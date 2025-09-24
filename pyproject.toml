@@ -1,6 +1,6 @@
 [project]
 name = "programgarden"
-version = "0.1.1"
+version = "0.1.2"
 description = "코딩을 처음 배우는 사람들도 LS증권API를 쉽게 사용하도록 만든 오픈소스"
 authors = [
     {name = "장용준",email = "coding@programgarden.com"}

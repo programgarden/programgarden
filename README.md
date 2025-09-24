@@ -7,8 +7,7 @@
 [![Product: OverseasStock](https://img.shields.io/badge/지원되는_자동매매-해외주식,해외선물-purple.svg)]()
 
 
-
-<br>
+![programgarden 그리고 ls](docs/images/programgarden_ls.png)
 
 ## 👏 오픈소스 개발 진행 상황
 - 해외 주식·해외 선물 전략 추가 중
@@ -38,9 +37,6 @@
 
 <a id="intro"></a>
 ## 📌 소개 
-
-![programgarden 그리고 ls](docs/images/programgarden_ls.png)
-
 **ProgramGarden**은 코딩을 모르는 시스템 트레이더와 투자자가 쉽게 사용하도록 지원하는 **개인 맞춤형 자동화매매 오픈소스 플랫폼**입니다.
 
 유튜버 [**프로그램 동산**](https://programgarden.com)과 [**LS증권**](https://ls-sec.co.kr) 협업으로 **시스템 트레이더 생태계** 발전에 기여하기 위하여 오랜 연구 끝에
