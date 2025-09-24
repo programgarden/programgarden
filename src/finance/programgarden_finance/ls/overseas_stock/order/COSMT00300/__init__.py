@@ -1,0 +1,75 @@
+from typing import Optional, Dict, Any
+
+import aiohttp
+
+from programgarden_core.exceptions import TrRequestDataNotFoundException
+from .blocks import (
+    COSMT00300InBlock1,
+    COSMT00300OutBlock1,
+    COSMT00300OutBlock2,
+    COSMT00300Request,
+    COSMT00300Response,
+    COSMT00300ResponseHeader,
+)
+from ....tr_base import TROrderAbstract
+from ....tr_helpers import GenericTR
+from programgarden_finance.ls.config import URLS
+# pg_logger intentionally unused here; GenericTR handles logging
+
+
+class TrCOSMT00300(TROrderAbstract):
+    def __init__(self, request_data: COSMT00300Request):
+        super().__init__(
+            rate_limit_count=request_data.options.rate_limit_count,
+            rate_limit_seconds=request_data.options.rate_limit_seconds,
+            on_rate_limit=request_data.options.on_rate_limit,
+            rate_limit_key=request_data.options.rate_limit_key,
+        )
+        self.request_data = request_data
+
+        if not isinstance(self.request_data, COSMT00300Request):
+            raise TrRequestDataNotFoundException()
+
+        self._generic: GenericTR[COSMT00300Response] = GenericTR(self.request_data, self._build_response, url=URLS.ORDER_URL)
+
+    def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> COSMT00300Response:
+        if exc is not None:
+            return COSMT00300Response(header=None, LoanDtlClssCode=None, block1=None, block2=None, rsp_cd="", rsp_msg="", error_msg=str(exc))
+
+        resp_json = resp_json or {}
+        loan_code = resp_json.get("LoanDtlClssCode", None)
+        block1 = resp_json.get("COSMT00300OutBlock1", None)
+        block2 = resp_json.get("COSMT00300OutBlock2", None)
+        result = COSMT00300Response(
+            header=COSMT00300ResponseHeader.model_validate(resp_headers),
+            LoanDtlClssCode=loan_code,
+            block1=COSMT00300OutBlock1.model_validate(block1) if block1 is not None else None,
+            block2=COSMT00300OutBlock2.model_validate(block2) if block2 is not None else None,
+            rsp_cd=resp_json.get("rsp_cd", ""),
+            rsp_msg=resp_json.get("rsp_msg", ""),
+        )
+        result.raw_data = resp
+        return result
+
+    def req(self) -> COSMT00300Response:
+        return self._generic.req()
+
+    async def req_async(self) -> COSMT00300Response:
+        return await self._generic.req_async()
+
+    async def _req_async_with_session(self, session: aiohttp.ClientSession) -> COSMT00300Response:
+        if hasattr(self._generic, "_req_async_with_session"):
+            return await self._generic._req_async_with_session(session)
+
+        return await self._generic.req_async()
+
+
+__all__ = [
+    TrCOSMT00300,
+    COSMT00300InBlock1,
+    COSMT00300OutBlock1,
+    COSMT00300OutBlock2,
+    COSMT00300Request,
+    COSMT00300Response,
+    COSMT00300ResponseHeader,
+]

@@ -1,0 +1,26 @@
+[project]
+authors = [
+    {"name" = "프로그램동산","email" = "coding@programgarden.com"}
+]
+homepage = "https://programgarden.com"
+requires-python = ">=3.9"
+name = "programgarden-community"
+version = "0.1.0"
+description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
+readme = "README.md"
+
+[tool.poetry]
+packages = [
+    { include = "programgarden_community" }
+]
+
+[tool.poetry.dependencies]
+pydantic = ">=2.11.7,<3.0.0"
+programgarden-finance = "^0.1.0"
+programgarden-core = "^0.1.0"
+croniter = "^6.0.0"
+python-dotenv = "^1.1.1"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
