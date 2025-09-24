@@ -1,10 +1,6 @@
 # Table of contents
 
-## 개요
-* [소개](README.md#intro)
-* [오픈소스 구조](README.md#structure)
-* [운영진](README.md#owners)
-
+* [**소개**](README.md)
 
 ## 투자자 가이드
 * [자동화매매 빠르게 사용하기](docs/non_dev_quick_guide.md)
