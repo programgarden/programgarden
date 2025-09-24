@@ -39,5 +39,5 @@
 
 * **프로그램 동산** – DSL 개발 담당 [링크딘 주소](https://www.linkedin.com/in/masterjyj/)
 * **라쿠너리 동산** – 시각화, WTS 개발 담당 [링크딘 주소](https://www.linkedin.com/in/rakunary)
-* **클라우드 동산** – AI & 서버 개발 담당 (준비중)
+* **클라우드 동산** – AI & 서버 개발 담당 [링크딘 주소](https://www.linkedin.com/in/philip-sung-jae-cho/)
 * **디자인 동산** – 콘텐츠와 디자인 담당 [링크딘 주소](https://www.linkedin.com/in/jina-jang-4561b717a/)
