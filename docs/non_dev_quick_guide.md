@@ -202,7 +202,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
 
 - **conditions**
     - 전략 계산 조건들의 모음이며 세 가지 형태를 가집니다.
-        1) `ProgramGarden Community` 라이브러리에 기여된 전략을 이용합니다. [Community 전략 보기](./community_plugins.md)
+        1) `ProgramGarden Community` 라이브러리에 기여된 전략을 이용합니다. [Community 전략들 둘러보기](./community_list.md)
         ```python
         {
             # Community 전략의 ID를 넣습니다.
