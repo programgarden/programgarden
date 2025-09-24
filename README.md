@@ -14,7 +14,7 @@
 - 해외 옵션 추가 예정
 - 코인 추가 예정
 
-> **⚠️ 경고**: ProgramGarden 자동화매매는 현재 **테스트 버전**이므로 오류를 계속 확인하고 있습니다. 따라서 정식 버전이 출시되기 전까지는 **소액 투자**를 권장합니다. 오픈소스 사용 시 발생하는 문제에 대한 책임은 사용자에게 있으며, 라이선스를 반드시 확인해 주세요. [라이선스 보기](https://github.com/programgarden/programgarden/blob/main/LICENSE)
+> **⚠️ 경고**: ProgramGarden 자동화매매는 현재 **테스트 버전**이므로 오류를 계속 확인하고 있습니다. 따라서 정식 버전이 출시되기 전까지는 **소액 투자**를 권장합니다. 오픈소스 사용 시 발생하는 문제에 대한 책임은 사용자에게 있으며, 라이선스를 반드시 확인해 주세요. [라이선스 보기](https://github.com/programgarden/programgarden?tab=AGPL-3.0-1-ov-file#readme)
 
 <br>
 
