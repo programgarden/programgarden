@@ -185,13 +185,12 @@ class SystemExecutor:
 
             # inside window -> immediate
             if kind == "submitted_new_buy":
-                result = await self.buy_sell_executor.new_buy_execute(
+                await self.buy_sell_executor.new_buy_execute(
                     system=system,
                     symbols_from_strategy=symbols_snapshot,
                     new_buy=trade,
                     order_id=strategy_order_id,
                 )
-                pg_logger.error(f"new_buy_execute result: {result}")
             else:
                 await self.buy_sell_executor.new_sell_execute(
                     system=system,

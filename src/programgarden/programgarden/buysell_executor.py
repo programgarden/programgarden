@@ -99,6 +99,7 @@ class BuySellExecutor:
             symbols_from_strategy[:] = filtered_symbols
 
         if not symbols_from_strategy:
+            pg_logger.warning(f"No symbols to buy. order_id: {order_id}")
             return
 
         purchase_symbols, community_instance = await self.plugin_resolver.resolve_buysell_community(
@@ -111,6 +112,7 @@ class BuySellExecutor:
         )
 
         if not purchase_symbols:
+            pg_logger.warning(f"No symbols match the order strategy. order_id: {order_id}")
             return
 
         for symbol in purchase_symbols:
@@ -262,6 +264,7 @@ class BuySellExecutor:
         filtered_symbols, held_symbols, non_trade_symbols = await self._block_duplicate_symbols(system, symbols_from_strategy)
 
         symbols, community_instance = await self.plugin_resolver.resolve_buysell_community(
+            system_id=system.get("settings", {}).get("system_id", None),
             trade=new_sell,
             symbols=symbols_from_strategy,
             held_symbols=held_symbols,
