@@ -834,24 +834,22 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "0.1.0"
+version = "0.1.2"
 description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-files = []
-develop = true
+files = [
+    {file = "programgarden_community-0.1.2-py3-none-any.whl", hash = "sha256:012d832c48323f5fc8356cf2439019705954e4fd22cfa4095f89b5f9b1ed2b41"},
+    {file = "programgarden_community-0.1.2.tar.gz", hash = "sha256:2872a87c383bd33b046fe1b6883c4bda6813d77d3c534e5323ae0729e067a248"},
+]
 
 [package.dependencies]
-croniter = "^6.0.0"
-programgarden-core = {path = "../core", develop = true}
-programgarden-finance = {path = "../finance", develop = true}
+croniter = ">=6.0.0,<7.0.0"
+programgarden-core = ">=0.1.0,<0.2.0"
+programgarden-finance = ">=0.1.0,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
-python-dotenv = "^1.1.1"
-
-[package.source]
-type = "directory"
-url = "../community"
+python-dotenv = ">=1.1.1,<2.0.0"
 
 [[package]]
 name = "programgarden-core"
@@ -860,12 +858,10 @@ description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-files = []
-develop = true
-
-[package.source]
-type = "directory"
-url = "../core"
+files = [
+    {file = "programgarden_core-0.1.0-py3-none-any.whl", hash = "sha256:c2ebc48865338520792f91df4d1428d8fcebe9718e0ac9b12864bd93210df67e"},
+    {file = "programgarden_core-0.1.0.tar.gz", hash = "sha256:ddcd51f9840db5b18514995749f716f766c428a23d70c109521895c989981135"},
+]
 
 [[package]]
 name = "programgarden-finance"
@@ -874,21 +870,18 @@ description = "프로그램 동산 운영진이 관리하는 증권사 데이터
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-files = []
-develop = true
+files = [
+    {file = "programgarden_finance-0.1.0-py3-none-any.whl", hash = "sha256:59bd548b7de2e401cc263b6f33727c713fc22c422bcf26ab96bde17ad7bdff1a"},
+    {file = "programgarden_finance-0.1.0.tar.gz", hash = "sha256:dbcaf90b5b75966d4341f2997b18607d6f3b1c9b3681bf86d986c1d27f6e8ceb"},
+]
 
 [package.dependencies]
-aiohttp = "^3.10.0"
-programgarden = {path = "../programgarden", develop = true}
-programgarden-core = {path = "../core", develop = true}
+aiohttp = ">=3.10.0,<4.0.0"
+programgarden-core = ">=0.1.0,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
-redis = "^6.4.0"
-requests = "^2.32.4"
-websockets = "^15.0.1"
-
-[package.source]
-type = "directory"
-url = "../finance"
+redis = ">=6.4.0,<7.0.0"
+requests = ">=2.32.4,<3.0.0"
+websockets = ">=15.0.1,<16.0.0"
 
 [[package]]
 name = "propcache"
@@ -1774,4 +1767,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "c73ad74e9916583986d76e195697f8dc5e0cfc91988c409873269f858ebb3d3d"
+content-hash = "d29ace5fe61d4dbca5fbb0a1af2824b12631fab242500042a5237e31ae46c584"

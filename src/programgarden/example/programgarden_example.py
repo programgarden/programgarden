@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from programgarden import Programgarden
+import os
 
 load_dotenv()
 
@@ -32,8 +33,8 @@ if __name__ == "__main__":
             "securities": {
                 "company": "ls",
                 "product": "overseas_stock",
-                "appkey": "LS증권 앱키를 넣어주세요",
-                "appsecretkey": "LS증권 앱시크릿키를 넣어주세요",
+                "appkey": os.getenv("APPKEY"),  # LS증권 앱키로 대체해주세요.
+                "appsecretkey": os.getenv("APPSECRET"),  # LS증권 앱시크릿키로 대체해주세요.
             },
             "strategies": [
                 {
@@ -63,8 +64,8 @@ if __name__ == "__main__":
                             "condition_id": "SMAGoldenDeadCross",
                             "params": {
                                 "use_ls": True,
-                                "appkey": "LS증권 앱키를 넣어주세요",
-                                "appsecretkey": "LS증권 앱시크릿키를 넣어주세요",
+                                "appkey": os.getenv("APPKEY"),  # LS증권 앱키로 대체해주세요.
+                                "appsecretkey": os.getenv("APPSECRET"),  # LS증권 앱시크릿키로 대체해주세요.
                                 "start_date": "20230101",
                                 "end_date": "20250918",
                                 "alignment": "golden",
@@ -84,7 +85,7 @@ if __name__ == "__main__":
                         "description": "시장 분석 전략",
                         "block_duplicate_trade": True,
                         "order_time": {
-                            "start": "02:00:00",
+                            "start": "21:00:00",
                             "end": "04:00:00",
                             "days": ["mon", "tue", "wed", "thu", "fri"],
                             "timezone": "Asia/Seoul",
@@ -94,11 +95,28 @@ if __name__ == "__main__":
                         "condition": {
                             "condition_id": "StockSplitFunds",
                             "params": {
-                                "appkey": "LS증권 앱키를 넣어주세요",
-                                "appsecretkey": "LS증권 앱시크릿키를 넣어주세요",
+                                "appkey": os.getenv("APPKEY"),  # LS증권 앱키로 대체해주세요.
+                                "appsecretkey": os.getenv("APPSECRET"),  # LS증권 앱시크릿키로 대체해주세요.
                                 "percent_balance": 0.8,
                                 "max_symbols": 2
                             }
+                        }
+                    },
+                ],
+                "new_sells": [
+                    {
+                        "order_id": "losscut_sell_1",
+                        "description": "수익률 마이너스되면 전량 매도하기",
+                        "order_time": {
+                            "start": "21:00:00",
+                            "end": "04:00:00",
+                            "days": ["mon", "tue", "wed", "thu", "fri"],
+                            "timezone": "Asia/Seoul",
+                            "behavior": "defer",
+                            "max_delay_seconds": 86400
+                        },
+                        "condition": {
+                            "condition_id": "BasicLossCutManager",
                         }
                     },
                 ],

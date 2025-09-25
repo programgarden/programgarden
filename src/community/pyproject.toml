@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.9"
 name = "programgarden-community"
-version = "0.1.1"
+version = "0.1.2"
 description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
 readme = "README.md"
 
