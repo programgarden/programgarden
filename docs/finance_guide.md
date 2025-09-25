@@ -54,6 +54,11 @@ pip install python-dotenv programgarden_core
 
 ### 2.3. 주요 기능 사용하기
 
+#### 코딩전에 openAPI 요청 테스트하기
+[LS증권 OpenAPI](https://openapi.ls-sec.co.kr/apiservice?group_id=ffd2def7-a118-40f7-a0ab-cd4c6a538a90&api_id=33bd887a-6652-4209-88cd-5324bc7c5e36) 서버에 요청을 보내 응답을 확인하는 간단한 테스트를 준비해두었습니다. Postman에서 테스트해보세요: [테스트하러 가기](https://www.postman.com/programgarden-team/programgarden/overview)
+
+
+
 #### 로그인
 LS 증권 API에 로그인하여 세션을 시작합니다. 싱글톤 패턴을 사용하여 인스턴스를 가져옵니다.
 
