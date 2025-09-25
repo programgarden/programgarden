@@ -37,7 +37,7 @@ Finance 라이브러리는 크게 3가지 주요 기능을 제공합니다:
 
 #### 설명전 예제파일 확인
 예제 파일을 확인하여 사용법을 익히세요.
-[예제폴더 이동](../src/finance/example/)
+[예제폴더 이동](https://github.com/programgarden/programgarden/tree/main/src/finance/example)
 
 #### 라이브러리 설치
 터미널에서 아래 명령어를 실행하여 `programgarden_finance` 패키지를 설치합니다.
