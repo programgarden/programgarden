@@ -24,7 +24,7 @@
 ## 주요 기능
 
 ### 클래스 구조
-- **상속**: `BaseBuyOverseasStock`을 상속받아 표준화된 인터페이스를 따릅니다.
+- **상속**: `BaseNewBuyOverseasStock`을 상속받아 표준화된 인터페이스를 따릅니다.
 - **식별자**: `id = "StockSplitFunds"`
 - **설명**: `description = "주식 분할 자금"`
 - **지원 증권사**: `securities = ["ls-sec.co.kr"]`

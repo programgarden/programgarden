@@ -10,7 +10,7 @@ caller and also logged.
 The implementations here are intentionally small: the executor focuses
 on orchestration (resolve -> instantiate -> set context -> execute)
 and leaves trading logic to plugin classes that must subclass
-`BaseBuyOverseasStock` from `programgarden_core`.
+`BaseNewBuyOverseasStock` from `programgarden_core`.
 """
 from __future__ import annotations
 

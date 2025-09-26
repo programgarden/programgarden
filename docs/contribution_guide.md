@@ -54,9 +54,9 @@ src/community/programgarden_community/overseas_stock/
 
 ```python
 
-from programgarden_core import BaseCondition, BaseConditionResponseType
+from programgarden_core import BaseStrategyCondition, BaseStrategyConditionResponseType
 
-class MySMACondition(BaseCondition):
+class MySMACondition(BaseStrategyCondition):
     id: str = "MySMACondition"
     description: str = "나만의 SMA 기반 컨디션"
 
@@ -65,7 +65,7 @@ class MySMACondition(BaseCondition):
         self.short_period = short_period
         self.long_period = long_period
 
-    async def execute(self) -> BaseConditionResponseType:
+    async def execute(self) -> BaseStrategyConditionResponseType:
         # 구현 로직
         return {
             "condition_id": self.id,

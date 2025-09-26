@@ -2,7 +2,7 @@
 High-level utilities for executing and evaluating strategy conditions.
 
 This module provides the :class:`ConditionExecutor` which is responsible for
-running individual conditions (plugins or BaseCondition instances), evaluating
+running individual conditions (plugins or BaseStrategyCondition instances), evaluating
 nested condition groups using logical operators, and filtering symbol lists
 based on a strategy's condition definitions.
 
