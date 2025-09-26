@@ -3,7 +3,7 @@ import threading
 from typing import Any, Dict, List, Optional, Union
 from programgarden_finance import LS, AS0, AS1, AS2, AS3, AS4
 from programgarden_core import (
-    OrderCategoryType, SystemType, BaseBuyOverseasStock, BaseSellOverseasStock, pg_logger,
+    OrderCategoryType, SystemType, BaseNewBuyOverseasStock, BaseNewSellOverseasStock, pg_logger,
 )
 from programgarden.pg_listener import pg_listener
 
@@ -62,7 +62,6 @@ class RealOrderExecutor:
         주문이 발생할때마다 데이터와 함께 on_real_order_receive가 호출된다.
         """
         try:
-            # reuse shared dispatch logic
             ordNo = response.body.sOrdNo
             if ordNo is None:
                 return
@@ -196,7 +195,7 @@ class RealOrderExecutor:
     async def send_data_community_instance(
             self,
             ordNo: str,
-            community_instance: Optional[Union[BaseBuyOverseasStock, BaseSellOverseasStock]]
+            community_instance: Optional[Union[BaseNewBuyOverseasStock, BaseNewSellOverseasStock]]
     ) -> None:
         """
         Send order result data to the community plugin instance's
@@ -205,7 +204,6 @@ class RealOrderExecutor:
         The order number is used as the key. If there are queued messages
         for this order number, they will be delivered in FIFO order.
         """
-        print(f"orderno for send_data_community_instance: {ordNo}")  # --- IGNORE ---
         if ordNo:
             # register the community instance (may be None)
             with self._lock:
@@ -253,13 +251,10 @@ class RealOrderExecutor:
             bns_tp=response.get("body", {}).get("sBnsTp", ""),
             ord_xct_ptn_code=response.get("body", {}).get("sOrdxctPtnCode", ""),
         )
-        print(f"====== {response.get('body', {}).get('sBnsTp', '')}, {response.get('body', {}).get('sOrdxctPtnCode', '')}, {order_type}")  # --- IGNORE ---
 
         instance = self._order_community_instance_map.get(ord_key)
         if instance:
             handler = getattr(instance, "on_real_order_receive", None)
-
-            print(f"handler: {handler}, order_type: {order_type}")  # --- IGNORE ---
 
             if handler:
                 loop: Optional[asyncio.AbstractEventLoop] = getattr(self, "_loop", None)

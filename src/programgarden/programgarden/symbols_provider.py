@@ -5,20 +5,6 @@ This module implements a small adapter around the LS (LS증권) finance
 client to fetch available symbols for a given product. The adapter exposes
 a single async provider class that external developers can call to retrieve
 a list of `SymbolInfo` records.
-
-High level behaviour
-- Supports only company == "ls".
-- Requires the underlying LS client to be logged in; this function will
-        raise a ValueError if the client is not authenticated.
-- Uses the LS client's async occurs-style API to receive result blocks and
-        converts them into `SymbolInfo` instances.
-
-Example
-                provider = SymbolProvider()
-                symbols = await provider.get_symbols(company="ls", product="overseas_stock")
-                for s in symbols:
-                                print(s.symbol, s.exchcd)
-
 """
 
 from typing import List, Optional

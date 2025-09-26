@@ -1,15 +1,10 @@
 from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 
-from .community import BaseCondition, SymbolInfo, BaseBuyOverseasStock, BaseSellOverseasStock
+from programgarden_core.bases.base import SymbolInfo
+from programgarden_core.bases.new_buy import BaseNewBuyOverseasStock
+from programgarden_core.bases.new_sell import BaseNewSellOverseasStock
+from programgarden_core.bases.strategy import BaseStrategyCondition
 
-
-ExecutionTimingType = Literal["once", "interval", "cron"]
-"""
-전략 반복 실행 여부입니다.
-- "once": 한번만 실행
-- "interval": 주기적으로 실행
-- "cron": 크론 표현식에 따라 실행
-"""
 
 LogicType = Literal["all", "any", "not", "xor", "at_least", "at_most", "exactly", "if_then", "weighted"]
 """
@@ -40,7 +35,7 @@ class StrategyConditionType(TypedDict):
     """전략의 논리 연산자"""
     threshold: Optional[int] = None
     """전략의 임계값"""
-    conditions: List[Union['StrategyConditionType', BaseCondition]]
+    conditions: List[Union['StrategyConditionType', BaseStrategyCondition]]
     """실행할 전략 리스트"""
 
 
@@ -56,8 +51,6 @@ class MaxSymbolsLimitType(TypedDict):
 
 
 class StrategyType(TypedDict):
-    timing: ExecutionTimingType
-    """전략 실행 타이밍"""
     schedule: Optional[str] = None
     """
 ### 필드 순서
@@ -154,14 +147,13 @@ class StrategyType(TypedDict):
     """
     전체 종목중에 몇개까지만 확인할지 지정한다. None이면 전체 종목을 다 확인한다.
     """
-    conditions: List[Union['StrategyConditionType', 'DictConditionType', BaseCondition]]
+    conditions: Optional[List[Union['StrategyConditionType', 'DictConditionType', BaseStrategyCondition]]]
     """실행할 전략 리스트"""
 
 
 class DictConditionType(TypedDict):
     """
-    DictConditionType은 문자열로 표현된 조건 타입입니다.
-    이 타입은 BaseCondition의 문자열 표현을 사용하여 조건을 정의합니다.
+    문자열 표현을 사용하여 조건을 정의합니다.
     """
     condition_id: str
     """전략의 고유 ID"""
@@ -229,10 +221,21 @@ class NewBuyTradeType(TypedDict):
     """중복거래 방지 여부, True:방지, False:허용"""
     available_balance: Optional[float] = None
     """빈 값으로 두면, securities에서 지정된 증권사 예수금으로 대체된다."""
-    condition: Optional[Union[DictConditionType, BaseBuyOverseasStock]]
+    condition: Optional[Union[DictConditionType, BaseNewBuyOverseasStock]]
     """ 매수 전략 정보"""
     order_time: Optional[OrderTimeType] = None
     """주문 실행 시간 설정"""
+
+
+class ModifyBuyTradeType(TypedDict):
+    order_id: str
+    """정정매수 거래의 고유 ID"""
+    description: Optional[str]
+    """정정매수 거래에 대한 설명"""
+    condition: Optional[Union[DictConditionType, BaseNewBuyOverseasStock]]
+    """정정매수 전략 정보"""
+    order_time: Optional[OrderTimeType] = None
+    """정정주문 실행 시간 설정"""
 
 
 class NewSellTradeType(TypedDict):
@@ -240,7 +243,7 @@ class NewSellTradeType(TypedDict):
     """매도 거래의 고유 ID"""
     description: Optional[str]
     """매도 거래에 대한 설명"""
-    condition: Optional[Union[DictConditionType, BaseSellOverseasStock]]
+    condition: Optional[Union[DictConditionType, BaseNewSellOverseasStock]]
     """ 매도 전략 정보"""
     order_time: Optional[OrderTimeType] = None
     """주문 실행 시간 설정"""
@@ -249,7 +252,7 @@ class NewSellTradeType(TypedDict):
 class OrdersType(TypedDict):
     """
     매수 또는 매도용 전략, 빈값이면 전략만 확인하는 용도
-    주식 new_buys, new_sells만 지원합니다.
+    주식 new_buys, new_sells, modify_buys, modify_sells, cancel_buys, cancel_sells만 지원합니다.
 
     선물옵션("shortbuy", "shortsell", "longbuy", "longsell") 거래는 준비중입니다.
     """
@@ -257,6 +260,16 @@ class OrdersType(TypedDict):
     """신규매수"""
     new_sells: List[NewSellTradeType]
     """신규매도"""
+
+    modify_buys: List[Any]
+    """매수정정, 준비중"""
+    modify_sells: List[Any]
+    """매도정정, 준비중"""
+
+    cancel_buys: List[Any]
+    """매수취소, 준비중"""
+    cancel_sells: List[Any]
+    """매도취소, 준비중"""
 
 
 class SystemType(TypedDict):

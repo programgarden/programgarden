@@ -3,13 +3,13 @@
 """
 from typing import List, Optional
 from programgarden_core import (
-    BaseBuyOverseasStock,
-    BaseBuyOverseasStockResponseType,
+    BaseNewBuyOverseasStock,
+    BaseNewBuyOverseasStockResponseType,
 )
 from programgarden_finance import LS, g3101
 
 
-class StockSplitFunds(BaseBuyOverseasStock):
+class StockSplitFunds(BaseNewBuyOverseasStock):
 
     id: str = "StockSplitFunds"
     description: str = "주식 분할 자금"
@@ -38,8 +38,7 @@ class StockSplitFunds(BaseBuyOverseasStock):
         self.percent_balance = percent_balance
         self.max_symbols = max_symbols
 
-    async def execute(self) -> List[BaseBuyOverseasStockResponseType]:
-
+    async def execute(self) -> List[BaseNewBuyOverseasStockResponseType]:
         ls = LS.get_instance()
         if not ls.is_logged_in():
             await ls.async_login(
@@ -52,7 +51,7 @@ class StockSplitFunds(BaseBuyOverseasStock):
         # 종목당 최대 매수 금액
         per_max_amt = round(fcurr_dps / self.max_symbols, 2)
 
-        orders: List[BaseBuyOverseasStockResponseType] = []
+        orders: List[BaseNewBuyOverseasStockResponseType] = []
         for symbol in self.available_symbols:
             if len(orders) >= self.max_symbols:
                 break
@@ -78,15 +77,14 @@ class StockSplitFunds(BaseBuyOverseasStock):
                 continue
 
             # 주문 생성
-            order: BaseBuyOverseasStockResponseType = {
+            order: BaseNewBuyOverseasStockResponseType = {
                 "success": True,
                 "ord_ptn_code": "02",
                 "ord_mkt_code": exchcd,
-                "isu_no": symbol,
+                "shtn_isu_no": symbol,
                 "ord_qty": buy_qty,
                 "ovrs_ord_prc": price,
                 "ordprc_ptn_code": "00",
-                "brk_tp_code": "01"
             }
 
             orders.append(order)

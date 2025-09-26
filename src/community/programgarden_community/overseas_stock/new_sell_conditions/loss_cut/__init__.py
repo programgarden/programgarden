@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import List
 from programgarden_core import (
-    BaseSellOverseasStock, BaseSellOverseasStockResponseType
+    BaseNewSellOverseasStock, BaseNewSellOverseasStockResponseType
 )
 
 
-class BasicLossCutManager(BaseSellOverseasStock):
+class BasicLossCutManager(BaseNewSellOverseasStock):
 
     id: str = "BasicLossCutManager"
     description: str = "기본 손절매 매니저"
@@ -26,20 +26,20 @@ class BasicLossCutManager(BaseSellOverseasStock):
 
         self.losscut = losscut
 
-    async def execute(self) -> List[BaseSellOverseasStockResponseType]:
+    async def execute(self) -> List[BaseNewSellOverseasStockResponseType]:
 
-        results: List[BaseSellOverseasStockResponseType] = []
+        results: List[BaseNewSellOverseasStockResponseType] = []
         for held in self.held_symbols:
             shtn_isu_no = held.get("ShtnIsuNo")
             fcurr_mkt_code = held.get("FcurrMktCode")
             keysymbol = fcurr_mkt_code + shtn_isu_no
 
-            rnl_rat = float(held.get("RnlRat", 0))
+            rnl_rat = float(held.get("PnlRat", 0))
+
+            print(f"손절: {rnl_rat <= self.losscut}, 손절매 조건 충족: {keysymbol} 손익률={rnl_rat:.2f}% <= {self.losscut}%")
 
             if rnl_rat <= self.losscut:
-                print(f"손절매 조건 충족: {keysymbol} 손익률={rnl_rat:.2f}% <= {self.losscut}%")
-
-                result: BaseSellOverseasStockResponseType = {
+                result: BaseNewSellOverseasStockResponseType = {
                     "success": True,
                     "ord_ptn_code": "01",
                     "ord_mkt_code": fcurr_mkt_code,
@@ -53,4 +53,12 @@ class BasicLossCutManager(BaseSellOverseasStock):
                 }
                 results.append(result)
 
+        print(f"손절매 주문 생성: {len(results)}건")
+
         return results
+
+    def on_real_order_receive(self, order_type, response):
+        pass
+
+
+__all__ = ["BasicLossCutManager"]

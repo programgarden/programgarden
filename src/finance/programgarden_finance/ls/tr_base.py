@@ -1,7 +1,7 @@
 """
-본 파일은 TR 요청 및 응답을 처리하기 위한 추상 클래스들을 정의합니다.
-이 클래스들은 TR 요청을 수행하고, 요청의 상태를 관리하며,
-비동기적으로 요청을 반복하거나 연속적으로 처리하는 기능을 제공합니다.
+This file defines abstract classes for handling TR requests and responses.
+These classes perform TR requests, manage request state, and provide functionality
+for retrying requests asynchronously and for processing continuous (repeated) requests.
 """
 
 from abc import ABC, abstractmethod

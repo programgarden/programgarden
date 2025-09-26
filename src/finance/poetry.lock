@@ -284,22 +284,6 @@ files = [
 ]
 
 [[package]]
-name = "croniter"
-version = "6.0.0"
-description = "croniter provides iteration for datetime object with cron like format"
-optional = false
-python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,>=2.6"
-groups = ["main"]
-files = [
-    {file = "croniter-6.0.0-py2.py3-none-any.whl", hash = "sha256:2f878c3856f17896979b2a4379ba1f09c83e374931ea15cc835c5dd2eee9b368"},
-    {file = "croniter-6.0.0.tar.gz", hash = "sha256:37c504b313956114a983ece2c2b07790b1f1094fe9d81cc94739214748255577"},
-]
-
-[package.dependencies]
-python-dateutil = "*"
-pytz = ">2021.1"
-
-[[package]]
 name = "frozenlist"
 version = "1.7.0"
 description = "A list-like structure which implements collections.abc.MutableSequence"
@@ -552,63 +536,16 @@ files = [
 typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
-name = "programgarden"
-version = "0.1.0"
-description = "자동화매매 오픈소스의 실행, 로그, 환경 등의 핵심이되는 오픈소스"
-optional = false
-python-versions = ">=3.9"
-groups = ["main"]
-files = []
-develop = true
-
-[package.dependencies]
-croniter = "^6.0.0"
-programgarden-community = {path = "../community", develop = true}
-programgarden-core = {path = "../core", develop = true}
-programgarden-finance = {path = "../finance", develop = true}
-pydantic = ">=2.11.7,<3.0.0"
-pyqt5 = "^5.15.11"
-python-dotenv = "^1.1.1"
-qscintilla = "^2.14.1"
-
-[package.source]
-type = "directory"
-url = "../programgarden"
-
-[[package]]
-name = "programgarden-community"
-version = "0.1.0"
-description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
-optional = false
-python-versions = ">=3.9"
-groups = ["main"]
-files = []
-develop = true
-
-[package.dependencies]
-croniter = "^6.0.0"
-programgarden-core = {path = "../core", develop = true}
-programgarden-finance = {path = "../finance", develop = true}
-pydantic = ">=2.11.7,<3.0.0"
-python-dotenv = "^1.1.1"
-
-[package.source]
-type = "directory"
-url = "../community"
-
-[[package]]
 name = "programgarden-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-files = []
-develop = true
-
-[package.source]
-type = "directory"
-url = "../core"
+files = [
+    {file = "programgarden_core-0.1.1-py3-none-any.whl", hash = "sha256:90cce037f2887e2b28d386070c0cef128f0d5482ca35704bd7bcc74e3736879a"},
+    {file = "programgarden_core-0.1.1.tar.gz", hash = "sha256:93065a89e144d154bd883e674c60f217653919fba5ee3e0421113f811447d986"},
+]
 
 [[package]]
 name = "propcache"
@@ -720,14 +657,14 @@ files = [
 
 [[package]]
 name = "pydantic"
-version = "2.11.7"
+version = "2.11.9"
 description = "Data validation using Python type hints"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "pydantic-2.11.7-py3-none-any.whl", hash = "sha256:dde5df002701f6de26248661f6835bbe296a47bf73990135c7d07ce741b9623b"},
-    {file = "pydantic-2.11.7.tar.gz", hash = "sha256:d989c3c6cb79469287b1569f7447a17848c998458d49ebe294e975b9baf0f0db"},
+    {file = "pydantic-2.11.9-py3-none-any.whl", hash = "sha256:c42dd626f5cfc1c6950ce6205ea58c93efa406da65f479dcb4029d5934857da2"},
+    {file = "pydantic-2.11.9.tar.gz", hash = "sha256:6b8ffda597a14812a7975c90b82a8a2e777d9257aba3453f973acd3c032a18e2"},
 ]
 
 [package.dependencies]
@@ -853,132 +790,6 @@ files = [
 typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
 
 [[package]]
-name = "pyqt5"
-version = "5.15.11"
-description = "Python bindings for the Qt cross platform application toolkit"
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-files = [
-    {file = "PyQt5-5.15.11-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:c8b03dd9380bb13c804f0bdb0f4956067f281785b5e12303d529f0462f9afdc2"},
-    {file = "PyQt5-5.15.11-cp38-abi3-macosx_11_0_x86_64.whl", hash = "sha256:6cd75628f6e732b1ffcfe709ab833a0716c0445d7aec8046a48d5843352becb6"},
-    {file = "PyQt5-5.15.11-cp38-abi3-manylinux_2_17_x86_64.whl", hash = "sha256:cd672a6738d1ae33ef7d9efa8e6cb0a1525ecf53ec86da80a9e1b6ec38c8d0f1"},
-    {file = "PyQt5-5.15.11-cp38-abi3-win32.whl", hash = "sha256:76be0322ceda5deecd1708a8d628e698089a1cea80d1a49d242a6d579a40babd"},
-    {file = "PyQt5-5.15.11-cp38-abi3-win_amd64.whl", hash = "sha256:bdde598a3bb95022131a5c9ea62e0a96bd6fb28932cc1619fd7ba211531b7517"},
-    {file = "PyQt5-5.15.11.tar.gz", hash = "sha256:fda45743ebb4a27b4b1a51c6d8ef455c4c1b5d610c90d2934c7802b5c1557c52"},
-]
-
-[package.dependencies]
-PyQt5-Qt5 = ">=5.15.2,<5.16.0"
-PyQt5-sip = ">=12.15,<13"
-
-[[package]]
-name = "pyqt5-qt5"
-version = "5.15.17"
-description = "The subset of a Qt installation needed by PyQt5."
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "PyQt5_Qt5-5.15.17-py3-none-macosx_10_13_x86_64.whl", hash = "sha256:d8b8094108e748b4bbd315737cfed81291d2d228de43278f0b8bd7d2b808d2b9"},
-    {file = "PyQt5_Qt5-5.15.17-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b68628f9b8261156f91d2f72ebc8dfb28697c4b83549245d9a68195bd2d74f0c"},
-    {file = "PyQt5_Qt5-5.15.17-py3-none-manylinux2014_x86_64.whl", hash = "sha256:b018f75d1cc61146396fa5af14da1db77c5d6318030e5e366f09ffdf7bd358d8"},
-]
-
-[[package]]
-name = "pyqt5-sip"
-version = "12.17.0"
-description = "The sip module support for PyQt5"
-optional = false
-python-versions = ">=3.9"
-groups = ["main"]
-files = [
-    {file = "PyQt5_sip-12.17.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:ec47914cc751608e587c1c2fdabeaf4af7fdc28b9f62796c583bea01c1a1aa3e"},
-    {file = "PyQt5_sip-12.17.0-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:2f2a8dcc7626fe0da73a0918e05ce2460c7a14ddc946049310e6e35052105434"},
-    {file = "PyQt5_sip-12.17.0-cp310-cp310-win32.whl", hash = "sha256:0c75d28b8282be3c1d7dbc76950d6e6eba1e334783224e9b9835ce1a9c64f482"},
-    {file = "PyQt5_sip-12.17.0-cp310-cp310-win_amd64.whl", hash = "sha256:8c4bc535bae0dfa764e8534e893619fe843ce5a2e25f901c439bcb960114f686"},
-    {file = "PyQt5_sip-12.17.0-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:2c912807dd638644168ea8c7a447bfd9d85a19471b98c2c588c4d2e911c09b0a"},
-    {file = "PyQt5_sip-12.17.0-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:71514a7d43b44faa1d65a74ad2c5da92c03a251bdc749f009c313f06cceacc9a"},
-    {file = "PyQt5_sip-12.17.0-cp311-cp311-win32.whl", hash = "sha256:023466ae96f72fbb8419b44c3f97475de6642fa5632520d0f50fc1a52a3e8200"},
-    {file = "PyQt5_sip-12.17.0-cp311-cp311-win_amd64.whl", hash = "sha256:fb565469d08dcb0a427def0c45e722323beb62db79454260482b6948bfd52d47"},
-    {file = "PyQt5_sip-12.17.0-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:ea08341c8a5da00c81df0d689ecd4ee47a95e1ecad9e362581c92513f2068005"},
-    {file = "PyQt5_sip-12.17.0-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:4a92478d6808040fbe614bb61500fbb3f19f72714b99369ec28d26a7e3494115"},
-    {file = "PyQt5_sip-12.17.0-cp312-cp312-win32.whl", hash = "sha256:b0ff280b28813e9bfd3a4de99490739fc29b776dc48f1c849caca7239a10fc8b"},
-    {file = "PyQt5_sip-12.17.0-cp312-cp312-win_amd64.whl", hash = "sha256:54c31de7706d8a9a8c0fc3ea2c70468aba54b027d4974803f8eace9c22aad41c"},
-    {file = "PyQt5_sip-12.17.0-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:c7a7ff355e369616b6bcb41d45b742327c104b2bf1674ec79b8d67f8f2fa9543"},
-    {file = "PyQt5_sip-12.17.0-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:419b9027e92b0b707632c370cfc6dc1f3b43c6313242fc4db57a537029bd179c"},
-    {file = "PyQt5_sip-12.17.0-cp313-cp313-win32.whl", hash = "sha256:351beab964a19f5671b2a3e816ecf4d3543a99a7e0650f88a947fea251a7589f"},
-    {file = "PyQt5_sip-12.17.0-cp313-cp313-win_amd64.whl", hash = "sha256:672c209d05661fab8e17607c193bf43991d268a1eefbc2c4551fbf30fd8bb2ca"},
-    {file = "PyQt5_sip-12.17.0-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:d65a9c1b4cbbd8e856254609f56e897d2cb5c903f77b75fb720cb3a32c76b92b"},
-    {file = "PyQt5_sip-12.17.0-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:32b03e7e77ecd7b4119eba486b0706fa59b490bcceb585f9b6ddec8a582082db"},
-    {file = "PyQt5_sip-12.17.0-cp39-cp39-win32.whl", hash = "sha256:5b6c734f4ad28f3defac4890ed747d391d246af279200935d49953bc7d915b8c"},
-    {file = "PyQt5_sip-12.17.0-cp39-cp39-win_amd64.whl", hash = "sha256:855e8f5787d57e26a48d8c3de1220a8e92ab83be8d73966deac62fdae03ea2f9"},
-    {file = "pyqt5_sip-12.17.0.tar.gz", hash = "sha256:682dadcdbd2239af9fdc0c0628e2776b820e128bec88b49b8d692fe682f90b4f"},
-]
-
-[[package]]
-name = "python-dateutil"
-version = "2.9.0.post0"
-description = "Extensions to the standard Python datetime module"
-optional = false
-python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
-groups = ["main"]
-files = [
-    {file = "python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3"},
-    {file = "python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"},
-]
-
-[package.dependencies]
-six = ">=1.5"
-
-[[package]]
-name = "python-dotenv"
-version = "1.1.1"
-description = "Read key-value pairs from a .env file and set them as environment variables"
-optional = false
-python-versions = ">=3.9"
-groups = ["main"]
-files = [
-    {file = "python_dotenv-1.1.1-py3-none-any.whl", hash = "sha256:31f23644fe2602f88ff55e1f5c79ba497e01224ee7737937930c448e4d0e24dc"},
-    {file = "python_dotenv-1.1.1.tar.gz", hash = "sha256:a8a6399716257f45be6a007360200409fce5cda2661e3dec71d23dc15f6189ab"},
-]
-
-[package.extras]
-cli = ["click (>=5.0)"]
-
-[[package]]
-name = "pytz"
-version = "2025.2"
-description = "World timezone definitions, modern and historical"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "pytz-2025.2-py2.py3-none-any.whl", hash = "sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"},
-    {file = "pytz-2025.2.tar.gz", hash = "sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"},
-]
-
-[[package]]
-name = "qscintilla"
-version = "2.14.1"
-description = "Python bindings for the QScintilla programmers editor widget"
-optional = false
-python-versions = ">=3.7"
-groups = ["main"]
-files = [
-    {file = "QScintilla-2.14.1-cp37-abi3-macosx_10_13_x86_64.whl", hash = "sha256:31fa0ddd4d61908c903e8c53783338d4d2e312cb2bccdc544fb4c41a8a0580f2"},
-    {file = "QScintilla-2.14.1-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:9be3cfe39756d94aacdecf8ab8964eaac7223f36eddff62bc74df2128266510f"},
-    {file = "QScintilla-2.14.1-cp37-abi3-manylinux_2_17_x86_64.whl", hash = "sha256:8dedbfc646669ad7a380497abddcfe1dd8ea08831cdd07ce89538eb75123ceeb"},
-    {file = "QScintilla-2.14.1-cp37-abi3-win32.whl", hash = "sha256:ba3d7ffe5a8610674e9f11c4e69197763bb968e73f06397d4c64d08ffcd5a15e"},
-    {file = "QScintilla-2.14.1-cp37-abi3-win_amd64.whl", hash = "sha256:3a0deb6d00251643fbbd0bfd6e7f876477c179313a5fc2a7d7050a1c21b595b0"},
-    {file = "QScintilla-2.14.1.tar.gz", hash = "sha256:2c120a56d60363ff4bc73b8a763dc69fae5f84681c24efcb03064c7df103052b"},
-]
-
-[package.dependencies]
-PyQt5 = ">=5.15.4"
-PyQt5-sip = ">=12.11,<13"
-
-[[package]]
 name = "redis"
 version = "6.4.0"
 description = "Python client for Redis database and key-value store"
@@ -1019,18 +830,6 @@ urllib3 = ">=1.21.1,<3"
 [package.extras]
 socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
-
-[[package]]
-name = "six"
-version = "1.17.0"
-description = "Python 2 and 3 compatibility utilities"
-optional = false
-python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
-groups = ["main"]
-files = [
-    {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
-    {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
-]
 
 [[package]]
 name = "typing-extensions"
@@ -1278,4 +1077,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "2db17917814d3256dfaf3ab5ab1a8563ccdbcb0e72ec36b26ace97857a83a9fa"
+content-hash = "939fdf38ae36c0f2d9e22e48e7ef471bc09b7fd9d53727870958f90540c7f539"

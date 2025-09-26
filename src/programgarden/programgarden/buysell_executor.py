@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING, List, Optional, TypedDict, Union
 from zoneinfo import ZoneInfo
 from programgarden_core import (
     SystemType, SymbolInfo,
-    BaseBuyOverseasStockResponseType, BaseSellOverseasStockResponseType,
-    pg_logger, BaseBuyOverseasStock, exceptions, NewBuyTradeType, HeldSymbol,
-    NonTradedSymbol, NewSellTradeType, BaseSellOverseasStock,
+    BaseNewBuyOverseasStockResponseType, BaseNewSellOverseasStockResponseType,
+    pg_logger, BaseNewBuyOverseasStock, exceptions, NewBuyTradeType, HeldSymbol,
+    NonTradedSymbol, NewSellTradeType, BaseNewSellOverseasStock,
     OrderCategoryType
 )
 from programgarden_finance import LS, COSAT00301, COSOQ00201, COSAQ00102, COSOQ02701
@@ -112,7 +112,7 @@ class BuySellExecutor:
         )
 
         if not purchase_symbols:
-            pg_logger.warning(f"No symbols match the order strategy. order_id: {order_id}")
+            pg_logger.warning(f"No symbols match the buy strategy. order_id: {order_id}")
             return
 
         for symbol in purchase_symbols:
@@ -256,7 +256,7 @@ class BuySellExecutor:
         symbols_from_strategy: List[SymbolInfo],
         new_sell: NewSellTradeType,
         order_id: str,
-    ) -> Optional[Union[BaseBuyOverseasStock, BaseSellOverseasStock]]:
+    ) -> Optional[Union[BaseNewBuyOverseasStock, BaseNewSellOverseasStock]]:
         """
         Public entrypoint to perform sell execution for a system.
         """
@@ -272,7 +272,7 @@ class BuySellExecutor:
         )
 
         if not symbols:
-            pg_logger.warning("No symbols found for sell strategy.")
+            pg_logger.warning(f"No symbols match the sell strategy. order_id: {order_id}")
 
             return
 
@@ -302,7 +302,7 @@ class BuySellExecutor:
         self,
         system: SystemType,
         trade_type: OrderCategoryType,
-        symbol: Union[BaseBuyOverseasStockResponseType, BaseSellOverseasStockResponseType]
+        symbol: Union[BaseNewBuyOverseasStockResponseType, BaseNewSellOverseasStockResponseType]
     ):
         """
         Function that performs the actual order placement.
@@ -322,12 +322,13 @@ class BuySellExecutor:
             if product == "overseas_stock":
                 # unify buy/sell order placement
                 ord_ptn = "02" if trade_type == "submitted_new_buy" else "01"
+
                 result: COSAT00301.COSAT00301Response = await ls.overseas_stock().order().cosat00301(
                     body=COSAT00301.COSAT00301InBlock1(
                         OrdPtnCode=ord_ptn,
                         OrgOrdNo=None,
                         OrdMktCode=symbol.get("ord_mkt_code"),
-                        IsuNo=symbol.get("isu_no"),
+                        IsuNo=symbol.get("shtn_isu_no"),
                         OrdQty=symbol.get("ord_qty"),
                         OvrsOrdPrc=symbol.get("ovrs_ord_prc"),
                         OrdprcPtnCode=symbol.get("ordprc_ptn_code"),

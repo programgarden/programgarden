@@ -84,7 +84,6 @@ def exist_system_keys_error(system: SystemType) -> None:
     required_strategy_keys = [
         "id",
         "logic",
-        "conditions",
     ]
 
     for idx, strategy in enumerate(strategies):
