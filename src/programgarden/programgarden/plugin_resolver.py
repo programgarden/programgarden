@@ -1,39 +1,11 @@
-"""
-Plugin discovery and caching utilities.
-
-This module provides a small helper for locating "plugin" classes that
-implement either condition or buy logic for the ProgramGarden system.
-
-The resolver performs the following search strategy (in order):
-1. If the identifier looks like a fully-qualified name (contains a dot),
-     attempt to import the module and retrieve the class by name.
-2. Try to resolve a top-level export from the optional
-     `programgarden_community` package (if installed).
-3. Scan all modules under `programgarden_community` (using
-     `pkgutil.walk_packages`) and import modules to look for the class.
-
-When a matching class is found it is cached for future lookups. The
-cache stores both the original identifier and a fully-qualified name
-(when available) so lookups later can succeed with either form.
-
-Notes:
-- The resolver only considers classes that subclass `BaseCondition`
-    or `BaseBuyOverseasStock` from `programgarden_core`.
-- The resolver swallows import/scan exceptions and logs them via
-    `pg_logger`; callers should not rely on exceptions being raised for
-    resolution failures.
-- `PluginResolver.resolve` is declared `async` for compatibility with
-    async code paths, but the implementation is synchronous internally.
-"""
-
 from typing import Dict, List, Optional, Union
 import inspect
 from programgarden_core import (
-    BaseCondition, BaseBuyOverseasStock, pg_logger,
-    SymbolInfo, BaseBuyOverseasStockResponseType, BaseSellOverseasStockResponseType,
+    BaseStrategyConditionResponseType, BaseStrategyCondition,
+    BaseNewBuyOverseasStock, pg_logger,
+    SymbolInfo, BaseNewBuyOverseasStockResponseType, BaseNewSellOverseasStockResponseType,
     exceptions, NewBuyTradeType, HeldSymbol,
-    NonTradedSymbol, BaseSellOverseasStock,
-    BaseConditionResponseType
+    NonTradedSymbol, BaseNewSellOverseasStock,
 )
 from programgarden_community import getCommunityCondition
 
@@ -42,12 +14,6 @@ from programgarden.buysell_executor import DpsTyped
 
 class PluginResolver:
     """Resolve and cache plugin classes by identifier.
-
-    The resolver is lightweight and intended to be used by callers that
-    need to convert a short name (e.g. "MyCondition") or a fully-
-    qualified name (e.g. "some.module.MyCondition") into the concrete
-    plugin class object. Resolved classes are cached in-memory to avoid
-    repeated import and scan costs.
 
     Cache shape: Dict[str, type]
     - keys are identifiers used for lookup (short name or fqdn)
@@ -62,7 +28,7 @@ class PluginResolver:
         This method accepts either a short class name ("MyPlugin") or a
         fully-qualified class name ("package.module.MyPlugin"). It
         returns the class object if found and subclasses either
-        `BaseCondition` or `BaseBuyOverseasStock`.
+        `BaseStrategyCondition` or `BaseNewBuyOverseasStock`.
 
         Behaviour and notes:
         - If the condition_id is already cached, the cached class is
@@ -88,7 +54,14 @@ class PluginResolver:
         # (if installed) to find community-provided plugins.
         try:
             exported_cls = getCommunityCondition(condition_id)
-            if inspect.isclass(exported_cls) and issubclass(exported_cls, (BaseCondition, BaseBuyOverseasStock)):
+            if inspect.isclass(exported_cls) and issubclass(
+                exported_cls,
+                (
+                    BaseStrategyCondition,
+                    BaseNewBuyOverseasStock,
+                    BaseNewSellOverseasStock,
+                ),
+            ):
                 self._plugin_cache[condition_id] = exported_cls
                 return exported_cls
         except Exception as e:
@@ -104,16 +77,16 @@ class PluginResolver:
             held_symbols: List[HeldSymbol] = [],
             non_trade_symbols: List[NonTradedSymbol] = [],
             dps: Optional[DpsTyped] = None
-    ) -> tuple[Optional[Union[List[BaseBuyOverseasStockResponseType], List[BaseSellOverseasStockResponseType]]], Optional[Union[BaseBuyOverseasStock, BaseSellOverseasStock]]]:
+    ) -> tuple[Optional[Union[List[BaseNewBuyOverseasStockResponseType], List[BaseNewSellOverseasStockResponseType]]], Optional[Union[BaseNewBuyOverseasStock, BaseNewSellOverseasStock]]]:
         """Resolve and run the configured buy/sell plugin.
 
         Returns:
-            A list of `BaseBuyOverseasStockResponseType` or `BaseSellOverseasStockResponseType` objects produced
+            A list of `BaseNewBuyOverseasStockResponseType` or `BaseNewSellOverseasStockResponseType` objects produced
             by the plugin, or None if an error occurred.
         """
 
         condition = trade.get("condition", {})
-        if isinstance(condition, BaseBuyOverseasStock) or isinstance(condition, BaseSellOverseasStock):
+        if isinstance(condition, BaseNewBuyOverseasStock) or isinstance(condition, BaseNewSellOverseasStock):
             result = await condition.execute()
             return result, condition
 
@@ -143,8 +116,9 @@ class PluginResolver:
                     fcurr_ord_able_amt=dps.get("fcurr_ord_able_amt", 0.0)
                 )
 
-            if not isinstance(community_instance, BaseBuyOverseasStock):
-                raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseBuyOverseasStock")
+            if not isinstance(community_instance, BaseNewBuyOverseasStock) and \
+                    not isinstance(community_instance, BaseNewSellOverseasStock):
+                raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseNewBuyOverseasStock")
 
             # Plugins expose an async `execute` method that returns the symbols to act on.
             result = await community_instance.execute()
@@ -162,8 +136,9 @@ class PluginResolver:
         condition_id: str,
         params: Dict,
         symbol_info: SymbolInfo
-    ) -> BaseConditionResponseType:
+    ) -> BaseStrategyConditionResponseType:
         cls = await self._resolve(condition_id)
+
         if cls is None:
             raise exceptions.NotExistConditionException(
                 message=f"Condition class '{condition_id}' not found"
@@ -176,9 +151,9 @@ class PluginResolver:
             if hasattr(instance, "_set_system_id") and system_id:
                 instance._set_system_id(system_id)
 
-            if not isinstance(instance, BaseCondition):
+            if not isinstance(instance, BaseStrategyCondition):
                 raise exceptions.NotExistConditionException(
-                    message=f"Condition class '{condition_id}' is not a subclass of BaseCondition"
+                    message=f"Condition class '{condition_id}' is not a subclass of BaseStrategyCondition"
                 )
             result = await instance.execute()
 
@@ -187,7 +162,7 @@ class PluginResolver:
         except exceptions.NotExistConditionException as e:
             pg_logger.error(f"Condition '{condition_id}' does not exist: {e}")
 
-            return BaseConditionResponseType(
+            return BaseStrategyConditionResponseType(
                 condition_id=condition_id,
                 success=False,
                 exchcd=symbol_info.get("exchcd"),
@@ -197,7 +172,7 @@ class PluginResolver:
 
         except Exception as e:
             pg_logger.error(f"Error executing condition '{condition_id}': {e}")
-            return BaseConditionResponseType(
+            return BaseStrategyConditionResponseType(
                 condition_id=condition_id,
                 success=False,
                 exchcd=symbol_info.get("exchcd"),

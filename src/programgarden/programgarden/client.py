@@ -14,10 +14,6 @@ from .system_keys import exist_system_keys_error
 from art import tprint
 
 
-def my_processor(event_type: str, data: dict):
-    print("global handler:", event_type, data)
-
-
 class Programgarden(metaclass=EnforceKoreanAliasMeta):
     """
     Programgarden DSL Client for running trading systems.

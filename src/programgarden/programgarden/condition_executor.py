@@ -21,7 +21,7 @@ from typing import List, Optional, Tuple, Union, Dict
 import asyncio
 
 from programgarden_core import (
-    BaseCondition, BaseConditionResponseType, StrategyConditionType,
+    BaseStrategyCondition, BaseStrategyConditionResponseType, StrategyConditionType,
     StrategyType, SymbolInfo, SystemType, pg_logger,
     OrdersType
 )
@@ -46,7 +46,7 @@ class ConditionExecutor:
     resolver:
         A :class:`PluginResolver` instance used to map a string condition
         identifier to a concrete condition class (usually a subclass of
-        :class:`programgarden_core.BaseCondition`). The resolver.resolve
+        :class:`programgarden_core.BaseStrategyCondition`). The resolver.resolve
         method is awaited and expected to return a callable/class.
 
     symbol_provider:
@@ -71,7 +71,7 @@ class ConditionExecutor:
         self.symbol_provider = symbol_provider
         self.state_lock = asyncio.Lock()
 
-    def evaluate_logic(self, results: List[BaseConditionResponseType], logic: str, threshold: Optional[int] = None) -> Tuple[bool, int]:
+    def evaluate_logic(self, results: List[BaseStrategyConditionResponseType], logic: str, threshold: Optional[int] = None) -> Tuple[bool, int]:
         """Evaluate a list of condition results using a logical operator.
 
         Returns a tuple: (bool_result, numeric_weight).
@@ -103,18 +103,18 @@ class ConditionExecutor:
             return (total_weight >= threshold, total_weight)
         return (False, 0)
 
-    async def execute_condition(self, system: SystemType, symbol_info: SymbolInfo, condition: Union[BaseCondition, StrategyConditionType]) -> BaseConditionResponseType:
+    async def execute_condition(self, system: SystemType, symbol_info: SymbolInfo, condition: Union[BaseStrategyCondition, StrategyConditionType]) -> BaseStrategyConditionResponseType:
         """Execute a single condition entry.
 
         A condition entry can be either:
-        - An instance of :class:`programgarden_core.BaseCondition`, in which
+        - An instance of :class:`programgarden_core.BaseStrategyCondition`, in which
           case its ``execute`` coroutine is awaited and its result returned.
         - A dictionary describing a plugin condition, e.g. ``{"condition_id": "MyCond", "params": {...}}``.
         - A nested condition group (dict containing a ``"conditions"`` list and
           optional ``"logic"``/``"threshold"`` keys).
         """
 
-        if isinstance(condition, BaseCondition):
+        if isinstance(condition, BaseStrategyCondition):
             result = await condition.execute()
 
             return result
@@ -130,7 +130,7 @@ class ConditionExecutor:
             if "conditions" in condition:
                 return await self._execute_nested_condition(system, symbol_info, condition)
             # Unknown dict shape: treat as failure but keep symbol context.
-            return BaseConditionResponseType(
+            return BaseStrategyConditionResponseType(
                 condition_id=None,
                 success=False,
                 exchcd=symbol_info.get("exchcd"),
@@ -139,7 +139,7 @@ class ConditionExecutor:
             )
 
         pg_logger.warning(f"Unknown condition type: {type(condition)}")
-        return BaseConditionResponseType(
+        return BaseStrategyConditionResponseType(
             condition_id=None,
             success=False,
             exchcd=symbol_info.get("exchcd"),
@@ -152,7 +152,7 @@ class ConditionExecutor:
             system_id: Optional[str],
             condition: Dict,
             symbol_info: SymbolInfo
-    ) -> BaseConditionResponseType:
+    ) -> BaseStrategyConditionResponseType:
         """
         Execute a single plugin condition identified by ``condition_id``.
         """
@@ -166,7 +166,7 @@ class ConditionExecutor:
             symbol_info=symbol_info,
         )
 
-    async def _execute_nested_condition(self, system: SystemType, symbol_info: SymbolInfo, condition_nested: StrategyConditionType) -> BaseConditionResponseType:
+    async def _execute_nested_condition(self, system: SystemType, symbol_info: SymbolInfo, condition_nested: StrategyConditionType) -> BaseStrategyConditionResponseType:
         """
         Execute a nested condition group using concurrent execution and
         """
@@ -181,7 +181,7 @@ class ConditionExecutor:
             for condition in conditions
         ]
 
-        condition_results: List[BaseConditionResponseType] = []
+        condition_results: List[BaseStrategyConditionResponseType] = []
         for task in asyncio.as_completed(tasks):
             try:
                 res = await task
@@ -189,7 +189,7 @@ class ConditionExecutor:
 
             except Exception as e:
                 pg_logger.error(f"Error executing condition: {e}")
-                condition_results.append(BaseConditionResponseType(
+                condition_results.append(BaseStrategyConditionResponseType(
                     condition_id=res.get("condition_id", None),
                     success=False,
                     exchcd=symbol_info.get("exchcd"),
@@ -199,7 +199,7 @@ class ConditionExecutor:
 
         complete, total_weight = self.evaluate_logic(results=condition_results, logic=logic, threshold=threshold)
         if not complete:
-            return BaseConditionResponseType(
+            return BaseStrategyConditionResponseType(
                 condition_id=None,
                 success=False,
                 exchcd=symbol_info.get("exchcd"),
@@ -208,7 +208,7 @@ class ConditionExecutor:
             )
 
         # All conditions passed
-        return BaseConditionResponseType(
+        return BaseStrategyConditionResponseType(
             condition_id=None,
             success=True,
             exchcd=symbol_info.get("exchcd"),
@@ -286,7 +286,7 @@ class ConditionExecutor:
                 for condition in conditions
             ]
 
-            condition_results: List[BaseConditionResponseType] = []
+            condition_results: List[BaseStrategyConditionResponseType] = []
             for task in asyncio.as_completed(tasks):
                 try:
                     res = await task

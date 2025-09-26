@@ -5,7 +5,7 @@ import queue
 import concurrent.futures
 import inspect
 from typing import Any, Dict, Callable, Optional, TypedDict
-from programgarden_core import BaseConditionResponseType, OrderCategoryType
+from programgarden_core import BaseStrategyConditionResponseType, OrderCategoryType
 
 load_dotenv()
 
@@ -33,7 +33,7 @@ class RealOrderPayload(TypedDict):
 class StrategyPayload(TypedDict):
     condition_id: str
     message: Optional[str]
-    response: Optional[BaseConditionResponseType] = None,
+    response: Optional[BaseStrategyConditionResponseType] = None,
 
 
 class RealTimeListener:

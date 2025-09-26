@@ -76,6 +76,15 @@ if __name__ == "__main__":
                         },
                     ],
                 },
+                {
+                    "id": "condition_loss_cut",
+                    "description": "수익률 마이너스되면 전량 매도하기",
+                    "schedule": "* * * * * *",
+                    "timezone": "Asia/Seoul",
+                    "logic": "at_least",
+                    "threshold": 0,
+                    "order_id": "losscut_sell_1",
+                }
             ],
 
             "orders": {
@@ -85,7 +94,7 @@ if __name__ == "__main__":
                         "description": "시장 분석 전략",
                         "block_duplicate_trade": True,
                         "order_time": {
-                            "start": "21:00:00",
+                            "start": "20:00:00",
                             "end": "04:00:00",
                             "days": ["mon", "tue", "wed", "thu", "fri"],
                             "timezone": "Asia/Seoul",
@@ -108,9 +117,9 @@ if __name__ == "__main__":
                         "order_id": "losscut_sell_1",
                         "description": "수익률 마이너스되면 전량 매도하기",
                         "order_time": {
-                            "start": "21:00:00",
+                            "start": "02:00:00",
                             "end": "04:00:00",
-                            "days": ["mon", "tue", "wed", "thu", "fri"],
+                            "days": ["tue", "wed", "thu", "fri", "sat"],
                             "timezone": "Asia/Seoul",
                             "behavior": "defer",
                             "max_delay_seconds": 86400
