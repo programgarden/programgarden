@@ -73,20 +73,20 @@ def __getattr__(name: str) -> Any:
         globals()[name] = StockSplitFunds
         return StockSplitFunds
 
-    if name == "TrailingStopManager":
-        from programgarden_community.overseas_stock.new_sell_conditions.trailing_stop import (
-            TrailingStopManager,
+    if name == "BasicLossCutManager":
+        from programgarden_community.overseas_stock.new_sell_conditions.loss_cut import (
+            BasicLossCutManager,
         )
 
         _warn_on_import(
             name,
             replacement=(
-                "programgarden_community.overseas_stock.new_sell_conditions.trailing_stop.TrailingStopManager"
+                "programgarden_community.overseas_stock.new_sell_conditions.loss_cut.BasicLossCutManager"
             ),
         )
 
-        globals()[name] = TrailingStopManager
-        return TrailingStopManager
+        globals()[name] = BasicLossCutManager
+        return BasicLossCutManager
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -116,11 +116,11 @@ def getCommunityCondition(class_name: str) -> Any:
 
         return StockSplitFunds
 
-    if class_name == "TrailingStopManager":
-        from programgarden_community.overseas_stock.new_sell_conditions.trailing_stop import (
-            TrailingStopManager,
+    if class_name == "BasicLossCutManager":
+        from programgarden_community.overseas_stock.new_sell_conditions.loss_cut import (
+            BasicLossCutManager,
         )
 
-        return TrailingStopManager
+        return BasicLossCutManager
 
     raise ValueError(f"{class_name} is not a valid community tool.")

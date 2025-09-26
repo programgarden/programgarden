@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.9"
 name = "programgarden-community"
-version = "0.1.2"
+version = "0.1.3"
 description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
 readme = "README.md"
 
@@ -16,8 +16,8 @@ packages = [
 
 [tool.poetry.dependencies]
 pydantic = ">=2.11.7,<3.0.0"
-programgarden-finance = "^0.1.0"
-programgarden-core = "^0.1.0"
+programgarden-finance = "^0.1.1"
+programgarden-core = "^0.1.1"
 croniter = "^6.0.0"
 python-dotenv = "^1.1.1"
 

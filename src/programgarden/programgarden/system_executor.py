@@ -170,7 +170,7 @@ class SystemExecutor:
                     new_buy=trade,
                     order_id=strategy_order_id,
                 )
-            else:
+            elif kind == "submitted_new_sell":
                 await self.buy_sell_executor.new_sell_execute(
                     system=system,
                     symbols_from_strategy=symbols_snapshot,
@@ -260,21 +260,20 @@ class SystemExecutor:
 
         for orders_key, kind in (("new_buys", "submitted_new_buy"), ("new_sells", "submitted_new_sell")):
             orders_list: List[Union[NewBuyTradeType, NewSellTradeType]] = orders.get(orders_key, [])
-
             for trade in orders_list:
                 if trade.get("order_id") != strategy_order_id:
                     continue
 
-            symbols_snapshot = list(response_symbols)
-            await self._process_trade_time_window(
-                system=system,
-                trade=trade,
-                symbols_snapshot=symbols_snapshot,
-                strategy_order_id=strategy_order_id,
-                kind=kind,
-            )
+                symbols_snapshot = list(response_symbols)
+                await self._process_trade_time_window(
+                    system=system,
+                    trade=trade,
+                    symbols_snapshot=symbols_snapshot,
+                    strategy_order_id=strategy_order_id,
+                    kind=kind,
+                )
 
-            break
+                break
 
     async def _run_with_strategy(self, strategy_id: str, strategy: StrategyType, system: SystemType):
         """
