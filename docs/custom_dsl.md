@@ -21,9 +21,9 @@ pip install programgarden programgarden-core programgarden-finance
 ### 2.2. Base 클래스 이해
 커스텀 전략을 만들기 위해 다음 base 클래스를 상속받습니다:
 
-- **BaseCondition**: 시장 분석 조건을 정의하는 클래스. `execute` 메소드를 구현하여 조건 평가 로직을 작성합니다.
-- **BaseBuyOverseasStock**: 해외 주식 매수 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
-- **BaseSellOverseasStock**: 해외 주식 매도 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
+- **BaseStrategyCondition**: 시장 분석 조건을 정의하는 클래스. `execute` 메소드를 구현하여 조건 평가 로직을 작성합니다.
+- **BaseNewBuyOverseasStock**: 해외 주식 매수 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
+- **BaseNewSellOverseasStock**: 해외 주식 매도 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
 
 이 클래스들은 `programgarden_core` 패키지에서 제공됩니다.
 
@@ -34,12 +34,12 @@ pip install programgarden programgarden-core programgarden-finance
 from dataclasses import dataclass
 from typing import List, Literal, Optional, TypedDict
 from programgarden_core import (
-    BaseConditionResponseType,
-    BaseCondition,
-    BaseBuyOverseasStock,
-    BaseBuyOverseasStockResponseType,
-    BaseSellOverseasStock,
-    BaseSellOverseasStockResponseType,
+    BaseStrategyConditionResponseType,
+    BaseStrategyCondition,
+    BaseNewBuyOverseasStock,
+    BaseNewBuyOverseasStockResponseType,
+    BaseNewSellOverseasStock,
+    BaseNewSellOverseasStockResponseType,
 )
 from programgarden_finance import LS, g3204, g3101
 from programgarden import Programgarden
@@ -50,7 +50,7 @@ import os
 
 ## 3. 커스텀 컨디션 만들기
 
-컨디션은 시장 데이터를 분석하여 특정 조건이 만족되는지 평가하는 로직입니다. `BaseCondition`을 상속받아 `execute` 메소드를 구현합니다.
+컨디션은 시장 데이터를 분석하여 특정 조건이 만족되는지 평가하는 로직입니다. `BaseStrategyCondition`을 상속받아 `execute` 메소드를 구현합니다.
 
 ### 3.1. 클래스 구조
 커스텀 컨디션 클래스는 다음 요소를 포함합니다:
@@ -58,13 +58,13 @@ import os
 - **id**: 컨디션의 고유 식별자 (문자열).
 - **description**: 컨디션 설명.
 - **`__init__` 메소드**: 초기화 파라미터 설정.
-- **`execute` 메소드**: 비동기 메소드로, 조건 평가 로직 구현. `BaseConditionResponseType`을 반환.
+- **`execute` 메소드**: 비동기 메소드로, 조건 평가 로직 구현. `BaseStrategyConditionResponseType`을 반환.
 
 ### 3.2. 예시: SMAGoldenDeadCross 컨디션
 이 예시는 이동평균선의 골든 크로스를 감지하는 간단한 컨디션입니다. 실제 구현은 복잡할 수 있지만, 여기서는 기본 구조를 보여줍니다.
 
 ```python
-class SMAGoldenDeadCross(BaseCondition):
+class SMAGoldenDeadCross(BaseStrategyCondition):
     id: str = "SMAGoldenDeadCross"
     description: str = "SMA 골든 크로스 감지 컨디션"
 
@@ -74,7 +74,7 @@ class SMAGoldenDeadCross(BaseCondition):
         self.long_period = long_period
         # 추가 초기화...
 
-    async def execute(self) -> BaseConditionResponseType:
+    async def execute(self) -> BaseStrategyConditionResponseType:
         # 데이터 가져오기 (LS API 또는 다른 소스)
         # SMA 계산 로직
         # 조건 평가
@@ -87,8 +87,8 @@ class SMAGoldenDeadCross(BaseCondition):
         }
 ```
 
-#### BaseCondition 부모 클래스 설명
-`BaseCondition`은 다음과 같은 속성과 메소드를 제공합니다:
+#### BaseStrategyCondition 부모 클래스 설명
+`BaseStrategyCondition`은 다음과 같은 속성과 메소드를 제공합니다:
 
 - **속성**:
   - `id`: 전략의 고유 ID (클래스 레벨).
@@ -99,7 +99,7 @@ class SMAGoldenDeadCross(BaseCondition):
 
 - **메소드**:
   - `__init__(**kwargs)`: 초기화. 자식 클래스에서 `super().__init__()` 호출 필요. `self.symbol = None` 설정.
-  - `execute()`: **필수 구현**. 비동기로 조건 평가 로직 작성. `BaseConditionResponseType` 반환.
+  - `execute()`: **필수 구현**. 비동기로 조건 평가 로직 작성. `BaseStrategyConditionResponseType` 반환.
 
 이 메소드들은 프레임워크에서 자동으로 호출되며, 자식 클래스에서 오버라이드할 수 있습니다.
 
@@ -109,7 +109,7 @@ class SMAGoldenDeadCross(BaseCondition):
 
 ## 4. 커스텀 오더 전략 만들기 (매수/매도)
 
-오더 전략은 조건이 만족되었을 때 실제 주문을 생성하는 로직입니다. 매수 전략은 `BaseBuyOverseasStock`을, 매도 전략은 `BaseSellOverseasStock`을 상속받아 `execute` 메소드를 구현합니다.
+오더 전략은 조건이 만족되었을 때 실제 주문을 생성하는 로직입니다. 매수 전략은 `BaseNewBuyOverseasStock`을, 매도 전략은 `BaseNewSellOverseasStock`을 상속받아 `execute` 메소드를 구현합니다.
 
 ### 4.1. 클래스 구조
 커스텀 오더 클래스는 다음 요소를 포함합니다:
@@ -118,14 +118,14 @@ class SMAGoldenDeadCross(BaseCondition):
 - **description**: 전략 설명.
 - **securities**: 지원하는 증권사 리스트.
 - **`__init__` 메소드**: 초기화 파라미터.
-- **`execute` 메소드**: 주문 리스트 생성. 매수는 `List[BaseBuyOverseasStockResponseType]`, 매도는 `List[BaseSellOverseasStockResponseType]` 반환.
+- **`execute` 메소드**: 주문 리스트 생성. 매수는 `List[BaseNewBuyOverseasStockResponseType]`, 매도는 `List[BaseNewSellOverseasStockResponseType]` 반환.
 - **`on_real_order_receive` 메소드**: 실시간 주문 응답 처리.
 
 ### 4.2. 예시: StockSplitFunds 매수 전략
 이 예시는 예수금을 균등하게 분할하여 여러 종목을 매수하는 전략입니다. 실제 구현은 복잡할 수 있지만, 여기서는 기본 구조를 보여줍니다.
 
 ```python
-class StockSplitFunds(BaseBuyOverseasStock):
+class StockSplitFunds(BaseNewBuyOverseasStock):
     id: str = "StockSplitFunds"
     description: str = "균등 분할 매수 전략"
     securities: List[str] = ["ls-sec.co.kr"]
@@ -136,7 +136,7 @@ class StockSplitFunds(BaseBuyOverseasStock):
         self.max_symbols = max_symbols
         # 추가 초기화...
 
-    async def execute(self) -> List[BaseBuyOverseasStockResponseType]:
+    async def execute(self) -> List[BaseNewBuyOverseasStockResponseType]:
         # 잔고 계산, 종목별 자금 분배 로직
         # 주문 리스트 생성
         return [
@@ -157,8 +157,8 @@ class StockSplitFunds(BaseBuyOverseasStock):
         print(f"주문 응답: {order_type}")
 ```
 
-#### BaseBuyOverseasStock 부모 클래스 설명
-`BaseBuyOverseasStock`은 `BaseOrderOverseasStock`를 상속받아 다음과 같은 추가 속성과 메소드를 제공합니다:
+#### BaseNewBuyOverseasStock 부모 클래스 설명
+`BaseNewBuyOverseasStock`은 `BaseOrderOverseasStock`를 상속받아 다음과 같은 추가 속성과 메소드를 제공합니다:
 
 - **속성** (상속 포함):
   - `id`, `description`, `securities`: 클래스 레벨 속성.
@@ -171,7 +171,7 @@ class StockSplitFunds(BaseBuyOverseasStock):
 
 - **메소드**:
   - `__init__()`: 초기화. `super().__init__()` 호출, 잔고 속성 초기화.
-  - `execute()`: **필수 구현**. 주문 리스트 생성 로직. `List[BaseBuyOverseasStockResponseType]` 반환.
+  - `execute()`: **필수 구현**. 주문 리스트 생성 로직. `List[BaseNewBuyOverseasStockResponseType]` 반환.
   - `on_real_order_receive(order_type, response)`: **필수 구현**. 실시간 주문 응답 처리.
 
 이 메소드들은 프레임워크에서 자동으로 호출되며, 자식 클래스에서 오버라이드할 수 있습니다.
@@ -182,7 +182,7 @@ class StockSplitFunds(BaseBuyOverseasStock):
 이 예시는 보유 종목의 수익률이 일정 수준 이상일 때 매도하는 전략입니다. 실제 구현은 복잡할 수 있지만, 여기서는 기본 구조를 보여줍니다.
 
 ```python
-class ProfitTaking(BaseSellOverseasStock):
+class ProfitTaking(BaseNewSellOverseasStock):
     id: str = "ProfitTaking"
     description: str = "수익 실현 매도 전략"
     securities: List[str] = ["ls-sec.co.kr"]
@@ -192,7 +192,7 @@ class ProfitTaking(BaseSellOverseasStock):
         self.target_profit = target_profit
         # 추가 초기화...
 
-    async def execute(self) -> List[BaseSellOverseasStockResponseType]:
+    async def execute(self) -> List[BaseNewSellOverseasStockResponseType]:
         # 보유 종목 수익률 확인 로직
         # 매도 주문 리스트 생성
         return [
@@ -215,8 +215,8 @@ class ProfitTaking(BaseSellOverseasStock):
         print(f"매도 주문 응답: {order_type}")
 ```
 
-#### BaseSellOverseasStock 부모 클래스 설명
-`BaseSellOverseasStock`은 `BaseOrderOverseasStock`를 상속받아 다음과 같은 추가 속성과 메소드를 제공합니다:
+#### BaseNewSellOverseasStock 부모 클래스 설명
+`BaseNewSellOverseasStock`은 `BaseOrderOverseasStock`를 상속받아 다음과 같은 추가 속성과 메소드를 제공합니다:
 
 - **속성** (상속 포함):
   - `id`, `description`, `securities_domains`: 클래스 레벨 속성.
@@ -228,7 +228,7 @@ class ProfitTaking(BaseSellOverseasStock):
 
 - **메소드**:
   - `__init__(**kwargs)`: 초기화. `super().__init__()` 호출, `self.symbols = []` 설정.
-  - `execute()`: **필수 구현**. 주문 리스트 생성 로직. `List[BaseSellOverseasStockResponseType]` 반환.
+  - `execute()`: **필수 구현**. 주문 리스트 생성 로직. `List[BaseNewSellOverseasStockResponseType]` 반환.
   - `on_real_order_receive(order_type, response)`: **필수 구현**. 실시간 주문 응답 처리.
 
 이 메소드들은 프레임워크에서 자동으로 호출되며, 자식 클래스에서 오버라이드할 수 있습니다.
