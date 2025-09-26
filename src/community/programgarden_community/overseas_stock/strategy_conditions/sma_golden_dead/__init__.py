@@ -8,8 +8,8 @@ Moving average golden/dead cross detection conditions
 from dataclasses import dataclass
 from typing import List, Literal, Optional, TypedDict
 from programgarden_core import (
-    BaseConditionResponseType,
-    BaseCondition,
+    BaseStrategyConditionResponseType,
+    BaseStrategyCondition,
 )
 from programgarden_finance import LS, g3204
 
@@ -33,7 +33,7 @@ class SMASignal:
     date: str
 
 
-class SMAGoldenDeadCross(BaseCondition):
+class SMAGoldenDeadCross(BaseStrategyCondition):
     """
     SMA 해외 주식 클래스
     """
@@ -107,7 +107,7 @@ Moving average golden/dead cross detection conditions
         self.appkey = appkey
         self.appsecretkey = appsecretkey
 
-    async def execute(self) -> BaseConditionResponseType:
+    async def execute(self) -> BaseStrategyConditionResponseType:
         """
         SMA 해외 주식 전략을 실행합니다.
         이 메서드는 비동기적으로 실행됩니다.

@@ -425,15 +425,15 @@ class COSOQ00201OutBlock4(BaseModel):
     )
     """해외증권잔고구분코드명"""
 
-    AstkBalQty: float = Field(
-        default=0.0,
+    AstkBalQty: int = Field(
+        default=0,
         title="해외증권잔고수량",
         description="해외증권잔고수량"
     )
     """해외증권잔고수량"""
 
-    AstkSellAbleQty: float = Field(
-        default=0.0,
+    AstkSellAbleQty: int = Field(
+        default=0,
         title="해외증권매도가능수량",
         description="해외증권매도가능수량"
     )
