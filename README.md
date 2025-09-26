@@ -1,7 +1,7 @@
 # 소개
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Release](https://img.shields.io/github/v/tag/OWNER/REPO?label=release&sort=semver&logo=github)](https://github.com/OWNER/REPO/releases)
+[![Release](https://img.shields.io/github/v/tag/programgarden/programgarden?label=release&sort=semver&logo=github)](https://github.com/programgarden/programgarden/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](./LICENSE)
 [![Company: LS](https://img.shields.io/badge/지원되는_증권사-LS증권-008FC7.svg)]()
 [![Product: OverseasStock](https://img.shields.io/badge/지원되는_자동매매-해외주식,해외선물-purple.svg)]()
