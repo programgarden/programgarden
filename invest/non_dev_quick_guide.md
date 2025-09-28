@@ -216,7 +216,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
 * **conditions**
   *   전략 계산 조건들의 모음이며 세 가지 형태를 가집니다.
 
-      1. `ProgramGarden Community` 라이브러리에 기여된 전략을 이용합니다. [Community 전략들 둘러보기](community_list.md)
+      1. [`programgarden-community`](../develop/contribution_guide.md) 라이브러리에 기여된 전략을 이용합니다. [Community 전략들 둘러보기](community_list.md)
 
       ```python
       {
@@ -231,7 +231,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
       }
       ```
 
-      2. 개인 전략을 활용하려면 `python` 코드를 이용해 커스텀 가능합니다. [개발자 가이드에서 확인](../develop/contribution_guide.md)
+      2. 개인 전략을 활용하려면 `python` 코드를 이용해 커스텀 가능합니다. [커스텀하기](../develop/custom_dsl.md)
       3. 조건 중첩도 가능합니다. 하위 conditions가 통과되면 상위 conditions의 계산을 수행하는 형태입니다.
 
       ```python
