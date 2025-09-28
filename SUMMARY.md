@@ -12,5 +12,5 @@
   * [자동화매매 오픈소스 성장에 기여하기](docs/contribution_guide.md)
   * [LS증권 코드 사용하기](docs/finance_guide.md)
 
-# 시각화•WTS 만들기
-* Dashboard 가이드로 이동 (준비중)
+## 시각화•WTS 만들기
+  * 나만의 WTS 가이드 만들기 (준비중)
