@@ -4,7 +4,7 @@
 
 ProgramGarden은 오픈소스 프로젝트로, 커뮤니티의 기여를 통해 성장하고 있습니다. 이 가이드는 개발자들이 자신만의 커스텀 전략을 공유하거나, 코드를 개선하여 프로젝트에 기여하는 방법을 설명합니다.
 
-커스텀 전략을 ProgramGarden Community에 기여하면, 다른 사용자들이 쉽게 사용할 수 있고, AI 바이브 코딩도 전략을 기반으로 DSL을 작성하여 비개발자가 쉽게 사용하도록 지원됩니다.
+커스텀 전략을 [`programgarden-community`](contribution_guide.md)에 기여하면, 다른 사용자들이 쉽게 사용할 수 있고, AI 바이브 코딩도 전략을 기반으로 DSL을 작성하여 비개발자가 쉽게 사용하도록 지원됩니다.
 
 이는 시스템 트레이더의 생태계를 풍부하게 만듭니다.
 
@@ -15,7 +15,7 @@ ProgramGarden은 오픈소스 프로젝트로, 커뮤니티의 기여를 통해 
 
 ### 2.1. 전략 파일 위치 및 구조
 
-커스텀 전략은 ProgramGarden Community에 기여되며, 상품에 맞는 각 전략별로 **전용 폴더**를 만들어야 합니다. 폴더 이름은 전략의 `클래스` 이름과 동일하게 하세요.
+커스텀 전략은 [`programgarden-community`](contribution_guide.md)에 기여되며, 상품에 맞는 각 전략별로 **전용 폴더**를 만들어야 합니다. 폴더 이름은 전략의 `클래스` 이름과 동일하게 하세요.
 
 * **컨디션 클래스**: `src/community/programgarden_community/overseas_stock/strategy_conditions/{StrategyID}/` 폴더 생성
 * **신규매수 전략 클래스**: `src/community/programgarden_community/overseas_stock/new_buy_conditions/{StrategyID}/` 폴더 생성
