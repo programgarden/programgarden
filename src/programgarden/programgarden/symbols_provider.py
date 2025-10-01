@@ -9,15 +9,16 @@ a list of `SymbolInfo` records.
 
 from typing import List, Optional
 
-from programgarden_core import SymbolInfo, pg_logger, SecuritiesAccountType
-from programgarden_finance import LS, g3190, COSOQ00201, g3104
-from datetime import date
+from programgarden_core import SymbolInfo, OrderType, pg_logger, SecuritiesAccountType
+from programgarden_finance import LS, g3190, COSOQ00201, g3104, COSAQ00102
+from datetime import date, datetime
+import pytz
 
 
 class SymbolProvider:
     async def get_symbols(
         self,
-        buy: Optional[bool],
+        order_type: Optional[OrderType],
         securities: SecuritiesAccountType
     ) -> List[SymbolInfo]:
         """
@@ -36,11 +37,13 @@ class SymbolProvider:
 
         symbols: List[SymbolInfo] = []
         if product == "overseas_stock":
-            if buy is True or buy is None:
+            if order_type == "new_buy" or order_type is None:
                 symbols.extend(await self.get_market_symbols(ls))
-
-            elif buy is False:
+            elif order_type == "new_sell":
                 symbols.extend(await self.get_account_symbols(ls))
+
+            elif order_type in ["modify_buy", "modify_sell", "cancel_buy", "cancel_sell"]:
+                symbols.extend(await self.get_non_trade_symbols(ls))
 
         else:
             pg_logger.warning(f"Unsupported product: {product}")
@@ -104,6 +107,54 @@ class SymbolProvider:
                                                 )
                                                 for block in response.block1
                                 ) if response and hasattr(response, "block1") and response.block1 else None
+                )
+
+        return tmp
+
+    async def get_non_trade_symbols(self, ls: LS) -> List[SymbolInfo]:
+        """Retrieve non-trade symbols for overseas stocks."""
+        tmp: List[SymbolInfo] = []
+
+        ny_tz = pytz.timezone("America/New_York")
+        ny_time = datetime.now(ny_tz)
+
+        for exchcd in ["81", "82"]:
+            response = await ls.overseas_stock().accno().cosaq00102(
+                        COSAQ00102.COSAQ00102InBlock1(
+                            RecCnt=1,
+                            QryTpCode="1",
+                            BkseqTpCode="1",
+                            OrdMktCode=exchcd,
+                            BnsTpCode="0",
+                            IsuNo="",
+                            SrtOrdNo=999999999,
+                            OrdDt=ny_time.strftime("%Y%m%d"),
+                            ExecYn="2",
+                            CrcyCode="USD",
+                            ThdayBnsAppYn="0",
+                            LoanBalHldYn="0"
+                        )
+                    ).req_async()
+
+            for block in response.block3:
+                result = await ls.overseas_stock().market().g3104(
+                    body=g3104.G3104InBlock(
+                        keysymbol=block.OrdMktCode+block.ShtnIsuNo.strip(),
+                        exchcd=block.OrdMktCode,
+                        symbol=block.ShtnIsuNo.strip()
+                    )
+                ).req_async()
+
+                if not result:
+                    continue
+
+                tmp.append(
+                    SymbolInfo(
+                        symbol=block.ShtnIsuNo.strip(),
+                        exchcd=block.OrdMktCode,
+                        mcap=result.block.shareprc,
+                        OrdNo=block.OrdNo
+                    )
                 )
 
         return tmp

@@ -553,32 +553,33 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "programgarden-core"
-version = "0.1.1"
+version = "0.1.2"
 description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-0.1.1-py3-none-any.whl", hash = "sha256:90cce037f2887e2b28d386070c0cef128f0d5482ca35704bd7bcc74e3736879a"},
-    {file = "programgarden_core-0.1.1.tar.gz", hash = "sha256:93065a89e144d154bd883e674c60f217653919fba5ee3e0421113f811447d986"},
+    {file = "programgarden_core-0.1.2-py3-none-any.whl", hash = "sha256:ae0ff2a37a8a31d98dda4d5c628ea2f915a67061531dfdf95329bfb78d5d1883"},
+    {file = "programgarden_core-0.1.2.tar.gz", hash = "sha256:7f5926ed72ae06bc0fd5782ff7e71f9cdcfc015738552a93d38a9f87b0d7cb39"},
 ]
 
 [[package]]
 name = "programgarden-finance"
-version = "0.1.1"
+version = "0.1.4"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-0.1.1-py3-none-any.whl", hash = "sha256:89a3df0eebfb138d692c211f68bfdfcdac93dcff018918ba1cf11f5b13f5a977"},
-    {file = "programgarden_finance-0.1.1.tar.gz", hash = "sha256:4ce2de2ae94946052974454487897ea9d543f7b70872ebd9a86f22e1e40e2255"},
+    {file = "programgarden_finance-0.1.4-py3-none-any.whl", hash = "sha256:461068fa2755ac918aa4d34d5fc080a21b29ddff63ceb95546d1b839c80449ac"},
+    {file = "programgarden_finance-0.1.4.tar.gz", hash = "sha256:94679a8fccb408c679d2d24b171b9c1274fcd0d17401c769d10ce4235f31cbaf"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.10.0,<4.0.0"
-programgarden-core = ">=0.1.1,<0.2.0"
+programgarden-core = ">=0.1.2,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
+python-dotenv = ">=1.1.1,<2.0.0"
 redis = ">=6.4.0,<7.0.0"
 requests = ">=2.32.4,<3.0.0"
 websockets = ">=15.0.1,<16.0.0"
@@ -935,14 +936,14 @@ files = [
 
 [[package]]
 name = "typing-inspection"
-version = "0.4.1"
+version = "0.4.2"
 description = "Runtime typing introspection tools"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "typing_inspection-0.4.1-py3-none-any.whl", hash = "sha256:389055682238f53b04f7badcb49b989835495a96700ced5dab2d8feae4b26f51"},
-    {file = "typing_inspection-0.4.1.tar.gz", hash = "sha256:6ae134cc0203c33377d43188d4064e9b357dba58cff3185f22924610e70a9d28"},
+    {file = "typing_inspection-0.4.2-py3-none-any.whl", hash = "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7"},
+    {file = "typing_inspection-0.4.2.tar.gz", hash = "sha256:ba561c48a67c5958007083d386c3295464928b01faa735ab8547c5692e87f464"},
 ]
 
 [package.dependencies]
@@ -1167,4 +1168,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "9746fde80c5ff5d276c81940bc08a3caef6854e6d8f5b12d92fede4d4972f4c7"
+content-hash = "4f0977f6c4722cef7bcbf3f462ecce8571b7e0fd53c14ebdd7f954d9d4c0e7cc"
