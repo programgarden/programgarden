@@ -2,7 +2,26 @@
 
 ## 1. 개요
 
-이 가이드는 ProgramGarden의 DSL(Domain Specific Language)을 커스텀하여 자신만의 트레이딩 전략을 개발하는 방법을 설명합니다. 개발자는 Python 클래스를 상속받아 커스텀 컨디션(조건)과 오더 전략(주문 전략)을 만들 수 있습니다. 이 가이드를 통해 직접 코드를 작성하고 DSL에 통합하는 방법을 배우게 됩니다.
+이 가이드는 ProgramGarden의 DSL(Domain Specific Language)을 커스텀하여 자신만의 트레이딩 전략을 개발하는 방법을 설명합니다. 개발자는 Python 클래스를 상속받아 커스텀 컨디션(조건)과 오더 전#### BaseNewOrderOverseasStock 부모 클래스 설명
+
+`BaseNewOrderOverseasStock`은 `BaseOrderOverseasStock`를 상속받아 다음과 같은 추가 속성과 메소드를 제공합니다:
+
+* **속성** (상속 포함):
+  * `id`, `description`, `securities`: 클래스 레벨 속성.
+  * `available_symbols`: 매매 전략에 사용할 종목 리스트.
+  * `held_symbols`: 보유 중인 종목 리스트.
+  * `non_traded_symbols`: 미체결 종목 리스트.
+  * `fcurr_dps`: 외화 예금 잔고.
+  * `fcurr_ord_able_amt`: 외화 주문 가능 금액.
+  * `system_id`: 시스템 ID.
+* **메소드**:
+  * `__init__(**kwargs)`: 초기화. `super().__init__()` 호출, 잔고 속성 초기화.
+  * `execute()`: **필수 구현**. 주문 리스트 생성 로직. `List[BaseNewOrderOverseasStockResponseType]` 반환.
+  * `on_real_order_receive(order_type, response)`: **필수 구현**. 실시간 주문 응답 처리.
+
+이 메소드들은 프레임워크에서 자동으로 호출되며, 자식 클래스에서 오버라이드할 수 있습니다.
+
+이 클래스를 DSL에서 `"order_id": "StockSplitFunds"`로 사용합니다. 이 가이드를 통해 직접 코드를 작성하고 DSL에 통합하는 방법을 배우게 됩니다.
 
 비개발자를 위한 [퀵스타트 가이드](../invest/non_dev_quick_guide.md)와 달리, 이 가이드는 코드 레벨의 구현을 중점으로 합니다. 예시 코드를 따라하며 자신의 전략을 구축하세요.
 
@@ -21,35 +40,13 @@ pip install programgarden programgarden-core programgarden-finance
 
 ### 2.2. Base 클래스 이해
 
-커스텀 전략을 만들기 위해 다음 base 클래스를 상속받습니다:
-
-* **BaseStrategyCondition**: 시장 분석 조건을 정의하는 클래스. `execute` 메소드를 구현하여 조건 평가 로직을 작성합니다.
-* **BaseNewBuyOverseasStock**: 해외 주식 매수 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
-* **BaseNewSellOverseasStock**: 해외 주식 매도 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
-
+커스텀 전략을 만들기 위해 다음 base 클래스를 상속받습니다. 
 이 클래스들은 `programgarden_core` 패키지에서 제공됩니다.
 
-### 2.3. Import 문
-
-커스텀 클래스를 작성할 때 필요한 import 예시문입니다:
-
-```python
-from dataclasses import dataclass
-from typing import List, Literal, Optional, TypedDict
-from programgarden_core import (
-    BaseStrategyConditionResponseType,
-    BaseStrategyCondition,
-    BaseNewBuyOverseasStock,
-    BaseNewBuyOverseasStockResponseType,
-    BaseNewSellOverseasStock,
-    BaseNewSellOverseasStockResponseType,
-)
-from programgarden_finance import LS, g3204, g3101
-from programgarden import Programgarden
-import os
-```
-
-\
+* **BaseStrategyCondition**: 시장 분석 조건을 정의하는 클래스. `execute` 메소드를 구현하여 조건 평가 로직을 작성합니다.
+* **BaseNewOrderOverseasStock**: 해외 주식 신규 매매 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
+* **BaseModifyOrderOverseasStock**: 해외 주식 정정 매매 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
+* **BaseCancelOrderOverseasStock**: 해외 주식 취소 매매 전략을 정의하는 클래스. `execute` 메소드를 구현하여 주문 생성 로직을 작성합니다.
 
 
 ## 3. 커스텀 컨디션 만들기
@@ -114,11 +111,11 @@ class SMAGoldenDeadCross(BaseStrategyCondition):
 \
 
 
-## 4. 커스텀 오더 전략 만들기 (매수/매도)
+## 4. 커스텀 오더 전략 만들기
 
-오더 전략은 조건이 만족되었을 때 실제 주문을 생성하는 로직입니다. 매수 전략은 `BaseNewBuyOverseasStock`을, 매도 전략은 `BaseNewSellOverseasStock`을 상속받아 `execute` 메소드를 구현합니다.
+오더 전략은 조건이 만족되었을 때 실제 주문을 생성하는 로직입니다. 전략은 `BaseNewOrderOverseasStock`, `BaseModifyOrderOverseasStock`, `BaseCancelOrderOverseasStock`을 상속받아 `execute` 메소드를 구현합니다.
 
-### 4.1. 클래스 구조
+### 4.1. 신규 오더 전략 (newOrder)
 
 커스텀 오더 클래스는 다음 요소를 포함합니다:
 
@@ -126,18 +123,19 @@ class SMAGoldenDeadCross(BaseStrategyCondition):
 * **description**: 전략 설명.
 * **securities**: 지원하는 증권사 리스트.
 * **`__init__` 메소드**: 초기화 파라미터.
-* **`execute` 메소드**: 주문 리스트 생성. 매수는 `List[BaseNewBuyOverseasStockResponseType]`, 매도는 `List[BaseNewSellOverseasStockResponseType]` 반환.
+* **`execute` 메소드**: 주문 리스트 생성. `List[BaseNewOrderOverseasStockResponseType]` 반환.
 * **`on_real_order_receive` 메소드**: 실시간 주문 응답 처리.
 
-### 4.2. 예시: StockSplitFunds 매수 전략
+### 4.2. 예시: StockSplitFunds 신규 오더 전략
 
 이 예시는 예수금을 균등하게 분할하여 여러 종목을 매수하는 전략입니다. 실제 구현은 복잡할 수 있지만, 여기서는 기본 구조를 보여줍니다.
 
 ```python
-class StockSplitFunds(BaseNewBuyOverseasStock):
+class StockSplitFunds(BaseNewOrderOverseasStock):
     id: str = "StockSplitFunds"
-    description: str = "균등 분할 매수 전략"
+    description: str = "균등 분할 신규 오더 전략"
     securities: List[str] = ["ls-sec.co.kr"]
+    order_types: List[OrderType] = ["new_buy", "new_sell"]
 
     def __init__(self, percent_balance: float = 10.0, max_symbols: int = 5, **kwargs):
         super().__init__()
@@ -145,19 +143,29 @@ class StockSplitFunds(BaseNewBuyOverseasStock):
         self.max_symbols = max_symbols
         # 추가 초기화...
 
-    async def execute(self) -> List[BaseNewBuyOverseasStockResponseType]:
+    async def execute(self) -> List[BaseNewOrderOverseasStockResponseType]:
         # 잔고 계산, 종목별 자금 분배 로직
-        # 주문 리스트 생성
+        # 주문 리스트 생성 (매수 또는 매도)
         return [
             {
                 "success": True,
-                "ord_ptn_code": "02",
+                "ord_ptn_code": "02",  # 매수
                 "ord_mkt_code": "82",
                 "isu_no": "TSLA",
                 "ord_qty": 10,
                 "ovrs_ord_prc": 150.0,
                 "ordprc_ptn_code": "00",
                 "brk_tp_code": "01"
+            },
+            {
+                "success": True,
+                "ord_ptn_code": "01",  # 매도
+                "ord_mkt_code": "82",
+                "shtn_isu_no": "NVDA",
+                "ord_qty": 5,
+                "ovrs_ord_prc": 160.0,
+                "ordprc_ptn_code": "00",
+                "crcy_code": "USD"
             }
             # 추가 주문들...
         ]
@@ -166,12 +174,10 @@ class StockSplitFunds(BaseNewBuyOverseasStock):
         print(f"주문 응답: {order_type}")
 ```
 
-#### BaseNewBuyOverseasStock 부모 클래스 설명
-
-`BaseNewBuyOverseasStock`은 `BaseOrderOverseasStock`를 상속받아 다음과 같은 추가 속성과 메소드를 제공합니다:
+이러한 주문 전략은 `BaseOrderOverseasStock`를 상속받고 있습니다. 그래서 다음과 같은 추가 속성과 메소드를 제공합니다:
 
 * **속성** (상속 포함):
-  * `id`, `description`, `securities`: 클래스 레벨 속성.
+  * `id`, `description`, `securities`, `order_types`: 클래스 레벨 속성.
   * `available_symbols`: 매매 전략에 사용할 종목 리스트.
   * `held_symbols`: 보유 중인 종목 리스트.
   * `non_traded_symbols`: 미체결 종목 리스트.
@@ -180,72 +186,14 @@ class StockSplitFunds(BaseNewBuyOverseasStock):
   * `system_id`: 시스템 ID.
 * **메소드**:
   * `__init__()`: 초기화. `super().__init__()` 호출, 잔고 속성 초기화.
-  * `execute()`: **필수 구현**. 주문 리스트 생성 로직. `List[BaseNewBuyOverseasStockResponseType]` 반환.
+  * `execute()`: **필수 구현**. 주문 리스트 생성 로직 반환.
   * `on_real_order_receive(order_type, response)`: **필수 구현**. 실시간 주문 응답 처리.
 
 이 메소드들은 프레임워크에서 자동으로 호출되며, 자식 클래스에서 오버라이드할 수 있습니다.
 
-이 클래스를 DSL에서 `"condition_id": "StockSplitFunds"`로 사용합니다.
+그리고 정정, 취소 주문도 마찬가지로 `BaseModifyOrderOverseasStock`, `BaseCancelOrderOverseasStock`을 상속받아 구현하면 됩니다.
 
-### 4.3. 예시: ProfitTaking 매도 전략
-
-이 예시는 보유 종목의 수익률이 일정 수준 이상일 때 매도하는 전략입니다. 실제 구현은 복잡할 수 있지만, 여기서는 기본 구조를 보여줍니다.
-
-```python
-class ProfitTaking(BaseNewSellOverseasStock):
-    id: str = "ProfitTaking"
-    description: str = "수익 실현 매도 전략"
-    securities: List[str] = ["ls-sec.co.kr"]
-
-    def __init__(self, target_profit: float = 10.0, **kwargs):
-        super().__init__()
-        self.target_profit = target_profit
-        # 추가 초기화...
-
-    async def execute(self) -> List[BaseNewSellOverseasStockResponseType]:
-        # 보유 종목 수익률 확인 로직
-        # 매도 주문 리스트 생성
-        return [
-            {
-                "success": True,
-                "ord_ptn_code": "01",
-                "ord_mkt_code": "82",
-                "shtn_isu_no": "TSLA",
-                "ord_qty": 5,
-                "ovrs_ord_prc": 160.0,
-                "ordprc_ptn_code": "00",
-                "crcy_code": "USD",
-                "pnl_rat": 15.5,
-                "pchs_amt": 750.0
-            }
-            # 추가 주문들...
-        ]
-
-    async def on_real_order_receive(self, order_type, response):
-        print(f"매도 주문 응답: {order_type}")
-```
-
-#### BaseNewSellOverseasStock 부모 클래스 설명
-
-`BaseNewSellOverseasStock`은 `BaseOrderOverseasStock`를 상속받아 다음과 같은 추가 속성과 메소드를 제공합니다:
-
-* **속성** (상속 포함):
-  * `id`, `description`, `securities_domains`: 클래스 레벨 속성.
-  * `available_symbols`: 매매 전략에 사용할 종목 리스트.
-  * `held_symbols`: 보유 중인 종목 리스트.
-  * `non_traded_symbols`: 미체결 종목 리스트.
-  * `symbols`: 종목 정보 리스트.
-  * `system_id`: 시스템 ID.
-* **메소드**:
-  * `__init__(**kwargs)`: 초기화. `super().__init__()` 호출, `self.symbols = []` 설정.
-  * `execute()`: **필수 구현**. 주문 리스트 생성 로직. `List[BaseNewSellOverseasStockResponseType]` 반환.
-  * `on_real_order_receive(order_type, response)`: **필수 구현**. 실시간 주문 응답 처리.
-
-이 메소드들은 프레임워크에서 자동으로 호출되며, 자식 클래스에서 오버라이드할 수 있습니다.
-
-이 클래스를 DSL에서 `"condition_id": "ProfitTaking"`으로 사용합니다.
-
-\
+그리고 외부 투자자들은 매매전략을 DSL에서 `"condition_id": "StockSplitFunds"`로 지정된 id를 불러서 사용합니다.
 
 
 ## 5. DSL 구성 및 실행
@@ -302,47 +250,63 @@ class CustomConditionExample:
                             {"symbol": "TSLA", "exchcd": "82"},
                             {"symbol": "NVDA", "exchcd": "82"},
                         ],
-                        "order_id": "split_buy_1",
+                        "order_id": "split_order_1",
                         "max_symbols": {"order": "mcap", "limit": 5},
                         "conditions": [
                             SMAGoldenDeadCross,
                         ],
                     },
                 ],
-                "orders": {
-                    "new_buys": [
-                        {
-                            "order_id": "split_buy_1",
-                            "description": "분할 매수",
-                            "block_duplicate_trade": True,
-                            "order_time": {
-                                "start": "09:00:00",
-                                "end": "15:00:00",
-                                "days": ["mon", "tue", "wed", "thu", "fri"],
-                                "timezone": "Asia/Seoul",
-                                "behavior": "defer",
-                                "max_delay_seconds": 3600,
-                            },
-                            "condition": StockSplitFunds,
+                "orders": [
+                    {
+                        "order_id": "split_order_1",
+                        "description": "분할 신규 오더",
+                        "block_duplicate_trade": True,
+                        "order_time": {
+                            "start": "09:00:00",
+                            "end": "15:00:00",
+                            "days": ["mon", "tue", "wed", "thu", "fri"],
+                            "timezone": "Asia/Seoul",
+                            "behavior": "defer",
+                            "max_delay_seconds": 3600,
                         },
-                    ],
-                    "new_sells": [
-                        {
-                            "order_id": "profit_sell_1",
-                            "description": "수익 실현 매도",
-                            "block_duplicate_trade": True,
-                            "order_time": {
-                                "start": "09:00:00",
-                                "end": "15:00:00",
-                                "days": ["mon", "tue", "wed", "thu", "fri"],
-                                "timezone": "Asia/Seoul",
-                                "behavior": "defer",
-                                "max_delay_seconds": 3600,
+                        "condition": {
+                            "condition_id": "StockSplitFunds",
+                            "params": {
+                                "percent_balance": 10.0,
+                                "max_symbols": 5,
                             },
-                            "condition": ProfitTaking,  # 또는 "condition": ProfitTaking (클래스 객체 직접 사용)
                         },
-                    ],
-                },
+                    },
+                    {
+                        "order_id": "modify_order_1",
+                        "description": "주문 정정",
+                        "block_duplicate_trade": True,
+                        "order_time": {
+                            "start": "09:00:00",
+                            "end": "15:00:00",
+                            "days": ["mon", "tue", "wed", "thu", "fri"],
+                            "timezone": "Asia/Seoul",
+                            "behavior": "defer",
+                            "max_delay_seconds": 3600,
+                        },
+                        "condition": ModifyOrderExample,
+                    },
+                    {
+                        "order_id": "cancel_order_1",
+                        "description": "주문 취소",
+                        "block_duplicate_trade": True,
+                        "order_time": {
+                            "start": "09:00:00",
+                            "end": "15:00:00",
+                            "days": ["mon", "tue", "wed", "thu", "fri"],
+                            "timezone": "Asia/Seoul",
+                            "behavior": "defer",
+                            "max_delay_seconds": 3600,
+                        },
+                        "condition": CancelOrderExample,
+                    },
+                ]
             }
         )
 
@@ -357,8 +321,6 @@ example.run_example()
 ## 6. 추가 팁
 
 * **디버깅**: `settings`의 `debug`를 `"DEBUG"`로 설정하여 상세 로그를 확인하세요.
-* **테스트**: 각 메소드를 단위 테스트로 검증하세요. 예를 들어, `execute` 메소드의 반환값을 assert.
-* **확장**: 더 복잡한 로직을 위해 추가 메소드를 구현하거나, 외부 라이브러리를 사용하세요.
-* **커뮤니티**: 커스텀 클래스를 ProgramGarden Community에 기여하여 다른 사용자와 공유하세요.
+* **커뮤니티**: 커스텀 클래스를 `programgarden-community`에 기여하여 다른 사용자와 공유하세요.
 
-이 가이드를 따라 자신만의 트레이딩 전략을 구축하세요. 질문이 있으면 Issue나 커뮤니티(https://cafe.naver.com/programgarden)를 이용하세요.
+이 가이드를 따라 자신만의 트레이딩 전략을 구축하세요. 질문이 있으면 Issue나 커뮤니티(https://cafe.naver.com/programgarden)를 방문해주세요.

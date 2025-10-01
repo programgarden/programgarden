@@ -265,56 +265,54 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
 
 ### orders 영역
 
-orders 영역은 사용하려는 매매 전략을 작성하는 곳입니다. 미작성 시 매매가 이루어지지 않습니다. 매매 전략은 Community의 전략을 가져오거나 개별적으로 파이썬 코드로 커스텀할 수 있습니다.
+orders 영역은 사용하려는 매매 전략을 작성하는 곳입니다. 매매 전략은 Community의 전략을 가져오거나 개별적으로 파이썬 코드로 커스텀할 수 있습니다. Community에서 전략을 가져와 사용하는 경우에, 매매전략이 원하는 방향의 매수/매도를 지원하는지 자세하게 체크하고 사용하세요.
+
+사용 방법은 다음과 같습니다.
 
 ```python
 {
-    "orders": {
-        # 매매 종류를 선택합니다.
-        "new_buys": [
-            {
-                # 매매 전략의 ID (중복 불가)
-                "order_id": "분할매매_1",
-                # 매매 전략 설명
-                "description": "시장 분석 전략",
-                # 보유 중인 종목은 추가 매수하지 않습니다.
-                "block_duplicate_trade": True,
-                # 특정 시간 안에서만 매매합니다.
-                "order_time": {
-                    # 시작(start)과 끝(end) 시간입니다.
-                    "start": "13:58:00",
-                    "end": "20:00:00",
-                    # 지정된 요일에만 매매합니다.
-                    "days": ["mon", "tue", "wed", "thu", "fri"],
-                    # 국가와 지역 시간대입니다.
-                    "timezone": "Asia/Seoul",
-                    # 주문 시간까지 대기 여부: 'defer' 또는 'skip'
-                    "behavior": "defer",
-                    # 최대 대기 시간(초)
-                    "max_delay_seconds": 86400
-                },
-                # 매매 전략은 1개만 지정할 수 있습니다.
-                "condition": {
-                    # Community에서 선택된 매매 전략 ID
-                    "condition_id": "StockSplitFunds",
-                    "params": {
-                        "appkey": os.getenv("APPKEY"),
-                        "appsecretkey": os.getenv("APPSECRET"),
-                        "percent_balance": 0.8,
-                        "max_symbols": 2
-                    }
-                }
+    "orders": [
+        # 매매 전략의 ID (중복 불가)
+        "order_id": "분할매매_1",
+        # 매매 전략 설명
+        "description": "시장 분석 전략",
+        # 보유 중인 종목은 추가 매수하지 않습니다.
+        "block_duplicate_trade": True,
+        # 특정 시간 안에서만 매매합니다.
+        "order_time": {
+            # 시작(start)과 끝(end) 시간입니다.
+            "start": "13:58:00",
+            "end": "20:00:00",
+            # 지정된 요일에만 매매합니다.
+            "days": ["mon", "tue", "wed", "thu", "fri"],
+            # 국가와 지역 시간대입니다.
+            "timezone": "Asia/Seoul",
+            # 주문 시간까지 대기 여부: 'defer' 또는 'skip'
+            "behavior": "defer",
+            # 최대 대기 시간(초)
+            "max_delay_seconds": 86400
+        },
+        # 매매 전략은 1개만 지정할 수 있습니다.
+        "condition": {
+            # Community에서 선택된 매매 전략 ID
+            "condition_id": "StockSplitFunds",
+            # 매매 전략에서 요구하는 데이터 값 작성
+            "params": {
+                "appkey": os.getenv("APPKEY"),
+                "appsecretkey": os.getenv("APPSECRET"),
+                "percent_balance": 0.8,
+                "max_symbols": 2
             }
-        ]
-    }
+        }
+    ]
 }
 ```
 
 #### 상세설명
 
 * **매매 종류**
-  * 현재는 해외주식 신규매수(`new_buys`), 신규매도(`new_sells`)만 지원합니다.
-  * 정정·취소 주문과 선물·옵션 매매 전략도 곧 업데이트될 예정입니다.
+  * 현재는 해외주식 매매만 지원하고 있습니다.
+  * 선물·옵션 매매 전략도 곧 업데이트될 예정입니다.
 * **order\_time**
   * 매매를 수행할 특정 시간대를 지정합니다. 보통 거래소 운영 시간에 맞춥니다.
   * **behavior**는 종목 전략 계산이 끝난 후 매매 시간이 될 때까지 기다릴지 여부입니다. `defer`는 매매 시간까지 기다리며 다음 전략 계산으로 넘어가지 않습니다. `skip`은 매매 시간이 아니면 해당 주문을 건너뛰고 다음 전략 계산으로 넘어갑니다.
@@ -366,14 +364,9 @@ orders 영역은 사용하려는 매매 전략을 작성하는 곳입니다. 미
                         # ... 전략 설정 ...
                     },
                 ],
-                "orders": {
-                    "new_buys": [
-                       # ... 매수 전략 설정 ...
-                    ],
-                    "new_sells": [
-                       # ... 매도 전략 설정 ...
-                    ]
-                }
+                "orders": [
+                    # ... 주문 전략 설정 ...
+                ]
             }
         )
         ```

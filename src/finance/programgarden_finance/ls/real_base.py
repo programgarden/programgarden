@@ -200,7 +200,8 @@ class RealRequestAbstract(ABC):
                                     try:
                                         exc = t.exception()
                                         if exc is not None:
-                                            print(f"handler task error: {exc}")
+                                            pass
+                                            # print(f"handler task error: {exc}")
                                     except asyncio.CancelledError:
                                         pass
 
@@ -342,7 +343,7 @@ class RealRequestAbstract(ABC):
 
             req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
 
-            print(f"Sending real request: {req}, {self._ws}")
+            # print(f"Sending real request: {req}, {self._ws}")
             asyncio.create_task(self._ws.send(json.dumps(req)))
 
     def _remove_message_symbols(self, symbols: List[str], tr_cd: str):

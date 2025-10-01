@@ -5,14 +5,18 @@
 from datetime import datetime
 from datetime import time as datetime_time, timedelta
 import asyncio
-from typing import List, Optional, Union
+from typing import List, Optional
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
 from programgarden_core import (
-    SystemType, StrategyType, pg_logger, OrderTimeType,
-    NewBuyTradeType, NewSellTradeType, OrderCategoryType
+    SystemType, StrategyType, pg_logger,
+    OrderTimeType, SymbolInfo
+)
+from programgarden_core import (
+    OrderType,
+    OrderStrategyType,
 )
 
 from .plugin_resolver import PluginResolver
@@ -31,6 +35,47 @@ class SystemExecutor:
         self.symbol_provider = SymbolProvider()
         self.condition_executor = ConditionExecutor(self.plugin_resolver, self.symbol_provider)
         self.buy_sell_executor = BuySellExecutor(self.plugin_resolver)
+
+    async def _execute_trade(
+        self,
+        system: SystemType,
+        symbols_snapshot: list[SymbolInfo],
+        trade: OrderStrategyType,
+        order_id: str,
+        order_types: List[OrderType],
+    ):
+        """
+        Helper to execute a trade based on its kind.
+
+        Args:
+            system (SystemType): The trading system configuration.
+            symbols_snapshot (list[SymbolInfo]): The list of symbols to trade.
+            trade (OrderStrategyType): The trade order configuration.
+            order_id (str): The unique identifier for the order.
+            order_types (List[OrderType]): The types of orders to execute.
+        """
+        if any(ot in ["new_buy", "new_sell"] for ot in order_types):
+            await self.buy_sell_executor.new_order_execute(
+                system=system,
+                symbols_from_strategy=symbols_snapshot,
+                new_order=trade,
+                order_id=order_id,
+                order_types=order_types
+            )
+        elif any(ot in ["modify_buy", "modify_sell"] for ot in order_types):
+            await self.buy_sell_executor.modify_order_execute(
+                system=system,
+                symbols_from_strategy=symbols_snapshot,
+                modify_order=trade,
+                order_id=order_id,
+            )
+        elif any(ot in ["cancel_buy", "cancel_sell"] for ot in order_types):
+            await self.buy_sell_executor.cancel_order_execute(
+                system=system,
+                symbols_from_strategy=symbols_snapshot,
+                cancel_order=trade,
+                order_id=order_id,
+            )
 
     # Helper: parse order_time range object
     def _parse_order_time_range(self, order: Optional[OrderTimeType], fallback_tz: str):
@@ -141,10 +186,10 @@ class SystemExecutor:
     async def _process_trade_time_window(
         self,
         system: SystemType,
-        trade: Union[NewBuyTradeType, NewSellTradeType],
-        symbols_snapshot: list,
+        trade: OrderStrategyType,
+        symbols_snapshot: list[SymbolInfo],
         strategy_order_id: str,
-        kind: OrderCategoryType,
+        order_types: OrderType,
     ) -> bool:
         """
         Shared helper to handle time-window parsing, immediate execution, skipping, or deferring
@@ -163,20 +208,7 @@ class SystemExecutor:
 
         # no scheduling configured -> execute immediately
         if not order_range:
-            if kind == "submitted_new_buy":
-                await self.buy_sell_executor.new_buy_execute(
-                    system=system,
-                    symbols_from_strategy=symbols_snapshot,
-                    new_buy=trade,
-                    order_id=strategy_order_id,
-                )
-            elif kind == "submitted_new_sell":
-                await self.buy_sell_executor.new_sell_execute(
-                    system=system,
-                    symbols_from_strategy=symbols_snapshot,
-                    new_sell=trade,
-                    order_id=strategy_order_id,
-                )
+            await self._execute_trade(system, symbols_snapshot, trade, strategy_order_id, order_types)
             return True
 
         # inside window -> immediate
@@ -184,20 +216,7 @@ class SystemExecutor:
         if self._is_dt_in_window(now, order_range["start"], order_range["end"], order_range["days"]):
 
             # inside window -> immediate
-            if kind == "submitted_new_buy":
-                await self.buy_sell_executor.new_buy_execute(
-                    system=system,
-                    symbols_from_strategy=symbols_snapshot,
-                    new_buy=trade,
-                    order_id=strategy_order_id,
-                )
-            else:
-                await self.buy_sell_executor.new_sell_execute(
-                    system=system,
-                    symbols_from_strategy=symbols_snapshot,
-                    new_sell=trade,
-                    order_id=strategy_order_id,
-                )
+            await self._execute_trade(system, symbols_snapshot, trade, strategy_order_id, order_types)
             return True
 
         # outside window -> behavior
@@ -222,22 +241,9 @@ class SystemExecutor:
             # wait until scheduled time
             await asyncio.sleep(delay)
 
-            if kind == "submitted_new_buy":
-                await self.buy_sell_executor.new_buy_execute(
-                    system=system,
-                    symbols_from_strategy=symbols_snapshot,
-                    new_buy=trade,
-                    order_id=order_id,
-                )
-            else:
-                await self.buy_sell_executor.new_sell_execute(
-                    system=system,
-                    symbols_from_strategy=symbols_snapshot,
-                    new_sell=trade,
-                    order_id=order_id,
-                )
+            await self._execute_trade(system, symbols_snapshot, trade, order_id, order_types)
 
-        pg_logger.info(f"Deferring and blocking until {kind} order '{strategy_order_id}' executes at {next_start.isoformat()} ({order_range['tz']})")
+        pg_logger.info(f"Deferring and blocking until {order_types} order '{strategy_order_id}' executes at {next_start.isoformat()} ({order_range['tz']})")
         await _scheduled_exec(delay, symbols_snapshot, trade, strategy_order_id, next_start, order_range["tz"])
 
         # returned after deferred execution; allow caller to continue with subsequent logic
@@ -247,6 +253,7 @@ class SystemExecutor:
         """
         Run a single execution of the strategy within the system.
         """
+        print(f"===== Running strategy: {strategy.get('id')} =====")
         response_symbols = await self.condition_executor.execute_condition_list(system=system, strategy=strategy)
         async with self.condition_executor.state_lock:
             success = len(response_symbols) > 0
@@ -255,25 +262,31 @@ class SystemExecutor:
             return
 
         # 전략 계산 통과됐으면 매수/매도 진행
-        orders = system.get("orders", {})
+        orders = system.get("orders", [])
         strategy_order_id = strategy.get("order_id", None)
 
-        for orders_key, kind in (("new_buys", "submitted_new_buy"), ("new_sells", "submitted_new_sell")):
-            orders_list: List[Union[NewBuyTradeType, NewSellTradeType]] = orders.get(orders_key, [])
-            for trade in orders_list:
-                if trade.get("order_id") != strategy_order_id:
-                    continue
+        for trade in orders:
+            if trade.get("order_id") != strategy_order_id:
+                continue
 
-                symbols_snapshot = list(response_symbols)
-                await self._process_trade_time_window(
-                    system=system,
-                    trade=trade,
-                    symbols_snapshot=symbols_snapshot,
-                    strategy_order_id=strategy_order_id,
-                    kind=kind,
-                )
+            condition_id = trade.get("condition", {}).get("condition_id", None)
+            if not condition_id:
+                pg_logger.warning(f"Order '{trade.get('order_id')}' missing condition_id, skipping trade")
+                continue
 
-                break
+            order_types = await self.plugin_resolver.get_order_types(condition_id)
+            if not order_types:
+                pg_logger.warning(f"Unknown order_types for condition_id: {condition_id}, skipping trade")
+                continue
+
+            symbols_snapshot = list(response_symbols)
+            await self._process_trade_time_window(
+                system=system,
+                trade=trade,
+                symbols_snapshot=symbols_snapshot,
+                strategy_order_id=strategy_order_id,
+                order_types=order_types,
+            )
 
     async def _run_with_strategy(self, strategy_id: str, strategy: StrategyType, system: SystemType):
         """
@@ -338,6 +351,8 @@ class SystemExecutor:
             )
 
             strategies = system.get("strategies", [])
+
+            # 전략 계산
             concurrent_tasks = [self._run_with_strategy(strategy_id=strategy.get("id"), strategy=strategy, system=system) for strategy in strategies]
 
             if concurrent_tasks:

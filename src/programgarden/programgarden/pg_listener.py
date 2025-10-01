@@ -5,7 +5,7 @@ import queue
 import concurrent.futures
 import inspect
 from typing import Any, Dict, Callable, Optional, TypedDict
-from programgarden_core import BaseStrategyConditionResponseType, OrderCategoryType
+from programgarden_core import BaseStrategyConditionResponseType, OrderRealResponseType
 
 load_dotenv()
 
@@ -16,7 +16,7 @@ class ListenerCategoryType(Enum):
 
 
 class RealOrderPayload(TypedDict):
-    order_type: OrderCategoryType
+    order_type: OrderRealResponseType
     """
     실시간 상태
     """

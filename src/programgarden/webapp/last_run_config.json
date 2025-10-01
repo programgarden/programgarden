@@ -2,7 +2,7 @@
   "orders": {
     "new_buys": [
       {
-        "block_duplicate_trade": true,
+        "block_duplicate_buy": true,
         "condition": {
           "condition_id": "StockSplitFunds",
           "params": {

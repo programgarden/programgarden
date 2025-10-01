@@ -2,11 +2,23 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, TypedDict
 
-OrderCategoryType = Literal["submitted_new_buy", "submitted_new_sell",
-                            "filled_new_buy", "filled_new_sell",
-                            "cancel_request_buy", "cancel_request_sell",
-                            "modify_buy", "modify_sell", "cancel_complete_buy", "cancel_complete_sell",
-                            "reject_buy", "reject_sell"]
+OrderType = Literal[
+    "new_buy",
+    "new_sell",
+    "cancel_buy",
+    "cancel_sell",
+    "modify_buy",
+    "modify_sell"
+]
+
+
+OrderRealResponseType = Literal[
+    "submitted_new_buy", "submitted_new_sell",
+    "filled_new_buy", "filled_new_sell",
+    "cancel_request_buy", "cancel_request_sell",
+    "modify_buy", "modify_sell", "cancel_complete_buy", "cancel_complete_sell",
+    "reject_buy", "reject_sell"
+]
 """
 - submitted_new_buy: 신규 매수 접수
 - submitted_new_sell: 신규 매도 접수
@@ -44,6 +56,8 @@ class SymbolInfo(TypedDict):
     """
     mcap: Optional[float] = None
     """시가총액 (단위: 백만 달러)"""
+    OrdNo: Optional[int] = None
+    """주문번호"""
 
 
 class HeldSymbol(TypedDict):
@@ -73,7 +87,12 @@ class NonTradedSymbol(TypedDict):
     미체결 종목
     """
     OrdTime: str
-    """주문시각"""
+    """주문시각 (
+    HHMMSSmmm
+    HH → 시 (00-23)
+    MM → 분 (00-59)
+    SS → 초 (00-59)
+    mmm → 밀리초 (000-999))"""
     OrdNo: int
     """주문번호"""
     OrgOrdNo: int
@@ -121,13 +140,17 @@ class BaseOrderOverseasStock(Generic[OrderResGenericT], ABC):
     description: str
     """전략에 대한 설명"""
     securities: List[str]
-    """사용 가능한 증권사/거래소들"""
+    """이 전략에서 사용되는 증권사들"""
+    order_types: List[OrderType]
+    """이 전략이 지원하는 주문 유형들"""
 
     @abstractmethod
     def __init__(
         self,
     ):
         self.available_symbols = []
+        self.fcurr_dps = 0.0
+        self.fcurr_ord_able_amt = 0.0
 
     @abstractmethod
     async def execute(self) -> 'List[OrderResGenericT]':
@@ -160,8 +183,23 @@ class BaseOrderOverseasStock(Generic[OrderResGenericT], ABC):
         """
         self.non_traded_symbols = symbols
 
+    def _set_available_balance(
+        self,
+        fcurr_dps: float,
+        fcurr_ord_able_amt: float
+    ) -> None:
+        """
+        사용 가능한 잔고를 설정합니다.
+
+        Args:
+            fcurr_dps (float): 외화 예금
+            fcurr_ord_able_amt (float): 외화 주문 가능 금액
+        """
+        self.fcurr_dps = fcurr_dps
+        self.fcurr_ord_able_amt = fcurr_ord_able_amt
+
     @abstractmethod
-    async def on_real_order_receive(self, order_type: OrderCategoryType, response: OrderResGenericT) -> None:
+    async def on_real_order_receive(self, order_type: OrderRealResponseType, response: OrderResGenericT) -> None:
         """
         매매 주문 상태를 받습니다.
         """

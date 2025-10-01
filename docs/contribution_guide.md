@@ -18,8 +18,9 @@ ProgramGarden은 오픈소스 프로젝트로, 커뮤니티의 기여를 통해 
 커스텀 전략은 [`programgarden-community`](contribution_guide.md)에 기여되며, 상품에 맞는 각 전략별로 **전용 폴더**를 만들어야 합니다. 폴더 이름은 전략의 `클래스` 이름과 동일하게 하세요.
 
 * **컨디션 클래스**: `src/community/programgarden_community/overseas_stock/strategy_conditions/{StrategyID}/` 폴더 생성
-* **신규매수 전략 클래스**: `src/community/programgarden_community/overseas_stock/new_buy_conditions/{StrategyID}/` 폴더 생성
-* **신규매도 전략 클래스**: `src/community/programgarden_community/overseas_stock/new_sell_conditions/{StrategyID}/` 폴더 생성
+* **신규매매 전략 클래스**: `src/community/programgarden_community/overseas_stock/new_order_conditions/{StrategyID}/` 폴더 생성
+* **정정매매 전략 클래스**: `src/community/programgarden_community/overseas_stock/modify_order_conditions/{StrategyID}/` 폴더 생성
+* **취소매매 전략 클래스**: `src/community/programgarden_community/overseas_stock/cancel_order_conditions/{StrategyID}/` 폴더 생성
 
 외에도 상품과 전략 유형에 따라 적절한 디렉토리에 폴더를 생성하세요. 각 전략 폴더에는 다음 파일들이 **필수**로 포함되어야 합니다:
 
@@ -34,14 +35,18 @@ src/community/programgarden_community/overseas_stock/
 │   └── MySMACondition/
 │       ├── __init__.py
 │       └── README.md
-├── new_buy_conditions/
+├── new_order_conditions/
 │   └── MyBuyStrategy/
 │       ├── __init__.py
 │       └── README.md
-└── new_sell_conditions/
+└── modify_order_conditions/
     └── MySellStrategy/
         ├── __init__.py
         └── README.md
+    cancel_order_conditions/
+        └── MyCancelStrategy/
+            ├── __init__.py
+            └── README.md
     ...
 ```
 
