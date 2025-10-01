@@ -68,25 +68,6 @@
    - 최신 정렬이 골든 상태 유지.
 5. 감지된 신호 목록을 반환합니다.
 
-## 사용 예시
-
-```python
-from programgarden_community.overseas_stock.strategy_conditions.sma_golden_dead import SMAGoldenDeadCross
-
-# 20일과 50일 SMA를 사용한 골든 크로스 감지
-sma_condition = SMAGoldenDeadCross(
-    start_date="20240101",
-    end_date="20241231",
-    long_period=50,
-    short_period=20,
-    appkey="your_appkey",
-    appsecretkey="your_appsecretkey"
-)
-
-# 조건 실행
-result = await sma_condition.execute()
-print(result["data"])  # 감지된 신호 목록
-```
 
 ## 주의사항
 

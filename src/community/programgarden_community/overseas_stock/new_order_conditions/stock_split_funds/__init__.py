@@ -3,17 +3,18 @@
 """
 from typing import List, Optional
 from programgarden_core import (
-    BaseNewBuyOverseasStock,
-    BaseNewBuyOverseasStockResponseType,
+    BaseNewOrderOverseasStock,
+    BaseNewOrderOverseasStockResponseType,
 )
 from programgarden_finance import LS, g3101
 
 
-class StockSplitFunds(BaseNewBuyOverseasStock):
+class StockSplitFunds(BaseNewOrderOverseasStock):
 
     id: str = "StockSplitFunds"
     description: str = "주식 분할 자금"
     securities: List[str] = ["ls-sec.co.kr"]
+    order_types = ["new_buy"]
 
     def __init__(
         self,
@@ -38,7 +39,7 @@ class StockSplitFunds(BaseNewBuyOverseasStock):
         self.percent_balance = percent_balance
         self.max_symbols = max_symbols
 
-    async def execute(self) -> List[BaseNewBuyOverseasStockResponseType]:
+    async def execute(self) -> List[BaseNewOrderOverseasStockResponseType]:
         ls = LS.get_instance()
         if not ls.is_logged_in():
             await ls.async_login(
@@ -51,7 +52,7 @@ class StockSplitFunds(BaseNewBuyOverseasStock):
         # 종목당 최대 매수 금액
         per_max_amt = round(fcurr_dps / self.max_symbols, 2)
 
-        orders: List[BaseNewBuyOverseasStockResponseType] = []
+        orders: List[BaseNewOrderOverseasStockResponseType] = []
         for symbol in self.available_symbols:
             if len(orders) >= self.max_symbols:
                 break
@@ -77,7 +78,7 @@ class StockSplitFunds(BaseNewBuyOverseasStock):
                 continue
 
             # 주문 생성
-            order: BaseNewBuyOverseasStockResponseType = {
+            order: BaseNewOrderOverseasStockResponseType = {
                 "success": True,
                 "ord_ptn_code": "02",
                 "ord_mkt_code": exchcd,
@@ -85,6 +86,7 @@ class StockSplitFunds(BaseNewBuyOverseasStock):
                 "ord_qty": buy_qty,
                 "ovrs_ord_prc": price,
                 "ordprc_ptn_code": "00",
+                "bns_tp_code": "2",  # 매수
             }
 
             orders.append(order)
@@ -92,7 +94,7 @@ class StockSplitFunds(BaseNewBuyOverseasStock):
         return orders
 
     async def on_real_order_receive(self, order_type, response):
-        print(f"매수 Community 주문 데이터 수신: {order_type}")
+        pass
 
 
 __all__ = [
