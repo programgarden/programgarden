@@ -22,8 +22,7 @@ import asyncio
 
 from programgarden_core import (
     BaseStrategyCondition, BaseStrategyConditionResponseType, StrategyConditionType,
-    StrategyType, SymbolInfo, SystemType, pg_logger,
-    OrdersType
+    StrategyType, SymbolInfo, SystemType, pg_logger, OrderStrategyType
 )
 
 from programgarden.pg_listener import pg_listener
@@ -225,21 +224,44 @@ class ConditionExecutor:
         securities = system.get("securities", {})
         order_id = strategy.get("order_id", None)
         orders = system.get("orders", {})
+        conditions = strategy.get("conditions", [])
 
-        order_category = self._get_category_order(order_id, orders)
+        order_types = await self._get_order_types(order_id, orders)
 
         market_symbols: List[SymbolInfo] = []
         account_symbols: List[SymbolInfo] = []
+        non_account_symbols: List[SymbolInfo] = []
 
-        if not my_symbols and (order_category == "submitted_new_buy" or order_category is None):
+        if not my_symbols and ("new_buy" in order_types or order_types is None):
             market_symbols = await self.symbol_provider.get_symbols(
-                buy=True,
+                order_type="new_buy",
                 securities=securities,
             )
 
-        elif order_category == "submitted_new_sell":
+        if "new_sell" in order_types:
             account_symbols = await self.symbol_provider.get_symbols(
-                buy=False,
+                order_type="new_sell",
+                securities=securities,
+            )
+
+        if "modify_buy" in order_types:
+            non_account_symbols = await self.symbol_provider.get_symbols(
+                order_type="modify_buy",
+                securities=securities,
+            )
+        elif "modify_sell" in order_types:
+            non_account_symbols = await self.symbol_provider.get_symbols(
+                order_type="modify_sell",
+                securities=securities,
+            )
+        elif "cancel_buy" in order_types:
+            non_account_symbols = await self.symbol_provider.get_symbols(
+                order_type="cancel_buy",
+                securities=securities,
+            )
+        elif "cancel_sell" in order_types:
+            non_account_symbols = await self.symbol_provider.get_symbols(
+                order_type="cancel_sell",
                 securities=securities,
             )
 
@@ -248,13 +270,14 @@ class ConditionExecutor:
         for symbol in my_symbols:
             exch = symbol.get("exchcd", "")
             sym = symbol.get("symbol", "")
-            seen_ids.add(f"{exch}:{sym}")
+            seen_ids.add(f"{exch}:{sym}:")
 
-        for src in (market_symbols, account_symbols):
+        for src in (market_symbols, account_symbols, non_account_symbols):
             for symbol in src:
                 exch = symbol.get("exchcd", "")
                 sym = symbol.get("symbol", "")
-                ident = f"{exch}:{sym}"
+                ord_no = symbol.get("OrdNo", "")
+                ident = f"{exch}:{sym}:{ord_no}"
                 if ident not in seen_ids:
                     my_symbols.append(symbol)
                     seen_ids.add(ident)
@@ -273,15 +296,21 @@ class ConditionExecutor:
         if max_count > 0:
             my_symbols = my_symbols[:max_count]
 
+        if not conditions:
+            return my_symbols
+
         passed_symbols: List[SymbolInfo] = []
         for symbol_info in my_symbols:
             conditions = strategy.get("conditions", [])
             logic = strategy.get("logic", "and")
             threshold = strategy.get("threshold", None)
-
             tasks = [
                 asyncio.create_task(
-                    self.execute_condition(system=system, symbol_info=symbol_info, condition=condition)
+                    self.execute_condition(
+                        system=system,
+                        symbol_info=symbol_info,
+                        condition=condition
+                    )
                 )
                 for condition in conditions
             ]
@@ -323,26 +352,18 @@ class ConditionExecutor:
 
         return passed_symbols
 
-    def _get_category_order(
+    async def _get_order_types(
         self,
         order_id: str,
-        orders: OrdersType,
+        orders: list[OrderStrategyType],
     ):
         """
-        Determine buy/sell flags based on the order sequence.
+        Get the order types for a specific order ID.
         """
-        new_buys = orders.get("new_buys", [])
-        for new_buy in new_buys:
-            new_buy_id = new_buy.get("order_id", None)
-
-            if new_buy_id == order_id:
-                return "submitted_new_buy"
-
-        new_sells = orders.get("new_sells", [])
-        for new_sell in new_sells:
-            new_sell_id = new_sell.get("order_id", None)
-
-            if new_sell_id == order_id:
-                return "submitted_new_sell"
+        for trade in orders:
+            if trade.get("order_id") == order_id:
+                condition_id = trade.get("condition", {}).get("condition_id")
+                order_types = await self.resolver.get_order_types(condition_id)
+                return order_types
 
         return None

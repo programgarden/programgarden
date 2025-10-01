@@ -1,8 +1,9 @@
 from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 
 from programgarden_core.bases.base import SymbolInfo
-from programgarden_core.bases.new_buy import BaseNewBuyOverseasStock
-from programgarden_core.bases.new_sell import BaseNewSellOverseasStock
+from programgarden_core.bases.modify_orders import BaseModifyOrderOverseasStock
+from programgarden_core.bases.new_orders import BaseNewOrderOverseasStock
+from programgarden_core.bases.cancel_orders import BaseCancelOrderOverseasStock
 from programgarden_core.bases.strategy import BaseStrategyCondition
 
 
@@ -212,64 +213,27 @@ class OrderTimeType(TypedDict, total=False):
     """최대 지연 시간(초), 기본값 86400초(24시간)"""
 
 
-class NewBuyTradeType(TypedDict):
+class OrderStrategyType(TypedDict, total=False):
+    """
+    오더 전략 타입
+    """
     order_id: str
-    """매수 거래의 고유 ID"""
+    """오더의 고유 ID"""
     description: Optional[str]
-    """매수 거래에 대한 설명"""
-    block_duplicate_trade: bool
-    """중복거래 방지 여부, True:방지, False:허용"""
-    available_balance: Optional[float] = None
-    """빈 값으로 두면, securities에서 지정된 증권사 예수금으로 대체된다."""
-    condition: Optional[Union[DictConditionType, BaseNewBuyOverseasStock]]
-    """ 매수 전략 정보"""
+    """오더에 대한 설명"""
+    block_duplicate_buy: Optional[bool]
+    """중복 매수 방지 여부"""
+    available_balance: Optional[float]
+    """사용 가능한 예수금"""
     order_time: Optional[OrderTimeType] = None
     """주문 실행 시간 설정"""
-
-
-class ModifyBuyTradeType(TypedDict):
-    order_id: str
-    """정정매수 거래의 고유 ID"""
-    description: Optional[str]
-    """정정매수 거래에 대한 설명"""
-    condition: Optional[Union[DictConditionType, BaseNewBuyOverseasStock]]
-    """정정매수 전략 정보"""
-    order_time: Optional[OrderTimeType] = None
-    """정정주문 실행 시간 설정"""
-
-
-class NewSellTradeType(TypedDict):
-    order_id: str
-    """매도 거래의 고유 ID"""
-    description: Optional[str]
-    """매도 거래에 대한 설명"""
-    condition: Optional[Union[DictConditionType, BaseNewSellOverseasStock]]
-    """ 매도 전략 정보"""
-    order_time: Optional[OrderTimeType] = None
-    """주문 실행 시간 설정"""
-
-
-class OrdersType(TypedDict):
-    """
-    매수 또는 매도용 전략, 빈값이면 전략만 확인하는 용도
-    주식 new_buys, new_sells, modify_buys, modify_sells, cancel_buys, cancel_sells만 지원합니다.
-
-    선물옵션("shortbuy", "shortsell", "longbuy", "longsell") 거래는 준비중입니다.
-    """
-    new_buys: List[NewBuyTradeType]
-    """신규매수"""
-    new_sells: List[NewSellTradeType]
-    """신규매도"""
-
-    modify_buys: List[Any]
-    """매수정정, 준비중"""
-    modify_sells: List[Any]
-    """매도정정, 준비중"""
-
-    cancel_buys: List[Any]
-    """매수취소, 준비중"""
-    cancel_sells: List[Any]
-    """매도취소, 준비중"""
+    condition: Optional[Union[
+        DictConditionType,
+        BaseNewOrderOverseasStock,
+        BaseModifyOrderOverseasStock,
+        BaseCancelOrderOverseasStock
+    ]]
+    """오더 전략 정보"""
 
 
 class SystemType(TypedDict):
@@ -282,5 +246,5 @@ class SystemType(TypedDict):
     """증권사 인증 정보"""
     strategies: List[StrategyType]
     """시스템 실행 바디"""
-    orders: OrdersType
+    orders: List[OrderStrategyType]
     """주문 정보"""

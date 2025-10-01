@@ -14,16 +14,21 @@ and leaves trading logic to plugin classes that must subclass
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, List, Literal, TypedDict, Union
 from zoneinfo import ZoneInfo
 from programgarden_core import (
-    SystemType, SymbolInfo,
-    BaseNewBuyOverseasStockResponseType, BaseNewSellOverseasStockResponseType,
-    pg_logger, BaseNewBuyOverseasStock, exceptions, NewBuyTradeType, HeldSymbol,
-    NonTradedSymbol, NewSellTradeType, BaseNewSellOverseasStock,
-    OrderCategoryType
+    SystemType, SymbolInfo, OrderStrategyType,
+    pg_logger, exceptions, HeldSymbol,
+    NonTradedSymbol,
+    OrderType
 )
-from programgarden_finance import LS, COSAT00301, COSOQ00201, COSAQ00102, COSOQ02701
+from programgarden_core import (
+    BaseOrderOverseasStock,
+    BaseNewOrderOverseasStockResponseType,
+    BaseModifyOrderOverseasStockResponseType,
+    BaseCancelOrderOverseasStockResponseType
+)
+from programgarden_finance import LS, COSAT00301, COSAT00311, COSOQ00201, COSAQ00102, COSOQ02701
 
 from programgarden.pg_listener import pg_listener
 from programgarden.real_order_executor import RealOrderExecutor
@@ -60,51 +65,37 @@ class BuySellExecutor:
         self.plugin_resolver = plugin_resolver
         self.real_order_executor = RealOrderExecutor()
 
-    async def new_buy_execute(
+    async def new_order_execute(
         self,
         system: SystemType,
         symbols_from_strategy: List[SymbolInfo],
-        new_buy: NewBuyTradeType,
+        new_order: OrderStrategyType,
         order_id: str,
+        order_types: List[OrderType]
     ) -> None:
         """
-        Public entrypoint to perform buy execution for a system.
+        Execute a new order.
+        Args:
+            system (SystemType): The trading system configuration.
+            symbols_from_strategy (list[SymbolInfo]): The list of symbols to trade.
+            new_order (OrderStrategyType): The new order configuration.
+            order_id (str): The unique identifier for the order.
+            order_types (List[OrderType]): The types of orders to execute.
         """
-
-        # 예수금 세팅
-        available_balance = float(new_buy.get("available_balance", 0.0))
-        dps: DpsTyped = {
-            "fcurr_dps": available_balance,
-            "fcurr_ord_able_amt": available_balance,
-        }
-        is_ls = system.get("securities", {}).get("company", None) == "ls"
-
-        if available_balance == 0.0 and is_ls:
-            # 예수금 가져오기
-            cosoq02701 = await LS.get_instance().overseas_stock().accno().cosoq02701(
-                body=COSOQ02701.COSOQ02701InBlock1(
-                    RecCnt=1,
-                    CrcyCode="USD",
-                ),
-            ).req_async()
-
-            dps["fcurr_dps"] = cosoq02701.block3[0].FcurrDps
-            dps["fcurr_ord_able_amt"] = cosoq02701.block3[0].FcurrOrdAbleAmt
+        dps = await self._setup_dps(system, new_order)
 
         # 필터링, 보유, 미체결 종목들 가져오기
-        filtered_symbols, held_symbols, non_trade_symbols = await self._block_duplicate_symbols(system, symbols_from_strategy)
-
-        # 종목 보유중이면 막기
-        if new_buy.get("block_duplicate_trade", True):
-            symbols_from_strategy[:] = filtered_symbols
+        non_held_symbols, held_symbols, non_trade_symbols = await self._block_duplicate_symbols(system, symbols_from_strategy)
+        if new_order.get("block_duplicate_buy", True) and "new_buy" in order_types:
+            symbols_from_strategy[:] = non_held_symbols
 
         if not symbols_from_strategy:
-            pg_logger.warning(f"No symbols to buy. order_id: {order_id}")
+            # pg_logger.warning(f"No symbols to buy. order_id: {order_id}")
             return
 
         purchase_symbols, community_instance = await self.plugin_resolver.resolve_buysell_community(
             system_id=system.get("settings", {}).get("system_id", None),
-            trade=new_buy,
+            trade=new_order,
             symbols=symbols_from_strategy,
             held_symbols=held_symbols,
             non_trade_symbols=non_trade_symbols,
@@ -115,29 +106,13 @@ class BuySellExecutor:
             pg_logger.warning(f"No symbols match the buy strategy. order_id: {order_id}")
             return
 
-        for symbol in purchase_symbols:
-            if not symbol.get("success"):
-                continue
-
-            # 주문 함수 구성
-            result = await self._build_order_function(
-                system=system,
-                trade_type="submitted_new_buy",
-                symbol=symbol
-            )
-
-            ord_no = None
-            if result is not None:
-                block2 = getattr(result, "block2", None)
-                ord_val = getattr(block2, "OrdNo", None) if block2 is not None else None
-                ord_no = str(ord_val) if ord_val is not None else None
-
-            await self.real_order_executor.send_data_community_instance(
-                ordNo=ord_no,
-                community_instance=community_instance
-            )
-
-            pg_logger.info(f"🟢 New buy order executed for order '{order_id}'")
+        await self._execute_orders(
+            system=system,
+            symbols=purchase_symbols,
+            community_instance=community_instance,
+            field="new",
+            order_id=order_id
+        )
 
     async def _block_duplicate_symbols(
         self,
@@ -145,9 +120,7 @@ class BuySellExecutor:
         symbols_from_strategy: List[SymbolInfo],
     ):
         """
-        Filter out only the stocks that are not held
-
-        Returns로는 중복 여부 필터링한 종목들과, 보유잔고 종목들과 미체결 종목들이 반환된다.
+        Returns로는 중복 여부로 보유하지 않은 종목들과, 보유잔고 종목들과 미체결 종목들이 반환된다.
         """
 
         held_symbols: List[HeldSymbol] = []
@@ -201,7 +174,7 @@ class BuySellExecutor:
                         QryTpCode="1",
                         BkseqTpCode="1",
                         OrdMktCode=exchcd,
-                        BnsTpCode="2",
+                        BnsTpCode="0",
                         SrtOrdNo="999999999",
                         OrdDt=datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d"),
                         ExecYn="2",
@@ -240,69 +213,99 @@ class BuySellExecutor:
                         )
 
             if held_isus:
-                filtered = []
+                non_held_symbols = []
                 for m_symbol in symbols_from_strategy:
                     m_isu_no = m_symbol.get("symbol")
 
                     if m_isu_no is None or str(m_isu_no).strip() not in held_isus:
-                        filtered.append(m_symbol)
-                return filtered, held_symbols, non_trade_symbols
+                        non_held_symbols.append(m_symbol)
+                return non_held_symbols, held_symbols, non_trade_symbols
 
             return [], held_symbols, non_trade_symbols
 
-    async def new_sell_execute(
+    async def modify_order_execute(
         self,
         system: SystemType,
         symbols_from_strategy: List[SymbolInfo],
-        new_sell: NewSellTradeType,
+        modify_order: OrderStrategyType,
         order_id: str,
-    ) -> Optional[Union[BaseNewBuyOverseasStock, BaseNewSellOverseasStock]]:
-        """
-        Public entrypoint to perform sell execution for a system.
-        """
+    ):
+        dps = await self._setup_dps(system, modify_order)
 
-        filtered_symbols, held_symbols, non_trade_symbols = await self._block_duplicate_symbols(system, symbols_from_strategy)
+        # 필터링, 보유, 미체결 종목들 가져오기
+        non_held_symbols, held_symbols, non_trade_symbols = await self._block_duplicate_symbols(system, symbols_from_strategy)
 
-        symbols, community_instance = await self.plugin_resolver.resolve_buysell_community(
-            system_id=system.get("settings", {}).get("system_id", None),
-            trade=new_sell,
-            symbols=symbols_from_strategy,
-            held_symbols=held_symbols,
-            non_trade_symbols=non_trade_symbols,
-        )
-
-        if not symbols:
-            pg_logger.warning(f"No symbols match the sell strategy. order_id: {order_id}")
-
+        # 미체결 종목 없으면 넘기기
+        if not non_trade_symbols:
+            pg_logger.warning(f"No symbols to modify buy. order_id: {order_id}")
             return
 
-        for symbol in symbols:
-            if not symbol.get("success"):
-                continue
+        # 미체결 종목 전략 계산으로
+        modify_symbols, community_instance = await self.plugin_resolver.resolve_buysell_community(
+            system_id=system.get("settings", {}).get("system_id", None),
+            trade=modify_order,
+            symbols=non_held_symbols,
+            held_symbols=held_symbols,
+            non_trade_symbols=non_trade_symbols,
+            dps=dps,
+        )
 
-            result = await self._build_order_function(
-                system=system,
-                trade_type="submitted_new_sell",
-                symbol=symbol
-            )
+        if not modify_symbols:
+            pg_logger.warning(f"No symbols match the buy strategy. order_id: {order_id}")
+            return
 
-            await self.real_order_executor.send_data_community_instance(
-                ordNo=str(result.block2.OrdNo),
-                community_instance=community_instance
-            )
+        await self._execute_orders(
+            system=system,
+            symbols=modify_symbols,
+            community_instance=community_instance,
+            field="modify",
+            order_id=order_id
+        )
 
-            if result.error_msg:
-                pg_logger.error(f"Order placement failed: {result.error_msg}")
+    async def cancel_order_execute(
+        self,
+        system: SystemType,
+        symbols_from_strategy: List[SymbolInfo],
+        cancel_order: OrderStrategyType,
+        order_id: str,
+    ):
+        dps = await self._setup_dps(system, cancel_order)
 
-                continue
+        # 필터링, 보유, 미체결 종목들 가져오기
+        non_held_symbols, held_symbols, non_trade_symbols = await self._block_duplicate_symbols(system, symbols_from_strategy)
 
-            pg_logger.info(f"🟢 New buy order executed for order '{order_id}'")
+        # 미체결 종목 없으면 넘기기
+        if not non_trade_symbols:
+            pg_logger.warning(f"No symbols to modify buy. order_id: {order_id}")
+            return
+
+        # 미체결 종목 전략 계산으로
+        cancel_symbols, community_instance = await self.plugin_resolver.resolve_buysell_community(
+            system_id=system.get("settings", {}).get("system_id", None),
+            trade=cancel_order,
+            symbols=non_held_symbols,
+            held_symbols=held_symbols,
+            non_trade_symbols=non_trade_symbols,
+            dps=dps,
+        )
+
+        await self._execute_orders(
+            system=system,
+            symbols=cancel_symbols,
+            community_instance=community_instance,
+            field="cancel",
+            order_id=order_id
+        )
 
     async def _build_order_function(
         self,
         system: SystemType,
-        trade_type: OrderCategoryType,
-        symbol: Union[BaseNewBuyOverseasStockResponseType, BaseNewSellOverseasStockResponseType]
+        symbol: Union[
+            BaseNewOrderOverseasStockResponseType,
+            BaseModifyOrderOverseasStockResponseType,
+            BaseCancelOrderOverseasStockResponseType
+        ],
+        field: Literal["new", "modify"]
     ):
         """
         Function that performs the actual order placement.
@@ -317,28 +320,54 @@ class BuySellExecutor:
 
         if company == "ls":
 
+            ord_ptn = symbol.get("ord_ptn_code")
+            symbol.get("")
+
             ls = LS.get_instance()
 
             if product == "overseas_stock":
-                # unify buy/sell order placement
-                ord_ptn = "02" if trade_type == "submitted_new_buy" else "01"
 
-                result: COSAT00301.COSAT00301Response = await ls.overseas_stock().order().cosat00301(
-                    body=COSAT00301.COSAT00301InBlock1(
-                        OrdPtnCode=ord_ptn,
-                        OrgOrdNo=None,
-                        OrdMktCode=symbol.get("ord_mkt_code"),
-                        IsuNo=symbol.get("shtn_isu_no"),
-                        OrdQty=symbol.get("ord_qty"),
-                        OvrsOrdPrc=symbol.get("ovrs_ord_prc"),
-                        OrdprcPtnCode=symbol.get("ordprc_ptn_code"),
-                    )
-                ).req_async()
+                if ord_ptn in ("01", "02", "08"):
+                    print(f"Executing {field} order for symbol: {symbol}")
+
+                    result: COSAT00301.COSAT00301Response = await ls.overseas_stock().order().cosat00301(
+                        body=COSAT00301.COSAT00301InBlock1(
+                            OrdPtnCode=ord_ptn,
+                            OrgOrdNo=symbol.get("org_ord_no", None),
+                            OrdMktCode=symbol.get("ord_mkt_code"),
+                            IsuNo=symbol.get("shtn_isu_no"),
+                            OrdQty=symbol.get("ord_qty"),
+                            OvrsOrdPrc=symbol.get("ovrs_ord_prc"),
+                            OrdprcPtnCode=symbol.get("ordprc_ptn_code"),
+                        )
+                    ).req_async()
+                elif ord_ptn in ("07"):
+
+                    result: COSAT00311.COSAT00311Response = await ls.overseas_stock().order().cosat00311(
+                        body=COSAT00311.COSAT00311InBlock1(
+                            OrdPtnCode=ord_ptn,
+                            OrgOrdNo=int(symbol.get("org_ord_no")),
+                            OrdMktCode=symbol.get("ord_mkt_code"),
+                            IsuNo=symbol.get("shtn_isu_no"),
+                            OrdQty=symbol.get("ord_qty"),
+                            OvrsOrdPrc=symbol.get("ovrs_ord_prc"),
+                            OrdprcPtnCode=symbol.get("ordprc_ptn_code"),
+                        )
+                    ).req_async()
+
+                print(f"Order result: {result}, {ord_ptn}")
+
+                bns_tp_code = symbol.get("bns_tp_code", "02")
+                if field == "new":
+                    order_type = "submitted_new_buy" if bns_tp_code == "2" else "submitted_new_sell"
+                if field == "modify":
+                    order_type = "modify_buy" if bns_tp_code == "2" else "modify_sell"
+                if field == "cancel":
+                    order_type = "cancel_buy" if bns_tp_code == "2" else "cancel_sell"
 
                 pg_listener.emit_real_order({
-                    "order_type": trade_type,
+                    "order_type": order_type,
                     "message": result.rsp_msg,
-                    "symbol": symbol,
                     "response": result,
                 })
 
@@ -349,3 +378,66 @@ class BuySellExecutor:
                     )
 
                 return result
+
+    async def _setup_dps(
+        self,
+        system: SystemType,
+        trade: OrderStrategyType
+    ) -> DpsTyped:
+        """Setup DPS (deposit) information for trading."""
+        available_balance = float(trade.get("available_balance", 0.0))
+        dps: DpsTyped = {
+            "fcurr_dps": available_balance,
+            "fcurr_ord_able_amt": available_balance,
+        }
+        is_ls = system.get("securities", {}).get("company", None) == "ls"
+
+        if available_balance == 0.0 and is_ls:
+            # Fetch deposit information from LS API
+            cosoq02701 = await LS.get_instance().overseas_stock().accno().cosoq02701(
+                body=COSOQ02701.COSOQ02701InBlock1(
+                    RecCnt=1,
+                    CrcyCode="USD",
+                ),
+            ).req_async()
+
+            dps["fcurr_dps"] = cosoq02701.block3[0].FcurrDps
+            dps["fcurr_ord_able_amt"] = cosoq02701.block3[0].FcurrOrdAbleAmt
+
+        return dps
+
+    async def _execute_orders(
+        self,
+        system: SystemType,
+        symbols: List[Union[
+            BaseNewOrderOverseasStockResponseType,
+            BaseModifyOrderOverseasStockResponseType,
+            BaseCancelOrderOverseasStockResponseType
+        ]],
+        community_instance: BaseOrderOverseasStock,
+        field: Literal["new", "modify", "cancel"],
+        order_id: str,
+    ) -> None:
+        """Execute trades for the given symbols."""
+        for symbol in symbols:
+            if not symbol.get("success"):
+                continue
+
+            result = await self._build_order_function(system, symbol, field)
+
+            ord_no = None
+            if result is not None:
+                block2 = getattr(result, "block2", None)
+                ord_val = getattr(block2, "OrdNo", None) if block2 is not None else None
+                ord_no = str(ord_val) if ord_val is not None else None
+
+            await self.real_order_executor.send_data_community_instance(
+                ordNo=ord_no,
+                community_instance=community_instance
+            )
+
+            if result and result.error_msg:
+                pg_logger.error(f"Order placement failed: {result.error_msg}")
+                continue
+
+            pg_logger.info(f"🟢 New {field} order executed for order '{order_id}'")

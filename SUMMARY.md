@@ -16,4 +16,4 @@
 
 ## 시각화•WTS 만들기 <a href="#wts" id="wts"></a>
 
-* [나만의 WTS 가이드 만들기 (준비중)](wts/wts.md)
+* [나만의 WTS 가이드 만들기](https://programgarden-dashboard.gitbook.io/docs/)

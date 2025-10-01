@@ -7,29 +7,32 @@ from .system import (
     StrategyConditionType,
     DictConditionType,
 
-    NewBuyTradeType,
-    NewSellTradeType,
-    OrdersType,
+    OrderStrategyType,
     OrderTimeType,
 )
 from .base import (
     SymbolInfo,
     HeldSymbol,
     NonTradedSymbol,
-    OrderCategoryType,
     BaseOrderOverseasStock,
+    OrderType,
+    OrderRealResponseType
 )
 from .strategy import (
     BaseStrategyCondition,
     BaseStrategyConditionResponseType,
 )
-from .new_buy import (
-    BaseNewBuyOverseasStock,
-    BaseNewBuyOverseasStockResponseType,
+from .new_orders import (
+    BaseNewOrderOverseasStock,
+    BaseNewOrderOverseasStockResponseType,
 )
-from .new_sell import (
-    BaseNewSellOverseasStock,
-    BaseNewSellOverseasStockResponseType,
+from .modify_orders import (
+    BaseModifyOrderOverseasStock,
+    BaseModifyOrderOverseasStockResponseType,
+)
+from .cancel_orders import (
+    BaseCancelOrderOverseasStock,
+    BaseCancelOrderOverseasStockResponseType,
 )
 
 __all__ = [
@@ -40,27 +43,30 @@ __all__ = [
     StrategyConditionType,
     DictConditionType,
     SystemSettingType,
-    NewBuyTradeType,
-    NewSellTradeType,
+    OrderStrategyType,
     OrderTimeType,
-    OrdersType,
+    OrderRealResponseType,
 
     # base types
     SymbolInfo,
     HeldSymbol,
     NonTradedSymbol,
-    OrderCategoryType,
     BaseOrderOverseasStock,
+    OrderType,
 
     # strategy types
     BaseStrategyCondition,
     BaseStrategyConditionResponseType,
 
-    # new_buy types
-    BaseNewBuyOverseasStock,
-    BaseNewBuyOverseasStockResponseType,
+    # new order types
+    BaseNewOrderOverseasStock,
+    BaseNewOrderOverseasStockResponseType,
 
-    # new_sell types
-    BaseNewSellOverseasStock,
-    BaseNewSellOverseasStockResponseType,
+    # modify order types
+    BaseModifyOrderOverseasStock,
+    BaseModifyOrderOverseasStockResponseType,
+
+    # cancel order types
+    BaseCancelOrderOverseasStock,
+    BaseCancelOrderOverseasStockResponseType,
 ]

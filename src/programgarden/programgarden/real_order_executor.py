@@ -3,7 +3,8 @@ import threading
 from typing import Any, Dict, List, Optional, Union
 from programgarden_finance import LS, AS0, AS1, AS2, AS3, AS4
 from programgarden_core import (
-    OrderCategoryType, SystemType, BaseNewBuyOverseasStock, BaseNewSellOverseasStock, pg_logger,
+    OrderRealResponseType, SystemType, pg_logger,
+    BaseOrderOverseasStock
 )
 from programgarden.pg_listener import pg_listener
 
@@ -32,7 +33,7 @@ class RealOrderExecutor:
         """
 
         company = system.get("securities", {}).get("company", None)
-        if len(system.get("orders", {}).keys()) > 0 and company == "ls":
+        if len(system.get("orders", [])) > 0 and company == "ls":
             self.buy_sell_order_real = LS.get_instance().overseas_stock().real()
             await self.buy_sell_order_real.connect()
             # store the currently running event loop so synchronous callbacks
@@ -195,7 +196,7 @@ class RealOrderExecutor:
     async def send_data_community_instance(
             self,
             ordNo: str,
-            community_instance: Optional[Union[BaseNewBuyOverseasStock, BaseNewSellOverseasStock]]
+            community_instance: Optional[Union[BaseOrderOverseasStock]]
     ) -> None:
         """
         Send order result data to the community plugin instance's
@@ -303,10 +304,10 @@ class RealOrderExecutor:
             # queue message until instance is registered
             self._pending_order_messages.setdefault(ord_key, []).append(response)
 
-    def _order_type_from_response(self, bns_tp: str, ord_xct_ptn_code: str) -> Optional[OrderCategoryType]:
+    def _order_type_from_response(self, bns_tp: str, ord_xct_ptn_code: str) -> Optional[OrderRealResponseType]:
         """Derive unified order_type string from an AS0/AS1 response-like object."""
         try:
-            order_category_type: Optional[OrderCategoryType] = None
+            order_category_type: Optional[OrderRealResponseType] = None
             if bns_tp == "2":
                 if ord_xct_ptn_code == "01":
                     order_category_type = "submitted_new_buy"

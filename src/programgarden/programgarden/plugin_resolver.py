@@ -2,10 +2,21 @@ from typing import Dict, List, Optional, Union
 import inspect
 from programgarden_core import (
     BaseStrategyConditionResponseType, BaseStrategyCondition,
-    BaseNewBuyOverseasStock, pg_logger,
-    SymbolInfo, BaseNewBuyOverseasStockResponseType, BaseNewSellOverseasStockResponseType,
-    exceptions, NewBuyTradeType, HeldSymbol,
-    NonTradedSymbol, BaseNewSellOverseasStock,
+    pg_logger,
+    SymbolInfo, OrderType,
+    exceptions, HeldSymbol,
+    NonTradedSymbol, OrderStrategyType
+)
+from programgarden_core import (
+    BaseOrderOverseasStock,
+    BaseNewOrderOverseasStock,
+    BaseModifyOrderOverseasStock,
+    BaseCancelOrderOverseasStock,
+)
+from programgarden_core import (
+    BaseNewOrderOverseasStockResponseType,
+    BaseModifyOrderOverseasStockResponseType,
+    BaseCancelOrderOverseasStockResponseType
 )
 from programgarden_community import getCommunityCondition
 
@@ -58,8 +69,10 @@ class PluginResolver:
                 exported_cls,
                 (
                     BaseStrategyCondition,
-                    BaseNewBuyOverseasStock,
-                    BaseNewSellOverseasStock,
+                    BaseOrderOverseasStock,
+                    BaseNewOrderOverseasStock,
+                    BaseModifyOrderOverseasStock,
+                    BaseCancelOrderOverseasStock,
                 ),
             ):
                 self._plugin_cache[condition_id] = exported_cls
@@ -72,21 +85,30 @@ class PluginResolver:
     async def resolve_buysell_community(
             self,
             system_id: Optional[str],
-            trade: Union[NewBuyTradeType],
+            trade: OrderStrategyType,
             symbols: List[SymbolInfo] = [],
             held_symbols: List[HeldSymbol] = [],
             non_trade_symbols: List[NonTradedSymbol] = [],
             dps: Optional[DpsTyped] = None
-    ) -> tuple[Optional[Union[List[BaseNewBuyOverseasStockResponseType], List[BaseNewSellOverseasStockResponseType]]], Optional[Union[BaseNewBuyOverseasStock, BaseNewSellOverseasStock]]]:
+    ) -> tuple[
+        Optional[
+            Union[
+                    List[BaseNewOrderOverseasStockResponseType],
+                    List[BaseModifyOrderOverseasStockResponseType],
+                    List[BaseCancelOrderOverseasStockResponseType]
+                ]
+            ],
+            Optional[BaseOrderOverseasStock]
+            ]:
         """Resolve and run the configured buy/sell plugin.
 
         Returns:
-            A list of `BaseNewBuyOverseasStockResponseType` or `BaseNewSellOverseasStockResponseType` objects produced
+            A list of `BaseNewOrderOverseasStockResponseType` or `BaseModifyOrderOverseasStockResponseType` objects produced
             by the plugin, or None if an error occurred.
         """
 
         condition = trade.get("condition", {})
-        if isinstance(condition, BaseNewBuyOverseasStock) or isinstance(condition, BaseNewSellOverseasStock):
+        if isinstance(condition, BaseOrderOverseasStock):
             result = await condition.execute()
             return result, condition
 
@@ -94,6 +116,7 @@ class PluginResolver:
         params = condition.get("params", {}) or {}
 
         cls = await self._resolve(ident)
+
         if cls is None:
             raise exceptions.NotExistConditionException(
                 message=f"Condition class '{ident}' not found"
@@ -116,9 +139,8 @@ class PluginResolver:
                     fcurr_ord_able_amt=dps.get("fcurr_ord_able_amt", 0.0)
                 )
 
-            if not isinstance(community_instance, BaseNewBuyOverseasStock) and \
-                    not isinstance(community_instance, BaseNewSellOverseasStock):
-                raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseNewBuyOverseasStock")
+            if not isinstance(community_instance, BaseOrderOverseasStock):
+                raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseOrderOverseasStock")
 
             # Plugins expose an async `execute` method that returns the symbols to act on.
             result = await community_instance.execute()
@@ -179,3 +201,10 @@ class PluginResolver:
                 symbol=symbol_info.get("symbol"),
                 weight=0
             )
+
+    async def get_order_types(self, condition_id: str) -> Optional[List[OrderType]]:
+        """Get order types from a condition class."""
+        cls = await self._resolve(condition_id)
+        if cls and hasattr(cls, 'order_types'):
+            return cls.order_types
+        return None
