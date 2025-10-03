@@ -16,7 +16,7 @@ if __name__ == "__main__":
 
     # 실시간 주문 응답 콜백
     pg.on_real_order_message(
-        callback=lambda message: print(f"Real Order Message: {message.get('order_type')}, {message.get('message'), {message.get('response')}}")
+        callback=lambda message: print(f"Real Order Message: {message.get('order_type')}, {message.get('message')}")
     )
 
     pg.run(
@@ -29,6 +29,7 @@ if __name__ == "__main__":
                 "author": "Author Name",
                 "date": "2023-10-01",
                 "debug": "DEBUG",
+                "test": True
             },
             "securities": {
                 "company": "ls",
@@ -86,7 +87,7 @@ if __name__ == "__main__":
             "orders": [
                 {
                     "order_id": "자금분배매수_1",
-                    "description": "시장 분석 전략",
+                    "description": "분할 매매 전략임",
                     "block_duplicate_buy": True,
                     "order_time": {
                         "start": "00:00:00",
