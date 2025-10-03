@@ -217,7 +217,6 @@ def stop_current_pg():
     """Attempt to stop the currently running Programgarden instance."""
     with current_pg_lock:
         pg = globals().get('current_pg')
-        pg.stop()
     if pg is None:
         add_log('No Programgarden instance to stop')
         return False
@@ -241,7 +240,7 @@ def stop_endpoint():
     ok = stop_current_pg()
     if ok:
         return jsonify({'status': 'stopping'}), 202
-    return jsonify({'status': 'no_instance'}), 400
+    return jsonify({'status': 'no_instance'}), 200
 
 
 if __name__ == '__main__':

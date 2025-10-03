@@ -1,0 +1,4 @@
+Flask==2.3.3
+Werkzeug==2.3.7
+# Add any other dependencies if your app.py requires them (e.g., requests, json, etc.)
+# Based on the editor.html, no additional Python packages seem needed beyond Flask.

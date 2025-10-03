@@ -63,11 +63,14 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 system (SystemType): The system data object to run.
             """
 
-        tprint("""
+        try:
+            tprint("""
 Program Garden
     x
 LS Securities
-""", font="tarty1")
+    """, font="tarty1")
+        except Exception:
+            pass
 
         if system:
             self._check_debug(system)
