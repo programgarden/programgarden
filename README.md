@@ -30,10 +30,10 @@
 * 공식사이트: https://programgarden.com
 * 프로그램 동산 유튜브: https://youtube.com/@programgarden
 * 시스템 트레이더 커뮤니티: https://cafe.naver.com/programgarden
+* 퀀트 개발자에게 전략 제작 요청하기: https://cafe.naver.com/f-e/cafes/30041992/menus/204?t=1759655782657
 * LS증권 유튜브: https://www.youtube.com/@lssec
 * 비즈니스 문의: coding@programgarden.com
 
-\
 
 
 ## 👥 운영진
