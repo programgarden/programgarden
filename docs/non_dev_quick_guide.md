@@ -215,7 +215,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
 * **conditions**
   *   전략 계산 조건들의 모음이며 세 가지 형태를 가집니다.
 
-      1. [`programgarden-community`](contribution_guide.md) 라이브러리에 기여된 전략을 이용합니다. [Community 전략들 둘러보기](community_list.md)
+      1. 오픈소스에 기여된 [Community의 종목추출 전략들](/docs/strategies/stock_condition.md) 중에서 전략ID를 `condition_id`에 추가합니다.
 
       ```python
       {
@@ -264,7 +264,9 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
 
 ### orders 영역
 
-orders 영역은 사용하려는 매매 전략을 작성하는 곳입니다. 매매 전략은 Community의 전략을 가져오거나 개별적으로 파이썬 코드로 커스텀할 수 있습니다. Community에서 전략을 가져와 사용하는 경우에, 매매전략이 원하는 방향의 매수/매도를 지원하는지 자세하게 체크하고 사용하세요.
+orders 영역은 어떤 방식으로 매매를 할지 전략을 추가하는 영역입니다. 매매 전략은 오픈소스에 기여된 [Community의 매매전략 목록](/docs/strategies/order_condition.md)에서 전략 id를 `condition_id`에 추가합니다.
+
+ 원하는 전략이 없다면, 파이썬 코드로 직접 만들 수 있습니다. [만드는 방법 보기](custom_dsl.md)
 
 사용 방법은 다음과 같습니다.
 
@@ -322,7 +324,7 @@ orders 영역은 사용하려는 매매 전략을 작성하는 곳입니다. 매
 
 ### 2.4. 실행하기
 
-자동매매 설정이 완료되었으면, 다음 단계에 따라 실행하세요. 실행용 예제파일은 [여기](../src/programgarden/example/programgarden_example.py)에서 확인할 수 있습니다.
+자동매매 설정이 완료되었으면, 다음 단계에 따라 실행하세요. 실행용 예제파일은 [여기](/src/programgarden/example/programgarden_example.py)에서 확인할 수 있습니다.
 
 1.  **programgarden 패키지 설치**: 터미널에서 아래 명령어를 실행하여 `programgarden` 패키지를 설치합니다.
 
@@ -374,4 +376,4 @@ orders 영역은 사용하려는 매매 전략을 작성하는 곳입니다. 매
 
     최종적으로 자동매매 시스템이 시작됩니다. 전략에 따라 주기적으로 시장을 분석하고, 조건이 만족되면 주문을 실행합니다.
 
-실행용 예제파일에서 확인해보세요. [예제파일 이동](../src/programgarden/example/programgarden_example.py)
+실행용 예제파일에서 확인해보세요. [예제파일 이동](/src/programgarden/example/programgarden_example.py)
