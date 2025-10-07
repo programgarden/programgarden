@@ -5,7 +5,9 @@
 ## 투자자 가이드 <a href="#invest" id="invest"></a>
 
 * [자동화매매 빠르게 사용하기](docs/non_dev_quick_guide.md)
-* [커뮤니티 전략 모음](docs/community_list.md)
+* [제공된 전략 리스트 보기](/docs/strategy_list.md)
+    * [종목추출 전략](docs/strategies/stock_condition.md)
+    * [매매 전략](docs/strategies/order_condition.md)
 
 ## 개발자 가이드 <a href="#develop" id="develop"></a>
 
