@@ -8,8 +8,7 @@
 
 * 사용자 커뮤니티: https://cafe.naver.com/programgarden
 
-\
-
+\\
 
 ## 2. 사용법
 
@@ -188,7 +187,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
 #### 상세 설명
 
 * **schedule**
-  * 스케줄러 작성 가이드 보기: [자동화매매 스케줄 가이드](../docs/schedule_guide.md)
+  * 스케줄러 작성 가이드 보기: [자동화매매 스케줄 가이드](schedule_guide.md)
 * **timezone**
   * 스케줄 기준 시간대로 한국 실행은 `Asia/Seoul`로 설정합니다.
   * 다른 나라 지역 시간 확인: [다른 나라 지역 확인](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
@@ -204,7 +203,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
     "threshold": 2
     ```
 
-    * logic 가이드 보기: [조건 계산 가이드](../docs/logic_guide.md)
+    * logic 가이드 보기: [조건 계산 가이드](logic_guide.md)
 * **symbols**
   * 계산하려는 종목을 여러 개 작성합니다. 작성하지 않으면 시장에 상장된 모든 종목을 대상으로 계산하므로 연산 시간이 오래 걸릴 수 있습니다.
   * `symbol`은 종목 코드입니다.
@@ -216,7 +215,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
 * **conditions**
   *   전략 계산 조건들의 모음이며 세 가지 형태를 가집니다.
 
-      1. [`programgarden-community`](../docs/contribution_guide.md) 라이브러리에 기여된 전략을 이용합니다. [Community 전략들 둘러보기](community_list.md)
+      1. [`programgarden-community`](contribution_guide.md) 라이브러리에 기여된 전략을 이용합니다. [Community 전략들 둘러보기](community_list.md)
 
       ```python
       {
@@ -231,7 +230,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
       }
       ```
 
-      2. 개인 전략을 활용하려면 `python` 코드를 이용해 커스텀 가능합니다. [커스텀하기](../docs/custom_dsl.md)
+      2. 개인 전략을 활용하려면 `python` 코드를 이용해 커스텀 가능합니다. [커스텀하기](custom_dsl.md)
       3. 조건 중첩도 가능합니다. 하위 conditions가 통과되면 상위 conditions의 계산을 수행하는 형태입니다.
 
       ```python
@@ -272,36 +271,38 @@ orders 영역은 사용하려는 매매 전략을 작성하는 곳입니다. 매
 ```python
 {
     "orders": [
-        # 매매 전략의 ID (중복 불가)
-        "order_id": "분할매매_1",
-        # 매매 전략 설명
-        "description": "시장 분석 전략",
-        # 보유 중인 종목은 추가 매수하지 않습니다.
-        "block_duplicate_trade": True,
-        # 특정 시간 안에서만 매매합니다.
-        "order_time": {
-            # 시작(start)과 끝(end) 시간입니다.
-            "start": "13:58:00",
-            "end": "20:00:00",
-            # 지정된 요일에만 매매합니다.
-            "days": ["mon", "tue", "wed", "thu", "fri"],
-            # 국가와 지역 시간대입니다.
-            "timezone": "Asia/Seoul",
-            # 주문 시간까지 대기 여부: 'defer' 또는 'skip'
-            "behavior": "defer",
-            # 최대 대기 시간(초)
-            "max_delay_seconds": 86400
-        },
-        # 매매 전략은 1개만 지정할 수 있습니다.
-        "condition": {
-            # Community에서 선택된 매매 전략 ID
-            "condition_id": "StockSplitFunds",
-            # 매매 전략에서 요구하는 데이터 값 작성
-            "params": {
-                "appkey": os.getenv("APPKEY"),
-                "appsecretkey": os.getenv("APPSECRET"),
-                "percent_balance": 0.8,
-                "max_symbols": 2
+        {
+            # 매매 전략의 ID (중복 불가)
+            "order_id": "분할매매_1",
+            # 매매 전략 설명
+            "description": "시장 분석 전략",
+            # 보유 중인 종목은 추가 매수하지 않습니다.
+            "block_duplicate_trade": True,
+            # 특정 시간 안에서만 매매합니다.
+            "order_time": {
+                # 시작(start)과 끝(end) 시간입니다.
+                "start": "13:58:00",
+                "end": "20:00:00",
+                # 지정된 요일에만 매매합니다.
+                "days": ["mon", "tue", "wed", "thu", "fri"],
+                # 국가와 지역 시간대입니다.
+                "timezone": "Asia/Seoul",
+                # 주문 시간까지 대기 여부: 'defer' 또는 'skip'
+                "behavior": "defer",
+                # 최대 대기 시간(초)
+                "max_delay_seconds": 86400
+            },
+            # 매매 전략은 1개만 지정할 수 있습니다.
+            "condition": {
+                # Community에서 선택된 매매 전략 ID
+                "condition_id": "StockSplitFunds",
+                # 매매 전략에서 요구하는 데이터 값 작성
+                "params": {
+                    "appkey": os.getenv("APPKEY"),
+                    "appsecretkey": os.getenv("APPSECRET"),
+                    "percent_balance": 0.8,
+                    "max_symbols": 2
+                }
             }
         }
     ]
