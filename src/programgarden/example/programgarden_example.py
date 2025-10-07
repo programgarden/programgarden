@@ -29,7 +29,6 @@ if __name__ == "__main__":
                 "author": "Author Name",
                 "date": "2023-10-01",
                 "debug": "DEBUG",
-                "test": True
             },
             "securities": {
                 "company": "ls",
@@ -121,7 +120,7 @@ if __name__ == "__main__":
                     "condition": {
                         "condition_id": "BasicLossCutManager",
                         "params": {
-                            "losscut": 1
+                            "losscut": 10
                         }
                     }
                 }
