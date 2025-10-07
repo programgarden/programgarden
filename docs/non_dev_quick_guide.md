@@ -8,7 +8,6 @@
 
 * 사용자 커뮤니티: https://cafe.naver.com/programgarden
 
-\\
 
 ## 2. 사용법
 
