@@ -27,10 +27,9 @@
 
 해외주식 · 해외선물 업데이트 내용과 국내 주식·코인 등의 업데이트 일정을 유튜브와 커뮤니티에서 실시간으로 공유하고 있으니, 꼭 구독하고 알림을 설정해 주세요!
 
-* 공식사이트: https://programgarden.com
+* 카카오톡 단톡방: https://open.kakao.com/o/gKVObqUh
 * 프로그램 동산 유튜브: https://youtube.com/@programgarden
 * 시스템 트레이더 커뮤니티: https://cafe.naver.com/programgarden
-* 퀀트 개발자에게 전략 제작 요청하기: https://cafe.naver.com/f-e/cafes/30041992/menus/204?t=1759655782657
 * LS증권 유튜브: https://www.youtube.com/@lssec
 * 비즈니스 문의: coding@programgarden.com
 
