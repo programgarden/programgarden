@@ -12,7 +12,8 @@ from croniter import croniter
 
 from programgarden_core import (
     SystemType, StrategyType, pg_logger,
-    OrderTimeType, SymbolInfoOverseasStock, SymbolInfoOverseasFutures
+    OrderTimeType, SymbolInfoOverseasStock, SymbolInfoOverseasFutures,
+    BaseOrderOverseasStock, BaseOrderOverseasFutures
 )
 from programgarden_core import (
     OrderType,
@@ -36,6 +37,11 @@ class SystemExecutor:
         self.condition_executor = ConditionExecutor(self.plugin_resolver, self.symbol_provider)
         self.buy_sell_executor = BuySellExecutor(self.plugin_resolver)
 
+    def _format_order_types(self, order_types: Union[List[OrderType], OrderType]) -> str:
+        if isinstance(order_types, (list, tuple, set)):
+            return ", ".join(str(ot) for ot in order_types)
+        return str(order_types)
+
     async def _execute_trade(
         self,
         system: SystemType,
@@ -54,7 +60,13 @@ class SystemExecutor:
             order_id (str): The unique identifier for the order.
             order_types (List[OrderType]): The types of orders to execute.
         """
+        order_type_label = self._format_order_types(order_types)
+        symbol_count = len(symbols_snapshot)
+
         if any(ot in ["new_buy", "new_sell"] for ot in order_types):
+            pg_logger.info(
+                f"🟢 [TRADE] {order_id}: {symbol_count}개 종목에 신규 주문({order_type_label}) 전송"
+            )
             await self.buy_sell_executor.new_order_execute(
                 system=system,
                 symbols_from_strategy=symbols_snapshot,
@@ -63,6 +75,9 @@ class SystemExecutor:
                 order_types=order_types
             )
         elif any(ot in ["modify_buy", "modify_sell"] for ot in order_types):
+            pg_logger.info(
+                f"🟡 [TRADE] {order_id}: {symbol_count}개 종목에 정정 주문({order_type_label}) 전송"
+            )
             await self.buy_sell_executor.modify_order_execute(
                 system=system,
                 symbols_from_strategy=symbols_snapshot,
@@ -70,11 +85,18 @@ class SystemExecutor:
                 order_id=order_id,
             )
         elif any(ot in ["cancel_buy", "cancel_sell"] for ot in order_types):
+            pg_logger.info(
+                f"🔴 [TRADE] {order_id}: {symbol_count}개 종목에 취소 주문({order_type_label}) 전송"
+            )
             await self.buy_sell_executor.cancel_order_execute(
                 system=system,
                 symbols_from_strategy=symbols_snapshot,
                 cancel_order=trade,
                 order_id=order_id,
+            )
+        else:
+            pg_logger.warning(
+                f"⚠️ [TRADE] {order_id}: 지원되지 않는 주문 유형({order_type_label})이라 실행을 건너뜁니다"
             )
 
     # Helper: parse order_time range object
@@ -104,7 +126,7 @@ class SystemExecutor:
             start_tm = datetime_time(*start_parts)
             end_tm = datetime_time(*end_parts)
         except Exception:
-            pg_logger.error(f"Invalid time format in order_time: start={start_s} end={end_s}")
+            pg_logger.error(f"order_time 시간 형식이 잘못되었습니다: start={start_s} end={end_s}")
             return None
 
         days_list = ot.get("days", ["mon", "tue", "wed", "thu", "fri"]) or ["mon", "tue", "wed", "thu", "fri"]
@@ -119,7 +141,7 @@ class SystemExecutor:
         try:
             tz = ZoneInfo(tz_name)
         except Exception:
-            pg_logger.warning(f"Invalid timezone '{tz_name}' for order; falling back to UTC")
+            pg_logger.warning(f"주문에 지정된 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
             tz = ZoneInfo("UTC")
 
         behavior = ot.get("behavior", "defer")
@@ -199,6 +221,7 @@ class SystemExecutor:
         logic after the deferred execution completes).
         """
 
+        order_type_label = self._format_order_types(order_types)
         order_time = trade.get("order_time", None)
 
         order_range: Optional[dict] = None
@@ -222,19 +245,25 @@ class SystemExecutor:
         # outside window -> behavior
         behavior = order_range.get("behavior", "defer")
         if behavior == "skip":
-            pg_logger.warning(f"Order '{strategy_order_id}' skipped because outside time window and behavior=skip")
+            pg_logger.warning(
+                f"주문 '{strategy_order_id}'이 시간 조건을 벗어나 동작=skip 설정에 따라 건너뜁니다 ({order_type_label})"
+            )
             return False
 
         # defer: schedule at next window start (subject to max_delay_seconds)
         next_start = self._next_window_start(now, order_range["start"], order_range["days"])
         if not next_start:
-            pg_logger.warning(f"Could not compute next window start for order '{strategy_order_id}'")
+            pg_logger.warning(
+                f"주문 '{strategy_order_id}'에 대해 다음 실행 시간 창을 계산할 수 없어 건너뜁니다 ({order_type_label})"
+            )
             return False
 
         # compute delay and check max_delay_seconds
         delay = (next_start - now).total_seconds()
         if delay > order_range.get("max_delay_seconds", 86400):
-            pg_logger.warning(f"Order '{strategy_order_id}' deferred delay {delay}s exceeds max_delay_seconds; skipping")
+            pg_logger.warning(
+                f"주문 '{strategy_order_id}'의 지연 시간 {delay}s가 허용치(max_delay_seconds)를 초과하여 건너뜁니다 ({order_type_label})"
+            )
             return False
 
         async def _scheduled_exec(delay, symbols_snapshot, trade, order_id, when, tz):
@@ -243,7 +272,9 @@ class SystemExecutor:
 
             await self._execute_trade(system, symbols_snapshot, trade, order_id, order_types)
 
-        pg_logger.info(f"Deferring and blocking until {order_types} order '{strategy_order_id}' executes at {next_start.isoformat()} ({order_range['tz']})")
+        pg_logger.info(
+            f"⏳ [TRADE] {strategy_order_id}: {order_type_label} 주문을 {next_start.isoformat()} ({order_range['tz']}) 실행으로 예약했습니다"
+        )
         await _scheduled_exec(delay, symbols_snapshot, trade, strategy_order_id, next_start, order_range["tz"])
 
         # returned after deferred execution; allow caller to continue with subsequent logic
@@ -253,39 +284,72 @@ class SystemExecutor:
         """
         Run a single execution of the strategy within the system.
         """
-        print(f"===== Running strategy: {strategy.get('id')} =====")
+        strategy_id = strategy.get("id", "<unknown>")
+        pg_logger.info(f"🚀 [STRATEGY] {strategy_id}: 전략 실행을 시작합니다")
+
+        conditions = strategy.get("conditions", [])
+        if not conditions:
+            pg_logger.info(f"⚪️ [STRATEGY] {strategy_id}: 조건이 없어 주문을 건너뜁니다")
+            return
+
         response_symbols = await self.condition_executor.execute_condition_list(system=system, strategy=strategy)
         async with self.condition_executor.state_lock:
             success = len(response_symbols) > 0
 
         if not success:
+            pg_logger.info(f"⚪️ [STRATEGY] {strategy_id}: 조건을 통과한 종목이 없어 주문을 건너뜁니다")
             return
+
+        symbol_count = len(response_symbols)
 
         # 전략 계산 통과됐으면 매수/매도 진행
         orders = system.get("orders", [])
         strategy_order_id = strategy.get("order_id", None)
 
+        matched_trade = False
+        triggered_trades: list[str] = []
         for trade in orders:
             if trade.get("order_id") != strategy_order_id:
                 continue
 
-            condition_id = trade.get("condition", {}).get("condition_id", None)
-            if not condition_id:
-                pg_logger.warning(f"Order '{trade.get('order_id')}' missing condition_id, skipping trade")
+            matched_trade = True
+
+            condition = trade.get("condition", None)
+            if condition is None:
                 continue
 
-            order_types = await self.plugin_resolver.get_order_types(condition_id)
+            if isinstance(condition, (BaseOrderOverseasStock, BaseOrderOverseasFutures)):
+                condition_id = condition.id
+                order_types = condition.order_types
+            else:
+                condition_id = condition.get("condition_id")
+                order_types = await self.plugin_resolver.get_order_types(condition_id)
+
+            if not condition_id:
+                pg_logger.warning(f"주문 '{trade.get('order_id')}'에 condition_id가 없어 처리하지 않습니다")
+                continue
+
             if not order_types:
-                pg_logger.warning(f"Unknown order_types for condition_id: {condition_id}, skipping trade")
+                pg_logger.warning(f"condition_id '{condition_id}'에 대한 주문 유형을 알 수 없어 건너뜁니다")
                 continue
 
             symbols_snapshot = list(response_symbols)
+
             await self._process_trade_time_window(
                 system=system,
                 trade=trade,
                 symbols_snapshot=symbols_snapshot,
                 strategy_order_id=strategy_order_id,
                 order_types=order_types,
+            )
+            triggered_trades.append(
+                f"{trade.get('order_id')} ({self._format_order_types(order_types)})"
+            )
+
+        if matched_trade:
+            trade_summary = ", ".join(triggered_trades) if triggered_trades else "없음"
+            pg_logger.info(
+                f"✅ [STRATEGY] {strategy_id}: {symbol_count}개 종목 통과, 실행된 주문 -> {trade_summary}"
             )
 
     async def _run_with_strategy(self, strategy_id: str, strategy: StrategyType, system: SystemType):
@@ -296,17 +360,23 @@ class SystemExecutor:
         try:
             cron_expr = strategy.get("schedule", None)
             count = strategy.get("count", 9999999)
+            tz_name = strategy.get("timezone", "UTC")
 
             if not cron_expr:
-                pg_logger.debug(f"Running strategy '{strategy_id}' once (no schedule)")
+                pg_logger.info(f"🕐 [STRATEGY] {strategy_id}: 스케줄이 없어 한 번만 실행합니다")
                 await self._run_once_execute(system=system, strategy=strategy)
+
                 return
 
-            tz_name = strategy.get("timezone", "UTC")
             tz = ZoneInfo(tz_name)
+            tz_label = getattr(tz, "key", str(tz))
+            pg_logger.info(
+                f"🗓️ [STRATEGY] {strategy_id}: cron '{cron_expr}'(시간대 {tz_label}) 기준으로 최대 {count}회 실행을 예약합니다"
+            )
         except Exception:
-            pg_logger.warning(f"Invalid timezone '{tz_name}', falling back to UTC.")
+            pg_logger.warning(f"[STRATEGY] {strategy_id}: 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
             tz = ZoneInfo("UTC")
+            tz_label = getattr(tz, "key", str(tz))
 
         async def run_cron():
             try:
@@ -315,6 +385,7 @@ class SystemExecutor:
                 valid = croniter.is_valid(cron_expr)
 
             if not valid:
+                pg_logger.error(f"[STRATEGY] {strategy_id}: cron 표현식 '{cron_expr}'이 잘못되었습니다")
                 raise ValueError(f"Invalid cron expression: {cron_expr}")
 
             cnt = 0
@@ -326,6 +397,9 @@ class SystemExecutor:
                 if delay < 0:
                     delay = 0
 
+                pg_logger.debug(
+                    f"[STRATEGY] {strategy_id}: 다음 실행 #{cnt + 1}은 {next_dt.isoformat()} ({tz_label})"
+                )
                 await asyncio.sleep(delay)
                 if not self.running:
                     break
@@ -334,40 +408,71 @@ class SystemExecutor:
 
                 cnt += 1
 
+            pg_logger.info(f"⏹️ [STRATEGY] {strategy_id}: cron 실행이 종료되었습니다 (총 {cnt}회)")
+
         task = asyncio.create_task(run_cron())
         self.tasks.append(task)
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            pg_logger.debug(f"[STRATEGY] {strategy_id}: cron 태스크가 취소되었습니다")
+            raise
 
     async def execute_system(self, system: SystemType):
         """
         Execute the trading system.
         """
 
+        system_settings = system.get("settings", {}) or {}
+        system_id = system_settings.get("system_id", system.get("id", "<unknown>"))
+        strategies = system.get("strategies", [])
         self.running = True
+        pg_logger.info(
+            f"👋 [SYSTEM] {system_id}: {len(strategies)}개 전략 실행을 시작합니다"
+        )
         try:
-            asyncio.create_task(
+            real_order_task = asyncio.create_task(
                 self.buy_sell_executor.real_order_executor.real_order_websockets(
                     system=system
                 )
             )
-
-            strategies = system.get("strategies", [])
+            self.tasks.append(real_order_task)
 
             # 전략 계산
             concurrent_tasks = [self._run_with_strategy(strategy_id=strategy.get("id"), strategy=strategy, system=system) for strategy in strategies]
 
             if concurrent_tasks:
-                await asyncio.gather(*concurrent_tasks, return_exceptions=True)
+                results = await asyncio.gather(*concurrent_tasks, return_exceptions=True)
+                for idx, result in enumerate(results):
+                    if isinstance(result, asyncio.CancelledError):
+                        pg_logger.debug(
+                            f"[SYSTEM] {system_id}: 전략 태스크 {idx + 1}이(가) 취소되었습니다"
+                        )
+                        continue
+                    if isinstance(result, Exception):
+                        pg_logger.error(
+                            f"[SYSTEM] {system_id}: 전략 태스크 {idx + 1}에서 예외 발생 -> {result}"
+                        )
+                pg_logger.info(f"✅ [SYSTEM] {system_id}: 모든 전략 태스크가 완료 또는 중지되었습니다")
+            else:
+                pg_logger.info(f"ℹ️ [SYSTEM] {system_id}: 실행할 전략이 구성되어 있지 않습니다")
 
         except Exception as e:
-            pg_logger.error(f"Error executing system: {e}")
+            pg_logger.error(f"[SYSTEM] {system_id}: 실행 중 오류 발생 -> {e}")
             await self.stop()
             raise
+        finally:
+            pg_logger.info(f"🏁 [SYSTEM] {system_id}: 시스템 실행이 종료되었습니다")
 
     async def stop(self):
         self.running = False
+        pending = sum(1 for task in self.tasks if not task.done())
+        pg_logger.info(f"🛑 [SYSTEM] 중지 요청 수신, 진행 중인 태스크 {pending}개를 취소합니다")
         for task in self.tasks:
             if not task.done():
                 task.cancel()
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
+            pg_logger.info("🧹 [SYSTEM] 남은 태스크 취소를 완료했습니다")
         self.tasks.clear()

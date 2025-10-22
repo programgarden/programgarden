@@ -16,7 +16,7 @@ packages = [{ include = "programgarden_finance" }]
 pydantic = ">=2.11.7,<3.0.0"
 requests = "^2.32.4"
 aiohttp = "^3.10.0"
-programgarden-core = "^0.1.2"
+programgarden-core = { path="../core", develop = true }
 redis = "^6.4.0"
 websockets = "^15.0.1"
 python-dotenv = "^1.1.1"

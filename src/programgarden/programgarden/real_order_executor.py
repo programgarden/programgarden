@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 from programgarden_finance import LS, AS0, AS1, AS2, AS3, AS4, TC1, TC2, TC3
 from programgarden_core import (
     OrderRealResponseType, SystemType, pg_logger,
-    BaseOrderOverseasStock, BaseOrderOverseasFuture,
+    BaseOrderOverseasStock, BaseOrderOverseasFutures,
 )
 from programgarden.pg_listener import pg_listener
 
@@ -298,7 +298,7 @@ class RealOrderExecutor:
     async def send_data_community_instance(
         self,
         ordNo: str,
-        community_instance: Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFuture]],
+        community_instance: Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFutures]],
     ) -> None:
         """
         Send order result data to the community plugin instance's

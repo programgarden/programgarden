@@ -44,7 +44,7 @@ class CIDBQ03000InBlock1(BaseModel):
         title="거래일자",
         description="거래일자(YYYYMMDD)"
     )
-    """거래일자"""
+    """거래일자(YYYYMMDD)"""
 
 
 class CIDBQ03000Request(BaseModel):

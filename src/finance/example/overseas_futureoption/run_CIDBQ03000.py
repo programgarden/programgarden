@@ -15,8 +15,9 @@ async def test_req_CIDBQ03000():
     ls = LS()
 
     login_result = ls.login(
-        appkey=os.getenv("APPKEY_FUTURE"),
-        appsecretkey=os.getenv("APPSECRET_FUTURE")
+        appkey=os.getenv("APPKEY_FUTURE_FAKE"),
+        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE"),
+        paper_trading=True
     )
 
     if login_result is False:
@@ -27,7 +28,7 @@ async def test_req_CIDBQ03000():
         body=CIDBQ03000.CIDBQ03000InBlock1(
             RecCnt=1,
             AcntTpCode="1",
-            TrdDt="20230609"
+            TrdDt=""
         )
     )
     print(await req.req_async())

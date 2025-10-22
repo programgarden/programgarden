@@ -34,22 +34,22 @@ from .bases import (
     OrderStrategyType,
 
     BaseOrderOverseasStock,
-    BaseOrderOverseasFuture,
+    BaseOrderOverseasFutures,
 
     BaseNewOrderOverseasStock,
     BaseNewOrderOverseasStockResponseType,
-    BaseNewOrderOverseasFuture,
-    BaseNewOrderOverseasFutureResponseType,
+    BaseNewOrderOverseasFutures,
+    BaseNewOrderOverseasFuturesResponseType,
 
     BaseModifyOrderOverseasStock,
     BaseModifyOrderOverseasStockResponseType,
-    BaseModifyOrderOverseasFuture,
+    BaseModifyOrderOverseasFutures,
     BaseModifyOrderOverseasFutureResponseType,
 
     BaseCancelOrderOverseasStock,
     BaseCancelOrderOverseasStockResponseType,
-    BaseCancelOrderOverseasFuture,
-    BaseCancelOrderOverseasFutureResponseType,
+    BaseCancelOrderOverseasFutures,
+    BaseCancelOrderOverseasFuturesResponseType,
 )
 from .korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 from . import logs, exceptions
@@ -98,7 +98,7 @@ __all__ = [
     NonTradedSymbolOverseasStock,
     NonTradedSymbolOverseasFutures,
     BaseOrderOverseasStock,
-    BaseOrderOverseasFuture,
+    BaseOrderOverseasFutures,
 
     # strategy types
     BaseStrategyCondition,
@@ -111,18 +111,18 @@ __all__ = [
     # new_order types
     BaseNewOrderOverseasStock,
     BaseNewOrderOverseasStockResponseType,
-    BaseNewOrderOverseasFuture,
-    BaseNewOrderOverseasFutureResponseType,
+    BaseNewOrderOverseasFutures,
+    BaseNewOrderOverseasFuturesResponseType,
 
     # modify_order types
     BaseModifyOrderOverseasStock,
     BaseModifyOrderOverseasStockResponseType,
-    BaseModifyOrderOverseasFuture,
+    BaseModifyOrderOverseasFutures,
     BaseModifyOrderOverseasFutureResponseType,
 
     # cancel_order types
     BaseCancelOrderOverseasStock,
     BaseCancelOrderOverseasStockResponseType,
-    BaseCancelOrderOverseasFuture,
-    BaseCancelOrderOverseasFutureResponseType,
+    BaseCancelOrderOverseasFutures,
+    BaseCancelOrderOverseasFuturesResponseType,
 ]

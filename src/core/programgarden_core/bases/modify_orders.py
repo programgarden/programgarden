@@ -1,7 +1,7 @@
 
 from typing import Literal, TypedDict
 
-from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFuture
+from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFutures
 
 
 class BaseModifyOrderOverseasStockResponseType(TypedDict):
@@ -81,7 +81,7 @@ class BaseModifyOrderOverseasFutureResponseType(TypedDict, total=False):
     """거래소코드"""
 
 
-class BaseModifyOrderOverseasFuture(BaseOrderOverseasFuture[BaseModifyOrderOverseasFutureResponseType]):
+class BaseModifyOrderOverseasFutures(BaseOrderOverseasFutures[BaseModifyOrderOverseasFutureResponseType]):
     """해외선물 정정 주문 전략 기본 클래스"""
 
     pass
