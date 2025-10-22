@@ -1,7 +1,7 @@
 
 from typing import Literal, TypedDict
 
-from programgarden_core.bases.base import BaseOrderOverseasStock
+from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFuture
 
 
 class BaseCancelOrderOverseasStockResponseType(TypedDict):
@@ -32,4 +32,35 @@ class BaseCancelOrderOverseasStock(BaseOrderOverseasStock[BaseCancelOrderOversea
     """
     취소 주문을 하기 위한 전략을 계산하고 주문을 위한 값을 던져줍니다.
     """
+    pass
+
+
+class BaseCancelOrderOverseasFutureResponseType(TypedDict, total=False):
+    """해외선물 취소주문을 넣기 위한 반환값 데이터"""
+
+    success: bool
+    """전략 통과 성공 여부"""
+
+    ord_dt: str
+    """주문일자 (YYYYMMDD)"""
+
+    isu_code_val: str
+    """종목코드값"""
+
+    ovrs_futs_org_ord_no: str
+    """해외선물 원주문번호"""
+
+    futs_ord_tp_code: Literal["3"]
+    """선물주문구분코드 (3: 취소)"""
+
+    prdt_tp_code: str
+    """상품구분코드"""
+
+    exch_code: str
+    """거래소코드"""
+
+
+class BaseCancelOrderOverseasFuture(BaseOrderOverseasFuture[BaseCancelOrderOverseasFutureResponseType]):
+    """해외선물 취소 주문 전략 기본 클래스"""
+
     pass

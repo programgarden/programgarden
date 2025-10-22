@@ -24,3 +24,9 @@ class URLS:
     FO_ORDER_URL = f"{LS_URL}/overseas-futureoption/order"
 
     WSS_URL = "wss://openapi.ls-sec.co.kr:9443/websocket"
+    WSS_URL_FAKE = "wss://openapi.ls-sec.co.kr:29443/websocket"
+
+    @classmethod
+    def get_wss_url(cls, paper_trading: bool = False) -> str:
+        """Return the appropriate websocket endpoint based on trading mode."""
+        return cls.WSS_URL_FAKE if paper_trading else cls.WSS_URL

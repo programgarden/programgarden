@@ -17,12 +17,22 @@ The public surface is intentionally small: construct a :class:`ConditionExecutor
 and use :meth:`execute_condition` and :meth:`execute_condition_list`.
 """
 
-from typing import List, Optional, Tuple, Union, Dict
+from typing import Any, Dict, List, Optional, Tuple, Union
 import asyncio
 
 from programgarden_core import (
-    BaseStrategyCondition, BaseStrategyConditionResponseType, StrategyConditionType,
-    StrategyType, SymbolInfo, SystemType, pg_logger, OrderStrategyType
+    BaseStrategyCondition,
+    BaseStrategyConditionOverseasStock,
+    BaseStrategyConditionOverseasFutures,
+    BaseStrategyConditionResponseOverseasStockType,
+    BaseStrategyConditionResponseOverseasFuturesType,
+    StrategyConditionType,
+    StrategyType,
+    SymbolInfoOverseasStock,
+    SymbolInfoOverseasFutures,
+    SystemType,
+    pg_logger,
+    OrderStrategyType,
 )
 
 from programgarden.pg_listener import pg_listener
@@ -70,7 +80,17 @@ class ConditionExecutor:
         self.symbol_provider = symbol_provider
         self.state_lock = asyncio.Lock()
 
-    def evaluate_logic(self, results: List[BaseStrategyConditionResponseType], logic: str, threshold: Optional[int] = None) -> Tuple[bool, int]:
+    def evaluate_logic(
+        self,
+        results: List[
+            Union[
+                BaseStrategyConditionResponseOverseasStockType,
+                BaseStrategyConditionResponseOverseasFuturesType,
+            ]
+        ],
+        logic: str,
+        threshold: Optional[int] = None,
+    ) -> Tuple[bool, int]:
         """Evaluate a list of condition results using a logical operator.
 
         Returns a tuple: (bool_result, numeric_weight).
@@ -102,7 +122,54 @@ class ConditionExecutor:
             return (total_weight >= threshold, total_weight)
         return (False, 0)
 
-    async def execute_condition(self, system: SystemType, symbol_info: SymbolInfo, condition: Union[BaseStrategyCondition, StrategyConditionType]) -> BaseStrategyConditionResponseType:
+    def _build_response(
+        self,
+        symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
+        *,
+        success: bool,
+        condition_id: Optional[str] = None,
+        weight: int = 0,
+        data: Optional[Any] = None,
+        position_side: Optional[str] = None,
+    ) -> Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]:
+        product_type = symbol_info.get("product_type") if isinstance(symbol_info, dict) else None
+        if product_type == "overseas_futures":
+            futures_response: BaseStrategyConditionResponseOverseasFuturesType = {
+                "condition_id": condition_id,
+                "success": success,
+                "symbol": symbol_info.get("symbol", ""),
+                "exchcd": symbol_info.get("exchcd", ""),
+                "data": data if data is not None else {},
+                "weight": weight,
+                "product": "overseas_futures",
+                "position_side": position_side if position_side in {"long", "short", "flat"} else "flat",
+            }
+            return futures_response
+
+        stock_response: BaseStrategyConditionResponseOverseasStockType = {
+            "condition_id": condition_id,
+            "success": success,
+            "symbol": symbol_info.get("symbol", ""),
+            "exchcd": symbol_info.get("exchcd", ""),
+            "data": data if data is not None else {},
+            "weight": weight,
+            "product": "overseas_stock",
+        }
+        return stock_response
+
+    async def execute_condition(
+        self,
+        system: SystemType,
+        symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
+        condition: Union[
+            BaseStrategyConditionOverseasStock,
+            BaseStrategyConditionOverseasFutures,
+            StrategyConditionType,
+        ],
+    ) -> Union[
+        BaseStrategyConditionResponseOverseasStockType,
+        BaseStrategyConditionResponseOverseasFuturesType,
+    ]:
         """Execute a single condition entry.
 
         A condition entry can be either:
@@ -112,7 +179,6 @@ class ConditionExecutor:
         - A nested condition group (dict containing a ``"conditions"`` list and
           optional ``"logic"``/``"threshold"`` keys).
         """
-
         if isinstance(condition, BaseStrategyCondition):
             result = await condition.execute()
 
@@ -123,35 +189,26 @@ class ConditionExecutor:
                 return await self._execute_plugin_condition(
                     system_id=system.get("settings", {}).get("system_id", None),
                     condition=condition,
-                    symbol_info=symbol_info
+                    symbol_info=symbol_info,
                 )
             # Nested condition group
             if "conditions" in condition:
                 return await self._execute_nested_condition(system, symbol_info, condition)
             # Unknown dict shape: treat as failure but keep symbol context.
-            return BaseStrategyConditionResponseType(
-                condition_id=None,
-                success=False,
-                exchcd=symbol_info.get("exchcd"),
-                symbol=symbol_info.get("symbol"),
-                weight=0
-            )
+            return self._build_response(symbol_info, success=False)
 
         pg_logger.warning(f"Unknown condition type: {type(condition)}")
-        return BaseStrategyConditionResponseType(
-            condition_id=None,
-            success=False,
-            exchcd=symbol_info.get("exchcd"),
-            symbol=symbol_info.get("symbol"),
-            weight=0
-        )
+        return self._build_response(symbol_info, success=False)
 
     async def _execute_plugin_condition(
-            self,
-            system_id: Optional[str],
-            condition: Dict,
-            symbol_info: SymbolInfo
-    ) -> BaseStrategyConditionResponseType:
+        self,
+        system_id: Optional[str],
+        condition: Dict,
+        symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
+    ) -> Union[
+        BaseStrategyConditionResponseOverseasStockType,
+        BaseStrategyConditionResponseOverseasFuturesType,
+    ]:
         """
         Execute a single plugin condition identified by ``condition_id``.
         """
@@ -165,7 +222,15 @@ class ConditionExecutor:
             symbol_info=symbol_info,
         )
 
-    async def _execute_nested_condition(self, system: SystemType, symbol_info: SymbolInfo, condition_nested: StrategyConditionType) -> BaseStrategyConditionResponseType:
+    async def _execute_nested_condition(
+        self,
+        system: SystemType,
+        symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
+        condition_nested: StrategyConditionType,
+    ) -> Union[
+        BaseStrategyConditionResponseOverseasStockType,
+        BaseStrategyConditionResponseOverseasFuturesType,
+    ]:
         """
         Execute a nested condition group using concurrent execution and
         """
@@ -180,7 +245,12 @@ class ConditionExecutor:
             for condition in conditions
         ]
 
-        condition_results: List[BaseStrategyConditionResponseType] = []
+        condition_results: List[
+            Union[
+                BaseStrategyConditionResponseOverseasStockType,
+                BaseStrategyConditionResponseOverseasFuturesType,
+            ]
+        ] = []
         for task in asyncio.as_completed(tasks):
             try:
                 res = await task
@@ -188,34 +258,30 @@ class ConditionExecutor:
 
             except Exception as e:
                 pg_logger.error(f"Error executing condition: {e}")
-                condition_results.append(BaseStrategyConditionResponseType(
-                    condition_id=res.get("condition_id", None),
-                    success=False,
-                    exchcd=symbol_info.get("exchcd"),
-                    symbol=symbol_info.get("symbol"),
-                    weight=0
-                ))
+                condition_results.append(
+                    self._build_response(symbol_info, success=False, condition_id=None)
+                )
 
         complete, total_weight = self.evaluate_logic(results=condition_results, logic=logic, threshold=threshold)
         if not complete:
-            return BaseStrategyConditionResponseType(
-                condition_id=None,
+            return self._build_response(
+                symbol_info,
                 success=False,
-                exchcd=symbol_info.get("exchcd"),
-                symbol=symbol_info.get("symbol"),
-                weight=total_weight
+                weight=total_weight,
             )
 
         # All conditions passed
-        return BaseStrategyConditionResponseType(
-            condition_id=None,
+        return self._build_response(
+            symbol_info,
             success=True,
-            exchcd=symbol_info.get("exchcd"),
-            symbol=symbol_info.get("symbol"),
-            weight=total_weight
+            weight=total_weight,
         )
 
-    async def execute_condition_list(self, system: SystemType, strategy: StrategyType) -> List[SymbolInfo]:
+    async def execute_condition_list(
+        self,
+        system: SystemType,
+        strategy: StrategyType,
+    ) -> List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]:
         """
         Perform calculations defined in the strategy
         """
@@ -228,9 +294,9 @@ class ConditionExecutor:
 
         order_types = await self._get_order_types(order_id, orders)
 
-        market_symbols: List[SymbolInfo] = []
-        account_symbols: List[SymbolInfo] = []
-        non_account_symbols: List[SymbolInfo] = []
+        market_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
+        account_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
+        non_account_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
 
         if not my_symbols and ("new_buy" in order_types or order_types is None):
             market_symbols = await self.symbol_provider.get_symbols(
@@ -299,7 +365,7 @@ class ConditionExecutor:
         if not conditions:
             return my_symbols
 
-        passed_symbols: List[SymbolInfo] = []
+        passed_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
         for symbol_info in my_symbols:
             conditions = strategy.get("conditions", [])
             logic = strategy.get("logic", "and")
@@ -315,7 +381,12 @@ class ConditionExecutor:
                 for condition in conditions
             ]
 
-            condition_results: List[BaseStrategyConditionResponseType] = []
+            condition_results: List[
+                Union[
+                    BaseStrategyConditionResponseOverseasStockType,
+                    BaseStrategyConditionResponseOverseasFuturesType,
+                ]
+            ] = []
             for task in asyncio.as_completed(tasks):
                 try:
                     res = await task
@@ -332,19 +403,16 @@ class ConditionExecutor:
                 except Exception as e:
                     pg_logger.error(f"Error executing condition: {e}")
 
+                    failure_response = self._build_response(symbol_info, success=False)
+
                     pg_listener.emit_strategies(
                         payload={
-                            "condition_id": res.get("condition_id", None),
+                            "condition_id": failure_response.get("condition_id"),
                             "message": f"Failed executing condition: {e}",
-                            "response": {
-                                "condition_id": res.get("condition_id", None),
-                                "success": False,
-                                "exchcd": symbol_info.get("exchcd"),
-                                "symbol": symbol_info.get("symbol"),
-                            },
+                            "response": failure_response,
                         }
                     )
-                    condition_results.append({"success": False, "exchcd": symbol_info.get("exchcd"), "symbol": symbol_info.get("symbol")})
+                    condition_results.append(failure_response)
 
             complete, total_weight = self.evaluate_logic(results=condition_results, logic=logic, threshold=threshold)
             if complete:

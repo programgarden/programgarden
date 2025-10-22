@@ -64,6 +64,8 @@ from dataclasses import dataclass
 import time
 from typing import Optional, ClassVar
 
+from .config import URLS
+
 # 토큰 재발급 임계 시간(초): 만료 5분 전부터 재발급 시도
 TOKEN_REFRESH_SKEW_SECONDS = 300
 
@@ -77,6 +79,8 @@ class TokenManager:
     scope: Optional[str] = None
     expires_in: Optional[int] = None  # 초 단위
     acquired_at: ClassVar[float] = None  # epoch seconds
+    paper_trading: bool = False
+    wss_url: Optional[str] = None
 
     @property
     def expires_at(self) -> Optional[float]:
@@ -97,3 +101,8 @@ class TokenManager:
         if not self.access_token:
             raise TokenNotFoundException()
         return f"Bearer {self.access_token}"
+
+    def configure_trading_mode(self, paper_trading: bool) -> None:
+        mode = bool(paper_trading)
+        self.paper_trading = mode
+        self.wss_url = URLS.get_wss_url(mode)

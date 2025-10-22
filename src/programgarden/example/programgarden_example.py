@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     # 전략 수행 응답 콜백
     pg.on_strategies_message(
-        callback=lambda message: print(f"Strategies: {message}")
+        callback=lambda message: print(f"Strategies: {message.get('condition_id')}")
     )
 
     # 실시간 주문 응답 콜백

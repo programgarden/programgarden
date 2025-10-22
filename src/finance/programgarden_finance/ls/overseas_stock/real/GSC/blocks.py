@@ -22,10 +22,9 @@ class GSCRealRequestBody(BaseModel):
         if v is None:
             return None
         s = str(v)
-        # remove any existing trailing spaces, limit base to 6 chars so total <= 18,
-        # then append exactly 12 spaces
-        base = s.rstrip()[:6]
-        return base + " " * 12
+        if len(s) < 18:
+            return s.ljust(18)
+        return s
 
     model_config = ConfigDict(validate_assignment=True)
 

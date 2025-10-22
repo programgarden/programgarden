@@ -1,22 +1,35 @@
 from typing import Dict, List, Optional, Union
 import inspect
 from programgarden_core import (
-    BaseStrategyConditionResponseType, BaseStrategyCondition,
+    BaseStrategyCondition,
+    BaseStrategyConditionOverseasStock,
+    BaseStrategyConditionOverseasFutures,
+    BaseStrategyConditionResponseOverseasStockType,
+    BaseStrategyConditionResponseOverseasFuturesType,
     pg_logger,
-    SymbolInfo, OrderType,
+    SymbolInfoOverseasStock,
+    SymbolInfoOverseasFutures,
+    OrderType,
     exceptions, HeldSymbol,
     NonTradedSymbol, OrderStrategyType
 )
 from programgarden_core import (
     BaseOrderOverseasStock,
+    BaseOrderOverseasFuture,
     BaseNewOrderOverseasStock,
+    BaseNewOrderOverseasFuture,
     BaseModifyOrderOverseasStock,
+    BaseModifyOrderOverseasFuture,
     BaseCancelOrderOverseasStock,
+    BaseCancelOrderOverseasFuture,
 )
 from programgarden_core import (
     BaseNewOrderOverseasStockResponseType,
     BaseModifyOrderOverseasStockResponseType,
-    BaseCancelOrderOverseasStockResponseType
+    BaseCancelOrderOverseasStockResponseType,
+    BaseNewOrderOverseasFutureResponseType,
+    BaseModifyOrderOverseasFutureResponseType,
+    BaseCancelOrderOverseasFutureResponseType,
 )
 from programgarden_community import getCommunityCondition
 
@@ -32,6 +45,29 @@ class PluginResolver:
     """
     def __init__(self):
         self._plugin_cache: Dict[str, type] = {}
+
+    def _build_failure_response(
+        self,
+        symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
+        condition_id: Optional[str],
+    ) -> Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]:
+        product_type = symbol_info.get("product_type") if isinstance(symbol_info, dict) else None
+        product = "overseas_futures" if product_type == "overseas_futures" else "overseas_stock"
+
+        response: Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType] = {
+            "condition_id": condition_id,
+            "success": False,
+            "symbol": symbol_info.get("symbol", ""),
+            "exchcd": symbol_info.get("exchcd", ""),
+            "data": {},
+            "weight": 0,
+            "product": product,
+        }
+
+        if product == "overseas_futures":
+            response["position_side"] = "flat"
+
+        return response
 
     async def _resolve(self, condition_id: str):
         """Locate a plugin class by name and cache the result.
@@ -69,10 +105,16 @@ class PluginResolver:
                 exported_cls,
                 (
                     BaseStrategyCondition,
+                    BaseStrategyConditionOverseasStock,
+                    BaseStrategyConditionOverseasFutures,
                     BaseOrderOverseasStock,
+                    BaseOrderOverseasFuture,
                     BaseNewOrderOverseasStock,
+                    BaseNewOrderOverseasFuture,
                     BaseModifyOrderOverseasStock,
+                    BaseModifyOrderOverseasFuture,
                     BaseCancelOrderOverseasStock,
+                    BaseCancelOrderOverseasFuture,
                 ),
             ):
                 self._plugin_cache[condition_id] = exported_cls
@@ -83,22 +125,25 @@ class PluginResolver:
         return None
 
     async def resolve_buysell_community(
-            self,
-            system_id: Optional[str],
-            trade: OrderStrategyType,
-            symbols: List[SymbolInfo] = [],
-            held_symbols: List[HeldSymbol] = [],
-            non_trade_symbols: List[NonTradedSymbol] = [],
-            dps: Optional[DpsTyped] = None
+        self,
+        system_id: Optional[str],
+        trade: OrderStrategyType,
+        symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = [],
+        held_symbols: List[HeldSymbol] = [],
+        non_trade_symbols: List[NonTradedSymbol] = [],
+        dps: Optional[DpsTyped] = None
     ) -> tuple[
         Optional[
             Union[
-                    List[BaseNewOrderOverseasStockResponseType],
-                    List[BaseModifyOrderOverseasStockResponseType],
-                    List[BaseCancelOrderOverseasStockResponseType]
-                ]
-            ],
-            Optional[BaseOrderOverseasStock]
+                List[BaseNewOrderOverseasStockResponseType],
+                List[BaseModifyOrderOverseasStockResponseType],
+                List[BaseCancelOrderOverseasStockResponseType],
+                List[BaseNewOrderOverseasFutureResponseType],
+                List[BaseModifyOrderOverseasFutureResponseType],
+                List[BaseCancelOrderOverseasFutureResponseType],
+            ]
+        ],
+        Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFuture]]
             ]:
         """Resolve and run the configured buy/sell plugin.
 
@@ -108,7 +153,7 @@ class PluginResolver:
         """
 
         condition = trade.get("condition", {})
-        if isinstance(condition, BaseOrderOverseasStock):
+        if isinstance(condition, (BaseOrderOverseasStock, BaseOrderOverseasFuture)):
             result = await condition.execute()
             return result, condition
 
@@ -139,8 +184,8 @@ class PluginResolver:
                     fcurr_ord_able_amt=dps.get("fcurr_ord_able_amt", 0.0)
                 )
 
-            if not isinstance(community_instance, BaseOrderOverseasStock):
-                raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseOrderOverseasStock")
+            if not isinstance(community_instance, (BaseOrderOverseasStock, BaseOrderOverseasFuture)):
+                raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseOrderOverseasStock/BaseOrderOverseasFuture")
 
             # Plugins expose an async `execute` method that returns the symbols to act on.
             result = await community_instance.execute()
@@ -157,8 +202,8 @@ class PluginResolver:
         system_id: Optional[str],
         condition_id: str,
         params: Dict,
-        symbol_info: SymbolInfo
-    ) -> BaseStrategyConditionResponseType:
+        symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
+    ) -> Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]:
         cls = await self._resolve(condition_id)
 
         if cls is None:
@@ -184,23 +229,11 @@ class PluginResolver:
         except exceptions.NotExistConditionException as e:
             pg_logger.error(f"Condition '{condition_id}' does not exist: {e}")
 
-            return BaseStrategyConditionResponseType(
-                condition_id=condition_id,
-                success=False,
-                exchcd=symbol_info.get("exchcd"),
-                symbol=symbol_info.get("symbol"),
-                weight=0
-            )
+            return self._build_failure_response(symbol_info, condition_id)
 
         except Exception as e:
             pg_logger.error(f"Error executing condition '{condition_id}': {e}")
-            return BaseStrategyConditionResponseType(
-                condition_id=condition_id,
-                success=False,
-                exchcd=symbol_info.get("exchcd"),
-                symbol=symbol_info.get("symbol"),
-                weight=0
-            )
+            return self._build_failure_response(symbol_info, condition_id)
 
     async def get_order_types(self, condition_id: str) -> Optional[List[OrderType]]:
         """Get order types from a condition class."""
