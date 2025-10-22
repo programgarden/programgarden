@@ -5,14 +5,14 @@
 from datetime import datetime
 from datetime import time as datetime_time, timedelta
 import asyncio
-from typing import List, Optional
+from typing import List, Optional, Union
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
 from programgarden_core import (
     SystemType, StrategyType, pg_logger,
-    OrderTimeType, SymbolInfo
+    OrderTimeType, SymbolInfoOverseasStock, SymbolInfoOverseasFutures
 )
 from programgarden_core import (
     OrderType,
@@ -39,7 +39,7 @@ class SystemExecutor:
     async def _execute_trade(
         self,
         system: SystemType,
-        symbols_snapshot: list[SymbolInfo],
+        symbols_snapshot: list[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]],
         trade: OrderStrategyType,
         order_id: str,
         order_types: List[OrderType],
@@ -88,7 +88,7 @@ class SystemExecutor:
           "end": "16:00:00",
           "days": ["mon","tue",...],  # optional, defaults to weekdays
           "timezone": "America/New_York", # optional
-          "behavior": "defer" | "skip", # optional (default: defer)
+          "behavior": Union["defer", "skip"], # optional (default: defer)
           "max_delay_seconds": 86400  # optional
         }
         """
@@ -187,7 +187,7 @@ class SystemExecutor:
         self,
         system: SystemType,
         trade: OrderStrategyType,
-        symbols_snapshot: list[SymbolInfo],
+        symbols_snapshot: list[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]],
         strategy_order_id: str,
         order_types: OrderType,
     ) -> bool:

@@ -22,8 +22,9 @@ class GSHRealRequestBody(BaseModel):
         if v is None:
             return None
         s = str(v)
-        base = s.rstrip()[:6]
-        return base + " " * 12
+        if len(s) < 18:
+            return s.ljust(18)
+        return s
 
     model_config = ConfigDict(validate_assignment=True)
 

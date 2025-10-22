@@ -1,10 +1,22 @@
 from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 
-from programgarden_core.bases.base import SymbolInfo
-from programgarden_core.bases.modify_orders import BaseModifyOrderOverseasStock
-from programgarden_core.bases.new_orders import BaseNewOrderOverseasStock
-from programgarden_core.bases.cancel_orders import BaseCancelOrderOverseasStock
-from programgarden_core.bases.strategy import BaseStrategyCondition
+from programgarden_core.bases.base import SymbolInfoOverseasStock, SymbolInfoOverseasFutures
+from programgarden_core.bases.modify_orders import (
+    BaseModifyOrderOverseasStock,
+    BaseModifyOrderOverseasFuture,
+)
+from programgarden_core.bases.new_orders import (
+    BaseNewOrderOverseasStock,
+    BaseNewOrderOverseasFuture,
+)
+from programgarden_core.bases.cancel_orders import (
+    BaseCancelOrderOverseasStock,
+    BaseCancelOrderOverseasFuture,
+)
+from programgarden_core.bases.strategy import (
+    BaseStrategyConditionOverseasStock,
+    BaseStrategyConditionOverseasFutures,
+)
 
 
 LogicType = Literal["all", "any", "not", "xor", "at_least", "at_most", "exactly", "if_then", "weighted"]
@@ -36,7 +48,11 @@ class StrategyConditionType(TypedDict):
     """전략의 논리 연산자"""
     threshold: Optional[int] = None
     """전략의 임계값"""
-    conditions: List[Union['StrategyConditionType', BaseStrategyCondition]]
+    conditions: List[Union[
+        'StrategyConditionType',
+        BaseStrategyConditionOverseasStock,
+        BaseStrategyConditionOverseasFutures,
+    ]]
     """실행할 전략 리스트"""
 
 
@@ -134,7 +150,7 @@ class StrategyType(TypedDict):
     """전략의 고유 ID"""
     description: Optional[str] = None
     """전략에 대한 설명"""
-    symbols: Optional[List[SymbolInfo]] = None
+    symbols: Optional[List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]] = None
     """분석할 종목들, 빈값이면 전체 종목에서 분석한다."""
     logic: LogicType
     """전략의 논리 연산자"""
@@ -148,7 +164,12 @@ class StrategyType(TypedDict):
     """
     전체 종목중에 몇개까지만 확인할지 지정한다. None이면 전체 종목을 다 확인한다.
     """
-    conditions: Optional[List[Union['StrategyConditionType', 'DictConditionType', BaseStrategyCondition]]]
+    conditions: Optional[List[Union[
+        'StrategyConditionType',
+        'DictConditionType',
+        BaseStrategyConditionOverseasStock,
+        BaseStrategyConditionOverseasFutures,
+    ]]]
     """실행할 전략 리스트"""
 
 
@@ -183,16 +204,18 @@ class SystemSettingType(TypedDict):
     """
 
 
-class SecuritiesAccountType(TypedDict):
+class SecuritiesAccountType(TypedDict, total=False):
     """계좌와 증권사 및 상품 정보"""
     company: Literal["ls"]
     """증권사 이름"""
-    product: Literal["overseas_stock", "overseas_future"]
+    product: Literal["overseas_stock", "overseas_futures"]
     """상품 이름"""
     appkey: Optional[str]
     """앱 키"""
     appsecretkey: Optional[str]
     """앱 시크릿 키"""
+    paper_trading: Optional[bool]
+    """모의투자 여부"""
 
 
 class OrderTimeType(TypedDict, total=False):
@@ -231,7 +254,10 @@ class OrderStrategyType(TypedDict, total=False):
         DictConditionType,
         BaseNewOrderOverseasStock,
         BaseModifyOrderOverseasStock,
-        BaseCancelOrderOverseasStock
+        BaseCancelOrderOverseasStock,
+        BaseNewOrderOverseasFuture,
+        BaseModifyOrderOverseasFuture,
+        BaseCancelOrderOverseasFuture,
     ]]
     """오더 전략 정보"""
 

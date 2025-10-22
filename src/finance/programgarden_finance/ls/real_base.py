@@ -76,8 +76,11 @@ class RealRequestAbstract(ABC):
             while not self._stop:
                 try:
                     # set ping/pong to keep connection alive
+                    target_uri = None
+                    if self._token_manager is not None:
+                        target_uri = getattr(self._token_manager, "wss_url", None)
                     async with connect(
-                        uri=URLS.WSS_URL,
+                        uri=target_uri or URLS.WSS_URL,
                         ping_interval=self._ping_interval,
                         ping_timeout=self._ping_timeout,
                     ) as ws:

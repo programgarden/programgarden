@@ -1,7 +1,7 @@
 
 from typing import Literal, TypedDict
 
-from programgarden_core.bases.base import BaseOrderOverseasStock
+from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFuture
 
 
 class BaseModifyOrderOverseasStockResponseType(TypedDict):
@@ -32,4 +32,56 @@ class BaseModifyOrderOverseasStock(BaseOrderOverseasStock[BaseModifyOrderOversea
     """
     정정매수를 하기 위한 전략을 계산하고 정정매수를 위한 값을 던져줍니다.
     """
+    pass
+
+
+class BaseModifyOrderOverseasFutureResponseType(TypedDict, total=False):
+    """해외선물 정정주문을 넣기 위한 반환값 데이터"""
+
+    success: bool
+    """전략 통과 성공 여부"""
+
+    ord_dt: str
+    """주문일자 (YYYYMMDD)"""
+
+    ovrs_futs_org_ord_no: str
+    """해외선물 원주문번호"""
+
+    isu_code_val: str
+    """종목코드값"""
+
+    futs_ord_tp_code: Literal["2"]
+    """선물주문구분코드 (2: 정정)"""
+
+    bns_tp_code: Literal["1", "2"]
+    """매매구분코드"""
+
+    futs_ord_ptn_code: Literal["2"]
+    """선물주문유형코드 (2: 지정가)"""
+
+    crcy_code_val: str
+    """통화코드값"""
+
+    ovrs_drvt_ord_prc: float
+    """해외파생주문가격"""
+
+    cndi_ord_prc: float
+    """조건주문가격"""
+
+    ord_qty: int
+    """주문수량"""
+
+    ovrs_drvt_prdt_code: str
+    """해외파생상품코드"""
+
+    due_yymm: str
+    """만기년월"""
+
+    exch_code: str
+    """거래소코드"""
+
+
+class BaseModifyOrderOverseasFuture(BaseOrderOverseasFuture[BaseModifyOrderOverseasFutureResponseType]):
+    """해외선물 정정 주문 전략 기본 클래스"""
+
     pass

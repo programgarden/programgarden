@@ -3,7 +3,7 @@ import asyncio
 import logging
 import threading
 from typing import Callable
-from programgarden_core import pg_log, pg_log_disable, pg_logger
+from programgarden_core import pg_log, pg_log_disable, pg_logger, normalize_system_config
 from programgarden_core.bases import SystemType
 from programgarden_finance import LS
 from programgarden_core import EnforceKoreanAliasMeta
@@ -73,6 +73,7 @@ LS Securities
             pass
 
         if system:
+            system = normalize_system_config(system)
             self._check_debug(system)
 
         try:
@@ -122,10 +123,15 @@ LS Securities
             if company == "ls":
                 ls = LS.get_instance()
 
+                paper_trading = bool(securities.get("paper_trading", False))
+                if getattr(ls, "token_manager", None) is not None:
+                    ls.token_manager.configure_trading_mode(paper_trading)
+
                 if not ls.is_logged_in():
                     login_result = await ls.async_login(
                         appkey=securities.get("appkey"),
-                        appsecretkey=securities.get("appsecretkey")
+                        appsecretkey=securities.get("appsecretkey"),
+                        paper_trading=paper_trading,
                     )
                     if not login_result:
                         raise LoginException(

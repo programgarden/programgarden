@@ -66,7 +66,8 @@ class LS(metaclass=EnforceKoreanAliasMeta):
     def login(
         self,
         appkey: str = None,
-        appsecretkey: str = None
+        appsecretkey: str = None,
+        paper_trading: bool = False,
     ) -> bool:
         """
         LS증권사 로그인 (동기)
@@ -74,6 +75,7 @@ class LS(metaclass=EnforceKoreanAliasMeta):
         Args:
             appkey (str): LS 증권의 앱 키.
             appsecretkey (str): LS 증권의 앱 시크릿 키.
+            paper_trading (bool): 모의 투자 환경(WSS 포함)을 사용할지 여부. 기본값은 False입니다.
 
         Returns:
             bool: 로그인 성공 여부. 성공하면 True, 실패하면 False.
@@ -91,6 +93,7 @@ class LS(metaclass=EnforceKoreanAliasMeta):
             with self._sync_lock:
                 self.token_manager.appkey = appkey
                 self.token_manager.appsecretkey = appsecretkey
+                self.token_manager.configure_trading_mode(paper_trading)
 
             response = GenerateToken().token(
                 TokenInBlock(
@@ -112,13 +115,14 @@ class LS(metaclass=EnforceKoreanAliasMeta):
             raise LoginException(message=str(e))
 
     @require_korean_alias
-    async def async_login(self, appkey: str, appsecretkey: str) -> bool:
+    async def async_login(self, appkey: str, appsecretkey: str, paper_trading: bool = False) -> bool:
         """
         LS증권사 로그인 (비동기)
 
         Args:
             appkey (str): LS 증권의 앱 키.
             appsecretkey (str): LS 증권의 앱 시크릿 키.
+            paper_trading (bool): 모의 투자 환경(WSS 포함)을 사용할지 여부. 기본값은 False입니다.
 
         Returns:
             bool: 로그인 성공 여부. 성공하면 True, 실패하면 False.
@@ -141,6 +145,7 @@ class LS(metaclass=EnforceKoreanAliasMeta):
             async with self._async_lock:
                 self.token_manager.appkey = appkey
                 self.token_manager.appsecretkey = appsecretkey
+                self.token_manager.configure_trading_mode(paper_trading)
 
             response = await GenerateToken().token(
                 TokenInBlock(

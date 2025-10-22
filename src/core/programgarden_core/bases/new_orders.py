@@ -1,7 +1,7 @@
 
 from typing import Literal, TypedDict
 
-from programgarden_core.bases.base import BaseOrderOverseasStock
+from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFuture
 
 
 class BaseNewOrderOverseasStockResponseType(TypedDict):
@@ -36,4 +36,53 @@ class BaseNewOrderOverseasStock(BaseOrderOverseasStock[BaseNewOrderOverseasStock
     """
     매수 또는 매도를 하기 위한 전략을 계산하고 주문을 위한 값을 던져줍니다.
     """
+    pass
+
+
+class BaseNewOrderOverseasFutureResponseType(TypedDict, total=False):
+    """해외선물 신규주문을 넣기 위한 반환값 데이터"""
+
+    success: bool
+    """전략 통과 성공 여부"""
+
+    ord_dt: str
+    """주문일자 (YYYYMMDD)"""
+
+    isu_code_val: str
+    """종목코드값"""
+
+    futs_ord_tp_code: Literal["1"]
+    """선물주문구분코드 (1: 신규)"""
+
+    bns_tp_code: Literal["1", "2"]
+    """매매구분코드 (1: 매도, 2: 매수)"""
+
+    abrd_futs_ord_ptn_code: Literal["1", "2"]
+    """해외선물주문유형코드 (1: 시장가, 2: 지정가)"""
+
+    ovrs_drvt_ord_prc: float
+    """해외파생주문가격"""
+
+    cndi_ord_prc: float
+    """조건주문가격"""
+
+    ord_qty: int
+    """주문수량"""
+
+    prdt_code: str
+    """상품코드"""
+
+    due_yymm: str
+    """만기년월"""
+
+    exch_code: str
+    """거래소코드"""
+
+    crcy_code: str
+    """통화코드"""
+
+
+class BaseNewOrderOverseasFuture(BaseOrderOverseasFuture[BaseNewOrderOverseasFutureResponseType]):
+    """해외선물 신규 주문 전략 기본 클래스"""
+
     pass

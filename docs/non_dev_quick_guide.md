@@ -123,7 +123,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
 #### 상세설명
 
 * **product**
-  * `overseas_stock`(해외주식), `overseas_future`(해외선물)만 지원 중이고 다른 상품들도 지원 예정입니다.
+    * `overseas_stock`(해외주식), `overseas_futures`(해외선물)만 지원 중이고 다른 상품들도 지원 예정입니다.
 
 ### strategies 영역
 
