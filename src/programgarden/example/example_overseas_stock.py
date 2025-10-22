@@ -40,7 +40,7 @@ if __name__ == "__main__":
                 {
                     "id": "condition_market_analysis",
                     "description": "시장 분석 전략",
-                    "schedule": "*/5 * * * * *",
+                    "schedule": "*/30 * * * * *",
                     "timezone": "Asia/Seoul",
                     "logic": "at_least",
                     "threshold": 1,
@@ -49,7 +49,7 @@ if __name__ == "__main__":
                         {
                             "symbol": "GOSS",
                             "exchcd": "82"
-                        }
+                        },
                     ],
                     "max_symbols": {
                         "order": "mcap",
@@ -75,7 +75,7 @@ if __name__ == "__main__":
                 {
                     "id": "loss_cut_net",
                     "description": "손절하기",
-                    "schedule": "*/5 * * * * *",
+                    "schedule": "*/30 * * * * *",
                     "timezone": "Asia/Seoul",
                     "logic": "at_least",
                     "threshold": 1,

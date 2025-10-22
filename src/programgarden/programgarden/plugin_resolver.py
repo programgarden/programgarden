@@ -15,23 +15,27 @@ from programgarden_core import (
 )
 from programgarden_core import (
     BaseOrderOverseasStock,
-    BaseOrderOverseasFuture,
+    BaseOrderOverseasFutures,
     BaseNewOrderOverseasStock,
-    BaseNewOrderOverseasFuture,
+    BaseNewOrderOverseasFutures,
     BaseModifyOrderOverseasStock,
-    BaseModifyOrderOverseasFuture,
+    BaseModifyOrderOverseasFutures,
     BaseCancelOrderOverseasStock,
-    BaseCancelOrderOverseasFuture,
+    BaseCancelOrderOverseasFutures,
 )
 from programgarden_core import (
     BaseNewOrderOverseasStockResponseType,
     BaseModifyOrderOverseasStockResponseType,
     BaseCancelOrderOverseasStockResponseType,
-    BaseNewOrderOverseasFutureResponseType,
+    BaseNewOrderOverseasFuturesResponseType,
     BaseModifyOrderOverseasFutureResponseType,
-    BaseCancelOrderOverseasFutureResponseType,
+    BaseCancelOrderOverseasFuturesResponseType,
 )
-from programgarden_community import getCommunityCondition
+try:
+    from programgarden_community import getCommunityCondition  # type: ignore[import]
+except ImportError:
+    def getCommunityCondition(_condition_id):
+        return None
 
 from programgarden.buysell_executor import DpsTyped
 
@@ -108,19 +112,19 @@ class PluginResolver:
                     BaseStrategyConditionOverseasStock,
                     BaseStrategyConditionOverseasFutures,
                     BaseOrderOverseasStock,
-                    BaseOrderOverseasFuture,
+                    BaseOrderOverseasFutures,
                     BaseNewOrderOverseasStock,
-                    BaseNewOrderOverseasFuture,
+                    BaseNewOrderOverseasFutures,
                     BaseModifyOrderOverseasStock,
-                    BaseModifyOrderOverseasFuture,
+                    BaseModifyOrderOverseasFutures,
                     BaseCancelOrderOverseasStock,
-                    BaseCancelOrderOverseasFuture,
+                    BaseCancelOrderOverseasFutures,
                 ),
             ):
                 self._plugin_cache[condition_id] = exported_cls
                 return exported_cls
-        except Exception as e:
-            pg_logger.debug(f"Error scanning programgarden_community for class '{condition_id}': {e}")
+        except Exception as exc:
+            pg_logger.debug(f"programgarden_community에서 '{condition_id}' 클래스를 찾는 중 오류 발생: {exc}")
 
         return None
 
@@ -138,12 +142,12 @@ class PluginResolver:
                 List[BaseNewOrderOverseasStockResponseType],
                 List[BaseModifyOrderOverseasStockResponseType],
                 List[BaseCancelOrderOverseasStockResponseType],
-                List[BaseNewOrderOverseasFutureResponseType],
+                List[BaseNewOrderOverseasFuturesResponseType],
                 List[BaseModifyOrderOverseasFutureResponseType],
-                List[BaseCancelOrderOverseasFutureResponseType],
+                List[BaseCancelOrderOverseasFuturesResponseType],
             ]
         ],
-        Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFuture]]
+        Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFutures]]
             ]:
         """Resolve and run the configured buy/sell plugin.
 
@@ -153,7 +157,22 @@ class PluginResolver:
         """
 
         condition = trade.get("condition", {})
-        if isinstance(condition, (BaseOrderOverseasStock, BaseOrderOverseasFuture)):
+        if isinstance(condition, (BaseOrderOverseasStock, BaseOrderOverseasFutures)):
+
+            if hasattr(condition, "_set_available_symbols"):
+                condition._set_available_symbols(symbols)
+            if hasattr(condition, "_set_held_symbols"):
+                condition._set_held_symbols(held_symbols)
+            if hasattr(condition, "_set_system_id") and system_id:
+                condition._set_system_id(system_id)
+            if hasattr(condition, "_set_non_traded_symbols"):
+                condition._set_non_traded_symbols(non_trade_symbols)
+            if hasattr(condition, "_set_available_balance") and dps:
+                condition._set_available_balance(
+                    fcurr_dps=dps.get("fcurr_dps", 0.0),
+                    fcurr_ord_able_amt=dps.get("fcurr_ord_able_amt", 0.0)
+                )
+
             result = await condition.execute()
             return result, condition
 
@@ -163,6 +182,7 @@ class PluginResolver:
         cls = await self._resolve(ident)
 
         if cls is None:
+            pg_logger.error(f"[PLUGIN] {ident}: 조건 클래스를 찾을 수 없습니다")
             raise exceptions.NotExistConditionException(
                 message=f"Condition class '{ident}' not found"
             )
@@ -184,17 +204,26 @@ class PluginResolver:
                     fcurr_ord_able_amt=dps.get("fcurr_ord_able_amt", 0.0)
                 )
 
-            if not isinstance(community_instance, (BaseOrderOverseasStock, BaseOrderOverseasFuture)):
-                raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseOrderOverseasStock/BaseOrderOverseasFuture")
+            if not isinstance(community_instance, (BaseOrderOverseasStock, BaseOrderOverseasFutures)):
+                pg_logger.error(
+                    f"[PLUGIN] {ident}: 주문 플러그인 타입이 올바르지 않습니다"
+                )
+                raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseOrderOverseasStock/BaseOrderOverseasFutures")
 
             # Plugins expose an async `execute` method that returns the symbols to act on.
+            pg_logger.debug(
+                f"[PLUGIN] {ident}: 매매 플러그인을 실행합니다 (입력 종목 {len(symbols or [])}개)"
+            )
             result = await community_instance.execute()
+            pg_logger.debug(
+                f"[PLUGIN] {ident}: 플러그인이 {len(result or []) if result else 0}개 종목을 반환했습니다"
+            )
 
             return result, community_instance
 
         except Exception:
             # Log the full traceback to aid external developers debugging plugin errors.
-            pg_logger.exception(f"Error executing buy/sell plugin '{ident}'")
+            pg_logger.exception(f"[PLUGIN] {ident}: 매매 플러그인 실행 중 오류가 발생했습니다")
             return None, None
 
     async def resolve_condition(
@@ -207,6 +236,7 @@ class PluginResolver:
         cls = await self._resolve(condition_id)
 
         if cls is None:
+            pg_logger.error(f"[PLUGIN] {condition_id}: 조건 클래스를 찾을 수 없습니다")
             raise exceptions.NotExistConditionException(
                 message=f"Condition class '{condition_id}' not found"
             )
@@ -219,20 +249,26 @@ class PluginResolver:
                 instance._set_system_id(system_id)
 
             if not isinstance(instance, BaseStrategyCondition):
+                pg_logger.error(
+                    f"[PLUGIN] {condition_id}: BaseStrategyCondition을 상속하지 않은 클래스입니다"
+                )
                 raise exceptions.NotExistConditionException(
                     message=f"Condition class '{condition_id}' is not a subclass of BaseStrategyCondition"
                 )
+            pg_logger.debug(
+                f"[PLUGIN] {condition_id}: 전략 조건을 실행합니다 (params={params})"
+            )
             result = await instance.execute()
 
             return result
 
         except exceptions.NotExistConditionException as e:
-            pg_logger.error(f"Condition '{condition_id}' does not exist: {e}")
+            pg_logger.error(f"[PLUGIN] {condition_id}: 조건이 존재하지 않습니다 -> {e}")
 
             return self._build_failure_response(symbol_info, condition_id)
 
-        except Exception as e:
-            pg_logger.error(f"Error executing condition '{condition_id}': {e}")
+        except Exception:
+            pg_logger.exception(f"[PLUGIN] {condition_id}: 조건 실행 중 처리되지 않은 오류가 발생했습니다")
             return self._build_failure_response(symbol_info, condition_id)
 
     async def get_order_types(self, condition_id: str) -> Optional[List[OrderType]]:

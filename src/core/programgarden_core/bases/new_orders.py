@@ -1,7 +1,7 @@
 
 from typing import Literal, TypedDict
 
-from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFuture
+from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFutures
 
 
 class BaseNewOrderOverseasStockResponseType(TypedDict):
@@ -39,7 +39,7 @@ class BaseNewOrderOverseasStock(BaseOrderOverseasStock[BaseNewOrderOverseasStock
     pass
 
 
-class BaseNewOrderOverseasFutureResponseType(TypedDict, total=False):
+class BaseNewOrderOverseasFuturesResponseType(TypedDict):
     """해외선물 신규주문을 넣기 위한 반환값 데이터"""
 
     success: bool
@@ -49,9 +49,9 @@ class BaseNewOrderOverseasFutureResponseType(TypedDict, total=False):
     """주문일자 (YYYYMMDD)"""
 
     isu_code_val: str
-    """종목코드값"""
+    """종목코드값 예: ADM23"""
 
-    futs_ord_tp_code: Literal["1"]
+    futs_ord_tp_code: Literal["1"] = "1"
     """선물주문구분코드 (1: 신규)"""
 
     bns_tp_code: Literal["1", "2"]
@@ -69,20 +69,20 @@ class BaseNewOrderOverseasFutureResponseType(TypedDict, total=False):
     ord_qty: int
     """주문수량"""
 
-    prdt_code: str
-    """상품코드"""
+    prdt_code: str = ""
+    """상품코드 (빈값으로)"""
 
-    due_yymm: str
-    """만기년월"""
+    due_yymm: str = ""
+    """만기년월 (빈값으로)"""
 
-    exch_code: str
-    """거래소코드"""
+    exch_code: str = ""
+    """거래소코드 (빈값으로)"""
 
-    crcy_code: str
-    """통화코드"""
+    crcy_code: str = ""
+    """통화코드 (빈값으로)"""
 
 
-class BaseNewOrderOverseasFuture(BaseOrderOverseasFuture[BaseNewOrderOverseasFutureResponseType]):
+class BaseNewOrderOverseasFutures(BaseOrderOverseasFutures[BaseNewOrderOverseasFuturesResponseType]):
     """해외선물 신규 주문 전략 기본 클래스"""
 
     pass

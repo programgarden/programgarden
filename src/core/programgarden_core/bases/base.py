@@ -314,6 +314,6 @@ class BaseOrderOverseasStock(BaseOrderOverseas[OrderResGenericT, SymbolInfoOvers
     product: Literal["overseas_stock"] = "overseas_stock"
 
 
-class BaseOrderOverseasFuture(BaseOrderOverseas[OrderResGenericT, SymbolInfoOverseasFutures], ABC):
+class BaseOrderOverseasFutures(BaseOrderOverseas[OrderResGenericT, SymbolInfoOverseasFutures], ABC):
     """해외선물 매매 주문을 위한 기본 전략 클래스"""
     product: Literal["overseas_futures"] = "overseas_futures"

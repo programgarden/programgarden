@@ -3,15 +3,15 @@ from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 from programgarden_core.bases.base import SymbolInfoOverseasStock, SymbolInfoOverseasFutures
 from programgarden_core.bases.modify_orders import (
     BaseModifyOrderOverseasStock,
-    BaseModifyOrderOverseasFuture,
+    BaseModifyOrderOverseasFutures,
 )
 from programgarden_core.bases.new_orders import (
     BaseNewOrderOverseasStock,
-    BaseNewOrderOverseasFuture,
+    BaseNewOrderOverseasFutures,
 )
 from programgarden_core.bases.cancel_orders import (
     BaseCancelOrderOverseasStock,
-    BaseCancelOrderOverseasFuture,
+    BaseCancelOrderOverseasFutures,
 )
 from programgarden_core.bases.strategy import (
     BaseStrategyConditionOverseasStock,
@@ -255,9 +255,9 @@ class OrderStrategyType(TypedDict, total=False):
         BaseNewOrderOverseasStock,
         BaseModifyOrderOverseasStock,
         BaseCancelOrderOverseasStock,
-        BaseNewOrderOverseasFuture,
-        BaseModifyOrderOverseasFuture,
-        BaseCancelOrderOverseasFuture,
+        BaseNewOrderOverseasFutures,
+        BaseModifyOrderOverseasFutures,
+        BaseCancelOrderOverseasFutures,
     ]]
     """오더 전략 정보"""
 

@@ -20,7 +20,7 @@ from .base import (
     NonTradedSymbolOverseasStock,
     NonTradedSymbolOverseasFutures,
     BaseOrderOverseasStock,
-    BaseOrderOverseasFuture,
+    BaseOrderOverseasFutures,
     OrderType,
     OrderRealResponseType
 )
@@ -35,20 +35,20 @@ from .strategy import (
 from .new_orders import (
     BaseNewOrderOverseasStock,
     BaseNewOrderOverseasStockResponseType,
-    BaseNewOrderOverseasFuture,
-    BaseNewOrderOverseasFutureResponseType,
+    BaseNewOrderOverseasFutures,
+    BaseNewOrderOverseasFuturesResponseType,
 )
 from .modify_orders import (
     BaseModifyOrderOverseasStock,
     BaseModifyOrderOverseasStockResponseType,
-    BaseModifyOrderOverseasFuture,
+    BaseModifyOrderOverseasFutures,
     BaseModifyOrderOverseasFutureResponseType,
 )
 from .cancel_orders import (
     BaseCancelOrderOverseasStock,
     BaseCancelOrderOverseasStockResponseType,
-    BaseCancelOrderOverseasFuture,
-    BaseCancelOrderOverseasFutureResponseType,
+    BaseCancelOrderOverseasFutures,
+    BaseCancelOrderOverseasFuturesResponseType,
 )
 
 __all__ = [
@@ -73,7 +73,7 @@ __all__ = [
     NonTradedSymbolOverseasStock,
     NonTradedSymbolOverseasFutures,
     BaseOrderOverseasStock,
-    BaseOrderOverseasFuture,
+    BaseOrderOverseasFutures,
     OrderType,
 
     # strategy types
@@ -87,18 +87,18 @@ __all__ = [
     # new order types
     BaseNewOrderOverseasStock,
     BaseNewOrderOverseasStockResponseType,
-    BaseNewOrderOverseasFuture,
-    BaseNewOrderOverseasFutureResponseType,
+    BaseNewOrderOverseasFutures,
+    BaseNewOrderOverseasFuturesResponseType,
 
     # modify order types
     BaseModifyOrderOverseasStock,
     BaseModifyOrderOverseasStockResponseType,
-    BaseModifyOrderOverseasFuture,
+    BaseModifyOrderOverseasFutures,
     BaseModifyOrderOverseasFutureResponseType,
 
     # cancel order types
     BaseCancelOrderOverseasStock,
     BaseCancelOrderOverseasStockResponseType,
-    BaseCancelOrderOverseasFuture,
-    BaseCancelOrderOverseasFutureResponseType,
+    BaseCancelOrderOverseasFutures,
+    BaseCancelOrderOverseasFuturesResponseType,
 ]

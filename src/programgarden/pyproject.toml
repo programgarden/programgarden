@@ -16,9 +16,9 @@ packages = [
 
 [tool.poetry.dependencies]
 pydantic = ">=2.11.7,<3.0.0"
-programgarden-community = "^0.1.5"
-programgarden-finance = "^0.1.4"
-programgarden-core = "^0.1.2"
+programgarden-community = {path = "../community", develop = true}
+programgarden-finance = {path = "../finance", develop = true}
+programgarden-core = {path = "../core", develop = true}
 croniter = "^6.0.0"
 art = "^6.5"
 jsoneditor = "^1.6.0"

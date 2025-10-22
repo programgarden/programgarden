@@ -1,7 +1,7 @@
 
 from typing import Literal, TypedDict
 
-from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFuture
+from programgarden_core.bases.base import BaseOrderOverseasStock, BaseOrderOverseasFutures
 
 
 class BaseCancelOrderOverseasStockResponseType(TypedDict):
@@ -32,10 +32,10 @@ class BaseCancelOrderOverseasStock(BaseOrderOverseasStock[BaseCancelOrderOversea
     """
     취소 주문을 하기 위한 전략을 계산하고 주문을 위한 값을 던져줍니다.
     """
-    pass
+    product = "overseas_stock"
 
 
-class BaseCancelOrderOverseasFutureResponseType(TypedDict, total=False):
+class BaseCancelOrderOverseasFuturesResponseType(TypedDict, total=False):
     """해외선물 취소주문을 넣기 위한 반환값 데이터"""
 
     success: bool
@@ -60,7 +60,7 @@ class BaseCancelOrderOverseasFutureResponseType(TypedDict, total=False):
     """거래소코드"""
 
 
-class BaseCancelOrderOverseasFuture(BaseOrderOverseasFuture[BaseCancelOrderOverseasFutureResponseType]):
+class BaseCancelOrderOverseasFutures(BaseOrderOverseasFutures[BaseCancelOrderOverseasFuturesResponseType]):
     """해외선물 취소 주문 전략 기본 클래스"""
 
-    pass
+    product = "overseas_futures"
