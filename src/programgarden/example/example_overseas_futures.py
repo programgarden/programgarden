@@ -76,15 +76,17 @@ if __name__ == "__main__":
     pg = Programgarden()
 
     # 전략 수행 응답 콜백
-    # pg.on_strategies_message(
-    #     callback=lambda message: print(f"Strategies: {message}")
-    # )
+    pg.on_strategies_message(
+        callback=lambda message: print(f"Strategies: {message}")
+    )
 
     # 실시간 주문 응답 콜백
-    # TODO Real Order Message: submitted_new_buy, 주문 접수 완료
-    # Real Order Message: submitted_new_buy, 주문 접수 완료
     pg.on_real_order_message(
         callback=lambda message: print(f"Real Order Message: {message.get('order_type')}, {message.get('message')}")
+    )
+
+    pg.on_error_message(
+        callback=lambda message: print(f"Error Message: {message}")
     )
 
     pg.run(
@@ -114,8 +116,8 @@ if __name__ == "__main__":
                     "로직": "at_least",
                     "임계값": 1,
                     "symbols": [{
-                        "symbol": "ESZ25",
-                        "name": "E-mini S&P 500",
+                        "symbol": "ADZ25",
+                        "name": "Australian Dollar",
                         "exchange": "CME"
                     }],
                     "order_id": "OrderTest",
@@ -128,6 +130,7 @@ if __name__ == "__main__":
                 {
                     "order_id": "OrderTest",
                     "description": "테스트 주문",
+                    "block_duplicate_buy": True,
                     "condition": OrderTest()
                 }
             ]

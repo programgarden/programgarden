@@ -45,12 +45,10 @@ class RealOrderExecutor:
                 return
 
             await self.buy_sell_order_real.connect()
-            # store the currently running event loop so synchronous callbacks
-            # (from the LS library) can schedule coroutines back onto it
+
             try:
                 self._loop = asyncio.get_running_loop()
             except RuntimeError:
-                # no running loop (should not happen here because we're in async fn)
                 self._loop = None
 
             if product == "overseas_stock":

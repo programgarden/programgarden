@@ -36,6 +36,7 @@ from programgarden_core import (
     BaseOrderOverseasStock,
     BaseOrderOverseasFutures,
 )
+from programgarden_core.exceptions import ConditionExecutionException
 
 from programgarden.pg_listener import pg_listener
 
@@ -88,6 +89,11 @@ class ConditionExecutor:
             symbol = symbol_info.get("symbol") or symbol_info.get("IsuCodeVal") or symbol_info.get("ShtnIsuNo") or "?"
             return f"{exch}:{symbol}"
         return str(symbol_info)
+
+    def _describe_condition(self, condition: StrategyConditionType) -> str:
+        if isinstance(condition, dict):
+            return condition.get("condition_id") or condition.get("logic", "group")
+        return getattr(condition, "id", condition.__class__.__name__)
 
     def evaluate_logic(
         self,
@@ -268,12 +274,14 @@ class ConditionExecutor:
         logic = condition_nested.get("logic", "and")
         threshold = condition_nested.get("threshold", None)
 
-        tasks = [
-            asyncio.create_task(
+        tasks: List[asyncio.Task] = []
+        task_metadata: Dict[asyncio.Task, Dict[str, Any]] = {}
+        for index, condition in enumerate(conditions):
+            task = asyncio.create_task(
                 self.execute_condition(system=system, symbol_info=symbol_info, condition=condition)
             )
-            for condition in conditions
-        ]
+            tasks.append(task)
+            task_metadata[task] = {"condition": condition, "index": index}
 
         condition_results: List[
             Union[
@@ -290,6 +298,19 @@ class ConditionExecutor:
             except Exception as e:
                 failure_count += 1
                 pg_logger.error(f"[CONDITION] 그룹 조건 실행 중 오류가 발생했습니다: {e}")
+                meta = task_metadata.get(task, {})
+                condition_obj = meta.get("condition") if meta else None
+                condition_label = self._describe_condition(condition_obj) if condition_obj is not None else None
+                cond_exc = ConditionExecutionException(
+                    message="그룹 조건 실행 중 오류가 발생했습니다.",
+                    data={
+                        "symbol": self._symbol_label(symbol_info),
+                        "logic": logic,
+                        "condition": condition_label,
+                        "condition_index": meta.get("index") if meta else None,
+                    },
+                )
+                pg_listener.emit_exception(cond_exc)
                 condition_results.append(
                     self._build_response(symbol_info, success=False, condition_id=None)
                 )
@@ -435,16 +456,18 @@ class ConditionExecutor:
             conditions = strategy.get("conditions", [])
             logic = strategy.get("logic", "and")
             threshold = strategy.get("threshold", None)
-            tasks = [
-                asyncio.create_task(
+            tasks: List[asyncio.Task] = []
+            task_metadata: Dict[asyncio.Task, Dict[str, Any]] = {}
+            for index, condition in enumerate(conditions):
+                task = asyncio.create_task(
                     self.execute_condition(
                         system=system,
                         symbol_info=symbol_info,
                         condition=condition
                     )
                 )
-                for condition in conditions
-            ]
+                tasks.append(task)
+                task_metadata[task] = {"condition": condition, "index": index}
 
             condition_results: List[
                 Union[
@@ -470,6 +493,19 @@ class ConditionExecutor:
 
                 except Exception as e:
                     pg_logger.error(f"[CONDITION] {strategy.get('id')}: 조건 실행 중 오류가 발생했습니다 -> {e}")
+                    meta = task_metadata.get(task, {})
+                    condition_obj = meta.get("condition") if meta else None
+                    condition_label = self._describe_condition(condition_obj) if condition_obj is not None else None
+                    cond_exc = ConditionExecutionException(
+                        message="조건 실행 중 오류가 발생했습니다.",
+                        data={
+                            "strategy_id": strategy.get("id"),
+                            "symbol": self._symbol_label(symbol_info),
+                            "condition": condition_label,
+                            "condition_index": meta.get("index") if meta else None,
+                        },
+                    )
+                    pg_listener.emit_exception(cond_exc)
 
                     failure_response = self._build_response(symbol_info, success=False)
 

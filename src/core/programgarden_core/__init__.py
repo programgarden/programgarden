@@ -5,11 +5,12 @@ LS OpenAPI 클라이언트의 핵심 기능을 제공합니다.
 """
 
 from programgarden_core.alias_resolver import normalize_system_config
-from .bases import (
+from programgarden_core.bases import (
     SystemType, StrategyConditionType,
     StrategyType, SystemSettingType,
     DictConditionType,
     SecuritiesAccountType,
+    DpsTyped,
 
     BaseStrategyCondition,
     BaseStrategyConditionOverseasStock,
@@ -51,9 +52,9 @@ from .bases import (
     BaseCancelOrderOverseasFutures,
     BaseCancelOrderOverseasFuturesResponseType,
 )
-from .korea_alias import EnforceKoreanAliasMeta, require_korean_alias
-from . import logs, exceptions
-from .logs import pg_log_disable, pg_log_reset, pg_logger, pg_log
+from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
+from programgarden_core import logs, exceptions
+from programgarden_core.logs import pg_log_disable, pg_log_reset, pg_logger, pg_log
 
 
 __all__ = [
@@ -76,6 +77,7 @@ __all__ = [
     SystemSettingType,
     SystemType,
     OrderStrategyType,
+    DpsTyped,
 
     # system 타입
     SystemType,

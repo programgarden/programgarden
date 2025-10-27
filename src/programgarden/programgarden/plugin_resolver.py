@@ -11,7 +11,8 @@ from programgarden_core import (
     SymbolInfoOverseasFutures,
     OrderType,
     exceptions, HeldSymbol,
-    NonTradedSymbol, OrderStrategyType
+    NonTradedSymbol, OrderStrategyType,
+    DpsTyped,
 )
 from programgarden_core import (
     BaseOrderOverseasStock,
@@ -31,13 +32,12 @@ from programgarden_core import (
     BaseModifyOrderOverseasFutureResponseType,
     BaseCancelOrderOverseasFuturesResponseType,
 )
+from programgarden.pg_listener import pg_listener
 try:
     from programgarden_community import getCommunityCondition  # type: ignore[import]
 except ImportError:
     def getCommunityCondition(_condition_id):
         return None
-
-from programgarden.buysell_executor import DpsTyped
 
 
 class PluginResolver:
@@ -49,6 +49,17 @@ class PluginResolver:
     """
     def __init__(self):
         self._plugin_cache: Dict[str, type] = {}
+        self._reported_condition_errors: set[str] = set()
+        self._reported_order_errors: set[str] = set()
+
+    def reset_error_tracking(self) -> None:
+        """Clear cached error reporting state.
+
+        호출 시 이전에 보고한 플러그인/조건 오류 정보를 초기화하여
+        새로운 시스템 실행에서 동일 오류도 다시 보고되도록 한다.
+        """
+        self._reported_condition_errors.clear()
+        self._reported_order_errors.clear()
 
     def _build_failure_response(
         self,
@@ -135,7 +146,7 @@ class PluginResolver:
         symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = [],
         held_symbols: List[HeldSymbol] = [],
         non_trade_symbols: List[NonTradedSymbol] = [],
-        dps: Optional[DpsTyped] = None
+        dps: Optional[List[DpsTyped]] = None
     ) -> tuple[
         Optional[
             Union[
@@ -169,8 +180,7 @@ class PluginResolver:
                 condition._set_non_traded_symbols(non_trade_symbols)
             if hasattr(condition, "_set_available_balance") and dps:
                 condition._set_available_balance(
-                    fcurr_dps=dps.get("fcurr_dps", 0.0),
-                    fcurr_ord_able_amt=dps.get("fcurr_ord_able_amt", 0.0)
+                    dps=dps
                 )
 
             result = await condition.execute()
@@ -221,9 +231,20 @@ class PluginResolver:
 
             return result, community_instance
 
-        except Exception:
+        except Exception as exc:
             # Log the full traceback to aid external developers debugging plugin errors.
             pg_logger.exception(f"[PLUGIN] {ident}: 매매 플러그인 실행 중 오류가 발생했습니다")
+            if ident not in self._reported_order_errors:
+                order_exc = exceptions.OrderExecutionException(
+                    message=f"주문 플러그인 '{ident}' 실행 중 오류가 발생했습니다.",
+                    data={
+                        "condition_id": ident,
+                        "system_id": system_id,
+                        "details": str(exc),
+                    },
+                )
+                pg_listener.emit_exception(order_exc)
+                self._reported_order_errors.add(ident)
             return None, None
 
     async def resolve_condition(
@@ -264,11 +285,31 @@ class PluginResolver:
 
         except exceptions.NotExistConditionException as e:
             pg_logger.error(f"[PLUGIN] {condition_id}: 조건이 존재하지 않습니다 -> {e}")
+            if condition_id not in self._reported_condition_errors:
+                pg_listener.emit_exception(
+                    e,
+                    data={
+                        "condition_id": condition_id,
+                        "system_id": system_id,
+                    },
+                )
+                self._reported_condition_errors.add(condition_id)
 
             return self._build_failure_response(symbol_info, condition_id)
 
-        except Exception:
+        except Exception as exc:
             pg_logger.exception(f"[PLUGIN] {condition_id}: 조건 실행 중 처리되지 않은 오류가 발생했습니다")
+            if condition_id not in self._reported_condition_errors:
+                cond_exc = exceptions.ConditionExecutionException(
+                    message=f"조건 '{condition_id}' 실행 중 오류가 발생했습니다.",
+                    data={
+                        "condition_id": condition_id,
+                        "system_id": system_id,
+                        "details": str(exc),
+                    },
+                )
+                pg_listener.emit_exception(cond_exc)
+                self._reported_condition_errors.add(condition_id)
             return self._build_failure_response(symbol_info, condition_id)
 
     async def get_order_types(self, condition_id: str) -> Optional[List[OrderType]]:

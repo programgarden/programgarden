@@ -236,7 +236,20 @@ class OrderTimeType(TypedDict, total=False):
     """최대 지연 시간(초), 기본값 86400초(24시간)"""
 
 
-class OrderStrategyType(TypedDict, total=False):
+class DpsTyped(TypedDict):
+    """
+    예수금 타입,
+    USD만 지원됩니다.
+    """
+    deposit: float
+    """예수금 금액"""
+    orderable_amount: float
+    """주문 가능한 금액"""
+    currency: Literal["USD"]
+    """통화 코드"""
+
+
+class OrderStrategyType(TypedDict):
     """
     오더 전략 타입
     """
@@ -246,7 +259,7 @@ class OrderStrategyType(TypedDict, total=False):
     """오더에 대한 설명"""
     block_duplicate_buy: Optional[bool]
     """중복 매수 방지 여부"""
-    available_balance: Optional[float]
+    available_balance: Optional[DpsTyped]
     """사용 가능한 예수금"""
     order_time: Optional[OrderTimeType] = None
     """주문 실행 시간 설정"""

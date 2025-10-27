@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, TypedDict, Union
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, TypedDict, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .system import DpsTyped
 
 OrderType = Literal[
     "new_buy",
@@ -260,11 +265,15 @@ class BaseOrderOverseas(Generic[OrderResGenericT, SymbolInfoType], ABC):
     @abstractmethod
     def __init__(self) -> None:
         self.available_symbols: List[SymbolInfoType] = []
+        """ 매매 전략에 사용하려는 신규 종목들입니다. """
         self.held_symbols: List[HeldSymbol] = []
+        """ 보유종목 리스트입니다. """
         self.non_traded_symbols: List[NonTradedSymbol] = []
-        self.fcurr_dps = 0.0
-        self.fcurr_ord_able_amt = 0.0
+        """ 미체결 종목 리스트입니다. """
+        self.dps: Optional[List[DpsTyped]] = None
+        """ USD 예수금만 지원합니다. """
         self.system_id: Optional[str] = None
+        """ 시스템 식별 ID 입니다. """
 
     @abstractmethod
     async def execute(self) -> List[OrderResGenericT]:
@@ -289,18 +298,15 @@ class BaseOrderOverseas(Generic[OrderResGenericT, SymbolInfoType], ABC):
 
     def _set_available_balance(
         self,
-        fcurr_dps: float,
-        fcurr_ord_able_amt: float
+        dps: Optional[List[DpsTyped]],
     ) -> None:
         """
         사용 가능한 잔고를 설정합니다.
 
         Args:
-            fcurr_dps (float): 외화 예금 또는 예수금
-            fcurr_ord_able_amt (float): 외화 주문 가능 금액
+            dps (List[DpsTyped]): 외화 예금 또는 예수금
         """
-        self.fcurr_dps = fcurr_dps
-        self.fcurr_ord_able_amt = fcurr_ord_able_amt
+        self.dps = dps
 
     @abstractmethod
     async def on_real_order_receive(self, order_type: OrderRealResponseType, response: OrderResGenericT) -> None:
