@@ -10,6 +10,7 @@ from programgarden_core import (
     BaseStrategyConditionResponseOverseasStockType,
     BaseStrategyConditionResponseOverseasFuturesType
 )
+from programgarden_core.exceptions import BasicException
 
 load_dotenv()
 
@@ -17,6 +18,7 @@ load_dotenv()
 class ListenerCategoryType(Enum):
     STRATEGIES = "strategies"
     REAL_ORDER = "real_order"
+    ERROR = "error"
 
 
 class RealOrderPayload(TypedDict):
@@ -40,6 +42,12 @@ class StrategyPayload(TypedDict):
     response: Optional[Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]] = None,
 
 
+class ErrorPayload(TypedDict, total=False):
+    code: str
+    message: str
+    data: Dict[str, Any]
+
+
 class RealTimeListener:
     """
     Threaded event queue + ThreadPoolExecutor dispatch.
@@ -51,6 +59,7 @@ class RealTimeListener:
         self._handlers: Dict[ListenerCategoryType, Optional[Callable[[Dict[str, Any]], Any]]] = {
             ListenerCategoryType.STRATEGIES: None,
             ListenerCategoryType.REAL_ORDER: None,
+            ListenerCategoryType.ERROR: None,
         }
         self._q: "queue.Queue[Optional[Dict[str, Any]]]" = queue.Queue()
         self._thread: Optional[threading.Thread] = None
@@ -159,6 +168,24 @@ class RealOrderListener:
                 pass
 
 
+class ErrorListener:
+    def __init__(self, emitter: Optional[Callable[[ListenerCategoryType, Dict[str, Any]], None]] = None) -> None:
+        self._lock = threading.Lock()
+        self._last_payload: Dict[str, Any] = {}
+        self._emitter = emitter
+
+    def emit(self, payload: ErrorPayload) -> None:
+        with self._lock:
+            self._last_payload = dict(payload)
+            payload_local: ErrorPayload = dict(self._last_payload)  # type: ignore[arg-type]
+            payload_local.setdefault("data", {})
+        if self._emitter:
+            try:
+                self._emitter(ListenerCategoryType.ERROR, payload_local)
+            except Exception:
+                pass
+
+
 class PGListener:
     """Module-level singleton wrapper for all four category listeners."""
 
@@ -166,6 +193,7 @@ class PGListener:
         self.realtime = RealTimeListener(max_workers=max_workers)
         self.strategies = StrategiesListener(emitter=self.realtime.emit)
         self.real_order = RealOrderListener(emitter=self.realtime.emit)
+        self.error = ErrorListener(emitter=self.realtime.emit)
 
     def set_strategies_handler(self, handler: Callable[[StrategyPayload], Any]) -> None:
         self.realtime.set_handler(ListenerCategoryType.STRATEGIES, handler)
@@ -175,11 +203,25 @@ class PGListener:
         self.realtime.set_handler(ListenerCategoryType.REAL_ORDER, handler)
         self.realtime.start()
 
+    def set_error_handler(self, handler: Callable[[ErrorPayload], Any]) -> None:
+        self.realtime.set_handler(ListenerCategoryType.ERROR, handler)
+        self.realtime.start()
+
     def emit_strategies(self, payload: StrategyPayload) -> None:
         self.strategies.emit(payload)
 
     def emit_real_order(self, payload: RealOrderPayload) -> None:
         self.real_order.emit(payload)
+
+    def emit_exception(self, exc: Exception, *, data: Optional[Dict[str, Any]] = None) -> None:
+        if getattr(exc, "_pg_error_emitted", False):
+            return
+        payload = build_error_payload(exc, data=data)
+        self.error.emit(payload)
+        try:
+            setattr(exc, "_pg_error_emitted", True)
+        except Exception:
+            pass
 
     def stop(self) -> None:
         self.realtime.stop()
@@ -187,6 +229,23 @@ class PGListener:
 
 # module-level singleton
 pg_listener = PGListener()
+
+
+def build_error_payload(exc: Exception, data: Optional[Dict[str, Any]] = None) -> ErrorPayload:
+    extra_data: Dict[str, Any] = dict(data or {})
+    if isinstance(exc, BasicException):
+        payload = exc.to_payload(extra=extra_data)
+        payload.setdefault("data", {})
+        return payload
+
+    message = str(exc) or exc.__class__.__name__
+    code_value = getattr(exc, "code", "UNEXPECTED_ERROR")
+    payload = {
+        "code": str(code_value),
+        "message": message,
+        "data": extra_data,
+    }
+    return payload
 
 
 # def set_strategies_handler(handler: Callable[[EventPayload], Any]) -> None:
@@ -208,9 +267,7 @@ pg_listener = PGListener()
 #         )
 #     )
 
-#     # emit_error with ErrorPayload
 #     set_error_handler(lambda payload: print(f"Error: {payload}"))
-#     pg_listener.emit_error({"error_code": 123, "message": "additional info", "data": {}})
 #     import time
 #     # 이벤트가 워커에서 처리될 시간을 약간 줌
 #     time.sleep(0.1)

@@ -19,6 +19,13 @@ from programgarden_core import (
     OrderType,
     OrderStrategyType,
 )
+from programgarden_core.exceptions import (
+    BasicException,
+    InvalidCronExpressionException,
+    StrategyExecutionException,
+    SystemException,
+)
+from programgarden.pg_listener import pg_listener
 
 from .plugin_resolver import PluginResolver
 from .symbols_provider import SymbolProvider
@@ -364,7 +371,21 @@ class SystemExecutor:
 
             if not cron_expr:
                 pg_logger.info(f"🕐 [STRATEGY] {strategy_id}: 스케줄이 없어 한 번만 실행합니다")
-                await self._run_once_execute(system=system, strategy=strategy)
+                try:
+                    await self._run_once_execute(system=system, strategy=strategy)
+                except BasicException as exc:
+                    pg_listener.emit_exception(exc)
+                    raise
+                except Exception as exc:
+                    pg_logger.exception(
+                        f"[STRATEGY] {strategy_id}: 단일 실행 중 예외 발생"
+                    )
+                    strategy_exc = StrategyExecutionException(
+                        message=f"전략 '{strategy_id}' 실행 중 오류가 발생했습니다.",
+                        data={"strategy_id": strategy_id, "details": str(exc)},
+                    )
+                    pg_listener.emit_exception(strategy_exc)
+                    raise strategy_exc
 
                 return
 
@@ -384,10 +405,19 @@ class SystemExecutor:
             except TypeError:
                 valid = croniter.is_valid(cron_expr)
 
-            if not valid:
-                pg_logger.error(f"[STRATEGY] {strategy_id}: cron 표현식 '{cron_expr}'이 잘못되었습니다")
-                raise ValueError(f"Invalid cron expression: {cron_expr}")
+            try:
+                if not valid:
+                    pg_logger.error(f"[STRATEGY] {strategy_id}: cron 표현식 '{cron_expr}'이 잘못되었습니다")
+                    raise InvalidCronExpressionException(
+                        message=f"Invalid cron expression: {cron_expr}",
+                        data={"strategy_id": strategy_id},
+                    )
+            except InvalidCronExpressionException as exc:
+                pg_logger.error(f"[STRATEGY] {strategy_id}: cron 예외 발생 - {exc}")
+                pg_listener.emit_exception(exc)
+                raise
 
+            # TODO 여기 이후로 정리해야함
             cnt = 0
             itr = croniter(cron_expr, datetime.now(tz), second_at_beginning=True)
             while cnt < count and self.running:
@@ -404,7 +434,21 @@ class SystemExecutor:
                 if not self.running:
                     break
 
-                await self._run_once_execute(system=system, strategy=strategy)
+                try:
+                    await self._run_once_execute(system=system, strategy=strategy)
+                except BasicException as exc:
+                    pg_listener.emit_exception(exc)
+                    raise
+                except Exception as exc:
+                    pg_logger.exception(
+                        f"[STRATEGY] {strategy_id}: 실행 중 예외 발생"
+                    )
+                    strategy_exc = StrategyExecutionException(
+                        message=f"전략 '{strategy_id}' 실행 중 오류가 발생했습니다.",
+                        data={"strategy_id": strategy_id, "details": str(exc)},
+                    )
+                    pg_listener.emit_exception(strategy_exc)
+                    raise strategy_exc
 
                 cnt += 1
 
@@ -428,9 +472,12 @@ class SystemExecutor:
         system_id = system_settings.get("system_id", system.get("id", "<unknown>"))
         strategies = system.get("strategies", [])
         self.running = True
+        self.plugin_resolver.reset_error_tracking()
+
         pg_logger.info(
             f"👋 [SYSTEM] {system_id}: {len(strategies)}개 전략 실행을 시작합니다"
         )
+
         try:
             real_order_task = asyncio.create_task(
                 self.buy_sell_executor.real_order_executor.real_order_websockets(
@@ -451,17 +498,43 @@ class SystemExecutor:
                         )
                         continue
                     if isinstance(result, Exception):
+                        strategy_meta = strategies[idx] if idx < len(strategies) else {}
+                        strategy_key = strategy_meta.get("id", f"strategy_{idx + 1}")
                         pg_logger.error(
-                            f"[SYSTEM] {system_id}: 전략 태스크 {idx + 1}에서 예외 발생 -> {result}"
+                            f"[SYSTEM] {system_id}: 전략 '{strategy_key}' 태스크에서 예외 발생 -> {result}"
                         )
-                pg_logger.info(f"✅ [SYSTEM] {system_id}: 모든 전략 태스크가 완료 또는 중지되었습니다")
+                        if getattr(result, "_pg_error_emitted", False):
+                            continue
+                        if isinstance(result, BasicException):
+                            pg_listener.emit_exception(result)
+                        else:
+                            wrapped_exc = StrategyExecutionException(
+                                message=f"전략 '{strategy_key}' 실행 중 오류가 발생했습니다.",
+                                data={
+                                    "strategy_id": strategy_key,
+                                    "details": str(result),
+                                },
+                            )
+                            pg_listener.emit_exception(wrapped_exc)
+                pg_logger.info(f"✅ [SYSTEM] {system_id}: 모든 전략 태스크가 완료되었습니다")
             else:
                 pg_logger.info(f"ℹ️ [SYSTEM] {system_id}: 실행할 전략이 구성되어 있지 않습니다")
 
-        except Exception as e:
-            pg_logger.error(f"[SYSTEM] {system_id}: 실행 중 오류 발생 -> {e}")
+        except BasicException as exc:
+            pg_logger.error(f"[SYSTEM] {system_id}: 실행 중 오류 발생 -> {exc}")
+            pg_listener.emit_exception(exc)
             await self.stop()
             raise
+        except Exception as exc:
+            pg_logger.exception(f"[SYSTEM] {system_id}: 실행 중 처리되지 않은 오류 발생")
+            system_exc = SystemException(
+                message=f"시스템 '{system_id}' 실행 중 처리되지 않은 오류가 발생했습니다.",
+                code="SYSTEM_EXECUTION_ERROR",
+                data={"system_id": system_id, "details": str(exc)},
+            )
+            pg_listener.emit_exception(system_exc)
+            await self.stop()
+            raise system_exc from exc
         finally:
             pg_logger.info(f"🏁 [SYSTEM] {system_id}: 시스템 실행이 종료되었습니다")
 

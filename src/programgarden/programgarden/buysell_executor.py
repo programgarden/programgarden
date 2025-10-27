@@ -14,7 +14,7 @@ and leaves trading logic to plugin classes that must subclass
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Literal, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, List, Literal, Optional, Union
 from zoneinfo import ZoneInfo
 from programgarden_core import (
     SystemType, OrderStrategyType,
@@ -26,7 +26,8 @@ from programgarden_core import (
     NonTradedSymbolOverseasFutures,
     SymbolInfoOverseasStock,
     SymbolInfoOverseasFutures,
-    OrderType
+    OrderType,
+    DpsTyped
 )
 from programgarden_core import (
     BaseOrderOverseasStock,
@@ -59,13 +60,6 @@ from datetime import datetime
 
 if TYPE_CHECKING:
     from .plugin_resolver import PluginResolver
-
-
-class DpsTyped(TypedDict):
-    fcurr_dps: float
-    """예수금"""
-    fcurr_ord_able_amt: float
-    """주문 가능 금액"""
 
 
 class BuySellExecutor:
@@ -303,6 +297,12 @@ class BuySellExecutor:
                 ).req_async()
             except Exception as exc:
                 pg_logger.exception(f"해외선물 잔고 조회에 실패했습니다: {exc}")
+                pg_listener.emit_exception(
+                    exceptions.OrderExecutionException(
+                        message="해외선물 잔고 조회에 실패했습니다.",
+                        data={"details": str(exc)},
+                    )
+                )
                 balance_resp = None
 
             if balance_resp and getattr(balance_resp, "block2", None):
@@ -363,6 +363,12 @@ class BuySellExecutor:
                     ).req_async()
                 except Exception as exc:
                     pg_logger.exception(f"해외선물 미체결 주문 조회에 실패했습니다 ({symbol_code}): {exc}")
+                    pg_listener.emit_exception(
+                        exceptions.OrderExecutionException(
+                            message="해외선물 미체결 주문 조회에 실패했습니다.",
+                            data={"symbol": symbol_code, "details": str(exc)},
+                        )
+                    )
                     continue
 
                 if not orders_resp or not getattr(orders_resp, "block2", None):
@@ -685,13 +691,17 @@ class BuySellExecutor:
         self,
         system: SystemType,
         trade: OrderStrategyType
-    ) -> DpsTyped:
+    ) -> List[DpsTyped]:
         """Setup DPS (deposit) information for trading."""
+
         available_balance = float(trade.get("available_balance", 0.0))
-        dps: DpsTyped = {
-            "fcurr_dps": available_balance,
-            "fcurr_ord_able_amt": available_balance,
-        }
+        dps: List[DpsTyped] = [
+            {
+                "deposit": available_balance,
+                "orderable_amount": available_balance,
+                "currency": "USD"
+            }
+        ]
         is_ls = system.get("securities", {}).get("company", None) == "ls"
         product = system.get("securities", {}).get("product", "overseas_stock")
 
@@ -705,10 +715,10 @@ class BuySellExecutor:
                 ).req_async()
 
                 if cosoq02701 and getattr(cosoq02701, "block3", None):
-                    dps["fcurr_dps"] = cosoq02701.block3[0].FcurrDps
-                    dps["fcurr_ord_able_amt"] = cosoq02701.block3[0].FcurrOrdAbleAmt
+                    dps[0]["deposit"] = cosoq02701.block3[0].FcurrDps
+                    dps[0]["orderable_amount"] = cosoq02701.block3[0].FcurrOrdAbleAmt
                     pg_logger.debug(
-                        f"[ORDER] DPS: LS 해외주식 잔고 조회 결과 예수금={dps['fcurr_dps']} 주문가능금액={dps['fcurr_ord_able_amt']}"
+                        f"[ORDER] DPS: LS 해외주식 잔고 조회 결과 예수금={dps[0]['deposit']} 주문가능금액={dps[0]['orderable_amount']}"
                     )
 
             elif product == "overseas_futures":
@@ -719,8 +729,6 @@ class BuySellExecutor:
                     )
                 ).req_async()
 
-                # TODO: 여러 통화들 지원
-
                 if cidbq03000 and getattr(cidbq03000, "block2", None):
 
                     block = None
@@ -728,11 +736,11 @@ class BuySellExecutor:
                         if cid.CrcyObjCode == "USD":
                             block = cid
                             break
-                    dps["fcurr_dps"] = block.OvrsFutsDps if block else 0.0
-                    dps["fcurr_ord_able_amt"] = block.AbrdFutsOrdAbleAmt if block else 0.0
+                    dps[0]["deposit"] = block.OvrsFutsDps if block else 0.0
+                    dps[0]["orderable_amount"] = block.AbrdFutsOrdAbleAmt if block else 0.0
 
         pg_logger.debug(
-            f"[ORDER] DPS: 최종 예수금={dps['fcurr_dps']} 주문가능금액={dps['fcurr_ord_able_amt']}"
+            f"[ORDER] DPS: 최종 예수금={dps[0]['deposit']} 주문가능금액={dps[0]['orderable_amount']}"
         )
         return dps
 
