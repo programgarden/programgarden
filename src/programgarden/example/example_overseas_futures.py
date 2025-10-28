@@ -33,7 +33,7 @@ Moving average golden/dead cross detection conditions
             "success": True,
             "symbol": self.symbol.get("symbol", ""),
             "product": "overseas_futures",
-            "position_side": "flat",
+            "position_side": "long",
             "condition_id": self.id,
             "description": self.description,
             "exchcd": "CME",
@@ -113,6 +113,7 @@ if __name__ == "__main__":
                     "설명": "시장 분석 전략",
                     "스케줄": "*/10 * * * * *",
                     "시간대": "Asia/Seoul",
+                    "시작즉시실행": True,
                     "로직": "at_least",
                     "임계값": 1,
                     "symbols": [{

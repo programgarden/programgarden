@@ -35,6 +35,7 @@ from programgarden_core import (
     OrderStrategyType,
     BaseOrderOverseasStock,
     BaseOrderOverseasFutures,
+    StrategySymbolInputType,
 )
 from programgarden_core.exceptions import ConditionExecutionException
 
@@ -42,6 +43,15 @@ from programgarden.pg_listener import pg_listener
 
 from .plugin_resolver import PluginResolver
 from .symbols_provider import SymbolProvider
+
+
+EXCHANGE_CODE_ALIASES: Dict[str, str] = {
+    "81": "81",
+    "nyse": "81",
+    "amex": "81",
+    "82": "82",
+    "nasdaq": "82",
+}
 
 
 class ConditionExecutor:
@@ -83,12 +93,67 @@ class ConditionExecutor:
         self.symbol_provider = symbol_provider
         self.state_lock = asyncio.Lock()
 
+    def _normalize_exchange_code(self, exchange: Any) -> str:
+        """Map human-friendly exchange aliases to LS market codes."""
+
+        if isinstance(exchange, str):
+            normalized = exchange.strip()
+            if not normalized:
+                return normalized
+
+            alias = normalized.lower()
+            return EXCHANGE_CODE_ALIASES.get(alias, normalized)
+
+        return str(exchange)
+
     def _symbol_label(self, symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]) -> str:
         if isinstance(symbol_info, dict):
             exch = symbol_info.get("exchcd") or symbol_info.get("ExchCode") or "?"
             symbol = symbol_info.get("symbol") or symbol_info.get("IsuCodeVal") or symbol_info.get("ShtnIsuNo") or "?"
             return f"{exch}:{symbol}"
         return str(symbol_info)
+
+    def _coerce_user_symbols(
+        self,
+        symbols: Optional[List[
+            StrategySymbolInputType,
+        ]],
+        product: Optional[str],
+    ) -> List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]:
+        """Ensure user-provided symbol dicts carry required runtime fields."""
+
+        if not symbols:
+            return []
+
+        normalized_product = "overseas_futures" if product == "overseas_futures" else "overseas_stock"
+        coerced: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
+
+        for entry in symbols:
+            if not isinstance(entry, dict):
+                coerced.append(entry)
+                continue
+
+            product_type = entry.get("product_type")
+            if product_type in {"overseas_stock", "overseas_futures"}:
+                coerced.append(entry)
+                continue
+
+            normalized = dict(entry)
+            exchange = normalized.get("exchcd") or normalized.pop("exchange", None)
+            if exchange:
+                normalized["exchcd"] = self._normalize_exchange_code(exchange)
+
+            name = normalized.get("symbol_name") or normalized.pop("name", None)
+            if name:
+                normalized["symbol_name"] = name
+
+            normalized["product_type"] = normalized_product
+            if normalized_product == "overseas_futures" and "position_side" not in normalized:
+                normalized["position_side"] = "flat"
+
+            coerced.append(normalized)
+
+        return coerced
 
     def _describe_condition(self, condition: StrategyConditionType) -> str:
         if isinstance(condition, dict):
@@ -393,11 +458,16 @@ class ConditionExecutor:
         Perform calculations defined in the strategy
         """
 
-        my_symbols = strategy.get("symbols", [])
         securities = system.get("securities", {})
         order_id = strategy.get("order_id", None)
         orders = system.get("orders", {})
         conditions = strategy.get("conditions", [])
+
+        my_symbols = self._coerce_user_symbols(
+            symbols=strategy.get("symbols", []),
+            product=securities.get("product"),
+        )
+        strategy["symbols"] = my_symbols
 
         order_types = []
         if order_id is not None:
