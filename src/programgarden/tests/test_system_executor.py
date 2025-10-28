@@ -180,3 +180,60 @@ async def test_run_with_strategy_schedule_respects_cron(monkeypatch: pytest.Monk
 
     executor.tasks.clear()
     executor.running = False
+
+
+@pytest.mark.asyncio
+async def test_run_with_strategy_run_once_on_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    executor = SystemExecutor()
+    executor.running = True
+
+    run_calls: List[str] = []
+
+    async def fake_run_once(system: Dict[str, Any], strategy: Dict[str, Any]) -> None:
+        run_calls.append(strategy["id"])
+
+    monkeypatch.setattr(executor, "_run_once_execute", fake_run_once)
+
+    now = datetime.now(ZoneInfo("UTC"))
+
+    class FakeCroniterInstance:
+        def __init__(self) -> None:
+            self.current = now
+
+        def get_next(self, _dt_type: Any) -> datetime:
+            self.current = self.current + timedelta(seconds=1)
+            return self.current
+
+    class FakeCroniter:
+        def __call__(self, *args: Any, **_kwargs: Any) -> FakeCroniterInstance:
+            return FakeCroniterInstance()
+
+        @staticmethod
+        def is_valid(*_args: Any, **_kwargs: Any) -> bool:
+            return True
+
+    monkeypatch.setattr(system_executor_module, "croniter", FakeCroniter())
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(system_executor_module.asyncio, "sleep", fake_sleep)
+
+    strategy = {
+        "id": "cron-strategy",
+        "logic": "and",
+        "conditions": [{"condition_id": "c"}],
+        "schedule": "* * * * * *",
+        "count": 1,
+        "timezone": "UTC",
+        "run_once_on_start": True,
+    }
+
+    system = {"settings": {"system_id": "cron-system"}}
+
+    await executor._run_with_strategy(strategy["id"], strategy, system)
+
+    assert run_calls == ["cron-strategy", "cron-strategy"]
+
+    executor.tasks.clear()
+    executor.running = False

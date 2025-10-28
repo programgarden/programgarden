@@ -364,6 +364,8 @@ class SystemExecutor:
         Run a single strategy within the system.
         """
 
+        run_once_on_start = bool(strategy.get("run_once_on_start", False))
+
         try:
             cron_expr = strategy.get("schedule", None)
             count = strategy.get("count", 9999999)
@@ -398,6 +400,26 @@ class SystemExecutor:
             pg_logger.warning(f"[STRATEGY] {strategy_id}: 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
             tz = ZoneInfo("UTC")
             tz_label = getattr(tz, "key", str(tz))
+
+        if run_once_on_start:
+            pg_logger.info(
+                f"⚡️ [STRATEGY] {strategy_id}: 시스템 시작 시 즉시 한 번 실행한 뒤 스케줄을 따릅니다"
+            )
+            try:
+                await self._run_once_execute(system=system, strategy=strategy)
+            except BasicException as exc:
+                pg_listener.emit_exception(exc)
+                raise
+            except Exception as exc:
+                pg_logger.exception(
+                    f"[STRATEGY] {strategy_id}: 시작 즉시 실행 중 예외 발생"
+                )
+                strategy_exc = StrategyExecutionException(
+                    message=f"전략 '{strategy_id}' 실행 중 오류가 발생했습니다.",
+                    data={"strategy_id": strategy_id, "details": str(exc)},
+                )
+                pg_listener.emit_exception(strategy_exc)
+                raise strategy_exc
 
         async def run_cron():
             try:

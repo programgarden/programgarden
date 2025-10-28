@@ -43,12 +43,13 @@ if __name__ == "__main__":
                     "schedule": "*/30 * * * * *",
                     "timezone": "Asia/Seoul",
                     "logic": "at_least",
+                    "run_once_on_start": True,
                     "threshold": 1,
                     "order_id": "자금분배매수_1",
                     "symbols": [
                         {
                             "symbol": "GOSS",
-                            "exchcd": "82"
+                            "exchange": "NASDAQ",
                         },
                     ],
                     "max_symbols": {

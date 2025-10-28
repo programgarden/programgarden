@@ -10,6 +10,7 @@ from .system import (
     OrderStrategyType,
     OrderTimeType,
     DpsTyped,
+    StrategySymbolInputType,
 )
 from .base import (
     SymbolInfoOverseasStock,
@@ -64,6 +65,7 @@ __all__ = [
     OrderTimeType,
     OrderRealResponseType,
     DpsTyped,
+    StrategySymbolInputType,
 
     # base types
     SymbolInfoOverseasStock,

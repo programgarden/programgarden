@@ -72,6 +72,7 @@ STRATEGY_ALIAS_MAP: Dict[str, str] = {
     "조건": "conditions",
     "조건들": "conditions",
     "매수매도": "buy_or_sell",
+    "시작즉시실행": "run_once_on_start",
 }
 
 SYMBOL_ALIAS_MAP: Dict[str, str] = {

@@ -11,6 +11,7 @@ from programgarden_core.bases import (
     DictConditionType,
     SecuritiesAccountType,
     DpsTyped,
+    StrategySymbolInputType,
 
     BaseStrategyCondition,
     BaseStrategyConditionOverseasStock,
@@ -78,6 +79,7 @@ __all__ = [
     SystemType,
     OrderStrategyType,
     DpsTyped,
+    StrategySymbolInputType,
 
     # system 타입
     SystemType,

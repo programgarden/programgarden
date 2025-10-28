@@ -1,6 +1,5 @@
 from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 
-from programgarden_core.bases.base import SymbolInfoOverseasStock, SymbolInfoOverseasFutures
 from programgarden_core.bases.modify_orders import (
     BaseModifyOrderOverseasStock,
     BaseModifyOrderOverseasFutures,
@@ -65,6 +64,19 @@ class MaxSymbolsLimitType(TypedDict):
     """
     limit: int
     """선택할 종목 수"""
+
+
+class StrategySymbolInputType(TypedDict, total=False):
+    """외부 사용자가 구성 파일에 입력하는 단순 심볼 정보"""
+
+    symbol: str
+    """종목 코드"""
+
+    exchange: str
+    """거래소/시장 코드 (예: CME, 81)"""
+
+    name: Optional[str]
+    """표기용 종목명"""
 
 
 class StrategyType(TypedDict):
@@ -150,7 +162,9 @@ class StrategyType(TypedDict):
     """전략의 고유 ID"""
     description: Optional[str] = None
     """전략에 대한 설명"""
-    symbols: Optional[List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]] = None
+    symbols: Optional[List[
+        StrategySymbolInputType,
+    ]] = None
     """분석할 종목들, 빈값이면 전체 종목에서 분석한다."""
     logic: LogicType
     """전략의 논리 연산자"""
@@ -171,6 +185,8 @@ class StrategyType(TypedDict):
         BaseStrategyConditionOverseasFutures,
     ]]]
     """실행할 전략 리스트"""
+    run_once_on_start: Optional[bool]
+    """시스템 시작 시 스케줄 대기 전에 즉시 한 번 실행할지 여부"""
 
 
 class DictConditionType(TypedDict):
