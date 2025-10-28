@@ -34,9 +34,9 @@ from programgarden_core import (
 )
 from programgarden.pg_listener import pg_listener
 try:
-    from programgarden_community import getCommunityCondition  # type: ignore[import]
+    from programgarden_community import get_community_condition  # type: ignore[import]
 except ImportError:
-    def getCommunityCondition(_condition_id):
+    def get_community_condition(_condition_id):
         return None
 
 
@@ -115,7 +115,7 @@ class PluginResolver:
         # Attempt to use the optional `programgarden_community` package
         # (if installed) to find community-provided plugins.
         try:
-            exported_cls = getCommunityCondition(condition_id)
+            exported_cls = get_community_condition(condition_id)
             if inspect.isclass(exported_cls) and issubclass(
                 exported_cls,
                 (

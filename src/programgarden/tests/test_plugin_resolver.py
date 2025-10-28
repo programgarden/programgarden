@@ -10,6 +10,7 @@ from programgarden_core import (
     BaseStrategyConditionOverseasFutures,
     BaseStrategyConditionResponseOverseasFuturesType,
     BaseNewOrderOverseasFutures,
+    BaseNewOrderOverseasFuturesResponseType,
 )
 
 
@@ -27,7 +28,7 @@ class DummyNewOrder(BaseNewOrderOverseasFutures):
         self.dps = None
         self.system_id = None
 
-    async def execute(self) -> List[Dict[str, Any]]:
+    async def execute(self) -> List[BaseNewOrderOverseasFuturesResponseType]:
         symbol = self.available_symbols[0] if self.available_symbols else {"symbol": "UNKNOWN"}
         return [
             {
@@ -37,9 +38,13 @@ class DummyNewOrder(BaseNewOrderOverseasFutures):
                 "futs_ord_tp_code": "1",
                 "bns_tp_code": "2",
                 "abrd_futs_ord_ptn_code": "2",
-                "ord_qty": self.quantity,
                 "ovrs_drvt_ord_prc": 100.0,
                 "cndi_ord_prc": 0.0,
+                "ord_qty": self.quantity,
+                "prdt_code": symbol.get("prdt_code", ""),
+                "due_yymm": symbol.get("due_yymm", ""),
+                "exch_code": symbol.get("exch_code", symbol.get("exchcd", "")),
+                "crcy_code": symbol.get("crcy_code", ""),
             }
         ]
 
@@ -72,7 +77,7 @@ class DummyCondition(BaseStrategyConditionOverseasFutures):
 
 @pytest.mark.asyncio
 async def test_resolve_buysell_community_executes_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(resolver_module, "getCommunityCondition", lambda ident: DummyNewOrder if ident == "DummyNewOrder" else None)
+    monkeypatch.setattr(resolver_module, "get_community_condition", lambda ident: DummyNewOrder if ident == "DummyNewOrder" else None)
 
     resolver = PluginResolver()
 
@@ -97,11 +102,14 @@ async def test_resolve_buysell_community_executes_plugin(monkeypatch: pytest.Mon
     assert responses is not None
     assert responses[0]["ord_qty"] == 3
     assert responses[0]["isu_code_val"] == "ADZ25"
+    assert responses[0]["prdt_code"] == ""
+    assert responses[0]["exch_code"] == "CME"
+    assert responses[0]["crcy_code"] == ""
 
 
 @pytest.mark.asyncio
 async def test_resolve_condition_returns_plugin_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(resolver_module, "getCommunityCondition", lambda ident: DummyCondition if ident == "DummyCondition" else None)
+    monkeypatch.setattr(resolver_module, "get_community_condition", lambda ident: DummyCondition if ident == "DummyCondition" else None)
 
     resolver = PluginResolver()
     symbol = {"symbol": "ADZ25", "exchcd": "CME", "product_type": "overseas_futures"}
