@@ -33,7 +33,7 @@ Moving average golden/dead cross detection conditions
             "success": True,
             "symbol": self.symbol.get("symbol", ""),
             "product": "overseas_futures",
-            "position_side": "long",
+            "position_side": "flat",
             "condition_id": self.id,
             "description": self.description,
             "exchcd": "CME",

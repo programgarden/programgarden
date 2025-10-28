@@ -92,6 +92,9 @@ class SymbolInfoOverseasFutures(SymbolInfoBase, total=False):
     contract_size: Optional[float]
     """계약 단위"""
 
+    position_side: Optional[Literal["long", "short", "flat"]] = "flat"
+    """포지션 방향 "long": 매수, "short": 매도, "flat": 없음"""
+
 
 class HeldSymbolOverseasStock(TypedDict):
     """해외주식 보유 종목 잔고 정보"""

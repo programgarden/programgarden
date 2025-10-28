@@ -39,7 +39,14 @@ class BaseStrategyConditionResponseOverseasFuturesType(BaseStrategyConditionResp
     product: Literal["overseas_futures"]
     """응답이 속한 상품 유형"""
     position_side: Literal["long", "short", "flat"]
-    """해외선물은 양방향 포지션을 지원하므로 롱/숏/포지션 없음(flat)으로 결과를 표현합니다."""
+    """
+    해외선물 포지션은 롱, 숏, 혹은 포지션 없음(flat) 중 하나로 계산됩니다.
+
+    - success=True 이면 position_side 값이 의미를 갖습니다.
+    - success=False 이면 position_side 값은 무시됩니다.
+    - success=True 이면서 position_side="flat"이면 전략이 충족되지 않은 것으로 간주됩니다.
+      즉, 주문 단계로 넘어가려면 position_side가 "long" 또는 "short"여야 합니다.
+    """
 
 
 ResponseType = TypeVar(

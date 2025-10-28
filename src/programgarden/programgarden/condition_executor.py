@@ -105,37 +105,80 @@ class ConditionExecutor:
         ],
         logic: str,
         threshold: Optional[int] = None,
-    ) -> Tuple[bool, int]:
-        """Evaluate a list of condition results using a logical operator.
+    ) -> Tuple[bool, int, Optional[str]]:
+        """Evaluate condition results with logical operators and futures direction.
 
-        Returns a tuple: (bool_result, numeric_weight).
+        Returns a tuple: (bool_result, numeric_weight, aligned_position_side).
+        For overseas futures conditions a success requires a non-flat direction, and
+        all successful futures conditions must agree on the same side.
         """
+
+        normalized_successes: List[bool] = []
+        futures_sides: List[str] = []
+
+        for result in results:
+            product = str(result.get("product", "") or "").lower()
+            position_side = str(result.get("position_side", "") or "").lower()
+            is_success = bool(result.get("success", False))
+
+            if product == "overseas_futures":
+                if is_success and position_side in {"long", "short"}:
+                    futures_sides.append(position_side)
+                else:
+                    # Treat flat/missing direction as failure for futures conditions.
+                    is_success = False
+
+            normalized_successes.append(is_success)
+
+        success_count = sum(1 for success in normalized_successes if success)
+
+        bool_result = False
+        total_weight = 0
+
         if logic in ("and", "all"):
-            return (all(result.get("success", False) for result in results), 0)
-        if logic in ("or", "any"):
-            return (any(result.get("success", False) for result in results), 0)
-        if logic == "not":
-            return (not any(result.get("success", False) for result in results), 0)
-        if logic == "xor":
-            return (sum(bool(result.get("success", False)) for result in results) == 1, 0)
-        if logic == "at_least":
+            bool_result = all(normalized_successes) if normalized_successes else True
+        elif logic in ("or", "any"):
+            bool_result = any(normalized_successes)
+        elif logic == "not":
+            bool_result = not any(normalized_successes)
+        elif logic == "xor":
+            bool_result = success_count == 1
+        elif logic == "at_least":
             if threshold is None:
                 raise ValueError("Threshold must be provided for 'at_least' logic.")
-            return (sum(bool(result.get("success", False)) for result in results) >= threshold, 0)
-        if logic == "at_most":
+            bool_result = success_count >= threshold
+        elif logic == "at_most":
             if threshold is None:
                 raise ValueError("Threshold must be provided for 'at_most' logic.")
-            return (sum(bool(result.get("success", False)) for result in results) <= threshold, 0)
-        if logic == "exactly":
+            bool_result = success_count <= threshold
+        elif logic == "exactly":
             if threshold is None:
                 raise ValueError("Threshold must be provided for 'exactly' logic.")
-            return (sum(bool(result.get("success", False)) for result in results) == threshold, 0)
-        if logic == "weighted":
+            bool_result = success_count == threshold
+        elif logic == "weighted":
             if threshold is None:
                 raise ValueError("Threshold must be provided for 'weighted' logic.")
-            total_weight = sum(result.get("weight", 0) for result in results if result.get("success", False))
-            return (total_weight >= threshold, total_weight)
-        return (False, 0)
+            total_weight = sum(
+                result.get("weight", 0) for result, success in zip(results, normalized_successes) if success
+            )
+            bool_result = total_weight >= threshold
+
+        unique_sides = {side for side in futures_sides}
+        aligned_side: Optional[str] = None
+
+        if bool_result:
+            if len(unique_sides) > 1:
+                pg_logger.debug("[CONDITION] 해외선물 조건 간 방향이 일치하지 않아 실패 처리합니다")
+                bool_result = False
+            elif len(unique_sides) == 1:
+                aligned_side = unique_sides.pop()
+
+        weight_result = total_weight if bool_result and logic == "weighted" else 0
+
+        if not bool_result:
+            aligned_side = None
+
+        return (bool_result, weight_result, aligned_side)
 
     def _build_response(
         self,
@@ -315,7 +358,11 @@ class ConditionExecutor:
                     self._build_response(symbol_info, success=False, condition_id=None)
                 )
 
-        complete, total_weight = self.evaluate_logic(results=condition_results, logic=logic, threshold=threshold)
+        complete, total_weight, position_side = self.evaluate_logic(
+            results=condition_results,
+            logic=logic,
+            threshold=threshold,
+        )
         if failure_count:
             pg_logger.warning(
                 f"[CONDITION] 그룹: {self._symbol_label(symbol_info)} 대상 조건 {failure_count}개가 실패했습니다"
@@ -325,13 +372,16 @@ class ConditionExecutor:
                 symbol_info,
                 success=False,
                 weight=total_weight,
+                position_side=position_side,
             )
 
         # All conditions passed
+        symbol_info["position_side"] = position_side or "flat"
         return self._build_response(
             symbol_info,
             success=True,
             weight=total_weight,
+            position_side=position_side,
         )
 
     async def execute_condition_list(
@@ -458,6 +508,7 @@ class ConditionExecutor:
             threshold = strategy.get("threshold", None)
             tasks: List[asyncio.Task] = []
             task_metadata: Dict[asyncio.Task, Dict[str, Any]] = {}
+
             for index, condition in enumerate(conditions):
                 task = asyncio.create_task(
                     self.execute_condition(
@@ -518,11 +569,17 @@ class ConditionExecutor:
                     )
                     condition_results.append(failure_response)
 
-            complete, total_weight = self.evaluate_logic(results=condition_results, logic=logic, threshold=threshold)
+            complete, total_weight, position_side = self.evaluate_logic(
+                results=condition_results,
+                logic=logic,
+                threshold=threshold,
+            )
             if complete:
+                direction_note = f", 방향 {position_side}" if position_side else ""
                 pg_logger.debug(
-                    f"[CONDITION] {strategy.get('id')}: 종목 {self._symbol_label(symbol_info)} 통과 (가중치 {total_weight})"
+                    f"[CONDITION] {strategy.get('id')}: 종목 {self._symbol_label(symbol_info)} 통과 (가중치 {total_weight}{direction_note})"
                 )
+                symbol_info["position_side"] = position_side or "flat"
                 passed_symbols.append(symbol_info)
             else:
                 pg_logger.debug(
