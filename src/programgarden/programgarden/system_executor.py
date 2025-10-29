@@ -11,9 +11,17 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 
 from programgarden_core import (
-    SystemType, StrategyType, pg_logger,
-    OrderTimeType, SymbolInfoOverseasStock, SymbolInfoOverseasFutures,
-    BaseOrderOverseasStock, BaseOrderOverseasFutures
+    SystemType,
+    StrategyType,
+    OrderTimeType,
+    SymbolInfoOverseasStock,
+    SymbolInfoOverseasFutures,
+    BaseOrderOverseasStock,
+    BaseOrderOverseasFutures,
+    strategy_logger,
+    trade_logger,
+    system_logger,
+    condition_logger,
 )
 from programgarden_core import (
     OrderType,
@@ -71,8 +79,8 @@ class SystemExecutor:
         symbol_count = len(symbols_snapshot)
 
         if any(ot in ["new_buy", "new_sell"] for ot in order_types):
-            pg_logger.info(
-                f"🟢 [TRADE] {order_id}: {symbol_count}개 종목에 신규 주문({order_type_label}) 전송"
+            trade_logger.info(
+                f"🟢 {order_id}: {symbol_count}개 종목에 신규 주문({order_type_label}) 전송"
             )
             await self.buy_sell_executor.new_order_execute(
                 system=system,
@@ -82,8 +90,8 @@ class SystemExecutor:
                 order_types=order_types
             )
         elif any(ot in ["modify_buy", "modify_sell"] for ot in order_types):
-            pg_logger.info(
-                f"🟡 [TRADE] {order_id}: {symbol_count}개 종목에 정정 주문({order_type_label}) 전송"
+            trade_logger.info(
+                f"🟡 {order_id}: {symbol_count}개 종목에 정정 주문({order_type_label}) 전송"
             )
             await self.buy_sell_executor.modify_order_execute(
                 system=system,
@@ -92,8 +100,8 @@ class SystemExecutor:
                 order_id=order_id,
             )
         elif any(ot in ["cancel_buy", "cancel_sell"] for ot in order_types):
-            pg_logger.info(
-                f"🔴 [TRADE] {order_id}: {symbol_count}개 종목에 취소 주문({order_type_label}) 전송"
+            trade_logger.info(
+                f"🔴 {order_id}: {symbol_count}개 종목에 취소 주문({order_type_label}) 전송"
             )
             await self.buy_sell_executor.cancel_order_execute(
                 system=system,
@@ -102,8 +110,8 @@ class SystemExecutor:
                 order_id=order_id,
             )
         else:
-            pg_logger.warning(
-                f"⚠️ [TRADE] {order_id}: 지원되지 않는 주문 유형({order_type_label})이라 실행을 건너뜁니다"
+            trade_logger.warning(
+                f"⚠️ {order_id}: 지원되지 않는 주문 유형({order_type_label})이라 실행을 건너뜁니다"
             )
 
     # Helper: parse order_time range object
@@ -133,7 +141,7 @@ class SystemExecutor:
             start_tm = datetime_time(*start_parts)
             end_tm = datetime_time(*end_parts)
         except Exception:
-            pg_logger.error(f"order_time 시간 형식이 잘못되었습니다: start={start_s} end={end_s}")
+            system_logger.error(f"order_time 시간 형식이 잘못되었습니다: start={start_s} end={end_s}")
             return None
 
         days_list = ot.get("days", ["mon", "tue", "wed", "thu", "fri"]) or ["mon", "tue", "wed", "thu", "fri"]
@@ -148,7 +156,7 @@ class SystemExecutor:
         try:
             tz = ZoneInfo(tz_name)
         except Exception:
-            pg_logger.warning(f"주문에 지정된 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
+            system_logger.warning(f"주문에 지정된 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
             tz = ZoneInfo("UTC")
 
         behavior = ot.get("behavior", "defer")
@@ -252,7 +260,7 @@ class SystemExecutor:
         # outside window -> behavior
         behavior = order_range.get("behavior", "defer")
         if behavior == "skip":
-            pg_logger.warning(
+            trade_logger.warning(
                 f"주문 '{strategy_order_id}'이 시간 조건을 벗어나 동작=skip 설정에 따라 건너뜁니다 ({order_type_label})"
             )
             return False
@@ -260,7 +268,7 @@ class SystemExecutor:
         # defer: schedule at next window start (subject to max_delay_seconds)
         next_start = self._next_window_start(now, order_range["start"], order_range["days"])
         if not next_start:
-            pg_logger.warning(
+            trade_logger.warning(
                 f"주문 '{strategy_order_id}'에 대해 다음 실행 시간 창을 계산할 수 없어 건너뜁니다 ({order_type_label})"
             )
             return False
@@ -268,7 +276,7 @@ class SystemExecutor:
         # compute delay and check max_delay_seconds
         delay = (next_start - now).total_seconds()
         if delay > order_range.get("max_delay_seconds", 86400):
-            pg_logger.warning(
+            trade_logger.warning(
                 f"주문 '{strategy_order_id}'의 지연 시간 {delay}s가 허용치(max_delay_seconds)를 초과하여 건너뜁니다 ({order_type_label})"
             )
             return False
@@ -279,8 +287,8 @@ class SystemExecutor:
 
             await self._execute_trade(system, symbols_snapshot, trade, order_id, order_types)
 
-        pg_logger.info(
-            f"⏳ [TRADE] {strategy_order_id}: {order_type_label} 주문을 {next_start.isoformat()} ({order_range['tz']}) 실행으로 예약했습니다"
+        trade_logger.info(
+            f"⏳ {strategy_order_id}: {order_type_label} 주문을 {next_start.isoformat()} ({order_range['tz']}) 실행으로 예약했습니다"
         )
         await _scheduled_exec(delay, symbols_snapshot, trade, strategy_order_id, next_start, order_range["tz"])
 
@@ -292,11 +300,11 @@ class SystemExecutor:
         Run a single execution of the strategy within the system.
         """
         strategy_id = strategy.get("id", "<unknown>")
-        pg_logger.info(f"🚀 [STRATEGY] {strategy_id}: 전략 실행을 시작합니다")
+        strategy_logger.info(f"🚀 {strategy_id}: 전략 실행을 시작합니다")
 
         conditions = strategy.get("conditions", [])
         if not conditions:
-            pg_logger.info(f"⚪️ [STRATEGY] {strategy_id}: 조건이 없어 주문을 건너뜁니다")
+            strategy_logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
             return
 
         response_symbols = await self.condition_executor.execute_condition_list(system=system, strategy=strategy)
@@ -304,7 +312,7 @@ class SystemExecutor:
             success = len(response_symbols) > 0
 
         if not success:
-            pg_logger.info(f"⚪️ [STRATEGY] {strategy_id}: 조건을 통과한 종목이 없어 주문을 건너뜁니다")
+            strategy_logger.info(f"⚪️ {strategy_id}: 조건을 통과한 종목이 없어 주문을 건너뜁니다")
             return
 
         symbol_count = len(response_symbols)
@@ -333,11 +341,11 @@ class SystemExecutor:
                 order_types = await self.plugin_resolver.get_order_types(condition_id)
 
             if not condition_id:
-                pg_logger.warning(f"주문 '{trade.get('order_id')}'에 condition_id가 없어 처리하지 않습니다")
+                condition_logger.warning(f"주문 '{trade.get('order_id')}'에 condition_id가 없습니다.")
                 continue
 
             if not order_types:
-                pg_logger.warning(f"condition_id '{condition_id}'에 대한 주문 유형을 알 수 없어 건너뜁니다")
+                condition_logger.warning(f"condition_id '{condition_id}'에 대한 주문 유형을 알 수 없어 건너뜁니다")
                 continue
 
             symbols_snapshot = list(response_symbols)
@@ -355,8 +363,8 @@ class SystemExecutor:
 
         if matched_trade:
             trade_summary = ", ".join(triggered_trades) if triggered_trades else "없음"
-            pg_logger.info(
-                f"✅ [STRATEGY] {strategy_id}: {symbol_count}개 종목 통과, 실행된 주문 -> {trade_summary}"
+            strategy_logger.info(
+                f"✅ {strategy_id}: {symbol_count}개 종목 통과, 실행된 주문 -> {trade_summary}"
             )
 
     async def _run_with_strategy(self, strategy_id: str, strategy: StrategyType, system: SystemType):
@@ -372,15 +380,15 @@ class SystemExecutor:
             tz_name = strategy.get("timezone", "UTC")
 
             if not cron_expr:
-                pg_logger.info(f"🕐 [STRATEGY] {strategy_id}: 스케줄이 없어 한 번만 실행합니다")
+                strategy_logger.info(f"🕐 {strategy_id}: 스케줄이 없어 한 번만 실행합니다")
                 try:
                     await self._run_once_execute(system=system, strategy=strategy)
                 except BasicException as exc:
                     pg_listener.emit_exception(exc)
                     raise
                 except Exception as exc:
-                    pg_logger.exception(
-                        f"[STRATEGY] {strategy_id}: 단일 실행 중 예외 발생"
+                    strategy_logger.exception(
+                        f"{strategy_id}: 단일 실행 중 예외 발생"
                     )
                     strategy_exc = StrategyExecutionException(
                         message=f"전략 '{strategy_id}' 실행 중 오류가 발생했습니다.",
@@ -393,26 +401,20 @@ class SystemExecutor:
 
             tz = ZoneInfo(tz_name)
             tz_label = getattr(tz, "key", str(tz))
-            pg_logger.info(
-                f"🗓️ [STRATEGY] {strategy_id}: cron '{cron_expr}'(시간대 {tz_label}) 기준으로 최대 {count}회 실행을 예약합니다"
-            )
         except Exception:
-            pg_logger.warning(f"[STRATEGY] {strategy_id}: 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
+            strategy_logger.warning(f"{strategy_id}: 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
             tz = ZoneInfo("UTC")
             tz_label = getattr(tz, "key", str(tz))
 
         if run_once_on_start:
-            pg_logger.info(
-                f"⚡️ [STRATEGY] {strategy_id}: 시스템 시작 시 즉시 한 번 실행한 뒤 스케줄을 따릅니다"
-            )
             try:
                 await self._run_once_execute(system=system, strategy=strategy)
             except BasicException as exc:
                 pg_listener.emit_exception(exc)
                 raise
             except Exception as exc:
-                pg_logger.exception(
-                    f"[STRATEGY] {strategy_id}: 시작 즉시 실행 중 예외 발생"
+                strategy_logger.exception(
+                    f"{strategy_id}: 시작 즉시 실행 중 예외 발생"
                 )
                 strategy_exc = StrategyExecutionException(
                     message=f"전략 '{strategy_id}' 실행 중 오류가 발생했습니다.",
@@ -429,17 +431,16 @@ class SystemExecutor:
 
             try:
                 if not valid:
-                    pg_logger.error(f"[STRATEGY] {strategy_id}: cron 표현식 '{cron_expr}'이 잘못되었습니다")
+                    strategy_logger.error(f"{strategy_id}: cron 표현식 '{cron_expr}'이 잘못되었습니다")
                     raise InvalidCronExpressionException(
                         message=f"Invalid cron expression: {cron_expr}",
                         data={"strategy_id": strategy_id},
                     )
             except InvalidCronExpressionException as exc:
-                pg_logger.error(f"[STRATEGY] {strategy_id}: cron 예외 발생 - {exc}")
+                strategy_logger.error(f"{strategy_id}: cron 예외 발생 - {exc}")
                 pg_listener.emit_exception(exc)
                 raise
 
-            # TODO 여기 이후로 정리해야함
             cnt = 0
             itr = croniter(cron_expr, datetime.now(tz), second_at_beginning=True)
             while cnt < count and self.running:
@@ -449,8 +450,8 @@ class SystemExecutor:
                 if delay < 0:
                     delay = 0
 
-                pg_logger.debug(
-                    f"[STRATEGY] {strategy_id}: 다음 실행 #{cnt + 1}은 {next_dt.isoformat()} ({tz_label})"
+                strategy_logger.debug(
+                    f"{strategy_id}: 다음 실행 #{cnt + 1}은 {next_dt.isoformat()} ({tz_label})"
                 )
                 await asyncio.sleep(delay)
                 if not self.running:
@@ -462,8 +463,8 @@ class SystemExecutor:
                     pg_listener.emit_exception(exc)
                     raise
                 except Exception as exc:
-                    pg_logger.exception(
-                        f"[STRATEGY] {strategy_id}: 실행 중 예외 발생"
+                    strategy_logger.exception(
+                        f"{strategy_id}: 실행 중 예외 발생"
                     )
                     strategy_exc = StrategyExecutionException(
                         message=f"전략 '{strategy_id}' 실행 중 오류가 발생했습니다.",
@@ -474,7 +475,7 @@ class SystemExecutor:
 
                 cnt += 1
 
-            pg_logger.info(f"⏹️ [STRATEGY] {strategy_id}: cron 실행이 종료되었습니다 (총 {cnt}회)")
+            strategy_logger.info(f"⏹️ {strategy_id}: cron 실행이 종료되었습니다 (총 {cnt}회)")
 
         task = asyncio.create_task(run_cron())
         self.tasks.append(task)
@@ -482,7 +483,7 @@ class SystemExecutor:
         try:
             await task
         except asyncio.CancelledError:
-            pg_logger.debug(f"[STRATEGY] {strategy_id}: cron 태스크가 취소되었습니다")
+            strategy_logger.debug(f"{strategy_id}: cron 태스크가 취소되었습니다")
             raise
 
     async def execute_system(self, system: SystemType):
@@ -496,8 +497,8 @@ class SystemExecutor:
         self.running = True
         self.plugin_resolver.reset_error_tracking()
 
-        pg_logger.info(
-            f"👋 [SYSTEM] {system_id}: {len(strategies)}개 전략 실행을 시작합니다"
+        system_logger.info(
+            f"👋 {system_id}: {len(strategies)}개 전략 실행을 시작합니다"
         )
 
         try:
@@ -515,15 +516,15 @@ class SystemExecutor:
                 results = await asyncio.gather(*concurrent_tasks, return_exceptions=True)
                 for idx, result in enumerate(results):
                     if isinstance(result, asyncio.CancelledError):
-                        pg_logger.debug(
-                            f"[SYSTEM] {system_id}: 전략 태스크 {idx + 1}이(가) 취소되었습니다"
+                        system_logger.warning(
+                            f"{system_id}: 전략 태스크 {idx + 1}이(가) 취소되었습니다"
                         )
                         continue
                     if isinstance(result, Exception):
                         strategy_meta = strategies[idx] if idx < len(strategies) else {}
                         strategy_key = strategy_meta.get("id", f"strategy_{idx + 1}")
-                        pg_logger.error(
-                            f"[SYSTEM] {system_id}: 전략 '{strategy_key}' 태스크에서 예외 발생 -> {result}"
+                        system_logger.error(
+                            f"{system_id}: 전략 '{strategy_key}' 태스크에서 예외 발생 -> {result}"
                         )
                         if getattr(result, "_pg_error_emitted", False):
                             continue
@@ -538,17 +539,17 @@ class SystemExecutor:
                                 },
                             )
                             pg_listener.emit_exception(wrapped_exc)
-                pg_logger.info(f"✅ [SYSTEM] {system_id}: 모든 전략 태스크가 완료되었습니다")
+                system_logger.info(f"✅ {system_id}: 모든 전략 태스크가 완료되었습니다")
             else:
-                pg_logger.info(f"ℹ️ [SYSTEM] {system_id}: 실행할 전략이 구성되어 있지 않습니다")
+                system_logger.info(f"ℹ️ {system_id}: 실행할 전략이 구성되어 있지 않습니다")
 
         except BasicException as exc:
-            pg_logger.error(f"[SYSTEM] {system_id}: 실행 중 오류 발생 -> {exc}")
+            system_logger.error(f"{system_id}: 실행 중 오류 발생 -> {exc}")
             pg_listener.emit_exception(exc)
             await self.stop()
             raise
         except Exception as exc:
-            pg_logger.exception(f"[SYSTEM] {system_id}: 실행 중 처리되지 않은 오류 발생")
+            system_logger.exception(f"{system_id}: 실행 중 처리되지 않은 오류 발생")
             system_exc = SystemException(
                 message=f"시스템 '{system_id}' 실행 중 처리되지 않은 오류가 발생했습니다.",
                 code="SYSTEM_EXECUTION_ERROR",
@@ -558,16 +559,16 @@ class SystemExecutor:
             await self.stop()
             raise system_exc from exc
         finally:
-            pg_logger.info(f"🏁 [SYSTEM] {system_id}: 시스템 실행이 종료되었습니다")
+            system_logger.info(f"🏁 {system_id}: 시스템 실행이 종료되었습니다")
 
     async def stop(self):
         self.running = False
         pending = sum(1 for task in self.tasks if not task.done())
-        pg_logger.info(f"🛑 [SYSTEM] 중지 요청 수신, 진행 중인 태스크 {pending}개를 취소합니다")
+        system_logger.info(f"🛑 중지 요청 수신, 진행 중인 태스크 {pending}개를 취소합니다")
         for task in self.tasks:
             if not task.done():
                 task.cancel()
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
-            pg_logger.info("🧹 [SYSTEM] 남은 태스크 취소를 완료했습니다")
+            system_logger.info("🧹 남은 태스크 취소를 완료했습니다")
         self.tasks.clear()

@@ -1,4 +1,5 @@
 import logging
+from typing import Dict
 
 # ANSI 색상 코드
 LOG_COLORS = {
@@ -9,7 +10,39 @@ LOG_COLORS = {
     "RESET": "\033[0m",  # 색상 초기화
 }
 
-pg_logger = logging.getLogger("pg")
+_BASE_LOGGER_NAME = "pg"
+_LOGGER_NAMES = {
+    "system": f"{_BASE_LOGGER_NAME}.system",
+    "strategy": f"{_BASE_LOGGER_NAME}.strategy",
+    "condition": f"{_BASE_LOGGER_NAME}.condition",
+    "trade": f"{_BASE_LOGGER_NAME}.trade",
+    "order": f"{_BASE_LOGGER_NAME}.order",
+    "plugin": f"{_BASE_LOGGER_NAME}.plugin",
+    "symbol": f"{_BASE_LOGGER_NAME}.symbol",
+    "finance": f"{_BASE_LOGGER_NAME}.finance",
+}
+
+pg_logger = logging.getLogger(_BASE_LOGGER_NAME)
+system_logger = logging.getLogger(_LOGGER_NAMES["system"])
+strategy_logger = logging.getLogger(_LOGGER_NAMES["strategy"])
+condition_logger = logging.getLogger(_LOGGER_NAMES["condition"])
+trade_logger = logging.getLogger(_LOGGER_NAMES["trade"])
+order_logger = logging.getLogger(_LOGGER_NAMES["order"])
+plugin_logger = logging.getLogger(_LOGGER_NAMES["plugin"])
+symbol_logger = logging.getLogger(_LOGGER_NAMES["symbol"])
+finance_logger = logging.getLogger(_LOGGER_NAMES["finance"])
+
+_KNOWN_LOGGERS: Dict[str, logging.Logger] = {
+    "pg": pg_logger,
+    "system": system_logger,
+    "strategy": strategy_logger,
+    "condition": condition_logger,
+    "trade": trade_logger,
+    "order": order_logger,
+    "plugin": plugin_logger,
+    "symbol": symbol_logger,
+    "finance": finance_logger,
+}
 
 
 class _ColoredFormatter(logging.Formatter):
@@ -39,6 +72,26 @@ class _ColoredFormatter(logging.Formatter):
         return super().format(record)
 
 
+def get_logger(category: str) -> logging.Logger:
+    """Return a named logger under the pg namespace."""
+    if not category:
+        return pg_logger
+
+    if category in _KNOWN_LOGGERS:
+        return _KNOWN_LOGGERS[category]
+
+    if category.startswith(f"{_BASE_LOGGER_NAME}."):
+        logger_name = category
+        registry_key = category.split(".", 1)[1]
+    else:
+        logger_name = f"{_BASE_LOGGER_NAME}.{category}"
+        registry_key = category
+
+    logger = logging.getLogger(logger_name)
+    _KNOWN_LOGGERS[registry_key] = logger
+    return logger
+
+
 def pg_log(level=logging.DEBUG):
     """
     로그 레벨을 설정합니다.
@@ -52,28 +105,39 @@ def pg_log(level=logging.DEBUG):
         logger.critical("치명적인 메시지")
     """
 
-    handler = logging.StreamHandler()
-    pg_logger.setLevel(level)
     formatter = _ColoredFormatter(
-        "%(name)s | %(asctime)s | %(levelname)s | %(filename)s:%(colored_lineno)s\n %(message)s"  # noqa: E501
+        "%(name)s | %(asctime)s | %(levelname)s | %(message)s"
     )
+    handler = logging.StreamHandler()
     handler.setFormatter(formatter)
-    pg_logger.addHandler(handler)
 
-    # 루트 로거에 영향을 주지 않도록 설정
+    pg_logger.handlers.clear()
+    pg_logger.addHandler(handler)
+    pg_logger.setLevel(level)
     pg_logger.propagate = False  # 루트 로거로 전파 방지
+
+    for name, logger in _KNOWN_LOGGERS.items():
+        if logger is pg_logger:
+            continue
+        logger.setLevel(level)
+        logger.propagate = True
+        logger.handlers.clear()
 
 
 def pg_log_disable():
     """로그를 완전히 비활성화합니다."""
-    pg_logger.handlers.clear()
-    pg_logger.setLevel(logging.CRITICAL + 1)  # 모든 로그 차단
+    for logger in _KNOWN_LOGGERS.values():
+        logger.handlers.clear()
+        logger.setLevel(logging.CRITICAL + 1)
+        logger.propagate = False
 
 
 def pg_log_reset():
     """로그 설정을 초기화합니다."""
-    pg_logger.handlers.clear()
-    pg_logger.setLevel(logging.NOTSET)
+    for logger in _KNOWN_LOGGERS.values():
+        logger.handlers.clear()
+        logger.setLevel(logging.NOTSET)
+        logger.propagate = True
 
 
 # 테스트 코드
@@ -82,7 +146,7 @@ if __name__ == "__main__":
     # pg_log(level=logging.DEBUG)  # 이 줄 제거
     pg_log()
     pg_logger.debug("디버그 메시지")
-    pg_logger.info("정보 메시지")
+    system_logger.info("정보 메시지")
     pg_logger.warning("경고 메시지")
     pg_logger.error("에러 메시지")
     pg_logger.critical("치명적인 메시지")

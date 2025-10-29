@@ -3,7 +3,7 @@ import asyncio
 import logging
 import threading
 from typing import Callable
-from programgarden_core import pg_log, pg_log_disable, pg_logger, normalize_system_config
+from programgarden_core import pg_log, pg_log_disable, system_logger, normalize_system_config
 from programgarden_core.bases import SystemType
 from programgarden_finance import LS
 from programgarden_core import EnforceKoreanAliasMeta
@@ -90,7 +90,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
             pg_listener.emit_exception(exc)
             raise
         except Exception as exc:
-            pg_logger.exception("System configuration validation failed")
+            system_logger.exception("System configuration validation failed")
             init_exc = SystemInitializationException(
                 message="시스템 설정 검증 중 알 수 없는 오류가 발생했습니다.",
                 data={"details": str(exc)},
@@ -102,7 +102,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
             asyncio.get_running_loop()
 
             if self._task is not None and not self._task.done():
-                pg_logger.info("A task is already running; returning the existing task.")
+                system_logger.info("A task is already running; returning the existing task.")
                 return self._task
 
             task = asyncio.create_task(self._execute(system_config))
@@ -117,7 +117,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
         if self._shutdown_notified:
             return
         self._shutdown_notified = True
-        pg_logger.info("The program has terminated.")
+        system_logger.info("The program has terminated.")
         shutdown_exc = SystemShutdownException()
         pg_listener.emit_exception(shutdown_exc)
         pg_listener.stop()
@@ -171,7 +171,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
         except BasicException as exc:
             pg_listener.emit_exception(exc)
         except Exception as exc:
-            pg_logger.exception("Unexpected error during system execution")
+            system_logger.exception("Unexpected error during system execution")
             system_exc = SystemException(
                 message="시스템 실행 중 처리되지 않은 오류가 발생했습니다.",
                 code="SYSTEM_EXECUTION_ERROR",
@@ -186,7 +186,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
 
     async def stop(self):
         await self.executor.stop()
-        pg_logger.debug("The program has been stopped.")
+    system_logger.debug("The program has been stopped.")
 
     def on_strategies_message(self, callback: Callable[[StrategyPayload], None]) -> None:
         """실시간 이벤트 수신 콜백 등록"""
@@ -235,4 +235,4 @@ Program Garden
 LS Securities
     """, font="tarty1")
         except Exception as e:
-            pg_logger.warning(f"Banner print failed: {e}")
+            system_logger.warning(f"Banner print failed: {e}")
