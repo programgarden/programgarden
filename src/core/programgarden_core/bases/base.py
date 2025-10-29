@@ -51,9 +51,6 @@ class SymbolInfoBase(TypedDict, total=False):
     symbol_name: Optional[str]
     """종목명"""
 
-    additional: Optional[Dict[str, Any]]
-    """추가 필드 (확장 용도)"""
-
 
 class SymbolInfoOverseasStock(SymbolInfoBase, total=False):
     """해외주식 종목 정보를 담는 타입"""
@@ -94,6 +91,15 @@ class SymbolInfoOverseasFutures(SymbolInfoBase, total=False):
 
     position_side: Optional[Literal["long", "short", "flat"]] = "flat"
     """포지션 방향 "long": 매수, "short": 매도, "flat": 없음"""
+
+    unit_price: Optional[float]
+    """호가단위가격"""
+    min_change_amount: Optional[float]
+    """최소변동액"""
+    maintenance_margin: Optional[float]
+    """유지증거금"""
+    opening_margin: Optional[float]
+    """개시증거금"""
 
 
 class HeldSymbolOverseasStock(TypedDict):

@@ -15,24 +15,32 @@ async def test_req_o3105():
     ls = LS()
 
     login_result = ls.login(
-        appkey=os.getenv("APPKEY_FUTURE"),
-        appsecretkey=os.getenv("APPSECRET_FUTURE")
+        appkey=os.getenv("APPKEY_FUTURE_FAKE"),
+        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE"),
+        paper_trading=True
     )
 
     if login_result is False:
         pg_logger.error("로그인 실패")
         return
 
-    req = ls.overseas_futureoption().market().해외선물_현재가조회(
+    req = ls.overseas_futureoption().market().o3105(
         body=o3105.O3105InBlock(
-            symbol="CUSU25"
+            symbol="ESZ25"
         )
     )
-    await req.retry_req_async(
-        callback=lambda resp, status: pg_logger.info(f"o3105 요청 상태: {status}, 응답: {resp}"),
-        max_retries=5,
-        delay=1
-    )
+
+    result = await req.req_async()
+    print(result)
+
+    # while True:
+    #     await asyncio.sleep(1)
+
+    # await req.retry_req_async(
+    #     callback=lambda resp, status: pg_logger.info(f"o3105 요청 상태: {status}, 응답: {resp}"),
+    #     max_retries=5,
+    #     delay=1
+    # )
 
 if __name__ == "__main__":
     asyncio.run(test_req_o3105())

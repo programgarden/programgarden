@@ -13,10 +13,10 @@ from programgarden_core import (
     SymbolInfoOverseasStock,
     SymbolInfoOverseasFutures,
     OrderType,
-    pg_logger,
+    symbol_logger,
     SecuritiesAccountType,
 )
-from programgarden_finance import LS, g3190, COSOQ00201, g3104, COSAQ00102, o3101
+from programgarden_finance import LS, g3190, COSOQ00201, g3104, COSAQ00102, o3101, CIDBQ01800, o3105
 from datetime import date, datetime
 import pytz
 
@@ -44,25 +44,27 @@ class SymbolProvider:
         symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
         if product == "overseas_stock":
             if order_type == "new_buy" or order_type is None:
-                symbols.extend(await self.get_market_symbols(ls))
+                symbols.extend(await self.get_stock_market_symbols(ls))
             elif order_type == "new_sell":
-                symbols.extend(await self.get_account_symbols(ls))
+                symbols.extend(await self.get_stock_account_symbols(ls))
 
             elif order_type in ["modify_buy", "modify_sell", "cancel_buy", "cancel_sell"]:
-                symbols.extend(await self.get_non_trade_symbols(ls))
+                symbols.extend(await self.get_stock_non_trade_symbols(ls))
 
         elif product == "overseas_futures":
             if order_type in ("new_buy", "new_sell", None):
                 symbols.extend(await self.get_future_market_symbols(ls))
             elif order_type in ["modify_buy", "modify_sell", "cancel_buy", "cancel_sell"]:
-                symbols.extend(await self.get_future_pending_orders(ls))
+                symbols.extend(
+                    await self.get_future_non_trade_symbols(ls)
+                )
 
         else:
-            pg_logger.warning(f"Unsupported product: {product}")
+            symbol_logger.warning(f"Unsupported product: {product}")
 
         return symbols
 
-    async def get_account_symbols(self, ls: LS) -> List[SymbolInfoOverseasStock]:
+    async def get_stock_account_symbols(self, ls: LS) -> List[SymbolInfoOverseasStock]:
         """Retrieve account symbols for overseas stocks."""
         tmp: List[SymbolInfoOverseasStock] = []
         response = await ls.overseas_stock().accno().cosoq00201(
@@ -98,7 +100,7 @@ class SymbolProvider:
 
         return tmp
 
-    async def get_market_symbols(self, ls: LS) -> List[SymbolInfoOverseasStock]:
+    async def get_stock_market_symbols(self, ls: LS) -> List[SymbolInfoOverseasStock]:
         """Retrieve buy symbols for overseas stocks."""
         overseas_stock = ls.overseas_stock()
         tmp: List[SymbolInfoOverseasStock] = []
@@ -125,7 +127,7 @@ class SymbolProvider:
 
         return tmp
 
-    async def get_non_trade_symbols(self, ls: LS) -> List[SymbolInfoOverseasStock]:
+    async def get_stock_non_trade_symbols(self, ls: LS) -> List[SymbolInfoOverseasStock]:
         """Retrieve non-trade symbols for overseas stocks."""
         tmp: List[SymbolInfoOverseasStock] = []
 
@@ -221,22 +223,102 @@ class SymbolProvider:
             except (TypeError, ValueError):
                 pass
 
-            symbol_info["additional"] = {
-                "unit_price": getattr(block, "UntPrc", None),
-                "min_change_amount": getattr(block, "MnChgAmt", None),
-                "maintenance_margin": getattr(block, "MntncMgn", None),
-                "opening_margin": getattr(block, "OpngMgn", None),
-            }
+            try:
+                unit_price = float(block.UntPrc)  # 호가단위가격
+                symbol_info["unit_price"] = unit_price
+            except (TypeError, ValueError):
+                pass
+
+            try:
+                min_change_amount = float(block.MnChgAmt)  # 최소변동액
+                symbol_info["min_change_amount"] = min_change_amount
+            except (TypeError, ValueError):
+                pass
+
+            try:
+                maintenance_margin = float(block.MntncMgn)  # 유지증거금
+                symbol_info["maintenance_margin"] = maintenance_margin
+            except (TypeError, ValueError):
+                pass
+
+            try:
+                opening_margin = float(block.OpngMgn)  # 개시증거금
+                symbol_info["opening_margin"] = opening_margin
+            except (TypeError, ValueError):
+                pass
 
             tmp.append(symbol_info)
 
         return tmp
 
-    async def get_future_pending_orders(self, ls: LS) -> List[SymbolInfoOverseasFutures]:
-        """Placeholder for future pending order retrieval.
+    async def get_future_non_trade_symbols(self, ls: LS) -> List[SymbolInfoOverseasFutures]:
+        """Retrieve pending overseas futures orders for modify/cancel workflows."""
 
-        현재는 미체결/정정 대상 종목을 별도로 조회하지 않고 빈 값을 반환합니다.
-        커뮤니티 플러그인 또는 전략에서 필요한 경우 직접 조회를 수행해야 합니다.
-        """
+        tmp: List[SymbolInfoOverseasFutures] = []
 
-        return []
+        try:
+            response = await ls.overseas_futureoption().accno().CIDBQ01800(
+                body=CIDBQ01800.CIDBQ01800InBlock1(
+                    RecCnt=1,
+                    IsuCodeVal="",  # 빈 문자열로 계좌 내 전체 미체결 주문을 조회합니다.
+                    OrdDt="",
+                    OrdStatCode="2",
+                    BnsTpCode="0",
+                    QryTpCode="1",
+                    OrdPtnCode="00",
+                    OvrsDrvtFnoTpCode="A",
+                )
+            ).req_async()
+        except Exception as exc:
+            symbol_logger.exception(f"해외선물 미체결 주문 조회에 실패했습니다: {exc}")
+            return tmp
+
+        if not response or not getattr(response, "block2", None):
+            return tmp
+
+        for block in response.block2:
+            try:
+                pending_qty = int(getattr(block, "UnercQty", 0) or 0)
+            except (TypeError, ValueError):
+                pending_qty = 0
+
+            if pending_qty <= 0:
+                continue
+
+            symbol_code = str(getattr(block, "IsuCodeVal", "") or "").strip()
+            if not symbol_code:
+                continue
+
+            futures_info: SymbolInfoOverseasFutures = {
+                "symbol": symbol_code,
+                "product_type": "overseas_futures",
+                "position_side": "flat",
+                "OrdNo": block.OvrsFutsOrdNo
+            }
+
+            req = await ls.overseas_futureoption().market().o3105(
+                body=o3105.O3105InBlock(
+                    symbol=symbol_code
+                )
+            ).req_async()
+
+            if not req or not getattr(req, "block", None):
+                if ls.token_manager.paper_trading:
+                    symbol_logger.info(f"모의투자API 환경에서 해외선물 미체결 주문의 종목 정보를 조회하지 못했습니다: {symbol_code}")
+                symbol_logger.warning(f"해외선물 미체결 주문의 종목 정보를 조회하지 못했습니다: {symbol_code}")
+                continue
+
+            futures_info["exchcd"] = req.block.ExchCd
+            futures_info["due_yymm"] = req.block.MtrtDt
+            futures_info["prdt_code"] = req.block.GdsCd
+            futures_info["currency_code"] = req.block.CrncyCd
+            futures_info["contract_size"] = float(req.block.CtrtPrAmt)
+            futures_info["position_side"] = block.BnsTpCode == "1" and "short" or block.BnsTpCode == "2" and "long" or "flat"
+            futures_info["unit_price"] = float(req.block.UntPrc)
+            futures_info["min_change_amount"] = float(req.block.MnChgAmt)
+            futures_info["maintenance_margin"] = float(req.block.MntncMgn)
+            futures_info["opening_margin"] = float(req.block.OpngMgn)
+
+            tmp.append(futures_info)
+
+        return tmp

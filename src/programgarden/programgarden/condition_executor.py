@@ -31,7 +31,7 @@ from programgarden_core import (
     SymbolInfoOverseasStock,
     SymbolInfoOverseasFutures,
     SystemType,
-    pg_logger,
+    condition_logger,
     OrderStrategyType,
     BaseOrderOverseasStock,
     BaseOrderOverseasFutures,
@@ -233,7 +233,7 @@ class ConditionExecutor:
 
         if bool_result:
             if len(unique_sides) > 1:
-                pg_logger.debug("[CONDITION] 해외선물 조건 간 방향이 일치하지 않아 실패 처리합니다")
+                condition_logger.debug("해외선물 조건 간 방향이 일치하지 않아 실패 처리합니다")
                 bool_result = False
             elif len(unique_sides) == 1:
                 aligned_side = unique_sides.pop()
@@ -316,8 +316,8 @@ class ConditionExecutor:
 
         if isinstance(condition, dict):
             if "condition_id" in condition and "conditions" not in condition:
-                pg_logger.debug(
-                    f"[CONDITION] {condition.get('condition_id')}: {self._symbol_label(symbol_info)}에 대한 플러그인 조건을 평가합니다"
+                condition_logger.debug(
+                    f"{condition.get('condition_id')}: {self._symbol_label(symbol_info)}에 대한 플러그인 조건을 평가합니다"
                 )
                 return await self._execute_plugin_condition(
                     system_id=system.get("settings", {}).get("system_id", None),
@@ -326,15 +326,15 @@ class ConditionExecutor:
                 )
             # Nested condition group
             if "conditions" in condition:
-                pg_logger.debug(
-                    f"[CONDITION] group: {self._symbol_label(symbol_info)}에 대해 로직 '{condition.get('logic', 'and')}'을 평가합니다"
+                condition_logger.debug(
+                    f"group: {self._symbol_label(symbol_info)}에 대해 로직 '{condition.get('logic', 'and')}'을 평가합니다"
                 )
                 return await self._execute_nested_condition(system, symbol_info, condition)
             # Unknown dict shape: treat as failure but keep symbol context.
             return self._build_response(symbol_info, success=False)
 
-        pg_logger.warning(
-            f"[CONDITION] 지원되지 않는 조건 타입입니다: {type(condition)}"
+        condition_logger.warning(
+            f"지원되지 않는 조건 타입입니다: {type(condition)}"
         )
         return self._build_response(symbol_info, success=False)
 
@@ -360,8 +360,8 @@ class ConditionExecutor:
             symbol_info=symbol_info,
         )
 
-        pg_logger.debug(
-            f"[CONDITION] {condition_id}: {self._symbol_label(symbol_info)} 결과 -> 성공={result.get('success')} 가중치={result.get('weight', 0)}"
+        condition_logger.debug(
+            f"{condition_id}: {self._symbol_label(symbol_info)} 결과 -> 성공={result.get('success')} 가중치={result.get('weight', 0)}"
         )
 
         return result
@@ -405,7 +405,7 @@ class ConditionExecutor:
 
             except Exception as e:
                 failure_count += 1
-                pg_logger.error(f"[CONDITION] 그룹 조건 실행 중 오류가 발생했습니다: {e}")
+                condition_logger.error(f"그룹 조건 실행 중 오류가 발생했습니다: {e}")
                 meta = task_metadata.get(task, {})
                 condition_obj = meta.get("condition") if meta else None
                 condition_label = self._describe_condition(condition_obj) if condition_obj is not None else None
@@ -429,8 +429,8 @@ class ConditionExecutor:
             threshold=threshold,
         )
         if failure_count:
-            pg_logger.warning(
-                f"[CONDITION] 그룹: {self._symbol_label(symbol_info)} 대상 조건 {failure_count}개가 실패했습니다"
+            condition_logger.warning(
+                f"그룹: {self._symbol_label(symbol_info)} 대상 조건 {failure_count}개가 실패했습니다"
             )
         if not complete:
             return self._build_response(
@@ -472,8 +472,8 @@ class ConditionExecutor:
         order_types = []
         if order_id is not None:
             order_types = await self._get_order_types(order_id, orders)
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: 주문 ID '{order_id}'의 주문 유형 -> {order_types}"
+            condition_logger.debug(
+                f"{strategy.get('id')}: 주문 ID '{order_id}'의 주문 유형 -> {order_types}"
             )
 
         market_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
@@ -481,8 +481,8 @@ class ConditionExecutor:
         non_account_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
 
         if not my_symbols and ("new_buy" in order_types or order_types is None):
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: 신규 매수를 위한 시장 종목을 조회합니다"
+            condition_logger.debug(
+                f"{strategy.get('id')}: 신규 매수를 위한 시장 종목을 조회합니다"
             )
             market_symbols = await self.symbol_provider.get_symbols(
                 order_type="new_buy",
@@ -490,8 +490,8 @@ class ConditionExecutor:
             )
 
         if "new_sell" in order_types:
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: 신규 매도를 위한 계좌 종목을 조회합니다"
+            condition_logger.debug(
+                f"{strategy.get('id')}: 신규 매도를 위한 계좌 종목을 조회합니다"
             )
             account_symbols = await self.symbol_provider.get_symbols(
                 order_type="new_sell",
@@ -499,32 +499,32 @@ class ConditionExecutor:
             )
 
         if "modify_buy" in order_types:
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: 정정 매수를 위한 종목을 조회합니다"
+            condition_logger.debug(
+                f"{strategy.get('id')}: 정정 매수를 위한 종목을 조회합니다"
             )
             non_account_symbols = await self.symbol_provider.get_symbols(
                 order_type="modify_buy",
                 securities=securities,
             )
         elif "modify_sell" in order_types:
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: 정정 매도를 위한 종목을 조회합니다"
+            condition_logger.debug(
+                f"{strategy.get('id')}: 정정 매도를 위한 종목을 조회합니다"
             )
             non_account_symbols = await self.symbol_provider.get_symbols(
                 order_type="modify_sell",
                 securities=securities,
             )
         elif "cancel_buy" in order_types:
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: 취소 매수를 위한 종목을 조회합니다"
+            condition_logger.debug(
+                f"{strategy.get('id')}: 취소 매수를 위한 종목을 조회합니다"
             )
             non_account_symbols = await self.symbol_provider.get_symbols(
                 order_type="cancel_buy",
                 securities=securities,
             )
         elif "cancel_sell" in order_types:
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: 취소 매도를 위한 종목을 조회합니다"
+            condition_logger.debug(
+                f"{strategy.get('id')}: 취소 매도를 위한 종목을 조회합니다"
             )
             non_account_symbols = await self.symbol_provider.get_symbols(
                 order_type="cancel_sell",
@@ -561,13 +561,13 @@ class ConditionExecutor:
 
         if max_count > 0:
             my_symbols = my_symbols[:max_count]
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: '{max_order}' 기준으로 최대 {max_count}개 종목만 사용합니다"
+            condition_logger.debug(
+                f"{strategy.get('id')}: '{max_order}' 기준으로 최대 {max_count}개 종목만 사용합니다"
             )
 
         if not conditions:
-            pg_logger.debug(
-                f"[CONDITION] {strategy.get('id')}: 조건이 없어 {len(my_symbols)}개 종목을 그대로 반환합니다"
+            condition_logger.debug(
+                f"{strategy.get('id')}: 조건이 없어 {len(my_symbols)}개 종목을 그대로 반환합니다"
             )
             return my_symbols
 
@@ -607,13 +607,13 @@ class ConditionExecutor:
                             "response": res,
                         }
                     )
-                    pg_logger.debug(
-                        f"[CONDITION] {res.get('condition_id')}: {self._symbol_label(symbol_info)} 결과 -> 성공={res.get('success')} 가중치={res.get('weight', 0)}"
+                    condition_logger.debug(
+                        f"{res.get('condition_id')}: {self._symbol_label(symbol_info)} 결과 -> 성공={res.get('success')} 가중치={res.get('weight', 0)}"
                     )
                     condition_results.append(res)
 
                 except Exception as e:
-                    pg_logger.error(f"[CONDITION] {strategy.get('id')}: 조건 실행 중 오류가 발생했습니다 -> {e}")
+                    condition_logger.error(f"{strategy.get('id')}: 조건 실행 중 오류가 발생했습니다 -> {e}")
                     meta = task_metadata.get(task, {})
                     condition_obj = meta.get("condition") if meta else None
                     condition_label = self._describe_condition(condition_obj) if condition_obj is not None else None
@@ -646,14 +646,14 @@ class ConditionExecutor:
             )
             if complete:
                 direction_note = f", 방향 {position_side}" if position_side else ""
-                pg_logger.debug(
-                    f"[CONDITION] {strategy.get('id')}: 종목 {self._symbol_label(symbol_info)} 통과 (가중치 {total_weight}{direction_note})"
+                condition_logger.debug(
+                    f"{strategy.get('id')}: 종목 {self._symbol_label(symbol_info)} 통과 (가중치 {total_weight}{direction_note})"
                 )
                 symbol_info["position_side"] = position_side or "flat"
                 passed_symbols.append(symbol_info)
             else:
-                pg_logger.debug(
-                    f"[CONDITION] {strategy.get('id')}: 종목 {self._symbol_label(symbol_info)}이(가) 조건을 통과하지 못했습니다"
+                condition_logger.debug(
+                    f"{strategy.get('id')}: 종목 {self._symbol_label(symbol_info)}이(가) 조건을 통과하지 못했습니다"
                 )
 
         return passed_symbols

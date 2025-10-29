@@ -3,7 +3,7 @@ import threading
 from typing import Any, Dict, List, Optional, Union
 from programgarden_finance import LS, AS0, AS1, AS2, AS3, AS4, TC1, TC2, TC3
 from programgarden_core import (
-    OrderRealResponseType, SystemType, pg_logger,
+    OrderRealResponseType, SystemType, order_logger,
     BaseOrderOverseasStock, BaseOrderOverseasFutures,
 )
 from programgarden.pg_listener import pg_listener
@@ -41,7 +41,7 @@ class RealOrderExecutor:
             elif product == "overseas_futures":
                 self.buy_sell_order_real = LS.get_instance().overseas_futureoption().real()
             else:
-                pg_logger.warning(f"Unsupported product for real order websocket: {product}")
+                order_logger.warning(f"Unsupported product for real order websocket: {product}")
                 return
 
             await self.buy_sell_order_real.connect()
@@ -95,7 +95,7 @@ class RealOrderExecutor:
             })
 
         except Exception as e:
-            pg_logger.error(e)
+            order_logger.error(e)
 
     def _as1_message_dispatcher(
         self,
@@ -125,7 +125,7 @@ class RealOrderExecutor:
             })
 
         except Exception:
-            pg_logger.exception("Error in AS1 dispatcher")
+            order_logger.exception("Error in AS1 dispatcher")
 
     def _as2_message_dispatcher(
         self,
@@ -151,7 +151,7 @@ class RealOrderExecutor:
             })
 
         except Exception:
-            pg_logger.exception("Error in AS2 dispatcher")
+            order_logger.exception("Error in AS2 dispatcher")
 
     def _as3_message_dispatcher(
         self,
@@ -180,7 +180,7 @@ class RealOrderExecutor:
             })
 
         except Exception:
-            pg_logger.exception("Error in AS3 dispatcher")
+            order_logger.exception("Error in AS3 dispatcher")
 
     def _as4_message_dispatcher(
         self,
@@ -209,7 +209,7 @@ class RealOrderExecutor:
                 "response": payload,
             })
         except Exception:
-            pg_logger.exception("Error in AS4 dispatcher")
+            order_logger.exception("Error in AS4 dispatcher")
 
     def _tc1_message_dispatcher(
         self,
@@ -235,7 +235,7 @@ class RealOrderExecutor:
             })
 
         except Exception:
-            pg_logger.exception("Error in TC1 dispatcher")
+            order_logger.exception("Error in TC1 dispatcher")
 
     def _tc2_message_dispatcher(
         self,
@@ -263,7 +263,7 @@ class RealOrderExecutor:
             })
 
         except Exception:
-            pg_logger.exception("Error in TC2 dispatcher")
+            order_logger.exception("Error in TC2 dispatcher")
 
     def _tc3_message_dispatcher(
         self,
@@ -291,7 +291,7 @@ class RealOrderExecutor:
             })
 
         except Exception:
-            pg_logger.exception("Error in TC3 dispatcher")
+            order_logger.exception("Error in TC3 dispatcher")
 
     async def send_data_community_instance(
         self,
@@ -368,7 +368,7 @@ class RealOrderExecutor:
                         try:
                             asyncio.run_coroutine_threadsafe(coro, loop)
                         except Exception:
-                            pg_logger.exception("Failed to schedule coroutine with run_coroutine_threadsafe")
+                            order_logger.exception("Failed to schedule coroutine with run_coroutine_threadsafe")
                     else:
                         # try to create task on current running loop (if any)
                         try:
@@ -381,7 +381,7 @@ class RealOrderExecutor:
                                 try:
                                     asyncio.run(c)
                                 except Exception:
-                                    pg_logger.exception("Error running coroutine in fallback thread")
+                                    order_logger.exception("Error running coroutine in fallback thread")
 
                             threading.Thread(target=_run_coro_in_thread, args=(coro,), daemon=True).start()
                 else:
@@ -391,7 +391,7 @@ class RealOrderExecutor:
                             # schedule creation of a background task that runs the sync handler
                             loop.call_soon_threadsafe(asyncio.create_task, asyncio.to_thread(handler, order_type, response))
                         except Exception:
-                            pg_logger.exception("Failed to schedule sync handler on loop; running in thread")
+                            order_logger.exception("Failed to schedule sync handler on loop; running in thread")
                             import threading
 
                             threading.Thread(target=handler, args=(order_type, response), daemon=True).start()
@@ -436,7 +436,7 @@ class RealOrderExecutor:
                     order_category_type = "reject_sell"
             return order_category_type
         except Exception:
-            pg_logger.exception("Error computing order_category_type from response")
+            order_logger.exception("Error computing order_category_type from response")
             return None
 
     def _futures_order_type(self, tr_cd: Optional[str], body: Dict[str, Any]) -> Optional[OrderRealResponseType]:

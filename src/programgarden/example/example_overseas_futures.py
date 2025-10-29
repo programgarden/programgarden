@@ -6,6 +6,9 @@ from programgarden_core import (
     BaseNewOrderOverseasFutures,
     BaseStrategyConditionResponseOverseasFuturesType,
     BaseNewOrderOverseasFuturesResponseType,
+
+    BaseModifyOrderOverseasFutures,
+    BaseModifyOrderOverseasFuturesResponseType
 )
 import os
 
@@ -15,19 +18,12 @@ load_dotenv()
 class StrategyTest(BaseStrategyConditionOverseasFutures):
 
     id: str = "StrategyTest"
-    description: str = """
-Moving average golden/dead cross detection conditions
-
-1) Observed a dead->golden where golden_price > dead_price (candidate)
-2) The golden occurred within the most recent 2 data points
-3) The latest alignment is golden (still maintained)
-"""
+    description: str = "샘플 전략 조건입니다."
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     async def execute(self) -> BaseStrategyConditionResponseOverseasFuturesType:
-        print(f"Executing condition for symbol: {self.symbol}")
 
         return {
             "success": True,
@@ -42,10 +38,10 @@ Moving average golden/dead cross detection conditions
         }
 
 
-class OrderTest(BaseNewOrderOverseasFutures):
+class OrderNewTest(BaseNewOrderOverseasFutures):
 
-    id: str = "OrderTest"
-    description: str = "주식 분할 자금"
+    id: str = "OrderNewTest"
+    description: str = "신규주문 테스트"
     securities: List[str] = ["ls-sec.co.kr"]
     order_types = ["new_buy"]
 
@@ -53,7 +49,6 @@ class OrderTest(BaseNewOrderOverseasFutures):
         super().__init__(**kwargs)
 
     async def execute(self) -> List[BaseNewOrderOverseasFuturesResponseType]:
-        print(f"Executing order for symbol: {self.available_symbols}")
 
         return [{
             "success": True,
@@ -71,14 +66,44 @@ class OrderTest(BaseNewOrderOverseasFutures):
         pass
 
 
+class OrderModifyTest(BaseModifyOrderOverseasFutures):
+
+    id: str = "OrderModifyTest"
+    description: str = "정정주문 테스트"
+    securities: List[str] = ["ls-sec.co.kr"]
+    order_types = ["modify_buy", "modify_sell"]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    async def execute(self) -> List[BaseModifyOrderOverseasFuturesResponseType]:
+        print(f"Executing order for symbol: {self.non_traded_symbols}")
+
+        return [{
+            "success": True,
+            "ord_dt": "20251023",
+            "ovrs_futs_org_ord_no": self.non_traded_symbols[0].get("OvrsFutsOrdNo", ""),
+            "isu_code_val": self.non_traded_symbols[0].get("IsuCodeVal", ""),
+            "futs_ord_tp_code": "2",
+            "bns_tp_code": "1",
+            "futs_ord_ptn_code": "2",
+            "ovrs_drvt_ord_prc": 0.66000,
+            "cndi_ord_prc": 0.0,
+            "ord_qty": 1,
+        }]
+
+    async def on_real_order_receive(self, order_type, response):
+        pass
+
+
 if __name__ == "__main__":
 
     pg = Programgarden()
 
-    # 전략 수행 응답 콜백
-    pg.on_strategies_message(
-        callback=lambda message: print(f"Strategies: {message}")
-    )
+    # # 전략 수행 응답 콜백
+    # pg.on_strategies_message(
+    #     callback=lambda message: print(f"Strategies: {message}")
+    # )
 
     # 실시간 주문 응답 콜백
     pg.on_real_order_message(
@@ -88,6 +113,11 @@ if __name__ == "__main__":
     pg.on_error_message(
         callback=lambda message: print(f"Error Message: {message}")
     )
+
+    # 해선 미체결 종목 정정/취소주문
+    # 해선 모의투자로 CME 거래소 등의 종목 정보를 가져오지 못하는 경우 문제 해결하기 (LS증권에 연락해둠)
+    # 해선 모의투자로 사이클 돌리기
+    # 24시간 동작시켜서 실시간 연결 끊기는거 확인하기
 
     pg.run(
         system={
@@ -121,7 +151,7 @@ if __name__ == "__main__":
                         "name": "Australian Dollar",
                         "exchange": "CME"
                     }],
-                    "order_id": "OrderTest",
+                    "order_id": "OrderModifyTest",
                     "conditions": [
                         StrategyTest()
                     ],
@@ -129,10 +159,10 @@ if __name__ == "__main__":
             ],
             "orders": [
                 {
-                    "order_id": "OrderTest",
+                    "order_id": "OrderModifyTest",
                     "description": "테스트 주문",
                     "block_duplicate_buy": True,
-                    "condition": OrderTest()
+                    "condition": OrderModifyTest()
                 }
             ]
         }

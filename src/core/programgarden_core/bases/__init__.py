@@ -44,7 +44,7 @@ from .modify_orders import (
     BaseModifyOrderOverseasStock,
     BaseModifyOrderOverseasStockResponseType,
     BaseModifyOrderOverseasFutures,
-    BaseModifyOrderOverseasFutureResponseType,
+    BaseModifyOrderOverseasFuturesResponseType,
 )
 from .cancel_orders import (
     BaseCancelOrderOverseasStock,
@@ -98,7 +98,7 @@ __all__ = [
     BaseModifyOrderOverseasStock,
     BaseModifyOrderOverseasStockResponseType,
     BaseModifyOrderOverseasFutures,
-    BaseModifyOrderOverseasFutureResponseType,
+    BaseModifyOrderOverseasFuturesResponseType,
 
     # cancel order types
     BaseCancelOrderOverseasStock,

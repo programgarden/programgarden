@@ -135,7 +135,6 @@ class TRRequestAbstract(ABC):
                 url=url,
                 headers=request_data.header.model_dump(by_alias=True),
                 json=self._build_json_body(request_data),
-                timeout=aiohttp.ClientTimeout(total=timeout)
             ) as response:
                 response.raise_for_status()
                 response_json = await response.json()

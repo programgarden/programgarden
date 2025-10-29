@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Union
 from zoneinfo import ZoneInfo
 from programgarden_core import (
     SystemType, OrderStrategyType,
-    pg_logger, exceptions, HeldSymbol,
+    order_logger, symbol_logger, exceptions, HeldSymbol,
     HeldSymbolOverseasStock,
     HeldSymbolOverseasFutures,
     NonTradedSymbol,
@@ -36,7 +36,7 @@ from programgarden_core import (
     BaseModifyOrderOverseasStockResponseType,
     BaseCancelOrderOverseasStockResponseType,
     BaseNewOrderOverseasFuturesResponseType,
-    BaseModifyOrderOverseasFutureResponseType,
+    BaseModifyOrderOverseasFuturesResponseType,
     BaseCancelOrderOverseasFuturesResponseType,
 )
 from programgarden_finance import (
@@ -52,6 +52,8 @@ from programgarden_finance import (
     CIDBQ01500,
     CIDBQ01800,
     CIDBQ03000,
+
+    o3105,
 )
 
 from programgarden.pg_listener import pg_listener
@@ -117,8 +119,8 @@ class BuySellExecutor:
             order_id (str): The unique identifier for the order.
             order_types (List[OrderType]): The types of orders to execute.
         """
-        pg_logger.info(
-            f"🛒 [ORDER] {order_id}: 신규 주문 진행을 시작합니다 (전략 종목 {len(symbols_from_strategy)}개)"
+        order_logger.info(
+            f"🛒 {order_id}: 신규 주문 진행을 시작합니다 (전략 종목 {len(symbols_from_strategy)}개)"
         )
         dps = await self._setup_dps(system, new_order)
 
@@ -128,8 +130,8 @@ class BuySellExecutor:
             symbols_from_strategy[:] = non_held_symbols
 
         if not symbols_from_strategy:
-            # pg_logger.warning(f"No symbols to buy. order_id: {order_id}")
-            pg_logger.info(f"⚪️ [ORDER] {order_id}: 중복 필터링 이후 실행할 종목이 없어 신규 주문을 종료합니다")
+            # order_logger.warning(f"No symbols to buy. order_id: {order_id}")
+            order_logger.info(f"⚪️ {order_id}: 중복 필터링 이후 실행할 종목이 없어 신규 주문을 종료합니다")
             return
 
         purchase_symbols, community_instance = await self.plugin_resolver.resolve_buysell_community(
@@ -142,11 +144,11 @@ class BuySellExecutor:
         )
 
         if not purchase_symbols:
-            pg_logger.warning(f"❌ [ORDER] {order_id}: 조건을 통과한 종목이 없어 신규 주문을 중단합니다")
+            order_logger.warning(f"❌ {order_id}: 조건을 통과한 종목이 없어 신규 주문을 중단합니다")
             return
 
-        pg_logger.info(
-            f"🎯 [ORDER] {order_id}: 플러그인이 실행 가능한 종목 {len(purchase_symbols)}개를 반환했습니다"
+        order_logger.info(
+            f"🎯 {order_id}: 플러그인이 실행 가능한 종목 {len(purchase_symbols)}개를 반환했습니다"
         )
 
         await self._execute_orders(
@@ -296,7 +298,7 @@ class BuySellExecutor:
                     )
                 ).req_async()
             except Exception as exc:
-                pg_logger.exception(f"해외선물 잔고 조회에 실패했습니다: {exc}")
+                symbol_logger.exception(f"해외선물 잔고 조회에 실패했습니다: {exc}")
                 pg_listener.emit_exception(
                     exceptions.OrderExecutionException(
                         message="해외선물 잔고 조회에 실패했습니다.",
@@ -308,6 +310,19 @@ class BuySellExecutor:
             if balance_resp and getattr(balance_resp, "block2", None):
                 for blk in balance_resp.block2:
                     symbol_code = str(getattr(blk, "IsuCodeVal", "") or "").strip()
+
+                    exist_symbol = await ls.get_instance().overseas_futureoption().market().o3105(
+                        body=o3105.O3105InBlock(
+                            symbol=symbol_code
+                        )
+                    ).req_async()
+
+                    if not exist_symbol.block or not exist_symbol.block.Symbol:
+                        if ls.token_manager.paper_trading:
+                            symbol_logger.warning(f"해외선물 잔고 종목 조회 중단: 종목코드 {symbol_code}는(은) 모의투자API에서 조회할 수 없는 종목입니다.")
+                        symbol_logger.warning(f"[SYMBOL]해외선물 잔고 종목 조회 중단: 종목코드 {symbol_code}는(은) 존재하지 않는 종목입니다.")
+                        continue
+
                     if symbol_code:
                         held_isus.add(symbol_code)
 
@@ -362,7 +377,7 @@ class BuySellExecutor:
                         )
                     ).req_async()
                 except Exception as exc:
-                    pg_logger.exception(f"해외선물 미체결 주문 조회에 실패했습니다 ({symbol_code}): {exc}")
+                    order_logger.exception(f"해외선물 미체결 주문 조회에 실패했습니다 ({symbol_code}): {exc}")
                     pg_listener.emit_exception(
                         exceptions.OrderExecutionException(
                             message="해외선물 미체결 주문 조회에 실패했습니다.",
@@ -454,8 +469,8 @@ class BuySellExecutor:
         modify_order: OrderStrategyType,
         order_id: str,
     ):
-        pg_logger.info(
-            f"🛠️ [ORDER] {order_id}: 정정 주문 흐름을 시작합니다 (전략 종목 {len(symbols_from_strategy)}개)"
+        order_logger.info(
+            f"🛠️ {order_id}: 정정 주문 흐름을 시작합니다 (전략 종목 {len(symbols_from_strategy)}개)"
         )
         dps = await self._setup_dps(system, modify_order)
 
@@ -464,7 +479,7 @@ class BuySellExecutor:
 
         # 미체결 종목 없으면 넘기기
         if not non_trade_symbols:
-            pg_logger.warning(f"⚠️ [ORDER] {order_id}: 정정할 미체결 종목이 없어 흐름을 종료합니다")
+            order_logger.warning(f"⚠️ {order_id}: 정정할 미체결 종목이 없어 흐름을 종료합니다")
             return
 
         # 미체결 종목 전략 계산으로
@@ -478,11 +493,11 @@ class BuySellExecutor:
         )
 
         if not modify_symbols:
-            pg_logger.warning(f"❌ [ORDER] {order_id}: 조건을 통과한 종목이 없어 정정 주문을 중단합니다")
+            order_logger.warning(f"❌ {order_id}: 조건을 통과한 종목이 없어 정정 주문을 중단합니다")
             return
 
-        pg_logger.info(
-            f"🟡 [ORDER] {order_id}: 플러그인이 정정 대상 {len(modify_symbols)}개 종목을 반환했습니다"
+        order_logger.info(
+            f"🟡 {order_id}: 플러그인이 정정 대상 {len(modify_symbols)}개 종목을 반환했습니다"
         )
 
         await self._execute_orders(
@@ -500,8 +515,8 @@ class BuySellExecutor:
         cancel_order: OrderStrategyType,
         order_id: str,
     ):
-        pg_logger.info(
-            f"🗑️ [ORDER] {order_id}: 취소 주문 흐름을 시작합니다 (전략 종목 {len(symbols_from_strategy)}개)"
+        order_logger.info(
+            f"🗑️ {order_id}: 취소 주문 흐름을 시작합니다 (전략 종목 {len(symbols_from_strategy)}개)"
         )
         dps = await self._setup_dps(system, cancel_order)
 
@@ -510,7 +525,7 @@ class BuySellExecutor:
 
         # 미체결 종목 없으면 넘기기
         if not non_trade_symbols:
-            pg_logger.warning(f"⚠️ [ORDER] {order_id}: 취소할 미체결 종목이 없어 흐름을 종료합니다")
+            order_logger.warning(f"⚠️ {order_id}: 취소할 미체결 종목이 없어 흐름을 종료합니다")
             return
 
         # 미체결 종목 전략 계산으로
@@ -532,12 +547,12 @@ class BuySellExecutor:
         )
 
         if cancel_symbols:
-            pg_logger.info(
-                f"🔴 [ORDER] {order_id}: 플러그인이 취소 대상 {len(cancel_symbols)}개 종목을 반환했습니다"
+            order_logger.info(
+                f"🔴 {order_id}: 플러그인이 취소 대상 {len(cancel_symbols)}개 종목을 반환했습니다"
             )
         else:
-            pg_logger.warning(
-                f"❌ [ORDER] {order_id}: 취소 조건을 만족하는 종목이 없습니다"
+            order_logger.warning(
+                f"❌ {order_id}: 취소 조건을 만족하는 종목이 없습니다"
             )
 
     async def _build_order_function(
@@ -548,7 +563,7 @@ class BuySellExecutor:
             BaseModifyOrderOverseasStockResponseType,
             BaseCancelOrderOverseasStockResponseType,
             BaseNewOrderOverseasFuturesResponseType,
-            BaseModifyOrderOverseasFutureResponseType,
+            BaseModifyOrderOverseasFuturesResponseType,
             BaseCancelOrderOverseasFuturesResponseType,
         ],
         field: Literal["new", "modify", "cancel"]
@@ -680,7 +695,7 @@ class BuySellExecutor:
         })
 
         if result.error_msg:
-            pg_logger.error(f"❗️ [ORDER] 주문 전송에 실패했습니다: {result.error_msg}")
+            order_logger.error(f"❗️ 주문 전송에 실패했습니다: {result.error_msg}")
             raise exceptions.OrderException(
                 message=f"Order placement failed: {result.error_msg}"
             )
@@ -717,8 +732,8 @@ class BuySellExecutor:
                 if cosoq02701 and getattr(cosoq02701, "block3", None):
                     dps[0]["deposit"] = cosoq02701.block3[0].FcurrDps
                     dps[0]["orderable_amount"] = cosoq02701.block3[0].FcurrOrdAbleAmt
-                    pg_logger.debug(
-                        f"[ORDER] DPS: LS 해외주식 잔고 조회 결과 예수금={dps[0]['deposit']} 주문가능금액={dps[0]['orderable_amount']}"
+                    order_logger.debug(
+                        f"DPS: LS 해외주식 잔고 조회 결과 예수금={dps[0]['deposit']} 주문가능금액={dps[0]['orderable_amount']}"
                     )
 
             elif product == "overseas_futures":
@@ -739,8 +754,8 @@ class BuySellExecutor:
                     dps[0]["deposit"] = block.OvrsFutsDps if block else 0.0
                     dps[0]["orderable_amount"] = block.AbrdFutsOrdAbleAmt if block else 0.0
 
-        pg_logger.debug(
-            f"[ORDER] DPS: 최종 예수금={dps[0]['deposit']} 주문가능금액={dps[0]['orderable_amount']}"
+        order_logger.debug(
+            f"DPS: 최종 예수금={dps[0]['deposit']} 주문가능금액={dps[0]['orderable_amount']}"
         )
         return dps
 
@@ -752,7 +767,7 @@ class BuySellExecutor:
             BaseModifyOrderOverseasStockResponseType,
             BaseCancelOrderOverseasStockResponseType,
             BaseNewOrderOverseasFuturesResponseType,
-            BaseModifyOrderOverseasFutureResponseType,
+            BaseModifyOrderOverseasFuturesResponseType,
             BaseCancelOrderOverseasFuturesResponseType,
         ]],
         community_instance: Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFutures]],
@@ -762,8 +777,8 @@ class BuySellExecutor:
         """Execute trades for the given symbols."""
         for symbol in symbols:
             if symbol.get("success") is False:
-                pg_logger.debug(
-                    f"[ORDER] {order_id}: 조건을 통과하지 못한 종목 {self._symbol_label(symbol)}을(를) 건너뜁니다"
+                order_logger.debug(
+                    f"{order_id}: 조건을 통과하지 못한 종목 {self._symbol_label(symbol)}을(를) 건너뜁니다"
                 )
                 continue
 
@@ -785,7 +800,7 @@ class BuySellExecutor:
             )
 
             if result and result.error_msg:
-                pg_logger.error(f"❗️ [ORDER] {order_id}: 주문 전송에 실패했습니다 -> {result.error_msg}")
+                order_logger.error(f"❗️ {order_id}: 주문 전송에 실패했습니다 -> {result.error_msg}")
                 continue
 
             product_key = system.get("securities", {}).get("product", "overseas_stock") or "overseas_stock"
@@ -793,6 +808,6 @@ class BuySellExecutor:
             field_label = self._field_label(field)
             product_label = self._product_label(product_key)
             ord_display = ord_no or "-"
-            pg_logger.info(
-                f"{icon} [ORDER] {order_id}: {product_label} {field_label} 주문 완료 ({self._symbol_label(symbol)}, 주문번호={ord_display})"
+            order_logger.info(
+                f"{icon} {order_id}: {product_label} {field_label} 주문 완료 ({self._symbol_label(symbol)}, 주문번호={ord_display})"
             )

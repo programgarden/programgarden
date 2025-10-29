@@ -35,7 +35,7 @@ class BaseModifyOrderOverseasStock(BaseOrderOverseasStock[BaseModifyOrderOversea
     pass
 
 
-class BaseModifyOrderOverseasFutureResponseType(TypedDict, total=False):
+class BaseModifyOrderOverseasFuturesResponseType(TypedDict, total=False):
     """해외선물 정정주문을 넣기 위한 반환값 데이터"""
 
     success: bool
@@ -54,12 +54,12 @@ class BaseModifyOrderOverseasFutureResponseType(TypedDict, total=False):
     """선물주문구분코드 (2: 정정)"""
 
     bns_tp_code: Literal["1", "2"]
-    """매매구분코드"""
+    """매매구분코드 (1: 매도, 2: 매수)"""
 
     futs_ord_ptn_code: Literal["2"]
     """선물주문유형코드 (2: 지정가)"""
 
-    crcy_code_val: str
+    crcy_code_val: str = ""
     """통화코드값"""
 
     ovrs_drvt_ord_prc: float
@@ -71,17 +71,17 @@ class BaseModifyOrderOverseasFutureResponseType(TypedDict, total=False):
     ord_qty: int
     """주문수량"""
 
-    ovrs_drvt_prdt_code: str
+    ovrs_drvt_prdt_code: str = ""
     """해외파생상품코드"""
 
-    due_yymm: str
+    due_yymm: str = ""
     """만기년월"""
 
-    exch_code: str
+    exch_code: str = ""
     """거래소코드"""
 
 
-class BaseModifyOrderOverseasFutures(BaseOrderOverseasFutures[BaseModifyOrderOverseasFutureResponseType]):
+class BaseModifyOrderOverseasFutures(BaseOrderOverseasFutures[BaseModifyOrderOverseasFuturesResponseType]):
     """해외선물 정정 주문 전략 기본 클래스"""
 
     pass
