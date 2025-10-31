@@ -71,14 +71,14 @@ class BaseModifyOrderOverseasFuturesResponseType(TypedDict, total=False):
     ord_qty: int
     """주문수량"""
 
+    exch_code: str
+    """거래소코드, 모의투자는 HKEX 고정"""
+
     ovrs_drvt_prdt_code: str = ""
     """해외파생상품코드"""
 
     due_yymm: str = ""
     """만기년월"""
-
-    exch_code: str = ""
-    """거래소코드"""
 
 
 class BaseModifyOrderOverseasFutures(BaseOrderOverseasFutures[BaseModifyOrderOverseasFuturesResponseType]):

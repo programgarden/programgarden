@@ -120,7 +120,7 @@ class ConditionExecutor:
         ]],
         product: Optional[str],
     ) -> List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]:
-        """Ensure user-provided symbol dicts carry required runtime fields."""
+        """사용자가 관심종목으로 넣은 종목 딕셔너리가 필요한 런타임 필드를 포함하도록 합니다."""
 
         if not symbols:
             return []
@@ -360,8 +360,11 @@ class ConditionExecutor:
             symbol_info=symbol_info,
         )
 
+        position_side = result.get("position_side", None)
+        direction_note = f", 방향 {position_side}" if position_side else ""
+        status = "통과" if result.get("success") else "실패"
         condition_logger.debug(
-            f"{condition_id}: {self._symbol_label(symbol_info)} 결과 -> 성공={result.get('success')} 가중치={result.get('weight', 0)}"
+            f"조건 {condition_id}의 {self._symbol_label(symbol_info)} 종목의 계산의 결과는 {status}이고 가중치는 {result.get('weight', 0)}{direction_note} 입니다."
         )
 
         return result
@@ -462,91 +465,125 @@ class ConditionExecutor:
         order_id = strategy.get("order_id", None)
         orders = system.get("orders", {})
         conditions = strategy.get("conditions", [])
+        product = securities.get("product", None)
 
         my_symbols = self._coerce_user_symbols(
             symbols=strategy.get("symbols", []),
-            product=securities.get("product"),
+            product=product,
         )
         strategy["symbols"] = my_symbols
 
         order_types = []
         if order_id is not None:
             order_types = await self._get_order_types(order_id, orders)
-            condition_logger.debug(
-                f"{strategy.get('id')}: 주문 ID '{order_id}'의 주문 유형 -> {order_types}"
-            )
 
         market_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
         account_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
         non_account_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
 
-        if not my_symbols and ("new_buy" in order_types or order_types is None):
-            condition_logger.debug(
-                f"{strategy.get('id')}: 신규 매수를 위한 시장 종목을 조회합니다"
-            )
-            market_symbols = await self.symbol_provider.get_symbols(
-                order_type="new_buy",
-                securities=securities,
-            )
+        # 해외주식은 매수/매도 구분이 필요하지만
+        # 해외선물은 매수/매도 구분 없이 보유종목(미결제종목)을 조회해야한다.
+        if product == "overseas_stock":
+            if (
+                not my_symbols
+                or (
+                    order_types is None
+                    or "new_buy" in order_types
+                )
+            ):
+                market_symbols = await self.symbol_provider.get_symbols(
+                    order_type="new_buy",
+                    securities=securities,
+                )
 
-        if "new_sell" in order_types:
-            condition_logger.debug(
-                f"{strategy.get('id')}: 신규 매도를 위한 계좌 종목을 조회합니다"
-            )
+            if "new_sell" in order_types:
+                account_symbols = await self.symbol_provider.get_symbols(
+                    order_type="new_sell",
+                    securities=securities,
+                )
+
+        elif product == "overseas_futures":
+            if (
+                not my_symbols
+                or (
+                    order_types is None
+                    or "new_buy" in order_types
+                    or "new_sell" in order_types
+                )
+            ):
+                market_symbols = await self.symbol_provider.get_symbols(
+                    order_type=None,
+                    securities=securities,
+                    product=product,
+                )
+
             account_symbols = await self.symbol_provider.get_symbols(
-                order_type="new_sell",
+                order_type=None,
                 securities=securities,
+                product=product,
+                futures_outstanding_only=True,
             )
 
         if "modify_buy" in order_types:
-            condition_logger.debug(
-                f"{strategy.get('id')}: 정정 매수를 위한 종목을 조회합니다"
-            )
             non_account_symbols = await self.symbol_provider.get_symbols(
                 order_type="modify_buy",
                 securities=securities,
             )
+
         elif "modify_sell" in order_types:
-            condition_logger.debug(
-                f"{strategy.get('id')}: 정정 매도를 위한 종목을 조회합니다"
-            )
             non_account_symbols = await self.symbol_provider.get_symbols(
                 order_type="modify_sell",
                 securities=securities,
             )
         elif "cancel_buy" in order_types:
-            condition_logger.debug(
-                f"{strategy.get('id')}: 취소 매수를 위한 종목을 조회합니다"
-            )
             non_account_symbols = await self.symbol_provider.get_symbols(
                 order_type="cancel_buy",
                 securities=securities,
             )
         elif "cancel_sell" in order_types:
-            condition_logger.debug(
-                f"{strategy.get('id')}: 취소 매도를 위한 종목을 조회합니다"
-            )
             non_account_symbols = await self.symbol_provider.get_symbols(
                 order_type="cancel_sell",
                 securities=securities,
             )
 
-        # Merge market_symbols and account_symbols into symbols without duplicate ids
+        # TODO: 관심종목의 종목이 중복 계산되지 않도록, 전체종목 및 보유종목 및 미체결종목에 포함되어 있으면
+        # 관심종목에서 제외되도록 만든다.
         seen_ids = set()
         for symbol in my_symbols:
-            exch = symbol.get("exchcd", "")
+            exch = symbol.get("exchange", "") or symbol.get("exchcd", "")
             sym = symbol.get("symbol", "")
-            seen_ids.add(f"{exch}:{sym}:")
+            seen_ids.add(f"{exch}:{sym}")
+        print("market_symbols:", seen_ids)
 
-        for src in (market_symbols, account_symbols, non_account_symbols):
-            for symbol in src:
-                exch = symbol.get("exchcd", "")
-                sym = symbol.get("symbol", "")
-                ord_no = symbol.get("OrdNo", "")
-                ident = f"{exch}:{sym}:{ord_no}"
-                if ident not in seen_ids:
-                    my_symbols.append(symbol)
-                    seen_ids.add(ident)
+        # TODO 관심종목을 확인해서 보유종목, 미체결 종목에 있는지 확인한 후에
+        # 없으면 관심종목만 계산하도록 진행한다.
+
+        responsible_symbols: List[SymbolInfoOverseasStock | SymbolInfoOverseasFutures] = []
+
+        # 미체결 정정/취소 주문에서는 관심종목에 있는 경우만 계산하도록 한다.
+        for non_symbol in non_account_symbols:
+            exch = non_symbol.get("exchange", "") or non_symbol.get("exchcd", "")
+            sym = non_symbol.get("symbol", "")
+            # ord_no = symbol.get("OrdNo", "")
+            ident = f"{exch}:{sym}"
+            if ident in seen_ids:
+                responsible_symbols.append(non_symbol)
+
+        # 보유 잔고 판매 주문에서는 관심종목에 있는 경우만 계산하도록 한다.
+        for account_symbol in account_symbols:
+            exch = account_symbol.get("exchange", "") or account_symbol.get("exchcd", "")
+            sym = account_symbol.get("symbol", "")
+            ident = f"{exch}:{sym}"
+            if ident in seen_ids:
+                responsible_symbols.append(account_symbol)
+
+        # 시장 종목들 주문에서는 관심종목에 있는 경우만 계산하도록 만든다.
+        for market_symbol in market_symbols:
+            exch = market_symbol.get("exchange", "") or market_symbol.get("exchcd", "")
+            sym = market_symbol.get("symbol", "")
+            ident = f"{exch}:{sym}"
+            if ident in seen_ids:
+                responsible_symbols.append(market_symbol)
 
         max_symbols = strategy.get("max_symbols", {})
         max_order = max_symbols.get("order", "random")
@@ -555,24 +592,28 @@ class ConditionExecutor:
         # Sort symbols based on the specified order
         if max_order == "random":
             import random
-            random.shuffle(my_symbols)
+            random.shuffle(responsible_symbols)
         elif max_order == "mcap":
-            my_symbols.sort(key=lambda x: x.get("mcap", 0), reverse=True)
+            responsible_symbols.sort(key=lambda x: x.get("mcap", 0), reverse=True)
 
         if max_count > 0:
-            my_symbols = my_symbols[:max_count]
+            responsible_symbols = responsible_symbols[:max_count]
             condition_logger.debug(
                 f"{strategy.get('id')}: '{max_order}' 기준으로 최대 {max_count}개 종목만 사용합니다"
             )
 
         if not conditions:
             condition_logger.debug(
-                f"{strategy.get('id')}: 조건이 없어 {len(my_symbols)}개 종목을 그대로 반환합니다"
+                f"{strategy.get('id')}: 조건이 없어 {len(responsible_symbols)}개 종목을 그대로 반환합니다"
             )
-            return my_symbols
+            return responsible_symbols
+
+        if not responsible_symbols:
+            condition_logger.debug(f"{order_id} 주문 전략을 위해서 분석하려는 종목이 없습니다.")
+            return []
 
         passed_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
-        for symbol_info in my_symbols:
+        for symbol_info in responsible_symbols:
             conditions = strategy.get("conditions", [])
             logic = strategy.get("logic", "and")
             threshold = strategy.get("threshold", None)
@@ -607,8 +648,12 @@ class ConditionExecutor:
                             "response": res,
                         }
                     )
+
+                    position_side = res.get("position_side", None)
+                    direction_note = f", 방향 {position_side}" if position_side else ""
+                    status = "통과" if res.get("success") else "실패"
                     condition_logger.debug(
-                        f"{res.get('condition_id')}: {self._symbol_label(symbol_info)} 결과 -> 성공={res.get('success')} 가중치={res.get('weight', 0)}"
+                        f"조건 {res.get('condition_id')}의 {self._symbol_label(symbol_info)} 종목의 계산의 결과는 {status}이고 가중치는 {res.get('weight', 0)}{direction_note}입니다."
                     )
                     condition_results.append(res)
 
@@ -645,10 +690,6 @@ class ConditionExecutor:
                 threshold=threshold,
             )
             if complete:
-                direction_note = f", 방향 {position_side}" if position_side else ""
-                condition_logger.debug(
-                    f"{strategy.get('id')}: 종목 {self._symbol_label(symbol_info)} 통과 (가중치 {total_weight}{direction_note})"
-                )
                 symbol_info["position_side"] = position_side or "flat"
                 passed_symbols.append(symbol_info)
             else:

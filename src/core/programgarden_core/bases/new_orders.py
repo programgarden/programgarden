@@ -69,14 +69,14 @@ class BaseNewOrderOverseasFuturesResponseType(TypedDict):
     ord_qty: int
     """주문수량"""
 
+    exch_code: str
+    """거래소코드 (빈값으로), 모의투자는 HKEX 고정"""
+
     prdt_code: str = ""
     """상품코드 (빈값으로)"""
 
     due_yymm: str = ""
     """만기년월 (빈값으로)"""
-
-    exch_code: str = ""
-    """거래소코드 (빈값으로)"""
 
     crcy_code: str = ""
     """통화코드 (빈값으로)"""

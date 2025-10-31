@@ -117,7 +117,9 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
         if self._shutdown_notified:
             return
         self._shutdown_notified = True
-        system_logger.info("The program has terminated.")
+
+        system_logger.debug("The program has terminated.")
+
         shutdown_exc = SystemShutdownException()
         pg_listener.emit_exception(shutdown_exc)
         pg_listener.stop()
@@ -142,11 +144,15 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
     async def _execute(self, system: SystemType):
         try:
             securities = system.get("securities", {})
+            product = securities.get("product", None)
             company = securities.get("company", None)
             if company == "ls":
                 ls = LS.get_instance()
 
                 paper_trading = bool(securities.get("paper_trading", False))
+                if product == "overseas_futures" and paper_trading:
+                    system_logger.warning("해외선물 모의투자는 홍콩거래소(HKEX)만 지원됩니다.")
+
                 if getattr(ls, "token_manager", None) is not None:
                     ls.token_manager.configure_trading_mode(paper_trading)
 

@@ -60,7 +60,7 @@ class MaxSymbolsLimitType(TypedDict):
     """
     종목 선택 방식
     - random: 랜덤 선택
-    - mcap: 시가총액 상위 선택
+    - mcap: 시가총액 상위 선택 (해외주식만 지원)
     """
     limit: int
     """선택할 종목 수"""

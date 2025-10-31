@@ -8,7 +8,9 @@ from programgarden_core import (
     BaseNewOrderOverseasFuturesResponseType,
 
     BaseModifyOrderOverseasFutures,
-    BaseModifyOrderOverseasFuturesResponseType
+    BaseModifyOrderOverseasFuturesResponseType,
+    BaseCancelOrderOverseasFutures,
+    BaseCancelOrderOverseasFuturesResponseType
 )
 import os
 
@@ -87,9 +89,36 @@ class OrderModifyTest(BaseModifyOrderOverseasFutures):
             "futs_ord_tp_code": "2",
             "bns_tp_code": "1",
             "futs_ord_ptn_code": "2",
-            "ovrs_drvt_ord_prc": 0.66000,
+            "ovrs_drvt_ord_prc": 2645.80,
             "cndi_ord_prc": 0.0,
             "ord_qty": 1,
+        }]
+
+    async def on_real_order_receive(self, order_type, response):
+        pass
+
+
+class OrderCancelTest(BaseCancelOrderOverseasFutures):
+
+    id: str = "OrderCancelTest"
+    description: str = "취소주문 테스트"
+    securities: List[str] = ["ls-sec.co.kr"]
+    order_types = ["cancel_buy", "cancel_sell"]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    async def execute(self) -> List[BaseCancelOrderOverseasFuturesResponseType]:
+        print(f"Executing order for symbol: {self.non_traded_symbols}")
+
+        return [{
+            "success": True,
+            "ovrs_futs_org_ord_no": self.non_traded_symbols[0].get("OvrsFutsOrdNo", ""),
+            "isu_code_val": self.non_traded_symbols[0].get("IsuCodeVal", ""),
+            "futs_ord_tp_code": "3",
+            "prdt_tp_code": "",
+            "exch_code": "",
+            "ord_dt": "20251023",
         }]
 
     async def on_real_order_receive(self, order_type, response):
@@ -147,11 +176,11 @@ if __name__ == "__main__":
                     "로직": "at_least",
                     "임계값": 1,
                     "symbols": [{
-                        "symbol": "ADZ25",
-                        "name": "Australian Dollar",
-                        "exchange": "CME"
+                        "symbol": "MCAX25",
+                        "name": "China A50 Index Futures",
+                        "exchange": "HKEX"
                     }],
-                    "order_id": "OrderModifyTest",
+                    "order_id": "OrderCancelTest",
                     "conditions": [
                         StrategyTest()
                     ],
@@ -159,10 +188,10 @@ if __name__ == "__main__":
             ],
             "orders": [
                 {
-                    "order_id": "OrderModifyTest",
+                    "order_id": "OrderCancelTest",
                     "description": "테스트 주문",
                     "block_duplicate_buy": True,
-                    "condition": OrderModifyTest()
+                    "condition": OrderCancelTest()
                 }
             ]
         }
