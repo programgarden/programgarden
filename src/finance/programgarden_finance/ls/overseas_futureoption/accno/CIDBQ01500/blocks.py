@@ -346,9 +346,9 @@ class CIDBQ01500OutBlock2(BaseModel):
     BnsTpCode: str = Field(
         default="",
         title="매매구분코드",
-        description="매매구분코드"
+        description="매매구분코드 (1: 매도, 2: 매수)"
     )
-    """매매구분코드"""
+    """매매구분코드 (1: 매도, 2: 매수)"""
 
     CmnCodeNm: str = Field(
         default="",

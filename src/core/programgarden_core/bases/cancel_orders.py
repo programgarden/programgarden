@@ -53,11 +53,11 @@ class BaseCancelOrderOverseasFuturesResponseType(TypedDict, total=False):
     futs_ord_tp_code: Literal["3"]
     """선물주문구분코드 (3: 취소)"""
 
-    prdt_tp_code: str
-    """상품구분코드"""
+    prdt_tp_code: str = ""
+    """상품구분코드 (빈값으로)"""
 
-    exch_code: str
-    """거래소코드"""
+    exch_code: str = ""
+    """거래소코드 (빈값으로 해도됨), 모의투자는 HKEX 고정"""
 
 
 class BaseCancelOrderOverseasFutures(BaseOrderOverseasFutures[BaseCancelOrderOverseasFuturesResponseType]):

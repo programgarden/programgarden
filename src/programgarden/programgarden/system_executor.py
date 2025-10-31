@@ -60,7 +60,7 @@ class SystemExecutor:
     async def _execute_trade(
         self,
         system: SystemType,
-        symbols_snapshot: list[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]],
+        res_symbols_from_conditions: list[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]],
         trade: OrderStrategyType,
         order_id: str,
         order_types: List[OrderType],
@@ -76,42 +76,39 @@ class SystemExecutor:
             order_types (List[OrderType]): The types of orders to execute.
         """
         order_type_label = self._format_order_types(order_types)
-        symbol_count = len(symbols_snapshot)
+        symbol_count = len(res_symbols_from_conditions)
 
         if any(ot in ["new_buy", "new_sell"] for ot in order_types):
             trade_logger.info(
-                f"🟢 {order_id}: {symbol_count}개 종목에 신규 주문({order_type_label}) 전송"
+                f"주문 전략 {order_id}의 {symbol_count}개 종목 신규 주문 요청합니다."
             )
             await self.buy_sell_executor.new_order_execute(
                 system=system,
-                symbols_from_strategy=symbols_snapshot,
+                res_symbols_from_conditions=res_symbols_from_conditions,
                 new_order=trade,
                 order_id=order_id,
                 order_types=order_types
             )
         elif any(ot in ["modify_buy", "modify_sell"] for ot in order_types):
-            trade_logger.info(
-                f"🟡 {order_id}: {symbol_count}개 종목에 정정 주문({order_type_label}) 전송"
-            )
             await self.buy_sell_executor.modify_order_execute(
                 system=system,
-                symbols_from_strategy=symbols_snapshot,
+                symbols_from_strategy=res_symbols_from_conditions,
                 modify_order=trade,
                 order_id=order_id,
             )
         elif any(ot in ["cancel_buy", "cancel_sell"] for ot in order_types):
             trade_logger.info(
-                f"🔴 {order_id}: {symbol_count}개 종목에 취소 주문({order_type_label}) 전송"
+                f"주문 전략 {order_id}의 {symbol_count}개 종목에 취소 주문 요청합니다."
             )
             await self.buy_sell_executor.cancel_order_execute(
                 system=system,
-                symbols_from_strategy=symbols_snapshot,
+                symbols_from_strategy=res_symbols_from_conditions,
                 cancel_order=trade,
                 order_id=order_id,
             )
         else:
             trade_logger.warning(
-                f"⚠️ {order_id}: 지원되지 않는 주문 유형({order_type_label})이라 실행을 건너뜁니다"
+                f"주문 전략 {order_id}에서 지원되지 않는 주문 유형({order_type_label})이라 실행을 건너뜁니다"
             )
 
     # Helper: parse order_time range object
@@ -224,7 +221,7 @@ class SystemExecutor:
         self,
         system: SystemType,
         trade: OrderStrategyType,
-        symbols_snapshot: list[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]],
+        res_symbols_from_conditions: list[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]],
         strategy_order_id: str,
         order_types: OrderType,
     ) -> bool:
@@ -246,7 +243,7 @@ class SystemExecutor:
 
         # no scheduling configured -> execute immediately
         if not order_range:
-            await self._execute_trade(system, symbols_snapshot, trade, strategy_order_id, order_types)
+            await self._execute_trade(system, res_symbols_from_conditions, trade, strategy_order_id, order_types)
             return True
 
         # inside window -> immediate
@@ -254,7 +251,7 @@ class SystemExecutor:
         if self._is_dt_in_window(now, order_range["start"], order_range["end"], order_range["days"]):
 
             # inside window -> immediate
-            await self._execute_trade(system, symbols_snapshot, trade, strategy_order_id, order_types)
+            await self._execute_trade(system, res_symbols_from_conditions, trade, strategy_order_id, order_types)
             return True
 
         # outside window -> behavior
@@ -281,53 +278,53 @@ class SystemExecutor:
             )
             return False
 
-        async def _scheduled_exec(delay, symbols_snapshot, trade, order_id, when, tz):
+        async def _scheduled_exec(delay, res_symbols_from_conditions, trade, order_id, when, tz):
             # wait until scheduled time
             await asyncio.sleep(delay)
 
-            await self._execute_trade(system, symbols_snapshot, trade, order_id, order_types)
+            await self._execute_trade(system, res_symbols_from_conditions, trade, order_id, order_types)
 
         trade_logger.info(
             f"⏳ {strategy_order_id}: {order_type_label} 주문을 {next_start.isoformat()} ({order_range['tz']}) 실행으로 예약했습니다"
         )
-        await _scheduled_exec(delay, symbols_snapshot, trade, strategy_order_id, next_start, order_range["tz"])
+        await _scheduled_exec(delay, res_symbols_from_conditions, trade, strategy_order_id, next_start, order_range["tz"])
 
         # returned after deferred execution; allow caller to continue with subsequent logic
         return True
 
-    async def _run_once_execute(self, system: SystemType, strategy: StrategyType):
+    async def _run_once_execute(
+            self,
+            system: SystemType,
+            strategy: StrategyType,
+            cnt: int = 0
+    ):
         """
         Run a single execution of the strategy within the system.
         """
         strategy_id = strategy.get("id", "<unknown>")
-        strategy_logger.info(f"🚀 {strategy_id}: 전략 실행을 시작합니다")
+        strategy_logger.info(f"\n\n\n🚀🚀🚀 전략 {strategy_id}의 {cnt}번째 실행을 시작합니다 🚀🚀🚀\n\n")
 
         conditions = strategy.get("conditions", [])
         if not conditions:
             strategy_logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
             return
 
-        response_symbols = await self.condition_executor.execute_condition_list(system=system, strategy=strategy)
+        # TODO: 조건 계산 결과값 종목들 반환
+        res_symbols_from_conditions = await self.condition_executor.execute_condition_list(system=system, strategy=strategy)
         async with self.condition_executor.state_lock:
-            success = len(response_symbols) > 0
+            success = len(res_symbols_from_conditions) > 0
 
         if not success:
-            strategy_logger.info(f"⚪️ {strategy_id}: 조건을 통과한 종목이 없어 주문을 건너뜁니다")
+            strategy_logger.info(f"전략 {strategy_id}을 통과한 종목이 없어 주문을 건너뜁니다")
             return
-
-        symbol_count = len(response_symbols)
 
         # 전략 계산 통과됐으면 매수/매도 진행
         orders = system.get("orders", [])
         strategy_order_id = strategy.get("order_id", None)
 
-        matched_trade = False
-        triggered_trades: list[str] = []
         for trade in orders:
             if trade.get("order_id") != strategy_order_id:
                 continue
-
-            matched_trade = True
 
             condition = trade.get("condition", None)
             if condition is None:
@@ -348,23 +345,14 @@ class SystemExecutor:
                 condition_logger.warning(f"condition_id '{condition_id}'에 대한 주문 유형을 알 수 없어 건너뜁니다")
                 continue
 
-            symbols_snapshot = list(response_symbols)
+            m_res_symbols_from_conditions = list(res_symbols_from_conditions)
 
             await self._process_trade_time_window(
                 system=system,
                 trade=trade,
-                symbols_snapshot=symbols_snapshot,
+                res_symbols_from_conditions=m_res_symbols_from_conditions,
                 strategy_order_id=strategy_order_id,
                 order_types=order_types,
-            )
-            triggered_trades.append(
-                f"{trade.get('order_id')} ({self._format_order_types(order_types)})"
-            )
-
-        if matched_trade:
-            trade_summary = ", ".join(triggered_trades) if triggered_trades else "없음"
-            strategy_logger.info(
-                f"✅ {strategy_id}: {symbol_count}개 종목 통과, 실행된 주문 -> {trade_summary}"
             )
 
     async def _run_with_strategy(self, strategy_id: str, strategy: StrategyType, system: SystemType):
@@ -451,14 +439,19 @@ class SystemExecutor:
                     delay = 0
 
                 strategy_logger.debug(
-                    f"{strategy_id}: 다음 실행 #{cnt + 1}은 {next_dt.isoformat()} ({tz_label})"
+                    f"전략 {strategy_id}의 다음 {cnt + 1}번째의 실행 시간은 {next_dt.isoformat()} ({tz_label})입니다."
                 )
+
                 await asyncio.sleep(delay)
                 if not self.running:
                     break
 
                 try:
-                    await self._run_once_execute(system=system, strategy=strategy)
+                    await self._run_once_execute(
+                        system=system,
+                        strategy=strategy,
+                        cnt=cnt+1
+                    )
                 except BasicException as exc:
                     pg_listener.emit_exception(exc)
                     raise
@@ -483,7 +476,7 @@ class SystemExecutor:
         try:
             await task
         except asyncio.CancelledError:
-            strategy_logger.debug(f"{strategy_id}: cron 태스크가 취소되었습니다")
+            strategy_logger.debug(f"전략 {strategy_id}의 스케줄이 강제 취소되었습니다.")
             raise
 
     async def execute_system(self, system: SystemType):
@@ -498,7 +491,7 @@ class SystemExecutor:
         self.plugin_resolver.reset_error_tracking()
 
         system_logger.info(
-            f"👋 {system_id}: {len(strategies)}개 전략 실행을 시작합니다"
+            f"👋 시스템 {system_id}에서 {len(strategies)}개 전략 실행을 시작합니다"
         )
 
         try:
@@ -559,16 +552,15 @@ class SystemExecutor:
             await self.stop()
             raise system_exc from exc
         finally:
-            system_logger.info(f"🏁 {system_id}: 시스템 실행이 종료되었습니다")
+            system_logger.debug(f"🏁 자동화매매 {system_id}의 실행이 종료되었습니다")
 
     async def stop(self):
         self.running = False
         pending = sum(1 for task in self.tasks if not task.done())
-        system_logger.info(f"🛑 중지 요청 수신, 진행 중인 태스크 {pending}개를 취소합니다")
+        system_logger.debug(f"🛑 진행 중인 작업 {pending}을 중지 요청으로 강제 취소합니다")
         for task in self.tasks:
             if not task.done():
                 task.cancel()
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
-            system_logger.info("🧹 남은 태스크 취소를 완료했습니다")
         self.tasks.clear()

@@ -143,7 +143,7 @@ class PluginResolver:
         self,
         system_id: Optional[str],
         trade: OrderStrategyType,
-        symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = [],
+        available_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = [],
         held_symbols: List[HeldSymbol] = [],
         non_trade_symbols: List[NonTradedSymbol] = [],
         dps: Optional[List[DpsTyped]] = None
@@ -171,7 +171,7 @@ class PluginResolver:
         if isinstance(condition, (BaseOrderOverseasStock, BaseOrderOverseasFutures)):
 
             if hasattr(condition, "_set_available_symbols"):
-                condition._set_available_symbols(symbols)
+                condition._set_available_symbols(available_symbols)
             if hasattr(condition, "_set_held_symbols"):
                 condition._set_held_symbols(held_symbols)
             if hasattr(condition, "_set_system_id") and system_id:
@@ -201,7 +201,7 @@ class PluginResolver:
             community_instance = cls(**params)
             # If plugin supports receiving the current symbol list, provide it.
             if hasattr(community_instance, "_set_available_symbols"):
-                community_instance._set_available_symbols(symbols)
+                community_instance._set_available_symbols(available_symbols)
             if hasattr(community_instance, "_set_held_symbols"):
                 community_instance._set_held_symbols(held_symbols)
             if hasattr(community_instance, "_set_system_id") and system_id:
@@ -222,7 +222,7 @@ class PluginResolver:
 
             # Plugins expose an async `execute` method that returns the symbols to act on.
             plugin_logger.debug(
-                f"{ident}: 매매 플러그인을 실행합니다 (입력 종목 {len(symbols or [])}개)"
+                f"{ident}: 매매 플러그인을 실행합니다 (입력 종목 {len(available_symbols or [])}개)"
             )
             result = await community_instance.execute()
             plugin_logger.debug(
