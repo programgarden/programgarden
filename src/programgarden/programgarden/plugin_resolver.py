@@ -1,3 +1,17 @@
+"""Plugin discovery, resolution, and error reporting helpers for Programgarden.
+
+EN:
+        Responsible for locating strategy/order plugin classes, instantiating them
+        with supplied parameters, and normalizing failure responses. The resolver
+        integrates with community packages, caches lookups, and emits structured
+        errors through :mod:`programgarden.pg_listener` to aid host applications.
+
+KR:
+        전략/주문 플러그인 클래스를 탐색하고, 제공된 파라미터로 인스턴스화하며, 실패
+        시 일관된 응답을 생성합니다. 커뮤니티 패키지와 연동하여 조회 결과를 캐시하고
+        :mod:`programgarden.pg_listener`를 통해 구조화된 오류를 전달합니다.
+"""
+
 from typing import Dict, List, Optional, Union
 import inspect
 from programgarden_core import (
@@ -37,26 +51,58 @@ try:
     from programgarden_community import get_community_condition  # type: ignore[import]
 except ImportError:
     def get_community_condition(_condition_id):
+        """Fallback when community package is unavailable (EN/KR).
+
+        EN:
+            Returns ``None`` to signal the resolver to continue searching built-in
+            targets.
+
+        KR:
+            기본 내장 플러그인 탐색을 계속 진행하도록 ``None``을 반환합니다.
+        """
+
         return None
 
 
 class PluginResolver:
     """Resolve and cache plugin classes by identifier.
 
-    Cache shape: Dict[str, type]
-    - keys are identifiers used for lookup (short name or fqdn)
-    - values are the resolved class objects
+    EN:
+        Maintains a lookup cache for strategy and order plugins, records previously
+        reported failures to avoid duplicate noise, and exposes helpers to execute
+        both built-in and community-provided plugins.
+
+    KR:
+        전략/주문 플러그인의 조회 캐시를 유지하고, 중복 오류 로그를 줄이기 위해 보고된
+        실패를 기록하며, 내장/커뮤니티 플러그인 모두를 실행하는 헬퍼를 제공합니다.
+
+    Attributes:
+        _plugin_cache (Dict[str, type]):
+            EN: Caches resolved plugin classes by identifier.
+            KR: 식별자별로 해석된 플러그인 클래스를 저장합니다.
+        _reported_condition_errors (set[str]):
+            EN: Tracks condition errors already reported to avoid duplication.
+            KR: 중복 보고를 피하기 위해 이미 보고한 조건 오류를 추적합니다.
+        _reported_order_errors (set[str]):
+            EN: Tracks order plugin errors already emitted.
+            KR: 이미 전송한 주문 플러그인 오류를 기록합니다.
     """
+
     def __init__(self):
         self._plugin_cache: Dict[str, type] = {}
         self._reported_condition_errors: set[str] = set()
         self._reported_order_errors: set[str] = set()
 
     def reset_error_tracking(self) -> None:
-        """Clear cached error reporting state.
+        """Reset state so previously reported errors can fire again.
 
-        호출 시 이전에 보고한 플러그인/조건 오류 정보를 초기화하여
-        새로운 시스템 실행에서 동일 오류도 다시 보고되도록 한다.
+        EN:
+            Clears both error-tracking sets to allow duplicate reports on subsequent
+            system executions.
+
+        KR:
+            두 에러 추적 세트를 초기화하여 다음 시스템 실행에서 동일 오류도 다시 보고될
+            수 있도록 합니다.
         """
         self._reported_condition_errors.clear()
         self._reported_order_errors.clear()
@@ -66,6 +112,16 @@ class PluginResolver:
         symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
         condition_id: Optional[str],
     ) -> Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]:
+        """Create a failure response shaped like a plugin execution result.
+
+        EN:
+            Converts symbol metadata into a failure payload consumed by downstream
+            listeners so they can gracefully handle plugin errors.
+
+        KR:
+            심볼 메타데이터를 플러그인 실패 페이로드로 변환하여 다운스트림 리스너가
+            오류를 우아하게 처리할 수 있도록 합니다.
+        """
         product_type = symbol_info.get("product_type") if isinstance(symbol_info, dict) else None
         product = "overseas_futures" if product_type == "overseas_futures" else "overseas_stock"
 
@@ -85,29 +141,26 @@ class PluginResolver:
         return response
 
     async def _resolve(self, condition_id: str):
-        """Locate a plugin class by name and cache the result.
+        """Find a plugin class by identifier and cache the result.
 
-        This method accepts either a short class name ("MyPlugin") or a
-        fully-qualified class name ("package.module.MyPlugin"). It
-        returns the class object if found and subclasses either
-        `BaseStrategyCondition` or `BaseNewBuyOverseasStock`.
+        EN:
+            Accepts short names or fully-qualified paths. Community plugins are
+            queried first, followed by built-in lookups. Successful resolutions are
+            cached for reuse.
 
-        Behaviour and notes:
-        - If the condition_id is already cached, the cached class is
-          returned immediately.
-        - Fully-qualified names are resolved first using importlib.
-        - If `programgarden_community` is installed, the resolver
-          attempts a top-level attribute lookup on the package and
-          then scans submodules using `pkgutil.walk_packages`.
-        - All import/scan failures are logged but do not raise; a
-          failure to resolve simply returns `None`.
+        KR:
+            짧은 이름 또는 전체 경로 모두를 받아 커뮤니티 플러그인을 우선 탐색하고,
+            실패 시 내장 플러그인을 찾습니다. 성공 시 결과를 캐시에 저장합니다.
 
         Args:
-            condition_id: Short or fully-qualified class name to resolve.
+            condition_id (str):
+                EN: Plugin identifier supplied in strategy/order definitions.
+                KR: 전략/주문 정의에서 제공된 플러그인 식별자입니다.
 
         Returns:
-            The resolved class object if found and valid, otherwise
-            `None`.
+            Optional[type]:
+                EN: Resolved class when available; ``None`` if lookup fails.
+                KR: 해석된 클래스 또는 실패 시 ``None``.
         """
         if condition_id in self._plugin_cache:
             return self._plugin_cache[condition_id]
@@ -160,11 +213,36 @@ class PluginResolver:
         ],
         Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFutures]]
             ]:
-        """Resolve and run the configured buy/sell plugin.
+        """Resolve and run a buy/sell plugin declared in the trade payload.
+
+        EN:
+            Supports both direct class instances and identifier-based plugins. Hook
+            points (`_set_available_symbols`, etc.) are invoked when present to
+            hydrate the plugin with runtime context.
+
+        KR:
+            트레이드 페이로드에 선언된 직접 인스턴스와 식별자 기반 플러그인을 모두
+            지원합니다. 실행 전 `_set_available_symbols` 등 훅을 호출해 런타임 컨텍스트를
+            주입합니다.
+
+        Args:
+            system_id (Optional[str]):
+                EN: Identifier of the running system, passed to plugins that expect it.
+                KR: 시스템 식별자로, 필요한 플러그인에 전달됩니다.
+            trade (OrderStrategyType):
+                EN: Order block containing the plugin declaration.
+                KR: 플러그인 선언을 포함하는 주문 블록입니다.
+            available_symbols (...):
+                EN/KR: 종목 목록 컨텍스트 (조건 결과, 보유 종목, 미체결 종목 등).
+            dps (Optional[List[DpsTyped]]):
+                EN: Account balance data for plugins needing buying power info.
+                KR: 매매 가능 잔고 정보를 요구하는 플러그인을 위한 계좌 잔고 데이터입니다.
 
         Returns:
-            A list of `BaseNewOrderOverseasStockResponseType` or `BaseModifyOrderOverseasStockResponseType` objects produced
-            by the plugin, or None if an error occurred.
+            tuple[Optional[List[...]], Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFutures]]]:
+                EN: Tuple containing plugin execution result list and the plugin
+                instance (if resolved).
+                KR: 실행 결과 리스트와 플러그인 인스턴스를 포함한 튜플입니다.
         """
 
         condition = trade.get("condition", {})
@@ -254,6 +332,18 @@ class PluginResolver:
         params: Dict,
         symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
     ) -> Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]:
+        """Execute a condition plugin for a single symbol.
+
+        EN:
+            Resolves the plugin, injects symbol/system context via optional hooks,
+            and returns the plugin's response. Failures trigger error emission and a
+            normalized failure payload.
+
+        KR:
+            플러그인을 해석한 뒤 선택적 훅을 통해 심볼/시스템 컨텍스트를 주입하고,
+            플러그인의 응답을 반환합니다. 실행 실패 시 오류를 전송하고 표준화된 실패
+            페이로드를 반환합니다.
+        """
         cls = await self._resolve(condition_id)
 
         if cls is None:
@@ -313,7 +403,16 @@ class PluginResolver:
             return self._build_failure_response(symbol_info, condition_id)
 
     async def get_order_types(self, condition_id: str) -> Optional[List[OrderType]]:
-        """Get order types from a condition class."""
+        """Retrieve declared ``order_types`` attribute from a plugin.
+
+        EN:
+            Returns ``None`` when the plugin lacks the attribute or the lookup
+            fails, enabling callers to fall back gracefully.
+
+        KR:
+            속성이 없거나 조회에 실패하면 ``None``을 반환하여 호출자가 우아하게 대처할 수
+            있도록 합니다.
+        """
         cls = await self._resolve(condition_id)
         if cls and hasattr(cls, 'order_types'):
             return cls.order_types

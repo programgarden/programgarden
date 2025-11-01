@@ -1,7 +1,19 @@
+"""Logging helpers for ProgramGarden namespaces.
+
+EN:
+    Provide convenience functions and colored formatters tailored to the
+    ``pg`` logger hierarchy so that SDK users can obtain structured output.
+
+KO:
+    SDK 사용자가 ``pg`` 로거 계층을 통해 구조화된 출력을 쉽게 얻도록 컬러
+    포매터와 편의 함수를 제공합니다.
+"""
+
 import logging
 from typing import Dict
 
-# ANSI 색상 코드
+# EN: ANSI escape codes used to colorize log output by level.
+# KO: 로그 레벨별 색상을 적용하기 위한 ANSI 이스케이프 코드 매핑입니다.
 LOG_COLORS = {
     "INFO": "\033[92m",  # 초록색
     "WARNING": "\033[93m",  # 노란색
@@ -10,7 +22,12 @@ LOG_COLORS = {
     "RESET": "\033[0m",  # 색상 초기화
 }
 
+# EN: Base namespace for all ProgramGarden loggers.
+# KO: ProgramGarden 로거 이름의 루트 네임스페이스입니다.
 _BASE_LOGGER_NAME = "pg"
+
+# EN: Canonical logger names grouped by functional categories.
+# KO: 기능 영역별로 정리된 표준 로거 이름 매핑입니다.
 _LOGGER_NAMES = {
     "system": f"{_BASE_LOGGER_NAME}.system",
     "strategy": f"{_BASE_LOGGER_NAME}.strategy",
@@ -22,6 +39,8 @@ _LOGGER_NAMES = {
     "finance": f"{_BASE_LOGGER_NAME}.finance",
 }
 
+# EN: Pre-resolved loggers exposed for external use.
+# KO: 외부에서 바로 사용할 수 있도록 준비된 로거 인스턴스입니다.
 pg_logger = logging.getLogger(_BASE_LOGGER_NAME)
 system_logger = logging.getLogger(_LOGGER_NAMES["system"])
 strategy_logger = logging.getLogger(_LOGGER_NAMES["strategy"])
@@ -46,9 +65,27 @@ _KNOWN_LOGGERS: Dict[str, logging.Logger] = {
 
 
 class _ColoredFormatter(logging.Formatter):
-    """메시지를 제외한 모든 항목에 로그 레벨별 색상을 입히는 포매터"""
+    """Formatter that applies level-specific ANSI colors.
+
+    EN:
+        Colors timestamps, level names, and logger names while keeping the
+        message body untouched for readability.
+
+    KO:
+        메시지 본문을 제외한 시간, 레벨, 로거 이름에 ANSI 색상을 입혀 가독성을
+        높입니다.
+    """
 
     def format_time(self, record, datefmt=None):
+        """Format timestamp with level-based coloring.
+
+        Parameters:
+            record (logging.LogRecord): Log record produced by the handler.
+            datefmt (Optional[str]): Optional datetime format string.
+
+        Returns:
+            str: Colorized timestamp string.
+        """
         # 원본 levelname을 사용 (format()에서 _orig_levelname에 저장)
         orig_level = getattr(record, "_orig_levelname", record.levelname)
         log_color = LOG_COLORS.get(orig_level, LOG_COLORS["RESET"])
@@ -56,6 +93,14 @@ class _ColoredFormatter(logging.Formatter):
         return f"{log_color}{t}{LOG_COLORS['RESET']}"
 
     def format(self, record):
+        """Apply ANSI color codes to select record attributes.
+
+        Parameters:
+            record (logging.LogRecord): Log record to format.
+
+        Returns:
+            str: Fully formatted log message string.
+        """
         # record의 원본 levelname을 저장 (나중에 formatTime에서 사용)
         orig_levelname = record.levelname
         record._orig_levelname = orig_levelname
@@ -73,7 +118,21 @@ class _ColoredFormatter(logging.Formatter):
 
 
 def get_logger(category: str) -> logging.Logger:
-    """Return a named logger under the pg namespace."""
+    """Return a logger scoped to the ``pg`` namespace.
+
+    EN:
+        Provide consistent logger retrieval for custom categories, caching
+        instances to avoid redundant creation.
+
+    KO:
+        커스텀 카테고리에 맞는 로거를 재사용할 수 있도록 생성 및 캐싱합니다.
+
+    Parameters:
+        category (str): Category or sub-namespace to retrieve.
+
+    Returns:
+        logging.Logger: Requested logger instance.
+    """
     if not category:
         return pg_logger
 
@@ -93,16 +152,21 @@ def get_logger(category: str) -> logging.Logger:
 
 
 def pg_log(level=logging.DEBUG):
-    """
-    로그 레벨을 설정합니다.
-    설정된 레벨부터 표시됩니다.
+    """Configure base ``pg`` logger with colored console output.
 
-    .. code-block:: python
-        logger.debug("디버그 메시지")
-        logger.info("정보 메시지")
-        logger.warning("경고 메시지")
-        logger.error("에러 메시지")
-        logger.critical("치명적인 메시지")
+    EN:
+        Attach the custom colored formatter to the root ProgramGarden logger and
+        propagate level settings to known child loggers.
+
+    KO:
+        ProgramGarden 루트 로거에 컬러 포매터를 부착하고 자식 로거에도 동일한
+        레벨을 적용합니다.
+
+    Parameters:
+        level (int): Logging level constant (e.g., ``logging.INFO``).
+
+    Returns:
+        None: The function configures loggers in place.
     """
 
     formatter = _ColoredFormatter(
@@ -125,7 +189,18 @@ def pg_log(level=logging.DEBUG):
 
 
 def pg_log_disable():
-    """로그를 완전히 비활성화합니다."""
+    """Disable all loggers managed by ProgramGarden.
+
+    EN:
+        Clear handlers and set levels beyond ``CRITICAL`` to suppress output.
+
+    KO:
+        모든 핸들러를 제거하고 ``CRITICAL`` 보다 높은 레벨로 설정하여 로그를
+        완전히 차단합니다.
+
+    Returns:
+        None: The function mutates global logging state.
+    """
     for logger in _KNOWN_LOGGERS.values():
         logger.handlers.clear()
         logger.setLevel(logging.CRITICAL + 1)
@@ -133,7 +208,17 @@ def pg_log_disable():
 
 
 def pg_log_reset():
-    """로그 설정을 초기화합니다."""
+    """Reset logger configuration to defaults.
+
+    EN:
+        Remove custom handlers and restore propagation for each known logger.
+
+    KO:
+        커스텀 핸들러를 제거하고 전파 설정을 복원하여 기본 상태로 되돌립니다.
+
+    Returns:
+        None: The function mutates global logging state.
+    """
     for logger in _KNOWN_LOGGERS.values():
         logger.handlers.clear()
         logger.setLevel(logging.NOTSET)

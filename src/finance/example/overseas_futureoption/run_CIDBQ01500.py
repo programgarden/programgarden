@@ -28,8 +28,8 @@ async def test_req_CIDBQ01500():
             RecCnt=1,
             AcntTpCode="1",
             FcmAcntNo="",
-            QryDt="20230609",
-            BalTpCode="1"
+            QryDt="20251101",
+            BalTpCode="2"
         )
     )
     print(await req.req_async())

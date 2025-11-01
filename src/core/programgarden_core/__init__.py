@@ -1,7 +1,12 @@
-"""
-핵심 기능 모듈
+"""ProgramGarden core module exports.
 
-LS OpenAPI 클라이언트의 핵심 기능을 제공합니다.
+EN:
+    Provide the primary interfaces, base classes, and helpers that external
+    developers rely on when integrating with ProgramGarden.
+
+KO:
+    ProgramGarden과 연동하는 외부 개발자를 위해 핵심 인터페이스, 베이스
+    클래스, 헬퍼 함수를 한곳에서 노출합니다.
 """
 
 from programgarden_core.alias_resolver import normalize_system_config
@@ -71,7 +76,8 @@ from programgarden_core.logs import (
     get_logger,
 )
 
-
+# EN: Public re-export list consolidating frequently used symbols.
+# KO: 외부 개발자가 자주 활용하는 심볼을 재노출하기 위한 목록입니다.
 __all__ = [
     logs,
     exceptions,

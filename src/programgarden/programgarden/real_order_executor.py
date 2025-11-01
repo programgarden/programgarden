@@ -1,3 +1,17 @@
+"""Real-time order websocket integration for Programgarden.
+
+EN:
+        Bridges LS finance websocket callbacks to community plugins and the global
+        :mod:`programgarden.pg_listener`. Incoming events are normalized into
+        unified order types and routed to plugin instances or queued until the
+        instance registers itself.
+
+KR:
+        LS 금융 웹소켓 콜백을 커뮤니티 플러그인과 글로벌
+        :mod:`programgarden.pg_listener`로 연결합니다. 수신한 이벤트를 일관된 주문
+        유형으로 변환한 뒤 플러그인 인스턴스로 전달하거나 등록 대기 큐에 보관합니다.
+"""
+
 import asyncio
 import threading
 from typing import Any, Dict, List, Optional, Union
@@ -10,26 +24,41 @@ from programgarden.pg_listener import pg_listener
 
 
 class RealOrderExecutor:
-    """
-    주문 상태에 대한 실시간 수신기
+    """Consume real-time order events and notify registered listeners.
+
+    EN:
+        Connects to LS websocket channels, keeps track of plugin instances that
+        originated orders, and delivers streaming updates back to them.
+
+    KR:
+        LS 웹소켓 채널에 연결하여 주문을 생성한 플러그인 인스턴스를 추적하고, 실시간
+        업데이트를 다시 전달합니다.
     """
 
     def __init__(self):
-        # map ordNo -> community instance that created the order
+        # EN: Map order numbers to originating plugin instances for callbacks.
+        # KR: 주문 번호별로 원본 플러그인 인스턴스를 기록해 콜백에 사용합니다.
         self._order_community_instance_map: Dict[str, Any] = {}
-        # pending messages received before the instance was registered
-        # ordNo -> list[response]
+        # EN: Pending messages buffered until an instance registers.
+        # KR: 인스턴스 등록 전 대기 중인 메시지를 버퍼링합니다.
         self._pending_order_messages: Dict[str, List[Dict[Any, Any]]] = {}
-        # simple lock to protect access to the two maps from multiple threads
-        # callbacks from the LS library may come from non-async threads.
+        # EN: Protect maps because LS callbacks may run on non-async threads.
+        # KR: LS 콜백이 비동기 외부 스레드에서 실행될 수 있어 락으로 보호합니다.
         self._lock = threading.Lock()
 
     async def real_order_websockets(
         self,
         system: SystemType,
     ):
-        """
-        Real-time order tracking function
+        """Establish websocket subscriptions for the given system.
+
+        EN:
+            Chooses the appropriate LS real-time client based on product type,
+            wires message handlers, and blocks until ``stop`` is invoked.
+
+        KR:
+            상품 유형에 따라 LS 실시간 클라이언트를 선택하고 메시지 핸들러를 연결한 뒤
+            ``stop`` 호출 전까지 대기합니다.
         """
 
         securities = system.get("securities", {})
@@ -69,11 +98,15 @@ class RealOrderExecutor:
         self,
         response: AS0.AS0RealResponse
     ):
-        """
-        실시간 주문 메세지 디스패치이다.
-        커뮤니티의 전략 인스턴스를 찾아서 on_real_order_receive 함수를 호출한다.
-        on_real_order_receive는 주문번호의 쌍을 이루고 있는 함수이고
-        주문이 발생할때마다 데이터와 함께 on_real_order_receive가 호출된다.
+        """Handle AS0 (order submission) messages from LS.
+
+        EN:
+            Normalizes the response into Programgarden order types, forwards to
+            registered plugins, and emits through :mod:`pg_listener`.
+
+        KR:
+            실시간 주문 응답이며, 응답을 Programgarden 주문 유형으로 정규화하여 플러그인과
+            :mod:`pg_listener`에 전달합니다.
         """
         try:
             ordNo = response.body.sOrdNo
@@ -101,6 +134,16 @@ class RealOrderExecutor:
         self,
         response: AS1.AS1RealResponse
     ) -> None:
+        """Handle AS1 (fill) messages and clear completed orders.
+
+        EN:
+            Removes order registrations once unexecuted quantity reaches zero and
+            emits both plugin callbacks and global listener notifications.
+
+        KR:
+            미체결 수량이 0이 되면 등록 정보를 정리하고, 플러그인 콜백 및 글로벌
+            리스너 알림을 전송합니다.
+        """
         try:
             ordNo = response.body.sOrdNo
             if ordNo is None:
@@ -131,6 +174,15 @@ class RealOrderExecutor:
         self,
         response: AS2.AS2RealResponse
     ) -> None:
+        """Handle AS2 (modification) messages and notify listeners.
+
+        EN:
+            Converts modification responses into unified order types and forwards
+            them to registered callbacks and listeners.
+
+        KR:
+            정정 응답을 일관된 주문 유형으로 변환하여 등록된 콜백과 리스너에 전달합니다.
+        """
         try:
             sOrdNo = response.body.sOrdNo
             if sOrdNo is None:
@@ -157,6 +209,15 @@ class RealOrderExecutor:
         self,
         response: AS3.AS3RealResponse
     ) -> None:
+        """Handle AS3 (cancellation completion) messages and clean registrations.
+
+        EN:
+            Removes the associated plugin instance and broadcasts cancellation
+            completion to observers.
+
+        KR:
+            관련 플러그인 인스턴스를 제거하고 취소 완료를 옵저버에 전파합니다.
+        """
         try:
             ordNo = response.body.sOrdNo
             if ordNo is None:
@@ -186,6 +247,16 @@ class RealOrderExecutor:
         self,
         response: AS4.AS4RealResponse
     ) -> None:
+        """Handle AS4 (rejection) messages and drop stale registrations.
+
+        EN:
+            Processes rejection payloads, cleans the instance cache, and emits a
+            rejection event for UI/log consumers.
+
+        KR:
+            거절 페이로드를 처리하고 인스턴스 캐시를 정리한 뒤 UI/로그 소비자를 위한
+            거절 이벤트를 발행합니다.
+        """
         try:
             ordNo = response.body.sOrdNo
             if ordNo is None:
@@ -215,6 +286,15 @@ class RealOrderExecutor:
         self,
         response: TC1.TC1RealResponse
     ) -> None:
+        """Handle TC1 (futures submission) real-time messages.
+
+        EN:
+            Dispatches futures submission notifications to plugin callbacks and the
+            listener bridge.
+
+        KR:
+            선물 주문 접수 알림을 플러그인 콜백과 리스너 브리지로 전달합니다.
+        """
         try:
             if response.body is None:
                 return
@@ -241,6 +321,16 @@ class RealOrderExecutor:
         self,
         response: TC2.TC2RealResponse
     ) -> None:
+        """Handle TC2 (futures modification/rejection) messages.
+
+        EN:
+            Determines whether the payload represents a modification or rejection,
+            updates registrations accordingly, and emits structured events.
+
+        KR:
+            페이로드가 정정인지 거절인지 판별해 등록 상태를 갱신하고 구조화된 이벤트를
+            발행합니다.
+        """
         try:
             if response.body is None:
                 return
@@ -269,6 +359,16 @@ class RealOrderExecutor:
         self,
         response: TC3.TC3RealResponse
     ) -> None:
+        """Handle TC3 (futures fill/cancel completion) messages.
+
+        EN:
+            Cleans cached instances after fills or cancel completions and forwards
+            standardized payloads to observers.
+
+        KR:
+            체결/취소 완료 이후 캐시된 인스턴스를 정리하고 표준화된 페이로드를 옵저버에
+            전달합니다.
+        """
         try:
             if response.body is None:
                 return
@@ -298,12 +398,16 @@ class RealOrderExecutor:
         ordNo: str,
         community_instance: Optional[Union[BaseOrderOverseasStock, BaseOrderOverseasFutures]],
     ) -> None:
-        """
-        Send order result data to the community plugin instance's
-        `on_real_order_receive` method after an order is placed.
+        """Register an instance and flush queued order messages.
 
-        The order number is used as the key. If there are queued messages
-        for this order number, they will be delivered in FIFO order.
+        EN:
+            Associates the given order number with the plugin instance and replays
+            buffered messages in FIFO order, invoking synchronous or asynchronous
+            handlers accordingly.
+
+        KR:
+            전달된 주문 번호를 플러그인 인스턴스와 연결하고, 대기 중인 메시지를 FIFO
+            순서로 재생하여 동기/비동기 핸들러를 알맞게 호출합니다.
         """
         if ordNo:
             # register the community instance (may be None)
@@ -340,14 +444,17 @@ class RealOrderExecutor:
         response: Dict[str, Any],
         order_type: Optional[OrderRealResponseType] = None,
     ) -> None:
-        """Dispatch order response to the registered community instance or queue it.
+        """Dispatch or queue order responses based on registration state.
 
-        This centralizes async/sync handler delivery and pending queueing.
+        EN:
+            Delivers payloads to registered plugin callbacks using the preserved
+            event loop when possible. Unregistered orders accumulate in a pending
+            queue until the instance calls ``send_data_community_instance``.
 
-        If we have a stored event loop (the main async loop started
-        in `real_order_websockets`), schedule coroutines/thread jobs
-        safely from synchronous callback contexts. Otherwise try to
-        schedule on the current loop or fall back to a thread.
+        KR:
+            등록된 플러그인 콜백이 있으면 저장된 이벤트 루프를 활용해 페이로드를 전달하고,
+            아직 등록되지 않은 주문은 ``send_data_community_instance`` 호출 전까지 대기
+            큐에 적재합니다.
         """
 
         if order_type is None:
@@ -405,7 +512,16 @@ class RealOrderExecutor:
             self._pending_order_messages.setdefault(ord_key, []).append(response)
 
     def _order_type_from_response(self, bns_tp: str, ord_xct_ptn_code: str) -> Optional[OrderRealResponseType]:
-        """Derive unified order_type string from an AS0/AS1 response-like object."""
+        """Derive a unified order type from AS-series stock responses.
+
+        EN:
+            Maps LS buy/sell codes into Programgarden's normalized order type strings
+            to keep downstream processing consistent.
+
+        KR:
+            LS 매수/매도 코드를 Programgarden의 표준화된 주문 유형 문자열로 변환하여
+            후속 처리를 일관되게 유지합니다.
+        """
         try:
             order_category_type: Optional[OrderRealResponseType] = None
             if bns_tp == "2":
@@ -440,7 +556,15 @@ class RealOrderExecutor:
             return None
 
     def _futures_order_type(self, tr_cd: Optional[str], body: Dict[str, Any]) -> Optional[OrderRealResponseType]:
-        """Map overseas futures real-time payloads to unified order type values."""
+        """Map overseas futures payloads to unified order type values.
+
+        EN:
+            Normalizes futures transaction codes and side codes into the same order
+            type vocabulary used for equities.
+
+        KR:
+            선물 거래 코드와 매수/매도 코드를 주식과 동일한 주문 유형 어휘로 정규화합니다.
+        """
 
         if not body:
             return None
@@ -476,7 +600,17 @@ class RealOrderExecutor:
         return None
 
     def _determine_order_type_from_payload(self, payload: Dict[str, Any]) -> Optional[OrderRealResponseType]:
-        """Infer order type from a generic real-time payload for stocks or futures."""
+        """Infer order type from generic real-time payloads.
+
+        EN:
+            Inspects TR codes and body fields to detect whether the payload
+            originates from stock or futures streams and delegates to the
+            appropriate mapper.
+
+        KR:
+            TR 코드와 바디 필드를 검사해 페이로드가 주식 또는 선물 스트림에서 온 것인지
+            판별하고, 알맞은 매퍼로 위임합니다.
+        """
 
         if not payload:
             return None
@@ -506,7 +640,16 @@ class RealOrderExecutor:
         return None
 
     def _order_message_from_type(self, order_type: Optional[OrderRealResponseType]) -> str:
-        """Provide human-friendly fallback messages for emitted order events."""
+        """Provide human-friendly fallback messages for emitted order events.
+
+        EN:
+            Supplies localized defaults for real-order emissions when the upstream
+            payload lacks a user-facing message.
+
+        KR:
+            상위 페이로드에 사용자 메시지가 없을 때 실시간 주문 이벤트에 사용할 기본
+            메시지를 제공합니다.
+        """
 
         message_map = {
             "submitted_new_buy": "주문 접수 완료",
