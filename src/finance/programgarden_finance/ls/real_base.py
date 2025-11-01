@@ -1,3 +1,15 @@
+"""Base utilities for LS Securities real-time websocket handling.
+
+EN:
+    Provides reconnection-aware websocket scaffolding, dynamic TR response
+    resolution, and convenience hooks for subscribing to live market/order
+    feeds.
+
+KO:
+    재연결을 고려한 웹소켓 기반 구조와 실시간 TR 응답 동적 로딩, 시세/주문
+    구독을 위한 헬퍼를 제공합니다.
+"""
+
 from abc import ABC
 import asyncio
 import json
@@ -13,10 +25,13 @@ from programgarden_finance.ls.token_manager import TokenManager
 
 T = TypeVar("T")
 
-# cache for dynamic response class lookups: tr_cd -> (response_model, header_model, body_model) or None
+# cache for dynamic response class lookups (EN/KR)
+# EN: tr_cd -> (response_model, header_model, body_model) or None
+# KO: tr_cd에 대응하는 응답/헤더/바디 모델 캐시입니다 (없으면 None)
 _RESPONSE_CLASS_CACHE: Dict[str, Optional[tuple]] = {}
 
 # candidate module roots where tr_cd modules may live; keep order from most likely to least
+# EN: search bases for dynamic imports; KO: 동적 import 시도 순서를 정의합니다.
 _RESPONSE_MODULE_BASES = [
     "programgarden_finance.ls.overseas_stock.real",
     "programgarden_finance.ls.overseas_futureoption.real",
@@ -24,8 +39,15 @@ _RESPONSE_MODULE_BASES = [
 
 
 class RealRequestAbstract(ABC):
-    """
-    실시간 요청 추상 클래스
+    """Reconnect-capable abstract base for LS real-time requests.
+
+    EN:
+        Manages websocket lifecycle, dynamic TR model loading, and listener
+        dispatching so concrete real-time clients can focus on business logic.
+
+    KO:
+        실시간 요청에 필요한 추상클래스이며, 웹소켓 연결 수명주기, TR 모델 동적 로딩, 수신 리스너 디스패치를 관리하여
+        하위 클래스가 비즈니스 로직에 집중할 수 있게 합니다.
     """
 
     def __init__(
@@ -55,6 +77,16 @@ class RealRequestAbstract(ABC):
         self._on_message_listeners: Dict[str, Callable[[Any], Any]] = {}
 
     async def is_connected(self) -> bool:
+        """Check whether the websocket handshake completed.
+
+        EN:
+            Returns ``True`` once the connection event is set after a successful
+            websocket handshake.
+
+        KO:
+            웹소켓 핸드셰이크가 완료되어 연결 이벤트가 설정되었을 때 ``True`` 를
+            반환합니다.
+        """
         return self._connected_event.is_set()
 
     async def connect(
@@ -62,6 +94,21 @@ class RealRequestAbstract(ABC):
         wait: bool = True,
         timeout: float = 5.0,
     ):
+        """Open the websocket and launch the listener loop.
+
+        EN:
+            Optionally waits until the first successful connection. Handles
+            reconnection with exponential backoff when ``reconnect`` is enabled.
+
+        KO:
+            최초 연결이 성사될 때까지 대기할 수 있으며 ``reconnect`` 설정 시
+            지수 백오프 기반으로 재연결을 처리합니다.
+
+        Parameters:
+            wait (bool): EN: Wait for connection event. KO: 연결 완료까지 대기 여부.
+            timeout (float): EN: Max seconds to wait when ``wait`` is True. KO:
+                ``wait`` 가 True일 때 대기 시간.
+        """
 
         self._stop = False
 
@@ -249,6 +296,16 @@ class RealRequestAbstract(ABC):
             await asyncio.sleep(0)
 
     async def close(self):
+        """Stop listening and close the websocket connection.
+
+        EN:
+            Cancels the background task and closes the socket gracefully,
+            tolerating cancellation or close errors.
+
+        KO:
+            백그라운드 태스크를 취소하고 소켓을 부드럽게 종료하며, 취소나 종료
+            오류가 발생해도 무시하고 진행합니다.
+        """
         self._stop = True
         # cancel listener task if running
         if self._listen_task is not None:
@@ -265,11 +322,30 @@ class RealRequestAbstract(ABC):
                 pass
 
     def _on_message(self, message_key: str,  listener: Callable[[Any], None]):
+        """Register a callback to handle messages for a specific TR code.
+
+        EN:
+            Raises if the websocket is not yet connected.
+
+        KO:
+            웹소켓이 연결되지 않은 경우 예외를 발생시키며, 특정 TR 코드에 대한
+            콜백을 등록합니다.
+        """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")
         self._on_message_listeners[message_key] = listener
 
     def _on_remove_message(self, message_key: str):
+        """Detach a registered listener and clean up order subscriptions.
+
+        EN:
+            Removes the listener and, when no listeners remain, clears
+            auto-registered order streams.
+
+        KO:
+            등록된 리스너를 제거하며 더 이상 리스너가 없을 경우 자동 주문 구독을
+            해제합니다.
+        """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")
         if message_key in self._on_message_listeners:
@@ -280,6 +356,20 @@ class RealRequestAbstract(ABC):
             self._remove_real_order()
 
     def _add_message_symbols(self, symbols: List[str], tr_cd: str):
+        """Subscribe to real-time feeds for given symbols and TR code.
+
+        EN:
+            Builds the correct request model per TR code and sends a subscribe
+            message with transaction type ``3``.
+
+        KO:
+            TR 코드별로 올바른 요청 모델을 생성하고 트랜잭션 타입 ``3`` 으로 구독
+            메시지를 전송합니다.
+
+        Parameters:
+            symbols (List[str]): EN: Symbols to subscribe. KO: 구독할 종목 코드들.
+            tr_cd (str): EN: TR identifier to route request. KO: 요청 라우팅용 TR 코드.
+        """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")
 
@@ -350,6 +440,16 @@ class RealRequestAbstract(ABC):
             asyncio.create_task(self._ws.send(json.dumps(req)))
 
     def _remove_message_symbols(self, symbols: List[str], tr_cd: str):
+        """Unsubscribe from real-time feeds for given symbols.
+
+        EN:
+            Reuses the same TR-specific models with transaction type ``4`` to
+            cancel registrations.
+
+        KO:
+            동일한 TR 모델을 사용하되 트랜잭션 타입 ``4`` 로 전송하여 실시간 등록을
+            해제합니다.
+        """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")
 
@@ -417,9 +517,15 @@ class RealRequestAbstract(ABC):
             asyncio.create_task(self._ws.send(json.dumps(req)))
 
     def _add_real_order(self):
-        """
-        해외주식 주문 체결, 정정, 취소, 거부 실시간 요청을 전부 자동 등록합니다.
-        (증권사에서 AS0, AS2, AS3, AS4 어떤걸로 요청해도 전부 다 자동 등록되기 때문에 구분지어서 요청할 필요가 없습니다.)
+        """Auto-subscribe to all overseas stock order lifecycle feeds.
+
+        EN:
+            Registers AS0/AS2/AS3/AS4 streams in one shot since the broker
+            auto-enables every order channel.
+
+        KO:
+            증권사가 AS0/AS2/AS3/AS4 주문 채널을 자동 활성화하므로 한 번의 호출로
+            해외주식 주문 전체 상태를 등록합니다.
         """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")
@@ -445,8 +551,14 @@ class RealRequestAbstract(ABC):
             asyncio.create_task(self._ws.send(json.dumps(req)))
 
     def _remove_real_order(self):
-        """
-        해외주식 주문 접수, 체결, 정정, 취소, 거부 실시간 요청을 해제합니다.
+        """Unsubscribe from overseas stock order lifecycle feeds.
+
+        EN:
+            Sends the deregistration request (transaction type ``2``) using the
+            AS1 schema.
+
+        KO:
+            AS1 스키마를 이용해 트랜잭션 타입 ``2`` 로 실시간 주문 구독을 해제합니다. 한번의 해제로 주문 접수, 체결, 정정, 취소, 거부 실시간 요청을 해제합니다.
         """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")

@@ -65,28 +65,90 @@ if TYPE_CHECKING:
 
 
 class BuySellExecutor:
-    """Orchestrates execution of buy/sell condition plugins.
+    """Coordinate buy/sell plugin resolution and order execution flows.
 
-    The executor requires a `PluginResolver` which maps condition
-    identifiers to concrete classes. It does not implement trading
-    strategies itself; instead it prepares and runs plugin instances
-    and returns whatever those plugins produce.
+    EN:
+        Handles orchestration for condition-based trading across overseas
+        stock and futures products. The executor resolves plugin classes,
+        injects contextual data such as holdings and pending orders, and
+        delegates order placement to the `RealOrderExecutor` while keeping
+        listeners informed.
 
-    Contract (high level):
-        - Input: a `system` config (dict-like `SystemType`) and a list of
-            `SymbolInfoOverseasStock` or `SymbolInfoOverseasFutures` items describing available symbols.
-    - Output: a list of plugin execution responses (or None on error).
-    - Error modes: missing plugin, incorrect plugin type, runtime
-      exceptions inside plugin code. Errors are logged and result in
-      a None return value from the internal executor.
+    KR:
+        해외 주식 및 해외 선물 상품을 대상으로 조건 기반 매매를 오케스트레이션합니다.
+        실행기는 플러그인 클래스를 해석하고, 보유/미체결 종목과 같은 컨텍스트 데이터를
+        주입한 뒤 `RealOrderExecutor`에 주문 실행을 위임하며 리스너에도 상황을 전달합니다.
+
+    Attributes:
+        plugin_resolver (PluginResolver):
+            EN: Resolver that translates condition identifiers into
+            executable plugin instances.
+            KR: 조건 식별자를 실행 가능한 플러그인 인스턴스로 변환하는
+            리졸버입니다.
+        real_order_executor (RealOrderExecutor):
+            EN: Bridge responsible for forwarding completed order payloads
+            to downstream communities.
+            KR: 완료된 주문 페이로드를 다운스트림 커뮤니티로 전달하는 브리지입니다.
+    ---
+    속성:
+        plugin_resolver (PluginResolver):
+            조건 식별자를 실행 플러그인으로 변환하는 리졸버입니다.
+        real_order_executor (RealOrderExecutor):
+            주문 결과를 커뮤니티로 안내하는 실행 브리지입니다.
     """
 
     def __init__(self, plugin_resolver: PluginResolver):
-        # PluginResolver instance used to look up condition classes by id
+        """Initialize the executor with a plugin resolver dependency.
+
+        EN:
+            Stores the resolver and prepares a dedicated real order executor
+            instance for downstream notifications.
+
+        KR:
+            리졸버를 보관하고, 커뮤니티 알림을 위한 전용 실거래 실행기 인스턴스를
+            준비합니다.
+
+        Args:
+            plugin_resolver (PluginResolver):
+                EN: Dependency that resolves plugin identifiers to
+                concrete classes.
+                KR: 플러그인 식별자를 구체 클래스에 매핑하는 의존성입니다.
+
+        Returns:
+            None:
+                EN: Constructor performs side effects only.
+                KR: 생성자는 부수 효과만 수행하고 값을 반환하지 않습니다.
+        """
+
+        # EN: Resolver used to look up condition classes by identifier.
+        # KR: 조건 클래스를 식별자로 조회하기 위한 리졸버입니다.
         self.plugin_resolver = plugin_resolver
+        # EN: Executor forwarding order payloads to community callbacks.
+        # KR: 주문 페이로드를 커뮤니티 콜백으로 전달하는 실행기입니다.
         self.real_order_executor = RealOrderExecutor()
 
     def _symbol_label(self, symbol: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures, HeldSymbol, NonTradedSymbol]) -> str:
+        """Format a human-readable label for diverse symbol payloads.
+
+        EN:
+            Consolidates multiple symbol representations into a consistent
+            `EXCHANGE:CODE` string, falling back to the default string form.
+
+        KR:
+            다양한 심볼 표현을 `거래소:코드` 문자열로 통일하며, 데이터가 없으면
+            기본 문자열 표현으로 대체합니다.
+
+        Args:
+            symbol (Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures, HeldSymbol, NonTradedSymbol]):
+                EN: Symbol dictionary or domain object describing a
+                tradable instrument.
+                KR: 거래 가능 종목을 설명하는 심볼 딕셔너리 또는 도메인 객체입니다.
+
+        Returns:
+            str:
+                EN: Normalized display label combining exchange and code.
+                KR: 거래소와 코드를 결합한 정규화된 표시 문자열입니다.
+        """
         if isinstance(symbol, dict):
             exch = symbol.get("exchcd") or symbol.get("OrdMktCode") or symbol.get("ExchCode") or symbol.get("OrdMktCodeVal") or "?"
             code = symbol.get("symbol") or symbol.get("ShtnIsuNo") or symbol.get("IsuNo") or symbol.get("IsuCodeVal") or symbol.get("IsuCode") or "?"
@@ -94,12 +156,71 @@ class BuySellExecutor:
         return str(symbol)
 
     def _field_icon(self, field: str) -> str:
+        """Return an emoji icon representing the order action type.
+
+        EN:
+            Maps `new`, `modify`, and `cancel` operations to green, yellow, and
+            red indicators to highlight log messages.
+
+        KR:
+            로그 메시지를 강조하기 위해 `new`, `modify`, `cancel` 작업을 각각 초록,
+            노랑, 빨간 이모지로 매핑합니다.
+
+        Args:
+            field (str):
+                EN: Order action identifier, usually `new`, `modify`, or
+                `cancel`.
+                KR: 일반적으로 `new`, `modify`, `cancel` 값을 갖는 주문 작업
+                식별자입니다.
+
+        Returns:
+            str:
+                EN: Emoji icon string suitable for logging.
+                KR: 로깅에 사용되는 이모지 문자열입니다.
+        """
         return {"new": "🟢", "modify": "🟡", "cancel": "🔴"}.get(field, "✅")
 
     def _field_label(self, field: str) -> str:
+        """Translate an order action into a localized label.
+
+        EN:
+            Provides human-readable Korean labels to pair with order actions in
+            log statements.
+
+        KR:
+            로그 문장에 사용할 주문 작업의 한글 레이블을 제공합니다.
+
+        Args:
+            field (str):
+                EN: Order action identifier.
+                KR: 주문 작업 식별자입니다.
+
+        Returns:
+            str:
+                EN: Localized order action label.
+                KR: 주문 작업을 설명하는 한글 레이블입니다.
+        """
         return {"new": "신규", "modify": "정정", "cancel": "취소"}.get(field, "처리")
 
     def _product_label(self, product: str) -> str:
+        """Convert a product key into a localized product label.
+
+        EN:
+            Distinguishes between overseas stock and futures when logging.
+
+        KR:
+            로깅 시 해외 주식과 선물을 구분하는 한글 레이블을 제공합니다.
+
+        Args:
+            product (str):
+                EN: Product identifier from the system config.
+                KR: 시스템 구성에 정의된 상품 식별자입니다.
+
+        Returns:
+            str:
+                EN: Localized product label.
+                KR: 상품을 표현하는 한글 레이블입니다.
+        """
         return {"overseas_stock": "해외주식", "overseas_futures": "해외선물"}.get(product, "해외주식")
 
     async def new_order_execute(
@@ -110,14 +231,51 @@ class BuySellExecutor:
         order_id: str,
         order_types: List[OrderType]
     ) -> None:
-        """
-        Execute a new order.
+        """Run the plugin pipeline for new order submissions.
+
+        EN:
+            Filters symbols returned from condition plugins, prepares deposit
+            state, resolves community plugins, and executes applicable orders
+            while emitting rich logs.
+
+        KR:
+            조건 플러그인이 반환한 종목을 필터링하고 예수금을 준비한 뒤, 커뮤니티
+            플러그인을 해석하여 해당되는 주문을 실행하고 상세 로그를 남깁니다.
+
         Args:
-            system (SystemType): The trading system configuration.
-            res_symbols_from_conditions (list[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]): The list of symbols to trade.
-            new_order (OrderStrategyType): The new order configuration.
-            order_id (str): The unique identifier for the order.
-            order_types (List[OrderType]): The types of orders to execute.
+            system (SystemType):
+                EN: Complete trading system configuration including
+                securities context.
+                KR: 증권 컨텍스트를 포함한 전체 거래 시스템 구성입니다.
+            res_symbols_from_conditions (List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]):
+                EN: Symbols that passed strategy condition evaluation.
+                KR: 전략 조건 평가를 통과한 종목 목록입니다.
+            new_order (OrderStrategyType):
+                EN: Declarative settings describing how to submit new
+                orders.
+                KR: 신규 주문 제출 방법을 설명하는 선언적 설정입니다.
+            order_id (str):
+                EN: Friendly identifier used for grouping log messages.
+                KR: 로그 메시지를 그룹화하는 데 사용하는 식별자입니다.
+            order_types (List[OrderType]):
+                EN: Order action flags controlling which flows execute
+                (e.g., `new_buy`).
+                KR: 실행할 흐름을 제어하는 주문 작업 플래그 목록입니다
+                (예: `new_buy`).
+
+        Returns:
+            None:
+                EN: Completes after submitting all applicable orders.
+                KR: 적용 가능한 주문을 모두 제출한 뒤 값을 반환하지 않습니다.
+
+        Raises:
+            exceptions.NotExistCompanyException:
+                EN: Propagated when the configured securities company is
+                unsupported.
+                KR: 구성된 증권사가 지원되지 않을 때 전파됩니다.
+            exceptions.OrderException:
+                EN: Propagated from downstream order execution failures.
+                KR: 하위 주문 실행 실패가 발생하면 전파됩니다.
         """
         order_logger.info(
             f"🛒 {order_id}: 신규 주문 진행을 시작합니다 (전략 종목 {len(res_symbols_from_conditions)}개)"
@@ -164,8 +322,40 @@ class BuySellExecutor:
         system: SystemType,
         res_symbols_from_conditions: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]],
     ):
-        """
-        Returns로는 중복 여부로 보유하지 않은 종목들과, 보유잔고 종목들과 미체결 종목들이 반환된다.
+        """Filter out duplicate or already-held symbols before ordering.
+
+        EN:
+            Consults LS account APIs to gather current holdings and pending
+            orders, excluding duplicates when block rules are enabled, and
+            returns structured lists separating tradable, held, and pending
+            symbols.
+
+        KR:
+            LS 계좌 API를 조회해 현재 보유 및 미체결 종목을 수집하고, 중복 차단
+            규칙이 활성화된 경우 전략 종목에서 제거한 뒤, 거래 가능/보유/미체결
+            목록을 구분해 반환합니다.
+
+        Args:
+            system (SystemType):
+                EN: System configuration containing securities metadata
+                and credentials.
+                KR: 증권 메타데이터와 자격 정보를 포함한 시스템 구성입니다.
+            res_symbols_from_conditions (List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]):
+                EN: Symbols produced by condition plugins prior to
+                filtering.
+                KR: 필터링 전에 조건 플러그인이 생성한 종목 목록입니다.
+
+        Returns:
+            Tuple[List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]], List[HeldSymbol], List[NonTradedSymbol]]:
+                EN: Triple containing tradable symbols, current holdings,
+                and pending orders.
+                KR: 거래 가능 종목, 현재 보유 종목, 미체결 주문으로 구성된
+                튜플입니다.
+
+        Raises:
+            exceptions.OrderExecutionException:
+                EN: Emitted via listener when remote queries fail.
+                KR: 원격 조회 실패 시 리스너를 통해 발생하는 예외입니다.
         """
 
         held_symbols: List[HeldSymbol] = []

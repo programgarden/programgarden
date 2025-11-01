@@ -1,8 +1,14 @@
 """Utilities for normalizing Korean aliases in system configuration.
 
-This module allows user-provided configuration dictionaries to use
-commonly requested Korean key names. The keys are converted to the
-canonical English identifiers that the runtime expects.
+EN:
+    This module allows user-provided configuration dictionaries to use
+    commonly requested Korean key names. The keys are converted to the
+    canonical English identifiers that the runtime expects.
+
+KO:
+    이 모듈은 사용자 구성 사전에서 자주 사용되는 한글 키 이름을
+    표준 영문 식별자로 변환합니다. 런타임이 기대하는 키로 자동 변환하여
+    개발자가 자유롭게 한글 별칭을 사용할 수 있도록 지원합니다.
 
 Example:
     >>> system = {"설정": {"시스템ID": "전략-1"}}
@@ -15,7 +21,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict
 
-# Top-level aliases under the system dictionary.
+# EN: Alias mappings for top-level keys under the system dictionary.
+# KO: 시스템 구성의 최상위 키에 대한 한글 별칭과 표준 영문 키의 매핑입니다.
 TOP_LEVEL_ALIAS_MAP: Dict[str, str] = {
     "설정": "settings",
     "세팅": "settings",
@@ -28,6 +35,8 @@ TOP_LEVEL_ALIAS_MAP: Dict[str, str] = {
     "주문들": "orders",
 }
 
+# EN: Alias mappings for system settings keys provided by users.
+# KO: 사용자가 입력하는 시스템 설정 키에 대한 한글 별칭과 표준 영문 키의 매핑입니다.
 SETTINGS_ALIAS_MAP: Dict[str, str] = {
     "시스템ID": "system_id",
     "이름": "name",
@@ -41,6 +50,8 @@ SETTINGS_ALIAS_MAP: Dict[str, str] = {
     "로그": "debug",
 }
 
+# EN: Alias mappings that normalize brokerage and product related keys.
+# KO: 증권사 및 상품 관련 키를 표준화하기 위한 한글 별칭 매핑입니다.
 SECURITIES_ALIAS_MAP: Dict[str, str] = {
     "회사": "company",
     "증권사": "company",
@@ -53,6 +64,8 @@ SECURITIES_ALIAS_MAP: Dict[str, str] = {
     "모의투자": "paper_trading",
 }
 
+# EN: Alias mappings used when normalizing strategy configuration blocks.
+# KO: 전략 구성 블록을 표준화할 때 사용하는 한글 별칭 매핑입니다.
 STRATEGY_ALIAS_MAP: Dict[str, str] = {
     "전략ID": "id",
     "설명": "description",
@@ -75,6 +88,8 @@ STRATEGY_ALIAS_MAP: Dict[str, str] = {
     "시작즉시실행": "run_once_on_start",
 }
 
+# EN: Alias mappings for individual symbol configuration entries.
+# KO: 개별 종목 구성 항목에 대한 한글 별칭과 표준 키 매핑입니다.
 SYMBOL_ALIAS_MAP: Dict[str, str] = {
     "심볼": "symbol",
     "종목": "symbol",
@@ -82,6 +97,8 @@ SYMBOL_ALIAS_MAP: Dict[str, str] = {
     "거래소": "exchcd",
 }
 
+# EN: Alias mappings for maximum symbol constraint settings.
+# KO: 최대 종목 제한 설정을 위한 한글 별칭과 표준 키 매핑입니다.
 MAX_SYMBOLS_ALIAS_MAP: Dict[str, str] = {
     "정렬": "order",
     "정렬기준": "order",
@@ -89,11 +106,15 @@ MAX_SYMBOLS_ALIAS_MAP: Dict[str, str] = {
     "최대": "limit",
 }
 
+# EN: Alias mappings for strategy condition definitions.
+# KO: 전략 조건 정의에 사용되는 한글 별칭과 표준 키 매핑입니다.
 CONDITION_ALIAS_MAP: Dict[str, str] = {
     "조건ID": "condition_id",
     "필요한데이터": "params",
 }
 
+# EN: Alias mappings that describe the structure of order definitions.
+# KO: 주문 정의 구조를 설명하는 한글 별칭과 표준 키 매핑입니다.
 ORDER_ALIAS_MAP: Dict[str, str] = {
     "주문ID": "order_id",
     "설명": "description",
@@ -107,6 +128,8 @@ ORDER_ALIAS_MAP: Dict[str, str] = {
     "주문종류": "order_types",
 }
 
+# EN: Alias mappings for order timing window configuration.
+# KO: 주문 시간 창 설정을 위한 한글 별칭과 표준 키 매핑입니다.
 ORDER_TIME_ALIAS_MAP: Dict[str, str] = {
     "시작": "start",
     "시작시간": "start",
@@ -120,6 +143,8 @@ ORDER_TIME_ALIAS_MAP: Dict[str, str] = {
     "최대지연초": "max_delay_seconds",
 }
 
+# EN: Alias mappings for conditions embedded within order definitions.
+# KO: 주문 정의에 포함된 조건 블록을 위한 한글 별칭과 표준 키 매핑입니다.
 ORDER_CONDITION_ALIAS_MAP: Dict[str, str] = {
     "조건ID": "condition_id",
     "필요한데이터": "params",
@@ -127,7 +152,27 @@ ORDER_CONDITION_ALIAS_MAP: Dict[str, str] = {
 
 
 def _apply_aliases(target: Dict[str, Any], alias_map: Dict[str, str]) -> None:
-    """In-place conversion of alias keys to their canonical names."""
+    """Perform in-place alias normalization for mapping keys.
+
+    EN:
+        Update ``target`` so that any keys present in ``alias_map`` are replaced
+        by their canonical equivalents while preserving existing canonical keys.
+
+    KO:
+        ``alias_map`` 에 정의된 한글 별칭 키를 표준 키로 교체하여 ``target``
+        사전을 제자리에서 업데이트합니다. 이미 표준 키가 존재할 때는 값을
+        덮어쓰지 않고 별칭 키만 제거합니다.
+
+    Parameters:
+        target (Dict[str, Any]): The dictionary to mutate by applying alias rules.
+        alias_map (Dict[str, str]): Alias-to-canonical mapping definitions.
+
+    Returns:
+        None: The function mutates ``target`` directly and returns ``None``.
+
+    Raises:
+        None: Non-dictionary inputs are ignored without raising.
+    """
     if not isinstance(target, dict):
         return
 
@@ -141,10 +186,26 @@ def _apply_aliases(target: Dict[str, Any], alias_map: Dict[str, str]) -> None:
 
 
 def normalize_system_config(system: Any) -> Any:
-    """Return a configuration with Korean aliases normalized.
+    """Deep-copy and normalize configuration dictionaries using alias maps.
 
-    The function performs a deep copy so that callers can safely reuse
-    the original dictionary without side effects.
+    EN:
+        Produce a sanitized configuration object where Korean aliases are
+        converted to canonical English keys. A deep copy is created so the
+        original input remains untouched.
+
+    KO:
+        한글 별칭을 표준 영문 키로 변환한 구성 사전을 반환합니다. 원본 입력이
+        변경되지 않도록 깊은 복사본을 생성하여 안전하게 재사용할 수 있습니다.
+
+    Parameters:
+        system (Any): The user-supplied configuration object to normalize.
+
+    Returns:
+        Any: A normalized deep-copied configuration if ``system`` is a dict;
+        otherwise the original value is returned unchanged.
+
+    Raises:
+        None: All operations handle unexpected types gracefully.
     """
 
     if not isinstance(system, dict):

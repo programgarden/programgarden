@@ -1,3 +1,14 @@
+"""Convenient re-exports for ProgramGarden base strategy and order types.
+
+EN:
+    Collect frequently used TypedDicts and base classes so downstream packages
+    can import from ``programgarden_core.bases`` without deep paths.
+
+KO:
+    자주 사용하는 TypedDict와 베이스 클래스를 모아 ``programgarden_core.bases``
+    경로에서 바로 가져올 수 있도록 합니다.
+"""
+
 from .system import (
     SystemType,
     SystemSettingType,
@@ -53,6 +64,8 @@ from .cancel_orders import (
     BaseCancelOrderOverseasFuturesResponseType,
 )
 
+# EN: Public export list for the ``bases`` package.
+# KO: ``bases`` 패키지가 외부에 노출하는 공개 심볼 목록입니다.
 __all__ = [
     # system 타입
     SystemType,

@@ -1,33 +1,26 @@
-"""
-한글 별칭을 강제하기 위한 데코레이터와 메타클래스
+"""Utilities for enforcing Korean aliases on callables and classes.
 
-이 모듈은 함수에 한글 별칭이 필요한 경우 이를 강제하기 위한
-데코레이터와 메타클래스를 제공합니다.
-이 기능은 함수가 한글 별칭을 갖도록 보장하며, 이를 통해
-프로그램의 일관성을 유지합니다.
+EN:
+    Provide a decorator and metaclass that guarantee the presence of Korean
+    aliases for methods so that both English and Korean APIs stay synchronized.
+    Apply ``@require_korean_alias`` to methods and ``EnforceKoreanAliasMeta`` as
+    a metaclass to ensure each decorated method has at least one Korean alias.
 
-사용방법은
-1. 함수에 `@require_korean_alias` 데코레이터를 적용합니다.
-2. 클래스에 `EnforceKoreanAliasMeta` 메타클래스를 적용합니다.
-이렇게 하면 해당 클래스의 모든 메서드가 한글 별칭을 갖도록 강제됩니다.
+KO:
+    메서드가 한글 별칭을 반드시 갖도록 보장하는 데코레이터와 메타클래스를
+    제공합니다. ``@require_korean_alias`` 데코레이터와
+    ``EnforceKoreanAliasMeta`` 메타클래스를 적용하면 영어/한글 API를 동시에
+    유지할 수 있습니다.
 
-예시:
-```python
-from programgarden_core.korean_alias import require_korean_alias, EnforceKoreanAliasMeta
-
-class OverseasStock(metaclass=EnforceKoreanAliasMeta):
-
-    @require_korean_alias
-    def accno(self) -> Accno:
-        return Accno()
-
-    계좌 = accno
-    계좌.__doc__ = "계좌 정보를 조회합니다."
-
-    ```
-
-이렇게 하면 `accno`는 한글 별칭을 반드시 가져야 합니다.
-만약 한글 별칭이 정의되지 않으면 `ValueError`가 발생합니다.
+Example / 예시:
+    >>> from programgarden_core.korea_alias import require_korean_alias,
+    ...     EnforceKoreanAliasMeta
+    >>> class OverseasStock(metaclass=EnforceKoreanAliasMeta):
+    ...     @require_korean_alias
+    ...     def accno(self):
+    ...         return "account"
+    ...     계좌 = accno
+    ...     계좌.__doc__ = "계좌 정보를 조회합니다."
 """
 
 from functools import wraps
@@ -35,7 +28,26 @@ import inspect
 
 
 def require_korean_alias(func):
-    """한글 별칭이 필요한 함수임을 표시하는 데코레이터"""
+    """Mark functions that must expose a Korean alias.
+
+    EN:
+        Attach metadata to ``func`` so ``EnforceKoreanAliasMeta`` can verify a
+        corresponding Korean alias is defined on the owning class.
+
+    KO:
+        ``func`` 에 메타데이터를 부여하여 ``EnforceKoreanAliasMeta`` 가 한글
+        별칭이 정의되어 있는지 검사할 수 있도록 합니다.
+
+    Parameters:
+        func (Callable): A method that requires a Korean alias binding.
+
+    Returns:
+        Callable: The wrapped function carrying alias requirements.
+
+    Raises:
+        None: The decorator never raises and simply augments the function.
+    """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -44,8 +56,41 @@ def require_korean_alias(func):
 
 
 class EnforceKoreanAliasMeta(type):
-    """한글 별칭 강제를 위한 메타클래스"""
+    """Metaclass that enforces Korean aliases for decorated methods.
+
+    EN:
+        Ensures every method decorated with ``@require_korean_alias`` has at
+        least one Korean-named alias defined on the class.
+
+    KO:
+        ``@require_korean_alias`` 가 적용된 모든 메서드에 대해 한글 이름의 별칭이
+        클래스에 정의되어 있는지 확인하는 메타클래스입니다.
+    """
+
     def __new__(cls, name, bases, attrs):
+        """Create a class and validate the presence of Korean aliases.
+
+        EN:
+            Walk through namespace ``attrs`` and confirm that decorated
+            functions receive at least one Korean alias. A ``ValueError`` is
+            raised when the requirement is not satisfied.
+
+        KO:
+            네임스페이스 ``attrs`` 를 순회하며 데코레이터가 적용된 함수에 한글
+            별칭이 존재하는지 검증합니다. 조건을 만족하지 못하면
+            ``ValueError`` 를 발생시킵니다.
+
+        Parameters:
+            name (str): The class name being constructed.
+            bases (Tuple[type, ...]): Inherited base classes.
+            attrs (Dict[str, Any]): Namespace containing class attributes.
+
+        Returns:
+            type: The finalized class object after validation.
+
+        Raises:
+            ValueError: Missing Korean aliases for decorated functions.
+        """
         korean_aliases = set()
         # 한글 별칭 수집
         for key, value in attrs.items():
