@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, PrivateAttr
 from websockets import Response
 
@@ -42,8 +42,8 @@ class TC1RealResponseBody(BaseModel):
     """KEY"""
     user: str = Field(..., title="조작자ID")
     """조작자ID"""
-    svc_id: str = Field(..., title="서비스ID")
-    """서비스ID"""
+    svc_id: str = Field(..., title="서비스ID HO01:주문ACK HO04:주문Pending")
+    """서비스ID HO01:주문ACK HO04:주문Pending"""
     ordr_dt: str = Field(..., title="주문일자")
     """주문일자"""
     brn_cd: str = Field(..., title="지점번호")
@@ -58,30 +58,28 @@ class TC1RealResponseBody(BaseModel):
     """계좌번호"""
     is_cd: str = Field(..., title="종목코드")
     """종목코드"""
-    s_b_ccd: str = Field(..., title="매도매수유형")
-    """매도매수유형"""
-    ordr_ccd: str = Field(..., title="정정취소유형")
-    """정정취소유형"""
-    ordr_typ_cd: str = Field(..., title="주문유형코드")
-    """주문유형코드"""
+    s_b_ccd: str = Field(..., title="매도매수유형 1:매도 2:매수")
+    """매도매수유형 1:매도 2:매수"""
+    ordr_ccd: str = Field(..., title="정정취소유형 1:신규 2:정정 3:취소")
+    """정정취소유형 1:신규 2:정정 3:취소"""
+    ordr_typ_cd: Literal["1", "2", "3", "4"] = Field(..., title="주문유형코드 1:시장가 2:지정가 3:Stop Market 4:Stop Limit")
+    """주문유형코드 1:시장가 2:지정가 3:Stop Market 4:Stop Limit"""
     ordr_typ_prd_ccd: str = Field(..., title="주문기간코드")
     """주문기간코드"""
     ordr_aplc_strt_dt: str = Field(..., title="주문적용시작일자")
     """주문적용시작일자"""
     ordr_aplc_end_dt: str = Field(..., title="주문적용종료일자")
     """주문적용종료일자"""
-    ordr_prc: str = Field(..., title="주문가격")
+    ordr_prc: float = Field(..., title="주문가격")
     """주문가격"""
-    cndt_ordr_prc: str = Field(..., title="주문조건가격")
+    cndt_ordr_prc: float = Field(..., title="주문조건가격")
     """주문조건가격"""
-    ordr_q: str = Field(..., title="주문수량")
+    ordr_q: int = Field(..., title="주문수량")
     """주문수량"""
     ordr_tm: str = Field(..., title="주문시간")
     """주문시간"""
     userid: str = Field(..., title="사용자ID")
     """사용자ID"""
-    xrc_rsv_tp_code: str = Field(..., title="행사예약구분코드")
-    """행사예약구분코드"""
 
 
 class TC1RealResponse(BaseModel):

@@ -255,6 +255,12 @@ class CIDBT01000Response(BaseModel):
         description="CIDBT01000 API 응답의 두번째 출력 블록"
     )
     """두번째 출력 블록 (CIDBT01000OutBlock2)"""
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
     rsp_cd: str = Field(
         ...,
         title="응답 코드",

@@ -25,6 +25,7 @@ from ....tr_base import OccursReqAbstract, TRRequestAbstract
 from ....tr_helpers import GenericTR
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.status import RequestStatus
+from programgarden_core.logs import pg_logger
 
 # pg_logger not used in this module after refactor
 
@@ -61,26 +62,45 @@ class TrG3203(TRRequestAbstract, OccursReqAbstract):
         return self._generic.req()
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> G3203Response:
-        if exc is not None:
-            return G3203Response(
-                header=None,
-                block=None,
-                block1=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(exc),
-            )
-
         resp_json = resp_json or {}
-        block = resp_json.get("g3203OutBlock", None)
+        block_data = resp_json.get("g3203OutBlock")
+        block1_data = resp_json.get("g3203OutBlock1", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = G3203ResponseHeader.model_validate(resp_headers)
+
+        parsed_block = None
+        parsed_block1: list[G3203OutBlock1] = []
+        if exc is None and not is_error_status:
+            if block_data is not None:
+                parsed_block = G3203OutBlock.model_validate(block_data)
+            parsed_block1 = [G3203OutBlock1.model_validate(item) for item in block1_data]
+
+        error_msg: Optional[str] = None
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"g3203 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"g3203 request failed with status: {error_msg}")
+
         result = G3203Response(
-            header=G3203ResponseHeader.model_validate(resp_headers),
-            block=G3203OutBlock.model_validate(block) if block is not None else None,
-            block1=[G3203OutBlock1.model_validate(item) for item in resp_json.get("g3203OutBlock1", [])],
+            header=header,
+            block=parsed_block,
+            block1=parsed_block1,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
-        result.raw_data = resp
+        if resp is not None:
+            result.raw_data = resp
         return result
 
     def occurs_req(self, callback: Optional[Callable[[Optional[G3203Response], RequestStatus], None]] = None, delay: int = 1) -> list[G3203Response]:
@@ -95,6 +115,8 @@ class TrG3203(TRRequestAbstract, OccursReqAbstract):
             list[G3203Response]: 조회된 모든 응답 리스트
         """
         def _updater(req_data, resp: G3203Response):
+            if resp.header is None or resp.block is None:
+                raise ValueError("g3203 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
             req_data.body["g3203InBlock"].cts_date = resp.block.cts_date
@@ -132,6 +154,8 @@ class TrG3203(TRRequestAbstract, OccursReqAbstract):
             list[G3203Response]: 조회된 모든 응답 리스트
         """
         def _updater(req_data, resp: G3203Response):
+            if resp.header is None or resp.block is None:
+                raise ValueError("g3203 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
             req_data.body["g3203InBlock"].cts_date = resp.block.cts_date

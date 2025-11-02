@@ -15,8 +15,8 @@ async def test_req_o3123():
     ls = LS.get_instance()
 
     login_result = ls.login(
-        appkey=os.getenv("APPKEY_FUTURE"),
-        appsecretkey=os.getenv("APPSECRET_FUTURE")
+        appkey=os.getenv("APPKEY_FUTURE_FAKE"),
+        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE")
     )
 
     if login_result is False:
@@ -26,7 +26,7 @@ async def test_req_o3123():
     req = ls.overseas_futureoption().market().해외선물옵션_차트분봉조회(
         body=o3123.O3123InBlock(
             mktgb="F",
-            shcode="CUSU25",
+            shcode="ADZ25",
             ncnt=1,
             readcnt=20,
             cts_date="",

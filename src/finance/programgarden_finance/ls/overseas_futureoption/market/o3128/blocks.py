@@ -145,6 +145,11 @@ class O3128Response(BaseModel):
         title="상세 리스트",
         description="상세 리스트 (여러 레코드)"
     )
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="HTTP 상태 코드"
+    )
     rsp_cd: str = Field(..., title="응답코드", description="응답코드")
     rsp_msg: str = Field(..., title="응답메시지", description="응답메시지")
     error_msg: Optional[str] = Field(None, title="오류메시지", description="오류메시지 (있으면)")

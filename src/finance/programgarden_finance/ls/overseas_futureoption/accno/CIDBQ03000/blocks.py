@@ -44,7 +44,7 @@ class CIDBQ03000InBlock1(BaseModel):
         title="거래일자",
         description="거래일자(YYYYMMDD)"
     )
-    """거래일자"""
+    """거래일자(YYYYMMDD)"""
 
 
 class CIDBQ03000Request(BaseModel):
@@ -226,6 +226,13 @@ class CIDBQ03000Response(BaseModel):
         description="두 번째 출력 블록 리스트"
     )
     """두 번째 출력 블록 리스트"""
+
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
 
     rsp_cd: str = Field(..., title="응답코드", description="응답코드")
     """응답코드"""

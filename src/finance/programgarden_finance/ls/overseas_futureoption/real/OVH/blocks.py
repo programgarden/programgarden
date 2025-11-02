@@ -21,9 +21,8 @@ class OVHRealRequestBody(BaseModel):
     def ensure_trailing_8_spaces(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
-        s = str(v)
-        base = s.rstrip()[:6]
-        return base + " " * 2
+        s = str(v)[:8]
+        return s.ljust(8)
 
     model_config = ConfigDict(validate_assignment=True)
 

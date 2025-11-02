@@ -23,6 +23,7 @@ from .blocks import (
 from ....tr_base import TRRequestAbstract
 from ....tr_helpers import GenericTR
 from programgarden_finance.ls.config import URLS
+from programgarden_core.logs import pg_logger
 
 
 class TrG3103(TRRequestAbstract):
@@ -55,26 +56,45 @@ class TrG3103(TRRequestAbstract):
         self._generic = GenericTR[G3103Response](self.request_data, self._build_response, url=URLS.CHART_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> G3103Response:
-        if exc is not None:
-            return G3103Response(
-                header=None,
-                block=None,
-                block1=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(exc),
-            )
-
         resp_json = resp_json or {}
-        block = resp_json.get("g3103OutBlock", None)
+        block_data = resp_json.get("g3103OutBlock")
+        block1_data = resp_json.get("g3103OutBlock1", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = G3103ResponseHeader.model_validate(resp_headers)
+
+        parsed_block = None
+        parsed_block1: list[G3103OutBlock1] = []
+        if exc is None and not is_error_status:
+            if block_data is not None:
+                parsed_block = G3103OutBlock.model_validate(block_data)
+            parsed_block1 = [G3103OutBlock1.model_validate(item) for item in block1_data]
+
+        error_msg: Optional[str] = None
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"g3103 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"g3103 request failed with status: {error_msg}")
+
         result = G3103Response(
-            header=G3103ResponseHeader.model_validate(resp_headers),
-            block=G3103OutBlock.model_validate(block) if block is not None else None,
-            block1=[G3103OutBlock1.model_validate(item) for item in resp_json.get("g3103OutBlock1", [])],
+            header=header,
+            block=parsed_block,
+            block1=parsed_block1,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
-        result.raw_data = resp
+        if resp is not None:
+            result.raw_data = resp
         return result
 
     def req(self) -> G3103Response:

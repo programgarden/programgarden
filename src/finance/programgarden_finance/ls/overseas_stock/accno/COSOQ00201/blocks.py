@@ -628,6 +628,12 @@ class COSOQ00201Response(BaseModel):
         description="네 번째 출력 블록 리스트"
     )
     """네 번째 출력 블록 리스트"""
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
 
     rsp_cd: str = Field(
         ...,

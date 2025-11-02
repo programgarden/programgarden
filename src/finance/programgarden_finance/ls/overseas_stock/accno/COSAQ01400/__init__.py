@@ -17,6 +17,7 @@ from .blocks import (
 from ....tr_base import TRAccnoAbstract
 from programgarden_finance.ls.status import RequestStatus
 from programgarden_finance.ls.config import URLS
+from programgarden_core.logs import pg_logger
 
 
 class TrCOSAQ01400(TRAccnoAbstract):
@@ -51,28 +52,45 @@ class TrCOSAQ01400(TRAccnoAbstract):
         self._generic: GenericTR[COSAQ01400Response] = GenericTR(self.request_data, self._build_response, url=URLS.ACCNO_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> COSAQ01400Response:
-        if exc is not None:
-            return COSAQ01400Response(
-                header=None,
-                block1=None,
-                block2=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(exc),
-            )
-
-        # resp_json may be None in error cases, guard accordingly
         resp_json = resp_json or {}
-        block1 = resp_json.get("COSAQ01400OutBlock1", None)
-        block2 = resp_json.get("COSAQ01400OutBlock2", [])
+        block1_data = resp_json.get("COSAQ01400OutBlock1")
+        block2_data = resp_json.get("COSAQ01400OutBlock2", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = COSAQ01400ResponseHeader.model_validate(resp_headers)
+
+        parsed_block1 = None
+        parsed_block2: list[COSAQ01400OutBlock2] = []
+        if exc is None and not is_error_status:
+            if block1_data is not None:
+                parsed_block1 = COSAQ01400OutBlock1.model_validate(block1_data)
+            parsed_block2 = [COSAQ01400OutBlock2.model_validate(item) for item in block2_data]
+
+        error_msg: Optional[str] = None
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"COSAQ01400 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"COSAQ01400 request failed with status: {error_msg}")
+
         result = COSAQ01400Response(
-            header=COSAQ01400ResponseHeader.model_validate(resp_headers),
-            block1=COSAQ01400OutBlock1.model_validate(block1) if block1 is not None else None,
-            block2=[COSAQ01400OutBlock2.model_validate(item) for item in block2],
+            header=header,
+            block1=parsed_block1,
+            block2=parsed_block2,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
-        result.raw_data = resp
+        if resp is not None:
+            result.raw_data = resp
         return result
 
     async def req_async(self) -> COSAQ01400Response:

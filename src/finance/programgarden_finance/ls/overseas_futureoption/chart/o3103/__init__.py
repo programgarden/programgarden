@@ -33,19 +33,42 @@ class TrO3103(TRRequestAbstract, OccursReqAbstract):
         self._generic: GenericTR[O3103Response] = GenericTR(self.request_data, self._build_response, url=URLS.FO_CHART_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> O3103Response:
-        if exc is not None:
-            return O3103Response(header=None, block=None, block1=[], rsp_cd="", rsp_msg="", error_msg=str(exc))
-
         resp_json = resp_json or {}
         block = resp_json.get("o3103OutBlock", None)
         block1 = resp_json.get("o3103OutBlock1", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = O3103ResponseHeader.model_validate(resp_headers)
+
+        parsed_block = None
+        parsed_block1 = []
+        if exc is None and not is_error_status:
+            if block is not None:
+                parsed_block = O3103OutBlock.model_validate(block)
+            parsed_block1 = [O3103OutBlock1.model_validate(item) for item in block1]
+
+        error_msg = ""
+        if exc is not None:
+            error_msg = str(exc)
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+
         result = O3103Response(
-            header=O3103ResponseHeader.model_validate(resp_headers),
-            block=O3103OutBlock.model_validate(block) if block is not None else None,
-            block1=[O3103OutBlock1.model_validate(item) for item in block1],
+            header=header,
+            block=parsed_block,
+            block1=parsed_block1,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
+
         result.raw_data = resp
         return result
 

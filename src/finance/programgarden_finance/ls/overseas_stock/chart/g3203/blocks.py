@@ -184,16 +184,38 @@ class G3203Response(BaseModel):
         header (Optional[G3203ResponseHeader]): 응답 헤더
         block (Optional[G3203OutBlock]): 기본 응답 블록
         block1 (List[G3203OutBlock1]): 상세 리스트
+        status_code (Optional[int]): HTTP 상태 코드
         rsp_cd (str): 응답코드
         rsp_msg (str): 응답메시지
         error_msg (Optional[str]): 오류메시지
     """
-    header: Optional[G3203ResponseHeader]
-    block: Optional[G3203OutBlock]
-    block1: List[G3203OutBlock1]
-    rsp_cd: str
-    rsp_msg: str
-    error_msg: Optional[str] = None
+    header: Optional[G3203ResponseHeader] = Field(
+        None,
+        title="응답 헤더",
+        description="응답 헤더 데이터 블록"
+    )
+    block: Optional[G3203OutBlock] = Field(
+        None,
+        title="기본 응답 블록",
+        description="기본 응답 데이터 블록"
+    )
+    block1: List[G3203OutBlock1] = Field(
+        default_factory=list,
+        title="상세 리스트",
+        description="상세 리스트 (여러 레코드)"
+    )
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
+    rsp_cd: str = Field(..., title="응답코드", description="응답코드")
+    rsp_msg: str = Field(..., title="응답메시지", description="응답메시지")
+    error_msg: Optional[str] = Field(
+        None,
+        title="오류메시지",
+        description="오류메시지 (있으면)"
+    )
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 

@@ -103,6 +103,7 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
                 "CIDBQ01500InBlock1": body,
             },
         )
+
         set_tr_header_options(
             token_manager=self.token_manager,
             header=header,
