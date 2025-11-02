@@ -319,6 +319,13 @@ class CIDBQ05300Response(BaseModel):
     )
     """세 번째 출력 블록"""
 
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
+
     rsp_cd: str = Field(..., title="응답코드", description="응답코드")
     """응답코드"""
 

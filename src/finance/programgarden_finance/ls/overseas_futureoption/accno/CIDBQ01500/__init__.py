@@ -32,21 +32,45 @@ class TrCIDBQ01500(TRAccnoAbstract):
 
         self._generic: GenericTR[CIDBQ01500Response] = GenericTR(self.request_data, self._build_response, url=URLS.FO_ACCNO_URL)
 
+    # TODO: tr_cd, tr_msg 여기서 추출해서 response에 넣기
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> CIDBQ01500Response:
-        if exc is not None:
-            return CIDBQ01500Response(header=None, block1=None, block2=[], rsp_cd="", rsp_msg="", error_msg=str(exc))
-
         resp_json = resp_json or {}
         block1 = resp_json.get("CIDBQ01500OutBlock1", None)
         block2 = resp_json.get("CIDBQ01500OutBlock2", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = CIDBQ01500ResponseHeader.model_validate(resp_headers)
+
+        parsed_block1 = None
+        parsed_block2 = []
+        if exc is None and not is_error_status:
+            if block1 is not None:
+                parsed_block1 = CIDBQ01500OutBlock1.model_validate(block1)
+            parsed_block2 = [CIDBQ01500OutBlock2.model_validate(item) for item in block2]
+
+        error_msg = ""
+        if exc is not None:
+            error_msg = str(exc)
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+
         result = CIDBQ01500Response(
-            header=CIDBQ01500ResponseHeader.model_validate(resp_headers),
-            block1=CIDBQ01500OutBlock1.model_validate(block1) if block1 is not None else None,
-            block2=[CIDBQ01500OutBlock2.model_validate(item) for item in block2],
+            header=header,
+            block1=parsed_block1,
+            block2=parsed_block2,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
         result.raw_data = resp
+
         return result
 
     def req(self) -> CIDBQ01500Response:

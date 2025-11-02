@@ -121,6 +121,7 @@ class O3103Response(BaseModel):
         header (Optional[O3103ResponseHeader]): 응답 헤더
         block (Optional[O3103OutBlock]): 기본 응답 블록
         block1 (List[O3103OutBlock1]): 상세 리스트
+        status_code (int): HTTP 상태 코드
         rsp_cd (str): 응답코드
         rsp_msg (str): 응답메시지
         error_msg (Optional[str]): 오류메시지
@@ -130,6 +131,11 @@ class O3103Response(BaseModel):
     block1: List[O3103OutBlock1]
     rsp_cd: str
     rsp_msg: str
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="API 호출에 대한 HTTP 상태 코드"
+    )
     error_msg: Optional[str] = None
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)

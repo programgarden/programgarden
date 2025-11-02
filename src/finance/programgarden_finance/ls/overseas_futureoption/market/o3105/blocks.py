@@ -194,6 +194,11 @@ class O3105Response(BaseModel):
         title="출력 블록",
         description="o3105 응답의 출력 블록"
     )
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="HTTP 상태 코드"
+    )
     rsp_cd: str = Field(..., title="응답 코드", description="응답 코드")
     rsp_msg: str = Field(..., title="응답 메시지", description="응답 메시지")
     error_msg: Optional[str] = Field(None, title="오류 메시지", description="오류 메시지 (있으면)")

@@ -460,7 +460,6 @@ class SymbolProvider:
 
         ny_time = datetime.now(ZoneInfo("America/New_York"))
         query_date = ny_time.strftime("%Y%m%d")
-        print("queray_date:", query_date)
 
         try:
             balance_response = await ls.overseas_futureoption().accno().CIDBQ01500(
@@ -471,7 +470,6 @@ class SymbolProvider:
                 )
             ).req_async()
 
-            print(f"43333 --> {balance_response}")
         except Exception as exc:
             symbol_logger.exception(f"해외선물 보유 종목 조회에 실패했습니다: {exc}")
             return holdings

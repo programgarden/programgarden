@@ -1,6 +1,6 @@
 from typing import Dict, Literal, Optional, List
 
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel, PrivateAttr, Field
 from requests import Response
 
 from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
@@ -201,10 +201,23 @@ class G3190Response(BaseModel):
     """
     header: Optional[G3190ResponseHeader]
     block: Optional[G3190OutBlock]
-    block1: Optional[List[G3190OutBlock1]]
+    block1: List[G3190OutBlock1] = Field(
+        default_factory=list,
+        title="상세 리스트",
+        description="상세 리스트 (여러 레코드)"
+    )
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
     rsp_cd: str
     rsp_msg: str
-    error_msg: Optional[str] = None
+    error_msg: Optional[str] = Field(
+        None,
+        title="오류메시지",
+        description="오류메시지 (있으면)"
+    )
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 

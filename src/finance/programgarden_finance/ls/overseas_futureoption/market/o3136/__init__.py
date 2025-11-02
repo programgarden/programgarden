@@ -1,7 +1,7 @@
 import aiohttp
 import asyncio
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict, Any
 import requests
 
 from programgarden_core.exceptions import TrRequestDataNotFoundException
@@ -38,6 +38,48 @@ class TrO3136(TRRequestAbstract, OccursReqAbstract):
         if not isinstance(self.request_data, O3136Request):
             raise TrRequestDataNotFoundException()
 
+    def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> O3136Response:
+        resp_json = resp_json or {}
+        block_data = resp_json.get("o3136OutBlock")
+        block1_data = resp_json.get("o3136OutBlock1", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = O3136ResponseHeader.model_validate(resp_headers)
+
+        parsed_block = None
+        parsed_block1: list[O3136OutBlock1] = []
+        if exc is None and not is_error_status:
+            if block_data is not None:
+                parsed_block = O3136OutBlock.model_validate(block_data)
+            parsed_block1 = [O3136OutBlock1.model_validate(item) for item in block1_data]
+
+        error_msg: Optional[str] = None
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"o3136 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"o3136 request failed with status: {error_msg}")
+
+        result = O3136Response(
+            header=header,
+            block=parsed_block,
+            block1=parsed_block1,
+            rsp_cd=resp_json.get("rsp_cd", ""),
+            rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
+        )
+        if resp is not None:
+            result.raw_data = resp
+        return result
+
     def req(self) -> O3136Response:
         try:
             resp, resp_json, resp_headers = self.execute_sync(
@@ -46,37 +88,13 @@ class TrO3136(TRRequestAbstract, OccursReqAbstract):
                 timeout=10
             )
 
-            result = O3136Response(
-                header=O3136ResponseHeader.model_validate(resp_headers),
-                block=O3136OutBlock.model_validate(resp_json.get("o3136OutBlock", None)) if resp_json.get("o3136OutBlock") is not None else None,
-                block1=[O3136OutBlock1.model_validate(item) for item in resp_json.get("o3136OutBlock1", [])],
-                rsp_cd=resp_json.get("rsp_cd", ""),
-                rsp_msg=resp_json.get("rsp_msg", ""),
-            )
-            result.raw_data = resp
-            return result
+            return self._build_response(resp, resp_json, resp_headers, None)
 
         except requests.RequestException as e:
-            pg_logger.error(f"o3136 요청 실패: {e}")
-            return O3136Response(
-                header=None,
-                block=None,
-                block1=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
         except Exception as e:
-            pg_logger.error(f"o3136 요청 중 예외 발생: {e}")
-            return O3136Response(
-                header=None,
-                block=None,
-                block1=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
     async def req_async(self) -> O3136Response:
         async with aiohttp.ClientSession() as session:
@@ -91,37 +109,13 @@ class TrO3136(TRRequestAbstract, OccursReqAbstract):
                 timeout=10
             )
 
-            result = O3136Response(
-                header=O3136ResponseHeader.model_validate(resp_headers),
-                block=O3136OutBlock.model_validate(resp_json.get("o3136OutBlock", None)) if resp_json.get("o3136OutBlock") is not None else None,
-                block1=[O3136OutBlock1.model_validate(item) for item in resp_json.get("o3136OutBlock1", [])],
-                rsp_cd=resp_json.get("rsp_cd", ""),
-                rsp_msg=resp_json.get("rsp_msg", ""),
-            )
-            result.raw_data = resp
-            return result
+            return self._build_response(resp, resp_json, resp_headers, None)
 
         except aiohttp.ClientError as e:
-            pg_logger.error(f"o3136 비동기 요청 실패: {e}")
-            return O3136Response(
-                header=None,
-                block=None,
-                block1=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
         except Exception as e:
-            pg_logger.error(f"o3136 비동기 요청 중 예외 발생: {e}")
-            return O3136Response(
-                header=None,
-                block=None,
-                block1=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
     def occurs_req(self, callback: Optional[Callable[[Optional[O3136Response], RequestStatus], None]] = None, delay: int = 1) -> list[O3136Response]:
         results: list[O3136Response] = []

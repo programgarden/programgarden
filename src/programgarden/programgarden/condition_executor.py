@@ -843,12 +843,12 @@ class ConditionExecutor:
                     product=product,
                 )
 
-            account_symbols = await self.symbol_provider.get_symbols(
-                order_type=None,
-                securities=securities,
-                product=product,
-                futures_outstanding_only=True,
-            )
+            # account_symbols = await self.symbol_provider.get_symbols(
+            #     order_type=None,
+            #     securities=securities,
+            #     product=product,
+            #     futures_outstanding_only=True,
+            # )
 
         if "modify_buy" in order_types:
             non_account_symbols = await self.symbol_provider.get_symbols(

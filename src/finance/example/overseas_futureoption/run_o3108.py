@@ -24,11 +24,11 @@ async def test_req_o3108():
 
     test1 = ls.overseas_futureoption().chart().o3108(
         o3108.O3108InBlock(
-            shcode="CUSU25",
+            shcode="ADZ25",
             gubun="0",
             qrycnt=20,
-            sdate="20230502",
-            edate="20230601",
+            sdate="20251031",
+            edate="20251102",
             cts_date=""
         )
 

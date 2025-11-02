@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict, Any
 
 import aiohttp
 import requests
@@ -45,6 +45,43 @@ class TrO3126(TRRequestAbstract, RetryReqAbstract):
         if not isinstance(self.request_data, O3126Request):
             raise TrRequestDataNotFoundException()
 
+    def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> O3126Response:
+        resp_json = resp_json or {}
+        block_data = resp_json.get("o3126OutBlock")
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = O3126ResponseHeader.model_validate(dict(resp_headers))
+
+        parsed_block = None
+        if exc is None and not is_error_status and block_data is not None:
+            parsed_block = O3126OutBlock.model_validate(block_data)
+
+        error_msg = ""
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"o3126 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"o3126 request failed with status: {error_msg}")
+
+        result = O3126Response(
+            header=header,
+            block=parsed_block,
+            rsp_cd=resp_json.get("rsp_cd", ""),
+            rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
+        )
+        if resp is not None:
+            result.raw_data = resp
+        return result
+
     def req(self) -> O3126Response:
 
         try:
@@ -54,38 +91,13 @@ class TrO3126(TRRequestAbstract, RetryReqAbstract):
                 timeout=10
             )
 
-            block = resp_json.get("o3126OutBlock", None)
-            result = O3126Response(
-                header=O3126ResponseHeader.model_validate(resp_headers),
-                block=O3126OutBlock.model_validate(block) if block is not None else None,
-                rsp_cd=resp_json.get("rsp_cd", ""),
-                rsp_msg=resp_json.get("rsp_msg", ""),
-            )
-            result.raw_data = resp
-
-            return result
+            return self._build_response(resp, resp_json, resp_headers, None)
 
         except requests.RequestException as e:
-            pg_logger.error(f"o3126 요청 실패: {e}")
-
-            return O3126Response(
-                header=None,
-                block=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
         except Exception as e:
-            pg_logger.error(f"o3126 요청 중 예외 발생: {e}")
-
-            return O3126Response(
-                header=None,
-                block=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
     async def req_async(self) -> O3126Response:
         async with aiohttp.ClientSession() as session:
@@ -101,39 +113,13 @@ class TrO3126(TRRequestAbstract, RetryReqAbstract):
                 timeout=10
             )
 
-            block = resp_json.get("o3126OutBlock", None)
-            response_headers = dict(resp_headers)
-
-            result = O3126Response(
-                header=O3126ResponseHeader.model_validate(response_headers),
-                block=O3126OutBlock.model_validate(block) if block is not None else None,
-                rsp_cd=resp_json.get("rsp_cd", ""),
-                rsp_msg=resp_json.get("rsp_msg", ""),
-            )
-            result.raw_data = resp
-            return result
+            return self._build_response(resp, resp_json, resp_headers, None)
 
         except aiohttp.ClientError as e:
-            pg_logger.error(f"o3126 비동기 요청 실패: {e}")
-
-            return O3126Response(
-                header=None,
-                block=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
         except Exception as e:
-            pg_logger.error(f"o3126 비동기 요청 중 예외 발생: {e}")
-
-            return O3126Response(
-                header=None,
-                block=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
     def retry_req(
         self,
@@ -182,23 +168,10 @@ class TrO3126(TRRequestAbstract, RetryReqAbstract):
 
         except aiohttp.ClientError as e:
             pg_logger.error(f"o3126 비동기 재시도 요청 실패: {e}")
-            return O3126Response(
-                header=None,
-                block=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
         except Exception as e:
             pg_logger.error(f"o3126 비동기 재시도 요청 중 예외 발생: {e}")
-
-            return O3126Response(
-                header=None,
-                block=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
 
 __all__ = [
