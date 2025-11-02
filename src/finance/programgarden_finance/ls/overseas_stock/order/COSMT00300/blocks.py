@@ -173,6 +173,12 @@ class COSMT00300Response(BaseModel):
     """첫번째 출력 블록 (COSMT00300OutBlock1)"""
     block2: Optional[COSMT00300OutBlock2] = Field(None, title="두번째 출력 블록")
     """두번째 출력 블록 (COSMT00300OutBlock2)"""
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
     rsp_cd: str = Field(..., title="응답 코드")
     """응답 코드set_tr_header_options(
             token_manager=self.token_manager,

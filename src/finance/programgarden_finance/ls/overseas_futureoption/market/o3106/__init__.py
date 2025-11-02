@@ -44,22 +44,40 @@ class TrO3106(TRRequestAbstract, RetryReqAbstract):
         self._generic: GenericTR[O3106Response] = GenericTR(self.request_data, self._build_response, url=URLS.FO_MARKET_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> O3106Response:
-        if exc is not None:
-            pg_logger.error(f"o3106 request failed: {exc}")
-            return O3106Response(header=None, block=None, rsp_cd="", rsp_msg="", error_msg=str(exc))
-
         resp_json = resp_json or {}
-        header = O3106ResponseHeader.model_validate(resp_headers)
         block_data = resp_json.get("o3106OutBlock", None)
-        block = O3106OutBlock.model_validate(block_data) if block_data is not None else None
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = O3106ResponseHeader.model_validate(resp_headers)
+
+        parsed_block: Optional[O3106OutBlock] = None
+        if exc is None and not is_error_status and block_data is not None:
+            parsed_block = O3106OutBlock.model_validate(block_data)
+
+        error_msg = ""
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"o3106 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"o3106 request failed with status: {error_msg}")
 
         result = O3106Response(
             header=header,
-            block=block,
+            block=parsed_block,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
-        result.raw_data = resp
+        if resp is not None:
+            result.raw_data = resp
         return result
 
     def req(self) -> O3106Response:

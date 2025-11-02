@@ -364,6 +364,13 @@ class CIDBQ01800Response(BaseModel):
     block2: List[CIDBQ01800OutBlock2] = Field(default_factory=list, title="두번째 출력 블록 리스트")
     """두번째 출력 블록 리스트"""
 
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
+
     rsp_cd: str = Field(..., title="응답 코드")
     """응답 코드"""
 

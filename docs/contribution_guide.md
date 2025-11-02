@@ -42,14 +42,20 @@ ProgramGarden은 오픈소스 프로젝트로, 커뮤니티의 기여를 통해 
 
 ### 3.1. 전략 파일 위치 및 구조
 
-커스텀 전략은 [`programgarden-community`](contribution_guide.md)에 기여되며, 상품에 맞는 각 전략별로 **전용 폴더**를 만들어야 합니다. 폴더 이름은 전략의 `클래스` 이름과 동일하게 만드는 것을 추천드립니다.
+커스텀 전략은 [`programgarden-community`](https://github.com/programgarden/programgarden_community)에 기여되며, 상품에 맞는 각 전략별로 **전용 폴더**를 만들어야 합니다. 폴더 이름은 전략의 `클래스` 이름과 동일하게 만드는 것을 추천드립니다.
 
-* **컨디션 클래스**: `programgarden_community/overseas_stock/strategy_conditions/{Strategy ID}/` 폴더 생성
-* **신규매매 전략 클래스**: `programgarden_community/overseas_stock/new_order_conditions/{Strategy ID}/` 폴더 생성
-* **정정매매 전략 클래스**: `programgarden_community/overseas_stock/modify_order_conditions/{Strategy ID}/` 폴더 생성
-* **취소매매 전략 클래스**: `programgarden_community/overseas_stock/cancel_order_conditions/{Strategy ID}/` 폴더 생성
+| 상품 | 전략 유형 | 폴더 경로 |
+| --- | --- | --- |
+| 해외주식 (`overseas_stock`) | 컨디션 | `programgarden_community/overseas_stock/strategy_conditions/{Strategy ID}/` |
+|  | 신규 주문 | `programgarden_community/overseas_stock/new_order_conditions/{Strategy ID}/` |
+|  | 정정 주문 | `programgarden_community/overseas_stock/modify_order_conditions/{Strategy ID}/` |
+|  | 취소 주문 | `programgarden_community/overseas_stock/cancel_order_conditions/{Strategy ID}/` |
+| 해외선물 (`overseas_futureoption`) | 컨디션 | `programgarden_community/overseas_futureoption/strategy_conditions/{Strategy ID}/` |
+|  | 신규 주문 | `programgarden_community/overseas_futureoption/new_order_conditions/{Strategy ID}/` *(없다면 새로 생성)* |
+|  | 정정 주문 | `programgarden_community/overseas_futureoption/modify_order_conditions/{Strategy ID}/` *(없다면 새로 생성)* |
+|  | 취소 주문 | `programgarden_community/overseas_futureoption/cancel_order_conditions/{Strategy ID}/` *(없다면 새로 생성)* |
 
-외에도 상품과 전략 유형에 따라 적절한 디렉토리에 폴더를 생성하세요. 각 전략 폴더에는 다음 파일들이 **필수**로 포함되어야 합니다:
+외에도 추후 추가될 상품과 전략 유형에 따라 적절한 디렉토리에 폴더를 생성하세요. 각 전략 폴더에는 다음 파일들이 **필수**로 포함되어야 합니다:
 
 1. **`__init__.py`**: 전략 클래스를 정의하고, `from . import *`로 내보내세요.
 2. **`README.md`**: 전략의 상세 설명, 사용법, 파라미터 설명을 작성하세요.
@@ -77,6 +83,29 @@ programgarden_community/overseas_stock/
     ...
 ```
 
+해외선물·옵션 전략도 동일한 구조를 따르며, 필요한 디렉터리가 없다면 직접 생성해 주세요.
+
+```
+programgarden_community/overseas_futureoption/
+├── strategy_conditions/
+│   └── FuturesMomentum/
+│       ├── __init__.py
+│       └── README.md
+├── new_order_conditions/
+│   └── FuturesLongEntry/
+│       ├── __init__.py
+│       └── README.md
+├── modify_order_conditions/
+│   └── FuturesTrailingStop/
+│       ├── __init__.py
+│       └── README.md
+└── cancel_order_conditions/
+    └── FuturesCloseAll/
+        ├── __init__.py
+        └── README.md
+    ...
+```
+
 ### 3.2. 전략 파일 작성
 
 커스텀 전략 클래스를 작성할 때는 다음을 준수하세요:
@@ -90,26 +119,61 @@ programgarden_community/overseas_stock/
 전략 폴더의 `__init__.py` 파일에 클래스 정의를 작성하세요:
 
 ```python
+from programgarden_core import (
+    BaseStrategyConditionOverseasStock,
+    BaseStrategyConditionResponseOverseasStockType,
+)
 
-from programgarden_core import BaseStrategyCondition, BaseStrategyConditionResponseType
 
-class MySMACondition(BaseStrategyCondition):
+class MySMACondition(BaseStrategyConditionOverseasStock):
     id: str = "MySMACondition"
-    description: str = "나만의 SMA 기반 컨디션"
+    description: str = "나만의 SMA 기반 해외주식 컨디션"
 
     def __init__(self, short_period: int = 5, long_period: int = 20, **kwargs):
         super().__init__()
         self.short_period = short_period
         self.long_period = long_period
 
-    async def execute(self) -> BaseStrategyConditionResponseType:
-        # 구현 로직
+    async def execute(self) -> BaseStrategyConditionResponseOverseasStockType:
+        # 컨디션 계산 로직 구현
         return {
             "condition_id": self.id,
             "success": True,
-            "exchange": self.symbol.get("exchcd"),
-            "symbol": self.symbol.get("symbol"),
-            "data": []
+            "symbol": self.symbol.get("symbol", ""),
+            "exchcd": self.symbol.get("exchcd", ""),
+            "product": self.product_type,
+            "data": [],
+        }
+```
+
+해외선물 전략은 포지션 방향(`position_side`)을 반드시 반환해야 하며, `BaseStrategyConditionOverseasFutures`를 상속받아 구현합니다.
+
+```python
+from programgarden_core import (
+    BaseStrategyConditionOverseasFutures,
+    BaseStrategyConditionResponseOverseasFuturesType,
+)
+
+
+class MyFuturesMomentum(BaseStrategyConditionOverseasFutures):
+    id: str = "MyFuturesMomentum"
+    description: str = "선물 모멘텀 조건"
+
+    def __init__(self, *, lookback: int = 5, **kwargs):
+        super().__init__()
+        self.lookback = lookback
+
+    async def execute(self) -> BaseStrategyConditionResponseOverseasFuturesType:
+        # 선물 데이터 계산 로직 구현
+        position_side = "long"  # long, short, flat 중 하나
+        return {
+            "condition_id": self.id,
+            "success": True,
+            "symbol": self.symbol.get("symbol", ""),
+            "exchcd": self.symbol.get("exchcd", ""),
+            "product": self.product_type,
+            "position_side": position_side,
+            "data": {},
         }
 ```
 
@@ -138,7 +202,8 @@ sns: https://youtube.com/abc
 ### 3.3. 테스트 및 검증
 
 * 전략을 로컬에서 테스트하세요. [커스텀 DSL 개발자 가이드](custom_dsl.md)의 예시를 참고하여 DSL에 통합해 보세요.
-* 코드가 Python 3.9+에서 정상 동작하는지 확인하세요.
+* 해외선물 전략은 `position_side`가 `long`, `short`, `flat` 중 하나인지 포함 여부를 검증하세요.
+* `poetry run pytest` 또는 최소한 전략별 유닛 테스트/샘플 스크립트를 실행하여 회귀가 없는지 확인하세요.
 * **폴더 구조 검증**: 전략 폴더에 `__init__.py`와 `README.md`가 모두 있는지 확인하세요. 누락 시 PR이 거부될 수 있습니다.
 
 ## 4. 코드 스타일
@@ -187,6 +252,6 @@ PR은 검토 후 병합됩니다. 피드백이 있을 수 있으니 적극적으
 * 저작권이 있는 코드를 복사하지 마세요.
 * 전략이 시장 조작이나 불공정 거래를 유발하지 않도록 하세요.
 
-질문이 있으면 Issues나 Discussions를 이용하세요.
+질문이 있으면 네이버카페(https://cafe.naver.com/programgarden)나 카카오톡 오픈톡방(https://open.kakao.com/o/gKVObqUh) 또는 GitHub Discussions를 이용하세요.
 
-시스템 트레이딩 발전에 기여해주셔서 감사합니다!
+### 시스템 트레이딩 발전에 기여해주셔서 감사합니다!

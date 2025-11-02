@@ -1,6 +1,6 @@
 from typing import Dict, Literal, Optional
 
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel, PrivateAttr, Field
 from requests import Response
 
 from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
@@ -184,9 +184,18 @@ class G3104Response(BaseModel):
     """
     header: Optional[G3104ResponseHeader]
     block: Optional[G3104OutBlock]
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
     rsp_cd: str
     rsp_msg: str
-    error_msg: Optional[str] = None
+    error_msg: Optional[str] = Field(
+        None,
+        title="오류메시지",
+        description="오류메시지 (있으면)"
+    )
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 
@@ -196,4 +205,4 @@ class G3104Response(BaseModel):
 
     @raw_data.setter
     def raw_data(self, raw_resp: Response) -> None:
-        self._raw_data
+        self._raw_data = raw_resp

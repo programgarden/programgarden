@@ -14,6 +14,7 @@ from typing import Callable, Optional, Dict, Any
 import aiohttp
 
 from programgarden_core.exceptions import TrRequestDataNotFoundException
+from programgarden_core.logs import pg_logger
 from .blocks import (
     G3190InBlock,
     G3190OutBlock,
@@ -41,22 +42,48 @@ class TrG3190(TRRequestAbstract, OccursReqAbstract):
         if not isinstance(self.request_data, G3190Request):
             raise TrRequestDataNotFoundException()
 
-        self._generic: GenericTR[G3190Response] = GenericTR(self.request_data, self._build_response, url=URLS.MARKET_URL)
+        self._generic: GenericTR[G3190Response] = GenericTR[G3190Response](self.request_data, self._build_response, url=URLS.MARKET_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> G3190Response:
-        if exc is not None:
-            return G3190Response(header=None, block=None, block1=[], rsp_cd="", rsp_msg="", error_msg=str(exc))
-
         resp_json = resp_json or {}
-        block = resp_json.get("g3190OutBlock", None)
+        block_data = resp_json.get("g3190OutBlock")
+        block1_data = resp_json.get("g3190OutBlock1", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = G3190ResponseHeader.model_validate(resp_headers)
+
+        parsed_block = None
+        parsed_block1: list[G3190OutBlock1] = []
+        if exc is None and not is_error_status:
+            if block_data is not None:
+                parsed_block = G3190OutBlock.model_validate(block_data)
+            parsed_block1 = [G3190OutBlock1.model_validate(item) for item in block1_data]
+
+        error_msg: Optional[str] = None
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"g3190 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"g3190 request failed with status: {error_msg}")
+
         result = G3190Response(
-            header=G3190ResponseHeader.model_validate(resp_headers),
-            block=G3190OutBlock.model_validate(block) if block is not None else None,
-            block1=[G3190OutBlock1.model_validate(item) for item in resp_json.get("g3190OutBlock1", [])],
+            header=header,
+            block=parsed_block,
+            block1=parsed_block1,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
-        result.raw_data = resp
+        if resp is not None:
+            result.raw_data = resp
         return result
 
     def req(self) -> G3190Response:
@@ -64,6 +91,8 @@ class TrG3190(TRRequestAbstract, OccursReqAbstract):
 
     def occurs_req(self, callback: Optional[Callable[[Optional[G3190Response], RequestStatus], None]] = None, delay: int = 1) -> list[G3190Response]:
         def _updater(req_data, resp: G3190Response):
+            if resp.header is None or resp.block is None:
+                raise ValueError("g3190 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
             req_data.body["g3190InBlock"].cts_value = resp.block.cts_value
@@ -81,6 +110,8 @@ class TrG3190(TRRequestAbstract, OccursReqAbstract):
 
     async def occurs_req_async(self, callback: Optional[Callable[[Optional[G3190Response], RequestStatus], None]] = None, delay: int = 1) -> list[G3190Response]:
         def _updater(req_data, resp: G3190Response):
+            if resp.header is None or resp.block is None:
+                raise ValueError("g3190 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
             req_data.body["g3190InBlock"].cts_value = resp.block.cts_value

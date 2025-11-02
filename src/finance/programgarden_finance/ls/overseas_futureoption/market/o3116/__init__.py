@@ -46,25 +46,45 @@ class TrO3116(TRRequestAbstract, OccursReqAbstract):
         self._generic: GenericTR[O3116Response] = GenericTR(self.request_data, self._build_response, url=URLS.FO_MARKET_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> O3116Response:
-        if exc is not None:
-            pg_logger.error(f"o3116 request failed: {exc}")
-            return O3116Response(header=None, block=None, block1=[], rsp_cd="", rsp_msg="", error_msg=str(exc))
-
         resp_json = resp_json or {}
-        block = resp_json.get("o3116OutBlock", None)
-        block1 = resp_json.get("o3116OutBlock1", [])
-        header = O3116ResponseHeader.model_validate(resp_headers)
-        block = O3116OutBlock.model_validate(block) if block is not None else None
-        block1 = [O3116OutBlock1.model_validate(item) for item in block1]
+        block_data = resp_json.get("o3116OutBlock", None)
+        block1_data = resp_json.get("o3116OutBlock1", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = O3116ResponseHeader.model_validate(resp_headers)
+
+        parsed_block: Optional[O3116OutBlock] = None
+        parsed_block1: list[O3116OutBlock1] = []
+        if exc is None and not is_error_status:
+            if block_data is not None:
+                parsed_block = O3116OutBlock.model_validate(block_data)
+            parsed_block1 = [O3116OutBlock1.model_validate(item) for item in block1_data]
+
+        error_msg = ""
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"o3116 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"o3116 request failed with status: {error_msg}")
 
         result = O3116Response(
             header=header,
-            block=block,
-            block1=block1,
+            block=parsed_block,
+            block1=parsed_block1,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
-        result.raw_data = resp
+        if resp is not None:
+            result.raw_data = resp
         return result
 
     def req(self) -> O3116Response:

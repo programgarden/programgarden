@@ -951,7 +951,7 @@ class BuySellExecutor:
                 cidbq03000 = await LS.get_instance().overseas_futureoption().accno().CIDBQ03000(
                     body=CIDBQ03000.CIDBQ03000InBlock1(
                         AcntTpCode="1",
-                        TrdDt="",
+                        TrdDt="20251031",
                     )
                 ).req_async()
 

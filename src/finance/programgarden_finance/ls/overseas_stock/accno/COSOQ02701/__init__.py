@@ -17,7 +17,7 @@ from .blocks import (
 from ....tr_base import TRAccnoAbstract
 from programgarden_finance.ls.status import RequestStatus
 from programgarden_finance.ls.config import URLS
-# ... no local logger needed; GenericTR handles errors in the response builder
+from programgarden_core.logs import pg_logger
 
 
 class TrCOSOQ02701(TRAccnoAbstract):
@@ -41,36 +41,60 @@ class TrCOSOQ02701(TRAccnoAbstract):
         self._generic: GenericTR[COSOQ02701Response] = GenericTR(self.request_data, self._build_response, url=URLS.ACCNO_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> COSOQ02701Response:
-        if exc is not None:
-            return COSOQ02701Response(
-                header=None,
-                block1=None,
-                block2=[],
-                block3=[],
-                block4=None,
-                block5=None,
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(exc),
-            )
-
         resp_json = resp_json or {}
-        block1 = resp_json.get("COSOQ02701OutBlock1", None)
-        block4 = resp_json.get("COSOQ02701OutBlock4", None)
-        block5 = resp_json.get("COSOQ02701OutBlock5", None)
+        block1_data = resp_json.get("COSOQ02701OutBlock1")
+        block2_data = resp_json.get("COSOQ02701OutBlock2", [])
+        block3_data = resp_json.get("COSOQ02701OutBlock3", [])
+        block4_data = resp_json.get("COSOQ02701OutBlock4")
+        block5_data = resp_json.get("COSOQ02701OutBlock5")
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = COSOQ02701ResponseHeader.model_validate(resp_headers)
+
+        parsed_block1 = None
+        parsed_block2: list[COSOQ02701OutBlock2] = []
+        parsed_block3: list[COSOQ02701OutBlock3] = []
+        parsed_block4 = None
+        parsed_block5 = None
+        if exc is None and not is_error_status:
+            if block1_data is not None:
+                parsed_block1 = COSOQ02701OutBlock1.model_validate(block1_data)
+            parsed_block2 = [COSOQ02701OutBlock2.model_validate(item) for item in block2_data]
+            parsed_block3 = [COSOQ02701OutBlock3.model_validate(item) for item in block3_data]
+            if block4_data is not None:
+                parsed_block4 = COSOQ02701OutBlock4.model_validate(block4_data)
+            if block5_data is not None:
+                parsed_block5 = COSOQ02701OutBlock5.model_validate(block5_data)
+
+        error_msg: Optional[str] = None
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"COSOQ02701 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"COSOQ02701 request failed with status: {error_msg}")
 
         result = COSOQ02701Response(
-            header=COSOQ02701ResponseHeader.model_validate(resp_headers),
-            block1=COSOQ02701OutBlock1.model_validate(block1) if block1 is not None else None,
-            block2=[COSOQ02701OutBlock2.model_validate(item) for item in resp_json.get("COSOQ02701OutBlock2", [])],
-            block3=[COSOQ02701OutBlock3.model_validate(item) for item in resp_json.get("COSOQ02701OutBlock3", [])],
-            block4=COSOQ02701OutBlock4.model_validate(block4) if block4 is not None else None,
-            block5=COSOQ02701OutBlock5.model_validate(block5) if block5 is not None else None,
+            header=header,
+            block1=parsed_block1,
+            block2=parsed_block2,
+            block3=parsed_block3,
+            block4=parsed_block4,
+            block5=parsed_block5,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
 
-        result.raw_data = resp
+        if resp is not None:
+            result.raw_data = resp
         return result
 
     async def req_async(self) -> COSOQ02701Response:

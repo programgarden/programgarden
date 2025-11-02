@@ -294,6 +294,13 @@ class CIDEQ00800Response(BaseModel):
     )
     """두 번째 출력 블록 리스트"""
 
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
+
     rsp_cd: str = Field(
         ...,
         title="응답코드",

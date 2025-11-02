@@ -431,6 +431,7 @@ class CIDBQ01500Response(BaseModel):
         block2 (List[CIDBQ01500OutBlock2]): 두 번째 출력 블록 리스트 (Occurs)
         rsp_cd (str): 응답코드
         rsp_msg (str): 응답메시지
+        status_code (int): HTTP 상태 코드
         error_msg (Optional[str]): 오류 메시지
     """
     header: Optional[CIDBQ01500ResponseHeader] = Field(
@@ -453,7 +454,12 @@ class CIDBQ01500Response(BaseModel):
         description="두 번째 출력 블록 리스트"
     )
     """두 번째 출력 블록 리스트"""
-
+    status_code: int = Field(
+        ...,
+        title="HTTP 상태 코드",
+        description="API 호출에 대한 HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
     rsp_cd: str = Field(
         ...,
         title="응답코드",
