@@ -7,6 +7,8 @@
 > **⚠️ 경고**: ProgramGarden 자동화매매는 현재 **테스트 버전**이므로 오류를 계속 확인하고 있습니다. 따라서 정식 버전이 출시되기 전까지는 **모의투자** 또는 **소액 투자**를 권장합니다. 오픈소스 사용 시 발생하는 문제에 대한 책임은 사용자에게 있으며, 라이선스를 반드시 확인해 주세요. [라이선스 보기](https://github.com/programgarden/programgarden?tab=AGPL-3.0-1-ov-file#readme)
 
 
+> **⚠️ 경고**: 모의투자도 지원됩니다. 다만 해외선물은 `홍콩거래소 (HKEX)`의 모의투자만 지원되며, `CME`, `EUREX` 등 다른 거래소의 모의투자는 지원되지 않습니다. 모의투자 시 실제 체결 가격과 차이가 발생하니 유의하시기 바랍니다. [빠른 실행 가이드 보기](https://programgarden.gitbook.io/docs/invest/non_dev_quick_guide)
+
 
 ## 📌 소개
 
