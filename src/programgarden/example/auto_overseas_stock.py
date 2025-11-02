@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     # 전략 수행 응답 콜백
     pg.on_strategies_message(
-        callback=lambda message: print(f"Strategies: {message}")
+        callback=lambda message: print(f"Strategies: {message.get('condition_id')}")
     )
 
     # 실시간 주문 응답 콜백
@@ -40,16 +40,17 @@ if __name__ == "__main__":
                 {
                     "id": "condition_market_analysis",
                     "description": "시장 분석 전략",
-                    "schedule": "*/5 * * * * *",
+                    "schedule": "*/30 * * * * *",
                     "timezone": "Asia/Seoul",
                     "logic": "at_least",
+                    "run_once_on_start": True,
                     "threshold": 1,
                     "order_id": "자금분배매수_1",
                     "symbols": [
                         {
                             "symbol": "GOSS",
-                            "exchcd": "82"
-                        }
+                            "exchange": "NASDAQ",
+                        },
                     ],
                     "max_symbols": {
                         "order": "mcap",
@@ -75,7 +76,7 @@ if __name__ == "__main__":
                 {
                     "id": "loss_cut_net",
                     "description": "손절하기",
-                    "schedule": "*/5 * * * * *",
+                    "schedule": "*/30 * * * * *",
                     "timezone": "Asia/Seoul",
                     "logic": "at_least",
                     "threshold": 1,

@@ -15,8 +15,8 @@ async def test_req_CIDBQ01400():
     ls = LS()
 
     login_result = ls.login(
-        appkey=os.getenv("APPKEY_FUTURE"),
-        appsecretkey=os.getenv("APPSECRET_FUTURE")
+        appkey=os.getenv("APPKEY_FUTURE_FAKE"),
+        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE")
     )
 
     if login_result is False:

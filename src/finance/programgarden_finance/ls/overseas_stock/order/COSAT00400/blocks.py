@@ -170,6 +170,12 @@ class COSAT00400Response(BaseModel):
     """첫번째 출력 블록 (COSAT00400OutBlock1)"""
     block2: Optional[COSAT00400OutBlock2] = Field(None, title="두번째 출력 블록", description="COSAT00400OutBlock2")
     """두번째 출력 블록 (COSAT00400OutBlock2)"""
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
     rsp_cd: str = Field(..., title="응답 코드", description="응답 코드")
     """응답 코드set_tr_header_options(
             token_manager=self.token_manager,

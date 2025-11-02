@@ -118,6 +118,7 @@ class O3117Response(BaseModel):
         header (Optional[O3117ResponseHeader]): 응답 헤더
         block (Optional[O3117OutBlock]): 기본 응답 블록
         block1 (List[O3117OutBlock1]): 상세 리스트
+        status_code (Optional[int]): HTTP 상태 코드
         rsp_cd (str): 응답코드
         rsp_msg (str): 응답메시지
         error_msg (Optional[str]): 오류메시지
@@ -125,6 +126,8 @@ class O3117Response(BaseModel):
     header: Optional[O3117ResponseHeader]
     block: Optional[O3117OutBlock]
     block1: List[O3117OutBlock1]
+    status_code: Optional[int] = None
+    """HTTP 상태 코드"""
     rsp_cd: str
     rsp_msg: str
     error_msg: Optional[str] = None

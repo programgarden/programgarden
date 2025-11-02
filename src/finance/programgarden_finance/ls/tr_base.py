@@ -131,15 +131,26 @@ class TRRequestAbstract(ABC):
             else:
                 await self.wait_until_available_async()
 
+            headers = request_data.header.model_dump(by_alias=True)
+            jsons = self._build_json_body(request_data)
+
             async with session.post(
                 url=url,
-                headers=request_data.header.model_dump(by_alias=True),
-                json=self._build_json_body(request_data),
-                timeout=aiohttp.ClientTimeout(total=timeout)
+                headers=headers,
+                json=jsons,
             ) as response:
-                response.raise_for_status()
-                response_json = await response.json()
+
+                try:
+                    response_json = await response.json()
+                except aiohttp.ContentTypeError:
+                    response_json = None
+
                 headers = dict(response.headers)
+
+                if response.status >= 400:
+                    return response, response_json or {}, headers
+
+                response.raise_for_status()
                 return response, response_json, headers
 
         except aiohttp.ClientError as e:
@@ -163,8 +174,19 @@ class TRRequestAbstract(ABC):
                 json=self._build_json_body(request_data),
                 timeout=timeout,
             )
+
+            try:
+                response_json = resp.json()
+            except ValueError:
+                response_json = None
+
+            headers = dict(resp.headers)
+
+            if resp.status_code >= 400:
+                return resp, response_json or {}, headers
+
             resp.raise_for_status()
-            return resp, resp.json(), dict(resp.headers)
+            return resp, response_json, headers
 
         except requests.RequestException as e:
             pg_logger.error(f"동기 요청 실패: {e}")

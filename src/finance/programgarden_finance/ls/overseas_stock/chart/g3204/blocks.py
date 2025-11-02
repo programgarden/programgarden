@@ -212,6 +212,11 @@ class G3204Response(BaseModel):
     header: Optional[G3204ResponseHeader] = Field(default=None, title="응답 헤더", description="응답 헤더")
     block: Optional[G3204OutBlock] = Field(default=None, title="기본 응답 블록", description="기본 응답 블록")
     block1: List[G3204OutBlock1] = Field(default_factory=list, title="상세 리스트", description="상세 리스트")
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
     rsp_cd: str = Field(..., title="응답코드", description="응답코드")
     rsp_msg: str = Field(..., title="응답메시지", description="응답메시지")
     error_msg: Optional[str] = Field(default=None, title="오류메시지", description="오류메시지")

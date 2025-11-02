@@ -210,6 +210,11 @@ class CIDBQ01400Response(BaseModel):
         description="주문가능수량 블록"
     )
     """주문가능수량 블록"""
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="HTTP 상태 코드"
+    )
     rsp_cd: str = Field(..., title="응답코드", description="응답코드")
     """응답코드"""
     rsp_msg: str = Field(..., title="응답메시지", description="응답메시지")

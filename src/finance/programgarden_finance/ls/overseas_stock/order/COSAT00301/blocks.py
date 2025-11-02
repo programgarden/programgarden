@@ -284,6 +284,12 @@ class COSAT00301Response(BaseModel):
         description="COSAT00301 API 응답의 두번째 출력 블록"
     )
     """두번째 출력 블록 (COSAT00301OutBlock2)"""
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
     rsp_cd: str = Field(
         ...,
         title="응답 코드",

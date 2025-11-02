@@ -43,20 +43,40 @@ class TrO3121(TRRequestAbstract):
         self._generic: GenericTR[O3121Response] = GenericTR(self.request_data, self._build_response, url=URLS.FO_MARKET_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> O3121Response:
-        if exc is not None:
-            pg_logger.error(f"o3121 request failed: {exc}")
-            return O3121Response(header=None, block=[], rsp_cd="", rsp_msg="", error_msg=str(exc))
+        resp_json = resp_json or {}
+        blocks_data = resp_json.get("o3121OutBlock", [])
 
-        header = O3121ResponseHeader.model_validate(resp_headers)
-        blocks = [O3121OutBlock.model_validate(item) for item in resp_json.get("o3121OutBlock", [])]
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = O3121ResponseHeader.model_validate(resp_headers)
+
+        parsed_blocks: list[O3121OutBlock] = []
+        if exc is None and not is_error_status:
+            parsed_blocks = [O3121OutBlock.model_validate(item) for item in blocks_data]
+
+        error_msg = ""
+        if exc is not None:
+            error_msg = str(exc)
+            pg_logger.error(f"o3121 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            pg_logger.error(f"o3121 request failed with status: {error_msg}")
 
         result = O3121Response(
             header=header,
-            block=blocks,
+            block=parsed_blocks,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
         )
-        result.raw_data = resp
+        if resp is not None:
+            result.raw_data = resp
         return result
 
     def req(self) -> O3121Response:
@@ -76,37 +96,18 @@ class TrO3121(TRRequestAbstract):
                 timeout=10
             )
 
-            result = O3121Response(
-                header=O3121ResponseHeader.model_validate(resp_headers),
-                block=[O3121OutBlock.model_validate(item) for item in resp_json.get("o3121OutBlock", [])],
-                rsp_cd=resp_json.get("rsp_cd", ""),
-                rsp_msg=resp_json.get("rsp_msg", ""),
-            )
-            result.raw_data = resp
-
+            result = self._build_response(resp, resp_json, resp_headers, None)
+            if hasattr(result, "raw_data") and resp is not None:
+                result.raw_data = resp
             return result
 
         except aiohttp.ClientError as e:
             pg_logger.error(f"o3121 비동기 요청 실패: {e}")
-
-            return O3121Response(
-                header=None,
-                block=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
         except Exception as e:
             pg_logger.error(f"o3121 비동기 요청 중 예외 발생: {e}")
-
-            return O3121Response(
-                header=None,
-                block=[],
-                rsp_cd="",
-                rsp_msg="",
-                error_msg=str(e),
-            )
+            return self._build_response(None, None, None, e)
 
 
 __all__ = [

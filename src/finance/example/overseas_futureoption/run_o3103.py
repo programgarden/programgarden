@@ -24,7 +24,7 @@ async def test_req_o3103():
 
     test1 = ls.overseas_futureoption().선물옵션차트().해외선물_차트분봉조회(
         o3103.O3103InBlock(
-            shcode="CUSU25",
+            shcode="ADZ25",
             ncnt=1,
             readcnt=20,
             cts_date="",

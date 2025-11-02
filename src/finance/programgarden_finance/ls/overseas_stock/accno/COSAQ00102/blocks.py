@@ -700,6 +700,12 @@ class COSAQ00102Response(BaseModel):
         description="COSAQ00102 API 응답의 세번째 출력 블록 리스트"
     )
     """세번째 출력 블록 리스트"""
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드",
+        description="요청에 대한 HTTP 상태 코드"
+    )
+    """HTTP 상태 코드"""
     rsp_cd: str = Field(
         ...,
         title="응답 코드",

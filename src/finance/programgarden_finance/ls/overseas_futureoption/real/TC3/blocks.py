@@ -44,8 +44,8 @@ class TC3RealResponseBody(BaseModel):
     user: str = Field(..., title="조작자ID")
     """조작자ID"""
 
-    svc_id: str = Field(..., title="서비스ID")
-    """서비스ID"""
+    svc_id: str = Field(..., title="서비스ID CH01")
+    """서비스ID CH01"""
 
     ordr_dt: str = Field(..., title="주문일자")
     """주문일자 (YYYYMMDD 형식)"""
@@ -68,11 +68,10 @@ class TC3RealResponseBody(BaseModel):
     is_cd: str = Field(..., title="종목코드")
     """종목코드"""
 
-    s_b_ccd: str = Field(..., title="매도매수유형")
-    """매도(매수) 구분 코드"""
-
-    ordr_ccd: str = Field(..., title="정정취소유형")
-    """정정/취소 유형 코드"""
+    s_b_ccd: str = Field(..., title="매도매수유형 1:매도 2:매수")
+    """매도매수유형 1:매도 2:매수"""
+    ordr_ccd: str = Field(..., title="정정취소유형 1:신규 2:정정 3:취소")
+    """정정취소유형 1:신규 2:정정 3:취소"""
 
     ccls_q: str = Field(..., title="체결수량")
     """체결 수량"""
