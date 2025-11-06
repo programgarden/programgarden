@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, TypedDict, Union, TYPE_CHECKING
+from typing_extensions import NotRequired
 
 if TYPE_CHECKING:
     from .system import DpsTyped
@@ -69,7 +70,7 @@ KO:
 """
 
 
-class SymbolInfoBase(TypedDict, total=False):
+class SymbolInfoBase(TypedDict):
     """Shared symbol metadata used by overseas products.
 
     EN:
@@ -85,16 +86,16 @@ class SymbolInfoBase(TypedDict, total=False):
     """EN: Broker-provided unique symbol code.
     KO: 종목코드(브로커가 제공하는 고유 종목 코드입니다.)"""
 
-    product_type: Optional[Literal["overseas_stock", "overseas_futures"]]
+    product_type: NotRequired[Literal["overseas_stock", "overseas_futures"]]
     """EN: Instrument category identifying stock or futures.
     KO: 상품유형(종목이 주식인지 선물인지 구분하는 상품 유형입니다.)"""
 
-    symbol_name: Optional[str]
+    symbol_name: NotRequired[str]
     """EN: Human-friendly symbol name, if supplied by the broker.
     KO: 종목명(브로커가 제공하는 사람 친화적인 종목명입니다.)"""
 
 
-class SymbolInfoOverseasStock(SymbolInfoBase, total=False):
+class SymbolInfoOverseasStock(SymbolInfoBase):
     """Structured view of overseas stock symbol information.
 
     EN:
@@ -106,7 +107,7 @@ class SymbolInfoOverseasStock(SymbolInfoBase, total=False):
         :class:`SymbolInfoBase` 에서 확장합니다.
     """
 
-    product_type: Optional[Literal["overseas_stock"]]
+    product_type: Literal["overseas_stock"] = "overseas_stock"
     """EN: Fixed literal indicating the stock asset class.
     KO: 해외주식상품유형식별자(주식 자산군을 나타내는 고정 literal 값입니다.)"""
 
@@ -114,16 +115,16 @@ class SymbolInfoOverseasStock(SymbolInfoBase, total=False):
     """EN: Exchange code (81: NYSE/AMEX, 82: NASDAQ).
     KO: 거래소코드(81: 뉴욕/아멕스, 82: 나스닥)."""
 
-    mcap: Optional[float]
+    mcap: NotRequired[float]
     """EN: Market capitalization in millions of USD.
     KO: 시가총액(단위: 백만 달러)입니다."""
 
-    OrdNo: Optional[int]
+    OrdNo: NotRequired[int]
     """EN: Order identifier for pending or amended requests.
     KO: 주문번호(미체결 또는 정정 주문을 추적하는 주문 번호입니다.)"""
 
 
-class SymbolInfoOverseasFutures(SymbolInfoBase, total=False):
+class SymbolInfoOverseasFutures(SymbolInfoBase):
     """Structured view of overseas futures symbol information.
 
     EN:
@@ -135,47 +136,47 @@ class SymbolInfoOverseasFutures(SymbolInfoBase, total=False):
         포함합니다.
     """
 
-    product_type: Optional[Literal["overseas_futures"]]
+    product_type: Literal["overseas_futures"] = "overseas_futures"
     """EN: Literal indicating the futures asset class.
     KO: 해외선물상품유형식별자(선물 자산군을 나타내는 literal 입니다.)"""
 
-    exchcd: Optional[str]
+    exchcd: NotRequired[str]
     """EN: Exchange code such as CME or NYMEX.
     KO: 거래소코드(CME, NYMEX 등 거래소 코드를 나타냅니다.)"""
 
-    due_yymm: Optional[str]
+    due_yymm: NotRequired[str]
     """EN: Expiration year and month (``YYMM`` format).
     KO: 해외선물만기년월(``YYMM`` 형식 값입니다.)"""
 
-    prdt_code: Optional[str]
+    prdt_code: NotRequired[str]
     """EN: Broker-specific product identifier.
     KO: 상품코드(브로커가 사용하는 상품 코드입니다.)"""
 
-    currency_code: Optional[str]
+    currency_code: NotRequired[str]
     """EN: Settlement currency code.
     KO: 통화코드(결제 통화 코드입니다.)"""
 
-    contract_size: Optional[float]
+    contract_size: NotRequired[float]
     """EN: Contract unit size for the futures instrument.
     KO: 계약단위(선물 계약 단위입니다.)"""
 
-    position_side: Optional[Literal["long", "short", "flat"]] = "flat"
+    position_side: NotRequired[Literal["long", "short", "flat"]] = "flat"
     """EN: Current directional exposure; defaults to ``flat``.
     KO: 포지션방향(기본값은 ``flat`` 이며 ``long``: 매수, ``short``: 매도, ``flat``: 보유 없음입니다.)"""
 
-    unit_price: Optional[float]
+    unit_price: NotRequired[float]
     """EN: Minimum tick price.
     KO: 호가단위가격(최소 호가 단위 가격입니다.)"""
 
-    min_change_amount: Optional[float]
+    min_change_amount: NotRequired[float]
     """EN: Monetary value of a single tick movement.
     KO: 최소변동액(한 틱 움직임의 금액 값을 나타냅니다.)"""
 
-    maintenance_margin: Optional[float]
+    maintenance_margin: NotRequired[float]
     """EN: Maintenance margin requirement.
     KO: 유지증거금(유지 증거금 요구 사항입니다.)"""
 
-    opening_margin: Optional[float]
+    opening_margin: NotRequired[float]
     """EN: Initial margin requirement.
     KO: 개시증거금(개시 증거금 요구 사항입니다.)"""
 

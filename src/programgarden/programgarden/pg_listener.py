@@ -21,6 +21,7 @@ import queue
 import concurrent.futures
 import inspect
 from typing import Any, Dict, Callable, Optional, TypedDict, Union
+from typing_extensions import NotRequired
 from programgarden_core import (
     OrderRealResponseType,
     BaseStrategyConditionResponseOverseasStockType,
@@ -86,11 +87,11 @@ class StrategyPayload(TypedDict):
     """
 
     condition_id: str
-    message: Optional[str]
-    response: Optional[Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]] = None,
+    message: NotRequired[str]
+    response: NotRequired[Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]]
 
 
-class ErrorPayload(TypedDict, total=False):
+class ErrorPayload(TypedDict):
     """Normalized error payload shared with host applications.
 
     EN:
@@ -104,7 +105,7 @@ class ErrorPayload(TypedDict, total=False):
 
     code: str
     message: str
-    data: Dict[str, Any]
+    data: NotRequired[Dict[str, Any]]
 
 
 class RealTimeListener:

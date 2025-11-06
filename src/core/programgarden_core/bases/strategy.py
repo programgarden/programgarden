@@ -11,6 +11,7 @@ KO:
 
 from abc import ABC, abstractmethod
 from typing import Any, Generic, List, Literal, Optional, TypeVar, TypedDict
+from typing_extensions import NotRequired
 
 from programgarden_core.bases.base import SymbolInfoOverseasStock, SymbolInfoOverseasFutures
 
@@ -30,7 +31,7 @@ class BaseStrategyConditionResponseCommon(TypedDict):
         데이터를 제공합니다.
     """
 
-    condition_id: Optional[str]
+    condition_id: NotRequired[Optional[str]]
     """EN: Identifier of the evaluated condition block.
     KO: 평가된 조건 블록의 식별자입니다."""
 
@@ -50,7 +51,7 @@ class BaseStrategyConditionResponseCommon(TypedDict):
     """EN: Additional payload produced by the condition implementation.
     KO: 조건 구현이 제공하는 추가 데이터입니다."""
 
-    weight: Optional[int]
+    weight: NotRequired[int]
     """EN: Optional weighting factor between 0 and 1 (defaults to 0).
     KO: 0과 1 사이에서 선택적으로 설정하는 가중치입니다 (기본값 0)."""
 

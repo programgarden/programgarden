@@ -179,7 +179,6 @@ class MySMAConditionParams(BaseModel):
 
 ```python
 from pydantic import BaseModel, Field
-from typing import Optional
 from programgarden_core import BaseStrategyCondition, BaseStrategyConditionResponseType
 
 

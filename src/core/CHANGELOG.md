@@ -1,3 +1,7 @@
+## [0.1.5] - 2025-11-06
+### Changed
+- type: Optional 타입들 일부는 NotRequired로 변경
+
 ## [0.1.4] - 2025-11-06
 ### Changed
 - build: Poetry 빌드 시스템 설정 업데이트

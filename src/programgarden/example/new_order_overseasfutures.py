@@ -29,7 +29,7 @@ class StrategyTest(BaseStrategyConditionOverseasFutures):
             "position_side": "long",
             "condition_id": self.id,
             "description": self.description,
-            "exchcd": "CME",
+            "exchcd": "HKEX",
             "data": {"test_key": "test_value"},
             "weight": 0.5,
         }

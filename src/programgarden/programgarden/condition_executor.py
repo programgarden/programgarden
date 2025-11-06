@@ -427,7 +427,7 @@ class ConditionExecutor:
         success: bool,
         condition_id: Optional[str] = None,
         weight: int = 0,
-        data: Optional[Any] = None,
+        data: Any = None,
         position_side: Optional[str] = None,
     ) -> Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]:
         """Create a normalized condition response payload for stocks or futures.
