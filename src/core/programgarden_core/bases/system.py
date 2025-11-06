@@ -10,6 +10,7 @@ KO:
 """
 
 from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
+from typing_extensions import NotRequired
 
 from programgarden_core.bases.modify_orders import (
     BaseModifyOrderOverseasStock,
@@ -71,7 +72,7 @@ class StrategyConditionType(TypedDict):
     """EN: Unique identifier for the condition node.
     KO: 조건 노드의 고유 식별자입니다."""
 
-    description: Optional[str] = None
+    description: NotRequired[str]
     """EN: Human-readable description of the condition.
     KO: 조건 로직에 대한 설명입니다."""
 
@@ -79,7 +80,7 @@ class StrategyConditionType(TypedDict):
     """EN: Logical reducer applied to child conditions.
     KO: 하위 조건에 적용되는 논리 연산자입니다."""
 
-    threshold: Optional[int] = None
+    threshold: NotRequired[int]
     """EN: Numeric threshold used by reducers such as ``at_least``.
     KO: ``at_least`` 등에서 사용하는 수치 임계값입니다."""
 
@@ -129,7 +130,7 @@ class StrategySymbolInputType(TypedDict, total=False):
     """EN: Exchange or market code (e.g., ``CME``, ``81``).
     KO: 거래소/시장 코드입니다 (예: ``CME``, ``81``)."""
 
-    name: Optional[str]
+    name: NotRequired[str]
     """EN: Optional display-friendly name.
     KO: 선택적 표기용 종목명입니다."""
 
@@ -145,7 +146,7 @@ class StrategyType(TypedDict):
         스케줄, 종목 목록, 논리 연산자, 실행할 주문 ID를 모두 정의합니다.
     """
 
-    schedule: Optional[str] = None
+    schedule: NotRequired[str]
     """EN:
         Cron-style expression controlling when the strategy evaluates. Supports
         5/6/7-field cron dialects with seconds and year precision.
@@ -221,7 +222,7 @@ class StrategyType(TypedDict):
         - 시간대는 ``strategies.timezone`` 을 따릅니다.
     """
 
-    timezone: Optional[str] = "Asia/Seoul"
+    timezone: NotRequired[str]
     """EN: Time zone name used for schedule evaluation.
     KO: 스케줄을 평가할 때 사용하는 시간대 이름입니다."""
 
@@ -229,13 +230,13 @@ class StrategyType(TypedDict):
     """EN: Unique identifier for the strategy.
     KO: 전략의 고유 식별자입니다."""
 
-    description: Optional[str] = None
+    description: NotRequired[str]
     """EN: Human-readable description of the strategy.
     KO: 전략 설명입니다."""
 
-    symbols: Optional[List[
+    symbols: NotRequired[Optional[List[
         StrategySymbolInputType,
-    ]] = None
+    ]]]
     """EN: Symbols to evaluate; ``None`` checks all available symbols.
     KO: 분석할 종목 목록이며 ``None`` 이면 전체 종목을 검토합니다."""
 
@@ -243,19 +244,19 @@ class StrategyType(TypedDict):
     """EN: Logical reducer applied to the ``conditions`` list.
     KO: ``conditions`` 목록에 적용되는 논리 연산자입니다."""
 
-    threshold: Optional[int] = None
+    threshold: NotRequired[int]
     """EN: Numeric threshold used by selected logic modes.
     KO: 특정 논리 모드에서 사용하는 수치 임계값입니다."""
 
-    order_id: Optional[str] = None
+    order_id: NotRequired[str]
     """EN: Identifier of the order definition triggered by this strategy.
     KO: 전략 성공 시 실행할 주문 정의의 식별자입니다."""
 
-    max_symbols: Optional[MaxSymbolsLimitType]
+    max_symbols: NotRequired[MaxSymbolsLimitType]
     """EN: Limits how many symbols the strategy processes.
     KO: 전략이 처리할 종목 수를 제한합니다."""
 
-    conditions: Optional[List[Union[
+    conditions: NotRequired[List[Union[
         'StrategyConditionType',
         'DictConditionType',
         BaseStrategyConditionOverseasStock,
@@ -264,7 +265,7 @@ class StrategyType(TypedDict):
     """EN: Condition blocks or callables to evaluate.
     KO: 평가할 조건 블록 혹은 호출 가능한 조건 목록입니다."""
 
-    run_once_on_start: Optional[bool]
+    run_once_on_start: NotRequired[bool]
     """EN: Run immediately on system startup before schedule waits.
     KO: 시스템 시작 직후 스케줄 대기 전에 한 번 실행할지 여부입니다."""
 
@@ -284,11 +285,11 @@ class DictConditionType(TypedDict):
     """EN: Identifier of the condition to resolve dynamically.
     KO: 동적으로 로드할 조건의 식별자입니다."""
 
-    params: Optional[Dict[str, Any]]
+    params: NotRequired[Dict[str, Any]]
     """EN: Parameters forwarded to the condition implementation.
     KO: 조건 구현에 전달할 매개변수입니다."""
 
-    weight: Optional[int] = 0
+    weight: NotRequired[int]
     """EN: Optional weighting factor (defaults to 0).
     KO: 선택적 가중치이며 기본값은 0입니다."""
 
@@ -303,27 +304,31 @@ class SystemSettingType(TypedDict):
         표시 정보와 로깅 선호도를 포함한 시스템 메타데이터입니다.
     """
 
+    system_id: str
+    """EN: Unique identifier for the system.
+    KO: 시스템의 고유 식별자입니다."""
+
     name: str
     """EN: System display name.
     KO: 시스템 이름입니다."""
 
-    description: str
+    description: NotRequired[str]
     """EN: Human-readable system description.
     KO: 시스템 설명입니다."""
 
-    version: str
+    version: NotRequired[str]
     """EN: Version identifier.
     KO: 버전 식별자입니다."""
 
-    author: str
+    author: NotRequired[str]
     """EN: Author or maintainer name.
     KO: 작성자 또는 유지보수자 이름입니다."""
 
-    date: str
+    date: NotRequired[str]
     """EN: Creation date as a string (e.g., ``YYYY-MM-DD``).
     KO: 문자열 형태의 생성일입니다 (예: ``YYYY-MM-DD``)."""
 
-    debug: str
+    debug: NotRequired[str]
     """EN:
         Logging level string such as ``DEBUG`` or ``INFO``.
 
@@ -333,7 +338,7 @@ class SystemSettingType(TypedDict):
     """
 
 
-class SecuritiesAccountType(TypedDict, total=False):
+class SecuritiesAccountType(TypedDict):
     """Brokerage credential information for ProgramGarden systems.
 
     EN:
@@ -351,20 +356,20 @@ class SecuritiesAccountType(TypedDict, total=False):
     """EN: Product category managed by the account.
     KO: 계좌가 다루는 상품 유형입니다."""
 
-    appkey: Optional[str]
+    appkey: str
     """EN: Application key issued by the broker.
     KO: 브로커가 발급한 앱 키입니다."""
 
-    appsecretkey: Optional[str]
+    appsecretkey: str
     """EN: Application secret key.
     KO: 앱 시크릿 키입니다."""
 
-    paper_trading: Optional[bool]
+    paper_trading: NotRequired[bool]
     """EN: Flag indicating whether to use paper trading endpoints.
     KO: 모의투자를 사용할지 여부입니다."""
 
 
-class OrderTimeType(TypedDict, total=False):
+class OrderTimeType(TypedDict):
     """Time window configuration for order execution.
 
     EN:
@@ -386,11 +391,11 @@ class OrderTimeType(TypedDict, total=False):
     """EN: Days of week when the window is active (e.g., ``['mon', 'tue']``).
     KO: 주문 실행이 활성화되는 요일 목록입니다 (예: ``['mon', 'tue']``)."""
 
-    timezone: Optional[str]
+    timezone: NotRequired[str]
     """EN: Time zone identifier (e.g., ``Asia/Seoul``).
     KO: 시간대 식별자입니다 (예: ``Asia/Seoul``)."""
 
-    behavior: Optional[Literal["defer", "skip"]]
+    behavior: Literal["defer", "skip"] = "defer"
     """EN:
         - ``defer``: Triggered outside the window → execute at next window start.
         - ``skip``: Triggered outside the window → drop the order.
@@ -400,7 +405,7 @@ class OrderTimeType(TypedDict, total=False):
         - ``skip``: 시간 범위 밖에서 트리거되면 주문을 실행하지 않습니다.
     """
 
-    max_delay_seconds: Optional[int] = 86400
+    max_delay_seconds: int = 86400
     """EN: Maximum delay allowed in seconds (default 86400).
     KO: 허용되는 최대 지연 시간(초)이며 기본값은 86400초입니다."""
 
@@ -442,23 +447,23 @@ class OrderStrategyType(TypedDict):
     """EN: Unique identifier for the order strategy.
     KO: 주문 전략의 고유 식별자입니다."""
 
-    description: Optional[str]
+    description: NotRequired[str]
     """EN: Optional description for documentation.
     KO: 문서화를 위한 선택적 설명입니다."""
 
-    block_duplicate_buy: Optional[bool]
+    block_duplicate_buy: NotRequired[bool]
     """EN: Prevent repeated buy orders for the same symbol.
     KO: 동일 종목에 대한 중복 매수를 방지합니다."""
 
-    available_balance: Optional[DpsTyped]
+    available_balance: NotRequired[DpsTyped]
     """EN: Snapshot of balances used when sizing orders.
     KO: 주문 규모 산정 시 참고할 예수금 정보입니다."""
 
-    order_time: Optional[OrderTimeType] = None
+    order_time: NotRequired[OrderTimeType]
     """EN: Time-window configuration restricting when orders can run.
     KO: 주문 실행 시간을 제한하는 설정입니다."""
 
-    condition: Optional[Union[
+    condition: NotRequired[Union[
         DictConditionType,
         BaseNewOrderOverseasStock,
         BaseModifyOrderOverseasStock,
