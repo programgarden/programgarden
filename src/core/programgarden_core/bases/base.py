@@ -494,9 +494,13 @@ class BaseOrderOverseas(Generic[OrderResGenericT, SymbolInfoType], ABC):
     """EN: Unique identifier for the strategy.
     KO: 전략을 구분하는 고유 식별자입니다."""
 
+    name: str
+    """EN: name of the strategy.
+    KO: 전략의 이름입니다."""
+
     description: str
-    """EN: Human-readable explanation of the strategy.
-    KO: 전략에 대한 사람 친화적인 설명입니다."""
+    """EN: description of the strategy.
+    KO: 전략에 대한 설명입니다."""
 
     securities: List[str]
     """EN: Broker identifiers this strategy communicates with.
@@ -505,6 +509,34 @@ class BaseOrderOverseas(Generic[OrderResGenericT, SymbolInfoType], ABC):
     order_types: List[OrderType]
     """EN: Order actions supported by the strategy (e.g., ``new_buy``).
     KO: 전략이 지원하는 주문 동작 목록입니다 (예: ``new_buy``)."""
+
+    parameter_schema: dict[str, Any]
+    """EN: Configurable parameters for the condition.
+
+    KO: 조건의 `def __init__`에 전달되는 매개변수가 어떤 것들이 있는지 설명하는 변수입니다. 투자자가 인지하는 중요한 값이며 아래처럼 세팅해야합니다.
+
+    ```python
+
+    # 1.매개변수를 설명하는 BaseModel 라이브러리를 이용하여 아래처럼 정의해야합니다.
+    class SMAGoldenDeadCrossParams(BaseModel):
+        start_date: Optional[str] = Field(
+            None,
+            title="시작 날짜",
+            description="차트가 시작하는 날짜입니다",
+            json_schema_extra={"example": "20230101"}
+        )
+
+        end_date: Optional[str] = Field(
+            None,
+            title="종료 날짜",
+            description="차트가 종료되는 날짜입니다",
+            json_schema_extra={"example": "20231231"}
+        )
+
+    # 2.정의된 BaseModel을 기반으로 paramters를 model_json_schema()로 json 스키마로 합니다.
+    parameter_schema: SMAGoldenDeadCrossParams.model_json_schema()
+    ```
+    """
 
     @abstractmethod
     def __init__(self) -> None:
