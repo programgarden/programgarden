@@ -862,33 +862,33 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "0.1.6"
+version = "0.1.7"
 description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_community-0.1.6-py3-none-any.whl", hash = "sha256:ed8c517fec6c266281ff46c199524400e9dcf75591b8416588717967dbcfa54e"},
-    {file = "programgarden_community-0.1.6.tar.gz", hash = "sha256:6d4a613f5567cc432cbd36b14a8872049fac2daee1ed7e606f29052b6f2cff2d"},
+    {file = "programgarden_community-0.1.7-py3-none-any.whl", hash = "sha256:bbf4b21b413359872c21d0764616aa187c7011661b5766f6fec44dedd92ff5ba"},
+    {file = "programgarden_community-0.1.7.tar.gz", hash = "sha256:e4243640e037b33c02693f3096c63746e12992a16eb9c0f7e5e8f63574ac1e8a"},
 ]
 
 [package.dependencies]
 croniter = ">=6.0.0,<7.0.0"
-programgarden-core = ">=0.1.3,<0.2.0"
+programgarden-core = ">=0.1.4,<0.2.0"
 programgarden-finance = ">=0.1.5,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "0.1.3"
+version = "0.1.4"
 description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-0.1.3-py3-none-any.whl", hash = "sha256:74ce953a49ffc220a167f109f3c5e3aaf905b3fd83804ebb050246d5d8c4c905"},
-    {file = "programgarden_core-0.1.3.tar.gz", hash = "sha256:2fa99f63585352404eabbb83d3023ce2fe3f403d34ba3669dca5e8da5d3cc252"},
+    {file = "programgarden_core-0.1.4-py3-none-any.whl", hash = "sha256:c2fe9ed5eb1d745f1950af52f8ca8506bcea0ffb7b2f294cee861bdc8da42b88"},
+    {file = "programgarden_core-0.1.4.tar.gz", hash = "sha256:4358f6298784e62c3bbdcbea92b492a4528b739b5698a2c6caf03b1038749c0f"},
 ]
 
 [[package]]
@@ -1809,4 +1809,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "1fdb445da86a5442fac9f29bae2319cc41e7a4bb1f8856a4e406c1aada3763b0"
+content-hash = "1b04bf6de7f01245489724ad052ea6f572decaf00b4f19cfd75c6728a8789edd"

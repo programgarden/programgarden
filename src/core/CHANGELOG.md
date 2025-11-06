@@ -1,3 +1,7 @@
+## [0.1.4] - 2025-11-06
+### Changed
+- build: Poetry 빌드 시스템 설정 업데이트
+
 ## [0.1.3] - 2025-11-02
 ### Added
 - docs: 코어 `README.md` 추가 — 프로젝트 개요, 설치 가이드, 로깅 활성화, 조건/주문 베이스 클래스 예시, 한글 별칭(`normalize_system_config`) 사용 예시, LS OpenAPI 준비 사항, 기여/변경로그 안내 포함
