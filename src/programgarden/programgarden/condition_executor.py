@@ -29,7 +29,7 @@ KR:
             다운스트림 리스너로 전달합니다.
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Set
 import asyncio
 
 from programgarden_core import (
@@ -796,6 +796,13 @@ class ConditionExecutor:
         )
         strategy["symbols"] = my_symbols
 
+        def _symbol_identity(symbol: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]) -> str:
+            if isinstance(symbol, dict):
+                exch = symbol.get("exchange", "") or symbol.get("exchcd", "")
+                sym = symbol.get("symbol", "")
+                return f"{exch}:{sym}"
+            return str(symbol)
+
         order_types = []
         if order_id is not None:
             order_types = await self._get_order_types(order_id, orders)
@@ -872,47 +879,48 @@ class ConditionExecutor:
                 securities=securities,
             )
 
-        # TODO: 관심종목의 종목이 중복 계산되지 않도록, 전체종목 및 보유종목 및 미체결종목에 포함되어 있으면
-        # 관심종목에서 제외되도록 만든다.
-        # EN: Deduplication set guarding against repeated symbol evaluation across sources.
-        # KR: 여러 소스에서 중복 평가되는 종목을 방지하기 위한 중복 제거 집합입니다.
-        seen_ids = set()
+        watchlist_ids: Set[str] = set()
         for symbol in my_symbols:
-            exch = symbol.get("exchange", "") or symbol.get("exchcd", "")
-            sym = symbol.get("symbol", "")
-            seen_ids.add(f"{exch}:{sym}")
-
-        # TODO 관심종목을 확인해서 보유종목, 미체결 종목에 있는지 확인한 후에
-        # 없으면 관심종목만 계산하도록 진행한다.
+            ident = _symbol_identity(symbol)
+            if ident:
+                watchlist_ids.add(ident)
 
         # EN: Final list of symbols scheduled for condition evaluation.
         # KR: 조건 평가 대상으로 확정된 종목 목록입니다.
         responsible_symbols: List[SymbolInfoOverseasStock | SymbolInfoOverseasFutures] = []
+        added_symbol_ids: Set[str] = set()
+
+        def _append_if_watchlisted(symbol: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]):
+            ident = _symbol_identity(symbol)
+            if not ident:
+                return
+            if ident not in watchlist_ids:
+                return
+            if ident in added_symbol_ids:
+                return
+            responsible_symbols.append(symbol)
+            added_symbol_ids.add(ident)
 
         # 미체결 정정/취소 주문에서는 관심종목에 있는 경우만 계산하도록 한다.
         for non_symbol in non_account_symbols:
-            exch = non_symbol.get("exchange", "") or non_symbol.get("exchcd", "")
-            sym = non_symbol.get("symbol", "")
-            # ord_no = symbol.get("OrdNo", "")
-            ident = f"{exch}:{sym}"
-            if ident in seen_ids:
-                responsible_symbols.append(non_symbol)
+            _append_if_watchlisted(non_symbol)
 
         # 보유 잔고 판매 주문에서는 관심종목에 있는 경우만 계산하도록 한다.
         for account_symbol in account_symbols:
-            exch = account_symbol.get("exchange", "") or account_symbol.get("exchcd", "")
-            sym = account_symbol.get("symbol", "")
-            ident = f"{exch}:{sym}"
-            if ident in seen_ids:
-                responsible_symbols.append(account_symbol)
+            _append_if_watchlisted(account_symbol)
 
         # 시장 종목들 주문에서는 관심종목에 있는 경우만 계산하도록 만든다.
         for market_symbol in market_symbols:
-            exch = market_symbol.get("exchange", "") or market_symbol.get("exchcd", "")
-            sym = market_symbol.get("symbol", "")
-            ident = f"{exch}:{sym}"
-            if ident in seen_ids:
-                responsible_symbols.append(market_symbol)
+            _append_if_watchlisted(market_symbol)
+
+        # 관심종목은 항상 평가 대상에 포함하되, 이미 추가된 종목은 중복 제거한다.
+        for symbol in my_symbols:
+            ident = _symbol_identity(symbol)
+            if not ident or ident in added_symbol_ids:
+                continue
+            responsible_symbols.append(symbol)
+            added_symbol_ids.add(ident)
+
 
         # EN: Strategy-specific hard cap settings guiding how many symbols to evaluate and ordering preference.
         # KR: 평가 수량과 정렬 우선순위를 제어하는 전략별 상한 설정입니다.
@@ -926,7 +934,7 @@ class ConditionExecutor:
             random.shuffle(responsible_symbols)
         elif max_order == "mcap":
             responsible_symbols.sort(key=lambda x: x.get("mcap", 0), reverse=True)
-
+        
         if max_count > 0:
             responsible_symbols = responsible_symbols[:max_count]
             condition_logger.debug(
@@ -1014,7 +1022,7 @@ class ConditionExecutor:
                         }
                     )
                     condition_results.append(failure_response)
-
+            
             complete, total_weight, position_side = self.evaluate_logic(
                 results=condition_results,
                 logic=logic,

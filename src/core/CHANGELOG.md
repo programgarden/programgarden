@@ -1,3 +1,7 @@
+## [0.1.6] - 2025-11-15
+### Fixed
+- fix: deepcopy가 읽지 못하는 객체 문제 해결
+
 ## [0.1.5] - 2025-11-06
 ### Changed
 - type: Optional 타입들 일부는 NotRequired로 변경
