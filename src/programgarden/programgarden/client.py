@@ -35,7 +35,6 @@ from programgarden.pg_listener import (
     pg_listener
 )
 from .system_keys import exist_system_keys_error
-from art import tprint
 
 
 class Programgarden(metaclass=EnforceKoreanAliasMeta):
@@ -156,7 +155,6 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
         """
 
         self._shutdown_notified = False
-        self._print_banner()
 
         try:
             system_config = system
@@ -439,28 +437,3 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 KR: 등록 후 반환값은 없습니다.
         """
         pg_listener.set_error_handler(callback)
-
-    def _print_banner(self):
-        """Render the Program Garden banner for user feedback.
-
-        EN:
-            Prints an ASCII art banner via `art.tprint`; failures degrade
-            gracefully with a logger warning.
-
-        KR:
-            `art.tprint`를 사용해 ASCII 배너를 출력하며, 실패 시 로거 경고로
-            우아하게 처리합니다.
-
-        Returns:
-            None:
-                EN: The method logs failures and otherwise returns None.
-                KR: 실패를 기록할 뿐 별도 반환값 없이 종료합니다.
-        """
-        try:
-            tprint("""
-Program Garden
-    x
-LS Securities
-    """, font="tarty1")
-        except Exception as e:
-            system_logger.warning(f"Banner print failed: {e}")

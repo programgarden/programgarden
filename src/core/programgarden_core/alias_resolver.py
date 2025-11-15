@@ -18,7 +18,6 @@ Example:
 
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import Any, Dict
 
 # EN: Alias mappings for top-level keys under the system dictionary.
@@ -185,6 +184,41 @@ def _apply_aliases(target: Dict[str, Any], alias_map: Dict[str, str]) -> None:
                 target.pop(alias)
 
 
+def _safe_copy(value: Any, memo: Dict[int, Any] | None = None) -> Any:
+    """Recursively copy mappings/sequences while leaving other objects intact."""
+    if memo is None:
+        memo = {}
+
+    obj_id = id(value)
+    if obj_id in memo:
+        return memo[obj_id]
+
+    if isinstance(value, dict):
+        cloned: Dict[Any, Any] = {}
+        memo[obj_id] = cloned
+        for key, item in value.items():
+            cloned[key] = _safe_copy(item, memo)
+        return cloned
+
+    if isinstance(value, list):
+        cloned_list: list[Any] = []
+        memo[obj_id] = cloned_list
+        cloned_list.extend(_safe_copy(item, memo) for item in value)
+        return cloned_list
+
+    if isinstance(value, tuple):
+        return tuple(_safe_copy(item, memo) for item in value)
+
+    if isinstance(value, set):
+        cloned_set: set[Any] = set()
+        memo[obj_id] = cloned_set
+        for item in value:
+            cloned_set.add(_safe_copy(item, memo))
+        return cloned_set
+
+    return value
+
+
 def normalize_system_config(system: Any) -> Any:
     """Deep-copy and normalize configuration dictionaries using alias maps.
 
@@ -211,7 +245,7 @@ def normalize_system_config(system: Any) -> Any:
     if not isinstance(system, dict):
         return system
 
-    normalized = deepcopy(system)
+    normalized = _safe_copy(system)
 
     _apply_aliases(normalized, TOP_LEVEL_ALIAS_MAP)
 
