@@ -288,8 +288,7 @@ class PluginResolver:
                 community_instance._set_non_traded_symbols(non_trade_symbols)
             if hasattr(community_instance, "_set_available_balance") and dps:
                 community_instance._set_available_balance(
-                    fcurr_dps=dps.get("fcurr_dps", 0.0),
-                    fcurr_ord_able_amt=dps.get("fcurr_ord_able_amt", 0.0)
+                    dps=dps
                 )
 
             if not isinstance(community_instance, (BaseOrderOverseasStock, BaseOrderOverseasFutures)):
