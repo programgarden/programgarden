@@ -763,19 +763,18 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "0.1.8"
+version = "0.1.9"
 description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_community-0.1.8-py3-none-any.whl", hash = "sha256:95fec80c9a1747e434b0be82f0639d344b60c55a6da53a491e731daef24dd71f"},
-    {file = "programgarden_community-0.1.8.tar.gz", hash = "sha256:bc3b0012687ba5a585c7c5ca7ccb057c5547a1db0a31b2879495783d08950137"},
+    {file = "programgarden_community-0.1.9-py3-none-any.whl", hash = "sha256:0d652194353bb58b5416d40301ae4f2b4a945fb223fce06a403976fd2202e676"},
+    {file = "programgarden_community-0.1.9.tar.gz", hash = "sha256:f78c26ab67770b5e284f31692378891e9df2006004d2bef7a40cd40a1f8d044f"},
 ]
 
 [package.dependencies]
 croniter = ">=6.0.0,<7.0.0"
-programgarden = ">=0.1.11,<0.2.0"
 programgarden-core = ">=0.1.6,<0.2.0"
 programgarden-finance = ">=0.1.7,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
@@ -1682,4 +1681,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "2083e9e3d4ec3c4fbd9ec2799a14edd30b7401b50d2b16593b45bfe7a050bc54"
+content-hash = "d39abf28aa645ccdf68c29f66455bb7d16321cbfeffe97fc137ee1df5c07032c"

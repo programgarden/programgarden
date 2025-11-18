@@ -169,7 +169,7 @@ class SystemExecutor:
 
         if any(ot in ["new_buy", "new_sell"] for ot in order_types):
             trade_logger.info(
-                f"주문 전략 {order_id}의 {symbol_count}개 종목 신규 주문 요청합니다."
+                f"주문 전략 {order_id}의 {symbol_count}개 종목 신규 주문을 위한 분석에 들어갑니다."
             )
             await self.buy_sell_executor.new_order_execute(
                 system=system,
@@ -517,10 +517,10 @@ class SystemExecutor:
         strategy_id = strategy.get("id", "<unknown>")
         strategy_logger.info(f"\n\n\n🚀🚀🚀 전략 {strategy_id}의 {cnt}번째 실행을 시작합니다 🚀🚀🚀\n\n")
 
-        conditions = strategy.get("conditions", [])
-        if not conditions:
-            strategy_logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
-            return
+        # conditions = strategy.get("conditions", [])
+        # if not conditions:
+        #     strategy_logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
+        #     return
 
         # 조건 계산 결과값 종목들 반환
         # 해외선물은 결과에 position_side가 포함되어 있는데, 이는 duplication 중복 주문 방지에 사용된다.

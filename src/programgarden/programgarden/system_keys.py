@@ -122,7 +122,6 @@ def exist_system_keys_error(system: SystemType) -> None:
     # KR: 조건 평가 파이프라인을 수행하는 데 필요한 전략 메타데이터 키입니다.
     required_strategy_keys = [
         "id",
-        "logic",
     ]
 
     for idx, strategy in enumerate(strategies):
