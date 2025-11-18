@@ -239,7 +239,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 KR: 로깅 구성을 조정할 뿐 반환값은 없습니다.
         """
 
-        debug = system.get("settings", {}).get("debug", None)
+        debug = system.get("settings", {}).get("debug", "").upper()
         if debug == "DEBUG":
             pg_log(logging.DEBUG)
         elif debug == "INFO":

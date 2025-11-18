@@ -71,6 +71,8 @@ ProgramGarden은 하나의 `system` 딕셔너리를 입력으로 받아 전략�
 ```
 `logic`에는 `and`, `or`, `xor`, `at_least`, `weighted` 등 조건 집계 연산자를 지정할 수 있습니다. 해외선물 전략의 경우 조건 응답이 `position_side` 정보를 제공해야 하며 `logic` 평가 시 모든 조건이 `long` 또는 `short`로 일치해야 주문 실행이 허용됩니다.
 
+- `DictConditionType` 형태의 조건에서 `"weight"` 필드를 작성하면, 커뮤니티 플러그인이 반환하는 기본 weight 대신 해당 값이 그대로 사용됩니다. 전략별로 동일한 플러그인에 서로 다른 비중을 줄 수 있습니다.
+
 ### 2.4 orders
 주문 전략은 조건 또는 외부 트리거가 호출할 실제 주문 실행 로직을 지정합니다.
 ```json

@@ -14,7 +14,7 @@ and leaves trading logic to plugin classes that must subclass
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Set, Union
 from zoneinfo import ZoneInfo
 from programgarden_core import (
     SystemType, OrderStrategyType,
@@ -223,6 +223,41 @@ class BuySellExecutor:
         """
         return {"overseas_stock": "해외주식", "overseas_futures": "해외선물"}.get(product, "해외주식")
 
+    def _normalize_futures_side(self, value: Optional[Union[str, int]]) -> Optional[str]:
+        """Normalize futures side representations to `long` or `short`."""
+        if value is None:
+            return None
+
+        text = str(value).strip().lower()
+        if text in {"2", "buy", "long", "b"}:
+            return "long"
+        if text in {"1", "sell", "short", "s"}:
+            return "short"
+        return None
+
+    def _strategy_position_side(self, symbol: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]) -> Optional[str]:
+        """Extract normalized side information from strategy symbols."""
+        candidate = None
+
+        if isinstance(symbol, dict) or hasattr(symbol, "get"):
+            getter = symbol.get  # type: ignore[attr-defined]
+            candidate = (
+                getter("position_side")
+                or getter("positionSide")
+                or getter("bns_tp_code")
+                or getter("BnsTpCode")
+            )
+
+        if candidate is None:
+            candidate = (
+                getattr(symbol, "position_side", None)
+                or getattr(symbol, "positionSide", None)
+                or getattr(symbol, "bns_tp_code", None)
+                or getattr(symbol, "BnsTpCode", None)
+            )
+
+        return self._normalize_futures_side(candidate)
+
     async def new_order_execute(
         self,
         system: SystemType,
@@ -284,7 +319,14 @@ class BuySellExecutor:
 
         # 필터링, 보유, 미체결 종목들 가져오기
         non_held_symbols, held_symbols, non_trade_symbols = await self._block_duplicate_symbols(system, res_symbols_from_conditions)
-        if new_order.get("block_duplicate_buy", True) and "new_buy" in order_types:
+        should_block_duplicates = new_order.get("block_duplicate_buy", True)
+        product_key = system.get("securities", {}).get("product", "overseas_stock") or "overseas_stock"
+        if product_key == "overseas_futures":
+            has_directional_new_orders = any(flag in {"new_buy", "new_sell"} for flag in (order_types or []))
+        else:
+            has_directional_new_orders = "new_buy" in (order_types or [])
+
+        if should_block_duplicates and has_directional_new_orders:
             res_symbols_from_conditions[:] = non_held_symbols
 
         if not res_symbols_from_conditions:
@@ -477,7 +519,21 @@ class BuySellExecutor:
             ny_time = datetime.now(ZoneInfo("America/New_York"))
             query_date = ny_time.strftime("%Y%m%d")
 
-            held_isus: set[str] = set()
+            held_positions: Dict[str, Set[str]] = {}
+
+            def register_position(symbol_code: Optional[str], side_value: Optional[Union[str, int]]) -> None:
+                code = str(symbol_code or "").strip()
+                normalized_side = self._normalize_futures_side(side_value)
+                if not code:
+                    return
+
+                bucket = held_positions.setdefault(code, set())
+                if normalized_side is None:
+                    # Keep legacy behavior for symbols without directional data by tagging a wildcard entry.
+                    bucket.add("__any__")
+                else:
+                    bucket.discard("__any__")
+                    bucket.add(normalized_side)
 
             try:
 
@@ -517,7 +573,7 @@ class BuySellExecutor:
                         continue
 
                     if symbol_code:
-                        held_isus.add(symbol_code)
+                        register_position(symbol_code, getattr(blk, "BnsTpCode", None))
 
                         def _clean_str(value):
                             if isinstance(value, str):
@@ -557,13 +613,6 @@ class BuySellExecutor:
                         }
 
                     held_symbols.append(entry)
-
-            # strategy_symbols = {
-            #     str(symbol.get("symbol") or "").strip()
-            #     for symbol in res_symbols_from_conditions
-            #     if symbol.get("symbol") is not None
-            # }
-            # strategy_symbols = {code for code in strategy_symbols if code}
 
             try:
                 cidbq01800_resp = await ls.overseas_futureoption().accno().CIDBQ01800(
@@ -658,14 +707,42 @@ class BuySellExecutor:
                     }
 
                     non_trade_symbols.append(non_trade_symbol)
-                    held_isus.add(symbol_code)
+                    register_position(symbol_code, _attr_str("BnsTpCode") or _attr_str("ExecBnsTpCode"))
 
-            if held_isus:
+            if held_positions:
                 non_held_symbols = []
                 for m_symbol in res_symbols_from_conditions:
-                    m_symbol_code = str(m_symbol.get("symbol") or "").strip()
-                    if not m_symbol_code or m_symbol_code not in held_isus:
+                    candidate_code = None
+                    if isinstance(m_symbol, dict):
+                        candidate_code = m_symbol.get("symbol") or m_symbol.get("symbol_code")
+                    elif hasattr(m_symbol, "get"):
+                        candidate_code = m_symbol.get("symbol")
+                    elif hasattr(m_symbol, "symbol"):
+                        candidate_code = getattr(m_symbol, "symbol")
+
+                    m_symbol_code = str(candidate_code or "").strip()
+                    blocked_sides = held_positions.get(m_symbol_code, set()) if m_symbol_code else set()
+                    strategy_side = self._strategy_position_side(m_symbol)
+
+                    if not m_symbol_code:
                         non_held_symbols.append(m_symbol)
+                        continue
+
+                    if "__any__" in blocked_sides:
+                        # Legacy fallback: once wildcard is set we treat the entire symbol as blocked.
+                        continue
+
+                    if not blocked_sides:
+                        non_held_symbols.append(m_symbol)
+                        continue
+
+                    if strategy_side is None:
+                        continue
+
+                    if strategy_side in blocked_sides:
+                        continue
+
+                    non_held_symbols.append(m_symbol)
 
                 return non_held_symbols, held_symbols, non_trade_symbols
 

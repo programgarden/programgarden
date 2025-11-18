@@ -48,9 +48,9 @@ from programgarden_core import (
 )
 from programgarden.pg_listener import pg_listener
 try:
-    from programgarden_community import get_community_condition  # type: ignore[import]
+    from programgarden_community import getCommunityCondition  # type: ignore[import]
 except ImportError:
-    def get_community_condition(_condition_id):
+    def getCommunityCondition(_condition_id):
         """Fallback when community package is unavailable (EN/KR).
 
         EN:
@@ -168,7 +168,7 @@ class PluginResolver:
         # Attempt to use the optional `programgarden_community` package
         # (if installed) to find community-provided plugins.
         try:
-            exported_cls = get_community_condition(condition_id)
+            exported_cls = getCommunityCondition(condition_id)
             if inspect.isclass(exported_cls) and issubclass(
                 exported_cls,
                 (
@@ -367,7 +367,7 @@ class PluginResolver:
                     message=f"Condition class '{condition_id}' is not a subclass of BaseStrategyCondition"
                 )
             plugin_logger.debug(
-                f"{condition_id}: 전략 조건을 실행합니다 (params={params})"
+                f"{condition_id}: 전략 조건을 실행합니다."
             )
             result = await instance.execute()
 
