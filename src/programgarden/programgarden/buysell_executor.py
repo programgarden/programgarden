@@ -987,6 +987,12 @@ class BuySellExecutor:
             raise exceptions.OrderException(
                 message=f"Order placement failed: {result.error_msg}"
             )
+        
+        if result.block1 is None:
+            order_logger.error(f"❗️ 주문 접수에 실패했습니다: {result.status_code} - {result.rsp_msg}")
+            raise exceptions.OrderException(
+                message=f"Order placement failed: {result.status_code} - {result.rsp_msg}"
+            )
 
         return result
 
@@ -1020,9 +1026,6 @@ class BuySellExecutor:
                 if cosoq02701 and getattr(cosoq02701, "block3", None):
                     dps[0]["deposit"] = cosoq02701.block3[0].FcurrDps
                     dps[0]["orderable_amount"] = cosoq02701.block3[0].FcurrOrdAbleAmt
-                    order_logger.debug(
-                        f"DPS: LS 해외주식 잔고 조회 결과 예수금={dps[0]['deposit']} 주문가능금액={dps[0]['orderable_amount']}"
-                    )
 
             elif product == "overseas_futures":
                 cidbq03000 = await LS.get_instance().overseas_futureoption().accno().CIDBQ03000(
@@ -1088,8 +1091,7 @@ class BuySellExecutor:
                 community_instance=community_instance
             )
 
-            if result and result.error_msg:
-                order_logger.error(f"❗️ {order_id}: 주문 전송에 실패했습니다 -> {result.error_msg}")
+            if result and result.block1 is None:
                 continue
 
             product_key = system.get("securities", {}).get("product", "overseas_stock") or "overseas_stock"
@@ -1097,6 +1099,7 @@ class BuySellExecutor:
             field_label = self._field_label(field)
             product_label = self._product_label(product_key)
             ord_display = ord_no or "-"
+
             order_logger.info(
                 f"{icon} {order_id}: {product_label} {field_label} 주문 완료 ({self._symbol_label(symbol)}, 주문번호={ord_display})"
             )
