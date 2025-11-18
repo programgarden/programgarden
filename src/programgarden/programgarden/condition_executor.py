@@ -876,6 +876,7 @@ class ConditionExecutor:
                 securities=securities,
             )
 
+        # 관심종목인 것 확인
         watchlist_ids: Set[str] = set()
         for symbol in my_symbols:
             ident = _symbol_identity(symbol)
@@ -900,11 +901,19 @@ class ConditionExecutor:
 
         # 미체결 정정/취소 주문에서는 관심종목에 있는 경우만 계산하도록 한다.
         for non_symbol in non_account_symbols:
-            _append_if_watchlisted(non_symbol)
+            ident = _symbol_identity(non_symbol)
+            if not ident or ident in added_symbol_ids:
+                continue
+            responsible_symbols.append(non_symbol)
+            added_symbol_ids.add(ident)
 
         # 보유 잔고 판매 주문에서는 관심종목에 있는 경우만 계산하도록 한다.
         for account_symbol in account_symbols:
-            _append_if_watchlisted(account_symbol)
+            ident = _symbol_identity(account_symbol)
+            if not ident or ident in added_symbol_ids:
+                continue
+            responsible_symbols.append(account_symbol)
+            added_symbol_ids.add(ident)
 
         # 시장 종목들 주문에서는 관심종목에 있는 경우만 계산하도록 만든다.
         for market_symbol in market_symbols:
