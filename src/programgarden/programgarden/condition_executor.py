@@ -617,6 +617,7 @@ class ConditionExecutor:
         """
         condition_id = condition.get("condition_id")
         params = condition.get("params", {}) or {}
+        configured_weight = condition.get("weight", None)
 
         result = await self.resolver.resolve_condition(
             system_id=system_id,
@@ -625,12 +626,8 @@ class ConditionExecutor:
             symbol_info=symbol_info,
         )
 
-        position_side = result.get("position_side", None)
-        direction_note = f", 방향 {position_side}" if position_side else ""
-        status = "통과" if result.get("success") else "실패"
-        condition_logger.debug(
-            f"조건 {condition_id}의 {self._symbol_label(symbol_info)} 종목의 계산의 결과는 {status}이고 가중치는 {result.get('weight', 0)}{direction_note} 입니다."
-        )
+        if configured_weight is not None:
+            result["weight"] = configured_weight
 
         return result
 
@@ -850,12 +847,12 @@ class ConditionExecutor:
                     product=product,
                 )
 
-            # account_symbols = await self.symbol_provider.get_symbols(
-            #     order_type=None,
-            #     securities=securities,
-            #     product=product,
-            #     futures_outstanding_only=True,
-            # )
+            account_symbols = await self.symbol_provider.get_symbols(
+                order_type=None,
+                securities=securities,
+                product=product,
+                futures_outstanding_only=True,
+            )
 
         if "modify_buy" in order_types:
             non_account_symbols = await self.symbol_provider.get_symbols(
@@ -921,7 +918,6 @@ class ConditionExecutor:
             responsible_symbols.append(symbol)
             added_symbol_ids.add(ident)
 
-
         # EN: Strategy-specific hard cap settings guiding how many symbols to evaluate and ordering preference.
         # KR: 평가 수량과 정렬 우선순위를 제어하는 전략별 상한 설정입니다.
         max_symbols = strategy.get("max_symbols", {})
@@ -976,7 +972,9 @@ class ConditionExecutor:
                     BaseStrategyConditionResponseOverseasFuturesType,
                 ]
             ] = []
+
             for task in asyncio.as_completed(tasks):
+
                 try:
                     res = await task
 
@@ -987,7 +985,6 @@ class ConditionExecutor:
                             "response": res,
                         }
                     )
-
                     position_side = res.get("position_side", None)
                     direction_note = f", 방향 {position_side}" if position_side else ""
                     status = "통과" if res.get("success") else "실패"

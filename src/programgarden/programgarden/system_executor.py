@@ -522,7 +522,8 @@ class SystemExecutor:
             strategy_logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
             return
 
-        # TODO: 조건 계산 결과값 종목들 반환
+        # 조건 계산 결과값 종목들 반환
+        # 해외선물은 결과에 position_side가 포함되어 있는데, 이는 duplication 중복 주문 방지에 사용된다.
         res_symbols_from_conditions = await self.condition_executor.execute_condition_list(system=system, strategy=strategy)
         async with self.condition_executor.state_lock:
             success = len(res_symbols_from_conditions) > 0

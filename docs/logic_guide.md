@@ -63,10 +63,11 @@ threshold = 2 -> True
 - `threshold`가 필요합니다. 
 - 각 조건에 가중치(weight)를 붙여, True인 조건들의 가중치 합이 threshold 이상이면 True입니다.
 - 가중치가 없으면 기본값은 0으로 처리되어서 조건이 통과되지 않습니다.
+- DSL에서 조건 딕셔너리에 `"weight"` 값을 작성하면 해당 값이 플러그인이 반환하는 기본 weight보다 우선 적용됩니다.
 - 예: 
 ```python
 conditions = [True, True, False]
 weights = [0.2, 0.1, 0.7]
 
-threshold = 0.3 -> True (0.2 + 0.1 >= 3)
+threshold = 0.3 -> True (0.2 + 0.1 >= 0.3)
 ```

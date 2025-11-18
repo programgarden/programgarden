@@ -220,6 +220,8 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
   * `exchange`는 거래소 코드입니다. 예: 나스닥(`NASDAQ`), 뉴욕증권거래소(`NYSE`), 시카고거래소(`CME`)
 * **max\_symbols**
   * 전략 실행 시 최종 대상으로 삼을 종목을 제한합니다.
+
+    *DSL 팁*: `weight` 값을 작성하면 커뮤니티 플러그인이 반환하는 기본 weight 대신 이 값이 그대로 사용됩니다. 전략별로 가중치를 미세 조정할 때 활용하세요.
   * `order`는 `random`: 랜덤 선택, `mcap`: 시가총액 상위 선택
   * `limit`은 대상이 될 상위 종목 수를 정합니다.
 * **conditions**
@@ -235,7 +237,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
         "params": {
             ...
         },
-        # logic이 weight인 경우에만 사용됩니다.
+        # logic이 weighted일 때 사용하며, 작성하면 플러그인 기본 weight보다 우선합니다.
         "weight": 0.2
     }
     ```

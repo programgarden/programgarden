@@ -45,7 +45,7 @@ if __name__ == "__main__":
                     "logic": "at_least",
                     "run_once_on_start": True,
                     "threshold": 1,
-                    "order_id": "자금분배매수_1",
+                    # "order_id": "자금분배매수_1",
                     "symbols": [
                         {
                             "symbol": "GOSS",
@@ -59,6 +59,7 @@ if __name__ == "__main__":
                     "conditions": [
                         {
                             "condition_id": "SMAGoldenDeadCross",
+                            "weight": 0.6,
                             "params": {
                                 "use_ls": True,
                                 "appkey": os.getenv("APPKEY"),  # LS증권 앱키로 대체해주세요.

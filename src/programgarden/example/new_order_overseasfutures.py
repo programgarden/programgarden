@@ -26,7 +26,7 @@ class StrategyTest(BaseStrategyConditionOverseasFutures):
             "success": True,
             "symbol": self.symbol.get("symbol", ""),
             "product": "overseas_futures",
-            "position_side": "long",
+            "position_side": "short",
             "condition_id": self.id,
             "description": self.description,
             "exchcd": "HKEX",
@@ -40,7 +40,7 @@ class OrderNewTest(BaseNewOrderOverseasFutures):
     id: str = "OrderNewTest"
     description: str = "신규주문 테스트"
     securities: List[str] = ["ls-sec.co.kr"]
-    order_types = ["new_buy"]
+    order_types = ["new_sell"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -52,7 +52,7 @@ class OrderNewTest(BaseNewOrderOverseasFutures):
             "ord_dt": "20251023",
             "isu_code_val": self.available_symbols[0].get("symbol", ""),
             "futs_ord_tp_code": "1",
-            "bns_tp_code": "2",
+            "bns_tp_code": "1",
             "abrd_futs_ord_ptn_code": "2",
             "ord_qty": 1,
             "ovrs_drvt_ord_prc": 6700.0,
@@ -103,13 +103,13 @@ if __name__ == "__main__":
                 {
                     "전략ID": "condition_market_analysis",
                     "설명": "시장 분석 전략",
-                    "스케줄": "*/10 * * * * *",
+                    "스케줄": "*/50 * * * * *",
                     "시간대": "Asia/Seoul",
                     "시작즉시실행": True,
                     "로직": "at_least",
                     "임계값": 1,
                     "symbols": [{
-                        "symbol": "MCAX25",
+                        "symbol": "HMCEX25",
                         "name": "China A50 Index Futures",
                         "exchange": "HKEX"
                     }],
