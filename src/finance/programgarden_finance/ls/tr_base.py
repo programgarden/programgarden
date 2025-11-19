@@ -433,3 +433,10 @@ def set_tr_header_options(
 
     if options:
         request_data.options = options
+
+    req_options = getattr(request_data, "options", None)
+    if req_options is None:
+        request_data.options = SetupOptions()
+        req_options = request_data.options
+
+    req_options.token_manager = token_manager

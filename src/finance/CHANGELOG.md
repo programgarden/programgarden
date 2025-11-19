@@ -1,3 +1,7 @@
+## [0.1.8] - 2025-11-19
+### Changed
+- Token Manager의 토큰 갱신 로직 수정
+
 ## [0.1.7] - 2025-11-15
 ### Changed
 - programgarden-core 버전 업데이트에 따른 종속성 수정

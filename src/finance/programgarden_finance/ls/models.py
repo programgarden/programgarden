@@ -5,6 +5,8 @@
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
+from programgarden_finance.ls.token_manager import TokenManager
+
 
 class SetupOptions(BaseModel):
     """Execution pre-setup options controlling rate limiting behaviour.
@@ -42,6 +44,20 @@ class SetupOptions(BaseModel):
     """Shared key for coordinating rate limit state across instances.
 
     여러 인스턴스 간 rate limit 상태를 공유하기 위한 키입니다. (기본값: None)"""
+
+    # 내부 실행 컨텍스트에서만 참조하는 객체이므로 검증/직렬화와 분리
+    token_manager: Optional[TokenManager] = Field(
+        default=None,
+        title="Token Manager",
+        description="현재 요청에 사용되는 토큰 관리자",
+        exclude=True,
+        repr=False,
+    )
+
+    model_config = ConfigDict(
+        # token_manager는 직렬화에서 제외되지만, 임의 객체라 검증에서 차단되지 않도록 허용
+        arbitrary_types_allowed=True
+    )
 
 
 class OAuthRequestHeader(BaseModel):

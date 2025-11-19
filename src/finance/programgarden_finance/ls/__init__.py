@@ -56,11 +56,7 @@ class LS(metaclass=EnforceKoreanAliasMeta):
             return
         with self._sync_lock:
             self.token = block
-            self.token_manager.access_token = block.access_token
-            self.token_manager.token_type = getattr(block, "token_type", None)
-            self.token_manager.scope = getattr(block, "scope", None)
-            self.token_manager.expires_in = getattr(block, "expires_in", None)
-            self.token_manager.acquired_at = time.time()
+            self.token_manager.update_from_block(block)
 
     @require_korean_alias
     def login(
@@ -190,6 +186,10 @@ class LS(metaclass=EnforceKoreanAliasMeta):
     def overseas_futureoption(self) -> OverseasFutureoption:
         """해외 선물 데이터를 조회합니다."""
 
+        # 토큰 확인
+        if not self.ensure_token():
+            raise LoginException("토큰이 유효하지 않습니다.")
+
         return OverseasFutureoption(
             token_manager=self.token_manager,
         )
@@ -197,103 +197,17 @@ class LS(metaclass=EnforceKoreanAliasMeta):
     해외선물 = overseas_futureoption
     해외선물.__doc__ = "해외 선물 데이터를 조회합니다."
 
-    def ensure_token(self) -> bool:
+    def ensure_token(self, force_refresh: bool = False) -> bool:
         """토큰이 만료(또는 임박)되었으면 재발급합니다."""
         if not self.token_manager:
             return False
+        return self.token_manager.ensure_fresh_token(force_refresh)
 
-        # 빠른 확인
-        if not self.token_manager.is_expired():
-            return True
-
-        # 만료면 sync 락을 잡고 재확인 후 갱신 시도
-        with self._sync_lock:
-            if not self.token_manager.is_expired():
-                return True
-            return self._refresh_token()
-
-    async def async_ensure_token(self) -> bool:
+    async def async_ensure_token(self, force_refresh: bool = False) -> bool:
         """토큰이 만료(또는 임박)되었으면 비동기로 재발급합니다."""
         if not self.token_manager:
             return False
-
-        if not self.token_manager.is_expired():
-            return True
-
-        # ensure async lock exists (create lazily in coroutine-safe way)
-        if self._async_lock is None:
-            with self._sync_lock:
-                if self._async_lock is None:
-                    self._async_lock = asyncio.Lock()
-        async with self._async_lock:
-            if not self.token_manager.is_expired():
-                return True
-            return await self._async_refresh_token()
-
-    # 토큰 만기시 로그인 재요청하는 함수
-    def _refresh_token(self) -> bool:
-        """토큰을 갱신합니다."""
-        if not self.token_manager:
-            return False
-
-        # 기존 토큰 정보를 사용하여 재로그인 시도
-        with self._sync_lock:
-            appkey = self.token_manager.appkey
-            appsecretkey = self.token_manager.appsecretkey
-
-        if not appkey or not appsecretkey:
-            return False
-
-        try:
-            response = GenerateToken().token(
-                TokenInBlock(
-                    appkey=appkey,
-                    appsecretkey=appsecretkey,
-                )
-            ).req()
-
-            if response.block and response.block.access_token:
-                self._update_token_from_block(response.block)
-                return True
-
-            return False
-
-        except Exception as e:
-            raise LoginException(message=str(e))
-
-    async def _async_refresh_token(self) -> bool:
-        """토큰을 비동기로 갱신합니다."""
-        if not self.token_manager:
-            return False
-
-        # ensure async lock exists (create lazily in coroutine-safe way)
-        if self._async_lock is None:
-            with self._sync_lock:
-                if self._async_lock is None:
-                    self._async_lock = asyncio.Lock()
-        async with self._async_lock:
-            appkey = self.token_manager.appkey
-            appsecretkey = self.token_manager.appsecretkey
-
-        if not appkey or not appsecretkey:
-            return False
-
-        try:
-            response = await GenerateToken().token(
-                TokenInBlock(
-                    appkey=appkey,
-                    appsecretkey=appsecretkey,
-                )
-            ).req_async()
-
-            if response.block and response.block.access_token:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, self._update_token_from_block, response.block)
-                return True
-
-            return False
-        except Exception as e:
-            raise LoginException(message=str(e))
+        return await self.token_manager.ensure_fresh_token_async(force_refresh)
 
 
 __all__ = [

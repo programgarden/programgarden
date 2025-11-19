@@ -1,70 +1,10 @@
-# from typing import Optional
 from programgarden_core.exceptions import TokenNotFoundException
-
-
-# class TokenManager:
-#     """
-#     애플리케이션 전체에서 사용할 토큰을 관리하는 클래스
-#     인스턴스화 할 때마다 상태가 초기화됩니다.
-#     """
-
-#     def __init__(self) -> None:
-#         self._access_token = None
-#         self._appkey = None
-#         self._appsecretkey = None
-
-#     @property
-#     def access_token(self) -> Optional[str]:
-#         """현재 저장된 access_token을 반환합니다."""
-#         return self._access_token
-
-#     @access_token.setter
-#     def access_token(self, token: str) -> None:
-#         """access_token을 설정합니다."""
-#         self._access_token = token
-
-#     @property
-#     def appkey(self) -> Optional[str]:
-#         """현재 저장된 appkey를 반환합니다."""
-#         return self._appkey
-
-#     @appkey.setter
-#     def appkey(self, key: str) -> None:
-#         """appkey를 설정합니다."""
-#         self._appkey = key
-
-#     @property
-#     def appsecretkey(self) -> Optional[str]:
-#         """현재 저장된 appsecretkey를 반환합니다."""
-#         return self._appsecretkey
-
-#     @appsecretkey.setter
-#     def appsecretkey(self, key: str) -> None:
-#         """appsecretkey를 설정합니다."""
-#         self._appsecretkey = key
-
-#     def get_bearer_token(self) -> str:
-#         """Bearer 형식의 토큰을 반환합니다."""
-#         if not self._access_token:
-#             raise TokenNotFoundException()
-#         return f"Bearer {self._access_token}"
-
-#     def is_token_available(self) -> bool:
-#         """토큰이 존재하는지 확인합니다."""
-#         return self._access_token is not None
-
-#     def clear_tokens(self) -> None:
-#         """모든 토큰 정보를 초기화합니다."""
-#         self._access_token = None
-#         self._appkey = None
-#         self._appsecretkey = None
-
-
 from dataclasses import dataclass
 import time
-from typing import Optional, ClassVar
+from typing import Awaitable, Callable, Optional, ClassVar
 
 from .config import URLS
+from programgarden_core.logs import pg_logger
 
 # 토큰 재발급 임계 시간(초): 만료 5분 전부터 재발급 시도
 TOKEN_REFRESH_SKEW_SECONDS = 300
@@ -96,8 +36,27 @@ class TokenManager:
     def is_token_available(self) -> bool:
         return self.access_token is not None and not self.is_expired()
 
+    def ensure_fresh_token(self, force_refresh: bool = False) -> bool:
+        """토큰이 만료되었거나 강제 갱신이 필요한 경우 동기적으로 갱신합니다."""
+        if not force_refresh and not self.is_expired():
+            return True
+        return self._refresh_token()
+
+    async def ensure_fresh_token_async(self, force_refresh: bool = False) -> bool:
+        """토큰이 만료되었거나 강제 갱신이 필요한 경우 비동기적으로 갱신합니다."""
+        if not force_refresh and not self.is_expired():
+            return True
+        return await self._async_refresh_token()
+
     def get_bearer_token(self) -> str:
-        """Bearer 형식의 토큰을 반환합니다."""
+        """Bearer 형식의 토큰을 반환합니다. 만료 시 자동 갱신을 시도합니다."""
+        # 토큰 만료 체크 및 자동 갱신
+        if self.is_expired():
+            # 동기 컨텍스트라고 가정하고 갱신 시도 (get_bearer_token은 보통 동기 호출됨)
+            # 비동기 환경에서 호출될 경우 블로킹이 발생할 수 있으나, 
+            # 토큰 갱신은 드물게 발생하므로 허용
+            self._refresh_token()
+
         if not self.access_token:
             raise TokenNotFoundException()
         return f"Bearer {self.access_token}"
@@ -106,3 +65,61 @@ class TokenManager:
         mode = bool(paper_trading)
         self.paper_trading = mode
         self.wss_url = URLS.get_wss_url(mode)
+
+    def update_from_block(self, block) -> None:
+        """토큰 응답 블록으로부터 상태를 갱신합니다."""
+        if not block:
+            return
+        self.access_token = block.access_token
+        self.token_type = getattr(block, "token_type", None)
+        self.scope = getattr(block, "scope", None)
+        self.expires_in = getattr(block, "expires_in", None)
+        self.acquired_at = time.time()
+
+    def _refresh_token(self) -> bool:
+        """내부적으로 토큰을 동기 갱신합니다."""
+        if not self.appkey or not self.appsecretkey:
+            return False
+
+        try:
+            # Avoid circular import
+            from .oauth.generate_token import GenerateToken
+            from .oauth.generate_token.token.blocks import TokenInBlock
+
+            response = GenerateToken().token(
+                TokenInBlock(
+                    appkey=self.appkey,
+                    appsecretkey=self.appsecretkey,
+                )
+            ).req()
+
+            if response.block and response.block.access_token:
+                self.update_from_block(response.block)
+                return True
+            return False
+        except Exception:
+            return False
+
+    async def _async_refresh_token(self) -> bool:
+        """내부적으로 토큰을 비동기 갱신합니다."""
+        if not self.appkey or not self.appsecretkey:
+            return False
+
+        try:
+            # Avoid circular import
+            from .oauth.generate_token import GenerateToken
+            from .oauth.generate_token.token.blocks import TokenInBlock
+
+            response = await GenerateToken().token(
+                TokenInBlock(
+                    appkey=self.appkey,
+                    appsecretkey=self.appsecretkey,
+                )
+            ).req_async()
+
+            if response.block and response.block.access_token:
+                self.update_from_block(response.block)
+                return True
+            return False
+        except Exception:
+            return False

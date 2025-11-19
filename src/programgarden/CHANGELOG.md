@@ -1,3 +1,7 @@
+## [0.1.17] - 2025-11-19
+### Updated
+- programgarden-finance 0.1.8, programgarden-community 0.1.10 버전으로 업데이트
+
 ## [0.1.16] - 2025-11-19
 ### Fixed
 - 보유종목, 미체결 종목은 관심종목 여부와 상관없이 처리하도록 수정

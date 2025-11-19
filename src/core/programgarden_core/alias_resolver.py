@@ -76,7 +76,6 @@ STRATEGY_ALIAS_MAP: Dict[str, str] = {
     "임계값": "threshold",
     "사용하는주문ID": "order_id",
     "주문ID": "order_id",
-    "주문ID": "order_id",
     "주문": "order_id",
     "종목": "symbols",
     "심볼": "symbols",
