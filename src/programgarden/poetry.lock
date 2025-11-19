@@ -763,20 +763,20 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "0.1.9"
+version = "0.1.10"
 description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_community-0.1.9-py3-none-any.whl", hash = "sha256:0d652194353bb58b5416d40301ae4f2b4a945fb223fce06a403976fd2202e676"},
-    {file = "programgarden_community-0.1.9.tar.gz", hash = "sha256:f78c26ab67770b5e284f31692378891e9df2006004d2bef7a40cd40a1f8d044f"},
+    {file = "programgarden_community-0.1.10-py3-none-any.whl", hash = "sha256:dac5b0943cc3470e236999166c57f588136570e53a82429ce02d4edf307219b0"},
+    {file = "programgarden_community-0.1.10.tar.gz", hash = "sha256:608092df4db55e25f0659763d6d9d1294a228835091071d7d1c756faf0f82e63"},
 ]
 
 [package.dependencies]
 croniter = ">=6.0.0,<7.0.0"
 programgarden-core = ">=0.1.6,<0.2.0"
-programgarden-finance = ">=0.1.7,<0.2.0"
+programgarden-finance = ">=0.1.8,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 
@@ -794,14 +794,14 @@ files = [
 
 [[package]]
 name = "programgarden-finance"
-version = "0.1.7"
+version = "0.1.8"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-0.1.7-py3-none-any.whl", hash = "sha256:ce33ae7249902525e2e7e72431d24162ea6ae7bfa4888484fc537d9b29b87bd8"},
-    {file = "programgarden_finance-0.1.7.tar.gz", hash = "sha256:fd99432e75941f523247199d3b27c5a57720fd4ae01935856d54a1a97fd54f66"},
+    {file = "programgarden_finance-0.1.8-py3-none-any.whl", hash = "sha256:c56c6ce32d925ee5a08b810ff64315de3fd4a789abaeda0c1edc0b4baf52a093"},
+    {file = "programgarden_finance-0.1.8.tar.gz", hash = "sha256:cf9c4dbb5622dd0be7cd425e5252135cd7e56ff8f50b71bab3c7da20aa4ea7c0"},
 ]
 
 [package.dependencies]
@@ -1681,4 +1681,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "d39abf28aa645ccdf68c29f66455bb7d16321cbfeffe97fc137ee1df5c07032c"
+content-hash = "9c5c72dd4a785f449036080f6151e2611311e15d00638e610bfcae4df4ce6d55"

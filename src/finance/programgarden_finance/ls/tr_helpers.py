@@ -1,11 +1,13 @@
 import asyncio
-from typing import Callable, Optional, TypeVar, Generic
+from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Generic
 
 import aiohttp
 
+from programgarden_core.exceptions import TokenNotFoundException
 from programgarden_core.logs import pg_logger
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.status import RequestStatus
+from programgarden_finance.ls.token_manager import TokenManager
 from .tr_base import TRAccnoAbstract
 
 
@@ -23,6 +25,12 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
     (resp, resp_json, resp_headers, exc) -> ResponseObject 를 반환해야 합니다.
     """
 
+    _EXPIRED_TOKEN_KEYWORDS = (
+        "기간이 만료된 token",
+        "token expired",
+        "token 만료",
+    )
+
     def __init__(self, request_data: object, response_builder: ResponseBuilder, url: str = URLS.ACCNO_URL):
         super().__init__(
             rate_limit_count=request_data.options.rate_limit_count,
@@ -33,11 +41,96 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         self.request_data = request_data
         self._response_builder = response_builder
         self._url = url
+        options = getattr(request_data, "options", None)
+        self._token_manager: Optional[TokenManager] = getattr(options, "token_manager", None)
+
+    async def _execute_async_with_retry(self, session: aiohttp.ClientSession) -> Tuple[Optional[object], Optional[dict], Optional[dict]]:
+        resp, resp_json, resp_headers = await self.execute_async_with_session(session, self._url, self.request_data, timeout=10)
+
+        if self._should_retry_due_to_expired(resp, resp_json):
+            retry_payload = await self._retry_after_refresh_async(session)
+            if retry_payload is not None:
+                resp, resp_json, resp_headers = retry_payload
+
+        return resp, resp_json, resp_headers
+
+    def _execute_sync_with_retry(self) -> Tuple[Optional[object], Optional[dict], Optional[dict]]:
+        resp, resp_json, resp_headers = self.execute_sync(self._url, self.request_data, timeout=10)
+
+        if self._should_retry_due_to_expired(resp, resp_json):
+            retry_payload = self._retry_after_refresh_sync()
+            if retry_payload is not None:
+                resp, resp_json, resp_headers = retry_payload
+
+        return resp, resp_json, resp_headers
+
+    def _extract_status_code(self, resp: Optional[object]) -> Optional[int]:
+        if resp is None:
+            return None
+        return getattr(resp, "status", getattr(resp, "status_code", None))
+
+    def _should_retry_due_to_expired(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]]) -> bool:
+        if self._token_manager is None:
+            return False
+
+        status = self._extract_status_code(resp)
+        if status is None or status < 400:
+            return False
+
+        # 401 Unauthorized or 403 Forbidden are strong indicators of token issues
+        if status in (401, 403):
+            return True
+
+        message = ""
+        if isinstance(resp_json, dict):
+            message = str(resp_json.get("rsp_msg") or resp_json.get("error_msg") or "").lower()
+
+        if not message:
+            return False
+
+        return any(keyword in message for keyword in self._EXPIRED_TOKEN_KEYWORDS)
+
+    def _retry_after_refresh_sync(self) -> Optional[Tuple[Optional[object], Optional[dict], Optional[dict]]]:
+        if self._token_manager is None:
+            return None
+        if not self._token_manager.ensure_fresh_token(force_refresh=True):
+            return None
+        self._update_authorization_header()
+        try:
+            return self.execute_sync(self._url, self.request_data, timeout=10)
+        except Exception as exc:  # pragma: no cover - propagate error handling to caller
+            pg_logger.error(f"토큰 재발급 후 동기 재시도 실패: {exc}")
+            return None
+
+    async def _retry_after_refresh_async(self, session: aiohttp.ClientSession) -> Optional[Tuple[Optional[object], Optional[dict], Optional[dict]]]:
+        if self._token_manager is None:
+            return None
+
+        refreshed = await self._token_manager.ensure_fresh_token_async(force_refresh=True)
+        if not refreshed:
+            return None
+
+        self._update_authorization_header()
+
+        try:
+            return await self.execute_async_with_session(session, self._url, self.request_data, timeout=10)
+        except Exception as exc:  # pragma: no cover - propagate error handling to caller
+            pg_logger.error(f"토큰 재발급 후 비동기 재시도 실패: {exc}")
+            return None
+
+    def _update_authorization_header(self) -> None:
+        if self._token_manager is None or not hasattr(self.request_data, "header"):
+            return
+
+        try:
+            self.request_data.header.authorization = self._token_manager.get_bearer_token()
+        except TokenNotFoundException:
+            pass
 
     async def req_async(self) -> R:
         try:
             async with aiohttp.ClientSession() as session:
-                resp, resp_json, resp_headers = await self.execute_async_with_session(session, self._url, self.request_data, timeout=10)
+                resp, resp_json, resp_headers = await self._execute_async_with_retry(session)
                 result: R = self._response_builder(resp, resp_json, resp_headers, None)
                 if hasattr(result, "raw_data"):
                     result.raw_data = resp
@@ -54,7 +147,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         callers that pass a session (for retries or connection reuse) keep working.
         """
         try:
-            resp, resp_json, resp_headers = await self.execute_async_with_session(session, self._url, self.request_data, timeout=10)
+            resp, resp_json, resp_headers = await self._execute_async_with_retry(session)
             result: R = self._response_builder(resp, resp_json, resp_headers, None)
             if hasattr(result, "raw_data"):
                 result.raw_data = resp
@@ -66,7 +159,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
 
     def req(self) -> R:
         try:
-            resp, resp_json, resp_headers = self.execute_sync(self._url, self.request_data, timeout=10)
+            resp, resp_json, resp_headers = self._execute_sync_with_retry()
             result: R = self._response_builder(resp, resp_json, resp_headers, None)
             if hasattr(result, "raw_data"):
                 result.raw_data = resp
@@ -75,6 +168,8 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         except Exception as e:
             pg_logger.error(f"GenericTR 동기 요청 중 예외: {e}")
             return self._response_builder(None, None, None, e)
+
+
 
     async def retry_req_async(self, callback: Callable[[Optional[R], RequestStatus], None], max_retries: int = 3, delay: int = 2):
         response: Optional[R] = None
