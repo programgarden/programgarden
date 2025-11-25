@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.9"
 name = "programgarden"
-version = "0.1.17"
+version = "0.1.18"
 description = "자동화매매 오픈소스의 실행, 로그, 환경 등의 핵심이되는 오픈소스"
 readme = "README.md"
 
@@ -20,9 +20,9 @@ croniter = "^6.0.0"
 jsoneditor = "^1.6.0"
 python-dotenv = "^1.1.1"
 tzdata = "^2025.2"
-programgarden-finance = { path="../finance", develop=true }
-programgarden-core = {path="../core", develop=true}
-programgarden-community = {path="../community", develop=true}
+programgarden-finance = "^0.1.8"
+programgarden-core = "^0.1.7"
+programgarden-community = "^0.1.10"
 psutil = "^7.1.3"
 
 [tool.poetry.group.dev.dependencies]
