@@ -14,7 +14,7 @@ KR:
 import asyncio
 import logging
 import threading
-from typing import Callable
+from typing import Callable, Dict, Any
 from programgarden_core import pg_log, pg_log_disable, system_logger, normalize_system_config
 from programgarden_core.bases import SystemType
 from programgarden_finance import LS
@@ -23,6 +23,7 @@ from programgarden_core.exceptions import (
     BasicException,
     LoginException,
     NotExistCompanyException,
+    PerformanceExceededException,
     SystemException,
     SystemInitializationException,
     SystemShutdownException,
@@ -32,6 +33,7 @@ from programgarden.pg_listener import (
     StrategyPayload,
     RealOrderPayload,
     ErrorPayload,
+    PerformancePayload,
     pg_listener
 )
 from .system_keys import exist_system_keys_error
@@ -113,6 +115,30 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 if getattr(self, "_executor", None) is None:
                     self._executor = SystemExecutor()
         return self._executor
+
+    def get_performance_status(self, sample_interval: float = 0.05) -> Dict[str, Any]:
+        """Get current system performance metrics.
+
+        EN:
+            Returns a snapshot of the current process's CPU and memory usage.
+            Requires the system to be initialized (executor created).
+
+        KR:
+            현재 프로세스의 CPU 및 메모리 사용량 스냅샷을 반환합니다.
+            시스템이 초기화되어 있어야 합니다(실행기 생성).
+
+        Args:
+            sample_interval (float):
+                EN: Optional blocking duration for CPU sampling. Concurrency
+                is also blocked during this period.
+                KR: CPU 샘플링을 위한 선택적 블로킹 시간입니다. 동시성 처리도 블록킹 됩니다.
+
+        Returns:
+            Dict[str, Any]: Performance metrics snapshot.
+        """
+        executor = self.executor
+        executor.perf_monitor.refresh_cpu_baseline()
+        return executor.perf_monitor.get_current_status(sample_interval=sample_interval)
 
     def run(
         self,
@@ -317,8 +343,13 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
             while self.executor.running:
                 await asyncio.sleep(1)
 
+        except PerformanceExceededException as exc:
+            if not getattr(exc, "_pg_error_emitted", False):
+                pg_listener.emit_exception(exc)
+            raise
         except BasicException as exc:
-            pg_listener.emit_exception(exc)
+            if not getattr(exc, "_pg_error_emitted", False):
+                pg_listener.emit_exception(exc)
         except Exception as exc:
             system_logger.exception("Unexpected error during system execution")
             system_exc = SystemException(
@@ -396,6 +427,29 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 KR: 등록이 완료돼도 반환값은 없습니다.
         """
         pg_listener.set_real_order_handler(callback)
+
+    def on_performance_message(self, callback: Callable[[PerformancePayload], None]) -> None:
+        """Register a callback for performance metric notifications.
+
+        EN:
+            Attaches the handler that will process performance payloads emitted
+            by the listener subsystem.
+
+        KR:
+            퍼포먼스 지표 알림 수신 콜백 함수로, 리스너 서브시스템에서 발행하는 퍼포먼스 페이로드를 처리할 핸들러를
+            등록합니다.
+
+        Args:
+            callback (Callable[[PerformancePayload], None]):
+                EN: Consumer receiving performance payload objects.
+                KR: 퍼포먼스 페이로드 객체를 받는 소비자 함수입니다.
+
+        Returns:
+            None:
+                EN: Registration completes without returning a value.
+                KR: 등록이 완료돼도 반환값은 없습니다.
+        """
+        pg_listener.set_performance_handler(callback)
 
     def on_error_message(self, callback: Callable[[ErrorPayload], None]) -> None:
         """Register a callback for structured error notifications.
