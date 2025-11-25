@@ -102,9 +102,34 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
         
         # 만든 날짜
         "date": "2025-09-21",
+
+        # (선택) 실행 모드: test | live | guarded_live
+        "dry_run_mode": "test",
+
+        # (선택) 성능 임계치 설정 (guarded_live 모드일 때 사용)
+        "perf_thresholds": {
+            "max_avg_cpu_percent": 80,
+            "max_memory_delta_mb": 256
+        }
     },
 }
 ```
+
+### 드라이런 및 성능 가드 옵션
+
+**드라이런(Dry Run)이란?**
+실제 주문을 내지 않고 가상으로 전략을 실행해보는 테스트 모드를 의미합니다. 여기서는 전략이 **시스템 성능(CPU, 메모리 등)에 무리를 주지 않고 안정적으로 동작하는지 확인**한 뒤, 안전하다고 판단되면 실제 매매로 넘어가기 위해 사용합니다.
+
+`settings` 블록에서 실행 정책을 바로 제어할 수 있습니다.
+
+- `dry_run_mode`:
+  - `test`: 조건 계산과 성능 측정만 수행하고 주문은 전송하지 않습니다. 한 번이라도 성공하면 자동으로 `live`로 승격됩니다.
+  - `live`(기본값): 기존과 동일하게 실주문을 즉시 전송합니다.
+  - `guarded_live`: 실주문은 전송하되, 시스템 자원(CPU, 메모리) 사용량이 설정된 임계치를 초과하면 즉시 중단하여 안전을 확보합니다.
+
+- `perf_thresholds`:
+  - `max_avg_cpu_percent`: 평균 CPU %, 초과 시 실행 중단
+  - `max_memory_delta_mb`: 메모리 증가치(MB), 초과 시 중단
 
 ### securities 영역
 
