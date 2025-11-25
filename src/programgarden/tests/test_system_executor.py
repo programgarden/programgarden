@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from programgarden.system_executor import SystemExecutor
 from programgarden import system_executor as system_executor_module
+from programgarden_core.exceptions import PerformanceExceededException
 
 
 class StubPluginResolver:
@@ -44,17 +45,23 @@ class StubConditionExecutor:
 class StubBuySellExecutor:
     def __init__(self) -> None:
         self.new_order_calls: List[Dict[str, Any]] = []
+        self.mode_changes: List[str] = []
+        self.current_mode = "live"
 
         async def _real_order_websockets(*, system: Dict[str, Any]) -> None:
             self.real_order_system = system
 
         self.real_order_executor = SimpleNamespace(real_order_websockets=_real_order_websockets)
 
+    def configure_execution_mode(self, mode: str) -> None:
+        self.mode_changes.append(mode)
+        self.current_mode = mode
+
     async def new_order_execute(
         self,
         *,
         system: Dict[str, Any],
-        symbols_from_strategy: List[Dict[str, Any]],
+        res_symbols_from_conditions: List[Dict[str, Any]],
         new_order: Dict[str, Any],
         order_id: str,
         order_types: List[str],
@@ -63,7 +70,7 @@ class StubBuySellExecutor:
             {
                 "system_id": system["settings"]["system_id"],
                 "order_id": order_id,
-                "symbols": symbols_from_strategy,
+                "symbols": res_symbols_from_conditions,
                 "order_types": order_types,
                 "new_order": new_order,
             }
@@ -237,3 +244,122 @@ async def test_run_with_strategy_run_once_on_start(monkeypatch: pytest.MonkeyPat
 
     executor.tasks.clear()
     executor.running = False
+
+
+@pytest.mark.asyncio
+async def test_dry_run_mode_promotes_to_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    executor = SystemExecutor()
+    executor.plugin_resolver = StubPluginResolver()
+    executor.condition_executor = StubConditionExecutor()
+    stub_buy_sell = StubBuySellExecutor()
+    executor.buy_sell_executor = stub_buy_sell
+
+    perf_events: List[Dict[str, Any]] = []
+
+    def capture_performance(payload: Dict[str, Any]) -> None:
+        perf_events.append(payload)
+
+    monkeypatch.setattr(system_executor_module.pg_listener, "emit_performance", capture_performance)
+
+    system = {
+        "settings": {"system_id": "dry-run-system", "dry_run_mode": "test"},
+        "securities": {
+            "company": "ls",
+            "product": "overseas_futures",
+            "appkey": "key",
+            "appsecretkey": "secret",
+            "paper_trading": True,
+        },
+        "strategies": [
+            {
+                "id": "strategy-dry",
+                "conditions": [{"condition_id": "dummy"}],
+                "order_id": "order-1",
+            }
+        ],
+        "orders": [
+            {
+                "order_id": "order-1",
+                "condition": {"condition_id": "OrderPlugin"},
+            }
+        ],
+    }
+
+    await executor.execute_system(system)
+
+    assert stub_buy_sell.mode_changes[0] == "test"
+    assert stub_buy_sell.mode_changes[-1] == "live"
+    assert executor.execution_mode == "live"
+    safe_event = [evt for evt in perf_events if evt.get("status") == "safe_to_live"]
+    assert safe_event, "safe_to_live 이벤트가 발생해야 합니다"
+
+    await executor.stop()
+
+
+@pytest.mark.asyncio
+async def test_guarded_live_raises_when_threshold_exceeded(monkeypatch: pytest.MonkeyPatch) -> None:
+    executor = SystemExecutor()
+    executor.plugin_resolver = StubPluginResolver()
+    executor.condition_executor = StubConditionExecutor()
+    executor.buy_sell_executor = StubBuySellExecutor()
+
+    perf_events: List[Dict[str, Any]] = []
+
+    def capture_performance(payload: Dict[str, Any]) -> None:
+        perf_events.append(payload)
+
+    monkeypatch.setattr(system_executor_module.pg_listener, "emit_performance", capture_performance)
+
+    class FakeExecutionTimer:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            self._stats = {
+                "duration_seconds": 1,
+                "avg_cpu_percent": 150,
+                "memory_delta_mb": 10,
+            }
+
+        def __enter__(self) -> "FakeExecutionTimer":
+            return self
+
+        def __exit__(self, *_exc: Any) -> None:
+            return None
+
+        def get_result(self) -> Dict[str, Any]:
+            return dict(self._stats)
+
+    monkeypatch.setattr(system_executor_module, "ExecutionTimer", FakeExecutionTimer)
+
+    system = {
+        "settings": {
+            "system_id": "guarded",
+            "dry_run_mode": "guarded_live",
+            "perf_thresholds": {"max_avg_cpu_percent": 50},
+        },
+        "securities": {
+            "company": "ls",
+            "product": "overseas_futures",
+            "appkey": "key",
+            "appsecretkey": "secret",
+        },
+        "strategies": [
+            {
+                "id": "strategy-guard",
+                "conditions": [{"condition_id": "dummy"}],
+                "order_id": "order-1",
+            }
+        ],
+        "orders": [
+            {
+                "order_id": "order-1",
+                "condition": {"condition_id": "OrderPlugin"},
+            }
+        ],
+    }
+
+    with pytest.raises(PerformanceExceededException):
+        await executor.execute_system(system)
+
+    throttle_events = [evt for evt in perf_events if evt.get("status") == "throttled"]
+    assert throttle_events, "성능 제한 초과 이벤트가 발행돼야 합니다"
+
+    await executor.stop()

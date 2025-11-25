@@ -47,6 +47,22 @@ class ListenerCategoryType(Enum):
     STRATEGIES = "strategies"
     REAL_ORDER = "real_order"
     ERROR = "error"
+    PERFORMANCE = "performance"
+
+
+class PerformancePayload(TypedDict):
+    """Payload emitted for performance metrics.
+
+    EN:
+        Contains execution duration and resource usage statistics.
+    KR:
+        실행 시간 및 자원 사용량 통계를 포함합니다.
+    """
+    context: str  # e.g., "strategy:my_strategy_id"
+    stats: Dict[str, Any]
+    status: NotRequired[str]
+    details: NotRequired[Dict[str, Any]]
+
 
 
 class RealOrderPayload(TypedDict):
@@ -138,6 +154,7 @@ class RealTimeListener:
             ListenerCategoryType.STRATEGIES: None,
             ListenerCategoryType.REAL_ORDER: None,
             ListenerCategoryType.ERROR: None,
+            ListenerCategoryType.PERFORMANCE: None,
         }
         self._q: "queue.Queue[Optional[Dict[str, Any]]]" = queue.Queue()
         self._thread: Optional[threading.Thread] = None
@@ -338,6 +355,33 @@ class RealOrderListener:
                 pass
 
 
+class PerformanceListener:
+    """Persist and emit the latest performance payload.
+
+    EN:
+        Stores the last performance snapshot and forwards copies to the emitter
+        when configured.
+
+    KR:
+        최근 퍼포먼스 스냅샷을 저장하고 emitter가 설정된 경우 복사본을 전달합니다.
+    """
+
+    def __init__(self, emitter: Optional[Callable[[ListenerCategoryType, Dict[str, Any]], None]] = None) -> None:
+        self._lock = threading.Lock()
+        self._last_payload: Dict[str, Any] = {}
+        self._emitter = emitter
+
+    def emit(self, payload: PerformancePayload) -> None:
+        with self._lock:
+            self._last_payload = dict(payload)
+            payload_local: PerformancePayload = dict(self._last_payload)  # type: ignore[arg-type]
+        if self._emitter:
+            try:
+                self._emitter(ListenerCategoryType.PERFORMANCE, payload_local)
+            except Exception:
+                pass
+
+
 class ErrorListener:
     """Persist and emit normalized error payloads.
 
@@ -392,6 +436,7 @@ class PGListener:
         self.realtime = RealTimeListener(max_workers=max_workers)
         self.strategies = StrategiesListener(emitter=self.realtime.emit)
         self.real_order = RealOrderListener(emitter=self.realtime.emit)
+        self.performance = PerformanceListener(emitter=self.realtime.emit)
         self.error = ErrorListener(emitter=self.realtime.emit)
 
     def set_strategies_handler(self, handler: Callable[[StrategyPayload], Any]) -> None:
@@ -402,6 +447,11 @@ class PGListener:
     def set_real_order_handler(self, handler: Callable[[RealOrderPayload], Any]) -> None:
         """Register a real-order handler and ensure the realtime worker is running."""
         self.realtime.set_handler(ListenerCategoryType.REAL_ORDER, handler)
+        self.realtime.start()
+
+    def set_performance_handler(self, handler: Callable[[PerformancePayload], Any]) -> None:
+        """Register a performance handler and ensure the realtime worker is running."""
+        self.realtime.set_handler(ListenerCategoryType.PERFORMANCE, handler)
         self.realtime.start()
 
     def set_error_handler(self, handler: Callable[[ErrorPayload], Any]) -> None:
@@ -416,6 +466,10 @@ class PGListener:
     def emit_real_order(self, payload: RealOrderPayload) -> None:
         """Emit a real-order payload through the real-order listener."""
         self.real_order.emit(payload)
+
+    def emit_performance(self, payload: PerformancePayload) -> None:
+        """Emit a performance payload through the performance listener."""
+        self.performance.emit(payload)
 
     def emit_exception(self, exc: Exception, *, data: Optional[Dict[str, Any]] = None) -> None:
         """Normalize and emit exceptions unless already reported."""

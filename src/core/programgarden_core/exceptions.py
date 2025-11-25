@@ -206,6 +206,27 @@ class SystemException(BasicException):
         super().__init__(message=message, code=code, data=data)
 
 
+class PerformanceExceededException(SystemException):
+    """Raised when performance guardrails are violated during execution.
+
+    EN:
+        Signals that CPU or memory thresholds defined by the user have been
+        exceeded, prompting Programgarden to halt the current run.
+
+    KO:
+        사용자가 정의한 CPU 또는 메모리 임계치를 초과하여 Programgarden 실행을
+        중단해야 함을 알립니다.
+    """
+
+    def __init__(
+        self,
+        message: str = "시스템 자원 사용량이 허용치를 초과했습니다.",
+        code: str = "PERFORMANCE_THRESHOLD_EXCEEDED",
+        data: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message=message, code=code, data=data)
+
+
 class NotExistSystemException(SystemException):
     """Raised when a requested system definition cannot be found.
 

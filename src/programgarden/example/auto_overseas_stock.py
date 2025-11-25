@@ -19,6 +19,19 @@ if __name__ == "__main__":
         callback=lambda message: print(f"Real Order Message: {message.get('order_type')}, {message.get('message')}")
     )
 
+    pg.on_error_message(
+        callback=lambda message: print(f"Error: {message}")
+    )  
+
+    # 퍼포먼스 모니터링 콜백
+    pg.on_performance_message(
+        callback=lambda message: print(f"Performance: {message} - Duration: {message.get('stats', {}).get('duration_seconds')}s")
+    )
+
+    # 온디맨드 퍼포먼스 스냅샷
+    initial_perf = pg.get_performance_status()
+    print(f"Current performance snapshot: {initial_perf}")
+
     pg.run(
         system={
             "settings": {
@@ -29,6 +42,11 @@ if __name__ == "__main__":
                 "author": "Author Name",
                 "date": "2023-10-01",
                 "debug": "DEBUG",
+                "dry_run_mode": "test",
+                "perf_thresholds": {
+                    "max_avg_cpu_percent": 1,
+                    "max_memory_delta_mb": 1
+                }
             },
             "securities": {
                 "company": "ls",

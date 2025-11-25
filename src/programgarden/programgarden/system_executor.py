@@ -18,7 +18,7 @@ KR:
 from datetime import datetime
 from datetime import time as datetime_time, timedelta
 import asyncio
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
@@ -45,13 +45,15 @@ from programgarden_core.exceptions import (
     InvalidCronExpressionException,
     StrategyExecutionException,
     SystemException,
+    PerformanceExceededException,
 )
-from programgarden.pg_listener import pg_listener
+from programgarden.pg_listener import pg_listener, ListenerCategoryType
 
 from .plugin_resolver import PluginResolver
 from .symbols_provider import SymbolProvider
 from .condition_executor import ConditionExecutor
 from .buysell_executor import BuySellExecutor
+from .performance_monitor import PerformanceMonitor, ExecutionTimer
 
 
 class SystemExecutor:
@@ -101,6 +103,132 @@ class SystemExecutor:
         self.symbol_provider = SymbolProvider()
         self.condition_executor = ConditionExecutor(self.plugin_resolver, self.symbol_provider)
         self.buy_sell_executor = BuySellExecutor(self.plugin_resolver)
+        self.perf_monitor = PerformanceMonitor()
+        self.execution_mode: str = "live"
+        self.perf_limits: Dict[str, float] = {}
+        self._pending_dry_run_promotion: bool = False
+        self._dry_run_promotion_sent: bool = False
+        self._current_system_id: str = "<unknown>"
+
+    def _normalize_perf_thresholds(self, raw_thresholds: Optional[Dict[str, Any]]) -> Dict[str, float]:
+        limits: Dict[str, float] = {}
+        if not isinstance(raw_thresholds, dict):
+            return limits
+
+        for key in ("max_avg_cpu_percent", "max_memory_delta_mb", "max_duration_seconds"):
+            value = raw_thresholds.get(key)
+            if value is None:
+                continue
+            try:
+                limits[key] = float(value)
+            except (TypeError, ValueError):
+                system_logger.warning(
+                    f"퍼포먼스 임계치 '{key}' 값을 숫자로 변환할 수 없어 무시합니다: {value}"
+                )
+        return limits
+
+    def _apply_runtime_settings(self, settings: Dict[str, Any]) -> None:
+        requested_mode = str(settings.get("dry_run_mode", "live") or "live").lower()
+        if requested_mode not in {"live", "guarded_live", "test"}:
+            if requested_mode:
+                system_logger.warning(
+                    f"알 수 없는 dry_run_mode='{requested_mode}' 값을 감지해 live 모드로 대체합니다"
+                )
+            requested_mode = "live"
+
+        self.execution_mode = requested_mode
+        self._pending_dry_run_promotion = requested_mode == "test"
+        self._dry_run_promotion_sent = False
+        self.perf_limits = self._normalize_perf_thresholds(settings.get("perf_thresholds"))
+
+        configure_fn = getattr(self.buy_sell_executor, "configure_execution_mode", None)
+        if callable(configure_fn):
+            configure_fn(requested_mode)
+
+    def _emit_performance_payload(
+        self,
+        *,
+        context: str,
+        perf_stats: Dict[str, Any],
+        status: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        payload: Dict[str, Any] = {
+            "context": context,
+            "stats": perf_stats,
+        }
+        if status:
+            payload["status"] = status
+        if details:
+            payload["details"] = details
+        pg_listener.emit_performance(payload)  # type: ignore[arg-type]
+
+    def _evaluate_perf_thresholds(self, perf_stats: Dict[str, Any]) -> Dict[str, float]:
+        if not self.perf_limits:
+            return {}
+
+        exceeded: Dict[str, float] = {}
+        avg_cpu = perf_stats.get("avg_cpu_percent")
+        cpu_limit = self.perf_limits.get("max_avg_cpu_percent")
+        if avg_cpu is not None and cpu_limit is not None and avg_cpu > cpu_limit:
+            exceeded["avg_cpu_percent"] = float(avg_cpu)
+
+        mem_delta = perf_stats.get("memory_delta_mb")
+        mem_limit = self.perf_limits.get("max_memory_delta_mb")
+        if mem_delta is not None and mem_limit is not None and mem_delta > mem_limit:
+            exceeded["memory_delta_mb"] = float(mem_delta)
+
+        duration = perf_stats.get("duration_seconds")
+        duration_limit = self.perf_limits.get("max_duration_seconds")
+        if duration is not None and duration_limit is not None and duration > duration_limit:
+            exceeded["duration_seconds"] = float(duration)
+
+        return exceeded
+
+    async def _handle_perf_guards(self, strategy_id: str, perf_stats: Dict[str, Any]) -> None:
+        exceeded = self._evaluate_perf_thresholds(perf_stats)
+        if exceeded:
+            details = {
+                "limits": dict(self.perf_limits),
+                "exceeded": exceeded,
+                "system_id": self._current_system_id,
+                "strategy_id": strategy_id,
+            }
+            self._emit_performance_payload(
+                context=f"strategy:{strategy_id}",
+                perf_stats=perf_stats,
+                status="throttled",
+                details=details,
+            )
+            await self.stop()
+            raise PerformanceExceededException(data=details)
+
+        self._emit_performance_payload(
+            context=f"strategy:{strategy_id}",
+            perf_stats=perf_stats,
+        )
+
+    def _promote_from_dry_run(self, perf_stats: Dict[str, Any]) -> None:
+        if not self._pending_dry_run_promotion or self._dry_run_promotion_sent:
+            return
+        if self.execution_mode != "test":
+            return
+
+        self._pending_dry_run_promotion = False
+        self._dry_run_promotion_sent = True
+        system_logger.info(
+            f"시스템 {self._current_system_id}: 드라이런이 성공적으로 완료되어 live 모드로 승격합니다"
+        )
+        configure_fn = getattr(self.buy_sell_executor, "configure_execution_mode", None)
+        if callable(configure_fn):
+            configure_fn("live")
+        self.execution_mode = "live"
+        self._emit_performance_payload(
+            context=f"system:{self._current_system_id}",
+            perf_stats=perf_stats,
+            status="safe_to_live",
+            details={"previous_mode": "test"},
+        )
 
     def _format_order_types(self, order_types: Union[List[OrderType], OrderType]) -> str:
         """Return a comma-separated label for heterogeneous order type inputs.
@@ -517,57 +645,65 @@ class SystemExecutor:
         strategy_id = strategy.get("id", "<unknown>")
         strategy_logger.info(f"\n\n\n🚀🚀🚀 전략 {strategy_id}의 {cnt}번째 실행을 시작합니다 🚀🚀🚀\n\n")
 
-        # conditions = strategy.get("conditions", [])
-        # if not conditions:
-        #     strategy_logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
-        #     return
+        # Performance monitoring context
+        with ExecutionTimer(self.perf_monitor) as timer:
+            # conditions = strategy.get("conditions", [])
+            # if not conditions:
+            #     strategy_logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
+            #     return
 
-        # 조건 계산 결과값 종목들 반환
-        # 해외선물은 결과에 position_side가 포함되어 있는데, 이는 duplication 중복 주문 방지에 사용된다.
-        res_symbols_from_conditions = await self.condition_executor.execute_condition_list(system=system, strategy=strategy)
-        async with self.condition_executor.state_lock:
-            success = len(res_symbols_from_conditions) > 0
+            # 조건 계산 결과값 종목들 반환
+            # 해외선물은 결과에 position_side가 포함되어 있는데, 이는 duplication 중복 주문 방지에 사용된다.
+            res_symbols_from_conditions = await self.condition_executor.execute_condition_list(system=system, strategy=strategy)
+            async with self.condition_executor.state_lock:
+                success = len(res_symbols_from_conditions) > 0
 
-        if not success:
-            strategy_logger.info(f"전략 {strategy_id}을 통과한 종목이 없어 주문을 건너뜁니다")
-            return
-
-        # 전략 계산 통과됐으면 매수/매도 진행
-        orders = system.get("orders", [])
-        strategy_order_id = strategy.get("order_id", None)
-
-        for trade in orders:
-            if trade.get("order_id") != strategy_order_id:
-                continue
-
-            condition = trade.get("condition", None)
-            if condition is None:
-                continue
-
-            if isinstance(condition, (BaseOrderOverseasStock, BaseOrderOverseasFutures)):
-                condition_id = condition.id
-                order_types = condition.order_types
+            if not success:
+                strategy_logger.info(f"전략 {strategy_id}을 통과한 종목이 없어 주문을 건너뜁니다")
+                # Even if skipped, we log performance up to this point
             else:
-                condition_id = condition.get("condition_id")
-                order_types = await self.plugin_resolver.get_order_types(condition_id)
+                # 전략 계산 통과됐으면 매수/매도 진행
+                orders = system.get("orders", [])
+                strategy_order_id = strategy.get("order_id", None)
 
-            if not condition_id:
-                condition_logger.warning(f"주문 '{trade.get('order_id')}'에 condition_id가 없습니다.")
-                continue
+                for trade in orders:
+                    if trade.get("order_id") != strategy_order_id:
+                        continue
 
-            if not order_types:
-                condition_logger.warning(f"condition_id '{condition_id}'에 대한 주문 유형을 알 수 없어 건너뜁니다")
-                continue
+                    condition = trade.get("condition", None)
+                    if condition is None:
+                        continue
 
-            m_res_symbols_from_conditions = list(res_symbols_from_conditions)
+                    if isinstance(condition, (BaseOrderOverseasStock, BaseOrderOverseasFutures)):
+                        condition_id = condition.id
+                        order_types = condition.order_types
+                    else:
+                        condition_id = condition.get("condition_id")
+                        order_types = await self.plugin_resolver.get_order_types(condition_id)
 
-            await self._process_trade_time_window(
-                system=system,
-                trade=trade,
-                res_symbols_from_conditions=m_res_symbols_from_conditions,
-                strategy_order_id=strategy_order_id,
-                order_types=order_types,
-            )
+                    if not condition_id:
+                        condition_logger.warning(f"주문 '{trade.get('order_id')}'에 condition_id가 없습니다.")
+                        continue
+
+                    if not order_types:
+                        condition_logger.warning(f"condition_id '{condition_id}'에 대한 주문 유형을 알 수 없어 건너뜁니다")
+                        continue
+
+                    m_res_symbols_from_conditions = list(res_symbols_from_conditions)
+
+                    await self._process_trade_time_window(
+                        system=system,
+                        trade=trade,
+                        res_symbols_from_conditions=m_res_symbols_from_conditions,
+                        strategy_order_id=strategy_order_id,
+                        order_types=order_types,
+                    )
+
+        # Emit performance metrics
+        perf_stats = timer.get_result()
+        if perf_stats:
+            await self._handle_perf_guards(strategy_id, perf_stats)
+            self._promote_from_dry_run(perf_stats)
 
     async def _run_with_strategy(self, strategy_id: str, strategy: StrategyType, system: SystemType):
         """Launch cron-driven execution for a single strategy.
@@ -735,12 +871,14 @@ class SystemExecutor:
 
         system_settings = system.get("settings", {}) or {}
         system_id = system_settings.get("system_id", system.get("id", "<unknown>"))
+        self._current_system_id = system_id
+        self._apply_runtime_settings(system_settings)
         strategies = system.get("strategies", [])
         self.running = True
         self.plugin_resolver.reset_error_tracking()
 
         system_logger.info(
-            f"👋 시스템 {system_id}에서 {len(strategies)}개 전략 실행을 시작합니다"
+            f"👋 시스템 {system_id}에서 {len(strategies)}개 전략 실행을 시작합니다 (mode={self.execution_mode})"
         )
 
         try:
@@ -768,6 +906,9 @@ class SystemExecutor:
                         system_logger.error(
                             f"{system_id}: 전략 '{strategy_key}' 태스크에서 예외 발생 -> {result}"
                         )
+                        if isinstance(result, PerformanceExceededException):
+                            await self.stop()
+                            raise result
                         if getattr(result, "_pg_error_emitted", False):
                             continue
                         if isinstance(result, BasicException):
@@ -787,7 +928,8 @@ class SystemExecutor:
 
         except BasicException as exc:
             system_logger.error(f"{system_id}: 실행 중 오류 발생 -> {exc}")
-            pg_listener.emit_exception(exc)
+            if not getattr(exc, "_pg_error_emitted", False):
+                pg_listener.emit_exception(exc)
             await self.stop()
             raise
         except Exception as exc:
