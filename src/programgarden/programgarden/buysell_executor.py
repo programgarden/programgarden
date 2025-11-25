@@ -126,6 +126,19 @@ class BuySellExecutor:
         # EN: Executor forwarding order payloads to community callbacks.
         # KR: 주문 페이로드를 커뮤니티 콜백으로 전달하는 실행기입니다.
         self.real_order_executor = RealOrderExecutor()
+        # EN: Default to live execution unless overridden by settings.
+        # KR: 설정에서 덮어쓰지 않으면 기본적으로 실거래 모드입니다.
+        self.execution_mode: str = "live"
+
+    def configure_execution_mode(self, mode: str) -> None:
+        """Update execution mode (live, guarded_live, or dry-run test)."""
+        candidate = (mode or "live").lower()
+        if candidate not in {"live", "guarded_live", "test"}:
+            candidate = "live"
+        if candidate == self.execution_mode:
+            return
+        order_logger.info(f"⚙️ 주문 실행 모드를 '{self.execution_mode}' -> '{candidate}'로 전환합니다")
+        self.execution_mode = candidate
 
     def _symbol_label(self, symbol: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures, HeldSymbol, NonTradedSymbol]) -> str:
         """Format a human-readable label for diverse symbol payloads.
@@ -1066,11 +1079,25 @@ class BuySellExecutor:
         order_id: str,
     ) -> None:
         """Execute trades for the given symbols."""
+        product_key = system.get("securities", {}).get("product", "overseas_stock") or "overseas_stock"
         for symbol in symbols:
 
             if symbol.get("success") is False:
                 order_logger.debug(
                     f"{order_id}: 조건을 통과하지 못한 종목 {self._symbol_label(symbol)}을(를) 건너뜁니다"
+                )
+                continue
+
+            if self.execution_mode == "test":
+                icon = self._field_icon(field)
+                field_label = self._field_label(field)
+                product_label = self._product_label(product_key)
+                order_logger.info(
+                    f"🧪 {order_id}: {product_label} {field_label} 주문을 드라이런으로 기록만 하고 전송하지 않습니다 ({self._symbol_label(symbol)})"
+                )
+                await self.real_order_executor.send_data_community_instance(
+                    ordNo=None,
+                    community_instance=community_instance
                 )
                 continue
 
@@ -1094,7 +1121,6 @@ class BuySellExecutor:
             if result and result.block1 is None:
                 continue
 
-            product_key = system.get("securities", {}).get("product", "overseas_stock") or "overseas_stock"
             icon = self._field_icon(field)
             field_label = self._field_label(field)
             product_label = self._product_label(product_key)
