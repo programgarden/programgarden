@@ -25,11 +25,30 @@ ProgramGarden은 하나의 `system` 딕셔너리를 입력으로 받아 전략�
     "version": "1.0.0",
     "author": "Your Name",
     "date": "2025-11-02",
-    "debug": "DEBUG"
+    "debug": "DEBUG",
+    "dry_run_mode": "test",
+    "perf_thresholds": {
+      "max_avg_cpu_percent": 80,
+      "max_memory_delta_mb": 256
+    }
   }
 }
 ```
 `debug` 값은 `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` 중 선택할 수 있으며 실행 내용을 보고 싶다면 실행 로그 레벨을 추가하면 됩니다. 그게 아니라면 debug는 빈값으로 두면 됩니다.
+
+#### 드라이런 및 성능 가드 옵션
+`settings` 블록에서 실행 정책을 바로 제어할 수 있습니다.
+
+- `dry_run_mode`:
+  - `test`: 조건 계산과 성능 측정만 수행하고 주문은 전송하지 않습니다. 한 번이라도 성공하면 자동으로 `live`로 승격되며 `safe_to_live` 성격의 퍼포먼스 이벤트가 발생합니다.
+  - `live`(기본값): 기존과 동일하게 실주문을 즉시 전송합니다.
+  - `guarded_live`: 실주문은 전송하되, `perf_thresholds`를 초과하면 즉시 중단하며 `PerformanceExceededException`을 사용자 코드로 전달합니다.
+
+- `perf_thresholds`:
+  - `max_avg_cpu_percent`: 평균 CPU %, 초과 시 실행 중단
+  - `max_memory_delta_mb`: RSS 증가치(MB), 초과 시 중단
+
+임계치를 넘어서면 `pg.on_performance_message`로 전달되는 콜백 payload에 `status="throttled"`가 포함되어 시스템 중단 이벤트를 바로 감지할 수 있습니다.
 
 ### 2.2 securities
 ```json
