@@ -890,7 +890,17 @@ class SystemExecutor:
             self.tasks.append(real_order_task)
 
             # 전략 계산
-            concurrent_tasks = [self._run_with_strategy(strategy_id=strategy.get("id"), strategy=strategy, system=system) for strategy in strategies]
+            concurrent_tasks = []
+            for strategy in strategies:
+                t = asyncio.create_task(
+                    self._run_with_strategy(
+                        strategy_id=strategy.get("id"),
+                        strategy=strategy,
+                        system=system
+                    )
+                )
+                concurrent_tasks.append(t)
+                self.tasks.append(t)
 
             if concurrent_tasks:
                 results = await asyncio.gather(*concurrent_tasks, return_exceptions=True)
