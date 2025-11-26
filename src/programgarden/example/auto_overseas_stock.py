@@ -1,6 +1,9 @@
 from dotenv import load_dotenv
 from programgarden import Programgarden
 import os
+import time
+import threading
+import asyncio
 
 load_dotenv()
 
@@ -30,7 +33,16 @@ if __name__ == "__main__":
 
     # 온디맨드 퍼포먼스 스냅샷
     initial_perf = pg.get_performance_status()
-    print(f"Current performance snapshot: {initial_perf}")
+
+    # 5초 후 자동 종료를 위한 타이머 설정
+    def stop_after_delay():
+        time.sleep(5)
+        print("5초 경과 - 시스템 종료 중...")
+        asyncio.run(pg.stop())
+    
+    # 백그라운드 스레드로 타이머 시작
+    timer_thread = threading.Thread(target=stop_after_delay, daemon=True)
+    timer_thread.start()
 
     pg.run(
         system={
@@ -42,11 +54,11 @@ if __name__ == "__main__":
                 "author": "Author Name",
                 "date": "2023-10-01",
                 "debug": "DEBUG",
-                "dry_run_mode": "test",
-                "perf_thresholds": {
-                    "max_avg_cpu_percent": 1,
-                    "max_memory_delta_mb": 1
-                }
+                # "dry_run_mode": "test",
+                # "perf_thresholds": {
+                #     "max_avg_cpu_percent": 1,
+                #     "max_memory_delta_mb": 1
+                # }
             },
             "securities": {
                 "company": "ls",

@@ -90,6 +90,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
         # KR: 활성 이벤트 루프에서 중복 실행을 방지하는 비동기 태스크 핸들입니다.
         self._task = None
         self._shutdown_notified = False
+        self._loop = None
 
     @property
     def executor(self):
@@ -311,6 +312,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 finishes.
                 KR: 정리 작업이 끝나면 값을 반환하지 않고 종료합니다.
         """
+        self._loop = asyncio.get_running_loop()
         try:
             securities = system.get("securities", {})
             product = securities.get("product", None)
@@ -379,6 +381,18 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 EN: The coroutine resolves after the executor stops.
                 KR: 실행기가 중지된 뒤 값을 반환하지 않고 종료합니다.
         """
+
+        if getattr(self, "_loop", None) and self._loop.is_running():
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+
+            if current_loop != self._loop:
+                future = asyncio.run_coroutine_threadsafe(self.executor.stop(), self._loop)
+                await asyncio.wrap_future(future)
+                system_logger.debug("The program has been stopped (thread-safe).")
+                return
 
         await self.executor.stop()
         system_logger.debug("The program has been stopped.")
