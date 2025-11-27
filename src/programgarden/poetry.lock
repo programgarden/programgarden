@@ -801,51 +801,51 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "0.1.11"
+version = "0.1.12"
 description = "증권 분석에 필요한 외부 전략 모아둔 플러그인"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_community-0.1.11-py3-none-any.whl", hash = "sha256:0f83a810ce3babf322935c7dd9980376bb3f3d0b0648a39f944adc4478ef15a1"},
-    {file = "programgarden_community-0.1.11.tar.gz", hash = "sha256:dcf34be90cae6a9ea8c576073bad72e5e7ed709de4aba5250dabdb19274ebab3"},
+    {file = "programgarden_community-0.1.12-py3-none-any.whl", hash = "sha256:67aa1579e051fcf960a3a82dca6d9148e06fc2913f01a826a5a0c9374d0f2e32"},
+    {file = "programgarden_community-0.1.12.tar.gz", hash = "sha256:2928ab3e442d510427bc3668e9abc931dff2b810e0b6773c0d5f0c6f9bc463b0"},
 ]
 
 [package.dependencies]
 bs4 = ">=0.0.2,<0.0.3"
 croniter = ">=6.0.0,<7.0.0"
-programgarden-core = ">=0.1.7,<0.2.0"
-programgarden-finance = ">=0.1.8,<0.2.0"
+programgarden-core = ">=0.1.8,<0.2.0"
+programgarden-finance = ">=0.1.9,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "0.1.7"
+version = "0.1.8"
 description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-0.1.7-py3-none-any.whl", hash = "sha256:8b838c857dfd307865a202897ff31b99502e67a557643dc8b568a201593a330b"},
-    {file = "programgarden_core-0.1.7.tar.gz", hash = "sha256:bd4bb66848581c2bb484544b80a079567008f390f210933ecd60245c54a60671"},
+    {file = "programgarden_core-0.1.8-py3-none-any.whl", hash = "sha256:c74dc2c535917c00bce358697f6563f7002c70de0510e246a5833f8ef4e1167f"},
+    {file = "programgarden_core-0.1.8.tar.gz", hash = "sha256:7c1ebbb56405e074d6639de5663f867fef18c671b8517c64cb6b3acb0bb06a0e"},
 ]
 
 [[package]]
 name = "programgarden-finance"
-version = "0.1.8"
+version = "0.1.9"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-0.1.8-py3-none-any.whl", hash = "sha256:c56c6ce32d925ee5a08b810ff64315de3fd4a789abaeda0c1edc0b4baf52a093"},
-    {file = "programgarden_finance-0.1.8.tar.gz", hash = "sha256:cf9c4dbb5622dd0be7cd425e5252135cd7e56ff8f50b71bab3c7da20aa4ea7c0"},
+    {file = "programgarden_finance-0.1.9-py3-none-any.whl", hash = "sha256:80737bca37c8e2900ebef5eb9f164bad1bdea36d21cf786d3951dd661f3bc320"},
+    {file = "programgarden_finance-0.1.9.tar.gz", hash = "sha256:086a5ac1772482c7a6f7bfbaa40a474846dc4890f8957d8858de3207ee25d04d"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.10.0,<4.0.0"
-programgarden-core = ">=0.1.6,<0.2.0"
+programgarden-core = ">=0.1.8,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 redis = ">=6.4.0,<7.0.0"
@@ -1019,14 +1019,14 @@ test = ["pytest", "pytest-instafail", "pytest-subtests", "pytest-xdist", "pywin3
 
 [[package]]
 name = "pydantic"
-version = "2.12.4"
+version = "2.12.5"
 description = "Data validation using Python type hints"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "pydantic-2.12.4-py3-none-any.whl", hash = "sha256:92d3d202a745d46f9be6df459ac5a064fdaa3c1c4cd8adcfa332ccf3c05f871e"},
-    {file = "pydantic-2.12.4.tar.gz", hash = "sha256:0f8cb9555000a4b5b617f66bfd2566264c4984b27589d3b845685983e8ea85ac"},
+    {file = "pydantic-2.12.5-py3-none-any.whl", hash = "sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d"},
+    {file = "pydantic-2.12.5.tar.gz", hash = "sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49"},
 ]
 
 [package.dependencies]
@@ -1293,6 +1293,13 @@ optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 files = [
+    {file = "PyYAML-6.0.3-cp38-cp38-macosx_10_13_x86_64.whl", hash = "sha256:c2514fceb77bc5e7a2f7adfaa1feb2fb311607c9cb518dbc378688ec73d8292f"},
+    {file = "PyYAML-6.0.3-cp38-cp38-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9c57bb8c96f6d1808c030b1687b9b5fb476abaa47f0db9c0101f5e9f394e97f4"},
+    {file = "PyYAML-6.0.3-cp38-cp38-manylinux2014_s390x.manylinux_2_17_s390x.manylinux_2_28_s390x.whl", hash = "sha256:efd7b85f94a6f21e4932043973a7ba2613b059c4a000551892ac9f1d11f5baf3"},
+    {file = "PyYAML-6.0.3-cp38-cp38-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:22ba7cfcad58ef3ecddc7ed1db3409af68d023b7f940da23c6c2a1890976eda6"},
+    {file = "PyYAML-6.0.3-cp38-cp38-musllinux_1_2_x86_64.whl", hash = "sha256:6344df0d5755a2c9a276d4473ae6b90647e216ab4757f8426893b5dd2ac3f369"},
+    {file = "PyYAML-6.0.3-cp38-cp38-win32.whl", hash = "sha256:3ff07ec89bae51176c0549bc4c63aa6202991da2d9a6129d7aef7f1407d3f295"},
+    {file = "PyYAML-6.0.3-cp38-cp38-win_amd64.whl", hash = "sha256:5cf4e27da7e3fbed4d6c3d8e797387aaad68102272f8f9752883bc32d61cb87b"},
     {file = "pyyaml-6.0.3-cp310-cp310-macosx_10_13_x86_64.whl", hash = "sha256:214ed4befebe12df36bcc8bc2b64b396ca31be9304b8f59e25c11cf94a4c033b"},
     {file = "pyyaml-6.0.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:02ea2dfa234451bbb8772601d7b8e426c2bfa197136796224e50e35a78777956"},
     {file = "pyyaml-6.0.3-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b30236e45cf30d2b8e7b3e85881719e98507abed1011bf463a8fa23e9c3e98a8"},
@@ -1765,4 +1772,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "79c25bb55658acf5bbee4a78eac2486fa8f0c9b97ce196d9f2da7f26f6ae385d"
+content-hash = "967a1675c822059f07decc8aa860a6c2deb4fad297b29ff0dcee6dee8056b2ad"

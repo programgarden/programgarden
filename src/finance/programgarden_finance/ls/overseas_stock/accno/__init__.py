@@ -1,4 +1,5 @@
 from typing import Optional
+from programgarden_core.bases import BaseAccno
 from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
@@ -29,7 +30,7 @@ from .COSOQ02701.blocks import (
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 
 
-class Accno(metaclass=EnforceKoreanAliasMeta):
+class Accno(BaseAccno):
     """
     LS증권 OpenAPI 계좌 정보 클래스
     """

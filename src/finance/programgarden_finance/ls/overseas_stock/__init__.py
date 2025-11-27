@@ -1,5 +1,6 @@
 
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
+from programgarden_core.bases import BaseOverseasStock
 from programgarden_finance.ls.token_manager import TokenManager
 
 from .accno import Accno
@@ -9,7 +10,7 @@ from .order import Order
 from .real import Real
 
 
-class OverseasStock(metaclass=EnforceKoreanAliasMeta):
+class OverseasStock(BaseOverseasStock):
 
     def __init__(self, token_manager: TokenManager):
         if not token_manager:

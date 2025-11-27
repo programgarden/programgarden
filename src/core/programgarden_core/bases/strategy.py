@@ -175,6 +175,7 @@ class BaseStrategyCondition(Generic[SymbolInfoType, ResponseType], ABC):
     def __init__(self, **kwargs):
         """Initialize shared state for condition evaluation."""
         self.symbol: Optional[SymbolInfoType] = None
+        
 
     @abstractmethod
     async def execute(self) -> 'ResponseType':
@@ -220,6 +221,18 @@ class BaseStrategyCondition(Generic[SymbolInfoType, ResponseType], ABC):
             symbol (SymbolInfoType): Symbol metadata for evaluation.
         """
         self.symbol = symbol
+
+    def _set_companies(self, **kwargs) -> None:
+        """증권사 데이터 설정 확장 지점.
+
+        EN:
+            Extension point for setting broker data if needed.
+        
+        KO:
+            증권사 데이터가 필요한 경우를 대비한 확장 지점입니다.
+        """
+
+        self.ls = kwargs.get("ls", None)
 
 
 class BaseStrategyConditionOverseasStock(

@@ -54,11 +54,11 @@ if __name__ == "__main__":
                 "author": "Author Name",
                 "date": "2023-10-01",
                 "debug": "DEBUG",
-                # "dry_run_mode": "test",
-                # "perf_thresholds": {
-                #     "max_avg_cpu_percent": 1,
-                #     "max_memory_delta_mb": 1
-                # }
+                "dry_run_mode": "test",
+                "perf_thresholds": {
+                    "max_avg_cpu_percent": 1,
+                    "max_memory_delta_mb": 1
+                }
             },
             "securities": {
                 "company": "ls",
@@ -75,7 +75,7 @@ if __name__ == "__main__":
                     "logic": "at_least",
                     "run_once_on_start": True,
                     "threshold": 1,
-                    # "order_id": "자금분배매수_1",
+                    "order_id": "자금분배매수_1",
                     "symbols": [
                         {
                             "symbol": "GOSS",

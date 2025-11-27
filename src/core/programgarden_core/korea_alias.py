@@ -25,6 +25,7 @@ Example / 예시:
 
 from functools import wraps
 import inspect
+from abc import ABCMeta
 
 
 def require_korean_alias(func):
@@ -124,3 +125,8 @@ class EnforceKoreanAliasMeta(type):
                     )
 
         return super().__new__(cls, name, bases, attrs)
+
+
+class EnforceKoreanAliasABCMeta(EnforceKoreanAliasMeta, ABCMeta):
+    """ABCMeta 확장 버전: 추상 메서드와 한글 별칭을 동시에 검증합니다."""
+

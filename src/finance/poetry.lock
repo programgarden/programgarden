@@ -659,14 +659,14 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "programgarden-core"
-version = "0.1.6"
+version = "0.1.8"
 description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-0.1.6-py3-none-any.whl", hash = "sha256:2e3c55f32515913e58dc94622896576534cd1e7d965bcc24533c1b64a8b2d069"},
-    {file = "programgarden_core-0.1.6.tar.gz", hash = "sha256:922f1504011e20c59ec3a5acafd0c7d0da9fdc98da04560a4fb947464e8597b5"},
+    {file = "programgarden_core-0.1.8-py3-none-any.whl", hash = "sha256:c74dc2c535917c00bce358697f6563f7002c70de0510e246a5833f8ef4e1167f"},
+    {file = "programgarden_core-0.1.8.tar.gz", hash = "sha256:7c1ebbb56405e074d6639de5663f867fef18c671b8517c64cb6b3acb0bb06a0e"},
 ]
 
 [[package]]
@@ -803,14 +803,14 @@ files = [
 
 [[package]]
 name = "pydantic"
-version = "2.12.4"
+version = "2.12.5"
 description = "Data validation using Python type hints"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "pydantic-2.12.4-py3-none-any.whl", hash = "sha256:92d3d202a745d46f9be6df459ac5a064fdaa3c1c4cd8adcfa332ccf3c05f871e"},
-    {file = "pydantic-2.12.4.tar.gz", hash = "sha256:0f8cb9555000a4b5b617f66bfd2566264c4984b27589d3b845685983e8ea85ac"},
+    {file = "pydantic-2.12.5-py3-none-any.whl", hash = "sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d"},
+    {file = "pydantic-2.12.5.tar.gz", hash = "sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49"},
 ]
 
 [package.dependencies]
@@ -1286,4 +1286,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "355a1a9b96043579364d651463a757aaf770577b63ac203c9cc6d579188e4a3d"
+content-hash = "108a28b74c4cf58f707f76bcdc2afc6d138916932ca48605fbb63f46b2ab7d61"

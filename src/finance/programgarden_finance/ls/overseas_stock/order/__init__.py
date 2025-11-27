@@ -1,4 +1,5 @@
 from typing import Optional
+from programgarden_core.bases import BaseOrder
 from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
@@ -30,7 +31,7 @@ from .COSAT00400.blocks import (
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 
 
-class Order(metaclass=EnforceKoreanAliasMeta):
+class Order(BaseOrder):
     """
     LS증권 OpenAPI 주문 정보 클래스
     """
