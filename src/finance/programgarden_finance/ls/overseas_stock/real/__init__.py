@@ -1,3 +1,4 @@
+from programgarden_core.bases import BaseReal
 from programgarden_finance.ls.real_base import RealRequestAbstract
 from programgarden_finance.ls.token_manager import TokenManager
 from .GSC import RealGSC
@@ -65,16 +66,10 @@ from .AS4.blocks import (
 )
 
 
-from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
-
-EnforceKoreanAliasAndBaseMeta = type(
-    "EnforceKoreanAliasAndBaseMeta",
-    (EnforceKoreanAliasMeta, RealRequestAbstract.__class__),
-    {}
-)
+from programgarden_core.korea_alias import require_korean_alias
 
 
-class Real(RealRequestAbstract, metaclass=EnforceKoreanAliasAndBaseMeta):
+class Real(RealRequestAbstract, BaseReal):
     """
     LS증권 OpenAPI 실시간 클래스
     """

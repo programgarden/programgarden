@@ -1,4 +1,5 @@
 from typing import Optional
+from programgarden_core.bases import BaseChart
 from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
@@ -17,7 +18,7 @@ from .g3204.blocks import G3204InBlock, G3204Request, G3204RequestHeader
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 
 
-class Chart(metaclass=EnforceKoreanAliasMeta):
+class Chart(BaseChart):
     """
     특정 일자를 기준으로 매월,매일,매년을 조회하는 클래스
     """

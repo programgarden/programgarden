@@ -1,8 +1,8 @@
 import asyncio
 import threading
-import time
 from typing import Optional
-from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
+from programgarden_core.korea_alias import require_korean_alias
+from programgarden_core.bases import BaseClient, SingletonClientMixin
 
 from . import overseas_stock, overseas_futureoption, oauth
 
@@ -15,23 +15,7 @@ from programgarden_core.exceptions import AppKeyException, LoginException
 from .config import URLS
 
 
-class LS(metaclass=EnforceKoreanAliasMeta):
-
-    # Singleton support: use LS.get_instance() to obtain a process-global instance.
-    # Regular instantiation via LS() remains unchanged.
-    _singleton_instance: Optional["LS"] = None
-    _singleton_lock = threading.RLock()
-
-    @classmethod
-    def get_instance(cls) -> "LS":
-        """
-        Return a thread-safe singleton instance of LS. Multiple calls return the
-        same object. This does not prevent creating additional instances via LS().
-        """
-        with cls._singleton_lock:
-            if cls._singleton_instance is None:
-                cls._singleton_instance = cls()
-            return cls._singleton_instance
+class LS(SingletonClientMixin, BaseClient):
 
     def __init__(self):
         self.token_manager: Optional[TokenManager] = TokenManager()

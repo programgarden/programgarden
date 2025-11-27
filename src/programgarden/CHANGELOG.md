@@ -1,3 +1,9 @@
+## [0.1.22] - 2025-11-27
+### Updated
+- programgarden-core 0.1.8 버전으로 업데이트
+- programgarden-finance 0.1.9 버전으로 업데이트
+- programgarden-community 0.1.12 버전으로 업데이트
+
 ## [0.1.21] - 2025-11-26
 ### Fixed
 - 비동기 종료 시 이벤트 루프 참조 오류 수정

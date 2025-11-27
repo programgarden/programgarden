@@ -5,9 +5,10 @@ from .accno import Accno
 from .chart import Chart
 from .order import Order
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
+from programgarden_core.bases import BaseOverseasFutureoption
 
 
-class OverseasFutureoption(metaclass=EnforceKoreanAliasMeta):
+class OverseasFutureoption(BaseOverseasFutureoption):
 
     def __init__(self, token_manager: TokenManager):
         if not token_manager:

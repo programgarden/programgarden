@@ -1,5 +1,6 @@
 
 from typing import Optional
+from programgarden_core.bases import BaseMarket
 from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
@@ -26,7 +27,7 @@ from .g3190.blocks import G3190InBlock, G3190Request, G3190RequestHeader
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 
 
-class Market(metaclass=EnforceKoreanAliasMeta):
+class Market(BaseMarket):
     """
     현재가를 조회하는 Market 클래스입니다.
     """
