@@ -58,6 +58,7 @@ from programgarden_core.bases import (
     BaseCancelOrderOverseasFutures,
     BaseCancelOrderOverseasFuturesResponseType,
 )
+from programgarden_core.bases.products import BaseOverseasFutureoption, BaseOverseasStock
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 from programgarden_core import logs, exceptions
 from programgarden_core.logs import (
@@ -134,6 +135,8 @@ __all__ = [
     BaseOrderOverseasFutures,
 
     # strategy types
+    BaseOverseasFutureoption,
+    BaseOverseasStock,
     BaseStrategyCondition,
     BaseStrategyConditionOverseasStock,
     BaseStrategyConditionOverseasFutures,

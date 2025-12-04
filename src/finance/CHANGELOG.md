@@ -1,3 +1,11 @@
+## [0.1.11] - 2025-12-05
+### Changed
+- programgarden-core 버전 업데이트에 따른 종속성 수정
+
+## [0.1.10] - 2025-12-05
+### Changed
+- programgarden-core 버전 업데이트에 따른 종속성 수정
+
 ## [0.1.9] - 2025-11-27
 ### Changed
 - programgarden-core 버전 업데이트에 따른 종속성 수정

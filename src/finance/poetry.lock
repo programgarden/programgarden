@@ -659,14 +659,14 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "programgarden-core"
-version = "0.1.8"
+version = "0.1.10"
 description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-0.1.8-py3-none-any.whl", hash = "sha256:c74dc2c535917c00bce358697f6563f7002c70de0510e246a5833f8ef4e1167f"},
-    {file = "programgarden_core-0.1.8.tar.gz", hash = "sha256:7c1ebbb56405e074d6639de5663f867fef18c671b8517c64cb6b3acb0bb06a0e"},
+    {file = "programgarden_core-0.1.10-py3-none-any.whl", hash = "sha256:b9d453d70678ed790aa61acfc9b3c55d7ed8f5aed7a5135594fca068bec32c7b"},
+    {file = "programgarden_core-0.1.10.tar.gz", hash = "sha256:14e2ebce45311186ff486975e8c22e722d256f635701efa88f2e53a04fb43eb4"},
 ]
 
 [[package]]
@@ -1286,4 +1286,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "108a28b74c4cf58f707f76bcdc2afc6d138916932ca48605fbb63f46b2ab7d61"
+content-hash = "736c56df28767c495bc027c84a7982a5718246e4101166e56c17001d54c0dc18"
