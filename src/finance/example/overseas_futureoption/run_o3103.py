@@ -22,7 +22,7 @@ async def test_req_o3103():
         pg_logger.error("로그인 실패")
         return
 
-    test1 = ls.overseas_futureoption().선물옵션차트().해외선물_차트분봉조회(
+    test1 = ls.overseas_futureoption().차트().해외선물_차트분봉조회(
         o3103.O3103InBlock(
             shcode="ADZ25",
             ncnt=1,

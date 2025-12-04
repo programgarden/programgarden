@@ -1,6 +1,6 @@
 [project]
 name = "programgarden"
-version = "0.2.10"
+version = "0.2.11"
 description = "LS증권 API을 메인으로 제작된 노코딩 시스템 트레이딩 DSL 오픈소스"
 authors = [
     {name = "장용준",email = "coding@programgarden.com"}

@@ -1,3 +1,13 @@
+## [0.1.24] - 2025-12-05
+### Updated
+- programgarden-core 0.1.10 버전으로 업데이트
+- programgarden-finance 0.1.11 버전으로 업데이트
+
+## [0.1.23] - 2025-12-05
+### Updated
+- programgarden-core 0.1.9 버전으로 업데이트
+- programgarden-finance 0.1.10 버전으로 업데이트
+
 ## [0.1.22] - 2025-11-27
 ### Updated
 - programgarden-core 0.1.8 버전으로 업데이트
