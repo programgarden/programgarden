@@ -90,20 +90,28 @@ class BaseStrategyConditionResponseOverseasFuturesType(BaseStrategyConditionResp
     """EN: Literal confirming the futures product category.
     KO: 선물 상품 유형임을 나타내는 literal 입니다."""
 
-    position_side: Literal["long", "short", "flat"]
+    position_side: Literal["long", "short", "flat", "neutral"]
     """EN:
         Indicates directional bias for futures positions.
-        - ``success`` is ``True``: ``position_side`` is meaningful.
+        - ``success`` is ``True`` and ``position_side`` is ``long`` or ``short``:
+          the direction is used for order execution.
+        - ``success`` is ``True`` and ``position_side`` is ``neutral``:
+          this condition delegates direction decision to other conditions.
+          It participates in success evaluation but not in direction alignment.
+        - ``success`` is ``True`` and ``position_side`` is ``flat``:
+          treat as unmet and skip order submission.
         - ``success`` is ``False``: ``position_side`` is ignored.
-        - ``success`` is ``True`` and ``position_side`` is ``flat``: treat as
-          unmet and skip order submission.
 
     KO:
         선물 포지션의 방향성을 나타냅니다.
-        - ``success`` 가 ``True`` 면 ``position_side`` 값을 사용합니다.
-        - ``success`` 가 ``False`` 면 ``position_side`` 값을 무시합니다.
+        - ``success`` 가 ``True`` 이고 ``position_side`` 가 ``long`` 또는 ``short`` 면
+          해당 방향으로 주문을 진행합니다.
+        - ``success`` 가 ``True`` 이고 ``position_side`` 가 ``neutral`` 이면
+          방향 결정을 다른 조건에 위임합니다. 성공 여부 평가에는 참여하지만
+          방향 일치 검증에서는 제외됩니다.
         - ``success`` 가 ``True`` 이지만 ``position_side`` 가 ``flat`` 이면 미충족으로
           간주하여 주문을 진행하지 않습니다.
+        - ``success`` 가 ``False`` 면 ``position_side`` 값을 무시합니다.
     """
 
 
