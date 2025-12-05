@@ -210,18 +210,18 @@ files = [
 
 [[package]]
 name = "beautifulsoup4"
-version = "4.14.2"
+version = "4.14.3"
 description = "Screen-scraping library"
 optional = false
 python-versions = ">=3.7.0"
 groups = ["main"]
 files = [
-    {file = "beautifulsoup4-4.14.2-py3-none-any.whl", hash = "sha256:5ef6fa3a8cbece8488d66985560f97ed091e22bbc4e9c2338508a9d5de6d4515"},
-    {file = "beautifulsoup4-4.14.2.tar.gz", hash = "sha256:2a98ab9f944a11acee9cc848508ec28d9228abfd522ef0fad6a02a72e0ded69e"},
+    {file = "beautifulsoup4-4.14.3-py3-none-any.whl", hash = "sha256:0918bfe44902e6ad8d57732ba310582e98da931428d231a5ecb9e7c703a735bb"},
+    {file = "beautifulsoup4-4.14.3.tar.gz", hash = "sha256:6292b1c5186d356bba669ef9f7f051757099565ad9ada5dd630bd9de5fa7fb86"},
 ]
 
 [package.dependencies]
-soupsieve = ">1.2"
+soupsieve = ">=1.6.1"
 typing-extensions = ">=4.0.0"
 
 [package.extras]
@@ -417,7 +417,7 @@ description = "Backport of PEP 654 (exception groups)"
 optional = false
 python-versions = ">=3.7"
 groups = ["dev"]
-markers = "python_version < \"3.11\""
+markers = "python_version == \"3.10\""
 files = [
     {file = "exceptiongroup-1.3.1-py3-none-any.whl", hash = "sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598"},
     {file = "exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219"},
@@ -586,14 +586,14 @@ all = ["flake8 (>=7.1.1)", "mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2
 
 [[package]]
 name = "iniconfig"
-version = "2.1.0"
+version = "2.3.0"
 description = "brain-dead simple config-ini parsing"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.10"
 groups = ["dev"]
 files = [
-    {file = "iniconfig-2.1.0-py3-none-any.whl", hash = "sha256:9deba5723312380e77435581c6bf4935c94cbfab9b1ed33ef8d238ea168eb760"},
-    {file = "iniconfig-2.1.0.tar.gz", hash = "sha256:3abbd2e30b36733fee78f9c7f7308f2d0050e88f0087fd25c2645f63c773e1c7"},
+    {file = "iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"},
+    {file = "iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730"},
 ]
 
 [[package]]
@@ -821,31 +821,31 @@ python-dotenv = ">=1.1.1,<2.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "0.1.10"
+version = "0.1.11"
 description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
 optional = false
-python-versions = ">=3.9"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-0.1.10-py3-none-any.whl", hash = "sha256:b9d453d70678ed790aa61acfc9b3c55d7ed8f5aed7a5135594fca068bec32c7b"},
-    {file = "programgarden_core-0.1.10.tar.gz", hash = "sha256:14e2ebce45311186ff486975e8c22e722d256f635701efa88f2e53a04fb43eb4"},
+    {file = "programgarden_core-0.1.11-py3-none-any.whl", hash = "sha256:8dd424032bb7ed4a30ec7d32d218422c3c219f6c2860e65b182404047bccf145"},
+    {file = "programgarden_core-0.1.11.tar.gz", hash = "sha256:485602861619b0bdcd51ac9d990c5a5ccd19e0228c7ac9f0c7af52bcf095fce2"},
 ]
 
 [[package]]
 name = "programgarden-finance"
-version = "0.1.11"
+version = "0.1.12"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
-python-versions = ">=3.9"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-0.1.11-py3-none-any.whl", hash = "sha256:66e4a0da77904d6165f2a53b38110e11ffe65cf9d3d7467c0d89bdb0fc288512"},
-    {file = "programgarden_finance-0.1.11.tar.gz", hash = "sha256:d663f4e552fd631248e5cb15c715262a80329c8bc13d605437064118e671b6e7"},
+    {file = "programgarden_finance-0.1.12-py3-none-any.whl", hash = "sha256:9b28cb1e1531efee6f4538cbbfd3268c877c607cc699037660a8dcbd25ad9dc8"},
+    {file = "programgarden_finance-0.1.12.tar.gz", hash = "sha256:ff80c4af159c78b6cabb761de96631b8ef642abdfa30cd93105789348e4ceafb"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.10.0,<4.0.0"
-programgarden-core = ">=0.1.10,<0.2.0"
+programgarden-core = ">=0.1.11,<0.2.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 redis = ">=6.4.0,<7.0.0"
@@ -1441,7 +1441,7 @@ description = "A lil' TOML parser"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
-markers = "python_version < \"3.11\""
+markers = "python_version == \"3.10\""
 files = [
     {file = "tomli-2.3.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:88bd15eb972f3664f5ed4b57c1634a97153b4bac4479dcb6a495f41921eb7f45"},
     {file = "tomli-2.3.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:883b1c0d6398a6a9d29b508c331fa56adbcdff647f6ace4dfca0f50e90dfd0ba"},
@@ -1498,7 +1498,7 @@ files = [
     {file = "typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548"},
     {file = "typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466"},
 ]
-markers = {dev = "python_version < \"3.11\""}
+markers = {dev = "python_version == \"3.10\""}
 
 [[package]]
 name = "typing-inspection"
@@ -1771,5 +1771,5 @@ propcache = ">=0.2.1"
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.9"
-content-hash = "57603ca584ea7c0b506b48ae875d601c7695e26e849a7207d94953f632911b20"
+python-versions = ">=3.10"
+content-hash = "20ba94ead79e15cd81e5a9eaa1111d2d5d9ad6673fd57b65b16eda3615bc621d"

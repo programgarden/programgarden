@@ -1,3 +1,7 @@
+## [0.1.25] - 2025-12-05
+### Changed
+- feat: python 3.10으로 최소 버전 상향
+
 ## [0.1.24] - 2025-12-05
 ### Updated
 - programgarden-core 0.1.10 버전으로 업데이트

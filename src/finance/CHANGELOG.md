@@ -1,3 +1,7 @@
+## [0.1.12] - 2025-12-05
+### Changed
+- feat: python 3.10으로 최소 버전 상향
+
 ## [0.1.11] - 2025-12-05
 ### Changed
 - programgarden-core 버전 업데이트에 따른 종속성 수정
