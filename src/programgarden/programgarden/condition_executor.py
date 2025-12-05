@@ -352,26 +352,64 @@ class ConditionExecutor:
                 without providing one.
                 KR: 임계값이 필요한 연산자를 임계값 없이 호출할 경우 발생합니다.
         """
+        # ============================================================================
+        # 해외선물 position_side 처리 흐름도
+        # ============================================================================
+        #
+        # 1단계: 각 조건 결과를 순회하며 정규화
+        #   - 해외선물(overseas_futures) 조건인 경우:
+        #     ├─ success=True + position_side="long"/"short" → futures_sides에 추가
+        #     ├─ success=True + position_side="neutral" → 방향 검증에서 제외 (성공으로 카운트)
+        #     └─ success=True + position_side="flat" → 실패로 처리
+        #   - 해외주식(overseas_stock) 조건인 경우:
+        #     └─ position_side 무시, success 값만 사용
+        #
+        # 2단계: 논리 연산자(and/or/weighted 등)로 성공 여부 평가
+        #
+        # 3단계: 해외선물 조건이 하나라도 있으면 방향 일치 검증
+        #   ├─ long과 short가 혼재 → 실패
+        #   ├─ 모두 동일 방향(long 또는 short) → 해당 방향으로 주문
+        #   ├─ 모두 neutral → 방향 결정 불가, 실패
+        #   └─ 해외주식만 있는 경우 → 방향 검증 생략
+        #
+        # ============================================================================
 
         normalized_successes: List[bool] = []
-        futures_sides: List[str] = []
+        futures_sides: List[str] = []  # long/short 방향만 수집 (neutral은 제외)
+        has_futures_condition = False  # 해외선물 조건 존재 여부
 
+        # ----------------------------------------------------------------------
+        # 1단계: 각 조건 결과를 순회하며 정규화
+        # ----------------------------------------------------------------------
         for result in results:
             product = str(result.get("product", "") or "").lower()
             position_side = str(result.get("position_side", "") or "").lower()
             is_success = bool(result.get("success", False))
 
             if product == "overseas_futures":
+                # 해외선물 조건이 하나라도 있으면 플래그 설정
+                has_futures_condition = True
+
                 if is_success and position_side in {"long", "short"}:
+                    # 방향 결정 조건: 방향 목록에 추가
                     futures_sides.append(position_side)
+                elif is_success and position_side == "neutral":
+                    # neutral: 성공 여부 평가에는 참여하지만 방향 검증에서는 제외
+                    # 변동성, 거래량 등 필터 조건에 적합
+                    pass
                 else:
-                    # Treat flat/missing direction as failure for futures conditions.
+                    # flat 또는 방향 미지정: 해당 조건은 실패로 처리
+                    # 하나라도 flat이 있으면 전체 실패로 이어짐
                     is_success = False
 
+            # 해외주식은 position_side 무시, success 값만 사용
             normalized_successes.append(is_success)
 
         success_count = sum(1 for success in normalized_successes if success)
 
+        # ----------------------------------------------------------------------
+        # 2단계: 논리 연산자로 성공 여부 평가
+        # ----------------------------------------------------------------------
         bool_result = False
         total_weight = 0
 
@@ -403,15 +441,27 @@ class ConditionExecutor:
             )
             bool_result = total_weight >= threshold
 
+        # ----------------------------------------------------------------------
+        # 3단계: 해외선물 조건이 있을 때만 방향 일치 검증
+        # ----------------------------------------------------------------------
+        # unique_sides: long/short 방향만 수집된 집합 (neutral은 포함되지 않음)
         unique_sides = {side for side in futures_sides}
         aligned_side: Optional[str] = None
 
-        if bool_result:
+        if bool_result and has_futures_condition:
+            # 해외선물 조건이 있고 논리 연산자 평가가 성공한 경우에만 방향 검증
             if len(unique_sides) > 1:
+                # long과 short가 혼재 → 실패
                 condition_logger.debug("해외선물 조건 간 방향이 일치하지 않아 실패 처리합니다")
                 bool_result = False
             elif len(unique_sides) == 1:
+                # 모든 방향 조건이 동일 → 해당 방향으로 주문
                 aligned_side = unique_sides.pop()
+            elif len(unique_sides) == 0:
+                # 모든 해외선물 조건이 neutral (long/short 없음) → 방향 결정 불가, 실패
+                condition_logger.debug("해외선물 조건이 모두 neutral이어서 방향을 결정할 수 없습니다")
+                bool_result = False
+        # 해외주식만 있는 경우 (has_futures_condition=False): 방향 검증 생략
 
         weight_result = total_weight if bool_result and logic == "weighted" else 0
 
