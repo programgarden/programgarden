@@ -160,9 +160,9 @@ class SymbolInfoOverseasFutures(SymbolInfoBase):
     """EN: Contract unit size for the futures instrument.
     KO: 계약단위(선물 계약 단위입니다.)"""
 
-    position_side: NotRequired[Literal["long", "short", "flat"]] = "flat"
+    position_side: NotRequired[Literal["long", "short", "flat", "neutral"]] = "flat"
     """EN: Current directional exposure; defaults to ``flat``.
-    KO: 포지션방향(기본값은 ``flat`` 이며 ``long``: 매수, ``short``: 매도, ``flat``: 보유 없음입니다.)"""
+    KO: 포지션방향(기본값은 ``flat`` 이며 ``long``: 매수, ``short``: 매도, ``flat``: 보유 없음, ``neutral``: 방향 중립(다른 조건에 위임)입니다.)"""
 
     unit_price: NotRequired[float]
     """EN: Minimum tick price.

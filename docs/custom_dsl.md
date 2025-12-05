@@ -88,7 +88,11 @@ ProgramGarden은 하나의 `system` 딕셔너리를 입력으로 받아 전략�
   ]
 }
 ```
-`logic`에는 `and`, `or`, `xor`, `at_least`, `weighted` 등 조건 집계 연산자를 지정할 수 있습니다. 해외선물 전략의 경우 조건 응답이 `position_side` 정보를 제공해야 하며 `logic` 평가 시 모든 조건이 `long` 또는 `short`로 일치해야 주문 실행이 허용됩니다.
+`logic`에는 `and`, `or`, `xor`, `at_least`, `weighted` 등 조건 집계 연산자를 지정할 수 있습니다. 해외선물 조건이 하나라도 있는 경우 `position_side`를 기반으로 추가 검증이 수행되며, 규칙은 다음과 같습니다:
+- `long` 또는 `short`: 방향을 결정하는 조건입니다. 모든 방향 조건이 동일한 방향이어야 주문이 실행됩니다.
+- `neutral`: 방향 결정에 관여하지 않고 다른 조건에 위임합니다. 변동성, 거래량 등 필터 조건에 적합합니다.
+- `flat`: 조건은 통과했지만 진입 신호가 없음을 의미하며, 하나라도 `flat`이 있으면 전체가 실패 처리됩니다.
+- 해외선물 조건이 모두 `neutral`이면 방향을 결정할 수 없어 주문이 실행되지 않습니다.
 
 - `DictConditionType` 형태의 조건에서 `"weight"` 필드를 작성하면, 커뮤니티 플러그인이 반환하는 기본 weight 대신 해당 값이 그대로 사용됩니다. 전략별로 동일한 플러그인에 서로 다른 비중을 줄 수 있습니다.
 
@@ -138,7 +142,10 @@ ProgramGarden은 하나의 `system` 딕셔너리를 입력으로 받아 전략�
 - `self.symbol`에 현재 평가 중인 종목 정보가 주입됩니다.
 - `self.system_id`로 실행 중인 시스템 식별자를 조회할 수 있습니다.
 - 응답(`success`, `symbol`, `exchcd`, `data`, `weight`) 구조는 TypedDict로 강제됩니다.
-- 선물 조건은 반드시 `position_side`(`"long"`, `"short"`, `"flat"`)를 설정해야 합니다.
+- 선물 조건은 반드시 `position_side`(`"long"`, `"short"`, `"flat"`, `"neutral"`)를 설정해야 합니다.
+  - `long`/`short`: 해당 방향으로 주문 진행
+  - `neutral`: 방향 결정을 다른 조건에 위임 (변동성, 거래량 등 필터 조건용)
+  - `flat`: 조건은 통과했지만 진입 신호 없음 → 실패 처리
 
 ### 3.2 주문(Order) 계층
 | 클래스 | 상품군 | 역할 | 반환 TypedDict |
@@ -214,18 +221,52 @@ class MomentumWithPosition(BaseStrategyConditionOverseasFutures):
     async def execute(self) -> BaseStrategyConditionResponseOverseasFuturesType:
         symbol = self.symbol or {}
         momentum_score = 0.9
-        position_side = "long" if momentum_score >= self.threshold else "flat"
+        position_side = "long" if momentum_score >= self.threshold else "short" if momentum_score <= -self.threshold else "flat"
         return {
             "condition_id": self.id,
             "success": position_side in {"long", "short"},
             "symbol": symbol.get("symbol", ""),
             "exchcd": symbol.get("exchcd", ""),
             "data": {"momentum": momentum_score},
-            "weight": round(momentum_score, 2),
+            "weight": round(abs(momentum_score), 2),
             "product": "overseas_futures",
             "position_side": position_side,
         }
 ```
+
+#### 방향 중립(neutral) 조건 예시 - 변동성 필터
+변동성이나 거래량 같은 필터 조건은 방향을 결정하지 않고 다른 조건에 위임해야 합니다. 이 경우 `position_side`를 `"neutral"`로 설정합니다.
+
+```python
+class VolatilityFilter(BaseStrategyConditionOverseasFutures):
+    id = "VolatilityFilter"
+    description = "변동성 필터 - 방향 결정에 관여하지 않음"
+    securities = ["ls-sec.co.kr"]
+
+    def __init__(self, min_volatility: float = 0.02):
+        super().__init__()
+        self.min_volatility = min_volatility
+
+    async def execute(self) -> BaseStrategyConditionResponseOverseasFuturesType:
+        symbol = self.symbol or {}
+        current_volatility = 0.03  # 실제로는 변동성 계산 로직
+        is_volatile_enough = current_volatility >= self.min_volatility
+        return {
+            "condition_id": self.id,
+            "success": is_volatile_enough,
+            "symbol": symbol.get("symbol", ""),
+            "exchcd": symbol.get("exchcd", ""),
+            "data": {"volatility": current_volatility},
+            "weight": 1 if is_volatile_enough else 0,
+            "product": "overseas_futures",
+            "position_side": "neutral",  # 방향 결정을 다른 조건에 위임
+        }
+```
+
+이렇게 `neutral`을 사용하면 여러 조건을 조합할 때 유연하게 구성할 수 있습니다:
+- 모멘텀 조건 (`long`/`short`) + 변동성 필터 (`neutral`) → 변동성이 충분하고 모멘텀 방향이 결정되면 해당 방향으로 주문
+- 모든 조건이 `neutral`이면 방향을 알 수 없어 주문이 실행되지 않습니다.
+
 `position_side`가 `flat`이면 `success`가 자동으로 거짓으로 처리되어 주문이 실행되지 않습니다.
 
 ## 5. 주문 전략 구현하기
@@ -380,7 +421,11 @@ pg.run(system={
 - **형식 준수**: TypedDict 스펙을 지켜 반환하지 않으면 런타임에서 키 에러 또는 검증 실패가 발생합니다.
 - **상태 공유 최소화**: 전략 클래스는 상태를 최소로 유지하고, 실행 시점에 전달되는 컨텍스트(`available_symbols`, `held_symbols`)만 사용하세요.
 - **심볼 정규화**: `symbols` 입력에 `exchange`, `name` 등의 별칭을 사용하면 alias resolver가 자동 변환하지만, 가능하면 표준 키(`symbol`, `exchcd`, `product_type`)를 직접 지정하는 것이 안전합니다.
-- **포지션 방향**: 해외선물 조건이 `position_side`를 일관되게 반환하지 않으면 `ConditionExecutor`가 자동으로 실패 처리합니다.
+- **포지션 방향**: 해외선물 조건에서 `position_side`를 올바르게 설정해야 합니다:
+  - 방향을 결정하는 조건: `long` 또는 `short` 반환
+  - 필터 조건 (변동성, 거래량 등): `neutral` 반환 (방향 결정을 다른 조건에 위임)
+  - 진입 신호 없음: `flat` 반환 → 전체 실패 처리
+  - 모든 조건이 `neutral`이면 방향을 알 수 없어 주문 실패
 
 ## 9. 커뮤니티 기여 및 배포
 - 재사용 가능한 전략을 배포해서 시스템 트레이딩 생태계 발전에 기여하세요. 직접 커스텀한 전략은 https://github.com/programgarden/programgarden_community 패키지에 PR하면 수 많은 투자자들이 공유하게 됩니다.
