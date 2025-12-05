@@ -21,7 +21,7 @@ Programgarden Finance는 LS증권 OpenAPI를 Python 친화적으로 감싸 해�
 
 ## 요구 사항 및 설치
 
-- Python 3.9 이상
+- Python 3.10 이상
 - LS증권 자동화매매 API 사용 권한 및 발급 받은 `appkey`, `appsecret`
 
 ```bash
