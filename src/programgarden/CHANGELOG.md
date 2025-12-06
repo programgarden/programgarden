@@ -1,3 +1,7 @@
+## [0.1.28] - 2025-12-06
+### Changed
+- feat: programgarden-community 0.1.15 버전으로 업데이트
+
 ## [0.1.27] - 2025-12-06
 ### Changed
 - feat: programgarden-community 0.1.14 버전으로 업데이트
