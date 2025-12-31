@@ -67,18 +67,19 @@ if __name__ == "__main__":
 
     pg = Programgarden()
 
-    # 전략 수행 응답 콜백
-    pg.on_strategies_message(
-        callback=lambda message: print(f"Strategies: {message}")
+    # 전략 수행 응답 콜백 (신규 API)
+    pg.on_strategy(
+        callback=lambda message: print(f"Strategy [{message.get('event_type')}]: {message}")
     )
 
-    # 실시간 주문 응답 콜백
-    pg.on_real_order_message(
-        callback=lambda message: print(f"Real Order Message: {message.get('order_type')}, {message.get('message')}")
+    # 실시간 주문 응답 콜백 (신규 API)
+    pg.on_order(
+        callback=lambda message: print(f"Order [{message.get('event_type')}]: {message.get('order_type')}, {message.get('message')}")
     )
 
-    pg.on_error_message(
-        callback=lambda message: print(f"Error Message: {message}")
+    # 퍼포먼스 모니터링 콜백 (시스템 에러도 여기서 처리)
+    pg.on_performance_message(
+        callback=lambda message: print(f"Performance [{message.get('event_type')}]: {message}")
     )
 
     pg.run(
@@ -90,7 +91,6 @@ if __name__ == "__main__":
                 "버전": "1.0.0",
                 "작성자": "Author Name",
                 "작성일": "2023-10-01",
-                "디버그": "DEBUG",
             },
             "securities": {
                 "회사": "ls",

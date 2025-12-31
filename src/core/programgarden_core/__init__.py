@@ -12,7 +12,7 @@ KO:
 from programgarden_core.alias_resolver import normalize_system_config
 from programgarden_core.bases import (
     SystemType, StrategyConditionType,
-    StrategyType, SystemSettingType,
+    StrategyType, SystemSettingType, PerfThresholdsType,
     DictConditionType,
     SecuritiesAccountType,
     DpsTyped,
@@ -61,41 +61,12 @@ from programgarden_core.bases import (
 from programgarden_core.bases.products import BaseOverseasFutureoption, BaseOverseasStock
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 from programgarden_core import logs, exceptions
-from programgarden_core.logs import (
-    pg_log_disable,
-    pg_log_reset,
-    pg_logger,
-    pg_log,
-    system_logger,
-    strategy_logger,
-    condition_logger,
-    trade_logger,
-    order_logger,
-    plugin_logger,
-    symbol_logger,
-    finance_logger,
-    get_logger,
-)
 
 # EN: Public re-export list consolidating frequently used symbols.
 # KO: 외부 개발자가 자주 활용하는 심볼을 재노출하기 위한 목록입니다.
 __all__ = [
     logs,
     exceptions,
-
-    pg_logger,
-    pg_log,
-    pg_log_disable,
-    pg_log_reset,
-    system_logger,
-    strategy_logger,
-    condition_logger,
-    trade_logger,
-    order_logger,
-    plugin_logger,
-    symbol_logger,
-    finance_logger,
-    get_logger,
 
     normalize_system_config,
     require_korean_alias,
@@ -106,6 +77,7 @@ __all__ = [
     StrategyType,
     DictConditionType,
     SystemSettingType,
+    PerfThresholdsType,
     SystemType,
     OrderStrategyType,
     DpsTyped,
@@ -118,6 +90,7 @@ __all__ = [
     StrategyConditionType,
     DictConditionType,
     SystemSettingType,
+    PerfThresholdsType,
     OrderTimeType,
     OrderType,
     OrderRealResponseType,

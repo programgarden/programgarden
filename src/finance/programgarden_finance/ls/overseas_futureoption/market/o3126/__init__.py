@@ -16,7 +16,9 @@ from .blocks import (
 from ....tr_base import TRRequestAbstract, RetryReqAbstract
 from programgarden_finance.ls.status import RequestStatus
 from programgarden_finance.ls.config import URLS
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_futureoption.market.o3126")
 
 
 class TrO3126(TRRequestAbstract, RetryReqAbstract):
@@ -63,12 +65,12 @@ class TrO3126(TRRequestAbstract, RetryReqAbstract):
         error_msg = ""
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"o3126 request failed: {exc}")
+            logger.error(f"o3126 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"o3126 request failed with status: {error_msg}")
+            logger.error(f"o3126 request failed with status: {error_msg}")
 
         result = O3126Response(
             header=header,
@@ -167,10 +169,10 @@ class TrO3126(TRRequestAbstract, RetryReqAbstract):
                 return response
 
         except aiohttp.ClientError as e:
-            pg_logger.error(f"o3126 비동기 재시도 요청 실패: {e}")
+            logger.error(f"o3126 비동기 재시도 요청 실패: {e}")
             return self._build_response(None, None, None, e)
         except Exception as e:
-            pg_logger.error(f"o3126 비동기 재시도 요청 중 예외 발생: {e}")
+            logger.error(f"o3126 비동기 재시도 요청 중 예외 발생: {e}")
             return self._build_response(None, None, None, e)
 
 

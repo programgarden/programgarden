@@ -14,7 +14,9 @@ from typing import Callable, Optional, Dict, Any
 import aiohttp
 
 from programgarden_core.exceptions import TrRequestDataNotFoundException
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_stock.market.g3190")
 from .blocks import (
     G3190InBlock,
     G3190OutBlock,
@@ -66,12 +68,12 @@ class TrG3190(TRRequestAbstract, OccursReqAbstract):
         error_msg: Optional[str] = None
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"g3190 request failed: {exc}")
+            logger.error(f"g3190 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"g3190 request failed with status: {error_msg}")
+            logger.error(f"g3190 request failed with status: {error_msg}")
 
         result = G3190Response(
             header=header,

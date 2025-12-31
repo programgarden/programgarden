@@ -45,8 +45,6 @@ SETTINGS_ALIAS_MAP: Dict[str, str] = {
     "작성자": "author",
     "작성일": "date",
     "날짜": "date",
-    "디버그": "debug",
-    "로그": "debug",
 }
 
 # EN: Alias mappings that normalize brokerage and product related keys.

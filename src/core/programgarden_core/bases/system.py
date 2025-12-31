@@ -294,6 +294,31 @@ class DictConditionType(TypedDict):
     KO: 선택적 가중치이며 기본값은 0입니다."""
 
 
+class PerfThresholdsType(TypedDict, total=False):
+    """Performance thresholds for system monitoring.
+
+    EN:
+        Defines limits for CPU, memory, and execution duration.
+        Exceeding these triggers PerformanceExceededException.
+
+    KO:
+        CPU, 메모리, 실행 시간 제한을 정의합니다.
+        초과 시 PerformanceExceededException이 발생합니다.
+    """
+
+    max_avg_cpu_percent: float
+    """EN: Maximum average CPU usage percentage.
+    KO: 최대 평균 CPU 사용률(%)."""
+
+    max_memory_delta_mb: float
+    """EN: Maximum memory delta in megabytes.
+    KO: 최대 메모리 증가량(MB)."""
+
+    max_duration_seconds: float
+    """EN: Maximum execution duration in seconds.
+    KO: 최대 실행 시간(초)."""
+
+
 class SystemSettingType(TypedDict):
     """Metadata describing a ProgramGarden system.
 
@@ -328,14 +353,24 @@ class SystemSettingType(TypedDict):
     """EN: Creation date as a string (e.g., ``YYYY-MM-DD``).
     KO: 문자열 형태의 생성일입니다 (예: ``YYYY-MM-DD``)."""
 
-    debug: NotRequired[str]
+
+    dry_run_mode: NotRequired[Literal["live", "guarded_live", "test"]]
     """EN:
-        Logging level string such as ``DEBUG`` or ``INFO``.
+        Execution mode controlling order submission behavior.
+        - ``live``: Real orders submitted to the broker.
+        - ``guarded_live``: Real orders with additional safety checks.
+        - ``test``: Simulated execution; no real orders.
 
     KO:
-        ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL`` 등 로깅 레벨을
-        설정합니다.
+        주문 제출 동작을 제어하는 실행 모드입니다.
+        - ``live``: 실제 주문을 브로커에 제출합니다.
+        - ``guarded_live``: 추가 안전 검사와 함께 실제 주문을 제출합니다.
+        - ``test``: 시뮬레이션 실행; 실제 주문 없음.
     """
+
+    perf_thresholds: NotRequired[PerfThresholdsType]
+    """EN: Performance thresholds for CPU, memory, and duration monitoring.
+    KO: CPU, 메모리, 실행 시간 모니터링을 위한 성능 임계치입니다."""
 
 
 class SecuritiesAccountType(TypedDict):

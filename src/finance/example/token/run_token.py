@@ -1,7 +1,8 @@
 import asyncio
 from dotenv import dotenv_values
 from programgarden_finance.ls.oauth.generate_token import GenerateToken
-from programgarden_core import pg_logger
+import logging
+logger = logging.getLogger(__name__)
 
 from programgarden_finance.ls.oauth.generate_token.token.blocks import (
     TokenInBlock,
@@ -19,7 +20,7 @@ async def test_req_token():
     )
 
     access_token = (await response.req_async()).block.access_token
-    pg_logger.debug(f"Access Token: {access_token}")
+    logger.debug(f"Access Token: {access_token}")
 
 
 if __name__ == "__main__":

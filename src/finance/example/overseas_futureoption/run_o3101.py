@@ -3,14 +3,15 @@ import os
 from dotenv import load_dotenv
 import asyncio
 from programgarden_finance import LS, o3101
-from programgarden_core import pg_logger, pg_log
+import logging
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 
 async def test_req_o3101():
 
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
     ls = LS()
 
@@ -20,7 +21,7 @@ async def test_req_o3101():
     )
 
     if login_result is False:
-        pg_logger.error("로그인 실패")
+        logger.error("로그인 실패")
         return
 
     test1 = ls.overseas_futureoption().market().해외선물마스터조회(

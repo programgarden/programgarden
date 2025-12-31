@@ -2,7 +2,8 @@ import logging
 from dotenv import load_dotenv
 import os
 from programgarden_finance import LS, g3204
-from programgarden_core import pg_logger, pg_log
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 
 
@@ -11,7 +12,7 @@ load_dotenv()
 
 async def test_req_g3204():
 
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
     ls = LS.get_instance()
     login_result = await ls.async_login(
@@ -20,7 +21,7 @@ async def test_req_g3204():
     )
 
     if login_result is False:
-        pg_logger.error("로그인 실패")
+        logger.error("로그인 실패")
         return
 
     test1 = ls.overseas_stock().차트().차트일주월년별조회(
@@ -57,11 +58,11 @@ async def test_req_g3204():
 
     asyncio.create_task(test2.req_async())
 
-    # pg_logger.debug(f"Response: {result}, Status: {result.header}")
+    # logger.debug(f"Response: {result}, Status: {result.header}")
 
     await asyncio.sleep(1)
     await test1.occurs_req_async(
-        callback=lambda response, status: pg_logger.debug(f"Success: {status}, response: {len(response.block1) if response and hasattr(response, 'block1') else None}")
+        callback=lambda response, status: logger.debug(f"Success: {status}, response: {len(response.block1) if response and hasattr(response, 'block1') else None}")
     )
 
 

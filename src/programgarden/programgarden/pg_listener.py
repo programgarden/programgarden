@@ -36,17 +36,18 @@ class ListenerCategoryType(Enum):
     """Enumerate supported listener queues (EN/KR described).
 
     EN:
-        Distinguishes strategy events, real-order updates, and error notifications
-        so handlers can subscribe selectively.
+        Distinguishes strategy events, order updates, and performance notifications
+        so handlers can subscribe selectively. Errors are now domain-specific
+        and included in each category's event_type field.
 
     KR:
-        전략 이벤트, 실시간 주문 업데이트, 오류 알림을 구분하여 핸들러가 원하는
-        카테고리만 구독할 수 있도록 합니다.
+        전략 이벤트, 주문 업데이트, 퍼포먼스 알림을 구분하여 핸들러가 원하는
+        카테고리만 구독할 수 있도록 합니다. 에러는 이제 도메인별로 분류되어
+        각 카테고리의 event_type 필드에 포함됩니다.
     """
 
-    STRATEGIES = "strategies"
-    REAL_ORDER = "real_order"
-    ERROR = "error"
+    STRATEGY = "strategy"
+    ORDER = "order"
     PERFORMANCE = "performance"
 
 
@@ -58,65 +59,96 @@ class PerformancePayload(TypedDict):
     KR:
         실행 시간 및 자원 사용량 통계를 포함합니다.
     """
+    event_type: str  # e.g., "perf_snapshot", "perf_exceeded", "system_shutdown"
     context: str  # e.g., "strategy:my_strategy_id"
     stats: Dict[str, Any]
     status: NotRequired[str]
     details: NotRequired[Dict[str, Any]]
 
 
-
-class RealOrderPayload(TypedDict):
-    """Structured payload emitted for real-order updates.
+class OrderPayload(TypedDict):
+    """Structured payload emitted for order updates.
 
     EN:
-        Bundles the unified order type, human-readable message, and raw response
-        from LS real-time APIs.
+        Bundles the event type, unified order type, human-readable message, and raw response
+        from LS real-time APIs. Includes error information when applicable.
 
     KR:
-        LS 실시간 API의 응답을 기반으로 통합 주문 유형, 메시지, 원본 응답을 묶은
-        자료구조입니다.
+        LS 실시간 API의 응답을 기반으로 이벤트 유형, 통합 주문 유형, 메시지, 원본 응답을 묶은
+        자료구조입니다. 오류 발생 시 에러 정보도 포함됩니다.
     """
 
-    order_type: OrderRealResponseType
+    event_type: str
     """
-    실시간 상태
+    이벤트 유형: order_submitted, order_filled, order_modified, order_cancelled, order_rejected, order_error
+    """
+    order_type: NotRequired[OrderRealResponseType]
+    """
+    주문 유형 (매수/매도 구분)
     """
     message: str
     """
     작업 내용
     """
-    response: Dict[str, Any]
+    response: NotRequired[Dict[str, Any]]
     """
     실시간 데이터
     """
+    error_code: NotRequired[str]
+    """
+    에러 코드 (에러 발생 시)
+    """
+    error_data: NotRequired[Dict[str, Any]]
+    """
+    에러 상세 데이터 (에러 발생 시)
+    """
+
+
+# Backward compatibility alias
+RealOrderPayload = OrderPayload
 
 
 class StrategyPayload(TypedDict):
     """Payload emitted when a strategy condition produces a response.
 
     EN:
-        Contains the originating condition identifier, optional message, and the
-        structured condition response object.
+        Contains the event type, originating condition identifier, optional message, and the
+        structured condition response object. Includes error information when applicable.
 
     KR:
-        발생한 조건 식별자, 선택적 메시지, 구조화된 조건 응답 객체를 포함합니다.
+        이벤트 유형, 발생한 조건 식별자, 선택적 메시지, 구조화된 조건 응답 객체를 포함합니다.
+        오류 발생 시 에러 정보도 포함됩니다.
     """
 
-    condition_id: str
+    event_type: str
+    """
+    이벤트 유형: condition_evaluated, condition_passed, condition_failed, condition_error, strategy_completed
+    """
+    condition_id: NotRequired[str]
     message: NotRequired[str]
     response: NotRequired[Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]]
+    error_code: NotRequired[str]
+    """
+    에러 코드 (에러 발생 시)
+    """
+    error_data: NotRequired[Dict[str, Any]]
+    """
+    에러 상세 데이터 (에러 발생 시)
+    """
 
 
 class ErrorPayload(TypedDict):
-    """Normalized error payload shared with host applications.
+    """Normalized error payload shared with host applications (deprecated - use domain payloads).
 
     EN:
         Mirrors :class:`programgarden_core.exceptions.BasicException` payloads and
-        includes arbitrary ``data`` for context.
+        includes arbitrary ``data`` for context. Deprecated in favor of domain-specific
+        payloads with event_type="*_error".
 
     KR:
         :class:`programgarden_core.exceptions.BasicException` 페이로드와 동일한 구조를
-        따르며 추가 컨텍스트 데이터를 포함합니다.
+        따르며 추가 컨텍스트 데이터를 포함합니다. 도메인별 페이로드의 event_type="*_error"
+        사용을 권장합니다 (deprecated).
     """
 
     code: str
@@ -151,9 +183,8 @@ class RealTimeListener:
             수준의 :class:`ThreadPoolExecutor`를 생성합니다.
         """
         self._handlers: Dict[ListenerCategoryType, Optional[Callable[[Dict[str, Any]], Any]]] = {
-            ListenerCategoryType.STRATEGIES: None,
-            ListenerCategoryType.REAL_ORDER: None,
-            ListenerCategoryType.ERROR: None,
+            ListenerCategoryType.STRATEGY: None,
+            ListenerCategoryType.ORDER: None,
             ListenerCategoryType.PERFORMANCE: None,
         }
         self._q: "queue.Queue[Optional[Dict[str, Any]]]" = queue.Queue()
@@ -278,7 +309,7 @@ class RealTimeListener:
             pass
 
 
-class StrategiesListener:
+class StrategyListener:
     """Store and emit the latest strategy payload via the realtime emitter.
 
     EN:
@@ -312,13 +343,17 @@ class StrategiesListener:
             payload_local: StrategyPayload = dict(self._last_payload)  # type: ignore[arg-type]
         if self._emitter:
             try:
-                self._emitter(ListenerCategoryType.STRATEGIES, payload_local)
+                self._emitter(ListenerCategoryType.STRATEGY, payload_local)
             except Exception:
                 pass
 
 
-class RealOrderListener:
-    """Persist and emit the latest real-order payload.
+# Backward compatibility alias
+StrategiesListener = StrategyListener
+
+
+class OrderListener:
+    """Persist and emit the latest order payload.
 
     EN:
         Keeps a thread-safe copy of the newest payload and forwards a duplicate to
@@ -334,7 +369,7 @@ class RealOrderListener:
         self._last_payload: Dict[str, Any] = {}
         self._emitter = emitter
 
-    def emit(self, payload: RealOrderPayload) -> None:
+    def emit(self, payload: OrderPayload) -> None:
         """Update last known payload and emit it to listeners.
 
         EN:
@@ -347,12 +382,16 @@ class RealOrderListener:
         """
         with self._lock:
             self._last_payload = dict(payload)
-            payload_local: RealOrderPayload = dict(self._last_payload)  # type: ignore[arg-type]
+            payload_local: OrderPayload = dict(self._last_payload)  # type: ignore[arg-type]
         if self._emitter:
             try:
-                self._emitter(ListenerCategoryType.REAL_ORDER, payload_local)
+                self._emitter(ListenerCategoryType.ORDER, payload_local)
             except Exception:
                 pass
+
+
+# Backward compatibility alias
+RealOrderListener = OrderListener
 
 
 class PerformanceListener:
@@ -383,14 +422,17 @@ class PerformanceListener:
 
 
 class ErrorListener:
-    """Persist and emit normalized error payloads.
-
+    """Deprecated: Errors are now emitted through domain-specific listeners.
+    
     EN:
-        Ensures a ``data`` dict is always present and forwards copies to the
-        configured emitter.
+        This class is kept for backward compatibility but is no longer used.
+        Errors are now included in StrategyPayload or OrderPayload with
+        event_type containing 'error'.
 
     KR:
-        ``data`` 딕셔너리가 항상 존재하도록 보장하고, 설정된 emitter로 복사본을 전달합니다.
+        이 클래스는 하위 호환성을 위해 유지되지만 더 이상 사용되지 않습니다.
+        오류는 이제 event_type에 'error'를 포함한 StrategyPayload 또는
+        OrderPayload로 전달됩니다.
     """
 
     def __init__(self, emitter: Optional[Callable[[ListenerCategoryType, Dict[str, Any]], None]] = None) -> None:
@@ -399,25 +441,8 @@ class ErrorListener:
         self._emitter = emitter
 
     def emit(self, payload: ErrorPayload) -> None:
-        """Normalize error payload and forward it to the emitter.
-
-        EN:
-            Copies the payload, ensures ``data`` exists to simplify downstream
-            consumers, then emits the sanitized version.
-
-        KR:
-            페이로드를 복사하여 ``data`` 키가 항상 존재하도록 한 뒤 정리된 버전을
-            emitter에 전달합니다.
-        """
-        with self._lock:
-            self._last_payload = dict(payload)
-            payload_local: ErrorPayload = dict(self._last_payload)  # type: ignore[arg-type]
-            payload_local.setdefault("data", {})
-        if self._emitter:
-            try:
-                self._emitter(ListenerCategoryType.ERROR, payload_local)
-            except Exception:
-                pass
+        """Deprecated: Does nothing. Use domain-specific emit methods."""
+        pass
 
 
 class PGListener:
@@ -425,28 +450,36 @@ class PGListener:
 
     EN:
         Instantiates category-specific listener helpers and wires them to a shared
-        :class:`RealTimeListener` emitter.
+        :class:`RealTimeListener` emitter. Now uses domain-centric callbacks:
+        - on_strategy: All strategy-related events (conditions, errors)
+        - on_order: All order-related events (submissions, fills, errors)
+        - on_performance_message: System performance and lifecycle events
 
     KR:
         카테고리별 리스너 헬퍼를 생성하고 공통 :class:`RealTimeListener` emitter에 연결하는
-        파사드입니다.
+        파사드입니다. 이제 도메인 중심 콜백을 사용합니다:
+        - on_strategy: 전략 관련 모든 이벤트 (조건 평가, 오류)
+        - on_order: 주문 관련 모든 이벤트 (제출, 체결, 오류)
+        - on_performance_message: 시스템 성능 및 라이프사이클 이벤트
     """
 
     def __init__(self, max_workers: int = 4) -> None:
         self.realtime = RealTimeListener(max_workers=max_workers)
-        self.strategies = StrategiesListener(emitter=self.realtime.emit)
-        self.real_order = RealOrderListener(emitter=self.realtime.emit)
+        self.strategy = StrategyListener(emitter=self.realtime.emit)
+        self.order = OrderListener(emitter=self.realtime.emit)
         self.performance = PerformanceListener(emitter=self.realtime.emit)
-        self.error = ErrorListener(emitter=self.realtime.emit)
+        # Backward compatibility aliases
+        self.strategies = self.strategy
+        self.real_order = self.order
 
-    def set_strategies_handler(self, handler: Callable[[StrategyPayload], Any]) -> None:
+    def set_strategy_handler(self, handler: Callable[[StrategyPayload], Any]) -> None:
         """Register a strategy handler and ensure the realtime worker is running."""
-        self.realtime.set_handler(ListenerCategoryType.STRATEGIES, handler)
+        self.realtime.set_handler(ListenerCategoryType.STRATEGY, handler)
         self.realtime.start()
 
-    def set_real_order_handler(self, handler: Callable[[RealOrderPayload], Any]) -> None:
-        """Register a real-order handler and ensure the realtime worker is running."""
-        self.realtime.set_handler(ListenerCategoryType.REAL_ORDER, handler)
+    def set_order_handler(self, handler: Callable[[OrderPayload], Any]) -> None:
+        """Register an order handler and ensure the realtime worker is running."""
+        self.realtime.set_handler(ListenerCategoryType.ORDER, handler)
         self.realtime.start()
 
     def set_performance_handler(self, handler: Callable[[PerformancePayload], Any]) -> None:
@@ -454,29 +487,88 @@ class PGListener:
         self.realtime.set_handler(ListenerCategoryType.PERFORMANCE, handler)
         self.realtime.start()
 
+    # Backward compatibility methods
+    def set_strategies_handler(self, handler: Callable[[StrategyPayload], Any]) -> None:
+        """Deprecated: Use set_strategy_handler instead."""
+        self.set_strategy_handler(handler)
+
+    def set_real_order_handler(self, handler: Callable[[OrderPayload], Any]) -> None:
+        """Deprecated: Use set_order_handler instead."""
+        self.set_order_handler(handler)
+
     def set_error_handler(self, handler: Callable[[ErrorPayload], Any]) -> None:
-        """Register an error handler and ensure the realtime worker is running."""
-        self.realtime.set_handler(ListenerCategoryType.ERROR, handler)
-        self.realtime.start()
+        """Deprecated: Errors are now included in domain-specific callbacks via event_type.
+        
+        This method is kept for backward compatibility but does nothing.
+        Register handlers via set_strategy_handler or set_order_handler and
+        filter by event_type containing 'error'.
+        """
+        pass
 
-    def emit_strategies(self, payload: StrategyPayload) -> None:
-        """Emit a strategy payload through the strategies listener."""
-        self.strategies.emit(payload)
+    def emit_strategy(self, payload: StrategyPayload) -> None:
+        """Emit a strategy payload through the strategy listener."""
+        self.strategy.emit(payload)
 
-    def emit_real_order(self, payload: RealOrderPayload) -> None:
-        """Emit a real-order payload through the real-order listener."""
-        self.real_order.emit(payload)
+    def emit_order(self, payload: OrderPayload) -> None:
+        """Emit an order payload through the order listener."""
+        self.order.emit(payload)
 
     def emit_performance(self, payload: PerformancePayload) -> None:
         """Emit a performance payload through the performance listener."""
         self.performance.emit(payload)
 
-    def emit_exception(self, exc: Exception, *, data: Optional[Dict[str, Any]] = None) -> None:
-        """Normalize and emit exceptions unless already reported."""
+    # Backward compatibility methods
+    def emit_strategies(self, payload: StrategyPayload) -> None:
+        """Deprecated: Use emit_strategy instead."""
+        self.emit_strategy(payload)
+
+    def emit_real_order(self, payload: OrderPayload) -> None:
+        """Deprecated: Use emit_order instead."""
+        self.emit_order(payload)
+
+    def emit_exception(self, exc: Exception, *, data: Optional[Dict[str, Any]] = None, domain: str = "strategy") -> None:
+        """Emit exception as domain-specific event.
+        
+        Args:
+            exc: The exception to emit
+            data: Additional context data
+            domain: 'strategy' | 'order' | 'performance' - determines which callback receives it
+        """
         if getattr(exc, "_pg_error_emitted", False):
             return
-        payload = build_error_payload(exc, data=data)
-        self.error.emit(payload)
+        
+        error_payload = build_error_payload(exc, data=data)
+        
+        if domain == "order":
+            order_event: OrderPayload = {
+                "event_type": "order_error",
+                "message": error_payload.get("message", str(exc)),
+                "error_code": error_payload.get("code", "UNKNOWN_ERROR"),
+                "error_data": error_payload.get("data", {}),
+            }
+            self.emit_order(order_event)
+        elif domain == "performance":
+            perf_event: PerformancePayload = {
+                "event_type": "system_error",
+                "context": "system",
+                "stats": {},
+                "status": "error",
+                "details": {
+                    "error_code": error_payload.get("code", "UNKNOWN_ERROR"),
+                    "error_message": error_payload.get("message", str(exc)),
+                    "error_data": error_payload.get("data", {}),
+                },
+            }
+            self.emit_performance(perf_event)
+        else:  # default to strategy
+            strategy_event: StrategyPayload = {
+                "event_type": "strategy_error",
+                "message": error_payload.get("message", str(exc)),
+                "error_code": error_payload.get("code", "UNKNOWN_ERROR"),
+                "error_data": error_payload.get("data", {}),
+            }
+            self.emit_strategy(strategy_event)
+        
         try:
             setattr(exc, "_pg_error_emitted", True)
         except Exception:

@@ -17,7 +17,9 @@ from ....tr_base import TRRequestAbstract, OccursReqAbstract
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.status import RequestStatus
 
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_futureoption.market.o3137")
 
 
 class TrO3137(TRRequestAbstract, OccursReqAbstract):
@@ -57,7 +59,7 @@ class TrO3137(TRRequestAbstract, OccursReqAbstract):
             return result
 
         except requests.RequestException as e:
-            pg_logger.error(f"o3137 요청 실패: {e}")
+            logger.error(f"o3137 요청 실패: {e}")
             return O3137Response(
                 header=None,
                 block=None,
@@ -68,7 +70,7 @@ class TrO3137(TRRequestAbstract, OccursReqAbstract):
             )
 
         except Exception as e:
-            pg_logger.error(f"o3137 요청 중 예외 발생: {e}")
+            logger.error(f"o3137 요청 중 예외 발생: {e}")
             return O3137Response(
                 header=None,
                 block=None,
@@ -102,7 +104,7 @@ class TrO3137(TRRequestAbstract, OccursReqAbstract):
             return result
 
         except aiohttp.ClientError as e:
-            pg_logger.error(f"o3137 비동기 요청 실패: {e}")
+            logger.error(f"o3137 비동기 요청 실패: {e}")
             return O3137Response(
                 header=None,
                 block=None,
@@ -113,7 +115,7 @@ class TrO3137(TRRequestAbstract, OccursReqAbstract):
             )
 
         except Exception as e:
-            pg_logger.error(f"o3137 비동기 요청 중 예외 발생: {e}")
+            logger.error(f"o3137 비동기 요청 중 예외 발생: {e}")
             return O3137Response(
                 header=None,
                 block=None,
@@ -132,7 +134,7 @@ class TrO3137(TRRequestAbstract, OccursReqAbstract):
         results.append(response)
 
         while getattr(response.header, "tr_cont", "N") == "Y":
-            pg_logger.debug(f"계속 조회 중... {response.header.tr_cont}")
+            logger.debug(f"계속 조회 중... {response.header.tr_cont}")
             callback and callback(response, RequestStatus.OCCURS_REQUEST)
 
             time.sleep(delay)
@@ -166,7 +168,7 @@ class TrO3137(TRRequestAbstract, OccursReqAbstract):
             results.append(response)
 
             while getattr(response.header, "tr_cont", "N") == "Y":
-                pg_logger.debug("계속 조회 중...")
+                logger.debug("계속 조회 중...")
                 callback and callback(response, RequestStatus.OCCURS_REQUEST)
 
                 await asyncio.sleep(delay)

@@ -17,7 +17,9 @@ from .blocks import (
 from ....tr_base import TRAccnoAbstract
 from programgarden_finance.ls.status import RequestStatus
 from programgarden_finance.ls.config import URLS
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_stock.accno.COSOQ00201")
 
 
 class TrCOSOQ00201(TRAccnoAbstract):
@@ -69,12 +71,12 @@ class TrCOSOQ00201(TRAccnoAbstract):
         error_msg: Optional[str] = None
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"COSOQ00201 request failed: {exc}")
+            logger.error(f"COSOQ00201 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"COSOQ00201 request failed with status: {error_msg}")
+            logger.error(f"COSOQ00201 request failed with status: {error_msg}")
 
         result = COSOQ00201Response(
             header=header,

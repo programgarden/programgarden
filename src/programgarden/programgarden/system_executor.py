@@ -18,6 +18,7 @@ KR:
 from datetime import datetime
 from datetime import time as datetime_time, timedelta
 import asyncio
+import logging
 from typing import Any, Dict, List, Optional, Union
 from zoneinfo import ZoneInfo
 
@@ -31,15 +32,11 @@ from programgarden_core import (
     SymbolInfoOverseasFutures,
     BaseOrderOverseasStock,
     BaseOrderOverseasFutures,
-    strategy_logger,
-    trade_logger,
-    system_logger,
-    condition_logger,
-)
-from programgarden_core import (
     OrderType,
     OrderStrategyType,
 )
+
+logger = logging.getLogger("programgarden.system_executor")
 from programgarden_core.exceptions import (
     BasicException,
     InvalidCronExpressionException,
@@ -48,6 +45,7 @@ from programgarden_core.exceptions import (
     PerformanceExceededException,
 )
 from programgarden.pg_listener import pg_listener, ListenerCategoryType
+from programgarden.data_cache_manager import get_cache_manager, DataCacheManager
 
 from .plugin_resolver import PluginResolver
 from .symbols_provider import SymbolProvider
@@ -93,14 +91,18 @@ class SystemExecutor:
             KR: 신규/정정/취소 주문을 처리합니다.
     """
 
+    # 연속 실패 임계치: 5회 연속 실패 시 전략 비활성화
+    MAX_CONSECUTIVE_FAILURES: int = 5
+
     def __init__(self):
         self.running = False
         self.tasks: list[asyncio.Task] = []
 
         # EN: Instantiate core collaborators in deterministic order.
         # KR: 핵심 협력 객체를 결정된 순서로 초기화합니다.
+        self._cache_manager: DataCacheManager = get_cache_manager()
         self.plugin_resolver = PluginResolver()
-        self.symbol_provider = SymbolProvider()
+        self.symbol_provider = SymbolProvider(cache_manager=self._cache_manager)
         self.condition_executor = ConditionExecutor(self.plugin_resolver, self.symbol_provider)
         self.buy_sell_executor = BuySellExecutor(self.plugin_resolver)
         self.perf_monitor = PerformanceMonitor()
@@ -109,6 +111,79 @@ class SystemExecutor:
         self._pending_dry_run_promotion: bool = False
         self._dry_run_promotion_sent: bool = False
         self._current_system_id: str = "<unknown>"
+
+        # EN: Track consecutive failures per strategy for auto-disable logic.
+        # KR: 전략별 연속 실패 횟수를 추적하여 자동 비활성화 로직에 활용합니다.
+        self._strategy_failure_count: Dict[str, int] = {}
+        self._disabled_strategies: set = set()
+
+    def _record_strategy_success(self, strategy_id: str) -> None:
+        """Reset failure count on successful strategy execution.
+
+        EN:
+            Clears the consecutive failure counter for a strategy after it
+            completes without errors.
+
+        KR:
+            전략이 오류 없이 완료되면 연속 실패 카운터를 초기화합니다.
+        """
+        if strategy_id in self._strategy_failure_count:
+            self._strategy_failure_count[strategy_id] = 0
+
+    def _record_strategy_failure(self, strategy_id: str) -> bool:
+        """Increment failure count and check if strategy should be disabled.
+
+        EN:
+            Tracks consecutive failures per strategy. Returns True if the
+            strategy has exceeded MAX_CONSECUTIVE_FAILURES and should be
+            disabled.
+
+        KR:
+            전략별 연속 실패를 추적합니다. MAX_CONSECUTIVE_FAILURES를 초과하면
+            True를 반환하여 전략이 비활성화되어야 함을 알립니다.
+
+        Returns:
+            bool: True if strategy should be disabled, False otherwise.
+        """
+        self._strategy_failure_count[strategy_id] = (
+            self._strategy_failure_count.get(strategy_id, 0) + 1
+        )
+        count = self._strategy_failure_count[strategy_id]
+
+        if count >= self.MAX_CONSECUTIVE_FAILURES:
+            self._disabled_strategies.add(strategy_id)
+            logger.error(
+                f"🚫 전략 '{strategy_id}'이(가) {count}회 연속 실패하여 자동 비활성화되었습니다"
+            )
+            pg_listener.emit_strategy(
+                payload={
+                    "event_type": "strategy_disabled",
+                    "strategy_id": strategy_id,
+                    "message": f"전략이 {count}회 연속 실패하여 비활성화되었습니다.",
+                    "error_code": "STRATEGY_AUTO_DISABLED",
+                    "error_data": {
+                        "consecutive_failures": count,
+                        "max_allowed": self.MAX_CONSECUTIVE_FAILURES,
+                    },
+                }
+            )
+            return True
+        else:
+            logger.warning(
+                f"⚠️ 전략 '{strategy_id}' 실패 ({count}/{self.MAX_CONSECUTIVE_FAILURES})"
+            )
+            return False
+
+    def _is_strategy_disabled(self, strategy_id: str) -> bool:
+        """Check if a strategy has been disabled due to consecutive failures.
+
+        EN:
+            Returns True if the strategy was previously disabled.
+
+        KR:
+            전략이 이전에 비활성화되었으면 True를 반환합니다.
+        """
+        return strategy_id in self._disabled_strategies
 
     def _normalize_perf_thresholds(self, raw_thresholds: Optional[Dict[str, Any]]) -> Dict[str, float]:
         limits: Dict[str, float] = {}
@@ -122,7 +197,7 @@ class SystemExecutor:
             try:
                 limits[key] = float(value)
             except (TypeError, ValueError):
-                system_logger.warning(
+                logger.warning(
                     f"퍼포먼스 임계치 '{key}' 값을 숫자로 변환할 수 없어 무시합니다: {value}"
                 )
         return limits
@@ -131,7 +206,7 @@ class SystemExecutor:
         requested_mode = str(settings.get("dry_run_mode", "live") or "live").lower()
         if requested_mode not in {"live", "guarded_live", "test"}:
             if requested_mode:
-                system_logger.warning(
+                logger.warning(
                     f"알 수 없는 dry_run_mode='{requested_mode}' 값을 감지해 live 모드로 대체합니다"
                 )
             requested_mode = "live"
@@ -152,8 +227,10 @@ class SystemExecutor:
         perf_stats: Dict[str, Any],
         status: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
+        event_type: str = "perf_snapshot",
     ) -> None:
         payload: Dict[str, Any] = {
+            "event_type": event_type,
             "context": context,
             "stats": perf_stats,
         }
@@ -199,6 +276,7 @@ class SystemExecutor:
                 perf_stats=perf_stats,
                 status="throttled",
                 details=details,
+                event_type="perf_exceeded",
             )
             await self.stop()
             raise PerformanceExceededException(data=details)
@@ -206,6 +284,7 @@ class SystemExecutor:
         self._emit_performance_payload(
             context=f"strategy:{strategy_id}",
             perf_stats=perf_stats,
+            event_type="perf_snapshot",
         )
 
     def _promote_from_dry_run(self, perf_stats: Dict[str, Any]) -> None:
@@ -216,7 +295,7 @@ class SystemExecutor:
 
         self._pending_dry_run_promotion = False
         self._dry_run_promotion_sent = True
-        system_logger.info(
+        logger.info(
             f"시스템 {self._current_system_id}: 드라이런이 성공적으로 완료되어 live 모드로 승격합니다"
         )
         configure_fn = getattr(self.buy_sell_executor, "configure_execution_mode", None)
@@ -228,6 +307,7 @@ class SystemExecutor:
             perf_stats=perf_stats,
             status="safe_to_live",
             details={"previous_mode": "test"},
+            event_type="mode_promoted",
         )
 
     def _format_order_types(self, order_types: Union[List[OrderType], OrderType]) -> str:
@@ -296,7 +376,7 @@ class SystemExecutor:
         symbol_count = len(res_symbols_from_conditions)
 
         if any(ot in ["new_buy", "new_sell"] for ot in order_types):
-            trade_logger.info(
+            logger.info(
                 f"주문 전략 {order_id}의 {symbol_count}개 종목 신규 주문을 위한 분석에 들어갑니다."
             )
             await self.buy_sell_executor.new_order_execute(
@@ -314,7 +394,7 @@ class SystemExecutor:
                 order_id=order_id,
             )
         elif any(ot in ["cancel_buy", "cancel_sell"] for ot in order_types):
-            trade_logger.info(
+            logger.info(
                 f"주문 전략 {order_id}의 {symbol_count}개 종목에 취소 주문 요청합니다."
             )
             await self.buy_sell_executor.cancel_order_execute(
@@ -324,7 +404,7 @@ class SystemExecutor:
                 order_id=order_id,
             )
         else:
-            trade_logger.warning(
+            logger.warning(
                 f"주문 전략 {order_id}에서 지원되지 않는 주문 유형({order_type_label})이라 실행을 건너뜁니다"
             )
 
@@ -372,7 +452,7 @@ class SystemExecutor:
             start_tm = datetime_time(*start_parts)
             end_tm = datetime_time(*end_parts)
         except Exception:
-            system_logger.error(f"order_time 시간 형식이 잘못되었습니다: start={start_s} end={end_s}")
+            logger.error(f"order_time 시간 형식이 잘못되었습니다: start={start_s} end={end_s}")
             return None
 
         days_list = ot.get("days", ["mon", "tue", "wed", "thu", "fri"]) or ["mon", "tue", "wed", "thu", "fri"]
@@ -387,7 +467,7 @@ class SystemExecutor:
         try:
             tz = ZoneInfo(tz_name)
         except Exception:
-            system_logger.warning(f"주문에 지정된 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
+            logger.warning(f"주문에 지정된 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
             tz = ZoneInfo("UTC")
 
         behavior = ot.get("behavior", "defer")
@@ -578,7 +658,7 @@ class SystemExecutor:
         # outside window -> behavior
         behavior = order_range.get("behavior", "defer")
         if behavior == "skip":
-            trade_logger.warning(
+            logger.warning(
                 f"주문 '{strategy_order_id}'이 시간 조건을 벗어나 동작=skip 설정에 따라 건너뜁니다 ({order_type_label})"
             )
             return False
@@ -586,7 +666,7 @@ class SystemExecutor:
         # defer: schedule at next window start (subject to max_delay_seconds)
         next_start = self._next_window_start(now, order_range["start"], order_range["days"])
         if not next_start:
-            trade_logger.warning(
+            logger.warning(
                 f"주문 '{strategy_order_id}'에 대해 다음 실행 시간 창을 계산할 수 없어 건너뜁니다 ({order_type_label})"
             )
             return False
@@ -594,18 +674,31 @@ class SystemExecutor:
         # compute delay and check max_delay_seconds
         delay = (next_start - now).total_seconds()
         if delay > order_range.get("max_delay_seconds", 86400):
-            trade_logger.warning(
+            logger.warning(
                 f"주문 '{strategy_order_id}'의 지연 시간 {delay}s가 허용치(max_delay_seconds)를 초과하여 건너뜁니다 ({order_type_label})"
             )
             return False
 
         async def _scheduled_exec(delay, res_symbols_from_conditions, trade, order_id, when, tz):
-            # wait until scheduled time
+            # 거래 시간대 대기 실시간 표시
+            symbol_list = [s.get("symbol", "N/A") for s in res_symbols_from_conditions[:3]]
+            symbol_str = ", ".join(symbol_list)
+            if len(res_symbols_from_conditions) > 3:
+                symbol_str += f" 외 {len(res_symbols_from_conditions) - 3}개"
+            
+            start_time_str = order_range["start"].strftime("%H:%M:%S") if order_range["start"] else "N/A"
+            end_time_str = order_range["end"].strftime("%H:%M:%S") if order_range["end"] else "N/A"
+            tz_str = str(order_range.get("tz", "UTC"))
+            
+            logger.info(
+                f"⏳ 거래 시간대 대기 중: {symbol_str}, "
+                f"시간대: {start_time_str}~{end_time_str} ({tz_str})"
+            )
             await asyncio.sleep(delay)
 
             await self._execute_trade(system, res_symbols_from_conditions, trade, order_id, order_types)
 
-        trade_logger.info(
+        logger.info(
             f"⏳ {strategy_order_id}: {order_type_label} 주문을 {next_start.isoformat()} ({order_range['tz']}) 실행으로 예약했습니다"
         )
         await _scheduled_exec(delay, res_symbols_from_conditions, trade, strategy_order_id, next_start, order_range["tz"])
@@ -643,13 +736,13 @@ class SystemExecutor:
                 KR: 로깅용 실행 인덱스(임의 실행 시 0).
         """
         strategy_id = strategy.get("id", "<unknown>")
-        strategy_logger.info(f"\n\n\n🚀🚀🚀 전략 {strategy_id}의 {cnt}번째 실행을 시작합니다 🚀🚀🚀\n\n")
+        logger.info(f"\n\n\n🚀🚀🚀 전략 {strategy_id}의 {cnt}번째 실행을 시작합니다 🚀🚀🚀\n\n")
 
         # Performance monitoring context
         with ExecutionTimer(self.perf_monitor) as timer:
             # conditions = strategy.get("conditions", [])
             # if not conditions:
-            #     strategy_logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
+            #     logger.warning(f"⚪️ {strategy_id}: 조건이 없어 주문을 건너뜁니다")
             #     return
 
             # 조건 계산 결과값 종목들 반환
@@ -659,7 +752,7 @@ class SystemExecutor:
                 success = len(res_symbols_from_conditions) > 0
 
             if not success:
-                strategy_logger.info(f"전략 {strategy_id}을 통과한 종목이 없어 주문을 건너뜁니다")
+                logger.info(f"전략 {strategy_id}을 통과한 종목이 없어 주문을 건너뜁니다")
                 # Even if skipped, we log performance up to this point
             else:
                 # 전략 계산 통과됐으면 매수/매도 진행
@@ -682,11 +775,11 @@ class SystemExecutor:
                         order_types = await self.plugin_resolver.get_order_types(condition_id)
 
                     if not condition_id:
-                        condition_logger.warning(f"주문 '{trade.get('order_id')}'에 condition_id가 없습니다.")
+                        logger.warning(f"주문 '{trade.get('order_id')}'에 condition_id가 없습니다.")
                         continue
 
                     if not order_types:
-                        condition_logger.warning(f"condition_id '{condition_id}'에 대한 주문 유형을 알 수 없어 건너뜁니다")
+                        logger.warning(f"condition_id '{condition_id}'에 대한 주문 유형을 알 수 없어 건너뜁니다")
                         continue
 
                     m_res_symbols_from_conditions = list(res_symbols_from_conditions)
@@ -739,14 +832,14 @@ class SystemExecutor:
             tz_name = strategy.get("timezone", "UTC")
 
             if not cron_expr:
-                strategy_logger.info(f"🕐 {strategy_id}: 스케줄이 없어 한 번만 실행합니다")
+                logger.info(f"🕐 {strategy_id}: 스케줄이 없어 한 번만 실행합니다")
                 try:
                     await self._run_once_execute(system=system, strategy=strategy)
                 except BasicException as exc:
                     pg_listener.emit_exception(exc)
                     raise
                 except Exception as exc:
-                    strategy_logger.exception(
+                    logger.exception(
                         f"{strategy_id}: 단일 실행 중 예외 발생"
                     )
                     strategy_exc = StrategyExecutionException(
@@ -761,7 +854,7 @@ class SystemExecutor:
             tz = ZoneInfo(tz_name)
             tz_label = getattr(tz, "key", str(tz))
         except Exception:
-            strategy_logger.warning(f"{strategy_id}: 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
+            logger.warning(f"{strategy_id}: 시간대 '{tz_name}'가 유효하지 않아 UTC로 대체합니다")
             tz = ZoneInfo("UTC")
             tz_label = getattr(tz, "key", str(tz))
 
@@ -772,7 +865,7 @@ class SystemExecutor:
                 pg_listener.emit_exception(exc)
                 raise
             except Exception as exc:
-                strategy_logger.exception(
+                logger.exception(
                     f"{strategy_id}: 시작 즉시 실행 중 예외 발생"
                 )
                 strategy_exc = StrategyExecutionException(
@@ -790,56 +883,92 @@ class SystemExecutor:
 
             try:
                 if not valid:
-                    strategy_logger.error(f"{strategy_id}: cron 표현식 '{cron_expr}'이 잘못되었습니다")
+                    logger.error(f"{strategy_id}: cron 표현식 '{cron_expr}'이 잘못되었습니다")
                     raise InvalidCronExpressionException(
                         message=f"Invalid cron expression: {cron_expr}",
                         data={"strategy_id": strategy_id},
                     )
             except InvalidCronExpressionException as exc:
-                strategy_logger.error(f"{strategy_id}: cron 예외 발생 - {exc}")
+                logger.error(f"{strategy_id}: cron 예외 발생 - {exc}")
                 pg_listener.emit_exception(exc)
                 raise
 
             cnt = 0
             itr = croniter(cron_expr, datetime.now(tz), second_at_beginning=True)
             while cnt < count and self.running:
+                # 전략이 비활성화된 경우 스킵
+                if self._is_strategy_disabled(strategy_id):
+                    logger.warning(
+                        f"🚫 전략 '{strategy_id}'이(가) 비활성화되어 실행을 건너뜁니다."
+                    )
+                    break
+
                 next_dt = itr.get_next(datetime)
                 now = datetime.now(tz)
                 delay = (next_dt - now).total_seconds()
                 if delay < 0:
                     delay = 0
 
-                strategy_logger.debug(
+                logger.debug(
                     f"전략 {strategy_id}의 다음 {cnt + 1}번째의 실행 시간은 {next_dt.isoformat()} ({tz_label})입니다."
                 )
 
-                await asyncio.sleep(delay)
+                # 스케줄 대기 로그
+                logger.info(
+                    f"⏳ 전략 {strategy_id}: 다음 실행까지 대기 중 ({next_dt.isoformat()} {tz_label})"
+                )
+                try:
+                    await asyncio.sleep(delay)
+                finally:
+                    pass
                 if not self.running:
                     break
 
                 try:
+                    # 전략 실행 시작
+                    logger.info(f"▶️ 전략 {strategy_id}: 실행 시작")
                     await self._run_once_execute(
                         system=system,
                         strategy=strategy,
                         cnt=cnt+1
                     )
+                    # 성공 시 완료 로그 및 실패 카운터 초기화
+                    logger.info(f"✅ 전략 {strategy_id}: 실행 완료")
+                    self._record_strategy_success(strategy_id)
                 except BasicException as exc:
+                    logger.error(f"❌ 전략 {strategy_id}: 실행 실패 - {exc}")
                     pg_listener.emit_exception(exc)
-                    raise
+                    # 전략 레벨 에러는 해당 전략만 스킵하고 다음 스케줄에 재시도
+                    severity = getattr(exc, "severity", "strategy")
+                    if severity == "fatal":
+                        raise
+                    # 연속 실패 추적
+                    should_disable = self._record_strategy_failure(strategy_id)
+                    if should_disable:
+                        break  # 비활성화되면 루프 종료
+                    # strategy 레벨은 다음 스케줄에 재시도
+                    cnt += 1
+                    continue
                 except Exception as exc:
-                    strategy_logger.exception(
+                    logger.exception(
                         f"{strategy_id}: 실행 중 예외 발생"
                     )
+                    logger.error(f"❌ 전략 {strategy_id}: 실행 실패 - {exc}")
                     strategy_exc = StrategyExecutionException(
                         message=f"전략 '{strategy_id}' 실행 중 오류가 발생했습니다.",
                         data={"strategy_id": strategy_id, "details": str(exc)},
                     )
                     pg_listener.emit_exception(strategy_exc)
-                    raise strategy_exc
+                    # 연속 실패 추적 및 다음 스케줄에 재시도
+                    should_disable = self._record_strategy_failure(strategy_id)
+                    if should_disable:
+                        break  # 비활성화되면 루프 종료
+                    cnt += 1
+                    continue
 
                 cnt += 1
 
-            strategy_logger.info(f"⏹️ {strategy_id}: cron 실행이 종료되었습니다 (총 {cnt}회)")
+            logger.info(f"⏹️ {strategy_id}: cron 실행이 종료되었습니다 (총 {cnt}회)")
 
         task = asyncio.create_task(run_cron())
         self.tasks.append(task)
@@ -847,7 +976,7 @@ class SystemExecutor:
         try:
             await task
         except asyncio.CancelledError:
-            strategy_logger.debug(f"전략 {strategy_id}의 스케줄이 강제 취소되었습니다.")
+            logger.debug(f"전략 {strategy_id}의 스케줄이 강제 취소되었습니다.")
             raise
 
     async def execute_system(self, system: SystemType):
@@ -877,11 +1006,19 @@ class SystemExecutor:
         self.running = True
         self.plugin_resolver.reset_error_tracking()
 
-        system_logger.info(
+        # 캐시 관련 상품 타입 확인
+        product = system.get("securities", {}).get("product", "overseas_stock")
+
+        logger.info(
             f"👋 시스템 {system_id}에서 {len(strategies)}개 전략 실행을 시작합니다 (mode={self.execution_mode})"
         )
 
         try:
+            # 캐시 워밍업: Tracker 초기화 및 시장 데이터 캐시 설정
+            logger.info(f"📦 캐시 워밍업 시작: {product}")
+            await self._warmup_cache(system)
+            logger.info(f"✅ 캐시 워밍업 완료: {product}")
+
             real_order_task = asyncio.create_task(
                 self.buy_sell_executor.real_order_executor.real_order_websockets(
                     system=system
@@ -889,7 +1026,7 @@ class SystemExecutor:
             )
             self.tasks.append(real_order_task)
 
-            # 전략 계산
+            # 전략 계산 - 통합 테이블 컨텍스트 내에서 병렬 실행
             concurrent_tasks = []
             for strategy in strategies:
                 t = asyncio.create_task(
@@ -903,22 +1040,41 @@ class SystemExecutor:
                 self.tasks.append(t)
 
             if concurrent_tasks:
+                # 모든 전략을 병렬 실행
                 results = await asyncio.gather(*concurrent_tasks, return_exceptions=True)
+                
                 for idx, result in enumerate(results):
                     if isinstance(result, asyncio.CancelledError):
-                        system_logger.warning(
+                        logger.warning(
                             f"{system_id}: 전략 태스크 {idx + 1}이(가) 취소되었습니다"
                         )
                         continue
                     if isinstance(result, Exception):
                         strategy_meta = strategies[idx] if idx < len(strategies) else {}
                         strategy_key = strategy_meta.get("id", f"strategy_{idx + 1}")
-                        system_logger.error(
+                        logger.error(
                             f"{system_id}: 전략 '{strategy_key}' 태스크에서 예외 발생 -> {result}"
                         )
-                        if isinstance(result, PerformanceExceededException):
+
+                        # severity 기반 처리
+                        severity = getattr(result, "severity", "strategy")
+
+                        # fatal 에러는 전체 시스템 종료
+                        if severity == "fatal" or isinstance(result, PerformanceExceededException):
+                            if not getattr(result, "_pg_error_emitted", False):
+                                if isinstance(result, BasicException):
+                                    pg_listener.emit_exception(result)
+                                else:
+                                    wrapped_exc = SystemException(
+                                        message=f"치명적 오류 발생: {result}",
+                                        data={"details": str(result)},
+                                        severity="fatal",
+                                    )
+                                    pg_listener.emit_exception(wrapped_exc)
                             await self.stop()
                             raise result
+
+                        # strategy 레벨 에러는 해당 전략만 기록하고 계속
                         if getattr(result, "_pg_error_emitted", False):
                             continue
                         if isinstance(result, BasicException):
@@ -932,18 +1088,18 @@ class SystemExecutor:
                                 },
                             )
                             pg_listener.emit_exception(wrapped_exc)
-                system_logger.info(f"✅ {system_id}: 모든 전략 태스크가 완료되었습니다")
+                logger.info(f"✅ {system_id}: 모든 전략 태스크가 완료되었습니다")
             else:
-                system_logger.info(f"ℹ️ {system_id}: 실행할 전략이 구성되어 있지 않습니다")
+                logger.info(f"ℹ️ {system_id}: 실행할 전략이 구성되어 있지 않습니다")
 
         except BasicException as exc:
-            system_logger.error(f"{system_id}: 실행 중 오류 발생 -> {exc}")
+            logger.error(f"{system_id}: 실행 중 오류 발생 -> {exc}")
             if not getattr(exc, "_pg_error_emitted", False):
                 pg_listener.emit_exception(exc)
             await self.stop()
             raise
         except Exception as exc:
-            system_logger.exception(f"{system_id}: 실행 중 처리되지 않은 오류 발생")
+            logger.exception(f"{system_id}: 실행 중 처리되지 않은 오류 발생")
             system_exc = SystemException(
                 message=f"시스템 '{system_id}' 실행 중 처리되지 않은 오류가 발생했습니다.",
                 code="SYSTEM_EXECUTION_ERROR",
@@ -953,22 +1109,29 @@ class SystemExecutor:
             await self.stop()
             raise system_exc from exc
         finally:
-            system_logger.debug(f"🏁 자동화매매 {system_id}의 실행이 종료되었습니다")
+            logger.debug(f"🏁 자동화매매 {system_id}의 실행이 종료되었습니다")
 
     async def stop(self):
         """Cancel outstanding tasks and reset the executor state.
 
         EN:
-            Signals all running tasks to stop, awaits their completion, and clears
-            internal bookkeeping so the executor can be re-used safely.
+            Signals all running tasks to stop, awaits their completion, stops
+            background cache refresh and AccountTracker, and clears internal
+            bookkeeping so the executor can be re-used safely.
 
         KR:
-            실행 중인 태스크에 중지 신호를 보내고 완료를 기다린 뒤 내부 상태를
-            초기화하여 실행기를 안전하게 재사용할 수 있도록 합니다.
+            실행 중인 태스크에 중지 신호를 보내고 완료를 기다린 뒤, 백그라운드
+            캐시 갱신과 AccountTracker를 중지하고 내부 상태를 초기화하여 실행기를
+            안전하게 재사용할 수 있도록 합니다.
         """
         self.running = False
+
+        # DataCacheManager 중지 (AccountTracker + 시장 캐시)
+        if self._cache_manager and self._cache_manager._is_initialized:
+            await self._cache_manager.stop()
+
         pending = sum(1 for task in self.tasks if not task.done())
-        system_logger.debug(f"🛑 진행 중인 작업 {pending}을 중지 요청으로 강제 취소합니다")
+        logger.debug(f"🛑 진행 중인 작업 {pending}을 중지 요청으로 강제 취소합니다")
         for task in self.tasks:
             if not task.done():
                 task.cancel()
@@ -978,3 +1141,52 @@ class SystemExecutor:
 
         # EN: Ensures no dangling tasks remain when the executor halts.
         # KR: 실행기가 중지될 때 미완료 태스크가 남지 않도록 정리합니다.
+
+    async def _warmup_cache(self, system: SystemType) -> None:
+        """Pre-populate the cache before strategy execution begins.
+
+        EN:
+            Initializes the DataCacheManager with AccountTracker for real-time
+            position/balance tracking. Raises RuntimeError if Tracker
+            initialization fails.
+
+        KR:
+            실시간 포지션/잔고 추적을 위해 AccountTracker를 포함한 DataCacheManager를
+            초기화합니다. Tracker 초기화 실패 시 RuntimeError를 발생시킵니다.
+        """
+        from programgarden_finance import LS
+
+        securities = system.get("securities", {})
+        company = securities.get("company", "ls")
+        product = securities.get("product", "overseas_stock")
+        paper_trading = bool(securities.get("paper_trading", False))
+
+        if company != "ls":
+            return
+
+        ls = LS.get_instance()
+        if not ls.is_logged_in():
+            await ls.async_login(
+                appkey=securities.get("appkey", None),
+                appsecretkey=securities.get("appsecretkey", None),
+                paper_trading=paper_trading,
+            )
+
+        # DataCacheManager 초기화 (AccountTracker 포함)
+        await self._cache_manager.initialize(
+            ls=ls,
+            product=product,
+            paper_trading=paper_trading
+        )
+
+        # 시장 종목 fetch 함수 등록 (1시간 캐싱)
+        if product == "overseas_stock":
+            self._cache_manager.market_cache.register_fetch_function(
+                f"market_symbols_{product}",
+                lambda: self.symbol_provider.get_stock_market_symbols(ls),
+            )
+        elif product == "overseas_futures":
+            self._cache_manager.market_cache.register_fetch_function(
+                f"market_symbols_{product}",
+                lambda: self.symbol_provider.get_future_market_symbols(ls),
+            )

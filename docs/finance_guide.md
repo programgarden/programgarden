@@ -76,7 +76,7 @@ futures.real()
 
 - **동기/비동기 세션**: `ls.login`은 동기, `await ls.async_login(...)`은 비동기 로그인입니다. 싱글톤 인스턴스가 필요하면 `LS.get_instance()`를 사용할 수 있습니다.
 - **토큰 발급**: `programgarden_finance.ls.oauth.generate_token` 모듈은 OAuth 토큰 발급·갱신을 지원합니다.
-- **로깅**: `programgarden_core.pg_logger`와 `pg_log`를 활용하면 디버깅 로그를 일관되게 출력할 수 있습니다.
+- **로깅**: 표준 `logging` 모듈을 사용하면 디버깅 로그를 일관되게 출력할 수 있습니다.
 
 ---
 
@@ -108,7 +108,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from programgarden_finance import LS
-from programgarden_core import pg_logger
+import logging
 
 load_dotenv()
 
@@ -119,7 +119,7 @@ async def ensure_login():
         appsecretkey=os.getenv("APPSECRET"),
     )
     if not success:
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return None
     return ls
 
@@ -133,14 +133,14 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from programgarden_finance import LS, g3101
-from programgarden_core import pg_logger
+import logging
 
 load_dotenv()
 
 async def get_stock_price():
     ls = LS()
     if not ls.login(appkey=os.getenv("APPKEY"), appsecretkey=os.getenv("APPSECRET")):
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return
 
     response = ls.overseas_stock().market().현재가조회(
@@ -152,7 +152,7 @@ async def get_stock_price():
         )
     )
     result = await response.req_async()
-    pg_logger.debug(f"TSLA 현재가: {result}")
+    logging.debug(f"TSLA 현재가: {result}")
 
 asyncio.run(get_stock_price())
 ```
@@ -164,14 +164,14 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from programgarden_finance import LS
-from programgarden_core import pg_logger
+import logging
 
 load_dotenv()
 
 async def subscribe_realtime():
     ls = LS()
     if not ls.login(appkey=os.getenv("APPKEY"), appsecretkey=os.getenv("APPSECRET")):
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return
 
     def on_message(resp):
@@ -196,7 +196,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from programgarden_finance import LS, o3101
-from programgarden_core import pg_logger
+import logging
 
 load_dotenv()
 
@@ -206,7 +206,7 @@ async def get_futures_master():
         appkey=os.getenv("APPKEY_FUTURE"),
         appsecretkey=os.getenv("APPSECRET_FUTURE"),
     ):
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return
 
     result = ls.overseas_futureoption().market().해외선물마스터조회(
@@ -230,15 +230,15 @@ import logging
 import os
 from dotenv import load_dotenv
 from programgarden_finance import LS, g3204
-from programgarden_core import pg_logger, pg_log
+import logging
 
 load_dotenv()
 
 async def fetch_tsla_chart():
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
     ls = LS.get_instance()
     if not await ls.async_login(os.getenv("APPKEY"), os.getenv("APPSECRET")):
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return
 
     chart = ls.overseas_stock().차트().차트일주월년별조회(
@@ -258,7 +258,7 @@ async def fetch_tsla_chart():
 
     asyncio.create_task(chart.req_async())
     await chart.occurs_req_async(
-        callback=lambda resp, status: pg_logger.debug(
+        callback=lambda resp, status: logging.debug(
             f"응답 상태: {status}, 건수: {len(resp.block1) if resp and hasattr(resp, 'block1') else 0}",
         ),
     )
@@ -273,14 +273,14 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from programgarden_finance import LS, AS0
-from programgarden_core import pg_logger
+import logging
 
 load_dotenv()
 
 async def stream_real_time():
     ls = LS.get_instance()
     if not ls.login(os.getenv("APPKEY"), os.getenv("APPSECRET")):
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return
 
     def on_message(resp: AS0.AS0RealResponse):
@@ -299,6 +299,71 @@ async def stream_real_time():
 
 asyncio.run(stream_real_time())
 ```
+
+---
+
+### Extension: 계좌 추적기
+
+보유종목, 예수금, 미체결 주문을 실시간으로 추적하고 손익을 자동 계산합니다. SEC Fee, TAF, 국가별 거래세가 자동 반영되며, 거래소·증권사별로 수수료율이 다를 수 있어 직접 설정도 가능합니다.
+
+```mermaid
+flowchart LR
+    subgraph 초기화
+        A[start] --> B[API 조회]
+        B --> C[보유종목/예수금/미체결]
+    end
+
+    subgraph 실시간 추적
+        D[GSC 틱 수신] --> E[현재가 업데이트]
+        E --> F[손익 재계산]
+        F --> G[콜백 호출]
+    end
+
+    subgraph 주기 갱신
+        H[1분 타이머] --> B
+    end
+
+    C --> D
+    G --> H
+```
+
+```python
+import asyncio
+import os
+from dotenv import load_dotenv
+from programgarden_finance import LS
+from decimal import Decimal
+
+load_dotenv()
+
+async def track_account():
+    ls = LS()
+    ls.login(appkey=os.getenv("APPKEY"), appsecretkey=os.getenv("APPSECRET"))
+
+    accno = ls.overseas_stock().accno()
+    real = ls.overseas_stock().real()
+    await real.connect()
+
+    # 수수료/세금 직접 설정 (선택사항)
+    tracker = accno.account_tracker(
+        real_client=real,
+        commission_rates={"USD": Decimal("0.0025"), "DEFAULT": Decimal("0.0025")},
+        tax_rates={"HK": Decimal("0.001"), "CN": Decimal("0.001"), "DEFAULT": Decimal("0")},
+    )
+    tracker.on_position_change(lambda positions: print(f"보유종목: {positions}"))
+    tracker.on_balance_change(lambda balances: print(f"예수금: {balances}"))
+    tracker.on_open_orders_change(lambda orders: print(f"미체결: {orders}"))
+
+    await tracker.start()
+    try:
+        await asyncio.sleep(3600)
+    finally:
+        await tracker.stop()
+
+asyncio.run(track_account())
+```
+
+해외 선물·옵션도 `ls.overseas_futureoption().accno().account_tracker()`로 동일하게 사용합니다.
 
 ---
 
@@ -393,7 +458,7 @@ python src/finance/example/overseas_futureoption/run_o3101.py
 python src/finance/example/overseas_stock/real_GSC.py
 ```
 
-실행 전 `pg_log(logging.DEBUG)`로 로그 레벨을 조정하면 요청과 응답을 쉽게 추적할 수 있습니다.
+실행 전 `logging.basicConfig(level=logging.DEBUG)`로 로그 레벨을 조정하면 요청과 응답을 쉽게 추적할 수 있습니다.
 
 ---
 

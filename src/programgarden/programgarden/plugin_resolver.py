@@ -12,6 +12,7 @@ KR:
         :mod:`programgarden.pg_listener`를 통해 구조화된 오류를 전달합니다.
 """
 
+import logging
 from typing import Dict, List, Optional, Union
 import inspect
 from programgarden_core import (
@@ -20,7 +21,6 @@ from programgarden_core import (
     BaseStrategyConditionOverseasFutures,
     BaseStrategyConditionResponseOverseasStockType,
     BaseStrategyConditionResponseOverseasFuturesType,
-    plugin_logger,
     SymbolInfoOverseasStock,
     SymbolInfoOverseasFutures,
     OrderType,
@@ -28,6 +28,8 @@ from programgarden_core import (
     NonTradedSymbol, OrderStrategyType,
     DpsTyped,
 )
+
+logger = logging.getLogger("programgarden.plugin_resolver")
 from programgarden_core import (
     BaseOrderOverseasStock,
     BaseOrderOverseasFutures,
@@ -188,7 +190,7 @@ class PluginResolver:
                 self._plugin_cache[condition_id] = exported_cls
                 return exported_cls
         except Exception as exc:
-            plugin_logger.debug(f"programgarden_community에서 '{condition_id}' 클래스를 찾는 중 오류 발생: {exc}")
+            logger.debug(f"programgarden_community에서 '{condition_id}' 클래스를 찾는 중 오류 발생: {exc}")
 
         return None
 
@@ -270,7 +272,7 @@ class PluginResolver:
         cls = await self._resolve(ident)
 
         if cls is None:
-            plugin_logger.error(f"{ident}: 조건 클래스를 찾을 수 없습니다")
+            logger.error(f"{ident}: 조건 클래스를 찾을 수 없습니다")
             raise exceptions.NotExistConditionException(
                 message=f"Condition class '{ident}' not found"
             )
@@ -292,17 +294,17 @@ class PluginResolver:
                 )
 
             if not isinstance(community_instance, (BaseOrderOverseasStock, BaseOrderOverseasFutures)):
-                plugin_logger.error(
+                logger.error(
                     f"{ident}: 주문 플러그인 타입이 올바르지 않습니다"
                 )
                 raise TypeError(f"{__class__.__name__}: Condition class '{ident}' is not a subclass of BaseOrderOverseasStock/BaseOrderOverseasFutures")
 
             # Plugins expose an async `execute` method that returns the symbols to act on.
-            plugin_logger.debug(
+            logger.debug(
                 f"{ident}: 매매 플러그인을 실행합니다 (입력 종목 {len(available_symbols or [])}개)"
             )
             result = await community_instance.execute()
-            plugin_logger.debug(
+            logger.debug(
                 f"{ident}: 플러그인이 {len(result or []) if result else 0}개 종목을 반환했습니다"
             )
 
@@ -310,7 +312,7 @@ class PluginResolver:
 
         except Exception as exc:
             # Log the full traceback to aid external developers debugging plugin errors.
-            plugin_logger.exception(f"{ident}: 매매 플러그인 실행 중 오류가 발생했습니다")
+            logger.exception(f"{ident}: 매매 플러그인 실행 중 오류가 발생했습니다")
             if ident not in self._reported_order_errors:
                 order_exc = exceptions.OrderExecutionException(
                     message=f"주문 플러그인 '{ident}' 실행 중 오류가 발생했습니다.",
@@ -320,7 +322,7 @@ class PluginResolver:
                         "details": str(exc),
                     },
                 )
-                pg_listener.emit_exception(order_exc)
+                pg_listener.emit_exception(order_exc, domain="order")
                 self._reported_order_errors.add(ident)
             return None, None
 
@@ -346,7 +348,7 @@ class PluginResolver:
         cls = await self._resolve(condition_id)
 
         if cls is None:
-            plugin_logger.error(f"{condition_id}: 조건 클래스를 찾을 수 없습니다")
+            logger.error(f"{condition_id}: 조건 클래스를 찾을 수 없습니다")
             raise exceptions.NotExistConditionException(
                 message=f"Condition class '{condition_id}' not found"
             )
@@ -359,13 +361,13 @@ class PluginResolver:
                 instance._set_system_id(system_id)
 
             if not isinstance(instance, BaseStrategyCondition):
-                plugin_logger.error(
+                logger.error(
                     f"{condition_id}: BaseStrategyCondition을 상속하지 않은 클래스입니다"
                 )
                 raise exceptions.NotExistConditionException(
                     message=f"Condition class '{condition_id}' is not a subclass of BaseStrategyCondition"
                 )
-            plugin_logger.debug(
+            logger.debug(
                 f"{condition_id}: 전략 조건을 실행합니다."
             )
             result = await instance.execute()
@@ -373,21 +375,15 @@ class PluginResolver:
             return result
 
         except exceptions.NotExistConditionException as e:
-            plugin_logger.error(f"{condition_id}: 조건이 존재하지 않습니다 -> {e}")
+            logger.error(f"{condition_id}: 조건이 존재하지 않습니다 -> {e}")
             if condition_id not in self._reported_condition_errors:
-                pg_listener.emit_exception(
-                    e,
-                    data={
-                        "condition_id": condition_id,
-                        "system_id": system_id,
-                    },
-                )
+                pg_listener.emit_exception(e, domain="strategy")
                 self._reported_condition_errors.add(condition_id)
 
             return self._build_failure_response(symbol_info, condition_id)
 
         except Exception as exc:
-            plugin_logger.exception(f"{condition_id}: 조건 실행 중 처리되지 않은 오류가 발생했습니다")
+            logger.exception(f"{condition_id}: 조건 실행 중 처리되지 않은 오류가 발생했습니다")
             if condition_id not in self._reported_condition_errors:
                 cond_exc = exceptions.ConditionExecutionException(
                     message=f"조건 '{condition_id}' 실행 중 오류가 발생했습니다.",
@@ -397,7 +393,7 @@ class PluginResolver:
                         "details": str(exc),
                     },
                 )
-                pg_listener.emit_exception(cond_exc)
+                pg_listener.emit_exception(cond_exc, domain="strategy")
                 self._reported_condition_errors.add(condition_id)
             return self._build_failure_response(symbol_info, condition_id)
 

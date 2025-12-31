@@ -3,14 +3,15 @@ import os
 from dotenv import load_dotenv
 import asyncio
 from programgarden_finance import LS, o3105
-from programgarden_core import pg_logger, pg_log
+import logging
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 
 async def test_req_o3105():
 
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
     ls = LS()
 
@@ -21,7 +22,7 @@ async def test_req_o3105():
     )
 
     if login_result is False:
-        pg_logger.error("로그인 실패")
+        logger.error("로그인 실패")
         return
 
     req = ls.overseas_futureoption().market().o3105(
@@ -37,7 +38,7 @@ async def test_req_o3105():
     #     await asyncio.sleep(1)
 
     # await req.retry_req_async(
-    #     callback=lambda resp, status: pg_logger.info(f"o3105 요청 상태: {status}, 응답: {resp}"),
+    #     callback=lambda resp, status: logger.info(f"o3105 요청 상태: {status}, 응답: {resp}"),
     #     max_retries=5,
     #     delay=1
     # )

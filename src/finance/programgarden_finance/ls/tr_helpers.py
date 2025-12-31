@@ -1,11 +1,13 @@
 import asyncio
+import logging
 from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Generic
 
 import aiohttp
 
 from programgarden_core.exceptions import TokenNotFoundException
-from programgarden_core.logs import pg_logger
 from programgarden_finance.ls.config import URLS
+
+logger = logging.getLogger("programgarden.ls.tr_helpers")
 from programgarden_finance.ls.status import RequestStatus
 from programgarden_finance.ls.token_manager import TokenManager
 from .tr_base import TRAccnoAbstract
@@ -99,7 +101,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         try:
             return self.execute_sync(self._url, self.request_data, timeout=10)
         except Exception as exc:  # pragma: no cover - propagate error handling to caller
-            pg_logger.error(f"토큰 재발급 후 동기 재시도 실패: {exc}")
+            logger.error(f"토큰 재발급 후 동기 재시도 실패: {exc}")
             return None
 
     async def _retry_after_refresh_async(self, session: aiohttp.ClientSession) -> Optional[Tuple[Optional[object], Optional[dict], Optional[dict]]]:
@@ -115,7 +117,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         try:
             return await self.execute_async_with_session(session, self._url, self.request_data, timeout=10)
         except Exception as exc:  # pragma: no cover - propagate error handling to caller
-            pg_logger.error(f"토큰 재발급 후 비동기 재시도 실패: {exc}")
+            logger.error(f"토큰 재발급 후 비동기 재시도 실패: {exc}")
             return None
 
     def _update_authorization_header(self) -> None:
@@ -137,7 +139,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
                 return result
 
         except Exception as e:
-            pg_logger.error(f"GenericTR 비동기 요청 중 예외: {e}")
+            logger.error(f"GenericTR 비동기 요청 중 예외: {e}")
             return self._response_builder(None, None, None, e)
 
     async def _req_async_with_session(self, session: aiohttp.ClientSession) -> R:
@@ -154,7 +156,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
             return result
 
         except Exception as e:
-            pg_logger.error(f"GenericTR._req_async_with_session 비동기 요청 중 예외: {e}")
+            logger.error(f"GenericTR._req_async_with_session 비동기 요청 중 예외: {e}")
             return self._response_builder(None, None, None, e)
 
     def req(self) -> R:
@@ -166,7 +168,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
             return result
 
         except Exception as e:
-            pg_logger.error(f"GenericTR 동기 요청 중 예외: {e}")
+            logger.error(f"GenericTR 동기 요청 중 예외: {e}")
             return self._response_builder(None, None, None, e)
 
 
@@ -236,7 +238,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
             try:
                 continuation_updater(self.request_data, response)
             except Exception as e:
-                pg_logger.error(f"occurs continuation_updater failed: {e}")
+                logger.error(f"occurs continuation_updater failed: {e}")
                 callback and callback(None, RequestStatus.FAIL)
                 break
 
@@ -275,7 +277,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
                 try:
                     continuation_updater(self.request_data, response)
                 except Exception as e:
-                    pg_logger.error(f"occurs continuation_updater failed: {e}")
+                    logger.error(f"occurs continuation_updater failed: {e}")
                     callback and callback(None, RequestStatus.FAIL)
                     break
 

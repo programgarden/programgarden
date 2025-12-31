@@ -12,7 +12,9 @@ from .blocks import (
 from ....tr_base import TRRequestAbstract, RetryReqAbstract
 from programgarden_finance.ls.status import RequestStatus
 from programgarden_finance.ls.config import URLS
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_futureoption.market.o3106")
 
 
 class TrO3106(TRRequestAbstract, RetryReqAbstract):
@@ -61,12 +63,12 @@ class TrO3106(TRRequestAbstract, RetryReqAbstract):
         error_msg = ""
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"o3106 request failed: {exc}")
+            logger.error(f"o3106 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"o3106 request failed with status: {error_msg}")
+            logger.error(f"o3106 request failed with status: {error_msg}")
 
         result = O3106Response(
             header=header,

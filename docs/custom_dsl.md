@@ -414,7 +414,7 @@ pg.run(system={
 ## 7. 실행, 검증, 디버깅 팁
 - **콜백 활용**: `on_strategies_message`, `on_real_order_message`, `on_error_message`를 이용해 실행 결과를 실시간으로 모니터링하세요.
 - **로컬 샌드박스**: `paper_trading`을 `True`로 두고 LS증권 모의투자 API KEY 이용하여 로직을 검증한 뒤 실거래 키로 전환합니다.
-- **로깅**: `programgarden_core.logs`에 정의된 로거(`condition_logger`, `order_logger`, `system_logger`)를 사용하면 DSL 파이프라인의 각 단계별 상태를 추적할 수 있습니다.
+- **로깅**: 표준 `logging.getLogger(__name__)` 패턴을 사용하면 DSL 파이프라인의 각 단계별 상태를 추적할 수 있습니다.
 - **에러 처리**: 예외 발생 시 `programgarden_core.exceptions`에 정의된 도메인 예외(`ConditionExecutionException`, `NotExistSystemKeyException` 등)를 참고하여 원인을 파악하세요.
 
 ## 8. 가장 유의할 점

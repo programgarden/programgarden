@@ -2,7 +2,8 @@ import logging
 from dotenv import load_dotenv
 import os
 from programgarden_finance import LS, g3102
-from programgarden_core import pg_logger, pg_log
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 
 load_dotenv()
@@ -10,7 +11,7 @@ load_dotenv()
 
 async def test_req_g3102():
 
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
     ls = LS.get_instance()
     login_result = ls.login(
@@ -19,7 +20,7 @@ async def test_req_g3102():
     )
 
     if login_result is False:
-        pg_logger.error("로그인 실패")
+        logger.error("로그인 실패")
         return
 
     m_g3102 = ls.overseas_stock().market().시간대별조회(
@@ -32,7 +33,7 @@ async def test_req_g3102():
         )
     )
     await m_g3102.occurs_req_async(
-        callback=lambda response, status: pg_logger.debug(f"Retrying request: {response.block.cts_seq if response is not None else 'None'}, status: {status}"),
+        callback=lambda response, status: logger.debug(f"Retrying request: {response.block.cts_seq if response is not None else 'None'}, status: {status}"),
     )
 
 if __name__ == "__main__":

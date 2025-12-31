@@ -11,7 +11,9 @@ from .blocks import (
 )
 from ....tr_base import TRRequestAbstract
 from ....config import URLS
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.oauth.generate_token.token")
 
 
 class Token(TRRequestAbstract):
@@ -65,7 +67,7 @@ class Token(TRRequestAbstract):
                     )
 
         except aiohttp.ClientError as e:
-            pg_logger.error(f"Token 요청 실패: {e}")
+            logger.error(f"Token 요청 실패: {e}")
 
             return TokenResponse(
                 header=None,
@@ -74,7 +76,7 @@ class Token(TRRequestAbstract):
             )
 
         except Exception as e:
-            pg_logger.error(f"Token 요청 중 예외 발생: {e}")
+            logger.error(f"Token 요청 중 예외 발생: {e}")
 
             return TokenResponse(
                 header=None,
@@ -113,7 +115,7 @@ class Token(TRRequestAbstract):
             return result
 
         except requests.RequestException as e:
-            pg_logger.error(f"Token 요청 실패: {e}")
+            logger.error(f"Token 요청 실패: {e}")
 
             return TokenResponse(
                 header=None,
@@ -122,7 +124,7 @@ class Token(TRRequestAbstract):
             )
 
         except Exception as e:
-            pg_logger.error(f"Token 요청 중 예외 발생: {e}")
+            logger.error(f"Token 요청 중 예외 발생: {e}")
 
             return TokenResponse(
                 header=None,

@@ -4,34 +4,37 @@ EN:
     Wraps the LS (LS증권) finance client to fetch market, account, and pending
     symbols for overseas stocks and futures. Downstream components use the
     asynchronous :class:`SymbolProvider` to populate strategy universes based
-    on order intent.
+    on order intent. Supports cached data from AccountTracker when available.
 
 KR:
     LS(LS증권) 금융 클라이언트를 감싸 해외 주식/선물의 시장, 보유, 미체결 종목을
     조회합니다. 주문 의도에 따라 전략 우주를 구성할 때 비동기
-    :class:`SymbolProvider`를 활용합니다.
+    :class:`SymbolProvider`를 활용합니다. AccountTracker가 있으면 캐시된 데이터를
+    활용합니다.
 """
 
-from datetime import date, datetime
-from typing import List, Literal, Optional, Union
-from zoneinfo import ZoneInfo
+from __future__ import annotations
 
-import pytz
+from datetime import date, datetime
+import logging
+from typing import TYPE_CHECKING, List, Literal, Optional, Union
+from zoneinfo import ZoneInfo
 
 from programgarden_core import (
     OrderType,
     SecuritiesAccountType,
     SymbolInfoOverseasFutures,
     SymbolInfoOverseasStock,
-    symbol_logger,
 )
+
+if TYPE_CHECKING:
+    from .data_cache_manager import DataCacheManager
+
+logger = logging.getLogger("programgarden.symbols_provider")
 from programgarden_finance import (
     CIDBQ01500,
     CIDBQ01800,
-    COSAQ00102,
-    COSOQ00201,
     LS,
-    g3104,
     g3190,
     o3101,
     o3105,
@@ -44,12 +47,35 @@ class SymbolProvider:
     EN:
         Central entry point for fetching symbols across LS endpoints. Each helper
         method focuses on a specific account or market feed to minimize redundant
-        API calls.
+        API calls. When cache_manager with an active Tracker is set, uses cached
+        data instead of direct API calls.
 
     KR:
         LS 엔드포인트 전반에서 종목을 조회하는 중심 진입점입니다. 각 헬퍼 메서드는
         중복 API 호출을 줄이기 위해 특정 계좌/시장 피드에 집중합니다.
+        Tracker가 활성화된 cache_manager가 설정되면 직접 API 호출 대신 캐시
+        데이터를 사용합니다.
     """
+
+    def __init__(self, cache_manager: Optional[DataCacheManager] = None):
+        """Initialize SymbolProvider with optional cache manager.
+
+        Args:
+            cache_manager (Optional[DataCacheManager]):
+                EN: Cache manager with Tracker support.
+                KR: Tracker 지원 캐시 매니저입니다.
+        """
+        self._cache_manager = cache_manager
+
+    def set_cache_manager(self, cache_manager: DataCacheManager) -> None:
+        """Set cache manager for Tracker-based queries.
+
+        Args:
+            cache_manager (DataCacheManager):
+                EN: Cache manager instance with Tracker support.
+                KR: Tracker 지원 캐시 매니저 인스턴스입니다.
+        """
+        self._cache_manager = cache_manager
 
     async def get_symbols(
         self,
@@ -124,7 +150,7 @@ class SymbolProvider:
                 symbols.extend(await self.get_future_account_symbols(ls))
 
         else:
-            symbol_logger.warning(f"Unsupported product: {configured_product}")
+            logger.warning(f"Unsupported product: {configured_product}")
 
         return symbols
 
@@ -132,45 +158,33 @@ class SymbolProvider:
         """Retrieve overseas stock holdings from the account.
 
         EN:
-            Queries LS account endpoints to collect currently held symbols and
-            enriches them with market metadata.
+            Uses cached Tracker data when available, otherwise queries LS account
+            endpoints to collect currently held symbols.
 
         KR:
-            LS 계좌 엔드포인트를 호출해 보유 중인 종목을 조회하고 시장 메타데이터를
-            결합합니다.
+            Tracker 캐시에서 보유 종목을 조회합니다. Tracker가 초기화되지 않았으면
+            예외가 발생합니다.
         """
-
         holdings: List[SymbolInfoOverseasStock] = []
-        response = await ls.overseas_stock().accno().cosoq00201(
-            COSOQ00201.COSOQ00201InBlock1(
-                RecCnt=1,
-                BaseDt=date.today().strftime("%Y%m%d"),
-                CrcyCode="ALL",
-                AstkBalTpCode="00",
+
+        # Tracker 필수 - 초기화되지 않았으면 예외 발생
+        if not self._cache_manager or not self._cache_manager.has_tracker:
+            raise RuntimeError(
+                "AccountTracker가 초기화되지 않았습니다. "
+                "system_executor._warmup_cache()가 먼저 실행되어야 합니다."
             )
-        ).req_async()
 
-        for block in response.block4:
-            result = await ls.overseas_stock().market().g3104(
-                body=g3104.G3104InBlock(
-                    keysymbol=block.FcurrMktCode + block.ShtnIsuNo.strip(),
-                    exchcd=block.FcurrMktCode,
-                    symbol=block.ShtnIsuNo.strip(),
-                )
-            ).req_async()
-
-            if not result:
-                continue
-
+        positions = self._cache_manager.get_positions()
+        for symbol, pos in positions.items():
+            market_code = getattr(pos, 'market_code', '82')
             holdings.append(
                 SymbolInfoOverseasStock(
-                    symbol=block.ShtnIsuNo.strip(),
-                    exchcd=block.FcurrMktCode,
-                    mcap=result.block.shareprc,
+                    symbol=symbol.strip(),
+                    exchcd=market_code,
+                    mcap=0.0,
                     product_type="overseas_stock",
                 )
             )
-
         return holdings
 
     async def get_stock_market_symbols(self, ls: LS) -> List[SymbolInfoOverseasStock]:
@@ -215,59 +229,35 @@ class SymbolProvider:
         """Retrieve non-traded (open orders) overseas stock symbols.
 
         EN:
-            Pulls pending orders per exchange and resolves them to symbol metadata
-            to support modify/cancel workflows.
+            Uses cached Tracker data when available, otherwise pulls pending orders
+            per exchange and resolves them to symbol metadata.
 
         KR:
-            거래소별 미체결 주문을 조회해 심볼 메타데이터로 변환하여 정정/취소 흐름을
-            지원합니다.
+            Tracker 캐시에서 미체결 주문을 조회합니다. Tracker가 초기화되지 않았으면
+            예외가 발생합니다.
         """
-
         outstanding: List[SymbolInfoOverseasStock] = []
 
-        ny_tz = pytz.timezone("America/New_York")
-        ny_time = datetime.now(ny_tz)
+        # Tracker 필수 - 초기화되지 않았으면 예외 발생
+        if not self._cache_manager or not self._cache_manager.has_tracker:
+            raise RuntimeError(
+                "AccountTracker가 초기화되지 않았습니다. "
+                "system_executor._warmup_cache()가 먼저 실행되어야 합니다."
+            )
 
-        for exchcd in ["81", "82"]:
-            response = await ls.overseas_stock().accno().cosaq00102(
-                COSAQ00102.COSAQ00102InBlock1(
-                    RecCnt=1,
-                    QryTpCode="1",
-                    BkseqTpCode="1",
-                    OrdMktCode=exchcd,
-                    BnsTpCode="0",
-                    IsuNo="",
-                    SrtOrdNo=999999999,
-                    OrdDt=ny_time.strftime("%Y%m%d"),
-                    ExecYn="2",
-                    CrcyCode="USD",
-                    ThdayBnsAppYn="0",
-                    LoanBalHldYn="0",
+        open_orders = self._cache_manager.get_open_orders()
+        for order_no, order in open_orders.items():
+            symbol = getattr(order, 'symbol', '').strip()
+            market_code = getattr(order, 'market_code', '82') if hasattr(order, 'market_code') else '82'
+            outstanding.append(
+                SymbolInfoOverseasStock(
+                    symbol=symbol,
+                    exchcd=market_code,
+                    mcap=0.0,
+                    OrdNo=int(order_no) if order_no.isdigit() else 0,
+                    product_type="overseas_stock",
                 )
-            ).req_async()
-
-            for block in response.block3:
-                result = await ls.overseas_stock().market().g3104(
-                    body=g3104.G3104InBlock(
-                        keysymbol=block.OrdMktCode + block.ShtnIsuNo.strip(),
-                        exchcd=block.OrdMktCode,
-                        symbol=block.ShtnIsuNo.strip(),
-                    )
-                ).req_async()
-
-                if not result:
-                    continue
-
-                outstanding.append(
-                    SymbolInfoOverseasStock(
-                        symbol=block.ShtnIsuNo.strip(),
-                        exchcd=block.OrdMktCode,
-                        mcap=result.block.shareprc,
-                        OrdNo=block.OrdNo,
-                        product_type="overseas_stock",
-                    )
-                )
-
+            )
         return outstanding
 
     async def get_future_market_symbols(self, ls: LS) -> List[SymbolInfoOverseasFutures]:
@@ -389,7 +379,7 @@ class SymbolProvider:
                 )
             ).req_async()
         except Exception as exc:
-            symbol_logger.exception(f"해외선물 미체결 주문 조회에 실패했습니다: {exc}")
+            logger.exception(f"해외선물 미체결 주문 조회에 실패했습니다: {exc}")
             return outstanding
 
         if not cidbq01800_response or not getattr(cidbq01800_response, "block2", None):
@@ -423,8 +413,8 @@ class SymbolProvider:
 
             if not exist_req or not getattr(exist_req, "block", None):
                 if ls.token_manager.paper_trading:
-                    symbol_logger.warning(f"모의투자API에서 지원되지 않는 종목입니다: {symbol_code}")
-                symbol_logger.warning(f"해외선물API에서 지원되지 않는 종목입니다: {symbol_code}")
+                    logger.warning(f"모의투자API에서 지원되지 않는 종목입니다: {symbol_code}")
+                logger.warning(f"해외선물API에서 지원되지 않는 종목입니다: {symbol_code}")
                 continue
 
             futures_info["exchcd"] = exist_req.block.ExchCd
@@ -471,7 +461,7 @@ class SymbolProvider:
             ).req_async()
 
         except Exception as exc:
-            symbol_logger.exception(f"해외선물 보유 종목 조회에 실패했습니다: {exc}")
+            logger.exception(f"해외선물 보유 종목 조회에 실패했습니다: {exc}")
             return holdings
 
         if not balance_response or not getattr(balance_response, "block2", None):
@@ -488,10 +478,10 @@ class SymbolProvider:
 
             if not exist_req or not getattr(exist_req, "block", None) or not getattr(exist_req.block, "Symbol", None):
                 if ls.token_manager.paper_trading:
-                    symbol_logger.warning(
+                    logger.warning(
                         f"해외선물 잔고 종목 조회 중단: 종목코드 {symbol_code}는(은) 모의투자API에서 조회할 수 없는 종목입니다."
                     )
-                symbol_logger.warning(
+                logger.warning(
                     f"해외선물 잔고 종목 조회 중단: 종목코드 {symbol_code}는(은) 지원되지 않는 종목입니다."
                 )
                 continue

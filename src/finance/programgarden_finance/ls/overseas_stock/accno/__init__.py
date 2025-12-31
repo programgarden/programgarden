@@ -183,6 +183,49 @@ class Accno(BaseAccno):
     계좌외화예수금및주문가능금액조회 = cosoq02701
     계좌외화예수금및주문가능금액조회.__doc__ = "외화 예수금 및 주문 가능 금액을 조회합니다."
 
+    def account_tracker(
+        self,
+        real_client,
+        refresh_interval: int = 60,
+    ):
+        """
+        계좌 추적기 생성 (보유종목, 예수금, 미체결 실시간 추적)
+
+        Args:
+            real_client: 실시간 클라이언트 (overseas_stock().real()) - 필수
+            refresh_interval: API 갱신 주기 (초, 기본 60초)
+
+        Returns:
+            StockAccountTracker: 계좌 추적기 인스턴스
+
+        Example:
+            ```python
+            # 사용 예시
+            real = overseas_stock().real()
+            await real.connect()
+            
+            tracker = accno.account_tracker(real_client=real)
+            await tracker.start()
+
+            # 콜백 등록
+            tracker.on_position_change(lambda positions: print(positions))
+            tracker.on_balance_change(lambda balance: print(balance))
+
+            # 종료
+            await tracker.stop()
+            ```
+        """
+        from ..extension import StockAccountTracker
+
+        return StockAccountTracker(
+            accno_client=self,
+            real_client=real_client,
+            refresh_interval=refresh_interval,
+        )
+
+    계좌추적기 = account_tracker
+    계좌추적기.__doc__ = "계좌 실시간 추적기를 생성합니다."
+
 
 __all__ = [
     Accno,

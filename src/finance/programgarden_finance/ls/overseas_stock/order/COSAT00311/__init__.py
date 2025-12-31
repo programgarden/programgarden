@@ -3,7 +3,9 @@ from typing import Optional, Dict, Any
 import aiohttp
 
 from programgarden_core.exceptions import TrRequestDataNotFoundException
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_stock.order.COSAT00311")
 from .blocks import (
     COSAT00311InBlock1,
     COSAT00311OutBlock1,
@@ -55,12 +57,12 @@ class TrCOSAT00311(TROrderAbstract):
         error_msg: Optional[str] = None
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"COSAT00311 request failed: {exc}")
+            logger.error(f"COSAT00311 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"COSAT00311 request failed with status: {error_msg}")
+            logger.error(f"COSAT00311 request failed with status: {error_msg}")
 
         result = COSAT00311Response(
             header=header,

@@ -13,7 +13,9 @@ from .blocks import (
 )
 from ....tr_base import TRRequestAbstract
 from programgarden_finance.ls.config import URLS
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_futureoption.market.o3127")
 
 
 class TrO3127(TRRequestAbstract):
@@ -60,12 +62,12 @@ class TrO3127(TRRequestAbstract):
         error_msg = ""
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"o3127 request failed: {exc}")
+            logger.error(f"o3127 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"o3127 request failed with status: {error_msg}")
+            logger.error(f"o3127 request failed with status: {error_msg}")
 
         result = O3127Response(
             header=header,

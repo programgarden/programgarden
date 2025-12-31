@@ -29,6 +29,7 @@ KR:
             다운스트림 리스너로 전달합니다.
 """
 
+import logging
 from typing import Any, Dict, List, Optional, Tuple, Union, Set
 import asyncio
 
@@ -43,12 +44,13 @@ from programgarden_core import (
     SymbolInfoOverseasStock,
     SymbolInfoOverseasFutures,
     SystemType,
-    condition_logger,
     OrderStrategyType,
     BaseOrderOverseasStock,
     BaseOrderOverseasFutures,
     StrategySymbolInputType,
 )
+
+logger = logging.getLogger("programgarden.condition_executor")
 from programgarden_core.exceptions import ConditionExecutionException
 
 from programgarden.pg_listener import pg_listener
@@ -106,6 +108,11 @@ class ConditionExecutor:
             KR: 현재 구현은 락이 필요 없지만, 향후 상태 기반 확장을 지원하기 위한
             예약 락입니다.
     """
+
+    # 조건 실행 재시도 횟수 (최대 3회 시도 = 2회 재시도)
+    MAX_CONDITION_RETRIES: int = 2
+    # 재시도 간 대기 시간 (초)
+    RETRY_DELAY_SECONDS: float = 0.5
 
     def __init__(self, resolver: PluginResolver, symbol_provider: SymbolProvider):
         """Initialize executor dependencies and concurrency primitives.
@@ -452,14 +459,14 @@ class ConditionExecutor:
             # 해외선물 조건이 있고 논리 연산자 평가가 성공한 경우에만 방향 검증
             if len(unique_sides) > 1:
                 # long과 short가 혼재 → 실패
-                condition_logger.debug("해외선물 조건 간 방향이 일치하지 않아 실패 처리합니다")
+                logger.debug("해외선물 조건 간 방향이 일치하지 않아 실패 처리합니다")
                 bool_result = False
             elif len(unique_sides) == 1:
                 # 모든 방향 조건이 동일 → 해당 방향으로 주문
                 aligned_side = unique_sides.pop()
             elif len(unique_sides) == 0:
                 # 모든 해외선물 조건이 neutral (long/short 없음) → 방향 결정 불가, 실패
-                condition_logger.debug("해외선물 조건이 모두 neutral이어서 방향을 결정할 수 없습니다")
+                logger.debug("해외선물 조건이 모두 neutral이어서 방향을 결정할 수 없습니다")
                 bool_result = False
         # 해외주식만 있는 경우 (has_futures_condition=False): 방향 검증 생략
 
@@ -604,7 +611,7 @@ class ConditionExecutor:
 
         if isinstance(condition, dict):
             if "condition_id" in condition and "conditions" not in condition:
-                condition_logger.debug(
+                logger.debug(
                     f"{condition.get('condition_id')}: {self._symbol_label(symbol_info)}에 대한 플러그인 조건을 평가합니다"
                 )
                 return await self._execute_plugin_condition(
@@ -614,14 +621,14 @@ class ConditionExecutor:
                 )
             # Nested condition group
             if "conditions" in condition:
-                condition_logger.debug(
+                logger.debug(
                     f"group: {self._symbol_label(symbol_info)}에 대해 로직 '{condition.get('logic', 'and')}'을 평가합니다"
                 )
                 return await self._execute_nested_condition(system, symbol_info, condition)
             # Unknown dict shape: treat as failure but keep symbol context.
             return self._build_response(symbol_info, success=False)
 
-        condition_logger.warning(
+        logger.warning(
             f"지원되지 않는 조건 타입입니다: {type(condition)}"
         )
         return self._build_response(symbol_info, success=False)
@@ -732,11 +739,30 @@ class ConditionExecutor:
         logic = condition_nested.get("logic", "and")
         threshold = condition_nested.get("threshold", None)
 
+        async def execute_with_retry(condition: Any, index: int):
+            """Execute a condition with retry logic."""
+            last_error = None
+            for attempt in range(self.MAX_CONDITION_RETRIES + 1):
+                try:
+                    return await self.execute_condition(
+                        system=system, symbol_info=symbol_info, condition=condition
+                    )
+                except Exception as e:
+                    last_error = e
+                    if attempt < self.MAX_CONDITION_RETRIES:
+                        logger.warning(
+                            f"조건 실행 실패 (시도 {attempt + 1}/{self.MAX_CONDITION_RETRIES + 1}), "
+                            f"재시도 중: {e}"
+                        )
+                        await asyncio.sleep(self.RETRY_DELAY_SECONDS)
+                    else:
+                        raise last_error
+
         tasks: List[asyncio.Task] = []
         task_metadata: Dict[asyncio.Task, Dict[str, Any]] = {}
         for index, condition in enumerate(conditions):
             task = asyncio.create_task(
-                self.execute_condition(system=system, symbol_info=symbol_info, condition=condition)
+                execute_with_retry(condition, index)
             )
             tasks.append(task)
             task_metadata[task] = {"condition": condition, "index": index}
@@ -755,7 +781,7 @@ class ConditionExecutor:
 
             except Exception as e:
                 failure_count += 1
-                condition_logger.error(f"그룹 조건 실행 중 오류가 발생했습니다: {e}")
+                logger.error(f"그룹 조건 실행 중 오류가 발생했습니다 ({self.MAX_CONDITION_RETRIES + 1}회 시도 후 실패): {e}")
                 meta = task_metadata.get(task, {})
                 condition_obj = meta.get("condition") if meta else None
                 condition_label = self._describe_condition(condition_obj) if condition_obj is not None else None
@@ -766,12 +792,21 @@ class ConditionExecutor:
                         "logic": logic,
                         "condition": condition_label,
                         "condition_index": meta.get("index") if meta else None,
+                        "retry_attempts": self.MAX_CONDITION_RETRIES + 1,
                     },
                 )
-                pg_listener.emit_exception(cond_exc)
-                condition_results.append(
-                    self._build_response(symbol_info, success=False, condition_id=None)
+                failure_response = self._build_response(symbol_info, success=False, condition_id=None)
+                pg_listener.emit_strategy(
+                    payload={
+                        "event_type": "condition_error",
+                        "condition_id": condition_label,
+                        "message": f"그룹 조건 실행 중 오류가 발생했습니다: {e}",
+                        "response": failure_response,
+                        "error_code": getattr(cond_exc, "code", "CONDITION_EXECUTION_ERROR"),
+                        "error_data": cond_exc.data if hasattr(cond_exc, "data") else {},
+                    }
                 )
+                condition_results.append(failure_response)
 
         complete, total_weight, position_side = self.evaluate_logic(
             results=condition_results,
@@ -779,7 +814,7 @@ class ConditionExecutor:
             threshold=threshold,
         )
         if failure_count:
-            condition_logger.warning(
+            logger.warning(
                 f"그룹: {self._symbol_label(symbol_info)} 대상 조건 {failure_count}개가 실패했습니다"
             )
         if not complete:
@@ -992,35 +1027,76 @@ class ConditionExecutor:
         
         if max_count > 0:
             responsible_symbols = responsible_symbols[:max_count]
-            condition_logger.debug(
+            logger.debug(
                 f"{strategy.get('id')}: '{max_order}' 기준으로 최대 {max_count}개 종목만 사용합니다"
             )
 
         if not conditions:
-            condition_logger.debug(
+            logger.debug(
                 f"{strategy.get('id')}: 조건이 없어 {len(responsible_symbols)}개 종목을 그대로 반환합니다"
             )
             return responsible_symbols
 
         if not responsible_symbols:
-            condition_logger.debug(f"{order_id} 주문 전략을 위해서 분석하려는 종목이 없습니다.")
+            logger.debug(f"{order_id} 주문 전략을 위해서 분석하려는 종목이 없습니다.")
             return []
 
+        # 진행률 로그 기록
+        strategy_id = strategy.get("id", "unknown")
+        total_symbols = len(responsible_symbols)
+        conditions = strategy.get("conditions", [])
+        total_conditions = len(conditions)
+
+        # 모든 조건 이름 추출 (순서 유지)
+        condition_names = [self._describe_condition(cond) for cond in conditions]
+        
+        logger.info(
+            f"📊 전략 {strategy_id}: 조건 평가 시작 "
+            f"(종목 {total_symbols}개, 조건 {total_conditions}개)"
+        )
+
         passed_symbols: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]] = []
+
+        # 종목별 조건 평가
+        symbol_index = 0
         for symbol_info in responsible_symbols:
+            symbol_index += 1
+            symbol_label = self._symbol_label(symbol_info)
+
+            logger.debug(
+                f"전략 {strategy_id}: 종목 {symbol_label} 평가 중 ({symbol_index}/{total_symbols})"
+            )
+
             conditions = strategy.get("conditions", [])
             logic = strategy.get("logic", "and")
             threshold = strategy.get("threshold", None)
             tasks: List[asyncio.Task] = []
             task_metadata: Dict[asyncio.Task, Dict[str, Any]] = {}
 
+            async def execute_with_retry(condition: Any, index: int):
+                """Execute a condition with retry logic."""
+                last_error = None
+                for attempt in range(self.MAX_CONDITION_RETRIES + 1):
+                    try:
+                        return await self.execute_condition(
+                            system=system,
+                            symbol_info=symbol_info,
+                            condition=condition
+                        )
+                    except Exception as e:
+                        last_error = e
+                        if attempt < self.MAX_CONDITION_RETRIES:
+                            logger.warning(
+                                f"조건 실행 실패 (시도 {attempt + 1}/{self.MAX_CONDITION_RETRIES + 1}), "
+                                f"재시도 중: {e}"
+                            )
+                            await asyncio.sleep(self.RETRY_DELAY_SECONDS)
+                        else:
+                            raise last_error
+
             for index, condition in enumerate(conditions):
                 task = asyncio.create_task(
-                    self.execute_condition(
-                        system=system,
-                        symbol_info=symbol_info,
-                        condition=condition
-                    )
+                    execute_with_retry(condition, index)
                 )
                 tasks.append(task)
                 task_metadata[task] = {"condition": condition, "index": index}
@@ -1032,65 +1108,94 @@ class ConditionExecutor:
                 ]
             ] = []
 
+            completed_conditions = 0
             for task in asyncio.as_completed(tasks):
 
                 try:
                     res = await task
+                    is_success = res.get("success", False)
+                    completed_conditions += 1
 
-                    pg_listener.emit_strategies(
+                    condition_id = res.get("condition_id", "unknown")
+                    position_side = res.get("position_side", None)
+
+                    pg_listener.emit_strategy(
                         payload={
-                            "condition_id": res.get("condition_id", None),
+                            "event_type": "condition_passed" if is_success else "condition_failed",
+                            "condition_id": condition_id,
                             "message": "Completed condition execution",
                             "response": res,
                         }
                     )
-                    position_side = res.get("position_side", None)
                     direction_note = f", 방향 {position_side}" if position_side else ""
-                    status = "통과" if res.get("success") else "실패"
-                    condition_logger.debug(
-                        f"조건 {res.get('condition_id')}의 {self._symbol_label(symbol_info)} 종목의 계산의 결과는 {status}이고 가중치는 {res.get('weight', 0)}{direction_note}입니다."
+                    status_msg = "통과" if is_success else "실패"
+                    logger.debug(
+                        f"조건 {condition_id}의 {symbol_label} 종목의 계산의 결과는 {status_msg}이고 가중치는 {res.get('weight', 0)}{direction_note}입니다."
                     )
                     condition_results.append(res)
 
                 except Exception as e:
-                    condition_logger.error(f"{strategy.get('id')}: 조건 실행 중 오류가 발생했습니다 -> {e}")
+                    completed_conditions += 1
+                    logger.error(f"{strategy.get('id')}: 조건 실행 중 오류가 발생했습니다 ({self.MAX_CONDITION_RETRIES + 1}회 시도 후 실패) -> {e}")
                     meta = task_metadata.get(task, {})
                     condition_obj = meta.get("condition") if meta else None
                     condition_label = self._describe_condition(condition_obj) if condition_obj is not None else None
+
                     cond_exc = ConditionExecutionException(
                         message="조건 실행 중 오류가 발생했습니다.",
                         data={
                             "strategy_id": strategy.get("id"),
-                            "symbol": self._symbol_label(symbol_info),
+                            "symbol": symbol_label,
                             "condition": condition_label,
                             "condition_index": meta.get("index") if meta else None,
+                            "retry_attempts": self.MAX_CONDITION_RETRIES + 1,
                         },
                     )
-                    pg_listener.emit_exception(cond_exc)
 
                     failure_response = self._build_response(symbol_info, success=False)
 
-                    pg_listener.emit_strategies(
+                    pg_listener.emit_strategy(
                         payload={
+                            "event_type": "condition_error",
                             "condition_id": failure_response.get("condition_id"),
-                            "message": f"Failed executing condition: {e}",
+                            "message": f"Failed executing condition after {self.MAX_CONDITION_RETRIES + 1} attempts: {e}",
                             "response": failure_response,
+                            "error_code": getattr(cond_exc, "code", "CONDITION_EXECUTION_ERROR"),
+                            "error_data": cond_exc.data if hasattr(cond_exc, "data") else {},
                         }
                     )
                     condition_results.append(failure_response)
-            
+
             complete, total_weight, position_side = self.evaluate_logic(
                 results=condition_results,
                 logic=logic,
                 threshold=threshold,
             )
+
+            # 종목별 최종 결과 로그
             if complete:
                 symbol_info["position_side"] = position_side or "flat"
                 passed_symbols.append(symbol_info)
+                logger.debug(f"→ {symbol_label}: 조건 통과 ✓")
             else:
-                condition_logger.debug(
-                    f"{strategy.get('id')}: 종목 {self._symbol_label(symbol_info)}이(가) 조건을 통과하지 못했습니다"
+                logger.debug(
+                    f"{strategy.get('id')}: 종목 {symbol_label}이(가) 조건을 통과하지 못했습니다"
                 )
+
+        # 결과 요약 로그
+        passed_count = len(passed_symbols)
+
+        if passed_count > 0:
+            passed_labels = [self._symbol_label(sym) for sym in passed_symbols[:5]]
+            extra = f" 외 {passed_count - 5}개" if passed_count > 5 else ""
+            logger.info(
+                f"✅ 전략 {strategy_id}: {passed_count}/{total_symbols}개 종목 통과 "
+                f"({', '.join(passed_labels)}{extra})"
+            )
+        else:
+            logger.info(
+                f"⚠️ 전략 {strategy_id}: 통과 종목 없음 (0/{total_symbols})"
+            )
 
         return passed_symbols
 

@@ -3,14 +3,15 @@ import os
 from dotenv import load_dotenv
 import asyncio
 from programgarden_finance import LS, CIDBQ03000
-from programgarden_core import pg_logger, pg_log
+import logging
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 
 async def test_req_CIDBQ03000():
 
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
     ls = LS()
 
@@ -21,7 +22,7 @@ async def test_req_CIDBQ03000():
     )
 
     if login_result is False:
-        pg_logger.error("로그인 실패")
+        logger.error("로그인 실패")
         return
 
     req = ls.overseas_futureoption().accno().CIDBQ03000(

@@ -256,6 +256,64 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
     해외선물_일자별_미결제잔고내역조회 = CIDEQ00800
     해외선물_일자별_미결제잔고내역조회.__doc__ = "해외선물 일자별 미결제 잔고내역을 조회합니다."
 
+    def account_tracker(
+        self,
+        market_client,
+        real_client,
+        refresh_interval: int = 60,
+        spec_refresh_hours: int = 6,
+    ):
+        """
+        계좌 추적기 생성 (보유포지션, 예수금, 미체결 실시간 추적)
+
+        Args:
+            market_client: 시세 API 클라이언트 (overseas_futureoption().market()) - 필수
+                - o3121 종목 명세 조회에 필요
+            real_client: 실시간 클라이언트 (overseas_futureoption().real()) - 필수
+            refresh_interval: API 갱신 주기 (초, 기본 60초)
+            spec_refresh_hours: 종목 명세 갱신 주기 (시간, 기본 6시간)
+
+        Returns:
+            FuturesAccountTracker: 계좌 추적기 인스턴스
+
+        Example:
+            ```python
+            # 사용 예시
+            market = overseas_futureoption().market()
+            real = overseas_futureoption().real()
+            await real.connect()
+            
+            tracker = accno.account_tracker(
+                market_client=market,
+                real_client=real
+            )
+            await tracker.start()
+
+            # 콜백 등록
+            tracker.on_position_change(lambda positions: print(positions))
+            tracker.on_balance_change(lambda balance: print(balance))
+
+            # 종목 명세 조회
+            spec = tracker.get_symbol_spec("NQH25")
+            print(f"Tick Size: {spec.tick_size}, Tick Value: {spec.tick_value}")
+
+            # 종료
+            await tracker.stop()
+            ```
+        """
+        from ..extension import FuturesAccountTracker
+
+        return FuturesAccountTracker(
+            accno_client=self,
+            market_client=market_client,
+            real_client=real_client,
+            refresh_interval=refresh_interval,
+            spec_refresh_hours=spec_refresh_hours,
+        )
+
+    계좌추적기 = account_tracker
+    계좌추적기.__doc__ = "해외선물 계좌 실시간 추적기를 생성합니다."
+
 
 __all__ = [
     Accno,

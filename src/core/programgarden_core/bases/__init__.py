@@ -12,6 +12,7 @@ KO:
 from .system import (
     SystemType,
     SystemSettingType,
+    PerfThresholdsType,
 
     StrategyType,
     SecuritiesAccountType,
@@ -84,6 +85,7 @@ __all__ = [
     StrategyConditionType,
     DictConditionType,
     SystemSettingType,
+    PerfThresholdsType,
     OrderStrategyType,
     OrderTimeType,
     OrderRealResponseType,

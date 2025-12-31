@@ -2,7 +2,8 @@ import logging
 from dotenv import load_dotenv
 import os
 from programgarden_finance import LS, g3103
-from programgarden_core import pg_logger, pg_log
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 
 load_dotenv()
@@ -10,7 +11,7 @@ load_dotenv()
 
 async def test_req_g3103():
 
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
     ls = LS()
     login_result = ls.login(
@@ -19,7 +20,7 @@ async def test_req_g3103():
     )
 
     if login_result is False:
-        pg_logger.error("로그인 실패")
+        logger.error("로그인 실패")
         return
 
     m_g3103 = ls.overseas_stock().chart().일주월조회(
@@ -33,7 +34,7 @@ async def test_req_g3103():
         )
     )
     result = await m_g3103.req_async()
-    pg_logger.debug(f"Response: {result}, Status: {result.header}")
+    logger.debug(f"Response: {result}, Status: {result.header}")
 
 
 if __name__ == "__main__":

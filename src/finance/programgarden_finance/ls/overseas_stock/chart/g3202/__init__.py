@@ -25,9 +25,9 @@ from ....tr_base import OccursReqAbstract, TRRequestAbstract
 from ....tr_helpers import GenericTR
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.status import RequestStatus
-from programgarden_core.logs import pg_logger
+import logging
 
-# ...existing code... (pg_logger intentionally unused after refactor)
+logger = logging.getLogger("programgarden.ls.overseas_stock.chart.g3202")
 
 
 class TrG3202(TRRequestAbstract, OccursReqAbstract):
@@ -83,12 +83,12 @@ class TrG3202(TRRequestAbstract, OccursReqAbstract):
         error_msg: Optional[str] = None
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"g3202 request failed: {exc}")
+            logger.error(f"g3202 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"g3202 request failed with status: {error_msg}")
+            logger.error(f"g3202 request failed with status: {error_msg}")
 
         result = G3202Response(
             header=header,

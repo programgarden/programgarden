@@ -3,7 +3,8 @@ from dotenv import load_dotenv
 import os
 import asyncio
 from programgarden_finance import LS, COSAT00311
-from programgarden_core import pg_logger, pg_log
+import logging
+logger = logging.getLogger(__name__)
 
 from programgarden_finance.ls.models import SetupOptions
 
@@ -12,7 +13,7 @@ load_dotenv()
 
 async def test_req_cosat00311():
 
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
     ls = LS.get_instance()
 
@@ -22,7 +23,7 @@ async def test_req_cosat00311():
     )
 
     if login_result is False:
-        pg_logger.error("로그인 실패")
+        logger.error("로그인 실패")
         return
 
     cosat00311 = ls.overseas_stock().주문().cosat00311(

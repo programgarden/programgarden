@@ -12,23 +12,19 @@ if __name__ == "__main__":
 
     pg = Programgarden()
 
-    # 전략 수행 응답 콜백
-    pg.on_strategies_message(
-        callback=lambda message: print(f"Strategies: {message.get('condition_id')}")
+    # 전략 수행 응답 콜백 (신규 API)
+    pg.on_strategy(
+        callback=lambda message: print(f"Strategy [{message.get('event_type')}]: {message.get('condition_id')} - {message.get('message')}")
     )
 
-    # 실시간 주문 응답 콜백
-    pg.on_real_order_message(
-        callback=lambda message: print(f"Real Order Message: {message.get('order_type')}, {message.get('message')}")
+    # 실시간 주문 응답 콜백 (신규 API)
+    pg.on_order(
+        callback=lambda message: print(f"Order [{message.get('event_type')}]: {message.get('order_type')}, {message.get('message')}")
     )
 
-    pg.on_error_message(
-        callback=lambda message: print(f"Error: {message}")
-    )  
-
-    # 퍼포먼스 모니터링 콜백
+    # 퍼포먼스 모니터링 콜백 (시스템 에러도 여기서 처리)
     pg.on_performance_message(
-        callback=lambda message: print(f"Performance: {message} - Duration: {message.get('stats', {}).get('duration_seconds')}s")
+        callback=lambda message: print(f"Performance [{message.get('event_type')}]: {message.get('context')} - Duration: {message.get('stats', {}).get('duration_seconds')}s")
     )
 
     # 온디맨드 퍼포먼스 스냅샷
@@ -53,7 +49,6 @@ if __name__ == "__main__":
                 "version": "1.0.0",
                 "author": "Author Name",
                 "date": "2023-10-01",
-                "debug": "DEBUG",
                 "dry_run_mode": "test",
                 "perf_thresholds": {
                     "max_avg_cpu_percent": 1,
@@ -70,7 +65,7 @@ if __name__ == "__main__":
                 {
                     "id": "condition_market_analysis",
                     "description": "시장 분석 전략",
-                    "schedule": "*/30 * * * * *",
+                    "schedule": "*/10 * * * * *",  # 테스트용 10초 간격
                     "timezone": "Asia/Seoul",
                     "logic": "at_least",
                     "run_once_on_start": True,
@@ -107,7 +102,7 @@ if __name__ == "__main__":
                 {
                     "id": "loss_cut_net",
                     "description": "손절하기",
-                    "schedule": "*/30 * * * * *",
+                    "schedule": "*/10 * * * * *",  # 테스트용 10초 간격
                     "timezone": "Asia/Seoul",
                     "logic": "at_least",
                     "threshold": 1,

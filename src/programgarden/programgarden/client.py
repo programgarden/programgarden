@@ -15,7 +15,9 @@ import asyncio
 import logging
 import threading
 from typing import Callable, Dict, Any
-from programgarden_core import pg_log, pg_log_disable, system_logger, normalize_system_config
+from programgarden_core import normalize_system_config
+
+logger = logging.getLogger("programgarden.client")
 from programgarden_core.bases import SystemType
 from programgarden_finance import LS
 from programgarden_core import EnforceKoreanAliasMeta
@@ -31,6 +33,7 @@ from programgarden_core.exceptions import (
 from programgarden import SystemExecutor
 from programgarden.pg_listener import (
     StrategyPayload,
+    OrderPayload,
     RealOrderPayload,
     ErrorPayload,
     PerformancePayload,
@@ -149,12 +152,12 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
 
         EN:
             Normalizes the incoming system configuration, checks mandatory
-            keys, sets debug logging, and either schedules asynchronous
+            keys, configures display settings, and either schedules asynchronous
             execution on an existing event loop or creates a fresh loop via
             `asyncio.run`.
 
         KR:
-            시스템 구성을 정규화하고 필수 키를 검증하며, 디버그 로깅을 설정한 뒤
+            시스템 구성을 정규화하고 필수 키를 검증하며, 표시 설정을 적용한 뒤
             실행 중인 이벤트 루프에서는 비동기 태스크로, 그렇지 않을 경우
             `asyncio.run`으로 시스템을 실행합니다.
 
@@ -187,26 +190,34 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
             system_config = system
             if system_config:
                 system_config = normalize_system_config(system_config)
-                self._check_debug(system_config)
 
+                # 시작 로그 출력
+                settings = system_config.get("settings", {}) or {}
+                strategies = system_config.get("strategies", []) or []
+                dry_run_mode = settings.get("dry_run_mode", "live")
+                system_id = settings.get("system_id", "")
+                logger.info(
+                    f"ProgramGarden 시작: system_id={system_id}, "
+                    f"strategies={len(strategies)}, mode={dry_run_mode}"
+                )
             exist_system_keys_error(system_config)
         except BasicException as exc:
-            pg_listener.emit_exception(exc)
+            pg_listener.emit_exception(exc, domain="performance")
             raise
         except Exception as exc:
-            system_logger.exception("System configuration validation failed")
+            logger.exception("System configuration validation failed")
             init_exc = SystemInitializationException(
                 message="시스템 설정 검증 중 알 수 없는 오류가 발생했습니다.",
                 data={"details": str(exc)},
             )
-            pg_listener.emit_exception(init_exc)
+            pg_listener.emit_exception(init_exc, domain="performance")
             raise init_exc
 
         try:
             asyncio.get_running_loop()
 
             if self._task is not None and not self._task.done():
-                system_logger.info("A task is already running; returning the existing task.")
+                logger.info("A task is already running; returning the existing task.")
                 return self._task
 
             task = asyncio.create_task(self._execute(system_config))
@@ -238,47 +249,11 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
             return
         self._shutdown_notified = True
 
-        system_logger.debug("The program has terminated.")
+        logger.debug("The program has terminated.")
 
         shutdown_exc = SystemShutdownException()
-        pg_listener.emit_exception(shutdown_exc)
+        pg_listener.emit_exception(shutdown_exc, domain="performance")
         pg_listener.stop()
-
-    def _check_debug(self, system: SystemType):
-        """Apply debug logging preference from the system configuration.
-
-        EN:
-            Reads `settings.debug` and adjusts Programgarden logging levels,
-            falling back to disabling logs when unspecified.
-
-        KR:
-            `settings.debug` 값을 참조하여 Programgarden 로깅 수준을 조정하며,
-            지정되지 않은 경우 로깅을 비활성화합니다.
-
-        Args:
-            system (SystemType):
-                EN: System definition containing the debug setting.
-                KR: 디버그 설정을 포함하는 시스템 정의입니다.
-
-        Returns:
-            None:
-                EN: Adjusts log configuration without a return value.
-                KR: 로깅 구성을 조정할 뿐 반환값은 없습니다.
-        """
-
-        debug = system.get("settings", {}).get("debug", "").upper()
-        if debug == "DEBUG":
-            pg_log(logging.DEBUG)
-        elif debug == "INFO":
-            pg_log(logging.INFO)
-        elif debug == "WARNING":
-            pg_log(logging.WARNING)
-        elif debug == "ERROR":
-            pg_log(logging.ERROR)
-        elif debug == "CRITICAL":
-            pg_log(logging.CRITICAL)
-        else:
-            pg_log_disable()
 
     async def _execute(self, system: SystemType):
         """Drive the asynchronous execution lifecycle for the system.
@@ -322,7 +297,7 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
 
                 paper_trading = bool(securities.get("paper_trading", False))
                 if product == "overseas_futures" and paper_trading:
-                    system_logger.warning("해외선물 모의투자는 홍콩거래소(HKEX)만 지원됩니다.")
+                    logger.warning("해외선물 모의투자는 홍콩거래소(HKEX)만 지원됩니다.")
 
                 if getattr(ls, "token_manager", None) is not None:
                     ls.token_manager.configure_trading_mode(paper_trading)
@@ -346,20 +321,28 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 await asyncio.sleep(1)
 
         except PerformanceExceededException as exc:
+            # PerformanceExceededException은 항상 fatal
             if not getattr(exc, "_pg_error_emitted", False):
-                pg_listener.emit_exception(exc)
+                pg_listener.emit_exception(exc, domain="performance")
             raise
         except BasicException as exc:
             if not getattr(exc, "_pg_error_emitted", False):
-                pg_listener.emit_exception(exc)
+                pg_listener.emit_exception(exc, domain="performance")
+            # severity가 fatal인 경우 즉시 종료
+            severity = getattr(exc, "severity", "strategy")
+            if severity == "fatal":
+                logger.error(f"치명적 에러 발생으로 시스템을 종료합니다: {exc.code} - {exc.message}")
+                raise
         except Exception as exc:
-            system_logger.exception("Unexpected error during system execution")
+            logger.exception("Unexpected error during system execution")
             system_exc = SystemException(
                 message="시스템 실행 중 처리되지 않은 오류가 발생했습니다.",
                 code="SYSTEM_EXECUTION_ERROR",
                 data={"details": str(exc)},
             )
-            pg_listener.emit_exception(system_exc)
+            pg_listener.emit_exception(system_exc, domain="performance")
+            # 처리되지 않은 예외는 fatal로 취급
+            raise system_exc from exc
 
         finally:
             await self.stop()
@@ -391,21 +374,31 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
             if current_loop != self._loop:
                 future = asyncio.run_coroutine_threadsafe(self.executor.stop(), self._loop)
                 await asyncio.wrap_future(future)
-                system_logger.debug("The program has been stopped (thread-safe).")
+                logger.debug("The program has been stopped (thread-safe).")
                 return
 
         await self.executor.stop()
-        system_logger.debug("The program has been stopped.")
+        logger.debug("The program has been stopped.")
 
-    def on_strategies_message(self, callback: Callable[[StrategyPayload], None]) -> None:
+    def on_strategy(self, callback: Callable[[StrategyPayload], None]) -> None:
         """Register a callback for strategy event stream handling.
 
         EN:
             Subscribes the provided callable to receive strategy payloads as
-            they arrive from the listener.
+            they arrive from the listener. Events include condition evaluations,
+            successes, failures, and errors.
 
         KR:
-            실시간 이벤트 수신 콜백 등록 함수로, 제공된 콜러블을 리스너에서 전달되는 전략 페이로드 수신에 등록합니다.
+            전략 이벤트 스트림 처리를 위한 콜백을 등록합니다. 조건 평가,
+            성공, 실패, 오류 등의 이벤트를 수신합니다.
+
+        페이로드 구조:
+            - event_type: 이벤트 유형 (condition_evaluated, condition_passed, condition_failed, condition_error, strategy_completed)
+            - condition_id: 조건 식별자
+            - message: 메시지
+            - response: 조건 응답 객체
+            - error_code: 에러 코드 (에러 발생 시)
+            - error_data: 에러 상세 데이터 (에러 발생 시)
 
         Args:
             callback (Callable[[StrategyPayload], None]):
@@ -417,41 +410,72 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
                 EN: Registration has no direct return value.
                 KR: 등록 과정은 별도의 반환값을 제공하지 않습니다.
         """
-        pg_listener.set_strategies_handler(callback)
+        pg_listener.set_strategy_handler(callback)
 
-    def on_real_order_message(self, callback: Callable[[RealOrderPayload], None]) -> None:
-        """Register a callback for real order event notifications.
+    def on_strategies_message(self, callback: Callable[[StrategyPayload], None]) -> None:
+        """Deprecated: Use on_strategy instead.
+        
+        Register a callback for strategy event stream handling.
+        """
+        self.on_strategy(callback)
+
+    def on_order(self, callback: Callable[[OrderPayload], None]) -> None:
+        """Register a callback for order event notifications.
 
         EN:
-            Attaches the handler that will process real order payloads emitted
-            by the listener subsystem.
+            Attaches the handler that will process order payloads emitted
+            by the listener subsystem. Events include submissions, fills,
+            modifications, cancellations, and errors.
 
         KR:
-            실시간 주문 이벤트 수신 콜백 함수로, 리스너 서브시스템에서 발행하는 실시간 주문 페이로드를 처리할 핸들러를
-            등록합니다.
+            주문 이벤트 알림을 위한 콜백을 등록합니다. 제출, 체결, 정정,
+            취소, 오류 등의 이벤트를 수신합니다.
+
+        페이로드 구조:
+            - event_type: 이벤트 유형 (order_submitted, order_filled, order_modified, order_cancelled, order_rejected, order_error)
+            - order_type: 주문 유형 (매수/매도 구분)
+            - message: 작업 내용
+            - response: 실시간 데이터
+            - error_code: 에러 코드 (에러 발생 시)
+            - error_data: 에러 상세 데이터 (에러 발생 시)
 
         Args:
-            callback (Callable[[RealOrderPayload], None]):
-                EN: Consumer receiving real order payload objects.
-                KR: 실시간 주문 페이로드 객체를 받는 소비자 함수입니다.
+            callback (Callable[[OrderPayload], None]):
+                EN: Consumer receiving order payload objects.
+                KR: 주문 페이로드 객체를 받는 소비자 함수입니다.
 
         Returns:
             None:
                 EN: Registration completes without returning a value.
                 KR: 등록이 완료돼도 반환값은 없습니다.
         """
-        pg_listener.set_real_order_handler(callback)
+        pg_listener.set_order_handler(callback)
+
+    def on_real_order_message(self, callback: Callable[[RealOrderPayload], None]) -> None:
+        """Deprecated: Use on_order instead.
+        
+        Register a callback for real order event notifications.
+        """
+        self.on_order(callback)
 
     def on_performance_message(self, callback: Callable[[PerformancePayload], None]) -> None:
-        """Register a callback for performance metric notifications.
+        """Register a callback for performance metric and system lifecycle notifications.
 
         EN:
             Attaches the handler that will process performance payloads emitted
-            by the listener subsystem.
+            by the listener subsystem. Also receives system errors and shutdown events.
 
         KR:
-            퍼포먼스 지표 알림 수신 콜백 함수로, 리스너 서브시스템에서 발행하는 퍼포먼스 페이로드를 처리할 핸들러를
-            등록합니다.
+            퍼포먼스 지표 및 시스템 라이프사이클 알림 수신 콜백 함수로, 리스너 서브시스템에서 
+            발행하는 퍼포먼스 페이로드를 처리할 핸들러를 등록합니다.
+            시스템 오류 및 종료 이벤트도 이 콜백으로 전달됩니다.
+
+        페이로드 구조:
+            - event_type: 이벤트 유형 (perf_snapshot, perf_exceeded, system_shutdown, system_error)
+            - context: 컨텍스트 (예: "strategy:my_strategy_id", "system")
+            - stats: 성능 통계
+            - status: 상태 (선택)
+            - details: 상세 정보 (선택, 에러 시 error_code, error_message 포함)
 
         Args:
             callback (Callable[[PerformancePayload], None]):
@@ -466,42 +490,33 @@ class Programgarden(metaclass=EnforceKoreanAliasMeta):
         pg_listener.set_performance_handler(callback)
 
     def on_error_message(self, callback: Callable[[ErrorPayload], None]) -> None:
-        """Register a callback for structured error notifications.
+        """Deprecated: 오류는 이제 도메인별 콜백(on_strategy, on_order, on_performance_message)으로 전달됩니다.
+        
+        이 메서드는 하위 호환성을 위해 유지되지만 아무 동작도 하지 않습니다.
+        대신 on_strategy, on_order, on_performance_message 콜백에서 event_type 필드를 확인하여
+        오류를 처리하세요:
+        
+        - 전략 오류: event_type이 'condition_error' 또는 'strategy_error'인 경우
+        - 주문 오류: event_type이 'order_error' 또는 'order_rejected'인 경우  
+        - 시스템 오류: event_type이 'system_error'인 경우
 
-        전달되는 페이로드는 ``{"code": str, "message": str, "data": dict}`` 형태이며,
-        사용 가능한 에러 코드는 다음과 같다:
-
+        기존 에러 코드들은 각 페이로드의 error_code 필드로 전달됩니다:
         - ``APPKEY_NOT_FOUND``: 인증 키 누락
         - ``CONDITION_EXECUTION_ERROR``: 조건 실행 실패
         - ``INVALID_CRON_EXPRESSION``: 잘못된 스케줄 표현식
         - ``LOGIN_ERROR``: 로그인 실패
-        - ``NOT_EXIST_COMPANY``: 지원하지 않는 증권사
-        - ``NOT_EXIST_CONDITION``: 등록되지 않은 조건(플러그인)
-        - ``NOT_EXIST_KEY``: 필수 키 부재
-        - ``NOT_EXIST_SYSTEM``: 정의되지 않은 시스템
         - ``ORDER_ERROR``: 주문 처리 중 오류
-        - ``ORDER_EXECUTION_ERROR``: 주문 실행/조회 실패
         - ``STRATEGY_EXECUTION_ERROR``: 전략 실행 실패
         - ``SYSTEM_ERROR``: 일반 시스템 오류
-        - ``SYSTEM_EXECUTION_ERROR``: 실행 중 처리되지 않은 예외
-        - ``SYSTEM_INITIALIZATION_ERROR``: 시스템 초기 검증 실패
-        - ``SYSTEM_SHUTDOWN``: 정상 종료 알림
-        - ``TOKEN_ERROR``: 토큰 발급 실패
-        - ``TOKEN_NOT_FOUND``: 토큰 부재
-        - ``TR_REQUEST_DATA_NOT_FOUND``: TR 요청 데이터 누락
-        - ``UNKNOWN_ERROR``: 기타 알 수 없는 오류(기본값)
-
-        외부 개발자는 해당 코드를 기준으로 장애 원인을 분류하고 ``data`` 필드에 포함된
-        세부 정보를 활용하면 된다.
+        - 등등...
 
         Args:
             callback (Callable[[ErrorPayload], None]):
-                EN: Handler invoked for each error payload.
-                KR: 각 오류 페이로드에 대해 호출되는 핸들러입니다.
+                EN: Handler (ignored - this method does nothing).
+                KR: 핸들러 (무시됨 - 이 메서드는 아무 동작도 하지 않습니다).
 
         Returns:
-            None:
-                EN: Registration finishes without a return value.
-                KR: 등록 후 반환값은 없습니다.
+            None
         """
+        # Deprecated: errors are now domain-specific
         pg_listener.set_error_handler(callback)

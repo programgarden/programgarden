@@ -14,11 +14,13 @@ KR:
     확인할 수 있습니다.
 """
 
+import logging
 from programgarden_core import (
     SystemType,
     exceptions,
-    system_logger,
 )
+
+logger = logging.getLogger("programgarden.system_keys")
 
 
 def exist_system_keys_error(system: SystemType) -> None:
@@ -58,7 +60,7 @@ def exist_system_keys_error(system: SystemType) -> None:
     """
 
     if not isinstance(system, dict):
-        system_logger.error("Invalid system configuration: must be a dictionary.")
+        logger.error("Invalid system configuration: must be a dictionary.")
         raise exceptions.NotExistSystemException(
             message="Invalid system configuration: must be a dictionary.",
         )
@@ -66,19 +68,19 @@ def exist_system_keys_error(system: SystemType) -> None:
     # --- settings ---
     settings = system.get("settings", {})
     if not settings:
-        system_logger.error("System settings information ('settings') is required.")
+        logger.error("System settings information ('settings') is required.")
         raise exceptions.NotExistSystemKeyException(
             message="System settings information ('settings') is required.",
         )
 
     if not isinstance(settings, dict):
-        system_logger.error("System settings information ('settings') must be a dictionary.")
+        logger.error("System settings information ('settings') must be a dictionary.")
         raise exceptions.NotExistSystemKeyException(
             message="System settings information ('settings') must be a dictionary.",
         )
 
     if not settings.get("system_id", None):
-        system_logger.error("System settings must include a unique 'system_id'.")
+        logger.error("System settings must include a unique 'system_id'.")
         raise exceptions.NotExistSystemKeyException(
             message="System settings must include a unique 'system_id'.",
         )
@@ -86,13 +88,13 @@ def exist_system_keys_error(system: SystemType) -> None:
     # --- securities ---
     securities = system.get("securities")
     if securities is None:
-        system_logger.error("System securities information ('securities') is required.")
+        logger.error("System securities information ('securities') is required.")
         raise exceptions.NotExistSystemKeyException(
             message="System securities information ('securities') is required.",
         )
 
     if not isinstance(securities, dict):
-        system_logger.error("System securities information ('securities') must be a dictionary.")
+        logger.error("System securities information ('securities') must be a dictionary.")
         raise exceptions.NotExistSystemKeyException(
             message="System securities information ('securities') must be a dictionary.",
         )
@@ -102,7 +104,7 @@ def exist_system_keys_error(system: SystemType) -> None:
     required_sec_keys = ["company", "product", "appkey", "appsecretkey"]
     for key in required_sec_keys:
         if key not in securities:
-            system_logger.error(f"Missing '{key}' key in system securities.")
+            logger.error(f"Missing '{key}' key in system securities.")
             raise exceptions.NotExistSystemKeyException(
                 message=f"Missing '{key}' key in system securities."
             )
@@ -113,7 +115,7 @@ def exist_system_keys_error(system: SystemType) -> None:
         strategies = []
 
     if not isinstance(strategies, list):
-        system_logger.error("System strategies ('strategies') must be a list.")
+        logger.error("System strategies ('strategies') must be a list.")
         raise exceptions.NotExistSystemKeyException(
             message="'strategies' must be a list."
         )

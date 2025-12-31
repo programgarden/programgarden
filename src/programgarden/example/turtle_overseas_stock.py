@@ -12,18 +12,19 @@ if __name__ == "__main__":
 
     pg = Programgarden()
 
-    # 전략 수행 응답 콜백
-    pg.on_strategies_message(
-        callback=lambda message: print(f"Strategies: {message.get('condition_id')}")
+    # 전략 수행 응답 콜백 (신규 API)
+    pg.on_strategy(
+        callback=lambda message: print(f"Strategy [{message.get('event_type')}]: {message.get('condition_id')} - {message.get('message')}")
     )
 
-    # 실시간 주문 응답 콜백
-    pg.on_real_order_message(
-        callback=lambda message: print(f"Real Order Message: {message.get('order_type')}, {message.get('message')}")
+    # 실시간 주문 응답 콜백 (신규 API)
+    pg.on_order(
+        callback=lambda message: print(f"Order [{message.get('event_type')}]: {message.get('order_type')}, {message.get('message')}")
     )
 
-    pg.on_error_message(
-        callback=lambda message: print(f"Error: {message}")
+    # 퍼포먼스 모니터링 콜백 (시스템 에러도 여기서 처리)
+    pg.on_performance_message(
+        callback=lambda message: print(f"Performance [{message.get('event_type')}]: {message.get('context')}")
     )  
 
     # 5초 후 자동 종료를 위한 타이머 설정
@@ -45,7 +46,6 @@ if __name__ == "__main__":
                 'version': '1.0.0',
                 'author': 'Programgarden Community',
                 'date': '2025-11-22',
-                'debug': 'debug'
             },
             'securities': {
                 'company': 'ls',

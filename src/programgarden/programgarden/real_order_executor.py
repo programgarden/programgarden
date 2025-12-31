@@ -16,10 +16,13 @@ import asyncio
 import threading
 from typing import Any, Dict, List, Optional, Union
 from programgarden_finance import LS, AS0, AS1, AS2, AS3, AS4, TC1, TC2, TC3
+import logging
 from programgarden_core import (
-    OrderRealResponseType, SystemType, order_logger,
+    OrderRealResponseType, SystemType,
     BaseOrderOverseasStock, BaseOrderOverseasFutures,
 )
+
+logger = logging.getLogger("programgarden.real_order_executor")
 from programgarden.pg_listener import pg_listener
 
 
@@ -70,7 +73,7 @@ class RealOrderExecutor:
             elif product == "overseas_futures":
                 self.buy_sell_order_real = LS.get_instance().overseas_futureoption().real()
             else:
-                order_logger.warning(f"Unsupported product for real order websocket: {product}")
+                logger.warning(f"Unsupported product for real order websocket: {product}")
                 return
 
             await self.buy_sell_order_real.connect()
@@ -121,14 +124,15 @@ class RealOrderExecutor:
                 ord_xct_ptn_code=response.body.sOrdxctPtnCode,
             )
             self.__dispatch_real_order_message(ord_key, payload, order_type=order_type)
-            pg_listener.emit_real_order({
+            pg_listener.emit_order({
+                "event_type": "order_submitted",
                 "order_type": order_type,
                 "message": "주문 접수 완료",
                 "response": payload,
             })
 
         except Exception as e:
-            order_logger.error(e)
+            logger.error(e)
 
     def _as1_message_dispatcher(
         self,
@@ -161,14 +165,15 @@ class RealOrderExecutor:
                 ord_xct_ptn_code=response.body.sOrdxctPtnCode,
             )
             self.__dispatch_real_order_message(ord_key, payload, order_type=order_type)
-            pg_listener.emit_real_order({
+            pg_listener.emit_order({
+                "event_type": "order_filled",
                 "order_type": order_type,
                 "message": "주문 체결 완료",
                 "response": payload,
             })
 
         except Exception:
-            order_logger.exception("Error in AS1 dispatcher")
+            logger.exception("Error in AS1 dispatcher")
 
     def _as2_message_dispatcher(
         self,
@@ -196,14 +201,15 @@ class RealOrderExecutor:
                 ord_xct_ptn_code=response.body.sOrdxctPtnCode,
             )
             self.__dispatch_real_order_message(ord_key, payload, order_type=order_type)
-            pg_listener.emit_real_order({
+            pg_listener.emit_order({
+                "event_type": "order_modified",
                 "order_type": order_type,
                 "message": "주문 정정 완료",
                 "response": payload,
             })
 
         except Exception:
-            order_logger.exception("Error in AS2 dispatcher")
+            logger.exception("Error in AS2 dispatcher")
 
     def _as3_message_dispatcher(
         self,
@@ -234,14 +240,15 @@ class RealOrderExecutor:
                 ord_xct_ptn_code=response.body.sOrdxctPtnCode,
             )
             self.__dispatch_real_order_message(ord_key, payload, order_type=order_type)
-            pg_listener.emit_real_order({
+            pg_listener.emit_order({
+                "event_type": "order_cancelled",
                 "order_type": order_type,
                 "message": "주문 취소 완료",
                 "response": payload,
             })
 
         except Exception:
-            order_logger.exception("Error in AS3 dispatcher")
+            logger.exception("Error in AS3 dispatcher")
 
     def _as4_message_dispatcher(
         self,
@@ -274,13 +281,14 @@ class RealOrderExecutor:
                 ord_xct_ptn_code=response.body.sOrdxctPtnCode,
             )
             self.__dispatch_real_order_message(ord_key, payload, order_type=order_type)
-            pg_listener.emit_real_order({
+            pg_listener.emit_order({
+                "event_type": "order_rejected",
                 "order_type": order_type,
                 "message": "주문 거부됨",
                 "response": payload,
             })
         except Exception:
-            order_logger.exception("Error in AS4 dispatcher")
+            logger.exception("Error in AS4 dispatcher")
 
     def _tc1_message_dispatcher(
         self,
@@ -308,14 +316,15 @@ class RealOrderExecutor:
             if ord_key:
                 self.__dispatch_real_order_message(ord_key, payload, order_type=order_type)
 
-            pg_listener.emit_real_order({
+            pg_listener.emit_order({
+                "event_type": "order_submitted",
                 "order_type": order_type,
                 "message": payload.get("rsp_msg") or self._order_message_from_type(order_type),
                 "response": payload,
             })
 
         except Exception:
-            order_logger.exception("Error in TC1 dispatcher")
+            logger.exception("Error in TC1 dispatcher")
 
     def _tc2_message_dispatcher(
         self,
@@ -346,14 +355,16 @@ class RealOrderExecutor:
                 if order_type in {"reject_buy", "reject_sell"}:
                     self._order_community_instance_map.pop(ord_key, None)
 
-            pg_listener.emit_real_order({
+            event_type = "order_rejected" if order_type in {"reject_buy", "reject_sell"} else "order_modified"
+            pg_listener.emit_order({
+                "event_type": event_type,
                 "order_type": order_type,
                 "message": payload.get("rsp_msg") or self._order_message_from_type(order_type),
                 "response": payload,
             })
 
         except Exception:
-            order_logger.exception("Error in TC2 dispatcher")
+            logger.exception("Error in TC2 dispatcher")
 
     def _tc3_message_dispatcher(
         self,
@@ -384,14 +395,16 @@ class RealOrderExecutor:
                 if order_type in {"filled_new_buy", "filled_new_sell", "cancel_complete_buy", "cancel_complete_sell"}:
                     self._order_community_instance_map.pop(ord_key, None)
 
-            pg_listener.emit_real_order({
+            event_type = "order_cancelled" if order_type in {"cancel_complete_buy", "cancel_complete_sell"} else "order_filled"
+            pg_listener.emit_order({
+                "event_type": event_type,
                 "order_type": order_type,
                 "message": payload.get("rsp_msg") or self._order_message_from_type(order_type),
                 "response": payload,
             })
 
         except Exception:
-            order_logger.exception("Error in TC3 dispatcher")
+            logger.exception("Error in TC3 dispatcher")
 
     async def send_data_community_instance(
         self,
@@ -475,7 +488,7 @@ class RealOrderExecutor:
                         try:
                             asyncio.run_coroutine_threadsafe(coro, loop)
                         except Exception:
-                            order_logger.exception("Failed to schedule coroutine with run_coroutine_threadsafe")
+                            logger.exception("Failed to schedule coroutine with run_coroutine_threadsafe")
                     else:
                         # try to create task on current running loop (if any)
                         try:
@@ -488,7 +501,7 @@ class RealOrderExecutor:
                                 try:
                                     asyncio.run(c)
                                 except Exception:
-                                    order_logger.exception("Error running coroutine in fallback thread")
+                                    logger.exception("Error running coroutine in fallback thread")
 
                             threading.Thread(target=_run_coro_in_thread, args=(coro,), daemon=True).start()
                 else:
@@ -498,7 +511,7 @@ class RealOrderExecutor:
                             # schedule creation of a background task that runs the sync handler
                             loop.call_soon_threadsafe(asyncio.create_task, asyncio.to_thread(handler, order_type, response))
                         except Exception:
-                            order_logger.exception("Failed to schedule sync handler on loop; running in thread")
+                            logger.exception("Failed to schedule sync handler on loop; running in thread")
                             import threading
 
                             threading.Thread(target=handler, args=(order_type, response), daemon=True).start()
@@ -552,7 +565,7 @@ class RealOrderExecutor:
                     order_category_type = "reject_sell"
             return order_category_type
         except Exception:
-            order_logger.exception("Error computing order_category_type from response")
+            logger.exception("Error computing order_category_type from response")
             return None
 
     def _futures_order_type(self, tr_cd: Optional[str], body: Dict[str, Any]) -> Optional[OrderRealResponseType]:

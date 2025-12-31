@@ -14,7 +14,9 @@ from .blocks import (
 )
 from ....tr_base import TROrderAbstract
 from programgarden_finance.ls.config import URLS
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_futureoption.order.CIDBT00900")
 
 
 class TrCIDBT00900(TROrderAbstract):
@@ -88,12 +90,12 @@ class TrCIDBT00900(TROrderAbstract):
         error_msg: Optional[str] = None
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"CIDBT00900 request failed: {exc}")
+            logger.error(f"CIDBT00900 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"CIDBT00900 request failed with status: {error_msg}")
+            logger.error(f"CIDBT00900 request failed with status: {error_msg}")
 
         result = CIDBT00900Response(
             header=header,

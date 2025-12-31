@@ -17,7 +17,9 @@ from ....tr_base import TRRequestAbstract, OccursReqAbstract
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.status import RequestStatus
 
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_futureoption.market.o3123")
 
 
 class TrO3123(TRRequestAbstract, OccursReqAbstract):
@@ -59,12 +61,12 @@ class TrO3123(TRRequestAbstract, OccursReqAbstract):
         error_msg = ""
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"o3123 request failed: {exc}")
+            logger.error(f"o3123 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"o3123 request failed with status: {error_msg}")
+            logger.error(f"o3123 request failed with status: {error_msg}")
 
         result = O3123Response(
             header=header,
@@ -125,7 +127,7 @@ class TrO3123(TRRequestAbstract, OccursReqAbstract):
         results.append(response)
 
         while getattr(response.header, "tr_cont", "N") == "Y":
-            pg_logger.debug(f"계속 조회 중... {response.header.tr_cont}")
+            logger.debug(f"계속 조회 중... {response.header.tr_cont}")
             callback and callback(response, RequestStatus.OCCURS_REQUEST)
 
             time.sleep(delay)
@@ -159,7 +161,7 @@ class TrO3123(TRRequestAbstract, OccursReqAbstract):
             results.append(response)
 
             while getattr(response.header, "tr_cont", "N") == "Y":
-                pg_logger.debug("계속 조회 중...")
+                logger.debug("계속 조회 중...")
                 callback and callback(response, RequestStatus.OCCURS_REQUEST)
 
                 await asyncio.sleep(delay)

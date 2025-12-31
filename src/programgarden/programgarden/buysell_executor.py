@@ -14,11 +14,11 @@ and leaves trading logic to plugin classes that must subclass
 """
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Set, Union
-from zoneinfo import ZoneInfo
 from programgarden_core import (
     SystemType, OrderStrategyType,
-    order_logger, symbol_logger, exceptions, HeldSymbol,
+    exceptions, HeldSymbol,
     HeldSymbolOverseasStock,
     HeldSymbolOverseasFutures,
     NonTradedSymbol,
@@ -29,6 +29,9 @@ from programgarden_core import (
     OrderType,
     DpsTyped
 )
+
+logger = logging.getLogger("programgarden.buysell_executor")
+
 from programgarden_core import (
     BaseOrderOverseasStock,
     BaseOrderOverseasFutures,
@@ -43,21 +46,25 @@ from programgarden_finance import (
     LS,
     COSAT00301,
     COSAT00311,
-    COSOQ00201,
-    COSAQ00102,
     COSOQ02701,
     CIDBT00100,
     CIDBT00900,
     CIDBT01000,
-    CIDBQ01500,
-    CIDBQ01800,
     CIDBQ03000,
-
-    o3105,
 )
+from programgarden_finance.ls.models import SetupOptions
 
 from programgarden.pg_listener import pg_listener
 from programgarden.real_order_executor import RealOrderExecutor
+from programgarden.data_cache_manager import get_cache_manager, DataCacheManager
+from programgarden.adapters import (
+    adapt_stock_positions_to_held_list,
+    adapt_stock_open_orders_to_non_traded_list,
+    adapt_stock_balances_to_dps,
+    adapt_futures_positions_to_held_list,
+    adapt_futures_open_orders_to_non_traded_list,
+    adapt_futures_balance_to_dps,
+)
 from datetime import datetime
 
 if TYPE_CHECKING:
@@ -97,16 +104,22 @@ class BuySellExecutor:
             주문 결과를 커뮤니티로 안내하는 실행 브리지입니다.
     """
 
+    # 잔고/미체결 조회 재시도 횟수 (최대 2회 시도 = 1회 재시도)
+    MAX_QUERY_RETRIES: int = 1
+    # 재시도 간 대기 시간 (초)
+    RETRY_DELAY_SECONDS: float = 0.5
+
     def __init__(self, plugin_resolver: PluginResolver):
         """Initialize the executor with a plugin resolver dependency.
 
         EN:
             Stores the resolver and prepares a dedicated real order executor
-            instance for downstream notifications.
+            instance for downstream notifications. Also initializes the cache
+            manager for deposit caching.
 
         KR:
             리졸버를 보관하고, 커뮤니티 알림을 위한 전용 실거래 실행기 인스턴스를
-            준비합니다.
+            준비합니다. 예수금 캐싱을 위한 캐시 매니저도 초기화합니다.
 
         Args:
             plugin_resolver (PluginResolver):
@@ -129,6 +142,9 @@ class BuySellExecutor:
         # EN: Default to live execution unless overridden by settings.
         # KR: 설정에서 덮어쓰지 않으면 기본적으로 실거래 모드입니다.
         self.execution_mode: str = "live"
+        # EN: Cache manager for deposit and account data caching.
+        # KR: 예수금 및 계좌 데이터 캐싱을 위한 캐시 매니저입니다.
+        self._cache_manager: DataCacheManager = get_cache_manager()
 
     def configure_execution_mode(self, mode: str) -> None:
         """Update execution mode (live, guarded_live, or dry-run test)."""
@@ -137,7 +153,7 @@ class BuySellExecutor:
             candidate = "live"
         if candidate == self.execution_mode:
             return
-        order_logger.info(f"⚙️ 주문 실행 모드를 '{self.execution_mode}' -> '{candidate}'로 전환합니다")
+        logger.info(f"⚙️ 주문 실행 모드를 '{self.execution_mode}' -> '{candidate}'로 전환합니다")
         self.execution_mode = candidate
 
     def _symbol_label(self, symbol: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures, HeldSymbol, NonTradedSymbol]) -> str:
@@ -163,8 +179,8 @@ class BuySellExecutor:
                 KR: 거래소와 코드를 결합한 정규화된 표시 문자열입니다.
         """
         if isinstance(symbol, dict):
-            exch = symbol.get("exchcd") or symbol.get("OrdMktCode") or symbol.get("ExchCode") or symbol.get("OrdMktCodeVal") or "?"
-            code = symbol.get("symbol") or symbol.get("ShtnIsuNo") or symbol.get("IsuNo") or symbol.get("IsuCodeVal") or symbol.get("IsuCode") or "?"
+            exch = symbol.get("exchcd") or symbol.get("OrdMktCode") or symbol.get("ord_mkt_code") or symbol.get("ExchCode") or symbol.get("OrdMktCodeVal") or "?"
+            code = symbol.get("symbol") or symbol.get("ShtnIsuNo") or symbol.get("shtn_isu_no") or symbol.get("IsuNo") or symbol.get("IsuCodeVal") or symbol.get("IsuCode") or "?"
             return f"{exch}:{code}"
         return str(symbol)
 
@@ -325,12 +341,16 @@ class BuySellExecutor:
                 EN: Propagated from downstream order execution failures.
                 KR: 하위 주문 실행 실패가 발생하면 전파됩니다.
         """
-        order_logger.info(
+        logger.info(
             f"🛒 {order_id}: 신규 주문 진행을 시작합니다 (전략 종목 {len(res_symbols_from_conditions)}개)"
         )
+
+        # 주문 진행 로그
+        logger.debug(f"{order_id}: DPS 설정 중...")
         dps = await self._setup_dps(system, new_order)
 
         # 필터링, 보유, 미체결 종목들 가져오기
+        logger.debug(f"{order_id}: 중복 필터링 중...")
         non_held_symbols, held_symbols, non_trade_symbols = await self._block_duplicate_symbols(system, res_symbols_from_conditions)
         should_block_duplicates = new_order.get("block_duplicate_buy", True)
         product_key = system.get("securities", {}).get("product", "overseas_stock") or "overseas_stock"
@@ -343,10 +363,10 @@ class BuySellExecutor:
             res_symbols_from_conditions[:] = non_held_symbols
 
         if not res_symbols_from_conditions:
-            # order_logger.warning(f"No symbols to buy. order_id: {order_id}")
-            order_logger.info(f"⚪️ {order_id}: 중복 필터링 이후 실행할 종목이 없어 신규 주문을 종료합니다")
+            logger.info(f"⚪️ {order_id}: 중복 필터링 이후 실행할 종목이 없어 신규 주문을 종료합니다")
             return
 
+        logger.debug(f"{order_id}: 플러그인 처리 중...")
         purchase_symbols, community_instance = await self.plugin_resolver.resolve_buysell_community(
             system_id=system.get("settings", {}).get("system_id", None),
             trade=new_order,
@@ -357,13 +377,14 @@ class BuySellExecutor:
         )
 
         if not purchase_symbols:
-            order_logger.warning(f"❌ {order_id}: 조건을 통과한 종목이 없어 신규 주문을 중단합니다")
+            logger.warning(f"❌ {order_id}: 조건을 통과한 종목이 없어 신규 주문을 중단합니다")
             return
 
-        order_logger.info(
+        logger.info(
             f"🎯 {order_id}: 플러그인이 실행 가능한 종목 {len(purchase_symbols)}개를 반환했습니다"
         )
 
+        logger.debug(f"{order_id}: 주문 실행 중...")
         await self._execute_orders(
             system=system,
             symbols=purchase_symbols,
@@ -380,386 +401,118 @@ class BuySellExecutor:
         """Filter out duplicate or already-held symbols before ordering.
 
         EN:
-            Consults LS account APIs to gather current holdings and pending
-            orders, excluding duplicates when block rules are enabled, and
-            returns structured lists separating tradable, held, and pending
-            symbols.
+            Uses AccountTracker to get cached holdings and pending orders when
+            available, otherwise falls back to direct API calls. Excludes
+            duplicates when block rules are enabled and returns structured
+            lists separating tradable, held, and pending symbols.
 
         KR:
-            LS 계좌 API를 조회해 현재 보유 및 미체결 종목을 수집하고, 중복 차단
-            규칙이 활성화된 경우 전략 종목에서 제거한 뒤, 거래 가능/보유/미체결
-            목록을 구분해 반환합니다.
+            AccountTracker가 초기화되어 있으면 캐시된 보유/미체결 데이터를 사용하고,
+            그렇지 않으면 직접 API를 호출합니다. 중복 차단 규칙이 활성화된 경우
+            전략 종목에서 제거한 뒤, 거래 가능/보유/미체결 목록을 구분해 반환합니다.
 
         Args:
             system (SystemType):
-                EN: System configuration containing securities metadata
-                and credentials.
-                KR: 증권 메타데이터와 자격 정보를 포함한 시스템 구성입니다.
-            res_symbols_from_conditions (List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]]):
-                EN: Symbols produced by condition plugins prior to
-                filtering.
+                EN: System configuration containing securities metadata.
+                KR: 증권 메타데이터를 포함한 시스템 구성입니다.
+            res_symbols_from_conditions (List[...]):
+                EN: Symbols produced by condition plugins prior to filtering.
                 KR: 필터링 전에 조건 플러그인이 생성한 종목 목록입니다.
 
         Returns:
-            Tuple[List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]], List[HeldSymbol], List[NonTradedSymbol]]:
-                EN: Triple containing tradable symbols, current holdings,
-                and pending orders.
-                KR: 거래 가능 종목, 현재 보유 종목, 미체결 주문으로 구성된
-                튜플입니다.
-
-        Raises:
-            exceptions.OrderExecutionException:
-                EN: Emitted via listener when remote queries fail.
-                KR: 원격 조회 실패 시 리스너를 통해 발생하는 예외입니다.
+            Tuple[List[...], List[HeldSymbol], List[NonTradedSymbol]]:
+                EN: Triple containing tradable symbols, holdings, and pending orders.
+                KR: 거래 가능 종목, 보유 종목, 미체결 주문으로 구성된 튜플입니다.
         """
-
         held_symbols: List[HeldSymbol] = []
         non_trade_symbols: List[NonTradedSymbol] = []
+        held_isus: Set[str] = set()
 
         company = system.get("securities", {}).get("company", "")
         product = system.get("securities", {}).get("product", "")
-        paper_trading = bool(system.get("securities", {}).get("paper_trading", False))
 
-        if company == "ls" and product == "overseas_stock":
-            ls = LS.get_instance()
-            if getattr(ls, "token_manager", None) is not None:
-                ls.token_manager.configure_trading_mode(paper_trading)
-            if not ls.is_logged_in():
-                await ls.async_login(
-                        appkey=system.get("securities", {}).get("appkey", None),
-                        appsecretkey=system.get("securities", {}).get("appsecretkey", None),
-                        paper_trading=paper_trading,
-                    )
-
-            # 보유잔고에서 확인하기
-            acc_result = await ls.overseas_stock().accno().cosoq00201(
-                    body=COSOQ00201.COSOQ00201InBlock1(
-                        # BaseDt=datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d")
-                    )
-                ).req_async()
-
-            held_isus = set()
-            for blk in acc_result.block4:
-                shtn_isu_no = blk.ShtnIsuNo
-                if shtn_isu_no is not None:
-                    held_isus.add(str(shtn_isu_no).strip())
-
-                held_symbols.append(
-                    HeldSymbolOverseasStock(
-                        CrcyCode=blk.CrcyCode,
-                        ShtnIsuNo=shtn_isu_no,
-                        AstkBalQty=blk.AstkBalQty,
-                        AstkSellAbleQty=blk.AstkSellAbleQty,
-                        PnlRat=blk.PnlRat,
-                        BaseXchrat=blk.BaseXchrat,
-                        PchsAmt=blk.PchsAmt,
-                        FcurrMktCode=blk.FcurrMktCode
-                    )
-                )
-
-            # res_symbols_from_conditions에서
-            exchcds: set[str] = set()
-            for symbol in res_symbols_from_conditions:
-                exchcds.add(symbol.get("exchcd"))
-
-            for exchcd in exchcds:
-                # 미체결에서도 확인하기
-                not_acc_result = await ls.overseas_stock().accno().cosaq00102(
-                    body=COSAQ00102.COSAQ00102InBlock1(
-                        QryTpCode="1",
-                        BkseqTpCode="1",
-                        OrdMktCode=exchcd,
-                        BnsTpCode="0",
-                        SrtOrdNo="999999999",
-                        OrdDt=datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d"),
-                        ExecYn="2",
-                        CrcyCode="USD",
-                        ThdayBnsAppYn="0",
-                        LoanBalHldYn="0"
-                    )
-                ).req_async()
-
-                if not_acc_result.block3:
-                    for blk in not_acc_result.block3:
-                        isu_no = blk.IsuNo
-                        if isu_no is not None:
-                            held_isus.add(str(isu_no).strip())
-
-                        non_trade_symbols.append(
-                            NonTradedSymbolOverseasStock(
-                                OrdTime=blk.OrdTime,
-                                OrdNo=blk.OrdNo,
-                                OrgOrdNo=blk.OrgOrdNo,
-                                ShtnIsuNo=blk.ShtnIsuNo,
-                                MrcAbleQty=blk.MrcAbleQty,
-                                OrdQty=blk.OrdQty,
-                                OvrsOrdPrc=blk.OvrsOrdPrc,
-                                OrdprcPtnCode=blk.OrdprcPtnCode,
-                                OrdPtnCode=blk.OrdPtnCode,
-                                MrcTpCode=blk.MrcTpCode,
-                                OrdMktCode=blk.OrdMktCode,
-                                UnercQty=blk.UnercQty,
-                                CnfQty=blk.CnfQty,
-                                CrcyCode=blk.CrcyCode,
-                                RegMktCode=blk.RegMktCode,
-                                IsuNo=blk.IsuNo,
-                                BnsTpCode=blk.BnsTpCode
-                            )
-                        )
-
-            if held_isus:
-                non_held_symbols = []
-                for m_symbol in res_symbols_from_conditions:
-                    m_isu_no = m_symbol.get("symbol")
-
-                    if m_isu_no is None or str(m_isu_no).strip() not in held_isus:
-                        non_held_symbols.append(m_symbol)
-                return non_held_symbols, held_symbols, non_trade_symbols
-
+        if company != "ls":
             return res_symbols_from_conditions, held_symbols, non_trade_symbols
 
-        if company == "ls" and product == "overseas_futures":
-            ls = LS.get_instance()
-            if getattr(ls, "token_manager", None) is not None:
-                ls.token_manager.configure_trading_mode(paper_trading)
-            if not ls.is_logged_in():
-                await ls.async_login(
-                    appkey=system.get("securities", {}).get("appkey", None),
-                    appsecretkey=system.get("securities", {}).get("appsecretkey", None),
-                    paper_trading=paper_trading,
-                )
+        # Tracker 필수 - 초기화되지 않았으면 예외 발생
+        if not self._cache_manager.has_tracker:
+            raise RuntimeError(
+                "AccountTracker가 초기화되지 않았습니다. "
+                "system_executor._warmup_cache()가 먼저 실행되어야 합니다."
+            )
 
-            ny_time = datetime.now(ZoneInfo("America/New_York"))
-            query_date = ny_time.strftime("%Y%m%d")
+        return await self._block_duplicate_symbols_with_tracker(
+            product, res_symbols_from_conditions
+        )
 
-            held_positions: Dict[str, Set[str]] = {}
+    async def _block_duplicate_symbols_with_tracker(
+        self,
+        product: str,
+        res_symbols_from_conditions: List[Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]],
+    ):
+        """Tracker 기반 중복 체크 (캐시된 데이터 사용)"""
+        held_symbols: List[HeldSymbol] = []
+        non_trade_symbols: List[NonTradedSymbol] = []
+        held_isus: Set[str] = set()
 
-            def register_position(symbol_code: Optional[str], side_value: Optional[Union[str, int]]) -> None:
-                code = str(symbol_code or "").strip()
-                normalized_side = self._normalize_futures_side(side_value)
-                if not code:
-                    return
+        if product == "overseas_stock":
+            # Tracker에서 보유종목 조회
+            positions = self._cache_manager.get_positions()
+            held_list, held_isus = adapt_stock_positions_to_held_list(positions)
+            held_symbols.extend(held_list)
 
-                bucket = held_positions.setdefault(code, set())
-                if normalized_side is None:
-                    # Keep legacy behavior for symbols without directional data by tagging a wildcard entry.
-                    bucket.add("__any__")
-                else:
-                    bucket.discard("__any__")
-                    bucket.add(normalized_side)
+            # Tracker에서 미체결 조회
+            open_orders = self._cache_manager.get_open_orders()
+            non_traded_list, non_traded_isus = adapt_stock_open_orders_to_non_traded_list(open_orders)
+            non_trade_symbols.extend(non_traded_list)
+            held_isus.update(non_traded_isus)
 
-            try:
+            # 중복 종목 필터링
+            if held_isus:
+                non_held_symbols = [
+                    m for m in res_symbols_from_conditions
+                    if str(m.get("symbol", "")).strip() not in held_isus
+                ]
+                return non_held_symbols, held_symbols, non_trade_symbols
 
-                # 잔고 보유종목 조회
-                balance_resp = await ls.overseas_futureoption().accno().CIDBQ01500(
-                    body=CIDBQ01500.CIDBQ01500InBlock1(
-                        RecCnt=1,
-                        QryDt=query_date,
-                        BalTpCode="2",
-                    )
-                ).req_async()
-            except Exception as exc:
-                symbol_logger.exception(f"해외선물 잔고 조회에 실패했습니다: {exc}")
-                pg_listener.emit_exception(
-                    exceptions.OrderExecutionException(
-                        message="해외선물 잔고 조회에 실패했습니다.",
-                        data={"details": str(exc)},
-                    )
-                )
-                balance_resp = None
+        elif product == "overseas_futures":
+            # Tracker에서 보유종목 조회
+            positions = self._cache_manager.get_positions()
+            held_list, held_positions = adapt_futures_positions_to_held_list(positions)
+            held_symbols.extend(held_list)
 
-            if balance_resp and getattr(balance_resp, "block2", None):
-                for blk in balance_resp.block2:
-                    symbol_code = str(getattr(blk, "IsuCodeVal", "") or "").strip()
+            # Tracker에서 미체결 조회
+            open_orders = self._cache_manager.get_open_orders()
+            non_traded_list, non_traded_positions = adapt_futures_open_orders_to_non_traded_list(open_orders)
+            non_trade_symbols.extend(non_traded_list)
 
-                    # 해외선물 모의투자에서 지원 안 하는 종목일 수 있어서 확인하기
-                    o3105_symbol = await ls.get_instance().overseas_futureoption().market().o3105(
-                        body=o3105.O3105InBlock(
-                            symbol=symbol_code
-                        )
-                    ).req_async()
+            # 방향별 중복 필터링 (선물은 long/short 별도)
+            all_positions = {**held_positions}
+            for sym, sides in non_traded_positions.items():
+                all_positions.setdefault(sym, set()).update(sides)
 
-                    if not o3105_symbol.block or not o3105_symbol.block.Symbol:
-                        if ls.token_manager.paper_trading:
-                            symbol_logger.warning(f"해외선물 잔고 종목 조회 중단: 종목코드 {symbol_code}는(은) 모의투자API에서 조회할 수 없는 종목입니다.")
-                        symbol_logger.warning(f"해외선물 잔고 종목 조회 중단: 종목코드 {symbol_code}는(은) 지원되지 않는 종목입니다.")
-                        continue
-
-                    if symbol_code:
-                        register_position(symbol_code, getattr(blk, "BnsTpCode", None))
-
-                        def _clean_str(value):
-                            if isinstance(value, str):
-                                value = value.strip()
-                            return value or None
-
-                        def _clean_float(value):
-                            if value in (None, ""):
-                                return None
-                            try:
-                                return float(value)
-                            except (TypeError, ValueError):
-                                return None
-
-                        entry_data = {
-                            "IsuCodeVal": symbol_code,
-                            "IsuNm": _clean_str(getattr(blk, "IsuNm", None)),
-                            "BnsTpCode": _clean_str(getattr(blk, "BnsTpCode", None)),
-                            "DueDt": _clean_str(getattr(blk, "DueDt", None)),
-                            "CrcyCodeVal": _clean_str(getattr(blk, "CrcyCodeVal", None)),
-                            "PosNo": _clean_str(getattr(blk, "PosNo", None)),
-                        }
-
-                        for field_name in (
-                            "BalQty",
-                            "OrdAbleAmt",
-                            "OvrsDrvtNowPrc",
-                            "AbrdFutsEvalPnlAmt",
-                            "PchsPrc",
-                            "MaintMgn",
-                            "CsgnMgn",
-                        ):
-                            entry_data[field_name] = _clean_float(getattr(blk, field_name, None))
-
-                        entry: HeldSymbolOverseasFutures = {
-                            key: value for key, value in entry_data.items() if value is not None
-                        }
-
-                    held_symbols.append(entry)
-
-            try:
-                cidbq01800_resp = await ls.overseas_futureoption().accno().CIDBQ01800(
-                    body=CIDBQ01800.CIDBQ01800InBlock1(
-                        IsuCodeVal="",
-                        OrdDt="",
-                        OrdStatCode="2",
-                    )
-                ).req_async()
-            except Exception as exc:
-                order_logger.exception(f"해외선물 미체결 주문 조회에 실패했습니다 ({symbol_code}): {exc}")
-                pg_listener.emit_exception(
-                    exceptions.OrderExecutionException(
-                        message="해외선물 미체결 주문 조회에 실패했습니다.",
-                        data={"symbol": symbol_code, "details": str(exc)},
-                    )
-                )
-
-            if cidbq01800_resp and getattr(cidbq01800_resp, "block2", None):
-                for blk in cidbq01800_resp.block2:
-                    try:
-                        pending_qty = int(getattr(blk, "UnercQty", 0) or 0)
-                    except (TypeError, ValueError):
-                        pending_qty = 0
-
-                    if pending_qty <= 0:
-                        continue
-
-                    symbol_code = blk.IsuCodeVal
-
-                    # 해외선물 모의투자에서 지원 안 하는 종목일 수 있어서 확인하기
-                    exist_symbol = await ls.get_instance().overseas_futureoption().market().o3105(
-                        body=o3105.O3105InBlock(
-                            symbol=symbol_code
-                        )
-                    ).req_async()
-
-                    if not exist_symbol.block or not exist_symbol.block.Symbol:
-                        if ls.token_manager.paper_trading:
-                            symbol_logger.warning(f"해외선물 미체결 종목 조회 중단: 종목코드 {symbol_code}는(은) 모의투자API에서 조회할 수 없는 종목입니다.")
-                        symbol_logger.warning(f"해외선물 미체결 종목 조회 중단: 종목코드 {symbol_code}는(은) 지원되지 않는 종목입니다.")
-                        continue
-
-                    def _attr_str(name: str) -> Optional[str]:
-                        raw = getattr(blk, name, None)
-                        if raw is None:
-                            return None
-                        raw_str = str(raw).strip()
-                        return raw_str or None
-
-                    def _attr_int(name: str) -> Optional[int]:
-                        raw = getattr(blk, name, None)
-                        if raw in (None, ""):
-                            return None
-                        try:
-                            return int(raw)
-                        except (TypeError, ValueError):
-                            return None
-
-                    def _attr_float(name: str) -> Optional[float]:
-                        raw = getattr(blk, name, None)
-                        if raw in (None, ""):
-                            return None
-                        try:
-                            return float(raw)
-                        except (TypeError, ValueError):
-                            return None
-
-                    non_trade_symbol: NonTradedSymbolOverseasFutures = {
-                        key: value
-                        for key, value in {
-                            "OvrsFutsOrdNo": _attr_str("OvrsFutsOrdNo"),
-                            "OvrsFutsOrgOrdNo": _attr_str("OvrsFutsOrgOrdNo"),
-                            "IsuCodeVal": _attr_str("IsuCodeVal"),
-                            "OrdDt": _attr_str("OrdDt"),
-                            "OrdTime": _attr_str("OrdTime"),
-                            "BnsTpCode": _attr_str("BnsTpCode"),
-                            "FutsOrdStatCode": _attr_str("FutsOrdStatCode"),
-                            "FutsOrdTpCode": _attr_str("FutsOrdTpCode"),
-                            "AbrdFutsOrdPtnCode": _attr_str("AbrdFutsOrdPtnCode"),
-                            "IsuNm": _attr_str("IsuNm"),
-                            "UnercQty": pending_qty,
-                            "OrdQty": _attr_int("OrdQty"),
-                            "ExecQty": _attr_int("ExecQty"),
-                            "OvrsDrvtOrdPrc": _attr_float("OvrsDrvtOrdPrc"),
-                            "FcmOrdNo": _attr_str("FcmOrdNo"),
-                            "FcmAcntNo": _attr_str("FcmAcntNo"),
-                            "ExecBnsTpCode": _attr_str("ExecBnsTpCode"),
-                            "CvrgYn": _attr_str("CvrgYn"),
-                        }.items()
-                        if value is not None
-                    }
-
-                    non_trade_symbols.append(non_trade_symbol)
-                    register_position(symbol_code, _attr_str("BnsTpCode") or _attr_str("ExecBnsTpCode"))
-
-            if held_positions:
+            if all_positions:
                 non_held_symbols = []
                 for m_symbol in res_symbols_from_conditions:
-                    candidate_code = None
-                    if isinstance(m_symbol, dict):
-                        candidate_code = m_symbol.get("symbol") or m_symbol.get("symbol_code")
-                    elif hasattr(m_symbol, "get"):
-                        candidate_code = m_symbol.get("symbol")
-                    elif hasattr(m_symbol, "symbol"):
-                        candidate_code = getattr(m_symbol, "symbol")
-
-                    m_symbol_code = str(candidate_code or "").strip()
-                    blocked_sides = held_positions.get(m_symbol_code, set()) if m_symbol_code else set()
+                    m_symbol_code = str(m_symbol.get("symbol", "")).strip()
+                    blocked_sides = all_positions.get(m_symbol_code, set())
                     strategy_side = self._strategy_position_side(m_symbol)
 
                     if not m_symbol_code:
                         non_held_symbols.append(m_symbol)
                         continue
-
                     if "__any__" in blocked_sides:
-                        # Legacy fallback: once wildcard is set we treat the entire symbol as blocked.
                         continue
-
                     if not blocked_sides:
                         non_held_symbols.append(m_symbol)
                         continue
-
                     if strategy_side is None:
                         continue
-
                     if strategy_side in blocked_sides:
                         continue
-
                     non_held_symbols.append(m_symbol)
 
                 return non_held_symbols, held_symbols, non_trade_symbols
-
-            return res_symbols_from_conditions, held_symbols, non_trade_symbols
 
         return res_symbols_from_conditions, held_symbols, non_trade_symbols
 
@@ -770,7 +523,7 @@ class BuySellExecutor:
         modify_order: OrderStrategyType,
         order_id: str,
     ):
-        order_logger.debug(
+        logger.debug(
             f"🛠️ 정정 주문 종목 {len(symbols_from_strategy)}개에 대해서 {order_id} 계산을 시작합니다."
         )
         dps = await self._setup_dps(system, modify_order)
@@ -780,7 +533,7 @@ class BuySellExecutor:
 
         # 미체결 종목 없으면 넘기기
         if not non_trade_symbols:
-            order_logger.warning(f" 정정할 미체결 종목이 없어서 {order_id}의 계산을 강제 종료합니다.")
+            logger.warning(f" 정정할 미체결 종목이 없어서 {order_id}의 계산을 강제 종료합니다.")
             return
 
         # 미체결 종목 전략 계산으로
@@ -794,10 +547,10 @@ class BuySellExecutor:
         )
 
         if not modify_symbols:
-            order_logger.warning(f"❌ {order_id}: 조건을 통과한 종목이 없어 정정 주문을 중단합니다")
+            logger.warning(f"❌ {order_id}: 조건을 통과한 종목이 없어 정정 주문을 중단합니다")
             return
 
-        order_logger.info(
+        logger.info(
             f"🟡 {order_id}: 플러그인이 정정 대상 {len(modify_symbols)}개 종목을 반환했습니다"
         )
 
@@ -816,7 +569,7 @@ class BuySellExecutor:
         cancel_order: OrderStrategyType,
         order_id: str,
     ):
-        order_logger.info(
+        logger.info(
             f"🗑️ {order_id}: 취소 주문 흐름을 시작합니다 (전략 종목 {len(symbols_from_strategy)}개)"
         )
         dps = await self._setup_dps(system, cancel_order)
@@ -826,7 +579,7 @@ class BuySellExecutor:
 
         # 미체결 종목 없으면 넘기기
         if not non_trade_symbols:
-            order_logger.warning(f"⚠️ {order_id}: 취소할 미체결 종목이 없어 흐름을 종료합니다")
+            logger.warning(f"⚠️ {order_id}: 취소할 미체결 종목이 없어 흐름을 종료합니다")
             return
 
         # 미체결 종목 전략 계산으로
@@ -848,11 +601,11 @@ class BuySellExecutor:
         )
 
         if cancel_symbols:
-            order_logger.info(
+            logger.info(
                 f"🔴 {order_id}: 플러그인이 취소 대상 {len(cancel_symbols)}개 종목을 반환했습니다"
             )
         else:
-            order_logger.warning(
+            logger.warning(
                 f"❌ {order_id}: 취소 조건을 만족하는 종목이 없습니다"
             )
 
@@ -982,27 +735,32 @@ class BuySellExecutor:
         side_code = str(symbol.get("bns_tp_code", "2")).strip() or "2"
         if field == "new":
             order_type = "submitted_new_buy" if side_code == "2" else "submitted_new_sell"
+            event_type = "order_submitted"
         elif field == "modify":
             order_type = "modify_buy" if side_code == "2" else "modify_sell"
+            event_type = "order_modified"
         elif field == "cancel":
             order_type = "cancel_buy" if side_code == "2" else "cancel_sell"
+            event_type = "order_cancelled"
         else:
             order_type = "submitted_new_buy"
+            event_type = "order_submitted"
 
-        pg_listener.emit_real_order({
+        pg_listener.emit_order({
+            "event_type": event_type,
             "order_type": order_type,
             "message": result.rsp_msg,
             "response": result,
         })
 
         if result.error_msg:
-            order_logger.error(f"❗️ 주문 전송에 실패했습니다: {result.error_msg}")
+            logger.error(f"❗️ 주문 전송에 실패했습니다: {result.error_msg}")
             raise exceptions.OrderException(
                 message=f"Order placement failed: {result.error_msg}"
             )
         
         if result.block1 is None:
-            order_logger.error(f"❗️ 주문 접수에 실패했습니다: {result.status_code} - {result.rsp_msg}")
+            logger.error(f"❗️ 주문 접수에 실패했습니다: {result.status_code} - {result.rsp_msg}")
             raise exceptions.OrderException(
                 message=f"Order placement failed: {result.status_code} - {result.rsp_msg}"
             )
@@ -1012,9 +770,19 @@ class BuySellExecutor:
     async def _setup_dps(
         self,
         system: SystemType,
-        trade: OrderStrategyType
+        trade: OrderStrategyType,
+        use_cache: bool = True,
     ) -> List[DpsTyped]:
-        """Setup DPS (deposit) information for trading."""
+        """Setup DPS (deposit) information for trading with caching support.
+
+        EN:
+            Retrieves deposit information from cache when available, or fetches
+            from the broker API. Uses on_rate_limit="wait" option.
+
+        KR:
+            캐시에서 예수금 정보를 가져오거나, 없으면 브로커 API에서 조회합니다.
+            on_rate_limit="wait" 옵션을 사용합니다.
+        """
 
         available_balance = float(trade.get("available_balance", 0.0))
         dps: List[DpsTyped] = [
@@ -1028,37 +796,75 @@ class BuySellExecutor:
         product = system.get("securities", {}).get("product", "overseas_stock")
 
         if available_balance == 0.0 and is_ls:
-            if product == "overseas_stock":
-                cosoq02701 = await LS.get_instance().overseas_stock().accno().cosoq02701(
-                    body=COSOQ02701.COSOQ02701InBlock1(
-                        RecCnt=1,
-                        CrcyCode="USD",
-                    ),
-                ).req_async()
+            if use_cache:
+                # 캐시에서 예수금 조회 시도
+                cached_dps = await self._cache_manager.get_cached_data(
+                    product=product,  # type: ignore[arg-type]
+                    data_type="dps",
+                    fetch_fn=lambda: self._fetch_dps(product),
+                )
+                if cached_dps:
+                    return cached_dps
+            else:
+                return await self._fetch_dps(product)
 
-                if cosoq02701 and getattr(cosoq02701, "block3", None):
-                    dps[0]["deposit"] = cosoq02701.block3[0].FcurrDps
-                    dps[0]["orderable_amount"] = cosoq02701.block3[0].FcurrOrdAbleAmt
+        logger.debug(
+            f"현재 예수금은 ${dps[0]['deposit']}이고 주문가능금액은 ${dps[0]['orderable_amount']}입니다."
+        )
+        return dps
 
-            elif product == "overseas_futures":
-                cidbq03000 = await LS.get_instance().overseas_futureoption().accno().CIDBQ03000(
-                    body=CIDBQ03000.CIDBQ03000InBlock1(
-                        AcntTpCode="1",
-                        TrdDt="20251031",
-                    )
-                ).req_async()
+    async def _fetch_dps(self, product: str) -> List[DpsTyped]:
+        """Fetch deposit information directly from broker API.
 
-                if cidbq03000 and getattr(cidbq03000, "block2", None):
+        EN:
+            Calls the appropriate LS API based on product type to retrieve
+            current deposit and orderable amount. Uses on_rate_limit="wait" option.
 
-                    block = None
-                    for cid in cidbq03000.block2:
-                        if cid.CrcyObjCode == "USD":
-                            block = cid
-                            break
-                    dps[0]["deposit"] = block.OvrsFutsDps if block else 0.0
-                    dps[0]["orderable_amount"] = block.AbrdFutsOrdAbleAmt if block else 0.0
+        KR:
+            상품 유형에 따라 적절한 LS API를 호출하여 현재 예수금과 주문가능금액을
+            조회합니다. on_rate_limit="wait" 옵션을 사용합니다.
+        """
+        dps: List[DpsTyped] = [
+            {
+                "deposit": 0.0,
+                "orderable_amount": 0.0,
+                "currency": "USD"
+            }
+        ]
 
-        order_logger.debug(
+        if product == "overseas_stock":
+            cosoq02701 = await LS.get_instance().overseas_stock().accno().cosoq02701(
+                body=COSOQ02701.COSOQ02701InBlock1(
+                    RecCnt=1,
+                    CrcyCode="USD",
+                ),
+                options=SetupOptions(on_rate_limit="wait"),
+            ).req_async()
+
+            if cosoq02701 and getattr(cosoq02701, "block3", None):
+                dps[0]["deposit"] = cosoq02701.block3[0].FcurrDps
+                dps[0]["orderable_amount"] = cosoq02701.block3[0].FcurrOrdAbleAmt
+
+        elif product == "overseas_futures":
+            cidbq03000 = await LS.get_instance().overseas_futureoption().accno().CIDBQ03000(
+                body=CIDBQ03000.CIDBQ03000InBlock1(
+                    AcntTpCode="1",
+                    TrdDt="20251031",
+                ),
+                options=SetupOptions(on_rate_limit="wait"),
+            ).req_async()
+
+            if cidbq03000 and getattr(cidbq03000, "block2", None):
+
+                block = None
+                for cid in cidbq03000.block2:
+                    if cid.CrcyObjCode == "USD":
+                        block = cid
+                        break
+                dps[0]["deposit"] = block.OvrsFutsDps if block else 0.0
+                dps[0]["orderable_amount"] = block.AbrdFutsOrdAbleAmt if block else 0.0
+
+        logger.debug(
             f"현재 예수금은 ${dps[0]['deposit']}이고 주문가능금액은 ${dps[0]['orderable_amount']}입니다."
         )
         return dps
@@ -1080,10 +886,18 @@ class BuySellExecutor:
     ) -> None:
         """Execute trades for the given symbols."""
         product_key = system.get("securities", {}).get("product", "overseas_stock") or "overseas_stock"
+        total_symbols = len(symbols)
+        field_label = self._field_label(field)
+
+        logger.info(f"📦 {order_id}: {field_label} 주문 처리 시작 (종목 {total_symbols}개)")
+
+        completed_count = 0
+        success_count = 0
+
         for symbol in symbols:
 
             if symbol.get("success") is False:
-                order_logger.debug(
+                logger.debug(
                     f"{order_id}: 조건을 통과하지 못한 종목 {self._symbol_label(symbol)}을(를) 건너뜁니다"
                 )
                 continue
@@ -1092,7 +906,7 @@ class BuySellExecutor:
                 icon = self._field_icon(field)
                 field_label = self._field_label(field)
                 product_label = self._product_label(product_key)
-                order_logger.info(
+                logger.info(
                     f"🧪 {order_id}: {product_label} {field_label} 주문을 드라이런으로 기록만 하고 전송하지 않습니다 ({self._symbol_label(symbol)})"
                 )
                 await self.real_order_executor.send_data_community_instance(
@@ -1126,6 +940,22 @@ class BuySellExecutor:
             product_label = self._product_label(product_key)
             ord_display = ord_no or "-"
 
-            order_logger.info(
+            logger.info(
                 f"{icon} {order_id}: {product_label} {field_label} 주문 완료 ({self._symbol_label(symbol)}, 주문번호={ord_display})"
+            )
+            success_count += 1
+
+            completed_count += 1
+            logger.debug(
+                f"{order_id}: {field_label} 주문 처리 중... ({completed_count}/{total_symbols})"
+            )
+
+        # 결과 요약 로그
+        if success_count > 0:
+            logger.info(
+                f"✅ {order_id}: {field_label} 주문 {success_count}건 완료"
+            )
+        else:
+            logger.info(
+                f"⚠️ {order_id}: {field_label} 주문 완료된 건 없음"
             )

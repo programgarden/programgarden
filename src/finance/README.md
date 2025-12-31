@@ -63,7 +63,7 @@ asyncio.run(get_token())
 import asyncio
 import os
 from programgarden_finance import LS, g3101
-from programgarden_core import pg_logger
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -76,7 +76,7 @@ async def get_stock_price():
         appkey=os.getenv("APPKEY"),
         appsecretkey=os.getenv("APPSECRET")
     ):
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return
     
     # TSLA 현재가 조회
@@ -90,7 +90,7 @@ async def get_stock_price():
     )
     
     response = await result.req_async()
-    pg_logger.debug(f"TSLA 현재가: {response}")
+    logging.debug(f"TSLA 현재가: {response}")
 
 asyncio.run(get_stock_price())
 ```
@@ -101,7 +101,7 @@ asyncio.run(get_stock_price())
 import asyncio
 import os
 from programgarden_finance import LS
-from programgarden_core import pg_logger
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -113,7 +113,7 @@ async def subscribe_realtime():
         appkey=os.getenv("APPKEY"),
         appsecretkey=os.getenv("APPSECRET")
     ):
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return
     
     # 실시간 데이터 콜백
@@ -138,7 +138,7 @@ asyncio.run(subscribe_realtime())
 import asyncio
 import os
 from programgarden_finance import LS, o3101
-from programgarden_core import pg_logger
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -150,7 +150,7 @@ async def get_futures_master():
         appkey=os.getenv("APPKEY_FUTURE"),
         appsecretkey=os.getenv("APPSECRET_FUTURE")
     ):
-        pg_logger.error("로그인 실패")
+        logging.error("로그인 실패")
         return
     
     # 해외선물 마스터 조회

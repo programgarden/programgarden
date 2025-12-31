@@ -22,7 +22,9 @@ from ....tr_base import TRRequestAbstract, OccursReqAbstract
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.status import RequestStatus
 
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_futureoption.market.o3116")
 
 
 class TrO3116(TRRequestAbstract, OccursReqAbstract):
@@ -67,12 +69,12 @@ class TrO3116(TRRequestAbstract, OccursReqAbstract):
         error_msg = ""
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"o3116 request failed: {exc}")
+            logger.error(f"o3116 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"o3116 request failed with status: {error_msg}")
+            logger.error(f"o3116 request failed with status: {error_msg}")
 
         result = O3116Response(
             header=header,

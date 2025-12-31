@@ -3,7 +3,9 @@ from typing import Optional, Dict, Any
 import aiohttp
 
 from programgarden_core.exceptions import TrRequestDataNotFoundException
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_stock.order.COSMT00300")
 from .blocks import (
     COSMT00300InBlock1,
     COSMT00300OutBlock1,
@@ -58,12 +60,12 @@ class TrCOSMT00300(TROrderAbstract):
         error_msg: Optional[str] = None
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"COSMT00300 request failed: {exc}")
+            logger.error(f"COSMT00300 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"COSMT00300 request failed with status: {error_msg}")
+            logger.error(f"COSMT00300 request failed with status: {error_msg}")
 
         result = COSMT00300Response(
             header=header,

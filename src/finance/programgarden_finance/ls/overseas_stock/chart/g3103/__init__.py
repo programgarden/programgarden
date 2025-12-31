@@ -23,7 +23,9 @@ from .blocks import (
 from ....tr_base import TRRequestAbstract
 from ....tr_helpers import GenericTR
 from programgarden_finance.ls.config import URLS
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.overseas_stock.chart.g3103")
 
 
 class TrG3103(TRRequestAbstract):
@@ -77,12 +79,12 @@ class TrG3103(TRRequestAbstract):
         error_msg: Optional[str] = None
         if exc is not None:
             error_msg = str(exc)
-            pg_logger.error(f"g3103 request failed: {exc}")
+            logger.error(f"g3103 request failed: {exc}")
         elif is_error_status:
             error_msg = f"HTTP {status}"
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            pg_logger.error(f"g3103 request failed with status: {error_msg}")
+            logger.error(f"g3103 request failed with status: {error_msg}")
 
         result = G3103Response(
             header=header,

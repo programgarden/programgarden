@@ -4,7 +4,9 @@ import time
 from typing import Awaitable, Callable, Optional, ClassVar
 
 from .config import URLS
-from programgarden_core.logs import pg_logger
+import logging
+
+logger = logging.getLogger("programgarden.ls.token_manager")
 
 # 토큰 재발급 임계 시간(초): 만료 5분 전부터 재발급 시도
 TOKEN_REFRESH_SKEW_SECONDS = 300

@@ -536,6 +536,7 @@ class RealRequestAbstract(ABC):
         # AS0, AS2, AS3, AS4 어떤걸로 요청해도 증권사에서는 전부 다
         # 자동 등록되기 때문에 구분지어서 요청할 필요가 없다.
         if self._as01234_connect is False:
+            self._as01234_connect = True  # 중복 등록 방지
             from programgarden_finance.ls.overseas_stock.real.AS1.blocks import AS1RealRequest, AS1RealRequestBody, AS1RealRequestHeader
             req = AS1RealRequest(
                 header=AS1RealRequestHeader(
@@ -543,7 +544,7 @@ class RealRequestAbstract(ABC):
                     tr_type="1"
                 ),
                 body=AS1RealRequestBody(
-                    tr_cd="",
+                    tr_cd="AS1",
                     tr_key="",
                 )
             )

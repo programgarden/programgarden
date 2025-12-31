@@ -3,7 +3,8 @@ import os
 from dotenv import load_dotenv
 import asyncio
 from programgarden_finance import LS, CIDBT00900
-from programgarden_core import pg_logger, pg_log
+import logging
+logger = logging.getLogger(__name__)
 from datetime import datetime
 
 load_dotenv()
@@ -11,7 +12,7 @@ load_dotenv()
 
 async def test_req_CIDBT00900():
 
-    pg_log(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
     ls = LS()
 
@@ -22,7 +23,7 @@ async def test_req_CIDBT00900():
     )
 
     if login_result is False:
-        pg_logger.error("로그인 실패")
+        logger.error("로그인 실패")
         return
 
     ord_dt = datetime.now().strftime("%Y%m%d")

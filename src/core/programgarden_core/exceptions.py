@@ -9,7 +9,10 @@ KO:
     모아 구조화된 오류 정보를 제공하도록 합니다.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
+
+# 에러 심각도 타입 정의
+SeverityType = Literal["fatal", "strategy", "retryable", "ignorable"]
 
 
 class BasicException(Exception):
@@ -18,17 +21,30 @@ class BasicException(Exception):
     EN:
         Stores additional metadata in ``code`` and ``data`` so that API
         consumers can inspect machine-readable details.
+        The ``severity`` attribute categorizes how the system should respond:
+        - "fatal": Immediate shutdown required (auth failures, etc.)
+        - "strategy": Skip current strategy only, continue others
+        - "retryable": Retry the operation before escalating
+        - "ignorable": Log and continue execution
 
     KO:
         ``code`` 와 ``data`` 속성에 구조화된 메타데이터를 담아 API 소비자가
         기계적으로 오류를 식별할 수 있도록 합니다.
+        ``severity`` 속성은 시스템이 어떻게 대응해야 하는지 분류합니다:
+        - "fatal": 즉시 종료 필요 (인증 실패 등)
+        - "strategy": 현재 전략만 스킵, 다른 전략은 계속
+        - "retryable": 재시도 후 실패 시 에스컬레이션
+        - "ignorable": 로깅 후 계속 진행
     """
+
+    severity: SeverityType = "strategy"  # 기본값: 전략 레벨
 
     def __init__(
         self,
         message: str = "알 수 없는 오류가 발생했습니다.",
         code: str = "UNKNOWN_ERROR",
         data: Optional[Dict[str, Any]] = None,
+        severity: Optional[SeverityType] = None,
     ):
         """Initialize a basic exception instance with structured fields.
 
@@ -36,10 +52,13 @@ class BasicException(Exception):
             message (str): Human-readable error summary.
             code (str): Machine-friendly identifier describing the error type.
             data (Optional[Dict[str, Any]]): Extra context to attach to payloads.
+            severity (Optional[SeverityType]): Error severity level.
         """
         self.code: str = code
         self.message: str = message
         self.data: Dict[str, Any] = dict(data or {})
+        if severity is not None:
+            self.severity = severity
         super().__init__(message)
 
     def to_payload(self, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -81,6 +100,8 @@ class SystemShutdownException(BasicException):
         백그라운드 작업을 마무리할 수 있습니다.
     """
 
+    severity: SeverityType = "ignorable"  # 정상 종료는 무시 가능
+
     def __init__(
         self,
         message: str = "시스템이 정상적으로 종료되었습니다.",
@@ -100,6 +121,8 @@ class AppKeyException(BasicException):
     KO:
         설정 값에 ``appkey`` 또는 ``secretkey`` 가 없거나 잘못되었을 때 발생합니다.
     """
+
+    severity: SeverityType = "fatal"  # 인증 키 없으면 실행 불가
 
     def __init__(
         self,
@@ -121,6 +144,8 @@ class LoginException(BasicException):
         제공된 자격 증명으로 인증 플로우가 완료되지 못했음을 나타냅니다.
     """
 
+    severity: SeverityType = "fatal"  # 로그인 실패 시 실행 불가
+
     def __init__(
         self,
         message: str = "로그인에 실패했습니다.",
@@ -139,6 +164,8 @@ class TokenException(BasicException):
     KO:
         토큰 발급 과정에서 발생한 예외를 감싸 전달합니다.
     """
+
+    severity: SeverityType = "fatal"  # 토큰 발급 실패 시 API 호출 불가
 
     def __init__(
         self,
@@ -159,6 +186,8 @@ class TokenNotFoundException(BasicException):
         보관된 토큰이 만료되었거나 존재하지 않을 때 발생합니다.
     """
 
+    severity: SeverityType = "retryable"  # 토큰 갱신 후 재시도 가능
+
     def __init__(
         self,
         message: str = "토큰이 존재하지 않습니다.",
@@ -177,6 +206,8 @@ class TrRequestDataNotFoundException(BasicException):
     KO:
         필수 거래 요청 파라미터가 누락되었음을 나타냅니다.
     """
+
+    severity: SeverityType = "retryable"  # 데이터 준비 타이밍 문제일 수 있음
 
     def __init__(
         self,
@@ -217,6 +248,8 @@ class PerformanceExceededException(SystemException):
         사용자가 정의한 CPU 또는 메모리 임계치를 초과하여 Programgarden 실행을
         중단해야 함을 알립니다.
     """
+
+    severity: SeverityType = "fatal"  # 리소스 초과 시 즉시 종료
 
     def __init__(
         self,
@@ -275,6 +308,8 @@ class NotExistConditionException(SystemException):
         요청한 조건 매핑이 정의되지 않았음을 호출자에게 알려줍니다.
     """
 
+    severity: SeverityType = "strategy"  # 해당 전략만 스킵
+
     def __init__(
         self,
         message: str = "존재하지 않는 조건입니다.",
@@ -313,6 +348,8 @@ class NotExistCompanyException(SystemException):
         증권사 메타데이터와 구성이 일치하지 않을 때 문제를 진단합니다.
     """
 
+    severity: SeverityType = "fatal"  # 증권사 미지원 시 실행 불가
+
     def __init__(
         self,
         message: str = "증권사가 존재하지 않습니다.",
@@ -331,6 +368,9 @@ class InvalidCronExpressionException(SystemException):
     KO:
         스케줄 문자열이 크론 문법을 위반했음을 알립니다.
     """
+
+    severity: SeverityType = "strategy"  # 해당 전략만 스킵
+
     def __init__(
         self,
         message: str = "잘못된 Cron 식입니다.",
@@ -349,6 +389,8 @@ class ConditionExecutionException(SystemException):
     KO:
         전략 조건 평가기에서 발생한 예외를 감싸 제공합니다.
     """
+
+    severity: SeverityType = "strategy"  # 해당 전략만 스킵
 
     def __init__(
         self,
@@ -369,6 +411,8 @@ class OrderExecutionException(OrderException):
         주문 전송 또는 브로커 응답 처리 중 문제를 나타냅니다.
     """
 
+    severity: SeverityType = "retryable"  # 재시도 가능
+
     def __init__(
         self,
         message: str = "주문 실행 중 오류가 발생했습니다.",
@@ -388,6 +432,8 @@ class StrategyExecutionException(SystemException):
         전략 루프나 평가기에서 복구 불가능한 오류가 발생했음을 나타냅니다.
     """
 
+    severity: SeverityType = "strategy"  # 해당 전략만 스킵
+
     def __init__(
         self,
         message: str = "전략 실행 중 오류가 발생했습니다.",
@@ -406,6 +452,8 @@ class SystemInitializationException(SystemException):
     KO:
         의존성 연결 등 초기화 단계에서 발생한 문제를 알려줍니다.
     """
+
+    severity: SeverityType = "fatal"  # 초기화 실패 시 실행 불가
 
     def __init__(
         self,

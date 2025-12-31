@@ -6,6 +6,7 @@ for retrying requests asynchronously and for processing continuous (repeated) re
 
 from abc import ABC, abstractmethod
 import asyncio
+import logging
 import math
 import threading
 import time
@@ -18,7 +19,8 @@ from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
 
 from .status import RequestStatus
-from programgarden_core.logs import pg_logger
+
+logger = logging.getLogger("programgarden.ls.tr_base")
 
 
 TRresponse = TypeVar("TRresponse")
@@ -189,7 +191,7 @@ class TRRequestAbstract(ABC):
             return resp, response_json, headers
 
         except requests.RequestException as e:
-            pg_logger.error(f"동기 요청 실패: {e}")
+            logger.error(f"동기 요청 실패: {e}")
             raise
 
     def is_rate_limited(self) -> bool:
