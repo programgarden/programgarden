@@ -11,7 +11,7 @@ KO:
 
 from programgarden_core.alias_resolver import normalize_system_config
 from programgarden_core.bases import (
-    SystemType, StrategyConditionType,
+    SystemType,
     StrategyType, SystemSettingType, PerfThresholdsType,
     DictConditionType,
     SecuritiesAccountType,
@@ -73,7 +73,6 @@ __all__ = [
     EnforceKoreanAliasMeta,
 
     SecuritiesAccountType,
-    StrategyConditionType,
     StrategyType,
     DictConditionType,
     SystemSettingType,
@@ -87,7 +86,6 @@ __all__ = [
     SystemType,
     StrategyType,
     SecuritiesAccountType,
-    StrategyConditionType,
     DictConditionType,
     SystemSettingType,
     PerfThresholdsType,

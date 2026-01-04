@@ -268,7 +268,7 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
     ```
 
     2. 개인 전략을 활용하려면 `python` 코드를 이용해 커스텀 가능합니다. [커스텀하기](custom_dsl.md)
-    3. 조건 중첩도 가능합니다. 하위 conditions가 통과되면 상위 conditions의 계산을 수행하는 형태입니다.
+    3. 조건 중첩도 가능합니다. 하위 conditions가 통과되면 상위 condition_id의 계산을 수행하는 형태입니다.
 
     ```python
     {
@@ -276,14 +276,19 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
         "params": {
             ...
         },
-        # 중첩을 합니다.
+        # 중첩 시 하위 조건들에 적용할 논리 연산자 (all, any, at_least 등)
+        "logic": "all",
+        # logic이 at_least, weighted 등일 때 사용하는 임계값
+        "threshold": 1,
+        # 중첩을 합니다. 하위가 먼저 평가되고, 통과하면 상위(SMAGoldenDeadCross)가 평가됩니다.
         "conditions": [
             {
                 "condition_id": "IncreaseAmount",
                 "params": {
                     ...
                 },
-                # 추가 중첩 예시
+                # 추가 중첩 예시 - logic 지정 필수
+                "logic": "all",
                 "conditions": [
                     {
                         "condition_id": "VolumeSpike",
@@ -293,6 +298,24 @@ ProgramGarden 자동매매는 4가지 항목을 가집니다.
                     }
                 ]
             }
+        ]
+    }
+    ```
+
+    위 예시의 실행 순서:
+    1. VolumeSpike 평가 → 통과 시
+    2. IncreaseAmount 평가 → 통과 시
+    3. SMAGoldenDeadCross 평가 → 통과 시 최종 성공
+    
+    순수 그룹 노드도 지원합니다. `condition_id` 없이 `logic`과 `conditions`만 있으면 그룹의 결과만 반환합니다.
+
+    ```python
+    {
+        "logic": "weighted",
+        "threshold": 0.6,
+        "conditions": [
+            {"condition_id": "OBV", "weight": 0.4, "params": {...}},
+            {"condition_id": "VolumeSpike", "weight": 0.4, "params": {...}}
         ]
     }
     ```

@@ -51,7 +51,7 @@ class BaseStrategyConditionResponseCommon(TypedDict):
     """EN: Additional payload produced by the condition implementation.
     KO: 조건 구현이 제공하는 추가 데이터입니다."""
 
-    weight: NotRequired[int]
+    weight: NotRequired[float]
     """EN: Optional weighting factor between 0 and 1 (defaults to 0).
     KO: 0과 1 사이에서 선택적으로 설정하는 가중치입니다 (기본값 0)."""
 

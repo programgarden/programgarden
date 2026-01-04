@@ -39,7 +39,7 @@ from programgarden_core import (
     BaseStrategyConditionOverseasFutures,
     BaseStrategyConditionResponseOverseasStockType,
     BaseStrategyConditionResponseOverseasFuturesType,
-    StrategyConditionType,
+    DictConditionType,
     StrategyType,
     SymbolInfoOverseasStock,
     SymbolInfoOverseasFutures,
@@ -281,7 +281,7 @@ class ConditionExecutor:
 
         return coerced
 
-    def _describe_condition(self, condition: StrategyConditionType) -> str:
+    def _describe_condition(self, condition: DictConditionType) -> str:
         """Produce a human-readable identifier for logging.
 
         EN:
@@ -294,7 +294,7 @@ class ConditionExecutor:
             객체일 경우 속성 기반 식별자를 생성해 로깅 정보를 풍부하게 합니다.
 
         Args:
-            condition (StrategyConditionType):
+            condition (DictConditionType):
                 EN: Condition object or dictionary as defined in strategy
                 configuration.
                 KR: 전략 설정에 정의된 조건 객체 또는 딕셔너리입니다.
@@ -483,7 +483,7 @@ class ConditionExecutor:
         *,
         success: bool,
         condition_id: Optional[str] = None,
-        weight: int = 0,
+        weight: float = 0,
         data: Any = None,
         position_side: Optional[str] = None,
     ) -> Union[BaseStrategyConditionResponseOverseasStockType, BaseStrategyConditionResponseOverseasFuturesType]:
@@ -555,7 +555,7 @@ class ConditionExecutor:
         condition: Union[
             BaseStrategyConditionOverseasStock,
             BaseStrategyConditionOverseasFutures,
-            StrategyConditionType,
+            DictConditionType,
         ],
     ) -> Union[
         BaseStrategyConditionResponseOverseasStockType,
@@ -619,12 +619,52 @@ class ConditionExecutor:
                     condition=condition,
                     symbol_info=symbol_info,
                 )
-            # Nested condition group
+            # Nested condition group with optional parent condition_id
             if "conditions" in condition:
                 logger.debug(
                     f"group: {self._symbol_label(symbol_info)}에 대해 로직 '{condition.get('logic', 'and')}'을 평가합니다"
                 )
-                return await self._execute_nested_condition(system, symbol_info, condition)
+                # 1단계: 하위 conditions 먼저 평가
+                nested_result = await self._execute_nested_condition(system, symbol_info, condition)
+                
+                # 하위가 실패하면 상위 평가 없이 바로 실패 반환
+                if not nested_result.get("success", False):
+                    return nested_result
+                
+                # 2단계: 하위 통과 후 condition_id가 있으면 상위 플러그인 평가
+                if "condition_id" in condition:
+                    logger.debug(
+                        f"{condition.get('condition_id')}: 하위 조건 통과 후 상위 조건을 평가합니다"
+                    )
+                    parent_result = await self._execute_plugin_condition(
+                        system_id=system.get("settings", {}).get("system_id", None),
+                        condition=condition,
+                        symbol_info=symbol_info,
+                    )
+                    
+                    # 상위가 실패하면 최종 실패
+                    if not parent_result.get("success", False):
+                        return parent_result
+                    
+                    # 상위도 통과: weight와 position_side 합성
+                    combined_weight = nested_result.get("weight", 0) + parent_result.get("weight", 0)
+                    # position_side는 상위 결과 우선, 없으면 하위 결과 사용
+                    combined_position_side = parent_result.get("position_side") or nested_result.get("position_side")
+                    
+                    return self._build_response(
+                        symbol_info,
+                        success=True,
+                        condition_id=condition.get("condition_id"),
+                        weight=combined_weight,
+                        data={
+                            "parent": parent_result.get("data"),
+                            "nested": nested_result.get("data"),
+                        },
+                        position_side=combined_position_side,
+                    )
+                
+                # condition_id가 없으면 하위 결과만 반환
+                return nested_result
             # Unknown dict shape: treat as failure but keep symbol context.
             return self._build_response(symbol_info, success=False)
 
@@ -692,7 +732,7 @@ class ConditionExecutor:
         self,
         system: SystemType,
         symbol_info: Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures],
-        condition_nested: StrategyConditionType,
+        condition_nested: DictConditionType,
     ) -> Union[
         BaseStrategyConditionResponseOverseasStockType,
         BaseStrategyConditionResponseOverseasFuturesType,
@@ -716,7 +756,7 @@ class ConditionExecutor:
             symbol_info (Union[SymbolInfoOverseasStock, SymbolInfoOverseasFutures]):
                 EN: Symbol context shared by the nested conditions.
                 KR: 중첩 조건이 공유하는 종목 컨텍스트입니다.
-            condition_nested (StrategyConditionType):
+            condition_nested (DictConditionType):
                 EN: Dictionary describing the logical group (contains
                 ``conditions``/``logic``/``threshold`` keys).
                 KR: ``conditions``/``logic``/``threshold`` 키를 포함하는 논리 그룹

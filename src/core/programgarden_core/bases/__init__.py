@@ -16,7 +16,6 @@ from .system import (
 
     StrategyType,
     SecuritiesAccountType,
-    StrategyConditionType,
     DictConditionType,
 
     OrderStrategyType,
@@ -82,7 +81,6 @@ __all__ = [
     SystemType,
     StrategyType,
     SecuritiesAccountType,
-    StrategyConditionType,
     DictConditionType,
     SystemSettingType,
     PerfThresholdsType,

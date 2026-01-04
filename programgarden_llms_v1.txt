@@ -1753,7 +1753,7 @@ sns: https://youtube.com/abc
     "symbol": str,                 # 필수: 종목 코드
     "exchcd": str,                 # 필수: 거래소 코드
     "data": Any,                   # 필수: 추가 데이터
-    "weight": int,                 # 가중치 0~1 (선택, 기본 0)
+    "weight": float,               # 가중치 0~1 (선택, 기본 0)
     "product": "overseas_stock",   # 필수: 상품 유형
 }
 ```
@@ -1767,7 +1767,7 @@ sns: https://youtube.com/abc
     "symbol": str,                 # 필수: 종목 코드
     "exchcd": str,                 # 필수: 거래소 코드
     "data": Any,                   # 필수: 추가 데이터
-    "weight": int,                 # 가중치 0~1 (선택, 기본 0)
+    "weight": float,               # 가중치 0~1 (선택, 기본 0)
     "product": "overseas_futures", # 필수: 상품 유형
     "position_side": str,          # 필수: long|short|flat|neutral
 }

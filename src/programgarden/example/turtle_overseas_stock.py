@@ -46,6 +46,7 @@ if __name__ == "__main__":
                 'version': '1.0.0',
                 'author': 'Programgarden Community',
                 'date': '2025-11-22',
+                'dry_run_mode': 'test',
             },
             'securities': {
                 'company': 'ls',

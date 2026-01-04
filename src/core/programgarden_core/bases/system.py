@@ -57,42 +57,6 @@ KO:
 """
 
 
-class StrategyConditionType(TypedDict):
-    """Nested condition definitions for strategy configuration.
-
-    EN:
-        Describes condition trees composed of both primitive and class-based
-        conditions.
-
-    KO:
-        기본 조건과 클래스 기반 조건으로 구성된 조건 트리를 설명합니다.
-    """
-
-    id: str
-    """EN: Unique identifier for the condition node.
-    KO: 조건 노드의 고유 식별자입니다."""
-
-    description: NotRequired[str]
-    """EN: Human-readable description of the condition.
-    KO: 조건 로직에 대한 설명입니다."""
-
-    logic: LogicType
-    """EN: Logical reducer applied to child conditions.
-    KO: 하위 조건에 적용되는 논리 연산자입니다."""
-
-    threshold: NotRequired[int]
-    """EN: Numeric threshold used by reducers such as ``at_least``.
-    KO: ``at_least`` 등에서 사용하는 수치 임계값입니다."""
-
-    conditions: List[Union[
-        'StrategyConditionType',
-        BaseStrategyConditionOverseasStock,
-        BaseStrategyConditionOverseasFutures,
-    ]]
-    """EN: Child conditions to evaluate.
-    KO: 평가할 하위 조건 목록입니다."""
-
-
 class MaxSymbolsLimitType(TypedDict):
     """Constraints for limiting the number of selected symbols.
 
@@ -257,7 +221,6 @@ class StrategyType(TypedDict):
     KO: 전략이 처리할 종목 수를 제한합니다."""
 
     conditions: NotRequired[List[Union[
-        'StrategyConditionType',
         'DictConditionType',
         BaseStrategyConditionOverseasStock,
         BaseStrategyConditionOverseasFutures,
@@ -275,23 +238,56 @@ class DictConditionType(TypedDict):
 
     EN:
         Allows referencing condition implementations by identifier along with
-        parameter dictionaries.
+        parameter dictionaries. Supports nested conditions where child
+        conditions are evaluated first before the parent condition_id.
+
+        Execution flow (bottom-up):
+        1. If ``conditions`` exists, evaluate nested conditions first
+        2. If nested conditions pass AND ``condition_id`` exists, evaluate parent
+        3. Combine weights and position_side from both levels
 
     KO:
         식별자와 매개변수 사전을 통해 조건 구현을 참조할 수 있습니다.
+        하위 조건(conditions)이 먼저 평가되고, 통과하면 상위 조건(condition_id)이
+        평가되는 중첩 구조를 지원합니다.
+
+        실행 흐름 (하위 → 상위):
+        1. ``conditions``가 있으면 하위 조건 먼저 평가
+        2. 하위 조건 통과 AND ``condition_id``가 있으면 상위 조건 평가
+        3. 두 레벨의 weight와 position_side를 합성
     """
 
-    condition_id: str
+    condition_id: NotRequired[str]
     """EN: Identifier of the condition to resolve dynamically.
-    KO: 동적으로 로드할 조건의 식별자입니다."""
+        Optional when used as a pure group node (logic + conditions only).
+    KO: 동적으로 로드할 조건의 식별자입니다.
+        순수 그룹 노드(logic + conditions만)로 사용할 경우 생략 가능합니다."""
 
     params: NotRequired[Dict[str, Any]]
     """EN: Parameters forwarded to the condition implementation.
     KO: 조건 구현에 전달할 매개변수입니다."""
 
-    weight: NotRequired[int]
+    weight: NotRequired[float]
     """EN: Optional weighting factor (defaults to 0).
     KO: 선택적 가중치이며 기본값은 0입니다."""
+
+    logic: NotRequired[LogicType]
+    """EN: Logical reducer applied to nested ``conditions``.
+        Required when ``conditions`` is present.
+    KO: 중첩된 ``conditions``에 적용되는 논리 연산자입니다.
+        ``conditions``가 있을 때 필수입니다."""
+
+    threshold: NotRequired[int]
+    """EN: Numeric threshold used by reducers such as ``at_least``, ``weighted``.
+    KO: ``at_least``, ``weighted`` 등에서 사용하는 수치 임계값입니다."""
+
+    conditions: NotRequired[List[Union[
+        'DictConditionType',
+        BaseStrategyConditionOverseasStock,
+        BaseStrategyConditionOverseasFutures,
+    ]]]
+    """EN: Nested child conditions evaluated before this condition.
+    KO: 이 조건보다 먼저 평가되는 하위 중첩 조건입니다."""
 
 
 class PerfThresholdsType(TypedDict, total=False):
