@@ -1,83 +1,133 @@
-"""Custom exception definitions used throughout ProgramGarden.
-
-EN:
-    Centralizes domain-specific error types so that the finance, core, and
-    application layers can raise rich exceptions with structured payloads.
-
-KO:
-    금융, 코어, 애플리케이션 레이어에서 공통으로 사용하는 도메인 전용 예외를
-    모아 구조화된 오류 정보를 제공하도록 합니다.
+"""
+ProgramGarden Core - 예외 클래스 정의
 """
 
-from typing import Any, Dict, Literal, Optional
-
-# 에러 심각도 타입 정의
-SeverityType = Literal["fatal", "strategy", "retryable", "ignorable"]
+from typing import Optional, Any
 
 
-class BasicException(Exception):
-    """Base exception carrying a code, message, and optional payload.
+class ProgramGardenError(Exception):
+    """ProgramGarden 기본 예외"""
 
-    EN:
-        Stores additional metadata in ``code`` and ``data`` so that API
-        consumers can inspect machine-readable details.
-        The ``severity`` attribute categorizes how the system should respond:
-        - "fatal": Immediate shutdown required (auth failures, etc.)
-        - "strategy": Skip current strategy only, continue others
-        - "retryable": Retry the operation before escalating
-        - "ignorable": Log and continue execution
+    def __init__(self, message: str, details: Optional[dict] = None):
+        super().__init__(message)
+        self.message = message
+        self.details = details or {}
 
-    KO:
-        ``code`` 와 ``data`` 속성에 구조화된 메타데이터를 담아 API 소비자가
-        기계적으로 오류를 식별할 수 있도록 합니다.
-        ``severity`` 속성은 시스템이 어떻게 대응해야 하는지 분류합니다:
-        - "fatal": 즉시 종료 필요 (인증 실패 등)
-        - "strategy": 현재 전략만 스킵, 다른 전략은 계속
-        - "retryable": 재시도 후 실패 시 에스컬레이션
-        - "ignorable": 로깅 후 계속 진행
-    """
 
-    severity: SeverityType = "strategy"  # 기본값: 전략 레벨
+class ValidationError(ProgramGardenError):
+    """워크플로우 검증 오류"""
 
     def __init__(
         self,
-        message: str = "알 수 없는 오류가 발생했습니다.",
-        code: str = "UNKNOWN_ERROR",
-        data: Optional[Dict[str, Any]] = None,
-        severity: Optional[SeverityType] = None,
+        message: str,
+        node_id: Optional[str] = None,
+        field: Optional[str] = None,
+        details: Optional[dict] = None,
     ):
-        """Initialize a basic exception instance with structured fields.
+        super().__init__(message, details)
+        self.node_id = node_id
+        self.field = field
 
-        Parameters:
-            message (str): Human-readable error summary.
-            code (str): Machine-friendly identifier describing the error type.
-            data (Optional[Dict[str, Any]]): Extra context to attach to payloads.
-            severity (Optional[SeverityType]): Error severity level.
-        """
+
+class ExecutionError(ProgramGardenError):
+    """워크플로우 실행 오류"""
+
+    def __init__(
+        self,
+        message: str,
+        job_id: Optional[str] = None,
+        node_id: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        super().__init__(message, details)
+        self.job_id = job_id
+        self.node_id = node_id
+
+
+class CredentialError(ProgramGardenError):
+    """인증 정보 오류"""
+
+    def __init__(
+        self,
+        message: str,
+        credential_id: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        super().__init__(message, details)
+        self.credential_id = credential_id
+
+
+class PluginError(ProgramGardenError):
+    """플러그인 오류"""
+
+    def __init__(
+        self,
+        message: str,
+        plugin_id: Optional[str] = None,
+        version: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        super().__init__(message, details)
+        self.plugin_id = plugin_id
+        self.version = version
+
+
+class ConnectionError(ProgramGardenError):
+    """연결 오류 (WebSocket, REST API)"""
+
+    def __init__(
+        self,
+        message: str,
+        provider: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        super().__init__(message, details)
+        self.provider = provider
+
+
+class OrderError(ProgramGardenError):
+    """주문 실행 오류"""
+
+    def __init__(
+        self,
+        message: str,
+        order_id: Optional[str] = None,
+        symbol: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        super().__init__(message, details)
+        self.order_id = order_id
+        self.symbol = symbol
+
+
+# =============================================================================
+# Finance 패키지 전용 예외 (LS증권 OpenAPI)
+# =============================================================================
+
+
+class FinanceError(Exception):
+    """Finance 패키지 기본 예외
+
+    EN:
+        Base exception for finance package carrying code, message, and payload.
+
+    KO:
+        Finance 패키지의 기본 예외로, 코드, 메시지, 데이터를 담습니다.
+    """
+
+    def __init__(
+        self,
+        message: str = "알 수 없는 금융 오류가 발생했습니다.",
+        code: str = "FINANCE_ERROR",
+        data: Optional[dict] = None,
+    ):
         self.code: str = code
         self.message: str = message
-        self.data: Dict[str, Any] = dict(data or {})
-        if severity is not None:
-            self.severity = severity
+        self.data: dict = dict(data or {})
         super().__init__(message)
 
-    def to_payload(self, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Serialize the exception into a dictionary payload.
-
-        EN:
-            Merge ``self.data`` with ``extra`` to make transport-friendly error
-            objects suitable for logging or API responses.
-
-        KO:
-            ``self.data`` 와 ``extra`` 를 병합하여 로그 및 API 응답에 사용하기 좋은
-            사전 형태의 오류 객체를 생성합니다.
-
-        Parameters:
-            extra (Optional[Dict[str, Any]]): Additional metadata to merge.
-
-        Returns:
-            Dict[str, Any]: Structured payload containing code, message, data.
-        """
+    def to_payload(self, extra: Optional[dict] = None) -> dict:
+        """예외를 딕셔너리로 직렬화"""
         payload_data = dict(self.data)
         if extra:
             payload_data.update(extra)
@@ -88,377 +138,96 @@ class BasicException(Exception):
         }
 
 
-class SystemShutdownException(BasicException):
-    """Raised when ProgramGarden performs a controlled shutdown.
+class AppKeyException(FinanceError):
+    """인증 키 누락 또는 유효하지 않음
 
     EN:
-        Indicates that execution stopped gracefully and clients can terminate
-        background work without retrying.
+        Raised when appkey or secretkey credentials are missing or invalid.
 
     KO:
-        프로그램이 정상적으로 종료되었다는 신호이며, 클라이언트는 재시도 없이
-        백그라운드 작업을 마무리할 수 있습니다.
+        appkey 또는 secretkey가 누락되었거나 유효하지 않을 때 발생합니다.
     """
-
-    severity: SeverityType = "ignorable"  # 정상 종료는 무시 가능
-
-    def __init__(
-        self,
-        message: str = "시스템이 정상적으로 종료되었습니다.",
-        code: str = "SYSTEM_SHUTDOWN",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class AppKeyException(BasicException):
-    """Raised when authentication keys are missing or invalid.
-
-    EN:
-        Emitted when ``appkey`` or ``secretkey`` credentials are absent from the
-        configuration payload.
-
-    KO:
-        설정 값에 ``appkey`` 또는 ``secretkey`` 가 없거나 잘못되었을 때 발생합니다.
-    """
-
-    severity: SeverityType = "fatal"  # 인증 키 없으면 실행 불가
 
     def __init__(
         self,
         message: str = "appkey 또는 secretkey가 존재하지 않습니다.",
         code: str = "APPKEY_NOT_FOUND",
-        data: Optional[Dict[str, Any]] = None,
+        data: Optional[dict] = None,
     ):
         super().__init__(message=message, code=code, data=data)
 
 
-class LoginException(BasicException):
-    """Raised when broker login attempts fail.
+class LoginException(FinanceError):
+    """로그인 실패
 
     EN:
-        Signals that the authentication workflow could not complete with the
-        provided credentials.
+        Raised when broker login attempts fail.
 
     KO:
-        제공된 자격 증명으로 인증 플로우가 완료되지 못했음을 나타냅니다.
+        증권사 로그인에 실패했을 때 발생합니다.
     """
-
-    severity: SeverityType = "fatal"  # 로그인 실패 시 실행 불가
 
     def __init__(
         self,
         message: str = "로그인에 실패했습니다.",
         code: str = "LOGIN_ERROR",
-        data: Optional[Dict[str, Any]] = None,
+        data: Optional[dict] = None,
     ):
         super().__init__(message=message, code=code, data=data)
 
 
-class TokenException(BasicException):
-    """Raised when issuing API tokens fails unexpectedly.
+class TokenException(FinanceError):
+    """토큰 발급 실패
 
     EN:
-        Wraps errors produced during token creation steps.
+        Raised when issuing API tokens fails.
 
     KO:
-        토큰 발급 과정에서 발생한 예외를 감싸 전달합니다.
+        API 토큰 발급에 실패했을 때 발생합니다.
     """
-
-    severity: SeverityType = "fatal"  # 토큰 발급 실패 시 API 호출 불가
 
     def __init__(
         self,
-        message: str = "토큰 발급 실패했습니다.",
+        message: str = "토큰 발급에 실패했습니다.",
         code: str = "TOKEN_ERROR",
-        data: Optional[Dict[str, Any]] = None,
+        data: Optional[dict] = None,
     ):
         super().__init__(message=message, code=code, data=data)
 
 
-class TokenNotFoundException(BasicException):
-    """Raised when a previously issued token cannot be located.
+class TokenNotFoundException(FinanceError):
+    """토큰을 찾을 수 없음
 
     EN:
-        Often triggered when secure storage is empty or expired.
+        Raised when a previously issued token cannot be located.
 
     KO:
-        보관된 토큰이 만료되었거나 존재하지 않을 때 발생합니다.
+        발급된 토큰이 만료되었거나 존재하지 않을 때 발생합니다.
     """
-
-    severity: SeverityType = "retryable"  # 토큰 갱신 후 재시도 가능
 
     def __init__(
         self,
         message: str = "토큰이 존재하지 않습니다.",
         code: str = "TOKEN_NOT_FOUND",
-        data: Optional[Dict[str, Any]] = None,
+        data: Optional[dict] = None,
     ):
         super().__init__(message=message, code=code, data=data)
 
 
-class TrRequestDataNotFoundException(BasicException):
-    """Raised when mandatory TR request payloads are missing.
+class TrRequestDataNotFoundException(FinanceError):
+    """TR 요청 데이터 누락
 
     EN:
-        Indicates that API calls lack required transaction request parameters.
+        Raised when mandatory TR request payloads are missing.
 
     KO:
-        필수 거래 요청 파라미터가 누락되었음을 나타냅니다.
+        필수 TR(거래) 요청 파라미터가 누락되었을 때 발생합니다.
     """
-
-    severity: SeverityType = "retryable"  # 데이터 준비 타이밍 문제일 수 있음
 
     def __init__(
         self,
         message: str = "TR 요청 데이터가 존재하지 않습니다.",
         code: str = "TR_REQUEST_DATA_NOT_FOUND",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class SystemException(BasicException):
-    """Generic system-level error raised by core components.
-
-    EN:
-        Represents unexpected failures originating from internal subsystems.
-
-    KO:
-        내부 서브시스템에서 발생하는 일반적인 시스템 오류를 나타냅니다.
-    """
-
-    def __init__(
-        self,
-        message: str = "시스템 오류가 발생했습니다.",
-        code: str = "SYSTEM_ERROR",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class PerformanceExceededException(SystemException):
-    """Raised when performance guardrails are violated during execution.
-
-    EN:
-        Signals that CPU or memory thresholds defined by the user have been
-        exceeded, prompting Programgarden to halt the current run.
-
-    KO:
-        사용자가 정의한 CPU 또는 메모리 임계치를 초과하여 Programgarden 실행을
-        중단해야 함을 알립니다.
-    """
-
-    severity: SeverityType = "fatal"  # 리소스 초과 시 즉시 종료
-
-    def __init__(
-        self,
-        message: str = "시스템 자원 사용량이 허용치를 초과했습니다.",
-        code: str = "PERFORMANCE_THRESHOLD_EXCEEDED",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class NotExistSystemException(SystemException):
-    """Raised when a requested system definition cannot be found.
-
-    EN:
-        Occurs if a client references a nonexistent system identifier.
-
-    KO:
-        존재하지 않는 시스템 ID를 참조했을 때 발생합니다.
-    """
-
-    def __init__(
-        self,
-        message: str = "존재하지 않는 시스템입니다.",
-        code: str = "NOT_EXIST_SYSTEM",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class NotExistSystemKeyException(SystemException):
-    """Raised when a requested system key is missing.
-
-    EN:
-        Provides clarity when configuration dictionaries lack specific keys.
-
-    KO:
-        구성 사전에 특정 키가 없을 때 원인을 명확히 알려줍니다.
-    """
-
-    def __init__(
-        self,
-        message: str = "존재하지 않는 키입니다.",
-        code: str = "NOT_EXIST_KEY",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class NotExistConditionException(SystemException):
-    """Raised when strategy condition identifiers do not exist.
-
-    EN:
-        Notifies callers that the requested condition mapping is undefined.
-
-    KO:
-        요청한 조건 매핑이 정의되지 않았음을 호출자에게 알려줍니다.
-    """
-
-    severity: SeverityType = "strategy"  # 해당 전략만 스킵
-
-    def __init__(
-        self,
-        message: str = "존재하지 않는 조건입니다.",
-        code: str = "NOT_EXIST_CONDITION",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class OrderException(SystemException):
-    """Base exception for order processing failures.
-
-    EN:
-        Serves as the parent for all order-related runtime errors.
-
-    KO:
-        주문 처리 중 발생하는 런타임 오류의 상위 예외로 사용됩니다.
-    """
-
-    def __init__(
-        self,
-        message: str = "주문 처리 중 오류가 발생했습니다.",
-        code: str = "ORDER_ERROR",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class NotExistCompanyException(SystemException):
-    """Raised when a brokerage company code is unrecognized.
-
-    EN:
-        Helps developers detect configuration mismatches with broker metadata.
-
-    KO:
-        증권사 메타데이터와 구성이 일치하지 않을 때 문제를 진단합니다.
-    """
-
-    severity: SeverityType = "fatal"  # 증권사 미지원 시 실행 불가
-
-    def __init__(
-        self,
-        message: str = "증권사가 존재하지 않습니다.",
-        code: str = "NOT_EXIST_COMPANY",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class InvalidCronExpressionException(SystemException):
-    """Raised when cron expressions fail validation.
-
-    EN:
-        Alerts callers that schedule strings violate cron syntax rules.
-
-    KO:
-        스케줄 문자열이 크론 문법을 위반했음을 알립니다.
-    """
-
-    severity: SeverityType = "strategy"  # 해당 전략만 스킵
-
-    def __init__(
-        self,
-        message: str = "잘못된 Cron 식입니다.",
-        code: str = "INVALID_CRON_EXPRESSION",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class ConditionExecutionException(SystemException):
-    """Raised when evaluating strategy conditions fails.
-
-    EN:
-        Wraps exceptions thrown by reusable condition evaluators.
-
-    KO:
-        전략 조건 평가기에서 발생한 예외를 감싸 제공합니다.
-    """
-
-    severity: SeverityType = "strategy"  # 해당 전략만 스킵
-
-    def __init__(
-        self,
-        message: str = "조건 실행 중 오류가 발생했습니다.",
-        code: str = "CONDITION_EXECUTION_ERROR",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class OrderExecutionException(OrderException):
-    """Raised when executing orders encounters runtime errors.
-
-    EN:
-        Indicates problems occurring during submission or broker responses.
-
-    KO:
-        주문 전송 또는 브로커 응답 처리 중 문제를 나타냅니다.
-    """
-
-    severity: SeverityType = "retryable"  # 재시도 가능
-
-    def __init__(
-        self,
-        message: str = "주문 실행 중 오류가 발생했습니다.",
-        code: str = "ORDER_EXECUTION_ERROR",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class StrategyExecutionException(SystemException):
-    """Raised when strategy orchestration fails.
-
-    EN:
-        Signals that strategy loops or evaluators produced unrecoverable errors.
-
-    KO:
-        전략 루프나 평가기에서 복구 불가능한 오류가 발생했음을 나타냅니다.
-    """
-
-    severity: SeverityType = "strategy"  # 해당 전략만 스킵
-
-    def __init__(
-        self,
-        message: str = "전략 실행 중 오류가 발생했습니다.",
-        code: str = "STRATEGY_EXECUTION_ERROR",
-        data: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message=message, code=code, data=data)
-
-
-class SystemInitializationException(SystemException):
-    """Raised when initializing systems or plugins fails.
-
-    EN:
-        Points to errors during setup phases such as dependency wiring.
-
-    KO:
-        의존성 연결 등 초기화 단계에서 발생한 문제를 알려줍니다.
-    """
-
-    severity: SeverityType = "fatal"  # 초기화 실패 시 실행 불가
-
-    def __init__(
-        self,
-        message: str = "시스템 초기화 중 오류가 발생했습니다.",
-        code: str = "SYSTEM_INITIALIZATION_ERROR",
-        data: Optional[Dict[str, Any]] = None,
+        data: Optional[dict] = None,
     ):
         super().__init__(message=message, code=code, data=data)

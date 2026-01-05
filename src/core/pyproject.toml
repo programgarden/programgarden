@@ -1,22 +1,64 @@
-[project]
-authors = [
-    {"name" = "프로그램동산","email" = "coding@programgarden.com"}
-]
-homepage = "https://programgarden.com"
-requires-python = ">=3.10"
-name = "programgarden-core"
-version = "0.1.12"
-description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
-readme = "README.md"
-
-[tool.poetry]
-packages = [
-  { include = "programgarden_core" }
-]
-
-[tool.poetry.dependencies]
-typing-extensions = "^4.15.0"
-
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "programgarden-core"
+version = "2.0.0"
+description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "ProgramGarden Team"}
+]
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+keywords = ["trading", "dsl", "workflow", "automation"]
+
+dependencies = [
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/programgarden/programgarden"
+Documentation = "https://github.com/programgarden/programgarden/docs"
+Repository = "https://github.com/programgarden/programgarden"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["programgarden_core*"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "D", "UP"]
+ignore = ["D100", "D104", "D107"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

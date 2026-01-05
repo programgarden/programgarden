@@ -1,4 +1,4 @@
-"""Utilities for enforcing Korean aliases on callables and classes.
+"""한글 별칭 강제 유틸리티
 
 EN:
     Provide a decorator and metaclass that guarantee the presence of Korean
@@ -13,8 +13,7 @@ KO:
     유지할 수 있습니다.
 
 Example / 예시:
-    >>> from programgarden_core.korea_alias import require_korean_alias,
-    ...     EnforceKoreanAliasMeta
+    >>> from programgarden_core.korea_alias import require_korean_alias, EnforceKoreanAliasMeta
     >>> class OverseasStock(metaclass=EnforceKoreanAliasMeta):
     ...     @require_korean_alias
     ...     def accno(self):
@@ -29,7 +28,7 @@ from abc import ABCMeta
 
 
 def require_korean_alias(func):
-    """Mark functions that must expose a Korean alias.
+    """한글 별칭이 필요한 함수를 표시하는 데코레이터
 
     EN:
         Attach metadata to ``func`` so ``EnforceKoreanAliasMeta`` can verify a
@@ -40,13 +39,10 @@ def require_korean_alias(func):
         별칭이 정의되어 있는지 검사할 수 있도록 합니다.
 
     Parameters:
-        func (Callable): A method that requires a Korean alias binding.
+        func (Callable): 한글 별칭이 필요한 메서드
 
     Returns:
-        Callable: The wrapped function carrying alias requirements.
-
-    Raises:
-        None: The decorator never raises and simply augments the function.
+        Callable: 별칭 요구사항을 담은 래핑된 함수
     """
 
     @wraps(func)
@@ -57,7 +53,7 @@ def require_korean_alias(func):
 
 
 class EnforceKoreanAliasMeta(type):
-    """Metaclass that enforces Korean aliases for decorated methods.
+    """데코레이트된 메서드에 대해 한글 별칭을 강제하는 메타클래스
 
     EN:
         Ensures every method decorated with ``@require_korean_alias`` has at
@@ -69,7 +65,7 @@ class EnforceKoreanAliasMeta(type):
     """
 
     def __new__(cls, name, bases, attrs):
-        """Create a class and validate the presence of Korean aliases.
+        """클래스를 생성하고 한글 별칭 존재 여부를 검증
 
         EN:
             Walk through namespace ``attrs`` and confirm that decorated
@@ -82,15 +78,15 @@ class EnforceKoreanAliasMeta(type):
             ``ValueError`` 를 발생시킵니다.
 
         Parameters:
-            name (str): The class name being constructed.
-            bases (Tuple[type, ...]): Inherited base classes.
-            attrs (Dict[str, Any]): Namespace containing class attributes.
+            name (str): 생성될 클래스 이름
+            bases (Tuple[type, ...]): 상속받은 베이스 클래스들
+            attrs (Dict[str, Any]): 클래스 속성을 담은 네임스페이스
 
         Returns:
-            type: The finalized class object after validation.
+            type: 검증 후 생성된 클래스 객체
 
         Raises:
-            ValueError: Missing Korean aliases for decorated functions.
+            ValueError: 데코레이트된 함수에 한글 별칭이 없는 경우
         """
         korean_aliases = set()
         # 한글 별칭 수집
@@ -129,4 +125,4 @@ class EnforceKoreanAliasMeta(type):
 
 class EnforceKoreanAliasABCMeta(EnforceKoreanAliasMeta, ABCMeta):
     """ABCMeta 확장 버전: 추상 메서드와 한글 별칭을 동시에 검증합니다."""
-
+    pass

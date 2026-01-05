@@ -1,14 +1,29 @@
+"""Finance 패키지용 제품(Product) 베이스 클래스들
+
+EN:
+    Base classes for product types (overseas stock, overseas futures/options).
+
+KO:
+    제품 타입별 베이스 클래스들 (해외주식, 해외선물옵션)
+"""
+
 from abc import ABC, abstractmethod
 from ..korea_alias import EnforceKoreanAliasABCMeta, require_korean_alias
 from .components import BaseAccno, BaseChart, BaseMarket, BaseOrder, BaseReal
 
 
 class BaseOverseasStock(ABC, metaclass=EnforceKoreanAliasABCMeta):
+    """해외 주식 관련 기능을 제공하는 객체의 기본 클래스
+
+    EN:
+        Base class for overseas stock functionality.
+        (e.g., balance, chart, market data, orders, etc.)
+
+    KO:
+        해외 주식 관련 기능을 제공하는 객체의 기본 클래스입니다.
+        (예: 잔고, 차트, 시세, 주문 등)
     """
-    해외 주식 관련 기능을 제공하는 객체의 기본 클래스입니다.
-    (예: 잔고, 차트, 시세, 주문 등)
-    """
-    
+
     @abstractmethod
     @require_korean_alias
     def accno(self) -> BaseAccno:
@@ -47,11 +62,17 @@ class BaseOverseasStock(ABC, metaclass=EnforceKoreanAliasABCMeta):
 
 
 class BaseOverseasFutureoption(ABC, metaclass=EnforceKoreanAliasABCMeta):
+    """해외 선물/옵션 관련 기능을 제공하는 객체의 기본 클래스
+
+    EN:
+        Base class for overseas futures/options functionality.
+        (e.g., balance, chart, market data, orders, etc.)
+
+    KO:
+        해외 선물/옵션 관련 기능을 제공하는 객체의 기본 클래스입니다.
+        (예: 잔고, 차트, 시세, 주문 등)
     """
-    해외 선물/옵션 관련 기능을 제공하는 객체의 기본 클래스입니다.
-    (예: 잔고, 차트, 시세, 주문 등)
-    """
-    
+
     @abstractmethod
     @require_korean_alias
     def accno(self) -> BaseAccno:
@@ -87,4 +108,3 @@ class BaseOverseasFutureoption(ABC, metaclass=EnforceKoreanAliasABCMeta):
     시세 = market
     주문 = order
     실시간 = real
-

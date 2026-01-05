@@ -1,0 +1,22 @@
+[project]
+authors = [
+    {"name" = "프로그램동산","email" = "coding@programgarden.com"}
+]
+homepage = "https://programgarden.com"
+requires-python = ">=3.10"
+name = "programgarden-core"
+version = "0.1.12"
+description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
+readme = "README.md"
+
+[tool.poetry]
+packages = [
+  { include = "programgarden_core" }
+]
+
+[tool.poetry.dependencies]
+typing-extensions = "^4.15.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
