@@ -1,7 +1,7 @@
 """
-ProgramGarden - 메인 클라이언트
+ProgramGarden - Main Client
 
-사용자 친화적 API 제공
+Provides user-friendly API
 """
 
 from typing import Optional, List, Dict, Any
@@ -13,14 +13,14 @@ from programgarden.executor import WorkflowExecutor
 
 class ProgramGarden:
     """
-    ProgramGarden 메인 클라이언트
+    ProgramGarden Main Client
 
-    노드 기반 DSL 시스템의 진입점.
+    Entry point for the node-based DSL system.
 
     Example:
         >>> pg = ProgramGarden()
         >>>
-        >>> # 워크플로우 검증
+        >>> # Validate workflow
         >>> result = pg.validate(my_workflow)
         >>> if result.is_valid:
         ...     job = pg.run(my_workflow, context={"credential_id": "cred-001"})
@@ -32,10 +32,10 @@ class ProgramGarden:
 
     def validate(self, definition: Dict[str, Any]) -> ValidationResult:
         """
-        워크플로우 정의 검증
+        Validate workflow definition
 
         Args:
-            definition: 워크플로우 정의 (JSON dict)
+            definition: Workflow definition (JSON dict)
 
         Returns:
             ValidationResult
@@ -46,19 +46,46 @@ class ProgramGarden:
         self,
         definition: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
+        secrets: Optional[Dict[str, Any]] = None,
+        wait: bool = True,
+        timeout: float = 60.0,
     ) -> Dict[str, Any]:
         """
-        워크플로우 실행
+        Execute workflow
 
         Args:
-            definition: 워크플로우 정의
-            context: 실행 컨텍스트 (credential_id, symbols 등)
+            definition: Workflow definition
+            context: Runtime parameters (symbols, dry_run, backtest options, etc.)
+            secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
+            wait: Whether to wait for completion (default True)
+            timeout: Maximum wait time (seconds)
 
         Returns:
-            Job 상태
+            Job state
+
+        Example:
+            >>> job = pg.run(
+            ...     workflow,
+            ...     context={"symbols": ["AAPL", "NVDA"]},
+            ...     secrets={"credential_id": {"appkey": "...", "appsecret": "..."}},
+            ... )
         """
         async def _run():
-            job = await self.executor.execute(definition, context)
+            job = await self.executor.execute(
+                definition,
+                context_params=context,
+                secrets=secrets,
+            )
+            
+            if wait:
+                # Wait for completion
+                import asyncio
+                start_time = asyncio.get_event_loop().time()
+                while job.status in ("pending", "running"):
+                    await asyncio.sleep(0.1)
+                    if asyncio.get_event_loop().time() - start_time > timeout:
+                        break
+            
             return job.get_state()
 
         return asyncio.run(_run())
@@ -69,42 +96,42 @@ class ProgramGarden:
         context: Optional[Dict[str, Any]] = None,
     ):
         """
-        워크플로우 비동기 실행
+        Execute workflow asynchronously
 
         Args:
-            definition: 워크플로우 정의
-            context: 실행 컨텍스트
+            definition: Workflow definition
+            context: Execution context
 
         Returns:
-            WorkflowJob 인스턴스
+            WorkflowJob instance
         """
         return await self.executor.execute(definition, context)
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         """
-        Job 상태 조회
+        Get Job state
 
         Args:
             job_id: Job ID
 
         Returns:
-            Job 상태 또는 None
+            Job state or None
         """
         job = self.executor.get_job(job_id)
         return job.get_state() if job else None
 
     def list_jobs(self) -> List[Dict[str, Any]]:
         """
-        모든 Job 목록 조회
+        List all Jobs
 
         Returns:
-            Job 상태 목록
+            List of Job states
         """
         return [job.get_state() for job in self.executor.list_jobs()]
 
     @staticmethod
     def list_node_types(category: Optional[str] = None) -> List[Dict[str, Any]]:
-        """노드 타입 목록 조회"""
+        """List available node types"""
         from programgarden.tools import list_node_types
         return list_node_types(category)
 
@@ -113,12 +140,12 @@ class ProgramGarden:
         category: Optional[str] = None,
         product: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """플러그인 목록 조회"""
+        """List available plugins"""
         from programgarden.tools import list_plugins
         return list_plugins(category, product)
 
     @staticmethod
     def list_categories() -> List[Dict[str, Any]]:
-        """노드 카테고리 목록 조회"""
+        """List node categories"""
         from programgarden.tools import list_categories
         return list_categories()

@@ -1,12 +1,12 @@
 """
-ProgramGarden Core - Condition 노드
+ProgramGarden Core - Condition Nodes
 
-조건 평가 노드:
-- ConditionNode: 조건 플러그인 실행 (RSI, MACD 등)
-- LogicNode: 조건 조합 (and/or/xor/at_least/weighted)
+Condition evaluation nodes:
+- ConditionNode: Condition plugin execution (RSI, MACD, etc.)
+- LogicNode: Condition combination (and/or/xor/at_least/weighted)
 """
 
-from typing import Optional, List, Literal, Dict, Any
+from typing import Optional, List, Literal, Dict, Any, ClassVar
 from pydantic import Field
 
 from programgarden_core.nodes.base import (
@@ -16,47 +16,49 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
+from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class ConditionNode(PluginNode):
     """
-    조건 플러그인 실행 노드
+    Condition plugin execution node
 
-    RSI, MACD, BollingerBands 등 커뮤니티 플러그인 실행
+    Executes community plugins such as RSI, MACD, BollingerBands
     """
 
     type: Literal["ConditionNode"] = "ConditionNode"
     category: NodeCategory = NodeCategory.CONDITION
+    description: str = "i18n:nodes.ConditionNode.description"
 
     _inputs: List[InputPort] = [
-        InputPort(name="trigger", type="signal", description="조건 평가 트리거"),
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
         InputPort(
             name="price_data",
             type="market_data",
-            description="가격 데이터 (RealMarketDataNode에서)",
+            description="i18n:ports.price_data",
         ),
         InputPort(
             name="volume_data",
             type="market_data",
-            description="거래량 데이터",
+            description="i18n:ports.volume_data",
             required=False,
         ),
         InputPort(
             name="symbols",
             type="symbol_list",
-            description="평가 대상 종목 리스트",
+            description="i18n:ports.symbols",
             required=False,
         ),
         InputPort(
             name="held_symbols",
             type="symbol_list",
-            description="보유 종목 리스트 (익절/손절용)",
+            description="i18n:ports.held_symbols",
             required=False,
         ),
         InputPort(
             name="position_data",
             type="position_data",
-            description="포지션 데이터 (수익률 기반 조건용)",
+            description="i18n:ports.positions",
             required=False,
         ),
     ]
@@ -64,55 +66,56 @@ class ConditionNode(PluginNode):
         OutputPort(
             name="result",
             type="condition_result",
-            description="조건 평가 결과 (True/False)",
+            description="i18n:ports.result",
         ),
         OutputPort(
             name="passed_symbols",
             type="symbol_list",
-            description="조건을 통과한 종목 리스트",
+            description="i18n:ports.passed_symbols",
         ),
         OutputPort(
             name="failed_symbols",
             type="symbol_list",
-            description="조건을 통과하지 못한 종목 리스트",
+            description="i18n:ports.failed_symbols",
         ),
         OutputPort(
             name="values",
             type="dict",
-            description="조건 평가에 사용된 값 (예: RSI 값)",
+            description="i18n:ports.values",
         ),
     ]
 
 
 class LogicNode(BaseNode):
     """
-    조건 조합 노드
+    Condition combination node
 
-    여러 조건의 결과를 논리 연산으로 조합
+    Combines multiple condition results with logical operators
     """
 
     type: Literal["LogicNode"] = "LogicNode"
     category: NodeCategory = NodeCategory.CONDITION
+    description: str = "i18n:nodes.LogicNode.description"
 
-    # LogicNode 전용 설정
+    # LogicNode specific config
     operator: Literal["all", "any", "not", "xor", "at_least", "at_most", "exactly", "weighted"] = Field(
         default="all",
-        description="논리 연산자 (all=AND, any=OR, not, xor, at_least, at_most, exactly, weighted)",
+        description="Logical operator (all=AND, any=OR, not, xor, at_least, at_most, exactly, weighted)",
     )
     threshold: Optional[int] = Field(
         default=None,
-        description="임계값 (at_least, at_most, exactly 연산자용)",
+        description="Threshold value (for at_least, at_most, exactly operators)",
     )
     weights: Optional[Dict[str, float]] = Field(
         default=None,
-        description="가중치 (weighted 연산자용, 입력 ID별 가중치)",
+        description="Weights (for weighted operator, weight per input ID)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="input",
             type="condition_result",
-            description="조건 결과 입력 (여러 개 연결 가능)",
+            description="i18n:ports.result",
             multiple=True,
             min_connections=2,
         ),
@@ -121,11 +124,35 @@ class LogicNode(BaseNode):
         OutputPort(
             name="result",
             type="condition_result",
-            description="조합된 조건 결과",
+            description="i18n:ports.result",
         ),
         OutputPort(
             name="passed_symbols",
             type="symbol_list",
-            description="조건을 통과한 종목 리스트",
+            description="i18n:ports.passed_symbols",
         ),
     ]
+    _field_schema: ClassVar[Dict[str, FieldSchema]] = {
+        "operator": FieldSchema(
+            name="operator",
+            type=FieldType.ENUM,
+            description="Logical operator",
+            default="all",
+            enum_values=["all", "any", "not", "xor", "at_least", "at_most", "exactly", "weighted"],
+            required=True,
+            bindable=False,
+        ),
+        "threshold": FieldSchema(
+            name="threshold",
+            type=FieldType.INTEGER,
+            description="Threshold value (for at_least, at_most, exactly operators)",
+            bindable=True,
+            expression_enabled=True,
+        ),
+        "weights": FieldSchema(
+            name="weights",
+            type=FieldType.OBJECT,
+            description="Weights (for weighted operator)",
+            bindable=False,
+        ),
+    }

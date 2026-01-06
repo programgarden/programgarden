@@ -72,7 +72,7 @@ RISK_GUARD = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1000, "y": 150},
         },
         {
@@ -80,7 +80,7 @@ RISK_GUARD = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1200, "y": 150},
         },
         # 리스크 초과 알림

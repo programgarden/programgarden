@@ -43,7 +43,7 @@ SINGLE_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 700, "y": 100},
         },
         {

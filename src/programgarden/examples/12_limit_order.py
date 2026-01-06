@@ -52,7 +52,7 @@ LIMIT_ORDER = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 35, "direction": "below"},
+            "fields": {"period": 14, "threshold": 35, "direction": "below"},
             "position": {"x": 1000, "y": 200},
         },
         {
@@ -60,7 +60,7 @@ LIMIT_ORDER = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "LimitOrder",
-            "params": {
+            "fields": {
                 "side": "buy",
                 "price_type": "percent_from_current",
                 "price": -1,  # 현재가 -1%

@@ -1,9 +1,9 @@
 """
-ProgramGarden Core - Risk 노드
+ProgramGarden Core - Risk Nodes
 
-리스크 관리 노드:
-- PositionSizingNode: 포지션 크기 계산
-- RiskGuardNode: 일일손실한도, 최대포지션 제한
+Risk management nodes:
+- PositionSizingNode: Position size calculation
+- RiskGuardNode: Daily loss limit, max position constraints
 """
 
 from typing import Optional, List, Literal, Dict, Any
@@ -19,51 +19,52 @@ from programgarden_core.nodes.base import (
 
 class PositionSizingNode(BaseNode):
     """
-    포지션 크기 계산 노드
+    Position size calculation node
 
-    켈리 공식, 고정비율, ATR 기반 등 다양한 포지션 사이징 방법 지원
+    Supports various position sizing methods: Kelly, fixed ratio, ATR-based
     """
 
     type: Literal["PositionSizingNode"] = "PositionSizingNode"
     category: NodeCategory = NodeCategory.RISK
+    description: str = "i18n:nodes.PositionSizingNode.description"
 
-    # PositionSizingNode 전용 설정
+    # PositionSizingNode specific config
     method: Literal["fixed_percent", "fixed_amount", "kelly", "atr_based"] = Field(
         default="fixed_percent",
-        description="포지션 사이징 방법",
+        description="Position sizing method",
     )
     max_percent: float = Field(
         default=10.0,
-        description="계좌 대비 최대 포지션 비율 (%)",
+        description="Max position percentage of account (%)",
     )
     fixed_amount: Optional[float] = Field(
         default=None,
-        description="고정 금액 (fixed_amount 방법용)",
+        description="Fixed amount (for fixed_amount method)",
     )
     kelly_fraction: float = Field(
         default=0.25,
-        description="켈리 비율 조정값 (kelly 방법용, 보수적으로 1/4 적용)",
+        description="Kelly fraction adjustment (for kelly method, conservative 1/4)",
     )
     atr_risk_percent: float = Field(
         default=1.0,
-        description="ATR 기반 리스크 비율 (atr_based 방법용)",
+        description="ATR-based risk percentage (for atr_based method)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="symbols",
             type="symbol_list",
-            description="포지션 계산 대상 종목",
+            description="i18n:ports.symbols",
         ),
         InputPort(
             name="balance",
             type="balance_data",
-            description="계좌 잔고 정보",
+            description="i18n:ports.balance",
         ),
         InputPort(
             name="price_data",
             type="market_data",
-            description="현재가 정보",
+            description="i18n:ports.price_data",
             required=False,
         ),
     ]
@@ -71,78 +72,125 @@ class PositionSizingNode(BaseNode):
         OutputPort(
             name="quantity",
             type="dict",
-            description="종목별 주문 수량",
+            description="i18n:ports.quantity",
         ),
         OutputPort(
             name="symbols",
             type="symbol_list",
-            description="포지션 계산된 종목 리스트",
+            description="i18n:ports.symbols",
         ),
     ]
 
 
 class RiskGuardNode(BaseNode):
     """
-    리스크 가드 노드
+    Risk guard node
 
-    일일손실한도, 최대포지션, 연속손실 제한 등 리스크 관리
+    Risk management for daily loss limit, max positions, consecutive losses
     """
 
     type: Literal["RiskGuardNode"] = "RiskGuardNode"
     category: NodeCategory = NodeCategory.RISK
+    description: str = "i18n:nodes.RiskGuardNode.description"
 
-    # RiskGuardNode 전용 설정
+    # RiskGuardNode specific config
     max_daily_loss: Optional[float] = Field(
         default=None,
-        description="일일 최대 손실액 (음수, 예: -500)",
+        description="Max daily loss amount (negative, e.g., -500)",
     )
     max_daily_loss_percent: Optional[float] = Field(
         default=None,
-        description="일일 최대 손실률 (%, 예: -5)",
+        description="Max daily loss percentage (%, e.g., -5)",
     )
     max_positions: Optional[int] = Field(
         default=None,
-        description="최대 동시 포지션 수",
+        description="Max concurrent positions",
     )
     max_position_per_symbol: Optional[float] = Field(
         default=None,
-        description="종목당 최대 포지션 비율 (%)",
+        description="Max position percentage per symbol (%)",
     )
     max_consecutive_losses: Optional[int] = Field(
         default=None,
-        description="연속 손실 제한 (횟수)",
+        description="Max consecutive losses (count)",
     )
     cooldown_after_loss_minutes: Optional[int] = Field(
         default=None,
-        description="손실 후 대기 시간 (분)",
+        description="Cooldown period after loss (minutes)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="symbols",
             type="symbol_list",
-            description="진입 요청 종목 리스트",
+            description="i18n:ports.symbols",
         ),
         InputPort(
             name="account_state",
             type="account_data",
-            description="계좌 상태 정보",
+            description="i18n:ports.account_state",
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
             name="approved_symbols",
             type="symbol_list",
-            description="리스크 체크 통과한 종목 리스트",
+            description="i18n:ports.approved_symbols",
         ),
         OutputPort(
             name="blocked_symbols",
             type="symbol_list",
-            description="리스크 체크 실패한 종목 리스트",
+            description="i18n:ports.blocked_symbols",
         ),
         OutputPort(
             name="blocked_reason",
             type="string",
-            description="차단 사유",
+            description="i18n:ports.blocked_reason",
+        ),
+    ]
+
+
+class RiskConditionNode(BaseNode):
+    """
+    Risk condition evaluation node
+
+    Evaluates risk conditions based on realtime P&L, trade count, etc.
+    """
+
+    type: Literal["RiskConditionNode"] = "RiskConditionNode"
+    category: NodeCategory = NodeCategory.RISK
+    description: str = "i18n:nodes.RiskConditionNode.description"
+
+    # RiskConditionNode specific config
+    rule: Literal["daily_pnl", "position_pnl", "daily_trade_count", "consecutive_losses"] = Field(
+        default="daily_pnl",
+        description="Risk rule to evaluate",
+    )
+    threshold: float = Field(
+        default=-500.0,
+        description="Threshold value",
+    )
+    operator: Literal["<=", "<", ">=", ">", "==", "!="] = Field(
+        default="<=",
+        description="Comparison operator",
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="value",
+            type="float",
+            description="Value to evaluate",
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="result",
+            type="bool",
+            description="i18n:ports.result",
+        ),
+        OutputPort(
+            name="current_value",
+            type="float",
+            description="i18n:ports.current_value",
         ),
     ]

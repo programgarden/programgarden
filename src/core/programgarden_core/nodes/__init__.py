@@ -1,18 +1,21 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-26개 노드 타입을 11개 카테고리로 분류:
+37개 노드 타입을 14개 카테고리로 분류:
 - infra (2): StartNode, BrokerNode
 - realtime (3): RealMarketDataNode, RealAccountNode, RealOrderEventNode
-- data (2): MarketDataNode, AccountNode
+- data (5): MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode
 - symbol (4): WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode
 - trigger (3): ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode
-- condition (2): ConditionNode, LogicNode
-- risk (2): PositionSizingNode, RiskGuardNode
-- order (3): NewOrderNode, ModifyOrderNode, CancelOrderNode
+- condition (3): ConditionNode, LogicNode, PerformanceConditionNode
+- risk (3): PositionSizingNode, RiskGuardNode, RiskConditionNode
+- order (4): NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
 - event (3): EventHandlerNode, ErrorHandlerNode, AlertNode
 - display (1): DisplayNode
 - group (1): GroupNode
+- backtest (2): BacktestExecutorNode, BacktestResultNode
+- job (3): DeployNode, TradingHaltNode, JobControlNode
+- calculation (1): PnLCalculatorNode
 """
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, Position
@@ -22,7 +25,7 @@ from programgarden_core.nodes.realtime import (
     RealAccountNode,
     RealOrderEventNode,
 )
-from programgarden_core.nodes.data import MarketDataNode, AccountNode
+from programgarden_core.nodes.data import MarketDataNode, AccountNode, SQLiteNode, PostgresNode
 from programgarden_core.nodes.symbol import (
     WatchlistNode,
     MarketUniverseNode,
@@ -35,11 +38,19 @@ from programgarden_core.nodes.trigger import (
     ExchangeStatusNode,
 )
 from programgarden_core.nodes.condition import ConditionNode, LogicNode
-from programgarden_core.nodes.risk import PositionSizingNode, RiskGuardNode
-from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode
+from programgarden_core.nodes.risk import PositionSizingNode, RiskGuardNode, RiskConditionNode
+from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
 from programgarden_core.nodes.event import EventHandlerNode, ErrorHandlerNode, AlertNode
 from programgarden_core.nodes.display import DisplayNode
 from programgarden_core.nodes.group import GroupNode
+from programgarden_core.nodes.backtest import (
+    HistoricalDataNode,
+    BacktestExecutorNode,
+    BacktestResultNode,
+    PerformanceConditionNode,
+)
+from programgarden_core.nodes.job import DeployNode, TradingHaltNode, JobControlNode
+from programgarden_core.nodes.calculation import CustomPnLNode
 
 __all__ = [
     # Base
@@ -56,6 +67,9 @@ __all__ = [
     # Data
     "MarketDataNode",
     "AccountNode",
+    "HistoricalDataNode",
+    "SQLiteNode",
+    "PostgresNode",
     # Symbol
     "WatchlistNode",
     "MarketUniverseNode",
@@ -68,13 +82,16 @@ __all__ = [
     # Condition
     "ConditionNode",
     "LogicNode",
+    "PerformanceConditionNode",
     # Risk
     "PositionSizingNode",
     "RiskGuardNode",
+    "RiskConditionNode",
     # Order
     "NewOrderNode",
     "ModifyOrderNode",
     "CancelOrderNode",
+    "LiquidateNode",
     # Event
     "EventHandlerNode",
     "ErrorHandlerNode",
@@ -83,4 +100,13 @@ __all__ = [
     "DisplayNode",
     # Group
     "GroupNode",
+    # Backtest
+    "BacktestExecutorNode",
+    "BacktestResultNode",
+    # Job
+    "DeployNode",
+    "TradingHaltNode",
+    "JobControlNode",
+    # Calculation
+    "CustomPnLNode",
 ]

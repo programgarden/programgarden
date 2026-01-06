@@ -10,6 +10,9 @@ ScheduleNode → BacktestExecutorNode → PerformanceConditionNode → JobContro
 계획서의 scheduled_backtest_job_control.py 구현
 """
 
+on_callback():
+
+
 SCHEDULED_BACKTEST_JOB_CONTROL = {
     "id": "30-scheduled-backtest-job-control",
     "version": "1.0.0",
@@ -80,7 +83,7 @@ SCHEDULED_BACKTEST_JOB_CONTROL = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {
+            "fields": {
                 "period": 14,
                 "threshold": 30,
                 "direction": "below",
@@ -92,7 +95,7 @@ SCHEDULED_BACKTEST_JOB_CONTROL = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "ProfitTarget",
-            "params": {"percent": 5},
+            "fields": {"percent": 5},
             "position": {"x": 600, "y": 450},
         },
         {
@@ -100,7 +103,7 @@ SCHEDULED_BACKTEST_JOB_CONTROL = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "StopLoss",
-            "params": {"percent": -3},
+            "fields": {"percent": -3},
             "position": {"x": 600, "y": 550},
         },
         {

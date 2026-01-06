@@ -14,15 +14,11 @@ class Edge(BaseModel):
 
     from_node.output → to_node.input 형태로 데이터 흐름 표현
 
-    지원 형식:
-        1. {"from": "broker.connection", "to": "realAccount"}
-        2. {"source": "broker", "sourceHandle": "connection", "target": "realAccount"}
-        
     Examples:
         - {"from": "broker.connection", "to": "realAccount"}
         - {"from": "rsi.passed_symbols", "to": "order.symbols"}
         - {"from": "schedule.trigger", "to": "tradingHours"}
-        - {"source": "start", "sourceHandle": "trigger", "target": "schedule"}
+        - {"from": "start", "to": "broker"}  # 포트 생략 시 기본 포트 사용
     """
 
     from_port: Optional[str] = Field(
@@ -36,24 +32,6 @@ class Edge(BaseModel):
         description="도착 포트 (node_id.input_name 또는 node_id)",
     )
     
-    # 대안 필드 (source/target 스타일)
-    source: Optional[str] = Field(
-        default=None,
-        description="출발 노드 ID (sourceHandle과 함께 사용)",
-    )
-    sourceHandle: Optional[str] = Field(
-        default=None,
-        description="출발 출력 포트 이름",
-    )
-    target: Optional[str] = Field(
-        default=None,
-        description="도착 노드 ID (targetHandle과 함께 사용)",
-    )
-    targetHandle: Optional[str] = Field(
-        default=None,
-        description="도착 입력 포트 이름",
-    )
-    
     description: Optional[str] = Field(
         default=None,
         description="연결 설명",
@@ -63,27 +41,12 @@ class Edge(BaseModel):
         populate_by_name = True  # alias 사용 허용
     
     @model_validator(mode='after')
-    def normalize_fields(self) -> 'Edge':
-        """source/target 스타일을 from/to로 정규화"""
-        # source/target → from/to 변환
-        if self.source and not self.from_port:
-            if self.sourceHandle:
-                self.from_port = f"{self.source}.{self.sourceHandle}"
-            else:
-                self.from_port = self.source
-        
-        if self.target and not self.to_port:
-            if self.targetHandle:
-                self.to_port = f"{self.target}.{self.targetHandle}"
-            else:
-                self.to_port = self.target
-        
-        # 필수 필드 검증
+    def validate_required_fields(self) -> 'Edge':
+        """필수 필드 검증"""
         if not self.from_port:
-            raise ValueError("'from' 또는 'source' 필드가 필요합니다")
+            raise ValueError("'from' 필드가 필요합니다")
         if not self.to_port:
-            raise ValueError("'to' 또는 'target' 필드가 필요합니다")
-        
+            raise ValueError("'to' 필드가 필요합니다")
         return self
 
     @property

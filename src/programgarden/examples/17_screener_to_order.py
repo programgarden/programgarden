@@ -48,7 +48,7 @@ SCREENER_TO_ORDER = {
             "type": "SymbolFilterNode",
             "category": "symbol",
             "filter_type": "market_cap",
-            "params": {"min": 10_000_000_000},
+            "fields": {"min": 10_000_000_000},
             "position": {"x": 800, "y": 200},
         },
         # 스크리너: RSI < 30
@@ -57,7 +57,7 @@ SCREENER_TO_ORDER = {
             "type": "ScreenerNode",
             "category": "symbol",
             "plugin": "RSI",
-            "params": {"threshold": 30, "direction": "below"},
+            "fields": {"threshold": 30, "direction": "below"},
             "limit": 5,  # 상위 5개
             "position": {"x": 1000, "y": 200},
         },
@@ -75,7 +75,7 @@ SCREENER_TO_ORDER = {
             "type": "PositionSizingNode",
             "category": "risk",
             "method": "equal_weight",
-            "params": {"max_positions": 5},
+            "fields": {"max_positions": 5},
             "position": {"x": 1400, "y": 200},
         },
         # 매수 주문
@@ -84,7 +84,7 @@ SCREENER_TO_ORDER = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1600, "y": 200},
         },
         {

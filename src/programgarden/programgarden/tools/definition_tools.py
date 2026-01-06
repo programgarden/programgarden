@@ -1,24 +1,24 @@
 """
 ProgramGarden - Definition Tools
 
-워크플로우 정의 관리 도구
+Workflow definition management tools
 """
 
 from typing import Optional, List, Dict, Any
 
-# 인메모리 저장소 (실제 구현에서는 DB 사용)
+# In-memory storage (use DB in actual implementation)
 _workflows: Dict[str, Dict[str, Any]] = {}
 
 
 def create_workflow(definition: Dict[str, Any]) -> Dict[str, Any]:
     """
-    새 워크플로우 정의 생성
+    Create new workflow definition
 
     Args:
-        definition: 워크플로우 정의 (nodes, edges 포함)
+        definition: Workflow definition (includes nodes, edges)
 
     Returns:
-        생성된 WorkflowDefinition
+        Created WorkflowDefinition
 
     Example:
         >>> create_workflow({
@@ -32,35 +32,35 @@ def create_workflow(definition: Dict[str, Any]) -> Dict[str, Any]:
     from programgarden_core import WorkflowDefinition
     from programgarden.resolver import WorkflowResolver
 
-    # 검증
+    # Validate
     resolver = WorkflowResolver()
     validation = resolver.validate(definition)
 
     if not validation.is_valid:
         raise ValueError(f"Validation failed: {validation.errors}")
 
-    # 저장
+    # Save
     workflow = WorkflowDefinition(**definition)
     key = f"{workflow.id}@{workflow.version}"
     _workflows[key] = workflow.model_dump()
-    _workflows[workflow.id] = workflow.model_dump()  # 최신 버전
+    _workflows[workflow.id] = workflow.model_dump()  # Latest version
 
     return workflow.model_dump()
 
 
 def validate_workflow(definition: Dict[str, Any]) -> Dict[str, Any]:
     """
-    워크플로우 정의 검증 (저장 없이)
+    Validate workflow definition (without saving)
 
     Args:
-        definition: 워크플로우 정의
+        definition: Workflow definition
 
     Returns:
-        검증 결과 {"is_valid": bool, "errors": [...], "warnings": [...]}
+        Validation result {"is_valid": bool, "errors": [...], "warnings": [...]}
 
     Example:
         >>> validate_workflow({"id": "test", "nodes": [], "edges": []})
-        {"is_valid": False, "errors": ["StartNode가 없습니다"], "warnings": []}
+        {"is_valid": False, "errors": ["StartNode is missing"], "warnings": []}
     """
     from programgarden.resolver import WorkflowResolver
 
@@ -79,14 +79,14 @@ def get_workflow(
     version: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    워크플로우 정의 조회
+    Get workflow definition
 
     Args:
-        workflow_id: 워크플로우 ID
-        version: 버전 (생략 시 최신 버전)
+        workflow_id: Workflow ID
+        version: Version (latest if omitted)
 
     Returns:
-        WorkflowDefinition 또는 None
+        WorkflowDefinition or None
 
     Example:
         >>> get_workflow("my-strategy", "1.0.0")
@@ -100,10 +100,10 @@ def get_workflow(
 
 def list_workflows() -> List[Dict[str, Any]]:
     """
-    모든 워크플로우 정의 목록 조회
+    List all workflow definitions
 
     Returns:
-        워크플로우 요약 목록
+        List of workflow summaries
 
     Example:
         >>> list_workflows()
@@ -113,7 +113,7 @@ def list_workflows() -> List[Dict[str, Any]]:
     seen = set()
 
     for key, workflow in _workflows.items():
-        if "@" in key:  # 버전별 키는 스킵
+        if "@" in key:  # Skip versioned keys
             continue
         if workflow["id"] not in seen:
             result.append({
@@ -132,27 +132,27 @@ def update_workflow(
     definition: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    워크플로우 정의 업데이트 (새 버전 생성)
+    Update workflow definition (creates new version)
 
     Args:
-        workflow_id: 워크플로우 ID
-        definition: 새 정의
+        workflow_id: Workflow ID
+        definition: New definition
 
     Returns:
-        업데이트된 WorkflowDefinition
+        Updated WorkflowDefinition
 
     Example:
         >>> update_workflow("my-strategy", {"version": "1.1.0", ...})
         {"id": "my-strategy", "version": "1.1.0", ...}
     """
-    # ID 유지
+    # Keep ID
     definition["id"] = workflow_id
 
-    # 버전 자동 증가 (없으면)
+    # Auto-increment version (if not specified)
     if "version" not in definition:
         old = get_workflow(workflow_id)
         if old:
-            # 간단한 버전 증가 (실제로는 semantic versioning 파서 사용)
+            # Simple version increment (use semantic versioning parser in actual implementation)
             parts = old.get("version", "1.0.0").split(".")
             parts[-1] = str(int(parts[-1]) + 1)
             definition["version"] = ".".join(parts)
@@ -162,13 +162,13 @@ def update_workflow(
 
 def delete_workflow(workflow_id: str) -> bool:
     """
-    워크플로우 정의 삭제
+    Delete workflow definition
 
     Args:
-        workflow_id: 삭제할 워크플로우 ID
+        workflow_id: Workflow ID to delete
 
     Returns:
-        삭제 성공 여부
+        Whether deletion was successful
 
     Example:
         >>> delete_workflow("my-strategy")
@@ -176,7 +176,7 @@ def delete_workflow(workflow_id: str) -> bool:
     """
     deleted = False
 
-    # 버전별 키와 최신 키 모두 삭제
+    # Delete both versioned keys and latest key
     keys_to_delete = [k for k in _workflows.keys() if k.startswith(workflow_id)]
     for key in keys_to_delete:
         del _workflows[key]

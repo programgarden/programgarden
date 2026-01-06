@@ -69,7 +69,7 @@ GROUP_NODE = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1050, "y": 80},
         },
         {
@@ -77,7 +77,7 @@ GROUP_NODE = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "MACD",
-            "params": {"signal": "bullish_cross"},
+            "fields": {"signal": "bullish_cross"},
             "position": {"x": 1050, "y": 150},
         },
         {
@@ -92,7 +92,7 @@ GROUP_NODE = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1350, "y": 115},
         },
         # === Sell Strategy Group ===
@@ -110,7 +110,7 @@ GROUP_NODE = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "ProfitTarget",
-            "params": {"percent": 5},
+            "fields": {"percent": 5},
             "position": {"x": 1050, "y": 330},
         },
         {
@@ -118,7 +118,7 @@ GROUP_NODE = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "StopLoss",
-            "params": {"percent": -3},
+            "fields": {"percent": -3},
             "position": {"x": 1050, "y": 400},
         },
         {
@@ -133,7 +133,7 @@ GROUP_NODE = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "sell", "amount_type": "all"},
+            "fields": {"side": "sell", "amount_type": "all"},
             "position": {"x": 1350, "y": 365},
         },
         {

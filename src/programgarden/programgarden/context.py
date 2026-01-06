@@ -1,10 +1,10 @@
 """
 ProgramGarden - ExecutionContext
 
-워크플로우 실행 컨텍스트 프로토콜
-- 노드 간 데이터 전달
-- 실시간 데이터 주입
-- 상태 관리
+Workflow execution context protocol
+- Data transfer between nodes
+- Realtime data injection
+- State management
 """
 
 from typing import Optional, Dict, Any, List, Protocol, runtime_checkable
@@ -12,42 +12,44 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import asyncio
 
+from programgarden_core.expression import ExpressionContext
+
 
 @runtime_checkable
 class DataProvider(Protocol):
-    """데이터 제공자 프로토콜"""
+    """Data provider protocol"""
 
     async def get_price(self, symbol: str) -> Optional[float]:
-        """현재가 조회"""
+        """Get current price"""
         ...
 
     async def get_ohlcv(
         self, symbol: str, period: str, count: int
     ) -> Optional[List[Dict[str, Any]]]:
-        """OHLCV 데이터 조회"""
+        """Get OHLCV data"""
         ...
 
 
 @runtime_checkable
 class AccountProvider(Protocol):
-    """계좌 정보 제공자 프로토콜"""
+    """Account information provider protocol"""
 
     async def get_balance(self) -> Dict[str, Any]:
-        """잔고 조회"""
+        """Get balance"""
         ...
 
     async def get_positions(self) -> Dict[str, Any]:
-        """보유 포지션 조회"""
+        """Get positions"""
         ...
 
     async def get_open_orders(self) -> List[Dict[str, Any]]:
-        """미체결 주문 조회"""
+        """Get open orders"""
         ...
 
 
 @runtime_checkable
 class OrderExecutor(Protocol):
-    """주문 실행자 프로토콜"""
+    """Order executor protocol"""
 
     async def submit_order(
         self,
@@ -57,7 +59,7 @@ class OrderExecutor(Protocol):
         order_type: str = "market",
         price: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """주문 제출"""
+        """Submit order"""
         ...
 
     async def modify_order(
@@ -66,17 +68,17 @@ class OrderExecutor(Protocol):
         price: Optional[float] = None,
         quantity: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """주문 정정"""
+        """Modify order"""
         ...
 
     async def cancel_order(self, order_id: str) -> Dict[str, Any]:
-        """주문 취소"""
+        """Cancel order"""
         ...
 
 
 @dataclass
 class NodeOutput:
-    """노드 출력 값"""
+    """Node output value"""
 
     node_id: str
     port_name: str
@@ -86,9 +88,13 @@ class NodeOutput:
 
 class ExecutionContext:
     """
-    워크플로우 실행 컨텍스트
+    Workflow execution context
 
-    노드 간 데이터 전달, 실시간 데이터 주입, 상태 관리를 담당.
+    Handles data transfer between nodes, realtime data injection, and state management.
+
+    Attributes:
+        context_params: Runtime parameters (symbols, dry_run, backtest options, etc.)
+        _secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
     """
 
     def __init__(
@@ -96,47 +102,81 @@ class ExecutionContext:
         job_id: str,
         workflow_id: str,
         context_params: Optional[Dict[str, Any]] = None,
+        secrets: Optional[Dict[str, Any]] = None,
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id
         self.context_params = context_params or {}
 
-        # 노드 출력 저장소
+        # Secrets storage (never logged, separate from context_params)
+        self._secrets: Dict[str, Any] = secrets or {}
+
+        # Node output storage
         self._outputs: Dict[str, Dict[str, NodeOutput]] = {}
 
-        # 실시간 데이터 버퍼
+        # Realtime data buffer
         self._realtime_data: Dict[str, Any] = {}
 
-        # 프로바이더
+        # Providers
         self._data_provider: Optional[DataProvider] = None
         self._account_provider: Optional[AccountProvider] = None
         self._order_executor: Optional[OrderExecutor] = None
 
-        # 상태
+        # State
         self._is_running = False
         self._is_paused = False
 
-        # 이벤트 핸들러
+        # Event handlers
         self._event_handlers: Dict[str, List[callable]] = {}
 
-        # 로그
+        # Logs
         self._logs: List[Dict[str, Any]] = []
 
-    # === 프로바이더 설정 ===
+    # === Provider Configuration ===
 
     def set_data_provider(self, provider: DataProvider) -> None:
-        """데이터 프로바이더 설정"""
+        """Set data provider"""
         self._data_provider = provider
 
     def set_account_provider(self, provider: AccountProvider) -> None:
-        """계좌 프로바이더 설정"""
+        """Set account provider"""
         self._account_provider = provider
 
     def set_order_executor(self, executor: OrderExecutor) -> None:
-        """주문 실행자 설정"""
+        """Set order executor"""
         self._order_executor = executor
 
-    # === 노드 출력 관리 ===
+    # === Secrets Management ===
+
+    def get_secret(self, key: str) -> Optional[Any]:
+        """
+        Get secret value by key
+
+        Args:
+            key: Secret key (e.g., 'credential_id', 'telegram_token')
+
+        Returns:
+            Secret value or None
+        """
+        return self._secrets.get(key)
+
+    def get_credential(self, credential_id: str = "credential_id") -> Optional[Dict[str, Any]]:
+        """
+        Get credential (appkey, appsecret) by credential_id
+
+        Args:
+            credential_id: Credential identifier (default: 'credential_id')
+
+        Returns:
+            Dict with 'appkey', 'appsecret' or None
+        """
+        return self._secrets.get(credential_id)
+
+    def has_secret(self, key: str) -> bool:
+        """Check if secret exists"""
+        return key in self._secrets
+
+    # === Node Output Management ===
 
     def set_output(
         self,
@@ -144,7 +184,7 @@ class ExecutionContext:
         port_name: str,
         value: Any,
     ) -> None:
-        """노드 출력 설정"""
+        """Set node output"""
         if node_id not in self._outputs:
             self._outputs[node_id] = {}
 
@@ -159,14 +199,14 @@ class ExecutionContext:
         node_id: str,
         port_name: Optional[str] = None,
     ) -> Optional[Any]:
-        """노드 출력 조회"""
+        """Get node output"""
         node_outputs = self._outputs.get(node_id, {})
 
         if port_name:
             output = node_outputs.get(port_name)
             return output.value if output else None
 
-        # 포트 이름 없으면 첫 번째 출력 반환
+        # Return first output if no port name specified
         if node_outputs:
             first_output = list(node_outputs.values())[0]
             return first_output.value
@@ -178,23 +218,23 @@ class ExecutionContext:
         from_node_id: str,
         from_port: Optional[str],
     ) -> Optional[Any]:
-        """엣지를 통해 연결된 입력 값 조회"""
+        """Get input value connected via edge"""
         return self.get_output(from_node_id, from_port)
 
-    # === 실시간 데이터 ===
+    # === Realtime Data ===
 
     def update_realtime_data(self, key: str, value: Any) -> None:
-        """실시간 데이터 업데이트"""
+        """Update realtime data"""
         self._realtime_data[key] = value
 
     def get_realtime_data(self, key: str) -> Optional[Any]:
-        """실시간 데이터 조회"""
+        """Get realtime data"""
         return self._realtime_data.get(key)
 
-    # === 데이터 조회 (프로바이더 위임) ===
+    # === Data Query (Provider Delegation) ===
 
     async def get_price(self, symbol: str) -> Optional[float]:
-        """현재가 조회"""
+        """Get current price"""
         if self._data_provider:
             return await self._data_provider.get_price(symbol)
         return None
@@ -205,30 +245,30 @@ class ExecutionContext:
         period: str = "1d",
         count: int = 100,
     ) -> Optional[List[Dict[str, Any]]]:
-        """OHLCV 데이터 조회"""
+        """Get OHLCV data"""
         if self._data_provider:
             return await self._data_provider.get_ohlcv(symbol, period, count)
         return None
 
     async def get_balance(self) -> Dict[str, Any]:
-        """잔고 조회"""
+        """Get balance"""
         if self._account_provider:
             return await self._account_provider.get_balance()
         return {}
 
     async def get_positions(self) -> Dict[str, Any]:
-        """보유 포지션 조회"""
+        """Get positions"""
         if self._account_provider:
             return await self._account_provider.get_positions()
         return {}
 
     async def get_open_orders(self) -> List[Dict[str, Any]]:
-        """미체결 주문 조회"""
+        """Get open orders"""
         if self._account_provider:
             return await self._account_provider.get_open_orders()
         return []
 
-    # === 주문 실행 (실행자 위임) ===
+    # === Order Execution (Executor Delegation) ===
 
     async def submit_order(
         self,
@@ -238,7 +278,7 @@ class ExecutionContext:
         order_type: str = "market",
         price: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """주문 제출"""
+        """Submit order"""
         if self._order_executor:
             return await self._order_executor.submit_order(
                 symbol=symbol,
@@ -255,7 +295,7 @@ class ExecutionContext:
         price: Optional[float] = None,
         quantity: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """주문 정정"""
+        """Modify order"""
         if self._order_executor:
             return await self._order_executor.modify_order(
                 order_id=order_id,
@@ -265,12 +305,17 @@ class ExecutionContext:
         return {"error": "Order executor not configured"}
 
     async def cancel_order(self, order_id: str) -> Dict[str, Any]:
-        """주문 취소"""
+        """Cancel order"""
         if self._order_executor:
             return await self._order_executor.cancel_order(order_id)
         return {"error": "Order executor not configured"}
 
-    # === 상태 관리 ===
+    # === State Management ===
+
+    @property
+    def secrets(self) -> Dict[str, Any]:
+        """Get all secrets (read-only access)"""
+        return self._secrets
 
     @property
     def is_running(self) -> bool:
@@ -281,32 +326,32 @@ class ExecutionContext:
         return self._is_paused
 
     def start(self) -> None:
-        """실행 시작"""
+        """Start execution"""
         self._is_running = True
         self._is_paused = False
 
     def pause(self) -> None:
-        """일시정지"""
+        """Pause execution"""
         self._is_paused = True
 
     def resume(self) -> None:
-        """재개"""
+        """Resume execution"""
         self._is_paused = False
 
     def stop(self) -> None:
-        """정지"""
+        """Stop execution"""
         self._is_running = False
 
-    # === 이벤트 ===
+    # === Events ===
 
     def on(self, event_type: str, handler: callable) -> None:
-        """이벤트 핸들러 등록"""
+        """Register event handler"""
         if event_type not in self._event_handlers:
             self._event_handlers[event_type] = []
         self._event_handlers[event_type].append(handler)
 
     async def emit(self, event_type: str, data: Any = None) -> None:
-        """이벤트 발행"""
+        """Emit event"""
         handlers = self._event_handlers.get(event_type, [])
         for handler in handlers:
             if asyncio.iscoroutinefunction(handler):
@@ -314,7 +359,7 @@ class ExecutionContext:
             else:
                 handler(data)
 
-    # === 로깅 ===
+    # === Logging ===
 
     def log(
         self,
@@ -323,7 +368,7 @@ class ExecutionContext:
         node_id: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """로그 기록"""
+        """Record log entry"""
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
             "level": level,
@@ -339,7 +384,7 @@ class ExecutionContext:
         node_id: Optional[str] = None,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """로그 조회"""
+        """Get logs"""
         logs = self._logs
 
         if level:
@@ -348,3 +393,26 @@ class ExecutionContext:
             logs = [l for l in logs if l["node_id"] == node_id]
 
         return logs[-limit:]
+
+    # === Expression Context ===
+
+    def get_expression_context(self) -> ExpressionContext:
+        """
+        Create expression evaluation context
+
+        Converts all node outputs to be accessible in expressions
+        """
+        expr_context = ExpressionContext()
+
+        # Add node outputs
+        for node_id, outputs in self._outputs.items():
+            for port_name, output in outputs.items():
+                expr_context.set_node_output(node_id, port_name, output.value)
+
+        # Add realtime data
+        expr_context.variables.update(self._realtime_data)
+
+        # Add context parameters
+        expr_context.variables["context"] = self.context_params
+
+        return expr_context

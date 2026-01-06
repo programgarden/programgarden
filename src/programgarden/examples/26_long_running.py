@@ -79,7 +79,7 @@ LONG_RUNNING = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1200, "y": 100},
         },
         {
@@ -87,7 +87,7 @@ LONG_RUNNING = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "MACD",
-            "params": {"signal": "bullish_cross"},
+            "fields": {"signal": "bullish_cross"},
             "position": {"x": 1200, "y": 200},
         },
         {
@@ -113,7 +113,7 @@ LONG_RUNNING = {
             "type": "PositionSizingNode",
             "category": "risk",
             "method": "risk_percent",
-            "params": {"risk_percent": 1},
+            "fields": {"risk_percent": 1},
             "position": {"x": 1600, "y": 150},
         },
         {
@@ -121,7 +121,7 @@ LONG_RUNNING = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1800, "y": 150},
         },
         # === 일별 리포트 스케줄 ===

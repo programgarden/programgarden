@@ -1,25 +1,25 @@
 """
 ProgramGarden - Credential Tools
 
-증권사 인증 정보 관리 도구
+Broker authentication credential management tools
 """
 
 from typing import Optional, List, Dict, Any
 
-# 인메모리 저장소 (실제 구현에서는 암호화된 DB 사용)
+# In-memory storage (use encrypted DB in actual implementation)
 _credentials: Dict[str, Dict[str, Any]] = {}
 
 
 def list_credentials() -> List[Dict[str, Any]]:
     """
-    등록된 인증 정보 목록 조회 (요약 정보만)
+    List registered credentials (summary info only)
 
     Returns:
-        인증 정보 요약 목록 (ID, 이름, 계좌 마스킹)
+        List of credential summaries (ID, name, masked account)
 
     Example:
         >>> list_credentials()
-        [{"credential_id": "cred-ls-001", "name": "LS증권 메인계좌", ...}]
+        [{"credential_id": "cred-ls-001", "name": "LS Securities Main Account", ...}]
     """
     from programgarden_core import BrokerCredential
 
@@ -39,21 +39,21 @@ def create_credential(
     accounts: List[Dict[str, Any]],
 ) -> str:
     """
-    새 인증 정보 등록
+    Register new credential
 
     Args:
-        name: 인증 정보 이름 (예: LS증권 메인계좌)
-        provider: 증권사 (현재 ls-sec.co.kr만 지원)
-        app_key: OpenAPI 앱키
-        app_secret: OpenAPI 시크릿키
-        accounts: 계좌 목록 [{"account_number": "...", "product": "overseas_stock"}]
+        name: Credential name (e.g., LS Securities Main Account)
+        provider: Broker (currently only ls-sec.co.kr supported)
+        app_key: OpenAPI app key
+        app_secret: OpenAPI secret key
+        accounts: Account list [{"account_number": "...", "product": "overseas_stock"}]
 
     Returns:
-        생성된 credential_id
+        Created credential_id
 
     Example:
         >>> create_credential(
-        ...     name="LS증권 해외주식",
+        ...     name="LS Securities Overseas Stock",
         ...     provider="ls-sec.co.kr",
         ...     app_key="xxx",
         ...     app_secret="xxx",
@@ -66,13 +66,13 @@ def create_credential(
 
     credential_id = f"cred-{uuid.uuid4().hex[:8]}"
 
-    # 실제 구현에서는 암호화 저장
+    # Encrypt in actual implementation
     _credentials[credential_id] = {
         "credential_id": credential_id,
         "name": name,
         "provider": provider,
         "auth": {
-            "app_key": f"***encrypted:{app_key[:4]}***",  # 실제로는 암호화
+            "app_key": f"***encrypted:{app_key[:4]}***",  # Actually encrypt
             "app_secret": f"***encrypted:{app_secret[:4]}***",
         },
         "accounts": accounts,
@@ -85,13 +85,13 @@ def create_credential(
 
 def delete_credential(credential_id: str) -> bool:
     """
-    인증 정보 삭제
+    Delete credential
 
     Args:
-        credential_id: 삭제할 인증 정보 ID
+        credential_id: Credential ID to delete
 
     Returns:
-        삭제 성공 여부
+        Whether deletion was successful
 
     Example:
         >>> delete_credential("cred-abc123")
@@ -105,12 +105,12 @@ def delete_credential(credential_id: str) -> bool:
 
 def get_credential(credential_id: str) -> Optional[Dict[str, Any]]:
     """
-    인증 정보 조회 (내부용, AI에게 노출 안 함)
+    Get credential (internal use, not exposed to AI)
 
     Args:
-        credential_id: 인증 정보 ID
+        credential_id: Credential ID
 
     Returns:
-        인증 정보 (복호화됨) 또는 None
+        Credential (decrypted) or None
     """
     return _credentials.get(credential_id)

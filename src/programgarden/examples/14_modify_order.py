@@ -45,7 +45,7 @@ MODIFY_ORDER = {
             "type": "ModifyOrderNode",
             "category": "order",
             "plugin": "TrackingPriceModifier",
-            "params": {
+            "fields": {
                 "price_gap_percent": 0.5,  # 현재가와 0.5% 이상 차이나면 정정
                 "max_modifications": 5,  # 최대 5회 정정
             },

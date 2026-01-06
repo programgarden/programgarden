@@ -1,72 +1,35 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
+authors = [
+    {"name" = "프로그램동산", "email" = "coding@programgarden.com"}
+]
+homepage = "https://programgarden.com"
+requires-python = ">=3.12"
 name = "programgarden"
 version = "2.0.0"
 description = "ProgramGarden - 노드 기반 자동매매 DSL 실행 엔진"
 readme = "README.md"
-license = {text = "MIT"}
-authors = [
-    {name = "ProgramGarden Team"}
+
+[tool.poetry]
+packages = [
+    { include = "programgarden" }
 ]
-requires-python = ">=3.9"
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Office/Business :: Financial :: Investment",
-]
-keywords = ["trading", "dsl", "workflow", "automation", "algorithmic-trading"]
+exclude = ["examples", "tests", "**/__pycache__"]
 
-dependencies = [
-    "programgarden-core>=2.0.0",
-    "programgarden-finance>=1.0.0",
-    "pydantic>=2.0.0",
-]
+[tool.poetry.dependencies]
+pydantic = ">=2.0.0,<3.0.0"
+croniter = "^6.0.0"
+python-dotenv = "^1.1.0"
+tzdata = "^2025.2"
+programgarden-finance = {path = "../finance", develop = true}
+programgarden-core = {path = "../core", develop = true}
+psycopg2-binary = "^2.9.11"
 
-[project.optional-dependencies]
-community = [
-    "programgarden-community>=2.0.0",
-]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "mypy>=1.0.0",
-    "ruff>=0.1.0",
-]
-all = [
-    "programgarden[community,dev]",
-]
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.21.0"
+mypy = "^1.0.0"
+ruff = "^0.1.0"
 
-[project.urls]
-Homepage = "https://github.com/programgarden/programgarden"
-Documentation = "https://github.com/programgarden/programgarden/docs"
-Repository = "https://github.com/programgarden/programgarden"
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["programgarden*"]
-
-[tool.mypy]
-python_version = "3.9"
-strict = true
-ignore_missing_imports = true
-
-[tool.ruff]
-line-length = 100
-target-version = "py39"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "D", "UP"]
-ignore = ["D100", "D104", "D107"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

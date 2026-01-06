@@ -52,7 +52,7 @@ MARKET_ORDER = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1000, "y": 200},
         },
         {
@@ -60,7 +60,7 @@ MARKET_ORDER = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {
+            "fields": {
                 "side": "buy",
                 "amount_type": "percent_balance",
                 "amount": 10,  # 잔고의 10%

@@ -65,7 +65,7 @@ BACKTEST_SIMPLE = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {
+            "fields": {
                 "period": 14,
                 "threshold": 30,
                 "direction": "below",
@@ -77,7 +77,7 @@ BACKTEST_SIMPLE = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "ProfitTarget",
-            "params": {"percent": 5},
+            "fields": {"percent": 5},
             "position": {"x": 600, "y": 400},
         },
         {
@@ -85,7 +85,7 @@ BACKTEST_SIMPLE = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "StopLoss",
-            "params": {"percent": -3},
+            "fields": {"percent": -3},
             "position": {"x": 600, "y": 500},
         },
         {

@@ -1,39 +1,222 @@
-# **종목추출전략**
-거래를 하기 위한 종목을 필터링하는 전략들을 모아두었습니다. 원하는 전략이 없다면, 카페에 전략 제작을 요청해주세요([요청하기](https://cafe.naver.com/f-e/cafes/30041992/menus/204?viewType=L)). 또는 파이썬으로 직접 전략을 제작하고 추가하여 ([만드는 방법 보기](../custom_dsl.md)) 사용하실 수도 있습니다.
+# **종목조건 플러그인**
 
- | 상품 | 전략 ID | 설명 | 지원 |
-|-----|----------|------|-----|
-| 해외주식 | [**SMAGoldenDeadCross**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/sma_golden_dead/) | 최근 2봉 이내에 데드→골든 전환(골든 가격 > 데드 가격)이 발생했으며 현재 이평선 정렬이 골든인 경우 | 종목 분석 |
-| 해외주식 | [**StockSMAEMACross**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/sma_ema_trend_cross/) | 느린 SMA와 빠른 EMA의 위치·교차를 비교해 골든/데드 전환과 진행 중인 추세 방향을 라벨로 제공합니다. | 종목 분석 |
-| 해외주식 | [**StockMACDShift**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/macd_momentum_shift/) | MACD·시그널선·히스토그램을 함께 계산해 최근 골든/데드 교차와 모멘텀 이동 방향을 요약합니다. | 종목 분석 |
-| 해외주식 | [**StockRSIStochastic**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/rsi_stochastic_oscillator/) | RSI와 스토캐스틱 슬로우가 동시에 과열/침체 구간에 진입하는지를 감시해 반등·차익실현 타이밍을 알립니다. | 종목 분석 |
-| 해외주식 | [**TurtleBreakoutFilter**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/turtle_breakout_filter/) | 터틀 전략의 유동성·변동성·20/55일 돌파·손절 기준을 한 번에 점검해 “터틀 규칙에 맞는 후보인지”를 판정합니다. | 종목 분석 |
-| 해외주식 | [**TurtleLiquidityFilter**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/turtle_liquidity_filter/) | 최근 평균 거래대금과 거래량이 최소 기준을 넘는지 체크해 유동성이 부족한 종목을 앞단에서 걸러냅니다. | 종목 분석 |
-| 해외주식 | [**TurtleVolatilityFilter**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/turtle_volatility_filter/) | ATR 기반으로 최근 변동성이 설정한 기준 이상인지 확인해 “파도가 없는” 종목을 제외하는 필터입니다. | 종목 분석 |
-| 해외주식 | [**OverseasStockNewsSentiment**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/news_sentiment_analysis/) | 이 전략은 최신 뉴스를 수집하고 LLM(OpenAI)을 통해 시장 추세에 긍정적인지 분석해 주는 AI 기반 필터입니다. | 종목 분석 |
-| 해외주식 | [**AD**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/ad/) | 하루 중 종가 위치와 거래량을 결합해 매집/분산 상태를 분석하고, OBV보다 정교하게 수급을 파악합니다. | 종목 분석 |
-| 해외주식 | [**ADX**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/adx/) | 추세의 강도를 0~100 사이 숫자로 측정해, 추세장과 횡보장을 구분하고 +DI/-DI로 방향을 판단합니다. | 종목 분석 |
-| 해외주식 | [**ATR**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/atr/) | 평균 진정 범위(ATR)로 종목의 변동성을 측정해 손절 가격, 목표가, 포지션 크기 결정에 활용합니다. | 종목 분석 |
-| 해외주식 | [**Beta**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/beta/) | 종목이 시장(SPY) 대비 얼마나 민감하게 움직이는지를 측정해, 공격적/방어적 종목을 선별합니다. | 종목 분석 |
-| 해외주식 | [**BollingerBands**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/bollinger_bands/) | 가격이 평균에서 얼마나 벗어났는지 측정하고, 스퀴즈/익스팬션 상태로 추세 전환 타이밍을 포착합니다. | 종목 분석 |
-| 해외주식 | [**CandlePatterns**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/candle_patterns/) | 도지, 망치형, 유성형 등 캔들 모양을 자동 인식해 추세 전환 가능성을 직관적으로 알려줍니다. | 종목 분석 |
-| 해외주식 | [**CCI**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/cci/) | 현재 가격이 평균 대비 얼마나 벗어났는지를 측정해, 과매수(+100↑)/과매도(-100↓) 상태를 판단합니다. | 종목 분석 |
-| 해외주식 | [**KAMA**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/kama/) | 시장 상황에 따라 반응 속도를 자동 조절하는 적응 이동평균으로, 횡보장에서 거짓 신호를 줄여줍니다. | 종목 분석 |
-| 해외주식 | [**OBV**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/obv/) | 거래량 누적으로 큰손들의 매집/분산을 추적하고, 가격과의 다이버전스로 추세 전환을 예측합니다. | 종목 분석 |
-| 해외주식 | [**ParabolicSAR**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/parabolic_sar/) | 차트에 점으로 표시되어 상승/하락 추세를 자동 판단하고, 추세 전환 시점과 손절선을 제공합니다. | 종목 분석 |
-| 해외주식 | [**WilliamsR**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/strategy_conditions/williams_r/) | 현재 종가가 최근 고점/저점 대비 어디에 있는지 측정해, 과매수(-20↑)/과매도(-80↓)를 빠르게 감지합니다. | 종목 분석 |
-| 해외선물 | [**FuturesSMAEMACross**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/sma_ema_trend_cross/) | 해외선물 가격의 SMA·EMA 교차와 정렬을 자동으로 평가해 상승/하락 전환 신호를 제공합니다. | 종목 분석 |
-| 해외선물 | [**FuturesMACDShift**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/macd_momentum_shift/) | MACD 교차·히스토그램 흐름을 통합 분석해 최근 롱/숏 모멘텀 전환과 추천 포지션을 제안합니다. | 종목 분석 |
-| 해외선물 | [**FuturesRSIStochastic**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/rsi_stochastic_oscillator/) | RSI와 스토캐스틱이 동시에 과매수·과매도 영역에 진입하는 시점을 포착해 리스크 완화 구간을 알려줍니다. | 종목 분석 |
-| 해외선물 | [**FuturesEMARiskAdjustedTrend**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/ema_risk_adjusted_trend/) | EMA와 변동성 점수를 결합해 롱·숏 추천 방향과 신뢰도를 수치화하는 리스크 조정 추세 필터입니다. | 종목 분석 |
-| 해외선물 | [**FuturesAD**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/ad/) | 거래량이 고가/저가 근처에서 몰렸는지 분석해, 기관의 매집/분산 상태에 따라 롱/숏을 제안합니다. | 종목 분석 |
-| 해외선물 | [**FuturesADX**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/adx/) | 추세 강도(ADX)와 +DI/-DI로 추세장 여부와 방향을 판단해, 추세가 강할 때만 롱/숏을 추천합니다. | 종목 분석 |
-| 해외선물 | [**FuturesATR**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/atr/) | ATR로 시장 변동성을 측정해 적절한 손절 레벨과 포지션 크기를 계산하는 리스크 관리 도구입니다. | 종목 분석 |
-| 해외선물 | [**FuturesBeta**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/beta/) | 선물이 시장 전체 대비 얼마나 움직이는지 측정해, 공격적/방어적 자산을 선별하고 리스크를 관리합니다. | 종목 분석 |
-| 해외선물 | [**FuturesBollingerBands**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/bollinger_bands/) | 가격이 밴드 상단/하단에 닿으면 롱/숏을 제안하고, 스퀴즈 발생 시 큰 움직임을 예고합니다. | 종목 분석 |
-| 해외선물 | [**FuturesCandlePatterns**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/candle_patterns/) | 14가지 주요 캔들 패턴을 자동 인식해 롱 또는 숏 포지션을 제안하는 전통적 기술적 분석 도구입니다. | 종목 분석 |
-| 해외선물 | [**FuturesCCI**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/cci/) | CCI로 가격이 평균 대비 극단적 위치인지 측정해, 과매수/과매도에 따라 롱/숏을 추천합니다. | 종목 분석 |
-| 해외선물 | [**FuturesKAMA**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/kama/) | 추세 강도에 따라 반응 속도가 자동 조절되는 적응 이동평균으로, 거짓 신호를 줄여 롱/숏을 추천합니다. | 종목 분석 |
-| 해외선물 | [**FuturesOBV**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/obv/) | 거래량 흐름으로 매수/매도 압력을 추적하고, 다이버전스로 추세 전환을 미리 감지해 롱/숏을 제안합니다. | 종목 분석 |
-| 해외선물 | [**FuturesParabolicSAR**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/parabolic_sar/) | 차트의 SAR 점 위치로 추세 방향을 자동 판단하고, 반전 시점과 손절선을 함께 제공합니다. | 종목 분석 |
-| 해외선물 | [**FuturesWilliamsR**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/strategy_conditions/williams_r/) | Williams %R로 과매수/과매도를 민감하게 감지해, 단기 반전 타이밍에 롱/숏을 추천합니다. | 종목 분석 |
+종목 매수/매도 조건을 판단하는 플러그인들입니다. `ConditionNode`에서 `plugin` 필드로 지정하여 사용합니다.
+
+원하는 플러그인이 없다면:
+- 카페에 요청: [요청하기](https://cafe.naver.com/f-e/cafes/30041992/menus/204?viewType=L)
+- 직접 개발: [플러그인 개발 가이드](../custom_dsl.md)
+
+---
+
+## 사용 방법
+
+```python
+from programgarden_community.strategies import get_strategy
+from programgarden import ProgramGarden
+
+# 완성된 전략 바로 실행
+strategy = get_strategy("overseas_stock", "penny_stock_rsi")
+pg = ProgramGarden()
+job = pg.run(strategy)
+```
+
+또는 직접 워크플로우에서 플러그인 참조:
+
+```json
+{
+  "nodes": [
+    {
+      "id": "rsi",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      }
+    }
+  ]
+}
+```
+
+---
+
+## 전략 조건 플러그인 (strategy_conditions)
+
+| 플러그인 ID | 설명 | 상품 |
+|------------|------|------|
+| **RSI** | RSI 과매수/과매도 조건 | 해외주식, 해외선물 |
+| **MACD** | MACD 크로스오버 조건 | 해외주식, 해외선물 |
+| **BollingerBands** | 볼린저밴드 상단/하단 이탈 | 해외주식, 해외선물 |
+| **VolumeSpike** | 거래량 급증 감지 | 해외주식, 해외선물 |
+| **ProfitTarget** | 목표 수익률 익절 | 해외주식, 해외선물 |
+| **StopLoss** | 손절 조건 | 해외주식, 해외선물 |
+
+---
+
+## RSI (Relative Strength Index)
+
+과매도/과매수 상태를 판단합니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `period` | int | 14 | RSI 계산 기간 (2~100) |
+| `threshold` | float | 30 | 임계값 (0~100) |
+| `direction` | string | "below" | `below`: 과매도, `above`: 과매수 |
+
+### 사용 예시
+
+```json
+{
+  "id": "rsiBuy",
+  "type": "ConditionNode",
+  "plugin": "RSI",
+  "fields": {
+    "period": 14,
+    "threshold": 30,
+    "direction": "below"
+  }
+}
+```
+
+---
+
+## MACD
+
+MACD 선과 시그널 선의 교차를 감지합니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `fast_period` | int | 12 | 빠른 EMA 기간 |
+| `slow_period` | int | 26 | 느린 EMA 기간 |
+| `signal_period` | int | 9 | 시그널 기간 |
+| `signal_type` | string | "bullish_cross" | `bullish_cross`: 골든크로스, `bearish_cross`: 데드크로스 |
+
+### 사용 예시
+
+```json
+{
+  "id": "macdBuy",
+  "type": "ConditionNode",
+  "plugin": "MACD",
+  "fields": {
+    "fast_period": 12,
+    "slow_period": 26,
+    "signal_period": 9,
+    "signal_type": "bullish_cross"
+  }
+}
+```
+
+---
+
+## BollingerBands
+
+가격이 볼린저밴드 상단/하단을 이탈하는지 확인합니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `period` | int | 20 | 이동평균 기간 |
+| `std_dev` | float | 2.0 | 표준편차 배수 (0.5~4.0) |
+| `position` | string | "below_lower" | `below_lower`: 하단 이탈, `above_upper`: 상단 이탈 |
+
+---
+
+## VolumeSpike
+
+평균 거래량 대비 급증을 감지합니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `period` | int | 20 | 평균 계산 기간 |
+| `multiplier` | float | 2.0 | 평균 대비 배수 (1.0 이상) |
+
+---
+
+## ProfitTarget (익절)
+
+보유 포지션이 목표 수익률에 도달하면 매도 신호를 발생시킵니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `percent` | float | 5.0 | 목표 수익률 (%) |
+
+### 사용 예시
+
+```json
+{
+  "id": "takeProfit",
+  "type": "ConditionNode",
+  "plugin": "ProfitTarget",
+  "fields": {"percent": 5.0}
+}
+```
+
+---
+
+## StopLoss (손절)
+
+보유 포지션이 손절 기준에 도달하면 매도 신호를 발생시킵니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `percent` | float | -3.0 | 손절 비율 (%, 음수 값) |
+
+### 사용 예시
+
+```json
+{
+  "id": "stopLoss",
+  "type": "ConditionNode",
+  "plugin": "StopLoss",
+  "fields": {"percent": -3.0}
+}
+```
+
+---
+
+## 완성된 전략 목록
+
+바로 사용 가능한 해외주식 전략:
+
+| 전략 ID | 설명 | 노드 수 |
+|---------|------|--------|
+| `penny_stock_rsi` | 동전주 RSI 과매도 매수 (예수금 1~2만원용) | 16 |
+| `backtest_to_live` | 백테스트 → 성과 검증 → 실계좌 배포 | 15 |
+| `realtime_risk_monitor` | 실시간 P&L 모니터링 + 위험관리 | 18 |
+
+```python
+from programgarden_community.strategies import get_strategy, list_strategies
+
+# 전체 전략 목록
+print(list_strategies())
+# {'overseas_stock': ['penny_stock_rsi', 'backtest_to_live', 'realtime_risk_monitor'], ...}
+
+# 전략 조회 및 실행
+strategy = get_strategy("overseas_stock", "penny_stock_rsi")
+```
+
+---
+
+## 버전 정보
+
+| 플러그인 | 버전 | 최종 수정 |
+|----------|------|----------|
+| RSI | 1.0.0 | 2026-01-06 |
+| MACD | 1.0.0 | 2026-01-06 |
+| BollingerBands | 1.0.0 | 2026-01-06 |
+| VolumeSpike | 1.0.0 | 2026-01-06 |
+| ProfitTarget | 1.0.0 | 2026-01-06 |
+| StopLoss | 1.0.0 | 2026-01-06 |

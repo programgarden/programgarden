@@ -1,7 +1,7 @@
 """
-ProgramGarden - AI 에이전트 Tool Interface
+ProgramGarden - AI Agent Tool Interface
 
-AI 에이전트/챗봇이 사용하는 함수형 도구 모음
+Functional tools collection for AI agents/chatbots
 """
 
 from typing import Optional, List, Dict, Any

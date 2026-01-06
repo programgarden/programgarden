@@ -66,7 +66,7 @@ STATE_SNAPSHOT = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1000, "y": 100},
         },
         {
@@ -74,7 +74,7 @@ STATE_SNAPSHOT = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1200, "y": 100},
         },
         # 에러 핸들러 - 장애 복구

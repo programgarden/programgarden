@@ -1,14 +1,14 @@
 """
-ProgramGarden Core - Symbol 노드
+ProgramGarden Core - Symbol Nodes
 
-종목 소스/필터 노드:
-- WatchlistNode: 사용자 정의 관심종목 리스트
-- MarketUniverseNode: 시장 전체 (NASDAQ100, S&P500 등)
-- ScreenerNode: 조건부 종목 스크리닝
-- SymbolFilterNode: 종목 리스트 필터/교집합/차집합
+Symbol source/filter nodes:
+- WatchlistNode: User-defined watchlist
+- MarketUniverseNode: Market universe (NASDAQ100, S&P500, etc.)
+- ScreenerNode: Conditional symbol screening
+- SymbolFilterNode: Symbol list filter/intersection/difference
 """
 
-from typing import Optional, List, Literal, Dict, Any, Union
+from typing import Optional, List, Literal, Dict, Any, Union, ClassVar
 from pydantic import Field
 
 from programgarden_core.nodes.base import (
@@ -17,133 +17,149 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
+from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class WatchlistNode(BaseNode):
     """
-    사용자 정의 관심종목 리스트 노드
+    User-defined watchlist node
 
-    사용자가 직접 지정한 종목 리스트 출력
+    Outputs a list of symbols specified by the user
     """
 
     type: Literal["WatchlistNode"] = "WatchlistNode"
     category: NodeCategory = NodeCategory.SYMBOL
+    description: str = "i18n:nodes.WatchlistNode.description"
 
-    # WatchlistNode 전용 설정
-    # 템플릿 참조 허용 (예: "{{inputs.symbols}}")
+    # WatchlistNode specific config
+    # Template reference allowed (e.g., "{{inputs.symbols}}")
     symbols: Union[List[str], str] = Field(
         default_factory=list,
-        description="관심종목 코드 리스트 (예: ['AAPL', 'TSLA', 'NVDA']) 또는 템플릿 참조",
+        description="List of symbol codes (e.g., ['AAPL', 'TSLA', 'NVDA']) or template reference",
     )
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="종목 코드 리스트")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
     ]
+    _field_schema: ClassVar[Dict[str, FieldSchema]] = {
+        "symbols": FieldSchema(
+            name="symbols",
+            type=FieldType.ARRAY,
+            description="List of symbol codes",
+            required=True,
+            array_item_type=FieldType.STRING,
+            bindable=True,
+            expression_enabled=True,
+        ),
+    }
 
 
 class MarketUniverseNode(BaseNode):
     """
-    시장 전체 종목 노드
+    Market universe node
 
-    특정 시장/지수의 구성 종목 리스트 출력
+    Outputs constituent symbols of a specific market/index
     """
 
     type: Literal["MarketUniverseNode"] = "MarketUniverseNode"
     category: NodeCategory = NodeCategory.SYMBOL
+    description: str = "i18n:nodes.MarketUniverseNode.description"
 
-    # MarketUniverseNode 전용 설정
+    # MarketUniverseNode specific config
     universe: str = Field(
         default="NASDAQ100",
-        description="시장/지수 (NASDAQ100, SP500, DOW30, RUSSELL2000 등)",
+        description="Market/Index (NASDAQ100, SP500, DOW30, RUSSELL2000, etc.)",
     )
     exchange: Optional[str] = Field(
-        default=None, description="거래소 필터 (NYSE, NASDAQ, AMEX 등)"
+        default=None, description="Exchange filter (NYSE, NASDAQ, AMEX, etc.)"
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="connection",
             type="broker_connection",
-            description="BrokerNode 연결 (종목 조회용)",
+            description="i18n:ports.connection",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="종목 코드 리스트")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
     ]
 
 
 class ScreenerNode(BaseNode):
     """
-    조건부 종목 스크리닝 노드
+    Conditional symbol screening node
 
-    시가총액, 거래량, 섹터 등 조건에 따른 종목 필터링
+    Filters symbols based on market cap, volume, sector, etc.
     """
 
     type: Literal["ScreenerNode"] = "ScreenerNode"
     category: NodeCategory = NodeCategory.SYMBOL
+    description: str = "i18n:nodes.ScreenerNode.description"
 
-    # ScreenerNode 전용 설정
+    # ScreenerNode specific config
     filters: Dict[str, Any] = Field(
         default_factory=dict,
-        description="스크리닝 조건 (예: {'market_cap_min': 10e9, 'volume_min': 1e6})",
+        description="Screening conditions (e.g., {'market_cap_min': 10e9, 'volume_min': 1e6})",
     )
     universe: str = Field(
-        default="ALL", description="스크리닝 대상 시장 (ALL, NASDAQ, NYSE 등)"
+        default="ALL", description="Target market for screening (ALL, NASDAQ, NYSE, etc.)"
     )
-    max_results: int = Field(default=100, description="최대 결과 개수")
+    max_results: int = Field(default=100, description="Maximum number of results")
 
     _inputs: List[InputPort] = [
         InputPort(
             name="connection",
             type="broker_connection",
-            description="BrokerNode 연결 (종목 조회용)",
+            description="i18n:ports.connection",
         ),
         InputPort(
             name="trigger",
             type="signal",
-            description="스크리닝 실행 트리거",
+            description="i18n:ports.trigger",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="필터링된 종목 리스트")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
     ]
 
 
 class SymbolFilterNode(BaseNode):
     """
-    종목 리스트 필터/집합 연산 노드
+    Symbol list filter/set operation node
 
-    여러 종목 리스트의 교집합/합집합/차집합 등 연산
+    Performs intersection/union/difference operations on multiple symbol lists
     """
 
     type: Literal["SymbolFilterNode"] = "SymbolFilterNode"
     category: NodeCategory = NodeCategory.SYMBOL
+    description: str = "i18n:nodes.SymbolFilterNode.description"
 
-    # SymbolFilterNode 전용 설정
+    # SymbolFilterNode specific config
     operation: Literal["union", "intersection", "difference", "exclude"] = Field(
         default="intersection",
-        description="집합 연산 (union: 합집합, intersection: 교집합, difference: 차집합, exclude: 제외)",
+        description="Set operation (union, intersection, difference, exclude)",
     )
     exclude_symbols: List[str] = Field(
-        default_factory=list, description="제외할 종목 리스트 (exclude 연산 시)"
+        default_factory=list, description="Symbols to exclude (for exclude operation)"
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="input_a",
             type="symbol_list",
-            description="첫 번째 종목 리스트",
+            description="First symbol list",
         ),
         InputPort(
             name="input_b",
             type="symbol_list",
-            description="두 번째 종목 리스트",
+            description="Second symbol list",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="연산 결과 종목 리스트")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
     ]

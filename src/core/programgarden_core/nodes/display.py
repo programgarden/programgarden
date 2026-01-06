@@ -1,8 +1,8 @@
 """
-ProgramGarden Core - Display 노드
+ProgramGarden Core - Display Node
 
-시각화 노드:
-- DisplayNode: 차트/테이블 시각화
+Visualization node:
+- DisplayNode: Chart/table visualization
 """
 
 from typing import Optional, List, Literal, Dict, Any
@@ -18,48 +18,49 @@ from programgarden_core.nodes.base import (
 
 class DisplayNode(BaseNode):
     """
-    차트/테이블 시각화 노드
+    Chart/table visualization node
 
-    line, candlestick, bar, scatter, radar, heatmap, table 등 다양한 시각화 지원
+    Supports various visualizations: line, candlestick, bar, scatter, radar, heatmap, table
     """
 
     type: Literal["DisplayNode"] = "DisplayNode"
     category: NodeCategory = NodeCategory.DISPLAY
+    description: str = "i18n:nodes.DisplayNode.description"
 
-    # DisplayNode 전용 설정
+    # DisplayNode specific config
     chart_type: Literal[
         "line", "candlestick", "bar", "scatter", "radar", "heatmap", "table"
     ] = Field(
         default="line",
-        description="차트 유형",
+        description="Chart type",
     )
     title: Optional[str] = Field(
         default=None,
-        description="차트 제목",
+        description="Chart title",
     )
     x_label: Optional[str] = Field(
         default=None,
-        description="X축 레이블",
+        description="X-axis label",
     )
     y_label: Optional[str] = Field(
         default=None,
-        description="Y축 레이블",
+        description="Y-axis label",
     )
     options: Dict[str, Any] = Field(
         default_factory=dict,
-        description="차트별 추가 옵션",
+        description="Additional chart options",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="data",
             type="any",
-            description="시각화할 데이터",
+            description="i18n:ports.data",
         ),
         InputPort(
             name="trigger",
             type="signal",
-            description="시각화 업데이트 트리거",
+            description="i18n:ports.trigger",
             required=False,
         ),
     ]
@@ -67,6 +68,6 @@ class DisplayNode(BaseNode):
         OutputPort(
             name="rendered",
             type="signal",
-            description="렌더링 완료 신호",
+            description="Render complete signal",
         ),
     ]

@@ -45,7 +45,7 @@ CANCEL_ORDER = {
             "type": "CancelOrderNode",
             "category": "order",
             "plugin": "TimeStopCanceller",
-            "params": {
+            "fields": {
                 "timeout_minutes": 30,  # 30분 초과 시 취소
             },
             "position": {"x": 800, "y": 200},

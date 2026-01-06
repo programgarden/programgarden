@@ -41,10 +41,10 @@ class PluginSchema(BaseModel):
         description="지원 상품 유형",
     )
 
-    # 파라미터 스키마
-    params_schema: Dict[str, Any] = Field(
+    # 필드 스키마 (params_schema에서 변경)
+    fields_schema: Dict[str, Any] = Field(
         default_factory=dict,
-        description="파라미터 스키마 (타입, 기본값, 설명 등)",
+        description="필드 스키마 (타입, 기본값, 바인딩 가능 여부 등)",
     )
 
     # 필요 데이터

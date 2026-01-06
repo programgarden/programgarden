@@ -60,7 +60,7 @@ BUY_SELL_BASIC = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1000, "y": 150},
         },
         # === 매도 조건 ===
@@ -69,7 +69,7 @@ BUY_SELL_BASIC = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 70, "direction": "above"},
+            "fields": {"period": 14, "threshold": 70, "direction": "above"},
             "position": {"x": 1000, "y": 450},
         },
         # 주문
@@ -78,7 +78,7 @@ BUY_SELL_BASIC = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy", "amount_type": "percent_balance", "amount": 10},
+            "fields": {"side": "buy", "amount_type": "percent_balance", "amount": 10},
             "position": {"x": 1200, "y": 150},
         },
         {
@@ -86,7 +86,7 @@ BUY_SELL_BASIC = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "sell", "amount_type": "all"},
+            "fields": {"side": "sell", "amount_type": "all"},
             "position": {"x": 1200, "y": 450},
         },
         {

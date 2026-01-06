@@ -1,10 +1,10 @@
 """
-ProgramGarden Core - Realtime 노드
+ProgramGarden Core - Realtime Nodes
 
-실시간 스트림 관련 노드:
-- RealMarketDataNode: WebSocket 시세 스트림
-- RealAccountNode: 실시간 계좌 정보
-- RealOrderEventNode: 실시간 주문 이벤트
+Realtime stream nodes:
+- RealMarketDataNode: WebSocket market data stream
+- RealAccountNode: Realtime account information
+- RealOrderEventNode: Realtime order events
 """
 
 from typing import Optional, List, Literal
@@ -20,105 +20,108 @@ from programgarden_core.nodes.base import (
 
 class RealMarketDataNode(BaseNode):
     """
-    실시간 시세 스트림 노드
+    Realtime market data stream node
 
-    WebSocket을 통해 실시간 시세 데이터(price, volume, bid/ask) 수신
+    Receives realtime market data (price, volume, bid/ask) via WebSocket
     """
 
     type: Literal["RealMarketDataNode"] = "RealMarketDataNode"
     category: NodeCategory = NodeCategory.REALTIME
+    description: str = "i18n:nodes.RealMarketDataNode.description"
 
-    # RealMarketDataNode 전용 설정
+    # RealMarketDataNode specific config
     fields: List[str] = Field(
         default=["price", "volume"],
-        description="수신할 필드 목록 (price, volume, bid, ask, etc.)",
+        description="Fields to receive (price, volume, bid, ask, etc.)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="connection",
             type="broker_connection",
-            description="BrokerNode 연결",
+            description="i18n:ports.connection",
         ),
         InputPort(
-            name="symbols", type="symbol_list", description="구독할 종목 리스트"
+            name="symbols", type="symbol_list", description="i18n:ports.symbols"
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="price", type="market_data", description="실시간 가격 데이터"),
+        OutputPort(name="price", type="market_data", description="i18n:ports.price_data"),
         OutputPort(
-            name="volume", type="market_data", description="실시간 거래량 데이터"
+            name="volume", type="market_data", description="i18n:ports.volume_data"
         ),
-        OutputPort(name="bid", type="market_data", description="실시간 매수호가"),
-        OutputPort(name="ask", type="market_data", description="실시간 매도호가"),
+        OutputPort(name="bid", type="market_data", description="i18n:ports.bid"),
+        OutputPort(name="ask", type="market_data", description="i18n:ports.ask"),
     ]
 
 
 class RealAccountNode(BaseNode):
     """
-    실시간 계좌 정보 노드
+    Realtime account information node
 
-    보유종목, 예수금, 미체결, 실시간 수익률 등 계좌 정보 제공.
-    내부적으로 StockAccountTracker를 사용하여 실시간 수익률 계산.
+    Provides holdings, balance, open orders, and realtime P&L.
+    Uses StockAccountTracker internally for realtime return calculation.
 
-    - 1분마다 REST API로 증권사 데이터와 동기화
-    - WebSocket 틱 수신 시 즉시 수익률 재계산
+    - Syncs with broker data via REST API every minute
+    - Recalculates returns immediately on WebSocket tick
     """
 
     type: Literal["RealAccountNode"] = "RealAccountNode"
     category: NodeCategory = NodeCategory.REALTIME
+    description: str = "i18n:nodes.RealAccountNode.description"
 
-    # RealAccountNode 전용 설정
+    # RealAccountNode specific config
     sync_interval_sec: int = Field(
-        default=60, description="REST API 동기화 주기 (초)"
+        default=60, description="REST API sync interval (seconds)"
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="connection",
             type="broker_connection",
-            description="BrokerNode 연결",
+            description="i18n:ports.connection",
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="held_symbols", type="symbol_list", description="보유종목 코드 리스트"
+            name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols"
         ),
         OutputPort(
             name="balance",
             type="balance_data",
-            description="예수금/매수가능금액 (통화별)",
+            description="i18n:ports.balance",
         ),
         OutputPort(
-            name="open_orders", type="order_list", description="미체결 주문 목록"
+            name="open_orders", type="order_list", description="i18n:ports.open_orders"
         ),
         OutputPort(
             name="positions",
             type="position_data",
-            description="보유종목 상세 (실시간 수익률 포함)",
+            description="i18n:ports.positions",
         ),
     ]
 
 
 class RealOrderEventNode(BaseNode):
     """
-    실시간 주문 이벤트 노드
+    Realtime order event node
 
-    주문 체결/거부/취소 이벤트 실시간 수신
+    Receives realtime order fill/reject/cancel events
     """
 
     type: Literal["RealOrderEventNode"] = "RealOrderEventNode"
     category: NodeCategory = NodeCategory.REALTIME
+    description: str = "i18n:nodes.RealOrderEventNode.description"
 
     _inputs: List[InputPort] = [
         InputPort(
             name="connection",
             type="broker_connection",
-            description="BrokerNode 연결",
+            description="i18n:ports.connection",
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="filled", type="order_event", description="체결 이벤트"),
-        OutputPort(name="rejected", type="order_event", description="거부 이벤트"),
-        OutputPort(name="cancelled", type="order_event", description="취소 이벤트"),
+        OutputPort(name="filled", type="order_event", description="i18n:ports.filled"),
+        OutputPort(name="rejected", type="order_event", description="i18n:ports.rejected"),
+        OutputPort(name="cancelled", type="order_event", description="i18n:ports.cancelled"),
     ]

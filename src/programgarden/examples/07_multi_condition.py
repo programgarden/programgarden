@@ -43,7 +43,7 @@ MULTI_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 700, "y": 100},
         },
         {
@@ -51,7 +51,7 @@ MULTI_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "MACD",
-            "params": {"fast": 12, "slow": 26, "signal": 9, "cross": "bullish"},
+            "fields": {"fast": 12, "slow": 26, "signal": 9, "cross": "bullish"},
             "position": {"x": 700, "y": 300},
         },
         {

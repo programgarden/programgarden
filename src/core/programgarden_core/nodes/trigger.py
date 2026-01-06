@@ -1,13 +1,13 @@
 """
-ProgramGarden Core - Trigger 노드
+ProgramGarden Core - Trigger Nodes
 
-트리거/필터 노드:
-- ScheduleNode: 크론 스케줄 트리거
-- TradingHoursFilterNode: 거래시간 필터
-- ExchangeStatusNode: 거래소 상태 체크
+Trigger/filter nodes:
+- ScheduleNode: Cron schedule trigger
+- TradingHoursFilterNode: Trading hours filter
+- ExchangeStatusNode: Exchange status check
 """
 
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict, ClassVar
 from pydantic import Field
 
 from programgarden_core.nodes.base import (
@@ -16,97 +16,125 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
+from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class ScheduleNode(BaseNode):
     """
-    크론 스케줄 트리거 노드
+    Cron schedule trigger node
 
-    지정된 크론 표현식에 따라 트리거 신호 발생
+    Emits trigger signal according to specified cron expression
     """
 
     type: Literal["ScheduleNode"] = "ScheduleNode"
     category: NodeCategory = NodeCategory.TRIGGER
+    description: str = "i18n:nodes.ScheduleNode.description"
 
-    # ScheduleNode 전용 설정
+    # ScheduleNode specific config
     cron: str = Field(
         default="*/5 * * * *",
-        description="크론 표현식 (예: */5 * * * * = 5분마다)",
+        description="Cron expression (e.g., */5 * * * * = every 5 minutes)",
     )
     timezone: str = Field(
-        default="America/New_York", description="타임존 (예: America/New_York, Asia/Seoul)"
+        default="America/New_York", description="Timezone (e.g., America/New_York, Asia/Seoul)"
     )
-    enabled: bool = Field(default=True, description="스케줄 활성화 여부")
+    enabled: bool = Field(default=True, description="Schedule enabled")
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="trigger", type="signal", description="스케줄 트리거 신호")
+        OutputPort(name="trigger", type="signal", description="i18n:ports.trigger")
     ]
+    _field_schema: ClassVar[Dict[str, FieldSchema]] = {
+        "cron": FieldSchema(
+            name="cron",
+            type=FieldType.STRING,
+            description="Cron expression (e.g., */5 * * * * = every 5 minutes)",
+            default="*/5 * * * *",
+            required=True,
+            bindable=False,
+        ),
+        "timezone": FieldSchema(
+            name="timezone",
+            type=FieldType.STRING,
+            description="Timezone",
+            default="America/New_York",
+            bindable=False,
+        ),
+        "enabled": FieldSchema(
+            name="enabled",
+            type=FieldType.BOOLEAN,
+            description="Schedule enabled",
+            default=True,
+            bindable=False,
+        ),
+    }
 
 
 class TradingHoursFilterNode(BaseNode):
     """
-    거래시간 필터 노드
+    Trading hours filter node
 
-    지정된 거래시간 내에만 신호 통과
+    Passes signals only within specified trading hours
     """
 
     type: Literal["TradingHoursFilterNode"] = "TradingHoursFilterNode"
     category: NodeCategory = NodeCategory.TRIGGER
+    description: str = "i18n:nodes.TradingHoursFilterNode.description"
 
-    # TradingHoursFilterNode 전용 설정
-    start: str = Field(default="09:30", description="시작 시간 (HH:MM)")
-    end: str = Field(default="16:00", description="종료 시간 (HH:MM)")
+    # TradingHoursFilterNode specific config
+    start: str = Field(default="09:30", description="Start time (HH:MM)")
+    end: str = Field(default="16:00", description="End time (HH:MM)")
     timezone: str = Field(
-        default="America/New_York", description="타임존 (예: America/New_York)"
+        default="America/New_York", description="Timezone (e.g., America/New_York)"
     )
     days: List[str] = Field(
         default=["mon", "tue", "wed", "thu", "fri"],
-        description="활성화 요일 (mon, tue, wed, thu, fri, sat, sun)",
+        description="Active days (mon, tue, wed, thu, fri, sat, sun)",
     )
 
     _inputs: List[InputPort] = [
-        InputPort(name="trigger", type="signal", description="입력 트리거 신호"),
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="passed", type="signal", description="거래시간 내 통과 신호"
+            name="passed", type="signal", description="i18n:ports.passed"
         ),
         OutputPort(
-            name="blocked", type="signal", description="거래시간 외 차단 신호"
+            name="blocked", type="signal", description="i18n:ports.blocked"
         ),
     ]
 
 
 class ExchangeStatusNode(BaseNode):
     """
-    거래소 상태 체크 노드
+    Exchange status check node
 
-    거래소 개장/폐장/휴장 상태 확인
+    Checks exchange open/close/holiday status
     """
 
     type: Literal["ExchangeStatusNode"] = "ExchangeStatusNode"
     category: NodeCategory = NodeCategory.TRIGGER
+    description: str = "i18n:nodes.ExchangeStatusNode.description"
 
-    # ExchangeStatusNode 전용 설정
+    # ExchangeStatusNode specific config
     exchange: str = Field(
-        default="NYSE", description="거래소 코드 (NYSE, NASDAQ, CME 등)"
+        default="NYSE", description="Exchange code (NYSE, NASDAQ, CME, etc.)"
     )
     check_holidays: bool = Field(
-        default=True, description="공휴일 체크 여부"
+        default=True, description="Check holidays"
     )
 
     _inputs: List[InputPort] = [
-        InputPort(name="trigger", type="signal", description="입력 트리거 신호"),
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
         InputPort(
             name="connection",
             type="broker_connection",
-            description="BrokerNode 연결 (거래소 상태 조회용)",
+            description="i18n:ports.connection",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="open", type="signal", description="거래소 개장 시 신호"),
-        OutputPort(name="closed", type="signal", description="거래소 폐장 시 신호"),
-        OutputPort(name="holiday", type="signal", description="휴장일 시 신호"),
+        OutputPort(name="open", type="signal", description="i18n:ports.open"),
+        OutputPort(name="closed", type="signal", description="i18n:ports.closed"),
+        OutputPort(name="holiday", type="signal", description="i18n:ports.holiday"),
     ]

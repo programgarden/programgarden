@@ -25,7 +25,37 @@
 
 ---
 
-## 2. 지원되는 논리 연산자
+## 2. LogicNode 사용하기
+
+노드 기반 DSL에서는 **LogicNode**를 사용해 여러 조건을 조합합니다.
+
+### 기본 구조
+
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "all",
+    "threshold": 2
+  }
+}
+```
+
+여러 ConditionNode의 결과를 LogicNode에 연결합니다:
+
+```json
+"edges": [
+  {"from": "rsi.result", "to": "logic.input"},
+  {"from": "macd.result", "to": "logic.input"},
+  {"from": "volume.result", "to": "logic.input"},
+  {"from": "logic.passed_symbols", "to": "order.symbols"}
+]
+```
+
+---
+
+## 3. 지원되는 논리 연산자
 
 ### 한눈에 보기
 
@@ -57,8 +87,14 @@
 | ✅ | ❌ | ❌ | ❌ 실패 |
 
 **DSL 작성 예시**:
-```
-"logic": "all"
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "all"
+  }
+}
 ```
 
 ---
@@ -78,8 +114,14 @@
 | ❌ | ❌ | ❌ | ❌ 실패 |
 
 **DSL 작성 예시**:
-```
-"logic": "any"
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "any"
+  }
+}
 ```
 
 ---
@@ -99,8 +141,14 @@
 | ✅ | ✅ | ✅ | ❌ 실패 |
 
 **DSL 작성 예시**:
-```
-"logic": "not"
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "not"
+  }
+}
 ```
 
 ---
@@ -120,8 +168,14 @@
 | ❌ | ❌ | ❌ | ❌ 실패 (0개 통과) |
 
 **DSL 작성 예시**:
-```
-"logic": "xor"
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "xor"
+  }
+}
 ```
 
 ---
@@ -141,9 +195,15 @@
 | ✅ | ✅ | ✅ | 2개 이상 필요 | ✅ 통과 (3개 ≥ 2) |
 
 **DSL 작성 예시**:
-```
-"logic": "at_least",
-"threshold": 2
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "at_least",
+    "threshold": 2
+  }
+}
 ```
 
 ---
@@ -163,9 +223,15 @@
 | ❌ | ❌ | ❌ | 1개 이하 필요 | ✅ 통과 (0개 ≤ 1) |
 
 **DSL 작성 예시**:
-```
-"logic": "at_most",
-"threshold": 1
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "at_most",
+    "threshold": 1
+  }
+}
 ```
 
 ---
@@ -185,9 +251,15 @@
 | ✅ | ✅ | ✅ | 정확히 2개 | ❌ 실패 (3개 ≠ 2) |
 
 **DSL 작성 예시**:
-```
-"logic": "exactly",
-"threshold": 2
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "exactly",
+    "threshold": 2
+  }
+}
 ```
 
 ---
@@ -216,22 +288,63 @@
 → threshold가 0.7이면 **실패** (0.6 < 0.7)
 
 **DSL 작성 예시**:
-```
-"logic": "weighted",
-"threshold": 0.6,
-"conditions": [
-    {"condition_id": "RSI", "weight": 0.3, ...},
-    {"condition_id": "MACD", "weight": 0.3, ...},
-    {"condition_id": "Volume", "weight": 0.2, ...},
-    {"condition_id": "Trend", "weight": 0.2, ...}
-]
+
+먼저 각 ConditionNode에서 weight를 설정합니다:
+
+```json
+{
+  "nodes": [
+    {
+      "id": "rsi",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "params": {"period": 14, "oversold": 30},
+      "config": {"weight": 0.3}
+    },
+    {
+      "id": "macd",
+      "type": "ConditionNode",
+      "plugin": "MACD",
+      "params": {},
+      "config": {"weight": 0.3}
+    },
+    {
+      "id": "volume",
+      "type": "ConditionNode",
+      "plugin": "VolumeSpike",
+      "params": {},
+      "config": {"weight": 0.2}
+    },
+    {
+      "id": "trend",
+      "type": "ConditionNode",
+      "plugin": "ADX",
+      "params": {},
+      "config": {"weight": 0.2}
+    },
+    {
+      "id": "logic",
+      "type": "LogicNode",
+      "config": {
+        "operator": "weighted",
+        "threshold": 0.6
+      }
+    }
+  ],
+  "edges": [
+    {"from": "rsi.result", "to": "logic.input"},
+    {"from": "macd.result", "to": "logic.input"},
+    {"from": "volume.result", "to": "logic.input"},
+    {"from": "trend.result", "to": "logic.input"}
+  ]
+}
 ```
 
 > ⚠️ **주의**: weight를 지정하지 않으면 기본값이 **0**이므로, 조건이 통과해도 점수에 반영되지 않습니다.
 
 ---
 
-## 3. 중첩 조건 (조건 안에 조건 넣기)
+## 4. 중첩 조건 (조건 안에 조건 넣기)
 
 ### 중첩이란?
 
@@ -244,73 +357,52 @@
 1. 그룹 A: 수능 1등급 **또는** 내신 1등급 → `any`
 2. 최종: 그룹 A **그리고** 면접 통과 → `all`
 
----
+### 4.1 노드 기반 중첩 구조
 
-### 3.1 중첩 구조의 두 가지 형태
+노드 기반 DSL에서는 **여러 LogicNode를 연결**하여 중첩을 구현합니다.
 
-#### 형태 A: 상위 조건이 있는 중첩
-
-**"하위 조건들이 통과하면, 추가로 상위 조건도 확인한다"**
-
+**그림으로 보기**:
 ```
-┌─────────────────────────────────────┐
-│ 상위 조건: ADX (추세 강도)           │  ← 마지막에 확인
-│ ┌─────────────────────────────────┐ │
-│ │ 하위 조건들 (먼저 확인)          │ │
-│ │ - RSI                          │ │
-│ │ - MACD                         │ │
-│ └─────────────────────────────────┘ │
-└─────────────────────────────────────┘
-```
-
-**실행 순서**:
-1. RSI, MACD 먼저 확인
-2. 둘 다 통과하면 (logic: "all")
-3. ADX 추가 확인
-4. ADX도 통과하면 최종 성공
-
-**DSL 예시**:
-```python
-{
-    "condition_id": "ADX",       # 상위 조건 (마지막에 확인)
-    "params": {"period": 14},
-    "logic": "all",              # 하위 조건들을 어떻게 조합할지
-    "conditions": [              # 하위 조건들
-        {"condition_id": "RSI", "params": {...}},
-        {"condition_id": "MACD", "params": {...}}
-    ]
-}
-```
-
----
-
-#### 형태 B: 순수 그룹 (상위 조건 없이 묶기만)
-
-**"여러 조건을 그룹으로 묶어서 하나의 덩어리로 취급한다"**
-
-```
-┌─────────────────────────────────────┐
-│ 그룹 (condition_id 없음)            │
-│ - RSI                              │
-│ - StochasticRSI                    │
-│ → 이 중 하나만 통과하면 그룹 통과    │
-└─────────────────────────────────────┘
+┌────────────────────────────────────┐
+│         LogicNode (all)            │ ← 최종 결과
+│  ┌──────────────┐  ┌────────────┐  │
+│  │ LogicNode    │  │ Condition  │  │
+│  │ (any)        │  │ 면접       │  │
+│  │ ┌─────┐┌────┐│  │            │  │
+│  │ │수능 ││내신││  │            │  │
+│  │ └─────┘└────┘│  │            │  │
+│  └──────────────┘  └────────────┘  │
+└────────────────────────────────────┘
 ```
 
 **DSL 예시**:
-```python
+```json
 {
-    "logic": "any",              # 하나라도 통과하면 됨
-    "conditions": [
-        {"condition_id": "RSI", "params": {...}},
-        {"condition_id": "StochasticRSI", "params": {...}}
-    ]
+  "nodes": [
+    {"id": "suneung", "type": "ConditionNode", "plugin": "Test1"},
+    {"id": "naesin", "type": "ConditionNode", "plugin": "Test2"},
+    {"id": "interview", "type": "ConditionNode", "plugin": "Interview"},
+    {
+      "id": "groupA",
+      "type": "LogicNode",
+      "config": {"operator": "any"}
+    },
+    {
+      "id": "finalLogic",
+      "type": "LogicNode",
+      "config": {"operator": "all"}
+    }
+  ],
+  "edges": [
+    {"from": "suneung.result", "to": "groupA.input"},
+    {"from": "naesin.result", "to": "groupA.input"},
+    {"from": "groupA.result", "to": "finalLogic.input"},
+    {"from": "interview.result", "to": "finalLogic.input"}
+  ]
 }
 ```
 
----
-
-### 3.2 실전 예시: 복합 조건 만들기
+### 4.2 실전 예시: 복합 조건 만들기
 
 **목표**: "추세가 강할 때, 과매도 신호가 있으면 매수"
 
@@ -330,93 +422,36 @@
 ```
 
 **DSL 예시**:
-```python
+```json
 {
-    "logic": "all",                    # 모든 조건 만족 필요
-    "conditions": [
-        # 조건 1: 추세 강도
-        {"condition_id": "ADX", "params": {"min_value": 25}},
-        
-        # 조건 2: 과매도 그룹 (둘 중 하나만 만족하면 됨)
-        {
-            "logic": "any",            # OR 그룹
-            "conditions": [
-                {"condition_id": "RSI", "params": {"oversold": 30}},
-                {"condition_id": "Stochastic", "params": {"oversold": 20}}
-            ]
-        }
-    ]
+  "nodes": [
+    {"id": "adx", "type": "ConditionNode", "plugin": "ADX", "params": {"min_value": 25}},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "params": {"oversold": 30}},
+    {"id": "stochastic", "type": "ConditionNode", "plugin": "Stochastic", "params": {"oversold": 20}},
+    {
+      "id": "oversoldGroup",
+      "type": "LogicNode",
+      "config": {"operator": "any"}
+    },
+    {
+      "id": "finalLogic",
+      "type": "LogicNode",
+      "config": {"operator": "all"}
+    }
+  ],
+  "edges": [
+    {"from": "rsi.result", "to": "oversoldGroup.input"},
+    {"from": "stochastic.result", "to": "oversoldGroup.input"},
+    {"from": "adx.result", "to": "finalLogic.input"},
+    {"from": "oversoldGroup.result", "to": "finalLogic.input"},
+    {"from": "finalLogic.passed_symbols", "to": "order.symbols"}
+  ]
 }
 ```
 
 ---
 
-### 3.3 3단계 중첩 예시
-
-더 복잡한 조건도 가능합니다.
-
-**목표**: "ADX로 최종 확인, 그 전에 기술적 신호 1개 이상 필요, 거래량 신호는 가중치로 계산"
-
-```
-1계층: ADX (최종 확인)
-    │
-    └── 2계층: 1개 이상 통과 필요 (at_least)
-            │
-            ├── 볼린저밴드
-            ├── CCI
-            └── 3계층: 거래량 그룹 (weighted)
-                    ├── OBV (40%)
-                    └── VolumeSpike (40%)
-```
-
-**DSL 예시**:
-```python
-{
-    "condition_id": "ADX",           # 1계층: 최종 확인
-    "params": {"period": 14},
-    "logic": "at_least",             # 2계층에 적용: 1개 이상
-    "threshold": 1,
-    "conditions": [
-        # 2계층-A: 볼린저밴드
-        {"condition_id": "BollingerBands", "params": {...}},
-        
-        # 2계층-B: CCI
-        {"condition_id": "CCI", "params": {...}},
-        
-        # 2계층-C: 거래량 그룹 (3계층)
-        {
-            "logic": "weighted",     # 가중치 합산
-            "threshold": 0.6,        # 60% 이상 필요
-            "conditions": [
-                {"condition_id": "OBV", "weight": 0.4, "params": {...}},
-                {"condition_id": "VolumeSpike", "weight": 0.4, "params": {...}}
-            ]
-        }
-    ]
-}
-```
-
-**실행 순서 (안쪽부터 바깥으로)**:
-1. **3계층**: OBV, VolumeSpike 점수 합산 → 0.6 이상인지 확인
-2. **2계층**: 볼린저밴드, CCI, 3계층 결과 중 1개 이상 통과 확인
-3. **1계층**: 2계층 통과 시 ADX 확인 → 통과하면 최종 성공!
-
----
-
-### 3.4 결과 합성 규칙
-
-#### 가중치(weight) 합성
-
-하위 조건들의 점수와 상위 조건의 점수가 합산됩니다.
-
-**예시**:
-- 하위 조건들 점수 합: 0.4 + 0.3 = 0.7
-- 상위 조건(ADX) 점수: 0.2
-- **최종 점수: 0.9**
-
----
-
-#### position_side 합성 (해외선물 전용)
+## 5. position_side 합성 (해외선물 전용)
 
 해외선물에서는 **매수(long)할지 매도(short)할지** 방향을 결정해야 합니다.
 
@@ -434,19 +469,18 @@
 
 ---
 
-## 4. 자주 사용하는 패턴 모음
+## 6. 자주 사용하는 패턴 모음
 
 ### 패턴 1: 보수적 진입 (모든 조건 만족)
 
 **상황**: 확실할 때만 진입하고 싶음
 
-```python
-"logic": "all",
-"conditions": [
-    {"condition_id": "RSI", "params": {"oversold": 30}},
-    {"condition_id": "MACD", "params": {"signal": "bullish"}},
-    {"condition_id": "Volume", "params": {"min_ratio": 1.5}}
-]
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {"operator": "all"}
+}
 ```
 
 ✅ 장점: 거짓 신호 감소
@@ -458,12 +492,12 @@
 
 **상황**: 기회를 놓치고 싶지 않음
 
-```python
-"logic": "any",
-"conditions": [
-    {"condition_id": "RSI", "params": {"oversold": 25}},
-    {"condition_id": "BollingerBands", "params": {"position": "lower"}}
-]
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {"operator": "any"}
+}
 ```
 
 ✅ 장점: 진입 기회 많음
@@ -475,15 +509,17 @@
 
 **상황**: 여러 지표를 종합적으로 판단하고 싶음
 
-```python
-"logic": "weighted",
-"threshold": 0.6,
-"conditions": [
-    {"condition_id": "RSI", "weight": 0.3, "params": {...}},
-    {"condition_id": "MACD", "weight": 0.3, "params": {...}},
-    {"condition_id": "Volume", "weight": 0.2, "params": {...}},
-    {"condition_id": "Trend", "weight": 0.2, "params": {...}}
-]
+각 조건에 weight 설정 후:
+
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "weighted",
+    "threshold": 0.6
+  }
+}
 ```
 
 ✅ 장점: 균형 잡힌 판단
@@ -495,21 +531,22 @@
 
 **상황**: 조건이 맞을 때만, 신호를 기다림
 
-```python
-"logic": "all",
-"conditions": [
-    # 필터: 추세가 강해야 함
-    {"condition_id": "ADX", "params": {"min_value": 25}},
-    
-    # 신호: 둘 중 하나
-    {
-        "logic": "any",
-        "conditions": [
-            {"condition_id": "RSI", "params": {"oversold": 30}},
-            {"condition_id": "StochasticRSI", "params": {"oversold": 20}}
-        ]
-    }
-]
+```json
+{
+  "nodes": [
+    {"id": "adxFilter", "type": "ConditionNode", "plugin": "ADX", "params": {"min_value": 25}},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI"},
+    {"id": "stochasticRSI", "type": "ConditionNode", "plugin": "StochasticRSI"},
+    {"id": "signalGroup", "type": "LogicNode", "config": {"operator": "any"}},
+    {"id": "finalLogic", "type": "LogicNode", "config": {"operator": "all"}}
+  ],
+  "edges": [
+    {"from": "rsi.result", "to": "signalGroup.input"},
+    {"from": "stochasticRSI.result", "to": "signalGroup.input"},
+    {"from": "adxFilter.result", "to": "finalLogic.input"},
+    {"from": "signalGroup.result", "to": "finalLogic.input"}
+  ]
+}
 ```
 
 ✅ 장점: 추세 방향에서만 진입
@@ -517,7 +554,7 @@
 
 ---
 
-## 5. 주의사항 체크리스트
+## 7. 주의사항 체크리스트
 
 ### ✅ 기본 체크
 
@@ -538,19 +575,19 @@
 
 | 항목 | 권장 |
 |------|------|
-| 중첩 깊이 | 3단계 이하 |
-| 조건 개수 | 5개 이하 |
-| 테스트 | dry_run_mode: "test"로 먼저 확인 |
+| LogicNode 중첩 깊이 | 3단계 이하 |
+| 한 LogicNode에 연결하는 조건 개수 | 5개 이하 |
+| 테스트 | paper_trading: true로 먼저 확인 |
 
 ---
 
-## 6. 용어 정리
+## 8. 용어 정리
 
 | 용어 | 의미 |
 |------|------|
-| **logic** | 조건들을 어떻게 조합할지 결정하는 규칙 |
+| **LogicNode** | 여러 조건을 조합하는 노드 |
+| **operator** | 조건 조합 방식 (all, any, weighted 등) |
 | **threshold** | 기준값 (몇 개 이상, 몇 점 이상 등) |
 | **weight** | 가중치, 중요도 (0~1 사이 소수로 표현) |
-| **conditions** | 조건들의 목록 |
-| **중첩** | 조건 안에 또 다른 조건 그룹을 넣는 것 |
+| **edges** | 노드 간 데이터 흐름 연결 |
 | **통과/실패** | 조건을 만족하면 통과(True), 만족 못하면 실패(False) |

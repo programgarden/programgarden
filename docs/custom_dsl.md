@@ -1,176 +1,295 @@
 # ProgramGarden DSL 커스터마이징 가이드
 
 ## 1. 개요
-ProgramGarden DSL(Domain Specific Language)은 투자 자동화를 위한 전략 정의, 조건 실행, 주문 모듈을 선언적으로 기술할 수 있도록 설계된 설정 언어입니다. 해외 주식(`overseas_stock`)과 해외 선물(`overseas_futures`) 상품군을 동시에 지원하며, `programgarden-core` 패키지의 베이스 클래스를 확장해 자신만의 전략 로직을 파이썬으로 작성한 뒤 DSL에 매핑하면 즉시 실행할 수 있습니다. 이 문서는 외부 개발자가 ProgramGarden DSL을 이해하고 확장할 수 있도록 최신 코어 코드명 변경 사항과 해외선물 기능 추가 내용을 반영해 정리했습니다.
 
-## 2. DSL 전반 구조 이해하기
-ProgramGarden은 하나의 `system` 딕셔너리를 입력으로 받아 전략을 실행합니다. 이 딕셔너리는 다음 네 개의 최상위 섹션으로 구성됩니다.
+ProgramGarden DSL(Domain Specific Language)은 투자 자동화를 위한 **노드 기반 워크플로우**를 정의하는 설정 언어입니다. 해외 주식(`overseas_stock`)과 해외 선물(`overseas_futures`) 상품군을 지원하며, `programgarden-core` 패키지의 베이스 클래스를 확장해 자신만의 플러그인을 파이썬으로 작성할 수 있습니다.
 
-| 섹션 | 필수 여부 | 설명 |
-|------|-----------|------|
-| `settings` | 필수 | 시스템 ID, 작성자, 디버그 옵션 등 메타데이터 |
-| `securities` | 필수 | 연결할 증권사, 상품(`overseas_stock` 또는 `overseas_futures`), 인증 정보 |
-| `strategies` | 선택 | 조건 실행 및 주문 연동 로직. 미지정 시 주문을 직접 호출하는 형태로 사용 가능 |
-| `orders` | 선택 | 주문 전략 정의. `strategies`에서 참조하거나 직접 실행할 수 있음 |
+이 문서는 개발자가 ProgramGarden DSL을 이해하고 커스텀 플러그인을 만들 수 있도록 작성되었습니다.
 
-> 참고: `programgarden_core.alias_resolver.normalize_system_config`가 한글 키를 자동으로 영문 표준 키로 치환합니다. 예를 들어 `"설정"` → `"settings"`, `"전략ID"` → `"id"`로 변환되므로 한글 DSL도 그대로 사용할 수 있습니다.
+---
 
-### 2.1 settings
+## 2. 노드 그래프 구조 이해하기
+
+ProgramGarden은 JSON 직렬화 가능한 노드 그래프 기반 DSL을 사용합니다.
+
+### 2.1 기본 구조
+
 ```json
 {
-  "settings": {
-    "system_id": "custom_example_001",
-    "name": "커스텀 전략 시스템",
-    "description": "해외 주식·선물 통합 전략",
-    "version": "1.0.0",
-    "author": "Your Name",
-    "date": "2025-11-02",
-    "debug": "DEBUG",
-    "dry_run_mode": "test",
-    "perf_thresholds": {
-      "max_avg_cpu_percent": 80,
-      "max_memory_delta_mb": 256
-    }
-  }
-}
-```
-`debug` 값은 `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` 중 선택할 수 있으며 실행 내용을 보고 싶다면 실행 로그 레벨을 추가하면 됩니다. 그게 아니라면 debug는 빈값으로 두면 됩니다.
-
-#### 드라이런 및 성능 가드 옵션
-`settings` 블록에서 실행 정책을 바로 제어할 수 있습니다.
-
-- `dry_run_mode`:
-  - `test`: 조건 계산과 성능 측정만 수행하고 주문은 전송하지 않습니다. 한 번이라도 성공하면 자동으로 `live`로 승격되며 `safe_to_live` 성격의 퍼포먼스 이벤트가 발생합니다.
-  - `live`(기본값): 기존과 동일하게 실주문을 즉시 전송합니다.
-  - `guarded_live`: 실주문은 전송하되, `perf_thresholds`를 초과하면 즉시 중단하며 `PerformanceExceededException`을 사용자 코드로 전달합니다.
-
-- `perf_thresholds`:
-  - `max_avg_cpu_percent`: 평균 CPU %, 초과 시 실행 중단
-  - `max_memory_delta_mb`: RSS 증가치(MB), 초과 시 중단
-
-임계치를 넘어서면 `pg.on_performance_message`로 전달되는 콜백 payload에 `status="throttled"`가 포함되어 시스템 중단 이벤트를 바로 감지할 수 있습니다.
-
-### 2.2 securities
-```json
-{
-  "securities": {
-    "company": "ls",
-    "product": "overseas_futures",
-    "appkey": "...",
-    "appsecretkey": "...",
-    "paper_trading": true
-  }
-}
-```
-`product`는 반드시 `overseas_stock` 또는 `overseas_futures` 중 하나여야 합니다.
-
-### 2.3 strategies
-전략 블록은 조건을 일정 주기로 실행하고 조건 결과를 주문 전략에 연결합니다.
-```json
-{
-  "strategies": [
-    {
-      "id": "condition_market_analysis",
-      "description": "시장 분석",
-      "schedule": "0 */15 * * * *",
-      "timezone": "Asia/Seoul",
-      "logic": "at_least",
-      "threshold": 1,
-      "symbols": [
-        {"symbol": "TSLA", "name": "테슬라", "exchange": "82"},
-        {"symbol": "NVDA", "name": "엔비디아", "exchange": "82"}
-      ],
-      "order_id": "split_order_stock",
-      "conditions": [
-        {"condition_id": "SMAGoldenDeadCross", "params": {"short_period": 5, "long_period": 20}}
-      ]
-    }
+  "nodes": [
+    {"id": "broker", "type": "BrokerNode", "config": {...}},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "params": {...}},
+    {"id": "order", "type": "NewOrderNode", "plugin": "MarketOrder", "params": {...}}
+  ],
+  "edges": [
+    {"from": "broker.connection", "to": "rsi"},
+    {"from": "rsi.passed_symbols", "to": "order.symbols"}
   ]
 }
 ```
-`logic`에는 `and`, `or`, `xor`, `at_least`, `weighted` 등 조건 집계 연산자를 지정할 수 있습니다. 해외선물 조건이 하나라도 있는 경우 `position_side`를 기반으로 추가 검증이 수행되며, 규칙은 다음과 같습니다:
-- `long` 또는 `short`: 방향을 결정하는 조건입니다. 모든 방향 조건이 동일한 방향이어야 주문이 실행됩니다.
-- `neutral`: 방향 결정에 관여하지 않고 다른 조건에 위임합니다. 변동성, 거래량 등 필터 조건에 적합합니다.
-- `flat`: 조건은 통과했지만 진입 신호가 없음을 의미하며, 하나라도 `flat`이 있으면 전체가 실패 처리됩니다.
-- 해외선물 조건이 모두 `neutral`이면 방향을 결정할 수 없어 주문이 실행되지 않습니다.
 
-- `DictConditionType` 형태의 조건에서 `"weight"` 필드를 작성하면, 커뮤니티 플러그인이 반환하는 기본 weight 대신 해당 값이 그대로 사용됩니다. 전략별로 동일한 플러그인에 서로 다른 비중을 줄 수 있습니다.
+### 2.2 nodes 배열
 
-### 2.4 orders
-주문 전략은 조건 또는 외부 트리거가 호출할 실제 주문 실행 로직을 지정합니다.
+각 노드는 다음 필드를 가집니다:
+
+| 필드 | 필수 | 설명 |
+|------|:----:|------|
+| `id` | ✓ | 고유 식별자 (워크플로우 내 중복 불가) |
+| `type` | ✓ | 노드 타입 (BrokerNode, ConditionNode 등) |
+| `config` | | 노드 타입별 설정 |
+| `plugin` | | 사용할 플러그인 ID (ConditionNode, NewOrderNode 등) |
+| `params` | | 플러그인에 전달할 파라미터 |
+| `position` | | Flutter UI용 위치 정보 `{"x": 400, "y": 200}` |
+
+### 2.3 edges 배열
+
+노드 간 데이터 흐름을 정의합니다:
+
 ```json
 {
-  "orders": [
-    {
-      "order_id": "split_order_stock",
-      "description": "해외주식 균등 분할",
-      "order_time": {
-        "start": "09:00:00",
-        "end": "15:00:00",
-        "days": ["mon", "tue", "wed", "thu", "fri"],
-        "timezone": "Asia/Seoul",
-        "behavior": "defer",
-        "max_delay_seconds": 3600
-      },
-      "condition": {
-        "condition_id": "StockSplitFunds",
-        "params": {"percent_balance": 10.0, "max_symbols": 5}
-      }
+  "from": "sourceNode.outputPort",
+  "to": "targetNode.inputPort"
+}
+```
+
+- **명시적 엣지**: 모든 데이터 흐름이 그래프에서 보임
+- **Multiple 연결**: 하나의 출력 포트에서 여러 입력으로 연결 가능
+
+---
+
+## 3. 노드 타입별 상세
+
+### 3.1 인프라 노드 (infra)
+
+#### BrokerNode
+
+증권사 연결을 담당합니다.
+
+```json
+{
+  "id": "broker",
+  "type": "BrokerNode",
+  "config": {
+    "provider": "ls-sec.co.kr",
+    "product": "overseas_stock",
+    "credential_id": "cred-001"
+  }
+}
+```
+
+| 출력 | 타입 | 설명 |
+|------|------|------|
+| `connection` | broker_connection | 증권사 연결 객체 |
+
+### 3.2 실시간 노드 (realtime)
+
+#### RealMarketDataNode
+
+WebSocket으로 실시간 시세를 수신합니다.
+
+```json
+{
+  "id": "realMarket",
+  "type": "RealMarketDataNode",
+  "config": {
+    "fields": ["price", "volume", "bid", "ask"]
+  }
+}
+```
+
+| 입력 | 타입 | 설명 |
+|------|------|------|
+| `symbols` | symbol_list | 구독할 종목 목록 |
+
+| 출력 | 타입 | 설명 |
+|------|------|------|
+| `price` | market_data | 실시간 가격 데이터 |
+| `volume` | market_data | 실시간 거래량 데이터 |
+
+#### RealAccountNode
+
+실시간 계좌 정보를 제공합니다.
+
+```json
+{
+  "id": "realAccount",
+  "type": "RealAccountNode"
+}
+```
+
+| 출력 | 타입 | 설명 |
+|------|------|------|
+| `held_symbols` | symbol_list | 보유종목 코드 리스트 |
+| `balance` | balance_data | 예수금/매수가능금액 |
+| `open_orders` | order_list | 미체결 주문 목록 |
+| `positions` | position_data | 보유종목 상세 (실시간 수익률 포함) |
+
+**positions 상세 구조:**
+
+```json
+{
+  "AAPL": {
+    "symbol": "AAPL",
+    "quantity": 10,
+    "buy_price": 185.50,
+    "current_price": 190.25,
+    "pnl_amount": 42.50,
+    "pnl_rate": 2.29,
+    "realtime_pnl": {
+      "gross_profit_foreign": 47.50,
+      "net_profit_foreign": 42.50,
+      "total_fee_foreign": 5.00,
+      "return_rate_percent": 2.29
+    }
+  }
+}
+```
+
+### 3.3 조건 노드 (condition)
+
+#### ConditionNode
+
+조건 플러그인을 실행합니다.
+
+```json
+{
+  "id": "rsi",
+  "type": "ConditionNode",
+  "plugin": "RSI",
+  "params": {
+    "period": 14,
+    "oversold": 30
+  }
+}
+```
+
+| 입력 | 타입 | 설명 |
+|------|------|------|
+| `trigger` | signal | 실행 트리거 |
+| `price_data` | market_data | 가격 데이터 |
+| `symbols` | symbol_list | 평가할 종목 목록 |
+
+| 출력 | 타입 | 설명 |
+|------|------|------|
+| `result` | condition_result | 조건 평가 결과 |
+| `passed_symbols` | symbol_list | 조건 통과 종목 |
+
+#### LogicNode
+
+여러 조건을 조합합니다.
+
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "config": {
+    "operator": "at_least",
+    "threshold": 2
+  }
+}
+```
+
+| operator | 설명 | threshold 필요 |
+|----------|------|:--------------:|
+| `all` | 모든 조건 만족 (AND) | ✗ |
+| `any` | 하나 이상 만족 (OR) | ✗ |
+| `not` | 모든 조건 불만족 | ✗ |
+| `xor` | 정확히 하나만 만족 | ✗ |
+| `at_least` | N개 이상 만족 | ✓ |
+| `at_most` | N개 이하 만족 | ✓ |
+| `exactly` | 정확히 N개 만족 | ✓ |
+| `weighted` | 가중치 합이 threshold 이상 | ✓ |
+
+### 3.4 주문 노드 (order)
+
+#### NewOrderNode
+
+신규 주문을 실행합니다.
+
+```json
+{
+  "id": "order",
+  "type": "NewOrderNode",
+  "plugin": "StockSplitFunds",
+  "params": {
+    "percent_balance": 10.0,
+    "max_symbols": 5
+  }
+}
+```
+
+| 입력 | 타입 | 설명 |
+|------|------|------|
+| `symbols` | symbol_list | 주문할 종목 |
+| `held_symbols` | symbol_list | 보유 종목 (중복 방지용) |
+| `balance` | balance_data | 예수금 정보 |
+
+#### ModifyOrderNode / CancelOrderNode
+
+미체결 주문 정정/취소를 담당합니다.
+
+```json
+{
+  "id": "modifyOrder",
+  "type": "ModifyOrderNode",
+  "plugin": "TrackingPriceModifier",
+  "params": {
+    "price_gap_percent": 0.5
+  }
+}
+```
+
+| 입력 | 타입 | 설명 |
+|------|------|------|
+| `target_orders` | order_list | 대상 주문 (RealAccountNode.open_orders에서 연결) |
+| `price_data` | market_data | 현재 가격 데이터 |
+
+---
+
+## 4. 플러그인 개발
+
+### 4.1 플러그인 반환 구조 (PluginResult)
+
+모든 플러그인은 `PluginResult` 타입을 반환합니다.
+
+```python
+class PluginResult(TypedDict):
+    passed: bool              # 조건 충족 여부
+    value: Any                # 계산된 값 (예: RSI 28.5)
+    symbol: str               # 평가된 종목
+    analysis: AnalysisData    # 분석 데이터 (시각화용)
+```
+
+**analysis 상세 구조:**
+
+```json
+{
+  "passed": true,
+  "value": 28.5,
+  "symbol": "AAPL",
+  "analysis": {
+    "time_series": [
+      {"timestamp": "2026-01-05T14:30:00Z", "rsi": 32.1},
+      {"timestamp": "2026-01-05T14:35:00Z", "rsi": 28.5}
+    ],
+    "distribution": {
+      "oversold": 15,
+      "neutral": 60,
+      "overbought": 25
     },
-    {
-      "order_id": "futures_new_long",
-      "description": "선물 신규 진입",
-      "condition": "OrderNewTest"
-    }
-  ]
+    "threshold": {
+      "value": 30,
+      "direction": "below"
+    },
+    "comparison": "28.5 < 30 → passed"
+  }
 }
 ```
-`condition`에는 두 가지 형태를 사용할 수 있습니다.
-- 딕셔너리: `condition_id`로 등록된 주문 전략을 plugin resolver가 찾아 로딩합니다.
-- 클래스/인스턴스: 직접 작성한 파이썬 클래스 인스턴스를 넣을 수 있으며, 이 경우 DSL 로더가 그대로 활용합니다.
 
-## 3. programgarden-core 베이스 클래스 정리 (2025)
-해외선물 지원과 함께 코어 베이스 클래스 명칭이 정리되었습니다. 주요 클래스는 모두 `programgarden_core`에서 임포트할 수 있습니다.
+### 4.2 조건 플러그인 (ConditionNode용)
 
-### 3.1 조건(Condition) 계층
-| 클래스 | 상품군 | 상속해야 할 상황 | 필수 구현 |
-|--------|--------|------------------|-----------|
-| `BaseStrategyConditionOverseasStock` | overseas_stock | 해외 주식 종목 조건 분석 | `execute()` 반환형: `BaseStrategyConditionResponseOverseasStockType` |
-| `BaseStrategyConditionOverseasFutures` | overseas_futures | 해외 선물 종목 조건 분석 | `execute()` 반환형: `BaseStrategyConditionResponseOverseasFuturesType` |
+#### 해외 주식 조건 예시
 
-공통 특징:
-- `self.symbol`에 현재 평가 중인 종목 정보가 주입됩니다.
-- `self.system_id`로 실행 중인 시스템 식별자를 조회할 수 있습니다.
-- 응답(`success`, `symbol`, `exchcd`, `data`, `weight`) 구조는 TypedDict로 강제됩니다.
-- 선물 조건은 반드시 `position_side`(`"long"`, `"short"`, `"flat"`, `"neutral"`)를 설정해야 합니다.
-  - `long`/`short`: 해당 방향으로 주문 진행
-  - `neutral`: 방향 결정을 다른 조건에 위임 (변동성, 거래량 등 필터 조건용)
-  - `flat`: 조건은 통과했지만 진입 신호 없음 → 실패 처리
-
-### 3.2 주문(Order) 계층
-| 클래스 | 상품군 | 역할 | 반환 TypedDict |
-|--------|--------|------|----------------|
-| `BaseNewOrderOverseasStock` | overseas_stock | 신규 매수/매도 주문 | `BaseNewOrderOverseasStockResponseType` |
-| `BaseModifyOrderOverseasStock` | overseas_stock | 정정 주문 | `BaseModifyOrderOverseasStockResponseType` |
-| `BaseCancelOrderOverseasStock` | overseas_stock | 취소 주문 | `BaseCancelOrderOverseasStockResponseType` |
-| `BaseNewOrderOverseasFutures` | overseas_futures | 선물 신규 주문 | `BaseNewOrderOverseasFuturesResponseType` |
-| `BaseModifyOrderOverseasFutures` | overseas_futures | 선물 정정 | `BaseModifyOrderOverseasFuturesResponseType` |
-| `BaseCancelOrderOverseasFutures` | overseas_futures | 선물 취소 | `BaseCancelOrderOverseasFuturesResponseType` |
-
-공통 메소드:
-- `__init__`: `super().__init__()` 호출. 내부에서 `available_symbols`, `held_symbols`, `non_traded_symbols`, `dps`(예수금), `system_id`를 제공합니다.
-- `execute()`: 주문 메시지 리스트를 반환하는 비동기 메소드. 반환 리스트가 비어 있으면 주문이 실행되지 않습니다.
-- `on_real_order_receive(order_type, response)`: 실시간 주문 이벤트를 처리합니다. `order_type`은 `submitted_new_buy`, `filled_new_sell` 등으로 들어옵니다.
-
-## 4. 컨디션 구현 단계
-1. `programgarden_core`에서 필요한 베이스 클래스와 응답 타입을 임포트합니다.
-2. 고유 `id`와 `description`, `securities` 목록을 정의합니다.
-3. `__init__`에서 추가 파라미터를 설정하고 반드시 `super().__init__()`를 호출합니다.
-4. `execute()` 내에서 `self.symbol` 정보를 사용해 조건 검증을 수행합니다.
-5. 검증에 통과되면 success를 `True`로 설정하고, 그렇지 않으면 `False`로 설정합니다. 그래야만 해당 조건에 대해서는 내부적으로 조건의 통과 여부를 인지합니다.
-5. 결과 TypedDict를 반환합니다.
-
-### 4.1 해외 주식 조건 예시
 ```python
 from programgarden_core import (
     BaseStrategyConditionOverseasStock,
@@ -179,6 +298,7 @@ from programgarden_core import (
 
 class SMAGoldenDeadCross(BaseStrategyConditionOverseasStock):
     id = "SMAGoldenDeadCross"
+    version = "1.0.0"
     description = "단기·장기 이동평균 골든/데드 크로스"
     securities = ["ls-sec.co.kr"]
 
@@ -199,10 +319,15 @@ class SMAGoldenDeadCross(BaseStrategyConditionOverseasStock):
             "data": {"short": self.short_period, "long": self.long_period},
             "weight": 1 if is_cross else 0,
             "product": "overseas_stock",
+            "analysis": {
+                "time_series": [...],
+                "threshold": {"value": 0, "direction": "cross"},
+            },
         }
 ```
 
-### 4.2 해외 선물 조건 예시
+#### 해외 선물 조건 예시
+
 ```python
 from programgarden_core import (
     BaseStrategyConditionOverseasFutures,
@@ -211,6 +336,7 @@ from programgarden_core import (
 
 class MomentumWithPosition(BaseStrategyConditionOverseasFutures):
     id = "MomentumWithPosition"
+    version = "1.0.0"
     description = "선물 모멘텀 + 포지션 방향성"
     securities = ["ls-sec.co.kr"]
 
@@ -234,45 +360,22 @@ class MomentumWithPosition(BaseStrategyConditionOverseasFutures):
         }
 ```
 
-#### 방향 중립(neutral) 조건 예시 - 변동성 필터
-변동성이나 거래량 같은 필터 조건은 방향을 결정하지 않고 다른 조건에 위임해야 합니다. 이 경우 `position_side`를 `"neutral"`로 설정합니다.
+#### position_side 규칙 (해외선물 전용)
 
-```python
-class VolatilityFilter(BaseStrategyConditionOverseasFutures):
-    id = "VolatilityFilter"
-    description = "변동성 필터 - 방향 결정에 관여하지 않음"
-    securities = ["ls-sec.co.kr"]
+| 값 | 설명 |
+|----|------|
+| `long` | 매수 방향 |
+| `short` | 매도 방향 |
+| `neutral` | 방향 결정에 관여하지 않음 (필터 조건용) |
+| `flat` | 진입 신호 없음 → 실패 처리 |
 
-    def __init__(self, min_volatility: float = 0.02):
-        super().__init__()
-        self.min_volatility = min_volatility
+- 모든 조건이 `neutral`이면 방향을 결정할 수 없어 주문 실행 안 됨
+- `flat`이 하나라도 있으면 전체 실패 처리
 
-    async def execute(self) -> BaseStrategyConditionResponseOverseasFuturesType:
-        symbol = self.symbol or {}
-        current_volatility = 0.03  # 실제로는 변동성 계산 로직
-        is_volatile_enough = current_volatility >= self.min_volatility
-        return {
-            "condition_id": self.id,
-            "success": is_volatile_enough,
-            "symbol": symbol.get("symbol", ""),
-            "exchcd": symbol.get("exchcd", ""),
-            "data": {"volatility": current_volatility},
-            "weight": 1 if is_volatile_enough else 0,
-            "product": "overseas_futures",
-            "position_side": "neutral",  # 방향 결정을 다른 조건에 위임
-        }
-```
+### 4.3 주문 플러그인 (NewOrderNode용)
 
-이렇게 `neutral`을 사용하면 여러 조건을 조합할 때 유연하게 구성할 수 있습니다:
-- 모멘텀 조건 (`long`/`short`) + 변동성 필터 (`neutral`) → 변동성이 충분하고 모멘텀 방향이 결정되면 해당 방향으로 주문
-- 모든 조건이 `neutral`이면 방향을 알 수 없어 주문이 실행되지 않습니다.
+#### 해외 주식 신규 주문 예시
 
-`position_side`가 `flat`이면 `success`가 자동으로 거짓으로 처리되어 주문이 실행되지 않습니다.
-
-## 5. 주문 전략 구현하기
-주문 전략은 계좌 잔고·보유 종목·미체결 주문 등의 정보를 활용해 실제 주문 메시지를 만듭니다. ProgramGarden 실행기는 `available_symbols`, `held_symbols`, `non_traded_symbols`, `dps`를 자동 주입하므로 `execute()`에서 바로 사용할 수 있습니다.
-
-### 5.1 해외 주식 신규 주문 예시
 ```python
 from typing import List
 from programgarden_core import (
@@ -282,11 +385,12 @@ from programgarden_core import (
 
 class StockSplitFunds(BaseNewOrderOverseasStock):
     id = "StockSplitFunds"
+    version = "1.0.0"
     description = "예수금 균등 분할 매수"
     securities = ["ls-sec.co.kr"]
     order_types = ["new_buy", "new_sell"]
 
-    def __init__(self, percent_balance: float = 10.0, max_symbols: int = 5,):
+    def __init__(self, percent_balance: float = 10.0, max_symbols: int = 5):
         super().__init__()
         self.percent_balance = percent_balance
         self.max_symbols = max_symbols
@@ -294,12 +398,14 @@ class StockSplitFunds(BaseNewOrderOverseasStock):
     async def execute(self) -> List[BaseNewOrderOverseasStockResponseType]:
         if not self.available_symbols:
             return []
+        
         budget = (self.dps or [{}])[0].get("fcurr_ord_able_amt", 0) * (self.percent_balance / 100)
         per_symbol = budget / min(len(self.available_symbols), self.max_symbols or 1)
+        
         orders: List[BaseNewOrderOverseasStockResponseType] = []
-        for symbol in self.available_symbols[: self.max_symbols]:
+        for symbol in self.available_symbols[:self.max_symbols]:
             unit_price = symbol.get("unit_price") or symbol.get("ovrs_ord_prc") or 1
-            quantity = max(int(per_symbol // unit_price) or 0, 1)
+            quantity = max(int(per_symbol // unit_price), 1)
             orders.append({
                 "success": True,
                 "ord_ptn_code": "02",
@@ -308,127 +414,144 @@ class StockSplitFunds(BaseNewOrderOverseasStock):
                 "ord_qty": quantity,
                 "ovrs_ord_prc": symbol.get("target_price", unit_price),
                 "ordprc_ptn_code": "00",
-                "brk_tp_code": "",
                 "crcy_code": "USD",
-                "pnl_rat": 0.0,
-                "pchs_amt": per_symbol,
                 "bns_tp_code": "2",
             })
         return orders
 
-    async def on_real_order_receive(self, order_type, response):
+    async def on_real_order_receive(self, order_type: str, response: dict):
+        # 실시간 주문 이벤트 처리
         pass
 ```
 
-### 5.2 해외 선물 신규 주문 예시
-```python
-from typing import List
-from programgarden_core import (
-    BaseNewOrderOverseasFutures,
-    BaseNewOrderOverseasFuturesResponseType,
-)
+### 4.4 플러그인 클래스 필수 필드
 
-class OrderNewTest(BaseNewOrderOverseasFutures):
-    id = "OrderNewTest"
-    description = "선물 신규 진입"
-    securities = ["ls-sec.co.kr"]
-    order_types = ["new_buy"]
-
-    def __init__(self, price_offset: float = 0.0):
-        super().__init__()
-        self.price_offset = price_offset
-
-    async def execute(self) -> List[BaseNewOrderOverseasFuturesResponseType]:
-        if not self.available_symbols:
-            return []
-        symbol = self.available_symbols[0]
-        target_price = symbol.get("last_price", 0.0) + self.price_offset
-        return [{
-            "success": True,
-            "ord_dt": "20251102",
-            "isu_code_val": symbol.get("symbol", ""),
-            "futs_ord_tp_code": "1",
-            "bns_tp_code": "2",
-            "abrd_futs_ord_ptn_code": "2",
-            "ovrs_drvt_ord_prc": target_price,
-            "cndi_ord_prc": 0.0,
-            "ord_qty": 1,
-            "exch_code": symbol.get("exchcd", ""),
-            "prdt_code": symbol.get("prdt_code", ""),
-            "due_yymm": symbol.get("due_yymm", ""),
-            "crcy_code": symbol.get("currency_code", ""),
-        }]
-
-    async def on_real_order_receive(self, order_type, response):
-        pass
-```
-
-### 5.3 정정·취소 전략 작성 팁
-- 정정/취소 전략도 동일한 패턴으로 작성하되, 응답 TypedDict에서 `org_ord_no`(주식) 또는 `ovrs_futs_org_ord_no`(선물) 같은 필드를 정확히 채워야 합니다.
-- `self.non_traded_symbols`에 미체결 주문 리스트가 주입되므로 원하는 주문 번호를 탐색해 정정/취소 대상으로 삼을 수 있습니다.
-
-## 6. DSL에 내가 만든 커스텀 클래스 연결하기
-파이썬 모듈에서 작성한 클래스를 DSL에 연결하는 방법은 두 가지입니다.
-1. **모듈 경로 등록**: `programgarden`이 커스텀 클래스를 import할 수 있게 패키지를 `programgarden-community` 라이브러리에 공개적으로 전략을 PR하여 관리자에 의해서 반영되면 DSL의 `conditions`/`orders`에 전략 ID를 넣고 이용합니다.
-2. **직접 인스턴스 전달**: DSL을 파이썬 코드에서 직접 구성할 때는  클래스 인스턴스를 직접 넣을 수 있습니다. (예: `OrderNewTest()`)
-
-아래 예시는 한 시스템에서 주식과 선물 전략을 각각 실행하는 구조입니다.
-```python
-from programgarden import Programgarden
-from custom.conditions import SMAGoldenDeadCross, MomentumWithPosition
-from custom.orders import StockSplitFunds, OrderNewTest
-
-pg = Programgarden()
-pg.on_strategies_message(lambda message: print("전략 응답", message))
-pg.on_real_order_message(lambda message: print("주문 이벤트", message))
-pg.on_error_message(lambda message: print("오류", message))
-
-pg.run(system={
-    "settings": {...},
-    "securities": {
-        "company": "ls",
-        "product": "overseas_stock",
-        "appkey": "...",
-        "appsecretkey": "...",
-    },
-    "strategies": [
-        {
-            "id": "stock_strategy",
-            "logic": "at_least",
-            "threshold": 1,
-            "symbols": [{"symbol": "TSLA", "exchcd": "82"}],
-            "order_id": "split_order_stock",
-            "conditions": [SMAGoldenDeadCross(short_period=5, long_period=20)],
-        }
-    ],
-    "orders": [
-        {
-            "order_id": "split_order_stock",
-            "condition": StockSplitFunds(percent_balance=10.0, max_symbols=3),
-        }
-    ]
-})
-```
-해외선물 전략도 같은 방식으로 커스텀하면 됩니다.
-
-## 7. 실행, 검증, 디버깅 팁
-- **콜백 활용**: `on_strategies_message`, `on_real_order_message`, `on_error_message`를 이용해 실행 결과를 실시간으로 모니터링하세요.
-- **로컬 샌드박스**: `paper_trading`을 `True`로 두고 LS증권 모의투자 API KEY 이용하여 로직을 검증한 뒤 실거래 키로 전환합니다.
-- **로깅**: 표준 `logging.getLogger(__name__)` 패턴을 사용하면 DSL 파이프라인의 각 단계별 상태를 추적할 수 있습니다.
-- **에러 처리**: 예외 발생 시 `programgarden_core.exceptions`에 정의된 도메인 예외(`ConditionExecutionException`, `NotExistSystemKeyException` 등)를 참고하여 원인을 파악하세요.
-
-## 8. 가장 유의할 점
-- **형식 준수**: TypedDict 스펙을 지켜 반환하지 않으면 런타임에서 키 에러 또는 검증 실패가 발생합니다.
-- **상태 공유 최소화**: 전략 클래스는 상태를 최소로 유지하고, 실행 시점에 전달되는 컨텍스트(`available_symbols`, `held_symbols`)만 사용하세요.
-- **심볼 정규화**: `symbols` 입력에 `exchange`, `name` 등의 별칭을 사용하면 alias resolver가 자동 변환하지만, 가능하면 표준 키(`symbol`, `exchcd`, `product_type`)를 직접 지정하는 것이 안전합니다.
-- **포지션 방향**: 해외선물 조건에서 `position_side`를 올바르게 설정해야 합니다:
-  - 방향을 결정하는 조건: `long` 또는 `short` 반환
-  - 필터 조건 (변동성, 거래량 등): `neutral` 반환 (방향 결정을 다른 조건에 위임)
-  - 진입 신호 없음: `flat` 반환 → 전체 실패 처리
-  - 모든 조건이 `neutral`이면 방향을 알 수 없어 주문 실패
-
-## 9. 커뮤니티 기여 및 배포
-- 재사용 가능한 전략을 배포해서 시스템 트레이딩 생태계 발전에 기여하세요. 직접 커스텀한 전략은 https://github.com/programgarden/programgarden_community 패키지에 PR하면 수 많은 투자자들이 공유하게 됩니다.
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `id` | str | 플러그인 고유 ID |
+| `version` | str | 버전 (예: "1.0.0") |
+| `description` | str | 설명 |
+| `securities` | List[str] | 지원 증권사 |
+| `parameter_schema` | dict | Pydantic 모델의 JSON Schema (선택) |
 
 ---
-이 문서를 바탕으로 ProgramGarden DSL을 자신만의 전략에 맞게 커스터마이징하고, 해외 주식과 선물 상품을 안정적으로 운용해보세요.
+
+## 5. DSL에 커스텀 플러그인 연결하기
+
+### 5.1 모듈 경로 등록
+
+`programgarden-community`에 PR하여 플러그인을 등록하면 DSL에서 ID로 참조 가능합니다.
+
+```json
+{
+  "id": "myCondition",
+  "type": "ConditionNode",
+  "plugin": "MySMACondition",
+  "params": {"short_period": 5, "long_period": 20}
+}
+```
+
+### 5.2 직접 인스턴스 전달
+
+Python 코드에서 직접 실행할 때는 클래스 인스턴스를 전달할 수 있습니다.
+
+```python
+from programgarden import Programgarden
+from my_plugins import MySMACondition, MyOrderStrategy
+
+pg = Programgarden()
+
+pg.run(workflow={
+    "nodes": [
+        {
+            "id": "condition",
+            "type": "ConditionNode",
+            "plugin_instance": MySMACondition(short_period=5, long_period=20)
+        },
+        {
+            "id": "order",
+            "type": "NewOrderNode",
+            "plugin_instance": MyOrderStrategy(percent_balance=10.0)
+        }
+    ],
+    "edges": [...]
+})
+```
+
+---
+
+## 6. 디버깅 팁
+
+### 6.1 콜백 활용
+
+```python
+pg = Programgarden()
+
+pg.on_condition_evaluated(lambda msg: print(f"조건 평가: {msg}"))
+pg.on_order_placed(lambda msg: print(f"주문 발생: {msg}"))
+pg.on_order_filled(lambda msg: print(f"주문 체결: {msg}"))
+pg.on_error(lambda msg: print(f"에러: {msg}"))
+```
+
+### 6.2 로깅 설정
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("programgarden")
+```
+
+### 6.3 드라이런 모드
+
+실제 주문 없이 테스트:
+
+```json
+{
+  "id": "broker",
+  "type": "BrokerNode",
+  "config": {
+    "provider": "ls-sec.co.kr",
+    "product": "overseas_stock",
+    "paper_trading": true
+  }
+}
+```
+
+---
+
+## 7. 주의사항
+
+### 7.1 형식 준수
+
+TypedDict 스펙을 지키지 않으면 런타임 에러가 발생합니다.
+
+### 7.2 상태 공유 최소화
+
+플러그인 클래스는 상태를 최소로 유지하고, 실행 시점에 전달되는 컨텍스트만 사용하세요.
+
+### 7.3 버전 관리
+
+플러그인에 `version` 필드를 반드시 추가하세요. DSL에서 특정 버전을 지정할 수 있습니다:
+
+```json
+"plugin": "RSI@1.2.0"
+```
+
+### 7.4 analysis 필드
+
+모든 조건 플러그인은 `analysis` 필드를 반환해야 합니다. DisplayNode에서 시각화에 활용됩니다.
+
+| analysis 필드 | DisplayNode 차트 타입 |
+|---------------|----------------------|
+| `time_series` | line, candlestick |
+| `distribution` | bar, radar |
+| `threshold` | line (threshold overlay) |
+| `comparison` | table |
+
+---
+
+## 8. 커뮤니티 기여
+
+재사용 가능한 플러그인을 https://github.com/programgarden/programgarden_community 에 PR하면 다른 투자자들과 공유할 수 있습니다.
+
+자세한 기여 방법은 [오픈소스 기여 가이드](contribution_guide.md)를 참고하세요.

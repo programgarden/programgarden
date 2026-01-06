@@ -67,7 +67,7 @@ BACKTEST_WITH_DEPLOY = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {
+            "fields": {
                 "period": 14,
                 "threshold": 30,
                 "direction": "below",
@@ -79,7 +79,7 @@ BACKTEST_WITH_DEPLOY = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "MACD",
-            "params": {
+            "fields": {
                 "fast_period": 12,
                 "slow_period": 26,
                 "signal_period": 9,
@@ -99,7 +99,7 @@ BACKTEST_WITH_DEPLOY = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "ProfitTarget",
-            "params": {"percent": 8},
+            "fields": {"percent": 8},
             "position": {"x": 600, "y": 500},
         },
         {
@@ -107,7 +107,7 @@ BACKTEST_WITH_DEPLOY = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "StopLoss",
-            "params": {"percent": -4},
+            "fields": {"percent": -4},
             "position": {"x": 600, "y": 600},
         },
         {

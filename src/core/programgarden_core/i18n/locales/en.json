@@ -1,0 +1,178 @@
+{
+  "_meta": {
+    "locale": "en",
+    "name": "English",
+    "version": "1.0.0"
+  },
+  
+  "nodes.StartNode.name": "Start",
+  "nodes.StartNode.description": "Workflow entry point. Required one per workflow.",
+  
+  "nodes.BrokerNode.name": "Broker",
+  "nodes.BrokerNode.description": "Broker connection for OpenAPI. References credentials via credential_id.",
+  
+  "nodes.WatchlistNode.name": "Watchlist",
+  "nodes.WatchlistNode.description": "User-defined watchlist of symbols.",
+  
+  "nodes.MarketUniverseNode.name": "Market Universe",
+  "nodes.MarketUniverseNode.description": "Constituent symbols of a market/index.",
+  
+  "nodes.ScreenerNode.name": "Screener",
+  "nodes.ScreenerNode.description": "Filter symbols by conditions.",
+  
+  "nodes.SymbolFilterNode.name": "Symbol Filter",
+  "nodes.SymbolFilterNode.description": "Set operations on symbol lists.",
+  
+  "nodes.MarketDataNode.name": "Market Data",
+  "nodes.MarketDataNode.description": "REST API market data query.",
+  
+  "nodes.AccountNode.name": "Account",
+  "nodes.AccountNode.description": "REST API account query.",
+  
+  "nodes.RealMarketDataNode.name": "Real Market Data",
+  "nodes.RealMarketDataNode.description": "Realtime market data stream via WebSocket.",
+  
+  "nodes.RealAccountNode.name": "Real Account",
+  "nodes.RealAccountNode.description": "Realtime account info with P&L.",
+  
+  "nodes.RealOrderEventNode.name": "Real Order Event",
+  "nodes.RealOrderEventNode.description": "Realtime order fill/reject/cancel events.",
+  
+  "nodes.ScheduleNode.name": "Schedule",
+  "nodes.ScheduleNode.description": "Cron-based schedule trigger.",
+  
+  "nodes.TradingHoursFilterNode.name": "Trading Hours Filter",
+  "nodes.TradingHoursFilterNode.description": "Pass signals within trading hours only.",
+  
+  "nodes.ExchangeStatusNode.name": "Exchange Status",
+  "nodes.ExchangeStatusNode.description": "Check exchange open/close/holiday status.",
+  
+  "nodes.ConditionNode.name": "Condition",
+  "nodes.ConditionNode.description": "Execute condition plugin (RSI, MACD, etc.).",
+  
+  "nodes.LogicNode.name": "Logic",
+  "nodes.LogicNode.description": "Combine conditions with logical operators.",
+  
+  "nodes.PositionSizingNode.name": "Position Sizing",
+  "nodes.PositionSizingNode.description": "Calculate position size (Kelly, fixed, ATR-based).",
+  
+  "nodes.RiskGuardNode.name": "Risk Guard",
+  "nodes.RiskGuardNode.description": "Risk limits: daily loss, max positions.",
+  
+  "nodes.RiskConditionNode.name": "Risk Condition",
+  "nodes.RiskConditionNode.description": "Evaluate risk conditions (P&L, trade count).",
+  
+  "nodes.NewOrderNode.name": "New Order",
+  "nodes.NewOrderNode.description": "Execute new order plugin.",
+  
+  "nodes.ModifyOrderNode.name": "Modify Order",
+  "nodes.ModifyOrderNode.description": "Execute modify order plugin.",
+  
+  "nodes.CancelOrderNode.name": "Cancel Order",
+  "nodes.CancelOrderNode.description": "Execute cancel order plugin.",
+  
+  "nodes.LiquidateNode.name": "Liquidate",
+  "nodes.LiquidateNode.description": "Emergency or full position liquidation.",
+  
+  "nodes.HistoricalDataNode.name": "Historical Data",
+  "nodes.HistoricalDataNode.description": "Historical OHLCV data for backtesting.",
+  
+  "nodes.BacktestExecutorNode.name": "Backtest Executor",
+  "nodes.BacktestExecutorNode.description": "Run backtest with signals and historical data.",
+  
+  "nodes.BacktestResultNode.name": "Backtest Result",
+  "nodes.BacktestResultNode.description": "Calculate performance metrics (return, MDD, Sharpe).",
+  
+  "nodes.PerformanceConditionNode.name": "Performance Condition",
+  "nodes.PerformanceConditionNode.description": "Validate performance meets criteria.",
+  
+  "nodes.EventHandlerNode.name": "Event Handler",
+  "nodes.EventHandlerNode.description": "Handle order events (filled, rejected, cancelled).",
+  
+  "nodes.ErrorHandlerNode.name": "Error Handler",
+  "nodes.ErrorHandlerNode.description": "Error handling and recovery logic.",
+  
+  "nodes.AlertNode.name": "Alert",
+  "nodes.AlertNode.description": "Send notifications (email, SMS, webhook).",
+  
+  "nodes.DisplayNode.name": "Display",
+  "nodes.DisplayNode.description": "Chart/table visualization.",
+  
+  "nodes.GroupNode.name": "Group",
+  "nodes.GroupNode.description": "Reusable subflow group.",
+  
+  "nodes.DeployNode.name": "Deploy",
+  "nodes.DeployNode.description": "Deploy strategy (live/paper/dry_run).",
+  
+  "nodes.TradingHaltNode.name": "Trading Halt",
+  "nodes.TradingHaltNode.description": "Temporarily halt trading.",
+  
+  "nodes.JobControlNode.name": "Job Control",
+  "nodes.JobControlNode.description": "Control job state (pause/resume/stop).",
+  
+  "nodes.PnLCalculatorNode.name": "P&L Calculator",
+  "nodes.PnLCalculatorNode.description": "Calculate realtime P&L.",
+  
+  "ports.symbols": "List of symbols",
+  "ports.connection": "Broker connection",
+  "ports.trigger": "Trigger signal",
+  "ports.price_data": "Price data",
+  "ports.volume_data": "Volume data",
+  "ports.balance": "Account balance",
+  "ports.positions": "Position data",
+  "ports.held_symbols": "Held symbols",
+  "ports.open_orders": "Open orders",
+  "ports.result": "Result",
+  "ports.passed_symbols": "Passed symbols",
+  "ports.failed_symbols": "Failed symbols",
+  "ports.quantity": "Order quantity",
+  "ports.order_result": "Order result",
+  "ports.order_id": "Order ID",
+  "ports.submitted_orders": "Submitted orders",
+  "ports.target_orders": "Target orders",
+  "ports.modified_orders": "Modified orders",
+  "ports.cancelled_orders": "Cancelled orders",
+  "ports.ohlcv_data": "OHLCV data",
+  "ports.historical_data": "Historical data",
+  "ports.buy_signal": "Buy signal",
+  "ports.sell_signal": "Sell signal",
+  "ports.trades": "Trades",
+  "ports.summary": "Performance summary",
+  "ports.equity_curve": "Equity curve",
+  "ports.drawdown_curve": "Drawdown curve",
+  "ports.approved_symbols": "Approved symbols",
+  "ports.blocked_symbols": "Blocked symbols",
+  "ports.blocked_reason": "Block reason",
+  "ports.account_state": "Account state",
+  "ports.performance_data": "Performance data",
+  "ports.passed": "Passed",
+  "ports.blocked": "Blocked",
+  "ports.start": "Start signal",
+  "ports.bid": "Bid price",
+  "ports.ask": "Ask price",
+  "ports.filled": "Order filled",
+  "ports.rejected": "Order rejected",
+  "ports.cancelled": "Order cancelled",
+  "ports.open": "Exchange open",
+  "ports.closed": "Exchange closed",
+  "ports.holiday": "Exchange holiday",
+  "ports.values": "Calculated values",
+  "ports.modify_result": "Modify result",
+  "ports.cancel_result": "Cancel result",
+  "ports.liquidated_positions": "Liquidated positions",
+  "ports.backtest_result": "Backtest result",
+  "ports.event": "Event data",
+  "ports.recovered": "Recovery success",
+  "ports.failed": "Failed",
+  "ports.error_data": "Error data",
+  "ports.data": "Data",
+  "ports.halted": "Halted signal",
+  "ports.resume_at": "Resume time",
+  "ports.job_id": "Job ID",
+  "ports.strategy": "Strategy",
+  "ports.tick_data": "Tick data",
+  "ports.realized_pnl": "Realized P&L",
+  "ports.unrealized_pnl": "Unrealized P&L",
+  "ports.total_pnl": "Total P&L",
+  "ports.current_value": "Current value"
+}

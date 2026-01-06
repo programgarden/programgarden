@@ -1,8 +1,8 @@
 """
-ProgramGarden Core - Group 노드
+ProgramGarden Core - Group Node
 
-서브플로우 노드:
-- GroupNode: 재사용 가능한 서브플로우
+Subflow node:
+- GroupNode: Reusable subflow
 """
 
 from typing import Optional, List, Literal, Dict, Any
@@ -18,43 +18,44 @@ from programgarden_core.nodes.base import (
 
 class GroupNode(BaseNode):
     """
-    재사용 가능한 서브플로우 노드
+    Reusable subflow node
 
-    여러 노드를 그룹화하여 재사용 가능한 서브플로우로 만듦.
-    $input.*, $output.* 인터페이스로 외부와 데이터 교환.
-    무제한 중첩 허용.
+    Groups multiple nodes into a reusable subflow.
+    Exchanges data with external nodes via $input.*, $output.* interfaces.
+    Supports unlimited nesting.
     """
 
     type: Literal["GroupNode"] = "GroupNode"
     category: NodeCategory = NodeCategory.GROUP
+    description: str = "i18n:nodes.GroupNode.description"
 
-    # GroupNode 전용 설정
+    # GroupNode specific config
     workflow_id: Optional[str] = Field(
         default=None,
-        description="참조할 서브 워크플로우 ID (외부 정의 참조 시)",
+        description="Sub-workflow ID to reference (for external definition)",
     )
     inline_nodes: Optional[List[Dict[str, Any]]] = Field(
         default=None,
-        description="인라인 노드 정의 (그룹 내 직접 정의 시)",
+        description="Inline node definitions (for direct definition within group)",
     )
     inline_edges: Optional[List[Dict[str, Any]]] = Field(
         default=None,
-        description="인라인 엣지 정의 (그룹 내 직접 정의 시)",
+        description="Inline edge definitions (for direct definition within group)",
     )
     input_mapping: Dict[str, str] = Field(
         default_factory=dict,
-        description="입력 매핑 ($input.* → 내부 노드)",
+        description="Input mapping ($input.* → internal node)",
     )
     output_mapping: Dict[str, str] = Field(
         default_factory=dict,
-        description="출력 매핑 (내부 노드 → $output.*)",
+        description="Output mapping (internal node → $output.*)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="$input",
             type="any",
-            description="그룹 입력 (동적, input_mapping으로 정의)",
+            description="Group input (dynamic, defined by input_mapping)",
             multiple=True,
         ),
     ]
@@ -62,6 +63,6 @@ class GroupNode(BaseNode):
         OutputPort(
             name="$output",
             type="any",
-            description="그룹 출력 (동적, output_mapping으로 정의)",
+            description="Group output (dynamic, defined by output_mapping)",
         ),
     ]

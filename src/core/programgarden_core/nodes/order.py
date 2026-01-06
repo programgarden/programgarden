@@ -1,61 +1,64 @@
 """
-ProgramGarden Core - Order 노드
+ProgramGarden Core - Order Nodes
 
-주문 실행 노드:
-- NewOrderNode: 신규 주문 플러그인 실행
-- ModifyOrderNode: 정정 주문 플러그인 실행
-- CancelOrderNode: 취소 주문 플러그인 실행
+Order execution nodes:
+- NewOrderNode: New order plugin execution
+- ModifyOrderNode: Modify order plugin execution
+- CancelOrderNode: Cancel order plugin execution
 """
 
-from typing import Optional, List, Literal, Dict, Any
+from typing import Optional, List, Literal, Dict, Any, ClassVar
 from pydantic import Field
 
 from programgarden_core.nodes.base import (
+    BaseNode,
     PluginNode,
     NodeCategory,
     InputPort,
     OutputPort,
 )
+from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class NewOrderNode(PluginNode):
     """
-    신규 주문 플러그인 실행 노드
+    New order plugin execution node
 
-    MarketOrder, LimitOrder, ATRTrailingStop 등 신규 주문 플러그인 실행
+    Executes new order plugins such as MarketOrder, LimitOrder, ATRTrailingStop
     """
 
     type: Literal["NewOrderNode"] = "NewOrderNode"
     category: NodeCategory = NodeCategory.ORDER
+    description: str = "i18n:nodes.NewOrderNode.description"
 
     _inputs: List[InputPort] = [
         InputPort(
             name="symbols",
             type="symbol_list",
-            description="주문 대상 종목 리스트",
+            description="i18n:ports.symbols",
         ),
         InputPort(
             name="quantity",
             type="dict",
-            description="종목별 주문 수량 (PositionSizingNode에서)",
+            description="i18n:ports.quantity",
             required=False,
         ),
         InputPort(
             name="held_symbols",
             type="symbol_list",
-            description="현재 보유 종목 (중복 매수 방지용)",
+            description="i18n:ports.held_symbols",
             required=False,
         ),
         InputPort(
             name="balance",
             type="balance_data",
-            description="계좌 잔고 정보",
+            description="i18n:ports.balance",
             required=False,
         ),
         InputPort(
             name="price_data",
             type="market_data",
-            description="현재가 정보 (지정가 주문용)",
+            description="i18n:ports.price_data",
             required=False,
         ),
     ]
@@ -63,77 +66,79 @@ class NewOrderNode(PluginNode):
         OutputPort(
             name="order_result",
             type="order_result",
-            description="주문 실행 결과",
+            description="i18n:ports.order_result",
         ),
         OutputPort(
             name="order_id",
             type="string",
-            description="주문 번호",
+            description="i18n:ports.order_id",
         ),
         OutputPort(
             name="submitted_orders",
             type="order_list",
-            description="제출된 주문 목록",
+            description="i18n:ports.submitted_orders",
         ),
     ]
 
 
 class ModifyOrderNode(PluginNode):
     """
-    정정 주문 플러그인 실행 노드
+    Modify order plugin execution node
 
-    TrackingPriceModifier, TurtleAdaptiveModify 등 정정 주문 플러그인 실행
+    Executes modify order plugins such as TrackingPriceModifier, TurtleAdaptiveModify
     """
 
     type: Literal["ModifyOrderNode"] = "ModifyOrderNode"
     category: NodeCategory = NodeCategory.ORDER
+    description: str = "i18n:nodes.ModifyOrderNode.description"
 
     _inputs: List[InputPort] = [
         InputPort(
             name="target_orders",
             type="order_list",
-            description="정정 대상 미체결 주문 (RealAccountNode.open_orders에서)",
+            description="i18n:ports.target_orders",
         ),
         InputPort(
             name="price_data",
             type="market_data",
-            description="현재가 정보 (가격 추적용)",
+            description="i18n:ports.price_data",
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
             name="modify_result",
             type="order_result",
-            description="정정 실행 결과",
+            description="i18n:ports.modify_result",
         ),
         OutputPort(
             name="modified_orders",
             type="order_list",
-            description="정정된 주문 목록",
+            description="i18n:ports.modified_orders",
         ),
     ]
 
 
 class CancelOrderNode(PluginNode):
     """
-    취소 주문 플러그인 실행 노드
+    Cancel order plugin execution node
 
-    PriceRangeCanceller, TimeStopCanceller 등 취소 주문 플러그인 실행
+    Executes cancel order plugins such as PriceRangeCanceller, TimeStopCanceller
     """
 
     type: Literal["CancelOrderNode"] = "CancelOrderNode"
     category: NodeCategory = NodeCategory.ORDER
+    description: str = "i18n:nodes.CancelOrderNode.description"
 
     _inputs: List[InputPort] = [
         InputPort(
             name="target_orders",
             type="order_list",
-            description="취소 대상 미체결 주문 (RealAccountNode.open_orders에서)",
+            description="i18n:ports.target_orders",
         ),
         InputPort(
             name="price_data",
             type="market_data",
-            description="현재가 정보 (가격 범위 체크용)",
+            description="i18n:ports.price_data",
             required=False,
         ),
     ]
@@ -141,11 +146,63 @@ class CancelOrderNode(PluginNode):
         OutputPort(
             name="cancel_result",
             type="order_result",
-            description="취소 실행 결과",
+            description="i18n:ports.cancel_result",
         ),
         OutputPort(
             name="cancelled_orders",
             type="order_list",
-            description="취소된 주문 목록",
+            description="i18n:ports.cancelled_orders",
+        ),
+    ]
+
+
+class LiquidateNode(BaseNode):
+    """
+    Position liquidation node
+
+    Emergency liquidation or full liquidation when risk limits are exceeded
+    """
+
+    type: Literal["LiquidateNode"] = "LiquidateNode"
+    category: NodeCategory = NodeCategory.ORDER
+    description: str = "i18n:nodes.LiquidateNode.description"
+
+    # LiquidateNode specific config
+    mode: Literal["all", "symbol", "losing", "profitable"] = Field(
+        default="all",
+        description="Liquidation mode (all, symbol: specific symbols, losing: losing positions, profitable: profitable positions)",
+    )
+    order_type: Literal["market", "limit"] = Field(
+        default="market",
+        description="Liquidation order type",
+    )
+    target_symbols: Optional[List[str]] = Field(
+        default=None,
+        description="Target symbols to liquidate (when mode='symbol')",
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.trigger",
+        ),
+        InputPort(
+            name="positions",
+            type="position_data",
+            description="i18n:ports.positions",
+            required=False,
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="result",
+            type="liquidation_result",
+            description="i18n:ports.result",
+        ),
+        OutputPort(
+            name="liquidated_positions",
+            type="position_list",
+            description="청산된 포지션 목록",
         ),
     ]

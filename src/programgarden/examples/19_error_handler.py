@@ -52,7 +52,7 @@ ERROR_HANDLER = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1000, "y": 200},
         },
         {
@@ -60,7 +60,7 @@ ERROR_HANDLER = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1200, "y": 200},
         },
         # 에러 핸들러

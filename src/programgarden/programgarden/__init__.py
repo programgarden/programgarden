@@ -1,12 +1,12 @@
 """
-ProgramGarden - 노드 기반 DSL 실행 엔진
+ProgramGarden - Node-based DSL Execution Engine
 
 5-Layer Architecture:
-    1. Registry Layer - 노드/플러그인 메타데이터
-    2. Credential Layer - 인증/보안
-    3. Definition Layer - 워크플로우 정의
-    4. Job Layer - 실행 인스턴스
-    5. Event Layer - 이벤트 히스토리
+    1. Registry Layer - Node/Plugin metadata
+    2. Credential Layer - Authentication/Security
+    3. Definition Layer - Workflow definitions
+    4. Job Layer - Execution instances
+    5. Event Layer - Event history
 """
 
 from programgarden.resolver import WorkflowResolver, ValidationResult

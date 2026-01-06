@@ -5,12 +5,14 @@ ProgramGarden Core - 노드 베이스 클래스
 """
 
 from enum import Enum
-from typing import Optional, Dict, Any, List, Literal
+from typing import Optional, Dict, Any, List, Literal, ClassVar
 from pydantic import BaseModel, Field
+
+from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class NodeCategory(str, Enum):
-    """노드 카테고리 (11개)"""
+    """노드 카테고리 (14개)"""
 
     INFRA = "infra"
     REALTIME = "realtime"
@@ -23,6 +25,9 @@ class NodeCategory(str, Enum):
     EVENT = "event"
     DISPLAY = "display"
     GROUP = "group"
+    BACKTEST = "backtest"
+    JOB = "job"
+    CALCULATION = "calculation"
 
 
 class Position(BaseModel):
@@ -76,6 +81,7 @@ class BaseNode(BaseModel):
     # 메타 정보 (서브클래스에서 오버라이드)
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = []
+    _field_schema: ClassVar[Dict[str, FieldSchema]] = {}
 
     class Config:
         use_enum_values = True
@@ -93,6 +99,11 @@ class BaseNode(BaseModel):
         """설정 유효성 검증 (서브클래스에서 오버라이드)"""
         return True
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, FieldSchema]:
+        """노드의 설정 가능한 필드 스키마 반환"""
+        return cls._field_schema
+
 
 class PluginNode(BaseNode):
     """
@@ -105,8 +116,9 @@ class PluginNode(BaseNode):
     plugin_version: Optional[str] = Field(
         default=None, description="플러그인 버전 (예: 1.2.0)"
     )
-    params: Dict[str, Any] = Field(
-        default_factory=dict, description="플러그인 파라미터"
+    fields: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="플러그인 필드 (고정값, 바인딩, 표현식 지원)",
     )
 
     def get_plugin_ref(self) -> str:
@@ -114,3 +126,8 @@ class PluginNode(BaseNode):
         if self.plugin_version:
             return f"{self.plugin}@{self.plugin_version}"
         return self.plugin
+
+    def has_expressions(self) -> bool:
+        """표현식이 포함된 필드가 있는지 확인"""
+        from programgarden_core.models.field_binding import is_expression
+        return any(is_expression(v) for v in self.fields.values())

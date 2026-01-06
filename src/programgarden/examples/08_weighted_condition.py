@@ -44,7 +44,7 @@ WEIGHTED_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 700, "y": 100},
         },
         {
@@ -52,7 +52,7 @@ WEIGHTED_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "MACD",
-            "params": {"signal": "bullish_cross"},
+            "fields": {"signal": "bullish_cross"},
             "position": {"x": 700, "y": 200},
         },
         {
@@ -60,7 +60,7 @@ WEIGHTED_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "BollingerBands",
-            "params": {"position": "below_lower"},
+            "fields": {"position": "below_lower"},
             "position": {"x": 700, "y": 300},
         },
         {

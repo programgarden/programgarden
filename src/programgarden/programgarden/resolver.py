@@ -1,10 +1,10 @@
 """
 ProgramGarden - WorkflowResolver
 
-JSON Definition → 실행 객체 변환
-- Credential 바인딩
-- 플러그인 레지스트리 기반 인스턴스화
-- 에지 연결 검증
+JSON Definition → Execution object conversion
+- Credential binding
+- Plugin registry-based instantiation
+- Edge connection validation
 """
 
 from typing import Optional, List, Dict, Any, Tuple
@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 @dataclass
 class ValidationResult:
-    """워크플로우 검증 결과"""
+    """Workflow validation result"""
 
     is_valid: bool
     errors: List[str] = field(default_factory=list)
@@ -29,7 +29,7 @@ class ValidationResult:
 
 
 class ResolvedNode:
-    """해결된 노드 (실행 준비 완료)"""
+    """Resolved node (ready for execution)"""
 
     def __init__(
         self,
@@ -38,22 +38,22 @@ class ResolvedNode:
         category: str,
         config: Dict[str, Any],
         plugin: Optional[Any] = None,
-        plugin_params: Optional[Dict[str, Any]] = None,
+        fields: Optional[Dict[str, Any]] = None,
     ):
         self.node_id = node_id
         self.node_type = node_type
         self.category = category
         self.config = config
         self.plugin = plugin
-        self.plugin_params = plugin_params or {}
+        self.fields = fields or {}
 
-        # 런타임 연결 (executor에서 설정)
+        # Runtime connections (set by executor)
         self.inputs: Dict[str, Any] = {}
         self.outputs: Dict[str, Any] = {}
 
 
 class ResolvedEdge:
-    """해결된 엣지 (연결 정보)"""
+    """Resolved edge (connection info)"""
 
     def __init__(
         self,
@@ -69,7 +69,7 @@ class ResolvedEdge:
 
 
 class ResolvedWorkflow:
-    """해결된 워크플로우 (실행 준비 완료)"""
+    """Resolved workflow (ready for execution)"""
 
     def __init__(
         self,
@@ -88,41 +88,41 @@ class ResolvedWorkflow:
 
 class WorkflowResolver:
     """
-    워크플로우 리졸버
+    Workflow resolver
 
-    Definition JSON을 실행 가능한 객체로 변환:
-    1. 노드 타입 검증 및 인스턴스화
-    2. 플러그인 로드 및 바인딩
-    3. 엣지 연결 검증
-    4. 실행 순서 계산 (토폴로지 정렬)
+    Converts Definition JSON to executable objects:
+    1. Node type validation and instantiation
+    2. Plugin loading and binding
+    3. Edge connection validation
+    4. Execution order calculation (topological sort)
     """
 
     def __init__(self):
-        # 지연 임포트로 순환 참조 방지
+        # Lazy import to prevent circular references
         pass
 
     def validate(self, definition: Dict[str, Any]) -> ValidationResult:
         """
-        워크플로우 정의 검증
+        Validate workflow definition
 
         Args:
-            definition: 워크플로우 정의 (JSON dict)
+            definition: Workflow definition (JSON dict)
 
         Returns:
-            ValidationResult: 검증 결과
+            ValidationResult: Validation result
         """
         from programgarden_core import WorkflowDefinition, NodeTypeRegistry, PluginRegistry
 
         result = ValidationResult(is_valid=True)
 
-        # 1. 기본 구조 검증
+        # 1. Basic structure validation
         try:
             workflow = WorkflowDefinition(**definition)
         except Exception as e:
-            result.add_error(f"Definition 파싱 오류: {str(e)}")
+            result.add_error(f"Definition parsing error: {str(e)}")
             return result
 
-        # 2. WorkflowDefinition 내장 검증
+        # 2. WorkflowDefinition built-in validation
         structure_errors = workflow.validate_structure()
         for error in structure_errors:
             result.add_error(error)
@@ -130,14 +130,14 @@ class WorkflowResolver:
         if not result.is_valid:
             return result
 
-        # 3. 노드 타입 검증
+        # 3. Node type validation
         registry = NodeTypeRegistry()
         for node in workflow.nodes:
             node_type = node.get("type")
             if not registry.get(node_type):
-                result.add_error(f"알 수 없는 노드 타입: {node_type}")
+                result.add_error(f"Unknown node type: {node_type}")
 
-        # 4. 플러그인 검증 (플러그인 사용 노드)
+        # 4. Plugin validation (for plugin-using nodes)
         plugin_registry = PluginRegistry()
         plugin_node_types = {"ConditionNode", "NewOrderNode", "ModifyOrderNode", "CancelOrderNode"}
 
@@ -145,14 +145,14 @@ class WorkflowResolver:
             if node.get("type") in plugin_node_types:
                 plugin_id = node.get("plugin")
                 if not plugin_id:
-                    result.add_error(f"노드 '{node.get('id')}'에 plugin이 지정되지 않았습니다")
+                    result.add_error(f"Node '{node.get('id')}' does not have a plugin specified")
                 elif not plugin_registry.get(plugin_id):
                     result.add_warning(
-                        f"플러그인 '{plugin_id}'가 레지스트리에 없습니다 (커뮤니티 로드 필요)"
+                        f"Plugin '{plugin_id}' not found in registry (community load required)"
                     )
 
-        # 5. 엣지 연결 타입 호환성 검증
-        # TODO: 입출력 포트 타입 매칭 검증
+        # 5. Edge connection type compatibility validation
+        # TODO: Input/output port type matching validation
 
         return result
 
@@ -162,18 +162,18 @@ class WorkflowResolver:
         context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[ResolvedWorkflow, ValidationResult]:
         """
-        워크플로우 해결 (실행 객체 변환)
+        Resolve workflow (convert to execution objects)
 
         Args:
-            definition: 워크플로우 정의
-            context: 실행 컨텍스트 (credential_id, symbols 등)
+            definition: Workflow definition
+            context: Execution context (credential_id, symbols, etc.)
 
         Returns:
             (ResolvedWorkflow, ValidationResult)
         """
         from programgarden_core import WorkflowDefinition, NodeTypeRegistry, PluginRegistry
 
-        # 검증
+        # Validate
         validation = self.validate(definition)
         if not validation.is_valid:
             return None, validation
@@ -181,7 +181,7 @@ class WorkflowResolver:
         workflow = WorkflowDefinition(**definition)
         context = context or {}
 
-        # 노드 해결
+        # Resolve nodes
         resolved_nodes: Dict[str, ResolvedNode] = {}
         node_registry = NodeTypeRegistry()
         plugin_registry = PluginRegistry()
@@ -191,19 +191,19 @@ class WorkflowResolver:
             node_type = node_def.get("type")
             category = node_def.get("category", "")
 
-            # 설정 추출 (기본 필드 제외)
+            # Extract config (exclude base fields)
             config = {
                 k: v for k, v in node_def.items()
-                if k not in {"id", "type", "category", "position", "plugin", "params"}
+                if k not in {"id", "type", "category", "position", "plugin", "fields"}
             }
 
-            # 플러그인 로드 (해당되는 경우)
+            # Load plugin (if applicable)
             plugin = None
-            plugin_params = {}
+            fields = {}
             if "plugin" in node_def:
                 plugin_id = node_def.get("plugin")
                 plugin = plugin_registry.get(plugin_id)
-                plugin_params = node_def.get("params", {})
+                fields = node_def.get("fields", {})
 
             resolved_node = ResolvedNode(
                 node_id=node_id,
@@ -211,11 +211,11 @@ class WorkflowResolver:
                 category=category,
                 config=config,
                 plugin=plugin,
-                plugin_params=plugin_params,
+                fields=fields,
             )
             resolved_nodes[node_id] = resolved_node
 
-        # 엣지 해결
+        # Resolve edges
         resolved_edges: List[ResolvedEdge] = []
         for edge in workflow.edges:
             resolved_edge = ResolvedEdge(
@@ -226,7 +226,7 @@ class WorkflowResolver:
             )
             resolved_edges.append(resolved_edge)
 
-        # 실행 순서 계산 (토폴로지 정렬)
+        # Calculate execution order (topological sort)
         execution_order = self._topological_sort(resolved_nodes, resolved_edges)
 
         resolved_workflow = ResolvedWorkflow(
@@ -245,11 +245,11 @@ class WorkflowResolver:
         edges: List[ResolvedEdge],
     ) -> List[str]:
         """
-        토폴로지 정렬 (Kahn's algorithm)
+        Topological sort (Kahn's algorithm)
 
-        DAG의 노드를 의존성 순서대로 정렬
+        Sorts DAG nodes by dependency order
         """
-        # 진입 차수 계산
+        # Calculate in-degree
         in_degree: Dict[str, int] = {node_id: 0 for node_id in nodes}
         adjacency: Dict[str, List[str]] = {node_id: [] for node_id in nodes}
 
@@ -259,7 +259,7 @@ class WorkflowResolver:
             if edge.from_node_id in adjacency:
                 adjacency[edge.from_node_id].append(edge.to_node_id)
 
-        # 진입 차수 0인 노드부터 시작
+        # Start with nodes having in-degree 0
         queue = [node_id for node_id, degree in in_degree.items() if degree == 0]
         result = []
 
@@ -272,9 +272,9 @@ class WorkflowResolver:
                 if in_degree[neighbor] == 0:
                     queue.append(neighbor)
 
-        # 순환 참조 체크
+        # Check for circular references
         if len(result) != len(nodes):
-            # 순환 참조가 있으면 남은 노드 추가 (경고 발생)
+            # If circular reference exists, add remaining nodes (warning)
             remaining = [n for n in nodes if n not in result]
             result.extend(remaining)
 

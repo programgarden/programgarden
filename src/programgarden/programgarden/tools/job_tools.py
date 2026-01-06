@@ -1,18 +1,18 @@
 """
 ProgramGarden - Job Tools
 
-워크플로우 실행 인스턴스(Job) 관리 도구
+Workflow execution instance (Job) management tools
 """
 
 from typing import Optional, List, Dict, Any
 import asyncio
 
-# 글로벌 실행기 (싱글톤)
+# Global executor (singleton)
 _executor = None
 
 
 def _get_executor():
-    """실행기 싱글톤"""
+    """Executor singleton"""
     global _executor
     if _executor is None:
         from programgarden.executor import WorkflowExecutor
@@ -25,14 +25,14 @@ def start_job(
     context: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    워크플로우 실행 시작
+    Start workflow execution
 
     Args:
-        workflow_id: 실행할 워크플로우 ID
-        context: 실행 컨텍스트 (credential_id, symbols 등)
+        workflow_id: Workflow ID to execute
+        context: Execution context (credential_id, symbols, etc.)
 
     Returns:
-        생성된 WorkflowJob 정보
+        Created WorkflowJob info
 
     Example:
         >>> start_job("my-strategy", {"credential_id": "cred-001", "symbols": ["AAPL"]})
@@ -40,12 +40,12 @@ def start_job(
     """
     from programgarden.tools.definition_tools import get_workflow
 
-    # 워크플로우 정의 조회
+    # Get workflow definition
     definition = get_workflow(workflow_id)
     if not definition:
         raise ValueError(f"Workflow not found: {workflow_id}")
 
-    # 비동기 실행
+    # Async execution
     executor = _get_executor()
 
     async def _start():
@@ -57,13 +57,13 @@ def start_job(
 
 def get_job(job_id: str) -> Optional[Dict[str, Any]]:
     """
-    Job 상태 조회
+    Get Job state
 
     Args:
         job_id: Job ID
 
     Returns:
-        Job 상태 또는 None
+        Job state or None
 
     Example:
         >>> get_job("job-abc123")
@@ -79,14 +79,14 @@ def list_jobs(
     status: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Job 목록 조회
+    List Jobs
 
     Args:
-        workflow_id: 워크플로우 ID 필터
-        status: 상태 필터 (pending, running, paused, completed, failed, cancelled)
+        workflow_id: Workflow ID filter
+        status: Status filter (pending, running, paused, completed, failed, cancelled)
 
     Returns:
-        Job 목록
+        List of Jobs
 
     Example:
         >>> list_jobs(status="running")
@@ -111,14 +111,14 @@ def list_jobs(
 
 def pause_job(job_id: str, save_state: bool = True) -> Dict[str, Any]:
     """
-    Job 일시정지
+    Pause Job
 
     Args:
         job_id: Job ID
-        save_state: 상태 저장 여부 (Graceful Restart용)
+        save_state: Whether to save state (for Graceful Restart)
 
     Returns:
-        업데이트된 Job 상태
+        Updated Job state
 
     Example:
         >>> pause_job("job-abc123")
@@ -139,14 +139,14 @@ def pause_job(job_id: str, save_state: bool = True) -> Dict[str, Any]:
 
 def resume_job(job_id: str, restore_state: bool = True) -> Dict[str, Any]:
     """
-    Job 재개
+    Resume Job
 
     Args:
         job_id: Job ID
-        restore_state: 상태 복원 여부 (Graceful Restart용)
+        restore_state: Whether to restore state (for Graceful Restart)
 
     Returns:
-        업데이트된 Job 상태
+        Updated Job state
 
     Example:
         >>> resume_job("job-abc123")
@@ -167,13 +167,13 @@ def resume_job(job_id: str, restore_state: bool = True) -> Dict[str, Any]:
 
 def cancel_job(job_id: str) -> Dict[str, Any]:
     """
-    Job 취소
+    Cancel Job
 
     Args:
         job_id: Job ID
 
     Returns:
-        업데이트된 Job 상태
+        Updated Job state
 
     Example:
         >>> cancel_job("job-abc123")
@@ -194,19 +194,19 @@ def cancel_job(job_id: str) -> Dict[str, Any]:
 
 def get_job_state(job_id: str) -> Optional[Dict[str, Any]]:
     """
-    Job 상태 스냅샷 조회 (Graceful Restart용)
+    Get Job state snapshot (for Graceful Restart)
 
     Args:
         job_id: Job ID
 
     Returns:
-        JobState 스냅샷 (positions, balances, pending_orders 등)
+        JobState snapshot (positions, balances, pending_orders, etc.)
 
     Example:
         >>> get_job_state("job-abc123")
         {"job_id": "job-abc123", "positions": {...}, "balances": {...}, ...}
     """
-    # TODO: 실제 상태 스냅샷 구현
+    # TODO: Implement actual state snapshot
     job = get_job(job_id)
     if not job:
         return None
@@ -224,21 +224,21 @@ def get_job_state(job_id: str) -> Optional[Dict[str, Any]]:
 
 def emergency_close_all(job_id: str) -> Dict[str, Any]:
     """
-    비상 전체 청산
+    Emergency close all positions
 
-    모든 포지션을 시장가로 청산하고 미체결 주문 취소
+    Close all positions at market price and cancel pending orders
 
     Args:
         job_id: Job ID
 
     Returns:
-        청산 결과
+        Close result
 
     Example:
         >>> emergency_close_all("job-abc123")
         {"closed_positions": [...], "cancelled_orders": [...], ...}
     """
-    # TODO: 실제 청산 구현
+    # TODO: Implement actual close
     return {
         "job_id": job_id,
         "closed_positions": [],
@@ -249,19 +249,19 @@ def emergency_close_all(job_id: str) -> Dict[str, Any]:
 
 def cancel_all_orders(job_id: str) -> Dict[str, Any]:
     """
-    미체결 주문 일괄 취소
+    Cancel all pending orders
 
     Args:
         job_id: Job ID
 
     Returns:
-        취소 결과
+        Cancel result
 
     Example:
         >>> cancel_all_orders("job-abc123")
         {"cancelled_orders": [...], "failed_orders": [...]}
     """
-    # TODO: 실제 취소 구현
+    # TODO: Implement actual cancel
     return {
         "job_id": job_id,
         "cancelled_orders": [],

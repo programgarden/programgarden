@@ -82,7 +82,7 @@ MULTI_MARKET = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1050, "y": 80},
         },
         {
@@ -90,7 +90,7 @@ MULTI_MARKET = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1200, "y": 80},
         },
         # === Futures Trading Group ===
@@ -139,7 +139,7 @@ MULTI_MARKET = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "MACD",
-            "params": {"signal": "bullish_cross"},
+            "fields": {"signal": "bullish_cross"},
             "position": {"x": 1050, "y": 380},
         },
         {
@@ -147,7 +147,7 @@ MULTI_MARKET = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1200, "y": 380},
         },
         # === 공통 리스크 관리 ===

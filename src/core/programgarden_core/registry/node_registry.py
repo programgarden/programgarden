@@ -1,42 +1,43 @@
 """
 ProgramGarden Core - NodeTypeRegistry
 
-노드 타입 스키마 레지스트리
-AI가 "어떤 노드 타입 있어?" 질의 가능
+Node type schema registry
+AI can query "what node types are available?"
 """
 
 from typing import Optional, List, Dict, Any, Type
 from pydantic import BaseModel, Field
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, InputPort, OutputPort
+from programgarden_core.i18n import translate_schema
 
 
 class NodeTypeSchema(BaseModel):
-    """노드 타입 스키마 (AI 에이전트용)"""
+    """Node type schema (for AI agents)"""
 
-    node_type: str = Field(..., description="노드 타입명")
-    category: str = Field(..., description="노드 카테고리")
-    description: Optional[str] = Field(default=None, description="노드 설명")
+    node_type: str = Field(..., description="Node type name")
+    category: str = Field(..., description="Node category")
+    description: Optional[str] = Field(default=None, description="Node description")
     inputs: List[Dict[str, Any]] = Field(
         default_factory=list,
-        description="입력 포트 정의",
+        description="Input port definitions",
     )
     outputs: List[Dict[str, Any]] = Field(
         default_factory=list,
-        description="출력 포트 정의",
+        description="Output port definitions",
     )
     config_schema: Dict[str, Any] = Field(
         default_factory=dict,
-        description="설정 스키마",
+        description="Configuration schema",
     )
 
 
 class NodeTypeRegistry:
     """
-    노드 타입 레지스트리
+    Node type registry
 
-    26개 노드 타입을 등록하고 조회하는 레지스트리.
-    AI 에이전트가 사용 가능한 노드 목록을 조회할 때 사용.
+    Registry for registering and querying 37 node types.
+    Used by AI agents to query available node list.
     """
 
     _instance: Optional["NodeTypeRegistry"] = None
@@ -44,27 +45,30 @@ class NodeTypeRegistry:
     _schemas: Dict[str, NodeTypeSchema] = {}
 
     def __new__(cls) -> "NodeTypeRegistry":
-        """싱글톤 패턴"""
+        """Singleton pattern"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialize()
         return cls._instance
 
     def _initialize(self) -> None:
-        """내장 노드 타입 등록"""
+        """Register built-in node types"""
         # 지연 임포트로 순환 참조 방지
         from programgarden_core.nodes import (
             StartNode, BrokerNode,
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
-            MarketDataNode, AccountNode,
+            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode,
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
-            ConditionNode, LogicNode,
-            PositionSizingNode, RiskGuardNode,
-            NewOrderNode, ModifyOrderNode, CancelOrderNode,
+            ConditionNode, LogicNode, PerformanceConditionNode,
+            PositionSizingNode, RiskGuardNode, RiskConditionNode,
+            NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
             EventHandlerNode, ErrorHandlerNode, AlertNode,
             DisplayNode,
             GroupNode,
+            BacktestExecutorNode, BacktestResultNode,
+            DeployNode, TradingHaltNode, JobControlNode,
+            CustomPnLNode,
         )
 
         node_classes = [
@@ -73,50 +77,85 @@ class NodeTypeRegistry:
             # Realtime
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
             # Data
-            MarketDataNode, AccountNode,
+            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode,
             # Symbol
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             # Trigger
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
             # Condition
-            ConditionNode, LogicNode,
+            ConditionNode, LogicNode, PerformanceConditionNode,
             # Risk
-            PositionSizingNode, RiskGuardNode,
+            PositionSizingNode, RiskGuardNode, RiskConditionNode,
             # Order
-            NewOrderNode, ModifyOrderNode, CancelOrderNode,
+            NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
             # Event
             EventHandlerNode, ErrorHandlerNode, AlertNode,
             # Display
             DisplayNode,
             # Group
             GroupNode,
+            # Backtest
+            BacktestExecutorNode, BacktestResultNode,
+            # Job
+            DeployNode, TradingHaltNode, JobControlNode,
+            # Calculation
+            CustomPnLNode,
         ]
 
         for node_class in node_classes:
             self.register(node_class)
 
     def register(self, node_class: Type[BaseNode]) -> None:
-        """노드 타입 등록"""
+        """Register node type"""
+        import typing
+        from typing import get_origin, get_args
+        
         # 타입명 추출 (Literal에서)
         type_name = node_class.__name__
 
         self._registry[type_name] = node_class
 
         # 스키마 생성용 인스턴스 생성
-        # PluginNode 상속 노드는 plugin 필드 기본값 필요
+        # 모든 필수 필드에 대해 기본값 제공
         init_kwargs: Dict[str, Any] = {"id": "__schema__", "type": type_name}
         
-        # plugin 필드가 required인 경우 기본값 제공
-        if "plugin" in node_class.model_fields:
-            field_info = node_class.model_fields["plugin"]
+        # 모든 필수 필드에 임시 기본값 제공
+        for field_name, field_info in node_class.model_fields.items():
+            if field_name in {"id", "type", "category", "position", "config", "description"}:
+                continue
             if field_info.is_required():
-                init_kwargs["plugin"] = "__schema__"
+                # 타입에 따른 기본값 제공
+                annotation = field_info.annotation
+                origin = get_origin(annotation)
+                args = get_args(annotation)
+                
+                # Literal 타입 처리 - 첫 번째 값 사용
+                if origin is typing.Literal:
+                    init_kwargs[field_name] = args[0] if args else "__schema__"
+                elif annotation == str:
+                    init_kwargs[field_name] = "__schema__"
+                elif annotation == int:
+                    init_kwargs[field_name] = 0
+                elif annotation == float:
+                    init_kwargs[field_name] = 0.0
+                elif annotation == bool:
+                    init_kwargs[field_name] = False
+                elif origin is list:
+                    init_kwargs[field_name] = []
+                elif origin is dict or annotation is dict:
+                    init_kwargs[field_name] = {}
+                else:
+                    init_kwargs[field_name] = "__schema__"
         
         instance = node_class(**init_kwargs)
+        
+        # Use instance.description if available (for i18n), otherwise use docstring
+        description = instance.description if hasattr(instance, 'description') and instance.description else node_class.__doc__
+        
         schema = NodeTypeSchema(
             node_type=type_name,
             category=instance.category.value if hasattr(instance.category, 'value') else instance.category,
-            description=node_class.__doc__,
+            description=description,
             inputs=[inp.model_dump() for inp in instance.get_inputs()],
             outputs=[out.model_dump() for out in instance.get_outputs()],
             config_schema=self._extract_config_schema(node_class),
@@ -124,7 +163,7 @@ class NodeTypeRegistry:
         self._schemas[type_name] = schema
 
     def _extract_config_schema(self, node_class: Type[BaseNode]) -> Dict[str, Any]:
-        """노드 클래스에서 설정 스키마 추출"""
+        """Extract config schema from node class"""
         schema = {}
         model_fields = node_class.model_fields
 
@@ -153,15 +192,21 @@ class NodeTypeRegistry:
         return schema
 
     def get(self, node_type: str) -> Optional[Type[BaseNode]]:
-        """노드 클래스 조회"""
+        """Query node class"""
         return self._registry.get(node_type)
 
-    def get_schema(self, node_type: str) -> Optional[NodeTypeSchema]:
-        """노드 스키마 조회"""
-        return self._schemas.get(node_type)
+    def get_schema(self, node_type: str, locale: Optional[str] = None) -> Optional[NodeTypeSchema]:
+        """Query node schema with optional locale translation"""
+        schema = self._schemas.get(node_type)
+        if schema and locale:
+            # Translate schema to requested locale
+            schema_dict = schema.model_dump()
+            translated = translate_schema(schema_dict, locale=locale)
+            return NodeTypeSchema(**translated)
+        return schema
 
     def list_types(self, category: Optional[str] = None) -> List[str]:
-        """등록된 노드 타입 목록"""
+        """List registered node types"""
         if category:
             return [
                 name for name, schema in self._schemas.items()
@@ -169,17 +214,26 @@ class NodeTypeRegistry:
             ]
         return list(self._registry.keys())
 
-    def list_schemas(self, category: Optional[str] = None) -> List[NodeTypeSchema]:
-        """등록된 노드 스키마 목록 (AI 에이전트용)"""
-        if category:
-            return [
-                schema for schema in self._schemas.values()
-                if schema.category == category
-            ]
-        return list(self._schemas.values())
+    def list_schemas(self, category: Optional[str] = None, locale: Optional[str] = None) -> List[NodeTypeSchema]:
+        """List registered node schemas (for AI agents) with optional locale translation"""
+        schemas = [
+            schema for schema in self._schemas.values()
+            if not category or schema.category == category
+        ]
+        
+        if locale:
+            # Translate all schemas
+            translated_schemas = []
+            for schema in schemas:
+                schema_dict = schema.model_dump()
+                translated = translate_schema(schema_dict, locale=locale)
+                translated_schemas.append(NodeTypeSchema(**translated))
+            return translated_schemas
+        
+        return schemas
 
     def list_categories(self) -> List[Dict[str, Any]]:
-        """카테고리 목록 (노드 수 포함)"""
+        """List categories (with node count)"""
         category_counts: Dict[str, int] = {}
         for schema in self._schemas.values():
             cat = schema.category
@@ -195,7 +249,7 @@ class NodeTypeRegistry:
         ]
 
     def create_node(self, node_type: str, **kwargs) -> BaseNode:
-        """노드 인스턴스 생성"""
+        """Create node instance"""
         node_class = self.get(node_type)
         if not node_class:
             raise ValueError(f"Unknown node type: {node_type}")

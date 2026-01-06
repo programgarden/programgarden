@@ -1,17 +1,174 @@
-# **신규매매전략**
+# **주문 플러그인**
 
-신규 매수 또는 매도 주문 방식을 설정하는 전략들을 모아두었습니다. 원하는 전략이 없다면, 카페에 전략 제작을 요청해주세요([요청하기](https://cafe.naver.com/f-e/cafes/30041992/menus/204?viewType=L)). 또는 파이썬으로 직접 전략을 제작하고 추가하여 ([만드는 방법 보기](../custom_dsl.md)) 사용하실 수도 있습니다.
+매수/매도 주문 실행 및 주문 관리 플러그인들입니다. `NewOrderNode`, `ModifyOrderNode`, `CancelOrderNode`에서 `plugin` 필드로 지정하여 사용합니다.
 
- | 상품 | 전략 ID | 설명 | 지원 |
-|-----|----------|------|-----|
-| 해외주식 | [**StockSplitFunds**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/new_order_conditions/stock_split_funds/) | 사용 가능한 예수금을 균등 분할하여 최대 지정 수의 해외 주식에 매수 주문을 생성하는 전략입니다.  | 신규매수 |
-| 해외주식 | [**BasicLossCutManager**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/new_order_conditions/loss_cut/) | 보유 주식의 손익률이 설정된 임계값 이하로 떨어지면 자동으로 매도 주문을 생성해 손실을 제한하는 자동 손절매 전략 | 신규매도 |
-| 해외주식 | [**TurtlePyramidNewOrder**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/new_order_conditions/turtle_pyramid_new_order/) | ATR과 계좌 위험 한도를 이용해 터틀 방식의 유닛 크기를 계산하고, 가격이 유리하게 움직일 때마다 단계적으로 분할 매수를 실행합니다. | 신규매수 |
-| 해외주식 | [**TrackingPriceModifyBuy**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/modify_order_conditions/tracking_price/) | 해외 주식 정정매수/매도 시 주문 가격이 시장 가격과 일정 틱 이상 차이가 날 경우, 자동으로 1호가 가격으로 주문을 수정하는 전략입니다. 주문이 체결되지 않는 상황을 방지하여 효율적인 매매 실행을 돕습니다. | 정정매수, 정정매도 |
-| 해외주식 | [**TurtleAdaptiveModify**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/modify_order_conditions/turtle_adaptive_modify/) | 터틀 규칙에 맞춰 미체결 주문을 주기적으로 점검하고 1호가씩 최대 3회까지만 정정해 체결률을 높이는 적응형 정정 모듈입니다. | 정정매수, 정정매도 |
-| 해외주식 | [**PriceRangeCanceller**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/cancel_order_conditions/price_range_canceller) | 해외 주식에서 주문 가격과 현재 시장 가격의 차이가 설정한 임계값보다 커지면 자동으로 주문을 취소하는 기능입니다. 가격이 불리하게 변동할 때 손실을 막고, 주문을 효율적으로 관리합니다. | 주문취소 |
-| 해외주식 | [**TurtleSafetyCancel**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_stock/cancel_order_conditions/turtle_safety_cancel/) | 지정한 대기 시간 초과나 급격한 역방향 움직임이 감지되면 즉시 주문을 취소해 불리한 체결을 예방하는 터틀 안전장치입니다. | 주문취소 |
-| 해외선물 | [**FuturesSplitFunds**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/new_order_conditions/future_split_funds/) | 주문가능 증거금의 일부만 떼어 여러 선물 종목/월물에 균등 배분해 자동으로 신규 매수를 실행합니다. | 신규매수 |
-| 해외선물 | [**FuturesLossCutManager**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/new_order_conditions/loss_cut/) | 보유 중인 롱/숏 포지션의 손익률이 손절 임계값 이하로 떨어지면 반대 주문을 내어 포지션을 신속히 정리합니다. | 신규매수, 신규매도 |
-| 해외선물 | [**FuturesTrackingPriceModify**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/modify_order_conditions/tracking_price/) | 미체결 선물 주문 가격이 시장 호가와 일정 간격 이상 벌어지면 1호가 기준으로 자동 정정해 체결 성공률을 높입니다. | 정정매수, 정정매도 |
-| 해외선물 | [**FuturesPriceRangeCanceller**](https://github.com/programgarden/programgarden_community/tree/main/programgarden_community/overseas_futureoption/cancel_order_conditions/price_range_canceller/) | 선물 주문 가격과 현재 호가의 차이가 허용 범위를 벗어나면 해당 주문을 즉시 취소해 불리한 체결을 방지합니다. | 주문취소 |
+원하는 플러그인이 없다면:
+- 카페에 요청: [요청하기](https://cafe.naver.com/f-e/cafes/30041992/menus/204?viewType=L)
+- 직접 개발: [플러그인 개발 가이드](../custom_dsl.md)
+
+---
+
+## 신규 주문 플러그인 (new_order_conditions)
+
+| 플러그인 ID | 설명 | 상품 |
+|------------|------|------|
+| **MarketOrder** | 시장가 즉시 체결 | 해외주식 |
+| **LimitOrder** | 지정가 주문 | 해외주식 |
+
+---
+
+## MarketOrder (시장가 주문)
+
+시장가로 즉시 체결됩니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `side` | string | - | `buy`: 매수, `sell`: 매도 (필수) |
+| `amount_type` | string | "fixed" | `percent_balance`: 예수금 비율, `fixed`: 고정 수량, `all`: 전량 |
+| `amount` | float | 10 | 수량 또는 비율 |
+
+### 사용 예시
+
+```json
+{
+  "id": "buyOrder",
+  "type": "NewOrderNode",
+  "plugin": "MarketOrder",
+  "fields": {
+    "side": "buy",
+    "amount_type": "percent_balance",
+    "amount": 90
+  }
+}
+```
+
+---
+
+## LimitOrder (지정가 주문)
+
+지정한 가격에 주문을 걸어둡니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `side` | string | - | `buy`: 매수, `sell`: 매도 (필수) |
+| `price_type` | string | "fixed" | `fixed`: 고정가, `percent_from_current`: 현재가 대비 % |
+| `price` | float | - | 주문 가격 (필수) |
+
+### 사용 예시
+
+```json
+{
+  "id": "limitBuy",
+  "type": "NewOrderNode",
+  "plugin": "LimitOrder",
+  "fields": {
+    "side": "buy",
+    "price_type": "percent_from_current",
+    "price": -1.0
+  }
+}
+```
+
+---
+
+## 정정 주문 플러그인 (modify_order_conditions)
+
+| 플러그인 ID | 설명 | 상품 |
+|------------|------|------|
+| **TrailingStop** | 현재가 추적 정정 | 해외주식 |
+
+---
+
+## TrailingStop (가격 추적 정정)
+
+미체결 주문의 가격을 현재가에 맞춰 자동 정정합니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `price_gap_percent` | float | 0.5 | 현재가 대비 주문가 차이 (%) |
+| `max_modifications` | int | 5 | 최대 정정 횟수 |
+
+### 사용 예시
+
+```json
+{
+  "id": "trailingModify",
+  "type": "ModifyOrderNode",
+  "plugin": "TrailingStop",
+  "fields": {
+    "price_gap_percent": 0.5,
+    "max_modifications": 5
+  }
+}
+```
+
+---
+
+## 취소 주문 플러그인 (cancel_order_conditions)
+
+| 플러그인 ID | 설명 | 상품 |
+|------------|------|------|
+| **TimeStop** | 시간 초과 취소 | 해외주식 |
+
+---
+
+## TimeStop (시간 초과 취소)
+
+지정 시간 내 미체결 시 주문을 자동 취소합니다.
+
+### 파라미터
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `timeout_minutes` | int | 30 | 타임아웃 (분, 1 이상) |
+
+### 사용 예시
+
+```json
+{
+  "id": "timeCancel",
+  "type": "CancelOrderNode",
+  "plugin": "TimeStop",
+  "fields": {"timeout_minutes": 30}
+}
+```
+
+---
+
+## 완성된 전략에서의 주문 플러그인 사용
+
+`penny_stock_rsi` 전략의 주문 흐름:
+
+```
+RSI 조건 충족 → PositionSizingNode → NewOrderNode (MarketOrder)
+                                          ↓
+ProfitTarget/StopLoss 충족 → NewOrderNode (MarketOrder, sell)
+```
+
+```python
+from programgarden_community.strategies import get_strategy
+
+strategy = get_strategy("overseas_stock", "penny_stock_rsi")
+
+# 주문 노드 확인
+order_nodes = [n for n in strategy["nodes"] if "Order" in n["type"]]
+for node in order_nodes:
+    print(f'{node["id"]}: {node.get("plugin")} - {node.get("fields", {}).get("side")}')
+```
+
+---
+
+## 버전 정보
+
+| 플러그인 | 버전 | 최종 수정 |
+|----------|------|----------|
+| MarketOrder | 1.0.0 | 2026-01-06 |
+| LimitOrder | 1.0.0 | 2026-01-06 |
+| TrailingStop | 1.0.0 | 2026-01-06 |
+| TimeStop | 1.0.0 | 2026-01-06 |

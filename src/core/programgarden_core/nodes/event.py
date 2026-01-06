@@ -1,10 +1,10 @@
 """
-ProgramGarden Core - Event 노드
+ProgramGarden Core - Event Nodes
 
-이벤트/알림 노드:
-- EventHandlerNode: 주문 이벤트 처리
-- ErrorHandlerNode: 에러 처리 및 복구
-- AlertNode: 알림 발송
+Event/alert nodes:
+- EventHandlerNode: Order event handling
+- ErrorHandlerNode: Error handling and recovery
+- AlertNode: Send notifications
 """
 
 from typing import Optional, List, Literal, Dict, Any
@@ -20,138 +20,141 @@ from programgarden_core.nodes.base import (
 
 class EventHandlerNode(BaseNode):
     """
-    주문 이벤트 처리 노드
+    Order event handler node
 
-    체결, 거부, 취소 등 이벤트 발생 시 후속 액션 수행
+    Performs follow-up actions when fill/reject/cancel events occur
     """
 
     type: Literal["EventHandlerNode"] = "EventHandlerNode"
     category: NodeCategory = NodeCategory.EVENT
+    description: str = "i18n:nodes.EventHandlerNode.description"
 
-    # EventHandlerNode 전용 설정
+    # EventHandlerNode specific config
     event: Literal["filled", "rejected", "cancelled", "partial_filled", "all"] = Field(
         default="all",
-        description="처리할 이벤트 유형",
+        description="Event type to handle",
     )
     actions: List[str] = Field(
         default=["log"],
-        description="수행할 액션 목록 (log, notify, trigger 등)",
+        description="Actions to perform (log, notify, trigger, etc.)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="event",
             type="order_event",
-            description="주문 이벤트 (RealOrderEventNode에서)",
+            description="i18n:ports.event",
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
             name="event",
             type="event_data",
-            description="처리된 이벤트 데이터",
+            description="i18n:ports.event",
         ),
         OutputPort(
             name="trigger",
             type="signal",
-            description="후속 액션 트리거",
+            description="i18n:ports.trigger",
         ),
     ]
 
 
 class ErrorHandlerNode(BaseNode):
     """
-    에러 처리 및 복구 노드
+    Error handling and recovery node
 
-    실행 중 발생하는 에러 처리 및 복구 로직
+    Error handling and recovery logic during execution
     """
 
     type: Literal["ErrorHandlerNode"] = "ErrorHandlerNode"
     category: NodeCategory = NodeCategory.EVENT
+    description: str = "i18n:nodes.ErrorHandlerNode.description"
 
-    # ErrorHandlerNode 전용 설정
+    # ErrorHandlerNode specific config
     error_types: List[str] = Field(
         default=["all"],
-        description="처리할 에러 유형 (connection, order, validation, all 등)",
+        description="Error types to handle (connection, order, validation, all, etc.)",
     )
     retry_count: int = Field(
         default=3,
-        description="재시도 횟수",
+        description="Retry count",
     )
     retry_delay_sec: int = Field(
         default=5,
-        description="재시도 간격 (초)",
+        description="Retry delay (seconds)",
     )
     fallback_action: Literal["ignore", "alert", "pause_job", "cancel_orders"] = Field(
         default="alert",
-        description="재시도 실패 시 대체 액션",
+        description="Fallback action when retries fail",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="error",
             type="error_event",
-            description="에러 이벤트",
+            description="i18n:ports.error_data",
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
             name="recovered",
             type="signal",
-            description="복구 성공 시 신호",
+            description="i18n:ports.recovered",
         ),
         OutputPort(
             name="failed",
             type="signal",
-            description="복구 실패 시 신호",
+            description="i18n:ports.failed",
         ),
         OutputPort(
             name="error_data",
             type="error_data",
-            description="에러 상세 정보",
+            description="i18n:ports.error_data",
         ),
     ]
 
 
 class AlertNode(BaseNode):
     """
-    알림 발송 노드
+    Alert notification node
 
-    Slack, Telegram, Email, Webhook 등으로 알림 발송
+    Send notifications via Slack, Telegram, Email, Webhook, etc.
     """
 
     type: Literal["AlertNode"] = "AlertNode"
     category: NodeCategory = NodeCategory.EVENT
+    description: str = "i18n:nodes.AlertNode.description"
 
-    # AlertNode 전용 설정
+    # AlertNode specific config
     channel: Literal["slack", "telegram", "email", "webhook"] = Field(
         default="slack",
-        description="알림 채널",
+        description="Notification channel",
     )
     on: List[str] = Field(
         default=["order_filled", "risk_triggered", "error"],
-        description="알림 발송 이벤트 유형",
+        description="Event types to trigger notification",
     )
     template: Optional[str] = Field(
         default=None,
-        description="메시지 템플릿 (변수: {symbol}, {side}, {price}, {quantity} 등)",
+        description="Message template (variables: {symbol}, {side}, {price}, {quantity}, etc.)",
     )
     webhook_url: Optional[str] = Field(
         default=None,
-        description="Webhook URL (channel=webhook 시)",
+        description="Webhook URL (when channel=webhook)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="event",
             type="event_data",
-            description="알림 트리거 이벤트",
+            description="i18n:ports.event",
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
             name="sent",
             type="signal",
-            description="알림 발송 완료 신호",
+            description="Notification sent signal",
         ),
     ]

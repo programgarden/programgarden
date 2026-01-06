@@ -145,7 +145,6 @@ files = [
 [package.dependencies]
 aiohappyeyeballs = ">=2.5.0"
 aiosignal = ">=1.4.0"
-async-timeout = {version = ">=4.0,<6.0", markers = "python_version < \"3.11\""}
 attrs = ">=17.3.0"
 frozenlist = ">=1.1.1"
 multidict = ">=4.5,<7.0"
@@ -181,19 +180,6 @@ groups = ["main"]
 files = [
     {file = "annotated_types-0.7.0-py3-none-any.whl", hash = "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53"},
     {file = "annotated_types-0.7.0.tar.gz", hash = "sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89"},
-]
-
-[[package]]
-name = "async-timeout"
-version = "5.0.1"
-description = "Timeout context manager for asyncio programs"
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-markers = "python_full_version < \"3.11.3\""
-files = [
-    {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
-    {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
 ]
 
 [[package]]
@@ -654,23 +640,25 @@ files = [
     {file = "multidict-6.7.0.tar.gz", hash = "sha256:c6e99d9a65ca282e578dfea819cfa9c0a62b2499d8677392e09feaf305e9e6f5"},
 ]
 
-[package.dependencies]
-typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
-
 [[package]]
 name = "programgarden-core"
-version = "0.1.12"
-description = "자동화매매 클래스 상속, 로그, 환경 등의 핵심이되는 오픈소스"
+version = "2.0.0"
+description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
-python-versions = ">=3.10"
+python-versions = ">=3.12"
 groups = ["main"]
-files = [
-    {file = "programgarden_core-0.1.12-py3-none-any.whl", hash = "sha256:eca3b10a95bb6c3ae736f4b9c3696b1ec8c47a1be4b103324686e18f195b0b30"},
-    {file = "programgarden_core-0.1.12.tar.gz", hash = "sha256:99b709f2e85b58b82b6a5b56783c638520a9433768b42164482478f272f42c1c"},
-]
+files = []
+develop = true
 
 [package.dependencies]
-typing-extensions = ">=4.15.0,<5.0.0"
+pydantic = ">=2.0.0"
+
+[package.extras]
+dev = ["mypy (>=1.0.0)", "pytest (>=7.0.0)", "pytest-asyncio (>=0.21.0)", "ruff (>=0.1.0)"]
+
+[package.source]
+type = "directory"
+url = "../core"
 
 [[package]]
 name = "propcache"
@@ -987,9 +975,6 @@ files = [
     {file = "redis-6.4.0.tar.gz", hash = "sha256:b01bc7282b8444e28ec36b261df5375183bb47a07eb9c603f284e89cbc5ef010"},
 ]
 
-[package.dependencies]
-async-timeout = {version = ">=4.0.3", markers = "python_full_version < \"3.11.3\""}
-
 [package.extras]
 hiredis = ["hiredis (>=3.2.0)"]
 jwt = ["pyjwt (>=2.9.0)"]
@@ -1288,5 +1273,5 @@ propcache = ">=0.2.1"
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.10"
-content-hash = "e1fdc879c6a25b1ce094d37627665d3a9bd134f3c1fae9e34ae56464d25a3fd9"
+python-versions = ">=3.12"
+content-hash = "262c972bbfc4a9acd33af35072561fcfa84bfee1291dee8739863c975bd6a625"

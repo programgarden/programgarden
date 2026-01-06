@@ -1,7 +1,7 @@
 """
 ProgramGarden - Registry Tools
 
-노드 타입 및 플러그인 레지스트리 조회 도구
+Node type and plugin registry query tools
 """
 
 from typing import Optional, List, Dict, Any
@@ -9,14 +9,14 @@ from typing import Optional, List, Dict, Any
 
 def list_node_types(category: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    사용 가능한 노드 타입 목록 조회
+    List available node types
 
     Args:
-        category: 카테고리 필터 (infra, realtime, data, symbol, trigger,
+        category: Category filter (infra, realtime, data, symbol, trigger,
                   condition, risk, order, event, display, group)
 
     Returns:
-        노드 타입 스키마 목록
+        List of node type schemas
 
     Example:
         >>> list_node_types("condition")
@@ -32,13 +32,13 @@ def list_node_types(category: Optional[str] = None) -> List[Dict[str, Any]]:
 
 def get_node_schema(node_type: str) -> Optional[Dict[str, Any]]:
     """
-    특정 노드 타입의 상세 스키마 조회
+    Get detailed schema for a specific node type
 
     Args:
-        node_type: 노드 타입명 (예: ConditionNode, BrokerNode)
+        node_type: Node type name (e.g., ConditionNode, BrokerNode)
 
     Returns:
-        노드 스키마 또는 None
+        Node schema or None
 
     Example:
         >>> get_node_schema("ConditionNode")
@@ -57,15 +57,15 @@ def list_plugins(
     product: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    사용 가능한 플러그인 목록 조회
+    List available plugins
 
     Args:
-        category: 플러그인 카테고리 필터
+        category: Plugin category filter
                   (strategy_condition, new_order, modify_order, cancel_order)
-        product: 상품 유형 필터 (overseas_stock, overseas_futures)
+        product: Product type filter (overseas_stock, overseas_futures)
 
     Returns:
-        플러그인 스키마 목록
+        List of plugin schemas
 
     Example:
         >>> list_plugins("strategy_condition", "overseas_stock")
@@ -86,14 +86,14 @@ def list_plugins(
 
 def get_plugin_schema(plugin_id: str, version: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    특정 플러그인의 상세 스키마 조회
+    Get detailed schema for a specific plugin
 
     Args:
-        plugin_id: 플러그인 ID (예: RSI, MarketOrder)
-        version: 버전 (생략 시 최신 버전)
+        plugin_id: Plugin ID (e.g., RSI, MarketOrder)
+        version: Version (latest if omitted)
 
     Returns:
-        플러그인 스키마 또는 None
+        Plugin schema or None
 
     Example:
         >>> get_plugin_schema("RSI")
@@ -109,10 +109,10 @@ def get_plugin_schema(plugin_id: str, version: Optional[str] = None) -> Optional
 
 def list_categories() -> List[Dict[str, Any]]:
     """
-    노드 카테고리 목록 조회
+    List node categories
 
     Returns:
-        카테고리 정보 목록 (이름, 노드 수, 설명)
+        List of category info (name, count, description)
 
     Example:
         >>> list_categories()

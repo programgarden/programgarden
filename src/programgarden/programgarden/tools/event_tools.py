@@ -1,13 +1,13 @@
 """
 ProgramGarden - Event Tools
 
-이벤트 히스토리 조회 및 분석 도구
+Event history query and analysis tools
 """
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-# 인메모리 이벤트 저장소 (실제 구현에서는 DB 사용)
+# In-memory event storage (use DB in actual implementation)
 _events: List[Dict[str, Any]] = []
 
 
@@ -17,15 +17,15 @@ def get_events(
     limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """
-    이벤트 히스토리 조회
+    Get event history
 
     Args:
         job_id: Job ID
-        event_type: 이벤트 유형 필터 (order_filled, condition_passed 등)
-        limit: 최대 결과 수
+        event_type: Event type filter (order_filled, condition_passed, etc.)
+        limit: Maximum number of results
 
     Returns:
-        이벤트 목록
+        List of events
 
     Example:
         >>> get_events("job-abc123", event_type="order_filled")
@@ -49,13 +49,13 @@ def get_events(
 
 def get_job_summary(job_id: str) -> Dict[str, Any]:
     """
-    Job 실행 요약 (집계된 통계)
+    Get Job execution summary (aggregated statistics)
 
     Args:
         job_id: Job ID
 
     Returns:
-        실행 요약 통계
+        Execution summary statistics
 
     Example:
         >>> get_job_summary("job-abc123")
@@ -86,7 +86,7 @@ def get_job_summary(job_id: str) -> Dict[str, Any]:
         "orders_filled": stats.get("orders_filled", 0),
         "orders_cancelled": stats.get("orders_cancelled", 0),
         "errors_count": stats.get("errors_count", 0),
-        # TODO: 실제 트레이딩 통계
+        # TODO: Actual trading statistics
         "total_trades": 0,
         "winning_trades": 0,
         "losing_trades": 0,
@@ -99,13 +99,13 @@ def get_job_summary(job_id: str) -> Dict[str, Any]:
 
 def analyze_performance(job_id: str) -> Dict[str, Any]:
     """
-    성과 분석 리포트 생성
+    Generate performance analysis report
 
     Args:
         job_id: Job ID
 
     Returns:
-        성과 분석 리포트
+        Performance analysis report
 
     Example:
         >>> analyze_performance("job-abc123")
@@ -135,7 +135,7 @@ def analyze_performance(job_id: str) -> Dict[str, Any]:
 
 
 def _calculate_runtime(job: Dict[str, Any]) -> Optional[int]:
-    """실행 시간 계산 (초)"""
+    """Calculate runtime (seconds)"""
     started = job.get("started_at")
     if not started:
         return None
@@ -154,20 +154,20 @@ def _calculate_runtime(job: Dict[str, Any]) -> Optional[int]:
 
 
 def _build_trade_history(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """거래 히스토리 생성"""
-    # TODO: 실제 거래 히스토리 빌드
+    """Build trade history"""
+    # TODO: Implement actual trade history build
     return []
 
 
 def _calculate_daily_returns(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """일별 수익률 계산"""
-    # TODO: 실제 일별 수익률 계산
+    """Calculate daily returns"""
+    # TODO: Implement actual daily returns calculation
     return []
 
 
 def _calculate_risk_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """리스크 메트릭 계산"""
-    # TODO: 실제 리스크 메트릭 (Sharpe, Sortino, Max Drawdown 등)
+    """Calculate risk metrics"""
+    # TODO: Implement actual risk metrics (Sharpe, Sortino, Max Drawdown, etc.)
     return {
         "sharpe_ratio": None,
         "sortino_ratio": None,
@@ -177,7 +177,7 @@ def _calculate_risk_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-# === 내부용 이벤트 기록 함수 ===
+# === Internal event recording functions ===
 
 def _record_event(
     job_id: str,
@@ -185,7 +185,7 @@ def _record_event(
     node_id: Optional[str] = None,
     data: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """이벤트 기록 (내부용)"""
+    """Record event (internal use)"""
     import uuid
 
     event_id = f"evt-{uuid.uuid4().hex[:8]}"

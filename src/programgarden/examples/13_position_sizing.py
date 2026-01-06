@@ -59,7 +59,7 @@ POSITION_SIZING = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"period": 14, "threshold": 30, "direction": "below"},
+            "fields": {"period": 14, "threshold": 30, "direction": "below"},
             "position": {"x": 1000, "y": 200},
         },
         {
@@ -67,7 +67,7 @@ POSITION_SIZING = {
             "type": "PositionSizingNode",
             "category": "risk",
             "method": "risk_percent",
-            "params": {
+            "fields": {
                 "risk_percent": 1,  # 계좌의 1% 리스크
                 "stop_loss_percent": 5,  # 손절 5% 기준
             },
@@ -78,7 +78,7 @@ POSITION_SIZING = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {"side": "buy"},
+            "fields": {"side": "buy"},
             "position": {"x": 1400, "y": 200},
         },
         {

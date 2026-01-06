@@ -1,0 +1,178 @@
+{
+  "_meta": {
+    "locale": "ko",
+    "name": "한국어",
+    "version": "1.0.0"
+  },
+  
+  "nodes.StartNode.name": "시작",
+  "nodes.StartNode.description": "워크플로우 진입점. 워크플로우당 1개 필수.",
+  
+  "nodes.BrokerNode.name": "브로커",
+  "nodes.BrokerNode.description": "OpenAPI 연결을 위한 증권사 설정. credential_id로 인증 정보 참조.",
+  
+  "nodes.WatchlistNode.name": "관심종목",
+  "nodes.WatchlistNode.description": "사용자 정의 관심종목 리스트.",
+  
+  "nodes.MarketUniverseNode.name": "시장 유니버스",
+  "nodes.MarketUniverseNode.description": "시장/지수 구성 종목.",
+  
+  "nodes.ScreenerNode.name": "스크리너",
+  "nodes.ScreenerNode.description": "조건으로 종목 필터링.",
+  
+  "nodes.SymbolFilterNode.name": "종목 필터",
+  "nodes.SymbolFilterNode.description": "종목 리스트 집합 연산.",
+  
+  "nodes.MarketDataNode.name": "시세 조회",
+  "nodes.MarketDataNode.description": "REST API 시세 데이터 조회.",
+  
+  "nodes.AccountNode.name": "계좌 조회",
+  "nodes.AccountNode.description": "REST API 계좌 정보 조회.",
+  
+  "nodes.RealMarketDataNode.name": "실시간 시세",
+  "nodes.RealMarketDataNode.description": "WebSocket 실시간 시세 스트림.",
+  
+  "nodes.RealAccountNode.name": "실시간 계좌",
+  "nodes.RealAccountNode.description": "실시간 계좌 정보 및 손익.",
+  
+  "nodes.RealOrderEventNode.name": "실시간 주문 이벤트",
+  "nodes.RealOrderEventNode.description": "실시간 체결/거부/취소 이벤트.",
+  
+  "nodes.ScheduleNode.name": "스케줄",
+  "nodes.ScheduleNode.description": "크론 기반 스케줄 트리거.",
+  
+  "nodes.TradingHoursFilterNode.name": "거래시간 필터",
+  "nodes.TradingHoursFilterNode.description": "거래시간 내에만 신호 통과.",
+  
+  "nodes.ExchangeStatusNode.name": "거래소 상태",
+  "nodes.ExchangeStatusNode.description": "거래소 개장/폐장/휴장 상태 확인.",
+  
+  "nodes.ConditionNode.name": "조건",
+  "nodes.ConditionNode.description": "조건 플러그인 실행 (RSI, MACD 등).",
+  
+  "nodes.LogicNode.name": "논리 연산",
+  "nodes.LogicNode.description": "조건 논리 조합.",
+  
+  "nodes.PositionSizingNode.name": "포지션 사이징",
+  "nodes.PositionSizingNode.description": "포지션 크기 계산 (Kelly, 고정, ATR 기반).",
+  
+  "nodes.RiskGuardNode.name": "리스크 가드",
+  "nodes.RiskGuardNode.description": "리스크 한도: 일일 손실, 최대 포지션.",
+  
+  "nodes.RiskConditionNode.name": "리스크 조건",
+  "nodes.RiskConditionNode.description": "리스크 조건 평가 (손익, 거래 횟수).",
+  
+  "nodes.NewOrderNode.name": "신규 주문",
+  "nodes.NewOrderNode.description": "신규 주문 플러그인 실행.",
+  
+  "nodes.ModifyOrderNode.name": "주문 정정",
+  "nodes.ModifyOrderNode.description": "주문 정정 플러그인 실행.",
+  
+  "nodes.CancelOrderNode.name": "주문 취소",
+  "nodes.CancelOrderNode.description": "주문 취소 플러그인 실행.",
+  
+  "nodes.LiquidateNode.name": "청산",
+  "nodes.LiquidateNode.description": "긴급 또는 전체 포지션 청산.",
+  
+  "nodes.HistoricalDataNode.name": "과거 데이터",
+  "nodes.HistoricalDataNode.description": "백테스트용 OHLCV 과거 데이터.",
+  
+  "nodes.BacktestExecutorNode.name": "백테스트 실행",
+  "nodes.BacktestExecutorNode.description": "시그널과 과거 데이터로 백테스트 실행.",
+  
+  "nodes.BacktestResultNode.name": "백테스트 결과",
+  "nodes.BacktestResultNode.description": "성과 지표 계산 (수익률, MDD, 샤프).",
+  
+  "nodes.PerformanceConditionNode.name": "성과 조건",
+  "nodes.PerformanceConditionNode.description": "성과 기준 충족 여부 검증.",
+  
+  "nodes.EventHandlerNode.name": "이벤트 핸들러",
+  "nodes.EventHandlerNode.description": "주문 이벤트 처리 (체결, 거부, 취소).",
+  
+  "nodes.ErrorHandlerNode.name": "에러 핸들러",
+  "nodes.ErrorHandlerNode.description": "에러 처리 및 복구 로직.",
+  
+  "nodes.AlertNode.name": "알림",
+  "nodes.AlertNode.description": "알림 발송 (이메일, SMS, 웹훅).",
+  
+  "nodes.DisplayNode.name": "디스플레이",
+  "nodes.DisplayNode.description": "차트/테이블 시각화.",
+  
+  "nodes.GroupNode.name": "그룹",
+  "nodes.GroupNode.description": "재사용 가능한 서브플로우 그룹.",
+  
+  "nodes.DeployNode.name": "배포",
+  "nodes.DeployNode.description": "전략 배포 (실계좌/모의투자/테스트).",
+  
+  "nodes.TradingHaltNode.name": "거래 중단",
+  "nodes.TradingHaltNode.description": "일시적 거래 중단.",
+  
+  "nodes.JobControlNode.name": "Job 제어",
+  "nodes.JobControlNode.description": "Job 상태 제어 (일시정지/재개/중지).",
+  
+  "nodes.PnLCalculatorNode.name": "손익 계산기",
+  "nodes.PnLCalculatorNode.description": "실시간 손익 계산.",
+  
+  "ports.symbols": "종목 리스트",
+  "ports.connection": "브로커 연결",
+  "ports.trigger": "트리거 신호",
+  "ports.price_data": "가격 데이터",
+  "ports.volume_data": "거래량 데이터",
+  "ports.balance": "계좌 잔고",
+  "ports.positions": "포지션 데이터",
+  "ports.held_symbols": "보유 종목",
+  "ports.open_orders": "미체결 주문",
+  "ports.result": "결과",
+  "ports.passed_symbols": "통과 종목",
+  "ports.failed_symbols": "미통과 종목",
+  "ports.quantity": "주문 수량",
+  "ports.order_result": "주문 결과",
+  "ports.order_id": "주문 번호",
+  "ports.submitted_orders": "제출된 주문",
+  "ports.target_orders": "대상 주문",
+  "ports.modified_orders": "정정된 주문",
+  "ports.cancelled_orders": "취소된 주문",
+  "ports.ohlcv_data": "OHLCV 데이터",
+  "ports.historical_data": "과거 데이터",
+  "ports.buy_signal": "매수 시그널",
+  "ports.sell_signal": "매도 시그널",
+  "ports.trades": "거래 내역",
+  "ports.summary": "성과 요약",
+  "ports.equity_curve": "자산 곡선",
+  "ports.drawdown_curve": "낙폭 곡선",
+  "ports.approved_symbols": "승인된 종목",
+  "ports.blocked_symbols": "차단된 종목",
+  "ports.blocked_reason": "차단 사유",
+  "ports.account_state": "계좌 상태",
+  "ports.performance_data": "성과 데이터",
+  "ports.passed": "통과",
+  "ports.blocked": "차단",
+  "ports.start": "시작 신호",
+  "ports.bid": "매수호가",
+  "ports.ask": "매도호가",
+  "ports.filled": "체결됨",
+  "ports.rejected": "거부됨",
+  "ports.cancelled": "취소됨",
+  "ports.open": "거래소 개장",
+  "ports.closed": "거래소 폐장",
+  "ports.holiday": "거래소 휴장",
+  "ports.values": "계산된 값",
+  "ports.modify_result": "정정 결과",
+  "ports.cancel_result": "취소 결과",
+  "ports.liquidated_positions": "청산된 포지션",
+  "ports.backtest_result": "백테스트 결과",
+  "ports.event": "이벤트 데이터",
+  "ports.recovered": "복구 성공",
+  "ports.failed": "실패",
+  "ports.error_data": "에러 데이터",
+  "ports.data": "데이터",
+  "ports.halted": "중단 신호",
+  "ports.resume_at": "재개 시간",
+  "ports.job_id": "Job ID",
+  "ports.strategy": "전략",
+  "ports.tick_data": "틱 데이터",
+  "ports.realized_pnl": "실현 손익",
+  "ports.unrealized_pnl": "미실현 손익",
+  "ports.total_pnl": "총 손익",
+  "ports.current_value": "현재 값"
+}

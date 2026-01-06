@@ -1,12 +1,12 @@
 """
-ProgramGarden Core - Infra 노드
+ProgramGarden Core - Infra Nodes
 
-인프라/연결 관련 노드:
-- StartNode: 워크플로우 진입점
-- BrokerNode: 증권사 연결
+Infrastructure/connection nodes:
+- StartNode: Workflow entry point
+- BrokerNode: Broker connection
 """
 
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict, ClassVar
 from pydantic import Field
 
 from programgarden_core.nodes.base import (
@@ -15,41 +15,44 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
+from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class StartNode(BaseNode):
     """
-    워크플로우 진입점
+    Workflow entry point
 
-    Definition당 1개 필수. 워크플로우 실행의 시작점.
+    Required one per Definition. Starting point of workflow execution.
     """
 
     type: Literal["StartNode"] = "StartNode"
     category: NodeCategory = NodeCategory.INFRA
+    description: str = "i18n:nodes.StartNode.description"
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="start", type="signal", description="워크플로우 시작 신호")
+        OutputPort(name="start", type="signal", description="i18n:ports.start")
     ]
 
 
 class BrokerNode(BaseNode):
     """
-    증권사 연결 노드
+    Broker connection node
 
-    OpenAPI 연결을 위한 증권사 설정.
-    credential_id로 실제 인증 정보 참조.
+    Broker configuration for OpenAPI connection.
+    References actual credentials via credential_id.
     """
 
     type: Literal["BrokerNode"] = "BrokerNode"
     category: NodeCategory = NodeCategory.INFRA
+    description: str = "i18n:nodes.BrokerNode.description"
 
-    # BrokerNode 전용 설정
+    # BrokerNode specific config
     provider: str = Field(
-        default="ls-sec.co.kr", description="증권사 제공자 (현재 LS증권만 지원)"
+        default="ls-sec.co.kr", description="Broker provider (currently only LS Securities supported)"
     )
     product: Literal["overseas_stock", "overseas_futures"] = Field(
-        default="overseas_stock", description="상품 유형"
+        default="overseas_stock", description="Product type"
     )
 
     _inputs: List[InputPort] = []
@@ -57,6 +60,23 @@ class BrokerNode(BaseNode):
         OutputPort(
             name="connection",
             type="broker_connection",
-            description="증권사 연결 객체",
+            description="i18n:ports.connection",
         )
     ]
+    _field_schema: ClassVar[Dict[str, FieldSchema]] = {
+        "provider": FieldSchema(
+            name="provider",
+            type=FieldType.STRING,
+            description="Broker provider",
+            default="ls-sec.co.kr",
+            bindable=False,
+        ),
+        "product": FieldSchema(
+            name="product",
+            type=FieldType.ENUM,
+            description="Product type (overseas_stock/overseas_futures)",
+            default="overseas_stock",
+            enum_values=["overseas_stock", "overseas_futures"],
+            bindable=False,
+        ),
+    }

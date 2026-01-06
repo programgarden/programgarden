@@ -43,7 +43,7 @@ AT_LEAST_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {"threshold": 30},
+            "fields": {"threshold": 30},
             "position": {"x": 700, "y": 100},
         },
         {
@@ -51,7 +51,7 @@ AT_LEAST_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "MACD",
-            "params": {"signal": "bullish_cross"},
+            "fields": {"signal": "bullish_cross"},
             "position": {"x": 700, "y": 200},
         },
         {
@@ -59,7 +59,7 @@ AT_LEAST_CONDITION = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "VolumeSpike",
-            "params": {"multiplier": 2},
+            "fields": {"multiplier": 2},
             "position": {"x": 700, "y": 300},
         },
         {

@@ -146,7 +146,72 @@ class WorkflowDefinition(BaseModel):
         elif len(start_nodes) > 1:
             errors.append("StartNode가 여러 개입니다 (Definition당 1개만 허용)")
 
-        # 4. 순환 참조 체크 (간단한 DFS)
-        # TODO: 본격적인 DAG 검증 구현
+        # 4. 순환 참조 체크 (DAG 검증)
+        cycle = self._detect_cycle()
+        if cycle:
+            cycle_path = " → ".join(cycle)
+            errors.append(f"순환 참조가 있습니다: {cycle_path}")
 
         return errors
+
+    def _detect_cycle(self) -> Optional[List[str]]:
+        """
+        DFS 기반 순환 참조 탐지 (3-color 알고리즘)
+
+        Returns:
+            순환 경로 리스트 (없으면 None)
+            예: ["node-a", "node-b", "node-c", "node-a"]
+        """
+        # 인접 리스트 구성
+        adjacency: Dict[str, List[str]] = {
+            node.get("id"): [] for node in self.nodes if node.get("id")
+        }
+        for edge in self.edges:
+            from_id = edge.from_node_id
+            to_id = edge.to_node_id
+            if from_id in adjacency:
+                adjacency[from_id].append(to_id)
+
+        # 방문 상태: 0=WHITE(미방문), 1=GRAY(방문중), 2=BLACK(완료)
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color: Dict[str, int] = {node_id: WHITE for node_id in adjacency}
+        parent: Dict[str, Optional[str]] = {node_id: None for node_id in adjacency}
+
+        def dfs(node_id: str) -> Optional[List[str]]:
+            """DFS 탐색, 순환 발견 시 경로 반환"""
+            color[node_id] = GRAY
+
+            for neighbor in adjacency.get(node_id, []):
+                if neighbor not in color:
+                    # 존재하지 않는 노드 참조 (다른 검증에서 처리)
+                    continue
+
+                if color[neighbor] == GRAY:
+                    # 순환 발견! 경로 구성
+                    cycle = [neighbor]
+                    current = node_id
+                    while current != neighbor:
+                        cycle.append(current)
+                        current = parent.get(current)
+                        if current is None:
+                            break
+                    cycle.append(neighbor)
+                    return list(reversed(cycle))
+
+                if color[neighbor] == WHITE:
+                    parent[neighbor] = node_id
+                    result = dfs(neighbor)
+                    if result:
+                        return result
+
+            color[node_id] = BLACK
+            return None
+
+        # 모든 노드에서 DFS 시작 (연결되지 않은 컴포넌트 처리)
+        for node_id in adjacency:
+            if color[node_id] == WHITE:
+                result = dfs(node_id)
+                if result:
+                    return result
+
+        return None

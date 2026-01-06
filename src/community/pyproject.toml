@@ -1,0 +1,26 @@
+[project]
+authors = [
+    {"name" = "프로그램동산", "email" = "coding@programgarden.com"}
+]
+homepage = "https://programgarden.com"
+requires-python = ">=3.12"
+name = "programgarden-community"
+version = "2.0.0"
+description = "ProgramGarden Community - 전략 플러그인 모음"
+readme = "README.md"
+
+[tool.poetry]
+packages = [
+    { include = "programgarden_community" }
+]
+
+[tool.poetry.dependencies]
+programgarden-core = {path = "../core", develop = true}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.21.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

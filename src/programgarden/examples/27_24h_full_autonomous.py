@@ -116,7 +116,7 @@ FULL_AUTONOMOUS_24H = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "RSI",
-            "params": {
+            "fields": {
                 "period": 14,
                 "threshold": 30,
                 "direction": "below",
@@ -128,7 +128,7 @@ FULL_AUTONOMOUS_24H = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "BollingerBands",
-            "params": {
+            "fields": {
                 "period": 20,
                 "std": 2,
                 "position": "below_lower",
@@ -140,7 +140,7 @@ FULL_AUTONOMOUS_24H = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "VolumeSpike",
-            "params": {
+            "fields": {
                 "period": 20,
                 "multiplier": 2,
             },
@@ -160,7 +160,7 @@ FULL_AUTONOMOUS_24H = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "ProfitTarget",
-            "params": {
+            "fields": {
                 "percent": 5,
             },
             "position": {"x": 1200, "y": 650},
@@ -170,7 +170,7 @@ FULL_AUTONOMOUS_24H = {
             "type": "ConditionNode",
             "category": "condition",
             "plugin": "StopLoss",
-            "params": {
+            "fields": {
                 "percent": -3,
             },
             "position": {"x": 1200, "y": 750},
@@ -209,7 +209,7 @@ FULL_AUTONOMOUS_24H = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {
+            "fields": {
                 "side": "buy",
             },
             "position": {"x": 2000, "y": 150},
@@ -219,7 +219,7 @@ FULL_AUTONOMOUS_24H = {
             "type": "NewOrderNode",
             "category": "order",
             "plugin": "MarketOrder",
-            "params": {
+            "fields": {
                 "side": "sell",
                 "amount_type": "all",
             },
