@@ -12,11 +12,12 @@ from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class NodeCategory(str, Enum):
-    """노드 카테고리 (14개)"""
+    """노드 카테고리 (15개)"""
 
     INFRA = "infra"
     REALTIME = "realtime"
     DATA = "data"
+    ACCOUNT = "account"
     SYMBOL = "symbol"
     TRIGGER = "trigger"
     CONDITION = "condition"

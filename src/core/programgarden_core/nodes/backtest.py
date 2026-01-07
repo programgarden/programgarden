@@ -2,8 +2,7 @@
 ProgramGarden Core - Backtest Nodes
 
 Backtest execution and result analysis nodes:
-- BacktestExecutorNode: Backtest executor
-- BacktestResultNode: Backtest result analysis
+- BacktestEngineNode: Unified backtest engine (execution + result)
 - HistoricalDataNode: Historical data query
 """
 
@@ -68,18 +67,19 @@ class HistoricalDataNode(BaseNode):
     ]
 
 
-class BacktestExecutorNode(BaseNode):
+class BacktestEngineNode(BaseNode):
     """
-    Backtest execution node
+    Unified backtest engine node
 
-    Executes backtest with buy/sell signals and historical data
+    Executes backtest with signals and historical data,
+    then calculates performance metrics (return, MDD, Sharpe ratio, etc.)
     """
 
-    type: Literal["BacktestExecutorNode"] = "BacktestExecutorNode"
+    type: Literal["BacktestEngineNode"] = "BacktestEngineNode"
     category: NodeCategory = NodeCategory.BACKTEST
-    description: str = "i18n:nodes.BacktestExecutorNode.description"
+    description: str = "i18n:nodes.BacktestEngineNode.description"
 
-    # BacktestExecutorNode specific config
+    # Backtest execution config
     initial_capital: float = Field(
         default=10000,
         description="Initial capital",
@@ -89,57 +89,15 @@ class BacktestExecutorNode(BaseNode):
         description="Commission rate (0.001 = 0.1%)",
     )
     slippage: float = Field(
-        default=0.001,
-        description="Slippage (0.001 = 0.1%)",
+        default=0.0005,
+        description="Slippage (0.0005 = 0.05%)",
     )
     position_sizing: Literal["equal_weight", "kelly", "fixed"] = Field(
         default="equal_weight",
         description="Position sizing method",
     )
-
-    _inputs: List[InputPort] = [
-        InputPort(
-            name="historical_data",
-            type="ohlcv_data",
-            description="i18n:ports.historical_data",
-        ),
-        InputPort(
-            name="buy_signal",
-            type="signal",
-            description="i18n:ports.buy_signal",
-        ),
-        InputPort(
-            name="sell_signal",
-            type="signal",
-            description="i18n:ports.sell_signal",
-        ),
-    ]
-    _outputs: List[OutputPort] = [
-        OutputPort(
-            name="result",
-            type="backtest_result",
-            description="i18n:ports.backtest_result",
-        ),
-        OutputPort(
-            name="trades",
-            type="trade_list",
-            description="i18n:ports.trades",
-        ),
-    ]
-
-
-class BacktestResultNode(BaseNode):
-    """
-    Backtest result analysis node
-
-    Calculates performance metrics (return, MDD, Sharpe ratio, etc.)
-    """
-
-    type: Literal["BacktestResultNode"] = "BacktestResultNode"
-    category: NodeCategory = NodeCategory.BACKTEST
-    description: str = "i18n:nodes.BacktestResultNode.description"
-
-    # BacktestResultNode specific config
+    
+    # Result analysis config
     benchmark: Optional[str] = Field(
         default=None,
         description="Benchmark symbol (e.g., SPY)",
@@ -151,26 +109,36 @@ class BacktestResultNode(BaseNode):
 
     _inputs: List[InputPort] = [
         InputPort(
-            name="backtest_result",
-            type="backtest_result",
-            description="i18n:ports.backtest_result",
+            name="ohlcv_data",
+            type="ohlcv_data",
+            description="i18n:ports.ohlcv_data",
+        ),
+        InputPort(
+            name="signals",
+            type="signal_list",
+            description="i18n:ports.signals",
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(
-            name="summary",
-            type="performance_summary",
-            description="i18n:ports.summary",
-        ),
         OutputPort(
             name="equity_curve",
             type="time_series",
             description="i18n:ports.equity_curve",
         ),
         OutputPort(
-            name="drawdown_curve",
-            type="time_series",
-            description="i18n:ports.drawdown_curve",
+            name="trades",
+            type="trade_list",
+            description="i18n:ports.trades",
+        ),
+        OutputPort(
+            name="metrics",
+            type="performance_summary",
+            description="i18n:ports.metrics",
+        ),
+        OutputPort(
+            name="summary",
+            type="performance_summary",
+            description="i18n:ports.summary",
         ),
     ]
 

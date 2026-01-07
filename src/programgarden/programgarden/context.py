@@ -5,14 +5,29 @@ Workflow execution context protocol
 - Data transfer between nodes
 - Realtime data injection
 - State management
+- Event system for realtime updates
+- Persistent node lifecycle management
 """
 
-from typing import Optional, Dict, Any, List, Protocol, runtime_checkable
+from typing import Optional, Dict, Any, List, Protocol, runtime_checkable, Callable, Awaitable, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 import asyncio
+import logging
 
 from programgarden_core.expression import ExpressionContext
+from programgarden_core.bases.listener import (
+    ExecutionListener,
+    NodeState,
+    EdgeState,
+    NodeStateEvent,
+    EdgeStateEvent,
+    LogEvent,
+    JobStateEvent,
+)
+
+logger = logging.getLogger("programgarden.context")
 
 
 @runtime_checkable
@@ -86,6 +101,17 @@ class NodeOutput:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
+@dataclass
+class WorkflowEvent:
+    """Event for realtime updates and triggers"""
+    
+    type: str  # "realtime_update" | "schedule_tick" | "order_filled" | etc.
+    source_node_id: str
+    data: Any = None
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    trigger_nodes: List[str] = field(default_factory=list)  # Nodes to trigger on this event
+
+
 class ExecutionContext:
     """
     Workflow execution context
@@ -125,12 +151,29 @@ class ExecutionContext:
         # State
         self._is_running = False
         self._is_paused = False
+        self._is_failed = False
+        self._failure_reason: Optional[str] = None
 
         # Event handlers
         self._event_handlers: Dict[str, List[callable]] = {}
 
         # Logs
         self._logs: List[Dict[str, Any]] = []
+        
+        # === New: Event Queue for realtime updates ===
+        self._event_queue: asyncio.Queue[WorkflowEvent] = asyncio.Queue()
+        
+        # === New: Persistent node management ===
+        # Stores trackers/connections that should stay alive between flow executions
+        self._persistent_nodes: Dict[str, Any] = {}  # node_id -> tracker/connection
+        self._persistent_tasks: Dict[str, asyncio.Task] = {}  # node_id -> background task
+        
+        # === New: Cleanup on flow end (stay_connected=False) ===
+        # Stores trackers that should be cleaned up after each flow execution
+        self._cleanup_on_flow_end: Dict[str, Any] = {}  # node_id -> tracker/connection
+        
+        # === New: Execution Listeners (for UI/Server callbacks) ===
+        self._listeners: List[ExecutionListener] = []
 
     # === Provider Configuration ===
 
@@ -159,6 +202,16 @@ class ExecutionContext:
             Secret value or None
         """
         return self._secrets.get(key)
+
+    def set_secret(self, key: str, value: Any) -> None:
+        """
+        Set secret value
+
+        Args:
+            key: Secret key (e.g., 'credential_id')
+            value: Secret value (e.g., {'appkey': '...', 'appsecret': '...'})
+        """
+        self._secrets[key] = value
 
     def get_credential(self, credential_id: str = "credential_id") -> Optional[Dict[str, Any]]:
         """
@@ -212,6 +265,11 @@ class ExecutionContext:
             return first_output.value
 
         return None
+
+    def get_all_outputs(self, node_id: str) -> Dict[str, Any]:
+        """Get all outputs for a node as {port_name: value} dict"""
+        node_outputs = self._outputs.get(node_id, {})
+        return {port: output.value for port, output in node_outputs.items()}
 
     def get_input(
         self,
@@ -325,10 +383,20 @@ class ExecutionContext:
     def is_paused(self) -> bool:
         return self._is_paused
 
+    @property
+    def is_failed(self) -> bool:
+        return self._is_failed
+
+    @property
+    def failure_reason(self) -> Optional[str]:
+        return self._failure_reason
+
     def start(self) -> None:
         """Start execution"""
         self._is_running = True
         self._is_paused = False
+        self._is_failed = False
+        self._failure_reason = None
 
     def pause(self) -> None:
         """Pause execution"""
@@ -341,6 +409,158 @@ class ExecutionContext:
     def stop(self) -> None:
         """Stop execution"""
         self._is_running = False
+
+    def fail(self, reason: str) -> None:
+        """Mark execution as failed"""
+        self._is_failed = True
+        self._is_running = False
+        self._failure_reason = reason
+        self.log("error", f"Job failed: {reason}")
+
+    # === Event Queue (for realtime updates) ===
+
+    async def emit_event(
+        self,
+        event_type: str,
+        source_node_id: str,
+        data: Any = None,
+        trigger_nodes: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Emit event to the queue (for realtime updates)
+        
+        Args:
+            event_type: Type of event (e.g., "realtime_update", "schedule_tick")
+            source_node_id: Node that generated the event
+            data: Event payload
+            trigger_nodes: List of node IDs to trigger (from edge trigger: "on_update")
+        """
+        event = WorkflowEvent(
+            type=event_type,
+            source_node_id=source_node_id,
+            data=data,
+            trigger_nodes=trigger_nodes or [],
+        )
+        await self._event_queue.put(event)
+
+    async def wait_for_event(self, timeout: Optional[float] = None) -> Optional[WorkflowEvent]:
+        """
+        Wait for next event from queue
+        
+        Args:
+            timeout: Max seconds to wait (None = wait forever)
+            
+        Returns:
+            WorkflowEvent or None if timeout
+        """
+        try:
+            if timeout:
+                return await asyncio.wait_for(
+                    self._event_queue.get(),
+                    timeout=timeout,
+                )
+            return await self._event_queue.get()
+        except asyncio.TimeoutError:
+            return None
+
+    def has_pending_events(self) -> bool:
+        """Check if there are pending events"""
+        return not self._event_queue.empty()
+
+    # === Persistent Node Management ===
+
+    def register_persistent(self, node_id: str, tracker: Any) -> None:
+        """
+        Register a persistent tracker/connection
+        
+        Args:
+            node_id: Node ID
+            tracker: StockAccountTracker or similar object with start()/stop()
+        """
+        self._persistent_nodes[node_id] = tracker
+        logger.debug(f"Registered persistent node: {node_id}")
+
+    def get_persistent(self, node_id: str) -> Optional[Any]:
+        """Get registered persistent tracker"""
+        return self._persistent_nodes.get(node_id)
+
+    def has_persistent(self, node_id: str) -> bool:
+        """Check if node has persistent tracker"""
+        return node_id in self._persistent_nodes
+
+    def register_persistent_task(self, node_id: str, task: asyncio.Task) -> None:
+        """Register background task for persistent node"""
+        self._persistent_tasks[node_id] = task
+
+    async def cleanup_persistent_nodes(self) -> None:
+        """
+        Cleanup all persistent nodes (call on job stop)
+        """
+        # Stop all trackers
+        for node_id, tracker in self._persistent_nodes.items():
+            try:
+                if hasattr(tracker, 'stop'):
+                    if asyncio.iscoroutinefunction(tracker.stop):
+                        await tracker.stop()
+                    else:
+                        tracker.stop()
+                logger.debug(f"Stopped persistent node: {node_id}")
+            except Exception as e:
+                logger.warning(f"Error stopping persistent node {node_id}: {e}")
+        
+        # Cancel all background tasks
+        for node_id, task in self._persistent_tasks.items():
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                logger.debug(f"Cancelled persistent task: {node_id}")
+        
+        self._persistent_nodes.clear()
+        self._persistent_tasks.clear()
+
+    # === Cleanup on Flow End (stay_connected=False) ===
+
+    def register_cleanup_on_flow_end(self, node_id: str, tracker: Any) -> None:
+        """
+        Register a tracker to be cleaned up after each flow execution.
+        
+        Used for RealAccountNode with stay_connected=False:
+        - WebSocket 연결은 하지만, 플로우가 끝나면 종료
+        - persistent와 달리 스케줄 사이에는 유지되지 않음
+        
+        Args:
+            node_id: Node ID
+            tracker: StockAccountTracker or similar object with start()/stop()
+        """
+        self._cleanup_on_flow_end[node_id] = tracker
+        logger.debug(f"Registered cleanup_on_flow_end node: {node_id}")
+
+    async def cleanup_flow_end_nodes(self) -> None:
+        """
+        Cleanup nodes registered for flow-end cleanup.
+        
+        Called after each flow execution (before entering event loop).
+        """
+        if not self._cleanup_on_flow_end:
+            return
+        
+        logger.info(f"Cleaning up {len(self._cleanup_on_flow_end)} flow-end nodes")
+        
+        for node_id, tracker in self._cleanup_on_flow_end.items():
+            try:
+                if hasattr(tracker, 'stop'):
+                    if asyncio.iscoroutinefunction(tracker.stop):
+                        await tracker.stop()
+                    else:
+                        tracker.stop()
+                logger.debug(f"Stopped flow-end node: {node_id}")
+            except Exception as e:
+                logger.warning(f"Error stopping flow-end node {node_id}: {e}")
+        
+        self._cleanup_on_flow_end.clear()
 
     # === Events ===
 
@@ -359,6 +579,161 @@ class ExecutionContext:
             else:
                 handler(data)
 
+    # === Execution Listeners ===
+
+    def add_listener(self, listener: ExecutionListener) -> None:
+        """
+        Register an execution listener for state callbacks.
+        
+        Args:
+            listener: ExecutionListener implementation
+        """
+        self._listeners.append(listener)
+
+    def remove_listener(self, listener: ExecutionListener) -> None:
+        """
+        Remove a registered execution listener.
+        
+        Args:
+            listener: Listener to remove
+        """
+        if listener in self._listeners:
+            self._listeners.remove(listener)
+
+    def set_listeners(self, listeners: Optional[List[ExecutionListener]]) -> None:
+        """
+        Set listener list (replaces existing).
+        
+        Args:
+            listeners: New listener list
+        """
+        self._listeners = list(listeners) if listeners else []
+
+    async def notify_node_state(
+        self,
+        node_id: str,
+        node_type: str,
+        state: NodeState,
+        outputs: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+        duration_ms: Optional[float] = None,
+    ) -> None:
+        """Notify all listeners about node state change."""
+        if not self._listeners:
+            return
+        
+        event = NodeStateEvent(
+            job_id=self.job_id,
+            node_id=node_id,
+            node_type=node_type,
+            state=state,
+            outputs=self._sanitize_outputs(outputs),
+            error=error,
+            duration_ms=duration_ms,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_node_state_change(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_node_state_change: {e}")
+
+    async def notify_edge_state(
+        self,
+        from_node_id: str,
+        from_port: str,
+        to_node_id: str,
+        to_port: str,
+        state: EdgeState,
+        data: Any = None,
+    ) -> None:
+        """Notify all listeners about edge state change."""
+        if not self._listeners:
+            return
+        
+        # Truncate data preview for security
+        data_preview = None
+        if data is not None:
+            preview = str(data)
+            data_preview = preview[:200] + "..." if len(preview) > 200 else preview
+        
+        event = EdgeStateEvent(
+            job_id=self.job_id,
+            from_node_id=from_node_id,
+            from_port=from_port,
+            to_node_id=to_node_id,
+            to_port=to_port,
+            state=state,
+            data_preview=data_preview,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_edge_state_change(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_edge_state_change: {e}")
+
+    async def notify_log(
+        self,
+        level: str,
+        message: str,
+        node_id: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Notify all listeners about log entry."""
+        if not self._listeners:
+            return
+        
+        event = LogEvent(
+            job_id=self.job_id,
+            level=level,
+            message=message,
+            node_id=node_id,
+            data=data,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_log(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_log: {e}")
+
+    async def notify_job_state(self, state: str, stats: Optional[Dict[str, Any]] = None) -> None:
+        """Notify all listeners about job state change."""
+        if not self._listeners:
+            return
+        
+        event = JobStateEvent(
+            job_id=self.job_id,
+            state=state,
+            stats=stats,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_job_state_change(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_job_state_change: {e}")
+
+    def _sanitize_outputs(self, outputs: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Remove sensitive information from outputs."""
+        if not outputs:
+            return None
+        
+        # Filter sensitive keywords
+        sensitive_keys = {"appkey", "appsecret", "secret", "password", "token", "api_key"}
+        sanitized = {}
+        
+        for k, v in outputs.items():
+            if any(sk in k.lower() for sk in sensitive_keys):
+                sanitized[k] = "[REDACTED]"
+            elif isinstance(v, dict):
+                sanitized[k] = self._sanitize_outputs(v)
+            else:
+                sanitized[k] = v
+        
+        return sanitized
+
     # === Logging ===
 
     def log(
@@ -368,7 +743,7 @@ class ExecutionContext:
         node_id: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Record log entry"""
+        """Record log entry and notify listeners"""
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
             "level": level,
@@ -377,6 +752,14 @@ class ExecutionContext:
             "data": data,
         }
         self._logs.append(log_entry)
+        
+        # Notify listeners (async, fire-and-forget)
+        if self._listeners:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.notify_log(level, message, node_id, data))
+            except RuntimeError:
+                pass  # No event loop running
 
     def get_logs(
         self,

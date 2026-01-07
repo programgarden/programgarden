@@ -9,6 +9,7 @@ import asyncio
 
 from programgarden.resolver import WorkflowResolver, ValidationResult
 from programgarden.executor import WorkflowExecutor
+from programgarden_core.bases.listener import ExecutionListener
 
 
 class ProgramGarden:
@@ -94,18 +95,35 @@ class ProgramGarden:
         self,
         definition: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
+        secrets: Optional[Dict[str, Any]] = None,
+        listeners: Optional[List[ExecutionListener]] = None,
     ):
         """
         Execute workflow asynchronously
 
         Args:
             definition: Workflow definition
-            context: Execution context
+            context: Execution context parameters
+            secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
+            listeners: List of ExecutionListener instances for state callbacks (Option A)
 
         Returns:
-            WorkflowJob instance
+            WorkflowJob instance (can add more listeners via job.add_listener() - Option B)
+        
+        Example:
+            # Option A: Inject at creation
+            job = await pg.run_async(workflow, listeners=[MyListener()])
+            
+            # Option B: Add after creation
+            job = await pg.run_async(workflow)
+            job.add_listener(MyListener())
         """
-        return await self.executor.execute(definition, context)
+        return await self.executor.execute(
+            definition,
+            context_params=context,
+            secrets=secrets,
+            listeners=listeners,
+        )
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         """

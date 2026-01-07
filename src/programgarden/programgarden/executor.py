@@ -5,16 +5,26 @@ Workflow execution engine
 - validate() → compile() → execute() lifecycle
 - Stateful long-running execution support
 - Graceful Restart support
+- Event-based realtime updates
 """
 
 from typing import Optional, Dict, Any, List, Callable, Awaitable
 from datetime import datetime
 import asyncio
 import uuid
+import logging
 
 from programgarden.resolver import WorkflowResolver, ResolvedWorkflow, ValidationResult
-from programgarden.context import ExecutionContext
+from programgarden.context import ExecutionContext, WorkflowEvent
+from programgarden.reconnect_handler import ReconnectHandler
 from programgarden_core.expression import ExpressionEvaluator, ExpressionContext
+from programgarden_core.bases.listener import (
+    ExecutionListener,
+    NodeState,
+    EdgeState,
+)
+
+logger = logging.getLogger("programgarden.executor")
 
 
 class NodeExecutorBase:
@@ -51,7 +61,16 @@ class StartNodeExecutor(NodeExecutorBase):
 
 
 class ScheduleNodeExecutor(NodeExecutorBase):
-    """ScheduleNode executor"""
+    """
+    ScheduleNode executor
+    
+    Cron 표현식에 따라 주기적으로 schedule_tick 이벤트를 발생시킵니다.
+    - 첫 실행 시 즉시 trigger 반환 (초기 플로우 실행용)
+    - 백그라운드에서 cron 스케줄에 따라 schedule_tick 이벤트 발생
+    - stay_connected 노드들은 스케줄 사이에도 살아있음
+    
+    Based on programgarden_legacy/programgarden/system_executor.py
+    """
 
     async def execute(
         self,
@@ -60,9 +79,108 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         config: Dict[str, Any],
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        # Schedule trigger (uses cron scheduler in actual implementation)
-        cron = config.get("cron", "*/5 * * * *")
-        context.log("info", f"Schedule triggered: {cron}", node_id)
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from croniter import croniter
+        
+        # 이미 스케줄러가 실행 중이면 재등록하지 않음 (schedule_tick 이벤트로 인한 재실행 시)
+        if node_id in context._persistent_tasks:
+            context.log("debug", f"Scheduler already running for {node_id}, skip", node_id)
+            return {"trigger": True}
+        
+        cron_expr = config.get("cron", "*/5 * * * *")
+        tz_name = config.get("timezone", "America/New_York")
+        enabled = config.get("enabled", True)
+        count = config.get("count", 9999999)  # 최대 반복 횟수
+        
+        if not enabled:
+            context.log("info", f"Schedule disabled: {cron_expr}", node_id)
+            return {"trigger": False}
+        
+        # 타임존 설정
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            context.log("warning", f"Invalid timezone '{tz_name}', using UTC", node_id)
+            tz = ZoneInfo("UTC")
+        
+        # cron 표현식 유효성 검사
+        try:
+            # croniter 6.x는 second_at_beginning 지원
+            try:
+                valid = croniter.is_valid(cron_expr, second_at_beginning=True)
+            except TypeError:
+                valid = croniter.is_valid(cron_expr)
+            
+            if not valid:
+                context.log("error", f"Invalid cron expression: {cron_expr}", node_id)
+                return {"trigger": False, "error": f"Invalid cron: {cron_expr}"}
+        except Exception as e:
+            context.log("error", f"Cron validation error: {e}", node_id)
+            return {"trigger": False, "error": str(e)}
+        
+        context.log("info", f"Schedule started: {cron_expr} ({tz_name})", node_id)
+        
+        # 백그라운드 스케줄러 태스크
+        async def scheduler_task():
+            cnt = 0
+            try:
+                # second_at_beginning=True로 초 단위 cron도 지원
+                try:
+                    itr = croniter(cron_expr, datetime.now(tz), second_at_beginning=True)
+                except TypeError:
+                    itr = croniter(cron_expr, datetime.now(tz))
+                
+                while cnt < count and context.is_running:
+                    # 다음 실행 시간 계산
+                    next_dt = itr.get_next(datetime)
+                    now = datetime.now(tz)
+                    delay = (next_dt - now).total_seconds()
+                    
+                    if delay < 0:
+                        delay = 0
+                    
+                    context.log(
+                        "debug", 
+                        f"Next schedule in {delay:.1f}s ({next_dt.isoformat()})", 
+                        node_id
+                    )
+                    
+                    # 대기 (1초 단위로 나눠서 is_running 체크)
+                    while delay > 0 and context.is_running:
+                        sleep_time = min(delay, 1.0)
+                        await asyncio.sleep(sleep_time)
+                        delay -= sleep_time
+                    
+                    if not context.is_running:
+                        break
+                    
+                    # 스케줄 시간 도달 - 이벤트 발생
+                    cnt += 1
+                    context.log("info", f"Schedule tick #{cnt}: {cron_expr}", node_id)
+                    
+                    await context.emit_event(
+                        event_type="schedule_tick",
+                        source_node_id=node_id,
+                        data={
+                            "cron": cron_expr,
+                            "count": cnt,
+                            "triggered_at": datetime.now(tz).isoformat(),
+                        },
+                    )
+                
+                context.log("info", f"Schedule ended (total {cnt} executions)", node_id)
+                
+            except asyncio.CancelledError:
+                context.log("debug", f"Scheduler cancelled after {cnt} executions", node_id)
+            except Exception as e:
+                context.log("error", f"Scheduler error: {e}", node_id)
+        
+        # 백그라운드 태스크 등록
+        task = asyncio.create_task(scheduler_task())
+        context.register_persistent_task(node_id, task)
+        
+        # 초기 트리거 반환 (첫 플로우 실행용)
         return {"trigger": True}
 
 
@@ -92,13 +210,43 @@ class BrokerNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         provider = config.get("provider", "ls-sec.co.kr")
+        company = config.get("company", "ls")
         product = config.get("product", "overseas_stock")
+        
+        # appkey/appsecret을 context secrets에 저장
+        appkey = config.get("appkey")
+        appsecret = config.get("appsecret")
+        paper_trading = config.get("paper_trading", False)
+        
+        if appkey and appsecret:
+            context.set_secret("credential_id", {
+                "appkey": appkey,
+                "appsecret": appsecret,
+                "paper_trading": paper_trading,
+            })
+            context.log("info", f"Broker credentials stored (paper_trading={paper_trading})", node_id)
+        
+        # provider 매핑 (company -> provider)
+        if company == "ls":
+            provider = "ls-sec.co.kr"
+        
         context.log("info", f"Broker connected: {provider} ({product})", node_id)
-        return {"connection": {"provider": provider, "product": product}}
+        return {
+            "connected": True,
+            "connection": {
+                "provider": provider,
+                "product": product,
+                "paper_trading": paper_trading,
+            }
+        }
 
 
-class RealAccountNodeExecutor(NodeExecutorBase):
-    """RealAccountNode executor - 실시간 계좌 정보 (브로커별 분기 처리)"""
+class AccountNodeExecutor(NodeExecutorBase):
+    """
+    AccountNode executor - 계좌 잔고 1회 조회 (REST API)
+    
+    RealAccountNode와 달리 WebSocket 연결 없이 REST API로 1회만 조회합니다.
+    """
 
     async def execute(
         self,
@@ -112,15 +260,11 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         provider = broker_connection.get("provider", "ls-sec.co.kr")
         product = broker_connection.get("product", "overseas_stock")
         
-        context.log("info", f"RealAccount: provider={provider}, product={product}", node_id)
+        context.log("info", f"AccountNode: provider={provider}, product={product} (REST 1회 조회)", node_id)
         
-        # ========================================
         # 브로커별 분기 처리
-        # - 새 브로커 추가 시 여기에 elif 분기 추가
-        # - 예: elif provider == "kiwoom": return await self._execute_kiwoom(...)
-        # ========================================
         if provider == "ls-sec.co.kr":
-            return await self._execute_ls(node_id, product, config, context)
+            return await self._execute_ls(node_id, product, context)
         else:
             context.log("error", f"Unsupported provider: {provider}", node_id)
             return self._empty_result(f"Unsupported provider: {provider}")
@@ -129,12 +273,9 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         self,
         node_id: str,
         product: str,
-        config: Dict[str, Any],
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        """LS증권 계좌 조회"""
-        from datetime import datetime
-        
+        """LS증권 계좌 조회 (REST API)"""
         # secrets에서 인증 정보 가져오기
         credential = context.get_credential()
         if not credential:
@@ -151,7 +292,6 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         
         try:
             from programgarden_finance import LS
-            from programgarden_finance.ls.models import SetupOptions
             
             ls = LS.get_instance()
             
@@ -166,10 +306,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     return self._empty_result("Login failed")
                 context.log("info", f"LS logged in (paper_trading={paper_trading})", node_id)
             
-            # ========================================
-            # LS 상품별 분기 처리
-            # - 새 상품 추가 시 여기에 elif 분기 추가
-            # ========================================
+            # 상품별 REST API 호출
             if product == "overseas_stock":
                 return await self._ls_overseas_stock(ls, node_id, context)
             elif product == "domestic_stock":
@@ -188,7 +325,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             return self._empty_result(str(e))
 
     async def _ls_overseas_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
-        """LS증권 해외주식 잔고 조회 (COSOQ00201)"""
+        """LS증권 해외주식 잔고 조회"""
         from datetime import datetime
         from programgarden_finance import COSOQ00201
         from programgarden_finance.ls.models import SetupOptions
@@ -244,7 +381,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 "total_pnl_krw": response.block2.ConvEvalPnlAmt,
             }
         
-        context.log("info", f"LS overseas_stock: {len(held_symbols)} positions", node_id)
+        context.log("info", f"AccountNode: {len(held_symbols)} positions fetched", node_id)
         return {
             "held_symbols": held_symbols,
             "positions": positions,
@@ -265,6 +402,262 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         """빈 결과 반환"""
         result = {
             "held_symbols": [],
+            "positions": {},
+            "balance": {"cash": 0.0, "total_value": 0.0},
+        }
+        if error:
+            result["error"] = error
+        return result
+
+
+class RealAccountNodeExecutor(NodeExecutorBase):
+    """
+    RealAccountNode executor - 실시간 계좌 정보 (브로커별 분기 처리)
+    
+    stay_connected 옵션에 따라:
+    - True: WebSocket 연결 유지, 플로우 끝나도 계속 살아있음 (이벤트 루프 진입)
+    - False: WebSocket 연결, 플로우 끝나면 cleanup (연결 종료)
+    
+    1회성 REST API 조회가 필요하면 AccountNode를 사용하세요.
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        import sys
+        # 옵션 확인
+        stay_connected = config.get("stay_connected", True)
+        sync_interval_sec = config.get("sync_interval_sec", 60)
+        
+        
+        # BrokerNode에서 설정된 provider/product 정보 가져오기
+        broker_connection = context.get_output("broker", "connection") or {}
+        provider = broker_connection.get("provider", "ls-sec.co.kr")
+        product = broker_connection.get("product", "overseas_stock")
+        
+        
+        context.log("info", f"RealAccount: provider={provider}, product={product}, stay_connected={stay_connected}", node_id)
+        
+        # 이미 persistent tracker가 있으면 재사용 (stay_connected=True인 경우)
+        if stay_connected and context.has_persistent(node_id):
+            tracker = context.get_persistent(node_id)
+            context.log("info", "Reusing existing tracker", node_id)
+            return self._get_tracker_data(tracker)
+        
+        # ========================================
+        # 브로커별 분기 처리
+        # ========================================
+        if provider == "ls-sec.co.kr":
+            return await self._execute_ls(node_id, product, config, context, stay_connected, sync_interval_sec)
+        else:
+            context.log("error", f"Unsupported provider: {provider}", node_id)
+            return self._empty_result(f"Unsupported provider: {provider}")
+
+    async def _execute_ls(
+        self,
+        node_id: str,
+        product: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        stay_connected: bool,
+        sync_interval_sec: int,
+    ) -> Dict[str, Any]:
+        """LS증권 실시간 계좌 조회 (WebSocket)"""
+        from datetime import datetime
+        
+        
+        # secrets에서 인증 정보 가져오기
+        credential = context.get_credential()
+        
+        if not credential:
+            context.log("error", "Credential not found in secrets", node_id)
+            return self._empty_result("Missing credentials")
+        
+        appkey = credential.get("appkey")
+        appsecret = credential.get("appsecret")
+        paper_trading = credential.get("paper_trading", False)
+        
+        
+        if not appkey or not appsecret:
+            context.log("error", "appkey/appsecret not found in credential", node_id)
+            return self._empty_result("Missing appkey/appsecret")
+        
+        try:
+            from programgarden_finance import LS
+            from programgarden_finance.ls.models import SetupOptions
+            
+            ls = LS.get_instance()
+            
+            if not ls.is_logged_in():
+                login_result = ls.login(
+                    appkey=appkey,
+                    appsecretkey=appsecret,
+                    paper_trading=paper_trading,
+                )
+                if not login_result:
+                    context.log("error", "LS login failed", node_id)
+                    return self._empty_result("Login failed")
+                context.log("info", f"LS logged in (paper_trading={paper_trading})", node_id)
+            
+            # ========================================
+            # 항상 WebSocket + Tracker 사용 (진짜 "Real")
+            # stay_connected에 따라 cleanup 대상 여부만 결정
+            # ========================================
+            return await self._ls_with_tracker(
+                ls, node_id, product, config, context, 
+                sync_interval_sec, stay_connected
+            )
+                
+        except ImportError as e:
+            context.log("error", f"finance package not available: {e}", node_id)
+            return self._empty_result(f"finance package error: {e}")
+        except Exception as e:
+            context.log("error", f"Unexpected error: {e}", node_id)
+            return self._empty_result(str(e))
+
+    async def _ls_with_tracker(
+        self,
+        ls,
+        node_id: str,
+        product: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        sync_interval_sec: int,
+        stay_connected: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        LS증권 StockAccountTracker를 사용한 실시간 계좌 추적
+        
+        - WebSocket으로 틱마다 수익률 계산
+        - REST API로 주기적 데이터 동기화
+        - 연결 끊김 시 토큰 확인 후 재연결
+        
+        stay_connected:
+        - True: persistent로 등록 (플로우 끝나도 유지)
+        - False: cleanup_on_flow_end로 등록 (플로우 끝나면 종료)
+        """
+        
+        if product != "overseas_stock":
+            context.log("warning", f"Tracker only supports overseas_stock, got {product}", node_id)
+            # TODO: 다른 product도 지원 필요
+            raise ValueError(f"RealAccountNode does not support product '{product}' yet. Use AccountNode for REST API query.")
+        
+        try:
+            # 실시간 연결 클라이언트 가져오기 (tracker 생성 전에 필요)
+            real_client = ls.overseas_stock().real()
+            if not await real_client.is_connected():
+                await real_client.connect()
+            
+            # StockAccountTracker 생성 (동기 함수)
+            tracker = ls.overseas_stock().accno().account_tracker(
+                real_client=real_client,
+                refresh_interval=sync_interval_sec,
+            )
+            
+            # ReconnectHandler 설정 (토큰 갱신 포함)
+            token_manager = ls._token_manager if hasattr(ls, '_token_manager') else None
+            reconnect_handler = ReconnectHandler(token_manager)
+            
+            # 연결 끊김 콜백 등록
+            async def on_disconnect():
+                can_retry = await reconnect_handler.handle_disconnect()
+                if can_retry:
+                    try:
+                        # 토큰 갱신은 ReconnectHandler가 처리했으므로 재연결만
+                        if not await real_client.is_connected():
+                            await real_client.connect()
+                        reconnect_handler.reset()
+                        context.log("info", "Reconnected successfully", node_id)
+                    except Exception as e:
+                        context.log("error", f"Reconnect failed: {e}", node_id)
+                        await on_disconnect()  # 재귀 재시도
+                else:
+                    context.fail(f"Max reconnect attempts exceeded for {node_id}")
+            
+            # 포지션 변경 콜백 등록 (이벤트 발생용)
+            def on_position_change(positions: Dict):
+                # 컨텍스트에 최신 데이터 저장
+                context.set_output(node_id, "positions", positions)
+                
+                # 이벤트 큐에 추가 (비동기)
+                asyncio.create_task(context.emit_event(
+                    event_type="realtime_update",
+                    source_node_id=node_id,
+                    data={"positions": positions},
+                    trigger_nodes=config.get("_trigger_on_update_nodes", []),
+                ))
+            
+            tracker.on_position_change(on_position_change)
+            
+            # Tracker 시작
+            await tracker.start()
+            
+            # ========================================
+            # stay_connected에 따라 등록 방식 결정
+            # ========================================
+            if stay_connected:
+                # Persistent로 등록 (플로우 끝나도 유지, Job 종료 시 cleanup)
+                context.register_persistent(node_id, tracker)
+                context.log("info", f"StockAccountTracker started (stay_connected=True, sync_interval={sync_interval_sec}s)", node_id)
+            else:
+                # 플로우 끝나면 cleanup 대상으로 등록
+                context.register_cleanup_on_flow_end(node_id, tracker)
+                context.log("info", f"StockAccountTracker started (stay_connected=False, will cleanup after flow)", node_id)
+            
+            # 초기 데이터 반환
+            result = self._get_tracker_data(tracker)
+            return result
+            
+        except Exception as e:
+            context.log("error", f"Tracker setup failed: {e}", node_id)
+            raise
+
+    def _get_tracker_data(self, tracker) -> Dict[str, Any]:
+        """Tracker에서 현재 데이터 추출"""
+        positions = {}
+        for symbol, pos in tracker.get_positions().items():
+            positions[symbol] = {
+                "symbol": symbol,
+                "name": getattr(pos, 'name', symbol),
+                "qty": pos.quantity,
+                "avg_price": float(pos.buy_price),
+                "current_price": float(pos.current_price),
+                "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
+                "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
+                "currency": getattr(pos, 'currency_code', 'USD'),
+                "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
+                "market_code": getattr(pos, 'market_code', ''),  # LS증권 거래소 코드
+            }
+        
+        symbols = list(positions.keys())
+        
+        # balance를 JSON 직렬화 가능한 형태로 변환
+        raw_balance = tracker.get_balances()
+        if hasattr(raw_balance, 'model_dump'):
+            # Pydantic BaseModel인 경우
+            balance = {k: float(v) if isinstance(v, (int, float)) or hasattr(v, '__float__') else str(v) 
+                      for k, v in raw_balance.model_dump().items() if v is not None}
+        elif isinstance(raw_balance, dict):
+            balance = raw_balance
+        else:
+            balance = {"cash": 0.0, "total_value": 0.0}
+        
+        return {
+            "symbols": symbols,  # 표준 출력 포트명
+            "held_symbols": symbols,  # 별칭 (하위 호환)
+            "positions": positions,
+            "balance": balance,
+        }
+
+    def _empty_result(self, error: str = "") -> Dict[str, Any]:
+        """빈 결과 반환"""
+        result = {
+            "symbols": [],
+            "held_symbols": [],  # 별칭
             "positions": {},
             "balance": {"cash": 0.0, "total_value": 0.0},
         }
@@ -373,10 +766,50 @@ class DisplayNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         from datetime import datetime
         
-        # 입력 데이터 가져오기 (account.positions 또는 customPnl.position_pnl)
-        data = context.get_output("account", "positions") or {}
-        if not data:
-            data = context.get_output("customPnl", "position_pnl") or {}
+        # 입력 데이터 가져오기 (다양한 소스 지원)
+        # 1. _input_{node_id}에서 모든 포트의 데이터 수집
+        input_namespace = f"_input_{node_id}"
+        all_inputs = context.get_all_outputs(input_namespace) if hasattr(context, 'get_all_outputs') else {}
+        
+        context.log("debug", f"DisplayNode inputs from {input_namespace}: {list(all_inputs.keys())}", node_id)
+        
+        
+        # 개별 포트에서도 시도 (data, summary, positions 등)
+        input_data = (
+            context.get_output(input_namespace, "data") or
+            context.get_output(input_namespace, "summary") or
+            context.get_output(input_namespace, "positions") or
+            context.get_output(input_namespace, "input")
+        )
+        
+        
+        # 2. equity_curve 데이터 (라인 차트용)
+        equity_data = context.get_output(input_namespace, "equity_curve")
+        
+        # 3. backtestEngine에서 직접 조회 (fallback)
+        if not equity_data:
+            equity_data = context.get_output("backtestEngine", "equity_curve")
+        
+        # 4. data 포트에 equity_curve 리스트가 들어온 경우 처리
+        if not equity_data and isinstance(input_data, list) and len(input_data) > 0:
+            # equity_curve 형식인지 확인 (date와 value 키가 있는 dict 리스트)
+            first_item = input_data[0] if input_data else {}
+            if isinstance(first_item, dict) and "date" in first_item and "value" in first_item:
+                equity_data = input_data
+        
+        
+        # 5. account.positions (실시간 PnL)
+        positions_data = context.get_output("account", "positions") or {}
+        
+        # 6. all_inputs에서 첫 번째 데이터 가져오기 (fallback)
+        first_input = None
+        if all_inputs:
+            first_input = next(iter(all_inputs.values()), None)
+        
+        # 우선순위: input_data > equity_data > all_inputs > positions
+        data = input_data or first_input or positions_data or {}
+        
+        context.log("debug", f"DisplayNode data resolved: type={type(data).__name__}, equity_data={equity_data is not None}", node_id)
         
         # balance 정보도 가져오기
         balance = context.get_output("account", "balance") or {}
@@ -454,11 +887,102 @@ class DisplayNodeExecutor(NodeExecutorBase):
             print("=" * 100)
         
         context.log("info", f"Display rendered: {chart_type}", node_id)
-        return {"rendered": True}
+        
+        # 프론트엔드로 전달할 데이터 구성
+        output_data = {
+            "rendered": True,
+            "chart_type": chart_type,
+            "title": title,
+            "options": options,
+        }
+        
+        # 차트 타입별 데이터 포맷팅
+        if chart_type == "line":
+            # 라인 차트용 데이터 (equity_curve 등)
+            chart_data = None
+            if equity_data:
+                chart_data = equity_data
+            elif isinstance(data, dict) and "equity_curve" in data:
+                chart_data = data["equity_curve"]
+            elif isinstance(data, list):
+                chart_data = data
+            else:
+                chart_data = data
+            
+            output_data["chart_data"] = chart_data
+            
+            # 콘솔에 간단한 라인 차트 요약 출력
+            if chart_data and isinstance(chart_data, list) and len(chart_data) > 0:
+                from datetime import datetime
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"\n{title} [{now}]")
+                print("=" * 80)
+                
+                # 시작/끝 값
+                first = chart_data[0] if chart_data else {}
+                last = chart_data[-1] if chart_data else {}
+                
+                start_value = first.get("value", 0)
+                end_value = last.get("value", 0)
+                start_date = first.get("date", "N/A")
+                end_date = last.get("date", "N/A")
+                
+                # 수익률 계산
+                if start_value > 0:
+                    total_return = (end_value - start_value) / start_value * 100
+                else:
+                    total_return = 0
+                
+                return_sign = "+" if total_return >= 0 else ""
+                return_color = "\033[92m" if total_return >= 0 else "\033[91m"
+                reset = "\033[0m"
+                
+                print(f"📊 데이터 포인트: {len(chart_data)}일")
+                print(f"📅 기간: {start_date} ~ {end_date}")
+                print(f"💵 시작 자산: ${start_value:,.2f}")
+                print(f"💵 최종 자산: ${end_value:,.2f}")
+                print(f"📈 총 수익률: {return_color}{return_sign}{total_return:.2f}%{reset}")
+                
+                # 자산 최고/최저점 (equity curve)
+                values = [d.get("value", 0) for d in chart_data]
+                max_val = max(values)
+                min_val = min(values)
+                print(f"📈 자산 최고점: ${max_val:,.2f}")
+                print(f"📉 자산 최저점: ${min_val:,.2f}")
+                
+                # MDD
+                peak = values[0]
+                max_dd = 0
+                for v in values:
+                    if v > peak:
+                        peak = v
+                    dd = (peak - v) / peak * 100 if peak > 0 else 0
+                    if dd > max_dd:
+                        max_dd = dd
+                print(f"⚠️  최대 낙폭: {max_dd:.2f}%")
+                print("=" * 80)
+        else:
+            # 테이블용 데이터
+            if isinstance(data, dict):
+                output_data["table_data"] = list(data.values()) if data else []
+            elif isinstance(data, list):
+                output_data["table_data"] = data
+            else:
+                output_data["table_data"] = [data] if data else []
+        
+        return output_data
 
 
 class ConditionNodeExecutor(NodeExecutorBase):
-    """ConditionNode executor (plugin-based)"""
+    """
+    ConditionNode executor (plugin-based)
+    
+    두 가지 모드 지원:
+    1. 실시간 모드: 단일 시점 price_data → result: bool
+    2. 백테스트 모드: 시계열 ohlcv_data → signals: list
+    
+    입력 데이터 형태를 자동 감지하여 모드 결정.
+    """
 
     async def execute(
         self,
@@ -469,30 +993,83 @@ class ConditionNodeExecutor(NodeExecutorBase):
         plugin: Optional[Callable] = None,
         fields: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        # Collect input data
-        symbols = context.get_input(node_id, "symbols") or []
-        price_data = context.get_input(node_id, "price_data") or {}
-
-        # Evaluate expressions
-        evaluated_fields = fields or {}
-        if fields:
+        # 입력 데이터 수집
+        symbols = context.get_output(f"_input_{node_id}", "symbols") or []
+        price_data = context.get_output(f"_input_{node_id}", "price_data") or {}
+        
+        # 시계열 데이터 확인 (HistoricalDataNode에서 온 경우)
+        ohlcv_data = price_data
+        if not ohlcv_data:
+            ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
+        
+        # fields 표현식 평가
+        evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
+        if evaluated_fields:
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
-            evaluated_fields = evaluator.evaluate_fields(fields)
+            evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
+        
+        # 시계열 모드 감지
+        is_timeseries = self._is_timeseries_data(ohlcv_data)
+        
+        if is_timeseries:
+            # 백테스트 모드: 시계열 전체에 대해 시그널 생성
+            context.log("info", f"Condition running in backtest mode (timeseries)", node_id)
+            return await self._execute_backtest_mode(
+                node_id, ohlcv_data, evaluated_fields, plugin, context
+            )
+        else:
+            # 실시간 모드: 단일 시점 평가
+            context.log("info", f"Condition running in realtime mode", node_id)
+            return await self._execute_realtime_mode(
+                node_id, symbols, price_data, evaluated_fields, plugin, context
+            )
 
-        # Execute plugin (if present)
+    def _is_timeseries_data(self, data: Any) -> bool:
+        """시계열 데이터인지 확인"""
+        if not data:
+            return False
+        
+        # {symbol: [{date, open, high, low, close, volume}, ...]} 형태인지 확인
+        if isinstance(data, dict):
+            first_value = next(iter(data.values()), None)
+            if isinstance(first_value, list) and len(first_value) > 1:
+                # 리스트가 2개 이상이고 date 필드가 있으면 시계열
+                if isinstance(first_value[0], dict) and "date" in first_value[0]:
+                    return True
+        
+        return False
+
+    async def _execute_realtime_mode(
+        self,
+        node_id: str,
+        symbols: List[str],
+        price_data: Dict[str, Any],
+        fields: Dict[str, Any],
+        plugin: Optional[Callable],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """실시간 모드: 단일 시점 평가"""
+        
         passed_symbols = []
+        failed_symbols = []
         values = {}
 
         if plugin:
-            # Plugin execution logic
-            for symbol in symbols:
-                # TODO: Implement actual plugin execution
-                passed_symbols.append(symbol)
-                values[symbol] = {"result": True}
+            # 플러그인 실행
+            try:
+                result = await plugin(symbols, price_data, fields)
+                passed_symbols = result.get("passed_symbols", [])
+                failed_symbols = result.get("failed_symbols", [])
+                values = result.get("values", {})
+            except Exception as e:
+                context.log("error", f"Plugin error: {e}", node_id)
+                failed_symbols = symbols
         else:
-            # Pass all symbols if no plugin
+            # 플러그인 없으면 모두 통과
             passed_symbols = symbols
+            for symbol in symbols:
+                values[symbol] = {"result": True}
 
         context.log(
             "info",
@@ -503,8 +1080,638 @@ class ConditionNodeExecutor(NodeExecutorBase):
         return {
             "result": len(passed_symbols) > 0,
             "passed_symbols": passed_symbols,
-            "failed_symbols": [s for s in symbols if s not in passed_symbols],
+            "failed_symbols": failed_symbols,
             "values": values,
+        }
+
+    async def _execute_backtest_mode(
+        self,
+        node_id: str,
+        ohlcv_data: Dict[str, List[Dict]],
+        fields: Dict[str, Any],
+        plugin: Optional[Callable],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """
+        백테스트 모드: 시계열 전체에 대해 시그널 생성
+        
+        각 bar에 대해 플러그인을 호출하여 시그널 시계열 생성.
+        플러그인은 해당 시점까지의 데이터만 받음 (미래 데이터 누출 방지).
+        """
+        
+        signals = []
+        all_values = {}
+        
+        # 첫 번째 종목의 날짜 리스트 기준
+        if not ohlcv_data:
+            return {"signals": [], "result": False}
+        
+        first_symbol = list(ohlcv_data.keys())[0]
+        bars = ohlcv_data.get(first_symbol, [])
+        symbols = list(ohlcv_data.keys())
+        
+        # 최소 데이터 포인트 (지표 계산에 필요)
+        min_bars = fields.get("period", 14) + 5
+        
+        for i, bar in enumerate(bars):
+            date = bar.get("date", "")
+            
+            # 충분한 데이터가 없으면 hold
+            if i < min_bars:
+                signals.append({
+                    "date": date,
+                    "signal": "hold",
+                    "symbols": [],
+                    "values": {},
+                })
+                continue
+            
+            # 해당 시점까지의 데이터만 추출 (미래 데이터 누출 방지)
+            context_data = {}
+            for symbol, symbol_bars in ohlcv_data.items():
+                context_data[symbol] = {
+                    "prices": [b["close"] for b in symbol_bars[:i+1]],
+                    "volumes": [b.get("volume", 0) for b in symbol_bars[:i+1]],
+                    "current": symbol_bars[i] if i < len(symbol_bars) else {},
+                }
+            
+            # 플러그인 호출
+            if plugin:
+                try:
+                    result = await plugin(symbols, context_data, fields)
+                    passed = result.get("passed_symbols", [])
+                    values = result.get("values", {})
+                    
+                    # 시그널 결정
+                    if passed:
+                        signal_type = "buy"  # 조건 충족 = 매수 신호
+                    else:
+                        signal_type = "hold"
+                    
+                    signals.append({
+                        "date": date,
+                        "signal": signal_type,
+                        "symbols": passed,
+                        "values": values,
+                    })
+                    
+                    # 값 저장
+                    for symbol, val in values.items():
+                        if symbol not in all_values:
+                            all_values[symbol] = []
+                        all_values[symbol].append({"date": date, **val})
+                    
+                except Exception as e:
+                    context.log("warning", f"Plugin error at {date}: {e}", node_id)
+                    signals.append({"date": date, "signal": "hold", "symbols": [], "values": {}})
+            else:
+                # 플러그인 없으면 데모용 신호 생성
+                import random
+                signal_type = random.choices(["buy", "hold", "sell"], weights=[0.1, 0.8, 0.1])[0]
+                signals.append({
+                    "date": date,
+                    "signal": signal_type,
+                    "symbols": symbols if signal_type == "buy" else [],
+                    "values": {},
+                })
+        
+        context.log(
+            "info",
+            f"Generated {len(signals)} signals, {sum(1 for s in signals if s['signal'] == 'buy')} buy signals",
+            node_id,
+        )
+        
+        return {
+            "signals": signals,
+            "result": any(s["signal"] == "buy" for s in signals),
+            "values_timeseries": all_values,
+        }
+
+
+class HistoricalDataNodeExecutor(NodeExecutorBase):
+    """
+    HistoricalDataNode executor - 과거 OHLCV 데이터 조회
+    
+    LS Finance Chart API를 사용하여 과거 차트 데이터를 조회합니다.
+    - 해외주식: g3103 (일/주/월봉)
+    - 해외선물: o3108 (일봉), o3103 (분봉)
+    """
+
+    # 거래소 코드 매핑 (해외주식)
+    EXCHANGE_CODES = {
+        "NASDAQ": "82",
+        "NYSE": "81",
+        "AMEX": "83",
+        # 기본값으로 NASDAQ 사용
+    }
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """과거 데이터 조회"""
+        
+        # 입력 symbols 가져오기
+        input_symbols = context.get_output(f"_input_{node_id}", "symbols")
+        symbols = input_symbols or config.get("symbols", [])
+        
+        # positions 데이터 가져오기 (market_code 포함)
+        positions = context.get_output(f"_input_{node_id}", "positions")
+        if not positions:
+            positions = context.get_output("account", "positions") or {}
+        
+        if not symbols:
+            context.log("warning", "No symbols provided", node_id)
+            return {"ohlcv_data": {}, "symbols": []}
+        
+        # 기간 설정
+        start_date = config.get("start_date", "")
+        end_date = config.get("end_date", "")
+        interval = config.get("interval", "1d")  # 1d, 1w, 1m, 1min 등
+        
+        # dynamic: 표현식 처리
+        if start_date.startswith("dynamic:"):
+            start_date = self._resolve_dynamic_date(start_date)
+        if end_date.startswith("dynamic:"):
+            end_date = self._resolve_dynamic_date(end_date)
+        
+        # BrokerNode에서 product 정보 가져오기
+        broker_connection = context.get_output("broker", "connection") or {}
+        product = broker_connection.get("product", "overseas_stock")
+        
+        context.log(
+            "info", 
+            f"Fetching historical data: {len(symbols)} symbols, {start_date}~{end_date}, {interval}", 
+            node_id
+        )
+        
+        # product별 분기
+        if product == "overseas_stock":
+            ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, positions)
+        elif product == "overseas_futureoption":
+            ohlcv_data = await self._fetch_overseas_futures(symbols, start_date, end_date, interval, context, node_id)
+        else:
+            context.log("warning", f"Unsupported product: {product}, using demo data", node_id)
+            ohlcv_data = self._generate_demo_data(symbols, start_date, end_date)
+        
+        return {
+            "ohlcv_data": ohlcv_data,
+            "symbols": list(ohlcv_data.keys()),
+            "period": f"{start_date}~{end_date}",
+            "interval": interval,
+        }
+
+    def _resolve_dynamic_date(self, expr: str) -> str:
+        """dynamic: 표현식 해석"""
+        from datetime import datetime, timedelta
+        
+        today = datetime.now()
+        
+        if "today()" in expr:
+            return today.strftime("%Y%m%d")
+        elif "months_ago(" in expr:
+            # dynamic:months_ago(3)
+            import re
+            match = re.search(r'months_ago\((\d+)\)', expr)
+            if match:
+                months = int(match.group(1))
+                result = today - timedelta(days=months * 30)
+                return result.strftime("%Y%m%d")
+        elif "days_ago(" in expr:
+            import re
+            match = re.search(r'days_ago\((\d+)\)', expr)
+            if match:
+                days = int(match.group(1))
+                result = today - timedelta(days=days)
+                return result.strftime("%Y%m%d")
+        
+        return expr.replace("dynamic:", "")
+
+    async def _fetch_overseas_stock(
+        self,
+        symbols: List[str],
+        start_date: str,
+        end_date: str,
+        interval: str,
+        context: ExecutionContext,
+        node_id: str,
+        positions: Dict[str, Any] = None,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """해외주식 차트 데이터 조회 (g3103)"""
+        
+        credential = context.get_credential()
+        if not credential:
+            context.log("warning", "No credential, using demo data", node_id)
+            return self._generate_demo_data(symbols, start_date, end_date)
+        
+        try:
+            from programgarden_finance import LS
+            from programgarden_finance.ls.overseas_stock.chart.g3103.blocks import G3103InBlock
+            
+            ls = LS.get_instance()
+            
+            if not ls.is_logged_in():
+                ls.login(
+                    appkey=credential.get("appkey"),
+                    appsecretkey=credential.get("appsecret"),
+                    paper_trading=credential.get("paper_trading", False),
+                )
+            
+            api = ls.overseas_stock()
+            
+            # interval → gubun 변환
+            gubun_map = {"1d": "2", "1w": "3", "1M": "4"}
+            gubun = gubun_map.get(interval, "2")
+            
+            ohlcv_data = {}
+            
+            for symbol in symbols:
+                try:
+                    # positions에서 market_code 가져오기 (LS증권 거래소 코드: 81=NYSE, 82=NASDAQ, 83=AMEX 등)
+                    exchcd = "82"  # 기본값 NASDAQ
+                    if positions and symbol in positions:
+                        pos_market_code = positions[symbol].get("market_code", "")
+                        if pos_market_code:
+                            exchcd = pos_market_code
+                    
+                    keysymbol = f"{exchcd}{symbol}"
+                    
+                    
+                    body = G3103InBlock(
+                        keysymbol=keysymbol,
+                        exchcd=exchcd,
+                        symbol=symbol,
+                        gubun=gubun,
+                        date=end_date.replace("-", ""),
+                    )
+                    
+                    # chart()는 메서드, req_async() 사용
+                    result = await api.chart().g3103(body=body).req_async()
+                    
+                    if result.block1:
+                        bars = []
+                        for item in result.block1:
+                            bars.append({
+                                "date": item.chedate,
+                                "open": float(item.open) if item.open else 0,
+                                "high": float(item.high) if item.high else 0,
+                                "low": float(item.low) if item.low else 0,
+                                "close": float(item.price) if item.price else 0,
+                                "volume": int(item.volume) if item.volume else 0,
+                            })
+                        # 날짜순 정렬 (오래된 것부터)
+                        bars.sort(key=lambda x: x["date"])
+                        ohlcv_data[symbol] = bars
+                        context.log("debug", f"Fetched {len(bars)} bars for {symbol}", node_id)
+                    else:
+                        context.log("warning", f"No data for {symbol}", node_id)
+                        ohlcv_data[symbol] = []
+                        
+                except Exception as e:
+                    context.log("warning", f"Error fetching {symbol}: {e}", node_id)
+                    ohlcv_data[symbol] = []
+            
+            return ohlcv_data
+            
+        except ImportError as e:
+            context.log("warning", f"Finance package not available: {e}, using demo data", node_id)
+            return self._generate_demo_data(symbols, start_date, end_date)
+        except Exception as e:
+            context.log("error", f"Error fetching data: {e}", node_id)
+            return self._generate_demo_data(symbols, start_date, end_date)
+
+    async def _fetch_overseas_futures(
+        self,
+        symbols: List[str],
+        start_date: str,
+        end_date: str,
+        interval: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """해외선물 차트 데이터 조회 (o3108 일봉 / o3103 분봉)"""
+        
+        # TODO: 해외선물 API 연동 구현
+        # - 일봉: o3108
+        # - 분봉: o3103
+        context.log("info", "Overseas futures chart API - using demo data for now", node_id)
+        return self._generate_demo_data(symbols, start_date, end_date)
+
+    def _generate_demo_data(
+        self,
+        symbols: List[str],
+        start_date: str,
+        end_date: str,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """데모용 OHLCV 데이터 생성"""
+        from datetime import datetime, timedelta
+        import random
+        
+        ohlcv_data = {}
+        
+        for symbol in symbols:
+            base_price = random.uniform(100, 500)
+            bars = []
+            
+            # 시작일부터 90일치 데이터 생성
+            try:
+                start = datetime.strptime(start_date.replace("-", ""), "%Y%m%d")
+            except:
+                start = datetime.now() - timedelta(days=90)
+            
+            for i in range(90):
+                date = start + timedelta(days=i)
+                change = random.uniform(-0.03, 0.035)
+                base_price *= (1 + change)
+                
+                bars.append({
+                    "date": date.strftime("%Y%m%d"),
+                    "open": round(base_price * 0.99, 2),
+                    "high": round(base_price * 1.02, 2),
+                    "low": round(base_price * 0.98, 2),
+                    "close": round(base_price, 2),
+                    "volume": random.randint(1000000, 10000000),
+                })
+            
+            ohlcv_data[symbol] = bars
+        
+        return ohlcv_data
+
+
+class BacktestEngineNodeExecutor(NodeExecutorBase):
+    """
+    BacktestEngineNode executor - 백테스트 시뮬레이션 엔진
+    
+    입력:
+    - ohlcv_data: 종목별 OHLCV 데이터
+    - signals: 종목별 매매 시그널 시계열
+    
+    출력:
+    - equity_curve: 일별 포트폴리오 가치
+    - trades: 거래 내역
+    - metrics: 성과 지표
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """백테스트 실행"""
+        
+        # 입력 데이터 가져오기
+        ohlcv_data = context.get_output(f"_input_{node_id}", "ohlcv_data")
+        if not ohlcv_data:
+            ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
+        
+        signals = context.get_output(f"_input_{node_id}", "signals")
+        if not signals:
+            # ConditionNode에서 온 시그널
+            signals = context.get_output(f"_input_{node_id}", "entry_signal") or []
+        
+        # 설정
+        initial_capital = config.get("initial_capital", 10000)
+        commission_rate = config.get("commission_rate", 0.001)
+        slippage = config.get("slippage", 0.0005)
+        
+        context.log(
+            "info", 
+            f"Running backtest: capital=${initial_capital}, commission={commission_rate*100}%", 
+            node_id
+        )
+        
+        # 시뮬레이션 실행
+        result = self._run_simulation(
+            ohlcv_data=ohlcv_data,
+            signals=signals,
+            initial_capital=initial_capital,
+            commission_rate=commission_rate,
+            slippage=slippage,
+        )
+        
+        # 성과 지표 계산
+        metrics = self._calculate_metrics(result["equity_curve"], initial_capital)
+        
+        context.log(
+            "info", 
+            f"Backtest complete: return={metrics['total_return']:.2f}%, trades={len(result['trades'])}", 
+            node_id
+        )
+        
+        return {
+            "equity_curve": result["equity_curve"],
+            "trades": result["trades"],
+            "metrics": metrics,
+            "summary": {
+                **metrics,
+                "initial_capital": initial_capital,
+                "final_value": result["equity_curve"][-1]["value"] if result["equity_curve"] else initial_capital,
+                "trade_count": len(result["trades"]),
+            },
+        }
+
+    def _run_simulation(
+        self,
+        ohlcv_data: Dict[str, List[Dict]],
+        signals: List[Dict],
+        initial_capital: float,
+        commission_rate: float,
+        slippage: float,
+    ) -> Dict[str, Any]:
+        """백테스트 시뮬레이션 실행"""
+        
+        equity_curve = []
+        trades = []
+        
+        cash = initial_capital
+        positions = {}  # {symbol: {"qty": 10, "avg_price": 100}}
+        
+        # 모든 날짜 수집 (첫 번째 종목 기준)
+        if not ohlcv_data:
+            return {"equity_curve": [], "trades": []}
+        
+        first_symbol = list(ohlcv_data.keys())[0]
+        dates = [bar["date"] for bar in ohlcv_data.get(first_symbol, [])]
+        
+        # 시그널을 날짜별로 인덱싱
+        signal_by_date = {}
+        if isinstance(signals, list):
+            for sig in signals:
+                date = sig.get("date", "")
+                if date not in signal_by_date:
+                    signal_by_date[date] = []
+                signal_by_date[date].append(sig)
+        
+        # ========================================
+        # Buy & Hold 전략: signals가 없으면 첫날 전종목 매수
+        # ========================================
+        use_buy_and_hold = not signals or len(signals) == 0
+        buy_and_hold_executed = False
+        
+        # 날짜별 시뮬레이션
+        for date in dates:
+            # 현재가 조회
+            prices = {}
+            for symbol, bars in ohlcv_data.items():
+                for bar in bars:
+                    if bar["date"] == date:
+                        prices[symbol] = bar["close"]
+                        break
+            
+            # ========================================
+            # Buy & Hold: 첫날 전종목 균등 매수
+            # ========================================
+            if use_buy_and_hold and not buy_and_hold_executed and prices:
+                symbols = list(prices.keys())
+                per_symbol = initial_capital / len(symbols)
+                
+                for symbol in symbols:
+                    price = prices.get(symbol, 0)
+                    if price > 0:
+                        qty = per_symbol / (price * (1 + slippage))
+                        cost = qty * price * (1 + commission_rate)
+                        
+                        cash -= cost
+                        positions[symbol] = {"qty": qty, "avg_price": price}
+                        
+                        trades.append({
+                            "date": date,
+                            "symbol": symbol,
+                            "action": "buy",
+                            "price": price,
+                            "qty": qty,
+                            "cost": cost,
+                            "note": "buy_and_hold",
+                        })
+                
+                buy_and_hold_executed = True
+            
+            # 시그널 처리 (Buy & Hold가 아닐 때)
+            if not use_buy_and_hold:
+                day_signals = signal_by_date.get(date, [])
+                for sig in day_signals:
+                    symbol = sig.get("symbol", "")
+                    action = sig.get("signal", sig.get("action", "hold"))
+                    price = prices.get(symbol, 0)
+                    
+                    if action == "buy" and price > 0 and cash > 0:
+                        # 매수: 자본의 10%씩
+                        amount = cash * 0.1
+                        qty = amount / (price * (1 + slippage))
+                        cost = qty * price * (1 + commission_rate)
+                        
+                        if cost <= cash:
+                            cash -= cost
+                            if symbol not in positions:
+                                positions[symbol] = {"qty": 0, "avg_price": 0}
+                            
+                            # 평균 단가 계산
+                            old_qty = positions[symbol]["qty"]
+                            old_avg = positions[symbol]["avg_price"]
+                            new_qty = old_qty + qty
+                            new_avg = (old_qty * old_avg + qty * price) / new_qty if new_qty > 0 else price
+                            
+                            positions[symbol] = {"qty": new_qty, "avg_price": new_avg}
+                            
+                            trades.append({
+                                "date": date,
+                                "symbol": symbol,
+                                "action": "buy",
+                                "price": price,
+                                "qty": qty,
+                                "cost": cost,
+                            })
+                    
+                    elif action == "sell" and symbol in positions and positions[symbol]["qty"] > 0:
+                        # 매도: 전량 매도
+                        qty = positions[symbol]["qty"]
+                        proceeds = qty * price * (1 - commission_rate)
+                        pnl = proceeds - qty * positions[symbol]["avg_price"]
+                        
+                        cash += proceeds
+                        positions[symbol] = {"qty": 0, "avg_price": 0}
+                        
+                        trades.append({
+                            "date": date,
+                            "symbol": symbol,
+                            "action": "sell",
+                            "price": price,
+                            "qty": qty,
+                            "proceeds": proceeds,
+                            "pnl": pnl,
+                        })
+            
+            # 포트폴리오 가치 계산
+            portfolio_value = cash
+            for symbol, pos in positions.items():
+                if pos["qty"] > 0:
+                    price = prices.get(symbol, pos["avg_price"])
+                    portfolio_value += pos["qty"] * price
+            
+            equity_curve.append({
+                "date": date,
+                "value": round(portfolio_value, 2),
+                "cash": round(cash, 2),
+            })
+        
+        return {"equity_curve": equity_curve, "trades": trades}
+
+    def _calculate_metrics(
+        self,
+        equity_curve: List[Dict],
+        initial_capital: float,
+    ) -> Dict[str, Any]:
+        """성과 지표 계산"""
+        
+        if not equity_curve:
+            return {
+                "total_return": 0,
+                "max_drawdown": 0,
+                "sharpe_ratio": 0,
+                "win_rate": 0,
+            }
+        
+        values = [e["value"] for e in equity_curve]
+        final_value = values[-1]
+        
+        # 총 수익률
+        total_return = (final_value - initial_capital) / initial_capital * 100
+        
+        # 최대 낙폭 (MDD)
+        peak = values[0]
+        max_dd = 0
+        for v in values:
+            if v > peak:
+                peak = v
+            dd = (peak - v) / peak * 100
+            if dd > max_dd:
+                max_dd = dd
+        
+        # 일간 수익률
+        daily_returns = []
+        for i in range(1, len(values)):
+            if values[i-1] > 0:
+                daily_returns.append((values[i] - values[i-1]) / values[i-1])
+        
+        # 샤프 비율 (연환산, 무위험수익률 0 가정)
+        import math
+        if daily_returns:
+            avg_return = sum(daily_returns) / len(daily_returns)
+            std_return = math.sqrt(sum((r - avg_return) ** 2 for r in daily_returns) / len(daily_returns))
+            sharpe = (avg_return / std_return) * math.sqrt(252) if std_return > 0 else 0
+        else:
+            sharpe = 0
+        
+        return {
+            "total_return": round(total_return, 2),
+            "max_drawdown": round(max_dd, 2),
+            "sharpe_ratio": round(sharpe, 2),
+            "final_value": round(final_value, 2),
         }
 
 
@@ -530,12 +1737,15 @@ class WorkflowExecutor:
             "ScheduleNode": ScheduleNodeExecutor(),
             "WatchlistNode": WatchlistNodeExecutor(),
             "BrokerNode": BrokerNodeExecutor(),
-            "RealAccountNode": RealAccountNodeExecutor(),
+            "AccountNode": AccountNodeExecutor(),  # 1회성 REST API 조회
+            "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
             "RealMarketDataNode": RealMarketDataNodeExecutor(),
             "CustomPnLNode": CustomPnLNodeExecutor(),
             "DisplayNode": DisplayNodeExecutor(),
             "ConditionNode": ConditionNodeExecutor(),
-            # TODO: Implement remaining node executors
+            # Backtest nodes
+            "HistoricalDataNode": HistoricalDataNodeExecutor(),
+            "BacktestEngineNode": BacktestEngineNodeExecutor(),
         }
 
     def validate(self, definition: Dict[str, Any]) -> ValidationResult:
@@ -567,6 +1777,7 @@ class WorkflowExecutor:
         context_params: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
         job_id: Optional[str] = None,
+        listeners: Optional[List[ExecutionListener]] = None,
     ) -> "WorkflowJob":
         """
         Execute workflow
@@ -576,6 +1787,7 @@ class WorkflowExecutor:
             context_params: Runtime parameters (symbols, dry_run, etc.)
             secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
             job_id: Job ID (auto-generated if not provided)
+            listeners: List of ExecutionListener instances for state callbacks
         """
         # Compile
         resolved, validation = self.compile(definition, context_params)
@@ -590,6 +1802,10 @@ class WorkflowExecutor:
             context_params=context_params or {},
             secrets=secrets,
         )
+        
+        # Set listeners (Option A: inject at creation)
+        if listeners:
+            context.set_listeners(listeners)
 
         job = WorkflowJob(
             job_id=job_id,
@@ -653,6 +1869,12 @@ class WorkflowJob:
     Workflow execution instance
 
     Stateful: Persists position/balance state
+    
+    Execution modes based on workflow structure:
+    - No ScheduleNode, stay_connected=False: One-shot execution
+    - No ScheduleNode, stay_connected=True: Continuous until stop()
+    - With ScheduleNode, stay_connected=False: Repeat on schedule, disconnect between
+    - With ScheduleNode, stay_connected=True: Repeat on schedule, realtime stays alive
     """
 
     def __init__(
@@ -678,57 +1900,221 @@ class WorkflowJob:
             "orders_placed": 0,
             "orders_filled": 0,
             "errors_count": 0,
+            "flow_executions": 0,
+            "realtime_updates": 0,
         }
 
         # Execution task
         self._task: Optional[asyncio.Task] = None
+        
+        # Precompute node categories for optimization
+        self._has_schedule_node = self._check_has_schedule_node()
+        self._stay_connected_nodes = self._find_stay_connected_nodes()
+
+    # === Listener Management ===
+
+    def add_listener(self, listener: ExecutionListener) -> "WorkflowJob":
+        """
+        Add a listener (supports chaining).
+        
+        Example:
+            job.add_listener(listener1).add_listener(listener2)
+        
+        Args:
+            listener: ExecutionListener implementation
+        
+        Returns:
+            self (for chaining)
+        """
+        self.context.add_listener(listener)
+        return self
+
+    def remove_listener(self, listener: ExecutionListener) -> "WorkflowJob":
+        """
+        Remove a listener (supports chaining).
+        
+        Args:
+            listener: Listener to remove
+        
+        Returns:
+            self (for chaining)
+        """
+        self.context.remove_listener(listener)
+        return self
+
+    def _check_has_schedule_node(self) -> bool:
+        """Check if workflow has any ScheduleNode"""
+        for node in self.workflow.nodes.values():
+            if node.node_type == "ScheduleNode":
+                return True
+        return False
+
+    def _find_stay_connected_nodes(self) -> List[str]:
+        """Find all nodes with stay_connected=True or persistent nodes"""
+        result = []
+        for node_id, node in self.workflow.nodes.items():
+            # 실시간 노드 (stay_connected 설정)
+            if node.node_type in ("RealAccountNode", "RealMarketDataNode"):
+                if node.config.get("stay_connected", True):
+                    result.append(node_id)
+            # 영속 노드 (백그라운드 태스크를 등록하는 노드)
+            elif node.node_type == "ScheduleNode":
+                if node.config.get("enabled", True):
+                    result.append(node_id)
+        return result
 
     async def start(self) -> None:
         """Start execution"""
         self.status = "running"
         self.started_at = datetime.utcnow()
         self.context.start()
+        
+        # 🆕 Job 시작 알림
+        await self.context.notify_job_state("running", self.stats)
 
         # Async execution
         self._task = asyncio.create_task(self._run())
 
     async def _run(self) -> None:
-        """Workflow execution loop"""
+        """
+        Workflow execution loop
+        
+        Flow:
+        1. Execute main flow (all nodes in topological order)
+        2. Cleanup stay_connected=False nodes (flow-end cleanup)
+        3. If stay_connected=True nodes exist:
+           - Enter event loop
+           - Process realtime updates
+           - Re-execute triggered nodes
+        4. Cleanup on stop
+        """
         try:
-            # Execute nodes in topological order
-            for node_id in self.workflow.execution_order:
-                if not self.context.is_running:
-                    break
+            # Phase 1: Execute main flow
+            await self._execute_main_flow()
+            self.stats["flow_executions"] += 1
+            
+            # Phase 1.5: Cleanup stay_connected=False nodes
+            await self.context.cleanup_flow_end_nodes()
+            
+            # Phase 2: Event loop if stay_connected OR schedule nodes exist
+            has_event_sources = (
+                bool(self._stay_connected_nodes) or 
+                self._has_schedule_node or
+                bool(self.context._persistent_tasks)  # Any persistent background tasks
+            )
+            if has_event_sources and self.context.is_running:
+                logger.info(
+                    f"Entering event loop "
+                    f"(stay_connected: {self._stay_connected_nodes}, "
+                    f"schedule: {self._has_schedule_node}, "
+                    f"persistent_tasks: {len(self.context._persistent_tasks)})"
+                )
+                await self._event_loop()
+            
+            # Phase 3: Mark completed if no failures
+            if not self.context.is_failed:
+                self.status = "completed"
+            else:
+                self.status = "failed"
+            
+            self.completed_at = datetime.utcnow()
+            
+            # 🆕 Job 완료 알림
+            await self.context.notify_job_state(self.status, self.stats)
 
-                # Wait if paused
-                while self.context.is_paused:
-                    await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            self.status = "cancelled"
+            logger.info(f"Job {self.job_id} cancelled")
+            print(f"⚠️ Job {self.job_id} cancelled")
+            await self.context.notify_job_state("cancelled", self.stats)
+        except Exception as e:
+            self.status = "failed"
+            self.stats["errors_count"] += 1
+            self.context.log("error", str(e))
+            logger.exception(f"Job {self.job_id} failed: {e}")
+            print(f"❌ Job {self.job_id} failed: {e}")
+            import traceback
+            traceback.print_exc()
+            await self.context.notify_job_state("failed", self.stats)
+        finally:
+            # Cleanup persistent nodes
+            await self.context.cleanup_persistent_nodes()
 
-                node = self.workflow.nodes.get(node_id)
-                if not node:
-                    continue
+    async def _execute_main_flow(self) -> None:
+        """Execute all nodes in topological order with state notifications"""
+        print(f"🔄 Executing main flow: {self.workflow.execution_order}")
+        
+        for node_id in self.workflow.execution_order:
+            if not self.context.is_running:
+                break
 
-                # Connect inputs (get values from edges)
-                for edge in self.workflow.edges:
-                    if edge.to_node_id == node_id:
-                        value = self.context.get_output(
-                            edge.from_node_id,
-                            edge.from_port,
+            # Wait if paused
+            while self.context.is_paused:
+                await asyncio.sleep(0.1)
+
+            node = self.workflow.nodes.get(node_id)
+            if not node:
+                continue
+
+            print(f"  ▶ Executing node: {node_id} ({node.node_type})")
+            
+            # 🆕 노드 실행 시작 알림
+            start_time = datetime.utcnow()
+            await self.context.notify_node_state(
+                node_id=node_id,
+                node_type=node.node_type,
+                state=NodeState.RUNNING,
+            )
+
+            # Prepare node config with trigger info from edges
+            config = dict(node.config)
+            trigger_nodes = self._find_trigger_nodes(node_id)
+            if trigger_nodes:
+                config["_trigger_on_update_nodes"] = trigger_nodes
+
+            # Connect inputs (get values from edges) + 🆕 엣지 알림
+            for edge in self.workflow.edges:
+                if edge.to_node_id == node_id:
+                    value = self.context.get_output(
+                        edge.from_node_id,
+                        edge.from_port,
+                    )
+                    print(f"    📦 Edge: {edge.from_node_id}.{edge.from_port} → {node_id}.{edge.to_port} = {value is not None}", flush=True)
+                    if value is not None:
+                        from_port = edge.from_port or "output"
+                        input_port = edge.to_port or "input"
+                        
+                        # 🆕 엣지 전송 시작 알림
+                        await self.context.notify_edge_state(
+                            from_node_id=edge.from_node_id,
+                            from_port=from_port,
+                            to_node_id=node_id,
+                            to_port=input_port,
+                            state=EdgeState.TRANSMITTING,
+                            data=value,
                         )
-                        if value is not None:
-                            # Connect input value to node
-                            input_port = edge.to_port or "input"
-                            self.context.set_output(
-                                f"_input_{node_id}",
-                                input_port,
-                                value,
-                            )
+                        
+                        self.context.set_output(
+                            f"_input_{node_id}",
+                            input_port,
+                            value,
+                        )
+                        
+                        # 🆕 엣지 전송 완료 알림
+                        await self.context.notify_edge_state(
+                            from_node_id=edge.from_node_id,
+                            from_port=from_port,
+                            to_node_id=node_id,
+                            to_port=input_port,
+                            state=EdgeState.TRANSMITTED,
+                        )
 
-                # Execute node
+            # Execute node
+            try:
                 outputs = await self.executor.execute_node(
                     node_id=node_id,
                     node_type=node.node_type,
-                    config=node.config,
+                    config=config,
                     context=self.context,
                     plugin=node.plugin,
                     fields=node.fields,
@@ -737,14 +2123,112 @@ class WorkflowJob:
                 # Store outputs
                 for port_name, value in outputs.items():
                     self.context.set_output(node_id, port_name, value)
+                
+                # 🆕 노드 완료 알림
+                # stay_connected 노드는 RUNNING 상태 유지 (계속 실시간 업데이트)
+                duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+                is_stay_connected = node_id in self._stay_connected_nodes
+                
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.RUNNING if is_stay_connected else NodeState.COMPLETED,
+                    outputs=outputs,
+                    duration_ms=duration_ms,
+                )
+                
+            except Exception as e:
+                # 🆕 노드 실패 알림
+                duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.FAILED,
+                    error=str(e),
+                    duration_ms=duration_ms,
+                )
+                self.stats["errors_count"] += 1
+                self.context.log("error", f"Node {node_id} failed: {e}", node_id)
+                raise
 
-            self.status = "completed"
-            self.completed_at = datetime.utcnow()
+    def _find_trigger_nodes(self, source_node_id: str) -> List[str]:
+        """Find nodes that should be triggered on realtime update"""
+        trigger_nodes = []
+        for edge in self.workflow.edges:
+            if edge.from_node_id == source_node_id:
+                # Check if edge has trigger: "on_update" attribute
+                # (This would be set in the DSL edge definition)
+                if hasattr(edge, 'trigger') and edge.trigger == "on_update":
+                    trigger_nodes.append(edge.to_node_id)
+        return trigger_nodes
 
-        except Exception as e:
-            self.status = "failed"
-            self.stats["errors_count"] += 1
-            self.context.log("error", str(e))
+    async def _event_loop(self) -> None:
+        """
+        Event loop for realtime updates
+        
+        Waits for events and processes them:
+        - realtime_update: Re-execute triggered nodes (e.g., risk check)
+        - schedule_tick: Re-execute schedule branch
+        """
+        logger.info("Starting event loop")
+        
+        while self.context.is_running and not self.context.is_failed:
+            # Wait for event with timeout (allows checking is_running periodically)
+            event = await self.context.wait_for_event(timeout=1.0)
+            
+            if event is None:
+                continue
+            
+            # Wait if paused
+            while self.context.is_paused:
+                await asyncio.sleep(0.1)
+            
+            if event.type == "realtime_update":
+                self.stats["realtime_updates"] += 1
+                await self._handle_realtime_update(event)
+                
+            elif event.type == "schedule_tick":
+                self.stats["flow_executions"] += 1
+                await self._execute_main_flow()
+        
+        logger.info("Event loop ended")
+
+    async def _handle_realtime_update(self, event: WorkflowEvent) -> None:
+        """
+        Handle realtime update event
+        
+        Re-executes nodes specified in trigger_nodes (from edge trigger: "on_update")
+        """
+        if not event.trigger_nodes:
+            return
+        
+        logger.debug(f"Realtime update from {event.source_node_id}, triggering: {event.trigger_nodes}")
+        
+        for node_id in event.trigger_nodes:
+            if not self.context.is_running:
+                break
+            
+            node = self.workflow.nodes.get(node_id)
+            if not node:
+                continue
+            
+            # Re-execute the triggered node
+            try:
+                outputs = await self.executor.execute_node(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    config=node.config,
+                    context=self.context,
+                    plugin=node.plugin,
+                    fields=node.fields,
+                )
+                
+                for port_name, value in outputs.items():
+                    self.context.set_output(node_id, port_name, value)
+                    
+            except Exception as e:
+                self.context.log("error", f"Error in triggered node {node_id}: {e}", node_id)
+                self.stats["errors_count"] += 1
 
     async def pause(self) -> None:
         """Pause execution"""
@@ -756,12 +2240,33 @@ class WorkflowJob:
         self.status = "running"
         self.context.resume()
 
+    async def stop(self) -> None:
+        """Stop execution gracefully"""
+        logger.info(f"Stopping job {self.job_id}")
+        self.status = "stopping"
+        self.context.stop()
+        
+        # Wait for task to finish cleanup
+        if self._task and not self._task.done():
+            try:
+                await asyncio.wait_for(self._task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"Job {self.job_id} stop timeout, cancelling")
+                self._task.cancel()
+
     async def cancel(self) -> None:
-        """Cancel execution"""
+        """Cancel execution immediately"""
         self.status = "cancelled"
         self.context.stop()
         if self._task:
             self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        
+        # Cleanup
+        await self.context.cleanup_persistent_nodes()
 
     def get_state(self) -> Dict[str, Any]:
         """Get state snapshot"""
@@ -770,6 +2275,9 @@ class WorkflowJob:
             "workflow_id": self.workflow.workflow_id,
             "status": self.status,
             "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "stats": self.stats,
+            "has_schedule": self._has_schedule_node,
+            "stay_connected_nodes": self._stay_connected_nodes,
             "logs": self.context.get_logs(limit=50),
         }

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProgramGarden Flow Visualizer</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🌱 ProgramGarden Flow Visualizer</h1>
+            <div class="controls">
+                <button id="btn-run" class="btn btn-primary">▶ Run</button>
+                <button id="btn-stop" class="btn btn-danger" disabled>⏹ Stop</button>
+                <span id="job-status" class="status-badge status-idle">IDLE</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Flow Canvas -->
+            <section class="flow-panel">
+                <div class="flow-header">
+                    <h2>Workflow Flow</h2>
+                    <div class="zoom-controls">
+                        <button id="btn-zoom-out" class="btn btn-small">−</button>
+                        <span id="zoom-level">100%</span>
+                        <button id="btn-zoom-in" class="btn btn-small">+</button>
+                        <button id="btn-zoom-fit" class="btn btn-small">Fit</button>
+                    </div>
+                </div>
+                <div id="flow-canvas" class="flow-canvas">
+                    <div id="flow-viewport" class="flow-viewport">
+                        <!-- SVG for edges -->
+                        <svg id="edges-svg" class="edges-layer"></svg>
+                        <!-- Nodes rendered here -->
+                        <div id="nodes-container" class="nodes-container"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Log Panel -->
+            <section class="log-panel">
+                <div class="log-header">
+                    <h2>Execution Log</h2>
+                    <button id="btn-clear-log" class="btn btn-small">Clear</button>
+                </div>
+                <div id="log-container" class="log-container">
+                    <div class="log-entry log-info">
+                        Ready. Click "Run" to start workflow execution.
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span id="connection-status" class="connection-status disconnected">
+                ● Disconnected
+            </span>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

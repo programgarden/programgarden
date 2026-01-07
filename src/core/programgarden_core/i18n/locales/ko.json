@@ -77,11 +77,8 @@
   "nodes.HistoricalDataNode.name": "과거 데이터",
   "nodes.HistoricalDataNode.description": "백테스트용 OHLCV 과거 데이터.",
   
-  "nodes.BacktestExecutorNode.name": "백테스트 실행",
-  "nodes.BacktestExecutorNode.description": "시그널과 과거 데이터로 백테스트 실행.",
-  
-  "nodes.BacktestResultNode.name": "백테스트 결과",
-  "nodes.BacktestResultNode.description": "성과 지표 계산 (수익률, MDD, 샤프).",
+"nodes.BacktestEngineNode.name": "백테스트 엔진",
+  "nodes.BacktestEngineNode.description": "시그널과 과거 데이터로 백테스트 실행 및 성과 지표 계산.",
   
   "nodes.PerformanceConditionNode.name": "성과 조건",
   "nodes.PerformanceConditionNode.description": "성과 기준 충족 여부 검증.",

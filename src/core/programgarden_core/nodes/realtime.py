@@ -30,6 +30,12 @@ class RealMarketDataNode(BaseNode):
     description: str = "i18n:nodes.RealMarketDataNode.description"
 
     # RealMarketDataNode specific config
+    stay_connected: bool = Field(
+        default=True,
+        description="Keep WebSocket connection alive between flow executions. "
+        "If True, maintains realtime stream until explicit stop(). "
+        "If False, disconnects after single data fetch.",
+    )
     fields: List[str] = Field(
         default=["price", "volume"],
         description="Fields to receive (price, volume, bid, ask, etc.)",
@@ -62,8 +68,9 @@ class RealAccountNode(BaseNode):
     Provides holdings, balance, open orders, and realtime P&L.
     Uses StockAccountTracker internally for realtime return calculation.
 
-    - Syncs with broker data via REST API every minute
+    - Syncs with broker data via REST API every sync_interval_sec
     - Recalculates returns immediately on WebSocket tick
+    - Automatically refreshes token before reconnection attempts
     """
 
     type: Literal["RealAccountNode"] = "RealAccountNode"
@@ -71,6 +78,13 @@ class RealAccountNode(BaseNode):
     description: str = "i18n:nodes.RealAccountNode.description"
 
     # RealAccountNode specific config
+    stay_connected: bool = Field(
+        default=True,
+        description="Keep WebSocket connection alive between flow executions. "
+        "If True with ScheduleNode: stays alive during schedule wait. "
+        "If True without ScheduleNode: stays alive until explicit stop(). "
+        "If False: disconnects after each flow execution.",
+    )
     sync_interval_sec: int = Field(
         default=60, description="REST API sync interval (seconds)"
     )

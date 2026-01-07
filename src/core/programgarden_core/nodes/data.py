@@ -3,7 +3,8 @@ ProgramGarden Core - Data Nodes
 
 Data query nodes (REST API one-time):
 - MarketDataNode: REST API market data query
-- AccountNode: REST API account query
+
+계좌 조회는 account/AccountNode 참조
 """
 
 from typing import Optional, List, Literal
@@ -58,50 +59,6 @@ class MarketDataNode(BaseNode):
         OutputPort(name="price", type="market_data", description="i18n:ports.price_data"),
         OutputPort(name="volume", type="market_data", description="i18n:ports.volume_data"),
         OutputPort(name="ohlcv", type="ohlcv_data", description="i18n:ports.ohlcv_data"),
-    ]
-
-
-class AccountNode(BaseNode):
-    """
-    REST API one-time account query node
-
-    Fetches account information at a specific point in time via REST API
-    """
-
-    type: Literal["AccountNode"] = "AccountNode"
-    category: NodeCategory = NodeCategory.DATA
-    description: str = "i18n:nodes.AccountNode.description"
-
-    _inputs: List[InputPort] = [
-        InputPort(
-            name="connection",
-            type="broker_connection",
-            description="i18n:ports.connection",
-        ),
-        InputPort(
-            name="trigger",
-            type="signal",
-            description="i18n:ports.trigger",
-            required=False,
-        ),
-    ]
-    _outputs: List[OutputPort] = [
-        OutputPort(
-            name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols"
-        ),
-        OutputPort(
-            name="balance",
-            type="balance_data",
-            description="i18n:ports.balance",
-        ),
-        OutputPort(
-            name="open_orders", type="order_list", description="i18n:ports.open_orders"
-        ),
-        OutputPort(
-            name="positions",
-            type="position_data",
-            description="i18n:ports.positions",
-        ),
     ]
 
 

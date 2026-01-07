@@ -77,11 +77,8 @@
   "nodes.HistoricalDataNode.name": "Historical Data",
   "nodes.HistoricalDataNode.description": "Historical OHLCV data for backtesting.",
   
-  "nodes.BacktestExecutorNode.name": "Backtest Executor",
-  "nodes.BacktestExecutorNode.description": "Run backtest with signals and historical data.",
-  
-  "nodes.BacktestResultNode.name": "Backtest Result",
-  "nodes.BacktestResultNode.description": "Calculate performance metrics (return, MDD, Sharpe).",
+"nodes.BacktestEngineNode.name": "Backtest Engine",
+  "nodes.BacktestEngineNode.description": "Run backtest with signals and historical data, calculate performance metrics.",
   
   "nodes.PerformanceConditionNode.name": "Performance Condition",
   "nodes.PerformanceConditionNode.description": "Validate performance meets criteria.",

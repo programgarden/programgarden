@@ -66,7 +66,7 @@ class NodeTypeRegistry:
             EventHandlerNode, ErrorHandlerNode, AlertNode,
             DisplayNode,
             GroupNode,
-            BacktestExecutorNode, BacktestResultNode,
+            BacktestEngineNode,
             DeployNode, TradingHaltNode, JobControlNode,
             CustomPnLNode,
         )
@@ -95,7 +95,7 @@ class NodeTypeRegistry:
             # Group
             GroupNode,
             # Backtest
-            BacktestExecutorNode, BacktestResultNode,
+            BacktestEngineNode,
             # Job
             DeployNode, TradingHaltNode, JobControlNode,
             # Calculation
