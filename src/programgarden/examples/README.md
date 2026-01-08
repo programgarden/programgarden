@@ -1,87 +1,79 @@
 # ProgramGarden Examples
 
-노드 기반 DSL 워크플로우 예제 모음 (30개)
+노드 기반 DSL 워크플로우 예제 모음 (36개)
 
-## 카테고리
-
-### 🟢 Basic Examples (01-05)
-| # | 파일 | 설명 |
-|---|------|------|
-| 01 | [01_start_only.py](01_start_only.py) | StartNode만 있는 최소 워크플로우 |
-| 02 | [02_start_schedule.py](02_start_schedule.py) | Start → Schedule 연결 |
-| 03 | [03_start_schedule_trading_hours.py](03_start_schedule_trading_hours.py) | 거래시간 필터 추가 |
-| 04 | [04_broker_connection.py](04_broker_connection.py) | 증권사 연결 (LS) |
-| 05 | [05_watchlist_realmarket.py](05_watchlist_realmarket.py) | 관심종목 + 실시간 시세 |
-
-### 🔵 Condition Examples (06-10)
-| # | 파일 | 설명 |
-|---|------|------|
-| 06 | [06_single_condition.py](06_single_condition.py) | RSI < 30 단일 조건 |
-| 07 | [07_multi_condition.py](07_multi_condition.py) | RSI AND MACD 복합 조건 |
-| 08 | [08_weighted_condition.py](08_weighted_condition.py) | 가중치 조합 (40%+30%+30%) |
-| 09 | [09_at_least_condition.py](09_at_least_condition.py) | 3개 중 2개 이상 만족 |
-| 10 | [10_nested_logic.py](10_nested_logic.py) | (A AND B) OR (C AND D) 중첩 |
-
-### 🟠 Order Examples (11-15)
-| # | 파일 | 설명 |
-|---|------|------|
-| 11 | [11_market_order.py](11_market_order.py) | 시장가 매수 |
-| 12 | [12_limit_order.py](12_limit_order.py) | 지정가 매수 (현재가 -1%) |
-| 13 | [13_position_sizing.py](13_position_sizing.py) | 1% 리스크 기반 수량 계산 |
-| 14 | [14_modify_order.py](14_modify_order.py) | 가격 추적 정정 |
-| 15 | [15_cancel_order.py](15_cancel_order.py) | 30분 초과 주문 취소 |
-
-### 🟣 Integration Examples (16-22)
-| # | 파일 | 설명 |
-|---|------|------|
-| 16 | [16_buy_sell_basic.py](16_buy_sell_basic.py) | 기본 매수/매도 흐름 |
-| 17 | [17_screener_to_order.py](17_screener_to_order.py) | 스크리너 → 주문 |
-| 18 | [18_event_handler.py](18_event_handler.py) | 체결 이벤트 알림 |
-| 19 | [19_error_handler.py](19_error_handler.py) | 에러 재시도 및 알림 |
-| 20 | [20_risk_guard.py](20_risk_guard.py) | 일일 손실 제한 |
-| 21 | [21_group_node.py](21_group_node.py) | 전략 그룹화 |
-| 22 | [22_trading_hours.py](22_trading_hours.py) | 정규장 시간 필터 |
-
-### 🔴 24H Automation Examples (23-27)
-| # | 파일 | 설명 |
-|---|------|------|
-| 23 | [23_pause_resume.py](23_pause_resume.py) | 일시정지/재개 지원 |
-| 24 | [24_state_snapshot.py](24_state_snapshot.py) | 상태 스냅샷 및 복구 |
-| 25 | [25_multi_market.py](25_multi_market.py) | 주식 + 선물 동시 운영 |
-| 26 | [26_long_running.py](26_long_running.py) | 24시간 연속 + 일별 리포트 |
-| 27 | [27_24h_full_autonomous.py](27_24h_full_autonomous.py) | 완전 자율 트레이딩 (22개 노드) |
-
-### 🟡 Backtest Examples (28-30)
-| # | 파일 | 설명 |
-|---|------|------|
-| 28 | [28_backtest_simple.py](28_backtest_simple.py) | 단순 RSI 백테스트 |
-| 29 | [29_backtest_with_deploy.py](29_backtest_with_deploy.py) | 백테스트 → 성과 조건 → 자동 배포 |
-| 30 | [30_scheduled_backtest_job_control.py](30_scheduled_backtest_job_control.py) | 주간 백테스트 → Job 자동 제어 |
+> 모든 예제는 `workflow_editor/workflows/`로 이전되었습니다.
 
 ## 사용법
 
 ```python
-from programgarden import ProgramGarden
+from examples.workflow_editor.workflows import (
+    get_all_categories,
+    get_workflows_by_category,
+    get_all_workflows,
+    get_workflow_by_id,
+)
 
-# 클라이언트 생성
-pg = ProgramGarden()
+# 카테고리 목록
+categories = get_all_categories()
 
-# 예제 워크플로우 로드
-from programgarden.examples import get_example
-workflow = get_example("16_buy_sell_basic")
+# 카테고리별 워크플로우
+futures_workflows = get_workflows_by_category("futures")
 
-# 검증
-result = pg.validate(workflow)
-print(f"Valid: {result.is_valid}")
+# 전체 워크플로우 (36개)
+all_workflows = get_all_workflows()
 
-# 실행
-job = await pg.start(workflow)
-print(f"Job ID: {job.id}")
+# ID로 조회
+workflow = get_workflow_by_id("futures-01")
 ```
 
-## 노드 타입 분포
+## 카테고리 (8개)
 
-| 카테고리 | 노드 타입 | 예제 |
+| 카테고리 | 아이콘 | 워크플로우 | 설명 |
+|----------|--------|------------|------|
+| infra | 🏗️ | 5개 | 시작, 스케줄, 거래시간, 브로커 연결, 실시간 데이터 |
+| condition | ⚡ | 5개 | 단일 조건, 다중 조건, 가중치, at_least, 중첩 논리 |
+| order | 🛒 | 6개 | 시장가, 지정가, 포지션사이징, 정정, 취소, 매수매도 |
+| advanced | 🔧 | 5개 | 스크리너, 이벤트핸들러, 에러핸들러, 리스크가드, 그룹노드 |
+| operation | ⚙️ | 6개 | 거래시간, 일시정지, 스냅샷, 다중시장, 장시간실행, 24h자동 |
+| backtest | 📈 | 3개 | 단순백테스트, 자동배포, 주간스케줄 |
+| **futures** | 🔥 | 3개 | **해외선물** 브로커, 잔고조회, 주문 |
+| custom | ✨ | 3개 | 백테스트비교, 스파이더차트, 포트폴리오 |
+
+## 워크플로우 에디터 실행
+
+```bash
+cd src/programgarden/examples/workflow_editor
+poetry run python server.py
+```
+
+브라우저에서 http://localhost:8000 접속
+
+## API 엔드포인트
+
+| 엔드포인트 | 설명 |
+|------------|------|
+| `GET /categories` | 카테고리 목록 |
+| `GET /categories/{id}/workflows` | 카테고리별 워크플로우 |
+| `GET /workflows` | 전체 워크플로우 (카테고리 정보 포함) |
+| `GET /workflow/{id}` | 특정 워크플로우 정의 |
+| `POST /run/{id}` | 워크플로우 실행 |
+| `POST /stop` | 실행 중지 |
+| `GET /events` | SSE 이벤트 스트림 |
+
+## 해외선물 (overseas_futures) 지원
+
+해외선물은 모의투자를 지원합니다:
+
+```python
+# 해외선물 브로커 연결 (모의투자)
+workflow = get_workflow_by_id("futures-01")
+
+# 환경변수 설정 (로컬 개발용)
+# APPKEY_FUTURE_FAKE, APPSECRET_FUTURE_FAKE
+```
+
+> ⚠️ 해외주식(overseas_stock)은 모의투자를 지원하지 않습니다.
 |----------|-----------|------|
 | Infra | StartNode, BrokerNode | 01-04 |
 | Trigger | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode | 02-03, 22 |

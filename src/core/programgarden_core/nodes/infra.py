@@ -41,6 +41,10 @@ class BrokerNode(BaseNode):
 
     Broker configuration for OpenAPI connection.
     Credentials are provided via credential_id which references stored credentials.
+    
+    Note:
+    - overseas_stock: 모의투자 미지원 (LS증권 제한)
+    - overseas_futures: 모의투자 지원
     """
 
     type: Literal["BrokerNode"] = "BrokerNode"
@@ -58,7 +62,7 @@ class BrokerNode(BaseNode):
         default=None, description="Reference to stored credentials"
     )
     paper_trading: bool = Field(
-        default=True, description="Use paper trading (simulation) mode"
+        default=False, description="Use paper trading (overseas_futures only)"
     )
 
     _inputs: List[InputPort] = []
@@ -95,8 +99,10 @@ class BrokerNode(BaseNode):
         "paper_trading": FieldSchema(
             name="paper_trading",
             type=FieldType.BOOLEAN,
-            description="Use paper trading (simulation) mode",
-            default=True,
+            description="Use paper trading (overseas_futures only, overseas_stock not supported)",
+            default=False,
             bindable=False,
+            # UI 힌트: overseas_stock 선택 시 비활성화
+            extra={"ui_hint": {"disable_when": {"product": "overseas_stock"}}},
         ),
     }

@@ -1,0 +1,56 @@
+"""05_operation/w05_long_running - 장시간 실행"""
+
+
+def get_workflow():
+    return {
+        "id": "operation-05-long-running",
+        "version": "1.0.0",
+        "name": "장시간 실행 예제",
+        "description": "24시간 연속 운영 + 일별 리포트",
+        "settings": {
+            "snapshot_enabled": True,
+            "snapshot_interval_seconds": 60,
+            "graceful_shutdown": True,
+            "daily_report_enabled": True,
+            "daily_report_time": "16:30",
+            "health_check_interval_seconds": 30,
+        },
+        "nodes": [
+            {"id": "start", "type": "StartNode", "category": "infra", "position": {"x": 0, "y": 300}},
+            {"id": "broker", "type": "BrokerNode", "category": "infra", "provider": "ls-sec.co.kr", "product": "overseas_stock", "position": {"x": 200, "y": 300}},
+            {"id": "account", "type": "RealAccountNode", "category": "realtime", "fields": ["balance", "positions", "daily_pnl"], "position": {"x": 400, "y": 400}},
+            {"id": "tradeSchedule", "type": "ScheduleNode", "category": "trigger", "cron": "*/30 * * * * *", "timezone": "America/New_York", "position": {"x": 400, "y": 200}},
+            {"id": "hours", "type": "TradingHoursFilterNode", "category": "trigger", "market": "NYSE", "session": "regular", "timezone": "America/New_York", "position": {"x": 600, "y": 200}},
+            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"], "position": {"x": 800, "y": 200}},
+            {"id": "marketData", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 1000, "y": 200}},
+            {"id": "buyRsi", "type": "ConditionNode", "category": "condition", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"}, "position": {"x": 1200, "y": 100}},
+            {"id": "buyMacd", "type": "ConditionNode", "category": "condition", "plugin": "MACD", "fields": {"signal": "bullish_cross"}, "position": {"x": 1200, "y": 200}},
+            {"id": "buyLogic", "type": "LogicNode", "category": "condition", "operator": "all", "position": {"x": 1400, "y": 150}},
+            {"id": "riskGuard", "type": "RiskGuardNode", "category": "risk", "rules": [
+                {"type": "daily_loss_percent", "threshold": -3, "action": "stop_trading"},
+            ], "position": {"x": 600, "y": 400}},
+            {"id": "buyOrder", "type": "NewOrderNode", "category": "order", "plugin": "MarketOrder", "fields": {"side": "buy"}, "position": {"x": 1600, "y": 150}},
+            {"id": "dailyReportSchedule", "type": "ScheduleNode", "category": "trigger", "cron": "0 30 16 * * 1-5", "timezone": "America/New_York", "position": {"x": 400, "y": 500}},
+            {"id": "dailyReport", "type": "DisplayNode", "category": "display", "format": "report", "title": "일별 리포트", "fields": ["date", "pnl", "trades", "positions"], "position": {"x": 600, "y": 550}},
+            {"id": "display", "type": "DisplayNode", "category": "display", "format": "table", "fields": ["symbol", "status", "risk_status"], "position": {"x": 1800, "y": 300}},
+        ],
+        "edges": [
+            {"from": "start.start", "to": "broker"},
+            {"from": "broker.connection", "to": "tradeSchedule"},
+            {"from": "broker.connection", "to": "account.broker"},
+            {"from": "broker.connection", "to": "dailyReportSchedule"},
+            {"from": "tradeSchedule.tick", "to": "hours"},
+            {"from": "hours.within_hours", "to": "watchlist"},
+            {"from": "watchlist.symbols", "to": "marketData.symbols"},
+            {"from": "account.daily_pnl", "to": "riskGuard.pnl_data"},
+            {"from": "marketData.price", "to": "buyRsi.price_data"},
+            {"from": "marketData.price", "to": "buyMacd.price_data"},
+            {"from": "buyRsi.result", "to": "buyLogic.input1"},
+            {"from": "buyMacd.result", "to": "buyLogic.input2"},
+            {"from": "buyLogic.passed_symbols", "to": "buyOrder.trigger"},
+            {"from": "riskGuard.allow_trading", "to": "buyOrder.gate"},
+            {"from": "dailyReportSchedule.tick", "to": "dailyReport"},
+            {"from": "account.balance", "to": "dailyReport.data"},
+            {"from": "buyOrder.result", "to": "display.data"},
+        ],
+    }

@@ -128,23 +128,17 @@ BACKTEST_TO_LIVE = {
             "position": {"x": 600, "y": 400},
         },
         
-        # === 백테스트 실행 ===
+        # === 백테스트 실행 (통합 노드) ===
         {
-            "id": "backtestExecutor",
-            "type": "BacktestExecutorNode",
+            "id": "backtest",
+            "type": "BacktestEngineNode",
             "category": "backtest",
             "initial_capital": 200,  # $200 (약 28만원)
             "commission_rate": 0.001,
             "slippage": 0.001,
-            "position": {"x": 750, "y": 300},
-        },
-        {
-            "id": "backtestResult",
-            "type": "BacktestResultNode",
-            "category": "backtest",
             "benchmark": "SPY",
             "risk_free_rate": 0.02,
-            "position": {"x": 900, "y": 300},
+            "position": {"x": 800, "y": 300},
         },
         
         # === PHASE B: 성과 검증 ===
@@ -216,13 +210,11 @@ BACKTEST_TO_LIVE = {
         {"from": "historicalData.ohlcv_data", "to": "stopLoss.price_data"},
         {"from": "profitTarget.result", "to": "sellLogic.input"},
         {"from": "stopLoss.result", "to": "sellLogic.input"},
-        {"from": "rsiBuy.result", "to": "backtestExecutor.buy_signal"},
-        {"from": "sellLogic.result", "to": "backtestExecutor.sell_signal"},
-        {"from": "historicalData.ohlcv_data", "to": "backtestExecutor.historical_data"},
-        {"from": "backtestExecutor.result", "to": "backtestResult.backtest_result"},
+        {"from": "rsiBuy.result", "to": "backtest.signals"},
+        {"from": "historicalData.ohlcv_data", "to": "backtest.ohlcv_data"},
         
         # Phase B: 성과 검증
-        {"from": "backtestResult.summary", "to": "performanceCheck.performance_data"},
+        {"from": "backtest.metrics", "to": "performanceCheck.performance_data"},
         
         # Phase C: 배포 결정
         {"from": "performanceCheck.passed", "to": "deployLive.trigger"},
@@ -233,7 +225,7 @@ BACKTEST_TO_LIVE = {
         {"from": "deployPaper.result", "to": "failAlert.data"},
         
         # 결과 표시
-        {"from": "backtestResult.summary", "to": "resultDisplay.data"},
+        {"from": "backtest.metrics", "to": "resultDisplay.data"},
     ],
 }
 

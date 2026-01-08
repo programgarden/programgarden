@@ -216,10 +216,19 @@ class BrokerNodeExecutor(NodeExecutorBase):
         product = config.get("product", "overseas_stock")
         paper_trading = config.get("paper_trading", True)
         
+        # ========================================
+        # 모의투자 지원 여부 검증
+        # - overseas_stock: 모의투자 미지원 (LS증권)
+        # - overseas_futures: 모의투자 지원
+        # ========================================
+        if product == "overseas_stock" and paper_trading:
+            context.log("warning", "overseas_stock does not support paper_trading (LS Securities), forcing real mode", node_id)
+            paper_trading = False
+        
         # Credential resolution priority:
         # 1. credential_id -> load from credential store
         # 2. Direct appkey/appsecret in config
-        # 3. Environment variables (APPKEY, APPSECRET)
+        # 3. Environment variables (product별 자동 선택)
         
         credential_id = config.get("credential_id")
         appkey = config.get("appkey")
@@ -246,12 +255,11 @@ class BrokerNodeExecutor(NodeExecutorBase):
             except Exception as e:
                 context.log("warning", f"Failed to load credential: {e}", node_id)
         
-        # Fallback to environment variables
+        # Fallback to environment variables (product별 자동 선택)
         if not appkey or not appsecret:
-            appkey = appkey or os.getenv("APPKEY")
-            appsecret = appsecret or os.getenv("APPSECRET")
+            appkey, appsecret = self._get_env_credentials(product, paper_trading)
             if appkey and appsecret:
-                context.log("info", "Credentials loaded from environment variables", node_id)
+                context.log("info", f"Credentials loaded from environment variables (product={product}, paper_trading={paper_trading})", node_id)
         
         if appkey and appsecret:
             context.set_secret("credential_id", {
@@ -267,7 +275,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         if company == "ls":
             provider = "ls-sec.co.kr"
         
-        context.log("info", f"Broker connected: {provider} ({product})", node_id)
+        context.log("info", f"Broker connected: {provider} ({product}, paper_trading={paper_trading})", node_id)
         return {
             "connected": True,
             "connection": {
@@ -276,6 +284,33 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "paper_trading": paper_trading,
             }
         }
+
+    def _get_env_credentials(self, product: str, paper_trading: bool) -> tuple:
+        """
+        Product별 환경변수에서 credential 로드
+        
+        로컬 개발용 환경변수 맵핑:
+        - overseas_stock: APPKEY, APPSECRET (모의투자 미지원)
+        - overseas_futures (실전): APPKEY_FUTURE, APPSECRET_FUTURE
+        - overseas_futures (모의): APPKEY_FUTURE_FAKE, APPSECRET_FUTURE_FAKE
+        
+        프로덕션에서는 credential_id를 통해 DB에서 로드합니다.
+        """
+        import os
+        
+        if product == "overseas_futures":
+            if paper_trading:
+                appkey = os.getenv("APPKEY_FUTURE_FAKE")
+                appsecret = os.getenv("APPSECRET_FUTURE_FAKE")
+            else:
+                appkey = os.getenv("APPKEY_FUTURE")
+                appsecret = os.getenv("APPSECRET_FUTURE")
+        else:
+            # overseas_stock (기본)
+            appkey = os.getenv("APPKEY")
+            appsecret = os.getenv("APPSECRET")
+        
+        return appkey, appsecret
 
 
 class AccountNodeExecutor(NodeExecutorBase):
@@ -431,9 +466,78 @@ class AccountNodeExecutor(NodeExecutorBase):
         return self._empty_result("domestic_stock not implemented")
 
     async def _ls_overseas_futureoption(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
-        """LS증권 해외선물옵션 잔고 조회 (TODO: 구현 필요)"""
-        context.log("warning", "LS overseas_futureoption not yet implemented, returning empty", node_id)
-        return self._empty_result("overseas_futureoption not implemented")
+        """
+        LS증권 해외선물옵션 잔고 조회 (CIDBQ01500)
+        
+        미결제(보유) 잔고를 조회합니다.
+        """
+        from datetime import datetime
+        
+        try:
+            from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
+            
+            today = datetime.now().strftime("%Y%m%d")
+            
+            response = await ls.overseas_futureoption().accno().CIDBQ01500(
+                body=CIDBQ01500InBlock1(
+                    RecCnt=1,
+                    AcntTpCode="1",      # 1: 위탁
+                    QryDt=today,         # 조회일자
+                    BalTpCode="1",       # 1: 합산, 2: 건별
+                    FcmAcntNo=""
+                )
+            ).req_async()
+            
+            # 응답 코드 확인
+            if response.rsp_cd and response.rsp_cd not in ["00000", "00136"]:
+                context.log("warning", f"CIDBQ01500 response: {response.rsp_cd} - {response.rsp_msg}", node_id)
+            
+            # block2 = 종목별 잔고
+            positions = {}
+            for item in (response.block2 or []):
+                symbol = item.IsuCodeVal.strip() if item.IsuCodeVal else ""
+                if not symbol:
+                    continue
+                
+                # BnsTpCode: 1=매도, 2=매수
+                is_long = item.BnsTpCode == "2"
+                
+                positions[symbol] = {
+                    "symbol": symbol,
+                    "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else symbol,
+                    "is_long": is_long,
+                    "qty": int(item.BalQty) if item.BalQty else 0,
+                    "entry_price": float(item.AvrPrc) if item.AvrPrc else 0.0,
+                    "current_price": float(item.NowPrc) if item.NowPrc else 0.0,
+                    "pnl_amount": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
+                    "pnl_rate": float(item.ErnRat) if hasattr(item, 'ErnRat') and item.ErnRat else 0.0,
+                    "currency": "USD",  # 해외선물은 대부분 USD
+                }
+            
+            held_symbols = list(positions.keys())
+            
+            # block1 = 계좌 요약 정보
+            balance_info = {"cash": 0.0, "total_value": 0.0}
+            if response.block1:
+                b1 = response.block1
+                balance_info = {
+                    "deposit": float(b1.Dps) if hasattr(b1, 'Dps') and b1.Dps else 0.0,
+                    "orderable_amount": float(b1.OrdAbleAmt) if hasattr(b1, 'OrdAbleAmt') and b1.OrdAbleAmt else 0.0,
+                    "total_pnl": float(b1.TotEvalPnlAmt) if hasattr(b1, 'TotEvalPnlAmt') and b1.TotEvalPnlAmt else 0.0,
+                    "margin": float(b1.TotMgn) if hasattr(b1, 'TotMgn') and b1.TotMgn else 0.0,
+                }
+            
+            context.log("info", f"AccountNode (futures): {len(held_symbols)} positions fetched", node_id)
+            return {
+                "held_symbols": held_symbols,
+                "symbols": held_symbols,
+                "positions": positions,
+                "balance": balance_info,
+            }
+            
+        except Exception as e:
+            context.log("error", f"Failed to fetch futures positions: {e}", node_id)
+            return self._empty_result(str(e))
 
     def _empty_result(self, error: str = "") -> Dict[str, Any]:
         """빈 결과 반환"""
@@ -578,11 +682,29 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         - False: cleanup_on_flow_end로 등록 (플로우 끝나면 종료)
         """
         
-        if product != "overseas_stock":
-            context.log("warning", f"Tracker only supports overseas_stock, got {product}", node_id)
-            # TODO: 다른 product도 지원 필요
+        # Product별 분기 처리
+        if product == "overseas_stock":
+            return await self._ls_stock_with_tracker(
+                ls, node_id, config, context, sync_interval_sec, stay_connected
+            )
+        elif product == "overseas_futures":
+            return await self._ls_futureoption_with_tracker(
+                ls, node_id, config, context, sync_interval_sec, stay_connected
+            )
+        else:
+            context.log("warning", f"Unsupported product for RealAccountNode: {product}", node_id)
             raise ValueError(f"RealAccountNode does not support product '{product}' yet. Use AccountNode for REST API query.")
-        
+
+    async def _ls_stock_with_tracker(
+        self,
+        ls,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        sync_interval_sec: int,
+        stay_connected: bool = True,
+    ) -> Dict[str, Any]:
+        """해외주식 실시간 계좌 추적 (StockAccountTracker)"""
         try:
             # 실시간 연결 클라이언트 가져오기 (tracker 생성 전에 필요)
             real_client = ls.overseas_stock().real()
@@ -646,15 +768,109 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 context.log("info", f"StockAccountTracker started (stay_connected=False, will cleanup after flow)", node_id)
             
             # 초기 데이터 반환
-            result = self._get_tracker_data(tracker)
+            result = self._get_stock_tracker_data(tracker)
             return result
             
         except Exception as e:
-            context.log("error", f"Tracker setup failed: {e}", node_id)
+            context.log("error", f"Stock tracker setup failed: {e}", node_id)
             raise
 
-    def _get_tracker_data(self, tracker) -> Dict[str, Any]:
-        """Tracker에서 현재 데이터 추출"""
+    async def _ls_futureoption_with_tracker(
+        self,
+        ls,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        sync_interval_sec: int,
+        stay_connected: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        해외선물 실시간 계좌 추적 (FuturesAccountTracker)
+        
+        - OVC WebSocket으로 실시간 시세 수신
+        - TC1/TC2/TC3 WebSocket으로 주문 이벤트 수신
+        - CIDBQ01500 등으로 주기적 잔고 동기화
+        """
+        try:
+            # 각 클라이언트 준비
+            accno = ls.overseas_futureoption().accno()
+            market = ls.overseas_futureoption().market()
+            real = ls.overseas_futureoption().real()
+            
+            # 실시간 WebSocket 연결
+            if not await real.is_connected():
+                await real.connect()
+            
+            # FuturesAccountTracker 생성
+            tracker = accno.account_tracker(
+                market_client=market,
+                real_client=real,
+                refresh_interval=sync_interval_sec,
+            )
+            
+            # ReconnectHandler 설정
+            token_manager = ls._token_manager if hasattr(ls, '_token_manager') else None
+            reconnect_handler = ReconnectHandler(token_manager)
+            
+            # 연결 끊김 콜백
+            async def on_disconnect():
+                can_retry = await reconnect_handler.handle_disconnect()
+                if can_retry:
+                    try:
+                        if not await real.is_connected():
+                            await real.connect()
+                        reconnect_handler.reset()
+                        context.log("info", "Futures WebSocket reconnected successfully", node_id)
+                    except Exception as e:
+                        context.log("error", f"Futures reconnect failed: {e}", node_id)
+                        await on_disconnect()
+                else:
+                    context.fail(f"Max reconnect attempts exceeded for {node_id}")
+            
+            # 포지션 변경 콜백 (실시간 이벤트)
+            def on_position_change(positions):
+                context.set_output(node_id, "positions", positions)
+                asyncio.create_task(context.emit_event(
+                    event_type="realtime_update",
+                    source_node_id=node_id,
+                    data={"positions": positions},
+                    trigger_nodes=config.get("_trigger_on_update_nodes", []),
+                ))
+            
+            # 잔고 변경 콜백
+            def on_balance_change(balance):
+                context.set_output(node_id, "balance", balance)
+                asyncio.create_task(context.emit_event(
+                    event_type="balance_update",
+                    source_node_id=node_id,
+                    data={"balance": balance},
+                    trigger_nodes=[],
+                ))
+            
+            tracker.on_position_change(on_position_change)
+            tracker.on_balance_change(on_balance_change)
+            
+            # Tracker 시작
+            await tracker.start()
+            
+            # stay_connected에 따라 등록
+            if stay_connected:
+                context.register_persistent(node_id, tracker)
+                context.log("info", f"FuturesAccountTracker started (stay_connected=True, sync_interval={sync_interval_sec}s)", node_id)
+            else:
+                context.register_cleanup_on_flow_end(node_id, tracker)
+                context.log("info", f"FuturesAccountTracker started (stay_connected=False, will cleanup after flow)", node_id)
+            
+            # 초기 데이터 반환
+            result = self._get_futures_tracker_data(tracker)
+            return result
+            
+        except Exception as e:
+            context.log("error", f"Futures tracker setup failed: {e}", node_id)
+            raise
+
+    def _get_stock_tracker_data(self, tracker) -> Dict[str, Any]:
+        """해외주식 Tracker에서 현재 데이터 추출"""
         positions = {}
         for symbol, pos in tracker.get_positions().items():
             positions[symbol] = {
@@ -667,7 +883,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
                 "currency": getattr(pos, 'currency_code', 'USD'),
                 "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
-                "market_code": getattr(pos, 'market_code', ''),  # LS증권 거래소 코드
+                "market_code": getattr(pos, 'market_code', ''),
             }
         
         symbols = list(positions.keys())
@@ -675,7 +891,6 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         # balance를 JSON 직렬화 가능한 형태로 변환
         raw_balance = tracker.get_balances()
         if hasattr(raw_balance, 'model_dump'):
-            # Pydantic BaseModel인 경우
             balance = {k: float(v) if isinstance(v, (int, float)) or hasattr(v, '__float__') else str(v) 
                       for k, v in raw_balance.model_dump().items() if v is not None}
         elif isinstance(raw_balance, dict):
@@ -684,11 +899,76 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             balance = {"cash": 0.0, "total_value": 0.0}
         
         return {
-            "symbols": symbols,  # 표준 출력 포트명
-            "held_symbols": symbols,  # 별칭 (하위 호환)
+            "symbols": symbols,
+            "held_symbols": symbols,
             "positions": positions,
             "balance": balance,
         }
+
+    def _get_futures_tracker_data(self, tracker) -> Dict[str, Any]:
+        """해외선물 Tracker에서 현재 데이터 추출"""
+        positions = {}
+        for symbol, pos in tracker.get_positions().items():
+            positions[symbol] = {
+                "symbol": symbol,
+                "name": getattr(pos, 'symbol', symbol),
+                "is_long": getattr(pos, 'is_long', True),
+                "qty": int(getattr(pos, 'quantity', 0)),
+                "entry_price": float(getattr(pos, 'entry_price', 0)),
+                "current_price": float(getattr(pos, 'current_price', 0)),
+                "pnl_amount": float(getattr(pos, 'pnl_amount', 0)),
+                "pnl_rate": float(getattr(pos, 'realtime_pnl', {}).get('pnl_rate', 0)) if hasattr(pos, 'realtime_pnl') else 0,
+                "currency": "USD",
+            }
+        
+        symbols = list(positions.keys())
+        
+        # balance 추출
+        raw_balance = tracker.get_balance()
+        if hasattr(raw_balance, 'model_dump'):
+            balance = {k: float(v) if isinstance(v, (int, float)) or hasattr(v, '__float__') else str(v) 
+                      for k, v in raw_balance.model_dump().items() if v is not None}
+        elif hasattr(raw_balance, '__dict__'):
+            balance = {
+                "deposit": float(getattr(raw_balance, 'deposit', 0)),
+                "orderable_amount": float(getattr(raw_balance, 'orderable_amount', 0)),
+                "margin": float(getattr(raw_balance, 'total_margin', 0)),
+                "pnl_amount": float(getattr(raw_balance, 'pnl_amount', 0)),
+            }
+        elif isinstance(raw_balance, dict):
+            balance = raw_balance
+        else:
+            balance = {"deposit": 0.0, "orderable_amount": 0.0}
+        
+        # open_orders 추출
+        open_orders = {}
+        if hasattr(tracker, 'get_open_orders'):
+            for order_no, order in tracker.get_open_orders().items():
+                open_orders[order_no] = {
+                    "order_no": order_no,
+                    "symbol": getattr(order, 'symbol', ''),
+                    "is_long": getattr(order, 'is_long', True),
+                    "order_price": float(getattr(order, 'order_price', 0)),
+                    "order_qty": int(getattr(order, 'order_qty', 0)),
+                    "remaining_qty": int(getattr(order, 'remaining_qty', 0)),
+                }
+        
+        return {
+            "symbols": symbols,
+            "held_symbols": symbols,
+            "positions": positions,
+            "balance": balance,
+            "open_orders": open_orders,
+        }
+
+    def _get_tracker_data(self, tracker) -> Dict[str, Any]:
+        """Tracker에서 현재 데이터 추출 (하위 호환용)"""
+        # 타입에 따라 분기
+        tracker_type = type(tracker).__name__
+        if "Futures" in tracker_type:
+            return self._get_futures_tracker_data(tracker)
+        else:
+            return self._get_stock_tracker_data(tracker)
 
     def _empty_result(self, error: str = "") -> Dict[str, Any]:
         """빈 결과 반환"""
@@ -1622,13 +1902,141 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """해외선물 차트 데이터 조회 (o3108 일봉 / o3103 분봉)"""
+        """
+        해외선물 차트 데이터 조회 (o3108 일봉 / o3103 분봉)
         
-        # TODO: 해외선물 API 연동 구현
-        # - 일봉: o3108
-        # - 분봉: o3103
-        context.log("info", "Overseas futures chart API - using demo data for now", node_id)
-        return self._generate_demo_data(symbols, start_date, end_date)
+        - 일봉/주봉/월봉: o3108
+        - 분봉 (30초, 1분, 30분 등): o3103
+        """
+        credential = context.get_credential()
+        if not credential:
+            context.log("warning", "No credential, using demo data for futures", node_id)
+            return self._generate_demo_data(symbols, start_date, end_date)
+        
+        try:
+            from programgarden_finance import LS
+            
+            ls = LS.get_instance()
+            
+            if not ls.is_logged_in():
+                ls.login(
+                    appkey=credential.get("appkey"),
+                    appsecretkey=credential.get("appsecret"),
+                    paper_trading=credential.get("paper_trading", False),
+                )
+            
+            api = ls.overseas_futureoption()
+            ohlcv_data = {}
+            
+            # interval별 분기
+            is_minute_data = interval in ["1min", "5min", "15min", "30min", "30s"]
+            
+            for symbol in symbols:
+                try:
+                    if is_minute_data:
+                        # 분봉: o3103
+                        bars = await self._fetch_futures_minute_chart(api, symbol, interval, context, node_id)
+                    else:
+                        # 일봉/주봉/월봉: o3108
+                        bars = await self._fetch_futures_daily_chart(api, symbol, start_date, end_date, interval, context, node_id)
+                    
+                    ohlcv_data[symbol] = bars
+                    context.log("debug", f"Fetched {len(bars)} bars for {symbol}", node_id)
+                    
+                except Exception as e:
+                    context.log("warning", f"Error fetching futures {symbol}: {e}", node_id)
+                    ohlcv_data[symbol] = []
+            
+            return ohlcv_data
+            
+        except ImportError as e:
+            context.log("warning", f"Finance package not available: {e}, using demo data", node_id)
+            return self._generate_demo_data(symbols, start_date, end_date)
+        except Exception as e:
+            context.log("error", f"Error fetching futures data: {e}", node_id)
+            return self._generate_demo_data(symbols, start_date, end_date)
+
+    async def _fetch_futures_daily_chart(
+        self,
+        api,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        interval: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, Any]]:
+        """해외선물 일봉/주봉/월봉 조회 (o3108)"""
+        from programgarden_finance.ls.overseas_futureoption.chart.o3108.blocks import O3108InBlock
+        
+        # interval → gubun 변환 (0=일, 1=주, 2=월)
+        gubun_map = {"1d": "0", "1w": "1", "1M": "2"}
+        gubun = gubun_map.get(interval, "0")
+        
+        body = O3108InBlock(
+            shcode=symbol,
+            gubun=gubun,
+            qrycnt=200,     # 최대 조회 건수
+            sdate=start_date,
+            edate=end_date,
+        )
+        
+        result = await api.chart().o3108(body=body).req_async()
+        
+        bars = []
+        if result.block1:
+            for item in result.block1:
+                bars.append({
+                    "date": item.date if hasattr(item, 'date') else "",
+                    "open": float(item.open) if hasattr(item, 'open') and item.open else 0,
+                    "high": float(item.high) if hasattr(item, 'high') and item.high else 0,
+                    "low": float(item.low) if hasattr(item, 'low') and item.low else 0,
+                    "close": float(item.close) if hasattr(item, 'close') and item.close else 0,
+                    "volume": int(item.volume) if hasattr(item, 'volume') and item.volume else 0,
+                })
+        
+        # 날짜순 정렬 (오래된 것부터)
+        bars.sort(key=lambda x: x["date"])
+        return bars
+
+    async def _fetch_futures_minute_chart(
+        self,
+        api,
+        symbol: str,
+        interval: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, Any]]:
+        """해외선물 분봉 조회 (o3103)"""
+        from programgarden_finance.ls.overseas_futureoption.chart.o3103.blocks import O3103InBlock
+        
+        # interval → ncnt 변환 (0=30초, 1=1분, 5=5분, 30=30분)
+        ncnt_map = {"30s": 0, "1min": 1, "5min": 5, "15min": 15, "30min": 30}
+        ncnt = ncnt_map.get(interval, 1)
+        
+        body = O3103InBlock(
+            shcode=symbol,
+            ncnt=ncnt,
+            readcnt=200,    # 최대 조회 건수
+        )
+        
+        result = await api.chart().o3103(body=body).req_async()
+        
+        bars = []
+        if result.block1:
+            for item in result.block1:
+                bars.append({
+                    "date": item.chetime if hasattr(item, 'chetime') else "",  # 분봉은 시간 포함
+                    "open": float(item.open) if hasattr(item, 'open') and item.open else 0,
+                    "high": float(item.high) if hasattr(item, 'high') and item.high else 0,
+                    "low": float(item.low) if hasattr(item, 'low') and item.low else 0,
+                    "close": float(item.close) if hasattr(item, 'close') and item.close else 0,
+                    "volume": int(item.volume) if hasattr(item, 'volume') and item.volume else 0,
+                })
+        
+        # 시간순 정렬 (오래된 것부터)
+        bars.sort(key=lambda x: x["date"])
+        return bars
 
     def _generate_demo_data(
         self,
@@ -3010,6 +3418,14 @@ class WorkflowJob:
             except asyncio.TimeoutError:
                 logger.warning(f"Job {self.job_id} stop timeout, cancelling")
                 self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+        
+        self.status = "stopped"
+        self.completed_at = datetime.now()
+        logger.info(f"Job {self.job_id} stopped")
 
     async def cancel(self) -> None:
         """Cancel execution immediately"""

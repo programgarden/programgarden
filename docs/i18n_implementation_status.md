@@ -24,7 +24,7 @@
 3. `nodes/condition.py` - ConditionNode, LogicNode
 4. `nodes/risk.py` - PositionSizingNode, RiskGuardNode, RiskConditionNode
 5. `nodes/order.py` - NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
-6. `nodes/backtest.py` - HistoricalDataNode, BacktestExecutorNode, BacktestResultNode, PerformanceConditionNode
+6. `nodes/backtest.py` - HistoricalDataNode, BacktestEngineNode, PerformanceConditionNode
 7. `nodes/event.py` - EventHandlerNode, ErrorHandlerNode, AlertNode
 8. `nodes/display.py` - DisplayNode
 9. `nodes/group.py` - GroupNode

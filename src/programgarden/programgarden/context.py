@@ -623,7 +623,10 @@ class ExecutionContext:
         duration_ms: Optional[float] = None,
     ) -> None:
         """Notify all listeners about node state change."""
+        logger.info(f"📡 notify_node_state: {node_id} ({node_type}) → {state.value}")
+        
         if not self._listeners:
+            logger.warning(f"⚠️ No listeners registered for node state notification!")
             return
         
         event = NodeStateEvent(
@@ -652,6 +655,8 @@ class ExecutionContext:
         data: Any = None,
     ) -> None:
         """Notify all listeners about edge state change."""
+        logger.debug(f"📡 notify_edge_state: {from_node_id}.{from_port} → {to_node_id}.{to_port} ({state.value})")
+        
         if not self._listeners:
             return
         
