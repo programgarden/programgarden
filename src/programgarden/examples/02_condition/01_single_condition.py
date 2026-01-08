@@ -56,7 +56,7 @@ SINGLE_CONDITION = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "schedule"},
+        {"from": "start.start", "to": "schedule"},
         {"from": "schedule.tick", "to": "rsi"},
         {"from": "watchlist.symbols", "to": "realMarket.symbols"},
         {"from": "realMarket.price", "to": "rsi.price_data"},

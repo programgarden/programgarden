@@ -11,6 +11,8 @@ ConditionNode에서 사용하는 조건 플러그인을 등록합니다.
 - VolumeSpike: 거래량 급증 조건
 - ProfitTarget: 목표 수익률 도달 (익절)
 - StopLoss: 손절 조건
+- MovingAverageCross: 이동평균선 골든/데드 크로스
+- DualMomentum: 듀얼 모멘텀 (절대+상대)
 """
 
 from typing import Optional, List
@@ -69,6 +71,22 @@ def register_strategy_condition_plugins() -> None:
         plugin_id="StopLoss",
         plugin_callable=stop_loss_condition,
         schema=STOP_LOSS_SCHEMA,
+    )
+    
+    # === MovingAverageCross ===
+    from .ma_cross import ma_cross_condition, MA_CROSS_SCHEMA
+    registry.register(
+        plugin_id="MovingAverageCross",
+        plugin_callable=ma_cross_condition,
+        schema=MA_CROSS_SCHEMA,
+    )
+    
+    # === DualMomentum ===
+    from .dual_momentum import dual_momentum_condition, DUAL_MOMENTUM_SCHEMA
+    registry.register(
+        plugin_id="DualMomentum",
+        plugin_callable=dual_momentum_condition,
+        schema=DUAL_MOMENTUM_SCHEMA,
     )
 
 

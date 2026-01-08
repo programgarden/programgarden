@@ -81,7 +81,7 @@ WEIGHTED_CONDITION = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "schedule"},
+        {"from": "start.start", "to": "schedule"},
         {"from": "schedule.tick", "to": "rsi"},
         {"from": "schedule.tick", "to": "macd"},
         {"from": "schedule.tick", "to": "bb"},

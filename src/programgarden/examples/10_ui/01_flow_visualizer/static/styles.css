@@ -103,6 +103,28 @@ body {
     background: var(--border-color);
 }
 
+/* Workflow Select Dropdown */
+.workflow-select {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    min-width: 200px;
+}
+
+.workflow-select:hover {
+    border-color: var(--accent-blue);
+}
+
+.workflow-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+
 /* Status Badge */
 .status-badge {
     padding: 0.25rem 0.75rem;
@@ -228,22 +250,25 @@ body {
 }
 
 .node.running {
-    border-color: #fbbf24 !important;  /* Yellow-orange for high visibility */
-    background: linear-gradient(135deg, var(--node-bg) 0%, rgba(251, 191, 36, 0.25) 100%) !important;
+    border-color: #fbbf24;
+    background: linear-gradient(135deg, var(--node-bg) 0%, rgba(251, 191, 36, 0.25) 100%);
     box-shadow: 
         0 0 0 3px rgba(251, 191, 36, 0.3),
         0 0 30px rgba(251, 191, 36, 0.5),
-        inset 0 0 20px rgba(251, 191, 36, 0.1) !important;
+        inset 0 0 20px rgba(251, 191, 36, 0.1);
     animation: runningPulse 0.8s ease-in-out infinite;
     transform: scale(1.02);
-    z-index: 100 !important;
+    z-index: 100;
 }
 
-/* Completed - green checkmark indicator */
+/* Completed - subtle green indicator, no highlight border */
 .node.completed {
-    border-color: var(--accent-green);
-    background: linear-gradient(135deg, var(--node-bg) 0%, rgba(74, 222, 128, 0.15) 100%);
-    box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.3);
+    border-color: var(--node-border) !important;
+    background: var(--node-bg) !important;
+    opacity: 0.5 !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+    animation: none !important;
+    transform: scale(1) !important;
 }
 
 .node.completed::after {
@@ -261,6 +286,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    opacity: 1;
 }
 
 .node.failed {
@@ -368,12 +394,13 @@ body {
     stroke-dasharray: 10 5;
 }
 
-/* Transmitted - back to default (no highlight) */
+/* Transmitted - dimmed, no highlight */
 .edge.transmitted {
     stroke: var(--node-border);
-    stroke-width: 2;
+    stroke-width: 1.5;
     animation: none;
     stroke-dasharray: none;
+    opacity: 0.4;
 }
 
 @keyframes flow {

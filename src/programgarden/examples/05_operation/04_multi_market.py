@@ -171,8 +171,8 @@ MULTI_MARKET = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "stockBroker"},
-        {"from": "start.trigger", "to": "futuresBroker"},
+        {"from": "start.start", "to": "stockBroker"},
+        {"from": "start.start", "to": "futuresBroker"},
         # Stock flow
         {"from": "stockBroker.connection", "to": "stockSchedule"},
         {"from": "stockSchedule.tick", "to": "stockHours"},

@@ -83,6 +83,24 @@ class FieldSchema(BaseModel):
         default=None, description="필드 그룹 (UI에서 그룹핑용)"
     )
 
+    # 조건부 필드 상태 (계층적 노드 연결용)
+    disabled_when: Optional[str] = Field(
+        default=None,
+        description="조건부 비활성화 표현식 (예: 'has_incoming_portfolio_edge')",
+    )
+    read_only_when: Optional[str] = Field(
+        default=None,
+        description="조건부 읽기전용 표현식 (예: 'is_child_node')",
+    )
+    override_source: Optional[str] = Field(
+        default=None,
+        description="값이 다른 곳에서 계산되는 경우 출처 표시 (예: 'parent.allocation * parent.total_capital')",
+    )
+    ui_hint: Optional[str] = Field(
+        default=None,
+        description="UI 표시 힌트 (inherited, calculated, locked, warning 등)",
+    )
+
     class Config:
         use_enum_values = True
 

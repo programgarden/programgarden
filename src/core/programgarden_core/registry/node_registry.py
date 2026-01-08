@@ -61,7 +61,7 @@ class NodeTypeRegistry:
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
             ConditionNode, LogicNode, PerformanceConditionNode,
-            PositionSizingNode, RiskGuardNode, RiskConditionNode,
+            PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
             NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
             EventHandlerNode, ErrorHandlerNode, AlertNode,
             DisplayNode,
@@ -85,7 +85,7 @@ class NodeTypeRegistry:
             # Condition
             ConditionNode, LogicNode, PerformanceConditionNode,
             # Risk
-            PositionSizingNode, RiskGuardNode, RiskConditionNode,
+            PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
             # Order
             NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
             # Event

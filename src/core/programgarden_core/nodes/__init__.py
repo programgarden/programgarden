@@ -9,7 +9,7 @@ ProgramGarden Core - 노드 타입 정의
 - symbol (4): WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode
 - trigger (3): ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode
 - condition (3): ConditionNode, LogicNode, PerformanceConditionNode
-- risk (3): PositionSizingNode, RiskGuardNode, RiskConditionNode
+- risk (4): PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode
 - order (4): NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
 - event (3): EventHandlerNode, ErrorHandlerNode, AlertNode
 - display (1): DisplayNode
@@ -50,6 +50,7 @@ from programgarden_core.nodes.backtest import (
     BacktestEngineNode,
     PerformanceConditionNode,
 )
+from programgarden_core.nodes.portfolio import PortfolioNode
 from programgarden_core.nodes.job import DeployNode, TradingHaltNode, JobControlNode
 from programgarden_core.nodes.calculation import CustomPnLNode
 
@@ -88,6 +89,7 @@ __all__ = [
     "PositionSizingNode",
     "RiskGuardNode",
     "RiskConditionNode",
+    "PortfolioNode",
     # Order
     "NewOrderNode",
     "ModifyOrderNode",

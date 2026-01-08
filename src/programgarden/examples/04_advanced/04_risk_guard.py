@@ -102,7 +102,7 @@ RISK_GUARD = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "schedule"},
         {"from": "broker.connection", "to": "account.broker"},
         {"from": "account.data", "to": "riskGuard.account_data"},

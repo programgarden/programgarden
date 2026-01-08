@@ -61,7 +61,7 @@ EVENT_HANDLER = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "orderEvents"},
         {"from": "orderEvents.filled", "to": "fillHandler.event"},
         {"from": "fillHandler.processed", "to": "alert.data"},

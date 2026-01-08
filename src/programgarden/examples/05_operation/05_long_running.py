@@ -176,7 +176,7 @@ LONG_RUNNING = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "tradeSchedule"},
         {"from": "broker.connection", "to": "account.broker"},
         {"from": "broker.connection", "to": "reportSchedule"},

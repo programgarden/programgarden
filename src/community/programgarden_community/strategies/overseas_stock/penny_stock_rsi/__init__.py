@@ -119,7 +119,7 @@ PENNY_STOCK_RSI = {
             "id": "watchlist",
             "type": "WatchlistNode",
             "category": "symbol",
-            "symbols": "$input.symbols",
+            "symbols": "{{ input.symbols }}",
             "position": {"x": 600, "y": 300},
         },
         
@@ -146,8 +146,8 @@ PENNY_STOCK_RSI = {
             "category": "condition",
             "plugin": "RSI",
             "fields": {
-                "period": "$input.rsi_period",
-                "threshold": "$input.rsi_threshold",
+                "period": "{{ input.rsi_period }}",
+                "threshold": "{{ input.rsi_threshold }}",
                 "direction": "below",
             },
             "position": {"x": 900, "y": 150},
@@ -160,7 +160,7 @@ PENNY_STOCK_RSI = {
             "category": "condition",
             "plugin": "ProfitTarget",
             "fields": {
-                "percent": "$input.profit_target",
+                "percent": "{{ input.profit_target }}",
             },
             "position": {"x": 900, "y": 350},
         },
@@ -170,7 +170,7 @@ PENNY_STOCK_RSI = {
             "category": "condition",
             "plugin": "StopLoss",
             "fields": {
-                "percent": "$input.stop_loss",
+                "percent": "{{ input.stop_loss }}",
             },
             "position": {"x": 900, "y": 450},
         },
@@ -188,7 +188,7 @@ PENNY_STOCK_RSI = {
             "type": "PositionSizingNode",
             "category": "risk",
             "method": "percent_balance",
-            "percent": "$input.balance_percent",
+            "percent": "{{ input.balance_percent }}",
             "max_per_symbol": 15,  # 종목당 최대 $15
             "position": {"x": 1050, "y": 150},
         },

@@ -46,7 +46,7 @@ BACKTEST_WITH_DEPLOY = {
             "id": "watchlist",
             "type": "WatchlistNode",
             "category": "symbol",
-            "symbols": "$input.symbols",
+            "symbols": "{{ input.symbols }}",
             "position": {"x": 200, "y": 300},
         },
 
@@ -55,8 +55,8 @@ BACKTEST_WITH_DEPLOY = {
             "id": "historicalData",
             "type": "HistoricalDataNode",
             "category": "data",
-            "start_date": "dynamic:months_ago($input.backtest_months)",
-            "end_date": "dynamic:today()",
+            "start_date": "{{ months_ago(input.backtest_months) }}",
+            "end_date": "{{ today() }}",
             "interval": "1d",
             "position": {"x": 400, "y": 300},
         },
@@ -200,7 +200,7 @@ BACKTEST_WITH_DEPLOY = {
     ],
     "edges": [
         # Start → Watchlist
-        {"from": "start.trigger", "to": "watchlist"},
+        {"from": "start.start", "to": "watchlist"},
 
         # Watchlist → HistoricalData
         {"from": "watchlist.symbols", "to": "historicalData.symbols"},

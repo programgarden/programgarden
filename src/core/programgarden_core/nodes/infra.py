@@ -40,7 +40,7 @@ class BrokerNode(BaseNode):
     Broker connection node
 
     Broker configuration for OpenAPI connection.
-    References actual credentials via credential_id.
+    Credentials are provided via credential_id which references stored credentials.
     """
 
     type: Literal["BrokerNode"] = "BrokerNode"
@@ -53,6 +53,12 @@ class BrokerNode(BaseNode):
     )
     product: Literal["overseas_stock", "overseas_futures"] = Field(
         default="overseas_stock", description="Product type"
+    )
+    credential_id: Optional[str] = Field(
+        default=None, description="Reference to stored credentials"
+    )
+    paper_trading: bool = Field(
+        default=True, description="Use paper trading (simulation) mode"
     )
 
     _inputs: List[InputPort] = []
@@ -77,6 +83,20 @@ class BrokerNode(BaseNode):
             description="Product type (overseas_stock/overseas_futures)",
             default="overseas_stock",
             enum_values=["overseas_stock", "overseas_futures"],
+            bindable=False,
+        ),
+        "credential_id": FieldSchema(
+            name="credential_id",
+            type=FieldType.STRING,
+            description="Select stored credentials",
+            default=None,
+            bindable=False,
+        ),
+        "paper_trading": FieldSchema(
+            name="paper_trading",
+            type=FieldType.BOOLEAN,
+            description="Use paper trading (simulation) mode",
+            default=True,
             bindable=False,
         ),
     }

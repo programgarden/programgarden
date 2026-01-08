@@ -79,7 +79,7 @@ LIMIT_ORDER = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "schedule"},
         {"from": "schedule.tick", "to": "watchlist"},
         {"from": "watchlist.symbols", "to": "marketData.symbols"},

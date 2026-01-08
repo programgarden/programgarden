@@ -62,6 +62,9 @@
   "nodes.RiskConditionNode.name": "Risk Condition",
   "nodes.RiskConditionNode.description": "Evaluate risk conditions (P&L, trade count).",
   
+  "nodes.PortfolioNode.name": "Portfolio",
+  "nodes.PortfolioNode.description": "Multi-strategy capital allocation and rebalancing.",
+  
   "nodes.NewOrderNode.name": "New Order",
   "nodes.NewOrderNode.description": "Execute new order plugin.",
   
@@ -171,5 +174,12 @@
   "ports.realized_pnl": "Realized P&L",
   "ports.unrealized_pnl": "Unrealized P&L",
   "ports.total_pnl": "Total P&L",
-  "ports.current_value": "Current value"
+  "ports.current_value": "Current value",
+  "ports.strategy_results": "Strategy results",
+  "ports.combined_equity": "Combined equity curve",
+  "ports.combined_metrics": "Combined metrics",
+  "ports.allocation_weights": "Allocation weights",
+  "ports.rebalance_orders": "Rebalance orders",
+  "ports.rebalance_signal": "Rebalance signal",
+  "ports.allocated_capital": "Allocated capital"
 }

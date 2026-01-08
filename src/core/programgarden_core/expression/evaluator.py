@@ -10,6 +10,9 @@ Jinja2 스타일 {{ }} 표현식 평가기
 - 조건 표현식: {{ "buy" if rsi < 30 else "sell" }}
 - 배열 인덱싱: {{ symbols[0] }}
 - 속성 접근: {{ position.quantity }}
+- 날짜 함수: {{ today() }}, {{ days_ago(30) }}
+- 통계 함수: {{ avg(prices) }}, {{ median(values) }}
+- 금융 함수: {{ pct_change(100, 110) }}, {{ discount(price, 5) }}
 
 보안:
 - eval 대신 안전한 표현식 평가 사용
@@ -21,6 +24,9 @@ from typing import Any, Dict, Optional, List, Set
 import re
 import ast
 import operator
+import math
+import statistics
+from datetime import date, datetime, timedelta
 from dataclasses import dataclass, field
 
 
@@ -141,26 +147,92 @@ class SafeEvaluator:
 
     # 허용된 내장 함수
     ALLOWED_BUILTINS = {
+        # ═══════════════════════════════════════════════════════════════
+        # 기본 타입 변환
+        # ═══════════════════════════════════════════════════════════════
+        "bool": bool,
+        "int": int,
+        "float": float,
+        "str": str,
+        "list": list,
+        "dict": dict,
+        "tuple": tuple,
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 기본 수학 함수
+        # ═══════════════════════════════════════════════════════════════
         "abs": abs,
+        "min": min,
+        "max": max,
+        "sum": sum,
+        "pow": pow,
+        "round": round,
+        "len": len,
+        "range": range,
+        "sorted": sorted,
+        "zip": zip,
         "all": all,
         "any": any,
-        "bool": bool,
-        "dict": dict,
-        "float": float,
-        "int": int,
-        "len": len,
-        "list": list,
-        "max": max,
-        "min": min,
-        "pow": pow,
-        "range": range,
-        "round": round,
-        "sorted": sorted,
-        "str": str,
-        "sum": sum,
-        "tuple": tuple,
-        "zip": zip,
-        # 추가 유틸리티
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 수학 함수 (math 모듈)
+        # ═══════════════════════════════════════════════════════════════
+        "sqrt": math.sqrt,
+        "log": math.log,
+        "log10": math.log10,
+        "exp": math.exp,
+        "ceil": math.ceil,
+        "floor": math.floor,
+        "pi": math.pi,
+        "e": math.e,
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 통계 함수 (statistics 모듈)
+        # ═══════════════════════════════════════════════════════════════
+        "mean": statistics.mean,
+        "avg": statistics.mean,  # alias
+        "median": statistics.median,
+        "stdev": lambda lst: statistics.stdev(lst) if len(lst) > 1 else 0,
+        "variance": lambda lst: statistics.variance(lst) if len(lst) > 1 else 0,
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 날짜/시간 함수
+        # ═══════════════════════════════════════════════════════════════
+        "today": lambda: date.today().isoformat(),
+        "now": lambda: datetime.now().isoformat()[:19],
+        "days_ago": lambda n: (date.today() - timedelta(days=int(n))).isoformat(),
+        "days_later": lambda n: (date.today() + timedelta(days=int(n))).isoformat(),
+        "year_start": lambda: date(date.today().year, 1, 1).isoformat(),
+        "year_end": lambda: date(date.today().year, 12, 31).isoformat(),
+        "month_start": lambda: date.today().replace(day=1).isoformat(),
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 금융 계산 함수
+        # ═══════════════════════════════════════════════════════════════
+        "pct_change": lambda old, new: ((new - old) / old) * 100 if old != 0 else 0,
+        "pct": lambda part, total: (part / total) * 100 if total != 0 else 0,
+        "discount": lambda price, pct: price * (1 - pct / 100),
+        "markup": lambda price, pct: price * (1 + pct / 100),
+        "annualize": lambda ret, days: ((1 + ret / 100) ** (252 / days) - 1) * 100 if days > 0 else 0,
+        "compound": lambda principal, rate, periods: principal * ((1 + rate / 100) ** periods),
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 리스트 유틸리티
+        # ═══════════════════════════════════════════════════════════════
+        "first": lambda lst: lst[0] if lst else None,
+        "last": lambda lst: lst[-1] if lst else None,
+        "count": len,
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 포맷팅 함수
+        # ═══════════════════════════════════════════════════════════════
+        "format_pct": lambda v, decimals=2: f"{v:.{decimals}f}%",
+        "format_currency": lambda v, symbol="$": f"{symbol}{v:,.2f}",
+        "format_number": lambda v, decimals=2: f"{v:,.{decimals}f}",
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 상수
+        # ═══════════════════════════════════════════════════════════════
         "True": True,
         "False": False,
         "None": None,

@@ -129,6 +129,7 @@ class ExecutionContext:
         workflow_id: str,
         context_params: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
+        workflow_inputs: Optional[Dict[str, Any]] = None,
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id
@@ -136,6 +137,9 @@ class ExecutionContext:
 
         # Secrets storage (never logged, separate from context_params)
         self._secrets: Dict[str, Any] = secrets or {}
+        
+        # Workflow inputs schema (for {{ input.xxx }} expressions)
+        self._workflow_inputs: Dict[str, Any] = workflow_inputs or {}
 
         # Node output storage
         self._outputs: Dict[str, Dict[str, NodeOutput]] = {}
@@ -783,7 +787,13 @@ class ExecutionContext:
         """
         Create expression evaluation context
 
-        Converts all node outputs to be accessible in expressions
+        Converts all node outputs to be accessible in expressions.
+        Also provides `input` variable for workflow inputs.
+        
+        Available variables in expressions:
+        - {{ nodeId.port }}: Node output values
+        - {{ input.xxx }}: Workflow input parameters
+        - {{ context.xxx }}: Runtime context parameters
         """
         expr_context = ExpressionContext()
 
@@ -795,7 +805,31 @@ class ExecutionContext:
         # Add realtime data
         expr_context.variables.update(self._realtime_data)
 
-        # Add context parameters
+        # Add workflow inputs (merged: defaults + user overrides)
+        merged_inputs = self._merge_inputs_with_defaults()
+        expr_context.variables["input"] = merged_inputs
+
+        # Add context parameters (for backward compatibility)
         expr_context.variables["context"] = self.context_params
 
         return expr_context
+
+    def _merge_inputs_with_defaults(self) -> Dict[str, Any]:
+        """
+        Merge workflow input defaults with user-provided context_params.
+        
+        Priority: context_params > inputs[].default
+        """
+        result = {}
+        
+        # 1. Extract defaults from workflow inputs schema
+        for name, schema in self._workflow_inputs.items():
+            if isinstance(schema, dict):
+                default_value = schema.get("default")
+                if default_value is not None:
+                    result[name] = default_value
+        
+        # 2. Override with user-provided context_params
+        result.update(self.context_params)
+        
+        return result

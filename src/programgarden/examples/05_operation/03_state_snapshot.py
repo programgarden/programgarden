@@ -106,7 +106,7 @@ STATE_SNAPSHOT = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "schedule"},
         {"from": "broker.connection", "to": "account.broker"},
         {"from": "schedule.tick", "to": "watchlist"},

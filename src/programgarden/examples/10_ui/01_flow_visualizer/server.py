@@ -73,10 +73,14 @@ async def sse_events(request: Request):
     )
 
 
+# Currently selected workflow endpoint
+current_workflow_endpoint = "/workflow"
+
+
 @app.post("/run")
-async def run_workflow():
+async def run_workflow(request: Request):
     """Start workflow execution."""
-    global current_job
+    global current_job, current_workflow_endpoint
     
     # Check if already running
     if current_job and current_job.status == "running":
@@ -89,12 +93,37 @@ async def run_workflow():
         from programgarden import ProgramGarden
         import traceback
         
-        print("\n🚀 Starting workflow execution...")
+        # Get workflow type from request body if provided
+        try:
+            body = await request.json()
+            workflow_endpoint = body.get("workflow_endpoint", "/workflow")
+        except:
+            workflow_endpoint = "/workflow"
+        
+        current_workflow_endpoint = workflow_endpoint
+        
+        print(f"\n🚀 Starting workflow execution (endpoint: {workflow_endpoint})...")
         
         pg = ProgramGarden()
         
-        # Run with SSE listener
-        workflow = get_demo_workflow()
+        # Get the appropriate workflow
+        if workflow_endpoint == "/workflow/spider":
+            from pathlib import Path
+            import sys
+            spider_path = Path(__file__).parent.parent / "02_spider_chart"
+            sys.path.insert(0, str(spider_path))
+            from workflow import get_spider_chart_workflow
+            workflow = get_spider_chart_workflow()
+        elif workflow_endpoint == "/workflow/portfolio":
+            from pathlib import Path
+            import sys
+            portfolio_path = Path(__file__).parent.parent / "03_portfolio_backtest"
+            sys.path.insert(0, str(portfolio_path))
+            from workflow import get_portfolio_workflow
+            workflow = get_portfolio_workflow()
+        else:
+            workflow = get_demo_workflow()
+        
         print(f"📋 Workflow: {workflow.get('name', 'unknown')}")
         print(f"📋 Nodes: {[n.get('id') for n in workflow.get('nodes', [])]}")
         
@@ -147,6 +176,54 @@ async def get_status():
         "status": current_job.status,
         "job": current_job.get_state(),
     }
+
+
+@app.get("/workflow/spider")
+async def get_spider_workflow():
+    """Return spider chart workflow definition."""
+    try:
+        from pathlib import Path
+        import sys
+        spider_path = Path(__file__).parent.parent / "02_spider_chart"
+        sys.path.insert(0, str(spider_path))
+        from workflow import get_spider_chart_workflow
+        return JSONResponse(get_spider_chart_workflow())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/workflow/portfolio")
+async def get_portfolio_workflow():
+    """Return portfolio backtest workflow definition."""
+    try:
+        from pathlib import Path
+        import sys
+        import importlib
+        
+        portfolio_path = Path(__file__).parent.parent / "03_portfolio_backtest"
+        sys.path.insert(0, str(portfolio_path))
+        
+        # Force reimport to avoid caching issues
+        if "workflow" in sys.modules:
+            del sys.modules["workflow"]
+        
+        import workflow as portfolio_workflow
+        return JSONResponse(portfolio_workflow.get_portfolio_workflow())
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=500)
+
+
+@app.get("/workflows")
+async def list_workflows():
+    """List available workflows."""
+    return JSONResponse({
+        "workflows": [
+            {"id": "backtest", "name": "멀티 전략 백테스트 비교", "endpoint": "/workflow"},
+            {"id": "spider", "name": "🕸️ 스파이더 차트 포트폴리오 분석", "endpoint": "/workflow/spider"},
+            {"id": "portfolio", "name": "🏛️ 계층적 포트폴리오 백테스트", "endpoint": "/workflow/portfolio"},
+        ]
+    })
 
 
 def main(host: str = "0.0.0.0", port: int = 8765):

@@ -45,6 +45,7 @@ __all__ = [
     "LogicNode",
     "PositionSizingNode",
     "RiskGuardNode",
+    "PortfolioNode",
     "NewOrderNode",
     "ModifyOrderNode",
     "CancelOrderNode",

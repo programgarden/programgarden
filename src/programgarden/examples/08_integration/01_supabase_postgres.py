@@ -145,7 +145,7 @@ SUPABASE_POSTGRES = {
     ],
     "edges": [
         # 기본 흐름
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "watchlist"},
         {"from": "broker.connection", "to": "account.broker"},
         {"from": "watchlist.symbols", "to": "realMarket.symbols"},

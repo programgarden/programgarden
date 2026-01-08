@@ -10,9 +10,6 @@ ScheduleNode → BacktestExecutorNode → PerformanceConditionNode → JobContro
 계획서의 scheduled_backtest_job_control.py 구현
 """
 
-on_callback():
-
-
 SCHEDULED_BACKTEST_JOB_CONTROL = {
     "id": "30-scheduled-backtest-job-control",
     "version": "1.0.0",
@@ -61,7 +58,7 @@ SCHEDULED_BACKTEST_JOB_CONTROL = {
             "id": "watchlist",
             "type": "WatchlistNode",
             "category": "symbol",
-            "symbols": "$input.symbols",
+            "symbols": "{{ input.symbols }}",
             "position": {"x": 400, "y": 200},
         },
 
@@ -163,7 +160,7 @@ SCHEDULED_BACKTEST_JOB_CONTROL = {
             "type": "JobControlNode",
             "category": "job",
             "action": "pause",
-            "target_job_id": "$input.target_job_id",
+            "target_job_id": "{{ input.target_job_id }}",
             "require_confirmation": False,  # 자동으로 일시정지 (확인 불필요)
             "position": {"x": 1500, "y": 400},
         },
@@ -188,7 +185,7 @@ SCHEDULED_BACKTEST_JOB_CONTROL = {
     ],
     "edges": [
         # Start → Schedule
-        {"from": "start.trigger", "to": "weeklySchedule"},
+        {"from": "start.start", "to": "weeklySchedule"},
 
         # Schedule → Data & Symbols
         {"from": "weeklySchedule.trigger", "to": "watchlist"},

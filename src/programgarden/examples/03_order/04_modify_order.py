@@ -61,7 +61,7 @@ MODIFY_ORDER = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "schedule"},
         {"from": "schedule.tick", "to": "orderEvents"},
         {"from": "orderEvents.pending_orders", "to": "modify.orders"},

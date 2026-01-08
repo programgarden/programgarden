@@ -62,6 +62,9 @@
   "nodes.RiskConditionNode.name": "리스크 조건",
   "nodes.RiskConditionNode.description": "리스크 조건 평가 (손익, 거래 횟수).",
   
+  "nodes.PortfolioNode.name": "포트폴리오",
+  "nodes.PortfolioNode.description": "멀티 전략 자본 배분 및 리밸런싱 관리.",
+  
   "nodes.NewOrderNode.name": "신규 주문",
   "nodes.NewOrderNode.description": "신규 주문 플러그인 실행.",
   
@@ -171,5 +174,12 @@
   "ports.realized_pnl": "실현 손익",
   "ports.unrealized_pnl": "미실현 손익",
   "ports.total_pnl": "총 손익",
-  "ports.current_value": "현재 값"
+  "ports.current_value": "현재 값",
+  "ports.strategy_results": "전략 결과",
+  "ports.combined_equity": "통합 자산 곡선",
+  "ports.combined_metrics": "통합 성과 지표",
+  "ports.allocation_weights": "배분 비중",
+  "ports.rebalance_orders": "리밸런싱 주문",
+  "ports.rebalance_signal": "리밸런싱 신호",
+  "ports.allocated_capital": "배분된 자본"
 }

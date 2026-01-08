@@ -96,6 +96,31 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 
 - **nodes**: 각 기능을 담당하는 노드들의 배열
 - **edges**: 노드 간 데이터 흐름을 정의하는 연결
+- **inputs**: 워크플로우 입력 파라미터 (선택)
+
+### Expression 문법
+
+노드 설정값을 동적으로 계산할 때 `{{ }}` 문법을 사용합니다:
+
+```json
+{
+  "inputs": {
+    "symbols": {"type": "symbol_list", "default": ["AAPL"]}
+  },
+  "nodes": [
+    {
+      "id": "watchlist",
+      "symbols": "{{ input.symbols }}"
+    },
+    {
+      "id": "data",
+      "start_date": "{{ days_ago(30) }}"
+    }
+  ]
+}
+```
+
+> 📖 **상세 가이드**: [Expression 가이드](expression_guide.md)
 
 ---
 
@@ -110,7 +135,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | `symbol` | 종목 소스/필터 | WatchlistNode, MarketUniverseNode, ScreenerNode |
 | `trigger` | 스케줄/시간 필터 | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode |
 | `condition` | 조건 평가/조합 | ConditionNode, LogicNode, PerformanceConditionNode |
-| `risk` | 리스크 관리 | PositionSizingNode, RiskGuardNode |
+| `risk` | 리스크/포트폴리오 관리 | PositionSizingNode, RiskGuardNode, PortfolioNode |
 | `order` | 주문 실행 | NewOrderNode, ModifyOrderNode, CancelOrderNode |
 | `event` | 이벤트/알림 | EventHandlerNode, ErrorHandlerNode, AlertNode |
 | `display` | 시각화 | DisplayNode |
@@ -214,18 +239,92 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 - equity_curve (자산 곡선) 출력
 - summary (성과 요약: 수익률, MDD 등) 출력
 
+**확장 옵션:**
+
+| 옵션 | 설명 | 예시 |
+|------|------|------|
+| `position_sizing` | 포지션 사이징 방법 | `equal_weight`, `kelly`, `fixed_percent`, `atr_based` |
+| `position_sizing_config` | 사이징 세부 설정 | `{"kelly_fraction": 0.25, "max_position_percent": 10}` |
+| `exit_rules` | 자동 청산 규칙 | `{"stop_loss_percent": 5, "take_profit_percent": 15}` |
+| `allow_short` | 공매도 허용 | `true/false` |
+
 ```json
 {
   "id": "backtest",
   "type": "BacktestEngineNode",
-  "config": {
-    "initial_capital": 10000,
-    "commission_rate": 0.001
+  "initial_capital": 10000,
+  "commission_rate": 0.001,
+  "position_sizing": "kelly",
+  "position_sizing_config": {
+    "kelly_fraction": 0.25,
+    "max_position_percent": 10
+  },
+  "exit_rules": {
+    "stop_loss_percent": 5,
+    "take_profit_percent": 15,
+    "trailing_stop_percent": 3
   }
 }
 ```
 
-### 5.6 주문 노드 (order)
+### 5.6 포트폴리오 노드 (risk)
+
+| 노드 | 설명 |
+|------|------|
+| `PortfolioNode` | 멀티 전략 자본 배분 및 리밸런싱 관리 |
+
+**PortfolioNode 기능:**
+- 여러 BacktestEngineNode 또는 PortfolioNode 결과 합산
+- 자본 배분 방법 선택 (균등, 커스텀, 리스크 패리티, 모멘텀)
+- 리밸런싱 규칙 설정 (주기적, 드리프트 기반)
+- 계층적 포트폴리오 구성 (Portfolio of Portfolios)
+
+**배분 방법:**
+
+| 방법 | 설명 |
+|------|------|
+| `equal` | 균등 배분 |
+| `custom` | 사용자 지정 비율 |
+| `risk_parity` | 변동성 역비례 배분 |
+| `momentum` | 최근 수익률 비례 배분 |
+
+**리밸런싱 규칙:**
+
+| 규칙 | 설명 |
+|------|------|
+| `none` | 리밸런싱 없음 |
+| `periodic` | 주기적 (daily/weekly/monthly/quarterly) |
+| `drift` | 드리프트 임계값 초과 시 |
+| `both` | 주기적 + 드리프트 모두 적용 |
+
+```json
+{
+  "id": "portfolio",
+  "type": "PortfolioNode",
+  "total_capital": 100000,
+  "allocation_method": "risk_parity",
+  "rebalance_rule": "drift",
+  "drift_threshold": 5.0,
+  "capital_sharing": true,
+  "reserve_percent": 5.0
+}
+```
+
+**계층적 포트폴리오 구조:**
+
+```
+BacktestEngine₁ ──┐
+                  ├──▶ PortfolioNode (미국주식) ──┐
+BacktestEngine₂ ──┘                               │
+                                                  ├──▶ MasterPortfolio
+BacktestEngine₃ ──┐                               │
+                  ├──▶ PortfolioNode (해외선물) ──┘
+BacktestEngine₄ ──┘
+```
+
+> ⚠️ **자본 상속**: 상위 PortfolioNode에서 배분을 받으면 하위의 `total_capital` 설정은 자동으로 무시됩니다.
+
+### 5.7 주문 노드 (order)
 
 | 노드 | 설명 | Community 카테고리 |
 |------|------|-------------------|

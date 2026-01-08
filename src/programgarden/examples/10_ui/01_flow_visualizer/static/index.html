@@ -13,6 +13,10 @@
         <header class="header">
             <h1>🌱 ProgramGarden Flow Visualizer</h1>
             <div class="controls">
+                <select id="workflow-select" class="workflow-select">
+                    <option value="/workflow">멀티 전략 백테스트</option>
+                    <option value="/workflow/spider">🕸️ 스파이더 차트</option>
+                </select>
                 <button id="btn-run" class="btn btn-primary">▶ Run</button>
                 <button id="btn-stop" class="btn btn-danger" disabled>⏹ Stop</button>
                 <span id="job-status" class="status-badge status-idle">IDLE</span>

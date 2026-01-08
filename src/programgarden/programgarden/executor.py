@@ -209,14 +209,49 @@ class BrokerNodeExecutor(NodeExecutorBase):
         config: Dict[str, Any],
         context: ExecutionContext,
     ) -> Dict[str, Any]:
+        import os
+        
         provider = config.get("provider", "ls-sec.co.kr")
         company = config.get("company", "ls")
         product = config.get("product", "overseas_stock")
+        paper_trading = config.get("paper_trading", True)
         
-        # appkey/appsecret을 context secrets에 저장
+        # Credential resolution priority:
+        # 1. credential_id -> load from credential store
+        # 2. Direct appkey/appsecret in config
+        # 3. Environment variables (APPKEY, APPSECRET)
+        
+        credential_id = config.get("credential_id")
         appkey = config.get("appkey")
         appsecret = config.get("appsecret")
-        paper_trading = config.get("paper_trading", False)
+        
+        if credential_id:
+            # Load from credential store (n8n style)
+            try:
+                from programgarden_core.registry import get_credential_store
+                store = get_credential_store()
+                cred = store.get(credential_id)
+                
+                if cred and cred.data:
+                    appkey = cred.data.get("appkey") or appkey
+                    appsecret = cred.data.get("appsecret") or appsecret
+                    # Override paper_trading from credential if set
+                    if "paper_trading" in cred.data:
+                        paper_trading = cred.data.get("paper_trading", True)
+                    context.log("info", f"Credentials loaded from store: {cred.name}", node_id)
+                else:
+                    context.log("warning", f"Credential '{credential_id}' not found in store", node_id)
+            except ImportError:
+                context.log("warning", "CredentialStore not available", node_id)
+            except Exception as e:
+                context.log("warning", f"Failed to load credential: {e}", node_id)
+        
+        # Fallback to environment variables
+        if not appkey or not appsecret:
+            appkey = appkey or os.getenv("APPKEY")
+            appsecret = appsecret or os.getenv("APPSECRET")
+            if appkey and appsecret:
+                context.log("info", "Credentials loaded from environment variables", node_id)
         
         if appkey and appsecret:
             context.set_secret("credential_id", {
@@ -225,6 +260,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "paper_trading": paper_trading,
             })
             context.log("info", f"Broker credentials stored (paper_trading={paper_trading})", node_id)
+        else:
+            context.log("warning", "No credentials found - some features may not work", node_id)
         
         # provider 매핑 (company -> provider)
         if company == "ls":
@@ -757,6 +794,23 @@ class CustomPnLNodeExecutor(NodeExecutorBase):
 class DisplayNodeExecutor(NodeExecutorBase):
     """DisplayNode executor - 테이블/차트 표시"""
 
+    def _format_value(self, value) -> str:
+        """값을 출력용 문자열로 포맷팅"""
+        if value is None:
+            return "-"
+        if isinstance(value, float):
+            if abs(value) >= 1000:
+                return f"{value:,.2f}"
+            elif abs(value) < 0.01:
+                return f"{value:.6f}"
+            else:
+                return f"{value:.4f}"
+        if isinstance(value, int):
+            return f"{value:,}"
+        if isinstance(value, (list, dict)):
+            return str(value)[:15] + "..." if len(str(value)) > 15 else str(value)
+        return str(value)[:20]
+
     async def execute(
         self,
         node_id: str,
@@ -773,6 +827,26 @@ class DisplayNodeExecutor(NodeExecutorBase):
         
         context.log("debug", f"DisplayNode inputs from {input_namespace}: {list(all_inputs.keys())}", node_id)
         
+        # === 여러 백테스트 노드에서 데이터 수집 ===
+        metrics_list = []  # 성과 지표 배열 (radar/table용)
+        trades_list = []   # 거래 내역 배열 (bar chart 집계용)
+        
+        if all_inputs:
+            for key, value in all_inputs.items():
+                if isinstance(value, dict):
+                    # metrics/summary 형식인지 확인 (total_return, sharpe_ratio 등의 키 보유)
+                    if any(k in value for k in ["total_return", "sharpe_ratio", "max_drawdown"]):
+                        # 소스 노드에서 strategy_name 조회
+                        source_node = key.split(".")[0] if "." in key else key
+                        # strategy_name이 이미 있으면 사용, 없으면 소스 노드 이름
+                        strategy_name = value.get("strategy_name") or source_node
+                        metrics_with_name = {**value, "strategy_name": strategy_name}
+                        metrics_list.append(metrics_with_name)
+                elif isinstance(value, list) and len(value) > 0:
+                    # trades 배열인지 확인
+                    first = value[0]
+                    if isinstance(first, dict) and "symbol" in first and "action" in first:
+                        trades_list.extend(value)
         
         # 개별 포트에서도 시도 (data, summary, positions 등)
         input_data = (
@@ -822,69 +896,112 @@ class DisplayNodeExecutor(NodeExecutorBase):
             # 테이블 출력
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"\n{title} [{now}]")
-            print("=" * 100)
-            print(f"{'Symbol':<10} {'Name':<15} {'Qty':>10} {'Avg Price':>12} {'Cur Price':>12} {'PnL Rate':>10} {'PnL Amount':>14}")
-            print("-" * 100)
             
-            # 정렬
-            sort_by = options.get("sort_by", "symbol")
-            sort_order = options.get("sort_order", "asc")
-            sorted_data = sorted(
-                data.values(),
-                key=lambda x: x.get(sort_by, 0) if isinstance(x.get(sort_by, 0), (int, float)) else str(x.get(sort_by, "")),
-                reverse=(sort_order == "desc"),
+            # 데이터 형태에 따른 분기 처리
+            # 1. dict of dicts: {symbol: {field: value, ...}} - 포지션 형태
+            # 2. list of dicts: [{field: value}, ...] - 일반 테이블
+            # 3. flat dict: {field: value} - 단순 메트릭
+            
+            is_positions_format = (
+                isinstance(data, dict) and 
+                data and 
+                all(isinstance(v, dict) for v in data.values())
             )
             
-            for row in sorted_data:
-                pnl_rate = row.get("pnl_rate", 0)
-                pnl_amount = row.get("pnl_amount", 0)
-                pnl_sign = "+" if pnl_rate >= 0 else ""
-                pnl_color = "\033[92m" if pnl_rate >= 0 else "\033[91m"  # Green/Red
-                reset = "\033[0m"
-                
-                currency = row.get("currency", "USD")
-                currency_symbol = "$" if currency == "USD" else currency + " "
-                
-                # qty가 float인 경우 (소수점 주식)
-                qty = row.get("qty", 0)
-                qty_str = f"{qty:>10.4f}" if isinstance(qty, float) and qty != int(qty) else f"{int(qty):>10}"
-                
-                # name 축약 (15자 이내)
-                name = row.get("name", row.get("symbol", ""))[:15]
-                
-                print(
-                    f"{row.get('symbol', ''):<10} "
-                    f"{name:<15} "
-                    f"{qty_str} "
-                    f"{currency_symbol}{row.get('avg_price', 0):>10.4f} "
-                    f"{currency_symbol}{row.get('current_price', 0):>10.4f} "
-                    f"{pnl_color}{pnl_sign}{pnl_rate:>8.2f}%{reset} "
-                    f"{pnl_color}{pnl_sign}{currency_symbol}{pnl_amount:>12.2f}{reset}"
-                )
+            is_list_format = isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict)
+            is_flat_dict = isinstance(data, dict) and data and not is_positions_format
             
-            print("-" * 100)
-            total_pnl = sum(r.get("pnl_amount", 0) for r in data.values())
-            total_sign = "+" if total_pnl >= 0 else ""
-            total_color = "\033[92m" if total_pnl >= 0 else "\033[91m"
-            print(f"{'Total':<10} {'':<15} {'':<10} {'':<12} {'':<12} {'':<10} {total_color}{total_sign}${total_pnl:>12.2f}\033[0m")
-            
-            # balance 정보 표시
-            if balance:
+            if is_positions_format:
+                # 포지션 형태 (원래 로직)
+                print("=" * 100)
+                print(f"{'Symbol':<10} {'Name':<15} {'Qty':>10} {'Avg Price':>12} {'Cur Price':>12} {'PnL Rate':>10} {'PnL Amount':>14}")
                 print("-" * 100)
-                if "total_pnl_rate" in balance:
-                    total_rate = balance.get("total_pnl_rate", 0)
-                    rate_color = "\033[92m" if total_rate >= 0 else "\033[91m"
-                    rate_sign = "+" if total_rate >= 0 else ""
-                    print(f"총 수익률: {rate_color}{rate_sign}{total_rate:.2f}%\033[0m")
-                if "total_eval_krw" in balance:
-                    print(f"총 평가금액(원화): ₩{balance.get('total_eval_krw', 0):,.0f}")
-                if "total_pnl_krw" in balance:
-                    pnl_krw = balance.get("total_pnl_krw", 0)
-                    krw_color = "\033[92m" if pnl_krw >= 0 else "\033[91m"
-                    krw_sign = "+" if pnl_krw >= 0 else ""
-                    print(f"총 평가손익(원화): {krw_color}{krw_sign}₩{pnl_krw:,.0f}\033[0m")
+                
+                # 정렬
+                sort_by = options.get("sort_by", "symbol")
+                sort_order = options.get("sort_order", "asc")
+                sorted_data = sorted(
+                    data.values(),
+                    key=lambda x: x.get(sort_by, 0) if isinstance(x.get(sort_by, 0), (int, float)) else str(x.get(sort_by, "")),
+                    reverse=(sort_order == "desc"),
+                )
+                
+                for row in sorted_data:
+                    pnl_rate = row.get("pnl_rate", 0)
+                    pnl_amount = row.get("pnl_amount", 0)
+                    pnl_sign = "+" if pnl_rate >= 0 else ""
+                    pnl_color = "\033[92m" if pnl_rate >= 0 else "\033[91m"  # Green/Red
+                    reset = "\033[0m"
+                    
+                    currency = row.get("currency", "USD")
+                    currency_symbol = "$" if currency == "USD" else currency + " "
+                    
+                    # qty가 float인 경우 (소수점 주식)
+                    qty = row.get("qty", 0)
+                    qty_str = f"{qty:>10.4f}" if isinstance(qty, float) and qty != int(qty) else f"{int(qty):>10}"
+                    
+                    # name 축약 (15자 이내)
+                    name = row.get("name", row.get("symbol", ""))[:15]
+                    
+                    print(
+                        f"{row.get('symbol', ''):<10} "
+                        f"{name:<15} "
+                        f"{qty_str} "
+                        f"{currency_symbol}{row.get('avg_price', 0):>10.4f} "
+                        f"{currency_symbol}{row.get('current_price', 0):>10.4f} "
+                        f"{pnl_color}{pnl_sign}{pnl_rate:>8.2f}%{reset} "
+                        f"{pnl_color}{pnl_sign}{currency_symbol}{pnl_amount:>12.2f}{reset}"
+                    )
+                
+                print("-" * 100)
+                total_pnl = sum(r.get("pnl_amount", 0) for r in data.values())
+                total_sign = "+" if total_pnl >= 0 else ""
+                total_color = "\033[92m" if total_pnl >= 0 else "\033[91m"
+                print(f"{'Total':<10} {'':<15} {'':<10} {'':<12} {'':<12} {'':<10} {total_color}{total_sign}${total_pnl:>12.2f}\033[0m")
+                
+                # balance 정보 표시
+                if balance:
+                    print("-" * 100)
+                    if "total_pnl_rate" in balance:
+                        total_rate = balance.get("total_pnl_rate", 0)
+                        rate_color = "\033[92m" if total_rate >= 0 else "\033[91m"
+                        rate_sign = "+" if total_rate >= 0 else ""
+                        print(f"총 수익률: {rate_color}{rate_sign}{total_rate:.2f}%\033[0m")
+                    if "total_eval_krw" in balance:
+                        print(f"총 평가금액(원화): ₩{balance.get('total_eval_krw', 0):,.0f}")
+                    if "total_pnl_krw" in balance:
+                        pnl_krw = balance.get("total_pnl_krw", 0)
+                        krw_color = "\033[92m" if pnl_krw >= 0 else "\033[91m"
+                        krw_sign = "+" if pnl_krw >= 0 else ""
+                        print(f"총 평가손익(원화): {krw_color}{krw_sign}₩{pnl_krw:,.0f}\033[0m")
             
-            print("=" * 100)
+            elif is_list_format:
+                # 리스트 형태 테이블 (백테스트 summary 리스트 등)
+                print("=" * 80)
+                if data:
+                    columns = list(data[0].keys())
+                    header = " | ".join(f"{col:<15}" for col in columns[:6])  # 최대 6컬럼
+                    print(header)
+                    print("-" * 80)
+                    for row in data[:20]:  # 최대 20행
+                        values = " | ".join(
+                            f"{self._format_value(row.get(col)):<15}" for col in columns[:6]
+                        )
+                        print(values)
+            
+            elif is_flat_dict:
+                # 단순 key-value 형태 (메트릭)
+                print("=" * 50)
+                sort_by = options.get("sort_by")
+                items = list(data.items())
+                if sort_by and sort_by in data:
+                    # sort_by 키를 기준으로 정렬하지 않고 그냥 표시
+                    pass
+                for key, value in items:
+                    formatted = self._format_value(value)
+                    print(f"  {key:<25}: {formatted}")
+            
+            print("=" * 80 if not is_positions_format else "=" * 100)
         
         context.log("info", f"Display rendered: {chart_type}", node_id)
         
@@ -961,12 +1078,87 @@ class DisplayNodeExecutor(NodeExecutorBase):
                         max_dd = dd
                 print(f"⚠️  최대 낙폭: {max_dd:.2f}%")
                 print("=" * 80)
-        else:
-            # 테이블용 데이터
-            if isinstance(data, dict):
-                output_data["table_data"] = list(data.values()) if data else []
+        elif chart_type == "radar":
+            # Radar 차트용 데이터 (metrics_list 사용)
+            if metrics_list:
+                output_data["data"] = metrics_list
+                context.log("info", f"Radar chart: {len(metrics_list)} strategies", node_id)
             elif isinstance(data, list):
+                output_data["data"] = data
+            elif isinstance(data, dict):
+                # 단일 metrics 객체인 경우 배열로 감싸기
+                output_data["data"] = [data]
+            else:
+                output_data["data"] = []
+        elif chart_type == "bar":
+            # Bar 차트용 데이터
+            # trades 데이터 결정 (trades_list 또는 data)
+            trades_to_process = trades_list if trades_list else []
+            
+            # data가 trades 형식인지 확인
+            if not trades_to_process and isinstance(data, list) and len(data) > 0:
+                first = data[0] if data else {}
+                if isinstance(first, dict) and "symbol" in first and "action" in first:
+                    trades_to_process = data
+            
+            if trades_to_process:
+                # 종목별 투자 비중 및 손익 계산
+                symbol_stats = {}
+                for trade in trades_to_process:
+                    symbol = trade.get("symbol", "unknown")
+                    action = trade.get("action", "")
+                    price = trade.get("price", 0)
+                    qty = trade.get("qty", 0)
+                    cost = trade.get("cost", price * qty)
+                    
+                    if symbol not in symbol_stats:
+                        symbol_stats[symbol] = {"buy_cost": 0, "sell_revenue": 0, "buy_qty": 0, "sell_qty": 0}
+                    
+                    if action == "buy":
+                        symbol_stats[symbol]["buy_cost"] += cost
+                        symbol_stats[symbol]["buy_qty"] += qty
+                    elif action == "sell":
+                        symbol_stats[symbol]["sell_revenue"] += price * qty
+                        symbol_stats[symbol]["sell_qty"] += qty
+                
+                # 종목별 기여도 계산
+                bar_data = []
+                has_sells = any(s["sell_qty"] > 0 for s in symbol_stats.values())
+                
+                for symbol, stats in symbol_stats.items():
+                    if has_sells and stats["sell_qty"] > 0:
+                        # 매도가 있는 경우: 실현 손익
+                        avg_buy = stats["buy_cost"] / stats["buy_qty"] if stats["buy_qty"] > 0 else 0
+                        profit = stats["sell_revenue"] - (avg_buy * stats["sell_qty"])
+                        bar_data.append({"name": symbol, "value": round(profit, 2)})
+                    else:
+                        # 매도가 없는 경우 (Buy & Hold): 투자 금액 표시
+                        bar_data.append({"name": symbol, "value": round(stats["buy_cost"], 2)})
+                
+                # 값 순으로 정렬
+                bar_data.sort(key=lambda x: x["value"], reverse=True)
+                output_data["data"] = bar_data
+                
+                label = "실현 손익" if has_sells else "투자 금액"
+                context.log("info", f"Bar chart ({label}): {len(bar_data)} symbols from {len(trades_to_process)} trades", node_id)
+            elif isinstance(data, list) and len(data) > 0:
+                # 일반 배열 데이터
+                output_data["data"] = data
+            elif isinstance(data, dict):
+                output_data["data"] = [{"name": k, "value": v} for k, v in data.items() if isinstance(v, (int, float))]
+            else:
+                output_data["data"] = []
+        else:
+            # 테이블용 데이터 - 구조화된 객체 배열로 전달
+            if metrics_list:
+                # 여러 전략의 metrics를 테이블로 표시
+                output_data["table_data"] = metrics_list
+            elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                # 이미 객체 배열인 경우 그대로 사용
                 output_data["table_data"] = data
+            elif isinstance(data, dict):
+                # 단일 dict → 객체 배열로 감싸기
+                output_data["table_data"] = [data]
             else:
                 output_data["table_data"] = [data] if data else []
         
@@ -1238,6 +1430,10 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         if end_date.startswith("dynamic:"):
             end_date = self._resolve_dynamic_date(end_date)
         
+        # 날짜 형식 변환: YYYY-MM-DD → YYYYMMDD (finance 패키지 요구사항)
+        start_date = self._normalize_date_format(start_date)
+        end_date = self._normalize_date_format(end_date)
+        
         # BrokerNode에서 product 정보 가져오기
         broker_connection = context.get_output("broker", "connection") or {}
         product = broker_connection.get("product", "overseas_stock")
@@ -1290,6 +1486,40 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         
         return expr.replace("dynamic:", "")
 
+    def _normalize_date_format(self, date_str: str) -> str:
+        """
+        날짜 형식을 finance 패키지 요구사항(YYYYMMDD)으로 정규화.
+        
+        지원 형식:
+        - YYYY-MM-DD → YYYYMMDD
+        - YYYY/MM/DD → YYYYMMDD
+        - YYYYMMDD → YYYYMMDD (그대로)
+        - 빈 문자열/None → 오늘 날짜
+        """
+        from datetime import datetime
+        
+        if not date_str or date_str.startswith("{{"):
+            # 표현식이 resolve 안 됐거나 빈 값이면 오늘 날짜 사용
+            return datetime.now().strftime("%Y%m%d")
+        
+        # 구분자 제거
+        normalized = date_str.replace("-", "").replace("/", "").strip()
+        
+        # 8자리 숫자인지 검증
+        if len(normalized) == 8 and normalized.isdigit():
+            return normalized
+        
+        # 파싱 시도
+        for fmt in ["%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"]:
+            try:
+                dt = datetime.strptime(date_str.strip(), fmt)
+                return dt.strftime("%Y%m%d")
+            except ValueError:
+                continue
+        
+        # 파싱 실패 시 오늘 날짜 반환
+        return datetime.now().strftime("%Y%m%d")
+
     async def _fetch_overseas_stock(
         self,
         symbols: List[str],
@@ -1339,13 +1569,13 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                     
                     keysymbol = f"{exchcd}{symbol}"
                     
-                    
+                    # end_date는 이미 YYYYMMDD 형식으로 정규화됨
                     body = G3103InBlock(
                         keysymbol=keysymbol,
                         exchcd=exchcd,
                         symbol=symbol,
                         gubun=gubun,
-                        date=end_date.replace("-", ""),
+                        date=end_date,
                     )
                     
                     # chart()는 메서드, req_async() 사용
@@ -1548,9 +1778,14 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                 signal_by_date[date].append(sig)
         
         # ========================================
-        # Buy & Hold 전략: signals가 없으면 첫날 전종목 매수
+        # Buy & Hold 전략: signals가 없거나 빈 리스트면 첫날 전종목 매수
         # ========================================
-        use_buy_and_hold = not signals or len(signals) == 0
+        # signals가 bool, None, 빈 리스트 등일 때 처리
+        use_buy_and_hold = (
+            not signals or 
+            not isinstance(signals, list) or 
+            len(signals) == 0
+        )
         buy_and_hold_executed = False
         
         # 날짜별 시뮬레이션
@@ -1715,6 +1950,497 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
         }
 
 
+class PortfolioNodeExecutor(NodeExecutorBase):
+    """
+    PortfolioNode executor - 포트폴리오 관리 엔진
+    
+    백테스트 모드:
+    - 여러 전략 결과(equity_curve) 합산
+    - 리밸런싱 시뮬레이션
+    - 통합 성과 지표 계산
+    
+    실거래 모드:
+    - 실시간 자본 배분 관리
+    - 리밸런싱 신호 생성
+    
+    입력:
+    - strategy_results: 전략별 equity_curve (BacktestEngineNode 또는 PortfolioNode 출력)
+    - account_state: 실시간 계좌 상태 (실거래용, 선택적)
+    
+    출력:
+    - combined_equity: 통합 포트폴리오 equity curve
+    - combined_metrics: 통합 성과 지표
+    - allocation_weights: 현재 배분 비중
+    - rebalance_signal: 리밸런싱 필요 여부
+    - rebalance_orders: 리밸런싱 주문 목록 (실거래용)
+    - allocated_capital: 하위 전략/포트폴리오에 배분할 자본
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """포트폴리오 실행"""
+        
+        # 설정 읽기
+        total_capital = config.get("total_capital", 100000)
+        allocation_method = config.get("allocation_method", "equal")
+        custom_allocations = config.get("custom_allocations", {})
+        rebalance_rule = config.get("rebalance_rule", "none")
+        rebalance_frequency = config.get("rebalance_frequency")
+        drift_threshold = config.get("drift_threshold", 5.0)
+        capital_sharing = config.get("capital_sharing", True)
+        reserve_percent = config.get("reserve_percent", 0.0)
+        
+        # 상위 포트폴리오에서 자본 배분을 받았는지 확인
+        allocated_from_parent = context.get_output(f"_input_{node_id}", "allocated_capital")
+        if allocated_from_parent:
+            # 상위에서 배분받은 자본 사용 (total_capital 설정 무시)
+            parent_allocation = allocated_from_parent.get(node_id, 0)
+            if parent_allocation > 0:
+                total_capital = parent_allocation
+                context.log(
+                    "info",
+                    f"Using allocated capital from parent: ${total_capital:,.0f}",
+                    node_id
+                )
+        
+        # 전략 결과 수집 (여러 입력 연결)
+        strategy_results = self._collect_strategy_results(node_id, context)
+        
+        if not strategy_results:
+            context.log("warning", "No strategy results received", node_id)
+            return self._empty_result(total_capital)
+        
+        context.log(
+            "info",
+            f"Portfolio combining {len(strategy_results)} strategies, "
+            f"capital=${total_capital:,.0f}, method={allocation_method}",
+            node_id
+        )
+        
+        # 자본 배분 계산
+        reserve_amount = total_capital * (reserve_percent / 100)
+        investable_capital = total_capital - reserve_amount
+        
+        allocation_weights = self._calculate_allocations(
+            strategy_results=strategy_results,
+            method=allocation_method,
+            custom_allocations=custom_allocations,
+        )
+        
+        # 하위 전략에 배분할 자본 계산
+        allocated_capital = {
+            strategy_id: investable_capital * weight
+            for strategy_id, weight in allocation_weights.items()
+        }
+        
+        # 포트폴리오 합산 (백테스트 모드)
+        combined_equity = self._combine_equity_curves(
+            strategy_results=strategy_results,
+            allocation_weights=allocation_weights,
+            total_capital=investable_capital,
+            capital_sharing=capital_sharing,
+        )
+        
+        # 리밸런싱 체크
+        rebalance_signal = False
+        rebalance_orders = []
+        
+        if rebalance_rule != "none" and combined_equity:
+            rebalance_signal, rebalance_info = self._check_rebalancing(
+                strategy_results=strategy_results,
+                target_weights=allocation_weights,
+                rule=rebalance_rule,
+                frequency=rebalance_frequency,
+                drift_threshold=drift_threshold,
+                combined_equity=combined_equity,
+            )
+            
+            if rebalance_signal:
+                context.log("info", f"Rebalancing triggered: {rebalance_info}", node_id)
+                # 리밸런싱 시뮬레이션 (백테스트) 또는 주문 생성 (실거래)
+                combined_equity = self._apply_rebalancing(
+                    combined_equity=combined_equity,
+                    target_weights=allocation_weights,
+                    rebalance_info=rebalance_info,
+                )
+        
+        # 성과 지표 계산
+        combined_metrics = self._calculate_portfolio_metrics(
+            equity_curve=combined_equity,
+            initial_capital=total_capital,
+            strategy_results=strategy_results,
+        )
+        
+        context.log(
+            "info",
+            f"Portfolio result: return={combined_metrics.get('total_return', 0):.2f}%, "
+            f"MDD={combined_metrics.get('max_drawdown', 0):.2f}%",
+            node_id
+        )
+        
+        return {
+            "combined_equity": combined_equity,
+            "combined_metrics": combined_metrics,
+            "allocation_weights": allocation_weights,
+            "rebalance_signal": rebalance_signal,
+            "rebalance_orders": rebalance_orders,
+            "allocated_capital": allocated_capital,
+        }
+
+    def _collect_strategy_results(
+        self,
+        node_id: str,
+        context: ExecutionContext,
+    ) -> Dict[str, Dict[str, Any]]:
+        """여러 입력에서 전략 결과 수집"""
+        results = {}
+        
+        # strategy_results 입력에서 수집
+        strategy_data = context.get_output(f"_input_{node_id}", "strategy_results")
+        if strategy_data:
+            if isinstance(strategy_data, dict):
+                results.update(strategy_data)
+            elif isinstance(strategy_data, list):
+                for i, item in enumerate(strategy_data):
+                    if isinstance(item, dict):
+                        strategy_id = item.get("strategy_id", f"strategy_{i}")
+                        results[strategy_id] = item
+        
+        # 개별 equity_curve 연결도 확인
+        for key in context._outputs.keys():
+            if key.endswith(".equity_curve") or key.endswith(".combined_equity"):
+                source_node = key.split(".")[0]
+                if source_node != node_id:
+                    equity_data = context.get_output(key.split(".")[0], key.split(".")[1])
+                    if equity_data and source_node not in results:
+                        results[source_node] = {"equity_curve": equity_data}
+        
+        return results
+
+    def _calculate_allocations(
+        self,
+        strategy_results: Dict[str, Dict],
+        method: str,
+        custom_allocations: Dict[str, float],
+    ) -> Dict[str, float]:
+        """자본 배분 비율 계산"""
+        strategy_ids = list(strategy_results.keys())
+        
+        if not strategy_ids:
+            return {}
+        
+        if method == "equal":
+            weight = 1.0 / len(strategy_ids)
+            return {sid: weight for sid in strategy_ids}
+        
+        elif method == "custom":
+            # 커스텀 배분 (합계가 1.0이 되도록 정규화)
+            total = sum(custom_allocations.get(sid, 0) for sid in strategy_ids)
+            if total > 0:
+                return {
+                    sid: custom_allocations.get(sid, 0) / total
+                    for sid in strategy_ids
+                }
+            else:
+                # 배분 설정이 없으면 균등 배분
+                weight = 1.0 / len(strategy_ids)
+                return {sid: weight for sid in strategy_ids}
+        
+        elif method == "risk_parity":
+            # 리스크 패리티: 변동성 역비례 배분 (간단 버전)
+            volatilities = {}
+            for sid, data in strategy_results.items():
+                equity_curve = data.get("equity_curve", [])
+                vol = self._calculate_volatility(equity_curve)
+                volatilities[sid] = vol if vol > 0 else 0.01
+            
+            inv_vol_sum = sum(1/v for v in volatilities.values())
+            return {
+                sid: (1/vol) / inv_vol_sum
+                for sid, vol in volatilities.items()
+            }
+        
+        elif method == "momentum":
+            # 모멘텀 기반: 최근 수익률 비례 배분
+            returns = {}
+            for sid, data in strategy_results.items():
+                equity_curve = data.get("equity_curve", [])
+                ret = self._calculate_recent_return(equity_curve)
+                returns[sid] = max(ret, 0.001)  # 최소값 설정
+            
+            total_return = sum(returns.values())
+            return {
+                sid: ret / total_return
+                for sid, ret in returns.items()
+            }
+        
+        # 기본: 균등 배분
+        weight = 1.0 / len(strategy_ids)
+        return {sid: weight for sid in strategy_ids}
+
+    def _combine_equity_curves(
+        self,
+        strategy_results: Dict[str, Dict],
+        allocation_weights: Dict[str, float],
+        total_capital: float,
+        capital_sharing: bool,
+    ) -> List[Dict]:
+        """전략별 equity curve를 합산하여 통합 포트폴리오 생성"""
+        
+        if not strategy_results:
+            return []
+        
+        # 모든 날짜 수집
+        all_dates = set()
+        for data in strategy_results.values():
+            equity_curve = data.get("equity_curve", [])
+            for point in equity_curve:
+                if "date" in point:
+                    all_dates.add(point["date"])
+        
+        if not all_dates:
+            return []
+        
+        sorted_dates = sorted(all_dates)
+        
+        # 전략별 equity를 날짜별로 인덱싱
+        strategy_equity_by_date: Dict[str, Dict[str, float]] = {}
+        for sid, data in strategy_results.items():
+            equity_curve = data.get("equity_curve", [])
+            strategy_equity_by_date[sid] = {
+                point["date"]: point.get("value", 0)
+                for point in equity_curve
+                if "date" in point
+            }
+        
+        # 통합 equity curve 생성
+        combined = []
+        
+        for date in sorted_dates:
+            portfolio_value = 0
+            
+            for sid, weight in allocation_weights.items():
+                allocated = total_capital * weight
+                
+                equity_by_date = strategy_equity_by_date.get(sid, {})
+                current_value = equity_by_date.get(date)
+                
+                if current_value is not None:
+                    # 전략의 수익률을 배분 자본에 적용
+                    strategy_equity = list(strategy_equity_by_date.get(sid, {}).values())
+                    if strategy_equity:
+                        initial = strategy_equity[0] if strategy_equity else allocated
+                        if initial > 0:
+                            return_rate = current_value / initial
+                            portfolio_value += allocated * return_rate
+                        else:
+                            portfolio_value += allocated
+                    else:
+                        portfolio_value += allocated
+                else:
+                    # 해당 날짜 데이터 없으면 배분 자본 유지
+                    portfolio_value += allocated
+            
+            combined.append({
+                "date": date,
+                "value": round(portfolio_value, 2),
+            })
+        
+        return combined
+
+    def _check_rebalancing(
+        self,
+        strategy_results: Dict[str, Dict],
+        target_weights: Dict[str, float],
+        rule: str,
+        frequency: Optional[str],
+        drift_threshold: float,
+        combined_equity: List[Dict],
+    ) -> tuple[bool, Dict[str, Any]]:
+        """리밸런싱 필요 여부 체크"""
+        
+        if not combined_equity:
+            return False, {}
+        
+        # 현재 비중 계산 (마지막 날짜 기준)
+        current_weights = self._calculate_current_weights(strategy_results)
+        
+        rebalance_info = {
+            "target_weights": target_weights,
+            "current_weights": current_weights,
+            "drift": {},
+        }
+        
+        # 드리프트 체크
+        if rule in ("drift", "both"):
+            for sid, target in target_weights.items():
+                current = current_weights.get(sid, 0)
+                if target > 0:
+                    drift_pct = abs(current - target) / target * 100
+                    rebalance_info["drift"][sid] = drift_pct
+                    
+                    if drift_pct > drift_threshold:
+                        rebalance_info["trigger"] = "drift"
+                        rebalance_info["trigger_strategy"] = sid
+                        return True, rebalance_info
+        
+        # 주기적 체크 (백테스트에서는 날짜 기반)
+        if rule in ("periodic", "both") and frequency:
+            # TODO: 날짜 기반 주기적 리밸런싱 체크
+            # 실제 구현 시 combined_equity의 날짜와 frequency 비교
+            pass
+        
+        return False, rebalance_info
+
+    def _apply_rebalancing(
+        self,
+        combined_equity: List[Dict],
+        target_weights: Dict[str, float],
+        rebalance_info: Dict[str, Any],
+    ) -> List[Dict]:
+        """리밸런싱 시뮬레이션 적용"""
+        # 현재는 단순히 equity curve 반환
+        # 실제 구현 시 리밸런싱 비용 등 반영
+        return combined_equity
+
+    def _calculate_current_weights(
+        self,
+        strategy_results: Dict[str, Dict],
+    ) -> Dict[str, float]:
+        """현재 비중 계산"""
+        total_value = 0
+        current_values = {}
+        
+        for sid, data in strategy_results.items():
+            equity_curve = data.get("equity_curve", [])
+            if equity_curve:
+                current_value = equity_curve[-1].get("value", 0)
+                current_values[sid] = current_value
+                total_value += current_value
+        
+        if total_value > 0:
+            return {
+                sid: val / total_value
+                for sid, val in current_values.items()
+            }
+        
+        return {sid: 0 for sid in strategy_results}
+
+    def _calculate_volatility(self, equity_curve: List[Dict]) -> float:
+        """변동성(표준편차) 계산"""
+        if len(equity_curve) < 2:
+            return 0.01
+        
+        values = [p.get("value", 0) for p in equity_curve]
+        returns = []
+        for i in range(1, len(values)):
+            if values[i-1] > 0:
+                returns.append((values[i] - values[i-1]) / values[i-1])
+        
+        if not returns:
+            return 0.01
+        
+        import math
+        avg = sum(returns) / len(returns)
+        variance = sum((r - avg) ** 2 for r in returns) / len(returns)
+        return math.sqrt(variance)
+
+    def _calculate_recent_return(
+        self,
+        equity_curve: List[Dict],
+        lookback: int = 20,
+    ) -> float:
+        """최근 수익률 계산"""
+        if len(equity_curve) < 2:
+            return 0.0
+        
+        values = [p.get("value", 0) for p in equity_curve]
+        start_idx = max(0, len(values) - lookback - 1)
+        
+        if values[start_idx] > 0:
+            return (values[-1] - values[start_idx]) / values[start_idx]
+        return 0.0
+
+    def _calculate_portfolio_metrics(
+        self,
+        equity_curve: List[Dict],
+        initial_capital: float,
+        strategy_results: Dict[str, Dict],
+    ) -> Dict[str, Any]:
+        """포트폴리오 성과 지표 계산"""
+        
+        if not equity_curve:
+            return {
+                "total_return": 0,
+                "max_drawdown": 0,
+                "sharpe_ratio": 0,
+                "strategy_count": len(strategy_results),
+            }
+        
+        values = [e.get("value", 0) for e in equity_curve]
+        final_value = values[-1] if values else initial_capital
+        
+        # 총 수익률
+        total_return = (final_value - initial_capital) / initial_capital * 100 if initial_capital > 0 else 0
+        
+        # 최대 낙폭
+        peak = values[0] if values else initial_capital
+        max_dd = 0
+        for v in values:
+            if v > peak:
+                peak = v
+            if peak > 0:
+                dd = (peak - v) / peak * 100
+                if dd > max_dd:
+                    max_dd = dd
+        
+        # 샤프 비율
+        import math
+        daily_returns = []
+        for i in range(1, len(values)):
+            if values[i-1] > 0:
+                daily_returns.append((values[i] - values[i-1]) / values[i-1])
+        
+        if daily_returns:
+            avg_return = sum(daily_returns) / len(daily_returns)
+            std_return = math.sqrt(sum((r - avg_return) ** 2 for r in daily_returns) / len(daily_returns))
+            sharpe = (avg_return / std_return) * math.sqrt(252) if std_return > 0 else 0
+        else:
+            sharpe = 0
+        
+        return {
+            "total_return": round(total_return, 2),
+            "max_drawdown": round(max_dd, 2),
+            "sharpe_ratio": round(sharpe, 2),
+            "final_value": round(final_value, 2),
+            "initial_capital": initial_capital,
+            "strategy_count": len(strategy_results),
+        }
+
+    def _empty_result(self, total_capital: float) -> Dict[str, Any]:
+        """빈 결과 반환"""
+        return {
+            "combined_equity": [],
+            "combined_metrics": {
+                "total_return": 0,
+                "max_drawdown": 0,
+                "sharpe_ratio": 0,
+                "final_value": total_capital,
+                "initial_capital": total_capital,
+                "strategy_count": 0,
+            },
+            "allocation_weights": {},
+            "rebalance_signal": False,
+            "rebalance_orders": [],
+            "allocated_capital": {},
+        }
+
+
 class WorkflowExecutor:
     """
     Workflow execution engine
@@ -1746,6 +2472,8 @@ class WorkflowExecutor:
             # Backtest nodes
             "HistoricalDataNode": HistoricalDataNodeExecutor(),
             "BacktestEngineNode": BacktestEngineNodeExecutor(),
+            # Portfolio node
+            "PortfolioNode": PortfolioNodeExecutor(),
         }
 
     def validate(self, definition: Dict[str, Any]) -> ValidationResult:
@@ -1794,6 +2522,9 @@ class WorkflowExecutor:
         if not validation.is_valid:
             raise ValueError(f"Workflow validation failed: {validation.errors}")
 
+        # Extract workflow inputs schema for expression evaluation
+        workflow_inputs = definition.get("inputs", {})
+
         # Create Job
         job_id = job_id or f"job-{uuid.uuid4().hex[:8]}"
         context = ExecutionContext(
@@ -1801,6 +2532,7 @@ class WorkflowExecutor:
             workflow_id=resolved.workflow_id,
             context_params=context_params or {},
             secrets=secrets,
+            workflow_inputs=workflow_inputs,
         )
         
         # Set listeners (Option A: inject at creation)
@@ -2071,6 +2803,9 @@ class WorkflowJob:
             trigger_nodes = self._find_trigger_nodes(node_id)
             if trigger_nodes:
                 config["_trigger_on_update_nodes"] = trigger_nodes
+            
+            # Resolve expressions in config ({{ input.xxx }}, {{ nodeId.port }})
+            config = self._resolve_config_expressions(config)
 
             # Connect inputs (get values from edges) + 🆕 엣지 알림
             for edge in self.workflow.edges:
@@ -2161,6 +2896,28 @@ class WorkflowJob:
                 if hasattr(edge, 'trigger') and edge.trigger == "on_update":
                     trigger_nodes.append(edge.to_node_id)
         return trigger_nodes
+
+    def _resolve_config_expressions(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Config 내의 {{ }} 표현식을 resolve.
+        
+        예: "{{ input.total_capital }}" → 100000
+        
+        지원 표현식:
+        - {{ input.xxx }}: 워크플로우 inputs 파라미터
+        - {{ nodeId.port }}: 이전 노드 출력값
+        - {{ context.xxx }}: 실행 컨텍스트 값
+        """
+        from programgarden_core.expression import ExpressionEvaluator
+        
+        try:
+            expr_context = self.context.get_expression_context()
+            evaluator = ExpressionEvaluator(expr_context)
+            return evaluator.evaluate_fields(config)
+        except Exception as e:
+            # 표현식 평가 실패 시 원본 반환 (graceful degradation)
+            self.context.log("warning", f"Expression resolve failed: {e}")
+            return config
 
     async def _event_loop(self) -> None:
         """

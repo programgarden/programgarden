@@ -93,7 +93,7 @@ TRADING_HOURS = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "schedule"},
         {"from": "schedule.tick", "to": "hoursFilter"},
         {"from": "schedule.tick", "to": "exchangeStatus"},

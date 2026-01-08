@@ -81,7 +81,7 @@ EXPRESSION_BINDING = {
         },
     ],
     "edges": [
-        {"from": "start.trigger", "to": "broker"},
+        {"from": "start.start", "to": "broker"},
         {"from": "broker.connection", "to": "watchlist"},
         {"from": "watchlist.symbols", "to": "marketData.symbols"},
         {"from": "marketData.price", "to": "rsiCondition.price_data"},

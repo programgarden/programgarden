@@ -108,7 +108,7 @@ REALTIME_RISK_MONITOR = {
             "id": "watchlist",
             "type": "WatchlistNode",
             "category": "symbol",
-            "symbols": "$input.symbols",
+            "symbols": "{{ input.symbols }}",
             "position": {"x": 600, "y": 400},
         },
         
@@ -137,7 +137,7 @@ REALTIME_RISK_MONITOR = {
             "type": "RiskConditionNode",
             "category": "risk",
             "rule": "daily_pnl",
-            "threshold": "$input.daily_loss_limit",
+            "threshold": "{{ input.daily_loss_limit }}",
             "operator": "<=",
             "description": "일일 손실이 한도를 초과하면 true",
             "position": {"x": 1050, "y": 150},
@@ -147,7 +147,7 @@ REALTIME_RISK_MONITOR = {
             "type": "RiskConditionNode",
             "category": "risk",
             "rule": "position_pnl",
-            "threshold": "$input.position_loss_limit",
+            "threshold": "{{ input.position_loss_limit }}",
             "operator": "<=",
             "description": "포지션 손실이 한도를 초과하면 true",
             "position": {"x": 1050, "y": 300},
@@ -157,7 +157,7 @@ REALTIME_RISK_MONITOR = {
             "type": "RiskConditionNode",
             "category": "risk",
             "rule": "daily_trade_count",
-            "threshold": "$input.max_daily_trades",
+            "threshold": "{{ input.max_daily_trades }}",
             "operator": ">=",
             "description": "일일 거래 횟수가 한도에 도달하면 true",
             "position": {"x": 1050, "y": 450},
@@ -167,7 +167,7 @@ REALTIME_RISK_MONITOR = {
             "type": "RiskConditionNode",
             "category": "risk",
             "rule": "consecutive_losses",
-            "threshold": "$input.max_consecutive_losses",
+            "threshold": "{{ input.max_consecutive_losses }}",
             "operator": ">=",
             "description": "연속 손실이 한도에 도달하면 true",
             "position": {"x": 1050, "y": 600},
@@ -228,7 +228,7 @@ REALTIME_RISK_MONITOR = {
             "type": "DisplayNode",
             "category": "display",
             "format": "dashboard",
-            "refresh_rate_ms": "$input.risk_check_interval * 1000",
+            "refresh_rate_ms": "{{ input.risk_check_interval * 1000 }}",
             "widgets": [
                 {
                     "type": "gauge",
@@ -238,7 +238,7 @@ REALTIME_RISK_MONITOR = {
                 {
                     "type": "counter",
                     "metric": "trade_count",
-                    "max": "$input.max_daily_trades",
+                    "max": "{{ input.max_daily_trades }}",
                 },
                 {
                     "type": "table",

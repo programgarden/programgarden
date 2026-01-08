@@ -2,6 +2,7 @@
 ProgramGarden Core - Credential 모델
 
 인증 정보 (Credential Layer)
+n8n 스타일 credential 관리 시스템
 """
 
 from typing import Optional, List, Dict, Any
@@ -9,6 +10,184 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from enum import Enum
 
+
+# ============================================================
+# Credential Type Schema (n8n 스타일)
+# ============================================================
+
+class CredentialFieldType(str, Enum):
+    """Field input types for UI rendering"""
+    STRING = "string"
+    PASSWORD = "password"             # Masked input
+    BOOLEAN = "boolean"
+    NUMBER = "number"
+    SELECT = "select"                 # Dropdown
+
+
+class CredentialField(BaseModel):
+    """Single field definition in a credential schema"""
+    key: str = Field(..., description="Field key (e.g., 'appkey')")
+    label: str = Field(..., description="Display label (e.g., 'App Key')")
+    field_type: CredentialFieldType = Field(default=CredentialFieldType.STRING)
+    required: bool = Field(default=True)
+    default: Optional[Any] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+    options: Optional[List[str]] = Field(default=None, description="Options for SELECT type")
+
+    class Config:
+        use_enum_values = True
+
+
+class CredentialTypeSchema(BaseModel):
+    """
+    Schema definition for a credential type.
+    Defines what fields are needed for a specific service.
+    """
+    type_id: str = Field(..., description="Unique identifier (e.g., 'broker_ls')")
+    name: str = Field(..., description="Display name (e.g., 'LS Securities')")
+    description: Optional[str] = Field(default=None)
+    icon: Optional[str] = Field(default=None, description="Icon emoji or URL")
+    fields: List[CredentialField] = Field(default_factory=list)
+    
+    # For plugin-defined credentials
+    plugin_id: Optional[str] = Field(default=None, description="Plugin that defines this type")
+
+
+class Credential(BaseModel):
+    """
+    Stored credential instance (n8n 스타일).
+    Contains encrypted credential data.
+    """
+    id: str = Field(..., description="Unique credential ID")
+    user_id: str = Field(default="default", description="Owner user ID")
+    name: str = Field(..., description="User-friendly name (e.g., '내 LS증권 계정')")
+    credential_type: str = Field(..., description="Type ID (e.g., 'broker_ls')")
+    
+    # Encrypted data - in production, this would be encrypted with KMS
+    # For testing, we store as plain dict (or base64 encoded)
+    data: Dict[str, Any] = Field(default_factory=dict, description="Credential data")
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+
+
+# Built-in credential type schemas
+BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
+    "broker_ls": CredentialTypeSchema(
+        type_id="broker_ls",
+        name="LS Securities",
+        description="LS증권 OpenAPI 인증 정보",
+        icon="🏦",
+        fields=[
+            CredentialField(
+                key="appkey",
+                label="App Key",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="LS증권에서 발급받은 App Key"
+            ),
+            CredentialField(
+                key="appsecret",
+                label="App Secret",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="LS증권에서 발급받은 App Secret"
+            ),
+            CredentialField(
+                key="paper_trading",
+                label="Paper Trading",
+                field_type=CredentialFieldType.BOOLEAN,
+                required=False,
+                default=True,
+                description="모의투자 모드 사용"
+            ),
+        ]
+    ),
+    "telegram": CredentialTypeSchema(
+        type_id="telegram",
+        name="Telegram Bot",
+        description="텔레그램 봇 알림 설정",
+        icon="📱",
+        fields=[
+            CredentialField(
+                key="bot_token",
+                label="Bot Token",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="BotFather에서 발급받은 토큰"
+            ),
+            CredentialField(
+                key="chat_id",
+                label="Chat ID",
+                field_type=CredentialFieldType.STRING,
+                required=True,
+                description="메시지를 보낼 채팅 ID"
+            ),
+        ]
+    ),
+    "openai": CredentialTypeSchema(
+        type_id="openai",
+        name="OpenAI",
+        description="OpenAI API 키",
+        icon="🤖",
+        fields=[
+            CredentialField(
+                key="api_key",
+                label="API Key",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="OpenAI API Key (sk-...)"
+            ),
+            CredentialField(
+                key="organization",
+                label="Organization ID",
+                field_type=CredentialFieldType.STRING,
+                required=False,
+                description="조직 ID (선택)"
+            ),
+        ]
+    ),
+    "slack": CredentialTypeSchema(
+        type_id="slack",
+        name="Slack Webhook",
+        description="Slack Incoming Webhook",
+        icon="💬",
+        fields=[
+            CredentialField(
+                key="webhook_url",
+                label="Webhook URL",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="Slack Incoming Webhook URL"
+            ),
+        ]
+    ),
+    "discord": CredentialTypeSchema(
+        type_id="discord",
+        name="Discord Webhook",
+        description="Discord Webhook 알림",
+        icon="🎮",
+        fields=[
+            CredentialField(
+                key="webhook_url",
+                label="Webhook URL",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="Discord Webhook URL"
+            ),
+        ]
+    ),
+}
+
+
+# ============================================================
+# Legacy Models (기존 호환성 유지)
+# ============================================================
 
 class ProductType(str, Enum):
     """상품 유형"""
