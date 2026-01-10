@@ -13,16 +13,14 @@ def get_workflow():
             {"id": "stockBroker", "type": "BrokerNode", "category": "infra", "provider": "ls-sec.co.kr", "product": "overseas_stock", "position": {"x": 200, "y": 150}},
             # === 선물 Broker ===
             {"id": "futuresBroker", "type": "BrokerNode", "category": "infra", "provider": "ls-sec.co.kr", "product": "overseas_futures", "paper_trading": True, "position": {"x": 200, "y": 450}},
-            # === Stock Trading Group ===
-            {"id": "stockGroup", "type": "GroupNode", "category": "group", "name": "US Stock Trading", "color": "#2196F3", "child_nodes": ["stockSchedule", "stockHours", "stockWatchlist", "stockMarket", "stockCondition", "stockOrder"], "position": {"x": 400, "y": 50}},
+            # === Stock Trading Flow ===
             {"id": "stockSchedule", "type": "ScheduleNode", "category": "trigger", "cron": "*/30 * * * * *", "timezone": "America/New_York", "position": {"x": 450, "y": 80}},
             {"id": "stockHours", "type": "TradingHoursFilterNode", "category": "trigger", "market": "NYSE", "session": "regular", "timezone": "America/New_York", "position": {"x": 600, "y": 80}},
             {"id": "stockWatchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["AAPL", "MSFT", "NVDA"], "position": {"x": 750, "y": 80}},
             {"id": "stockMarket", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 900, "y": 80}},
             {"id": "stockCondition", "type": "ConditionNode", "category": "condition", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"}, "position": {"x": 1050, "y": 80}},
             {"id": "stockOrder", "type": "NewOrderNode", "category": "order", "plugin": "MarketOrder", "fields": {"side": "buy"}, "position": {"x": 1200, "y": 80}},
-            # === Futures Trading Group ===
-            {"id": "futuresGroup", "type": "GroupNode", "category": "group", "name": "US Futures Trading", "color": "#FF9800", "child_nodes": ["futuresSchedule", "futuresWatchlist", "futuresMarket", "futuresCondition", "futuresOrder"], "position": {"x": 400, "y": 350}},
+            # === Futures Trading Flow ===
             {"id": "futuresSchedule", "type": "ScheduleNode", "category": "trigger", "cron": "*/30 * * * * *", "timezone": "America/New_York", "position": {"x": 450, "y": 380}},
             {"id": "futuresWatchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["NQH26", "ESH26"], "position": {"x": 600, "y": 380}},
             {"id": "futuresMarket", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 750, "y": 380}},

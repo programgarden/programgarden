@@ -383,7 +383,107 @@ BacktestEngine₄ ──┘
 
 ---
 
-## 8. 패키지 관계도
+## 8. 리소스 관리 시스템
+
+ProgramGarden은 자동매매의 안정성을 위해 **적응형 리소스 관리 시스템**을 제공합니다.
+
+### 8.1 개요
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                ResourceContext (통합 관리)                  │
+├─────────────────────────────────────────────────────────────┤
+│  ResourceMonitor ──▶ ResourceLimiter ──▶ AdaptiveThrottle  │
+│  (CPU/RAM/Disk)      (제한 검사)         (5-Level 조절)    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 JSON DSL에서 사용
+
+```json
+{
+  "resource_limits": {
+    "max_cpu_percent": 70,
+    "max_memory_percent": 75,
+    "max_workers": 2,
+    "throttle_strategy": "conservative"
+  },
+  "nodes": [...],
+  "edges": [...]
+}
+```
+
+| 필드 | 기본값 | 설명 |
+|------|--------|------|
+| `max_cpu_percent` | 80 | 최대 CPU 사용률 (%) |
+| `max_memory_percent` | 80 | 최대 메모리 사용률 (%) |
+| `max_disk_percent` | 90 | 최대 디스크 사용률 (%) |
+| `max_workers` | 4 | 동시 작업 수 |
+| `throttle_strategy` | "gradual" | 스로틀 전략 (gradual, aggressive, conservative) |
+
+### 8.3 5-Level 적응형 스로틀링
+
+리소스 사용량에 따라 자동으로 실행 속도를 조절합니다:
+
+| 레벨 | 트리거 | 동작 |
+|------|--------|------|
+| **NONE** | < 60% | 정상 실행 |
+| **LIGHT** | 60-75% | 배치 크기 20% 감소 |
+| **MODERATE** | 75-85% | 배치 크기 50% 감소, 지연 추가 |
+| **HEAVY** | 85-95% | 동시 작업 50% 제한 |
+| **CRITICAL** | > 95% | 신규 작업 일시 중지 (주문만 허용) |
+
+> ⚠️ **주문 노드(NewOrderNode 등)는 CRITICAL 상태에서도 항상 우선 실행됩니다.**
+
+### 8.4 플러그인 샌드박스
+
+커뮤니티 플러그인은 **타임아웃 보호**를 받습니다:
+
+```python
+# 플러그인 리소스 힌트 (PR 리뷰어가 설정)
+RSI_SCHEMA = PluginSchema(
+    id="RSI",
+    # ... 기존 필드 ...
+    resource_hints={
+        "max_execution_sec": 30.0,      # 30초 타임아웃
+        "max_symbols_per_call": 100,    # 배치당 최대 100종목
+        "cpu_intensive": True,          # CPU 집약적 작업
+    },
+    trust_level="verified",  # core, verified, community
+)
+```
+
+| 신뢰 레벨 | 타임아웃 | 메모리 제한 | 종목 수 |
+|----------|----------|------------|---------|
+| `core` | 무제한 | 무제한 | 무제한 |
+| `verified` | 60초 | 500MB | 500 |
+| `community` | 30초 | 100MB | 100 |
+
+### 8.5 자동 감지
+
+`resource_limits`를 생략하면 시스템 리소스를 자동 감지합니다:
+
+```python
+import programgarden as pg
+
+# 자동 감지 (권장)
+job = pg.run(workflow)
+
+# 또는 명시적 설정
+from programgarden_core.models import ResourceLimits
+
+job = pg.run(
+    workflow,
+    resource_limits=ResourceLimits(
+        max_cpu_percent=70,
+        max_memory_percent=75,
+    )
+)
+```
+
+---
+
+## 9. 패키지 관계도
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -408,7 +508,7 @@ BacktestEngine₄ ──┘
 
 ---
 
-## 9. 다음 단계
+## 10. 다음 단계
 
 - [비개발자 빠른 시작 가이드](non_dev_quick_guide.md) - 코딩 없이 자동매매 설정하기
 - [DSL 커스터마이징 가이드](custom_dsl.md) - 개발자용 플러그인 제작

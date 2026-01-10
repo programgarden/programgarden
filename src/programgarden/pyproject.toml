@@ -23,6 +23,7 @@ tzdata = "^2025.2"
 programgarden-finance = {path = "../finance", develop = true}
 programgarden-core = {path = "../core", develop = true}
 psycopg2-binary = "^2.9.11"
+psutil = "^6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

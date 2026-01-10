@@ -43,7 +43,7 @@ workflow = get_workflow_by_id("futures-01")
 ## 워크플로우 에디터 실행
 
 ```bash
-cd src/programgarden/examples/workflow_editor
+cd ./src/programgarden/examples/workflow_editor/
 poetry run python server.py
 ```
 

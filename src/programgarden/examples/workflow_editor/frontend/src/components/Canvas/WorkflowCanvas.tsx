@@ -31,6 +31,7 @@ export default function WorkflowCanvas() {
     onConnect,
     addNode,
     selectNode,
+    selectEdge,
     nodeTypes: registeredNodeTypes,
   } = useWorkflowStore();
 
@@ -82,7 +83,15 @@ export default function WorkflowCanvas() {
 
   const onPaneClick = useCallback(() => {
     selectNode(null);
-  }, [selectNode]);
+    selectEdge(null);
+  }, [selectNode, selectEdge]);
+
+  const onEdgeClick = useCallback(
+    (_: React.MouseEvent, edge: { id: string }) => {
+      selectEdge(edge.id);
+    },
+    [selectEdge]
+  );
 
   return (
     <div ref={reactFlowWrapper} className="w-full h-full">
@@ -95,8 +104,10 @@ export default function WorkflowCanvas() {
         onDragOver={onDragOver}
         onDrop={onDrop}
         onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        deleteKeyCode={['Backspace', 'Delete']}
         fitView
         snapToGrid
         snapGrid={[15, 15]}

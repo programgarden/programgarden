@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { getCategoryColor } from '@/utils/nodeColors';
+import { findUpstreamNodes } from '@/utils/graphUtils';
 import { Trash2, Info, Plus } from 'lucide-react';
 import { ConfigField } from '@/types/workflow';
 import { useCredentials } from '@/hooks/useCredentials';
 import { CredentialModal } from './CredentialModal';
+import InputTab from './InputTab';
+import OutputTab from './OutputTab';
+import BindableField from './BindableField';
 
 // Map node types to their required credential types
 const NODE_CREDENTIAL_TYPES: Record<string, string> = {
@@ -13,13 +17,68 @@ const NODE_CREDENTIAL_TYPES: Record<string, string> = {
   // Add more mappings as needed
 };
 
+// Tab button component
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
+        active
+          ? 'text-white border-b-2 border-blue-500'
+          : 'text-gray-400 hover:text-gray-200'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function PropertiesPanel() {
-  const { nodes, selectedNodeId, updateNodeData, removeNode } = useWorkflowStore();
+  const [activeTab, setActiveTab] = useState<'input' | 'settings' | 'output'>('settings');
+  const { nodes, edges, selectedNodeId, updateNodeData, removeNode, nodeOutputs } = useWorkflowStore();
   const { credentials, credentialTypes, createCredential, loading: credLoading } = useCredentials();
   const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [credentialTypeForModal, setCredentialTypeForModal] = useState<string | undefined>();
+  const [focusedFieldKey, setFocusedFieldKey] = useState<string | null>(null);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+
+  // 이전 노드들 찾기
+  const upstreamNodes = useMemo(() => {
+    if (!selectedNodeId) return [];
+    return findUpstreamNodes(selectedNodeId, nodes, edges);
+  }, [selectedNodeId, nodes, edges]);
+
+  // 이전 노드들의 출력값
+  const inputData = useMemo(() => {
+    return upstreamNodes.reduce((acc, node) => {
+      if (nodeOutputs[node.id]) {
+        acc[node.id] = nodeOutputs[node.id];
+      }
+      return acc;
+    }, {} as Record<string, unknown>);
+  }, [upstreamNodes, nodeOutputs]);
+
+  // 필드 클릭 핸들러 (Input 탭에서 필드 클릭 시)
+  const handleFieldClick = useCallback((expression: string) => {
+    // focusedFieldKey가 있으면 해당 필드에 삽입
+    if (focusedFieldKey && selectedNode) {
+      updateNodeData(selectedNode.id, { [focusedFieldKey]: expression });
+      // Settings 탭으로 전환
+      setActiveTab('settings');
+    } else {
+      // 클립보드에 복사
+      navigator.clipboard.writeText(expression);
+    }
+  }, [focusedFieldKey, selectedNode, updateNodeData]);
 
   if (!selectedNode) {
     return (
@@ -50,8 +109,8 @@ export default function PropertiesPanel() {
   // Get the credential type required by this node
   const nodeType = nodeData.nodeType as string;
   const requiredCredentialType = NODE_CREDENTIAL_TYPES[nodeType];
-  const filteredCredentials = requiredCredentialType 
-    ? credentials.filter(c => c.credential_type === requiredCredentialType)
+  const filteredCredentials = requiredCredentialType
+    ? credentials.filter((c) => c.credential_type === requiredCredentialType)
     : [];
 
   const handleOpenCredentialModal = () => {
@@ -242,7 +301,9 @@ export default function PropertiesPanel() {
       {/* Header */}
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-semibold text-gray-200">Properties</h2>
+          <h2 className="text-sm font-semibold text-gray-200">
+            {(nodeData.label as string) || (nodeData.nodeType as string)}
+          </h2>
           <button
             onClick={handleDelete}
             className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded transition-colors"
@@ -259,54 +320,96 @@ export default function PropertiesPanel() {
         </div>
       </div>
 
-      {/* Form */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Label */}
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Label</label>
-          <input
-            type="text"
-            value={(nodeData.label as string) || ''}
-            onChange={handleLabelChange}
-            placeholder={nodeData.nodeType as string}
-            className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-          />
-        </div>
+      {/* Tabs (n8n 스타일) */}
+      <div className="flex border-b border-gray-700">
+        <TabButton active={activeTab === 'input'} onClick={() => setActiveTab('input')}>
+          Input
+        </TabButton>
+        <TabButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')}>
+          Settings
+        </TabButton>
+        <TabButton active={activeTab === 'output'} onClick={() => setActiveTab('output')}>
+          Output
+        </TabButton>
+      </div>
 
-        {/* Config Fields from Schema */}
-        {hasConfigSchema && (
-          <>
-            <div className="border-t border-gray-700 pt-4">
-              <h3 className="text-xs font-semibold text-gray-400 mb-3">Configuration</h3>
-            </div>
-            {Object.entries(configSchema).map(([key, schema]) => (
-              <div key={key}>
-                {renderField(key, schema, nodeData[key])}
-              </div>
-            ))}
-          </>
+      {/* Tab Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {activeTab === 'input' && (
+          <InputTab 
+            inputData={inputData} 
+            upstreamNodes={upstreamNodes}
+            onFieldClick={handleFieldClick}
+          />
         )}
 
-        {/* Inputs/Outputs Info */}
-        <div className="border-t border-gray-700 pt-4">
-          <h3 className="text-xs font-semibold text-gray-400 mb-2">Ports</h3>
-          <div className="space-y-2">
-            {(nodeData.inputs as { name: string; type: string }[] | undefined)?.map((input) => (
-              <div key={input.name} className="flex items-center gap-2 text-xs">
-                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                <span className="text-gray-300">{input.name}</span>
-                <span className="text-gray-500">({input.type})</span>
+        {activeTab === 'settings' && (
+          <div className="space-y-4">
+            {/* Label */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Label</label>
+              <input
+                type="text"
+                value={(nodeData.label as string) || ''}
+                onChange={handleLabelChange}
+                placeholder={nodeData.nodeType as string}
+                className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            {/* Config Fields from Schema */}
+            {hasConfigSchema && (
+              <>
+                <div className="border-t border-gray-700 pt-4">
+                  <h3 className="text-xs font-semibold text-gray-400 mb-3">Configuration</h3>
+                </div>
+                {Object.entries(configSchema).map(([key, schema]) => (
+                  <div key={key}>
+                    {key === 'credential_id' ? (
+                      renderField(key, schema, nodeData[key])
+                    ) : (
+                      <BindableField
+                        label={key.replace(/_/g, ' ')}
+                        fieldKey={key}
+                        value={nodeData[key]}
+                        onChange={(value) => updateNodeData(selectedNode.id, { [key]: value })}
+                        onFocus={() => setFocusedFieldKey(key)}
+                        schema={schema}
+                      />
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* Inputs/Outputs Info */}
+            <div className="border-t border-gray-700 pt-4">
+              <h3 className="text-xs font-semibold text-gray-400 mb-2">Ports</h3>
+              <div className="space-y-2">
+                {(nodeData.inputs as { name: string; type: string }[] | undefined)?.map(
+                  (input) => (
+                    <div key={input.name} className="flex items-center gap-2 text-xs">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      <span className="text-gray-300">{input.name}</span>
+                      <span className="text-gray-500">({input.type})</span>
+                    </div>
+                  )
+                )}
+                {(nodeData.outputs as { name: string; type: string }[] | undefined)?.map(
+                  (output) => (
+                    <div key={output.name} className="flex items-center gap-2 text-xs">
+                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                      <span className="text-gray-300">{output.name}</span>
+                      <span className="text-gray-500">({output.type})</span>
+                    </div>
+                  )
+                )}
               </div>
-            ))}
-            {(nodeData.outputs as { name: string; type: string }[] | undefined)?.map((output) => (
-              <div key={output.name} className="flex items-center gap-2 text-xs">
-                <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                <span className="text-gray-300">{output.name}</span>
-                <span className="text-gray-500">({output.type})</span>
-              </div>
-            ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'output' && <OutputTab output={nodeOutputs[selectedNodeId!]} />}
       </div>
 
       {/* Credential Modal */}

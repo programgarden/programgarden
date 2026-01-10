@@ -10,6 +10,7 @@ import asyncio
 from programgarden.resolver import WorkflowResolver, ValidationResult
 from programgarden.executor import WorkflowExecutor
 from programgarden_core.bases.listener import ExecutionListener
+from programgarden_core.models.resource import ResourceLimits
 
 
 class ProgramGarden:
@@ -25,6 +26,12 @@ class ProgramGarden:
         >>> result = pg.validate(my_workflow)
         >>> if result.is_valid:
         ...     job = pg.run(my_workflow, context={"credential_id": "cred-001"})
+        
+        >>> # With resource limits
+        >>> job = pg.run(
+        ...     my_workflow,
+        ...     resource_limits={"max_cpu_percent": 70, "max_memory_percent": 75}
+        ... )
     """
 
     def __init__(self):
@@ -48,6 +55,7 @@ class ProgramGarden:
         definition: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
+        resource_limits: Optional[Dict[str, Any]] = None,
         wait: bool = True,
         timeout: float = 60.0,
     ) -> Dict[str, Any]:
@@ -58,6 +66,8 @@ class ProgramGarden:
             definition: Workflow definition
             context: Runtime parameters (symbols, dry_run, backtest options, etc.)
             secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
+            resource_limits: Resource limits (max_cpu_percent, max_memory_percent, etc.)
+                           If None, auto-detects from system or uses workflow's resource_limits
             wait: Whether to wait for completion (default True)
             timeout: Maximum wait time (seconds)
 
@@ -69,13 +79,20 @@ class ProgramGarden:
             ...     workflow,
             ...     context={"symbols": ["AAPL", "NVDA"]},
             ...     secrets={"credential_id": {"appkey": "...", "appsecret": "..."}},
+            ...     resource_limits={"max_cpu_percent": 70},
             ... )
         """
+        # Parse resource_limits if provided
+        limits = None
+        if resource_limits:
+            limits = ResourceLimits(**resource_limits)
+        
         async def _run():
             job = await self.executor.execute(
                 definition,
                 context_params=context,
                 secrets=secrets,
+                resource_limits=limits,
             )
             
             if wait:
@@ -96,6 +113,7 @@ class ProgramGarden:
         definition: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
+        resource_limits: Optional[Dict[str, Any]] = None,
         listeners: Optional[List[ExecutionListener]] = None,
     ):
         """
@@ -105,6 +123,8 @@ class ProgramGarden:
             definition: Workflow definition
             context: Execution context parameters
             secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
+            resource_limits: Resource limits (max_cpu_percent, max_memory_percent, etc.)
+                           If None, auto-detects from system or uses workflow's resource_limits
             listeners: List of ExecutionListener instances for state callbacks (Option A)
 
         Returns:
@@ -117,11 +137,23 @@ class ProgramGarden:
             # Option B: Add after creation
             job = await pg.run_async(workflow)
             job.add_listener(MyListener())
+            
+            # With resource limits
+            job = await pg.run_async(
+                workflow,
+                resource_limits={"max_cpu_percent": 70, "throttle_strategy": "conservative"}
+            )
         """
+        # Parse resource_limits if provided
+        limits = None
+        if resource_limits:
+            limits = ResourceLimits(**resource_limits)
+        
         return await self.executor.execute(
             definition,
             context_params=context,
             secrets=secrets,
+            resource_limits=limits,
             listeners=listeners,
         )
 

@@ -98,9 +98,6 @@
   "nodes.DisplayNode.name": "Display",
   "nodes.DisplayNode.description": "Chart/table visualization.",
   
-  "nodes.GroupNode.name": "Group",
-  "nodes.GroupNode.description": "Reusable subflow group.",
-  
   "nodes.DeployNode.name": "Deploy",
   "nodes.DeployNode.description": "Deploy strategy (live/paper/dry_run).",
   

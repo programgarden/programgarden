@@ -9,7 +9,7 @@ import {
   applyEdgeChanges,
   Connection,
 } from '@xyflow/react';
-import { NodeState, EdgeState, LogEntry, NodeTypeSchema, PortDefinition } from '@/types/workflow';
+import { NodeState, EdgeState, LogEntry, NodeTypeSchema } from '@/types/workflow';
 import { isPortCompatible, getEdgeColor } from '@/utils/portCompatibility';
 
 interface WorkflowState {
@@ -22,6 +22,7 @@ interface WorkflowState {
   nodes: Node[];
   edges: Edge[];
   selectedNodeId: string | null;
+  selectedEdgeId: string | null;
 
   // Node registry
   nodeTypes: NodeTypeSchema[];
@@ -32,6 +33,9 @@ interface WorkflowState {
   nodeStates: Record<string, NodeState>;
   edgeStates: Record<string, EdgeState>;
   logs: LogEntry[];
+  
+  // Node outputs (last execution results)
+  nodeOutputs: Record<string, unknown>;
 
   // Actions - React Flow
   onNodesChange: OnNodesChange;
@@ -43,6 +47,10 @@ interface WorkflowState {
   removeNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, data: Record<string, unknown>) => void;
   selectNode: (nodeId: string | null) => void;
+
+  // Actions - Edge management
+  selectEdge: (edgeId: string | null) => void;
+  removeEdge: (edgeId: string) => void;
 
   // Actions - Workflow
   setWorkflow: (workflow: { id: string; name: string; description?: string; nodes: Node[]; edges: Edge[] }) => void;
@@ -60,6 +68,10 @@ interface WorkflowState {
   resetEdgeStates: () => void;
   addLog: (log: Omit<LogEntry, 'timestamp'>) => void;
   clearLogs: () => void;
+  
+  // Actions - Node outputs
+  setNodeOutput: (nodeId: string, output: unknown) => void;
+  clearNodeOutputs: () => void;
 }
 
 let nodeIdCounter = 1;
@@ -76,12 +88,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  selectedEdgeId: null,
   nodeTypes: [],
   nodeTypesLoaded: false,
   isRunning: false,
   nodeStates: {},
   edgeStates: {},
   logs: [],
+  nodeOutputs: {},
 
   // React Flow handlers
   onNodesChange: (changes) => {
@@ -99,34 +113,32 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   onConnect: (connection: Connection) => {
     if (!connection.source || !connection.target) return;
     
-    // Get source and target nodes
+    // n8n 스타일: 단순화된 단일 포트 연결 (output -> input)
+    // 포트 타입 체크는 내부적으로 유지하되 연결 차단은 하지 않음
     const sourceNode = get().nodes.find((n) => n.id === connection.source);
     const targetNode = get().nodes.find((n) => n.id === connection.target);
     
-    // Get port types from node type schemas
+    // 포트 타입 호환성 체크 (경고용, 메타데이터에서 첫 번째 포트 사용)
     const sourceNodeType = sourceNode?.data.nodeType as string;
     const targetNodeType = targetNode?.data.nodeType as string;
     const sourceSchema = get().nodeTypes.find((t) => t.node_type === sourceNodeType);
     const targetSchema = get().nodeTypes.find((t) => t.node_type === targetNodeType);
     
-    const sourcePort = sourceSchema?.outputs?.find((o: PortDefinition) => o.name === connection.sourceHandle);
-    const targetPort = targetSchema?.inputs?.find((i: PortDefinition) => i.name === connection.targetHandle);
+    // 단일 포트이므로 첫 번째 output/input 포트 타입 사용
+    const sourceType = sourceSchema?.outputs?.[0]?.type;
+    const targetType = targetSchema?.inputs?.[0]?.type;
     
-    const sourceType = sourcePort?.type;
-    const targetType = targetPort?.type;
-    
-    // Check port type compatibility
+    // Check port type compatibility (for warning only, not blocking)
     const isValid = isPortCompatible(sourceType, targetType);
     
     const newEdge: Edge = {
       id: `e_${connection.source}_${connection.target}`,
       source: connection.source,
       target: connection.target,
-      sourceHandle: connection.sourceHandle ?? undefined,
-      targetHandle: connection.targetHandle ?? undefined,
+      sourceHandle: 'output',  // 항상 'output'
+      targetHandle: 'input',   // 항상 'input'
       type: 'smoothstep',
       animated: false,
-      // Style based on compatibility
       style: {
         stroke: getEdgeColor(isValid),
         strokeWidth: isValid ? 1 : 2,
@@ -142,11 +154,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       edges: [...state.edges, newEdge],
     }));
     
-    // Log warning if types are incompatible
-    if (!isValid) {
+    // Log warning if types are incompatible (but don't block connection)
+    if (!isValid && sourceType && targetType) {
       get().addLog({
         level: 'warning',
-        message: `⚠️ Type mismatch: ${sourceType || 'unknown'} → ${targetType || 'unknown'}`,
+        message: `⚠️ Type mismatch: ${sourceType} → ${targetType}`,
       });
     }
   },
@@ -222,7 +234,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   selectNode: (nodeId) => {
-    set({ selectedNodeId: nodeId });
+    set({ selectedNodeId: nodeId, selectedEdgeId: null });
+  },
+
+  // Edge management
+  selectEdge: (edgeId) => {
+    set({ selectedEdgeId: edgeId, selectedNodeId: null });
+  },
+
+  removeEdge: (edgeId) => {
+    const edge = get().edges.find((e) => e.id === edgeId);
+    set((state) => ({
+      edges: state.edges.filter((e) => e.id !== edgeId),
+      selectedEdgeId: state.selectedEdgeId === edgeId ? null : state.selectedEdgeId,
+    }));
+    if (edge) {
+      get().addLog({ level: 'info', message: `Removed edge: ${edge.source} → ${edge.target}` });
+    }
   },
 
   // Workflow management
@@ -244,6 +272,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodes: workflow.nodes,
       edges: workflow.edges,
       selectedNodeId: null,
+      selectedEdgeId: null,
     });
     get().addLog({ level: 'success', message: `Loaded workflow: ${workflow.name}` });
   },
@@ -257,6 +286,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodes: [],
       edges: [],
       selectedNodeId: null,
+      selectedEdgeId: null,
       nodeStates: {},
     });
     get().addLog({ level: 'info', message: 'Cleared workflow' });
@@ -397,5 +427,28 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   clearLogs: () => {
     set({ logs: [] });
+  },
+
+  // Node output management
+  setNodeOutput: (nodeId, output) => {
+    set((state) => ({
+      nodeOutputs: { ...state.nodeOutputs, [nodeId]: output },
+      // 노드 데이터에도 lastOutput 추가 (프리뷰용)
+      nodes: state.nodes.map((n) =>
+        n.id === nodeId
+          ? { ...n, data: { ...n.data, lastOutput: output } }
+          : n
+      ),
+    }));
+  },
+
+  clearNodeOutputs: () => {
+    set((state) => ({
+      nodeOutputs: {},
+      nodes: state.nodes.map((n) => ({
+        ...n,
+        data: { ...n.data, lastOutput: undefined },
+      })),
+    }));
   },
 }));

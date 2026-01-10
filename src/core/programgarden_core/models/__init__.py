@@ -36,6 +36,22 @@ from programgarden_core.models.field_binding import (
     parse_field_value,
     is_expression,
 )
+from programgarden_core.models.resource import (
+    ThrottleLevel,
+    ResourceUsage,
+    ResourceLimits,
+    ThrottleState,
+    ResourceHints,
+    DEFAULT_NODE_HINTS,
+    get_node_hints,
+)
+from programgarden_core.models.plugin_resource import (
+    TrustLevel,
+    TRUST_LEVEL_LIMITS,
+    PluginResourceHints,
+    DEFAULT_PLUGIN_HINTS,
+    get_plugin_hints,
+)
 
 __all__ = [
     # Edge
@@ -68,4 +84,18 @@ __all__ = [
     "FieldsDict",
     "parse_field_value",
     "is_expression",
+    # Resource Management
+    "ThrottleLevel",
+    "ResourceUsage",
+    "ResourceLimits",
+    "ThrottleState",
+    "ResourceHints",
+    "DEFAULT_NODE_HINTS",
+    "get_node_hints",
+    # Plugin Resource
+    "TrustLevel",
+    "TRUST_LEVEL_LIMITS",
+    "PluginResourceHints",
+    "DEFAULT_PLUGIN_HINTS",
+    "get_plugin_hints",
 ]

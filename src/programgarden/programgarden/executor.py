@@ -1480,6 +1480,8 @@ class ConditionNodeExecutor(NodeExecutorBase):
     2. 백테스트 모드: 시계열 ohlcv_data → signals: list
     
     입력 데이터 형태를 자동 감지하여 모드 결정.
+    리소스 관리 시스템과 연동하여 배치 크기 및 속도를 조절합니다.
+    플러그인은 PluginSandbox를 통해 타임아웃 보호됩니다.
     """
 
     async def execute(
@@ -1491,36 +1493,91 @@ class ConditionNodeExecutor(NodeExecutorBase):
         plugin: Optional[Callable] = None,
         fields: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        # 입력 데이터 수집
-        symbols = context.get_output(f"_input_{node_id}", "symbols") or []
-        price_data = context.get_output(f"_input_{node_id}", "price_data") or {}
+        from programgarden.plugin import PluginSandbox, PluginTimeoutError
+        from programgarden_core.models import get_plugin_hints
         
-        # 시계열 데이터 확인 (HistoricalDataNode에서 온 경우)
-        ohlcv_data = price_data
-        if not ohlcv_data:
-            ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
+        # 플러그인 ID 추출
+        plugin_id = config.get("plugin", "Unknown")
         
-        # fields 표현식 평가
-        evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
-        if evaluated_fields:
-            expr_context = context.get_expression_context()
-            evaluator = ExpressionEvaluator(expr_context)
-            evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
+        # 플러그인 리소스 힌트 조회
+        hints = get_plugin_hints(plugin_id)
         
-        # 시계열 모드 감지
-        is_timeseries = self._is_timeseries_data(ohlcv_data)
+        # === 리소스 체크 ===
+        resource_check = await context.check_resources_before_task(
+            task_type="ConditionNode",
+            weight=hints.get_weight() if hasattr(hints, 'get_weight') else 1.0,
+        )
         
-        if is_timeseries:
-            # 백테스트 모드: 시계열 전체에 대해 시그널 생성
-            context.log("info", f"Condition running in backtest mode (timeseries)", node_id)
-            return await self._execute_backtest_mode(
-                node_id, ohlcv_data, evaluated_fields, plugin, context
-            )
-        else:
-            # 실시간 모드: 단일 시점 평가
-            context.log("info", f"Condition running in realtime mode", node_id)
-            return await self._execute_realtime_mode(
-                node_id, symbols, price_data, evaluated_fields, plugin, context
+        if not resource_check["can_proceed"]:
+            context.log("warning", f"Resource limit reached: {resource_check['reason']}", node_id)
+            # 리소스 부족 시 빈 결과 반환 (안전 모드)
+            return {
+                "result": False,
+                "passed_symbols": [],
+                "failed_symbols": [],
+                "values": {},
+                "error": "resource_limit",
+            }
+        
+        # 권장 배치 크기 저장 (백테스트 모드에서 사용)
+        recommended_batch_size = resource_check.get("recommended_batch_size", 10)
+        
+        # 샌드박스 생성
+        sandbox = PluginSandbox(
+            resource_context=context.resource,
+            default_timeout=hints.max_execution_sec if hasattr(hints, 'max_execution_sec') else 30.0,
+            default_batch_size=hints.max_symbols_per_call if hasattr(hints, 'max_symbols_per_call') else 100,
+        )
+        
+        try:
+            # 입력 데이터 수집
+            symbols = context.get_output(f"_input_{node_id}", "symbols") or []
+            price_data = context.get_output(f"_input_{node_id}", "price_data") or {}
+            
+            # 시계열 데이터 확인 (HistoricalDataNode에서 온 경우)
+            ohlcv_data = price_data
+            if not ohlcv_data:
+                ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
+            
+            # fields 표현식 평가
+            evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
+            if evaluated_fields:
+                expr_context = context.get_expression_context()
+                evaluator = ExpressionEvaluator(expr_context)
+                evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
+            
+            # 시계열 모드 감지
+            is_timeseries = self._is_timeseries_data(ohlcv_data)
+            
+            if is_timeseries:
+                # 백테스트 모드: 시계열 전체에 대해 시그널 생성
+                context.log("info", f"Condition running in backtest mode (timeseries)", node_id)
+                return await self._execute_backtest_mode(
+                    node_id, ohlcv_data, evaluated_fields, plugin, context, sandbox,
+                    plugin_id=plugin_id,
+                    batch_size=recommended_batch_size
+                )
+            else:
+                # 실시간 모드: 단일 시점 평가
+                context.log("info", f"Condition running in realtime mode", node_id)
+                return await self._execute_realtime_mode(
+                    node_id, symbols, price_data, evaluated_fields, plugin, context, sandbox,
+                    plugin_id=plugin_id
+                )
+        except PluginTimeoutError as e:
+            context.log("error", f"Plugin timeout: {e}", node_id)
+            return {
+                "result": False,
+                "passed_symbols": [],
+                "failed_symbols": symbols if 'symbols' in locals() else [],
+                "values": {},
+                "error": "plugin_timeout",
+            }
+        finally:
+            # 리소스 반환
+            await context.release_resources_after_task(
+                task_type="ConditionNode",
+                weight=hints.get_weight() if hasattr(hints, 'get_weight') else 1.0,
             )
 
     def _is_timeseries_data(self, data: Any) -> bool:
@@ -1546,20 +1603,42 @@ class ConditionNodeExecutor(NodeExecutorBase):
         fields: Dict[str, Any],
         plugin: Optional[Callable],
         context: ExecutionContext,
+        sandbox: "PluginSandbox",
+        plugin_id: str = "Unknown",
     ) -> Dict[str, Any]:
-        """실시간 모드: 단일 시점 평가"""
+        """실시간 모드: 단일 시점 평가 (샌드박스 적용)"""
+        from programgarden.plugin import PluginSandbox, PluginTimeoutError
         
         passed_symbols = []
         failed_symbols = []
         values = {}
 
         if plugin:
-            # 플러그인 실행
+            # 샌드박스에서 플러그인 실행
             try:
-                result = await plugin(symbols, price_data, fields)
+                if len(symbols) > sandbox._default_batch_size:
+                    # 대량 종목은 배치 처리
+                    result = await sandbox.execute_batched(
+                        plugin_id=plugin_id,
+                        plugin_callable=plugin,
+                        symbols=symbols,
+                        price_data=price_data,
+                        fields=fields,
+                    )
+                else:
+                    # 일반 실행
+                    result = await sandbox.execute(
+                        plugin_id=plugin_id,
+                        plugin_callable=plugin,
+                        kwargs={"symbols": symbols, "price_data": price_data, "fields": fields},
+                    )
+                
                 passed_symbols = result.get("passed_symbols", [])
                 failed_symbols = result.get("failed_symbols", [])
                 values = result.get("values", {})
+            except PluginTimeoutError as e:
+                context.log("error", f"Plugin timeout: {e}", node_id)
+                failed_symbols = symbols
             except Exception as e:
                 context.log("error", f"Plugin error: {e}", node_id)
                 failed_symbols = symbols
@@ -1589,13 +1668,21 @@ class ConditionNodeExecutor(NodeExecutorBase):
         fields: Dict[str, Any],
         plugin: Optional[Callable],
         context: ExecutionContext,
+        sandbox: "PluginSandbox",
+        plugin_id: str = "Unknown",
+        batch_size: int = 10,
     ) -> Dict[str, Any]:
         """
-        백테스트 모드: 시계열 전체에 대해 시그널 생성
+        백테스트 모드: 시계열 전체에 대해 시그널 생성 (샌드박스 적용)
         
         각 bar에 대해 플러그인을 호출하여 시그널 시계열 생성.
         플러그인은 해당 시점까지의 데이터만 받음 (미래 데이터 누출 방지).
+        
+        리소스 관리:
+        - batch_size 단위로 처리 후 리소스 상태 체크
+        - 리소스 부족 시 recommended_delay 적용
         """
+        from programgarden.plugin import PluginTimeoutError
         
         signals = []
         all_values = {}
@@ -1611,6 +1698,9 @@ class ConditionNodeExecutor(NodeExecutorBase):
         # 최소 데이터 포인트 (지표 계산에 필요)
         min_bars = fields.get("period", 14) + 5
         
+        # 배치 처리
+        batch_count = 0
+        
         for i, bar in enumerate(bars):
             date = bar.get("date", "")
             
@@ -1624,6 +1714,30 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 })
                 continue
             
+            # 배치 단위 리소스 체크 (batch_size마다)
+            batch_count += 1
+            if batch_count >= batch_size:
+                batch_count = 0
+                # 리소스 상태 확인 (권한 재획득 아님, 상태만 체크)
+                if context.resource:
+                    check = await context.check_resources_before_task(
+                        task_type="ConditionNode",
+                        weight=0.5,  # 배치 체크는 가벼움
+                        timeout=5.0,
+                    )
+                    if check.get("can_proceed"):
+                        # 권장 지연 적용
+                        delay = check.get("recommended_delay", 0)
+                        if delay > 0:
+                            await asyncio.sleep(delay)
+                        # 리소스 반환
+                        await context.release_resources_after_task("ConditionNode", 0.5)
+                    else:
+                        # 리소스 부족 시 잠시 대기
+                        context.log("debug", f"Resource throttle at bar {i}, waiting...", node_id)
+                        await asyncio.sleep(0.5)
+                        await context.release_resources_after_task("ConditionNode", 0.5)
+            
             # 해당 시점까지의 데이터만 추출 (미래 데이터 누출 방지)
             context_data = {}
             for symbol, symbol_bars in ohlcv_data.items():
@@ -1633,10 +1747,15 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     "current": symbol_bars[i] if i < len(symbol_bars) else {},
                 }
             
-            # 플러그인 호출
+            # 플러그인 호출 (샌드박스 적용)
             if plugin:
                 try:
-                    result = await plugin(symbols, context_data, fields)
+                    result = await sandbox.execute(
+                        plugin_id=f"{plugin_id}:bar{i}",
+                        plugin_callable=plugin,
+                        kwargs={"symbols": symbols, "price_data": context_data, "fields": fields},
+                        timeout=10.0,  # 개별 bar는 짧은 타임아웃
+                    )
                     passed = result.get("passed_symbols", [])
                     values = result.get("values", {})
                     
@@ -1658,7 +1777,10 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         if symbol not in all_values:
                             all_values[symbol] = []
                         all_values[symbol].append({"date": date, **val})
-                    
+                
+                except PluginTimeoutError:
+                    context.log("warning", f"Plugin timeout at {date}", node_id)
+                    signals.append({"date": date, "signal": "hold", "symbols": [], "values": {}})
                 except Exception as e:
                     context.log("warning", f"Plugin error at {date}: {e}", node_id)
                     signals.append({"date": date, "signal": "hold", "symbols": [], "values": {}})
@@ -2117,6 +2239,10 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
     - equity_curve: 일별 포트폴리오 가치
     - trades: 거래 내역
     - metrics: 성과 지표
+    
+    리소스 관리:
+    - 메모리/CPU 집약적 작업 (weight=3.0)
+    - 리소스 부족 시 실행 대기 또는 거부
     """
 
     async def execute(
@@ -2128,56 +2254,79 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """백테스트 실행"""
         
-        # 입력 데이터 가져오기
-        ohlcv_data = context.get_output(f"_input_{node_id}", "ohlcv_data")
-        if not ohlcv_data:
-            ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
-        
-        signals = context.get_output(f"_input_{node_id}", "signals")
-        if not signals:
-            # ConditionNode에서 온 시그널
-            signals = context.get_output(f"_input_{node_id}", "entry_signal") or []
-        
-        # 설정
-        initial_capital = config.get("initial_capital", 10000)
-        commission_rate = config.get("commission_rate", 0.001)
-        slippage = config.get("slippage", 0.0005)
-        
-        context.log(
-            "info", 
-            f"Running backtest: capital=${initial_capital}, commission={commission_rate*100}%", 
-            node_id
+        # === 리소스 체크 (백테스트는 무거운 작업) ===
+        resource_check = await context.check_resources_before_task(
+            task_type="BacktestEngineNode",
+            weight=3.0,  # 무거운 작업
+            timeout=60.0,  # 최대 1분 대기
         )
         
-        # 시뮬레이션 실행
-        result = self._run_simulation(
-            ohlcv_data=ohlcv_data,
-            signals=signals,
-            initial_capital=initial_capital,
-            commission_rate=commission_rate,
-            slippage=slippage,
-        )
+        if not resource_check["can_proceed"]:
+            context.log("error", f"Cannot run backtest: {resource_check['reason']}", node_id)
+            return {
+                "equity_curve": [],
+                "trades": [],
+                "metrics": {},
+                "summary": {"error": resource_check["reason"]},
+            }
         
-        # 성과 지표 계산
-        metrics = self._calculate_metrics(result["equity_curve"], initial_capital)
-        
-        context.log(
-            "info", 
-            f"Backtest complete: return={metrics['total_return']:.2f}%, trades={len(result['trades'])}", 
-            node_id
-        )
-        
-        return {
-            "equity_curve": result["equity_curve"],
-            "trades": result["trades"],
-            "metrics": metrics,
-            "summary": {
-                **metrics,
-                "initial_capital": initial_capital,
-                "final_value": result["equity_curve"][-1]["value"] if result["equity_curve"] else initial_capital,
-                "trade_count": len(result["trades"]),
-            },
-        }
+        try:
+            # 입력 데이터 가져오기
+            ohlcv_data = context.get_output(f"_input_{node_id}", "ohlcv_data")
+            if not ohlcv_data:
+                ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
+            
+            signals = context.get_output(f"_input_{node_id}", "signals")
+            if not signals:
+                # ConditionNode에서 온 시그널
+                signals = context.get_output(f"_input_{node_id}", "entry_signal") or []
+            
+            # 설정
+            initial_capital = config.get("initial_capital", 10000)
+            commission_rate = config.get("commission_rate", 0.001)
+            slippage = config.get("slippage", 0.0005)
+            
+            context.log(
+                "info", 
+                f"Running backtest: capital=${initial_capital}, commission={commission_rate*100}%", 
+                node_id
+            )
+            
+            # 시뮬레이션 실행
+            result = self._run_simulation(
+                ohlcv_data=ohlcv_data,
+                signals=signals,
+                initial_capital=initial_capital,
+                commission_rate=commission_rate,
+                slippage=slippage,
+            )
+            
+            # 성과 지표 계산
+            metrics = self._calculate_metrics(result["equity_curve"], initial_capital)
+            
+            context.log(
+                "info", 
+                f"Backtest complete: return={metrics['total_return']:.2f}%, trades={len(result['trades'])}", 
+                node_id
+            )
+            
+            return {
+                "equity_curve": result["equity_curve"],
+                "trades": result["trades"],
+                "metrics": metrics,
+                "summary": {
+                    **metrics,
+                    "initial_capital": initial_capital,
+                    "final_value": result["equity_curve"][-1]["value"] if result["equity_curve"] else initial_capital,
+                    "trade_count": len(result["trades"]),
+                },
+            }
+        finally:
+            # 리소스 반환
+            await context.release_resources_after_task(
+                task_type="BacktestEngineNode",
+                weight=3.0,
+            )
 
     def _run_simulation(
         self,
@@ -2940,6 +3089,7 @@ class WorkflowExecutor:
         secrets: Optional[Dict[str, Any]] = None,
         job_id: Optional[str] = None,
         listeners: Optional[List[ExecutionListener]] = None,
+        resource_limits: Optional["ResourceLimits"] = None,
     ) -> "WorkflowJob":
         """
         Execute workflow
@@ -2950,6 +3100,7 @@ class WorkflowExecutor:
             secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
             job_id: Job ID (auto-generated if not provided)
             listeners: List of ExecutionListener instances for state callbacks
+            resource_limits: Resource limits (CPU, RAM, workers). None = auto-detect
         """
         # Compile
         resolved, validation = self.compile(definition, context_params)
@@ -2958,6 +3109,36 @@ class WorkflowExecutor:
 
         # Extract workflow inputs schema for expression evaluation
         workflow_inputs = definition.get("inputs", {})
+        
+        # === Resource Context Setup ===
+        # Priority: explicit resource_limits > workflow definition > auto-detect
+        resource_context = None
+        try:
+            from programgarden.resource import ResourceContext
+            from programgarden_core.models.resource import ResourceLimits as RL
+            
+            # Determine limits to use
+            effective_limits = resource_limits
+            if effective_limits is None:
+                # Check workflow definition
+                workflow_limits = definition.get("resource_limits")
+                if workflow_limits:
+                    if isinstance(workflow_limits, dict):
+                        effective_limits = RL(**workflow_limits)
+                    else:
+                        effective_limits = workflow_limits
+            
+            # Create ResourceContext (auto-detect if no limits)
+            resource_context = await ResourceContext.create(
+                limits=effective_limits,
+                auto_detect=(effective_limits is None),
+            )
+            await resource_context.start()
+            logger.info(f"ResourceContext initialized (limits={effective_limits is not None})")
+        except ImportError:
+            logger.debug("Resource management not available (psutil not installed)")
+        except Exception as e:
+            logger.warning(f"Failed to initialize ResourceContext: {e}")
 
         # Create Job
         job_id = job_id or f"job-{uuid.uuid4().hex[:8]}"
@@ -2967,6 +3148,7 @@ class WorkflowExecutor:
             context_params=context_params or {},
             secrets=secrets,
             workflow_inputs=workflow_inputs,
+            resource_context=resource_context,
         )
         
         # Set listeners (Option A: inject at creation)
@@ -3449,6 +3631,14 @@ class WorkflowJob:
                 except asyncio.CancelledError:
                     pass
         
+        # Cleanup ResourceContext
+        if self.context.resource:
+            try:
+                await self.context.resource.stop()
+                logger.debug(f"ResourceContext stopped for job {self.job_id}")
+            except Exception as e:
+                logger.warning(f"Failed to stop ResourceContext: {e}")
+        
         self.status = "stopped"
         self.completed_at = datetime.now()
         logger.info(f"Job {self.job_id} stopped")
@@ -3466,6 +3656,13 @@ class WorkflowJob:
         
         # Cleanup
         await self.context.cleanup_persistent_nodes()
+        
+        # Cleanup ResourceContext
+        if self.context.resource:
+            try:
+                await self.context.resource.stop()
+            except Exception as e:
+                logger.warning(f"Failed to stop ResourceContext: {e}")
 
     def get_state(self) -> Dict[str, Any]:
         """Get state snapshot"""

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
 from programgarden_core.models.edge import Edge
+from programgarden_core.models.resource import ResourceLimits
 
 
 class InputType(str, Enum):
@@ -58,6 +59,12 @@ class WorkflowDefinition(BaseModel):
     inputs: Dict[str, WorkflowInput] = Field(
         default_factory=dict,
         description="워크플로우 입력 파라미터 (credential_id, symbols 등)",
+    )
+
+    # 리소스 제한 (선택사항, 미설정 시 자동 감지)
+    resource_limits: Optional[ResourceLimits] = Field(
+        default=None,
+        description="리소스 제한 설정 (CPU, RAM, 워커 수 등). None이면 시스템 기반 자동 감지",
     )
 
     # 노드와 엣지

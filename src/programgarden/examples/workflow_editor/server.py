@@ -235,9 +235,13 @@ async def get_status():
 # ========================================
 
 @app.get("/api/node-types")
-async def get_node_types():
-    """모든 노드 타입 스키마 반환"""
+async def get_node_types(locale: str = "ko"):
+    """모든 노드 타입 스키마 반환 (i18n 적용)"""
     import json
+    from programgarden_core.i18n import translate_schema, set_locale
+    
+    # Set locale for translation
+    set_locale(locale)
     
     def safe_serialize(obj):
         """Recursively convert objects to JSON-safe types"""
@@ -268,7 +272,8 @@ async def get_node_types():
         node_types = []
         for schema in schemas:
             try:
-                node_type_dict = {
+                # Build raw dict first
+                raw_dict = {
                     "node_type": str(getattr(schema, "node_type", "Unknown")),
                     "category": str(getattr(schema, "category", "group")),
                     "description": str(getattr(schema, "description", "") or ""),
@@ -276,7 +281,9 @@ async def get_node_types():
                     "outputs": safe_serialize(getattr(schema, "outputs", []) or []),
                     "config_schema": safe_serialize(getattr(schema, "config_schema", {}) or {}),
                 }
-                node_types.append(node_type_dict)
+                # Apply i18n translation
+                translated_dict = translate_schema(raw_dict, locale)
+                node_types.append(translated_dict)
             except Exception as e:
                 node_types.append({
                     "node_type": str(getattr(schema, "node_type", "Unknown")),
@@ -287,7 +294,7 @@ async def get_node_types():
                     "config_schema": {},
                 })
         
-        return JSONResponse({"node_types": node_types})
+        return JSONResponse({"node_types": node_types, "locale": locale})
     except Exception as e:
         import traceback
         return JSONResponse({

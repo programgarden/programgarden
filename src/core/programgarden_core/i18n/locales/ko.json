@@ -98,9 +98,6 @@
   "nodes.DisplayNode.name": "디스플레이",
   "nodes.DisplayNode.description": "차트/테이블 시각화.",
   
-  "nodes.GroupNode.name": "그룹",
-  "nodes.GroupNode.description": "재사용 가능한 서브플로우 그룹.",
-  
   "nodes.DeployNode.name": "배포",
   "nodes.DeployNode.description": "전략 배포 (실계좌/모의투자/테스트).",
   

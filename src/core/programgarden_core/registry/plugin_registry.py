@@ -5,9 +5,12 @@ ProgramGarden Core - PluginRegistry
 커뮤니티 전략 플러그인(RSI, MACD, MarketOrder 등) 관리
 """
 
-from typing import Optional, List, Dict, Any, Callable
+from typing import Optional, List, Dict, Any, Callable, TYPE_CHECKING
 from pydantic import BaseModel, Field
 from enum import Enum
+
+if TYPE_CHECKING:
+    from programgarden_core.models.plugin_resource import PluginResourceHints, TrustLevel
 
 
 class PluginCategory(str, Enum):
@@ -56,6 +59,16 @@ class PluginSchema(BaseModel):
     # 메타데이터
     author: Optional[str] = Field(default=None, description="작성자")
     tags: List[str] = Field(default_factory=list, description="태그")
+    
+    # 리소스 관리 (신규)
+    resource_hints: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="플러그인 리소스 사용 힌트 (PluginResourceHints)",
+    )
+    trust_level: str = Field(
+        default="community",
+        description="플러그인 신뢰 레벨 (core, verified, community)",
+    )
 
     class Config:
         use_enum_values = True

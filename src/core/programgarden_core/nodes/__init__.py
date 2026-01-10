@@ -13,7 +13,6 @@ ProgramGarden Core - 노드 타입 정의
 - order (4): NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
 - event (3): EventHandlerNode, ErrorHandlerNode, AlertNode
 - display (1): DisplayNode
-- group (1): GroupNode
 - backtest (1): BacktestEngineNode
 - job (3): DeployNode, TradingHaltNode, JobControlNode
 - calculation (1): PnLCalculatorNode
@@ -44,7 +43,6 @@ from programgarden_core.nodes.risk import PositionSizingNode, RiskGuardNode, Ris
 from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
 from programgarden_core.nodes.event import EventHandlerNode, ErrorHandlerNode, AlertNode
 from programgarden_core.nodes.display import DisplayNode
-from programgarden_core.nodes.group import GroupNode
 from programgarden_core.nodes.backtest import (
     HistoricalDataNode,
     BacktestEngineNode,
@@ -101,8 +99,6 @@ __all__ = [
     "AlertNode",
     # Display
     "DisplayNode",
-    # Group
-    "GroupNode",
     # Backtest
     "BacktestEngineNode",
     # Job

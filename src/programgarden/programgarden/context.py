@@ -122,6 +122,7 @@ class ExecutionContext:
     Attributes:
         context_params: Runtime parameters (symbols, dry_run, backtest options, etc.)
         _secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
+        _resource_context: Resource management context (CPU/RAM/Disk throttling)
     """
 
     def __init__(
@@ -131,6 +132,7 @@ class ExecutionContext:
         context_params: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
         workflow_inputs: Optional[Dict[str, Any]] = None,
+        resource_context: Optional[Any] = None,  # ResourceContext (lazy import)
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id
@@ -179,6 +181,9 @@ class ExecutionContext:
         
         # === New: Execution Listeners (for UI/Server callbacks) ===
         self._listeners: List[ExecutionListener] = []
+        
+        # === New: Resource Context (for CPU/RAM/Disk throttling) ===
+        self._resource_context = resource_context
 
     # === Provider Configuration ===
 
@@ -873,3 +878,122 @@ class ExecutionContext:
         result.update(self.context_params)
         
         return result
+
+    # === Resource Management ===
+
+    @property
+    def resource(self):
+        """
+        Get resource context for throttling and resource management.
+        
+        Returns:
+            ResourceContext or None if not configured
+        """
+        return self._resource_context
+    
+    def set_resource_context(self, resource_context) -> None:
+        """
+        Set resource context
+        
+        Args:
+            resource_context: ResourceContext instance
+        """
+        self._resource_context = resource_context
+    
+    async def check_resources_before_task(
+        self,
+        task_type: str = "default",
+        weight: float = 1.0,
+        is_order: bool = False,
+        timeout: Optional[float] = 30.0,
+    ) -> Dict[str, Any]:
+        """
+        Check resources and acquire execution permission before running a task.
+        
+        This method should be called before executing CPU/memory intensive tasks
+        like condition evaluation or backtesting.
+        
+        Args:
+            task_type: Task/node type (e.g., "ConditionNode", "BacktestEngineNode")
+            weight: Task weight (1.0=normal, 2.0=heavy)
+            is_order: Whether this is an order-related task (gets priority)
+            timeout: Maximum wait time in seconds
+        
+        Returns:
+            Dict with:
+                - can_proceed: bool
+                - waited: float (seconds waited)
+                - recommended_delay: float
+                - recommended_batch_size: int
+                - throttle_level: str
+                - reason: str or None (if can_proceed=False)
+        
+        Example:
+            >>> check = await context.check_resources_before_task("ConditionNode", weight=1.0)
+            >>> if check["can_proceed"]:
+            ...     # Apply recommended settings
+            ...     batch_size = check["recommended_batch_size"]
+            ...     await asyncio.sleep(check["recommended_delay"])
+            ...     # Execute task
+        """
+        if self._resource_context:
+            return await self._resource_context.before_task(
+                task_type=task_type,
+                weight=weight,
+                is_order=is_order,
+                timeout=timeout,
+            )
+        
+        # No resource context - always allow
+        return {
+            "can_proceed": True,
+            "waited": 0.0,
+            "recommended_delay": 0.0,
+            "recommended_batch_size": 10,
+            "throttle_level": "none",
+            "reason": None,
+        }
+    
+    async def release_resources_after_task(
+        self,
+        task_type: str = "default",
+        weight: float = 1.0,
+    ) -> None:
+        """
+        Release resources after task completion.
+        
+        Must be called after check_resources_before_task() when task completes.
+        
+        Args:
+            task_type: Task/node type (same as before_task)
+            weight: Task weight (same as before_task)
+        """
+        if self._resource_context:
+            await self._resource_context.after_task(
+                task_type=task_type,
+                weight=weight,
+            )
+    
+    def get_resource_expression_context(self) -> Dict[str, Any]:
+        """
+        Get resource variables for expression evaluation.
+        
+        Available in expressions as {{ resource.xxx }}
+        
+        Returns:
+            Dict with resource info (recommended_batch_size, max_symbols, etc.)
+        """
+        if self._resource_context:
+            return self._resource_context.get_expression_context()
+        
+        # Default values when no resource context
+        return {
+            "recommended_batch_size": 10,
+            "max_symbols": 100,
+            "max_backtest_days": 1095,
+            "max_workers": 4,
+            "throttle_level": "none",
+            "cpu_percent": 0.0,
+            "memory_percent": 0.0,
+            "is_healthy": True,
+        }

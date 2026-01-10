@@ -27,6 +27,7 @@ export function useSSE() {
     setEdgeState,
     setRunning,
     addLog,
+    setNodeOutput,
   } = useWorkflowStore();
 
   const connect = useCallback((): Promise<void> => {
@@ -46,6 +47,11 @@ export function useSSE() {
         const data = JSON.parse(e.data);
         console.log('📥 node_state:', data);
         setNodeState(data.node_id, data.state);
+        
+        // Store node output when completed
+        if (data.state === 'completed' && data.outputs) {
+          setNodeOutput(data.node_id, data.outputs);
+        }
         
         // Add log for state transitions
         const emojiMap: Record<string, string> = {
@@ -153,7 +159,7 @@ export function useSSE() {
         }
       };
     });
-  }, [setNodeState, setEdgeState, setRunning, addLog]);
+  }, [setNodeState, setEdgeState, setRunning, addLog, setNodeOutput]);
 
   const disconnect = useCallback(() => {
     if (eventSourceRef.current) {

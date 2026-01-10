@@ -38,6 +38,7 @@ export interface WorkflowNodeData {
   inputs?: PortDefinition[];
   outputs?: PortDefinition[];
   state?: NodeState;
+  lastOutput?: unknown; // 마지막 실행 출력값 (프리뷰용)
   // DisplayNode specific
   width?: number;
   height?: number;

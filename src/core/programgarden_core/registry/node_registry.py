@@ -65,7 +65,6 @@ class NodeTypeRegistry:
             NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
             EventHandlerNode, ErrorHandlerNode, AlertNode,
             DisplayNode,
-            GroupNode,
             BacktestEngineNode,
             DeployNode, TradingHaltNode, JobControlNode,
             CustomPnLNode,
@@ -92,8 +91,6 @@ class NodeTypeRegistry:
             EventHandlerNode, ErrorHandlerNode, AlertNode,
             # Display
             DisplayNode,
-            # Group
-            GroupNode,
             # Backtest
             BacktestEngineNode,
             # Job

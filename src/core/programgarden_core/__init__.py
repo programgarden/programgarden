@@ -53,7 +53,6 @@ __all__ = [
     "ErrorHandlerNode",
     "AlertNode",
     "DisplayNode",
-    "GroupNode",
     # Models
     "Edge",
     "WorkflowDefinition",
