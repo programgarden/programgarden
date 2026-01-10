@@ -3,6 +3,11 @@ export interface Position {
   y: number;
 }
 
+export interface Size {
+  width: number;
+  height: number;
+}
+
 export interface PortDefinition {
   name: string;
   type: string;
@@ -33,6 +38,11 @@ export interface WorkflowNodeData {
   inputs?: PortDefinition[];
   outputs?: PortDefinition[];
   state?: NodeState;
+  // DisplayNode specific
+  width?: number;
+  height?: number;
+  chart_type?: string;
+  title?: string;
   [key: string]: unknown;
 }
 
@@ -41,9 +51,21 @@ export interface WorkflowNode {
   type: string;
   category: string;
   position: Position;
+  size?: Size;  // For DisplayNode sizing
   data: WorkflowNodeData;
 }
 
+// DSL Edge format (from/to)
+export interface DslEdge {
+  id: string;
+  from: string;
+  to: string;
+  fromPort?: string;
+  toPort?: string;
+  isValid?: boolean;  // Port type compatibility
+}
+
+// React Flow Edge format (source/target) - internal use
 export interface WorkflowEdge {
   id: string;
   source: string;

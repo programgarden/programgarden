@@ -16,6 +16,7 @@
 
 import { useRef, useCallback, useState } from 'react';
 import { useWorkflowStore } from '@/stores/workflowStore';
+import { useDisplayStore } from '@/stores/displayStore';
 
 export function useSSE() {
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -99,6 +100,36 @@ export function useSSE() {
           message: data.message,
           nodeId: data.node_id,
         });
+      });
+
+      // Display data events for visualization nodes
+      es.addEventListener('display_data', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          console.log('📥 display_data:', data);
+          
+          // Ensure data.data is an array
+          const chartData = Array.isArray(data.data) ? data.data : [];
+          
+          // Update display store with chart data
+          // nodeId and timestamp are added automatically by the store
+          useDisplayStore.getState().setNodeDisplayData(data.node_id, {
+            chartType: data.chart_type || 'line',
+            title: data.title || '',
+            data: chartData,
+            xLabel: data.x_label,
+            yLabel: data.y_label,
+            options: data.options,
+          });
+          
+          addLog({
+            level: 'info',
+            message: `📊 Display updated: [${data.node_id}] - ${data.chart_type || 'line'} chart (${chartData.length} items)`,
+            nodeId: data.node_id,
+          });
+        } catch (err) {
+          console.error('❌ Error processing display_data:', err);
+        }
       });
 
       // Connection opened

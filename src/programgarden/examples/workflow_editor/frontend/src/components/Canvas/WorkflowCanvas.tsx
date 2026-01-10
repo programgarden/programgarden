@@ -12,10 +12,12 @@ import '@xyflow/react/dist/style.css';
 
 import { useWorkflowStore } from '@/stores/workflowStore';
 import CustomNode from './CustomNode';
+import DisplayNodeComponent from './DisplayNodeComponent';
 import { getCategoryColor } from '@/utils/nodeColors';
 
 const nodeTypes: NodeTypes = {
   customNode: CustomNode,
+  displayNode: DisplayNodeComponent,
 };
 
 export default function WorkflowCanvas() {

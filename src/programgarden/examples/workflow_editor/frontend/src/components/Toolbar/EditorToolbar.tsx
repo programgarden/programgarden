@@ -152,10 +152,18 @@ export default function EditorToolbar() {
       // Convert to React Flow format with schema merge
       const nodes = data.nodes.map((node: Record<string, unknown>) => {
         const schema = nodeTypeMap.get(node.type as string);
+        const isDisplayNode = node.type === 'DisplayNode';
+        
+        // Set style for DisplayNode (for NodeResizer)
+        const nodeStyle = isDisplayNode 
+          ? { width: node.width || 300, height: node.height || 200 }
+          : undefined;
+        
         return {
           id: node.id,
-          type: 'customNode',
+          type: isDisplayNode ? 'displayNode' : 'customNode',
           position: node.position || { x: 0, y: 0 },
+          ...(nodeStyle && { style: nodeStyle }),
           data: {
             label: node.id,
             nodeType: node.type,
@@ -177,7 +185,8 @@ export default function EditorToolbar() {
           id: `e_${fromStr}_${toStr}`,
           source: from.nodeId,
           target: to.nodeId,
-          // Note: sourceHandle/targetHandle omitted - React Flow uses default handles
+          sourceHandle: from.port || undefined,
+          targetHandle: to.port || undefined,
           type: 'smoothstep',
         };
       });
@@ -226,10 +235,18 @@ export default function EditorToolbar() {
         // Convert to React Flow format with schema merge
         const nodes = (data.nodes || []).map((node: Record<string, unknown>) => {
           const schema = nodeTypeMap.get(node.type as string);
+          const isDisplayNode = node.type === 'DisplayNode';
+          
+          // Set style for DisplayNode (for NodeResizer)
+          const nodeStyle = isDisplayNode 
+            ? { width: node.width || 300, height: node.height || 200 }
+            : undefined;
+          
           return {
             id: node.id,
-            type: 'customNode',
+            type: isDisplayNode ? 'displayNode' : 'customNode',
             position: node.position || { x: 0, y: 0 },
+            ...(nodeStyle && { style: nodeStyle }),
             data: {
               label: node.id,
               nodeType: node.type,
@@ -251,7 +268,8 @@ export default function EditorToolbar() {
             id: `e_${fromStr}_${toStr}`,
             source: from.nodeId,
             target: to.nodeId,
-            // Note: sourceHandle/targetHandle omitted - React Flow uses default handles
+            sourceHandle: from.port || undefined,
+            targetHandle: to.port || undefined,
             type: 'smoothstep',
           };
         });

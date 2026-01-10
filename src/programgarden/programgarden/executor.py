@@ -1442,6 +1442,32 @@ class DisplayNodeExecutor(NodeExecutorBase):
             else:
                 output_data["table_data"] = [data] if data else []
         
+        # Notify listeners for inline display visualization
+        # Prepare chart data for frontend
+        frontend_chart_data = None
+        if chart_type == "line":
+            frontend_chart_data = output_data.get("chart_data")
+        elif chart_type in ("radar", "bar"):
+            frontend_chart_data = output_data.get("data")
+        elif chart_type == "table":
+            frontend_chart_data = output_data.get("table_data")
+        elif chart_type == "candlestick":
+            # OHLC data
+            frontend_chart_data = equity_data or data
+        elif chart_type in ("scatter", "heatmap"):
+            frontend_chart_data = data
+        
+        if frontend_chart_data is not None:
+            await context.notify_display_data(
+                node_id=node_id,
+                chart_type=chart_type,
+                title=title,
+                data=frontend_chart_data,
+                x_label=config.get("x_label"),
+                y_label=config.get("y_label"),
+                options=options,
+            )
+        
         return output_data
 
 

@@ -647,7 +647,7 @@ async def validate_workflow(request: WorkflowRunRequest):
     })
 
 
-def main(host: str = "0.0.0.0", port: int = 8765):
+def main(host: str = "0.0.0.0", port: int = 8766):
     """Run the server."""
     print("\n" + "=" * 50)
     print("🌱 ProgramGarden Workflow Editor")

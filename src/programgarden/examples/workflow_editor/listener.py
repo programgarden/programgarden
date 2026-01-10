@@ -17,6 +17,7 @@ from programgarden_core.bases.listener import (
     EdgeStateEvent,
     LogEvent,
     JobStateEvent,
+    DisplayDataEvent,
 )
 
 
@@ -141,6 +142,19 @@ class SSEListener(BaseExecutionListener):
             "job_id": event.job_id,
             "status": event.state,
             "stats": event.stats,
+        })
+    
+    async def on_display_data(self, event: DisplayDataEvent) -> None:
+        """Broadcast display data to clients for visualization."""
+        await self._broadcast("display_data", {
+            "job_id": event.job_id,
+            "node_id": event.node_id,
+            "chart_type": event.chart_type,
+            "title": event.title,
+            "data": event.data,
+            "x_label": event.x_label,
+            "y_label": event.y_label,
+            "options": event.options,
         })
     
     # === SSE Stream Generator ===

@@ -25,6 +25,7 @@ from programgarden_core.bases.listener import (
     EdgeStateEvent,
     LogEvent,
     JobStateEvent,
+    DisplayDataEvent,
 )
 
 logger = logging.getLogger("programgarden.context")
@@ -723,6 +724,40 @@ class ExecutionContext:
                 await listener.on_job_state_change(event)
             except Exception as e:
                 logger.warning(f"Listener error on_job_state_change: {e}")
+
+    async def notify_display_data(
+        self,
+        node_id: str,
+        chart_type: str,
+        title: Optional[str],
+        data: Any,
+        x_label: Optional[str] = None,
+        y_label: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Notify all listeners about display data from DisplayNode."""
+        logger.debug(f"📡 notify_display_data: {node_id} ({chart_type})")
+        
+        if not self._listeners:
+            return
+        
+        event = DisplayDataEvent(
+            job_id=self.job_id,
+            node_id=node_id,
+            chart_type=chart_type,
+            title=title,
+            data=data,
+            x_label=x_label,
+            y_label=y_label,
+            options=options,
+        )
+        
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_display_data'):
+                    await listener.on_display_data(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_display_data: {e}")
 
     def _sanitize_outputs(self, outputs: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Remove sensitive information from outputs."""

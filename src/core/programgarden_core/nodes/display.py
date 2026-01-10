@@ -50,6 +50,20 @@ class DisplayNode(BaseNode):
         default_factory=dict,
         description="Additional chart options",
     )
+    
+    # Node size for inline visualization
+    width: int = Field(
+        default=300,
+        description="Node width in pixels",
+        ge=200,
+        le=800,
+    )
+    height: int = Field(
+        default=200,
+        description="Node height in pixels",
+        ge=150,
+        le=600,
+    )
 
     _inputs: List[InputPort] = [
         InputPort(

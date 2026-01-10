@@ -9,7 +9,8 @@ import {
   applyEdgeChanges,
   Connection,
 } from '@xyflow/react';
-import { NodeState, EdgeState, LogEntry, NodeTypeSchema } from '@/types/workflow';
+import { NodeState, EdgeState, LogEntry, NodeTypeSchema, PortDefinition } from '@/types/workflow';
+import { isPortCompatible, getEdgeColor } from '@/utils/portCompatibility';
 
 interface WorkflowState {
   // Workflow metadata
@@ -98,6 +99,25 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   onConnect: (connection: Connection) => {
     if (!connection.source || !connection.target) return;
     
+    // Get source and target nodes
+    const sourceNode = get().nodes.find((n) => n.id === connection.source);
+    const targetNode = get().nodes.find((n) => n.id === connection.target);
+    
+    // Get port types from node type schemas
+    const sourceNodeType = sourceNode?.data.nodeType as string;
+    const targetNodeType = targetNode?.data.nodeType as string;
+    const sourceSchema = get().nodeTypes.find((t) => t.node_type === sourceNodeType);
+    const targetSchema = get().nodeTypes.find((t) => t.node_type === targetNodeType);
+    
+    const sourcePort = sourceSchema?.outputs?.find((o: PortDefinition) => o.name === connection.sourceHandle);
+    const targetPort = targetSchema?.inputs?.find((i: PortDefinition) => i.name === connection.targetHandle);
+    
+    const sourceType = sourcePort?.type;
+    const targetType = targetPort?.type;
+    
+    // Check port type compatibility
+    const isValid = isPortCompatible(sourceType, targetType);
+    
     const newEdge: Edge = {
       id: `e_${connection.source}_${connection.target}`,
       source: connection.source,
@@ -106,10 +126,29 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       targetHandle: connection.targetHandle ?? undefined,
       type: 'smoothstep',
       animated: false,
+      // Style based on compatibility
+      style: {
+        stroke: getEdgeColor(isValid),
+        strokeWidth: isValid ? 1 : 2,
+      },
+      data: {
+        isValid,
+        fromType: sourceType,
+        toType: targetType,
+      },
     };
+    
     set((state) => ({
       edges: [...state.edges, newEdge],
     }));
+    
+    // Log warning if types are incompatible
+    if (!isValid) {
+      get().addLog({
+        level: 'warning',
+        message: `⚠️ Type mismatch: ${sourceType || 'unknown'} → ${targetType || 'unknown'}`,
+      });
+    }
   },
 
   // Node management
@@ -136,10 +175,19 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       }
     }
     
+    // Use 'displayNode' type for DisplayNode (renders inline chart)
+    const reactFlowNodeType = nodeType === 'DisplayNode' ? 'displayNode' : 'customNode';
+    
+    // Set initial size for DisplayNode (for NodeResizer)
+    const nodeStyle = nodeType === 'DisplayNode' 
+      ? { width: Number(configData.width) || 300, height: Number(configData.height) || 200 }
+      : undefined;
+    
     const newNode: Node = {
       id,
-      type: 'customNode',
+      type: reactFlowNodeType,
       position,
+      ...(nodeStyle && { style: nodeStyle }),
       data: {
         label: nodeType,
         nodeType,
@@ -220,23 +268,41 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       id: state.workflowId,
       name: state.workflowName,
       description: state.workflowDescription,
-      nodes: state.nodes.map((node) => ({
-        id: node.id,
-        type: node.data.nodeType,
-        category: node.data.category,
-        position: node.position,
-        ...Object.fromEntries(
-          Object.entries(node.data).filter(
-            ([key]) => !['label', 'nodeType', 'category', 'inputs', 'outputs', 'state'].includes(key)
-          )
-        ),
-      })),
-      edges: state.edges.map((edge) => ({
-        from: edge.source,
-        to: edge.target,
-        ...(edge.sourceHandle && { from_port: edge.sourceHandle }),
-        ...(edge.targetHandle && { to_port: edge.targetHandle }),
-      })),
+      nodes: state.nodes.map((node) => {
+        const baseNode = {
+          id: node.id,
+          type: node.data.nodeType,
+          category: node.data.category,
+          position: node.position,
+          ...Object.fromEntries(
+            Object.entries(node.data).filter(
+              ([key]) => !['label', 'nodeType', 'category', 'inputs', 'outputs', 'state', 'configSchema'].includes(key)
+            )
+          ),
+        };
+        
+        // Add size for DisplayNode
+        if (node.data.nodeType === 'DisplayNode' && (node.data.width || node.data.height)) {
+          return {
+            ...baseNode,
+            size: {
+              width: node.data.width || 300,
+              height: node.data.height || 200,
+            },
+          };
+        }
+        
+        return baseNode;
+      }),
+      // DSL format: from/to with port as "nodeId.port" or just "nodeId"
+      edges: state.edges.map((edge) => {
+        const from = edge.sourceHandle ? `${edge.source}.${edge.sourceHandle}` : edge.source;
+        const to = edge.targetHandle ? `${edge.target}.${edge.targetHandle}` : edge.target;
+        return {
+          from,
+          to,
+        };
+      }),
     };
   },
 

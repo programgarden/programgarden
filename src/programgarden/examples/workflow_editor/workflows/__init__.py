@@ -25,6 +25,7 @@ from . import futures
 from .w01_backtest import get_workflow as get_backtest_workflow
 from .w02_spider import get_workflow as get_spider_workflow
 from .w03_portfolio import get_workflow as get_portfolio_workflow
+from .w04_display_test import get_workflow as get_display_test_workflow
 
 __all__ = [
     # 카테고리 모듈
@@ -65,6 +66,7 @@ CATEGORIES = [
             {"id": "custom-01", "name": "📊 멀티 전략 백테스트 비교", "description": "5가지 전략의 1년 백테스트 성과 비교", "get_workflow": get_backtest_workflow},
             {"id": "custom-02", "name": "🕸️ 스파이더 차트 포트폴리오 분석", "description": "5종목의 기술적 지표를 레이더 차트로 비교", "get_workflow": get_spider_workflow},
             {"id": "custom-03", "name": "🏛️ 계층적 포트폴리오 백테스트", "description": "PortfolioNode를 활용한 멀티 전략 자본 배분 및 리밸런싱", "get_workflow": get_portfolio_workflow},
+            {"id": "custom-04", "name": "📺 DisplayNode 테스트", "description": "다양한 차트 타입의 인라인 시각화 테스트", "get_workflow": get_display_test_workflow},
         ],
     },
 ]

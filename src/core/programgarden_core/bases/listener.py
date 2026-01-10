@@ -137,6 +137,33 @@ class JobStateEvent:
     stats: Optional[Dict[str, Any]] = None
 
 
+@dataclass
+class DisplayDataEvent:
+    """
+    Event emitted when a DisplayNode produces visualization data.
+    
+    Attributes:
+        job_id: Job identifier
+        node_id: DisplayNode ID
+        chart_type: Type of chart (line, candlestick, bar, scatter, radar, heatmap, table)
+        title: Chart title
+        data: Chart data array
+        x_label: X-axis label (optional)
+        y_label: Y-axis label (optional)
+        options: Additional chart options (optional)
+        timestamp: Event timestamp
+    """
+    job_id: str
+    node_id: str
+    chart_type: str
+    title: Optional[str]
+    data: Any  # List[Dict] or similar
+    x_label: Optional[str] = None
+    y_label: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
 @runtime_checkable
 class ExecutionListener(Protocol):
     """
@@ -187,6 +214,15 @@ class ExecutionListener(Protocol):
             event: JobStateEvent with job_id, state, stats, etc.
         """
         ...
+    
+    async def on_display_data(self, event: 'DisplayDataEvent') -> None:
+        """
+        Called when a DisplayNode produces visualization data.
+        
+        Args:
+            event: DisplayDataEvent with chart_type, data, etc.
+        """
+        ...
 
 
 class BaseExecutionListener:
@@ -214,6 +250,10 @@ class BaseExecutionListener:
         pass
     
     async def on_job_state_change(self, event: JobStateEvent) -> None:
+        """Default implementation: do nothing"""
+        pass
+    
+    async def on_display_data(self, event: DisplayDataEvent) -> None:
         """Default implementation: do nothing"""
         pass
 
