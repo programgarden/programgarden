@@ -39,7 +39,7 @@
 ## 실행 방법
 
 ```bash
-cd src/programgarden/examples/10_ui/03_portfolio_backtest
+cd src/programgarden/examples/workflow_editor/03_portfolio_backtest
 poetry run python run.py
 ```
 

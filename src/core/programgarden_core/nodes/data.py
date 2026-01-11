@@ -1,14 +1,20 @@
 """
 ProgramGarden Core - Data Nodes
 
-Data query nodes (REST API one-time):
+Data query nodes:
 - MarketDataNode: REST API market data query
+- SQLiteNode: Local SQLite database
+- PostgresNode: External PostgreSQL database
+- HTTPRequestNode: External REST API request
 
 계좌 조회는 account/AccountNode 참조
 """
 
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -164,26 +170,21 @@ class PostgresNode(BaseNode):
     외부 PostgreSQL 데이터베이스 노드
 
     외부 PostgreSQL DB에 데이터를 저장/조회합니다.
-    연결 정보는 secrets 네임스페이스를 통해 참조합니다.
+    연결 정보는 credential_id를 통해 안전하게 관리됩니다.
     
     주요 용도:
     - 분산 환경에서 상태 공유
     - 대용량 데이터 저장
     - 백테스트 결과 저장
     
-    Example config:
+    Example DSL:
         {
-            "connection": {
-                "host": "{{ secrets.mydb.host }}",
-                "port": "{{ secrets.mydb.port }}",
-                "database": "{{ secrets.mydb.database }}",
-                "username": "{{ secrets.mydb.username }}",
-                "password": "{{ secrets.mydb.password }}"
-            },
-            "table": "trailing_stop_state",
+            "id": "db",
+            "type": "PostgresNode",
+            "credential_id": "my-postgres",
+            "table": "trading_state",
             "key_fields": ["symbol"],
-            "save_fields": ["symbol", "peak_price", "peak_pnl_rate", "updated_at"],
-            "aggregations": {"peak_price": "max", "peak_pnl_rate": "max"}
+            "save_fields": ["symbol", "peak_price", "updated_at"]
         }
     """
 
@@ -191,26 +192,25 @@ class PostgresNode(BaseNode):
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.PostgresNode.description"
 
-    # 연결 정보 (secrets 네임스페이스 참조)
-    connection: dict = Field(
-        ...,
-        description="DB 연결 정보 ({{ secrets.xxx }} 형태로 참조)",
+    # Credential (공통 패턴)
+    credential_id: Optional[str] = Field(
+        default=None,
+        description="PostgreSQL credential ID",
     )
 
-    # 테이블 설정
+    # credential에서 자동 주입 (exclude=True)
+    host: Optional[str] = Field(default=None, exclude=True)
+    port: int = Field(default=5432, exclude=True)
+    database: Optional[str] = Field(default=None, exclude=True)
+    username: Optional[str] = Field(default=None, exclude=True)
+    password: Optional[str] = Field(default=None, exclude=True)
+    ssl_enabled: bool = Field(default=False, exclude=True)
+
+    # 테이블 설정 (DSL에서 직접 지정)
     table: str = Field(..., description="테이블 이름")
-    schema_name: str = Field(
-        default="public",
-        description="스키마 이름",
-    )
-    key_fields: List[str] = Field(
-        ...,
-        description="Primary Key 필드 목록",
-    )
-    save_fields: List[str] = Field(
-        ...,
-        description="저장할 필드 목록",
-    )
+    schema_name: str = Field(default="public", description="스키마 이름")
+    key_fields: List[str] = Field(..., description="Primary Key 필드 목록")
+    save_fields: List[str] = Field(..., description="저장할 필드 목록")
 
     # 집계 설정
     aggregations: Optional[dict] = Field(
@@ -219,52 +219,230 @@ class PostgresNode(BaseNode):
     )
 
     # 동기화 설정
-    sync_interval_ms: int = Field(
-        default=1000,
-        description="DB 동기화 주기 (밀리초)",
-    )
-    sync_on_change_count: int = Field(
-        default=10,
-        description="변경 횟수 기준 동기화",
-    )
-
-    # 추가 옵션
-    ssl_enabled: bool = Field(
-        default=False,
-        description="SSL 연결 사용 여부",
-    )
-    connection_timeout: int = Field(
-        default=30,
-        description="연결 타임아웃 (초)",
-    )
+    sync_interval_ms: int = Field(default=1000, description="DB 동기화 주기 (밀리초)")
+    sync_on_change_count: int = Field(default=10, description="변경 횟수 기준 동기화")
+    connection_timeout: int = Field(default=30, description="연결 타임아웃 (초)")
 
     _inputs: List[InputPort] = [
-        InputPort(
-            name="data",
-            type="any",
-            description="i18n:ports.data_to_save",
-        ),
-        InputPort(
-            name="trigger",
-            type="signal",
-            description="i18n:ports.trigger",
-            required=False,
-        ),
+        InputPort(name="data", type="any", description="i18n:ports.data_to_save"),
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(
-            name="saved",
-            type="any",
-            description="i18n:ports.saved_data",
-        ),
-        OutputPort(
-            name="loaded",
-            type="any",
-            description="i18n:ports.loaded_data",
-        ),
-        OutputPort(
-            name="query_result",
-            type="any",
-            description="i18n:ports.query_result",
-        ),
+        OutputPort(name="saved", type="any", description="i18n:ports.saved_data"),
+        OutputPort(name="loaded", type="any", description="i18n:ports.loaded_data"),
+        OutputPort(name="query_result", type="any", description="i18n:ports.query_result"),
     ]
+
+
+class HTTPRequestNode(BaseNode):
+    """
+    HTTP/HTTPS REST API 요청 노드
+    
+    외부 REST API를 호출하고 응답을 다음 노드에 전달합니다.
+    
+    Headers 설정:
+        UI에서 + 버튼으로 헤더 추가 (Content-Type, Authorization 등)
+        headers는 JSON DSL에 노출되지 않습니다.
+    
+    Example DSL:
+        {
+            "id": "api_call",
+            "type": "HTTPRequestNode",
+            "method": "POST",
+            "url": "https://api.example.com/data",
+            "body": {"name": "test"}
+        }
+    """
+
+    type: Literal["HTTPRequestNode"] = "HTTPRequestNode"
+    category: NodeCategory = NodeCategory.DATA
+    description: str = "i18n:nodes.HTTPRequestNode.description"
+
+    # === PARAMETERS: 핵심 HTTP 요청 설정 ===
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = Field(
+        default="GET",
+        description="HTTP method",
+    )
+    url: str = Field(..., description="Request URL ({{ }} 표현식 지원)")
+    query_params: Optional[Dict[str, Any]] = Field(default=None, description="Query parameters")
+    body: Optional[Dict[str, Any]] = Field(default=None, description="Request body (POST/PUT/PATCH)")
+
+    # === Credential: 인증 정보 참조 ===
+    credential_id: Optional[str] = Field(
+        default=None, 
+        description="Credential ID (credentials 섹션에서 참조)"
+    )
+
+    # === Headers: UI에서 동적 추가 ===
+    headers: Optional[Dict[str, str]] = Field(default=None, description="HTTP headers")
+
+    # === SETTINGS: 부가 설정 ===
+    timeout_seconds: int = Field(default=30, description="Request timeout (seconds)")
+    retry_count: int = Field(default=0, description="Number of retries on failure")
+    retry_delay_ms: int = Field(default=1000, description="Delay between retries (ms)")
+
+    _inputs: List[InputPort] = [
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
+        InputPort(name="data", type="any", description="Dynamic data for request", required=False),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="response", type="any", description="API response data"),
+        OutputPort(name="status_code", type="number", description="HTTP status code"),
+        OutputPort(name="success", type="boolean", description="Request success flag"),
+        OutputPort(name="error", type="string", description="Error message if failed"),
+    ]
+
+    _field_schema: ClassVar[Dict[str, "FieldSchema"]] = {}
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        """노드의 설정 가능한 필드 스키마 반환"""
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        
+        return {
+            # PARAMETERS
+            "method": FieldSchema(
+                name="method", type=FieldType.ENUM, required=False,
+                enum_values=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                description="HTTP method", category=FieldCategory.PARAMETERS
+            ),
+            "url": FieldSchema(
+                name="url", type=FieldType.STRING, required=True,
+                expression_enabled=True,
+                description="Request URL", category=FieldCategory.PARAMETERS
+            ),
+            "query_params": FieldSchema(
+                name="query_params", type=FieldType.KEY_VALUE_PAIRS, required=False,
+                expression_enabled=True,
+                description="Query parameters (+로 추가)", category=FieldCategory.PARAMETERS
+            ),
+            "body": FieldSchema(
+                name="body", type=FieldType.OBJECT, required=False,
+                expression_enabled=True,
+                description="Request body", category=FieldCategory.PARAMETERS
+            ),
+            "credential_id": FieldSchema(
+                name="credential_id", type=FieldType.CREDENTIAL, required=False,
+                description="Credential ID (인증 정보)", category=FieldCategory.PARAMETERS
+            ),
+            "headers": FieldSchema(
+                name="headers", type=FieldType.KEY_VALUE_PAIRS, required=False,
+                description="HTTP headers (+로 추가)", category=FieldCategory.PARAMETERS
+            ),
+            # SETTINGS
+            "timeout_seconds": FieldSchema(
+                name="timeout_seconds", type=FieldType.INTEGER, required=False,
+                default=30,
+                description="Request timeout (seconds)", category=FieldCategory.SETTINGS
+            ),
+            "retry_count": FieldSchema(
+                name="retry_count", type=FieldType.INTEGER, required=False,
+                default=0,
+                description="Number of retries", category=FieldCategory.SETTINGS
+            ),
+            "retry_delay_ms": FieldSchema(
+                name="retry_delay_ms", type=FieldType.INTEGER, required=False,
+                default=1000,
+                description="Delay between retries (ms)", category=FieldCategory.SETTINGS
+            ),
+        }
+
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """
+        HTTP 요청 실행
+        
+        credential_id가 있으면 GenericNodeExecutor에서 credential data가 
+        노드 필드로 주입됩니다. credential type에 따라 헤더/쿼리에 적용:
+        
+        - http_bearer: Authorization: Bearer <token>
+        - http_header: <header_name>: <header_value>
+        - http_basic: Authorization: Basic <base64(username:password)>
+        - http_query: ?<param_name>=<param_value>
+        """
+        import aiohttp
+        import asyncio
+        import json
+        import base64
+
+        # Credential 데이터 → 헤더/쿼리 적용
+        headers = dict(self.headers) if self.headers else {}
+        query_params = dict(self.query_params) if self.query_params else {}
+        
+        # credential에서 주입된 필드들 처리 (GenericNodeExecutor가 주입)
+        # http_bearer: token 필드
+        if hasattr(self, 'token') and self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        
+        # http_header: header_name, header_value 필드
+        if hasattr(self, 'header_name') and hasattr(self, 'header_value'):
+            if self.header_name and self.header_value:
+                headers[self.header_name] = self.header_value
+        
+        # http_basic: username, password 필드
+        if hasattr(self, 'username') and hasattr(self, 'password'):
+            if self.username and self.password:
+                credentials = f"{self.username}:{self.password}"
+                encoded = base64.b64encode(credentials.encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
+        
+        # http_query: param_name, param_value 필드
+        if hasattr(self, 'param_name') and hasattr(self, 'param_value'):
+            if self.param_name and self.param_value:
+                query_params[self.param_name] = self.param_value
+
+        last_error = None
+        
+        for attempt in range(self.retry_count + 1):
+            try:
+                timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
+
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    request_kwargs: Dict[str, Any] = {
+                        "method": self.method,
+                        "url": self.url,
+                        "headers": headers if headers else None,
+                        "params": query_params if query_params else None,
+                    }
+
+                    # Body 처리 (dict면 JSON 직렬화, 아니면 그대로)
+                    if self.body and self.method in ["POST", "PUT", "PATCH"]:
+                        if isinstance(self.body, dict):
+                            request_kwargs["data"] = json.dumps(self.body)
+                            # Content-Type 자동 설정
+                            if "Content-Type" not in headers:
+                                request_kwargs["headers"] = request_kwargs.get("headers") or {}
+                                request_kwargs["headers"]["Content-Type"] = "application/json"
+                        else:
+                            request_kwargs["data"] = self.body
+
+                    async with session.request(**request_kwargs) as resp:
+                        status_code = resp.status
+
+                        # 응답 파싱 (JSON 시도 → 실패하면 text)
+                        try:
+                            data = await resp.json()
+                        except Exception:
+                            data = await resp.text()
+
+                        return {
+                            "response": data,
+                            "status_code": status_code,
+                            "success": 200 <= status_code < 300,
+                            "error": None,
+                        }
+
+            except aiohttp.ClientError as e:
+                last_error = f"Network error: {str(e)}"
+            except Exception as e:
+                last_error = f"Unexpected error: {str(e)}"
+            
+            # 재시도 대기
+            if attempt < self.retry_count:
+                await asyncio.sleep(self.retry_delay_ms / 1000)
+
+        return {
+            "response": None,
+            "status_code": 0,
+            "success": False,
+            "error": last_error,
+        }

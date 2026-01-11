@@ -20,6 +20,10 @@ export interface ConfigField {
   required: boolean;
   default?: unknown;
   description?: string;
+  category?: 'parameters' | 'settings';  // Field category for UI grouping
+  enum_values?: string[];
+  bindable?: boolean;
+  expression_enabled?: boolean;
 }
 
 export interface NodeTypeSchema {
@@ -29,6 +33,13 @@ export interface NodeTypeSchema {
   inputs: PortDefinition[];
   outputs: PortDefinition[];
   config_schema: Record<string, ConfigField>;
+}
+
+export interface CategoryInfo {
+  id: string;
+  name: string;
+  description: string;
+  count: number;
 }
 
 export interface WorkflowNodeData {
@@ -56,14 +67,11 @@ export interface WorkflowNode {
   data: WorkflowNodeData;
 }
 
-// DSL Edge format (from/to)
+// DSL Edge format (execution order only)
 export interface DslEdge {
-  id: string;
-  from: string;
-  to: string;
-  fromPort?: string;
-  toPort?: string;
-  isValid?: boolean;  // Port type compatibility
+  from: string;  // source node ID
+  to: string;    // target node ID
+  description?: string;
 }
 
 // React Flow Edge format (source/target) - internal use

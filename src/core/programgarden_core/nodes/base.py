@@ -6,7 +6,7 @@ ProgramGarden Core - 노드 베이스 클래스
 
 from enum import Enum
 from typing import Optional, Dict, Any, List, Literal, ClassVar
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from programgarden_core.models.field_binding import FieldSchema, FieldType
 
@@ -83,10 +83,9 @@ class BaseNode(BaseModel):
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = []
     _field_schema: ClassVar[Dict[str, FieldSchema]] = {}
+    _img_url: ClassVar[Optional[str]] = None  # 노드 아이콘 이미지 URL
 
-    class Config:
-        use_enum_values = True
-        extra = "allow"  # 플러그인별 추가 필드 허용
+    model_config = ConfigDict(use_enum_values=True, extra="allow")
 
     def get_inputs(self) -> List[InputPort]:
         """입력 포트 목록 반환"""
@@ -132,3 +131,79 @@ class PluginNode(BaseNode):
         """표현식이 포함된 필드가 있는지 확인"""
         from programgarden_core.models.field_binding import is_expression
         return any(is_expression(v) for v in self.fields.values())
+
+
+class BaseNotificationNode(BaseNode):
+    """
+    알림/메시징 노드의 베이스 클래스 (커뮤니티 확장용)
+    
+    TelegramNode, SlackNode, DiscordNode 등이 상속.
+    각 노드는 execute() 메서드를 구현해야 함.
+    
+    Credential 자동 주입:
+        credential_id를 설정하면 GenericNodeExecutor가 실행 전에
+        credential 값을 노드 필드에 자동 주입합니다.
+        
+        Example:
+            class TelegramNode(BaseNotificationNode):
+                bot_token: Optional[str] = None  # credential에서 자동 주입됨
+                chat_id: Optional[str] = None
+                
+                async def execute(self, context):
+                    # self.bot_token에 이미 값이 있음!
+                    url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+    """
+    
+    category: NodeCategory = NodeCategory.EVENT
+    
+    # 메시지 템플릿
+    template: Optional[str] = Field(
+        default=None,
+        description="Message template with {{ }} placeholders (e.g., '체결: {{symbol}} {{quantity}}주 @ {{price}}')",
+    )
+    
+    # Credential 연동 (GenericNodeExecutor가 자동 주입)
+    credential_id: Optional[str] = Field(
+        default=None,
+        description="Credential ID from CredentialRegistry. 해당 credential의 필드들이 노드 필드에 자동 주입됨",
+    )
+    
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="event",
+            type="event_data",
+            description="Event data to send notification",
+            required=False,
+        ),
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="Manual trigger signal",
+            required=False,
+        ),
+    ]
+    
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="sent",
+            type="signal",
+            description="Notification sent confirmation",
+        ),
+    ]
+    
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """
+        알림 전송 실행 (서브클래스에서 구현 필수)
+        
+        Args:
+            context: ExecutionContext with render_template() etc.
+        
+        Returns:
+            dict with 'sent': bool, and optional 'message_id', 'error' etc.
+            
+        Note:
+            credential_id가 설정되어 있으면 GenericNodeExecutor가 실행 전에
+            credential 값을 노드 필드에 자동 주입합니다.
+            따라서 self.bot_token, self.api_key 등을 바로 사용할 수 있습니다.
+        """
+        raise NotImplementedError("Subclass must implement execute()")

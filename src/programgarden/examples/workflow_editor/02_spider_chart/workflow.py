@@ -170,31 +170,24 @@ def get_spider_chart_workflow():
         ],
         
         "edges": [
-            # 기본 연결
-            {"from": "start.start", "to": "broker"},
-            {"from": "broker.connection", "to": "watchlist"},
-            {"from": "watchlist.symbols", "to": "historicalData.symbols"},
-            
-            # HistoricalData → Conditions
-            {"from": "historicalData.ohlcv_data", "to": "rsiCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "maCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "volumeCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "volatilityCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "momentumCondition.price_data"},
-            
-            # Conditions → Spider Chart (aggregated)
-            {"from": "rsiCondition.metrics", "to": "spiderChart.data"},
-            {"from": "maCondition.metrics", "to": "spiderChart.data"},
-            {"from": "volumeCondition.metrics", "to": "spiderChart.data"},
-            {"from": "volatilityCondition.metrics", "to": "spiderChart.data"},
-            {"from": "momentumCondition.metrics", "to": "spiderChart.data"},
-            
-            # Conditions → Summary Table
-            {"from": "rsiCondition.metrics", "to": "summaryTable.data"},
-            {"from": "maCondition.metrics", "to": "summaryTable.data"},
-            {"from": "volumeCondition.metrics", "to": "summaryTable.data"},
-            {"from": "volatilityCondition.metrics", "to": "summaryTable.data"},
-            {"from": "momentumCondition.metrics", "to": "summaryTable.data"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "watchlist"},
+            {"from": "watchlist", "to": "historicalData"},
+            {"from": "historicalData", "to": "rsiCondition"},
+            {"from": "historicalData", "to": "maCondition"},
+            {"from": "historicalData", "to": "volumeCondition"},
+            {"from": "historicalData", "to": "volatilityCondition"},
+            {"from": "historicalData", "to": "momentumCondition"},
+            {"from": "rsiCondition", "to": "spiderChart"},
+            {"from": "maCondition", "to": "spiderChart"},
+            {"from": "volumeCondition", "to": "spiderChart"},
+            {"from": "volatilityCondition", "to": "spiderChart"},
+            {"from": "momentumCondition", "to": "spiderChart"},
+            {"from": "rsiCondition", "to": "summaryTable"},
+            {"from": "maCondition", "to": "summaryTable"},
+            {"from": "volumeCondition", "to": "summaryTable"},
+            {"from": "volatilityCondition", "to": "summaryTable"},
+            {"from": "momentumCondition", "to": "summaryTable"},
         ],
     }
 
@@ -253,8 +246,8 @@ def get_mock_spider_data():
         ],
         
         "edges": [
-            {"from": "start.start", "to": "mockData"},
-            {"from": "mockData.output", "to": "spiderChart.data"},
+            {"from": "start", "to": "mockData"},
+            {"from": "mockData", "to": "spiderChart"},
         ],
     }
 

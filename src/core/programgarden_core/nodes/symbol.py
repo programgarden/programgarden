@@ -46,7 +46,7 @@ class WatchlistNode(BaseNode):
         "symbols": FieldSchema(
             name="symbols",
             type=FieldType.ARRAY,
-            description="List of symbol codes",
+            description="i18n:fields.WatchlistNode.symbols",
             required=True,
             array_item_type=FieldType.STRING,
             bindable=True,

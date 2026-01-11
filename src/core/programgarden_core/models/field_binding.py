@@ -8,7 +8,7 @@ ProgramGarden Core - Field Binding 모델
 
 from enum import Enum
 from typing import Optional, Any, List, Dict, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FieldType(str, Enum):
@@ -21,6 +21,15 @@ class FieldType(str, Enum):
     ENUM = "enum"
     ARRAY = "array"
     OBJECT = "object"
+    KEY_VALUE_PAIRS = "key_value_pairs"  # 동적 키-값 쌍 (headers 등)
+    CREDENTIAL = "credential"  # Credential 참조 (credentials 섹션에서 선택)
+
+
+class FieldCategory(str, Enum):
+    """필드 분류 (UI 렌더링용)"""
+
+    PARAMETERS = "parameters"  # 핵심 설정 (method, url, headers, body 등)
+    SETTINGS = "settings"      # 부가 설정 (timeout, retry, ssl 등)
 
 
 class FieldSchema(BaseModel):
@@ -38,12 +47,17 @@ class FieldSchema(BaseModel):
             required=True,
             bindable=True,
             expression_enabled=True,
+            category=FieldCategory.PARAMETERS,
         )
     """
 
     name: str = Field(..., description="필드 이름")
     type: FieldType = Field(..., description="필드 데이터 타입")
     description: Optional[str] = Field(default=None, description="필드 설명")
+    category: FieldCategory = Field(
+        default=FieldCategory.PARAMETERS,
+        description="필드 분류 (parameters: 핵심, settings: 부가)"
+    )
 
     # 필수/기본값
     required: bool = Field(default=False, description="필수 여부")
@@ -101,8 +115,7 @@ class FieldSchema(BaseModel):
         description="UI 표시 힌트 (inherited, calculated, locked, warning 등)",
     )
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class FieldValueType(str, Enum):

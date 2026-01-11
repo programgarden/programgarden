@@ -57,10 +57,10 @@ def get_workflow():
             },
         ],
         "edges": [
-            {"from": "start.start", "to": "broker"},
-            {"from": "broker.connection", "to": "schedule"},
-            {"from": "schedule.tick", "to": "orderEvents"},
-            {"from": "orderEvents.pending_orders", "to": "cancel.orders"},
-            {"from": "cancel.result", "to": "display.data"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "schedule"},
+            {"from": "schedule", "to": "orderEvents"},
+            {"from": "orderEvents", "to": "cancel"},
+            {"from": "cancel", "to": "display"},
         ],
     }

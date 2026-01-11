@@ -96,20 +96,17 @@ def get_workflow():
             },
         ],
         "edges": [
-            {"from": "start.start", "to": "broker"},
-            {"from": "broker.connection", "to": "schedule"},
-            {"from": "schedule.tick", "to": "watchlist"},
-            {"from": "watchlist.symbols", "to": "marketData.symbols"},
-            {"from": "broker.connection", "to": "account.broker"},
-            # Buy flow
-            {"from": "marketData.price", "to": "buyCond.price_data"},
-            {"from": "buyCond.passed_symbols", "to": "buyOrder.trigger"},
-            # Sell flow
-            {"from": "marketData.price", "to": "sellCond.price_data"},
-            {"from": "account.positions", "to": "sellCond.positions"},
-            {"from": "sellCond.passed_symbols", "to": "sellOrder.trigger"},
-            # Display
-            {"from": "buyOrder.result", "to": "display.data"},
-            {"from": "sellOrder.result", "to": "display.data"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "schedule"},
+            {"from": "schedule", "to": "watchlist"},
+            {"from": "watchlist", "to": "marketData"},
+            {"from": "broker", "to": "account"},
+            {"from": "marketData", "to": "buyCond"},
+            {"from": "buyCond", "to": "buyOrder"},
+            {"from": "marketData", "to": "sellCond"},
+            {"from": "account", "to": "sellCond"},
+            {"from": "sellCond", "to": "sellOrder"},
+            {"from": "buyOrder", "to": "display"},
+            {"from": "sellOrder", "to": "display"},
         ],
     }

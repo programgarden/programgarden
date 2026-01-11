@@ -77,14 +77,14 @@ class BrokerNode(BaseNode):
         "provider": FieldSchema(
             name="provider",
             type=FieldType.STRING,
-            description="Broker provider",
+            description="i18n:fields.BrokerNode.provider",
             default="ls-sec.co.kr",
             bindable=False,
         ),
         "product": FieldSchema(
             name="product",
             type=FieldType.ENUM,
-            description="Product type (overseas_stock/overseas_futures)",
+            description="i18n:fields.BrokerNode.product",
             default="overseas_stock",
             enum_values=["overseas_stock", "overseas_futures"],
             bindable=False,
@@ -92,14 +92,14 @@ class BrokerNode(BaseNode):
         "credential_id": FieldSchema(
             name="credential_id",
             type=FieldType.STRING,
-            description="Select stored credentials",
+            description="i18n:fields.BrokerNode.credential_id",
             default=None,
             bindable=False,
         ),
         "paper_trading": FieldSchema(
             name="paper_trading",
             type=FieldType.BOOLEAN,
-            description="Use paper trading (overseas_futures only, overseas_stock not supported)",
+            description="i18n:fields.BrokerNode.paper_trading",
             default=False,
             bindable=False,
             # UI 힌트: overseas_stock 선택 시 비활성화

@@ -6,7 +6,7 @@ ProgramGarden Core - Event 모델
 
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 
 
@@ -92,11 +92,10 @@ class Event(BaseModel):
         description="이벤트 메시지",
     )
 
-    class Config:
-        use_enum_values = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
+    model_config = ConfigDict(
+        use_enum_values=True,
+        json_encoders={datetime: lambda v: v.isoformat() if v else None}
+    )
 
 
 class EventFilter(BaseModel):

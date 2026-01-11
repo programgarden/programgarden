@@ -24,6 +24,7 @@ from programgarden_core.i18n.translator import (
     get_locale,
     get_available_locales,
     translate_schema,
+    translate_category,
 )
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "get_locale",
     "get_available_locales",
     "translate_schema",
+    "translate_category",
 ]

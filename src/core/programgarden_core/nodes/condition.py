@@ -136,7 +136,7 @@ class LogicNode(BaseNode):
         "operator": FieldSchema(
             name="operator",
             type=FieldType.ENUM,
-            description="Logical operator",
+            description="i18n:fields.LogicNode.operator",
             default="all",
             enum_values=["all", "any", "not", "xor", "at_least", "at_most", "exactly", "weighted"],
             required=True,
@@ -145,14 +145,14 @@ class LogicNode(BaseNode):
         "threshold": FieldSchema(
             name="threshold",
             type=FieldType.INTEGER,
-            description="Threshold value (for at_least, at_most, exactly operators)",
+            description="i18n:fields.LogicNode.threshold",
             bindable=True,
             expression_enabled=True,
         ),
         "weights": FieldSchema(
             name="weights",
             type=FieldType.OBJECT,
-            description="Weights (for weighted operator)",
+            description="i18n:fields.LogicNode.weights",
             bindable=False,
         ),
     }

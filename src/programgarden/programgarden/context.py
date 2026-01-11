@@ -132,6 +132,7 @@ class ExecutionContext:
         context_params: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
         workflow_inputs: Optional[Dict[str, Any]] = None,
+        workflow_credentials: Optional[Dict[str, Any]] = None,
         resource_context: Optional[Any] = None,  # ResourceContext (lazy import)
     ):
         self.job_id = job_id
@@ -143,6 +144,10 @@ class ExecutionContext:
         
         # Workflow inputs schema (for {{ input.xxx }} expressions)
         self._workflow_inputs: Dict[str, Any] = workflow_inputs or {}
+        
+        # Workflow credentials (for credential_id resolution)
+        # Format: {"credential_id": {"type": "http_bearer", "data": {"token": "..."}}}
+        self._workflow_credentials: Dict[str, Any] = workflow_credentials or {}
 
         # Node output storage
         self._outputs: Dict[str, Dict[str, NodeOutput]] = {}
@@ -234,6 +239,40 @@ class ExecutionContext:
             Dict with 'appkey', 'appsecret' or None
         """
         return self._secrets.get(credential_id)
+
+    def get_workflow_credential(self, credential_id: str) -> Optional[Dict[str, Any]]:
+        """
+        워크플로우 JSON의 credentials 섹션에서 credential 데이터 조회
+        
+        우선순위:
+        1. workflow_credentials의 data 필드 (값이 있으면)
+        2. CredentialStore (외부 저장소)
+        
+        Args:
+            credential_id: credentials 섹션의 키 (예: "openai-api")
+            
+        Returns:
+            Credential data dict (예: {"token": "sk-xxx"}) or None
+        """
+        # 1. 먼저 workflow credentials에서 찾기
+        cred_ref = self._workflow_credentials.get(credential_id)
+        if cred_ref:
+            data = cred_ref.get("data", {})
+            # data가 있고, 최소 하나의 값이 비어있지 않으면 사용
+            if data and any(v for v in data.values() if v):
+                return data
+        
+        # 2. CredentialStore에서 찾기 (fallback)
+        try:
+            from programgarden_core.registry import get_credential_store
+            store = get_credential_store()
+            cred = store.get(credential_id)
+            if cred and cred.data:
+                return cred.data
+        except (ImportError, Exception):
+            pass
+        
+        return None
 
     def has_secret(self, key: str) -> bool:
         """Check if secret exists"""

@@ -154,7 +154,7 @@ class PortfolioNode(BaseNode):
         "total_capital": FieldSchema(
             name="total_capital",
             type=FieldType.NUMBER,
-            description="총 포트폴리오 자본금",
+            description="i18n:fields.PortfolioNode.total_capital",
             default=100000.0,
             required=False,
             min_value=0,
@@ -169,7 +169,7 @@ class PortfolioNode(BaseNode):
         "allocation_method": FieldSchema(
             name="allocation_method",
             type=FieldType.ENUM,
-            description="자본 배분 방법",
+            description="i18n:fields.PortfolioNode.allocation_method",
             default="equal",
             enum_values=["equal", "custom", "risk_parity", "momentum"],
             required=True,
@@ -179,7 +179,7 @@ class PortfolioNode(BaseNode):
         "custom_allocations": FieldSchema(
             name="custom_allocations",
             type=FieldType.OBJECT,
-            description="커스텀 배분 비율 (strategy_id: 비율)",
+            description="i18n:fields.PortfolioNode.custom_allocations",
             required=False,
             bindable=False,
             group="allocation",
@@ -189,7 +189,7 @@ class PortfolioNode(BaseNode):
         "rebalance_rule": FieldSchema(
             name="rebalance_rule",
             type=FieldType.ENUM,
-            description="리밸런싱 규칙",
+            description="i18n:fields.PortfolioNode.rebalance_rule",
             default="none",
             enum_values=["none", "periodic", "drift", "both"],
             required=True,
@@ -199,7 +199,7 @@ class PortfolioNode(BaseNode):
         "rebalance_frequency": FieldSchema(
             name="rebalance_frequency",
             type=FieldType.ENUM,
-            description="리밸런싱 주기",
+            description="i18n:fields.PortfolioNode.rebalance_frequency",
             enum_values=["daily", "weekly", "monthly", "quarterly"],
             required=False,
             bindable=False,
@@ -209,7 +209,7 @@ class PortfolioNode(BaseNode):
         "drift_threshold": FieldSchema(
             name="drift_threshold",
             type=FieldType.NUMBER,
-            description="드리프트 임계값 (%)",
+            description="i18n:fields.PortfolioNode.drift_threshold",
             default=5.0,
             min_value=0.1,
             max_value=50.0,
@@ -222,7 +222,7 @@ class PortfolioNode(BaseNode):
         "capital_sharing": FieldSchema(
             name="capital_sharing",
             type=FieldType.BOOLEAN,
-            description="전략간 자본 공유 여부",
+            description="i18n:fields.PortfolioNode.capital_sharing",
             default=True,
             required=False,
             bindable=False,
@@ -231,7 +231,7 @@ class PortfolioNode(BaseNode):
         "reserve_percent": FieldSchema(
             name="reserve_percent",
             type=FieldType.NUMBER,
-            description="현금 예비금 비율 (%)",
+            description="i18n:fields.PortfolioNode.reserve_percent",
             default=0.0,
             min_value=0,
             max_value=100,

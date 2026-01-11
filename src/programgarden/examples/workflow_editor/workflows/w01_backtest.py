@@ -343,80 +343,51 @@ def get_workflow():
         ],
         
         "edges": [
-            # =====================================================================
-            # 기본 연결: Start → Broker → Watchlist → HistoricalData
-            # =====================================================================
-            {"from": "start.start", "to": "broker"},
-            {"from": "broker.connection", "to": "watchlist"},
-            {"from": "watchlist.symbols", "to": "historicalData.symbols"},
-            
-            # =====================================================================
-            # HistoricalData → 모든 Condition 노드
-            # =====================================================================
-            {"from": "historicalData.ohlcv_data", "to": "rsiBuyCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "rsiSellCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "goldenCrossCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "deadCrossCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "dualMomentumCondition.price_data"},
-            {"from": "historicalData.ohlcv_data", "to": "macdCondition.price_data"},
-            
-            # =====================================================================
-            # 전략 조합: LogicNode 입력
-            # =====================================================================
-            {"from": "rsiBuyCondition.result", "to": "rsiAndGoldenLogic.input"},
-            {"from": "goldenCrossCondition.result", "to": "rsiAndGoldenLogic.input"},
-            {"from": "rsiBuyCondition.result", "to": "rsiOrMacdLogic.input"},
-            {"from": "macdCondition.result", "to": "rsiOrMacdLogic.input"},
-            
-            # =====================================================================
-            # Condition → BacktestEngine
-            # =====================================================================
-            {"from": "rsiBuyCondition.signals", "to": "rsiBacktest.buy_signal"},
-            {"from": "rsiSellCondition.signals", "to": "rsiBacktest.sell_signal"},
-            {"from": "historicalData.ohlcv_data", "to": "rsiBacktest.ohlcv_data"},
-            
-            {"from": "goldenCrossCondition.signals", "to": "goldenCrossBacktest.buy_signal"},
-            {"from": "deadCrossCondition.signals", "to": "goldenCrossBacktest.sell_signal"},
-            {"from": "historicalData.ohlcv_data", "to": "goldenCrossBacktest.ohlcv_data"},
-            
-            {"from": "dualMomentumCondition.signals", "to": "dualMomentumBacktest.buy_signal"},
-            {"from": "historicalData.ohlcv_data", "to": "dualMomentumBacktest.ohlcv_data"},
-            
-            {"from": "rsiAndGoldenLogic.result", "to": "combinedAndBacktest.buy_signal"},
-            {"from": "historicalData.ohlcv_data", "to": "combinedAndBacktest.ohlcv_data"},
-            
-            {"from": "rsiOrMacdLogic.result", "to": "combinedOrBacktest.buy_signal"},
-            {"from": "historicalData.ohlcv_data", "to": "combinedOrBacktest.ohlcv_data"},
-            
-            # =====================================================================
-            # BacktestEngine → Display (Level 1)
-            # =====================================================================
-            {"from": "rsiBacktest.equity_curve", "to": "equityCurveDisplay.data"},
-            {"from": "goldenCrossBacktest.equity_curve", "to": "equityCurveDisplay.data"},
-            {"from": "dualMomentumBacktest.equity_curve", "to": "equityCurveDisplay.data"},
-            {"from": "combinedAndBacktest.equity_curve", "to": "equityCurveDisplay.data"},
-            {"from": "combinedOrBacktest.equity_curve", "to": "equityCurveDisplay.data"},
-            
-            {"from": "rsiBacktest.metrics", "to": "performanceRadar.data"},
-            {"from": "goldenCrossBacktest.metrics", "to": "performanceRadar.data"},
-            {"from": "dualMomentumBacktest.metrics", "to": "performanceRadar.data"},
-            {"from": "combinedAndBacktest.metrics", "to": "performanceRadar.data"},
-            {"from": "combinedOrBacktest.metrics", "to": "performanceRadar.data"},
-            
-            {"from": "rsiBacktest.summary", "to": "returnDistribution.data"},
-            {"from": "goldenCrossBacktest.summary", "to": "returnDistribution.data"},
-            {"from": "dualMomentumBacktest.summary", "to": "returnDistribution.data"},
-            {"from": "combinedAndBacktest.summary", "to": "returnDistribution.data"},
-            {"from": "combinedOrBacktest.summary", "to": "returnDistribution.data"},
-            
-            # =====================================================================
-            # BacktestEngine → Display (Level 2)
-            # =====================================================================
-            {"from": "rsiBacktest.trades", "to": "symbolContribution.data"},
-            {"from": "rsiBacktest.summary", "to": "tradeSummary.data"},
-            {"from": "goldenCrossBacktest.summary", "to": "tradeSummary.data"},
-            {"from": "dualMomentumBacktest.summary", "to": "tradeSummary.data"},
-            {"from": "combinedAndBacktest.summary", "to": "tradeSummary.data"},
-            {"from": "combinedOrBacktest.summary", "to": "tradeSummary.data"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "watchlist"},
+            {"from": "watchlist", "to": "historicalData"},
+            {"from": "historicalData", "to": "rsiBuyCondition"},
+            {"from": "historicalData", "to": "rsiSellCondition"},
+            {"from": "historicalData", "to": "goldenCrossCondition"},
+            {"from": "historicalData", "to": "deadCrossCondition"},
+            {"from": "historicalData", "to": "dualMomentumCondition"},
+            {"from": "historicalData", "to": "macdCondition"},
+            {"from": "rsiBuyCondition", "to": "rsiAndGoldenLogic"},
+            {"from": "goldenCrossCondition", "to": "rsiAndGoldenLogic"},
+            {"from": "rsiBuyCondition", "to": "rsiOrMacdLogic"},
+            {"from": "macdCondition", "to": "rsiOrMacdLogic"},
+            {"from": "rsiBuyCondition", "to": "rsiBacktest"},
+            {"from": "rsiSellCondition", "to": "rsiBacktest"},
+            {"from": "historicalData", "to": "rsiBacktest"},
+            {"from": "goldenCrossCondition", "to": "goldenCrossBacktest"},
+            {"from": "deadCrossCondition", "to": "goldenCrossBacktest"},
+            {"from": "historicalData", "to": "goldenCrossBacktest"},
+            {"from": "dualMomentumCondition", "to": "dualMomentumBacktest"},
+            {"from": "historicalData", "to": "dualMomentumBacktest"},
+            {"from": "rsiAndGoldenLogic", "to": "combinedAndBacktest"},
+            {"from": "historicalData", "to": "combinedAndBacktest"},
+            {"from": "rsiOrMacdLogic", "to": "combinedOrBacktest"},
+            {"from": "historicalData", "to": "combinedOrBacktest"},
+            {"from": "rsiBacktest", "to": "equityCurveDisplay"},
+            {"from": "goldenCrossBacktest", "to": "equityCurveDisplay"},
+            {"from": "dualMomentumBacktest", "to": "equityCurveDisplay"},
+            {"from": "combinedAndBacktest", "to": "equityCurveDisplay"},
+            {"from": "combinedOrBacktest", "to": "equityCurveDisplay"},
+            {"from": "rsiBacktest", "to": "performanceRadar"},
+            {"from": "goldenCrossBacktest", "to": "performanceRadar"},
+            {"from": "dualMomentumBacktest", "to": "performanceRadar"},
+            {"from": "combinedAndBacktest", "to": "performanceRadar"},
+            {"from": "combinedOrBacktest", "to": "performanceRadar"},
+            {"from": "rsiBacktest", "to": "returnDistribution"},
+            {"from": "goldenCrossBacktest", "to": "returnDistribution"},
+            {"from": "dualMomentumBacktest", "to": "returnDistribution"},
+            {"from": "combinedAndBacktest", "to": "returnDistribution"},
+            {"from": "combinedOrBacktest", "to": "returnDistribution"},
+            {"from": "rsiBacktest", "to": "symbolContribution"},
+            {"from": "rsiBacktest", "to": "tradeSummary"},
+            {"from": "goldenCrossBacktest", "to": "tradeSummary"},
+            {"from": "dualMomentumBacktest", "to": "tradeSummary"},
+            {"from": "combinedAndBacktest", "to": "tradeSummary"},
+            {"from": "combinedOrBacktest", "to": "tradeSummary"},
         ],
     }

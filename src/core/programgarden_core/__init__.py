@@ -15,6 +15,7 @@ Finance 패키지 지원:
 """
 
 from programgarden_core.nodes import *
+from programgarden_core.nodes.base import BaseNotificationNode
 from programgarden_core.models import *
 from programgarden_core.registry import *
 from programgarden_core.exceptions import *
@@ -27,6 +28,7 @@ __version__ = "2.0.0"
 __all__ = [
     # Nodes
     "BaseNode",
+    "BaseNotificationNode",  # 커뮤니티 알림 노드용 베이스
     "StartNode",
     "BrokerNode",
     "RealMarketDataNode",
@@ -49,9 +51,7 @@ __all__ = [
     "NewOrderNode",
     "ModifyOrderNode",
     "CancelOrderNode",
-    "EventHandlerNode",
-    "ErrorHandlerNode",
-    "AlertNode",
+    # Event 노드는 커뮤니티 노드(TelegramNode 등)로 대체됨
     "DisplayNode",
     # Models
     "Edge",

@@ -1,5 +1,5 @@
 """
-10_ui Workflows - 워크플로우 통합 모음
+Workflow Editor Workflows - 워크플로우 통합 모음
 
 카테고리:
 - infra: 인프라 (시작, 브로커, 스케줄 등)
@@ -9,6 +9,7 @@
 - operation: 운영 (거래시간/일시정지/스냅샷/다중시장/장시간실행)
 - backtest: 백테스트 (단순/자동배포/주간스케줄)
 - futures: 해외선물 전용
+- notification: 알림 (텔레그램, 슬랙 등)
 - custom: 기존 커스텀 워크플로우 (백테스트 비교/스파이더 차트/포트폴리오)
 """
 
@@ -20,12 +21,14 @@ from . import advanced
 from . import operation
 from . import backtest
 from . import futures
+from . import notification
 
 # 기존 커스텀 워크플로우
 from .w01_backtest import get_workflow as get_backtest_workflow
 from .w02_spider import get_workflow as get_spider_workflow
 from .w03_portfolio import get_workflow as get_portfolio_workflow
 from .w04_display_test import get_workflow as get_display_test_workflow
+from .w05_http_request import get_workflow as get_http_request_workflow
 
 __all__ = [
     # 카테고리 모듈
@@ -36,6 +39,7 @@ __all__ = [
     "operation",
     "backtest",
     "futures",
+    "notification",
     # 기존 워크플로우
     "get_backtest_workflow",
     "get_spider_workflow",
@@ -57,6 +61,7 @@ CATEGORIES = [
     {"id": "operation", "name": "⚙️ 운영", "module": operation, "description": "거래시간/일시정지/스냅샷/다중시장/장시간실행"},
     {"id": "backtest", "name": "📈 백테스트", "module": backtest, "description": "단순/자동배포/주간 스케줄 백테스트"},
     {"id": "futures", "name": "🔥 해외선물", "module": futures, "description": "해외선물 전용 브로커/잔고/주문"},
+    {"id": "notification", "name": "📱 알림", "module": notification, "description": "텔레그램, 슬랙 등 메시징 알림"},
     {
         "id": "custom",
         "name": "✨ 커스텀",
@@ -67,6 +72,7 @@ CATEGORIES = [
             {"id": "custom-02", "name": "🕸️ 스파이더 차트 포트폴리오 분석", "description": "5종목의 기술적 지표를 레이더 차트로 비교", "get_workflow": get_spider_workflow},
             {"id": "custom-03", "name": "🏛️ 계층적 포트폴리오 백테스트", "description": "PortfolioNode를 활용한 멀티 전략 자본 배분 및 리밸런싱", "get_workflow": get_portfolio_workflow},
             {"id": "custom-04", "name": "📺 DisplayNode 테스트", "description": "다양한 차트 타입의 인라인 시각화 테스트", "get_workflow": get_display_test_workflow},
+            {"id": "custom-05", "name": "🌐 HTTPRequestNode 테스트", "description": "외부 REST API 호출 및 응답 처리", "get_workflow": get_http_request_workflow},
         ],
     },
 ]

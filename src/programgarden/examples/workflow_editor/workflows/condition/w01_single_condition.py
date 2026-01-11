@@ -54,10 +54,10 @@ def get_workflow():
             },
         ],
         "edges": [
-            {"from": "start.start", "to": "schedule"},
-            {"from": "schedule.tick", "to": "rsi"},
-            {"from": "watchlist.symbols", "to": "realMarket.symbols"},
-            {"from": "realMarket.price", "to": "rsi.price_data"},
-            {"from": "rsi.passed_symbols", "to": "display.data"},
+            {"from": "start", "to": "schedule"},
+            {"from": "schedule", "to": "rsi"},
+            {"from": "watchlist", "to": "realMarket"},
+            {"from": "realMarket", "to": "rsi"},
+            {"from": "rsi", "to": "display"},
         ],
     }

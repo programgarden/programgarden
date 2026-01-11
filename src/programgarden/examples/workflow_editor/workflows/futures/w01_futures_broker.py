@@ -38,8 +38,8 @@ def get_workflow():
             },
         ],
         "edges": [
-            {"from": "start.start", "to": "broker"},
-            {"from": "broker.connection", "to": "account"},
-            {"from": "account.positions", "to": "display.data"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "display"},
         ],
     }

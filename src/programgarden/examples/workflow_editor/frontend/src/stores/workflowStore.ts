@@ -12,7 +12,17 @@ import {
 import { NodeState, EdgeState, LogEntry, NodeTypeSchema } from '@/types/workflow';
 import { isPortCompatible, getEdgeColor } from '@/utils/portCompatibility';
 
+// Credential 정보 (워크플로우에 포함될 메타 정보)
+interface WorkflowCredential {
+  type: string;
+  name: string;
+  data: unknown; // 공유용은 키만, 실행용은 값 포함
+}
+
 interface WorkflowState {
+  // Locale (i18n)
+  locale: 'ko' | 'en';
+
   // Workflow metadata
   workflowId: string;
   workflowName: string;
@@ -27,6 +37,9 @@ interface WorkflowState {
   // Node registry
   nodeTypes: NodeTypeSchema[];
   nodeTypesLoaded: boolean;
+  
+  // Credentials used in workflow
+  credentials: Record<string, WorkflowCredential>;
 
   // Execution state
   isRunning: boolean;
@@ -60,6 +73,13 @@ interface WorkflowState {
   // Actions - Node registry
   setNodeTypes: (types: NodeTypeSchema[]) => void;
 
+  // Actions - Locale
+  setLocale: (locale: 'ko' | 'en') => void;
+  
+  // Actions - Credentials
+  addCredential: (id: string, credential: WorkflowCredential) => void;
+  removeCredential: (id: string) => void;
+
   // Actions - Execution
   setRunning: (running: boolean) => void;
   setNodeState: (nodeId: string, state: NodeState) => void;
@@ -82,6 +102,7 @@ function generateNodeId(nodeType: string): string {
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   // Initial state
+  locale: 'ko',
   workflowId: 'new-workflow',
   workflowName: 'New Workflow',
   workflowDescription: '',
@@ -91,6 +112,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   selectedEdgeId: null,
   nodeTypes: [],
   nodeTypesLoaded: false,
+  credentials: {},
   isRunning: false,
   nodeStates: {},
   edgeStates: {},
@@ -204,6 +226,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         label: nodeType,
         nodeType,
         category,
+        description: schema?.description || '', // 스키마에서 설명 가져오기
         inputs: schema?.inputs || [],
         outputs: schema?.outputs || [],
         configSchema: schema?.config_schema || {},
@@ -265,11 +288,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }, 0);
     nodeIdCounter = maxId + 1;
 
+    // 노드 로드 시 최신 configSchema 병합
+    const nodeTypes = get().nodeTypes;
+    const updatedNodes = workflow.nodes.map((node) => {
+      const nodeType = node.data?.nodeType || node.type;
+      const schema = nodeTypes.find((t) => t.node_type === nodeType);
+      
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          // 최신 configSchema로 업데이트 (기존 값 유지)
+          configSchema: schema?.config_schema || node.data?.configSchema || {},
+        },
+      };
+    });
+
     set({
       workflowId: workflow.id,
       workflowName: workflow.name,
       workflowDescription: workflow.description || '',
-      nodes: workflow.nodes,
+      nodes: updatedNodes,
       edges: workflow.edges,
       selectedNodeId: null,
       selectedEdgeId: null,
@@ -294,51 +333,160 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   getWorkflowJson: () => {
     const state = get();
-    return {
+    
+    // 민감한 헤더 키 목록 (대소문자 무시)
+    const SENSITIVE_HEADER_KEYS = [
+      'authorization', 'x-api-key', 'api-key', 'apikey',
+      'x-auth-token', 'x-access-token', 'bearer', 'token',
+      'secret', 'password', 'credential', 'private-key', 'x-secret',
+    ];
+    
+    const isSensitiveKey = (key: string): boolean => {
+      const lowerKey = key.toLowerCase();
+      return SENSITIVE_HEADER_KEYS.some(sensitive => lowerKey.includes(sensitive));
+    };
+    
+    // 민감 헤더 값 마스킹
+    const maskSensitiveHeaders = (headers: Record<string, string> | undefined) => {
+      if (!headers) return headers;
+      const masked: Record<string, string> = {};
+      for (const [key, value] of Object.entries(headers)) {
+        masked[key] = isSensitiveKey(key) ? '********' : value;
+      }
+      return masked;
+    };
+    
+    // 노드들에서 사용하는 credential_id 수집
+    const usedCredentialIds = new Set<string>();
+    state.nodes.forEach(node => {
+      const credId = node.data.credential_id as string | undefined;
+      if (credId) {
+        usedCredentialIds.add(credId);
+      }
+    });
+    
+    // nodes 생성
+    const processedNodes = state.nodes.map((node) => {
+      // node.data에서 내부 필드 제외하고 추출
+      const nodeDataEntries = Object.entries(node.data).filter(
+        ([key]) => !['label', 'nodeType', 'category', 'inputs', 'outputs', 'state', 'configSchema'].includes(key)
+      );
+      
+      // headers 필드가 있으면 마스킹 처리
+      const processedEntries = nodeDataEntries.map(([key, value]) => {
+        if (key === 'headers' && value && typeof value === 'object') {
+          return [key, maskSensitiveHeaders(value as Record<string, string>)];
+        }
+        return [key, value];
+      });
+      
+      const baseNode = {
+        id: node.id,
+        type: node.data.nodeType,
+        category: node.data.category,
+        position: node.position,
+        ...Object.fromEntries(processedEntries),
+      };
+      
+      // Add size for DisplayNode
+      if (node.data.nodeType === 'DisplayNode' && (node.data.width || node.data.height)) {
+        return {
+          ...baseNode,
+          size: {
+            width: node.data.width || 300,
+            height: node.data.height || 200,
+          },
+        };
+      }
+      
+      return baseNode;
+    });
+    
+    // edges 생성
+    const processedEdges = state.edges.map((edge) => ({
+      from: edge.source,
+      to: edge.target,
+    }));
+    
+    // 기본 결과
+    const result: Record<string, unknown> = {
       id: state.workflowId,
       name: state.workflowName,
       description: state.workflowDescription,
-      nodes: state.nodes.map((node) => {
-        const baseNode = {
-          id: node.id,
-          type: node.data.nodeType,
-          category: node.data.category,
-          position: node.position,
-          ...Object.fromEntries(
-            Object.entries(node.data).filter(
-              ([key]) => !['label', 'nodeType', 'category', 'inputs', 'outputs', 'state', 'configSchema'].includes(key)
-            )
-          ),
-        };
-        
-        // Add size for DisplayNode
-        if (node.data.nodeType === 'DisplayNode' && (node.data.width || node.data.height)) {
-          return {
-            ...baseNode,
-            size: {
-              width: node.data.width || 300,
-              height: node.data.height || 200,
-            },
-          };
-        }
-        
-        return baseNode;
-      }),
-      // DSL format: from/to with port as "nodeId.port" or just "nodeId"
-      edges: state.edges.map((edge) => {
-        const from = edge.sourceHandle ? `${edge.source}.${edge.sourceHandle}` : edge.source;
-        const to = edge.targetHandle ? `${edge.target}.${edge.targetHandle}` : edge.target;
-        return {
-          from,
-          to,
-        };
-      }),
+      nodes: processedNodes,
+      edges: processedEdges,
     };
+    
+    // credentials 섹션 추가 (사용된 credential이 있는 경우)
+    // 형식: [{ id, type, name, data }, ...]
+    if (usedCredentialIds.size > 0) {
+      const credentialsArray: Array<{ id: string; type: string; name: string; data: unknown }> = [];
+      usedCredentialIds.forEach(credId => {
+        const cred = state.credentials[credId];
+        if (cred) {
+          // 공유용: data는 키만 (값은 빈 문자열)
+          let sanitizedData: unknown;
+          if (Array.isArray(cred.data)) {
+            // http_custom: 배열 형태
+            sanitizedData = (cred.data as Array<{ type: string; key: string; label: string }>).map(item => ({
+              type: item.type,
+              key: item.key,
+              value: '',  // 값은 빈 문자열
+              label: item.label,
+            }));
+          } else if (typeof cred.data === 'object' && cred.data !== null) {
+            // dict 형태: 키만 유지
+            sanitizedData = Object.fromEntries(
+              Object.keys(cred.data as Record<string, unknown>).map(k => [k, ''])
+            );
+          } else {
+            sanitizedData = {};
+          }
+          
+          credentialsArray.push({
+            id: credId,
+            type: cred.type,
+            name: cred.name,
+            data: sanitizedData,
+          });
+        } else {
+          // store에 없는 credential은 placeholder로 추가
+          credentialsArray.push({
+            id: credId,
+            type: 'unknown',
+            name: credId,
+            data: {},
+          });
+        }
+      });
+      result.credentials = credentialsArray;
+    }
+    
+    return result;
   },
 
   // Node registry
   setNodeTypes: (types) => {
     set({ nodeTypes: types, nodeTypesLoaded: true });
+  },
+
+  // Locale
+  setLocale: (locale) => {
+    set({ locale, nodeTypesLoaded: false }); // Reset to trigger reload
+  },
+  
+  // Credentials
+  addCredential: (id, credential) => {
+    set((state) => ({
+      credentials: { ...state.credentials, [id]: credential },
+    }));
+  },
+  
+  removeCredential: (id) => {
+    set((state) => {
+      const { [id]: _, ...rest } = state.credentials;
+      return { credentials: rest };
+    });
   },
 
   // Execution

@@ -1,10 +1,10 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-37개 노드 타입을 15개 카테고리로 분류:
+38개 노드 타입을 15개 카테고리로 분류:
 - infra (2): StartNode, BrokerNode
 - realtime (3): RealMarketDataNode, RealAccountNode, RealOrderEventNode
-- data (4): MarketDataNode, HistoricalDataNode, SQLiteNode, PostgresNode
+- data (5): MarketDataNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode
 - account (1): AccountNode
 - symbol (4): WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode
 - trigger (3): ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode
@@ -25,7 +25,7 @@ from programgarden_core.nodes.realtime import (
     RealAccountNode,
     RealOrderEventNode,
 )
-from programgarden_core.nodes.data import MarketDataNode, SQLiteNode, PostgresNode
+from programgarden_core.nodes.data import MarketDataNode, SQLiteNode, PostgresNode, HTTPRequestNode
 from programgarden_core.nodes.account import AccountNode
 from programgarden_core.nodes.symbol import (
     WatchlistNode,
@@ -41,7 +41,7 @@ from programgarden_core.nodes.trigger import (
 from programgarden_core.nodes.condition import ConditionNode, LogicNode
 from programgarden_core.nodes.risk import PositionSizingNode, RiskGuardNode, RiskConditionNode
 from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
-from programgarden_core.nodes.event import EventHandlerNode, ErrorHandlerNode, AlertNode
+# event 노드는 커뮤니티 노드(TelegramNode 등)로 대체됨
 from programgarden_core.nodes.display import DisplayNode
 from programgarden_core.nodes.backtest import (
     HistoricalDataNode,
@@ -70,6 +70,7 @@ __all__ = [
     "HistoricalDataNode",
     "SQLiteNode",
     "PostgresNode",
+    "HTTPRequestNode",
     # Symbol
     "WatchlistNode",
     "MarketUniverseNode",
@@ -93,10 +94,7 @@ __all__ = [
     "ModifyOrderNode",
     "CancelOrderNode",
     "LiquidateNode",
-    # Event
-    "EventHandlerNode",
-    "ErrorHandlerNode",
-    "AlertNode",
+    # Event - 커뮤니티 노드(TelegramNode 등)로 대체됨
     # Display
     "DisplayNode",
     # Backtest

@@ -1,8 +1,9 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { getCategoryColor } from '@/utils/nodeColors';
+import { getNodeLabel } from '@/utils/nodeLabels';
 import { findUpstreamNodes } from '@/utils/graphUtils';
-import { Trash2, Info, Plus } from 'lucide-react';
+import { Trash2, Info } from 'lucide-react';
 import { ConfigField } from '@/types/workflow';
 import { useCredentials } from '@/hooks/useCredentials';
 import { CredentialModal } from './CredentialModal';
@@ -14,7 +15,8 @@ import BindableField from './BindableField';
 const NODE_CREDENTIAL_TYPES: Record<string, string> = {
   'BrokerNode': 'broker_ls',
   'AlertNode': 'telegram',
-  // Add more mappings as needed
+  'TelegramNode': 'telegram',
+  'PostgresNode': 'postgres',
 };
 
 // Tab button component
@@ -42,8 +44,8 @@ function TabButton({
 }
 
 export default function PropertiesPanel() {
-  const [activeTab, setActiveTab] = useState<'input' | 'settings' | 'output'>('settings');
-  const { nodes, edges, selectedNodeId, updateNodeData, removeNode, nodeOutputs } = useWorkflowStore();
+  const [activeTab, setActiveTab] = useState<'input' | 'parameters' | 'settings' | 'output'>('parameters');
+  const { nodes, edges, selectedNodeId, updateNodeData, removeNode, nodeOutputs, addCredential } = useWorkflowStore();
   const { credentials, credentialTypes, createCredential, loading: credLoading } = useCredentials();
   const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [credentialTypeForModal, setCredentialTypeForModal] = useState<string | undefined>();
@@ -95,13 +97,12 @@ export default function PropertiesPanel() {
   const nodeData = selectedNode.data as Record<string, unknown>;
   const color = getCategoryColor(nodeData.category as string);
   const configSchema = (nodeData.configSchema || {}) as Record<string, ConfigField>;
-
-  const handleLabelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    updateNodeData(selectedNode.id, { label: e.target.value });
-  };
+  
+  // 삭제 시 표시할 이름
+  const nodeName = (nodeData.customLabel as string) || getNodeLabel(nodeData.nodeType as string, 'ko');
 
   const handleDelete = () => {
-    if (confirm(`Delete node "${nodeData.label || nodeData.nodeType}"?`)) {
+    if (confirm(`"${nodeName}" 노드를 삭제하시겠습니까?`)) {
       removeNode(selectedNode.id);
     }
   };
@@ -109,192 +110,48 @@ export default function PropertiesPanel() {
   // Get the credential type required by this node
   const nodeType = nodeData.nodeType as string;
   const requiredCredentialType = NODE_CREDENTIAL_TYPES[nodeType];
-  const filteredCredentials = requiredCredentialType
-    ? credentials.filter((c) => c.credential_type === requiredCredentialType)
-    : [];
 
-  const handleOpenCredentialModal = () => {
-    setCredentialTypeForModal(requiredCredentialType);
+  const handleOpenCredentialModal = useCallback((initialType?: string) => {
+    setCredentialTypeForModal(initialType || requiredCredentialType);
     setShowCredentialModal(true);
-  };
+  }, [requiredCredentialType]);
 
-  const handleSaveCredential = async (data: { name: string; credential_type: string; data: Record<string, unknown> }) => {
-    const result = await createCredential(data);
+  const handleSaveCredential = async (data: { name: string; credential_type: string; data: unknown }) => {
+    const result = await createCredential(data as { name: string; credential_type: string; data: Record<string, unknown> });
     if (result) {
+      // Store credential info in workflow store for JSON export
+      addCredential(result.id, {
+        type: data.credential_type,
+        name: data.name,
+        data: data.data,
+      });
       // Auto-select the newly created credential
       updateNodeData(selectedNode.id, { credential_id: result.id });
     }
   };
-
-  // Render credential dropdown for credential_id field
-  const renderCredentialField = (key: string, schema: ConfigField, value: unknown) => {
-    if (!requiredCredentialType) {
-      // No credential type mapping, fall back to text input
-      return renderTextField(key, schema, value);
-    }
-
-    return (
-      <div>
-        <label className="block text-xs text-gray-400 mb-1">
-          Credential
-          {schema.required && <span className="text-red-400 ml-1">*</span>}
-        </label>
-        <div className="flex gap-2">
-          <select
-            value={String(value || '')}
-            onChange={(e) => updateNodeData(selectedNode.id, { [key]: e.target.value })}
-            className="flex-1 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-            disabled={credLoading}
-          >
-            <option value="">Select credential...</option>
-            {filteredCredentials.map(cred => (
-              <option key={cred.id} value={cred.id}>
-                {cred.name}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={handleOpenCredentialModal}
-            className="px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm flex items-center gap-1"
-            title="Add new credential"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-        {filteredCredentials.length === 0 && !credLoading && (
-          <p className="text-xs text-gray-500 mt-1">
-            No credentials found. Click + to add one.
-          </p>
-        )}
-      </div>
-    );
-  };
-
-  // Render text field (extracted for reuse)
-  const renderTextField = (key: string, schema: ConfigField, value: unknown) => (
-    <div>
-      <label className="block text-xs text-gray-400 mb-1 capitalize">
-        {key.replace(/_/g, ' ')}
-        {schema.required && <span className="text-red-400 ml-1">*</span>}
-        {schema.description && (
-          <span className="text-gray-500 ml-1" title={schema.description}>ⓘ</span>
-        )}
-      </label>
-      <input
-        type="text"
-        value={String(value ?? '')}
-        onChange={(e) => updateNodeData(selectedNode.id, { [key]: e.target.value })}
-        placeholder={schema.description}
-        className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-      />
-    </div>
-  );
-
-  // Render form field based on schema type
-  const renderField = (key: string, schema: ConfigField, value: unknown) => {
-    const fieldType = schema.type;
-    const isRequired = schema.required;
+  
+  // credential_id 필드 변경 시 store에 credential 정보 등록
+  const handleFieldChange = useCallback((fieldKey: string, value: unknown) => {
+    updateNodeData(selectedNode.id, { [fieldKey]: value });
     
-    // Special handling for credential_id field
-    if (key === 'credential_id') {
-      return renderCredentialField(key, schema, value);
+    // credential_id 필드인 경우 store에 credential 정보 등록
+    if (fieldKey === 'credential_id' && typeof value === 'string' && value) {
+      const cred = credentials.find(c => c.id === value);
+      if (cred) {
+        addCredential(cred.id, {
+          type: cred.credential_type,
+          name: cred.name,
+          data: cred.data,
+        });
+      }
     }
-    
-    // Boolean: checkbox
-    if (fieldType === 'boolean') {
-      return (
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={Boolean(value)}
-            onChange={(e) => updateNodeData(selectedNode.id, { [key]: e.target.checked })}
-            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
-          />
-          <span className="text-sm text-gray-300">{key.replace(/_/g, ' ')}</span>
-          {isRequired && <span className="text-red-400 text-xs">*</span>}
-        </label>
-      );
-    }
-    
-    // Number
-    if (fieldType === 'number' || fieldType === 'integer') {
-      return (
-        <div>
-          <label className="block text-xs text-gray-400 mb-1 capitalize">
-            {key.replace(/_/g, ' ')}
-            {isRequired && <span className="text-red-400 ml-1">*</span>}
-            {schema.description && (
-              <span className="text-gray-500 ml-1" title={schema.description}>ⓘ</span>
-            )}
-          </label>
-          <input
-            type="number"
-            value={typeof value === 'number' ? value : 0}
-            step={fieldType === 'integer' ? 1 : 0.01}
-            onChange={(e) => {
-              const num = fieldType === 'integer' 
-                ? parseInt(e.target.value) || 0 
-                : parseFloat(e.target.value) || 0;
-              updateNodeData(selectedNode.id, { [key]: num });
-            }}
-            className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-          />
-        </div>
-      );
-    }
-    
-    // Array or Object: textarea for JSON
-    if (fieldType === 'array' || fieldType === 'object') {
-      const jsonValue = typeof value === 'object' ? JSON.stringify(value, null, 2) : '[]';
-      return (
-        <div>
-          <label className="block text-xs text-gray-400 mb-1 capitalize">
-            {key.replace(/_/g, ' ')}
-            {isRequired && <span className="text-red-400 ml-1">*</span>}
-            {schema.description && (
-              <span className="text-gray-500 ml-1" title={schema.description}>ⓘ</span>
-            )}
-          </label>
-          <textarea
-            value={jsonValue}
-            rows={3}
-            onChange={(e) => {
-              try {
-                const parsed = JSON.parse(e.target.value);
-                updateNodeData(selectedNode.id, { [key]: parsed });
-              } catch {
-                // Invalid JSON, don't update
-              }
-            }}
-            className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500 font-mono"
-          />
-        </div>
-      );
-    }
-    
-    // Default: text input
-    return (
-      <div>
-        <label className="block text-xs text-gray-400 mb-1 capitalize">
-          {key.replace(/_/g, ' ')}
-          {isRequired && <span className="text-red-400 ml-1">*</span>}
-          {schema.description && (
-            <span className="text-gray-500 ml-1" title={schema.description}>ⓘ</span>
-          )}
-        </label>
-        <input
-          type="text"
-          value={String(value ?? '')}
-          onChange={(e) => updateNodeData(selectedNode.id, { [key]: e.target.value })}
-          placeholder={schema.description}
-          className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-        />
-      </div>
-    );
-  };
+  }, [selectedNode?.id, updateNodeData, credentials, addCredential]);
 
   // Get config fields from schema
   const hasConfigSchema = Object.keys(configSchema).length > 0;
+  
+  // 표시할 라벨 (커스텀 라벨 > 기본 한글 라벨)
+  const displayLabel = (nodeData.customLabel as string) || getNodeLabel(nodeData.nodeType as string, 'ko');
 
   return (
     <div className="h-full flex flex-col">
@@ -302,7 +159,7 @@ export default function PropertiesPanel() {
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-semibold text-gray-200">
-            {(nodeData.label as string) || (nodeData.nodeType as string)}
+            {displayLabel}
           </h2>
           <button
             onClick={handleDelete}
@@ -316,14 +173,28 @@ export default function PropertiesPanel() {
           className="text-xs px-2 py-1 rounded inline-block text-white"
           style={{ backgroundColor: color }}
         >
-          {nodeData.nodeType as string}
+          {nodeData.category as string}
         </div>
+        {/* Node Description */}
+        {typeof nodeData.description === 'string' && nodeData.description && (
+          <div className="mt-3 p-2 bg-gray-750 rounded border border-gray-600">
+            <div className="flex items-start gap-2">
+              <Info className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-gray-300 leading-relaxed">
+                {nodeData.description}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Tabs (n8n 스타일) */}
+      {/* Tabs (4개: Input | Parameters | Settings | Output) */}
       <div className="flex border-b border-gray-700">
         <TabButton active={activeTab === 'input'} onClick={() => setActiveTab('input')}>
           Input
+        </TabButton>
+        <TabButton active={activeTab === 'parameters'} onClick={() => setActiveTab('parameters')}>
+          Parameters
         </TabButton>
         <TabButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')}>
           Settings
@@ -343,47 +214,112 @@ export default function PropertiesPanel() {
           />
         )}
 
+        {/* Parameters Tab - 핵심 설정 */}
+        {activeTab === 'parameters' && (
+          <div className="space-y-4">
+            {/* HTTPRequestNode URL Preview */}
+            {nodeType === 'HTTPRequestNode' && nodeData.url ? (
+              <div className="p-3 bg-gray-900 rounded border border-gray-700">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs text-gray-400">🔗 Request URL</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                    nodeData.method === 'GET' ? 'bg-green-900 text-green-300' :
+                    nodeData.method === 'POST' ? 'bg-blue-900 text-blue-300' :
+                    nodeData.method === 'PUT' ? 'bg-yellow-900 text-yellow-300' :
+                    nodeData.method === 'DELETE' ? 'bg-red-900 text-red-300' :
+                    'bg-gray-700 text-gray-300'
+                  }`}>
+                    {String(nodeData.method || 'GET')}
+                  </span>
+                </div>
+                <code className="text-xs text-cyan-400 break-all">
+                  {(() => {
+                    const baseUrl = String(nodeData.url || '');
+                    const params = nodeData.query_params as Record<string, string> | undefined;
+                    if (!params || Object.keys(params).length === 0) return baseUrl;
+                    const queryString = Object.entries(params)
+                      .filter(([k, v]) => k && v)
+                      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+                      .join('&');
+                    return queryString ? `${baseUrl}?${queryString}` : baseUrl;
+                  })()}
+                </code>
+              </div>
+            ) : null}
+            
+            {hasConfigSchema && (() => {
+              const paramFields = Object.entries(configSchema).filter(
+                ([, schema]) => schema.category === 'parameters' || !schema.category
+              );
+              
+              if (paramFields.length === 0) {
+                return (
+                  <div className="text-center text-gray-500 py-8">
+                    <p className="text-sm">No parameters for this node</p>
+                  </div>
+                );
+              }
+              
+              return paramFields.map(([key, schema]) => (
+                <div key={key}>
+                  <BindableField
+                    label={key.replace(/_/g, ' ')}
+                    fieldKey={key}
+                    value={nodeData[key]}
+                    onChange={(value) => handleFieldChange(key, value)}
+                    onFocus={() => setFocusedFieldKey(key)}
+                    schema={schema}
+                    // Credential props (credential_id 필드용)
+                    credentials={credentials}
+                    credentialTypes={credentialTypes}
+                    onOpenCredentialModal={handleOpenCredentialModal}
+                    credentialLoading={credLoading}
+                    requiredCredentialType={requiredCredentialType}
+                  />
+                </div>
+              ));
+            })()}
+          </div>
+        )}
+
+        {/* Settings Tab - 부가 설정 */}
         {activeTab === 'settings' && (
           <div className="space-y-4">
-            {/* Label */}
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Label</label>
-              <input
-                type="text"
-                value={(nodeData.label as string) || ''}
-                onChange={handleLabelChange}
-                placeholder={nodeData.nodeType as string}
-                className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            {/* Config Fields from Schema */}
-            {hasConfigSchema && (
-              <>
-                <div className="border-t border-gray-700 pt-4">
-                  <h3 className="text-xs font-semibold text-gray-400 mb-3">Configuration</h3>
-                </div>
-                {Object.entries(configSchema).map(([key, schema]) => (
-                  <div key={key}>
-                    {key === 'credential_id' ? (
-                      renderField(key, schema, nodeData[key])
-                    ) : (
-                      <BindableField
-                        label={key.replace(/_/g, ' ')}
-                        fieldKey={key}
-                        value={nodeData[key]}
-                        onChange={(value) => updateNodeData(selectedNode.id, { [key]: value })}
-                        onFocus={() => setFocusedFieldKey(key)}
-                        schema={schema}
-                      />
-                    )}
+            {hasConfigSchema && (() => {
+              const settingsFields = Object.entries(configSchema).filter(
+                ([, schema]) => schema.category === 'settings'
+              );
+              
+              if (settingsFields.length === 0) {
+                return (
+                  <div className="text-center text-gray-500 py-8">
+                    <p className="text-sm">No settings for this node</p>
                   </div>
-                ))}
-              </>
-            )}
+                );
+              }
+              
+              return settingsFields.map(([key, schema]) => (
+                <div key={key}>
+                  <BindableField
+                    label={key.replace(/_/g, ' ')}
+                    fieldKey={key}
+                    value={nodeData[key]}
+                    onChange={(value) => handleFieldChange(key, value)}
+                    onFocus={() => setFocusedFieldKey(key)}
+                    schema={schema}
+                    // Credential props (credential_id 필드용)
+                    credentials={credentials}
+                    credentialTypes={credentialTypes}
+                    onOpenCredentialModal={handleOpenCredentialModal}
+                    credentialLoading={credLoading}
+                    requiredCredentialType={requiredCredentialType}
+                  />
+                </div>
+              ));
+            })()}
 
             {/* Inputs/Outputs Info */}
-            <div className="border-t border-gray-700 pt-4">
+            <div className="border-t border-gray-700 pt-4 mt-4">
               <h3 className="text-xs font-semibold text-gray-400 mb-2">Ports</h3>
               <div className="space-y-2">
                 {(nodeData.inputs as { name: string; type: string }[] | undefined)?.map(

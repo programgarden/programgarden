@@ -2,8 +2,39 @@
   "_meta": {
     "locale": "ko",
     "name": "한국어",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
+
+  "categories.infra.name": "인프라",
+  "categories.infra.description": "워크플로우 시작점과 브로커 연결",
+  "categories.realtime.name": "실시간",
+  "categories.realtime.description": "WebSocket 기반 실시간 데이터 스트림",
+  "categories.data.name": "데이터",
+  "categories.data.description": "REST API 및 DB 데이터 조회/저장",
+  "categories.account.name": "계좌",
+  "categories.account.description": "계좌 정보 조회",
+  "categories.symbol.name": "종목",
+  "categories.symbol.description": "종목 소스 및 필터링",
+  "categories.trigger.name": "트리거",
+  "categories.trigger.description": "스케줄 및 시간 기반 트리거",
+  "categories.condition.name": "조건",
+  "categories.condition.description": "조건 평가 및 논리 연산",
+  "categories.risk.name": "리스크",
+  "categories.risk.description": "리스크 관리 및 포지션 사이징",
+  "categories.order.name": "주문",
+  "categories.order.description": "주문 실행 (신규/정정/취소)",
+  "categories.event.name": "이벤트",
+  "categories.event.description": "이벤트 처리 및 알림",
+  "categories.display.name": "디스플레이",
+  "categories.display.description": "차트 및 테이블 시각화",
+  "categories.group.name": "그룹",
+  "categories.group.description": "서브플로우 그룹화",
+  "categories.backtest.name": "백테스트",
+  "categories.backtest.description": "백테스트 실행 및 성과 분석",
+  "categories.job.name": "Job",
+  "categories.job.description": "Job 배포 및 상태 제어",
+  "categories.calculation.name": "계산",
+  "categories.calculation.description": "손익 및 수치 계산",
   
   "nodes.StartNode.name": "시작",
   "nodes.StartNode.description": "워크플로우 진입점. 워크플로우당 1개 필수.",
@@ -28,6 +59,15 @@
   
   "nodes.AccountNode.name": "계좌 조회",
   "nodes.AccountNode.description": "REST API 계좌 정보 조회.",
+  
+  "nodes.SQLiteNode.name": "SQLite",
+  "nodes.SQLiteNode.description": "SQLite 데이터베이스 조회/저장.",
+  
+  "nodes.PostgresNode.name": "PostgreSQL",
+  "nodes.PostgresNode.description": "PostgreSQL 데이터베이스 조회/저장.",
+  
+  "nodes.CustomPnLNode.name": "커스텀 손익",
+  "nodes.CustomPnLNode.description": "커스텀 손익 계산 로직.",
   
   "nodes.RealMarketDataNode.name": "실시간 시세",
   "nodes.RealMarketDataNode.description": "WebSocket 실시간 시세 스트림.",
@@ -178,5 +218,113 @@
   "ports.allocation_weights": "배분 비중",
   "ports.rebalance_orders": "리밸런싱 주문",
   "ports.rebalance_signal": "리밸런싱 신호",
-  "ports.allocated_capital": "배분된 자본"
+  "ports.allocated_capital": "배분된 자본",
+
+  "fields.BrokerNode.provider": "브로커 제공자",
+  "fields.BrokerNode.product": "상품 유형 (해외주식/해외선물옵션)",
+  "fields.BrokerNode.credential_id": "저장된 인증정보 선택",
+  "fields.BrokerNode.paper_trading": "모의투자 사용 (해외선물만 지원, 해외주식 미지원)",
+
+  "fields.WatchlistNode.symbols": "종목 코드 리스트",
+
+  "fields.RealMarketDataNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지. True면 stop() 호출 전까지 실시간 스트림 유지. False면 데이터 1회 수신 후 연결 종료.",
+  "fields.RealMarketDataNode.fields": "수신할 필드 (price, volume, bid, ask 등)",
+
+  "fields.RealAccountNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지. True+스케줄: 스케줄 대기 중에도 유지. True-스케줄: stop() 호출 전까지 유지. False: 플로우 종료 시 연결 종료.",
+  "fields.RealAccountNode.sync_interval_sec": "REST API 동기화 간격 (초)",
+
+  "fields.RealOrderEventNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지",
+
+  "fields.ScheduleNode.cron": "크론 표현식 (예: */5 * * * * = 5분마다)",
+  "fields.ScheduleNode.timezone": "타임존",
+  "fields.ScheduleNode.enabled": "스케줄 활성화",
+
+  "fields.TradingHoursFilterNode.start": "시작 시간 (HH:MM)",
+  "fields.TradingHoursFilterNode.end": "종료 시간 (HH:MM)",
+  "fields.TradingHoursFilterNode.timezone": "타임존",
+  "fields.TradingHoursFilterNode.days": "활성 요일",
+
+  "fields.LogicNode.operator": "논리 연산자",
+  "fields.LogicNode.threshold": "임계값 (at_least, at_most, exactly 연산자용)",
+  "fields.LogicNode.weights": "가중치 (weighted 연산자용)",
+
+  "fields.PortfolioNode.total_capital": "총 포트폴리오 자본금",
+  "fields.PortfolioNode.allocation_method": "자본 배분 방법",
+  "fields.PortfolioNode.custom_allocations": "커스텀 배분 비율 (strategy_id: 비율)",
+  "fields.PortfolioNode.rebalance_rule": "리밸런싱 규칙",
+  "fields.PortfolioNode.rebalance_frequency": "리밸런싱 주기",
+  "fields.PortfolioNode.drift_threshold": "드리프트 허용 비율 (%)",
+  "fields.PortfolioNode.capital_sharing": "전략간 자본 공유 여부",
+  "fields.PortfolioNode.reserve_percent": "현금 예비금 비율 (%)",
+
+  "fields.PositionSizingNode.method": "포지션 사이징 방법",
+  "fields.PositionSizingNode.max_percent": "계좌 대비 최대 포지션 비율 (%)",
+  "fields.PositionSizingNode.fixed_amount": "고정 금액 (fixed_amount 방식용)",
+  "fields.PositionSizingNode.kelly_fraction": "켈리 비율 조정치 (kelly 방식용, 보수적 1/4 권장)",
+  "fields.PositionSizingNode.atr_risk_percent": "ATR 기반 리스크 비율 (atr_based 방식용)",
+
+  "fields.RiskGuardNode.max_daily_loss": "일일 최대 손실 금액 (음수, 예: -500)",
+  "fields.RiskGuardNode.max_daily_loss_percent": "일일 최대 손실 비율 (%, 예: -5)",
+  "fields.RiskGuardNode.max_positions": "최대 동시 포지션 수",
+  "fields.RiskGuardNode.max_position_per_symbol": "종목당 최대 포지션 비율 (%)",
+  "fields.RiskGuardNode.max_consecutive_losses": "최대 연속 손실 횟수",
+  "fields.RiskGuardNode.cooldown_after_loss_minutes": "손실 후 거래 중단 시간 (분)",
+
+  "fields.AlertNode.channel": "알림 채널 (telegram, email, slack, webhook)",
+  "fields.AlertNode.message_template": "메시지 템플릿 (변수 사용 가능)",
+  "fields.AlertNode.credential_id": "알림 서비스 인증정보",
+
+  "fields.DisplayNode.chart_type": "차트 유형 (line, candlestick, bar)",
+  "fields.DisplayNode.title": "차트 제목",
+  "fields.DisplayNode.show_volume": "거래량 표시 여부",
+
+  "fields.ConditionNode.plugin": "조건 플러그인 (RSI, MACD 등)",
+  "fields.ConditionNode.params": "플러그인 파라미터",
+
+  "fields.NewOrderNode.plugin": "주문 플러그인 (MarketOrder, LimitOrder 등)",
+  "fields.NewOrderNode.params": "플러그인 파라미터",
+
+  "fields.HistoricalDataNode.period": "데이터 기간",
+  "fields.HistoricalDataNode.interval": "봉 간격",
+
+  "fields.BacktestEngineNode.initial_capital": "초기 자본금",
+  "fields.BacktestEngineNode.commission": "수수료율 (%)",
+  "fields.BacktestEngineNode.slippage": "슬리피지 (%)",
+
+  "enums.product.overseas_stock": "해외주식",
+  "enums.product.overseas_futures": "해외선물옵션",
+  "enums.allocation_method.equal": "균등 배분",
+  "enums.allocation_method.custom": "커스텀 배분",
+  "enums.allocation_method.risk_parity": "리스크 패리티",
+  "enums.allocation_method.momentum": "모멘텀 기반",
+  "enums.rebalance_rule.none": "없음",
+  "enums.rebalance_rule.periodic": "정기 리밸런싱",
+  "enums.rebalance_rule.drift": "드리프트 기반",
+  "enums.rebalance_rule.both": "정기 + 드리프트",
+  "enums.operator.all": "전체 (AND)",
+  "enums.operator.any": "하나 이상 (OR)",
+  "enums.operator.not": "모두 불만족 (NOT)",
+  "enums.operator.xor": "정확히 하나",
+  "enums.operator.at_least": "최소 N개",
+  "enums.operator.at_most": "최대 N개",
+  "enums.operator.exactly": "정확히 N개",
+  "enums.operator.weighted": "가중치 합",
+
+  "errors.VALIDATION_ERROR": "워크플로우 검증 오류",
+  "errors.EXECUTION_ERROR": "워크플로우 실행 오류",
+  "errors.CREDENTIAL_ERROR": "인증 정보 오류",
+  "errors.PLUGIN_ERROR": "플러그인 오류",
+  "errors.CONNECTION_ERROR": "연결 오류",
+  "errors.ORDER_ERROR": "주문 실행 오류",
+  "errors.FINANCE_ERROR": "알 수 없는 금융 오류가 발생했습니다.",
+  "errors.APPKEY_NOT_FOUND": "appkey 또는 secretkey가 존재하지 않습니다.",
+  "errors.LOGIN_ERROR": "로그인에 실패했습니다.",
+  "errors.TOKEN_ERROR": "토큰 발급에 실패했습니다.",
+  "errors.TOKEN_NOT_FOUND": "토큰이 존재하지 않습니다.",
+  "errors.TR_REQUEST_DATA_NOT_FOUND": "TR 요청 데이터가 존재하지 않습니다.",
+  "errors.NODE_NOT_FOUND": "노드를 찾을 수 없습니다: {node_id}",
+  "errors.PLUGIN_NOT_FOUND": "플러그인을 찾을 수 없습니다: {plugin_id}",
+  "errors.INVALID_EDGE": "잘못된 엣지 연결: {from_node} → {to_node}",
+  "errors.CYCLE_DETECTED": "순환 참조가 감지되었습니다",
+  "errors.REQUIRED_INPUT_MISSING": "필수 입력이 누락되었습니다: {input_name}"
 }

@@ -1,5 +1,30 @@
 import { useState, useRef } from 'react';
-import { ConfigField } from '@/types/workflow';
+import { ConfigField, Credential, CredentialTypeSchema } from '@/types/workflow';
+import { Plus, X, Lock, Key } from 'lucide-react';
+
+// 민감한 헤더 키 목록 (대소문자 무시)
+const SENSITIVE_HEADER_KEYS = [
+  'authorization',
+  'x-api-key',
+  'api-key',
+  'apikey',
+  'x-auth-token',
+  'x-access-token',
+  'bearer',
+  'token',
+  'secret',
+  'password',
+  'credential',
+  'private-key',
+  'x-secret',
+];
+
+const isSensitiveKey = (key: string): boolean => {
+  const lowerKey = key.toLowerCase();
+  return SENSITIVE_HEADER_KEYS.some(sensitive => 
+    lowerKey.includes(sensitive)
+  );
+};
 
 interface BindableFieldProps {
   label: string;
@@ -8,21 +33,35 @@ interface BindableFieldProps {
   onChange: (value: unknown) => void;
   onFocus?: () => void;
   schema?: ConfigField;
+  // Credential 관련 props (credential_id 필드용)
+  credentials?: Credential[];
+  credentialTypes?: CredentialTypeSchema[];
+  onOpenCredentialModal?: (initialType?: string) => void;
+  credentialLoading?: boolean;
+  requiredCredentialType?: string;
 }
 
 export default function BindableField({ 
   label, 
-  fieldKey: _fieldKey,
+  fieldKey,
   value, 
   onChange, 
   onFocus,
-  schema 
+  schema,
+  credentials,
+  credentialTypes,
+  onOpenCredentialModal,
+  credentialLoading,
+  requiredCredentialType,
 }: BindableFieldProps) {
   const [isExpression, setIsExpression] = useState(() => {
     return typeof value === 'string' && value.startsWith('{{');
   });
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  
+  // Credential field인지 확인 (fieldKey가 credential_id이거나 schema.type이 credential)
+  const isCredentialField = fieldKey === 'credential_id' || schema?.type === 'credential';
   
   // 드롭 핸들러
   const handleDrop = (e: React.DragEvent) => {
@@ -65,19 +104,100 @@ export default function BindableField({
     ? 'ring-2 ring-orange-500 ring-offset-1 ring-offset-gray-800' 
     : '';
   
+  // Credential 타입 (credential_id 필드)
+  if (isCredentialField) {
+    // 필터링된 credentials (특정 타입만 필터링 가능)
+    const filteredCredentials = requiredCredentialType && credentials
+      ? credentials.filter((c) => c.credential_type === requiredCredentialType)
+      : credentials || [];
+    
+    // 모든 credential 타입 또는 특정 타입만
+    const availableTypes = requiredCredentialType && credentialTypes
+      ? credentialTypes.filter(t => t.type_id === requiredCredentialType)
+      : credentialTypes || [];
+
+    return (
+      <div>
+        <label className="block text-xs text-gray-400 mb-1 capitalize">
+          <span className="flex items-center gap-1">
+            <Key className="w-3 h-3" />
+            {label}
+          </span>
+          {schema?.required && <span className="text-red-400 ml-1">*</span>}
+        </label>
+        {schema?.description && (
+          <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
+        )}
+        <div className="flex gap-2">
+          <select
+            value={String(value || '')}
+            onChange={(e) => onChange(e.target.value)}
+            className="flex-1 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+            disabled={credentialLoading}
+          >
+            <option value="">Select credential...</option>
+            {filteredCredentials.map(cred => {
+              // credential 타입에 맞는 아이콘/이름 찾기
+              const typeInfo = credentialTypes?.find(t => t.type_id === cred.credential_type);
+              return (
+                <option key={cred.id} value={cred.id}>
+                  {typeInfo?.icon || '🔑'} {cred.name}
+                </option>
+              );
+            })}
+          </select>
+          {onOpenCredentialModal && (
+            <button
+              onClick={() => onOpenCredentialModal(requiredCredentialType)}
+              className="px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm flex items-center gap-1 transition-colors"
+              title="Add new credential"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {filteredCredentials.length === 0 && !credentialLoading && (
+          <p className="text-xs text-amber-500/70 mt-1.5 flex items-center gap-1">
+            <span>⚠️</span>
+            No credentials found. 
+            {onOpenCredentialModal && (
+              <button 
+                onClick={() => onOpenCredentialModal(requiredCredentialType)}
+                className="text-blue-400 hover:text-blue-300 underline"
+              >
+                Add one
+              </button>
+            )}
+          </p>
+        )}
+        {availableTypes.length > 0 && !requiredCredentialType && (
+          <p className="text-xs text-gray-500 mt-1">
+            Supported: {availableTypes.map(t => t.name).join(', ')}
+          </p>
+        )}
+      </div>
+    );
+  }
+  
   // Boolean 타입
   if (schema?.type === 'boolean') {
     return (
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={Boolean(value)}
-          onChange={(e) => onChange(e.target.checked)}
-          className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
-        />
-        <span className="text-sm text-gray-300">{label}</span>
-        {schema?.required && <span className="text-red-400 text-xs">*</span>}
-      </label>
+      <div>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(e) => onChange(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+          />
+          <span className="text-sm text-gray-300">{label}</span>
+          {schema?.required && <span className="text-red-400 text-xs">*</span>}
+        </label>
+        {/* Field Description */}
+        {schema?.description && (
+          <p className="text-xs text-gray-500 mt-1 ml-6">{schema.description}</p>
+        )}
+      </div>
     );
   }
   
@@ -107,6 +227,11 @@ export default function BindableField({
             </button>
           </div>
         </div>
+        
+        {/* Field Description */}
+        {schema?.description && !isExpression && (
+          <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
+        )}
         
         {isExpression ? (
           <input
@@ -158,6 +283,10 @@ export default function BindableField({
           <label className="text-xs text-gray-400 capitalize">{label}</label>
           {schema?.required && <span className="text-red-400 text-xs">*</span>}
         </div>
+        {/* Field Description */}
+        {schema?.description && (
+          <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
+        )}
         <textarea
           ref={inputRef as React.RefObject<HTMLTextAreaElement>}
           value={jsonValue}
@@ -173,6 +302,207 @@ export default function BindableField({
           onFocus={onFocus}
           className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500 font-mono"
         />
+      </div>
+    );
+  }
+
+  // Key-Value Pairs 타입 (headers 등)
+  if (schema?.type === 'key_value_pairs') {
+    const pairs = (value as Record<string, string>) || {};
+    const entries = Object.entries(pairs);
+    const [showCredentialPicker, setShowCredentialPicker] = useState<number | null>(null);
+    
+    const addPair = () => {
+      onChange({ ...pairs, '': '' });
+    };
+    
+    // Credential에서 값을 가져와서 삽입
+    const insertCredentialValue = (index: number, credentialId: string, fieldKey: string) => {
+      const entriesArr = Object.entries(pairs);
+      if (entriesArr[index]) {
+        const [key] = entriesArr[index];
+        // {{ credential.credentialId.fieldKey }} 형식으로 삽입
+        const expression = `{{ credential.${credentialId}.${fieldKey} }}`;
+        onChange({ ...pairs, [key]: expression });
+      }
+      setShowCredentialPicker(null);
+    };
+    
+    const updateKey = (oldKey: string, newKey: string) => {
+      const newPairs: Record<string, string> = {};
+      for (const [k, v] of Object.entries(pairs)) {
+        if (k === oldKey) {
+          newPairs[newKey] = v;
+        } else {
+          newPairs[k] = v;
+        }
+      }
+      onChange(newPairs);
+    };
+    
+    const updateValue = (key: string, newValue: string) => {
+      onChange({ ...pairs, [key]: newValue });
+    };
+    
+    const removePair = (key: string) => {
+      const newPairs = { ...pairs };
+      delete newPairs[key];
+      onChange(newPairs);
+    };
+    
+    // Credential picker 팝업
+    const CredentialPicker = ({ index }: { index: number }) => {
+      if (!credentials || credentials.length === 0) {
+        return (
+          <div className="absolute right-0 top-full mt-1 z-20 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-3 min-w-[200px]">
+            <p className="text-xs text-gray-400 mb-2">No credentials available</p>
+            {onOpenCredentialModal && (
+              <button
+                onClick={() => {
+                  setShowCredentialPicker(null);
+                  onOpenCredentialModal();
+                }}
+                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+              >
+                <Plus className="w-3 h-3" />
+                Add Credential
+              </button>
+            )}
+          </div>
+        );
+      }
+      
+      return (
+        <div className="absolute right-0 top-full mt-1 z-20 bg-gray-800 border border-gray-600 rounded-lg shadow-xl max-h-[300px] overflow-y-auto min-w-[250px]">
+          <div className="p-2 border-b border-gray-700">
+            <p className="text-xs text-gray-400">Select credential value to insert</p>
+          </div>
+          <div className="py-1">
+            {credentials.map((cred) => {
+              const typeInfo = credentialTypes?.find(t => t.type_id === cred.credential_type);
+              // credential의 데이터 키 목록 가져오기
+              const dataKeys = typeInfo?.fields.map(f => f.key) || Object.keys(cred.data || {});
+              
+              return (
+                <div key={cred.id} className="px-2 py-1">
+                  <div className="flex items-center gap-2 text-xs text-gray-300 mb-1">
+                    <span>{typeInfo?.icon || '🔑'}</span>
+                    <span className="font-medium">{cred.name}</span>
+                    <span className="text-gray-500">({typeInfo?.name || cred.credential_type})</span>
+                  </div>
+                  <div className="ml-4 space-y-0.5">
+                    {dataKeys.map((key) => (
+                      <button
+                        key={key}
+                        onClick={() => insertCredentialValue(index, cred.id, key)}
+                        className="block w-full text-left px-2 py-1 text-xs text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors"
+                      >
+                        <code className="text-amber-400">{key}</code>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {onOpenCredentialModal && (
+            <div className="border-t border-gray-700 p-2">
+              <button
+                onClick={() => {
+                  setShowCredentialPicker(null);
+                  onOpenCredentialModal();
+                }}
+                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+              >
+                <Plus className="w-3 h-3" />
+                Add New Credential
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    };
+    
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-gray-400 capitalize">{label}</label>
+          <button
+            onClick={addPair}
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+            Add
+          </button>
+        </div>
+        {schema?.description && (
+          <p className="text-xs text-gray-500">{schema.description}</p>
+        )}
+        
+        {entries.length === 0 ? (
+          <p className="text-xs text-gray-500 italic">No headers. Click "Add" to add one.</p>
+        ) : (
+          <div className="space-y-2">
+            {entries.map(([key, val], index) => {
+              const isSensitive = isSensitiveKey(key);
+              const isCredentialExpression = typeof val === 'string' && val.includes('{{ credential.');
+              return (
+                <div key={index} className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={key}
+                      onChange={(e) => updateKey(key, e.target.value)}
+                      placeholder="Header name"
+                      className={`w-full px-2 py-1 bg-gray-700 border rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500 ${
+                        isSensitive ? 'border-amber-600 pr-7' : 'border-gray-600'
+                      }`}
+                    />
+                    {isSensitive && (
+                      <Lock className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-amber-500" />
+                    )}
+                  </div>
+                  <div className="relative flex-1">
+                    <input
+                      type={isSensitive && !isCredentialExpression ? 'password' : 'text'}
+                      value={val}
+                      onChange={(e) => updateValue(key, e.target.value)}
+                      placeholder={isSensitive ? '●●●●●● or use 🔑' : 'Value'}
+                      className={`w-full px-2 py-1 pr-8 bg-gray-700 border rounded text-sm focus:outline-none focus:border-blue-500 ${
+                        isCredentialExpression
+                          ? 'border-amber-600 text-amber-300 font-mono text-xs'
+                          : isSensitive 
+                            ? 'border-amber-600 text-amber-300' 
+                            : 'border-gray-600 text-gray-200'
+                      }`}
+                    />
+                    {/* Credential 삽입 버튼 */}
+                    <button
+                      onClick={() => setShowCredentialPicker(showCredentialPicker === index ? null : index)}
+                      className={`absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors ${
+                        showCredentialPicker === index
+                          ? 'bg-amber-600 text-white'
+                          : 'text-gray-400 hover:text-amber-400 hover:bg-gray-600'
+                      }`}
+                      title="Insert credential value"
+                    >
+                      <Key className="w-4 h-4" />
+                    </button>
+                    {/* Credential Picker Popup */}
+                    {showCredentialPicker === index && <CredentialPicker index={index} />}
+                  </div>
+                  <button
+                    onClick={() => removePair(key)}
+                    className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                    title="Remove"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -203,13 +533,18 @@ export default function BindableField({
         </div>
       </div>
       
+      {/* Field Description */}
+      {schema?.description && !isExpression && (
+        <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
+      )}
+      
       <input
         ref={inputRef as React.RefObject<HTMLInputElement>}
         type="text"
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}
-        placeholder={isExpression ? '{{ nodeId.field }}' : schema?.description}
+        placeholder={isExpression ? '{{ nodeId.field }}' : undefined}
         className={`w-full px-3 py-1.5 rounded text-sm focus:outline-none focus:ring-1 transition-colors ${
           isExpression 
             ? 'bg-orange-900/30 border border-orange-600 text-orange-300 font-mono focus:ring-orange-500'

@@ -377,75 +377,40 @@ def get_portfolio_workflow():
         ],
         
         "edges": [
-            # ═══════════════════════════════════════════════════════════════
-            # INFRA 연결
-            # ═══════════════════════════════════════════════════════════════
-            {"from": "start.start", "to": "broker"},
-            
-            # Broker → Watchlists
-            {"from": "broker.connection", "to": "techGrowth"},
-            {"from": "broker.connection", "to": "techStable"},
-            {"from": "broker.connection", "to": "valueStocks"},
-            {"from": "broker.connection", "to": "momentumStocks"},
-            
-            # ═══════════════════════════════════════════════════════════════
-            # Watchlist → HistoricalData
-            # ═══════════════════════════════════════════════════════════════
-            {"from": "techGrowth.symbols", "to": "histTechGrowth.symbols"},
-            {"from": "techStable.symbols", "to": "histTechStable.symbols"},
-            {"from": "valueStocks.symbols", "to": "histValue.symbols"},
-            {"from": "momentumStocks.symbols", "to": "histMomentum.symbols"},
-            
-            # ═══════════════════════════════════════════════════════════════
-            # HistoricalData → Conditions
-            # ═══════════════════════════════════════════════════════════════
-            {"from": "histTechGrowth.ohlcv_data", "to": "rsiCondition.price_data"},
-            {"from": "histTechStable.ohlcv_data", "to": "maCondition.price_data"},
-            {"from": "histValue.ohlcv_data", "to": "valueCondition.price_data"},
-            {"from": "histMomentum.ohlcv_data", "to": "momentumCondition.price_data"},
-            
-            # ═══════════════════════════════════════════════════════════════
-            # HistoricalData + Conditions → BacktestEngines
-            # ═══════════════════════════════════════════════════════════════
-            {"from": "histTechGrowth.ohlcv_data", "to": "btRSI.ohlcv_data"},
-            {"from": "rsiCondition.result", "to": "btRSI.signals"},
-            
-            {"from": "histTechStable.ohlcv_data", "to": "btMA.ohlcv_data"},
-            {"from": "maCondition.result", "to": "btMA.signals"},
-            
-            {"from": "histValue.ohlcv_data", "to": "btValue.ohlcv_data"},
-            {"from": "valueCondition.result", "to": "btValue.signals"},
-            
-            {"from": "histMomentum.ohlcv_data", "to": "btMomentum.ohlcv_data"},
-            {"from": "momentumCondition.result", "to": "btMomentum.signals"},
-            
-            # ═══════════════════════════════════════════════════════════════
-            # BacktestEngines → Level 2 Portfolios
-            # ═══════════════════════════════════════════════════════════════
-            {"from": "btRSI.equity_curve", "to": "techPortfolio.strategy_results"},
-            {"from": "btMA.equity_curve", "to": "techPortfolio.strategy_results"},
-            
-            {"from": "btValue.equity_curve", "to": "valuePortfolio.strategy_results"},
-            {"from": "btMomentum.equity_curve", "to": "valuePortfolio.strategy_results"},
-            
-            # ═══════════════════════════════════════════════════════════════
-            # Level 2 Portfolios → Master Portfolio
-            # ═══════════════════════════════════════════════════════════════
-            {"from": "techPortfolio.combined_equity", "to": "masterPortfolio.strategy_results"},
-            {"from": "valuePortfolio.combined_equity", "to": "masterPortfolio.strategy_results"},
-            
-            # ═══════════════════════════════════════════════════════════════
-            # Portfolios → Display
-            # ═══════════════════════════════════════════════════════════════
-            {"from": "techPortfolio.combined_equity", "to": "equityDisplay.data"},
-            {"from": "valuePortfolio.combined_equity", "to": "equityDisplay.data"},
-            {"from": "masterPortfolio.combined_equity", "to": "equityDisplay.data"},
-            
-            {"from": "masterPortfolio.allocation_weights", "to": "allocationDisplay.data"},
-            
-            {"from": "techPortfolio.combined_metrics", "to": "metricsDisplay.data"},
-            {"from": "valuePortfolio.combined_metrics", "to": "metricsDisplay.data"},
-            {"from": "masterPortfolio.combined_metrics", "to": "metricsDisplay.data"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "techGrowth"},
+            {"from": "broker", "to": "techStable"},
+            {"from": "broker", "to": "valueStocks"},
+            {"from": "broker", "to": "momentumStocks"},
+            {"from": "techGrowth", "to": "histTechGrowth"},
+            {"from": "techStable", "to": "histTechStable"},
+            {"from": "valueStocks", "to": "histValue"},
+            {"from": "momentumStocks", "to": "histMomentum"},
+            {"from": "histTechGrowth", "to": "rsiCondition"},
+            {"from": "histTechStable", "to": "maCondition"},
+            {"from": "histValue", "to": "valueCondition"},
+            {"from": "histMomentum", "to": "momentumCondition"},
+            {"from": "histTechGrowth", "to": "btRSI"},
+            {"from": "rsiCondition", "to": "btRSI"},
+            {"from": "histTechStable", "to": "btMA"},
+            {"from": "maCondition", "to": "btMA"},
+            {"from": "histValue", "to": "btValue"},
+            {"from": "valueCondition", "to": "btValue"},
+            {"from": "histMomentum", "to": "btMomentum"},
+            {"from": "momentumCondition", "to": "btMomentum"},
+            {"from": "btRSI", "to": "techPortfolio"},
+            {"from": "btMA", "to": "techPortfolio"},
+            {"from": "btValue", "to": "valuePortfolio"},
+            {"from": "btMomentum", "to": "valuePortfolio"},
+            {"from": "techPortfolio", "to": "masterPortfolio"},
+            {"from": "valuePortfolio", "to": "masterPortfolio"},
+            {"from": "techPortfolio", "to": "equityDisplay"},
+            {"from": "valuePortfolio", "to": "equityDisplay"},
+            {"from": "masterPortfolio", "to": "equityDisplay"},
+            {"from": "masterPortfolio", "to": "allocationDisplay"},
+            {"from": "techPortfolio", "to": "metricsDisplay"},
+            {"from": "valuePortfolio", "to": "metricsDisplay"},
+            {"from": "masterPortfolio", "to": "metricsDisplay"},
         ],
     }
 

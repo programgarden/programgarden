@@ -12,7 +12,7 @@ ProgramGarden Core - 모델 정의
 """
 
 from programgarden_core.models.edge import Edge
-from programgarden_core.models.workflow import WorkflowDefinition, WorkflowInput
+from programgarden_core.models.workflow import WorkflowDefinition, WorkflowInput, CredentialReference
 from programgarden_core.models.job import WorkflowJob, JobState, JobStatus
 from programgarden_core.models.credential import (
     # Legacy
@@ -31,6 +31,7 @@ from programgarden_core.models.event import Event, EventType
 from programgarden_core.models.field_binding import (
     FieldSchema,
     FieldType,
+    FieldCategory,
     FieldValueType,
     FieldsDict,
     parse_field_value,
@@ -59,6 +60,7 @@ __all__ = [
     # Workflow
     "WorkflowDefinition",
     "WorkflowInput",
+    "CredentialReference",
     # Job
     "WorkflowJob",
     "JobState",
@@ -80,6 +82,7 @@ __all__ = [
     # Field Binding
     "FieldSchema",
     "FieldType",
+    "FieldCategory",
     "FieldValueType",
     "FieldsDict",
     "parse_field_value",

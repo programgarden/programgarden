@@ -6,7 +6,7 @@ ProgramGarden Core - PluginRegistry
 """
 
 from typing import Optional, List, Dict, Any, Callable, TYPE_CHECKING
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 
 if TYPE_CHECKING:
@@ -60,6 +60,12 @@ class PluginSchema(BaseModel):
     author: Optional[str] = Field(default=None, description="작성자")
     tags: List[str] = Field(default_factory=list, description="태그")
     
+    # i18n 지원 (신규)
+    locales: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="다국어 번역 (locale: {name, description, fields.xxx})",
+    )
+    
     # 리소스 관리 (신규)
     resource_hints: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -69,9 +75,46 @@ class PluginSchema(BaseModel):
         default="community",
         description="플러그인 신뢰 레벨 (core, verified, community)",
     )
+    
+    def get_localized_name(self, locale: str = "en") -> str:
+        """Get localized name, fallback to default name"""
+        if locale in self.locales and "name" in self.locales[locale]:
+            return self.locales[locale]["name"]
+        return self.name or self.id
+    
+    def get_localized_description(self, locale: str = "en") -> str:
+        """Get localized description, fallback to default description"""
+        if locale in self.locales and "description" in self.locales[locale]:
+            return self.locales[locale]["description"]
+        return self.description or ""
+    
+    def get_localized_field_description(self, field_name: str, locale: str = "en") -> str:
+        """Get localized field description"""
+        key = f"fields.{field_name}"
+        if locale in self.locales and key in self.locales[locale]:
+            return self.locales[locale][key]
+        # Fallback to fields_schema description
+        if field_name in self.fields_schema:
+            return self.fields_schema[field_name].get("description", "")
+        return ""
+    
+    def to_localized_dict(self, locale: str = "en") -> Dict[str, Any]:
+        """Convert to dict with localized strings"""
+        result = self.model_dump()
+        result["display_name"] = self.get_localized_name(locale)
+        result["display_description"] = self.get_localized_description(locale)
+        
+        # Translate field descriptions
+        if self.fields_schema:
+            for field_name in self.fields_schema:
+                if "description" in result["fields_schema"][field_name]:
+                    localized_desc = self.get_localized_field_description(field_name, locale)
+                    if localized_desc:
+                        result["fields_schema"][field_name]["description"] = localized_desc
+        
+        return result
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class PluginRegistry:
@@ -154,23 +197,46 @@ class PluginRegistry:
         self,
         plugin_id: str,
         version: Optional[str] = None,
+        locale: Optional[str] = None,
     ) -> Optional[PluginSchema]:
-        """플러그인 스키마 조회"""
+        """플러그인 스키마 조회
+        
+        Args:
+            plugin_id: 플러그인 ID
+            version: 버전 (생략 시 최신)
+            locale: 번역 locale (ko, en 등)
+        """
         if version:
-            return self._schemas.get(f"{plugin_id}@{version}")
-        return self._schemas.get(plugin_id)
+            schema = self._schemas.get(f"{plugin_id}@{version}")
+        else:
+            schema = self._schemas.get(plugin_id)
+        return schema
+
+    def get_schema_localized(
+        self,
+        plugin_id: str,
+        locale: str = "en",
+        version: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """플러그인 스키마를 번역된 dict로 조회"""
+        schema = self.get_schema(plugin_id, version)
+        if schema:
+            return schema.to_localized_dict(locale)
+        return None
 
     def list_plugins(
         self,
         category: Optional[PluginCategory] = None,
         product: Optional[ProductType] = None,
-    ) -> List[PluginSchema]:
+        locale: Optional[str] = None,
+    ) -> List[Any]:
         """
         플러그인 목록 조회 (AI 에이전트용)
 
         Args:
             category: 카테고리 필터
             product: 상품 유형 필터 (BrokerNode.product로 자동 필터링)
+            locale: 번역 locale (제공 시 dict 반환, 아니면 PluginSchema 반환)
         """
         result = []
         seen = set()  # 중복 제거 (버전별로 등록되므로)
@@ -189,7 +255,10 @@ class PluginRegistry:
                 continue
 
             if schema.id not in seen:
-                result.append(schema)
+                if locale:
+                    result.append(schema.to_localized_dict(locale))
+                else:
+                    result.append(schema)
                 seen.add(schema.id)
 
         return result

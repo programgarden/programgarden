@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any, Type
 from pydantic import BaseModel, Field
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, InputPort, OutputPort
-from programgarden_core.i18n import translate_schema
+from programgarden_core.i18n import translate_schema, translate_category
 
 
 class NodeTypeSchema(BaseModel):
@@ -18,6 +18,7 @@ class NodeTypeSchema(BaseModel):
     node_type: str = Field(..., description="Node type name")
     category: str = Field(..., description="Node category")
     description: Optional[str] = Field(default=None, description="Node description")
+    img_url: Optional[str] = Field(default=None, description="Node icon image URL")
     inputs: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="Input port definitions",
@@ -36,13 +37,15 @@ class NodeTypeRegistry:
     """
     Node type registry
 
-    Registry for registering and querying 37 node types.
+    Registry for registering and querying node types.
     Used by AI agents to query available node list.
+    Supports both built-in nodes and external (community) nodes.
     """
 
     _instance: Optional["NodeTypeRegistry"] = None
     _registry: Dict[str, Type[BaseNode]] = {}
     _schemas: Dict[str, NodeTypeSchema] = {}
+    _external_nodes: Dict[str, Dict[str, Any]] = {}  # 외부 노드 메타데이터
 
     def __new__(cls) -> "NodeTypeRegistry":
         """Singleton pattern"""
@@ -57,13 +60,12 @@ class NodeTypeRegistry:
         from programgarden_core.nodes import (
             StartNode, BrokerNode,
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
-            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode,
+            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode,
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
             ConditionNode, LogicNode, PerformanceConditionNode,
             PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
             NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
-            EventHandlerNode, ErrorHandlerNode, AlertNode,
             DisplayNode,
             BacktestEngineNode,
             DeployNode, TradingHaltNode, JobControlNode,
@@ -76,7 +78,7 @@ class NodeTypeRegistry:
             # Realtime
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
             # Data
-            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode,
+            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode,
             # Symbol
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             # Trigger
@@ -87,8 +89,7 @@ class NodeTypeRegistry:
             PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
             # Order
             NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
-            # Event
-            EventHandlerNode, ErrorHandlerNode, AlertNode,
+            # Event - 커뮤니티 노드(TelegramNode 등)로 대체됨
             # Display
             DisplayNode,
             # Backtest
@@ -101,6 +102,55 @@ class NodeTypeRegistry:
 
         for node_class in node_classes:
             self.register(node_class)
+
+    def register_external(
+        self,
+        node_class: Type[BaseNode],
+        source: str = "community",
+        trust_level: str = "community",
+    ) -> None:
+        """
+        외부 노드 타입 등록 (커뮤니티/사용자용)
+        
+        Args:
+            node_class: 노드 클래스 (BaseNode 또는 BaseNotificationNode 상속)
+            source: 노드 출처 ("community", "user")
+            trust_level: 신뢰 레벨 ("core", "verified", "community")
+        
+        Raises:
+            ValueError: 노드 타입 이름이 이미 존재하는 경우
+        """
+        type_name = node_class.__name__
+        
+        # 중복 체크 (내장 노드와 충돌 방지)
+        if type_name in self._registry:
+            raise ValueError(f"Node type '{type_name}' already exists in registry")
+        
+        # 일반 등록 수행
+        self.register(node_class)
+        
+        # 외부 노드 메타데이터 저장
+        self._external_nodes[type_name] = {
+            "source": source,
+            "trust_level": trust_level,
+        }
+
+    def is_external(self, node_type: str) -> bool:
+        """노드가 외부(커뮤니티) 노드인지 확인"""
+        return node_type in self._external_nodes
+
+    def get_external_info(self, node_type: str) -> Optional[Dict[str, Any]]:
+        """외부 노드의 메타데이터 조회"""
+        return self._external_nodes.get(node_type)
+
+    def list_external_nodes(self, source: Optional[str] = None) -> List[str]:
+        """외부 노드 목록 조회"""
+        if source:
+            return [
+                name for name, info in self._external_nodes.items()
+                if info["source"] == source
+            ]
+        return list(self._external_nodes.keys())
 
     def register(self, node_class: Type[BaseNode]) -> None:
         """Register node type"""
@@ -149,10 +199,34 @@ class NodeTypeRegistry:
         # Use instance.description if available (for i18n), otherwise use docstring
         description = instance.description if hasattr(instance, 'description') and instance.description else node_class.__doc__
         
+        # Get img_url from class variable, fallback to default placeholder
+        img_url = getattr(node_class, '_img_url', None)
+        if not img_url:
+            # 카테고리별 기본 아이콘
+            category_icons = {
+                "infra": "https://cdn-icons-png.flaticon.com/512/2099/2099058.png",
+                "realtime": "https://cdn-icons-png.flaticon.com/512/2972/2972531.png",
+                "data": "https://cdn-icons-png.flaticon.com/512/2906/2906274.png",
+                "account": "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+                "symbol": "https://cdn-icons-png.flaticon.com/512/3135/3135706.png",
+                "trigger": "https://cdn-icons-png.flaticon.com/512/2972/2972185.png",
+                "condition": "https://cdn-icons-png.flaticon.com/512/1828/1828643.png",
+                "risk": "https://cdn-icons-png.flaticon.com/512/2345/2345338.png",
+                "order": "https://cdn-icons-png.flaticon.com/512/3144/3144456.png",
+                "event": "https://cdn-icons-png.flaticon.com/512/3239/3239952.png",
+                "display": "https://cdn-icons-png.flaticon.com/512/2920/2920349.png",
+                "backtest": "https://cdn-icons-png.flaticon.com/512/2920/2920244.png",
+                "job": "https://cdn-icons-png.flaticon.com/512/1087/1087815.png",
+                "calculation": "https://cdn-icons-png.flaticon.com/512/897/897368.png",
+            }
+            cat_value = instance.category.value if hasattr(instance.category, 'value') else instance.category
+            img_url = category_icons.get(cat_value, "https://cdn-icons-png.flaticon.com/512/2099/2099058.png")
+        
         schema = NodeTypeSchema(
             node_type=type_name,
             category=instance.category.value if hasattr(instance.category, 'value') else instance.category,
             description=description,
+            img_url=img_url,
             inputs=[inp.model_dump() for inp in instance.get_inputs()],
             outputs=[out.model_dump() for out in instance.get_outputs()],
             config_schema=self._extract_config_schema(node_class),
@@ -160,7 +234,12 @@ class NodeTypeRegistry:
         self._schemas[type_name] = schema
 
     def _extract_config_schema(self, node_class: Type[BaseNode]) -> Dict[str, Any]:
-        """Extract config schema from node class"""
+        """Extract config schema from node class
+        
+        Prioritizes _field_schema if available, falls back to Pydantic model_fields.
+        Excludes fields with exclude=True (credential-injected fields).
+        Includes category (PARAMETERS/SETTINGS) if available in _field_schema.
+        """
         schema = {}
         model_fields = node_class.model_fields
 
@@ -169,20 +248,48 @@ class NodeTypeRegistry:
         # PluginNode 필드 (해당되는 경우)
         plugin_fields = {"plugin", "plugin_version", "params"}
 
+        # _field_schema가 있으면 우선 사용
+        field_schema_dict = node_class.get_field_schema() if hasattr(node_class, 'get_field_schema') else {}
+
         for field_name, field_info in model_fields.items():
             if field_name in base_fields:
                 continue
+            
+            # exclude=True인 필드는 스키마에서 제외 (credential에서 주입되는 필드)
+            if field_info.exclude:
+                continue
 
-            field_type = str(field_info.annotation) if field_info.annotation else "any"
-            field_schema = {
-                "type": field_type,
-                "required": field_info.is_required(),
-            }
-
-            if field_info.default is not None:
-                field_schema["default"] = field_info.default
-            if field_info.description:
-                field_schema["description"] = field_info.description
+            # _field_schema에 정의가 있으면 사용
+            if field_name in field_schema_dict:
+                fs = field_schema_dict[field_name]
+                field_schema = {
+                    "type": fs.type.value if hasattr(fs.type, 'value') else str(fs.type),
+                    "required": fs.required,
+                }
+                if fs.default is not None:
+                    field_schema["default"] = fs.default
+                if fs.description:
+                    field_schema["description"] = fs.description
+                if fs.enum_values:
+                    field_schema["enum_values"] = fs.enum_values
+                if fs.bindable is not None:
+                    field_schema["bindable"] = fs.bindable
+                if fs.expression_enabled is not None:
+                    field_schema["expression_enabled"] = fs.expression_enabled
+                # category 추가 (PARAMETERS/SETTINGS)
+                if fs.category is not None:
+                    field_schema["category"] = fs.category.value if hasattr(fs.category, 'value') else str(fs.category)
+            else:
+                # Pydantic 필드에서 추출
+                field_type = str(field_info.annotation) if field_info.annotation else "any"
+                field_schema = {
+                    "type": field_type,
+                    "required": field_info.is_required(),
+                }
+                if field_info.default is not None:
+                    field_schema["default"] = field_info.default
+                if field_info.description:
+                    field_schema["description"] = field_info.description
 
             schema[field_name] = field_schema
 
@@ -229,21 +336,28 @@ class NodeTypeRegistry:
         
         return schemas
 
-    def list_categories(self) -> List[Dict[str, Any]]:
-        """List categories (with node count)"""
+    def list_categories(self, locale: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List categories with node count and optional locale translation"""
         category_counts: Dict[str, int] = {}
         for schema in self._schemas.values():
             cat = schema.category
             category_counts[cat] = category_counts.get(cat, 0) + 1
 
-        return [
-            {
-                "category": cat,
-                "count": count,
-                "description": NodeCategory(cat).name if cat in [e.value for e in NodeCategory] else cat,
-            }
-            for cat, count in sorted(category_counts.items())
-        ]
+        result = []
+        for cat, count in sorted(category_counts.items()):
+            if locale:
+                cat_info = translate_category(cat, locale)
+                cat_info["count"] = count
+            else:
+                cat_info = {
+                    "id": cat,
+                    "name": NodeCategory(cat).name if cat in [e.value for e in NodeCategory] else cat,
+                    "description": "",
+                    "count": count,
+                }
+            result.append(cat_info)
+        
+        return result
 
     def create_node(self, node_type: str, **kwargs) -> BaseNode:
         """Create node instance"""

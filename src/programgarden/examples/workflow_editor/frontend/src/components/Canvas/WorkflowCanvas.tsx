@@ -1,4 +1,4 @@
-import { useCallback, useRef, DragEvent } from 'react';
+import { useCallback, useRef, useEffect, DragEvent } from 'react';
 import {
   ReactFlow,
   Background,
@@ -32,8 +32,29 @@ export default function WorkflowCanvas() {
     addNode,
     selectNode,
     selectEdge,
+    updateNodeData,
     nodeTypes: registeredNodeTypes,
   } = useWorkflowStore();
+
+  // description 업데이트 이벤트 리스너
+  useEffect(() => {
+    const handleUpdateDescription = (event: CustomEvent<{ nodeId: string; description: string }>) => {
+      const { nodeId, description } = event.detail;
+      updateNodeData(nodeId, { description });
+    };
+    
+    const handleUpdateLabel = (event: CustomEvent<{ nodeId: string; customLabel: string }>) => {
+      const { nodeId, customLabel } = event.detail;
+      updateNodeData(nodeId, { customLabel });
+    };
+    
+    window.addEventListener('updateNodeDescription', handleUpdateDescription as EventListener);
+    window.addEventListener('updateNodeLabel', handleUpdateLabel as EventListener);
+    return () => {
+      window.removeEventListener('updateNodeDescription', handleUpdateDescription as EventListener);
+      window.removeEventListener('updateNodeLabel', handleUpdateLabel as EventListener);
+    };
+  }, [updateNodeData]);
 
   const onDragOver = useCallback((event: DragEvent) => {
     event.preventDefault();

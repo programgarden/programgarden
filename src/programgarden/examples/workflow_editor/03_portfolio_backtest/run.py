@@ -3,7 +3,7 @@
 
 Usage:
     cd src/programgarden
-    poetry run python examples/10_ui/03_portfolio_backtest/run.py
+    poetry run python examples/workflow_editor/03_portfolio_backtest/run.py
 """
 
 import sys

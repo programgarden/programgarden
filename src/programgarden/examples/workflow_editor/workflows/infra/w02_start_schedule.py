@@ -24,6 +24,6 @@ def get_workflow():
             },
         ],
         "edges": [
-            {"from": "start.start", "to": "schedule"},
+            {"from": "start", "to": "schedule"},
         ],
     }

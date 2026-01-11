@@ -46,6 +46,118 @@ class NodeExecutorBase:
         raise NotImplementedError
 
 
+class GenericNodeExecutor(NodeExecutorBase):
+    """
+    범용 노드 실행기 (커뮤니티 노드 및 execute() 메서드가 있는 노드용)
+    
+    NodeRegistry에 등록된 노드 클래스의 execute() 메서드를 호출합니다.
+    credential_id가 있으면 자동으로 credential 값을 노드 필드에 주입합니다.
+    
+    이를 통해 노드 개발자는:
+    1. 필드만 선언하면 됨 (bot_token: Optional[str] = None)
+    2. execute()에서 self.bot_token으로 바로 사용
+    3. _credential_keys, resolve_credentials() 호출 불필요
+    
+    Example:
+        class TelegramNode(BaseNotificationNode):
+            bot_token: Optional[str] = None  # credential에서 자동 주입
+            chat_id: Optional[str] = None
+            
+            async def execute(self, context):
+                # self.bot_token에 이미 값이 있음!
+                url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        from programgarden_core.registry import NodeTypeRegistry
+        
+        registry = NodeTypeRegistry()
+        node_class = registry.get(node_type)
+        
+        if not node_class:
+            context.log("error", f"Node class not found in registry: {node_type}", node_id)
+            return {"error": f"Unknown node type: {node_type}"}
+        
+        # credential_id가 있으면 credential 값을 config에 주입
+        credential_id = config.get("credential_id")
+        if credential_id:
+            config = self._inject_credentials(credential_id, config, context, node_id)
+        
+        # 노드 인스턴스 생성 (config의 값들이 Pydantic 필드에 매핑됨)
+        try:
+            node_instance = node_class(id=node_id, **config)
+        except Exception as e:
+            context.log("error", f"Failed to create node instance: {e}", node_id)
+            return {"error": str(e)}
+        
+        # execute() 메서드 호출
+        if hasattr(node_instance, "execute"):
+            try:
+                result = await node_instance.execute(context)
+                return result if isinstance(result, dict) else {"result": result}
+            except Exception as e:
+                context.log("error", f"Node execution failed: {e}", node_id)
+                return {"error": str(e)}
+        else:
+            context.log("warning", f"Node {node_type} has no execute() method", node_id)
+            return {"executed": True}
+    
+    def _inject_credentials(
+        self,
+        credential_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Credential 값을 config에 주입
+        
+        우선순위:
+        1. 워크플로우 JSON의 credentials 섹션 (data 값이 있으면)
+        2. CredentialStore (외부 저장소)
+        
+        규칙:
+        - credential의 키명 = 노드의 필드명 (예: token, header_name)
+        - config에 해당 키가 없거나 None이면 credential 값으로 채움
+        - 이미 값이 있으면 (직접 설정) 유지 (우선순위: 직접 설정 > credential)
+        
+        Example:
+            credentials = {"openai-api": {"type": "http_bearer", "data": {"token": "sk-xxx"}}}
+            config = {"credential_id": "openai-api", "url": "..."}
+            
+            → config = {"credential_id": "openai-api", "url": "...", "token": "sk-xxx"}
+        """
+        cred_data = context.get_workflow_credential(credential_id)
+        
+        if cred_data:
+            config = config.copy()  # 원본 보호
+            injected_keys = []
+            
+            for key, value in cred_data.items():
+                # config에 없거나 None인 경우만 주입
+                if config.get(key) is None and value:
+                    config[key] = value
+                    injected_keys.append(key)
+            
+            if injected_keys:
+                # 민감 정보 로깅 방지: 키 이름만 로깅
+                context.log(
+                    "debug", 
+                    f"Credentials injected from '{credential_id}': {', '.join(injected_keys)}", 
+                    node_id
+                )
+        else:
+            context.log("warning", f"Credential '{credential_id}' not found", node_id)
+        
+        return config
+
+
 class StartNodeExecutor(NodeExecutorBase):
     """StartNode executor"""
 
@@ -225,35 +337,87 @@ class BrokerNodeExecutor(NodeExecutorBase):
             context.log("warning", "overseas_stock does not support paper_trading (LS Securities), forcing real mode", node_id)
             paper_trading = False
         
-        # Credential resolution priority:
-        # 1. credential_id -> load from credential store
-        # 2. Direct appkey/appsecret in config
-        # 3. Environment variables (product별 자동 선택)
-        
+        # ========================================
+        # Credential 자동 주입 (GenericNodeExecutor와 동일 패턴)
+        # credential_id가 있으면 appkey, appsecret이 config에 주입됨
+        # ========================================
         credential_id = config.get("credential_id")
+        if credential_id:
+            config = self._inject_credentials(credential_id, config, context, node_id)
+        
         appkey = config.get("appkey")
         appsecret = config.get("appsecret")
         
-        if credential_id:
-            # Load from credential store (n8n style)
-            try:
-                from programgarden_core.registry import get_credential_store
-                store = get_credential_store()
-                cred = store.get(credential_id)
+        # credential에서 paper_trading 설정 오버라이드
+        if "paper_trading" in config and credential_id:
+            paper_trading = config.get("paper_trading", paper_trading)
+        
+        # Fallback to environment variables (product별 자동 선택)
+        if not appkey or not appsecret:
+            appkey, appsecret = self._get_env_credentials(product, paper_trading)
+            if appkey and appsecret:
+                context.log("info", f"Credentials loaded from environment variables (product={product}, paper_trading={paper_trading})", node_id)
+        
+        if appkey and appsecret:
+            context.set_secret("credential_id", {
+                "appkey": appkey,
+                "appsecret": appsecret,
+                "paper_trading": paper_trading,
+            })
+            context.log("info", f"Broker credentials stored (paper_trading={paper_trading})", node_id)
+        else:
+            context.log("warning", "No credentials found - some features may not work", node_id)
+        
+        # provider 매핑 (company -> provider)
+        if company == "ls":
+            provider = "ls-sec.co.kr"
+        
+        context.log("info", f"Broker connected: {provider} ({product}, paper_trading={paper_trading})", node_id)
+        return {
+            "connected": True,
+            "connection": {
+                "provider": provider,
+                "product": product,
+                "paper_trading": paper_trading,
+            }
+        }
+    
+    def _inject_credentials(
+        self,
+        credential_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Credential Store에서 값을 가져와 config에 주입 (GenericNodeExecutor와 동일 패턴)
+        """
+        try:
+            from programgarden_core.registry import get_credential_store
+            store = get_credential_store()
+            cred = store.get(credential_id)
+            
+            if cred and cred.data:
+                config = config.copy()
+                injected_keys = []
                 
-                if cred and cred.data:
-                    appkey = cred.data.get("appkey") or appkey
-                    appsecret = cred.data.get("appsecret") or appsecret
-                    # Override paper_trading from credential if set
-                    if "paper_trading" in cred.data:
-                        paper_trading = cred.data.get("paper_trading", True)
-                    context.log("info", f"Credentials loaded from store: {cred.name}", node_id)
-                else:
-                    context.log("warning", f"Credential '{credential_id}' not found in store", node_id)
-            except ImportError:
-                context.log("warning", "CredentialStore not available", node_id)
-            except Exception as e:
-                context.log("warning", f"Failed to load credential: {e}", node_id)
+                for key, value in cred.data.items():
+                    # config에 없거나 None인 경우만 주입
+                    if config.get(key) is None:
+                        config[key] = value
+                        injected_keys.append(key)
+                
+                if injected_keys:
+                    context.log("debug", f"Credentials injected from '{credential_id}': {', '.join(injected_keys)}", node_id)
+            else:
+                context.log("warning", f"Credential '{credential_id}' not found in store", node_id)
+                
+        except ImportError:
+            context.log("debug", "CredentialStore not available", node_id)
+        except Exception as e:
+            context.log("warning", f"Failed to inject credentials: {e}", node_id)
+        
+        return config
         
         # Fallback to environment variables (product별 자동 선택)
         if not appkey or not appsecret:
@@ -3110,6 +3274,9 @@ class WorkflowExecutor:
         # Extract workflow inputs schema for expression evaluation
         workflow_inputs = definition.get("inputs", {})
         
+        # Extract workflow credentials for credential_id resolution
+        workflow_credentials = definition.get("credentials", {})
+        
         # === Resource Context Setup ===
         # Priority: explicit resource_limits > workflow definition > auto-detect
         resource_context = None
@@ -3148,6 +3315,7 @@ class WorkflowExecutor:
             context_params=context_params or {},
             secrets=secrets,
             workflow_inputs=workflow_inputs,
+            workflow_credentials=workflow_credentials,
             resource_context=resource_context,
         )
         
@@ -3181,9 +3349,10 @@ class WorkflowExecutor:
         """Execute single node"""
         executor = self._executors.get(node_type)
 
+        # 전용 executor가 없으면 GenericNodeExecutor 사용 (커뮤니티 노드 등)
         if not executor:
-            context.log("warning", f"No executor for node type: {node_type}", node_id)
-            return {}
+            executor = GenericNodeExecutor()
+            context.log("debug", f"Using GenericNodeExecutor for {node_type}", node_id)
 
         # Add plugin fields for ConditionNode
         if node_type == "ConditionNode":
@@ -3426,14 +3595,15 @@ class WorkflowJob:
             # Connect inputs (get values from edges) + 🆕 엣지 알림
             for edge in self.workflow.edges:
                 if edge.to_node_id == node_id:
+                    # 엣지는 실행 순서만 표현, 데이터는 기본 포트("output" → "input") 사용
                     value = self.context.get_output(
                         edge.from_node_id,
-                        edge.from_port,
+                        None,  # 기본 output 포트
                     )
-                    print(f"    📦 Edge: {edge.from_node_id}.{edge.from_port} → {node_id}.{edge.to_port} = {value is not None}", flush=True)
+                    print(f"    📦 Edge: {edge.from_node_id} → {node_id} = {value is not None}", flush=True)
                     if value is not None:
-                        from_port = edge.from_port or "output"
-                        input_port = edge.to_port or "input"
+                        from_port = "output"
+                        input_port = "input"
                         
                         # 🆕 엣지 전송 시작 알림
                         await self.context.notify_edge_state(

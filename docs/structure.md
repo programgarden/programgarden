@@ -83,24 +83,75 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 ```json
 {
   "nodes": [
-    {"id": "broker", "type": "BrokerNode", ...},
+    {"id": "broker", "type": "BrokerNode", "credential_id": "my-broker-cred", ...},
     {"id": "rsi", "type": "ConditionNode", ...},
     {"id": "order", "type": "NewOrderNode", ...}
   ],
   "edges": [
-    {"from": "broker.connection", "to": "rsi"},
-    {"from": "rsi.passed_symbols", "to": "order.symbols"}
+    {"from": "broker", "to": "rsi"},
+    {"from": "rsi", "to": "order"}
+  ],
+  "credentials": [
+    {"id": "my-broker-cred", "type": "broker_ls", "name": "LS증권 API", "data": {"appkey": "", "appsecret": ""}}
   ]
 }
 ```
 
 - **nodes**: 각 기능을 담당하는 노드들의 배열
-- **edges**: 노드 간 데이터 흐름을 정의하는 연결
+- **edges**: 노드 간 실행 순서를 정의하는 연결 (데이터 바인딩은 노드 config에서 표현식으로 처리)
+- **credentials**: 워크플로우에서 사용하는 인증 정보 (공유 시 값은 빈 문자열)
 - **inputs**: 워크플로우 입력 파라미터 (선택)
+
+### Credentials 형식
+
+워크플로우 JSON에 포함되는 credentials 섹션은 배열 형태입니다:
+
+```json
+{
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 API",
+      "data": {
+        "appkey": "",
+        "appsecret": "",
+        "paper_trading": false
+      }
+    },
+    {
+      "id": "custom-api-cred",
+      "type": "http_custom",
+      "name": "외부 API 인증",
+      "data": [
+        {"type": "headers", "key": "Authorization", "value": "", "label": "API 토큰"},
+        {"type": "query_params", "key": "api_key", "value": "", "label": "API Key"}
+      ]
+    }
+  ]
+}
+```
+
+**Credential 타입:**
+
+| 타입 | 설명 | data 필드 |
+|------|------|----------|
+| `broker_ls` | LS증권 API | `appkey`, `appsecret`, `paper_trading` |
+| `telegram` | 텔레그램 봇 | `bot_token`, `chat_id` |
+| `postgres` | PostgreSQL DB | `host`, `port`, `database`, `username`, `password` |
+| `http_custom` | 커스텀 HTTP 인증 | 배열: `[{type, key, value, label}, ...]` |
+| `http_bearer` | Bearer Token | `token` |
+| `http_header` | HTTP Header | `header_name`, `header_value` |
+| `http_basic` | Basic Auth | `username`, `password` |
+
+**공유용 vs 실행용:**
+- **공유용 JSON**: `data` 필드에 키만 포함 (값은 빈 문자열)
+- **실행용 JSON**: 서버에서 암호화된 값을 복호화하여 주입
+
 
 ### Expression 문법
 
-노드 설정값을 동적으로 계산할 때 `{{ }}` 문법을 사용합니다:
+노드 설정값을 동적으로 계산하거나 다른 노드의 데이터를 참조할 때 `{{ }}` 문법을 사용합니다:
 
 ```json
 {
@@ -113,9 +164,23 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
       "symbols": "{{ input.symbols }}"
     },
     {
-      "id": "data",
-      "start_date": "{{ days_ago(30) }}"
+      "id": "marketData",
+      "symbols": "{{ watchlist.symbols }}"
+    },
+    {
+      "id": "condition",
+      "price_data": "{{ marketData.price }}"
+    },
+    {
+      "id": "order",
+      "symbol": "{{ condition.passed_symbols[0] }}",
+      "price": "{{ marketData.price * 0.99 }}"
     }
+  ],
+  "edges": [
+    {"from": "watchlist", "to": "marketData"},
+    {"from": "marketData", "to": "condition"},
+    {"from": "condition", "to": "order"}
   ]
 }
 ```

@@ -1,12 +1,14 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { getCategoryColor } from '@/utils/nodeColors';
+import { getNodeLabel } from '@/utils/nodeLabels';
 import { PortDefinition, NodeState } from '@/types/workflow';
 
 interface CustomNodeData {
   label: string;
   nodeType: string;
   category: string;
+  description?: string; // 노드 설명 (편집 가능)
   inputs?: PortDefinition[];
   outputs?: PortDefinition[];
   state?: NodeState;
@@ -14,8 +16,39 @@ interface CustomNodeData {
   [key: string]: unknown;
 }
 
-// 노드 아이콘 가져오기
-function getNodeIcon(nodeType: string): string {
+// 노드 아이콘 URL 가져오기
+function getNodeIconUrl(nodeType: string): string | null {
+  const iconUrls: Record<string, string> = {
+    // TelegramNode - 사용자 지정 아이콘
+    TelegramNode: 'https://i.namu.wiki/i/WB0c5rSBD3_LUdsinRiemDrRTepFImNUJr-K4mWBvITAmyXksxKMsA6Bohk388FJQyjdQw0Vbs_XQ8CXv_mg-w.svg',
+    // 샘플 아이콘 (simpleicons.org 등에서 가져온 SVG들)
+    StartNode: 'https://cdn.simpleicons.org/playwright/45ba4b',
+    BrokerNode: 'https://cdn.simpleicons.org/socket.io/ffffff',
+    ConditionNode: 'https://cdn.simpleicons.org/git/f05032',
+    NewOrderNode: 'https://cdn.simpleicons.org/googledocs/4285f4',
+    AlertNode: 'https://cdn.simpleicons.org/googlemessages/4285f4',
+    ScheduleNode: 'https://cdn.simpleicons.org/clockify/03a9f4',
+    DisplayNode: 'https://cdn.simpleicons.org/grafana/f46800',
+    WatchlistNode: 'https://cdn.simpleicons.org/openlayers/1f6b75',
+    ScreenerNode: 'https://cdn.simpleicons.org/elasticsearch/005571',
+    HistoricalDataNode: 'https://cdn.simpleicons.org/googleanalytics/e37400',
+    RealMarketDataNode: 'https://cdn.simpleicons.org/mqtt/660066',
+    PositionSizingNode: 'https://cdn.simpleicons.org/googlefit/4285f4',
+    RiskGuardNode: 'https://cdn.simpleicons.org/bitwarden/175ddc',
+    LiquidateNode: 'https://cdn.simpleicons.org/cashapp/00c853',
+    LogicNode: 'https://cdn.simpleicons.org/probot/00b0d8',
+    GroupNode: 'https://cdn.simpleicons.org/diagramsdotnet/f08705',
+    BacktestEngineNode: 'https://cdn.simpleicons.org/testcafe/36b6e5',
+    EventHandlerNode: 'https://cdn.simpleicons.org/amazonaws/ff9900',
+    CustomPnLNode: 'https://cdn.simpleicons.org/googlesheets/34a853',
+    DeployNode: 'https://cdn.simpleicons.org/docker/2496ed',
+    AccountNode: 'https://cdn.simpleicons.org/stripe/635bff',
+  };
+  return iconUrls[nodeType] || null;
+}
+
+// 폴백용 이모지 아이콘
+function getNodeEmojiIcon(nodeType: string): string {
   const icons: Record<string, string> = {
     StartNode: '▶️',
     BrokerNode: '🔌',
@@ -37,8 +70,29 @@ function getNodeIcon(nodeType: string): string {
     EventHandlerNode: '⚡',
     CustomPnLNode: '💹',
     DeployNode: '🚀',
+    TelegramNode: '📨',
+    AccountNode: '👤',
   };
   return icons[nodeType] || '📦';
+}
+
+// 노드 아이콘 컴포넌트
+function NodeIcon({ nodeType }: { nodeType: string }) {
+  const [imgError, setImgError] = useState(false);
+  const iconUrl = getNodeIconUrl(nodeType);
+  
+  if (iconUrl && !imgError) {
+    return (
+      <img 
+        src={iconUrl} 
+        alt={nodeType}
+        className="w-5 h-5 object-contain"
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+  
+  return <span>{getNodeEmojiIcon(nodeType)}</span>;
 }
 
 // 출력 프리뷰 생성 (n8n 스타일)
@@ -69,15 +123,46 @@ function getStateStyles(state?: NodeState): string {
   }
 }
 
-function CustomNode({ data, selected }: NodeProps) {
+function CustomNode({ data, selected, id }: NodeProps) {
   const nodeData = data as CustomNodeData;
   const color = getCategoryColor(nodeData.category);
   const stateStyles = getStateStyles(nodeData.state);
+  
+  // 노드 이름 편집 상태
+  const [isEditingLabel, setIsEditingLabel] = useState(false);
+  const defaultLabel = getNodeLabel(nodeData.nodeType, 'ko');
+  const [editedLabel, setEditedLabel] = useState<string>((nodeData.customLabel as string) || defaultLabel);
+  
+  // 설명 편집 상태
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState(nodeData.description || '');
   
   // 출력 프리뷰 생성
   const outputPreview = nodeData.lastOutput 
     ? getOutputPreview(nodeData.lastOutput) 
     : null;
+  
+  // 노드 이름 저장 핸들러
+  const handleLabelSave = () => {
+    setIsEditingLabel(false);
+    const event = new CustomEvent('updateNodeLabel', {
+      detail: { nodeId: id, customLabel: editedLabel || defaultLabel }
+    });
+    window.dispatchEvent(event);
+  };
+  
+  // 설명 저장 핸들러
+  const handleDescriptionSave = () => {
+    setIsEditingDescription(false);
+    // workflowStore의 updateNodeData를 통해 저장
+    const event = new CustomEvent('updateNodeDescription', {
+      detail: { nodeId: id, description: editedDescription }
+    });
+    window.dispatchEvent(event);
+  };
+  
+  // 표시할 라벨 (커스텀 라벨 > 기본 한글 라벨)
+  const displayLabel = (nodeData.customLabel as string) || defaultLabel;
 
   return (
     <div
@@ -100,18 +185,65 @@ function CustomNode({ data, selected }: NodeProps) {
         />
       )}
 
-      {/* Header */}
+      {/* Header - 노드 이름 (더블클릭으로 편집) */}
       <div
-        className="px-3 py-2 text-white text-sm font-medium flex items-center gap-2"
+        className="px-3 py-2 text-white text-sm font-medium flex items-center gap-2 cursor-text"
         style={{ backgroundColor: color }}
+        onDoubleClick={() => {
+          setIsEditingLabel(true);
+          setEditedLabel(displayLabel);
+        }}
       >
-        <span>{getNodeIcon(nodeData.nodeType)}</span>
-        <span>{nodeData.label || nodeData.nodeType}</span>
+        <NodeIcon nodeType={nodeData.nodeType} />
+        {isEditingLabel ? (
+          <input
+            type="text"
+            className="flex-1 bg-white/20 text-white text-sm px-1 py-0.5 rounded border border-white/30 focus:border-white focus:outline-none"
+            value={editedLabel}
+            onChange={(e) => setEditedLabel(e.target.value)}
+            onBlur={handleLabelSave}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleLabelSave();
+              if (e.key === 'Escape') {
+                setIsEditingLabel(false);
+                setEditedLabel(displayLabel);
+              }
+            }}
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span title="더블클릭하여 이름 변경">{displayLabel}</span>
+        )}
       </div>
 
-      {/* Body */}
-      <div className="px-3 py-2 text-gray-400 text-xs">
-        {nodeData.nodeType}
+      {/* Body - 설명 (더블클릭으로 편집) */}
+      <div 
+        className="px-3 py-2 text-gray-300 text-xs min-h-[32px] cursor-text hover:bg-gray-700/50 transition-colors"
+        onDoubleClick={() => {
+          setIsEditingDescription(true);
+          setEditedDescription(nodeData.description || '');
+        }}
+      >
+        {isEditingDescription ? (
+          <input
+            type="text"
+            className="w-full bg-gray-700 text-white text-xs px-1 py-0.5 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+            value={editedDescription}
+            onChange={(e) => setEditedDescription(e.target.value)}
+            onBlur={handleDescriptionSave}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleDescriptionSave();
+              if (e.key === 'Escape') setIsEditingDescription(false);
+            }}
+            autoFocus
+            placeholder="설명을 입력하세요..."
+          />
+        ) : (
+          <span className="text-gray-400">
+            {nodeData.description || '더블클릭하여 설명 추가'}
+          </span>
+        )}
       </div>
 
       {/* Output Preview (n8n 스타일) */}

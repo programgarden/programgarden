@@ -67,12 +67,12 @@
 ### 방법 1: 독립 실행
 ```bash
 cd src/programgarden
-poetry run python examples/10_ui/02_spider_chart/run.py
+poetry run python examples/workflow_editor/02_spider_chart/run.py
 ```
 
 ### 방법 2: 웹 UI (01_flow_visualizer 서버 활용)
 ```bash
-cd src/programgarden/examples/10_ui/01_flow_visualizer
+cd src/programgarden/examples/workflow_editor/01_flow_visualizer
 poetry run python server.py
 # 브라우저에서 http://localhost:8000 접속
 ```

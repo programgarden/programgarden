@@ -140,17 +140,12 @@ def get_workflow():
         ],
         
         "edges": [
-            # Infra chain
             {"from": "start", "to": "broker"},
-            {"from": "broker.connection", "to": "watchlist"},
-            
-            # Symbol to Data
-            {"from": "watchlist.symbols", "to": "historicalData.symbols"},
-            
-            # Data to Displays (각 차트로 데이터 전달)
-            {"from": "historicalData.ohlcv_data", "to": "display_line.data"},
-            {"from": "historicalData.ohlcv_data", "to": "display_candle.data"},
-            {"from": "historicalData.ohlcv_data", "to": "display_volume.data"},
-            {"from": "watchlist.symbols", "to": "display_table.data"},
+            {"from": "broker", "to": "watchlist"},
+            {"from": "watchlist", "to": "historicalData"},
+            {"from": "historicalData", "to": "display_line"},
+            {"from": "historicalData", "to": "display_candle"},
+            {"from": "historicalData", "to": "display_volume"},
+            {"from": "watchlist", "to": "display_table"},
         ],
     }

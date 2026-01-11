@@ -300,7 +300,162 @@ sns: https://youtube.com/abc
 
 ---
 
-## 4. 코드 스타일
+## 4. 커뮤니티 노드 기여하기
+
+플러그인 외에도 **새로운 노드 타입**을 커뮤니티에 기여할 수 있습니다. 예: TelegramNode, SlackNode, DiscordNode 등.
+
+### 4.1. 노드 vs 플러그인
+
+| 구분 | 플러그인 | 노드 |
+|------|----------|------|
+| 용도 | 기존 노드의 로직 확장 | 완전히 새로운 기능 |
+| 예시 | RSI, MACD, BollingerBands | TelegramNode, SlackNode |
+| 베이스 | `BaseStrategyCondition*` | `BaseNotificationNode`, `BaseNode` |
+| 위치 | `plugins/` | `nodes/` |
+
+### 4.2. 노드 파일 구조
+
+```
+programgarden_community/
+├── nodes/
+│   ├── __init__.py
+│   └── messaging/
+│       ├── __init__.py
+│       ├── telegram.py      # TelegramNode
+│       ├── slack.py         # SlackNode
+│       └── discord.py       # DiscordNode
+└── nodes_registry.py        # 노드 등록
+```
+
+### 4.3. 알림 노드 작성하기
+
+알림/메시징 노드는 `BaseNotificationNode`를 상속합니다:
+
+```python
+from typing import Literal, Optional, Dict, Any, ClassVar
+from pydantic import Field
+from programgarden_core.nodes.base import BaseNotificationNode
+
+
+class SlackNode(BaseNotificationNode):
+    """Slack 메시지 전송 노드"""
+    
+    type: Literal["SlackNode"] = "SlackNode"
+    description: str = "Send messages via Slack Webhook"
+    
+    # 노드 아이콘 (선택)
+    _img_url: ClassVar[str] = "https://example.com/slack-logo.svg"
+    
+    # Credential에서 자동 주입되는 필드들
+    # credential_id를 설정하면 GenericNodeExecutor가 자동으로 값을 채워줍니다
+    webhook_url: Optional[str] = Field(
+        default=None,
+        description="Slack Webhook URL. credential_id 사용 시 자동 주입됨",
+    )
+    channel: Optional[str] = Field(
+        default=None,
+        description="Slack channel name",
+    )
+    
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """
+        Slack 메시지 전송
+        
+        Note:
+            credential_id가 설정되어 있으면 webhook_url이 자동 주입됩니다.
+            self.webhook_url을 바로 사용하면 됩니다.
+        """
+        if not self.webhook_url:
+            return {"sent": False, "error": "webhook_url required"}
+        
+        # 템플릿 렌더링
+        event_data = getattr(context, "event_data", {}) or {}
+        message = context.render_template(self.template, event_data)
+        
+        # Slack API 호출
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.webhook_url, json={"text": message}) as resp:
+                if resp.status == 200:
+                    return {"sent": True}
+                else:
+                    return {"sent": False, "error": f"HTTP {resp.status}"}
+```
+
+### 4.4. Credential 자동 주입 패턴
+
+**핵심**: 필드만 선언하면 credential 값이 자동 주입됩니다!
+
+```python
+# ❌ 예전 방식 (더 이상 필요 없음)
+class MyNode(BaseNotificationNode):
+    _credential_keys = ["api_key"]  # 불필요
+    
+    async def execute(self, context):
+        creds = self.resolve_credentials(context)  # 불필요
+        api_key = creds["api_key"]
+
+# ✅ 새로운 방식 (권장)
+class MyNode(BaseNotificationNode):
+    api_key: Optional[str] = None  # 필드만 선언
+    
+    async def execute(self, context):
+        api_key = self.api_key  # 바로 사용!
+```
+
+**동작 원리**:
+1. 워크플로우에서 `credential_id: "my-credential"` 설정
+2. `GenericNodeExecutor`가 실행 전에 credential store에서 값 조회
+3. credential의 필드명과 노드의 필드명이 일치하면 자동 주입
+4. `execute()`에서 `self.필드명`으로 바로 사용
+
+**우선순위**: 직접 설정 값 > credential 값
+
+### 4.5. 노드 등록하기
+
+`nodes_registry.py`에 노드를 등록합니다:
+
+```python
+def register_all_nodes():
+    """커뮤니티 노드를 NodeTypeRegistry에 등록"""
+    from programgarden_core.registry import NodeTypeRegistry
+    from programgarden_community.nodes.messaging.telegram import TelegramNode
+    from programgarden_community.nodes.messaging.slack import SlackNode
+    
+    registry = NodeTypeRegistry()
+    registry.register_external(TelegramNode)
+    registry.register_external(SlackNode)
+```
+
+### 4.6. 워크플로우에서 사용하기
+
+```json
+{
+  "nodes": [
+    {
+      "id": "telegram",
+      "type": "TelegramNode",
+      "credential_id": "telegram-bot-001",
+      "template": "🎯 체결: {{symbol}} {{quantity}}주 @ {{price}}",
+      "on": ["order_filled"]
+    }
+  ]
+}
+```
+
+credential store에 다음과 같이 저장:
+```json
+{
+  "telegram-bot-001": {
+    "bot_token": "123456:ABC-DEF...",
+    "chat_id": "880982510"
+  }
+}
+```
+
+---
+
+## 5. 코드 스타일
 
 - Python 코드 스타일 가이드 (PEP 8)를 따릅니다.
 - Black 포맷터를 사용합니다:
@@ -314,7 +469,7 @@ sns: https://youtube.com/abc
 
 ---
 
-## 5. 테스트
+## 6. 테스트
 
 모든 변경 사항은 테스트를 통과해야 합니다: DSL 언어에서 커스텀하여 정상 동작을 확인하세요.
 
@@ -340,7 +495,7 @@ pg.run(workflow={
 
 ---
 
-## 6. 코드 기여 및 PR 제출
+## 7. 코드 기여 및 PR 제출
 
 버그 수정이나 기능 추가를 위해 코드를 기여하려면:
 
@@ -358,9 +513,9 @@ PR은 검토 후 병합됩니다. 피드백이 있을 수 있으니 적극적으
 
 ---
 
-## 7. 이슈 보고 및 토론
+## 8. 이슈 보고 및 토론
 
-### 7.1. 이슈 및 토론 참여
+### 8.1. 이슈 및 토론 참여
 
 * 버그, 기능 요청, 질문 등이 있으면 GitHub Issues를 사용하세요.
 * Github Discussions 탭에서 일반적인 토론에 참여하세요.
@@ -368,7 +523,7 @@ PR은 검토 후 병합됩니다. 피드백이 있을 수 있으니 적극적으
 
 ---
 
-## 8. 라이선스 및 윤리적 고려사항
+## 9. 라이선스 및 윤리적 고려사항
 
 * ProgramGarden은 AGPL-3.0 라이선스를 사용합니다. 기여 시 이 라이선스를 준수하세요.
 * 저작권이 있는 코드를 복사하지 마세요.

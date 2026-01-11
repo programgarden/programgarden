@@ -15,12 +15,13 @@ export default function App() {
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
   const setNodeTypes = useWorkflowStore((state) => state.setNodeTypes);
   const nodeTypesLoaded = useWorkflowStore((state) => state.nodeTypesLoaded);
+  const locale = useWorkflowStore((state) => state.locale);
 
-  // Preload node types on app start
+  // Preload node types on app start (or when locale changes)
   useEffect(() => {
     if (nodeTypesLoaded) return;
     
-    fetch('/api/node-types')
+    fetch(`/api/node-types?locale=${locale}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.node_types) {
@@ -28,7 +29,7 @@ export default function App() {
         }
       })
       .catch((err) => console.error('Failed to load node types:', err));
-  }, [nodeTypesLoaded, setNodeTypes]);
+  }, [nodeTypesLoaded, setNodeTypes, locale]);
 
   return (
     <ReactFlowProvider>
@@ -93,7 +94,7 @@ export default function App() {
 
           {/* JSON Viewer Panel (toggleable) */}
           {showJson && (
-            <div className="w-96 border-l border-gray-700 bg-gray-800">
+            <div className="w-96 h-full border-l border-gray-700 bg-gray-800 overflow-hidden">
               <JsonViewer />
             </div>
           )}

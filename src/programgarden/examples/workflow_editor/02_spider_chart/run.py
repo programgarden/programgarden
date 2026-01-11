@@ -7,10 +7,10 @@ Spider Chart Example Runner
 
 Usage:
     cd src/programgarden
-    poetry run python examples/10_ui/02_spider_chart/run.py
+    poetry run python examples/workflow_editor/02_spider_chart/run.py
     
     # Mock 데이터 테스트
-    poetry run python examples/10_ui/02_spider_chart/run.py --mock
+    poetry run python examples/workflow_editor/02_spider_chart/run.py --mock
 """
 
 import asyncio

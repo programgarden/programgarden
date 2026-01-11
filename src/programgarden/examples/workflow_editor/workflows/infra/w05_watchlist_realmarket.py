@@ -44,8 +44,8 @@ def get_workflow():
             },
         ],
         "edges": [
-            {"from": "start.start", "to": "broker"},
-            {"from": "broker.connection", "to": "realMarket"},
-            {"from": "watchlist.symbols", "to": "realMarket.symbols"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "realMarket"},
+            {"from": "watchlist", "to": "realMarket"},
         ],
     }

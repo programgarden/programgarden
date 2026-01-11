@@ -16,10 +16,10 @@ def get_workflow():
             {"id": "display", "type": "DisplayNode", "category": "display", "format": "table", "fields": ["event_type", "symbol", "side", "quantity", "price"], "position": {"x": 1000, "y": 200}},
         ],
         "edges": [
-            {"from": "start.start", "to": "broker"},
-            {"from": "broker.connection", "to": "orderEvents"},
-            {"from": "orderEvents.filled", "to": "fillHandler.event"},
-            {"from": "fillHandler.processed", "to": "alert.data"},
-            {"from": "alert.sent", "to": "display.data"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "orderEvents"},
+            {"from": "orderEvents", "to": "fillHandler"},
+            {"from": "fillHandler", "to": "alert"},
+            {"from": "alert", "to": "display"},
         ],
     }

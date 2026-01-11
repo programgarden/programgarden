@@ -25,11 +25,11 @@ export default function JsonViewer() {
   };
 
   return (
-    <div className="bg-gray-800 border-t border-gray-700">
+    <div className="h-full flex flex-col bg-gray-800 border-t border-gray-700">
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-750 transition-colors"
+        className="flex-shrink-0 w-full px-4 py-2 flex items-center justify-between hover:bg-gray-750 transition-colors"
       >
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-gray-200">📝 JSON</span>
@@ -62,7 +62,7 @@ export default function JsonViewer() {
 
       {/* JSON Content */}
       {expanded && (
-        <div className="max-h-[500px] overflow-auto border-t border-gray-700">
+        <div className="flex-1 overflow-auto border-t border-gray-700">
           <pre className="p-4 text-xs text-gray-300 font-mono whitespace-pre-wrap">
             {jsonString}
           </pre>

@@ -1,14 +1,14 @@
 """
 ProgramGarden Workflow Editor Server
 
-10_ui 폴더의 메인 서버.
+workflow_editor 폴더의 메인 서버.
 - React 기반 워크플로우 편집기 서빙
 - 워크플로우 실행 및 SSE 이벤트 스트리밍
 - NodeRegistry API 제공
 
 실행:
     cd src/programgarden
-    poetry run python examples/10_ui/server.py
+    poetry run python examples/workflow_editor/server.py
 """
 
 import sys
@@ -19,6 +19,9 @@ current_dir = Path(__file__).parent
 project_root = current_dir.parents[3]
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(current_dir))
+# Add core and community packages
+sys.path.insert(0, str(project_root / "src" / "core"))
+sys.path.insert(0, str(project_root / "src" / "community"))
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +32,32 @@ import uvicorn
 
 from listener import SSEListener
 from workflows import get_all_workflows, get_workflow_by_id, get_all_categories, get_workflows_by_category
+
+
+# ========================================
+# Register Community Nodes
+# ========================================
+def register_community_nodes():
+    """커뮤니티 노드를 NodeTypeRegistry에 등록"""
+    try:
+        from programgarden_core.registry import NodeTypeRegistry
+        from programgarden_community.nodes import TelegramNode
+        
+        registry = NodeTypeRegistry()
+        
+        # TelegramNode 등록 (아직 등록되지 않은 경우만)
+        if "TelegramNode" not in registry._registry:
+            registry.register_external(TelegramNode, source="community", trust_level="verified")
+            print("✅ Registered community node: TelegramNode")
+    except ImportError as e:
+        print(f"⚠️ Could not register community nodes: {e}")
+    except ValueError as e:
+        # 이미 등록된 경우
+        print(f"ℹ️ Community node already registered: {e}")
+
+# 서버 시작 시 커뮤니티 노드 등록
+register_community_nodes()
+
 
 app = FastAPI(title="ProgramGarden Workflow Editor")
 
@@ -74,7 +103,7 @@ async def index():
             <h1>🌱 ProgramGarden Workflow Editor</h1>
             <p>Frontend not built yet. Run:</p>
             <pre style="background: #374151; padding: 1rem; border-radius: 8px;">
-cd src/programgarden/examples/10_ui/frontend
+cd src/programgarden/examples/workflow_editor/frontend
 npm install
 npm run build</pre>
             <p>Then refresh this page.</p>
@@ -322,15 +351,19 @@ async def get_node_type_schema(node_type: str):
 
 
 @app.get("/api/categories")
-async def get_categories():
-    """카테고리 목록 반환"""
+async def get_categories(locale: str = "ko"):
+    """카테고리 목록 반환 (i18n 적용)"""
     try:
         from programgarden_core.registry import NodeTypeRegistry
+        from programgarden_core.i18n import set_locale
+        
+        # Set locale for translation
+        set_locale(locale)
         
         registry = NodeTypeRegistry()
-        categories = registry.list_categories()
+        categories = registry.list_categories(locale=locale)
         
-        return JSONResponse({"categories": categories})
+        return JSONResponse({"categories": categories, "locale": locale})
     except Exception as e:
         return JSONResponse({"error": str(e), "categories": []}, status_code=500)
 
@@ -343,7 +376,7 @@ class CredentialCreateRequest(BaseModel):
     """Request body for creating a credential"""
     name: str
     credential_type: str
-    data: Dict[str, Any]
+    data: Any  # Dict for normal types, List for http_custom
     user_id: str = "default"
 
 
@@ -406,14 +439,30 @@ async def list_credentials(user_id: str = "default", credential_type: Optional[s
         # Mask sensitive data
         result = []
         for cred in credentials:
-            masked_data = {}
-            for key, value in cred.data.items():
-                if isinstance(value, str) and len(value) > 4:
-                    masked_data[key] = value[:2] + "*" * (len(value) - 4) + value[-2:]
-                elif isinstance(value, bool):
-                    masked_data[key] = value
-                else:
-                    masked_data[key] = "***"
+            # Handle both dict and list data formats
+            if isinstance(cred.data, list):
+                # http_custom: array of {type, key, value, label}
+                masked_data = []
+                for item in cred.data:
+                    masked_item = {**item}
+                    if 'value' in masked_item and isinstance(masked_item['value'], str):
+                        v = masked_item['value']
+                        if len(v) > 4:
+                            masked_item['value'] = v[:2] + "*" * (len(v) - 4) + v[-2:]
+                        else:
+                            masked_item['value'] = "***"
+                    masked_data.append(masked_item)
+            elif isinstance(cred.data, dict):
+                masked_data = {}
+                for key, value in cred.data.items():
+                    if isinstance(value, str) and len(value) > 4:
+                        masked_data[key] = value[:2] + "*" * (len(value) - 4) + value[-2:]
+                    elif isinstance(value, bool):
+                        masked_data[key] = value
+                    else:
+                        masked_data[key] = "***"
+            else:
+                masked_data = cred.data
             
             result.append({
                 "id": cred.id,
@@ -447,15 +496,29 @@ async def get_credential(credential_id: str):
         if not cred:
             return JSONResponse({"error": f"Credential not found: {credential_id}"}, status_code=404)
         
-        # Mask sensitive data
-        masked_data = {}
-        for key, value in cred.data.items():
-            if isinstance(value, str) and len(value) > 4:
-                masked_data[key] = value[:2] + "*" * (len(value) - 4) + value[-2:]
-            elif isinstance(value, bool):
-                masked_data[key] = value
-            else:
-                masked_data[key] = "***"
+        # Mask sensitive data - handle both dict and list formats
+        if isinstance(cred.data, list):
+            masked_data = []
+            for item in cred.data:
+                masked_item = {**item}
+                if 'value' in masked_item and isinstance(masked_item['value'], str):
+                    v = masked_item['value']
+                    if len(v) > 4:
+                        masked_item['value'] = v[:2] + "*" * (len(v) - 4) + v[-2:]
+                    else:
+                        masked_item['value'] = "***"
+                masked_data.append(masked_item)
+        elif isinstance(cred.data, dict):
+            masked_data = {}
+            for key, value in cred.data.items():
+                if isinstance(value, str) and len(value) > 4:
+                    masked_data[key] = value[:2] + "*" * (len(value) - 4) + value[-2:]
+                elif isinstance(value, bool):
+                    masked_data[key] = value
+                else:
+                    masked_data[key] = "***"
+        else:
+            masked_data = cred.data
         
         return JSONResponse({
             "id": cred.id,

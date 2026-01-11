@@ -1,7 +1,7 @@
 """
 RSI (Relative Strength Index) 플러그인
 
-RSI 과매수/과매도 조건을 평가합니다.
+RSI overbought/oversold condition evaluation.
 """
 
 from typing import List
@@ -14,35 +14,44 @@ RSI_SCHEMA = PluginSchema(
     name="RSI (Relative Strength Index)",
     category=PluginCategory.STRATEGY_CONDITION,
     version="1.0.0",
-    description="RSI 과매수/과매도 조건",
+    description="RSI overbought/oversold condition",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
         "period": {
             "type": "int",
             "default": 14,
-            "title": "RSI 기간",
-            "description": "RSI 계산에 사용할 기간",
+            "title": "Period",
+            "description": "RSI calculation period",
             "ge": 2,
             "le": 100,
         },
         "threshold": {
             "type": "float",
             "default": 30,
-            "title": "임계값",
-            "description": "과매도/과매수 판단 기준값",
+            "title": "Threshold",
+            "description": "Overbought/oversold threshold value",
             "ge": 0,
             "le": 100,
         },
         "direction": {
             "type": "string",
             "default": "below",
-            "title": "방향",
-            "description": "below: 과매도, above: 과매수",
+            "title": "Direction",
+            "description": "below: oversold, above: overbought",
             "enum": ["below", "above"],
         },
     },
     required_data=["price_data"],
     tags=["momentum", "oscillator"],
+    locales={
+        "ko": {
+            "name": "RSI (상대강도지수)",
+            "description": "RSI 과매수/과매도 조건",
+            "fields.period": "RSI 계산에 사용할 기간",
+            "fields.threshold": "과매도/과매수 판단 기준값",
+            "fields.direction": "방향 (below: 과매도, above: 과매수)",
+        },
+    },
 )
 
 

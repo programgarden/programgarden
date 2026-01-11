@@ -34,7 +34,7 @@ def get_workflow():
             },
         ],
         "edges": [
-            {"from": "start.start", "to": "schedule"},
-            {"from": "schedule.trigger", "to": "tradingHours"},
+            {"from": "start", "to": "schedule"},
+            {"from": "schedule", "to": "tradingHours"},
         ],
     }

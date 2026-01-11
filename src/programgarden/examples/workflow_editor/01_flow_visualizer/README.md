@@ -57,7 +57,7 @@ poetry add fastapi uvicorn sse-starlette
 
 ```bash
 cd src/programgarden
-poetry run python -m examples.10_ui.01_flow_visualizer.run
+poetry run python -m examples.workflow_editor.01_flow_visualizer.run
 ```
 
 ### 3. Open browser

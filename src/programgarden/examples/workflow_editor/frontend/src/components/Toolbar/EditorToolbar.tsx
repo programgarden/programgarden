@@ -12,18 +12,12 @@ import {
 } from 'lucide-react';
 
 /**
- * Parse edge endpoint string.
- * Formats:
- *   - "nodeId.portName" -> { nodeId: "nodeId", port: "portName" }
- *   - "nodeId" -> { nodeId: "nodeId", port: undefined }
+ * Extract node ID from edge endpoint string.
+ * Handles legacy format "nodeId.port" -> extracts "nodeId"
  */
-function parseEdgeEndpoint(endpoint: string): { nodeId: string; port?: string } {
-  if (!endpoint) return { nodeId: '' };
-  const parts = endpoint.split('.');
-  if (parts.length >= 2) {
-    return { nodeId: parts[0], port: parts.slice(1).join('.') };
-  }
-  return { nodeId: endpoint };
+function extractNodeId(endpoint: string): string {
+  if (!endpoint) return '';
+  return endpoint.split('.')[0];
 }
 
 interface WorkflowInfo {
@@ -44,6 +38,8 @@ export default function EditorToolbar() {
     resetNodeStates,
     nodeTypes: registeredNodeTypes,
     resetEdgeStates,
+    locale,
+    setLocale,
   } = useWorkflowStore();
 
   // SSE connection management
@@ -177,16 +173,14 @@ export default function EditorToolbar() {
       });
 
       const edges = (data.edges || []).map((edge: Record<string, unknown>) => {
-        const fromStr = String(edge.from || '');
-        const toStr = String(edge.to || '');
-        const from = parseEdgeEndpoint(fromStr);
-        const to = parseEdgeEndpoint(toStr);
+        const fromNodeId = extractNodeId(String(edge.from || ''));
+        const toNodeId = extractNodeId(String(edge.to || ''));
         return {
-          id: `e_${fromStr}_${toStr}`,
-          source: from.nodeId,
-          target: to.nodeId,
-          sourceHandle: from.port || undefined,
-          targetHandle: to.port || undefined,
+          id: `e_${fromNodeId}_${toNodeId}`,
+          source: fromNodeId,
+          target: toNodeId,
+          sourceHandle: 'output',
+          targetHandle: 'input',
           type: 'smoothstep',
         };
       });
@@ -260,16 +254,14 @@ export default function EditorToolbar() {
         });
 
         const edges = (data.edges || []).map((edge: Record<string, unknown>) => {
-          const fromStr = String(edge.from || '');
-          const toStr = String(edge.to || '');
-          const from = parseEdgeEndpoint(fromStr);
-          const to = parseEdgeEndpoint(toStr);
+          const fromNodeId = extractNodeId(String(edge.from || ''));
+          const toNodeId = extractNodeId(String(edge.to || ''));
           return {
-            id: `e_${fromStr}_${toStr}`,
-            source: from.nodeId,
-            target: to.nodeId,
-            sourceHandle: from.port || undefined,
-            targetHandle: to.port || undefined,
+            id: `e_${fromNodeId}_${toNodeId}`,
+            source: fromNodeId,
+            target: toNodeId,
+            sourceHandle: 'output',
+            targetHandle: 'input',
             type: 'smoothstep',
           };
         });
@@ -406,14 +398,29 @@ export default function EditorToolbar() {
         </button>
       </div>
 
-      {/* Right: Status */}
-      <div className="flex items-center gap-2">
-        <span
-          className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}
-        />
-        <span className="text-xs text-gray-400">
-          {isRunning ? 'Running' : 'Idle'}
-        </span>
+      {/* Right: Status & Language */}
+      <div className="flex items-center gap-4">
+        {/* Language Toggle */}
+        <button
+          onClick={() => setLocale(locale === 'ko' ? 'en' : 'ko')}
+          className="flex items-center gap-1.5 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm transition-colors"
+          title={locale === 'ko' ? 'Switch to English' : '한국어로 변경'}
+        >
+          <span className="text-base">{locale === 'ko' ? '🇰🇷' : '🇺🇸'}</span>
+          <span className="text-gray-300 text-xs font-medium">
+            {locale === 'ko' ? 'KO' : 'EN'}
+          </span>
+        </button>
+
+        {/* Status */}
+        <div className="flex items-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}
+          />
+          <span className="text-xs text-gray-400">
+            {isRunning ? 'Running' : 'Idle'}
+          </span>
+        </div>
       </div>
     </header>
   );

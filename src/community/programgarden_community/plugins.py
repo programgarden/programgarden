@@ -25,15 +25,24 @@ def register_all_plugins() -> None:
             name="RSI (Relative Strength Index)",
             category=PluginCategory.STRATEGY_CONDITION,
             version="1.0.0",
-            description="RSI 과매수/과매도 조건",
+            description="RSI overbought/oversold condition",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
-                "period": {"type": "int", "default": 14, "description": "RSI 기간"},
-                "threshold": {"type": "float", "default": 30, "description": "임계값"},
-                "direction": {"type": "string", "enum": ["below", "above"], "default": "below"},
+                "period": {"type": "int", "default": 14, "description": "RSI period"},
+                "threshold": {"type": "float", "default": 30, "description": "Threshold value"},
+                "direction": {"type": "string", "enum": ["below", "above"], "default": "below", "description": "Direction"},
             },
             required_data=["price_data"],
             tags=["momentum", "oscillator"],
+            locales={
+                "ko": {
+                    "name": "RSI (상대강도지수)",
+                    "description": "RSI 과매수/과매도 조건",
+                    "fields.period": "RSI 기간",
+                    "fields.threshold": "임계값",
+                    "fields.direction": "방향",
+                },
+            },
         ),
     )
 

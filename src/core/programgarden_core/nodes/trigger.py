@@ -48,7 +48,7 @@ class ScheduleNode(BaseNode):
         "cron": FieldSchema(
             name="cron",
             type=FieldType.STRING,
-            description="Cron expression (e.g., */5 * * * * = every 5 minutes)",
+            description="i18n:fields.ScheduleNode.cron",
             default="*/5 * * * *",
             required=True,
             bindable=False,
@@ -56,14 +56,14 @@ class ScheduleNode(BaseNode):
         "timezone": FieldSchema(
             name="timezone",
             type=FieldType.STRING,
-            description="Timezone",
+            description="i18n:fields.ScheduleNode.timezone",
             default="America/New_York",
             bindable=False,
         ),
         "enabled": FieldSchema(
             name="enabled",
             type=FieldType.BOOLEAN,
-            description="Schedule enabled",
+            description="i18n:fields.ScheduleNode.enabled",
             default=True,
             bindable=False,
         ),

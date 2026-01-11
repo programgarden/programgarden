@@ -92,6 +92,7 @@ def translate_schema(schema: Dict[str, Any], locale: Optional[str] = None) -> Di
     """
     loc = locale or _current_locale
     result = schema.copy()
+    node_type = result.get("node_type", "")
     
     # Translate node_type (display name)
     if "node_type" in result:
@@ -116,10 +117,10 @@ def translate_schema(schema: Dict[str, Any], locale: Optional[str] = None) -> Di
             _translate_port(port, loc) for port in result["outputs"]
         ]
     
-    # Translate config_schema
+    # Translate config_schema (pass node_type for auto-key generation)
     if "config_schema" in result:
         result["config_schema"] = {
-            k: _translate_field(v, loc)
+            k: _translate_field(k, v, loc, node_type)
             for k, v in result["config_schema"].items()
         }
     
@@ -136,14 +137,48 @@ def _translate_port(port: Dict[str, Any], locale: str) -> Dict[str, Any]:
     return result
 
 
-def _translate_field(field: Dict[str, Any], locale: str) -> Dict[str, Any]:
-    """Translate a field definition."""
+def _translate_field(field_name: str, field: Dict[str, Any], locale: str, node_type: str = "") -> Dict[str, Any]:
+    """Translate a field definition.
+    
+    If description starts with 'i18n:', use that key.
+    Otherwise, try auto-generated key: fields.{NodeType}.{field_name}
+    If no translation found, keep original description.
+    """
     result = field.copy()
     if "description" in result and isinstance(result["description"], str):
-        key = result["description"]
-        if key.startswith("i18n:"):
-            result["description"] = t(key[5:], locale)
+        desc = result["description"]
+        if desc.startswith("i18n:"):
+            # Explicit i18n key
+            result["description"] = t(desc[5:], locale)
+        elif node_type:
+            # Try auto-generated key
+            auto_key = f"fields.{node_type}.{field_name}"
+            translated = t(auto_key, locale)
+            # Only use translation if it's different from the key (i.e., translation exists)
+            if translated != auto_key:
+                result["description"] = translated
+            # Otherwise keep original description
     return result
+    return result
+
+
+def translate_category(category: str, locale: Optional[str] = None) -> Dict[str, str]:
+    """
+    Translate a category to the specified locale.
+    
+    Args:
+        category: Category ID (e.g., "infra", "condition")
+        locale: Locale code (default: current global locale)
+    
+    Returns:
+        Dict with id, name, and description
+    """
+    loc = locale or _current_locale
+    return {
+        "id": category,
+        "name": t(f"categories.{category}.name", loc),
+        "description": t(f"categories.{category}.description", loc),
+    }
 
 
 class Translator:

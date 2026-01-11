@@ -2,7 +2,8 @@ import { useState, useEffect, DragEvent } from 'react';
 import { ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { getCategoryColor, getCategoryIcon } from '@/utils/nodeColors';
-import { NodeTypeSchema } from '@/types/workflow';
+import { getNodeLabel } from '@/utils/nodeLabels';
+import { NodeTypeSchema, CategoryInfo } from '@/types/workflow';
 
 interface GroupedNodeTypes {
   [category: string]: NodeTypeSchema[];
@@ -13,18 +14,21 @@ interface NodePaletteProps {
 }
 
 export default function NodePalette({ onClose }: NodePaletteProps) {
-  const { nodeTypes, nodeTypesLoaded, setNodeTypes, addNode } = useWorkflowStore();
+  const { nodeTypes, nodeTypesLoaded, setNodeTypes, addNode, locale } = useWorkflowStore();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['infra', 'condition', 'order']));
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [categoryInfo, setCategoryInfo] = useState<Record<string, CategoryInfo>>({});
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
 
   // Load node types from API
   useEffect(() => {
     if (!nodeTypesLoaded) {
       setLoading(true);
       setError(null);
-      fetch('/api/node-types')
+      
+      fetch(`/api/node-types?locale=${locale}`)
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
@@ -33,7 +37,6 @@ export default function NodePalette({ onClose }: NodePaletteProps) {
           if (data.node_types && data.node_types.length > 0) {
             setNodeTypes(data.node_types);
           } else {
-            // API returned empty, use mock data
             console.warn('API returned empty node types, using mock data');
             setNodeTypes(getMockNodeTypes());
           }
@@ -41,12 +44,35 @@ export default function NodePalette({ onClose }: NodePaletteProps) {
         .catch((err) => {
           console.error('Failed to load node types:', err);
           setError('Using demo nodes');
-          // Use mock data for development
           setNodeTypes(getMockNodeTypes());
         })
         .finally(() => setLoading(false));
     }
-  }, [nodeTypesLoaded, setNodeTypes]);
+  }, [nodeTypesLoaded, setNodeTypes, locale]);
+
+  // Load categories separately (always load if not loaded)
+  useEffect(() => {
+    if (!categoriesLoaded) {
+      fetch(`/api/categories?locale=${locale}`)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((data) => {
+          if (data.categories && data.categories.length > 0) {
+            const catMap: Record<string, CategoryInfo> = {};
+            for (const cat of data.categories) {
+              catMap[cat.id] = cat;
+            }
+            setCategoryInfo(catMap);
+            setCategoriesLoaded(true);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to load categories:', err);
+        });
+    }
+  }, [categoriesLoaded, locale]);
 
   // Group node types by category
   const groupedTypes: GroupedNodeTypes = nodeTypes.reduce((acc, type) => {
@@ -135,21 +161,28 @@ export default function NodePalette({ onClose }: NodePaletteProps) {
             {/* Category Header */}
             <button
               onClick={() => toggleCategory(category)}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-700 text-left"
+              className="w-full flex flex-col px-2 py-1.5 rounded hover:bg-gray-700 text-left"
             >
-              {expandedCategories.has(category) ? (
-                <ChevronDown className="w-4 h-4 text-gray-500" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-gray-500" />
+              <div className="flex items-center gap-2 w-full">
+                {expandedCategories.has(category) ? (
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                )}
+                <span className="text-base">{getCategoryIcon(category)}</span>
+                <span
+                  className="text-sm font-medium"
+                  style={{ color: getCategoryColor(category) }}
+                >
+                  {categoryInfo[category]?.name || category}
+                </span>
+                <span className="text-xs text-gray-500 ml-auto">{types.length}</span>
+              </div>
+              {categoryInfo[category]?.description && (
+                <div className="text-xs text-gray-500 ml-8 mt-0.5 line-clamp-2">
+                  {categoryInfo[category].description}
+                </div>
               )}
-              <span className="text-base">{getCategoryIcon(category)}</span>
-              <span
-                className="text-sm font-medium capitalize"
-                style={{ color: getCategoryColor(category) }}
-              >
-                {category}
-              </span>
-              <span className="text-xs text-gray-500 ml-auto">{types.length}</span>
             </button>
 
             {/* Node Items */}
@@ -164,19 +197,19 @@ export default function NodePalette({ onClose }: NodePaletteProps) {
                       draggable
                       onDragStart={(e) => onDragStart(e, type.node_type, category)}
                       onDoubleClick={() => onDoubleClick(type.node_type, category)}
-                      className="flex-1 px-2 py-1.5 rounded bg-gray-750 hover:bg-gray-700 cursor-pointer border border-transparent hover:border-gray-600 transition-colors"
-                      title={`${type.description || type.node_type} (더블클릭으로 추가)`}
+                      className="flex-1 px-2 py-2 rounded bg-gray-750 hover:bg-gray-700 cursor-pointer border border-transparent hover:border-gray-600 transition-colors group"
+                      title="더블클릭으로 캔버스에 추가"
                     >
-                      <div className="text-xs text-gray-300">{type.node_type}</div>
+                      <div className="text-xs font-medium text-gray-200">{getNodeLabel(type.node_type, locale)}</div>
                       {type.description && (
-                        <div className="text-xs text-gray-500 truncate mt-0.5">
-                          {type.description.slice(0, 50)}
+                        <div className="text-xs text-gray-400 mt-1 leading-relaxed group-hover:text-gray-300 transition-colors">
+                          {type.description}
                         </div>
                       )}
                     </div>
                     <button
                       onClick={() => onDoubleClick(type.node_type, category)}
-                      className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
+                      className="px-2 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded self-start mt-0.5"
                       title="캔버스에 추가"
                     >
                       +

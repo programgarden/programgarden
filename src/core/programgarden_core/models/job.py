@@ -6,7 +6,7 @@ ProgramGarden Core - Job 모델
 
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 
 
@@ -164,8 +164,7 @@ class WorkflowJob(BaseModel):
         description="마지막 에러 메시지",
     )
 
-    class Config:
-        use_enum_values = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
+    model_config = ConfigDict(
+        use_enum_values=True,
+        json_encoders={datetime: lambda v: v.isoformat() if v else None}
+    )

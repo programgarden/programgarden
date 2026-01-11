@@ -7,7 +7,7 @@ n8n 스타일 credential 관리 시스템
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 
 
@@ -34,8 +34,7 @@ class CredentialField(BaseModel):
     description: Optional[str] = Field(default=None)
     options: Optional[List[str]] = Field(default=None, description="Options for SELECT type")
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class CredentialTypeSchema(BaseModel):
@@ -65,15 +64,15 @@ class Credential(BaseModel):
     
     # Encrypted data - in production, this would be encrypted with KMS
     # For testing, we store as plain dict (or base64 encoded)
-    data: Dict[str, Any] = Field(default_factory=dict, description="Credential data")
+    # For http_custom type, this can be a list of {type, key, value, label}
+    data: Any = Field(default_factory=dict, description="Credential data")
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
+    model_config = ConfigDict(
+        json_encoders={datetime: lambda v: v.isoformat() if v else None}
+    )
 
 
 # Built-in credential type schemas
@@ -182,6 +181,161 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
             ),
         ]
     ),
+    "postgres": CredentialTypeSchema(
+        type_id="postgres",
+        name="PostgreSQL",
+        description="PostgreSQL 데이터베이스 연결 정보",
+        icon="🐘",
+        fields=[
+            CredentialField(
+                key="host",
+                label="Host",
+                field_type=CredentialFieldType.STRING,
+                required=True,
+                description="데이터베이스 호스트 주소"
+            ),
+            CredentialField(
+                key="port",
+                label="Port",
+                field_type=CredentialFieldType.NUMBER,
+                required=False,
+                default=5432,
+                description="포트 번호"
+            ),
+            CredentialField(
+                key="database",
+                label="Database",
+                field_type=CredentialFieldType.STRING,
+                required=True,
+                description="데이터베이스 이름"
+            ),
+            CredentialField(
+                key="username",
+                label="Username",
+                field_type=CredentialFieldType.STRING,
+                required=True,
+                description="사용자 이름"
+            ),
+            CredentialField(
+                key="password",
+                label="Password",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="비밀번호"
+            ),
+            CredentialField(
+                key="ssl_enabled",
+                label="SSL Enabled",
+                field_type=CredentialFieldType.BOOLEAN,
+                required=False,
+                default=False,
+                description="SSL 연결 사용"
+            ),
+        ]
+    ),
+    # ============================================================
+    # HTTP Authentication Types (HTTPRequestNode용)
+    # ============================================================
+    "http_bearer": CredentialTypeSchema(
+        type_id="http_bearer",
+        name="HTTP Bearer Token",
+        description="Bearer Token 인증 (Authorization: Bearer <token>)",
+        icon="🔑",
+        fields=[
+            CredentialField(
+                key="token",
+                label="Bearer Token",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="Bearer Token 값"
+            ),
+        ]
+    ),
+    "http_header": CredentialTypeSchema(
+        type_id="http_header",
+        name="HTTP Header Auth",
+        description="커스텀 헤더 인증 (X-API-Key 등)",
+        icon="📋",
+        fields=[
+            CredentialField(
+                key="header_name",
+                label="Header Name",
+                field_type=CredentialFieldType.STRING,
+                required=True,
+                default="X-API-Key",
+                description="헤더 이름 (예: X-API-Key, Authorization)"
+            ),
+            CredentialField(
+                key="header_value",
+                label="Header Value",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="헤더 값 (API 키 등)"
+            ),
+        ]
+    ),
+    "http_basic": CredentialTypeSchema(
+        type_id="http_basic",
+        name="HTTP Basic Auth",
+        description="Basic Authentication (username:password)",
+        icon="👤",
+        fields=[
+            CredentialField(
+                key="username",
+                label="Username",
+                field_type=CredentialFieldType.STRING,
+                required=True,
+                description="사용자 이름"
+            ),
+            CredentialField(
+                key="password",
+                label="Password",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="비밀번호"
+            ),
+        ]
+    ),
+    "http_query": CredentialTypeSchema(
+        type_id="http_query",
+        name="HTTP Query Parameter Auth",
+        description="쿼리 파라미터 인증 (?api_key=xxx)",
+        icon="❓",
+        fields=[
+            CredentialField(
+                key="param_name",
+                label="Parameter Name",
+                field_type=CredentialFieldType.STRING,
+                required=True,
+                default="api_key",
+                description="쿼리 파라미터 이름"
+            ),
+            CredentialField(
+                key="param_value",
+                label="Parameter Value",
+                field_type=CredentialFieldType.PASSWORD,
+                required=True,
+                description="쿼리 파라미터 값"
+            ),
+        ]
+    ),
+    "http_custom": CredentialTypeSchema(
+        type_id="http_custom",
+        name="Custom HTTP Credential",
+        description="커스텀 HTTP 인증 - Headers, Query Params, Body에 사용할 값들을 자유롭게 정의. 워크플로우에는 credential_id만 저장되고, 실제 값은 서버에서 주입됩니다.",
+        icon="⚙️",
+        fields=[
+            # 이 필드들은 UI 힌트용 - 실제 데이터는 동적 key-value로 저장
+            CredentialField(
+                key="_ui_type",
+                label="UI Type",
+                field_type=CredentialFieldType.STRING,
+                required=False,
+                default="dynamic_sections",
+                description="UI 렌더링 타입 (internal)"
+            ),
+        ]
+    ),
 }
 
 
@@ -204,8 +358,7 @@ class AccountInfo(BaseModel):
     alias: Optional[str] = Field(default=None, description="계좌 별칭")
     is_default: bool = Field(default=False, description="기본 계좌 여부")
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class BrokerCredential(BaseModel):
@@ -256,10 +409,9 @@ class BrokerCredential(BaseModel):
         description="유효성 여부 (토큰 만료 등)",
     )
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
+    model_config = ConfigDict(
+        json_encoders={datetime: lambda v: v.isoformat() if v else None}
+    )
 
     def get_default_account(self, product: ProductType = None) -> Optional[AccountInfo]:
         """기본 계좌 반환"""
@@ -341,11 +493,10 @@ class DBCredential(BaseModel):
         description="유효성 여부",
     )
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
-        use_enum_values = True
+    model_config = ConfigDict(
+        json_encoders={datetime: lambda v: v.isoformat() if v else None},
+        use_enum_values=True
+    )
 
     def to_summary(self) -> Dict[str, Any]:
         """AI 에이전트용 요약 정보 (민감정보 마스킹)"""

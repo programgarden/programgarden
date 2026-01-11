@@ -128,22 +128,16 @@ def get_demo_workflow():
             },
         ],
         "edges": [
-            # === 초기 연결 (1회) ===
-            {"from": "start.start", "to": "broker"},
-            {"from": "broker.connected", "to": "account"},
-            
-            # === Backtest 브랜치 (1회 실행) ===
-            {"from": "account.symbols", "to": "historicalData.symbols"},
-            {"from": "account.positions", "to": "historicalData.positions"},  # market_code 전달
-            {"from": "historicalData.ohlcv_data", "to": "backtestEngine.ohlcv_data"},
-            {"from": "backtestEngine.equity_curve", "to": "displayBacktest.data"},
-            
-            # === Realtime PnL 브랜치 (반복) ===
-            {"from": "broker.connected", "to": "schedule"},
-            {"from": "schedule.trigger", "to": "realMarket"},
-            {"from": "account.symbols", "to": "realMarket.symbols"},
-            {"from": "realMarket.price_data", "to": "displayPnL.data"},
-            {"from": "account.positions", "to": "displayPnL.positions"},
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "historicalData"},
+            {"from": "historicalData", "to": "backtestEngine"},
+            {"from": "backtestEngine", "to": "displayBacktest"},
+            {"from": "broker", "to": "schedule"},
+            {"from": "schedule", "to": "realMarket"},
+            {"from": "account", "to": "realMarket"},
+            {"from": "realMarket", "to": "displayPnL"},
+            {"from": "account", "to": "displayPnL"},
         ],
     }
 

@@ -53,19 +53,15 @@ class ResolvedNode:
 
 
 class ResolvedEdge:
-    """Resolved edge (connection info)"""
+    """Resolved edge (execution order only)"""
 
     def __init__(
         self,
         from_node_id: str,
-        from_port: Optional[str],
         to_node_id: str,
-        to_port: Optional[str],
     ):
         self.from_node_id = from_node_id
-        self.from_port = from_port
         self.to_node_id = to_node_id
-        self.to_port = to_port
 
 
 class ResolvedWorkflow:
@@ -215,14 +211,12 @@ class WorkflowResolver:
             )
             resolved_nodes[node_id] = resolved_node
 
-        # Resolve edges
+        # Resolve edges (execution order only)
         resolved_edges: List[ResolvedEdge] = []
         for edge in workflow.edges:
             resolved_edge = ResolvedEdge(
                 from_node_id=edge.from_node_id,
-                from_port=edge.from_output_name,
                 to_node_id=edge.to_node_id,
-                to_port=edge.to_input_name,
             )
             resolved_edges.append(resolved_edge)
 

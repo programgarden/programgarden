@@ -6,7 +6,7 @@ ProgramGarden Core - Workflow 모델
 
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from enum import Enum
 
 from programgarden_core.models.edge import Edge
@@ -31,6 +31,37 @@ class WorkflowInput(BaseModel):
     required: bool = Field(default=True, description="필수 여부")
     default: Optional[Any] = Field(default=None, description="기본값")
     description: Optional[str] = Field(default=None, description="설명")
+
+
+class CredentialReference(BaseModel):
+    """
+    워크플로우 내 Credential 참조
+    
+    JSON 공유 시 data의 키만 포함하고 값은 비워둠.
+    Python 개발자가 직접 사용 시 data에 값을 채워 실행 가능.
+    
+    Example (공유용):
+        {
+            "type": "http_bearer",
+            "name": "OpenAI API",
+            "data": {"token": ""}
+        }
+    
+    Example (실행용):
+        {
+            "type": "http_bearer", 
+            "name": "OpenAI API",
+            "data": {"token": "sk-proj-xxx-actual-token"}
+        }
+    """
+    
+    type: str = Field(..., description="Credential 타입 (http_bearer, telegram 등)")
+    name: Optional[str] = Field(default=None, description="표시 이름")
+    description: Optional[str] = Field(default=None, description="설명")
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Credential 데이터 (공유 시 값 비움, 실행 시 값 채움)"
+    )
 
 
 class WorkflowDefinition(BaseModel):
@@ -77,6 +108,12 @@ class WorkflowDefinition(BaseModel):
         description="엣지(연결) 정의 목록",
     )
 
+    # Credential 참조 (워크플로우에서 사용하는 인증 정보)
+    credentials: Dict[str, CredentialReference] = Field(
+        default_factory=dict,
+        description="워크플로우에서 사용하는 Credential 정의 (credential_id → CredentialReference)",
+    )
+
     # 메타데이터
     tags: List[str] = Field(
         default_factory=list,
@@ -92,10 +129,9 @@ class WorkflowDefinition(BaseModel):
         description="수정 시간",
     )
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
+    model_config = ConfigDict(
+        json_encoders={datetime: lambda v: v.isoformat() if v else None}
+    )
 
     def get_node_ids(self) -> List[str]:
         """모든 노드 ID 반환"""
