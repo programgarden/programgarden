@@ -165,16 +165,16 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
     },
     {
       "id": "marketData",
-      "symbols": "{{ watchlist.symbols }}"
+      "symbols": "{{ nodes.watchlist.symbols }}"
     },
     {
       "id": "condition",
-      "price_data": "{{ marketData.price }}"
+      "price_data": "{{ nodes.marketData.price }}"
     },
     {
       "id": "order",
-      "symbol": "{{ condition.passed_symbols[0] }}",
-      "price": "{{ marketData.price * 0.99 }}"
+      "symbol": "{{ nodes.condition.passed_symbols[0] }}",
+      "price": "{{ nodes.marketData.price * 0.99 }}"
     }
   ],
   "edges": [
@@ -575,6 +575,7 @@ job = pg.run(
 
 ## 10. 다음 단계
 
+- [노드 레퍼런스 가이드](node_reference.md) - 모든 노드의 상세 설명
 - [비개발자 빠른 시작 가이드](non_dev_quick_guide.md) - 코딩 없이 자동매매 설정하기
 - [DSL 커스터마이징 가이드](custom_dsl.md) - 개발자용 플러그인 제작
 - [Logic 가이드](logic_guide.md) - 조건 조합 방법

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { ConfigField, Credential, CredentialTypeSchema } from '@/types/workflow';
 import { Plus, X, Lock, Key } from 'lucide-react';
+import SymbolEditor from './SymbolEditor';
 
 // 민감한 헤더 키 목록 (대소문자 무시)
 const SENSITIVE_HEADER_KEYS = [
@@ -39,6 +40,9 @@ interface BindableFieldProps {
   onOpenCredentialModal?: (initialType?: string) => void;
   credentialLoading?: boolean;
   requiredCredentialType?: string;
+  // WatchlistNode 관련 (symbol_editor용)
+  nodeData?: Record<string, unknown>;
+  onNodeDataChange?: (key: string, value: unknown) => void;
 }
 
 export default function BindableField({ 
@@ -53,6 +57,8 @@ export default function BindableField({
   onOpenCredentialModal,
   credentialLoading,
   requiredCredentialType,
+  nodeData,
+  onNodeDataChange,
 }: BindableFieldProps) {
   const [isExpression, setIsExpression] = useState(() => {
     return typeof value === 'string' && value.startsWith('{{');
@@ -201,6 +207,41 @@ export default function BindableField({
     );
   }
   
+  // ENUM 타입 (드롭다운)
+  if (schema?.type === 'enum' && schema?.enum_values && schema.enum_values.length > 0) {
+    // 한글 라벨 매핑
+    const enumLabels: Record<string, string> = {
+      'overseas_stock': '해외주식',
+      'overseas_futures': '해외선물',
+      'domestic_stock': '국내주식',
+      'domestic_futures': '국내선물',
+    };
+    
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-gray-400 capitalize">{label}</label>
+          {schema?.required && <span className="text-red-400 text-xs">*</span>}
+        </div>
+        {/* Field Description */}
+        {schema?.description && (
+          <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
+        )}
+        <select
+          value={String(value ?? schema.default ?? '')}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+        >
+          {schema.enum_values.map((enumValue) => (
+            <option key={enumValue} value={enumValue}>
+              {enumLabels[enumValue] || enumValue}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+  
   // Number 타입
   if (schema?.type === 'number' || schema?.type === 'integer') {
     return (
@@ -241,7 +282,7 @@ export default function BindableField({
             onChange={(e) => onChange(e.target.value)}
             onFocus={onFocus}
             className="w-full px-3 py-1.5 rounded text-sm focus:outline-none focus:ring-1 bg-orange-900/30 border border-orange-600 text-orange-300 font-mono focus:ring-orange-500"
-            placeholder="{{ nodeId.field }}"
+            placeholder="{{ nodes.nodeId.field }}"
           />
         ) : (
           <input
@@ -269,9 +310,32 @@ export default function BindableField({
     );
   }
   
-  // Array/Object 타입 - JSON 에디터
+  // Symbol Editor (WatchlistNode용)
+  if (schema?.ui_component === 'symbol_editor') {
+    // nodeData에서 product 정보 추출 (BrokerNode 연동 시)
+    const product = nodeData?.product as string | undefined;
+    
+    return (
+      <div>
+        <label className="block text-xs text-gray-400 mb-2 capitalize">{label}</label>
+        <SymbolEditor
+          value={(value as Array<{exchange: string; symbol: string}>) || []}
+          onChange={(newValue) => onChange(newValue)}
+          product={product}
+          onProductChange={onNodeDataChange ? (p) => onNodeDataChange('product', p) : undefined}
+        />
+      </div>
+    );
+  }
+  
+  // Array/Object 타입 - JSON 에디터 또는 표현식
   if (schema?.type === 'array' || schema?.type === 'object') {
-    const jsonValue = typeof value === 'object' ? JSON.stringify(value, null, 2) : '[]';
+    // 표현식인지 확인
+    const isExpr = typeof value === 'string' && value.startsWith('{{');
+    const displayValue = isExpr 
+      ? value 
+      : (typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value || '[]'));
+    
     return (
       <div
         onDragOver={handleDragOver}
@@ -289,16 +353,25 @@ export default function BindableField({
         )}
         <textarea
           ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-          value={jsonValue}
+          defaultValue={displayValue}
           rows={3}
-          onChange={(e) => {
+          onBlur={(e) => {
+            const val = e.target.value.trim();
+            // 표현식이면 그대로 저장
+            if (val.startsWith('{{')) {
+              onChange(val);
+              return;
+            }
+            // JSON 파싱 시도
             try {
-              const parsed = JSON.parse(e.target.value);
+              const parsed = JSON.parse(val);
               onChange(parsed);
             } catch {
-              // Invalid JSON, keep as string
+              // 파싱 실패시 문자열로 저장
+              onChange(val);
             }
           }}
+          onClick={onFocus}
           onFocus={onFocus}
           className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500 font-mono"
         />
@@ -544,7 +617,7 @@ export default function BindableField({
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}
-        placeholder={isExpression ? '{{ nodeId.field }}' : undefined}
+        placeholder={isExpression ? '{{ nodes.nodeId.field }}' : undefined}
         className={`w-full px-3 py-1.5 rounded text-sm focus:outline-none focus:ring-1 transition-colors ${
           isExpression 
             ? 'bg-orange-900/30 border border-orange-600 text-orange-300 font-mono focus:ring-orange-500'

@@ -18,7 +18,7 @@ function NodeDataTree({ nodeId, nodeLabel, data, onFieldClick }: NodeDataTreePro
       
       <FieldTree
         data={data}
-        path={nodeId}
+        path={`nodes.${nodeId}`}
         onFieldClick={onFieldClick}
       />
     </div>

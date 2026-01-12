@@ -61,13 +61,15 @@ class ExpressionContext:
         """표현식에서 사용할 변수 딕셔너리 생성"""
         result = {}
 
-        # 노드 출력 추가 (node_id로 직접 접근 가능)
+        # 노드 출력 추가 (nodes.node_id로 접근)
+        nodes_dict = {}
         for node_id, outputs in self.node_outputs.items():
             # 단일 출력이면 직접 값으로, 여러 출력이면 dict로
             if len(outputs) == 1:
-                result[node_id] = list(outputs.values())[0]
+                nodes_dict[node_id] = list(outputs.values())[0]
             else:
-                result[node_id] = outputs
+                nodes_dict[node_id] = outputs
+        result["nodes"] = nodes_dict
 
         # 현재 컨텍스트
         if self.current_symbol:

@@ -77,7 +77,7 @@ def get_workflow():
                 "url": "https://webhook.example.com/notify",
                 "body": {
                     "event": "price_alert",
-                    "price": "{{ public_api.response.bitcoin.usd }}",
+                    "price": "{{ nodes.public_api.response.bitcoin.usd }}",
                     "message": "Bitcoin price updated"
                 },
                 # Headers는 UI에서 추가:
@@ -96,7 +96,7 @@ def get_workflow():
                 
                 "chart_type": "table",
                 "title": "API 응답 결과",
-                "data": "{{ public_api.response }}",
+                "data": "{{ nodes.public_api.response }}",
             },
         ],
         
