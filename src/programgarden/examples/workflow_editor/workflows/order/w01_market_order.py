@@ -34,7 +34,7 @@ def get_workflow():
                 "id": "watchlist",
                 "type": "WatchlistNode",
                 "category": "symbol",
-                "symbols": ["AAPL"],
+                "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
                 "position": {"x": 600, "y": 100},
             },
             {

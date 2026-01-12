@@ -67,6 +67,38 @@ class MarketDataNode(BaseNode):
         OutputPort(name="ohlcv", type="ohlcv_data", description="i18n:ports.ohlcv_data"),
     ]
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 조회 설정 ===
+            "fields": FieldSchema(
+                name="fields",
+                type=FieldType.ARRAY,
+                description="Fields to query",
+                default=["price", "volume", "ohlcv"],
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "period": FieldSchema(
+                name="period",
+                type=FieldType.STRING,
+                description="Period for OHLCV (1d, 1h, 5m)",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "count": FieldSchema(
+                name="count",
+                type=FieldType.INTEGER,
+                description="Number of data points",
+                default=100,
+                min_value=1,
+                max_value=1000,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
+
 
 class AggregationType(str):
     """집계 함수 타입"""
@@ -164,6 +196,67 @@ class SQLiteNode(BaseNode):
         ),
     ]
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 스토리지 설정 ===
+            "db_path": FieldSchema(
+                name="db_path",
+                type=FieldType.STRING,
+                description="SQLite DB file path",
+                default="./programgarden_storage.db",
+                category=FieldCategory.PARAMETERS,
+            ),
+            "table": FieldSchema(
+                name="table",
+                type=FieldType.STRING,
+                description="Table name",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "key_fields": FieldSchema(
+                name="key_fields",
+                type=FieldType.ARRAY,
+                description="Primary key fields (e.g., ['symbol'])",
+                required=True,
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "save_fields": FieldSchema(
+                name="save_fields",
+                type=FieldType.ARRAY,
+                description="Fields to save",
+                required=True,
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "aggregations": FieldSchema(
+                name="aggregations",
+                type=FieldType.OBJECT,
+                description="Aggregation functions per field (e.g., {'peak_price': 'max'})",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 동기화 설정 ===
+            "sync_interval_ms": FieldSchema(
+                name="sync_interval_ms",
+                type=FieldType.INTEGER,
+                description="DB sync interval (milliseconds)",
+                default=1000,
+                min_value=100,
+                category=FieldCategory.SETTINGS,
+            ),
+            "sync_on_change_count": FieldSchema(
+                name="sync_on_change_count",
+                type=FieldType.INTEGER,
+                description="Sync when N changes occur",
+                default=10,
+                min_value=1,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
+
 
 class PostgresNode(BaseNode):
     """
@@ -232,6 +325,82 @@ class PostgresNode(BaseNode):
         OutputPort(name="loaded", type="any", description="i18n:ports.loaded_data"),
         OutputPort(name="query_result", type="any", description="i18n:ports.query_result"),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 스토리지 설정 ===
+            "credential_id": FieldSchema(
+                name="credential_id",
+                type=FieldType.CREDENTIAL,
+                description="PostgreSQL credential ID",
+                credential_types=["postgres"],
+                category=FieldCategory.PARAMETERS,
+            ),
+            "table": FieldSchema(
+                name="table",
+                type=FieldType.STRING,
+                description="Table name",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "schema_name": FieldSchema(
+                name="schema_name",
+                type=FieldType.STRING,
+                description="Schema name",
+                default="public",
+                category=FieldCategory.PARAMETERS,
+            ),
+            "key_fields": FieldSchema(
+                name="key_fields",
+                type=FieldType.ARRAY,
+                description="Primary key fields",
+                required=True,
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "save_fields": FieldSchema(
+                name="save_fields",
+                type=FieldType.ARRAY,
+                description="Fields to save",
+                required=True,
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "aggregations": FieldSchema(
+                name="aggregations",
+                type=FieldType.OBJECT,
+                description="Aggregation functions per field",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 연결/동기화 설정 ===
+            "sync_interval_ms": FieldSchema(
+                name="sync_interval_ms",
+                type=FieldType.INTEGER,
+                description="DB sync interval (milliseconds)",
+                default=1000,
+                min_value=100,
+                category=FieldCategory.SETTINGS,
+            ),
+            "sync_on_change_count": FieldSchema(
+                name="sync_on_change_count",
+                type=FieldType.INTEGER,
+                description="Sync when N changes occur",
+                default=10,
+                min_value=1,
+                category=FieldCategory.SETTINGS,
+            ),
+            "connection_timeout": FieldSchema(
+                name="connection_timeout",
+                type=FieldType.INTEGER,
+                description="Connection timeout (seconds)",
+                default=30,
+                min_value=5,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
 
 
 class HTTPRequestNode(BaseNode):

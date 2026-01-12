@@ -16,7 +16,7 @@ def get_workflow():
                 {"type": "daily_loss_percent", "threshold": -3, "action": "stop_trading"},
                 {"type": "max_positions", "threshold": 10, "action": "no_new_orders"},
             ], "position": {"x": 800, "y": 350}},
-            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["AAPL"], "position": {"x": 600, "y": 150}},
+            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}], "position": {"x": 600, "y": 150}},
             {"id": "marketData", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 800, "y": 150}},
             {"id": "condition", "type": "ConditionNode", "category": "condition", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"}, "position": {"x": 1000, "y": 150}},
             {"id": "order", "type": "NewOrderNode", "category": "order", "plugin": "MarketOrder", "fields": {"side": "buy"}, "position": {"x": 1200, "y": 150}},

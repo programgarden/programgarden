@@ -7,8 +7,11 @@ Job control nodes:
 - JobControlNode: Job state control
 """
 
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -73,6 +76,45 @@ class DeployNode(BaseNode):
         ),
     ]
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 배포 설정 ===
+            "mode": FieldSchema(
+                name="mode",
+                type=FieldType.ENUM,
+                description="Deployment mode",
+                default="paper",
+                enum_values=["live", "paper", "dry_run"],
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "paper_trading": FieldSchema(
+                name="paper_trading",
+                type=FieldType.BOOLEAN,
+                description="Paper trading flag",
+                default=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "schedule_type": FieldSchema(
+                name="schedule_type",
+                type=FieldType.ENUM,
+                description="Deployment timing",
+                default="immediate",
+                enum_values=["immediate", "scheduled"],
+                category=FieldCategory.SETTINGS,
+            ),
+            "scheduled_time": FieldSchema(
+                name="scheduled_time",
+                type=FieldType.STRING,
+                description="Scheduled time (ISO 8601)",
+                required=False,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
+
 
 class TradingHaltNode(BaseNode):
     """
@@ -119,6 +161,36 @@ class TradingHaltNode(BaseNode):
         ),
     ]
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 설정 ===
+            "duration_hours": FieldSchema(
+                name="duration_hours",
+                type=FieldType.NUMBER,
+                description="Halt duration (hours)",
+                default=24,
+                min_value=0.1,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "reason": FieldSchema(
+                name="reason",
+                type=FieldType.STRING,
+                description="Halt reason",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "resume_condition": FieldSchema(
+                name="resume_condition",
+                type=FieldType.STRING,
+                description="Resume condition (e.g., 'next_trading_day')",
+                required=False,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
+
 
 class JobControlNode(BaseNode):
     """
@@ -159,3 +231,25 @@ class JobControlNode(BaseNode):
             description="New Job state",
         ),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 모두 핵심 제어 설정 ===
+            "action": FieldSchema(
+                name="action",
+                type=FieldType.ENUM,
+                description="Control action",
+                enum_values=["pause", "resume", "stop", "restart"],
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "target_job_id": FieldSchema(
+                name="target_job_id",
+                type=FieldType.STRING,
+                description="Target Job ID (None for current Job)",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+        }

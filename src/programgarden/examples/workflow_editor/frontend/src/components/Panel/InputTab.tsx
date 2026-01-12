@@ -5,9 +5,15 @@ interface InputTabProps {
   inputData: Record<string, unknown>;
   upstreamNodes: Node[];
   onFieldClick: (expression: string) => void;
+  targetField: string | null;  // 현재 포커스된 필드
 }
 
-export default function InputTab({ inputData, upstreamNodes, onFieldClick }: InputTabProps) {
+export default function InputTab({ 
+  inputData, 
+  upstreamNodes, 
+  onFieldClick,
+  targetField,
+}: InputTabProps) {
   if (Object.keys(inputData).length === 0) {
     return (
       <div className="text-gray-500 text-center py-8">
@@ -19,9 +25,20 @@ export default function InputTab({ inputData, upstreamNodes, onFieldClick }: Inp
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-gray-400">
-        💡 Drag fields to Settings tab, or click to copy expression
-      </p>
+      {/* 현재 포커스된 필드 표시 */}
+      {targetField ? (
+        <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-3">
+          <p className="text-xs text-blue-300">
+            🎯 Click a value to insert into <span className="font-bold text-blue-200">"{targetField}"</span>
+          </p>
+        </div>
+      ) : (
+        <div className="bg-gray-700/30 rounded-lg p-3">
+          <p className="text-xs text-gray-400">
+            💡 First, click a field in Parameters/Settings tab, then come back here to select a value
+          </p>
+        </div>
+      )}
 
       {upstreamNodes.map((node) => {
         const nodeData = inputData[node.id];

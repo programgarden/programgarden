@@ -9,10 +9,11 @@ Workflow execution context protocol
 - Persistent node lifecycle management
 """
 
-from typing import Optional, Dict, Any, List, Protocol, runtime_checkable, Callable, Awaitable, TYPE_CHECKING
+from typing import Optional, Dict, Any, List, Protocol, runtime_checkable, Callable, Awaitable, TYPE_CHECKING, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from collections import deque
 import asyncio
 import logging
 
@@ -134,6 +135,9 @@ class ExecutionContext:
         workflow_inputs: Optional[Dict[str, Any]] = None,
         workflow_credentials: Optional[Dict[str, Any]] = None,
         resource_context: Optional[Any] = None,  # ResourceContext (lazy import)
+        # DAG 탐색용 워크플로우 구조 정보
+        workflow_edges: Optional[List[Any]] = None,  # List[ResolvedEdge]
+        workflow_nodes: Optional[Dict[str, Any]] = None,  # Dict[str, ResolvedNode]
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id
@@ -189,6 +193,144 @@ class ExecutionContext:
         
         # === New: Resource Context (for CPU/RAM/Disk throttling) ===
         self._resource_context = resource_context
+        
+        # === New: DAG index for ancestor propagation ===
+        # Reverse adjacency list: {to_node: [from_nodes]}
+        self._reverse_adj: Dict[str, List[str]] = {}
+        # Node type mapping: {node_id: node_type}
+        self._node_types: Dict[str, str] = {}
+        self._build_dag_index(workflow_edges, workflow_nodes)
+
+    # === DAG Index Building ===
+
+    def _build_dag_index(
+        self,
+        edges: Optional[List[Any]],
+        nodes: Optional[Dict[str, Any]],
+    ) -> None:
+        """
+        Build reverse adjacency list from edges and node type mapping.
+        
+        This enables efficient BFS traversal to find ancestor nodes.
+        
+        Args:
+            edges: List of ResolvedEdge or dict with from/to keys
+            nodes: Dict of node_id -> ResolvedNode or dict with type key
+        """
+        if edges:
+            for edge in edges:
+                # ResolvedEdge 또는 dict 형태 모두 처리
+                if hasattr(edge, 'from_node_id'):
+                    from_node = edge.from_node_id
+                    to_node = edge.to_node_id
+                else:
+                    from_node = edge.get("from") or edge.get("from_node_id")
+                    to_node = edge.get("to") or edge.get("to_node_id")
+                
+                if to_node and from_node:
+                    if to_node not in self._reverse_adj:
+                        self._reverse_adj[to_node] = []
+                    self._reverse_adj[to_node].append(from_node)
+        
+        if nodes:
+            for node_id, node_data in nodes.items():
+                # ResolvedNode 또는 dict 형태 모두 처리
+                if hasattr(node_data, 'node_type'):
+                    self._node_types[node_id] = node_data.node_type
+                else:
+                    self._node_types[node_id] = node_data.get("type", "")
+
+    # === DAG Ancestor Propagation ===
+
+    def find_parent_outputs(
+        self,
+        current_node_id: str,
+        target_node_type: str,
+    ) -> List[Tuple[str, int, Dict[str, Any]]]:
+        """
+        Find all ancestor nodes of a specific type using BFS.
+        
+        Traverses the DAG backwards from current_node_id to find all
+        nodes of target_node_type, returning them sorted by distance.
+        
+        Args:
+            current_node_id: The node to search from
+            target_node_type: The node type to find (e.g., "BrokerNode")
+            
+        Returns:
+            List of (node_id, distance, outputs) tuples, sorted by distance.
+            Empty list if no matching ancestors found.
+            
+        Example:
+            brokers = context.find_parent_outputs("watchlist", "BrokerNode")
+            for node_id, dist, outputs in brokers:
+                print(f"{node_id} (거리 {dist}): {outputs.get('product')}")
+        """
+        # DAG 인덱스가 없으면 기존 방식 fallback
+        if not self._reverse_adj:
+            legacy_result = self.get_upstream_output(target_node_type)
+            if legacy_result:
+                return [("unknown", 0, legacy_result)]
+            return []
+        
+        results: List[Tuple[str, int, Dict[str, Any]]] = []
+        found_nodes: set = set()  # 이미 결과에 추가된 노드 추적
+        visited = set()
+        queue = deque([(current_node_id, 0)])  # (node_id, distance)
+        
+        while queue:
+            node_id, distance = queue.popleft()
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            
+            # 이 노드의 상위 노드들 확인
+            for parent_id in self._reverse_adj.get(node_id, []):
+                parent_distance = distance + 1
+                
+                # 타입 매칭되고 아직 결과에 없으면 추가
+                if self._node_types.get(parent_id) == target_node_type:
+                    if parent_id not in found_nodes:
+                        outputs = self._outputs.get(parent_id, {})
+                        if outputs:
+                            output_dict = {port: out.value for port, out in outputs.items()}
+                            results.append((parent_id, parent_distance, output_dict))
+                            found_nodes.add(parent_id)
+                
+                # 계속 탐색 (찾아도 멈추지 않고 더 상위로)
+                if parent_id not in visited:
+                    queue.append((parent_id, parent_distance))
+        
+        # 거리순 정렬
+        results.sort(key=lambda x: x[1])
+        return results
+
+    def find_parent_output(
+        self,
+        current_node_id: str,
+        target_node_type: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find the closest ancestor node output (convenience method).
+        
+        Returns only the outputs of the closest matching ancestor.
+        If multiple nodes are at the same distance, returns the first one.
+        Use find_parent_outputs() if you need all ancestors.
+        
+        Args:
+            current_node_id: The node to search from
+            target_node_type: The node type to find (e.g., "BrokerNode")
+            
+        Returns:
+            Output dict of the closest ancestor, or None if not found.
+            
+        Example:
+            broker_info = context.find_parent_output("watchlist", "BrokerNode")
+            if broker_info:
+                product = broker_info.get("product")
+        """
+        results = self.find_parent_outputs(current_node_id, target_node_type)
+        return results[0][2] if results else None
 
     # === Provider Configuration ===
 
@@ -319,6 +461,38 @@ class ExecutionContext:
         """Get all outputs for a node as {port_name: value} dict"""
         node_outputs = self._outputs.get(node_id, {})
         return {port: output.value for port, output in node_outputs.items()}
+
+    def get_upstream_output(self, node_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Get output from upstream node by node type.
+        
+        .. deprecated::
+            Use `find_parent_outputs(current_node_id, target_node_type)` or
+            `find_parent_output(current_node_id, target_node_type)` instead.
+            This method uses name-based matching which is unreliable
+            when multiple nodes of the same type exist in the workflow.
+        
+        Searches all stored outputs for a node whose id contains the node type.
+        Returns the first matching node's outputs as a dict.
+        
+        Args:
+            node_type: Node type to search for (e.g., "BrokerNode")
+            
+        Returns:
+            Output dict if found, None otherwise
+        """
+        # node_id가 타입명을 포함하거나, 별도로 저장된 노드 타입 정보로 매칭
+        for node_id, outputs in self._outputs.items():
+            # 일반적인 패턴: node_id가 타입 기반이거나, 타입명을 포함
+            # 예: "broker", "BrokerNode", "broker_1" 등
+            node_id_lower = node_id.lower()
+            type_lower = node_type.lower().replace("node", "")
+            
+            if type_lower in node_id_lower or node_id.endswith(node_type):
+                # 모든 출력을 dict로 반환
+                return {port: output.value for port, output in outputs.items()}
+        
+        return None
 
     def get_input(
         self,

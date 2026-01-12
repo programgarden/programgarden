@@ -223,7 +223,6 @@
   "fields.BrokerNode.provider": "브로커 제공자",
   "fields.BrokerNode.product": "상품 유형 (해외주식/해외선물옵션)",
   "fields.BrokerNode.credential_id": "저장된 인증정보 선택",
-  "fields.BrokerNode.paper_trading": "모의투자 사용 (해외선물만 지원, 해외주식 미지원)",
 
   "fields.WatchlistNode.symbols": "종목 코드 리스트",
 

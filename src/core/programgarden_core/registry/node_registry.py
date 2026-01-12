@@ -248,8 +248,11 @@ class NodeTypeRegistry:
         # PluginNode 필드 (해당되는 경우)
         plugin_fields = {"plugin", "plugin_version", "params"}
 
-        # _field_schema가 있으면 우선 사용
+        # _field_schema가 있으면 우선 사용 (get_field_schema에 정의된 필드만 UI에 표시)
         field_schema_dict = node_class.get_field_schema() if hasattr(node_class, 'get_field_schema') else {}
+        
+        # get_field_schema가 있으면 그 필드만 사용, 없으면 model_fields 전체 사용
+        has_field_schema = bool(field_schema_dict)
 
         for field_name, field_info in model_fields.items():
             if field_name in base_fields:
@@ -257,6 +260,11 @@ class NodeTypeRegistry:
             
             # exclude=True인 필드는 스키마에서 제외 (credential에서 주입되는 필드)
             if field_info.exclude:
+                continue
+            
+            # get_field_schema가 정의되어 있고, 해당 필드가 없으면 스키마에서 제외
+            # (내부용 필드로 취급 - UI에 노출하지 않음)
+            if has_field_schema and field_name not in field_schema_dict:
                 continue
 
             # _field_schema에 정의가 있으면 사용
@@ -279,6 +287,12 @@ class NodeTypeRegistry:
                 # category 추가 (PARAMETERS/SETTINGS)
                 if fs.category is not None:
                     field_schema["category"] = fs.category.value if hasattr(fs.category, 'value') else str(fs.category)
+                # ui_component 추가 (symbol_editor 등)
+                if hasattr(fs, 'ui_component') and fs.ui_component:
+                    field_schema["ui_component"] = fs.ui_component
+                # ui_hint 추가
+                if hasattr(fs, 'ui_hint') and fs.ui_hint:
+                    field_schema["ui_hint"] = fs.ui_hint
             else:
                 # Pydantic 필드에서 추출
                 field_type = str(field_info.annotation) if field_info.annotation else "any"

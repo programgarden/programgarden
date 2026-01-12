@@ -5,8 +5,11 @@ Visualization node:
 - DisplayNode: Chart/table visualization
 """
 
-from typing import Optional, List, Literal, Dict, Any
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -85,3 +88,30 @@ class DisplayNode(BaseNode):
             description="Render complete signal",
         ),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === INTERNAL: 자동 감지되는 내부 설정 (사용자에게 숨겨짐) ===
+            # chart_type과 title은 데이터 형태에 따라 자동 결정됨
+            # === SETTINGS: 부가 설정 ===
+            "width": FieldSchema(
+                name="width",
+                type=FieldType.INTEGER,
+                description="Node width (px)",
+                default=300,
+                min_value=200,
+                max_value=800,
+                category=FieldCategory.SETTINGS,
+            ),
+            "height": FieldSchema(
+                name="height",
+                type=FieldType.INTEGER,
+                description="Node height (px)",
+                default=200,
+                min_value=150,
+                max_value=600,
+                category=FieldCategory.SETTINGS,
+            ),
+        }

@@ -13,7 +13,7 @@ def get_workflow():
             {"id": "schedule", "type": "ScheduleNode", "category": "trigger", "cron": "*/30 * * * * *", "timezone": "America/New_York", "position": {"x": 400, "y": 200}},
             {"id": "hoursFilter", "type": "TradingHoursFilterNode", "category": "trigger", "market": "NYSE", "session": "regular", "timezone": "America/New_York", "position": {"x": 600, "y": 100}},
             {"id": "exchangeStatus", "type": "ExchangeStatusNode", "category": "trigger", "exchange": "NYSE", "check_holidays": True, "position": {"x": 600, "y": 300}},
-            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["AAPL"], "position": {"x": 800, "y": 200}},
+            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}], "position": {"x": 800, "y": 200}},
             {"id": "marketData", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 1000, "y": 200}},
             {"id": "condition", "type": "ConditionNode", "category": "condition", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"}, "position": {"x": 1200, "y": 200}},
             {"id": "order", "type": "NewOrderNode", "category": "order", "plugin": "MarketOrder", "fields": {"side": "buy"}, "position": {"x": 1400, "y": 200}},

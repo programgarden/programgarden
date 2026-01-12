@@ -100,9 +100,27 @@ class BaseNode(BaseModel):
         return True
 
     @classmethod
-    def get_field_schema(cls) -> Dict[str, FieldSchema]:
-        """노드의 설정 가능한 필드 스키마 반환"""
-        return cls._field_schema
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        """
+        노드의 설정 가능한 필드 스키마 반환 (UI 렌더링용)
+        
+        서브클래스에서 오버라이드하여 PARAMETERS/SETTINGS 카테고리 구분.
+        
+        Returns:
+            Dict[str, FieldSchema]: 필드명 → 스키마 매핑
+            
+        Example:
+            @classmethod
+            def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+                from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+                return {
+                    "url": FieldSchema(name="url", type=FieldType.STRING, 
+                        category=FieldCategory.PARAMETERS),
+                    "timeout": FieldSchema(name="timeout", type=FieldType.INTEGER,
+                        category=FieldCategory.SETTINGS),
+                }
+        """
+        return {}
 
 
 class PluginNode(BaseNode):

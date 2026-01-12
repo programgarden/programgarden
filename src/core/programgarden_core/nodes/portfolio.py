@@ -5,8 +5,11 @@ ProgramGarden Core - Portfolio Node
 - PortfolioNode: 멀티 전략 자본 관리, 리밸런싱 (백테스트 + 실거래 공용)
 """
 
-from typing import Optional, List, Literal, Dict, Any, ClassVar
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -14,7 +17,6 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
-from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class PortfolioNode(BaseNode):
@@ -150,94 +152,106 @@ class PortfolioNode(BaseNode):
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 필드 스키마 (클라이언트 UI용)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    _field_schema: ClassVar[Dict[str, FieldSchema]] = {
-        "total_capital": FieldSchema(
-            name="total_capital",
-            type=FieldType.NUMBER,
-            description="i18n:fields.PortfolioNode.total_capital",
-            default=100000.0,
-            required=False,
-            min_value=0,
-            bindable=True,
-            expression_enabled=True,
-            group="basic",
-            # 조건부 비활성화: 상위 포트폴리오에서 연결되면 자동 계산됨
-            disabled_when="has_incoming_portfolio_edge",
-            override_source="parent_portfolio.allocation * parent_portfolio.total_capital",
-            ui_hint="inherited_when_child",
-        ),
-        "allocation_method": FieldSchema(
-            name="allocation_method",
-            type=FieldType.ENUM,
-            description="i18n:fields.PortfolioNode.allocation_method",
-            default="equal",
-            enum_values=["equal", "custom", "risk_parity", "momentum"],
-            required=True,
-            bindable=False,
-            group="allocation",
-        ),
-        "custom_allocations": FieldSchema(
-            name="custom_allocations",
-            type=FieldType.OBJECT,
-            description="i18n:fields.PortfolioNode.custom_allocations",
-            required=False,
-            bindable=False,
-            group="allocation",
-            ui_component="key_value_editor",
-            ui_hint="show_when_allocation_method_is_custom",
-        ),
-        "rebalance_rule": FieldSchema(
-            name="rebalance_rule",
-            type=FieldType.ENUM,
-            description="i18n:fields.PortfolioNode.rebalance_rule",
-            default="none",
-            enum_values=["none", "periodic", "drift", "both"],
-            required=True,
-            bindable=False,
-            group="rebalancing",
-        ),
-        "rebalance_frequency": FieldSchema(
-            name="rebalance_frequency",
-            type=FieldType.ENUM,
-            description="i18n:fields.PortfolioNode.rebalance_frequency",
-            enum_values=["daily", "weekly", "monthly", "quarterly"],
-            required=False,
-            bindable=False,
-            group="rebalancing",
-            ui_hint="show_when_rebalance_rule_is_periodic_or_both",
-        ),
-        "drift_threshold": FieldSchema(
-            name="drift_threshold",
-            type=FieldType.NUMBER,
-            description="i18n:fields.PortfolioNode.drift_threshold",
-            default=5.0,
-            min_value=0.1,
-            max_value=50.0,
-            required=False,
-            bindable=True,
-            expression_enabled=True,
-            group="rebalancing",
-            ui_hint="show_when_rebalance_rule_is_drift_or_both",
-        ),
-        "capital_sharing": FieldSchema(
-            name="capital_sharing",
-            type=FieldType.BOOLEAN,
-            description="i18n:fields.PortfolioNode.capital_sharing",
-            default=True,
-            required=False,
-            bindable=False,
-            group="capital",
-        ),
-        "reserve_percent": FieldSchema(
-            name="reserve_percent",
-            type=FieldType.NUMBER,
-            description="i18n:fields.PortfolioNode.reserve_percent",
-            default=0.0,
-            min_value=0,
-            max_value=100,
-            required=False,
-            bindable=True,
-            expression_enabled=True,
-            group="capital",
-        ),
-    }
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 자본 배분 설정 ===
+            "total_capital": FieldSchema(
+                name="total_capital",
+                type=FieldType.NUMBER,
+                description="i18n:fields.PortfolioNode.total_capital",
+                default=100000.0,
+                required=False,
+                min_value=0,
+                bindable=True,
+                expression_enabled=True,
+                group="basic",
+                disabled_when="has_incoming_portfolio_edge",
+                override_source="parent_portfolio.allocation * parent_portfolio.total_capital",
+                ui_hint="inherited_when_child",
+                category=FieldCategory.PARAMETERS,
+            ),
+            "allocation_method": FieldSchema(
+                name="allocation_method",
+                type=FieldType.ENUM,
+                description="i18n:fields.PortfolioNode.allocation_method",
+                default="equal",
+                enum_values=["equal", "custom", "risk_parity", "momentum"],
+                required=True,
+                bindable=False,
+                group="allocation",
+                category=FieldCategory.PARAMETERS,
+            ),
+            "custom_allocations": FieldSchema(
+                name="custom_allocations",
+                type=FieldType.OBJECT,
+                description="i18n:fields.PortfolioNode.custom_allocations",
+                required=False,
+                bindable=False,
+                group="allocation",
+                ui_component="key_value_editor",
+                ui_hint="show_when_allocation_method_is_custom",
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 리밸런싱 및 자본 관리 부가 설정 ===
+            "rebalance_rule": FieldSchema(
+                name="rebalance_rule",
+                type=FieldType.ENUM,
+                description="i18n:fields.PortfolioNode.rebalance_rule",
+                default="none",
+                enum_values=["none", "periodic", "drift", "both"],
+                required=True,
+                bindable=False,
+                group="rebalancing",
+                category=FieldCategory.SETTINGS,
+            ),
+            "rebalance_frequency": FieldSchema(
+                name="rebalance_frequency",
+                type=FieldType.ENUM,
+                description="i18n:fields.PortfolioNode.rebalance_frequency",
+                enum_values=["daily", "weekly", "monthly", "quarterly"],
+                required=False,
+                bindable=False,
+                group="rebalancing",
+                ui_hint="show_when_rebalance_rule_is_periodic_or_both",
+                category=FieldCategory.SETTINGS,
+            ),
+            "drift_threshold": FieldSchema(
+                name="drift_threshold",
+                type=FieldType.NUMBER,
+                description="i18n:fields.PortfolioNode.drift_threshold",
+                default=5.0,
+                min_value=0.1,
+                max_value=50.0,
+                required=False,
+                bindable=True,
+                expression_enabled=True,
+                group="rebalancing",
+                ui_hint="show_when_rebalance_rule_is_drift_or_both",
+                category=FieldCategory.SETTINGS,
+            ),
+            "capital_sharing": FieldSchema(
+                name="capital_sharing",
+                type=FieldType.BOOLEAN,
+                description="i18n:fields.PortfolioNode.capital_sharing",
+                default=True,
+                required=False,
+                bindable=False,
+                group="capital",
+                category=FieldCategory.SETTINGS,
+            ),
+            "reserve_percent": FieldSchema(
+                name="reserve_percent",
+                type=FieldType.NUMBER,
+                description="i18n:fields.PortfolioNode.reserve_percent",
+                default=0.0,
+                min_value=0,
+                max_value=100,
+                required=False,
+                bindable=True,
+                expression_enabled=True,
+                group="capital",
+                category=FieldCategory.SETTINGS,
+            ),
+        }

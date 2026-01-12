@@ -20,7 +20,7 @@ def get_workflow():
             {"id": "start", "type": "StartNode", "category": "infra", "position": {"x": 50, "y": 300}},
             {"id": "broker", "type": "BrokerNode", "category": "infra", "provider": "ls-sec.co.kr", "product": "overseas_stock", "position": {"x": 200, "y": 300}},
             # === SYMBOL ===
-            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["AAPL", "TSLA", "NVDA"], "position": {"x": 200, "y": 500}},
+            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}, {"exchange": "NASDAQ", "symbol": "NVDA"}], "position": {"x": 200, "y": 500}},
             # === REALTIME ===
             {"id": "realAccount", "type": "RealAccountNode", "category": "realtime", "sync_interval_sec": 60, "position": {"x": 400, "y": 200}},
             {"id": "realMarket", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 400, "y": 400}},

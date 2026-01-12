@@ -80,7 +80,7 @@ function DisplayNodeComponent({ id, data, selected }: NodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          id="data"
+          id="input"
           className="!w-3 !h-3 !bg-blue-400 hover:!bg-blue-300 !border-2 !border-gray-600"
           style={{ top: '50%' }}
           title="data (any)"
@@ -104,9 +104,9 @@ function DisplayNodeComponent({ id, data, selected }: NodeProps) {
           className="p-2 bg-gray-900/50 flex-1"
           style={{ height: 'calc(100% - 32px)' }}
         >
-          {displayData?.data ? (
+          {displayData?.data && (Array.isArray(displayData.data) ? displayData.data.length > 0 : Object.keys(displayData.data).length > 0) ? (
             <ChartRenderer
-              type={chartType}
+              type={displayData.chartType || chartType}
               data={displayData.data}
               xLabel={nodeData.x_label}
               yLabel={nodeData.y_label}

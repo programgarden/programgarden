@@ -7,8 +7,11 @@ Realtime stream nodes:
 - RealOrderEventNode: Realtime order events
 """
 
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -52,13 +55,52 @@ class RealMarketDataNode(BaseNode):
         ),
     ]
     _outputs: List[OutputPort] = [
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.subscribed_symbols"),
         OutputPort(name="price", type="market_data", description="i18n:ports.price_data"),
         OutputPort(
             name="volume", type="market_data", description="i18n:ports.volume_data"
         ),
         OutputPort(name="bid", type="market_data", description="i18n:ports.bid"),
         OutputPort(name="ask", type="market_data", description="i18n:ports.ask"),
+        OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full"),
     ]
+
+    # Symbols config field (optional - can also receive from input port)
+    symbols: List[str] = Field(
+        default=[],
+        description="Symbols to subscribe. If empty, uses input port value.",
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 설정 ===
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbols to subscribe (e.g., AAPL, TSLA). If empty, uses input port.",
+                default=[],
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "fields": FieldSchema(
+                name="fields",
+                type=FieldType.ARRAY,
+                description="Fields to receive (price, volume, bid, ask)",
+                default=["price", "volume"],
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "stay_connected": FieldSchema(
+                name="stay_connected",
+                type=FieldType.BOOLEAN,
+                description="Keep WebSocket connection alive",
+                default=True,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
 
 
 class RealAccountNode(BaseNode):
@@ -114,6 +156,29 @@ class RealAccountNode(BaseNode):
             description="i18n:ports.positions",
         ),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === SETTINGS: 모두 부가 설정 ===
+            "stay_connected": FieldSchema(
+                name="stay_connected",
+                type=FieldType.BOOLEAN,
+                description="Keep WebSocket connection alive",
+                default=True,
+                category=FieldCategory.SETTINGS,
+            ),
+            "sync_interval_sec": FieldSchema(
+                name="sync_interval_sec",
+                type=FieldType.INTEGER,
+                description="REST API sync interval (seconds)",
+                default=60,
+                min_value=10,
+                max_value=3600,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
 
 
 class RealOrderEventNode(BaseNode):

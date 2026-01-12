@@ -35,7 +35,7 @@ def get_workflow():
                 "id": "watchlist",
                 "type": "WatchlistNode",
                 "category": "symbol",
-                "symbols": ["NQH26"],  # 나스닥 선물 2026년 3월물
+                "symbols": [{"exchange": "CME", "symbol": "NQH26"}],  # 나스닥 선물 2026년 3월물
                 "position": {"x": 600, "y": 100},
             },
             {

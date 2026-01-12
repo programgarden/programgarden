@@ -104,3 +104,42 @@ class CustomPnLNode(BaseNode):
             description="i18n:ports.summary",
         ),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 계산 설정 ===
+            "mode": FieldSchema(
+                name="mode",
+                type=FieldType.ENUM,
+                description="Calculation mode (realtime or batch)",
+                default="realtime",
+                enum_values=["realtime", "batch"],
+                category=FieldCategory.PARAMETERS,
+            ),
+            "base_currency": FieldSchema(
+                name="base_currency",
+                type=FieldType.STRING,
+                description="Base currency for calculation",
+                default="USD",
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 수수료 설정 ===
+            "commission_rate": FieldSchema(
+                name="commission_rate",
+                type=FieldType.NUMBER,
+                description="Custom commission rate (e.g., 0.0025 = 0.25%)",
+                default=0.0025,
+                min_value=0,
+                max_value=0.1,
+                category=FieldCategory.SETTINGS,
+            ),
+            "include_commission": FieldSchema(
+                name="include_commission",
+                type=FieldType.BOOLEAN,
+                description="Include commission in P&L calculation",
+                default=True,
+                category=FieldCategory.SETTINGS,
+            ),
+        }

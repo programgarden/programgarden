@@ -25,7 +25,7 @@ import {
 
 interface ChartProps {
   type: string;
-  data: unknown[];
+  data: unknown[] | Record<string, unknown>;  // Can be array or object
   xLabel?: string;
   yLabel?: string;
   options?: Record<string, unknown>;
@@ -77,6 +77,97 @@ function TableRenderer({ data }: { data: unknown[] }) {
           ... and {data.length - 50} more rows
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Raw JSON data renderer for fallback display
+ * Shows prettified JSON with syntax highlighting
+ */
+function RawDataRenderer({ data }: { data: unknown }) {
+  // Convert data to pretty JSON string with syntax highlighting
+  const renderJson = (obj: unknown, indent: number = 0): React.ReactNode[] => {
+    const indentStr = '  '.repeat(indent);
+    const elements: React.ReactNode[] = [];
+    
+    if (obj === null) {
+      return [<span key="null" className="text-gray-500">null</span>];
+    }
+    if (obj === undefined) {
+      return [<span key="undefined" className="text-gray-500">undefined</span>];
+    }
+    if (typeof obj === 'boolean') {
+      return [<span key="bool" className="text-purple-400">{obj.toString()}</span>];
+    }
+    if (typeof obj === 'number') {
+      const formatted = Number.isInteger(obj) ? obj.toString() : obj.toFixed(4).replace(/\.?0+$/, '');
+      return [<span key="num" className="text-blue-400">{formatted}</span>];
+    }
+    if (typeof obj === 'string') {
+      return [<span key="str" className="text-green-400">"{obj}"</span>];
+    }
+    
+    if (Array.isArray(obj)) {
+      if (obj.length === 0) {
+        return [<span key="empty-arr" className="text-gray-400">[]</span>];
+      }
+      elements.push(<span key="arr-open" className="text-gray-400">[</span>);
+      elements.push(<br key="arr-open-br" />);
+      obj.forEach((item, i) => {
+        elements.push(<span key={`arr-indent-${i}`}>{indentStr}  </span>);
+        elements.push(...renderJson(item, indent + 1));
+        if (i < obj.length - 1) {
+          elements.push(<span key={`arr-comma-${i}`} className="text-gray-500">,</span>);
+        }
+        elements.push(<br key={`arr-br-${i}`} />);
+      });
+      elements.push(<span key="arr-close-indent">{indentStr}</span>);
+      elements.push(<span key="arr-close" className="text-gray-400">]</span>);
+      return elements;
+    }
+    
+    if (typeof obj === 'object') {
+      const entries = Object.entries(obj);
+      if (entries.length === 0) {
+        return [<span key="empty-obj" className="text-gray-400">{'{}'}</span>];
+      }
+      elements.push(<span key="obj-open" className="text-gray-400">{'{'}</span>);
+      elements.push(<br key="obj-open-br" />);
+      entries.forEach(([key, value], i) => {
+        elements.push(<span key={`obj-indent-${i}`}>{indentStr}  </span>);
+        elements.push(<span key={`obj-key-${i}`} className="text-yellow-400">"{key}"</span>);
+        elements.push(<span key={`obj-colon-${i}`} className="text-gray-500">: </span>);
+        elements.push(...renderJson(value, indent + 1));
+        if (i < entries.length - 1) {
+          elements.push(<span key={`obj-comma-${i}`} className="text-gray-500">,</span>);
+        }
+        elements.push(<br key={`obj-br-${i}`} />);
+      });
+      elements.push(<span key="obj-close-indent">{indentStr}</span>);
+      elements.push(<span key="obj-close" className="text-gray-400">{'}'}</span>);
+      return elements;
+    }
+    
+    return [<span key="unknown" className="text-gray-300">{String(obj)}</span>];
+  };
+
+  // Count items for header
+  const itemCount = Array.isArray(data) 
+    ? data.length 
+    : (typeof data === 'object' && data !== null ? Object.keys(data).length : 1);
+
+  return (
+    <div className="h-full overflow-auto p-2 bg-gray-900/80 rounded">
+      <div className="text-gray-500 text-xs mb-2 flex items-center gap-1 sticky top-0 bg-gray-900/90 py-1">
+        📋 Raw Output
+        <span className="text-gray-600">
+          ({itemCount} {Array.isArray(data) ? 'items' : 'fields'})
+        </span>
+      </div>
+      <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-all">
+        {renderJson(data)}
+      </pre>
     </div>
   );
 }
@@ -164,8 +255,10 @@ function CandlestickRenderer({ data }: { data: unknown[] }) {
 }
 
 export default function ChartRenderer({ type, data, xLabel, yLabel, options: _options }: ChartProps) {
-  // Safety check for data
-  if (!data || !Array.isArray(data) || data.length === 0) {
+  // Safety check for data - handle both array and object
+  const isEmpty = !data || (Array.isArray(data) ? data.length === 0 : Object.keys(data).length === 0);
+  
+  if (isEmpty) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500 text-sm">
         No data to display
@@ -173,14 +266,15 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options: _op
     );
   }
 
+  // Handle object data (like positions) - render as raw
+  if (!Array.isArray(data)) {
+    return <RawDataRenderer data={data} />;
+  }
+
   // Determine data keys from first item
   const firstItem = data[0] as Record<string, unknown>;
   if (!firstItem || typeof firstItem !== 'object') {
-    return (
-      <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-        Invalid data format
-      </div>
-    );
+    return <RawDataRenderer data={data} />;
   }
   
   const keys = Object.keys(firstItem);
@@ -289,7 +383,15 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options: _op
     case 'table':
       return <TableRenderer data={data} />;
 
+    case 'raw':
+      // Raw JSON viewer for unsupported data types
+      return <RawDataRenderer data={data} />;
+
     default:
+      // Fallback: try to render as raw JSON if we have data
+      if (data && (Array.isArray(data) ? data.length > 0 : Object.keys(data).length > 0)) {
+        return <RawDataRenderer data={data} />;
+      }
       return (
         <div className="flex items-center justify-center h-full text-gray-500 text-sm">
           Unsupported chart type: {type}

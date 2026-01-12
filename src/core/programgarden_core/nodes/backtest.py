@@ -6,8 +6,11 @@ Backtest execution and result analysis nodes:
 - HistoricalDataNode: Historical data query
 """
 
-from typing import Optional, List, Literal, Dict, Any
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -65,6 +68,45 @@ class HistoricalDataNode(BaseNode):
             description="i18n:ports.symbols",
         ),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 데이터 조회 설정 ===
+            "start_date": FieldSchema(
+                name="start_date",
+                type=FieldType.STRING,
+                description="Start date (YYYY-MM-DD or dynamic:months_ago(N))",
+                default="dynamic:months_ago(3)",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "end_date": FieldSchema(
+                name="end_date",
+                type=FieldType.STRING,
+                description="End date (YYYY-MM-DD or dynamic:today())",
+                default="dynamic:today()",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "interval": FieldSchema(
+                name="interval",
+                type=FieldType.STRING,
+                description="Data interval (1m, 5m, 15m, 1h, 1d)",
+                default="1d",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "adjust": FieldSchema(
+                name="adjust",
+                type=FieldType.BOOLEAN,
+                description="Apply adjusted prices",
+                default=True,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
 
 
 class BacktestEngineNode(BaseNode):
@@ -206,6 +248,100 @@ class BacktestEngineNode(BaseNode):
         ),
     ]
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 백테스트 설정 ===
+            "initial_capital": FieldSchema(
+                name="initial_capital",
+                type=FieldType.NUMBER,
+                description="Initial capital",
+                default=10000,
+                min_value=100,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "position_sizing": FieldSchema(
+                name="position_sizing",
+                type=FieldType.ENUM,
+                description="Position sizing method",
+                default="equal_weight",
+                enum_values=["equal_weight", "kelly", "fixed_percent", "fixed_amount", "atr_based"],
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "position_sizing_config": FieldSchema(
+                name="position_sizing_config",
+                type=FieldType.OBJECT,
+                description="Position sizing config",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "exit_rules": FieldSchema(
+                name="exit_rules",
+                type=FieldType.OBJECT,
+                description="Exit rules (stop_loss, take_profit, etc.)",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "benchmark": FieldSchema(
+                name="benchmark",
+                type=FieldType.STRING,
+                description="Benchmark symbol (e.g., SPY)",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "commission_rate": FieldSchema(
+                name="commission_rate",
+                type=FieldType.NUMBER,
+                description="Commission rate (0.001 = 0.1%)",
+                default=0.001,
+                min_value=0,
+                max_value=0.1,
+                category=FieldCategory.SETTINGS,
+            ),
+            "slippage": FieldSchema(
+                name="slippage",
+                type=FieldType.NUMBER,
+                description="Slippage (0.0005 = 0.05%)",
+                default=0.0005,
+                min_value=0,
+                max_value=0.1,
+                category=FieldCategory.SETTINGS,
+            ),
+            "risk_free_rate": FieldSchema(
+                name="risk_free_rate",
+                type=FieldType.NUMBER,
+                description="Risk-free rate for Sharpe ratio",
+                default=0.02,
+                min_value=0,
+                max_value=0.2,
+                category=FieldCategory.SETTINGS,
+            ),
+            "allow_short": FieldSchema(
+                name="allow_short",
+                type=FieldType.BOOLEAN,
+                description="Allow short selling",
+                default=False,
+                category=FieldCategory.SETTINGS,
+            ),
+            "allow_fractional": FieldSchema(
+                name="allow_fractional",
+                type=FieldType.BOOLEAN,
+                description="Allow fractional shares",
+                default=True,
+                category=FieldCategory.SETTINGS,
+            ),
+            "strategy_name": FieldSchema(
+                name="strategy_name",
+                type=FieldType.STRING,
+                description="Strategy name (display)",
+                required=False,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
+
 
 class PerformanceConditionNode(BaseNode):
     """
@@ -248,3 +384,17 @@ class PerformanceConditionNode(BaseNode):
             description="i18n:ports.result",
         ),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 조건 설정 ===
+            "conditions": FieldSchema(
+                name="conditions",
+                type=FieldType.OBJECT,
+                description="Performance conditions",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+        }

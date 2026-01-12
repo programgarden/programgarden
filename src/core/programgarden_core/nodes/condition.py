@@ -6,8 +6,11 @@ Condition evaluation nodes:
 - LogicNode: Condition combination (and/or/xor/at_least/weighted)
 """
 
-from typing import Optional, List, Literal, Dict, Any, ClassVar
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -16,7 +19,6 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
-from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class ConditionNode(PluginNode):
@@ -63,6 +65,11 @@ class ConditionNode(PluginNode):
         ),
     ]
     _outputs: List[OutputPort] = [
+        OutputPort(
+            name="symbols",
+            type="symbol_list",
+            description="i18n:ports.input_symbols",
+        ),
         OutputPort(
             name="result",
             type="condition_result",
@@ -132,27 +139,35 @@ class LogicNode(BaseNode):
             description="i18n:ports.passed_symbols",
         ),
     ]
-    _field_schema: ClassVar[Dict[str, FieldSchema]] = {
-        "operator": FieldSchema(
-            name="operator",
-            type=FieldType.ENUM,
-            description="i18n:fields.LogicNode.operator",
-            default="all",
-            enum_values=["all", "any", "not", "xor", "at_least", "at_most", "exactly", "weighted"],
-            required=True,
-            bindable=False,
-        ),
-        "threshold": FieldSchema(
-            name="threshold",
-            type=FieldType.INTEGER,
-            description="i18n:fields.LogicNode.threshold",
-            bindable=True,
-            expression_enabled=True,
-        ),
-        "weights": FieldSchema(
-            name="weights",
-            type=FieldType.OBJECT,
-            description="i18n:fields.LogicNode.weights",
-            bindable=False,
-        ),
-    }
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 모두 핵심 논리 연산 설정 ===
+            "operator": FieldSchema(
+                name="operator",
+                type=FieldType.ENUM,
+                description="i18n:fields.LogicNode.operator",
+                default="all",
+                enum_values=["all", "any", "not", "xor", "at_least", "at_most", "exactly", "weighted"],
+                required=True,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "threshold": FieldSchema(
+                name="threshold",
+                type=FieldType.INTEGER,
+                description="i18n:fields.LogicNode.threshold",
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "weights": FieldSchema(
+                name="weights",
+                type=FieldType.OBJECT,
+                description="i18n:fields.LogicNode.weights",
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+        }

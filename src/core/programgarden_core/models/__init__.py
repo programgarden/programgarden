@@ -53,6 +53,13 @@ from programgarden_core.models.plugin_resource import (
     DEFAULT_PLUGIN_HINTS,
     get_plugin_hints,
 )
+from programgarden_core.models.exchange import (
+    ProductType,
+    ExchangeInfo,
+    ExchangeRegistry,
+    exchange_registry,
+    SymbolEntry,
+)
 
 __all__ = [
     # Edge
@@ -101,4 +108,10 @@ __all__ = [
     "PluginResourceHints",
     "DEFAULT_PLUGIN_HINTS",
     "get_plugin_hints",
+    # Exchange
+    "ProductType",
+    "ExchangeInfo",
+    "ExchangeRegistry",
+    "exchange_registry",
+    "SymbolEntry",
 ]

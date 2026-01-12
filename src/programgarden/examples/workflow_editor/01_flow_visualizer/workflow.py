@@ -62,7 +62,13 @@ def get_demo_workflow():
                 "id": "watchlist",
                 "type": "WatchlistNode",
                 "category": "symbol",
-                "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"],
+                "symbols": [
+                    {"exchange": "NASDAQ", "symbol": "AAPL"},
+                    {"exchange": "NASDAQ", "symbol": "MSFT"},
+                    {"exchange": "NASDAQ", "symbol": "GOOGL"},
+                    {"exchange": "NASDAQ", "symbol": "AMZN"},
+                    {"exchange": "NASDAQ", "symbol": "NVDA"},
+                ],
                 "position": {"x": 400, "y": 400},
             },
             

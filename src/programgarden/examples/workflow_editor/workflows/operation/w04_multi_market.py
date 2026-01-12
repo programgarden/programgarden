@@ -16,13 +16,20 @@ def get_workflow():
             # === Stock Trading Flow ===
             {"id": "stockSchedule", "type": "ScheduleNode", "category": "trigger", "cron": "*/30 * * * * *", "timezone": "America/New_York", "position": {"x": 450, "y": 80}},
             {"id": "stockHours", "type": "TradingHoursFilterNode", "category": "trigger", "market": "NYSE", "session": "regular", "timezone": "America/New_York", "position": {"x": 600, "y": 80}},
-            {"id": "stockWatchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["AAPL", "MSFT", "NVDA"], "position": {"x": 750, "y": 80}},
+            {"id": "stockWatchlist", "type": "WatchlistNode", "category": "symbol", "symbols": [
+                {"exchange": "NASDAQ", "symbol": "AAPL"},
+                {"exchange": "NASDAQ", "symbol": "MSFT"},
+                {"exchange": "NASDAQ", "symbol": "NVDA"},
+            ], "position": {"x": 750, "y": 80}},
             {"id": "stockMarket", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 900, "y": 80}},
             {"id": "stockCondition", "type": "ConditionNode", "category": "condition", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"}, "position": {"x": 1050, "y": 80}},
             {"id": "stockOrder", "type": "NewOrderNode", "category": "order", "plugin": "MarketOrder", "fields": {"side": "buy"}, "position": {"x": 1200, "y": 80}},
             # === Futures Trading Flow ===
             {"id": "futuresSchedule", "type": "ScheduleNode", "category": "trigger", "cron": "*/30 * * * * *", "timezone": "America/New_York", "position": {"x": 450, "y": 380}},
-            {"id": "futuresWatchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["NQH26", "ESH26"], "position": {"x": 600, "y": 380}},
+            {"id": "futuresWatchlist", "type": "WatchlistNode", "category": "symbol", "symbols": [
+                {"exchange": "CME", "symbol": "NQH26"},
+                {"exchange": "CME", "symbol": "ESH26"},
+            ], "position": {"x": 600, "y": 380}},
             {"id": "futuresMarket", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 750, "y": 380}},
             {"id": "futuresCondition", "type": "ConditionNode", "category": "condition", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"}, "position": {"x": 900, "y": 380}},
             {"id": "futuresOrder", "type": "NewOrderNode", "category": "order", "plugin": "FuturesLimitOrder", "fields": {"side": "buy", "quantity": 1}, "position": {"x": 1050, "y": 380}},

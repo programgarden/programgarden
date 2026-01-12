@@ -21,7 +21,7 @@ def get_workflow():
             {"id": "account", "type": "RealAccountNode", "category": "realtime", "fields": ["balance", "positions", "daily_pnl"], "position": {"x": 400, "y": 400}},
             {"id": "tradeSchedule", "type": "ScheduleNode", "category": "trigger", "cron": "*/30 * * * * *", "timezone": "America/New_York", "position": {"x": 400, "y": 200}},
             {"id": "hours", "type": "TradingHoursFilterNode", "category": "trigger", "market": "NYSE", "session": "regular", "timezone": "America/New_York", "position": {"x": 600, "y": 200}},
-            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"], "position": {"x": 800, "y": 200}},
+            {"id": "watchlist", "type": "WatchlistNode", "category": "symbol", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "MSFT"}, {"exchange": "NASDAQ", "symbol": "NVDA"}, {"exchange": "NASDAQ", "symbol": "GOOGL"}, {"exchange": "NASDAQ", "symbol": "AMZN"}], "position": {"x": 800, "y": 200}},
             {"id": "marketData", "type": "RealMarketDataNode", "category": "realtime", "fields": ["price", "volume"], "position": {"x": 1000, "y": 200}},
             {"id": "buyRsi", "type": "ConditionNode", "category": "condition", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"}, "position": {"x": 1200, "y": 100}},
             {"id": "buyMacd", "type": "ConditionNode", "category": "condition", "plugin": "MACD", "fields": {"signal": "bullish_cross"}, "position": {"x": 1200, "y": 200}},

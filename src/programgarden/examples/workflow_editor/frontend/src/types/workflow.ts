@@ -24,6 +24,8 @@ export interface ConfigField {
   enum_values?: string[];
   bindable?: boolean;
   expression_enabled?: boolean;
+  ui_component?: string;  // Custom UI component (e.g., 'symbol_editor')
+  ui_hint?: string;       // UI hint for special behavior
 }
 
 export interface NodeTypeSchema {

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { getCategoryColor } from '@/utils/nodeColors';
 import { getNodeLabel } from '@/utils/nodeLabels';
@@ -49,7 +49,9 @@ export default function PropertiesPanel() {
   const { credentials, credentialTypes, createCredential, loading: credLoading } = useCredentials();
   const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [credentialTypeForModal, setCredentialTypeForModal] = useState<string | undefined>();
-  const [focusedFieldKey, setFocusedFieldKey] = useState<string | null>(null);
+  
+  // useRef로 마지막 포커스된 필드 기억 (탭 전환해도 유지)
+  const lastFocusedFieldRef = useRef<string | null>(null);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
@@ -69,18 +71,27 @@ export default function PropertiesPanel() {
     }, {} as Record<string, unknown>);
   }, [upstreamNodes, nodeOutputs]);
 
+  // configSchema를 selectedNode에서 가져오기
+  const configSchema = useMemo(() => {
+    if (!selectedNode) return {} as Record<string, ConfigField>;
+    return ((selectedNode.data as Record<string, unknown>).configSchema || {}) as Record<string, ConfigField>;
+  }, [selectedNode]);
+
   // 필드 클릭 핸들러 (Input 탭에서 필드 클릭 시)
   const handleFieldClick = useCallback((expression: string) => {
-    // focusedFieldKey가 있으면 해당 필드에 삽입
-    if (focusedFieldKey && selectedNode) {
-      updateNodeData(selectedNode.id, { [focusedFieldKey]: expression });
-      // Settings 탭으로 전환
-      setActiveTab('settings');
+    // lastFocusedFieldRef가 있으면 해당 필드에 삽입
+    if (lastFocusedFieldRef.current && selectedNode) {
+      updateNodeData(selectedNode.id, { [lastFocusedFieldRef.current]: expression });
     } else {
       // 클립보드에 복사
       navigator.clipboard.writeText(expression);
     }
-  }, [focusedFieldKey, selectedNode, updateNodeData]);
+  }, [selectedNode, updateNodeData]);
+  
+  // 필드 포커스 핸들러
+  const handleFieldFocus = useCallback((fieldKey: string) => {
+    lastFocusedFieldRef.current = fieldKey;
+  }, []);
 
   if (!selectedNode) {
     return (
@@ -96,7 +107,6 @@ export default function PropertiesPanel() {
 
   const nodeData = selectedNode.data as Record<string, unknown>;
   const color = getCategoryColor(nodeData.category as string);
-  const configSchema = (nodeData.configSchema || {}) as Record<string, ConfigField>;
   
   // 삭제 시 표시할 이름
   const nodeName = (nodeData.customLabel as string) || getNodeLabel(nodeData.nodeType as string, 'ko');
@@ -211,6 +221,7 @@ export default function PropertiesPanel() {
             inputData={inputData} 
             upstreamNodes={upstreamNodes}
             onFieldClick={handleFieldClick}
+            targetField={lastFocusedFieldRef.current}
           />
         )}
 
@@ -267,7 +278,7 @@ export default function PropertiesPanel() {
                     fieldKey={key}
                     value={nodeData[key]}
                     onChange={(value) => handleFieldChange(key, value)}
-                    onFocus={() => setFocusedFieldKey(key)}
+                    onFocus={() => handleFieldFocus(key)}
                     schema={schema}
                     // Credential props (credential_id 필드용)
                     credentials={credentials}
@@ -275,6 +286,9 @@ export default function PropertiesPanel() {
                     onOpenCredentialModal={handleOpenCredentialModal}
                     credentialLoading={credLoading}
                     requiredCredentialType={requiredCredentialType}
+                    // WatchlistNode용 (symbol_editor)
+                    nodeData={nodeData}
+                    onNodeDataChange={handleFieldChange}
                   />
                 </div>
               ));
@@ -305,7 +319,7 @@ export default function PropertiesPanel() {
                     fieldKey={key}
                     value={nodeData[key]}
                     onChange={(value) => handleFieldChange(key, value)}
-                    onFocus={() => setFocusedFieldKey(key)}
+                    onFocus={() => handleFieldFocus(key)}
                     schema={schema}
                     // Credential props (credential_id 필드용)
                     credentials={credentials}

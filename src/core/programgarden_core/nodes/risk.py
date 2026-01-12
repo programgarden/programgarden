@@ -6,8 +6,11 @@ Risk management nodes:
 - RiskGuardNode: Daily loss limit, max position constraints
 """
 
-from typing import Optional, List, Literal, Dict, Any
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -81,6 +84,57 @@ class PositionSizingNode(BaseNode):
         ),
     ]
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 포지션 사이징 설정 ===
+            "method": FieldSchema(
+                name="method",
+                type=FieldType.ENUM,
+                description="Position sizing method",
+                default="fixed_percent",
+                enum_values=["fixed_percent", "fixed_amount", "kelly", "atr_based"],
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "max_percent": FieldSchema(
+                name="max_percent",
+                type=FieldType.NUMBER,
+                description="Max position % of account",
+                default=10.0,
+                min_value=0.1,
+                max_value=100.0,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "fixed_amount": FieldSchema(
+                name="fixed_amount",
+                type=FieldType.NUMBER,
+                description="Fixed amount (for fixed_amount)",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "kelly_fraction": FieldSchema(
+                name="kelly_fraction",
+                type=FieldType.NUMBER,
+                description="Kelly fraction (0.25 = 1/4 Kelly)",
+                default=0.25,
+                min_value=0.01,
+                max_value=1.0,
+                category=FieldCategory.SETTINGS,
+            ),
+            "atr_risk_percent": FieldSchema(
+                name="atr_risk_percent",
+                type=FieldType.NUMBER,
+                description="ATR risk %",
+                default=1.0,
+                min_value=0.1,
+                max_value=10.0,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
+
 
 class RiskGuardNode(BaseNode):
     """
@@ -149,6 +203,59 @@ class RiskGuardNode(BaseNode):
         ),
     ]
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 리스크 한도 설정 ===
+            "max_daily_loss": FieldSchema(
+                name="max_daily_loss",
+                type=FieldType.NUMBER,
+                description="Max daily loss amount (e.g., -500)",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "max_daily_loss_percent": FieldSchema(
+                name="max_daily_loss_percent",
+                type=FieldType.NUMBER,
+                description="Max daily loss % (e.g., -5)",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "max_positions": FieldSchema(
+                name="max_positions",
+                type=FieldType.INTEGER,
+                description="Max concurrent positions",
+                required=False,
+                min_value=1,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "max_position_per_symbol": FieldSchema(
+                name="max_position_per_symbol",
+                type=FieldType.NUMBER,
+                description="Max position % per symbol",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "max_consecutive_losses": FieldSchema(
+                name="max_consecutive_losses",
+                type=FieldType.INTEGER,
+                description="Max consecutive losses",
+                required=False,
+                min_value=1,
+                category=FieldCategory.SETTINGS,
+            ),
+            "cooldown_after_loss_minutes": FieldSchema(
+                name="cooldown_after_loss_minutes",
+                type=FieldType.INTEGER,
+                description="Cooldown after loss (minutes)",
+                required=False,
+                min_value=1,
+                category=FieldCategory.SETTINGS,
+            ),
+        }
+
 
 class RiskConditionNode(BaseNode):
     """
@@ -194,3 +301,36 @@ class RiskConditionNode(BaseNode):
             description="i18n:ports.current_value",
         ),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 모두 핵심 조건 설정 ===
+            "rule": FieldSchema(
+                name="rule",
+                type=FieldType.ENUM,
+                description="Risk rule to evaluate",
+                default="daily_pnl",
+                enum_values=["daily_pnl", "position_pnl", "daily_trade_count", "consecutive_losses"],
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "threshold": FieldSchema(
+                name="threshold",
+                type=FieldType.NUMBER,
+                description="Threshold value",
+                default=-500.0,
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "operator": FieldSchema(
+                name="operator",
+                type=FieldType.ENUM,
+                description="Comparison operator",
+                default="<=",
+                enum_values=["<=", "<", ">=", ">", "==", "!="],
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+        }

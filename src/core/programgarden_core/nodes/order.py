@@ -7,8 +7,11 @@ Order execution nodes:
 - CancelOrderNode: Cancel order plugin execution
 """
 
-from typing import Optional, List, Literal, Dict, Any, ClassVar
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -17,7 +20,6 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
-from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class NewOrderNode(PluginNode):
@@ -206,3 +208,37 @@ class LiquidateNode(BaseNode):
             description="청산된 포지션 목록",
         ),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 청산 설정 ===
+            "mode": FieldSchema(
+                name="mode",
+                type=FieldType.ENUM,
+                description="Liquidation mode",
+                default="all",
+                enum_values=["all", "symbol", "losing", "profitable"],
+                required=True,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "target_symbols": FieldSchema(
+                name="target_symbols",
+                type=FieldType.ARRAY,
+                description="Target symbols (when mode='symbol')",
+                array_item_type=FieldType.STRING,
+                required=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "order_type": FieldSchema(
+                name="order_type",
+                type=FieldType.ENUM,
+                description="Order type for liquidation",
+                default="market",
+                enum_values=["market", "limit"],
+                required=False,
+                category=FieldCategory.SETTINGS,
+            ),
+        }

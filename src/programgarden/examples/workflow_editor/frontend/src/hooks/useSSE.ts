@@ -114,13 +114,19 @@ export function useSSE() {
           const data = JSON.parse(e.data);
           console.log('📥 display_data:', data);
           
-          // Ensure data.data is an array
-          const chartData = Array.isArray(data.data) ? data.data : [];
+          // Handle both array and object data
+          // - Array: line charts, tables with list data
+          // - Object: positions, balance, raw JSON etc.
+          let chartData = data.data;
+          if (chartData === null || chartData === undefined) {
+            chartData = [];
+          }
+          // Don't force to array - let ChartRenderer handle different types
           
           // Update display store with chart data
           // nodeId and timestamp are added automatically by the store
           useDisplayStore.getState().setNodeDisplayData(data.node_id, {
-            chartType: data.chart_type || 'line',
+            chartType: data.chart_type || 'raw',
             title: data.title || '',
             data: chartData,
             xLabel: data.x_label,
@@ -128,9 +134,10 @@ export function useSSE() {
             options: data.options,
           });
           
+          const itemCount = Array.isArray(chartData) ? chartData.length : Object.keys(chartData).length;
           addLog({
             level: 'info',
-            message: `📊 Display updated: [${data.node_id}] - ${data.chart_type || 'line'} chart (${chartData.length} items)`,
+            message: `📊 Display updated: [${data.node_id}] - ${data.chart_type || 'raw'} (${itemCount} items)`,
             nodeId: data.node_id,
           });
         } catch (err) {

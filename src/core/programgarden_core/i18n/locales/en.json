@@ -223,7 +223,6 @@
   "fields.BrokerNode.provider": "Broker provider",
   "fields.BrokerNode.product": "Product type (overseas_stock/overseas_futures)",
   "fields.BrokerNode.credential_id": "Select stored credentials",
-  "fields.BrokerNode.paper_trading": "Use paper trading (overseas_futures only, overseas_stock not supported)",
 
   "fields.WatchlistNode.symbols": "List of symbol codes",
 

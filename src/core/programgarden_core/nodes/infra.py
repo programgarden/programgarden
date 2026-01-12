@@ -6,8 +6,11 @@ Infrastructure/connection nodes:
 - BrokerNode: Broker connection
 """
 
-from typing import Optional, List, Literal, Dict, ClassVar
+from typing import Optional, List, Literal, Dict, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNode,
@@ -15,7 +18,6 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
-from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class StartNode(BaseNode):
@@ -61,9 +63,7 @@ class BrokerNode(BaseNode):
     credential_id: Optional[str] = Field(
         default=None, description="Reference to stored credentials"
     )
-    paper_trading: bool = Field(
-        default=False, description="Use paper trading (overseas_futures only)"
-    )
+    # paper_trading은 credential에서 관리 (broker_ls.paper_trading)
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
@@ -73,36 +73,36 @@ class BrokerNode(BaseNode):
             description="i18n:ports.connection",
         )
     ]
-    _field_schema: ClassVar[Dict[str, FieldSchema]] = {
-        "provider": FieldSchema(
-            name="provider",
-            type=FieldType.STRING,
-            description="i18n:fields.BrokerNode.provider",
-            default="ls-sec.co.kr",
-            bindable=False,
-        ),
-        "product": FieldSchema(
-            name="product",
-            type=FieldType.ENUM,
-            description="i18n:fields.BrokerNode.product",
-            default="overseas_stock",
-            enum_values=["overseas_stock", "overseas_futures"],
-            bindable=False,
-        ),
-        "credential_id": FieldSchema(
-            name="credential_id",
-            type=FieldType.STRING,
-            description="i18n:fields.BrokerNode.credential_id",
-            default=None,
-            bindable=False,
-        ),
-        "paper_trading": FieldSchema(
-            name="paper_trading",
-            type=FieldType.BOOLEAN,
-            description="i18n:fields.BrokerNode.paper_trading",
-            default=False,
-            bindable=False,
-            # UI 힌트: overseas_stock 선택 시 비활성화
-            extra={"ui_hint": {"disable_when": {"product": "overseas_stock"}}},
-        ),
-    }
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 핵심 연결 설정 ===
+            "provider": FieldSchema(
+                name="provider",
+                type=FieldType.STRING,
+                description="i18n:fields.BrokerNode.provider",
+                default="ls-sec.co.kr",
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "product": FieldSchema(
+                name="product",
+                type=FieldType.ENUM,
+                description="i18n:fields.BrokerNode.product",
+                default="overseas_stock",
+                enum_values=["overseas_stock", "overseas_futures"],
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "credential_id": FieldSchema(
+                name="credential_id",
+                type=FieldType.CREDENTIAL,
+                description="i18n:fields.BrokerNode.credential_id",
+                default=None,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+            ),
+            # paper_trading은 credential에서 관리됨 (broker_ls.paper_trading)
+        }

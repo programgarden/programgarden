@@ -369,6 +369,61 @@ async def get_categories(locale: str = "ko"):
 
 
 # ========================================
+# Exchange API (거래소 목록 조회)
+# ========================================
+
+@app.get("/api/exchanges")
+async def get_exchanges(broker: str = "ls", product: str = "overseas_stock"):
+    """
+    증권사별 거래소 목록 반환
+    
+    Args:
+        broker: 증권사 코드 (ls, etc.)
+        product: 상품 타입 (overseas_stock, overseas_futures)
+    
+    Returns:
+        거래소 목록 [{code, name, full_name}, ...]
+    """
+    try:
+        from programgarden_core.models.exchange import exchange_registry, ProductType
+        
+        product_type = ProductType(product)
+        exchanges = exchange_registry.get_exchanges(broker, product_type)
+        
+        exchange_list = [
+            {
+                "code": info.code,
+                "name": info.name,
+                "full_name": info.full_name,
+                "country": info.country,
+                "currency": info.currency,
+            }
+            for name, info in exchanges.items()
+        ]
+        
+        return JSONResponse({
+            "broker": broker,
+            "product": product,
+            "exchanges": exchange_list,
+            "default": exchange_registry.get_default_exchange(broker, product_type),
+        })
+    except ValueError as e:
+        return JSONResponse({
+            "error": f"Invalid product type: {product}",
+            "broker": broker,
+            "product": product,
+            "exchanges": [],
+        }, status_code=400)
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e),
+            "broker": broker,
+            "product": product,
+            "exchanges": [],
+        }, status_code=500)
+
+
+# ========================================
 # Credential API (n8n style)
 # ========================================
 

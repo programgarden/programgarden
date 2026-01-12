@@ -1267,12 +1267,24 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         import random
-        from programgarden_core.exceptions import ValidationError
+        from programgarden_core.exceptions import ValidationError, ConnectionError
         
         # ========================================
-        # BrokerNode와 WatchlistNode product 정합성 검증
+        # 1. BrokerNode 필수 연결 검증
         # ========================================
         broker_output = context.find_parent_output(node_id, "BrokerNode")
+        if not broker_output:
+            error_msg = (
+                f"RealMarketDataNode requires BrokerNode connection for WebSocket. "
+                f"Node '{node_id}' has no BrokerNode connected. "
+                f"Please add a BrokerNode and connect it upstream."
+            )
+            context.log("error", error_msg, node_id)
+            raise ConnectionError(error_msg)
+        
+        # ========================================
+        # 2. BrokerNode와 WatchlistNode product 정합성 검증
+        # ========================================
         watchlist_output = context.find_parent_output(node_id, "WatchlistNode")
         
         broker_product = None
@@ -1299,18 +1311,19 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.log("error", error_msg, node_id)
             raise ValidationError(error_msg, node_id=node_id)
         
-        # BrokerNode는 있는데 WatchlistNode가 없거나, 또는 symbols가 없으면 경고
-        if broker_product and not watchlist_output:
-            context.log("warning", f"No WatchlistNode found. BrokerNode product: {broker_product}", node_id)
-        
-        # 입력에서 symbols 가져오기
-        symbols_raw = context.get_output("_input_" + node_id, "symbols") or []
-        if not symbols_raw:
-            symbols_raw = context.get_output("account", "held_symbols") or []
+        # ========================================
+        # 3. Symbols 획득 (필드 우선, 포트 폴백)
+        # ========================================
+        symbols_raw = self._resolve_symbols(node_id, config, context, watchlist_output)
         
         if not symbols_raw:
-            context.log("warning", "No symbols to subscribe. Check WatchlistNode or AccountNode connection.", node_id)
-            return {"price": {}, "volume": {}, "bid": {}, "ask": {}, "error": "no_symbols"}
+            error_msg = (
+                f"RealMarketDataNode requires symbols to subscribe. "
+                f"Either set 'symbols' field directly or connect WatchlistNode/AccountNode. "
+                f"Node '{node_id}' has no symbols configured."
+            )
+            context.log("error", error_msg, node_id)
+            raise ValidationError(error_msg, node_id=node_id)
         
         # symbols 정규화: dict 형태 [{exchange, symbol}] → 문자열 리스트
         symbols = []
@@ -1321,9 +1334,14 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             elif isinstance(entry, str):
                 symbols.append(entry)
         
-        # TODO: 실제 구현에서는 WebSocket 시세 수신
+        # ========================================
+        # 4. 시세 데이터 수신 (TODO: 실제 WebSocket 구현)
+        # ========================================
         # 현재는 약간의 변동을 주는 목업 데이터
         prices = {}
+        volumes = {}
+        bids = {}
+        asks = {}
         base_prices = {"NVDA": 875.30, "AAPL": 192.30, "TSLA": 248.90}
         
         for symbol in symbols:
@@ -1332,10 +1350,100 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             base = base_prices.get(symbol, 100.0)
             # ±0.5% 랜덤 변동
             variation = base * random.uniform(-0.005, 0.005)
-            prices[symbol] = round(base + variation, 2)
+            price = round(base + variation, 2)
+            prices[symbol] = price
+            volumes[symbol] = random.randint(100000, 10000000)
+            bids[symbol] = round(price - 0.01, 2)
+            asks[symbol] = round(price + 0.01, 2)
         
         context.log("info", f"Market data received: {symbols}", node_id)
-        return {"price": prices, "volume": {}, "bid": {}, "ask": {}}
+        
+        # ========================================
+        # 5. 출력 (symbols echo 포함)
+        # ========================================
+        return {
+            "symbols": symbols_raw,  # 입력받은 symbols echo (다음 노드에서 사용)
+            "price": prices,
+            "volume": volumes,
+            "bid": bids,
+            "ask": asks,
+            "data": self._build_full_data(symbols_raw, prices, volumes, bids, asks),
+        }
+    
+    def _resolve_symbols(
+        self,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        watchlist_output: Optional[Dict[str, Any]],
+    ) -> List[Dict[str, str]]:
+        """
+        Symbols 획득 (필드 우선, 포트 폴백 패턴)
+        
+        1. 노드 config의 symbols 필드 확인
+        2. WatchlistNode 출력에서 symbols 가져오기
+        3. AccountNode/RealAccountNode의 held_symbols 가져오기
+        """
+        # 1. 필드에서 직접 설정된 경우
+        if config.get("symbols"):
+            return config["symbols"]
+        
+        # 2. Input 포트에서 받기 (context input)
+        symbols_input = context.get_output(f"_input_{node_id}", "symbols")
+        if symbols_input:
+            return symbols_input
+        
+        # 3. WatchlistNode에서 받기
+        if watchlist_output and watchlist_output.get("symbols"):
+            return watchlist_output["symbols"]
+        
+        # 4. AccountNode/RealAccountNode에서 held_symbols 가져오기
+        account_output = context.find_parent_output(node_id, "RealAccountNode")
+        if account_output and account_output.get("held_symbols"):
+            return account_output["held_symbols"]
+        
+        account_output = context.find_parent_output(node_id, "AccountNode")
+        if account_output and account_output.get("held_symbols"):
+            return account_output["held_symbols"]
+        
+        return []
+    
+    def _build_full_data(
+        self,
+        symbols_raw: List[Dict[str, str]],
+        prices: Dict[str, float],
+        volumes: Dict[str, int],
+        bids: Dict[str, float],
+        asks: Dict[str, float],
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        종목별 전체 시세 데이터 구조 생성
+        
+        Returns:
+            {
+                "AAPL": {"symbol": "AAPL", "exchange": "NASDAQ", "price": 192.30, ...},
+                "TSLA": {...},
+            }
+        """
+        data = {}
+        for entry in symbols_raw:
+            if isinstance(entry, dict):
+                symbol = entry.get("symbol", "")
+                exchange = entry.get("exchange", "")
+            else:
+                symbol = entry
+                exchange = ""
+            
+            if symbol:
+                data[symbol] = {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "price": prices.get(symbol),
+                    "volume": volumes.get(symbol),
+                    "bid": bids.get(symbol),
+                    "ask": asks.get(symbol),
+                }
+        return data
 
 
 class CustomPnLNodeExecutor(NodeExecutorBase):
@@ -2026,7 +2134,11 @@ class ConditionNodeExecutor(NodeExecutorBase):
             node_id,
         )
 
+        # symbols echo: 입력받은 종목 목록을 출력에도 포함 (다음 노드에서 사용)
+        symbols_output = context.get_output(f"_input_{node_id}", "symbols") or symbols
+        
         return {
+            "symbols": symbols_output,  # 입력 symbols echo
             "result": len(passed_symbols) > 0,
             "passed_symbols": passed_symbols,
             "failed_symbols": failed_symbols,
@@ -2174,6 +2286,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
         )
         
         return {
+            "symbols": symbols,  # 입력 symbols echo
             "signals": signals,
             "result": any(s["signal"] == "buy" for s in signals),
             "values_timeseries": all_values,
