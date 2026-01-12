@@ -279,7 +279,7 @@ sns: https://youtube.com/abc
   "id": "sma",
   "type": "ConditionNode",
   "plugin": "MySMACondition",
-  "params": {
+  "fields": {
     "short_period": 5,
     "long_period": 20
   }
@@ -485,7 +485,7 @@ pg.run(workflow={
             "id": "myCondition",
             "type": "ConditionNode",
             "plugin": "MySMACondition",
-            "params": {"short_period": 5, "long_period": 20}
+            "fields": {"short_period": 5, "long_period": 20}
         },
         ...
     ],

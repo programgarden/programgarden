@@ -298,28 +298,28 @@
       "id": "rsi",
       "type": "ConditionNode",
       "plugin": "RSI",
-      "params": {"period": 14, "oversold": 30},
+      "fields": {"period": 14, "oversold": 30},
       "config": {"weight": 0.3}
     },
     {
       "id": "macd",
       "type": "ConditionNode",
       "plugin": "MACD",
-      "params": {},
+      "fields": {},
       "config": {"weight": 0.3}
     },
     {
       "id": "volume",
       "type": "ConditionNode",
       "plugin": "VolumeSpike",
-      "params": {},
+      "fields": {},
       "config": {"weight": 0.2}
     },
     {
       "id": "trend",
       "type": "ConditionNode",
       "plugin": "ADX",
-      "params": {},
+      "fields": {},
       "config": {"weight": 0.2}
     },
     {
@@ -425,9 +425,9 @@
 ```json
 {
   "nodes": [
-    {"id": "adx", "type": "ConditionNode", "plugin": "ADX", "params": {"min_value": 25}},
-    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "params": {"oversold": 30}},
-    {"id": "stochastic", "type": "ConditionNode", "plugin": "Stochastic", "params": {"oversold": 20}},
+    {"id": "adx", "type": "ConditionNode", "plugin": "ADX", "fields": {"min_value": 25}},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "fields": {"oversold": 30}},
+    {"id": "stochastic", "type": "ConditionNode", "plugin": "Stochastic", "fields": {"oversold": 20}},
     {
       "id": "oversoldGroup",
       "type": "LogicNode",
@@ -534,7 +534,7 @@
 ```json
 {
   "nodes": [
-    {"id": "adxFilter", "type": "ConditionNode", "plugin": "ADX", "params": {"min_value": 25}},
+    {"id": "adxFilter", "type": "ConditionNode", "plugin": "ADX", "fields": {"min_value": 25}},
     {"id": "rsi", "type": "ConditionNode", "plugin": "RSI"},
     {"id": "stochasticRSI", "type": "ConditionNode", "plugin": "StochasticRSI"},
     {"id": "signalGroup", "type": "LogicNode", "config": {"operator": "any"}},

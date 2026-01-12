@@ -245,8 +245,8 @@ class NodeTypeRegistry:
 
         # BaseNode 필드 제외
         base_fields = {"id", "type", "category", "position", "config", "description"}
-        # PluginNode 필드 (해당되는 경우)
-        plugin_fields = {"plugin", "plugin_version", "params"}
+        # UI에서 숨길 필드 (내부용)
+        hidden_fields = {"plugin_version"}  # community 플러그인은 버전 관리 불필요
 
         # _field_schema가 있으면 우선 사용 (get_field_schema에 정의된 필드만 UI에 표시)
         field_schema_dict = node_class.get_field_schema() if hasattr(node_class, 'get_field_schema') else {}
@@ -256,6 +256,10 @@ class NodeTypeRegistry:
 
         for field_name, field_info in model_fields.items():
             if field_name in base_fields:
+                continue
+            
+            # UI에서 숨길 필드 제외
+            if field_name in hidden_fields:
                 continue
             
             # exclude=True인 필드는 스키마에서 제외 (credential에서 주입되는 필드)

@@ -168,7 +168,7 @@ APPSECRET_FUTURE=your_futures_appsecret
   "id": "rsi",
   "type": "ConditionNode",
   "plugin": "RSI",
-  "params": {
+  "fields": {
     "period": 14,
     "oversold": 30
   }
@@ -176,7 +176,7 @@ APPSECRET_FUTURE=your_futures_appsecret
 ```
 
 - `plugin`: 사용할 분석 전략 ([종목추출 전략 목록](strategies/stock_condition.md) 참고)
-- `params`: 전략에 필요한 설정값
+- `fields`: 전략에 필요한 설정값
 
 #### LogicNode (조건 조합)
 
@@ -210,7 +210,7 @@ APPSECRET_FUTURE=your_futures_appsecret
   "id": "order",
   "type": "NewOrderNode",
   "plugin": "StockSplitFunds",
-  "params": {
+  "fields": {
     "percent_balance": 10.0,
     "max_symbols": 5
   }
@@ -319,7 +319,7 @@ RSI가 30 이하면 매수하는 간단한 전략입니다.
       "id": "rsi",
       "type": "ConditionNode",
       "plugin": "RSI",
-      "params": {
+      "fields": {
         "period": 14,
         "oversold": 30
       }
@@ -328,7 +328,7 @@ RSI가 30 이하면 매수하는 간단한 전략입니다.
       "id": "order",
       "type": "NewOrderNode",
       "plugin": "StockSplitFunds",
-      "params": {
+      "fields": {
         "percent_balance": 10.0,
         "max_symbols": 3
       }
@@ -357,8 +357,8 @@ RSI가 30 이하면 매수하는 간단한 전략입니다.
     {"id": "broker", "type": "BrokerNode", "config": {"provider": "ls-sec.co.kr", "product": "overseas_stock"}},
     {"id": "watchlist", "type": "WatchlistNode", "config": {"symbols": ["AAPL", "TSLA"]}},
     {"id": "realMarket", "type": "RealMarketDataNode"},
-    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "params": {"period": 14, "oversold": 30}},
-    {"id": "macd", "type": "ConditionNode", "plugin": "MACD", "params": {"fast": 12, "slow": 26, "signal": 9}},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "fields": {"period": 14, "oversold": 30}},
+    {"id": "macd", "type": "ConditionNode", "plugin": "MACD", "fields": {"fast": 12, "slow": 26, "signal": 9}},
     {
       "id": "logic",
       "type": "LogicNode",

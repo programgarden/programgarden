@@ -6,6 +6,7 @@ import { findUpstreamNodes } from '@/utils/graphUtils';
 import { Trash2, Info } from 'lucide-react';
 import { ConfigField } from '@/types/workflow';
 import { useCredentials } from '@/hooks/useCredentials';
+import { usePlugins } from '@/hooks/usePlugins';
 import { CredentialModal } from './CredentialModal';
 import InputTab from './InputTab';
 import OutputTab from './OutputTab';
@@ -49,6 +50,7 @@ export default function PropertiesPanel() {
   const { credentials, credentialTypes, createCredential, loading: credLoading } = useCredentials();
   const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [credentialTypeForModal, setCredentialTypeForModal] = useState<string | undefined>();
+  const { getPluginsForNodeType, getPluginSchema } = usePlugins();
   
   // useRef로 마지막 포커스된 필드 기억 (탭 전환해도 유지)
   const lastFocusedFieldRef = useRef<string | null>(null);
@@ -271,6 +273,9 @@ export default function PropertiesPanel() {
                 );
               }
               
+              // 현재 노드 타입에 맞는 플러그인 목록
+              const availablePlugins = getPluginsForNodeType(nodeType);
+              
               return paramFields.map(([key, schema]) => (
                 <div key={key}>
                   <BindableField
@@ -289,6 +294,25 @@ export default function PropertiesPanel() {
                     // WatchlistNode용 (symbol_editor)
                     nodeData={nodeData}
                     onNodeDataChange={handleFieldChange}
+                    // Plugin 관련 props (plugin 필드용)
+                    availablePlugins={availablePlugins}
+                    onPluginChange={async (pluginId) => {
+                      // 플러그인 변경 시 fields 초기화
+                      handleFieldChange('plugin', pluginId);
+                      // 플러그인 스키마 가져와서 기본값 설정
+                      const pluginSchema = await getPluginSchema(pluginId);
+                      if (pluginSchema?.fields_schema) {
+                        const defaultFields: Record<string, unknown> = {};
+                        for (const [fKey, fSchema] of Object.entries(pluginSchema.fields_schema)) {
+                          if (fSchema.default !== undefined) {
+                            defaultFields[fKey] = fSchema.default;
+                          }
+                        }
+                        if (Object.keys(defaultFields).length > 0) {
+                          handleFieldChange('fields', defaultFields);
+                        }
+                      }
+                    }}
                   />
                 </div>
               ));

@@ -419,7 +419,7 @@ BacktestEngine₄ ──┘
   "id": "rsi",
   "type": "ConditionNode",
   "plugin": "RSI",
-  "params": {"period": 14, "oversold": 30}
+  "fields": {"period": 14, "oversold": 30}
 }
 ```
 

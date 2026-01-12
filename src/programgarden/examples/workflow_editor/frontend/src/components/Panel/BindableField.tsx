@@ -43,6 +43,9 @@ interface BindableFieldProps {
   // WatchlistNode 관련 (symbol_editor용)
   nodeData?: Record<string, unknown>;
   onNodeDataChange?: (key: string, value: unknown) => void;
+  // Plugin 관련 props (plugin 필드용)
+  availablePlugins?: string[];
+  onPluginChange?: (pluginId: string) => void;
 }
 
 export default function BindableField({ 
@@ -59,6 +62,8 @@ export default function BindableField({
   requiredCredentialType,
   nodeData,
   onNodeDataChange,
+  availablePlugins,
+  onPluginChange,
 }: BindableFieldProps) {
   const [isExpression, setIsExpression] = useState(() => {
     return typeof value === 'string' && value.startsWith('{{');
@@ -68,6 +73,9 @@ export default function BindableField({
   
   // Credential field인지 확인 (fieldKey가 credential_id이거나 schema.type이 credential)
   const isCredentialField = fieldKey === 'credential_id' || schema?.type === 'credential';
+  
+  // Plugin field인지 확인 (fieldKey가 plugin)
+  const isPluginField = fieldKey === 'plugin';
   
   // 드롭 핸들러
   const handleDrop = (e: React.DragEvent) => {
@@ -179,6 +187,48 @@ export default function BindableField({
         {availableTypes.length > 0 && !requiredCredentialType && (
           <p className="text-xs text-gray-500 mt-1">
             Supported: {availableTypes.map(t => t.name).join(', ')}
+          </p>
+        )}
+      </div>
+    );
+  }
+  
+  // Plugin 타입 (드롭다운)
+  if (isPluginField && availablePlugins && availablePlugins.length > 0) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-gray-400 capitalize">
+            <span className="flex items-center gap-1">
+              🔌 {label}
+            </span>
+          </label>
+          {schema?.required && <span className="text-red-400 text-xs">*</span>}
+        </div>
+        {schema?.description && (
+          <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
+        )}
+        <select
+          value={String(value || '')}
+          onChange={(e) => {
+            if (onPluginChange) {
+              onPluginChange(e.target.value);
+            } else {
+              onChange(e.target.value);
+            }
+          }}
+          className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+        >
+          <option value="">Select plugin...</option>
+          {availablePlugins.map(pluginId => (
+            <option key={pluginId} value={pluginId}>
+              {pluginId}
+            </option>
+          ))}
+        </select>
+        {!value && (
+          <p className="text-xs text-amber-500/70 mt-1.5">
+            💡 Select a plugin to configure its parameters
           </p>
         )}
       </div>
@@ -580,7 +630,65 @@ export default function BindableField({
     );
   }
   
+  // 객체/배열이 잘못 들어온 경우 (스키마 없이) - JSON 에디터로 폴백
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const displayValue = JSON.stringify(value, null, 2);
+    return (
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`rounded transition-all ${dropZoneClass}`}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-gray-400 capitalize">{label}</label>
+          <div className="flex items-center gap-1">
+            {schema?.required && <span className="text-red-400 text-xs">*</span>}
+            <button
+              onClick={toggleExpression}
+              className={`px-1.5 py-0.5 text-xs rounded font-mono transition-colors ${
+                isExpression 
+                  ? 'bg-orange-600 text-white' 
+                  : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+              }`}
+              title="Toggle expression mode"
+            >
+              fx
+            </button>
+          </div>
+        </div>
+        {schema?.description && (
+          <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
+        )}
+        <textarea
+          ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+          defaultValue={displayValue}
+          rows={Math.min(Object.keys(value).length + 2, 8)}
+          onBlur={(e) => {
+            const val = e.target.value.trim();
+            if (val.startsWith('{{')) {
+              onChange(val);
+              return;
+            }
+            try {
+              onChange(JSON.parse(val));
+            } catch {
+              onChange(val);
+            }
+          }}
+          onFocus={onFocus}
+          className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500 font-mono"
+        />
+      </div>
+    );
+  }
+  
   // String 타입 (기본)
+  // 값을 문자열로 변환 (배열인 경우 JSON으로)
+  const stringValue = Array.isArray(value) 
+    ? JSON.stringify(value) 
+    : String(value ?? '');
+  
   return (
     <div
       onDragOver={handleDragOver}
@@ -614,7 +722,7 @@ export default function BindableField({
       <input
         ref={inputRef as React.RefObject<HTMLInputElement>}
         type="text"
-        value={String(value ?? '')}
+        value={stringValue}
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}
         placeholder={isExpression ? '{{ nodes.nodeId.field }}' : undefined}

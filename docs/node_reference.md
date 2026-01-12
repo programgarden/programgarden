@@ -467,7 +467,7 @@ REST API로 1회성 계좌 정보를 조회합니다.
   "id": "rsi",
   "type": "ConditionNode",
   "plugin": "RSI",
-  "params": {
+  "fields": {
     "period": 14,
     "oversold": 30,
     "overbought": 70
@@ -477,8 +477,8 @@ REST API로 1회성 계좌 정보를 조회합니다.
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
-| `plugin` | string | ✅ | 플러그인 ID (버전 지정 가능: `RSI@1.2.0`) |
-| `params` | object | ❌ | 플러그인 파라미터 |
+| `plugin` | string | ✅ | 플러그인 ID |
+| `fields` | object | ❌ | 플러그인 파라미터 |
 
 **출력**:
 - `passed` - 조건 통과 여부
@@ -612,7 +612,7 @@ REST API로 1회성 계좌 정보를 조회합니다.
   "id": "order",
   "type": "NewOrderNode",
   "plugin": "StockSplitFunds",
-  "params": {
+  "fields": {
     "percent_balance": 10
   }
 }

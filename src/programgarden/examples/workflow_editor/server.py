@@ -369,6 +369,81 @@ async def get_categories(locale: str = "ko"):
 
 
 # ========================================
+# Plugin Registry API (플러그인 목록 조회)
+# ========================================
+
+@app.get("/api/plugins")
+async def get_plugins(category: Optional[str] = None, product: Optional[str] = None):
+    """
+    플러그인 목록 반환
+    
+    Args:
+        category: 필터링할 카테고리 (strategy_condition, new_order, modify_order, cancel_order)
+        product: 필터링할 상품 (overseas_stock, overseas_futures)
+    
+    Returns:
+        카테고리별 플러그인 ID 목록
+    """
+    try:
+        from programgarden_core.registry import PluginRegistry
+        from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
+        
+        registry = PluginRegistry()
+        
+        # 카테고리별 플러그인 ID 목록 반환
+        result: dict = {}
+        
+        # 카테고리 필터
+        categories_to_check = [PluginCategory(category)] if category else list(PluginCategory)
+        
+        # product 필터
+        product_filter = ProductType(product) if product else None
+        
+        for cat in categories_to_check:
+            plugins = registry.list_plugins(category=cat, product=product_filter)
+            if plugins:
+                # PluginSchema 객체에서 ID만 추출
+                result[cat.value] = [p.id if hasattr(p, 'id') else str(p) for p in plugins]
+        
+        return JSONResponse({"plugins": result})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e), "plugins": {}}, status_code=500)
+
+
+@app.get("/api/plugins/{plugin_id}")
+async def get_plugin_schema(plugin_id: str, version: Optional[str] = None):
+    """
+    특정 플러그인의 스키마 반환
+    
+    Args:
+        plugin_id: 플러그인 ID (예: RSI, MACD)
+        version: 플러그인 버전 (선택)
+    
+    Returns:
+        플러그인 스키마 (fields_schema 포함)
+    """
+    try:
+        from programgarden_core.registry import PluginRegistry
+        
+        registry = PluginRegistry()
+        schema = registry.get_schema(plugin_id, version=version)
+        
+        if schema is None:
+            return JSONResponse({"error": f"Plugin '{plugin_id}' not found"}, status_code=404)
+        
+        # PluginSchema를 dict로 변환
+        schema_dict = schema.model_dump() if hasattr(schema, 'model_dump') else dict(schema)
+        
+        return JSONResponse({"plugin": schema_dict})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ========================================
 # Exchange API (거래소 목록 조회)
 # ========================================
 
