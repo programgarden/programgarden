@@ -297,7 +297,13 @@ class ScheduleNodeExecutor(NodeExecutorBase):
 
 
 class WatchlistNodeExecutor(NodeExecutorBase):
-    """WatchlistNode executor"""
+    """
+    WatchlistNode executor
+    
+    거래소 + 종목코드 구조를 처리합니다.
+    BrokerNode 연결 시 broker 정보를 가져오고, product 불일치 시 경고합니다.
+    BrokerNode 미연결 시에도 동작하며, 기본값(ls, overseas_stock)을 사용합니다.
+    """
 
     async def execute(
         self,
@@ -306,9 +312,78 @@ class WatchlistNodeExecutor(NodeExecutorBase):
         config: Dict[str, Any],
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        symbols = config.get("symbols", [])
-        context.log("info", f"Watchlist symbols: {symbols}", node_id)
-        return {"symbols": symbols}
+        from programgarden_core.models.exchange import (
+            exchange_registry, 
+            ProductType, 
+            SymbolEntry
+        )
+        
+        symbols_raw = config.get("symbols", [])
+        config_product = config.get("product")  # WatchlistNode 자체 설정
+        
+        # BrokerNode로부터 broker 정보 가져오기 (선택)
+        broker_output = context.find_parent_output(node_id, "BrokerNode")
+        
+        if broker_output:
+            broker = broker_output.get("company", "ls")
+            broker_product = broker_output.get("product", "overseas_stock")
+            
+            # WatchlistNode에 product가 설정되어 있고, BrokerNode와 다르면 경고
+            if config_product and config_product != broker_product:
+                context.log(
+                    "warning", 
+                    f"Product mismatch: WatchlistNode({config_product}) vs BrokerNode({broker_product}). "
+                    f"Using WatchlistNode's product setting.",
+                    node_id
+                )
+                product = config_product
+            else:
+                product = config_product or broker_product
+        else:
+            # BrokerNode 미연결: WatchlistNode 자체 설정 또는 기본값 사용
+            broker = "ls"
+            product = config_product or "overseas_stock"
+            context.log("info", f"No BrokerNode connected. Using defaults: broker={broker}, product={product}", node_id)
+        
+        product_type = ProductType(product)
+        
+        # symbols 처리: [{exchange, symbol}, ...] 형태
+        processed_symbols = []
+        for entry in symbols_raw:
+            if isinstance(entry, dict):
+                exchange = entry.get("exchange", "")
+                symbol = entry.get("symbol", "")
+                
+                if exchange and symbol:
+                    # 거래소 이름 → API 코드 변환
+                    exchange_code = exchange_registry.name_to_code(broker, product_type, exchange)
+                    if exchange_code is None:
+                        context.log("warning", f"Unknown exchange: {exchange}, using as-is", node_id)
+                        exchange_code = exchange
+                    
+                    processed_symbols.append({
+                        "exchange": exchange,           # 원본 이름 유지 (사용자 표시용)
+                        "exchange_code": exchange_code, # API 코드
+                        "symbol": symbol,
+                    })
+            elif isinstance(entry, str):
+                # 문자열만 있는 경우: 기본 거래소 사용
+                default_exchange = exchange_registry.get_default_exchange(broker, product_type)
+                exchange_code = exchange_registry.name_to_code(broker, product_type, default_exchange) if default_exchange else ""
+                
+                processed_symbols.append({
+                    "exchange": default_exchange or "",
+                    "exchange_code": exchange_code or "",
+                    "symbol": entry,
+                })
+        
+        context.log("info", f"Watchlist: {len(processed_symbols)} symbols, product={product}, broker={broker}", node_id)
+        
+        return {
+            "symbols": processed_symbols,
+            "product": product,
+            "broker": broker,
+        }
 
 
 class BrokerNodeExecutor(NodeExecutorBase):
@@ -906,6 +981,13 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 # 컨텍스트에 최신 데이터 저장
                 context.set_output(node_id, "positions", positions)
                 
+                # 디버깅용 print
+                from datetime import datetime
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 해외주식 포지션 업데이트:")
+                for sym, pos in positions.items():
+                    if hasattr(pos, 'pnl_rate'):
+                        print(f"  {sym}: 현재가=${pos.current_price:.2f}, 수익률={pos.pnl_rate:.2f}%")
+                
                 # 이벤트 큐에 추가 (비동기)
                 asyncio.create_task(context.emit_event(
                     event_type="realtime_update",
@@ -933,6 +1015,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 초기 데이터 반환
             result = self._get_stock_tracker_data(tracker)
+            print(f"\n{'='*60}")
+            print(f"[RealAccountNode] 해외주식 실시간 계좌 데이터")
+            print(f"{'='*60}")
+            print(f"보유 종목: {result.get('symbols', [])}")
+            print(f"잔고: {result.get('balance', {})}")
+            for sym, pos in result.get('positions', {}).items():
+                print(f"  - {sym}: 수량={pos.get('qty')}, 평단가=${pos.get('avg_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 수익률={pos.get('pnl_rate'):.2f}%")
+            print(f"{'='*60}\n")
             return result
             
         except Exception as e:
@@ -994,6 +1084,15 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             # 포지션 변경 콜백 (실시간 이벤트)
             def on_position_change(positions):
                 context.set_output(node_id, "positions", positions)
+                
+                # 디버깅용 print
+                from datetime import datetime
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 해외선물 포지션 업데이트:")
+                for sym, pos in positions.items():
+                    direction = '롱' if getattr(pos, 'is_long', True) else '숏'
+                    pnl = getattr(pos, 'pnl_amount', 0)
+                    print(f"  {sym} ({direction}): 현재가=${getattr(pos, 'current_price', 0):.2f}, 손익=${pnl:.2f}")
+                
                 asyncio.create_task(context.emit_event(
                     event_type="realtime_update",
                     source_node_id=node_id,
@@ -1027,6 +1126,16 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 초기 데이터 반환
             result = self._get_futures_tracker_data(tracker)
+            print(f"\n{'='*60}")
+            print(f"[RealAccountNode] 해외선물 실시간 계좌 데이터")
+            print(f"{'='*60}")
+            print(f"보유 종목: {result.get('symbols', [])}")
+            print(f"잔고: {result.get('balance', {})}")
+            for sym, pos in result.get('positions', {}).items():
+                direction = '롱' if pos.get('is_long') else '숏'
+                print(f"  - {sym} ({direction}): 수량={pos.get('qty')}, 진입가=${pos.get('entry_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 손익=${pos.get('pnl_amount'):.2f}")
+            print(f"미체결: {list(result.get('open_orders', {}).keys())}")
+            print(f"{'='*60}\n")
             return result
             
         except Exception as e:
@@ -1158,11 +1267,59 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         import random
+        from programgarden_core.exceptions import ValidationError
+        
+        # ========================================
+        # BrokerNode와 WatchlistNode product 정합성 검증
+        # ========================================
+        broker_output = context.find_parent_output(node_id, "BrokerNode")
+        watchlist_output = context.find_parent_output(node_id, "WatchlistNode")
+        
+        broker_product = None
+        watchlist_product = None
+        
+        if broker_output:
+            # BrokerNode 출력에서 product 가져오기
+            broker_product = broker_output.get("product")
+            if not broker_product:
+                # connection 내부에 있을 수도 있음
+                conn = broker_output.get("connection", {})
+                broker_product = conn.get("product")
+        
+        if watchlist_output:
+            watchlist_product = watchlist_output.get("product")
+        
+        # 둘 다 있고 product가 불일치하면 에러
+        if broker_product and watchlist_product and broker_product != watchlist_product:
+            error_msg = (
+                f"Product mismatch: BrokerNode({broker_product}) ↔ WatchlistNode({watchlist_product}). "
+                f"Cannot subscribe to realtime data with mismatched products. "
+                f"Please ensure BrokerNode and WatchlistNode use the same product type."
+            )
+            context.log("error", error_msg, node_id)
+            raise ValidationError(error_msg, node_id=node_id)
+        
+        # BrokerNode는 있는데 WatchlistNode가 없거나, 또는 symbols가 없으면 경고
+        if broker_product and not watchlist_output:
+            context.log("warning", f"No WatchlistNode found. BrokerNode product: {broker_product}", node_id)
         
         # 입력에서 symbols 가져오기
-        symbols = context.get_output("_input_" + node_id, "symbols") or []
-        if not symbols:
-            symbols = context.get_output("account", "held_symbols") or []
+        symbols_raw = context.get_output("_input_" + node_id, "symbols") or []
+        if not symbols_raw:
+            symbols_raw = context.get_output("account", "held_symbols") or []
+        
+        if not symbols_raw:
+            context.log("warning", "No symbols to subscribe. Check WatchlistNode or AccountNode connection.", node_id)
+            return {"price": {}, "volume": {}, "bid": {}, "ask": {}, "error": "no_symbols"}
+        
+        # symbols 정규화: dict 형태 [{exchange, symbol}] → 문자열 리스트
+        symbols = []
+        for entry in symbols_raw:
+            if isinstance(entry, dict):
+                # WatchlistNode 출력 형식: {exchange, symbol}
+                symbols.append(entry.get("symbol", ""))
+            elif isinstance(entry, str):
+                symbols.append(entry)
         
         # TODO: 실제 구현에서는 WebSocket 시세 수신
         # 현재는 약간의 변동을 주는 목업 데이터
@@ -1170,6 +1327,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         base_prices = {"NVDA": 875.30, "AAPL": 192.30, "TSLA": 248.90}
         
         for symbol in symbols:
+            if not symbol:
+                continue
             base = base_prices.get(symbol, 100.0)
             # ±0.5% 랜덤 변동
             variation = base * random.uniform(-0.005, 0.005)
@@ -1268,6 +1427,14 @@ class DisplayNodeExecutor(NodeExecutorBase):
         # 1. _input_{node_id}에서 모든 포트의 데이터 수집
         input_namespace = f"_input_{node_id}"
         all_inputs = context.get_all_outputs(input_namespace) if hasattr(context, 'get_all_outputs') else {}
+        
+        # 디버깅: 입력 데이터 확인
+        print(f"\n🔍 DisplayNode '{node_id}' 입력 데이터:")
+        print(f"   - all_inputs keys: {list(all_inputs.keys())}")
+        for k, v in all_inputs.items():
+            v_type = type(v).__name__
+            v_preview = str(v)[:100] if v else "None"
+            print(f"   - {k} ({v_type}): {v_preview}...")
         
         context.log("debug", f"DisplayNode inputs from {input_namespace}: {list(all_inputs.keys())}", node_id)
         
@@ -1620,6 +1787,47 @@ class DisplayNodeExecutor(NodeExecutorBase):
             frontend_chart_data = equity_data or data
         elif chart_type in ("scatter", "heatmap"):
             frontend_chart_data = data
+        
+        # ========================================
+        # Fallback: 차트 데이터가 없으면 raw data를 JSON으로 표시
+        # ========================================
+        if frontend_chart_data is None or (isinstance(frontend_chart_data, (list, dict)) and not frontend_chart_data):
+            # 원본 데이터가 있으면 raw로 출력
+            raw_data = data or all_inputs or {}
+            if raw_data:
+                context.log("info", f"DisplayNode: chart_type '{chart_type}'에 맞는 데이터 없음, raw JSON으로 표시", node_id)
+                
+                # 콘솔에 raw JSON 출력
+                import json
+                from datetime import datetime
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"\n📋 {title or 'Raw Output'} [{now}]")
+                print("=" * 60)
+                try:
+                    # Pydantic 모델이나 특수 객체 처리
+                    def serialize(obj):
+                        if hasattr(obj, 'model_dump'):
+                            return obj.model_dump()
+                        elif hasattr(obj, '__dict__'):
+                            return {k: serialize(v) for k, v in obj.__dict__.items() if not k.startswith('_')}
+                        elif isinstance(obj, dict):
+                            return {k: serialize(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [serialize(v) for v in obj]
+                        return obj
+                    
+                    serialized = serialize(raw_data)
+                    print(json.dumps(serialized, indent=2, ensure_ascii=False, default=str))
+                except Exception as e:
+                    print(f"(직렬화 실패: {e})")
+                    print(str(raw_data)[:500])
+                print("=" * 60 + "\n")
+                
+                # 프론트엔드로 raw 데이터 전송 (테이블 형식으로)
+                frontend_chart_data = raw_data
+                chart_type = "raw"  # 프론트엔드에서 JSON viewer로 처리
+                output_data["chart_type"] = "raw"
+                output_data["raw_data"] = raw_data
         
         if frontend_chart_data is not None:
             await context.notify_display_data(
@@ -3317,6 +3525,9 @@ class WorkflowExecutor:
             workflow_inputs=workflow_inputs,
             workflow_credentials=workflow_credentials,
             resource_context=resource_context,
+            # DAG 탐색용 워크플로우 구조 정보
+            workflow_edges=resolved.edges,
+            workflow_nodes=resolved.nodes,
         )
         
         # Set listeners (Option A: inject at creation)
@@ -3595,13 +3806,16 @@ class WorkflowJob:
             # Connect inputs (get values from edges) + 🆕 엣지 알림
             for edge in self.workflow.edges:
                 if edge.to_node_id == node_id:
-                    # 엣지는 실행 순서만 표현, 데이터는 기본 포트("output" → "input") 사용
-                    value = self.context.get_output(
-                        edge.from_node_id,
-                        None,  # 기본 output 포트
-                    )
-                    print(f"    📦 Edge: {edge.from_node_id} → {node_id} = {value is not None}", flush=True)
-                    if value is not None:
+                    # 엣지는 실행 순서만 표현, 데이터는 전체 출력을 전달
+                    # get_all_outputs로 소스 노드의 모든 출력 가져오기
+                    all_outputs = self.context.get_all_outputs(edge.from_node_id)
+                    
+                    # 단일 값 (하위 호환): 첫 번째 출력
+                    single_value = self.context.get_output(edge.from_node_id, None)
+                    
+                    print(f"    📦 Edge: {edge.from_node_id} → {node_id} = {len(all_outputs)} outputs", flush=True)
+                    
+                    if all_outputs:
                         from_port = "output"
                         input_port = "input"
                         
@@ -3612,13 +3826,22 @@ class WorkflowJob:
                             to_node_id=node_id,
                             to_port=input_port,
                             state=EdgeState.TRANSMITTING,
-                            data=value,
+                            data=all_outputs,
                         )
                         
+                        # 전체 출력을 각 포트별로 저장 (DisplayNode 등에서 개별 접근 가능)
+                        for port_name, port_value in all_outputs.items():
+                            self.context.set_output(
+                                f"_input_{node_id}",
+                                port_name,
+                                port_value,
+                            )
+                        
+                        # 단일 값도 "input" 포트에 저장 (하위 호환)
                         self.context.set_output(
                             f"_input_{node_id}",
                             input_port,
-                            value,
+                            single_value if single_value is not None else all_outputs,
                         )
                         
                         # 🆕 엣지 전송 완료 알림
