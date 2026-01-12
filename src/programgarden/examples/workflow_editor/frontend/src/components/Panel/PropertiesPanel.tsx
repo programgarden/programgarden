@@ -6,11 +6,12 @@ import { findUpstreamNodes } from '@/utils/graphUtils';
 import { Trash2, Info } from 'lucide-react';
 import { ConfigField } from '@/types/workflow';
 import { useCredentials } from '@/hooks/useCredentials';
-import { usePlugins } from '@/hooks/usePlugins';
+import { usePlugins, getDefaultFieldsFromSchema } from '@/hooks/usePlugins';
 import { CredentialModal } from './CredentialModal';
 import InputTab from './InputTab';
 import OutputTab from './OutputTab';
 import BindableField from './BindableField';
+import PluginFieldsGroup from './PluginFieldsGroup';
 
 // Map node types to their required credential types
 const NODE_CREDENTIAL_TYPES: Record<string, string> = {
@@ -275,47 +276,75 @@ export default function PropertiesPanel() {
               
               // 현재 노드 타입에 맞는 플러그인 목록
               const availablePlugins = getPluginsForNodeType(nodeType);
+              // 플러그인 사용 노드인지 확인
+              const isPluginNode = ['ConditionNode', 'NewOrderNode', 'ModifyOrderNode', 'CancelOrderNode'].includes(nodeType);
+              const currentPluginId = nodeData.plugin as string | undefined;
               
-              return paramFields.map(([key, schema]) => (
-                <div key={key}>
-                  <BindableField
-                    label={key.replace(/_/g, ' ')}
-                    fieldKey={key}
-                    value={nodeData[key]}
-                    onChange={(value) => handleFieldChange(key, value)}
-                    onFocus={() => handleFieldFocus(key)}
-                    schema={schema}
-                    // Credential props (credential_id 필드용)
-                    credentials={credentials}
-                    credentialTypes={credentialTypes}
-                    onOpenCredentialModal={handleOpenCredentialModal}
-                    credentialLoading={credLoading}
-                    requiredCredentialType={requiredCredentialType}
-                    // WatchlistNode용 (symbol_editor)
-                    nodeData={nodeData}
-                    onNodeDataChange={handleFieldChange}
-                    // Plugin 관련 props (plugin 필드용)
-                    availablePlugins={availablePlugins}
-                    onPluginChange={async (pluginId) => {
-                      // 플러그인 변경 시 fields 초기화
-                      handleFieldChange('plugin', pluginId);
-                      // 플러그인 스키마 가져와서 기본값 설정
-                      const pluginSchema = await getPluginSchema(pluginId);
-                      if (pluginSchema?.fields_schema) {
-                        const defaultFields: Record<string, unknown> = {};
-                        for (const [fKey, fSchema] of Object.entries(pluginSchema.fields_schema)) {
-                          if (fSchema.default !== undefined) {
-                            defaultFields[fKey] = fSchema.default;
+              // fields 필드는 PluginFieldsGroup에서 처리하므로 제외
+              const filteredParamFields = isPluginNode 
+                ? paramFields.filter(([key]) => key !== 'fields')
+                : paramFields;
+              
+              return (
+                <>
+                  {filteredParamFields.map(([key, schema]) => (
+                    <div key={key}>
+                      <BindableField
+                        label={key.replace(/_/g, ' ')}
+                        fieldKey={key}
+                        value={nodeData[key]}
+                        onChange={(value) => handleFieldChange(key, value)}
+                        onFocus={() => handleFieldFocus(key)}
+                        schema={schema}
+                        // Credential props (credential_id 필드용)
+                        credentials={credentials}
+                        credentialTypes={credentialTypes}
+                        onOpenCredentialModal={handleOpenCredentialModal}
+                        credentialLoading={credLoading}
+                        requiredCredentialType={requiredCredentialType}
+                        // WatchlistNode용 (symbol_editor)
+                        nodeData={nodeData}
+                        onNodeDataChange={handleFieldChange}
+                        // Plugin 관련 props (plugin 필드용)
+                        availablePlugins={availablePlugins}
+                        onPluginChange={async (pluginId) => {
+                          // 플러그인 변경 시 fields 완전 초기화 후 새 기본값 설정
+                          handleFieldChange('plugin', pluginId);
+                          // 플러그인 스키마 가져와서 기본값 설정
+                          const pluginSchema = await getPluginSchema(pluginId);
+                          if (pluginSchema?.fields_schema) {
+                            const defaultFields = getDefaultFieldsFromSchema(pluginSchema.fields_schema);
+                            // 기존 fields를 완전히 교체 (새 플러그인 기본값으로)
+                            handleFieldChange('fields', defaultFields);
+                          } else {
+                            handleFieldChange('fields', {});
                           }
-                        }
-                        if (Object.keys(defaultFields).length > 0) {
-                          handleFieldChange('fields', defaultFields);
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              ));
+                        }}
+                      />
+                    </div>
+                  ))}
+                  
+                  {/* 플러그인 필드 그룹 - 플러그인이 선택되었을 때만 표시 */}
+                  {isPluginNode && currentPluginId && (
+                    <PluginFieldsGroup
+                      pluginId={currentPluginId}
+                      fields={(nodeData.fields as Record<string, unknown>) || {}}
+                      onChange={(newFields) => handleFieldChange('fields', newFields)}
+                      locale="en"  // 기본 영어, 향후 사용자 설정으로 변경 가능
+                    />
+                  )}
+                  
+                  {/* 플러그인 미선택 안내 */}
+                  {isPluginNode && !currentPluginId && (
+                    <div className="mt-4 p-3 bg-amber-900/20 border border-amber-700/50 rounded text-amber-400 text-sm">
+                      <p className="flex items-center gap-2">
+                        <span>💡</span>
+                        <span>Select a plugin above to configure its parameters</span>
+                      </p>
+                    </div>
+                  )}
+                </>
+              );
             })()}
           </div>
         )}
