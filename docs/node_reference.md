@@ -56,23 +56,25 @@ ProgramGarden에서 사용할 수 있는 모든 노드의 상세 설명입니다
 {
   "id": "broker",
   "type": "BrokerNode",
-  "config": {
-    "company": "ls",
-    "product": "overseas_stock",
-    "credential_id": "my-broker-cred"
-  }
+  "provider": "ls-sec.co.kr",
+  "product": "overseas_stock",
+  "credential_id": "my-broker-cred"
 }
 ```
 
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|------|------|
-| `company` | "ls" | ✅ | 증권사 (현재 LS증권만 지원) |
-| `product` | "overseas_stock" \| "overseas_futures" | ✅ | 상품 유형 |
-| `credential_id` | string | ✅ | credentials 섹션의 ID 참조 |
+| 필드 | 타입 | 필수 | 기본값 | 설명 |
+|------|------|------|--------|------|
+| `provider` | string | - | "ls-sec.co.kr" | 증권사 도메인 (현재 LS증권만 지원) |
+| `product` | "overseas_stock" \| "overseas_futures" | - | "overseas_stock" | 상품 유형 (해외주식/해외선물) |
+| `credential_id` | string | - | - | credentials 섹션의 ID 참조 |
 
-> 💡 **모의투자 설정**: `paper_trading`은 credential의 `broker_ls.paper_trading`에서 관리됩니다.
+> 💡 **상품별 특성**:
+> - `overseas_stock`: 해외주식 (모의투자 미지원)
+> - `overseas_futures`: 해외선물 (모의투자 지원)
+>
+> **모의투자 설정**: `paper_trading`은 credential의 `broker_ls.paper_trading`에서 관리됩니다.
 
-**출력**: `client` - 증권사 클라이언트 객체
+**출력**: `connection` - 증권사 연결 객체
 
 ---
 

@@ -82,27 +82,35 @@ class BrokerNode(BaseNode):
             "provider": FieldSchema(
                 name="provider",
                 type=FieldType.STRING,
-                description="i18n:fields.BrokerNode.provider",
+                description="Broker provider domain. Currently only LS Securities (ls-sec.co.kr) is supported.",
                 default="ls-sec.co.kr",
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                example="ls-sec.co.kr",
+                expected_type="str",
             ),
             "product": FieldSchema(
                 name="product",
                 type=FieldType.ENUM,
-                description="i18n:fields.BrokerNode.product",
+                description="Product type. overseas_stock: US stocks (no paper trading). overseas_futures: Futures (paper trading supported).",
                 default="overseas_stock",
                 enum_values=["overseas_stock", "overseas_futures"],
+                enum_labels={
+                    "overseas_stock": "해외주식",
+                    "overseas_futures": "해외선물"
+                },
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                expected_type="str",
             ),
             "credential_id": FieldSchema(
                 name="credential_id",
                 type=FieldType.CREDENTIAL,
-                description="i18n:fields.BrokerNode.credential_id",
+                description="Reference to stored broker credentials. Contains appkey, appsecret, and paper_trading flag.",
                 default=None,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                credential_types=["broker_ls"],
             ),
             # paper_trading은 credential에서 관리됨 (broker_ls.paper_trading)
         }

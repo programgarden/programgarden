@@ -1,9 +1,7 @@
 import { useState, useRef } from 'react';
-import { Node } from '@xyflow/react';
 import { ConfigField, Credential, CredentialTypeSchema } from '@/types/workflow';
 import { Plus, X, Lock, Key } from 'lucide-react';
 import SymbolEditor from './SymbolEditor';
-import { findAutoBindingSource, getRequiredNodeTypesForPort, AutoBindingResult } from '@/utils/graphUtils';
 
 // 민감한 헤더 키 목록 (대소문자 무시)
 const SENSITIVE_HEADER_KEYS = [
@@ -48,8 +46,6 @@ interface BindableFieldProps {
   // Plugin 관련 props (plugin 필드용)
   availablePlugins?: string[];
   onPluginChange?: (pluginId: string) => void;
-  // Port Binding 자동 연결 확인용
-  upstreamNodes?: Node[];
 }
 
 export default function BindableField({ 
@@ -68,7 +64,6 @@ export default function BindableField({
   onNodeDataChange,
   availablePlugins,
   onPluginChange,
-  upstreamNodes,
 }: BindableFieldProps) {
   const [isExpression, setIsExpression] = useState(() => {
     return typeof value === 'string' && value.startsWith('{{');
@@ -82,9 +77,12 @@ export default function BindableField({
   // Plugin field인지 확인 (fieldKey가 plugin)
   const isPluginField = fieldKey === 'plugin';
   
-  // Port binding field인지 확인 (ui_hint가 port_binding:*로 시작)
-  const isPortBindingField = schema?.ui_hint?.startsWith('port_binding:');
-  const portBindingType = isPortBindingField ? schema?.ui_hint?.split(':')[1] : null;
+  // Port binding field인지 확인 (ui_hint가 port_binding:*로 시작하거나, 바인딩 가이드 정보가 있는 경우)
+  // 단, enum/boolean 타입은 제외 (고정된 선택지가 있는 필드)
+  const hasBindingGuide = schema?.example !== undefined || (schema?.bindable_sources && schema.bindable_sources.length > 0);
+  const isEnumOrBooleanType = schema?.type === 'enum' || schema?.type === 'boolean';
+  const isPortBindingField = !isEnumOrBooleanType && (schema?.ui_hint?.startsWith('port_binding:') || hasBindingGuide);
+  const portBindingType = schema?.ui_hint?.startsWith('port_binding:') ? schema?.ui_hint?.split(':')[1] : null;
   
   // 드롭 핸들러
   const handleDrop = (e: React.DragEvent) => {
@@ -244,97 +242,32 @@ export default function BindableField({
     );
   }
   
-  // Port Binding 필드 (ui_hint가 port_binding:* 인 경우)
-  // 자동 바인딩이 백엔드에서 처리되므로, 비어있으면 자동으로 연결됨
+  // Port Binding 필드 또는 바인딩 가이드가 있는 필드
   if (isPortBindingField) {
-    // 포트 타입별 설정 (아이콘, 색상, 예시 필드명, JSON 직접 입력 예시)
-    const portTypeConfig: Record<string, { 
-      icon: string; 
-      color: string; 
-      exampleField: string;
-      jsonExample: string;
-      jsonDescription: string;
-    }> = {
-      'market_data': { 
-        icon: '📈', 
-        color: 'emerald', 
-        exampleField: 'ohlcv',
-        jsonExample: '[{"open":100,"high":105,"low":99,"close":102,"volume":1000}]',
-        jsonDescription: 'OHLCV 배열',
-      },
-      'price_data': { 
-        icon: '📈', 
-        color: 'emerald', 
-        exampleField: 'price',
-        jsonExample: '[{"symbol":"AAPL","price":185.5},{"symbol":"NVDA","price":450.2}]',
-        jsonDescription: '종목별 가격 배열',
-      },
-      'volume_data': { 
-        icon: '📊', 
-        color: 'emerald', 
-        exampleField: 'volume',
-        jsonExample: '[{"symbol":"AAPL","volume":15000000}]',
-        jsonDescription: '종목별 거래량 배열',
-      },
-      'symbol_list': { 
-        icon: '🎯', 
-        color: 'cyan', 
-        exampleField: 'symbols',
-        jsonExample: '["AAPL","NVDA","TSLA"]',
-        jsonDescription: '종목코드 문자열 배열',
-      },
-      'symbols': { 
-        icon: '🎯', 
-        color: 'cyan', 
-        exampleField: 'symbols',
-        jsonExample: '["AAPL","NVDA","TSLA"]',
-        jsonDescription: '종목코드 문자열 배열',
-      },
-      'position_data': { 
-        icon: '📋', 
-        color: 'purple', 
-        exampleField: 'positions',
-        jsonExample: '[{"symbol":"AAPL","qty":10,"avg_price":150.5,"pnl_rate":5.2}]',
-        jsonDescription: '포지션 객체 배열',
-      },
-      'held_symbols': { 
-        icon: '🎯', 
-        color: 'purple', 
-        exampleField: 'held_symbols',
-        jsonExample: '["AAPL","GOOGL"]',
-        jsonDescription: '보유 종목코드 배열',
-      },
-      'order_list': { 
-        icon: '📝', 
-        color: 'orange', 
-        exampleField: 'active_orders',
-        jsonExample: '[{"order_id":"123","symbol":"AAPL","side":"buy","qty":10}]',
-        jsonDescription: '주문 객체 배열',
-      },
-      'quantity': { 
-        icon: '🔢', 
-        color: 'indigo', 
-        exampleField: 'quantity',
-        jsonExample: '100',
-        jsonDescription: '정수 또는 소수',
-      },
-      'balance': { 
-        icon: '💰', 
-        color: 'yellow', 
-        exampleField: 'balance',
-        jsonExample: '1000000',
-        jsonDescription: '잔고 금액 (숫자)',
-      },
+    // 포트 타입별 기본 설정 (아이콘, 색상 등)
+    const portTypeDefaults: Record<string, { icon: string; color: string }> = {
+      'market_data': { icon: '📈', color: 'emerald' },
+      'price_data': { icon: '📈', color: 'emerald' },
+      'volume_data': { icon: '📊', color: 'emerald' },
+      'symbol_list': { icon: '🎯', color: 'cyan' },
+      'symbols': { icon: '🎯', color: 'cyan' },
+      'position_data': { icon: '📋', color: 'purple' },
+      'held_symbols': { icon: '🎯', color: 'purple' },
+      'order_list': { icon: '📝', color: 'orange' },
+      'quantity': { icon: '🔢', color: 'indigo' },
+      'balance': { icon: '💰', color: 'yellow' },
     };
     
     const typeKey = portBindingType || 'default';
-    const config = portTypeConfig[typeKey] || { 
-      icon: '🔗', 
-      color: 'gray', 
-      exampleField: label.toLowerCase().replace(/ /g, '_'),
-      jsonExample: '{"key": "value"}',
-      jsonDescription: 'JSON 데이터',
-    };
+    const defaultConfig = portTypeDefaults[typeKey] || { icon: '🔗', color: 'gray' };
+    
+    // 스키마에서 바인딩 정보 가져오기 (백엔드에서 전달됨)
+    const jsonExample = schema?.example !== undefined 
+      ? (typeof schema.example === 'string' ? schema.example : JSON.stringify(schema.example, null, 2))
+      : null;
+    const bindingExample = schema?.example_binding || `{{ nodes.노드ID.${fieldKey} }}`;
+    const bindableSources = schema?.bindable_sources || [];
+    const expectedType = schema?.expected_type || 'any';
     
     const colorClasses: Record<string, string> = {
       emerald: 'border-emerald-600 bg-emerald-900/20 text-emerald-300 focus:ring-emerald-500',
@@ -348,30 +281,35 @@ export default function BindableField({
       gray: 'border-gray-600 bg-gray-900/20 text-gray-300 focus:ring-gray-500',
     };
     
-    // 값이 비어있으면 자동 바인딩 상태
+    // 값이 비어있는지 확인
     const isEmpty = !value || (typeof value === 'string' && value.trim() === '');
     
-    // upstream 노드에서 자동 바인딩 소스 찾기
-    const autoBindingResult: AutoBindingResult = upstreamNodes && portBindingType
-      ? findAutoBindingSource(portBindingType, upstreamNodes)
-      : { available: false };
+    // 바인딩 표현식 유효성 검사
+    const isBindingExpression = typeof value === 'string' && value.includes('{{');
+    const isValidBinding = (() => {
+      if (!isBindingExpression) return true; // 바인딩이 아니면 검사 안함
+      const strValue = String(value);
+      // {{ nodes.xxx.yyy }} 패턴 검사
+      const bindingPattern = /^\{\{\s*nodes\.\w+\.\w+(\.\w+)*\s*\}\}$/;
+      return bindingPattern.test(strValue.trim());
+    })();
     
-    // 상태 결정: 값 있음 / 자동 바인딩 가능 / 연결 필요
-    const bindingStatus = !isEmpty 
-      ? 'bound'  // 사용자가 직접 값을 입력함
-      : autoBindingResult.available 
-        ? 'auto'  // 자동 바인딩 가능
-        : 'missing';  // 연결 필요
-    
-    // 연결 필요 시 필요한 노드 타입 안내
-    const requiredNodeTypes = portBindingType 
-      ? getRequiredNodeTypesForPort(portBindingType) 
-      : '';
-    
-    // placeholder: 실제 사용 가능한 표현식 예시
-    const placeholderExpression = autoBindingResult.available && autoBindingResult.expression
-      ? autoBindingResult.expression
-      : `{{ nodes.노드ID.${config.exampleField} }}`;
+    // 입력값 상태에 따른 스타일 결정
+    const getInputStyle = () => {
+      if (isEmpty) {
+        return 'border border-gray-600 bg-gray-700 text-gray-200 placeholder:text-gray-500';
+      }
+      if (isBindingExpression && !isValidBinding) {
+        // 바인딩 표현식이지만 형식이 잘못됨 → 빨간색
+        return 'border border-red-500 bg-red-900/20 text-red-300 focus:ring-red-500';
+      }
+      if (isBindingExpression && isValidBinding) {
+        // 유효한 바인딩 표현식 → 해당 색상
+        return colorClasses[defaultConfig.color];
+      }
+      // JSON 직접 입력 → 해당 색상
+      return colorClasses[defaultConfig.color];
+    };
 
     return (
       <div
@@ -383,89 +321,80 @@ export default function BindableField({
         <div className="flex items-center justify-between mb-1">
           <label className="text-xs text-gray-400 capitalize">
             <span className="flex items-center gap-1">
-              {config.icon} {label}
+              {defaultConfig.icon} {label}
             </span>
           </label>
-          <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${
-            bindingStatus === 'auto'
-              ? 'bg-green-900/50 text-green-400 border border-green-700'
-              : bindingStatus === 'missing'
-                ? 'bg-amber-900/50 text-amber-400 border border-amber-700'
-                : 'bg-blue-900/50 text-blue-400 border border-blue-700'
-          }`}>
-            {bindingStatus === 'auto' 
-              ? '✨ auto' 
-              : bindingStatus === 'missing' 
-                ? '⚠️ 연결 필요' 
-                : '✏️ 직접 입력'}
-          </span>
+          {schema?.required && <span className="text-red-400 text-xs">*</span>}
         </div>
         {schema?.description && (
           <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
         )}
-        <input
-          ref={inputRef as React.RefObject<HTMLInputElement>}
-          type="text"
-          value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value)}
+        <textarea
+          ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+          value={
+            value === null || value === undefined 
+              ? '' 
+              : typeof value === 'object' 
+                ? JSON.stringify(value, null, 2) 
+                : String(value)
+          }
+          onChange={(e) => {
+            const newValue = e.target.value;
+            // JSON 파싱 시도 (배열이나 객체일 수 있음)
+            if (newValue.trim().startsWith('[') || newValue.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(newValue);
+                onChange(parsed);
+                return;
+              } catch {
+                // 파싱 실패 시 문자열로 유지
+              }
+            }
+            onChange(newValue);
+          }}
           onFocus={onFocus}
-          placeholder={placeholderExpression}
-          className={`w-full px-3 py-1.5 rounded text-sm font-mono focus:outline-none focus:ring-1 transition-colors ${
-            bindingStatus === 'auto'
-              ? 'border border-green-700/50 bg-green-900/10 text-green-400 placeholder:text-green-600/70' 
-              : bindingStatus === 'missing'
-                ? 'border border-amber-700/50 bg-amber-900/10 text-amber-400 placeholder:text-amber-600/70'
-                : colorClasses[config.color]
-          }`}
+          placeholder={bindingExample}
+          rows={2}
+          className={`w-full px-3 py-1.5 rounded text-sm font-mono focus:outline-none focus:ring-1 transition-colors resize-y min-h-[38px] ${getInputStyle()}`}
         />
         
-        {/* 상태별 안내 메시지 */}
-        <div className="mt-2 text-xs space-y-1.5">
-          {bindingStatus === 'auto' && autoBindingResult.sourceNode && (
-            <>
-              <p className="text-green-400 flex items-center gap-1">
-                <span>✅</span>
-                <span>
-                  자동 연결: <code className="bg-gray-700 px-1 rounded">{autoBindingResult.sourceNode.id}</code> → 
-                  <code className="bg-gray-700 px-1 ml-1 rounded">{autoBindingResult.sourceField}</code>
-                </span>
-              </p>
-              <div className="p-2 bg-gray-800/50 rounded border border-gray-700">
-                <p className="text-gray-400 mb-1">💡 직접 입력 옵션:</p>
-                <p className="text-gray-500 ml-3">• 표현식: <code className="bg-gray-700 px-1 rounded text-cyan-400">{placeholderExpression}</code></p>
-                <p className="text-gray-500 ml-3">• JSON ({config.jsonDescription}): <code className="bg-gray-700 px-1 rounded text-yellow-400 break-all">{config.jsonExample}</code></p>
-              </div>
-            </>
-          )}
-          
-          {bindingStatus === 'missing' && (
-            <>
-              <p className="text-amber-400 flex items-center gap-1">
-                <span>⚠️</span>
-                <span>자동 바인딩 가능 노드: <strong>{requiredNodeTypes}</strong></span>
-              </p>
-              <div className="p-2 bg-gray-800/50 rounded border border-gray-700">
-                <p className="text-gray-400 mb-1">💡 입력 방법:</p>
-                <p className="text-gray-500 ml-3">1. 위 노드 연결 → 자동 바인딩</p>
-                <p className="text-gray-500 ml-3">2. 표현식: <code className="bg-gray-700 px-1 rounded text-cyan-400">{`{{ nodes.노드ID.${config.exampleField} }}`}</code></p>
-                <p className="text-gray-500 ml-3">3. JSON 직접 입력 ({config.jsonDescription}):</p>
-                <p className="text-gray-500 ml-6"><code className="bg-gray-700 px-1 rounded text-yellow-400 break-all">{config.jsonExample}</code></p>
-              </div>
-            </>
-          )}
-          
-          {bindingStatus === 'bound' && (
-            <>
-              <p className="text-blue-400 flex items-center gap-1">
-                <span>✏️</span>
-                <span>직접 입력됨. 비우면 자동 바인딩으로 전환됩니다.</span>
-              </p>
-              <p className="text-gray-500">
-                기대 형식 ({config.jsonDescription}): <code className="bg-gray-700 px-1 rounded text-yellow-400">{config.jsonExample}</code>
-              </p>
-            </>
-          )}
-        </div>
+        {/* 바인딩 표현식 검증 에러 메시지 */}
+        {isBindingExpression && !isValidBinding && (
+          <p className="text-xs text-red-400 mt-1">
+            ⚠️ 잘못된 바인딩 형식. 올바른 형식: <code className="bg-gray-700 px-1 rounded">{'{{ nodes.노드ID.필드명 }}'}</code>
+          </p>
+        )}
+        
+        {/* 바인딩 가이드 (항상 표시) */}
+        {(jsonExample || bindableSources.length > 0) && (
+          <div className="mt-2 p-2 bg-gray-800/50 rounded border border-gray-700 text-xs">
+            <p className="text-gray-400 mb-2">💡 입력 방법:</p>
+            
+            {/* 방법 1: 바인딩 표현식 */}
+            <p className="text-gray-500 ml-3">1. 바인딩 표현식:</p>
+            <p className="text-gray-500 ml-6"><code className="bg-gray-700 px-1 rounded text-cyan-400">{bindingExample}</code></p>
+            
+            {/* 방법 2: JSON 직접 입력 */}
+            {jsonExample && (
+              <>
+                <p className="text-gray-500 ml-3 mt-2">2. JSON 직접 입력 <span className="text-gray-600">({expectedType})</span>:</p>
+                <pre className="ml-6 mt-1 p-2 bg-gray-900 rounded border border-gray-700 text-yellow-400 overflow-x-auto whitespace-pre-wrap break-all">{jsonExample}</pre>
+              </>
+            )}
+            
+            {/* 바인딩 가능 소스 목록 */}
+            {bindableSources.length > 0 && (
+              <>
+                <p className="text-gray-500 ml-3 mt-2">📌 바인딩 가능 소스:</p>
+                <div className="ml-6 mt-1 flex flex-wrap gap-1">
+                  {bindableSources.map((src, i) => (
+                    <code key={i} className="bg-gray-700 px-1.5 py-0.5 rounded text-cyan-400 text-xs">{src}</code>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -494,13 +423,8 @@ export default function BindableField({
   
   // ENUM 타입 (드롭다운)
   if (schema?.type === 'enum' && schema?.enum_values && schema.enum_values.length > 0) {
-    // 한글 라벨 매핑
-    const enumLabels: Record<string, string> = {
-      'overseas_stock': '해외주식',
-      'overseas_futures': '해외선물',
-      'domestic_stock': '국내주식',
-      'domestic_futures': '국내선물',
-    };
+    // 서버에서 제공하는 enum_labels 사용, 없으면 폴백
+    const enumLabels: Record<string, string> = schema.enum_labels || {};
     
     return (
       <div>
