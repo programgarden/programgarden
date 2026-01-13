@@ -320,6 +320,8 @@ export default function PropertiesPanel() {
                             handleFieldChange('fields', {});
                           }
                         }}
+                        // Port Binding 자동 연결 확인용
+                        upstreamNodes={upstreamNodes}
                       />
                     </div>
                   ))}
@@ -380,6 +382,8 @@ export default function PropertiesPanel() {
                     onOpenCredentialModal={handleOpenCredentialModal}
                     credentialLoading={credLoading}
                     requiredCredentialType={requiredCredentialType}
+                    // Port Binding 자동 연결 확인용
+                    upstreamNodes={upstreamNodes}
                   />
                 </div>
               ));

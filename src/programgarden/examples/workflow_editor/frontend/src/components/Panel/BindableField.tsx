@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react';
+import { Node } from '@xyflow/react';
 import { ConfigField, Credential, CredentialTypeSchema } from '@/types/workflow';
 import { Plus, X, Lock, Key } from 'lucide-react';
 import SymbolEditor from './SymbolEditor';
+import { findAutoBindingSource, getRequiredNodeTypesForPort, AutoBindingResult } from '@/utils/graphUtils';
 
 // 민감한 헤더 키 목록 (대소문자 무시)
 const SENSITIVE_HEADER_KEYS = [
@@ -46,6 +48,8 @@ interface BindableFieldProps {
   // Plugin 관련 props (plugin 필드용)
   availablePlugins?: string[];
   onPluginChange?: (pluginId: string) => void;
+  // Port Binding 자동 연결 확인용
+  upstreamNodes?: Node[];
 }
 
 export default function BindableField({ 
@@ -64,6 +68,7 @@ export default function BindableField({
   onNodeDataChange,
   availablePlugins,
   onPluginChange,
+  upstreamNodes,
 }: BindableFieldProps) {
   const [isExpression, setIsExpression] = useState(() => {
     return typeof value === 'string' && value.startsWith('{{');
@@ -76,6 +81,10 @@ export default function BindableField({
   
   // Plugin field인지 확인 (fieldKey가 plugin)
   const isPluginField = fieldKey === 'plugin';
+  
+  // Port binding field인지 확인 (ui_hint가 port_binding:*로 시작)
+  const isPortBindingField = schema?.ui_hint?.startsWith('port_binding:');
+  const portBindingType = isPortBindingField ? schema?.ui_hint?.split(':')[1] : null;
   
   // 드롭 핸들러
   const handleDrop = (e: React.DragEvent) => {
@@ -231,6 +240,232 @@ export default function BindableField({
             💡 Select a plugin to configure its parameters
           </p>
         )}
+      </div>
+    );
+  }
+  
+  // Port Binding 필드 (ui_hint가 port_binding:* 인 경우)
+  // 자동 바인딩이 백엔드에서 처리되므로, 비어있으면 자동으로 연결됨
+  if (isPortBindingField) {
+    // 포트 타입별 설정 (아이콘, 색상, 예시 필드명, JSON 직접 입력 예시)
+    const portTypeConfig: Record<string, { 
+      icon: string; 
+      color: string; 
+      exampleField: string;
+      jsonExample: string;
+      jsonDescription: string;
+    }> = {
+      'market_data': { 
+        icon: '📈', 
+        color: 'emerald', 
+        exampleField: 'ohlcv',
+        jsonExample: '[{"open":100,"high":105,"low":99,"close":102,"volume":1000}]',
+        jsonDescription: 'OHLCV 배열',
+      },
+      'price_data': { 
+        icon: '📈', 
+        color: 'emerald', 
+        exampleField: 'price',
+        jsonExample: '[{"symbol":"AAPL","price":185.5},{"symbol":"NVDA","price":450.2}]',
+        jsonDescription: '종목별 가격 배열',
+      },
+      'volume_data': { 
+        icon: '📊', 
+        color: 'emerald', 
+        exampleField: 'volume',
+        jsonExample: '[{"symbol":"AAPL","volume":15000000}]',
+        jsonDescription: '종목별 거래량 배열',
+      },
+      'symbol_list': { 
+        icon: '🎯', 
+        color: 'cyan', 
+        exampleField: 'symbols',
+        jsonExample: '["AAPL","NVDA","TSLA"]',
+        jsonDescription: '종목코드 문자열 배열',
+      },
+      'symbols': { 
+        icon: '🎯', 
+        color: 'cyan', 
+        exampleField: 'symbols',
+        jsonExample: '["AAPL","NVDA","TSLA"]',
+        jsonDescription: '종목코드 문자열 배열',
+      },
+      'position_data': { 
+        icon: '📋', 
+        color: 'purple', 
+        exampleField: 'positions',
+        jsonExample: '[{"symbol":"AAPL","qty":10,"avg_price":150.5,"pnl_rate":5.2}]',
+        jsonDescription: '포지션 객체 배열',
+      },
+      'held_symbols': { 
+        icon: '🎯', 
+        color: 'purple', 
+        exampleField: 'held_symbols',
+        jsonExample: '["AAPL","GOOGL"]',
+        jsonDescription: '보유 종목코드 배열',
+      },
+      'order_list': { 
+        icon: '📝', 
+        color: 'orange', 
+        exampleField: 'active_orders',
+        jsonExample: '[{"order_id":"123","symbol":"AAPL","side":"buy","qty":10}]',
+        jsonDescription: '주문 객체 배열',
+      },
+      'quantity': { 
+        icon: '🔢', 
+        color: 'indigo', 
+        exampleField: 'quantity',
+        jsonExample: '100',
+        jsonDescription: '정수 또는 소수',
+      },
+      'balance': { 
+        icon: '💰', 
+        color: 'yellow', 
+        exampleField: 'balance',
+        jsonExample: '1000000',
+        jsonDescription: '잔고 금액 (숫자)',
+      },
+    };
+    
+    const typeKey = portBindingType || 'default';
+    const config = portTypeConfig[typeKey] || { 
+      icon: '🔗', 
+      color: 'gray', 
+      exampleField: label.toLowerCase().replace(/ /g, '_'),
+      jsonExample: '{"key": "value"}',
+      jsonDescription: 'JSON 데이터',
+    };
+    
+    const colorClasses: Record<string, string> = {
+      emerald: 'border-emerald-600 bg-emerald-900/20 text-emerald-300 focus:ring-emerald-500',
+      blue: 'border-blue-600 bg-blue-900/20 text-blue-300 focus:ring-blue-500',
+      cyan: 'border-cyan-600 bg-cyan-900/20 text-cyan-300 focus:ring-cyan-500',
+      violet: 'border-violet-600 bg-violet-900/20 text-violet-300 focus:ring-violet-500',
+      purple: 'border-purple-600 bg-purple-900/20 text-purple-300 focus:ring-purple-500',
+      orange: 'border-orange-600 bg-orange-900/20 text-orange-300 focus:ring-orange-500',
+      indigo: 'border-indigo-600 bg-indigo-900/20 text-indigo-300 focus:ring-indigo-500',
+      yellow: 'border-yellow-600 bg-yellow-900/20 text-yellow-300 focus:ring-yellow-500',
+      gray: 'border-gray-600 bg-gray-900/20 text-gray-300 focus:ring-gray-500',
+    };
+    
+    // 값이 비어있으면 자동 바인딩 상태
+    const isEmpty = !value || (typeof value === 'string' && value.trim() === '');
+    
+    // upstream 노드에서 자동 바인딩 소스 찾기
+    const autoBindingResult: AutoBindingResult = upstreamNodes && portBindingType
+      ? findAutoBindingSource(portBindingType, upstreamNodes)
+      : { available: false };
+    
+    // 상태 결정: 값 있음 / 자동 바인딩 가능 / 연결 필요
+    const bindingStatus = !isEmpty 
+      ? 'bound'  // 사용자가 직접 값을 입력함
+      : autoBindingResult.available 
+        ? 'auto'  // 자동 바인딩 가능
+        : 'missing';  // 연결 필요
+    
+    // 연결 필요 시 필요한 노드 타입 안내
+    const requiredNodeTypes = portBindingType 
+      ? getRequiredNodeTypesForPort(portBindingType) 
+      : '';
+    
+    // placeholder: 실제 사용 가능한 표현식 예시
+    const placeholderExpression = autoBindingResult.available && autoBindingResult.expression
+      ? autoBindingResult.expression
+      : `{{ nodes.노드ID.${config.exampleField} }}`;
+
+    return (
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`rounded transition-all ${dropZoneClass}`}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-gray-400 capitalize">
+            <span className="flex items-center gap-1">
+              {config.icon} {label}
+            </span>
+          </label>
+          <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${
+            bindingStatus === 'auto'
+              ? 'bg-green-900/50 text-green-400 border border-green-700'
+              : bindingStatus === 'missing'
+                ? 'bg-amber-900/50 text-amber-400 border border-amber-700'
+                : 'bg-blue-900/50 text-blue-400 border border-blue-700'
+          }`}>
+            {bindingStatus === 'auto' 
+              ? '✨ auto' 
+              : bindingStatus === 'missing' 
+                ? '⚠️ 연결 필요' 
+                : '✏️ 직접 입력'}
+          </span>
+        </div>
+        {schema?.description && (
+          <p className="text-xs text-gray-500 mb-1.5">{schema.description}</p>
+        )}
+        <input
+          ref={inputRef as React.RefObject<HTMLInputElement>}
+          type="text"
+          value={String(value ?? '')}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={onFocus}
+          placeholder={placeholderExpression}
+          className={`w-full px-3 py-1.5 rounded text-sm font-mono focus:outline-none focus:ring-1 transition-colors ${
+            bindingStatus === 'auto'
+              ? 'border border-green-700/50 bg-green-900/10 text-green-400 placeholder:text-green-600/70' 
+              : bindingStatus === 'missing'
+                ? 'border border-amber-700/50 bg-amber-900/10 text-amber-400 placeholder:text-amber-600/70'
+                : colorClasses[config.color]
+          }`}
+        />
+        
+        {/* 상태별 안내 메시지 */}
+        <div className="mt-2 text-xs space-y-1.5">
+          {bindingStatus === 'auto' && autoBindingResult.sourceNode && (
+            <>
+              <p className="text-green-400 flex items-center gap-1">
+                <span>✅</span>
+                <span>
+                  자동 연결: <code className="bg-gray-700 px-1 rounded">{autoBindingResult.sourceNode.id}</code> → 
+                  <code className="bg-gray-700 px-1 ml-1 rounded">{autoBindingResult.sourceField}</code>
+                </span>
+              </p>
+              <div className="p-2 bg-gray-800/50 rounded border border-gray-700">
+                <p className="text-gray-400 mb-1">💡 직접 입력 옵션:</p>
+                <p className="text-gray-500 ml-3">• 표현식: <code className="bg-gray-700 px-1 rounded text-cyan-400">{placeholderExpression}</code></p>
+                <p className="text-gray-500 ml-3">• JSON ({config.jsonDescription}): <code className="bg-gray-700 px-1 rounded text-yellow-400 break-all">{config.jsonExample}</code></p>
+              </div>
+            </>
+          )}
+          
+          {bindingStatus === 'missing' && (
+            <>
+              <p className="text-amber-400 flex items-center gap-1">
+                <span>⚠️</span>
+                <span>자동 바인딩 가능 노드: <strong>{requiredNodeTypes}</strong></span>
+              </p>
+              <div className="p-2 bg-gray-800/50 rounded border border-gray-700">
+                <p className="text-gray-400 mb-1">💡 입력 방법:</p>
+                <p className="text-gray-500 ml-3">1. 위 노드 연결 → 자동 바인딩</p>
+                <p className="text-gray-500 ml-3">2. 표현식: <code className="bg-gray-700 px-1 rounded text-cyan-400">{`{{ nodes.노드ID.${config.exampleField} }}`}</code></p>
+                <p className="text-gray-500 ml-3">3. JSON 직접 입력 ({config.jsonDescription}):</p>
+                <p className="text-gray-500 ml-6"><code className="bg-gray-700 px-1 rounded text-yellow-400 break-all">{config.jsonExample}</code></p>
+              </div>
+            </>
+          )}
+          
+          {bindingStatus === 'bound' && (
+            <>
+              <p className="text-blue-400 flex items-center gap-1">
+                <span>✏️</span>
+                <span>직접 입력됨. 비우면 자동 바인딩으로 전환됩니다.</span>
+              </p>
+              <p className="text-gray-500">
+                기대 형식 ({config.jsonDescription}): <code className="bg-gray-700 px-1 rounded text-yellow-400">{config.jsonExample}</code>
+              </p>
+            </>
+          )}
+        </div>
       </div>
     );
   }

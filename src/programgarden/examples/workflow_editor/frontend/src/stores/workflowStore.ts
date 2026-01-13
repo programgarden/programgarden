@@ -121,9 +121,20 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   // React Flow handlers
   onNodesChange: (changes) => {
-    set((state) => ({
-      nodes: applyNodeChanges(changes, state.nodes),
-    }));
+    set((state) => {
+      const newNodes = applyNodeChanges(changes, state.nodes);
+      
+      // 노드 삭제 시 선택된 노드가 삭제되었는지 확인
+      let newSelectedNodeId = state.selectedNodeId;
+      if (newSelectedNodeId && !newNodes.find((n) => n.id === newSelectedNodeId)) {
+        newSelectedNodeId = null;
+      }
+      
+      return {
+        nodes: newNodes,
+        selectedNodeId: newSelectedNodeId,
+      };
+    });
   },
 
   onEdgesChange: (changes) => {
