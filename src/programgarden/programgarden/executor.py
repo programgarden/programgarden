@@ -532,12 +532,6 @@ class BrokerNodeExecutor(NodeExecutorBase):
         if "paper_trading" in config and credential_id:
             paper_trading = config.get("paper_trading", paper_trading)
         
-        # Fallback to environment variables (product별 자동 선택)
-        if not appkey or not appsecret:
-            appkey, appsecret = self._get_env_credentials(product, paper_trading)
-            if appkey and appsecret:
-                context.log("info", f"Credentials loaded from environment variables (product={product}, paper_trading={paper_trading})", node_id)
-        
         if appkey and appsecret:
             context.set_secret("credential_id", {
                 "appkey": appkey,
@@ -570,91 +564,38 @@ class BrokerNodeExecutor(NodeExecutorBase):
         node_id: str,
     ) -> Dict[str, Any]:
         """
-        Credential Store에서 값을 가져와 config에 주입 (GenericNodeExecutor와 동일 패턴)
+        Credential 값을 config에 주입
+        
+        워크플로우 JSON의 credentials 섹션에서 값을 가져와 config에 주입합니다.
+        (프로덕션 환경: 서버가 암호화된 credentials를 복호화하여 JSON에 포함)
+        
+        규칙:
+        - credential의 키명 = 노드의 필드명 (예: appkey, appsecret)
+        - config에 해당 키가 없거나 None이면 credential 값으로 채움
         """
-        try:
-            from programgarden_core.registry import get_credential_store
-            store = get_credential_store()
-            cred = store.get(credential_id)
+        cred_data = context.get_workflow_credential(credential_id)
+        
+        if cred_data:
+            config = config.copy()  # 원본 보호
+            injected_keys = []
             
-            if cred and cred.data:
-                config = config.copy()
-                injected_keys = []
-                
-                for key, value in cred.data.items():
-                    # config에 없거나 None인 경우만 주입
-                    if config.get(key) is None:
-                        config[key] = value
-                        injected_keys.append(key)
-                
-                if injected_keys:
-                    context.log("debug", f"Credentials injected from '{credential_id}': {', '.join(injected_keys)}", node_id)
-            else:
-                context.log("warning", f"Credential '{credential_id}' not found in store", node_id)
-                
-        except ImportError:
-            context.log("debug", "CredentialStore not available", node_id)
-        except Exception as e:
-            context.log("warning", f"Failed to inject credentials: {e}", node_id)
+            for key, value in cred_data.items():
+                # config에 없거나 None인 경우만 주입
+                if config.get(key) is None and value:
+                    config[key] = value
+                    injected_keys.append(key)
+            
+            if injected_keys:
+                # 민감 정보 로깅 방지: 키 이름만 로깅
+                context.log(
+                    "debug", 
+                    f"Credentials injected from '{credential_id}': {', '.join(injected_keys)}", 
+                    node_id
+                )
+        else:
+            context.log("warning", f"Credential '{credential_id}' not found in workflow credentials", node_id)
         
         return config
-        
-        # Fallback to environment variables (product별 자동 선택)
-        if not appkey or not appsecret:
-            appkey, appsecret = self._get_env_credentials(product, paper_trading)
-            if appkey and appsecret:
-                context.log("info", f"Credentials loaded from environment variables (product={product}, paper_trading={paper_trading})", node_id)
-        
-        if appkey and appsecret:
-            context.set_secret("credential_id", {
-                "appkey": appkey,
-                "appsecret": appsecret,
-                "paper_trading": paper_trading,
-            })
-            context.log("info", f"Broker credentials stored (paper_trading={paper_trading})", node_id)
-        else:
-            context.log("warning", "No credentials found - some features may not work", node_id)
-        
-        # provider 매핑 (company -> provider)
-        if company == "ls":
-            provider = "ls-sec.co.kr"
-        
-        context.log("info", f"Broker connected: {provider} ({product}, paper_trading={paper_trading})", node_id)
-        return {
-            "connected": True,
-            "connection": {
-                "provider": provider,
-                "product": product,
-                "paper_trading": paper_trading,
-            }
-        }
-
-    def _get_env_credentials(self, product: str, paper_trading: bool) -> tuple:
-        """
-        Product별 환경변수에서 credential 로드
-        
-        로컬 개발용 환경변수 맵핑:
-        - overseas_stock: APPKEY, APPSECRET (모의투자 미지원)
-        - overseas_futures (실전): APPKEY_FUTURE, APPSECRET_FUTURE
-        - overseas_futures (모의): APPKEY_FUTURE_FAKE, APPSECRET_FUTURE_FAKE
-        
-        프로덕션에서는 credential_id를 통해 DB에서 로드합니다.
-        """
-        import os
-        
-        if product == "overseas_futures":
-            if paper_trading:
-                appkey = os.getenv("APPKEY_FUTURE_FAKE")
-                appsecret = os.getenv("APPSECRET_FUTURE_FAKE")
-            else:
-                appkey = os.getenv("APPKEY_FUTURE")
-                appsecret = os.getenv("APPSECRET_FUTURE")
-        else:
-            # overseas_stock (기본)
-            appkey = os.getenv("APPKEY")
-            appsecret = os.getenv("APPSECRET")
-        
-        return appkey, appsecret
 
 
 class AccountNodeExecutor(NodeExecutorBase):

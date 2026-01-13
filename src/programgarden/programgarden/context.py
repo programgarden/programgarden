@@ -386,33 +386,24 @@ class ExecutionContext:
         """
         워크플로우 JSON의 credentials 섹션에서 credential 데이터 조회
         
-        우선순위:
-        1. workflow_credentials의 data 필드 (값이 있으면)
-        2. CredentialStore (외부 저장소)
+        프로덕션 환경에서는 서버가 DB에서 암호화된 credentials를 복호화하여
+        워크플로우 JSON의 credentials.data에 값을 주입한 후 실행합니다.
+        
+        이 함수는 주입된 credentials.data에서 값을 가져옵니다.
+        (라이브러리는 DB를 직접 참조하지 않음)
         
         Args:
-            credential_id: credentials 섹션의 키 (예: "openai-api")
+            credential_id: credentials 섹션의 키 (예: "broker-cred")
             
         Returns:
-            Credential data dict (예: {"token": "sk-xxx"}) or None
+            Credential data dict (예: {"appkey": "...", "appsecret": "..."}) or None
         """
-        # 1. 먼저 workflow credentials에서 찾기
         cred_ref = self._workflow_credentials.get(credential_id)
         if cred_ref:
             data = cred_ref.get("data", {})
             # data가 있고, 최소 하나의 값이 비어있지 않으면 사용
             if data and any(v for v in data.values() if v):
                 return data
-        
-        # 2. CredentialStore에서 찾기 (fallback)
-        try:
-            from programgarden_core.registry import get_credential_store
-            store = get_credential_store()
-            cred = store.get(credential_id)
-            if cred and cred.data:
-                return cred.data
-        except (ImportError, Exception):
-            pass
         
         return None
 
