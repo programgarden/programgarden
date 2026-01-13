@@ -92,46 +92,61 @@ class PositionSizingNode(BaseNode):
             "method": FieldSchema(
                 name="method",
                 type=FieldType.ENUM,
-                description="Position sizing method",
+                description="i18n:fields.PositionSizingNode.method",
                 default="fixed_percent",
                 enum_values=["fixed_percent", "fixed_amount", "kelly", "atr_based"],
+                enum_labels={
+                    "fixed_percent": "i18n:enum.PositionSizingNode.method.fixed_percent",
+                    "fixed_amount": "i18n:enum.PositionSizingNode.method.fixed_amount",
+                    "kelly": "i18n:enum.PositionSizingNode.method.kelly",
+                    "atr_based": "i18n:enum.PositionSizingNode.method.atr_based",
+                },
                 required=True,
                 category=FieldCategory.PARAMETERS,
             ),
+            # fixed_percent에서는 투자 비율, kelly/atr_based에서는 상한선
+            # fixed_amount에서는 불필요 (금액 고정이므로 비율 제한 없음)
             "max_percent": FieldSchema(
                 name="max_percent",
                 type=FieldType.NUMBER,
-                description="Max position % of account",
+                description="i18n:fields.PositionSizingNode.max_percent",
                 default=10.0,
                 min_value=0.1,
                 max_value=100.0,
                 category=FieldCategory.PARAMETERS,
+                visible_when={"method": ["fixed_percent", "kelly", "atr_based"]},
             ),
+            # fixed_amount 방식에서만 사용
             "fixed_amount": FieldSchema(
                 name="fixed_amount",
                 type=FieldType.NUMBER,
-                description="Fixed amount (for fixed_amount)",
+                description="i18n:fields.PositionSizingNode.fixed_amount",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                visible_when={"method": "fixed_amount"},
             ),
             # === SETTINGS: 부가 설정 ===
+            # kelly 방식에서만 사용
             "kelly_fraction": FieldSchema(
                 name="kelly_fraction",
                 type=FieldType.NUMBER,
-                description="Kelly fraction (0.25 = 1/4 Kelly)",
+                description="i18n:fields.PositionSizingNode.kelly_fraction",
                 default=0.25,
                 min_value=0.01,
                 max_value=1.0,
                 category=FieldCategory.SETTINGS,
+                visible_when={"method": "kelly"},
             ),
+            # atr_based 방식에서만 사용
             "atr_risk_percent": FieldSchema(
                 name="atr_risk_percent",
                 type=FieldType.NUMBER,
-                description="ATR risk %",
+                description="i18n:fields.PositionSizingNode.atr_risk_percent",
                 default=1.0,
                 min_value=0.1,
                 max_value=10.0,
                 category=FieldCategory.SETTINGS,
+                visible_when={"method": "atr_based"},
             ),
         }
 

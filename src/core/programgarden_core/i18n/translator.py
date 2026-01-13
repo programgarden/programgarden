@@ -143,8 +143,12 @@ def _translate_field(field_name: str, field: Dict[str, Any], locale: str, node_t
     If description starts with 'i18n:', use that key.
     Otherwise, try auto-generated key: fields.{NodeType}.{field_name}
     If no translation found, keep original description.
+    
+    Also translates enum_labels if they contain i18n keys.
     """
     result = field.copy()
+    
+    # Translate description
     if "description" in result and isinstance(result["description"], str):
         desc = result["description"]
         if desc.startswith("i18n:"):
@@ -158,7 +162,19 @@ def _translate_field(field_name: str, field: Dict[str, Any], locale: str, node_t
             if translated != auto_key:
                 result["description"] = translated
             # Otherwise keep original description
-    return result
+    
+    # Translate enum_labels
+    if "enum_labels" in result and isinstance(result["enum_labels"], dict):
+        translated_labels = {}
+        for enum_value, label in result["enum_labels"].items():
+            if isinstance(label, str) and label.startswith("i18n:"):
+                # Translate i18n key
+                translated_labels[enum_value] = t(label[5:], locale)
+            else:
+                # Keep original label
+                translated_labels[enum_value] = label
+        result["enum_labels"] = translated_labels
+    
     return result
 
 

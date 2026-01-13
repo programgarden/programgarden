@@ -21,6 +21,33 @@ const NODE_CREDENTIAL_TYPES: Record<string, string> = {
   'PostgresNode': 'postgres',
 };
 
+/**
+ * visible_when 조건을 체크하여 필드가 표시되어야 하는지 확인
+ * @param visibleWhen 조건 객체 (예: {"product": "overseas_stock"} 또는 {"method": ["a", "b"]})
+ * @param nodeData 현재 노드 데이터
+ * @returns 필드가 표시되어야 하면 true, 숨겨야 하면 false
+ */
+function shouldShowField(
+  visibleWhen: Record<string, unknown> | undefined,
+  nodeData: Record<string, unknown>
+): boolean {
+  // visible_when이 없으면 항상 표시
+  if (!visibleWhen) return true;
+  
+  // 모든 조건이 만족해야 표시
+  return Object.entries(visibleWhen).every(([key, expectedValue]) => {
+    const actualValue = nodeData[key];
+    
+    // 배열인 경우: OR 조건 (actualValue가 배열 내 값 중 하나와 일치)
+    if (Array.isArray(expectedValue)) {
+      return expectedValue.includes(actualValue);
+    }
+    
+    // 단일 값인 경우: 정확히 일치
+    return actualValue === expectedValue;
+  });
+}
+
 // Tab button component
 function TabButton({
   active,
@@ -47,7 +74,7 @@ function TabButton({
 
 export default function PropertiesPanel() {
   const [activeTab, setActiveTab] = useState<'input' | 'parameters' | 'settings' | 'output'>('parameters');
-  const { nodes, edges, selectedNodeId, updateNodeData, removeNode, nodeOutputs, addCredential } = useWorkflowStore();
+  const { nodes, edges, selectedNodeId, updateNodeData, removeNode, nodeOutputs, addCredential, nodeTypes } = useWorkflowStore();
   const { credentials, credentialTypes, createCredential, loading: credLoading } = useCredentials();
   const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [credentialTypeForModal, setCredentialTypeForModal] = useState<string | undefined>();
@@ -74,11 +101,14 @@ export default function PropertiesPanel() {
     }, {} as Record<string, unknown>);
   }, [upstreamNodes, nodeOutputs]);
 
-  // configSchema를 selectedNode에서 가져오기
+  // configSchema를 최신 nodeTypes에서 가져오기 (API 응답의 최신 스키마 사용)
   const configSchema = useMemo(() => {
     if (!selectedNode) return {} as Record<string, ConfigField>;
-    return ((selectedNode.data as Record<string, unknown>).configSchema || {}) as Record<string, ConfigField>;
-  }, [selectedNode]);
+    const nodeType = (selectedNode.data as Record<string, unknown>).nodeType as string;
+    const schema = nodeTypes.find((t) => t.node_type === nodeType);
+    // 최신 nodeTypes에서 config_schema 가져오기, 없으면 노드에 저장된 것 사용
+    return (schema?.config_schema || (selectedNode.data as Record<string, unknown>).configSchema || {}) as Record<string, ConfigField>;
+  }, [selectedNode, nodeTypes]);
 
   // 필드 클릭 핸들러 (Input 탭에서 필드 클릭 시)
   const handleFieldClick = useCallback((expression: string) => {
@@ -277,13 +307,14 @@ export default function PropertiesPanel() {
               // 현재 노드 타입에 맞는 플러그인 목록
               const availablePlugins = getPluginsForNodeType(nodeType);
               // 플러그인 사용 노드인지 확인
-              const isPluginNode = ['ConditionNode', 'NewOrderNode', 'ModifyOrderNode', 'CancelOrderNode'].includes(nodeType);
+              const isPluginNode = ['ConditionNode'].includes(nodeType);
               const currentPluginId = nodeData.plugin as string | undefined;
               
               // fields 필드는 PluginFieldsGroup에서 처리하므로 제외
-              const filteredParamFields = isPluginNode 
-                ? paramFields.filter(([key]) => key !== 'fields')
-                : paramFields;
+              // visible_when 조건에 따라 필드 필터링
+              const filteredParamFields = paramFields
+                .filter(([key]) => !isPluginNode || key !== 'fields')
+                .filter(([, schema]) => shouldShowField(schema.visible_when, nodeData));
               
               return (
                 <>
@@ -320,8 +351,6 @@ export default function PropertiesPanel() {
                             handleFieldChange('fields', {});
                           }
                         }}
-                        // Port Binding 자동 연결 확인용
-                        upstreamNodes={upstreamNodes}
                       />
                     </div>
                   ))}
@@ -355,8 +384,11 @@ export default function PropertiesPanel() {
         {activeTab === 'settings' && (
           <div className="space-y-4">
             {hasConfigSchema && (() => {
+              // visible_when 조건에 따라 필드 필터링
               const settingsFields = Object.entries(configSchema).filter(
-                ([, schema]) => schema.category === 'settings'
+                ([, schema]) => 
+                  schema.category === 'settings' && 
+                  shouldShowField(schema.visible_when, nodeData)
               );
               
               if (settingsFields.length === 0) {
@@ -382,8 +414,6 @@ export default function PropertiesPanel() {
                     onOpenCredentialModal={handleOpenCredentialModal}
                     credentialLoading={credLoading}
                     requiredCredentialType={requiredCredentialType}
-                    // Port Binding 자동 연결 확인용
-                    upstreamNodes={upstreamNodes}
                   />
                 </div>
               ));
