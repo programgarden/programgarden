@@ -187,6 +187,8 @@ class Accno(BaseAccno):
         self,
         real_client,
         refresh_interval: int = 60,
+        commission_rates: dict = None,
+        tax_rates: dict = None,
     ):
         """
         계좌 추적기 생성 (보유종목, 예수금, 미체결 실시간 추적)
@@ -194,6 +196,8 @@ class Accno(BaseAccno):
         Args:
             real_client: 실시간 클라이언트 (overseas_stock().real()) - 필수
             refresh_interval: API 갱신 주기 (초, 기본 60초)
+            commission_rates: 통화별 수수료율 (예: {"DEFAULT": Decimal("0.0025")})
+            tax_rates: 통화별 거래세율 (예: {"HK": Decimal("0.001")})
 
         Returns:
             StockAccountTracker: 계좌 추적기 인스턴스
@@ -221,6 +225,8 @@ class Accno(BaseAccno):
             accno_client=self,
             real_client=real_client,
             refresh_interval=refresh_interval,
+            commission_rates=commission_rates,
+            tax_rates=tax_rates,
         )
 
     계좌추적기 = account_tracker

@@ -87,6 +87,57 @@ def resolve_port_bindings(
     return config
 
 
+def ensure_ls_login(
+    appkey: str,
+    appsecret: str,
+    paper_trading: bool,
+    context: "ExecutionContext",
+    node_id: str,
+    caller_name: str = "",
+) -> tuple:
+    """
+    LS증권 로그인 보장 헬퍼 함수
+    
+    싱글톤 LS 클라이언트의 appkey가 변경되면 재로그인합니다.
+    
+    Args:
+        appkey: LS증권 appkey
+        appsecret: LS증권 appsecret
+        paper_trading: 모의투자 여부
+        context: 실행 컨텍스트
+        node_id: 노드 ID
+        caller_name: 호출자 이름 (로깅용)
+        
+    Returns:
+        (ls_instance, success: bool, error_message: str | None)
+    """
+    from programgarden_finance import LS
+    
+    ls = LS.get_instance()
+    
+    # 현재 로그인된 appkey와 요청된 appkey가 다르면 재로그인 필요
+    current_appkey = ls.token_manager.appkey if ls.token_manager else None
+    needs_relogin = not ls.is_logged_in() or (current_appkey and current_appkey != appkey)
+    
+    if needs_relogin:
+        if current_appkey and current_appkey != appkey:
+            context.log("info", f"AppKey changed, re-logging in{f' for {caller_name}' if caller_name else ''}", node_id)
+        
+        login_result = ls.login(
+            appkey=appkey,
+            appsecretkey=appsecret,
+            paper_trading=paper_trading,
+        )
+        
+        if not login_result:
+            context.log("error", "LS login failed", node_id)
+            return ls, False, "Login failed"
+        
+        context.log("info", f"LS logged in (paper_trading={paper_trading}){f' for {caller_name}' if caller_name else ''}", node_id)
+    
+    return ls, True, None
+
+
 def evaluate_all_bindings(
     config: Dict[str, Any],
     context: "ExecutionContext",
@@ -621,19 +672,14 @@ class AccountNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
-        # 1. config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        # config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        # 예: "connection": "{{ nodes.broker_2.connection }}"
         broker_connection = config.get("connection")
         
-        # 2. 엣지로 연결된 input에서 connection 가져오기
+        # connection 없으면 에러 - 명시적 바인딩 필수
         if not broker_connection:
-            # 엣지 데이터는 _input_{node_id}에 저장됨
-            edge_inputs = context.get_all_outputs(f"_input_{node_id}")
-            broker_connection = edge_inputs.get("connection")
-        
-        # connection 없으면 에러
-        if not broker_connection:
-            context.log("error", "AccountNode: connection이 필요합니다. BrokerNode를 연결하거나 connection 필드를 바인딩하세요.", node_id)
-            return self._empty_result("Missing connection - connect BrokerNode or bind connection field")
+            context.log("error", "AccountNode: connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
+            return self._empty_result("Missing connection field - set connection: \"{{ nodes.broker.connection }}\"")
         
         # connection 정보 추출
         if isinstance(broker_connection, dict):
@@ -674,26 +720,12 @@ class AccountNodeExecutor(NodeExecutorBase):
             return self._empty_result("Missing appkey/appsecret")
         
         try:
-            from programgarden_finance import LS
-            
-            ls = LS.get_instance()
-            
-            # 현재 로그인된 appkey와 요청된 appkey가 다르면 재로그인 필요
-            current_appkey = ls.token_manager.appkey if ls.token_manager else None
-            needs_relogin = not ls.is_logged_in() or (current_appkey and current_appkey != appkey)
-            
-            if needs_relogin:
-                if current_appkey and current_appkey != appkey:
-                    context.log("info", f"AppKey changed, re-logging in (product={product})", node_id)
-                login_result = ls.login(
-                    appkey=appkey,
-                    appsecretkey=appsecret,
-                    paper_trading=paper_trading,
-                )
-                if not login_result:
-                    context.log("error", "LS login failed", node_id)
-                    return self._empty_result("Login failed")
-                context.log("info", f"LS logged in (product={product}, paper_trading={paper_trading})", node_id)
+            ls, success, error = ensure_ls_login(
+                appkey, appsecret, paper_trading, context, node_id,
+                caller_name=f"AccountNode({product})"
+            )
+            if not success:
+                return self._empty_result(error)
             
             # 상품별 REST API 호출
             if product == "overseas_stock":
@@ -894,18 +926,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         sync_interval_sec = config.get("sync_interval_sec", 60)
         
         
-        # 1. config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        # config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        # 예: "connection": "{{ nodes.broker_2.connection }}"
         broker_connection = config.get("connection")
         
-        # 2. 엣지로 연결된 input에서 connection 가져오기
+        # connection 없으면 에러 - 명시적 바인딩 필수
         if not broker_connection:
-            edge_inputs = context.get_all_outputs(f"_input_{node_id}")
-            broker_connection = edge_inputs.get("connection")
-        
-        # connection 없으면 에러
-        if not broker_connection:
-            context.log("error", "RealAccountNode: connection이 필요합니다. BrokerNode를 연결하거나 connection 필드를 바인딩하세요.", node_id)
-            return {"error": "Missing connection"}
+            context.log("error", "RealAccountNode: connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
+            return {"error": "Missing connection field - set connection: \"{{ nodes.broker.connection }}\""}
         
         provider = broker_connection.get("provider", "ls-sec.co.kr")
         product = broker_connection.get("product", "overseas_stock")
@@ -957,21 +985,12 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             return self._empty_result("Missing appkey/appsecret")
         
         try:
-            from programgarden_finance import LS
-            from programgarden_finance.ls.models import SetupOptions
-            
-            ls = LS.get_instance()
-            
-            if not ls.is_logged_in():
-                login_result = ls.login(
-                    appkey=appkey,
-                    appsecretkey=appsecret,
-                    paper_trading=paper_trading,
-                )
-                if not login_result:
-                    context.log("error", "LS login failed", node_id)
-                    return self._empty_result("Login failed")
-                context.log("info", f"LS logged in (paper_trading={paper_trading})", node_id)
+            ls, success, error = ensure_ls_login(
+                appkey, appsecret, paper_trading, context, node_id,
+                caller_name=f"RealAccountNode({product})"
+            )
+            if not success:
+                return self._empty_result(error)
             
             # ========================================
             # 항상 WebSocket + Tracker 사용 (진짜 "Real")
@@ -1034,16 +1053,26 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         stay_connected: bool = True,
     ) -> Dict[str, Any]:
         """해외주식 실시간 계좌 추적 (StockAccountTracker)"""
+        from decimal import Decimal
+        
         try:
+            # 수수료/세금 설정 읽기 (% → 비율 변환)
+            commission_rate = Decimal(str(config.get("commission_rate", 0.25))) / 100
+            tax_rate = Decimal(str(config.get("tax_rate", 0.0))) / 100
+            
+            context.log("info", f"Commission rate: {float(commission_rate)*100:.2f}%, Tax rate: {float(tax_rate)*100:.2f}%", node_id)
+            
             # 실시간 연결 클라이언트 가져오기 (tracker 생성 전에 필요)
             real_client = ls.overseas_stock().real()
             if not await real_client.is_connected():
                 await real_client.connect()
             
-            # StockAccountTracker 생성 (동기 함수)
+            # StockAccountTracker 생성 (수수료/세금 적용)
             tracker = ls.overseas_stock().accno().account_tracker(
                 real_client=real_client,
                 refresh_interval=sync_interval_sec,
+                commission_rates={"DEFAULT": commission_rate},
+                tax_rates={"DEFAULT": tax_rate},
             )
             
             # ReconnectHandler 설정 (토큰 갱신 포함)
@@ -1066,10 +1095,41 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 else:
                     context.fail(f"Max reconnect attempts exceeded for {node_id}")
             
+            # 트리거할 하위 노드 목록 (클로저로 캡처)
+            trigger_nodes = config.get("_trigger_on_update_nodes", [])
+            print(f"[RealAccountNode] 트리거 대상 노드: {trigger_nodes}")
+            
+            # 현재 이벤트 루프 캡처 (콜백에서 사용)
+            loop = asyncio.get_running_loop()
+            
             # 포지션 변경 콜백 등록 (이벤트 발생용)
             def on_position_change(positions: Dict):
+                # 포지션 데이터를 직렬화 가능한 형태로 변환
+                serialized_positions = {}
+                for sym, pos in positions.items():
+                    serialized_positions[sym] = {
+                        "symbol": sym,
+                        "name": getattr(pos, 'symbol_name', sym),
+                        "qty": pos.quantity,
+                        "avg_price": float(pos.buy_price),
+                        "current_price": float(pos.current_price),
+                        "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
+                        "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
+                        "currency": getattr(pos, 'currency_code', 'USD'),
+                    }
+                
                 # 컨텍스트에 최신 데이터 저장
-                context.set_output(node_id, "positions", positions)
+                context.set_output(node_id, "positions", serialized_positions)
+                
+                # 🆕 SSE로 output 업데이트 브로드캐스트 (스레드 안전하게)
+                asyncio.run_coroutine_threadsafe(
+                    context.notify_output_update(
+                        node_id=node_id,
+                        node_type="RealAccountNode",
+                        outputs={"positions": serialized_positions},
+                    ),
+                    loop
+                )
                 
                 # 디버깅용 print
                 from datetime import datetime
@@ -1077,14 +1137,18 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 for sym, pos in positions.items():
                     if hasattr(pos, 'pnl_rate'):
                         print(f"  {sym}: 현재가=${pos.current_price:.2f}, 수익률={pos.pnl_rate:.2f}%")
+                print(f"  → 트리거할 노드: {trigger_nodes}")
                 
-                # 이벤트 큐에 추가 (비동기)
-                asyncio.create_task(context.emit_event(
-                    event_type="realtime_update",
-                    source_node_id=node_id,
-                    data={"positions": positions},
-                    trigger_nodes=config.get("_trigger_on_update_nodes", []),
-                ))
+                # 이벤트 큐에 추가 (스레드 안전하게)
+                asyncio.run_coroutine_threadsafe(
+                    context.emit_event(
+                        event_type="realtime_update",
+                        source_node_id=node_id,
+                        data={"positions": serialized_positions},
+                        trigger_nodes=trigger_nodes,
+                    ),
+                    loop
+                )
             
             tracker.on_position_change(on_position_change)
             
@@ -1105,6 +1169,23 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 초기 데이터 반환
             result = self._get_stock_tracker_data(tracker)
+            
+            # 데이터가 비어있는지 확인
+            positions_count = len(result.get('positions', {}))
+            if positions_count == 0:
+                context.log("warning", "⚠️ 해외주식 보유종목이 없거나 API 조회에 실패했습니다. (장 마감 시간이거나 잔고가 없을 수 있음)", node_id)
+            
+            # SSE로 즉시 전송되도록 context.set_output 호출
+            for key, value in result.items():
+                context.set_output(node_id, key, value)
+            
+            # 🆕 초기 데이터도 SSE로 브로드캐스트
+            asyncio.create_task(context.notify_output_update(
+                node_id=node_id,
+                node_type="RealAccountNode",
+                outputs=result,
+            ))
+            
             print(f"\n{'='*60}")
             print(f"[RealAccountNode] 해외주식 실시간 계좌 데이터")
             print(f"{'='*60}")
@@ -1113,6 +1194,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             for sym, pos in result.get('positions', {}).items():
                 print(f"  - {sym}: 수량={pos.get('qty')}, 평단가=${pos.get('avg_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 수익률={pos.get('pnl_rate'):.2f}%")
             print(f"{'='*60}\n")
+            
+            context.log("info", f"Initial account data loaded: {len(result.get('positions', {}))} positions", node_id)
             return result
             
         except Exception as e:
@@ -1135,7 +1218,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         - TC1/TC2/TC3 WebSocket으로 주문 이벤트 수신
         - CIDBQ01500 등으로 주기적 잔고 동기화
         """
+        from decimal import Decimal
+        
         try:
+            # 해외선물 수수료 설정 읽기 (계약당 고정 금액, USD)
+            futures_fee_per_contract = Decimal(str(config.get("futures_fee_per_contract", 7.5)))
+            
+            context.log("info", f"Futures fee per contract: ${float(futures_fee_per_contract):.2f} (one-way)", node_id)
+            
             # 각 클라이언트 준비
             accno = ls.overseas_futureoption().accno()
             market = ls.overseas_futureoption().market()
@@ -1145,11 +1235,12 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             if not await real.is_connected():
                 await real.connect()
             
-            # FuturesAccountTracker 생성
+            # FuturesAccountTracker 생성 (계약당 수수료 적용)
             tracker = accno.account_tracker(
                 market_client=market,
                 real_client=real,
                 refresh_interval=sync_interval_sec,
+                commission_rate=futures_fee_per_contract,  # 계약당 수수료
             )
             
             # ReconnectHandler 설정
@@ -1171,9 +1262,50 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 else:
                     context.fail(f"Max reconnect attempts exceeded for {node_id}")
             
+            # 트리거할 하위 노드 목록 (클로저로 캡처)
+            trigger_nodes = config.get("_trigger_on_update_nodes", [])
+            print(f"[RealAccountNode/Futures] 트리거 대상 노드: {trigger_nodes}")
+            
+            # 현재 이벤트 루프 캡처 (콜백에서 사용)
+            loop = asyncio.get_running_loop()
+            
             # 포지션 변경 콜백 (실시간 이벤트)
             def on_position_change(positions):
-                context.set_output(node_id, "positions", positions)
+                # 포지션 데이터를 직렬화 가능한 형태로 변환
+                serialized_positions = {}
+                for sym, pos in positions.items():
+                    # realtime_pnl이 None이 아닌 경우만 안전하게 접근
+                    realtime_pnl = getattr(pos, 'realtime_pnl', None)
+                    pnl_rate = 0.0
+                    if realtime_pnl is not None and hasattr(realtime_pnl, 'pnl_rate'):
+                        pnl_rate = float(getattr(realtime_pnl, 'pnl_rate', 0) or 0)
+                    elif hasattr(pos, 'pnl_rate') and pos.pnl_rate is not None:
+                        pnl_rate = float(pos.pnl_rate)
+                    
+                    serialized_positions[sym] = {
+                        "symbol": sym,
+                        "name": getattr(pos, 'symbol', sym),
+                        "is_long": getattr(pos, 'is_long', True),
+                        "qty": int(getattr(pos, 'quantity', 0)),
+                        "entry_price": float(getattr(pos, 'entry_price', 0)),
+                        "current_price": float(getattr(pos, 'current_price', 0)),
+                        "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
+                        "pnl_rate": pnl_rate,
+                        "currency": "USD",
+                    }
+                
+                # 컨텍스트에 최신 데이터 저장
+                context.set_output(node_id, "positions", serialized_positions)
+                
+                # 🆕 SSE로 output 업데이트 브로드캐스트 (스레드 안전하게)
+                asyncio.run_coroutine_threadsafe(
+                    context.notify_output_update(
+                        node_id=node_id,
+                        node_type="RealAccountNode",
+                        outputs={"positions": serialized_positions},
+                    ),
+                    loop
+                )
                 
                 # 디버깅용 print
                 from datetime import datetime
@@ -1182,23 +1314,31 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     direction = '롱' if getattr(pos, 'is_long', True) else '숏'
                     pnl = getattr(pos, 'pnl_amount', 0)
                     print(f"  {sym} ({direction}): 현재가=${getattr(pos, 'current_price', 0):.2f}, 손익=${pnl:.2f}")
+                print(f"  → 트리거할 노드: {trigger_nodes}")
                 
-                asyncio.create_task(context.emit_event(
-                    event_type="realtime_update",
-                    source_node_id=node_id,
-                    data={"positions": positions},
-                    trigger_nodes=config.get("_trigger_on_update_nodes", []),
-                ))
+                # 이벤트 큐에 추가 (스레드 안전하게)
+                asyncio.run_coroutine_threadsafe(
+                    context.emit_event(
+                        event_type="realtime_update",
+                        source_node_id=node_id,
+                        data={"positions": serialized_positions},
+                        trigger_nodes=trigger_nodes,
+                    ),
+                    loop
+                )
             
             # 잔고 변경 콜백
             def on_balance_change(balance):
                 context.set_output(node_id, "balance", balance)
-                asyncio.create_task(context.emit_event(
-                    event_type="balance_update",
-                    source_node_id=node_id,
-                    data={"balance": balance},
-                    trigger_nodes=[],
-                ))
+                asyncio.run_coroutine_threadsafe(
+                    context.emit_event(
+                        event_type="balance_update",
+                        source_node_id=node_id,
+                        data={"balance": balance},
+                        trigger_nodes=[],
+                    ),
+                    loop
+                )
             
             tracker.on_position_change(on_position_change)
             tracker.on_balance_change(on_balance_change)
@@ -1216,6 +1356,18 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 초기 데이터 반환
             result = self._get_futures_tracker_data(tracker)
+            
+            # SSE로 즉시 전송되도록 context.set_output 호출
+            for key, value in result.items():
+                context.set_output(node_id, key, value)
+            
+            # 🆕 초기 데이터도 SSE로 브로드캐스트
+            asyncio.create_task(context.notify_output_update(
+                node_id=node_id,
+                node_type="RealAccountNode",
+                outputs=result,
+            ))
+            
             print(f"\n{'='*60}")
             print(f"[RealAccountNode] 해외선물 실시간 계좌 데이터")
             print(f"{'='*60}")
@@ -1226,6 +1378,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 print(f"  - {sym} ({direction}): 수량={pos.get('qty')}, 진입가=${pos.get('entry_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 손익=${pos.get('pnl_amount'):.2f}")
             print(f"미체결: {list(result.get('open_orders', {}).keys())}")
             print(f"{'='*60}\n")
+            
+            context.log("info", f"Initial futures data loaded: {len(result.get('positions', {}))} positions", node_id)
             return result
             
         except Exception as e:
@@ -1238,7 +1392,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         for symbol, pos in tracker.get_positions().items():
             positions[symbol] = {
                 "symbol": symbol,
-                "name": getattr(pos, 'name', symbol),
+                "name": getattr(pos, 'name', getattr(pos, 'symbol_name', symbol)),
                 "qty": pos.quantity,
                 "avg_price": float(pos.buy_price),
                 "current_price": float(pos.current_price),
@@ -1252,12 +1406,41 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         symbols = list(positions.keys())
         
         # balance를 JSON 직렬화 가능한 형태로 변환
-        raw_balance = tracker.get_balances()
-        if hasattr(raw_balance, 'model_dump'):
-            balance = {k: float(v) if isinstance(v, (int, float)) or hasattr(v, '__float__') else str(v) 
-                      for k, v in raw_balance.model_dump().items() if v is not None}
-        elif isinstance(raw_balance, dict):
-            balance = raw_balance
+        # get_balances()는 Dict[str, StockBalanceInfo]를 반환 (통화별)
+        raw_balances = tracker.get_balances()
+        balance = {}
+        
+        if isinstance(raw_balances, dict):
+            # 통화별 잔고 변환
+            for currency, bal_info in raw_balances.items():
+                if hasattr(bal_info, 'model_dump'):
+                    # Pydantic 모델
+                    bal_dict = bal_info.model_dump()
+                    balance[currency] = {
+                        k: float(v) if hasattr(v, '__float__') else str(v)
+                        for k, v in bal_dict.items() 
+                        if v is not None and k != 'last_updated'
+                    }
+                elif hasattr(bal_info, '__dict__'):
+                    # dataclass 또는 일반 객체
+                    balance[currency] = {
+                        "deposit": float(getattr(bal_info, 'deposit', 0)),
+                        "orderable_amount": float(getattr(bal_info, 'orderable_amount', 0)),
+                        "eval_amount": float(getattr(bal_info, 'eval_amount', 0)),
+                        "pnl_amount": float(getattr(bal_info, 'pnl_amount', 0)),
+                        "pnl_rate": float(getattr(bal_info, 'pnl_rate', 0)),
+                    }
+                else:
+                    balance[currency] = bal_info
+            
+            # 총 잔고 요약 추가 (USD 기준 또는 첫 번째 통화)
+            if balance:
+                primary = balance.get('USD') or next(iter(balance.values()), {})
+                balance['_summary'] = {
+                    "total_deposit": sum(b.get('deposit', 0) for b in balance.values() if isinstance(b, dict) and 'deposit' in b),
+                    "total_eval_amount": sum(b.get('eval_amount', 0) for b in balance.values() if isinstance(b, dict) and 'eval_amount' in b),
+                    "total_pnl_amount": sum(b.get('pnl_amount', 0) for b in balance.values() if isinstance(b, dict) and 'pnl_amount' in b),
+                }
         else:
             balance = {"cash": 0.0, "total_value": 0.0}
         
@@ -1272,6 +1455,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         """해외선물 Tracker에서 현재 데이터 추출"""
         positions = {}
         for symbol, pos in tracker.get_positions().items():
+            # realtime_pnl이 None이 아닌 dict인 경우만 .get() 호출
+            realtime_pnl = getattr(pos, 'realtime_pnl', None)
+            pnl_rate = 0.0
+            if realtime_pnl is not None and hasattr(realtime_pnl, 'pnl_rate'):
+                pnl_rate = float(getattr(realtime_pnl, 'pnl_rate', 0) or 0)
+            elif hasattr(pos, 'pnl_rate') and pos.pnl_rate is not None:
+                pnl_rate = float(pos.pnl_rate)
+            
             positions[symbol] = {
                 "symbol": symbol,
                 "name": getattr(pos, 'symbol', symbol),
@@ -1279,8 +1470,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 "qty": int(getattr(pos, 'quantity', 0)),
                 "entry_price": float(getattr(pos, 'entry_price', 0)),
                 "current_price": float(getattr(pos, 'current_price', 0)),
-                "pnl_amount": float(getattr(pos, 'pnl_amount', 0)),
-                "pnl_rate": float(getattr(pos, 'realtime_pnl', {}).get('pnl_rate', 0)) if hasattr(pos, 'realtime_pnl') else 0,
+                "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
+                "pnl_rate": pnl_rate,
                 "currency": "USD",
             }
         
@@ -1361,19 +1552,15 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         from programgarden_core.exceptions import ValidationError, ConnectionError
         
         # ========================================
-        # 1. BrokerNode connection 획득 (config 바인딩 또는 엣지 연결)
+        # 1. BrokerNode connection 획득 (config 바인딩 필수)
         # ========================================
         broker_connection = config.get("connection")
         
-        if not broker_connection:
-            edge_inputs = context.get_all_outputs(f"_input_{node_id}")
-            broker_connection = edge_inputs.get("connection") if edge_inputs else None
-        
+        # connection 없으면 에러 - 명시적 바인딩 필수
         if not broker_connection:
             error_msg = (
-                f"RealMarketDataNode requires BrokerNode connection for WebSocket. "
-                f"Node '{node_id}' has no BrokerNode connected. "
-                f"Please add a BrokerNode and connect it upstream."
+                f"RealMarketDataNode: connection 필드가 필수입니다. "
+                f"connection: \"{{{{ nodes.broker.connection }}}}\"를 설정하세요."
             )
             context.log("error", error_msg, node_id)
             raise ConnectionError(error_msg)
@@ -1619,9 +1806,40 @@ class DisplayNodeExecutor(NodeExecutorBase):
         from datetime import datetime
         
         # 입력 데이터 가져오기 (다양한 소스 지원)
-        # 1. _input_{node_id}에서 모든 포트의 데이터 수집
+        # 1. _input_{node_id}에서 모든 포트의 데이터 수집 (초기 실행 시)
         input_namespace = f"_input_{node_id}"
         all_inputs = context.get_all_outputs(input_namespace) if hasattr(context, 'get_all_outputs') else {}
+        
+        # 🆕 0. 실시간 업데이트: 이벤트에서 직접 전달된 데이터 우선 사용 (가장 최신)
+        realtime_data = config.get("_realtime_data")
+        if realtime_data:
+            # 이벤트 데이터를 직접 사용 (타이밍 문제 해결)
+            all_inputs = {**all_inputs, **realtime_data}
+            print(f"   [DisplayNode] 실시간 이벤트 데이터 사용: {list(realtime_data.keys())}")
+        
+        # 2. 실시간 업데이트: 상위 노드의 최신 데이터 직접 조회 (fallback)
+        # input_namespace의 데이터가 오래된 경우를 대비하여 소스 노드에서 직접 가져옴
+        source_node_id = config.get("_source_node_id")
+        if source_node_id and not realtime_data:
+            # 소스 노드의 최신 output 가져오기
+            source_outputs = context.get_all_outputs(source_node_id)
+            if source_outputs:
+                all_inputs = source_outputs
+                print(f"   [DisplayNode] 소스 노드 '{source_node_id}'에서 직접 데이터 조회: {list(source_outputs.keys())}")
+        else:
+            # _source_node_id가 없으면 input 키에서 positions가 있는 노드 찾기
+            if all_inputs.get("positions"):
+                pass  # 이미 all_inputs에 있음
+            else:
+                # 모든 출력 중 positions를 가진 노드 찾기
+                for ns in context._outputs.keys():
+                    if ns.startswith("_input_"):
+                        continue
+                    ns_outputs = context.get_all_outputs(ns)
+                    if ns_outputs and "positions" in ns_outputs:
+                        all_inputs = ns_outputs
+                        print(f"   [DisplayNode] 노드 '{ns}'에서 positions 데이터 발견")
+                        break
         
         # 디버깅: 입력 데이터 확인
         print(f"\n🔍 DisplayNode '{node_id}' 입력 데이터:")
@@ -1655,12 +1873,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
                         trades_list.extend(value)
         
         # 개별 포트에서도 시도 (data, summary, positions 등)
-        input_data = (
-            context.get_output(input_namespace, "data") or
-            context.get_output(input_namespace, "summary") or
-            context.get_output(input_namespace, "positions") or
-            context.get_output(input_namespace, "input")
-        )
+        # 🔧 실시간 데이터가 있으면 그것을 우선 사용
+        if realtime_data and "positions" in realtime_data:
+            input_data = realtime_data["positions"]
+        else:
+            input_data = (
+                context.get_output(input_namespace, "data") or
+                context.get_output(input_namespace, "summary") or
+                context.get_output(input_namespace, "positions") or
+                context.get_output(input_namespace, "input")
+            )
         
         
         # 2. equity_curve 데이터 (라인 차트용)
@@ -2573,15 +2795,14 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         start_date = self._normalize_date_format(start_date)
         end_date = self._normalize_date_format(end_date)
         
-        # 1. config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        # config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        # 예: "connection": "{{ nodes.broker_2.connection }}"
         broker_connection = config.get("connection")
         
-        # 2. 엣지로 연결된 input에서 connection 가져오기
-        if not broker_connection:
-            edge_inputs = context.get_all_outputs(f"_input_{node_id}")
-            broker_connection = edge_inputs.get("connection") if edge_inputs else {}
-        
+        # connection 없으면 기본값 사용 (HistoricalDataNode는 선택적)
         product = broker_connection.get("product", "overseas_stock") if broker_connection else "overseas_stock"
+        if not broker_connection:
+            context.log("warning", "connection 필드가 없습니다. 기본값(overseas_stock) 사용. connection: \"{{ nodes.broker.connection }}\"를 설정하면 정확한 product를 사용합니다.", node_id)
         
         context.log(
             "info", 
@@ -2683,17 +2904,18 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             return self._generate_demo_data(symbols, start_date, end_date)
         
         try:
-            from programgarden_finance import LS
             from programgarden_finance.ls.overseas_stock.chart.g3103.blocks import G3103InBlock
             
-            ls = LS.get_instance()
-            
-            if not ls.is_logged_in():
-                ls.login(
-                    appkey=credential.get("appkey"),
-                    appsecretkey=credential.get("appsecret"),
-                    paper_trading=credential.get("paper_trading", False),
-                )
+            ls, success, error = ensure_ls_login(
+                credential.get("appkey"),
+                credential.get("appsecret"),
+                credential.get("paper_trading", False),
+                context, node_id,
+                caller_name="HistoricalDataNode(overseas_stock)"
+            )
+            if not success:
+                context.log("warning", f"LS login failed: {error}, using demo data", node_id)
+                return self._generate_demo_data(symbols, start_date, end_date)
             
             api = ls.overseas_stock()
             
@@ -2779,16 +3001,16 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             return self._generate_demo_data(symbols, start_date, end_date)
         
         try:
-            from programgarden_finance import LS
-            
-            ls = LS.get_instance()
-            
-            if not ls.is_logged_in():
-                ls.login(
-                    appkey=credential.get("appkey"),
-                    appsecretkey=credential.get("appsecret"),
-                    paper_trading=credential.get("paper_trading", False),
-                )
+            ls, success, error = ensure_ls_login(
+                credential.get("appkey"),
+                credential.get("appsecret"),
+                credential.get("paper_trading", False),
+                context, node_id,
+                caller_name="HistoricalDataNode(overseas_futures)"
+            )
+            if not success:
+                context.log("warning", f"LS login failed: {error}, using demo data", node_id)
+                return self._generate_demo_data(symbols, start_date, end_date)
             
             api = ls.overseas_futureoption()
             ohlcv_data = {}
@@ -4245,13 +4467,25 @@ class WorkflowJob:
                 raise
 
     def _find_trigger_nodes(self, source_node_id: str) -> List[str]:
-        """Find nodes that should be triggered on realtime update"""
+        """Find nodes that should be triggered on realtime update
+        
+        - edge에 trigger: "on_update" 속성이 있으면 트리거
+        - 소스가 RealAccountNode/RealMarketDataNode면 연결된 모든 노드 자동 트리거
+        """
         trigger_nodes = []
+        source_node = self.workflow.nodes.get(source_node_id)
+        
+        # 실시간 노드는 하위 노드를 자동 트리거
+        auto_trigger_types = {"RealAccountNode", "RealMarketDataNode", "RealOrderEventNode"}
+        is_realtime_source = source_node and source_node.node_type in auto_trigger_types
+        
         for edge in self.workflow.edges:
             if edge.from_node_id == source_node_id:
-                # Check if edge has trigger: "on_update" attribute
-                # (This would be set in the DSL edge definition)
+                # 1. edge에 trigger: "on_update" 속성이 있으면 트리거
                 if hasattr(edge, 'trigger') and edge.trigger == "on_update":
+                    trigger_nodes.append(edge.to_node_id)
+                # 2. 실시간 노드는 연결된 모든 노드 자동 트리거
+                elif is_realtime_source:
                     trigger_nodes.append(edge.to_node_id)
         return trigger_nodes
 
@@ -4314,10 +4548,15 @@ class WorkflowJob:
         
         Re-executes nodes specified in trigger_nodes (from edge trigger: "on_update")
         """
+        from datetime import datetime
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 실시간 업데이트 이벤트 수신: trigger_nodes={event.trigger_nodes}")
+        
         if not event.trigger_nodes:
+            print(f"  ⚠️ 트리거할 노드 없음, 스킵")
             return
         
         logger.debug(f"Realtime update from {event.source_node_id}, triggering: {event.trigger_nodes}")
+        print(f"  → {event.source_node_id}에서 트리거: {event.trigger_nodes}")
         
         for node_id in event.trigger_nodes:
             if not self.context.is_running:
@@ -4329,10 +4568,19 @@ class WorkflowJob:
             
             # Re-execute the triggered node
             try:
+                # 소스 노드 ID를 config에 추가하여 최신 데이터 참조 가능하게
+                config_with_source = dict(node.config)
+                config_with_source["_source_node_id"] = event.source_node_id
+                
+                # 🆕 이벤트 데이터를 직접 전달 (context.get_all_outputs보다 최신)
+                # emit_event에서 전달된 데이터를 사용하면 타이밍 문제 해결
+                if event.data:
+                    config_with_source["_realtime_data"] = event.data
+                
                 outputs = await self.executor.execute_node(
                     node_id=node_id,
                     node_type=node.node_type,
-                    config=node.config,
+                    config=config_with_source,
                     context=self.context,
                     plugin=node.plugin,
                     fields=node.fields,
@@ -4408,6 +4656,15 @@ class WorkflowJob:
 
     def get_state(self) -> Dict[str, Any]:
         """Get state snapshot"""
+        # 노드별 상태 및 outputs 수집
+        nodes_state = {}
+        for node_id in self.context._outputs.keys():
+            outputs = self.context.get_all_outputs(node_id)
+            nodes_state[node_id] = {
+                "state": "completed",
+                "outputs": outputs,
+            }
+        
         return {
             "job_id": self.job_id,
             "workflow_id": self.workflow.workflow_id,
@@ -4418,4 +4675,5 @@ class WorkflowJob:
             "has_schedule": self._has_schedule_node,
             "stay_connected_nodes": self._stay_connected_nodes,
             "logs": self.context.get_logs(limit=50),
+            "nodes": nodes_state,
         }

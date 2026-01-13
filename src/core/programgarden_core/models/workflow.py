@@ -42,20 +42,23 @@ class CredentialReference(BaseModel):
     
     Example (공유용):
         {
-            "type": "http_bearer",
-            "name": "OpenAI API",
-            "data": {"token": ""}
+            "id": "broker-cred",
+            "type": "broker_ls",
+            "name": "LS증권 API",
+            "data": {"appkey": "", "appsecret": ""}
         }
     
     Example (실행용):
         {
-            "type": "http_bearer", 
-            "name": "OpenAI API",
-            "data": {"token": "sk-proj-xxx-actual-token"}
+            "id": "broker-cred",
+            "type": "broker_ls", 
+            "name": "LS증권 API",
+            "data": {"appkey": "실제값", "appsecret": "실제값"}
         }
     """
     
-    type: str = Field(..., description="Credential 타입 (http_bearer, telegram 등)")
+    id: str = Field(..., description="Credential 고유 ID")
+    type: str = Field(..., description="Credential 타입 (broker_ls, telegram 등)")
     name: Optional[str] = Field(default=None, description="표시 이름")
     description: Optional[str] = Field(default=None, description="설명")
     data: Dict[str, Any] = Field(
@@ -109,9 +112,9 @@ class WorkflowDefinition(BaseModel):
     )
 
     # Credential 참조 (워크플로우에서 사용하는 인증 정보)
-    credentials: Dict[str, CredentialReference] = Field(
-        default_factory=dict,
-        description="워크플로우에서 사용하는 Credential 정의 (credential_id → CredentialReference)",
+    credentials: List[CredentialReference] = Field(
+        default_factory=list,
+        description="워크플로우에서 사용하는 Credential 목록",
     )
 
     # 메타데이터

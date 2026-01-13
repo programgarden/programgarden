@@ -94,9 +94,16 @@ function DisplayNodeComponent({ id, data, selected }: NodeProps) {
           <span className="text-white text-xs font-semibold truncate">
             📊 {title}
           </span>
-          <span className="text-white/70 text-xs">
-            {chartType}
-          </span>
+          <div className="flex items-center gap-2">
+            {displayData?.timestamp && (
+              <span className="text-white/50 text-[10px]">
+                {displayData.timestamp.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+            <span className="text-white/70 text-xs">
+              {chartType}
+            </span>
+          </div>
         </div>
 
         {/* Chart Area */}

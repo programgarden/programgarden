@@ -12,23 +12,41 @@ from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
 class NodeCategory(str, Enum):
-    """노드 카테고리 (15개)"""
+    """
+    노드 카테고리 (10개 - 금융 도메인 기준)
+    
+    투자자가 직관적으로 이해할 수 있는 금융 용어 기반 분류
+    """
 
+    # 인프라: 워크플로우 시작점, 브로커 연결
     INFRA = "infra"
-    REALTIME = "realtime"
-    DATA = "data"
+    
+    # 계좌: 잔고, 포지션, 체결 내역 (실시간/REST)
     ACCOUNT = "account"
-    SYMBOL = "symbol"
-    TRIGGER = "trigger"
+    
+    # 시장: 시세, 종목 목록, 과거 데이터
+    MARKET = "market"
+    
+    # 조건: 매매 조건 판단 (기술적 분석, 로직 조합)
     CONDITION = "condition"
-    RISK = "risk"
+    
+    # 주문: 신규/정정/취소 주문, 포지션 사이징
     ORDER = "order"
-    EVENT = "event"
-    DISPLAY = "display"
-    GROUP = "group"
-    BACKTEST = "backtest"
-    JOB = "job"
-    CALCULATION = "calculation"
+    
+    # 리스크: 리스크 관리, 포트폴리오 배분
+    RISK = "risk"
+    
+    # 스케줄: 시간 기반 트리거, 거래시간 필터
+    SCHEDULE = "schedule"
+    
+    # 데이터: 외부 DB/API 연동 (SQLite, Postgres, HTTP)
+    DATA = "data"
+    
+    # 분석: 백테스트, 차트, 성과 계산
+    ANALYSIS = "analysis"
+    
+    # 시스템: Job 제어, 알림, 서브플로우
+    SYSTEM = "system"
 
 
 class Position(BaseModel):
@@ -172,7 +190,7 @@ class BaseNotificationNode(BaseNode):
                     url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
     """
     
-    category: NodeCategory = NodeCategory.EVENT
+    category: NodeCategory = NodeCategory.SYSTEM
     
     # 메시지 템플릿
     template: Optional[str] = Field(

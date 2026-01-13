@@ -6,7 +6,7 @@ Infrastructure/connection nodes:
 - BrokerNode: Broker connection
 """
 
-from typing import Optional, List, Literal, Dict, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, TYPE_CHECKING, ClassVar
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -30,11 +30,19 @@ class StartNode(BaseNode):
     type: Literal["StartNode"] = "StartNode"
     category: NodeCategory = NodeCategory.INFRA
     description: str = "i18n:nodes.StartNode.description"
+    
+    # CDN 기반 노드 아이콘 URL (TODO: 실제 CDN URL로 교체)
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/start.svg"
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
         OutputPort(name="start", type="signal", description="i18n:ports.start")
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        """StartNode has no configurable fields."""
+        return {}
 
 
 class BrokerNode(BaseNode):
@@ -52,6 +60,9 @@ class BrokerNode(BaseNode):
     type: Literal["BrokerNode"] = "BrokerNode"
     category: NodeCategory = NodeCategory.INFRA
     description: str = "i18n:nodes.BrokerNode.description"
+    
+    # CDN 기반 노드 아이콘 URL (TODO: 실제 CDN URL로 교체)
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker.svg"
 
     # BrokerNode specific config
     provider: str = Field(
@@ -82,7 +93,7 @@ class BrokerNode(BaseNode):
             "provider": FieldSchema(
                 name="provider",
                 type=FieldType.STRING,
-                description="Broker provider domain. Currently only LS Securities (ls-sec.co.kr) is supported.",
+                description="i18n:fields.BrokerNode.provider",
                 default="ls-sec.co.kr",
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
@@ -92,12 +103,12 @@ class BrokerNode(BaseNode):
             "product": FieldSchema(
                 name="product",
                 type=FieldType.ENUM,
-                description="Product type. overseas_stock: US stocks (no paper trading). overseas_futures: Futures (paper trading supported).",
+                description="i18n:fields.BrokerNode.product",
                 default="overseas_stock",
                 enum_values=["overseas_stock", "overseas_futures"],
                 enum_labels={
-                    "overseas_stock": "해외주식",
-                    "overseas_futures": "해외선물"
+                    "overseas_stock": "i18n:enums.product.overseas_stock",
+                    "overseas_futures": "i18n:enums.product.overseas_futures"
                 },
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
@@ -106,7 +117,7 @@ class BrokerNode(BaseNode):
             "credential_id": FieldSchema(
                 name="credential_id",
                 type=FieldType.CREDENTIAL,
-                description="Reference to stored broker credentials. Contains appkey, appsecret, and paper_trading flag.",
+                description="i18n:fields.BrokerNode.credential_id",
                 default=None,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,

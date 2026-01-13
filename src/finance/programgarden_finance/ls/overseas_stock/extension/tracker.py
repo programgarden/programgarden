@@ -159,44 +159,46 @@ class StockAccountTracker:
                 
                 # 통화별 잔고 (OutBlock3)
                 self._balances.clear()
-                for item in resp.block3:
-                    balance = StockBalanceInfo(
-                        currency_code=item.CrcyCode,
-                        deposit=Decimal(str(item.FcurrDps)),
-                        orderable_amount=Decimal(str(item.FcurrOrdAbleAmt)),
-                        eval_amount=Decimal(str(item.FcurrEvalAmt)),
-                        pnl_amount=Decimal(str(item.FcurrEvalPnlAmt)),
-                        pnl_rate=Decimal(str(item.PnlRat)),
-                        exchange_rate=Decimal(str(item.BaseXchrat)),
-                        deposit_krw=Decimal(str(item.DpsConvEvalAmt)),
-                        last_updated=now
-                    )
-                    self._balances[item.CrcyCode] = balance
+                if hasattr(resp, 'block3') and resp.block3:
+                    for item in resp.block3:
+                        balance = StockBalanceInfo(
+                            currency_code=item.CrcyCode,
+                            deposit=Decimal(str(item.FcurrDps)),
+                            orderable_amount=Decimal(str(item.FcurrOrdAbleAmt)),
+                            eval_amount=Decimal(str(item.FcurrEvalAmt)),
+                            pnl_amount=Decimal(str(item.FcurrEvalPnlAmt)),
+                            pnl_rate=Decimal(str(item.PnlRat)),
+                            exchange_rate=Decimal(str(item.BaseXchrat)),
+                            deposit_krw=Decimal(str(item.DpsConvEvalAmt)),
+                            last_updated=now
+                        )
+                        self._balances[item.CrcyCode] = balance
                 
                 # 종목별 잔고 (OutBlock4)
                 old_symbols = set(self._positions.keys())
                 self._positions.clear()
                 
-                for item in resp.block4:
-                    symbol = item.ShtnIsuNo  # 단축종목번호 (예: SOXL)
-                    position = StockPositionItem(
-                        symbol=symbol,
-                        symbol_name=item.JpnMktHanglIsuNm or symbol,
-                        currency_code=item.CrcyCode,
-                        quantity=item.AstkBalQty,
-                        sellable_quantity=item.AstkSellAbleQty,
-                        buy_price=Decimal(str(item.FcstckUprc)),
-                        current_price=Decimal(str(item.OvrsScrtsCurpri)),
-                        buy_amount=Decimal(str(item.FcurrBuyAmt)),
-                        eval_amount=Decimal(str(item.FcurrEvalAmt)),
-                        pnl_amount=Decimal(str(item.FcurrEvalPnlAmt)),
-                        pnl_rate=Decimal(str(item.PnlRat)),
-                        exchange_rate=Decimal(str(item.BaseXchrat)),
-                        market_code=item.FcurrMktCode,
-                        last_updated=now
-                    )
-                    self._positions[symbol] = position
-                    self._current_prices[symbol] = position.current_price
+                if hasattr(resp, 'block4') and resp.block4:
+                    for item in resp.block4:
+                        symbol = item.ShtnIsuNo  # 단축종목번호 (예: SOXL)
+                        position = StockPositionItem(
+                            symbol=symbol,
+                            symbol_name=item.JpnMktHanglIsuNm or symbol,
+                            currency_code=item.CrcyCode,
+                            quantity=item.AstkBalQty,
+                            sellable_quantity=item.AstkSellAbleQty,
+                            buy_price=Decimal(str(item.FcstckUprc)),
+                            current_price=Decimal(str(item.OvrsScrtsCurpri)),
+                            buy_amount=Decimal(str(item.FcurrBuyAmt)),
+                            eval_amount=Decimal(str(item.FcurrEvalAmt)),
+                            pnl_amount=Decimal(str(item.FcurrEvalPnlAmt)),
+                            pnl_rate=Decimal(str(item.PnlRat)),
+                            exchange_rate=Decimal(str(item.BaseXchrat)),
+                            market_code=item.FcurrMktCode,
+                            last_updated=now
+                        )
+                        self._positions[symbol] = position
+                        self._current_prices[symbol] = position.current_price
                 
                 # 구독 동기화 (종목 변경 시)
                 new_symbols = set(self._positions.keys())
@@ -206,9 +208,12 @@ class StockAccountTracker:
                 # 콜백 호출
                 self._notify_position_change()
                 self._notify_balance_change()
+            else:
+                # API 에러 응답
+                print(f"[StockAccountTracker] COSOQ00201 응답 코드 {resp.rsp_cd}: {getattr(resp, 'rsp_msg', 'Unknown error')}")
                 
         except Exception as e:
-            print(f"[StockAccountTracker] 보유종목 조회 실패: {e}")
+            print(f"COSOQ00201 request failed with status: {e}")
     
     async def _fetch_open_orders(self):
         """미체결 주문 조회 (COSAQ00102)"""

@@ -28,7 +28,7 @@ class PositionSizingNode(BaseNode):
     """
 
     type: Literal["PositionSizingNode"] = "PositionSizingNode"
-    category: NodeCategory = NodeCategory.RISK
+    category: NodeCategory = NodeCategory.ORDER
     description: str = "i18n:nodes.PositionSizingNode.description"
 
     # PositionSizingNode specific config

@@ -217,6 +217,13 @@ function CustomNode({ data, selected, id }: NodeProps) {
         )}
       </div>
 
+      {/* Node ID 표시 */}
+      <div className="px-3 py-1 bg-gray-900/50 border-b border-gray-700">
+        <span className="text-[10px] font-mono text-gray-500 select-all" title="Node ID">
+          #{id}
+        </span>
+      </div>
+
       {/* Body - 설명 (더블클릭으로 편집) */}
       <div 
         className="px-3 py-2 text-gray-300 text-xs min-h-[32px] cursor-text hover:bg-gray-700/50 transition-colors"

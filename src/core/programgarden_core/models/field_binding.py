@@ -67,6 +67,9 @@ class FieldSchema(BaseModel):
     enum_values: Optional[List[str]] = Field(
         default=None, description="enum 타입의 선택 가능 값 목록"
     )
+    enum_labels: Optional[Dict[str, str]] = Field(
+        default=None, description="enum 값에 대한 라벨 (예: {'overseas_stock': '해외주식'})"
+    )
     min_value: Optional[float] = Field(
         default=None, description="number/integer의 최솟값"
     )
@@ -83,6 +86,24 @@ class FieldSchema(BaseModel):
     )
     expression_enabled: bool = Field(
         default=False, description="{{ }} 표현식 사용 가능 여부"
+    )
+    
+    # === 바인딩 가이드 (신규) ===
+    example: Optional[Any] = Field(
+        default=None,
+        description="예시 값 (기대하는 데이터 형태)",
+    )
+    example_binding: Optional[str] = Field(
+        default=None,
+        description="바인딩 표현식 예시 ({{ nodes.xxx.yyy }})",
+    )
+    bindable_sources: Optional[List[str]] = Field(
+        default=None,
+        description="바인딩 가능한 소스 노드와 포트 목록",
+    )
+    expected_type: Optional[str] = Field(
+        default=None,
+        description="기대하는 데이터 타입 (검증용, 예: dict[str, float], list[str])",
     )
 
     # UI 힌트
@@ -113,6 +134,12 @@ class FieldSchema(BaseModel):
     ui_hint: Optional[str] = Field(
         default=None,
         description="UI 표시 힌트 (inherited, calculated, locked, warning 등)",
+    )
+
+    # 조건부 표시 (특정 필드 값에 따라 필드 표시/숨김)
+    visible_when: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="조건부 표시 조건 (예: {'product': 'overseas_stock'}는 product 필드가 'overseas_stock'일 때만 표시)",
     )
 
     model_config = ConfigDict(use_enum_values=True)

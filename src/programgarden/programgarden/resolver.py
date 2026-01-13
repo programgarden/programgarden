@@ -174,11 +174,12 @@ class WorkflowResolver:
         """
         Validate required input port connections.
         
-        Checks if nodes with required=True input ports have valid incoming connections.
-        Special handling for BrokerNode-dependent nodes (WebSocket/API nodes).
+        Checks if nodes with required=True input ports have explicit connection field binding.
+        NO automatic BrokerNode ancestor detection - explicit binding required.
         """
-        # Nodes that absolutely require BrokerNode connection
-        BROKER_REQUIRED_NODES = {
+        # Nodes that require explicit connection field binding
+        # e.g., connection: "{{ nodes.broker.connection }}"
+        CONNECTION_REQUIRED_NODES = {
             "RealMarketDataNode",
             "RealAccountNode",
             "RealOrderEventNode",
@@ -187,7 +188,6 @@ class WorkflowResolver:
             "CancelOrderNode",
             "AccountNode",
             "MarketDataNode",
-            "HistoricalDataNode",
         }
         
         # Build edge lookup: {to_node_id: [from_node_ids]}
@@ -206,12 +206,13 @@ class WorkflowResolver:
             node_id = node.get("id")
             node_type = node.get("type")
             
-            # Check BrokerNode requirement for specific node types
-            if node_type in BROKER_REQUIRED_NODES:
-                if not self._has_broker_ancestor(node_id, incoming_edges, nodes_by_id):
+            # Check explicit connection field binding for specific node types
+            if node_type in CONNECTION_REQUIRED_NODES:
+                connection_field = node.get("connection")
+                if not connection_field:
                     result.add_error(
-                        f"Node '{node_id}' ({node_type}) requires BrokerNode connection. "
-                        f"Please connect a BrokerNode upstream."
+                        f"Node '{node_id}' ({node_type}) requires explicit connection field. "
+                        f"Set connection: \"{{{{ nodes.broker.connection }}}}\" in node config."
                     )
             
             # Check required input ports from node class definition

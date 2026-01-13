@@ -262,6 +262,7 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
         real_client,
         refresh_interval: int = 60,
         spec_refresh_hours: int = 6,
+        commission_rate: float = 7.5,
     ):
         """
         계좌 추적기 생성 (보유포지션, 예수금, 미체결 실시간 추적)
@@ -272,6 +273,7 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
             real_client: 실시간 클라이언트 (overseas_futureoption().real()) - 필수
             refresh_interval: API 갱신 주기 (초, 기본 60초)
             spec_refresh_hours: 종목 명세 갱신 주기 (시간, 기본 6시간)
+            commission_rate: 계약당 수수료 (USD, 편도. 기본 $7.5)
 
         Returns:
             FuturesAccountTracker: 계좌 추적기 인스턴스
@@ -285,7 +287,8 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
             
             tracker = accno.account_tracker(
                 market_client=market,
-                real_client=real
+                real_client=real,
+                commission_rate=7.5,  # 계약당 $7.5
             )
             await tracker.start()
 
@@ -301,6 +304,7 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
             await tracker.stop()
             ```
         """
+        from decimal import Decimal
         from ..extension import FuturesAccountTracker
 
         return FuturesAccountTracker(
@@ -309,6 +313,7 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
             real_client=real_client,
             refresh_interval=refresh_interval,
             spec_refresh_hours=spec_refresh_hours,
+            commission_rate=Decimal(str(commission_rate)),
         )
 
     계좌추적기 = account_tracker

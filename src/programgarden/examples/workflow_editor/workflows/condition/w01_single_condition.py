@@ -6,7 +6,7 @@ def get_workflow():
         "id": "06-single-condition",
         "version": "1.0.0",
         "name": "RSI 단일 조건 예제",
-        "description": "RSI가 30 이하일 때 통과",
+        "description": "RSI가 30 이하일 때 통과 → 신규 매수 주문 실행",
         "nodes": [
             {
                 "id": "start",
@@ -41,6 +41,8 @@ def get_workflow():
                 "id": "realMarket",
                 "type": "RealMarketDataNode",
                 "category": "realtime",
+                # 바인딩: symbols 필드에 바인딩 표현식
+                "symbols": "{{ nodes.watchlist.symbols }}",
                 "fields": ["price", "volume"],
                 "position": {"x": 550, "y": 175},
             },
@@ -50,7 +52,36 @@ def get_workflow():
                 "category": "condition",
                 "plugin": "RSI",
                 "fields": {"period": 14, "threshold": 30, "direction": "below"},
+                # 바인딩: price_data 필드에 바인딩 표현식
+                "price_data": "{{ nodes.realMarket.price }}",
                 "position": {"x": 750, "y": 100},
+            },
+            {
+                "id": "sizing",
+                "type": "PositionSizingNode",
+                "category": "risk",
+                "method": "equal_weight",
+                "max_percent": 10,
+                # 바인딩: symbols, balance 필드
+                "symbols": "{{ nodes.rsi.passed_symbols }}",
+                "balance": "{{ nodes.account.balance }}",
+                "position": {"x": 950, "y": 100},
+            },
+            {
+                "id": "order",
+                "type": "NewOrderNode",
+                "category": "order",
+                # 새로운 주문 노드 필드
+                "product": "overseas_stock",
+                "side": "buy",
+                "order_type": "limit",
+                "market_code": "NASDAQ",
+                "price_type": "limit",
+                # 바인딩: symbols, quantities, prices 필드
+                "symbols": "{{ nodes.rsi.passed_symbols }}",
+                "quantities": "{{ nodes.sizing.quantities }}",
+                "prices": "{{ nodes.realMarket.price }}",
+                "position": {"x": 1150, "y": 100},
             },
             {
                 "id": "display",
@@ -58,7 +89,7 @@ def get_workflow():
                 "category": "display",
                 "format": "table",
                 "fields": ["symbol", "rsi_value", "passed"],
-                "position": {"x": 950, "y": 100},
+                "position": {"x": 1350, "y": 100},
             },
         ],
         "edges": [
@@ -68,6 +99,8 @@ def get_workflow():
             {"from": "schedule", "to": "rsi"},
             {"from": "watchlist", "to": "realMarket"},
             {"from": "realMarket", "to": "rsi"},
-            {"from": "rsi", "to": "display"},
+            {"from": "rsi", "to": "sizing"},
+            {"from": "sizing", "to": "order"},
+            {"from": "order", "to": "display"},
         ],
     }

@@ -189,25 +189,22 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 
 ---
 
-## 4. 노드 카테고리 (15개)
+## 4. 노드 카테고리 (10개 - 금융 도메인 기준)
+
+투자자가 직관적으로 이해할 수 있는 금융 용어 기반 분류입니다.
 
 | Category | 용도 | 주요 노드 |
 |----------|------|----------|
-| `infra` | 시작점/증권사 연결 | StartNode, BrokerNode |
-| `realtime` | WebSocket 실시간 | RealMarketDataNode, RealAccountNode, RealOrderEventNode |
-| `data` | REST API/DB 조회·저장 | MarketDataNode, HistoricalDataNode, SQLiteNode, PostgresNode |
-| `account` | 계좌/자산 조회 | AccountNode |
-| `symbol` | 종목 소스/필터 | WatchlistNode, MarketUniverseNode, ScreenerNode |
-| `trigger` | 스케줄/시간 필터 | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode |
-| `condition` | 조건 평가/조합 | ConditionNode, LogicNode, PerformanceConditionNode |
-| `risk` | 리스크/포트폴리오 관리 | PositionSizingNode, RiskGuardNode, PortfolioNode |
-| `order` | 주문 실행 | NewOrderNode, ModifyOrderNode, CancelOrderNode |
-| `event` | 이벤트/알림 | EventHandlerNode, ErrorHandlerNode, AlertNode |
-| `display` | 시각화 | DisplayNode |
-| `group` | 서브플로우 | GroupNode |
-| `backtest` | 백테스트 | BacktestEngineNode |
-| `job` | Job 제어/배포 | DeployNode, JobControlNode |
-| `calculation` | 계산 | CustomPnLNode |
+| `infra` | 워크플로우 시작점, 브로커 연결 | StartNode, BrokerNode |
+| `account` | 잔고, 포지션, 체결 내역 | AccountNode, RealAccountNode, RealOrderEventNode |
+| `market` | 시세, 종목 목록, 과거 데이터 | WatchlistNode, ScreenerNode, MarketDataNode, HistoricalDataNode, RealMarketDataNode |
+| `condition` | 매매 조건 판단, 논리 연산 | ConditionNode, LogicNode, PerformanceConditionNode |
+| `order` | 신규/정정/취소 주문, 포지션 사이징 | NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode, PositionSizingNode |
+| `risk` | 리스크 관리, 포트폴리오 배분 | RiskGuardNode, RiskConditionNode, PortfolioNode |
+| `schedule` | 시간 기반 트리거, 거래시간 필터 | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode |
+| `data` | 외부 DB 및 API 연동 | SQLiteNode, PostgresNode, HTTPRequestNode |
+| `analysis` | 백테스트, 차트, 성과 계산 | BacktestEngineNode, DisplayNode, CustomPnLNode |
+| `system` | Job 제어, 알림, 서브플로우 | DeployNode, TradingHaltNode, JobControlNode |
 
 ---
 
@@ -220,11 +217,31 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | `StartNode` | 워크플로우 진입점 (Definition당 1개 필수) |
 | `BrokerNode` | 증권사 연결 (provider, product, account) |
 
-### 5.2 실시간 노드 (realtime)
+### Connection 필수 노드
+
+브로커 연결이 필요한 노드는 **반드시** `connection` 필드를 명시해야 합니다:
+
+```json
+{
+  "id": "account",
+  "type": "AccountNode",
+  "connection": "{{ nodes.broker.connection }}"
+}
+```
+
+| 카테고리 | 노드 |
+|----------|------|
+| account | `AccountNode`, `RealAccountNode`, `RealOrderEventNode` |
+| market | `MarketDataNode`, `HistoricalDataNode`, `RealMarketDataNode` |
+| order | `NewOrderNode`, `ModifyOrderNode`, `CancelOrderNode`, `LiquidateNode` |
+
+> **중요**: 자동 브로커 감지 없음. 사용자가 명시적으로 connection 필드를 설정해야 합니다.
+
+### 5.2 계좌 노드 (account)
 
 | 노드 | 설명 |
 |------|------|
-| `RealMarketDataNode` | WebSocket 시세 스트림 (price, volume, bid/ask) |
+| `AccountNode` | REST API 1회성 계좌 조회 (보유종목, 예수금, 미체결) |
 | `RealAccountNode` | 실시간 계좌 정보 (보유종목, 예수금, 미체결, 실시간 수익률) |
 | `RealOrderEventNode` | 실시간 주문 체결/거부/취소 이벤트 |
 
@@ -247,17 +264,11 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 {
   "id": "account",
   "type": "RealAccountNode",
-  "category": "realtime",
+  "category": "account",
   "stay_connected": true,
   "sync_interval_sec": 60
 }
 ```
-
-### 5.3 계좌 노드 (account)
-
-| 노드 | 설명 |
-|------|------|
-| `AccountNode` | REST API 1회성 계좌 조회 (보유종목, 예수금, 미체결) |
 
 **RealAccountNode vs AccountNode:**
 
@@ -265,26 +276,36 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 |------|-----------------|-------------|
 | 연결 방식 | WebSocket (실시간) | REST API (1회) |
 | 사용 시점 | 실시간 수익률 모니터링 | 잔고 스냅샷 조회 |
-| 카테고리 | realtime | account |
 
 ```json
 // 실시간 수익률 모니터링
-{"id": "realAccount", "type": "RealAccountNode", "category": "realtime", "stay_connected": true}
+{"id": "realAccount", "type": "RealAccountNode", "category": "account", "stay_connected": true}
 
 // 1회성 잔고 조회
 {"id": "account", "type": "AccountNode", "category": "account"}
 ```
 
+### 5.3 시장 노드 (market)
+
+| 노드 | 설명 |
+|------|------|
+| `WatchlistNode` | 사용자 정의 관심종목 리스트 |
+| `MarketUniverseNode` | 시장/지수 구성 종목 (NASDAQ100, S&P500 등) |
+| `ScreenerNode` | 조건부 종목 스크리닝 |
+| `SymbolFilterNode` | 종목 리스트 집합 연산 |
+| `MarketDataNode` | REST API 시세 조회 (일회성) |
+| `HistoricalDataNode` | 과거 데이터 조회 (OHLCV) |
+| `RealMarketDataNode` | WebSocket 실시간 시세 스트림 |
+
 ### 5.4 데이터 노드 (data)
 
 | 노드 | 설명 |
 |------|------|
-| `MarketDataNode` | REST API 시세 조회 (일회성) |
-| `HistoricalDataNode` | 과거 데이터 조회 (OHLCV) |
 | `SQLiteNode` | 로컬 SQLite DB 저장/조회 (트레일링스탑 최고점 추적 등) |
 | `PostgresNode` | 외부 PostgreSQL DB 연결 ({{ secrets.xxx }} 참조) |
+| `HTTPRequestNode` | 외부 REST API 호출 |
 
-### 5.4 조건 노드 (condition)
+### 5.5 조건 노드 (condition)
 
 | 노드 | 설명 |
 |------|------|
@@ -292,11 +313,13 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | `LogicNode` | 조건 조합 (all/any/xor/at_least/weighted) |
 | `PerformanceConditionNode` | 성과 기반 조건 (수익률, MDD, 승률 등) |
 
-### 5.5 백테스트 노드 (backtest)
+### 5.6 분석 노드 (analysis)
 
 | 노드 | 설명 |
 |------|------|
 | `BacktestEngineNode` | OHLCV 데이터 기반 백테스트 시뮬레이션 실행 |
+| `DisplayNode` | 차트/테이블 시각화 |
+| `CustomPnLNode` | 커스텀 손익 계산 (멀티계좌, 벤치마크 비교 등) |
 
 **BacktestEngineNode 기능:**
 - OHLCV 데이터 기반 수익률 시뮬레이션
@@ -391,11 +414,13 @@ BacktestEngine₄ ──┘
 
 ### 5.7 주문 노드 (order)
 
-| 노드 | 설명 | Community 카테고리 |
-|------|------|-------------------|
-| `NewOrderNode` | 신규 주문 플러그인 실행 | `new_order_conditions/` |
-| `ModifyOrderNode` | 정정 주문 플러그인 실행 | `modify_order_conditions/` |
-| `CancelOrderNode` | 취소 주문 플러그인 실행 | `cancel_order_conditions/` |
+| 노드 | 설명 |
+|------|------|
+| `NewOrderNode` | 신규 주문 실행 |
+| `ModifyOrderNode` | 정정 주문 실행 |
+| `CancelOrderNode` | 취소 주문 실행 |
+| `LiquidateNode` | 포지션 청산 |
+| `PositionSizingNode` | 포지션 크기 계산 (Kelly, 고정, ATR 기반) |
 
 ---
 

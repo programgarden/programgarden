@@ -171,6 +171,28 @@ class RealAccountNode(BaseNode):
     sync_interval_sec: int = Field(
         default=60, description="REST API sync interval (seconds)"
     )
+    
+    # 상품 유형 선택 (해외주식/해외선물)
+    product_type: str = Field(
+        default="overseas_stock",
+        description="상품 유형 선택 (해외주식/해외선물)"
+    )
+    
+    # 해외주식 수수료/세금 설정 (손익 계산에 반영)
+    commission_rate: float = Field(
+        default=0.25,
+        description="해외주식 매매 수수료율 (%). LS증권 기본 0.25%"
+    )
+    tax_rate: float = Field(
+        default=0.0,
+        description="해외주식 거래세율 (%). 미국 0%, 홍콩 0.1%, 일본 0%"
+    )
+    
+    # 해외선물 수수료 설정 (계약당 고정 금액)
+    futures_fee_per_contract: float = Field(
+        default=7.5,
+        description="해외선물 계약당 수수료 (USD, 편도). LS증권 기본 $7.5"
+    )
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -215,6 +237,64 @@ class RealAccountNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
+            ),
+            # === PARAMETERS: 상품 유형 선택 ===
+            "product_type": FieldSchema(
+                name="product_type",
+                type=FieldType.ENUM,
+                description="i18n:fields.RealAccountNode.product_type",
+                default="overseas_stock",
+                enum_values=["overseas_stock", "overseas_futures"],
+                enum_labels={
+                    "overseas_stock": "해외주식",
+                    "overseas_futures": "해외선물"
+                },
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+            ),
+            # === PARAMETERS: 해외주식 수수료/세금 (overseas_stock 선택 시만 표시) ===
+            "commission_rate": FieldSchema(
+                name="commission_rate",
+                type=FieldType.NUMBER,
+                description="i18n:fields.RealAccountNode.commission_rate",
+                default=0.25,
+                min_value=0,
+                max_value=5,
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example=0.25,
+                expected_type="float",
+                visible_when={"product_type": "overseas_stock"},
+            ),
+            "tax_rate": FieldSchema(
+                name="tax_rate",
+                type=FieldType.NUMBER,
+                description="i18n:fields.RealAccountNode.tax_rate",
+                default=0.0,
+                min_value=0,
+                max_value=1,
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example=0.0,
+                expected_type="float",
+                visible_when={"product_type": "overseas_stock"},
+            ),
+            # === PARAMETERS: 해외선물 수수료 (overseas_futures 선택 시만 표시) ===
+            "futures_fee_per_contract": FieldSchema(
+                name="futures_fee_per_contract",
+                type=FieldType.NUMBER,
+                description="i18n:fields.RealAccountNode.futures_fee_per_contract",
+                default=7.5,
+                min_value=0,
+                max_value=100,
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example=7.5,
+                expected_type="float",
+                visible_when={"product_type": "overseas_futures"},
             ),
             # === SETTINGS: 부가 설정 ===
             "stay_connected": FieldSchema(

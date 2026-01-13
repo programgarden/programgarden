@@ -38,7 +38,7 @@ class CustomPnLNode(BaseNode):
     """
 
     type: Literal["CustomPnLNode"] = "CustomPnLNode"
-    category: NodeCategory = NodeCategory.CALCULATION
+    category: NodeCategory = NodeCategory.ANALYSIS
     description: str = "Custom P&L calculation for advanced use cases"
 
     # CustomPnLNode specific config
@@ -113,33 +113,43 @@ class CustomPnLNode(BaseNode):
             "mode": FieldSchema(
                 name="mode",
                 type=FieldType.ENUM,
-                description="Calculation mode (realtime or batch)",
+                description="Calculation mode. realtime: calculate on every tick. batch: calculate periodically.",
                 default="realtime",
                 enum_values=["realtime", "batch"],
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="realtime",
+                expected_type="str",
             ),
             "base_currency": FieldSchema(
                 name="base_currency",
                 type=FieldType.STRING,
-                description="Base currency for calculation",
+                description="Base currency for P&L calculation. All values will be converted to this currency.",
                 default="USD",
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="USD",
+                expected_type="str",
             ),
             # === SETTINGS: 수수료 설정 ===
             "commission_rate": FieldSchema(
                 name="commission_rate",
                 type=FieldType.NUMBER,
-                description="Custom commission rate (e.g., 0.0025 = 0.25%)",
+                description="Custom commission rate as decimal. e.g., 0.0025 = 0.25% per trade.",
                 default=0.0025,
                 min_value=0,
                 max_value=0.1,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=0.0025,
+                expected_type="float",
             ),
             "include_commission": FieldSchema(
                 name="include_commission",
                 type=FieldType.BOOLEAN,
-                description="Include commission in P&L calculation",
+                description="Include commission in P&L calculation. When true, P&L is reduced by commission.",
                 default=True,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
             ),
         }

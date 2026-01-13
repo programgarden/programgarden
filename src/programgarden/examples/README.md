@@ -45,6 +45,7 @@ workflow = get_workflow_by_id("futures-01")
 ```bash
 cd ./src/programgarden/examples/workflow_editor/
 poetry run python server.py
+pkill -f "workflow_editor/server.py" 2>/dev/null; sleep 1; cd /Users/jyj/ls_projects/programgarden/src/programgarden && poetry run python examples/workflow_editor/server.py 2>&1 &
 ```
 
 브라우저에서 http://localhost:8000 접속

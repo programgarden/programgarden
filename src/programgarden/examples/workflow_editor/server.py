@@ -12,6 +12,7 @@ workflow_editor 폴더의 메인 서버.
 """
 
 import sys
+import os
 from pathlib import Path
 
 # Add paths for imports
@@ -22,6 +23,33 @@ sys.path.insert(0, str(current_dir))
 # Add core and community packages
 sys.path.insert(0, str(project_root / "src" / "core"))
 sys.path.insert(0, str(project_root / "src" / "community"))
+
+# ========================================
+# .env 파일 로드 (암호화 키 등)
+# ========================================
+env_file = project_root / ".env"
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip())
+    print(f"📄 Loaded .env from {env_file}")
+
+# ========================================
+# Credential Store 설정 (JSON 파일 기반)
+# 서버 재시작 시에도 credential 유지
+# ========================================
+credential_store_path = current_dir / "credentials.json"
+os.environ["PROGRAMGARDEN_CREDENTIAL_STORE"] = str(credential_store_path)
+
+# 암호화 상태 확인
+from encryption import is_encryption_enabled
+if is_encryption_enabled():
+    print("🔐 Credential encryption: ENABLED")
+else:
+    print("⚠️  Credential encryption: DISABLED (set CREDENTIAL_ENCRYPTION_KEY in .env)")
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -84,6 +112,7 @@ class WorkflowRunRequest(BaseModel):
     description: Optional[str] = None
     nodes: List[Dict[str, Any]]
     edges: List[Dict[str, Any]]
+    credentials: Optional[List[Dict[str, Any]]] = None  # 프론트엔드에서 전달되는 credentials 배열
 
 
 # ========================================
@@ -241,9 +270,15 @@ async def stop_workflow():
         return JSONResponse({"error": "No job running"}, status_code=400)
     
     try:
+        job_id = current_job.job_id
         await current_job.stop()
-        return {"jobId": current_job.job_id, "status": "stopped"}
+        # Reset current_job to allow new runs
+        current_job = None
+        print(f"🛑 Job stopped and cleared: {job_id}")
+        return {"jobId": job_id, "status": "stopped"}
     except Exception as e:
+        # Even on error, clear current_job to prevent stuck state
+        current_job = None
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
@@ -559,21 +594,24 @@ async def get_credential_type(type_id: str):
 
 @app.get("/api/credentials")
 async def list_credentials(user_id: str = "default", credential_type: Optional[str] = None):
-    """Credential 목록 반환 (데이터는 마스킹)"""
+    """Credential 목록 반환 (복호화 후 마스킹)"""
     try:
         from programgarden_core.registry import get_credential_store
+        from encryption import decrypt_data
         
         store = get_credential_store()
         credentials = store.list(user_id=user_id, credential_type=credential_type)
         
-        # Mask sensitive data
         result = []
         for cred in credentials:
-            # Handle both dict and list data formats
-            if isinstance(cred.data, list):
+            # 암호화된 data를 복호화
+            decrypted_data = decrypt_data(cred.data) if isinstance(cred.data, str) else cred.data
+            
+            # Mask sensitive data
+            if isinstance(decrypted_data, list):
                 # http_custom: array of {type, key, value, label}
                 masked_data = []
-                for item in cred.data:
+                for item in decrypted_data:
                     masked_item = {**item}
                     if 'value' in masked_item and isinstance(masked_item['value'], str):
                         v = masked_item['value']
@@ -582,9 +620,9 @@ async def list_credentials(user_id: str = "default", credential_type: Optional[s
                         else:
                             masked_item['value'] = "***"
                     masked_data.append(masked_item)
-            elif isinstance(cred.data, dict):
+            elif isinstance(decrypted_data, dict):
                 masked_data = {}
-                for key, value in cred.data.items():
+                for key, value in decrypted_data.items():
                     if isinstance(value, str) and len(value) > 4:
                         masked_data[key] = value[:2] + "*" * (len(value) - 4) + value[-2:]
                     elif isinstance(value, bool):
@@ -592,7 +630,7 @@ async def list_credentials(user_id: str = "default", credential_type: Optional[s
                     else:
                         masked_data[key] = "***"
             else:
-                masked_data = cred.data
+                masked_data = decrypted_data
             
             result.append({
                 "id": cred.id,
@@ -616,9 +654,10 @@ async def list_credentials(user_id: str = "default", credential_type: Optional[s
 
 @app.get("/api/credentials/{credential_id}")
 async def get_credential(credential_id: str):
-    """특정 credential 조회 (데이터는 마스킹)"""
+    """특정 credential 조회 (복호화 후 마스킹)"""
     try:
         from programgarden_core.registry import get_credential_store
+        from encryption import decrypt_data
         
         store = get_credential_store()
         cred = store.get(credential_id)
@@ -626,10 +665,13 @@ async def get_credential(credential_id: str):
         if not cred:
             return JSONResponse({"error": f"Credential not found: {credential_id}"}, status_code=404)
         
-        # Mask sensitive data - handle both dict and list formats
-        if isinstance(cred.data, list):
+        # 암호화된 data를 복호화
+        decrypted_data = decrypt_data(cred.data) if isinstance(cred.data, str) else cred.data
+        
+        # Mask sensitive data
+        if isinstance(decrypted_data, list):
             masked_data = []
-            for item in cred.data:
+            for item in decrypted_data:
                 masked_item = {**item}
                 if 'value' in masked_item and isinstance(masked_item['value'], str):
                     v = masked_item['value']
@@ -638,9 +680,9 @@ async def get_credential(credential_id: str):
                     else:
                         masked_item['value'] = "***"
                 masked_data.append(masked_item)
-        elif isinstance(cred.data, dict):
+        elif isinstance(decrypted_data, dict):
             masked_data = {}
-            for key, value in cred.data.items():
+            for key, value in decrypted_data.items():
                 if isinstance(value, str) and len(value) > 4:
                     masked_data[key] = value[:2] + "*" * (len(value) - 4) + value[-2:]
                 elif isinstance(value, bool):
@@ -648,7 +690,7 @@ async def get_credential(credential_id: str):
                 else:
                     masked_data[key] = "***"
         else:
-            masked_data = cred.data
+            masked_data = decrypted_data
         
         return JSONResponse({
             "id": cred.id,
@@ -665,10 +707,11 @@ async def get_credential(credential_id: str):
 
 @app.post("/api/credentials")
 async def create_credential(request: CredentialCreateRequest):
-    """새 credential 생성"""
+    """새 credential 생성 (암호화하여 저장)"""
     try:
         from programgarden_core.registry import get_credential_store, get_credential_type_registry
         from programgarden_core.models import Credential
+        from encryption import encrypt_data, is_encryption_enabled
         import uuid
         
         # Validate credential type
@@ -678,23 +721,30 @@ async def create_credential(request: CredentialCreateRequest):
                 "error": f"Unknown credential type: {request.credential_type}"
             }, status_code=400)
         
+        # 암호화하여 저장 (외부 KMS 시뮬레이션)
+        encrypted_data = encrypt_data(request.data)
+        
         # Create credential
         cred = Credential(
             id=str(uuid.uuid4()),
             name=request.name,
             credential_type=request.credential_type,
             user_id=request.user_id,
-            data=request.data,
+            data=encrypted_data,  # 암호화된 문자열 저장
         )
         
         store = get_credential_store()
         created = store.create(cred)
+        
+        encryption_status = "encrypted" if is_encryption_enabled() else "plaintext (no encryption key)"
+        print(f"🔐 Credential created: {created.id} ({encryption_status})")
         
         return JSONResponse({
             "id": created.id,
             "name": created.name,
             "credential_type": created.credential_type,
             "message": "Credential created successfully",
+            "encrypted": is_encryption_enabled(),
         })
     except Exception as e:
         import traceback
@@ -706,9 +756,10 @@ async def create_credential(request: CredentialCreateRequest):
 
 @app.put("/api/credentials/{credential_id}")
 async def update_credential(credential_id: str, request: CredentialUpdateRequest):
-    """Credential 업데이트"""
+    """Credential 업데이트 (암호화하여 저장)"""
     try:
         from programgarden_core.registry import get_credential_store
+        from encryption import encrypt_data
         
         store = get_credential_store()
         
@@ -716,7 +767,8 @@ async def update_credential(credential_id: str, request: CredentialUpdateRequest
         if request.name is not None:
             updates["name"] = request.name
         if request.data is not None:
-            updates["data"] = request.data
+            # 암호화하여 저장
+            updates["data"] = encrypt_data(request.data)
         
         if not updates:
             return JSONResponse({"error": "No updates provided"}, status_code=400)
@@ -770,8 +822,43 @@ async def run_workflow_inline(request: WorkflowRunRequest):
     
     try:
         from programgarden import ProgramGarden
+        from programgarden_core.registry import get_credential_store
+        from encryption import decrypt_data
         
         print(f"\n🚀 Starting inline workflow: {request.name}")
+        
+        # ========================================
+        # Credentials 처리: credential store에서 조회 후 복호화
+        # (외부 KMS에서 복호화하는 것을 시뮬레이션)
+        # List 형식 유지 (프론트엔드-서버-라이브러리 통일)
+        # ========================================
+        credentials_list = []
+        if request.credentials:
+            store = get_credential_store()
+            for cred_ref in request.credentials:
+                cred_id = cred_ref.get("id")
+                if cred_id:
+                    # credential store에서 암호화된 데이터 조회
+                    stored_cred = store.get(cred_id)
+                    if stored_cred:
+                        # 암호화된 data를 복호화 (외부 KMS 호출 시뮬레이션)
+                        decrypted_data = decrypt_data(stored_cred.data)
+                        credentials_list.append({
+                            "id": cred_id,
+                            "type": stored_cred.credential_type,
+                            "name": stored_cred.name,
+                            "data": decrypted_data,  # 복호화된 평문 데이터
+                        })
+                        print(f"🔑 Loaded & decrypted credential: {cred_id} ({stored_cred.name})")
+                    else:
+                        # 저장소에 없으면 전달된 데이터 사용 (빈 값일 수 있음)
+                        credentials_list.append({
+                            "id": cred_id,
+                            "type": cred_ref.get("type"),
+                            "name": cred_ref.get("name"),
+                            "data": cred_ref.get("data", {}),
+                        })
+                        print(f"⚠️ Credential not in store: {cred_id}")
         
         # Convert React Flow format to ProgramGarden format
         workflow = {
@@ -788,10 +875,12 @@ async def run_workflow_inline(request: WorkflowRunRequest):
                 }
                 for edge in request.edges
             ],
+            "credentials": credentials_list,  # List 형태로 전달 (통일)
         }
         
         print(f"📋 Nodes: {len(workflow['nodes'])}")
         print(f"📋 Edges: {len(workflow['edges'])}")
+        print(f"📋 Credentials: {len(credentials_list)} loaded")
         
         pg = ProgramGarden()
         current_job = await pg.run_async(

@@ -3,6 +3,9 @@ ProgramGarden Core - Credential Registry
 
 Credential 타입 및 인스턴스 관리 레지스트리.
 n8n 스타일의 credential 시스템 구현.
+
+주의: 이 라이브러리는 평문 데이터만 다룹니다.
+암호화/복호화는 외부(서버/KMS)에서 처리합니다.
 """
 
 from typing import Dict, List, Optional, Any
@@ -60,7 +63,10 @@ class CredentialTypeRegistry:
 class CredentialStore:
     """
     Credential 저장소 (추상 베이스).
-    테스트용 메모리/JSON 구현, 프로덕션은 KMS 연동.
+    
+    참고: 암호화는 이 클래스에서 처리하지 않습니다.
+    프로덕션에서는 서버가 외부 KMS를 통해 암호화/복호화 후
+    이 저장소에 저장하거나 조회합니다.
     """
     
     def create(self, credential: Credential) -> Credential:
@@ -130,9 +136,9 @@ class MemoryCredentialStore(CredentialStore):
 class JsonFileCredentialStore(CredentialStore):
     """
     JSON 파일 기반 credential 저장소 (개발/테스트용).
-    실제 프로덕션에서는 암호화된 DB/KMS 사용 권장.
     
-    주의: 이 구현은 평문 저장이므로 민감 정보 보안에 주의!
+    주의: 이 구현은 평문 저장입니다.
+    암호화가 필요한 경우, 서버에서 암호화 후 저장하세요.
     """
     
     def __init__(self, file_path: str = "credentials.json"):
@@ -149,6 +155,7 @@ class JsonFileCredentialStore(CredentialStore):
                     for cred_dict in data.get("credentials", []):
                         cred = Credential(**cred_dict)
                         self._credentials[cred.id] = cred
+                print(f"📂 Loaded {len(self._credentials)} credentials from {self._file_path}")
             except Exception as e:
                 print(f"Warning: Failed to load credentials from {self._file_path}: {e}")
     

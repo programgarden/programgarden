@@ -41,6 +41,16 @@ export function useSSE() {
       console.log('🔌 Connecting to SSE...');
       const es = new EventSource('/events');
       eventSourceRef.current = es;
+      
+      // Connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (es.readyState !== EventSource.OPEN) {
+          console.error('❌ SSE connection timeout');
+          es.close();
+          eventSourceRef.current = null;
+          reject(new Error('SSE connection timeout'));
+        }
+      }, 10000); // 10 second timeout
 
       // Node state changes
       es.addEventListener('node_state', (e) => {
@@ -48,26 +58,35 @@ export function useSSE() {
         console.log('📥 node_state:', data);
         setNodeState(data.node_id, data.state);
         
-        // Store node output when completed
-        if (data.state === 'completed' && data.outputs) {
-          setNodeOutput(data.node_id, data.outputs);
+        // Store node output when completed OR when running with outputs (realtime nodes)
+        // Realtime nodes (RealAccountNode, RealMarketDataNode) stay in 'running' state
+        // and send output updates continuously
+        if (data.outputs) {
+          if (data.state === 'completed' || data.state === 'running') {
+            console.log(`📊 Updating outputs for ${data.node_id}:`, Object.keys(data.outputs));
+            setNodeOutput(data.node_id, data.outputs);
+          }
         }
         
-        // Add log for state transitions
-        const emojiMap: Record<string, string> = {
-          pending: '⏳',
-          running: '🔄',
-          completed: '✅',
-          failed: '❌',
-          skipped: '⏭️',
-        };
-        const emoji = emojiMap[data.state as string] || '❓';
-        
-        addLog({
-          level: data.state === 'failed' ? 'error' : 'node',
-          message: `${emoji} Node [${data.node_id}] → ${data.state.toUpperCase()}`,
-          nodeId: data.node_id,
-        });
+        // Add log for state transitions (but not for running state realtime updates)
+        // Skip logging if it's just a realtime update (running + has outputs)
+        const isRealtimeUpdate = data.state === 'running' && data.outputs;
+        if (!isRealtimeUpdate) {
+          const emojiMap: Record<string, string> = {
+            pending: '⏳',
+            running: '🔄',
+            completed: '✅',
+            failed: '❌',
+            skipped: '⏭️',
+          };
+          const emoji = emojiMap[data.state as string] || '❓';
+          
+          addLog({
+            level: data.state === 'failed' ? 'error' : 'node',
+            message: `${emoji} Node [${data.node_id}] → ${data.state.toUpperCase()}`,
+            nodeId: data.node_id,
+          });
+        }
       });
 
       // Edge state changes
@@ -147,6 +166,7 @@ export function useSSE() {
 
       // Connection opened
       es.onopen = () => {
+        clearTimeout(connectionTimeout);
         console.log('✅ SSE connected');
         setIsConnected(true);
         resolve();
@@ -156,12 +176,18 @@ export function useSSE() {
       es.onerror = (error) => {
         console.error('❌ SSE error:', error);
         setIsConnected(false);
+        clearTimeout(connectionTimeout);
         
-        // Only reject if we haven't connected yet
-        if (es.readyState === EventSource.CONNECTING) {
-          // Still trying to connect - wait
-        } else if (es.readyState === EventSource.CLOSED) {
+        // Close and reject on any error during initial connection
+        if (es.readyState === EventSource.CLOSED) {
           addLog({ level: 'warning', message: '⚠️ Event stream disconnected' });
+          eventSourceRef.current = null;
+          reject(new Error('SSE connection failed'));
+        } else if (es.readyState === EventSource.CONNECTING) {
+          // Close the stale connection and reject
+          es.close();
+          eventSourceRef.current = null;
+          addLog({ level: 'warning', message: '⚠️ Event stream connection failed' });
           reject(new Error('SSE connection failed'));
         }
       };

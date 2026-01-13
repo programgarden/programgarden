@@ -27,7 +27,7 @@ class DisplayNode(BaseNode):
     """
 
     type: Literal["DisplayNode"] = "DisplayNode"
-    category: NodeCategory = NodeCategory.DISPLAY
+    category: NodeCategory = NodeCategory.ANALYSIS
     description: str = "i18n:nodes.DisplayNode.description"
 
     # DisplayNode specific config

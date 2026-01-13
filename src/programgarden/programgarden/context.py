@@ -133,7 +133,7 @@ class ExecutionContext:
         context_params: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
         workflow_inputs: Optional[Dict[str, Any]] = None,
-        workflow_credentials: Optional[Dict[str, Any]] = None,
+        workflow_credentials: Optional[List[Dict[str, Any]]] = None,
         resource_context: Optional[Any] = None,  # ResourceContext (lazy import)
         # DAG 탐색용 워크플로우 구조 정보
         workflow_edges: Optional[List[Any]] = None,  # List[ResolvedEdge]
@@ -150,8 +150,8 @@ class ExecutionContext:
         self._workflow_inputs: Dict[str, Any] = workflow_inputs or {}
         
         # Workflow credentials (for credential_id resolution)
-        # Format: {"credential_id": {"type": "http_bearer", "data": {"token": "..."}}}
-        self._workflow_credentials: Dict[str, Any] = workflow_credentials or {}
+        # Format: [{"id": "cred-id", "type": "http_bearer", "data": {"token": "..."}}]
+        self._workflow_credentials: List[Dict[str, Any]] = workflow_credentials or []
 
         # Node output storage
         self._outputs: Dict[str, Dict[str, NodeOutput]] = {}
@@ -387,18 +387,22 @@ class ExecutionContext:
         워크플로우 JSON의 credentials 섹션에서 credential 데이터 조회
         
         프로덕션 환경에서는 서버가 DB에서 암호화된 credentials를 복호화하여
-        워크플로우 JSON의 credentials.data에 값을 주입한 후 실행합니다.
+        워크플로우 JSON의 credentials 배열에 값을 주입한 후 실행합니다.
         
-        이 함수는 주입된 credentials.data에서 값을 가져옵니다.
+        이 함수는 주입된 credentials 배열에서 해당 id를 찾아 data를 반환합니다.
         (라이브러리는 DB를 직접 참조하지 않음)
         
         Args:
-            credential_id: credentials 섹션의 키 (예: "broker-cred")
+            credential_id: credentials 배열에서 찾을 id (예: "broker-cred")
             
         Returns:
             Credential data dict (예: {"appkey": "...", "appsecret": "..."}) or None
         """
-        cred_ref = self._workflow_credentials.get(credential_id)
+        # List에서 해당 id를 가진 credential 찾기
+        cred_ref = next(
+            (c for c in self._workflow_credentials if c.get("id") == credential_id),
+            None
+        )
         if cred_ref:
             data = cred_ref.get("data", {})
             # data가 있고, 최소 하나의 값이 비어있지 않으면 사용
@@ -934,6 +938,40 @@ class ExecutionContext:
             except Exception as e:
                 logger.warning(f"Listener error on_job_state_change: {e}")
 
+    async def notify_output_update(
+        self,
+        node_id: str,
+        node_type: str,
+        outputs: Dict[str, Any],
+    ) -> None:
+        """
+        Notify all listeners about realtime output update.
+        
+        Used for realtime nodes (RealAccountNode, RealMarketDataNode) to
+        broadcast output changes without changing node state.
+        """
+        logger.debug(f"📡 notify_output_update: {node_id} outputs={list(outputs.keys())}")
+        
+        if not self._listeners:
+            return
+        
+        # Use NodeStateEvent with 'running' state to indicate realtime update
+        event = NodeStateEvent(
+            job_id=self.job_id,
+            node_id=node_id,
+            node_type=node_type,
+            state=NodeState.RUNNING,  # Still running (realtime mode)
+            outputs=self._sanitize_outputs(outputs),
+            error=None,
+            duration_ms=None,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_node_state_change(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_output_update: {e}")
+
     async def notify_display_data(
         self,
         node_id: str,
@@ -970,7 +1008,8 @@ class ExecutionContext:
 
     def _sanitize_outputs(self, outputs: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Remove sensitive information from outputs."""
-        if not outputs:
+        # None은 None으로 반환, 빈 딕셔너리 {}는 그대로 유지
+        if outputs is None:
             return None
         
         # Filter sensitive keywords

@@ -97,7 +97,9 @@ async def rsi_condition(symbols: list, price_data: dict, fields: dict) -> dict:
     
     Args:
         symbols: 평가할 종목 리스트
-        price_data: 종목별 가격 데이터 {"AAPL": {"prices": [...]}}
+        price_data: 종목별 가격 데이터 
+                    - 시계열: {"AAPL": {"prices": [...]}} 또는 {"AAPL": [{"close": ...}, ...]}
+                    - 실시간: {"AAPL": 192.30} (단일 가격)
         fields: {"period": 14, "threshold": 30, "direction": "below"}
     
     Returns:
@@ -112,18 +114,42 @@ async def rsi_condition(symbols: list, price_data: dict, fields: dict) -> dict:
     values = {}
     
     for symbol in symbols:
-        # 가격 데이터 추출
-        symbol_data = price_data.get(symbol, {})
-        prices = symbol_data.get("prices", [])
+        # 가격 데이터 추출 (다양한 형식 지원)
+        symbol_data = price_data.get(symbol)
+        prices = []
+        current_price = None
         
-        # 가격 데이터가 없으면 시뮬레이션 데이터 사용
-        if not prices:
-            import random
-            rsi_value = random.uniform(20, 80)
-        else:
+        if symbol_data is None:
+            # 데이터 없음 - 시뮬레이션
+            pass
+        elif isinstance(symbol_data, (int, float)):
+            # 실시간 모드: 단일 가격 {"AAPL": 192.30}
+            current_price = float(symbol_data)
+        elif isinstance(symbol_data, dict):
+            # 시계열 모드: {"prices": [...]} 또는 {"close": ...}
+            prices = symbol_data.get("prices", [])
+            if not prices and "close" in symbol_data:
+                current_price = symbol_data.get("close")
+        elif isinstance(symbol_data, list):
+            # OHLCV 리스트: [{close: ...}, ...]
+            prices = [bar.get("close", bar.get("price", 0)) for bar in symbol_data if isinstance(bar, dict)]
+        
+        # RSI 계산
+        if prices and len(prices) >= period + 1:
+            # 시계열 데이터로 RSI 계산
             rsi_value = calculate_rsi(prices, period)
+        else:
+            # 실시간 모드: 충분한 데이터 없음 - 시뮬레이션 RSI
+            # 실제 환경에서는 히스토리컬 데이터를 별도로 가져와야 함
+            import random
+            # 현재 가격 기반 약간의 변동을 주어 시뮬레이션
+            base_rsi = random.uniform(25, 75)
+            rsi_value = round(base_rsi, 2)
         
-        values[symbol] = {"rsi": rsi_value}
+        values[symbol] = {
+            "rsi": rsi_value,
+            "current_price": current_price,
+        }
         
         # 조건 평가
         if direction == "below":

@@ -378,9 +378,28 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     
     // nodes 생성
     const processedNodes = state.nodes.map((node) => {
-      // node.data에서 내부 필드 제외하고 추출
+      // input port 이름 목록 (런타임 데이터 제외용)
+      const inputPortNames = new Set(
+        (node.data.inputs as Array<{ name: string }> | undefined)?.map(p => p.name) || []
+      );
+      
+      // node.data에서 내부 필드 및 런타임 input 데이터 제외
       const nodeDataEntries = Object.entries(node.data).filter(
-        ([key]) => !['label', 'nodeType', 'category', 'inputs', 'outputs', 'state', 'configSchema'].includes(key)
+        ([key, value]) => {
+          // 내부 관리 필드 제외
+          if (['label', 'nodeType', 'category', 'inputs', 'outputs', 'state', 'configSchema'].includes(key)) {
+            return false;
+          }
+          // input port 이름과 같은 필드 중 바인딩 표현식이 아닌 것(런타임 데이터) 제외
+          if (inputPortNames.has(key)) {
+            // 바인딩 표현식 ({{ ... }})이면 유지, 아니면 제외
+            if (typeof value === 'string' && value.includes('{{')) {
+              return true;
+            }
+            return false;
+          }
+          return true;
+        }
       );
       
       // headers 필드가 있으면 마스킹 처리

@@ -22,10 +22,21 @@ export interface ConfigField {
   description?: string;
   category?: 'parameters' | 'settings';  // Field category for UI grouping
   enum_values?: string[];
+  enum_labels?: Record<string, string>;  // enum 값에 대한 라벨 (예: {"overseas_stock": "해외주식"})
   bindable?: boolean;
   expression_enabled?: boolean;
   ui_component?: string;  // Custom UI component (e.g., 'symbol_editor')
-  ui_hint?: string;       // UI hint for special behavior
+  ui_hint?: string;       // UI hint for special behavior (e.g., 'port_binding:price_data')
+  placeholder?: string;   // Input placeholder text
+  
+  // === 바인딩 가이드 필드 (신규) ===
+  example?: unknown;              // 예시 값 (JSON 직접 입력 시 참고)
+  example_binding?: string;       // 바인딩 표현식 예시 ({{ nodes.xxx.yyy }})
+  bindable_sources?: string[];    // 바인딩 가능한 소스 노드/포트 목록
+  expected_type?: string;         // 기대하는 데이터 타입 (예: dict[str, float])
+  
+  // === 조건부 표시 필드 ===
+  visible_when?: Record<string, unknown>;  // 조건부 표시 조건 (예: {"product": "overseas_stock"})
 }
 
 export interface NodeTypeSchema {

@@ -6,7 +6,7 @@ Backtest execution and result analysis nodes:
 - HistoricalDataNode: Historical data query
 """
 
-from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -28,8 +28,9 @@ class HistoricalDataNode(BaseNode):
     """
 
     type: Literal["HistoricalDataNode"] = "HistoricalDataNode"
-    category: NodeCategory = NodeCategory.DATA
+    category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.HistoricalDataNode.description"
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/historicaldata.svg"
 
     # HistoricalDataNode specific config
     start_date: str = Field(
@@ -77,34 +78,44 @@ class HistoricalDataNode(BaseNode):
             "start_date": FieldSchema(
                 name="start_date",
                 type=FieldType.STRING,
-                description="Start date (YYYY-MM-DD or dynamic:months_ago(N))",
+                description="i18n:fields.HistoricalDataNode.start_date",
                 default="dynamic:months_ago(3)",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="2024-01-01",
+                expected_type="str",
             ),
             "end_date": FieldSchema(
                 name="end_date",
                 type=FieldType.STRING,
-                description="End date (YYYY-MM-DD or dynamic:today())",
+                description="i18n:fields.HistoricalDataNode.end_date",
                 default="dynamic:today()",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="2024-12-31",
+                expected_type="str",
             ),
             "interval": FieldSchema(
                 name="interval",
                 type=FieldType.STRING,
-                description="Data interval (1m, 5m, 15m, 1h, 1d)",
+                description="i18n:fields.HistoricalDataNode.interval",
                 default="1d",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="1d",
+                expected_type="str",
             ),
             # === SETTINGS: 부가 설정 ===
             "adjust": FieldSchema(
                 name="adjust",
                 type=FieldType.BOOLEAN,
-                description="Apply adjusted prices",
+                description="i18n:fields.HistoricalDataNode.adjust",
                 default=True,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
             ),
         }
 
@@ -118,7 +129,7 @@ class BacktestEngineNode(BaseNode):
     """
 
     type: Literal["BacktestEngineNode"] = "BacktestEngineNode"
-    category: NodeCategory = NodeCategory.BACKTEST
+    category: NodeCategory = NodeCategory.ANALYSIS
     description: str = "i18n:nodes.BacktestEngineNode.description"
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -256,89 +267,121 @@ class BacktestEngineNode(BaseNode):
             "initial_capital": FieldSchema(
                 name="initial_capital",
                 type=FieldType.NUMBER,
-                description="Initial capital",
+                description="Initial capital for backtest. Can be overridden by parent PortfolioNode allocation.",
                 default=10000,
                 min_value=100,
                 category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example=10000,
+                example_binding="{{ nodes.portfolio.allocated_capital.strategy_1 }}",
+                bindable_sources=["PortfolioNode.allocated_capital"],
+                expected_type="float",
             ),
             "position_sizing": FieldSchema(
                 name="position_sizing",
                 type=FieldType.ENUM,
-                description="Position sizing method",
+                description="Position sizing method. equal_weight: divide equally. kelly: Kelly criterion. fixed_percent: fixed % of capital. fixed_amount: fixed dollar amount. atr_based: ATR volatility-based.",
                 default="equal_weight",
                 enum_values=["equal_weight", "kelly", "fixed_percent", "fixed_amount", "atr_based"],
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="equal_weight",
+                expected_type="str",
             ),
             "position_sizing_config": FieldSchema(
                 name="position_sizing_config",
                 type=FieldType.OBJECT,
-                description="Position sizing config",
+                description="Position sizing parameters. Options: max_position_percent, kelly_fraction, fixed_amount, fixed_percent, atr_risk_percent, atr_period.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example={"max_position_percent": 10.0, "kelly_fraction": 0.25},
+                expected_type="dict[str, Any]",
             ),
             "exit_rules": FieldSchema(
                 name="exit_rules",
                 type=FieldType.OBJECT,
-                description="Exit rules (stop_loss, take_profit, etc.)",
+                description="Automatic exit rules. Options: stop_loss_percent, take_profit_percent, trailing_stop_percent, max_holding_days, time_stop_days.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example={"stop_loss_percent": 5.0, "take_profit_percent": 15.0, "trailing_stop_percent": 3.0},
+                expected_type="dict[str, Any]",
             ),
             "benchmark": FieldSchema(
                 name="benchmark",
                 type=FieldType.STRING,
-                description="Benchmark symbol (e.g., SPY)",
+                description="Benchmark symbol for comparison. Common options: SPY, QQQ, IWM.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="SPY",
+                expected_type="str",
             ),
             # === SETTINGS: 부가 설정 ===
             "commission_rate": FieldSchema(
                 name="commission_rate",
                 type=FieldType.NUMBER,
-                description="Commission rate (0.001 = 0.1%)",
+                description="Commission rate as decimal. e.g., 0.001 = 0.1% per trade.",
                 default=0.001,
                 min_value=0,
                 max_value=0.1,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=0.001,
+                expected_type="float",
             ),
             "slippage": FieldSchema(
                 name="slippage",
                 type=FieldType.NUMBER,
-                description="Slippage (0.0005 = 0.05%)",
+                description="Slippage as decimal. e.g., 0.0005 = 0.05% price impact.",
                 default=0.0005,
                 min_value=0,
                 max_value=0.1,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=0.0005,
+                expected_type="float",
             ),
             "risk_free_rate": FieldSchema(
                 name="risk_free_rate",
                 type=FieldType.NUMBER,
-                description="Risk-free rate for Sharpe ratio",
+                description="Annual risk-free rate for Sharpe ratio calculation. e.g., 0.02 = 2%.",
                 default=0.02,
                 min_value=0,
                 max_value=0.2,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=0.02,
+                expected_type="float",
             ),
             "allow_short": FieldSchema(
                 name="allow_short",
                 type=FieldType.BOOLEAN,
-                description="Allow short selling",
+                description="Allow short selling. When true, negative signals create short positions.",
                 default=False,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
             ),
             "allow_fractional": FieldSchema(
                 name="allow_fractional",
                 type=FieldType.BOOLEAN,
-                description="Allow fractional shares",
+                description="Allow fractional shares. When false, positions are rounded to whole shares.",
                 default=True,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
             ),
             "strategy_name": FieldSchema(
                 name="strategy_name",
                 type=FieldType.STRING,
-                description="Strategy name (display)",
+                description="Strategy name for display in reports and charts.",
                 required=False,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example="RSI Mean Reversion",
+                expected_type="str",
             ),
         }
 
@@ -393,8 +436,11 @@ class PerformanceConditionNode(BaseNode):
             "conditions": FieldSchema(
                 name="conditions",
                 type=FieldType.OBJECT,
-                description="Performance conditions",
+                description="Performance validation conditions. Use comparison operators: '>N', '<N', '>=N', '<=N'. Available metrics: total_return, max_drawdown, sharpe_ratio, win_rate.",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example={"total_return": ">0", "max_drawdown": "<10", "sharpe_ratio": ">1.0"},
+                expected_type="dict[str, str]",
             ),
         }

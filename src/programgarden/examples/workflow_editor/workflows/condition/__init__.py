@@ -9,6 +9,7 @@ from .w02_multi_condition import get_workflow as get_multi_condition
 from .w03_weighted_condition import get_workflow as get_weighted_condition
 from .w04_at_least_condition import get_workflow as get_at_least_condition
 from .w05_nested_logic import get_workflow as get_nested_logic
+from .w06_manual_binding import get_workflow as get_manual_binding
 
 WORKFLOWS = [
     {
@@ -41,6 +42,12 @@ WORKFLOWS = [
         "description": "(RSI AND MACD) OR (BB AND Volume)",
         "get_workflow": get_nested_logic,
     },
+    {
+        "id": "condition-06",
+        "name": "✋ Manual Binding",
+        "description": "{{ nodes.xxx.yyy }} 명시적 바인딩 예제 (일봉 RSI)",
+        "get_workflow": get_manual_binding,
+    },
 ]
 
 __all__ = [
@@ -49,5 +56,6 @@ __all__ = [
     "get_weighted_condition",
     "get_at_least_condition",
     "get_nested_logic",
+    "get_manual_binding",
     "WORKFLOWS",
 ]

@@ -284,6 +284,8 @@ class NodeTypeRegistry:
                     field_schema["description"] = fs.description
                 if fs.enum_values:
                     field_schema["enum_values"] = fs.enum_values
+                if fs.enum_labels:
+                    field_schema["enum_labels"] = fs.enum_labels
                 if fs.bindable is not None:
                     field_schema["bindable"] = fs.bindable
                 if fs.expression_enabled is not None:
@@ -297,6 +299,18 @@ class NodeTypeRegistry:
                 # ui_hint 추가
                 if hasattr(fs, 'ui_hint') and fs.ui_hint:
                     field_schema["ui_hint"] = fs.ui_hint
+                # === 바인딩 가이드 필드 추가 ===
+                if hasattr(fs, 'example') and fs.example is not None:
+                    field_schema["example"] = fs.example
+                if hasattr(fs, 'example_binding') and fs.example_binding:
+                    field_schema["example_binding"] = fs.example_binding
+                if hasattr(fs, 'bindable_sources') and fs.bindable_sources:
+                    field_schema["bindable_sources"] = fs.bindable_sources
+                if hasattr(fs, 'expected_type') and fs.expected_type:
+                    field_schema["expected_type"] = fs.expected_type
+                # === 조건부 표시 필드 추가 ===
+                if hasattr(fs, 'visible_when') and fs.visible_when:
+                    field_schema["visible_when"] = fs.visible_when
             else:
                 # Pydantic 필드에서 추출
                 field_type = str(field_info.annotation) if field_info.annotation else "any"

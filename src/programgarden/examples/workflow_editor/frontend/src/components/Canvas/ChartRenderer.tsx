@@ -38,7 +38,30 @@ const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'
 void COLORS;
 
 /**
+ * Format cell value for display in table
+ * Handles nested objects, arrays, numbers, etc.
+ */
+function formatCellValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'number') {
+    // Format numbers nicely
+    return Number.isInteger(value) ? value.toString() : value.toFixed(4).replace(/\.?0+$/, '');
+  }
+  if (typeof value === 'boolean') {
+    return value ? '✓' : '✗';
+  }
+  if (typeof value === 'object') {
+    // For nested objects/arrays, show a compact JSON
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+/**
  * Table renderer for tabular data
+ * Supports flat arrays of objects and nested position-like structures
  */
 function TableRenderer({ data }: { data: unknown[] }) {
   if (!data || data.length === 0) {
@@ -46,6 +69,59 @@ function TableRenderer({ data }: { data: unknown[] }) {
   }
 
   const firstItem = data[0] as Record<string, unknown>;
+  
+  // Check if data is positions-like: [{ SYMBOL: { ... }, SYMBOL2: { ... } }]
+  // This is when each item is an object whose values are also objects
+  const firstValue = Object.values(firstItem)[0];
+  if (typeof firstValue === 'object' && firstValue !== null && !Array.isArray(firstValue)) {
+    // Flatten positions-like data: extract the inner objects
+    const flattenedData: Record<string, unknown>[] = [];
+    data.forEach((item) => {
+      const itemObj = item as Record<string, unknown>;
+      Object.values(itemObj).forEach((innerValue) => {
+        if (typeof innerValue === 'object' && innerValue !== null) {
+          flattenedData.push(innerValue as Record<string, unknown>);
+        }
+      });
+    });
+    
+    if (flattenedData.length > 0) {
+      const columns = Object.keys(flattenedData[0]);
+      return (
+        <div className="overflow-auto h-full">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-600">
+                {columns.map((col) => (
+                  <th key={col} className="px-2 py-1 text-left text-gray-400 font-medium whitespace-nowrap">
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {flattenedData.slice(0, 50).map((row, i) => (
+                <tr key={i} className="border-b border-gray-700 hover:bg-gray-700/50">
+                  {columns.map((col) => (
+                    <td key={col} className="px-2 py-1 text-gray-300 whitespace-nowrap">
+                      {formatCellValue(row[col])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {flattenedData.length > 50 && (
+            <div className="text-gray-500 text-xs p-2">
+              ... and {flattenedData.length - 50} more rows
+            </div>
+          )}
+        </div>
+      );
+    }
+  }
+
+  // Standard flat array of objects
   const columns = Object.keys(firstItem);
 
   return (
@@ -54,7 +130,7 @@ function TableRenderer({ data }: { data: unknown[] }) {
         <thead>
           <tr className="border-b border-gray-600">
             {columns.map((col) => (
-              <th key={col} className="px-2 py-1 text-left text-gray-400 font-medium">
+              <th key={col} className="px-2 py-1 text-left text-gray-400 font-medium whitespace-nowrap">
                 {col}
               </th>
             ))}
@@ -64,8 +140,8 @@ function TableRenderer({ data }: { data: unknown[] }) {
           {data.slice(0, 50).map((row, i) => (
             <tr key={i} className="border-b border-gray-700 hover:bg-gray-700/50">
               {columns.map((col) => (
-                <td key={col} className="px-2 py-1 text-gray-300">
-                  {String((row as Record<string, unknown>)[col] ?? '')}
+                <td key={col} className="px-2 py-1 text-gray-300 whitespace-nowrap">
+                  {formatCellValue((row as Record<string, unknown>)[col])}
                 </td>
               ))}
             </tr>

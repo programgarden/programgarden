@@ -29,7 +29,7 @@ class DeployNode(BaseNode):
     """
 
     type: Literal["DeployNode"] = "DeployNode"
-    category: NodeCategory = NodeCategory.JOB
+    category: NodeCategory = NodeCategory.SYSTEM
     description: str = "i18n:nodes.DeployNode.description"
 
     # DeployNode specific config
@@ -84,34 +84,44 @@ class DeployNode(BaseNode):
             "mode": FieldSchema(
                 name="mode",
                 type=FieldType.ENUM,
-                description="Deployment mode",
+                description="Deployment mode. live: real trading with real money. paper: simulated trading. dry_run: test without execution.",
                 default="paper",
                 enum_values=["live", "paper", "dry_run"],
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="paper",
+                expected_type="str",
             ),
             "paper_trading": FieldSchema(
                 name="paper_trading",
                 type=FieldType.BOOLEAN,
-                description="Paper trading flag",
+                description="Enable paper trading. When true, orders are simulated.",
                 default=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
             ),
             # === SETTINGS: 부가 설정 ===
             "schedule_type": FieldSchema(
                 name="schedule_type",
                 type=FieldType.ENUM,
-                description="Deployment timing",
+                description="Deployment timing. immediate: deploy now. scheduled: deploy at specified time.",
                 default="immediate",
                 enum_values=["immediate", "scheduled"],
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example="immediate",
+                expected_type="str",
             ),
             "scheduled_time": FieldSchema(
                 name="scheduled_time",
                 type=FieldType.STRING,
-                description="Scheduled time (ISO 8601)",
+                description="Scheduled deployment time in ISO 8601 format. Only used when schedule_type='scheduled'.",
                 required=False,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example="2024-01-15T09:30:00-05:00",
+                expected_type="str",
             ),
         }
 
@@ -124,7 +134,7 @@ class TradingHaltNode(BaseNode):
     """
 
     type: Literal["TradingHaltNode"] = "TradingHaltNode"
-    category: NodeCategory = NodeCategory.JOB
+    category: NodeCategory = NodeCategory.SYSTEM
     description: str = "i18n:nodes.TradingHaltNode.description"
 
     # TradingHaltNode specific config
@@ -169,25 +179,37 @@ class TradingHaltNode(BaseNode):
             "duration_hours": FieldSchema(
                 name="duration_hours",
                 type=FieldType.NUMBER,
-                description="Halt duration (hours)",
+                description="Trading halt duration in hours. Trading resumes after this period.",
                 default=24,
                 min_value=0.1,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=24,
+                expected_type="float",
             ),
             "reason": FieldSchema(
                 name="reason",
                 type=FieldType.STRING,
-                description="Halt reason",
+                description="Reason for trading halt. Logged for audit trail.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example="Daily loss limit exceeded",
+                example_binding="{{ nodes.riskGuard.halt_reason }}",
+                bindable_sources=["RiskGuardNode.halt_reason"],
+                expected_type="str",
             ),
             # === SETTINGS: 부가 설정 ===
             "resume_condition": FieldSchema(
                 name="resume_condition",
                 type=FieldType.STRING,
-                description="Resume condition (e.g., 'next_trading_day')",
+                description="Condition for automatic resume. Options: 'next_trading_day', 'manual', or custom condition.",
                 required=False,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example="next_trading_day",
+                expected_type="str",
             ),
         }
 
@@ -200,7 +222,7 @@ class JobControlNode(BaseNode):
     """
 
     type: Literal["JobControlNode"] = "JobControlNode"
-    category: NodeCategory = NodeCategory.JOB
+    category: NodeCategory = NodeCategory.SYSTEM
     description: str = "i18n:nodes.JobControlNode.description"
 
     # JobControlNode specific config
@@ -240,16 +262,23 @@ class JobControlNode(BaseNode):
             "action": FieldSchema(
                 name="action",
                 type=FieldType.ENUM,
-                description="Control action",
+                description="Job control action. pause: temporarily stop trading. resume: continue paused job. stop: permanently stop job. restart: stop and restart job.",
                 enum_values=["pause", "resume", "stop", "restart"],
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="pause",
+                expected_type="str",
             ),
             "target_job_id": FieldSchema(
                 name="target_job_id",
                 type=FieldType.STRING,
-                description="Target Job ID (None for current Job)",
+                description="Target Job ID to control. Leave empty to control current job.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example="job_abc123",
+                expected_type="str",
             ),
         }
