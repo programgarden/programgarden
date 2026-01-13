@@ -40,8 +40,10 @@ class TestProductMismatch:
         ctx.set_output("watchlist", "product", watchlist_product)
         ctx.set_output("watchlist", "symbols", [{"exchange": "NASDAQ", "symbol": "AAPL"}])
         
-        # RealMarketDataNode 입력으로 symbols 설정 (실행 시 WorkflowExecutor가 이렇게 주입함)
+        # RealMarketDataNode 입력으로 connection, symbols 설정 (실행 시 WorkflowExecutor가 엣지를 통해 주입함)
+        ctx.set_output("_input_realMarket", "connection", {"provider": "ls-sec.co.kr", "product": broker_product})
         ctx.set_output("_input_realMarket", "symbols", [{"exchange": "NASDAQ", "symbol": "AAPL"}])
+        ctx.set_output("_input_realMarket", "product", watchlist_product)  # watchlist의 product
         
         return ctx
 

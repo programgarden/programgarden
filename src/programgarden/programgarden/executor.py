@@ -36,6 +36,7 @@ class NodeExecutorBase:
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,  # plugin, fields 등 추가 매개변수 허용
     ) -> Dict[str, Any]:
         """
         Execute node
@@ -46,12 +47,94 @@ class NodeExecutorBase:
         raise NotImplementedError
 
 
+def resolve_port_bindings(
+    config: Dict[str, Any],
+    context: ExecutionContext,
+    node_id: str,
+    port_names: List[str],
+) -> Dict[str, Any]:
+    """
+    포트 바인딩 표현식을 평가하여 config를 업데이트
+    
+    config에 {{ nodes.xxx.yyy }} 표현식이 있으면 평가하여 실제 데이터로 교체합니다.
+    
+    Args:
+        config: 노드 config (포트 바인딩 표현식 포함 가능)
+        context: 실행 컨텍스트
+        node_id: 현재 노드 ID
+        port_names: 포트 바인딩을 확인할 필드 이름 목록
+        
+    Returns:
+        평가된 config (표현식이 실제 데이터로 교체됨)
+    """
+    config = config.copy()  # 원본 보호
+    
+    for port_name in port_names:
+        binding_expr = config.get(port_name)
+        
+        if binding_expr and isinstance(binding_expr, str) and "{{" in binding_expr:
+            # {{ nodes.xxx.yyy }} 표현식 평가
+            expr_context = context.get_expression_context()
+            evaluator = ExpressionEvaluator(expr_context)
+            try:
+                result = evaluator.evaluate(binding_expr)
+                if result is not None:
+                    config[port_name] = result
+                    context.log("debug", f"Port binding resolved: {port_name} = {type(result).__name__}", node_id)
+            except Exception as e:
+                context.log("warning", f"Port binding evaluation failed for {port_name}: {e}", node_id)
+    
+    return config
+
+
+def evaluate_all_bindings(
+    config: Dict[str, Any],
+    context: "ExecutionContext",
+    node_id: str,
+) -> Dict[str, Any]:
+    """
+    config 내 모든 {{ }} 표현식을 재귀적으로 평가
+    
+    - dict, list 내부도 재귀 탐색
+    - 평가 실패 시 원본 유지 + 경고 로그
+    
+    Args:
+        config: 노드 config
+        context: 실행 컨텍스트
+        node_id: 노드 ID
+        
+    Returns:
+        표현식이 평가된 config
+    """
+    config = config.copy()
+    expr_context = context.get_expression_context()
+    evaluator = ExpressionEvaluator(expr_context)
+    
+    def evaluate_value(value: Any) -> Any:
+        if isinstance(value, str) and "{{" in value:
+            try:
+                result = evaluator.evaluate(value)
+                context.log("debug", f"Expression evaluated: {value} -> {type(result).__name__}", node_id)
+                return result
+            except Exception as e:
+                context.log("warning", f"Expression evaluation failed: {value} - {e}", node_id)
+                return value
+        elif isinstance(value, dict):
+            return {k: evaluate_value(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [evaluate_value(v) for v in value]
+        return value
+    
+    return {k: evaluate_value(v) for k, v in config.items()}
+
+
 class GenericNodeExecutor(NodeExecutorBase):
     """
     범용 노드 실행기 (커뮤니티 노드 및 execute() 메서드가 있는 노드용)
     
     NodeRegistry에 등록된 노드 클래스의 execute() 메서드를 호출합니다.
     credential_id가 있으면 자동으로 credential 값을 노드 필드에 주입합니다.
+    포트 바인딩({{ nodes.xxx.yyy }})이 있으면 자동으로 표현식을 평가합니다.
     
     이를 통해 노드 개발자는:
     1. 필드만 선언하면 됨 (bot_token: Optional[str] = None)
@@ -74,6 +157,8 @@ class GenericNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        plugin: Optional[Any] = None,
+        fields: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         from programgarden_core.registry import NodeTypeRegistry
         
@@ -84,10 +169,26 @@ class GenericNodeExecutor(NodeExecutorBase):
             context.log("error", f"Node class not found in registry: {node_type}", node_id)
             return {"error": f"Unknown node type: {node_type}"}
         
+        # plugin과 fields가 별도로 전달되면 config에 추가 (PluginNode용)
+        if plugin is not None:
+            config["plugin"] = plugin.id if hasattr(plugin, "id") else str(plugin)
+        if fields is not None:
+            config["fields"] = fields
+        
+        # 모든 config 값에서 {{ }} 표현식 평가
+        config = evaluate_all_bindings(config, context, node_id)
+        
         # credential_id가 있으면 credential 값을 config에 주입
         credential_id = config.get("credential_id")
         if credential_id:
             config = self._inject_credentials(credential_id, config, context, node_id)
+        
+        # fields 내부 표현식도 평가 (플러그인 노드용)
+        fields = config.get("fields", {})
+        if fields:
+            expr_context = context.get_expression_context()
+            evaluator = ExpressionEvaluator(expr_context)
+            config["fields"] = evaluator.evaluate_fields(fields)
         
         # 노드 인스턴스 생성 (config의 값들이 Pydantic 필드에 매핑됨)
         try:
@@ -167,6 +268,7 @@ class StartNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         context.log("info", "Workflow started", node_id)
         return {"start": True}
@@ -190,6 +292,7 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         from datetime import datetime
         from zoneinfo import ZoneInfo
@@ -311,6 +414,7 @@ class WatchlistNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         from programgarden_core.models.exchange import (
             exchange_registry, 
@@ -395,6 +499,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         import os
         
@@ -557,6 +662,14 @@ class AccountNodeExecutor(NodeExecutorBase):
     AccountNode executor - 계좌 잔고 1회 조회 (REST API)
     
     RealAccountNode와 달리 WebSocket 연결 없이 REST API로 1회만 조회합니다.
+    
+    Connection 획득 방법:
+    1. config에서 명시적으로 지정된 connection (바인딩 표현식 지원)
+    2. input 포트로 연결된 BrokerNode의 connection
+    
+    예시:
+      - 바인딩: "connection": "{{ nodes.broker_2.connection }}"
+      - 엣지 연결: BrokerNode → AccountNode
     """
 
     async def execute(
@@ -565,11 +678,29 @@ class AccountNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
-        # BrokerNode에서 설정된 provider/product 정보 가져오기
-        broker_connection = context.get_output("broker", "connection") or {}
-        provider = broker_connection.get("provider", "ls-sec.co.kr")
-        product = broker_connection.get("product", "overseas_stock")
+        # 1. config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        broker_connection = config.get("connection")
+        
+        # 2. 엣지로 연결된 input에서 connection 가져오기
+        if not broker_connection:
+            # 엣지 데이터는 _input_{node_id}에 저장됨
+            edge_inputs = context.get_all_outputs(f"_input_{node_id}")
+            broker_connection = edge_inputs.get("connection")
+        
+        # connection 없으면 에러
+        if not broker_connection:
+            context.log("error", "AccountNode: connection이 필요합니다. BrokerNode를 연결하거나 connection 필드를 바인딩하세요.", node_id)
+            return self._empty_result("Missing connection - connect BrokerNode or bind connection field")
+        
+        # connection 정보 추출
+        if isinstance(broker_connection, dict):
+            provider = broker_connection.get("provider", "ls-sec.co.kr")
+            product = broker_connection.get("product", "overseas_stock")
+        else:
+            context.log("error", f"AccountNode: connection 타입이 잘못되었습니다: {type(broker_connection)}", node_id)
+            return self._empty_result("Invalid connection type")
         
         context.log("info", f"AccountNode: provider={provider}, product={product} (REST 1회 조회)", node_id)
         
@@ -606,7 +737,13 @@ class AccountNodeExecutor(NodeExecutorBase):
             
             ls = LS.get_instance()
             
-            if not ls.is_logged_in():
+            # 현재 로그인된 appkey와 요청된 appkey가 다르면 재로그인 필요
+            current_appkey = ls.token_manager.appkey if ls.token_manager else None
+            needs_relogin = not ls.is_logged_in() or (current_appkey and current_appkey != appkey)
+            
+            if needs_relogin:
+                if current_appkey and current_appkey != appkey:
+                    context.log("info", f"AppKey changed, re-logging in (product={product})", node_id)
                 login_result = ls.login(
                     appkey=appkey,
                     appsecretkey=appsecret,
@@ -615,14 +752,15 @@ class AccountNodeExecutor(NodeExecutorBase):
                 if not login_result:
                     context.log("error", "LS login failed", node_id)
                     return self._empty_result("Login failed")
-                context.log("info", f"LS logged in (paper_trading={paper_trading})", node_id)
+                context.log("info", f"LS logged in (product={product}, paper_trading={paper_trading})", node_id)
             
             # 상품별 REST API 호출
             if product == "overseas_stock":
                 return await self._ls_overseas_stock(ls, node_id, context)
             elif product == "domestic_stock":
                 return await self._ls_domestic_stock(ls, node_id, context)
-            elif product == "overseas_futureoption":
+            elif product in ("overseas_futures", "overseas_futureoption"):
+                # overseas_futures와 overseas_futureoption은 같은 API 사용
                 return await self._ls_overseas_futureoption(ls, node_id, context)
             else:
                 context.log("warning", f"Unsupported LS product: {product}, using overseas_stock", node_id)
@@ -722,7 +860,7 @@ class AccountNodeExecutor(NodeExecutorBase):
                     RecCnt=1,
                     AcntTpCode="1",      # 1: 위탁
                     QryDt=today,         # 조회일자
-                    BalTpCode="1",       # 1: 합산, 2: 건별
+                    BalTpCode="2",       # 1: 합산, 2: 건별 (건별이 더 안정적)
                     FcmAcntNo=""
                 )
             ).req_async()
@@ -746,24 +884,24 @@ class AccountNodeExecutor(NodeExecutorBase):
                     "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else symbol,
                     "is_long": is_long,
                     "qty": int(item.BalQty) if item.BalQty else 0,
-                    "entry_price": float(item.AvrPrc) if item.AvrPrc else 0.0,
-                    "current_price": float(item.NowPrc) if item.NowPrc else 0.0,
+                    "entry_price": float(item.PchsPrc) if item.PchsPrc else 0.0,
+                    "current_price": float(item.OvrsDrvtNowPrc) if item.OvrsDrvtNowPrc else 0.0,
                     "pnl_amount": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
-                    "pnl_rate": float(item.ErnRat) if hasattr(item, 'ErnRat') and item.ErnRat else 0.0,
-                    "currency": "USD",  # 해외선물은 대부분 USD
+                    "currency": item.CrcyCodeVal.strip() if item.CrcyCodeVal else "USD",
                 }
             
             held_symbols = list(positions.keys())
             
-            # block1 = 계좌 요약 정보
+            # block2의 첫 번째 항목에서 계좌 요약 정보 가져오기 (CIDBQ01500 구조상 block2에 있음)
             balance_info = {"cash": 0.0, "total_value": 0.0}
-            if response.block1:
-                b1 = response.block1
+            if response.block2 and len(response.block2) > 0:
+                b2 = response.block2[0]
                 balance_info = {
-                    "deposit": float(b1.Dps) if hasattr(b1, 'Dps') and b1.Dps else 0.0,
-                    "orderable_amount": float(b1.OrdAbleAmt) if hasattr(b1, 'OrdAbleAmt') and b1.OrdAbleAmt else 0.0,
-                    "total_pnl": float(b1.TotEvalPnlAmt) if hasattr(b1, 'TotEvalPnlAmt') and b1.TotEvalPnlAmt else 0.0,
-                    "margin": float(b1.TotMgn) if hasattr(b1, 'TotMgn') and b1.TotMgn else 0.0,
+                    "deposit": float(b2.Dps) if b2.Dps else 0.0,
+                    "orderable_amount": float(b2.OrdAbleAmt) if b2.OrdAbleAmt else 0.0,
+                    "withdrawable_amount": float(b2.WthdwAbleAmt) if b2.WthdwAbleAmt else 0.0,
+                    "margin": float(b2.CsgnMgn) if b2.CsgnMgn else 0.0,
+                    "maintenance_margin": float(b2.MaintMgn) if b2.MaintMgn else 0.0,
                 }
             
             context.log("info", f"AccountNode (futures): {len(held_symbols)} positions fetched", node_id)
@@ -807,6 +945,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         import sys
         # 옵션 확인
@@ -814,11 +953,21 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         sync_interval_sec = config.get("sync_interval_sec", 60)
         
         
-        # BrokerNode에서 설정된 provider/product 정보 가져오기
-        broker_connection = context.get_output("broker", "connection") or {}
+        # 1. config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        broker_connection = config.get("connection")
+        
+        # 2. 엣지로 연결된 input에서 connection 가져오기
+        if not broker_connection:
+            edge_inputs = context.get_all_outputs(f"_input_{node_id}")
+            broker_connection = edge_inputs.get("connection")
+        
+        # connection 없으면 에러
+        if not broker_connection:
+            context.log("error", "RealAccountNode: connection이 필요합니다. BrokerNode를 연결하거나 connection 필드를 바인딩하세요.", node_id)
+            return {"error": "Missing connection"}
+        
         provider = broker_connection.get("provider", "ls-sec.co.kr")
         product = broker_connection.get("product", "overseas_stock")
-        
         
         context.log("info", f"RealAccount: provider={provider}, product={product}, stay_connected={stay_connected}", node_id)
         
@@ -1265,15 +1414,21 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         import random
         from programgarden_core.exceptions import ValidationError, ConnectionError
         
         # ========================================
-        # 1. BrokerNode 필수 연결 검증
+        # 1. BrokerNode connection 획득 (config 바인딩 또는 엣지 연결)
         # ========================================
-        broker_output = context.find_parent_output(node_id, "BrokerNode")
-        if not broker_output:
+        broker_connection = config.get("connection")
+        
+        if not broker_connection:
+            edge_inputs = context.get_all_outputs(f"_input_{node_id}")
+            broker_connection = edge_inputs.get("connection") if edge_inputs else None
+        
+        if not broker_connection:
             error_msg = (
                 f"RealMarketDataNode requires BrokerNode connection for WebSocket. "
                 f"Node '{node_id}' has no BrokerNode connected. "
@@ -1282,24 +1437,13 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.log("error", error_msg, node_id)
             raise ConnectionError(error_msg)
         
+        broker_product = broker_connection.get("product")
+        
         # ========================================
         # 2. BrokerNode와 WatchlistNode product 정합성 검증
         # ========================================
         watchlist_output = context.find_parent_output(node_id, "WatchlistNode")
-        
-        broker_product = None
-        watchlist_product = None
-        
-        if broker_output:
-            # BrokerNode 출력에서 product 가져오기
-            broker_product = broker_output.get("product")
-            if not broker_product:
-                # connection 내부에 있을 수도 있음
-                conn = broker_output.get("connection", {})
-                broker_product = conn.get("product")
-        
-        if watchlist_output:
-            watchlist_product = watchlist_output.get("product")
+        watchlist_product = watchlist_output.get("product") if watchlist_output else None
         
         # 둘 다 있고 product가 불일치하면 에러
         if broker_product and watchlist_product and broker_product != watchlist_product:
@@ -1455,6 +1599,7 @@ class CustomPnLNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         # 입력 데이터 가져오기
         positions = context.get_output("account", "positions") or {}
@@ -1528,6 +1673,7 @@ class DisplayNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         from datetime import datetime
         
@@ -1875,11 +2021,15 @@ class DisplayNodeExecutor(NodeExecutorBase):
             elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
                 # 이미 객체 배열인 경우 그대로 사용
                 output_data["table_data"] = data
-            elif isinstance(data, dict):
-                # 단일 dict → 객체 배열로 감싸기
+            elif isinstance(data, dict) and data:
+                # 단일 dict → 객체 배열로 감싸기 (빈 dict 제외)
                 output_data["table_data"] = [data]
+            elif isinstance(data, bool) or data is None:
+                # boolean이나 None은 빈 배열로 (fallback에서 처리됨)
+                output_data["table_data"] = []
             else:
-                output_data["table_data"] = [data] if data else []
+                # 기타 primitive 값도 빈 배열로 (fallback에서 raw로 처리됨)
+                output_data["table_data"] = []
         
         # Notify listeners for inline display visualization
         # Prepare chart data for frontend
@@ -1897,50 +2047,93 @@ class DisplayNodeExecutor(NodeExecutorBase):
             frontend_chart_data = data
         
         # ========================================
-        # Fallback: 차트 데이터가 없으면 raw data를 JSON으로 표시
+        # Fallback: 차트 데이터가 없거나 의미없는 데이터면 raw data를 JSON으로 표시
         # ========================================
-        if frontend_chart_data is None or (isinstance(frontend_chart_data, (list, dict)) and not frontend_chart_data):
-            # 원본 데이터가 있으면 raw로 출력
-            raw_data = data or all_inputs or {}
-            if raw_data:
-                context.log("info", f"DisplayNode: chart_type '{chart_type}'에 맞는 데이터 없음, raw JSON으로 표시", node_id)
-                
-                # 콘솔에 raw JSON 출력
-                import json
-                from datetime import datetime
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"\n📋 {title or 'Raw Output'} [{now}]")
-                print("=" * 60)
-                try:
-                    # Pydantic 모델이나 특수 객체 처리
-                    def serialize(obj):
-                        if hasattr(obj, 'model_dump'):
-                            return obj.model_dump()
-                        elif hasattr(obj, '__dict__'):
-                            return {k: serialize(v) for k, v in obj.__dict__.items() if not k.startswith('_')}
-                        elif isinstance(obj, dict):
-                            return {k: serialize(v) for k, v in obj.items()}
-                        elif isinstance(obj, list):
-                            return [serialize(v) for v in obj]
-                        return obj
-                    
-                    serialized = serialize(raw_data)
-                    print(json.dumps(serialized, indent=2, ensure_ascii=False, default=str))
-                except Exception as e:
-                    print(f"(직렬화 실패: {e})")
-                    print(str(raw_data)[:500])
-                print("=" * 60 + "\n")
-                
-                # 프론트엔드로 raw 데이터 전송 (테이블 형식으로)
-                frontend_chart_data = raw_data
-                chart_type = "raw"  # 프론트엔드에서 JSON viewer로 처리
-                output_data["chart_type"] = "raw"
-                output_data["raw_data"] = raw_data
+        # 의미없는 데이터 체크:
+        # - None
+        # - 빈 list/dict
+        # - boolean 단독 값 (connected: true 같은 신호)
+        # - [True], [False] 같은 신호만 있는 배열
+        def _is_meaningful_data(d):
+            if d is None:
+                return False
+            if isinstance(d, bool):
+                return False  # boolean 단독은 의미없음
+            if isinstance(d, (list, tuple)):
+                if not d:
+                    return False  # 빈 배열
+                # [True], [False] 같은 신호만 있는 배열 체크
+                if all(isinstance(x, bool) for x in d):
+                    return False
+            if isinstance(d, dict) and not d:
+                return False  # 빈 dict
+            return True
         
-        if frontend_chart_data is not None:
-            await context.notify_display_data(
-                node_id=node_id,
-                chart_type=chart_type,
+        if not _is_meaningful_data(frontend_chart_data):
+            # 원본 데이터가 있으면 raw로 출력
+            # all_inputs 전체를 구조화하여 표시 (이전 노드의 전체 output)
+            raw_data = {}
+            
+            # all_inputs에서 의미있는 값만 추출
+            if all_inputs:
+                for k, v in all_inputs.items():
+                    # boolean 신호(connected, rendered 등)가 아닌 실제 데이터만 포함
+                    if v is not None and not isinstance(v, bool):
+                        raw_data[k] = v
+                    elif isinstance(v, bool):
+                        # boolean도 포함하되 구조 내에 다른 데이터가 있으면 함께 표시
+                        raw_data[k] = v
+            
+            # raw_data가 비어있으면 원본 all_inputs 사용
+            if not raw_data and all_inputs:
+                raw_data = dict(all_inputs)
+            
+            # 그래도 비어있으면 결과 없음 메시지
+            if not raw_data:
+                raw_data = {
+                    "status": "no_data",
+                    "message": "이전 노드에서 전달된 데이터가 없습니다",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            
+            context.log("info", f"DisplayNode: chart_type '{chart_type}'에 맞는 데이터 없음, raw JSON으로 표시", node_id)
+            
+            # 콘솔에 raw JSON 출력
+            import json
+            from datetime import datetime
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"\n📋 {title or 'Previous Node Output'} [{now}]")
+            print("=" * 60)
+            try:
+                # Pydantic 모델이나 특수 객체 처리
+                def serialize(obj):
+                    if hasattr(obj, 'model_dump'):
+                        return obj.model_dump()
+                    elif hasattr(obj, '__dict__'):
+                        return {k: serialize(v) for k, v in obj.__dict__.items() if not k.startswith('_')}
+                    elif isinstance(obj, dict):
+                        return {k: serialize(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [serialize(v) for v in obj]
+                    return obj
+                
+                serialized = serialize(raw_data)
+                print(json.dumps(serialized, indent=2, ensure_ascii=False, default=str))
+            except Exception as e:
+                print(f"(직렬화 실패: {e})")
+                print(str(raw_data)[:500])
+            print("=" * 60 + "\n")
+            
+            # 프론트엔드로 raw 데이터 전송 (테이블 형식으로)
+            frontend_chart_data = raw_data
+            chart_type = "raw"  # 프론트엔드에서 JSON viewer로 처리
+            output_data["chart_type"] = "raw"
+            output_data["raw_data"] = raw_data
+        
+        # 항상 display_data 이벤트 전송 (데이터가 없어도)
+        await context.notify_display_data(
+            node_id=node_id,
+            chart_type=chart_type,
                 title=title,
                 data=frontend_chart_data,
                 x_label=config.get("x_label"),
@@ -1962,7 +2155,48 @@ class ConditionNodeExecutor(NodeExecutorBase):
     입력 데이터 형태를 자동 감지하여 모드 결정.
     리소스 관리 시스템과 연동하여 배치 크기 및 속도를 조절합니다.
     플러그인은 PluginSandbox를 통해 타임아웃 보호됩니다.
+    
+    포트 바인딩:
+    config에 price_data, symbols 등의 표현식({{ nodes.xxx.yyy }})이 있으면
+    해당 표현식을 평가하여 데이터를 가져옵니다.
     """
+
+    def _resolve_port_binding(
+        self,
+        config: Dict[str, Any],
+        port_name: str,
+        context: ExecutionContext,
+        node_id: str,
+        default: Any = None,
+    ) -> Any:
+        """
+        포트 바인딩 표현식을 평가하여 데이터 반환
+        
+        Args:
+            config: 노드 config (price_data, symbols 등 바인딩 표현식 포함)
+            port_name: 포트 이름 (price_data, symbols 등)
+            context: 실행 컨텍스트
+            node_id: 현재 노드 ID
+            default: 기본값
+            
+        Returns:
+            평가된 데이터 또는 기본값
+        """
+        binding_expr = config.get(port_name)
+        
+        if binding_expr and isinstance(binding_expr, str):
+            # {{ nodes.xxx.yyy }} 표현식 평가
+            expr_context = context.get_expression_context()
+            evaluator = ExpressionEvaluator(expr_context)
+            try:
+                result = evaluator.evaluate(binding_expr)
+                if result is not None:
+                    context.log("debug", f"Port binding resolved: {port_name} = {type(result).__name__}", node_id)
+                    return result
+            except Exception as e:
+                context.log("warning", f"Port binding evaluation failed for {port_name}: {e}", node_id)
+        
+        return default
 
     async def execute(
         self,
@@ -2010,14 +2244,47 @@ class ConditionNodeExecutor(NodeExecutorBase):
         )
         
         try:
-            # 입력 데이터 수집
-            symbols = context.get_output(f"_input_{node_id}", "symbols") or []
-            price_data = context.get_output(f"_input_{node_id}", "price_data") or {}
+            # === 명시적 바인딩으로 데이터 가져오기 ===
+            # 모든 config 값에서 {{ }} 표현식 평가
+            original_price_data_expr = config.get("price_data")
+            print(f"\n🔍 ConditionNode '{node_id}' 바인딩 평가:")
+            print(f"   - price_data 원본: {original_price_data_expr}")
             
-            # 시계열 데이터 확인 (HistoricalDataNode에서 온 경우)
+            config = evaluate_all_bindings(config, context, node_id)
+            
+            # 필수 데이터 추출
+            price_data = config.get("price_data", {})
+            volume_data = config.get("volume_data")
+            position_data = config.get("position_data")
+            held_symbols = config.get("held_symbols", [])
+            symbols = config.get("symbols", [])
+            
+            # symbols가 비어있으면 price_data에서 자동 추출
+            if not symbols and price_data and isinstance(price_data, dict):
+                symbols = list(price_data.keys())
+                print(f"   - symbols 자동 추출: {symbols}")
+            
+            print(f"   - price_data 평가 후: {type(price_data).__name__} = {price_data}")
+            print(f"   - symbols: {symbols}")
+            
+            # price_data가 없으면 에러
+            if not price_data:
+                context.log("error", 
+                    f"ConditionNode '{node_id}': price_data가 설정되지 않았습니다. "
+                    f"config에 price_data: {{{{ nodes.realMarket.price }}}} 형태로 추가하세요.",
+                    node_id
+                )
+                return {
+                    "result": False,
+                    "passed_symbols": [],
+                    "failed_symbols": [],
+                    "values": {},
+                    "error": "missing_price_data",
+                    "error_message": "price_data가 설정되지 않았습니다. 사용 가능: RealMarketDataNode.price, MarketDataNode.price, HistoricalDataNode.ohlcv",
+                }
+            
+            # 시계열 데이터 확인
             ohlcv_data = price_data
-            if not ohlcv_data:
-                ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
             
             # fields 표현식 평가
             evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
@@ -2042,7 +2309,10 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 context.log("info", f"Condition running in realtime mode", node_id)
                 return await self._execute_realtime_mode(
                     node_id, symbols, price_data, evaluated_fields, plugin, context, sandbox,
-                    plugin_id=plugin_id
+                    plugin_id=plugin_id,
+                    volume_data=volume_data,
+                    held_symbols=held_symbols,
+                    position_data=position_data,
                 )
         except PluginTimeoutError as e:
             context.log("error", f"Plugin timeout: {e}", node_id)
@@ -2085,6 +2355,9 @@ class ConditionNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         sandbox: "PluginSandbox",
         plugin_id: str = "Unknown",
+        volume_data: Optional[Dict[str, Any]] = None,
+        held_symbols: Optional[List[str]] = None,
+        position_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """실시간 모드: 단일 시점 평가 (샌드박스 적용)"""
         from programgarden.plugin import PluginSandbox, PluginTimeoutError
@@ -2094,6 +2367,20 @@ class ConditionNodeExecutor(NodeExecutorBase):
         values = {}
 
         if plugin:
+            # 플러그인에 전달할 추가 데이터 준비
+            plugin_kwargs = {
+                "symbols": symbols,
+                "price_data": price_data,
+                "fields": fields,
+            }
+            # 추가 포트 데이터가 있으면 포함
+            if volume_data:
+                plugin_kwargs["volume_data"] = volume_data
+            if held_symbols:
+                plugin_kwargs["held_symbols"] = held_symbols
+            if position_data:
+                plugin_kwargs["position_data"] = position_data
+            
             # 샌드박스에서 플러그인 실행
             try:
                 if len(symbols) > sandbox._default_batch_size:
@@ -2110,7 +2397,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     result = await sandbox.execute(
                         plugin_id=plugin_id,
                         plugin_callable=plugin,
-                        kwargs={"symbols": symbols, "price_data": price_data, "fields": fields},
+                        kwargs=plugin_kwargs,
                     )
                 
                 passed_symbols = result.get("passed_symbols", [])
@@ -2134,11 +2421,8 @@ class ConditionNodeExecutor(NodeExecutorBase):
             node_id,
         )
 
-        # symbols echo: 입력받은 종목 목록을 출력에도 포함 (다음 노드에서 사용)
-        symbols_output = context.get_output(f"_input_{node_id}", "symbols") or symbols
-        
         return {
-            "symbols": symbols_output,  # 입력 symbols echo
+            "symbols": symbols,  # 입력 symbols echo
             "result": len(passed_symbols) > 0,
             "passed_symbols": passed_symbols,
             "failed_symbols": failed_symbols,
@@ -2316,6 +2600,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         """과거 데이터 조회"""
         
@@ -2347,13 +2632,19 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         start_date = self._normalize_date_format(start_date)
         end_date = self._normalize_date_format(end_date)
         
-        # BrokerNode에서 product 정보 가져오기
-        broker_connection = context.get_output("broker", "connection") or {}
-        product = broker_connection.get("product", "overseas_stock")
+        # 1. config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        broker_connection = config.get("connection")
+        
+        # 2. 엣지로 연결된 input에서 connection 가져오기
+        if not broker_connection:
+            edge_inputs = context.get_all_outputs(f"_input_{node_id}")
+            broker_connection = edge_inputs.get("connection") if edge_inputs else {}
+        
+        product = broker_connection.get("product", "overseas_stock") if broker_connection else "overseas_stock"
         
         context.log(
             "info", 
-            f"Fetching historical data: {len(symbols)} symbols, {start_date}~{end_date}, {interval}", 
+            f"Fetching historical data: {len(symbols)} symbols, {start_date}~{end_date}, {interval}, product={product}", 
             node_id
         )
         
@@ -2736,6 +3027,7 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         """백테스트 실행"""
         
@@ -3050,6 +3342,7 @@ class PortfolioNodeExecutor(NodeExecutorBase):
         node_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
+        **kwargs,
     ) -> Dict[str, Any]:
         """포트폴리오 실행"""
         
@@ -3678,22 +3971,14 @@ class WorkflowExecutor:
             executor = GenericNodeExecutor()
             context.log("debug", f"Using GenericNodeExecutor for {node_type}", node_id)
 
-        # Add plugin fields for ConditionNode
-        if node_type == "ConditionNode":
-            return await executor.execute(
-                node_id=node_id,
-                node_type=node_type,
-                config=config,
-                context=context,
-                plugin=plugin,
-                fields=fields,
-            )
-
+        # 모든 노드에 plugin과 fields 전달 (GenericNodeExecutor에서 처리)
         return await executor.execute(
             node_id=node_id,
             node_type=node_type,
             config=config,
             context=context,
+            plugin=plugin,
+            fields=fields,
         )
 
     def get_job(self, job_id: str) -> Optional["WorkflowJob"]:
@@ -3884,6 +4169,16 @@ class WorkflowJob:
     async def _execute_main_flow(self) -> None:
         """Execute all nodes in topological order with state notifications"""
         print(f"🔄 Executing main flow: {self.workflow.execution_order}")
+        
+        # 🆕 실행 시작 전 모든 노드 상태를 pending으로 리셋 (UI 깜빡임 효과)
+        for node_id in self.workflow.execution_order:
+            node = self.workflow.nodes.get(node_id)
+            if node:
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.PENDING,
+                )
         
         for node_id in self.workflow.execution_order:
             if not self.context.is_running:

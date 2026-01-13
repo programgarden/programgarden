@@ -84,13 +84,14 @@ WebSocket을 통한 실시간 데이터 스트림입니다.
 
 ### RealMarketDataNode
 
-실시간 시세 데이터를 수신합니다.
+실시간 시세 데이터를 수신합니다. BrokerNode의 connection 출력을 연결해야 합니다.
 
 ```json
 {
   "id": "realMarket",
   "type": "RealMarketDataNode",
   "config": {
+    "connection": "{{ nodes.broker.connection }}",
     "symbols": "{{ nodes.watchlist.symbols }}",
     "stay_connected": true
   }
@@ -99,8 +100,12 @@ WebSocket을 통한 실시간 데이터 스트림입니다.
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
+| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
 | `symbols` | string[] | ✅ | 구독할 종목 코드 목록 |
 | `stay_connected` | boolean | ❌ | 플로우 종료 후에도 연결 유지 (기본: true) |
+
+**입력** (엣지 연결):
+- BrokerNode → RealMarketDataNode: `connection` 자동 전달
 
 **출력**:
 - `price` - 현재가
@@ -117,13 +122,14 @@ WebSocket을 통한 실시간 데이터 스트림입니다.
 
 ### RealAccountNode
 
-실시간 계좌 정보를 수신합니다.
+실시간 계좌 정보를 수신합니다. BrokerNode의 connection 출력을 연결해야 합니다.
 
 ```json
 {
   "id": "realAccount",
   "type": "RealAccountNode",
   "config": {
+    "connection": "{{ nodes.broker.connection }}",
     "stay_connected": true,
     "sync_interval_sec": 60
   }
@@ -132,8 +138,12 @@ WebSocket을 통한 실시간 데이터 스트림입니다.
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
+| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
 | `stay_connected` | boolean | ❌ | 연결 유지 여부 (기본: true) |
 | `sync_interval_sec` | number | ❌ | REST API 동기화 주기 (기본: 60초) |
+
+**입력** (엣지 연결):
+- BrokerNode → RealAccountNode: `connection` 자동 전달
 
 **출력**:
 - `held_symbols` - 보유종목 코드 리스트
@@ -198,13 +208,14 @@ REST API로 1회성 시세 데이터를 조회합니다.
 
 ### HistoricalDataNode
 
-과거 OHLCV 데이터를 조회합니다.
+과거 OHLCV 데이터를 조회합니다. BrokerNode의 connection 출력을 연결해야 합니다.
 
 ```json
 {
   "id": "history",
   "type": "HistoricalDataNode",
   "config": {
+    "connection": "{{ nodes.broker.connection }}",
     "symbols": ["AAPL"],
     "data_type": "daily",
     "count": 100
@@ -214,8 +225,12 @@ REST API로 1회성 시세 데이터를 조회합니다.
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
+| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
 | `data_type` | "minute" \| "daily" \| "weekly" | ✅ | 데이터 주기 |
 | `count` | number | ✅ | 가져올 데이터 개수 |
+
+**입력** (엣지 연결):
+- BrokerNode → HistoricalDataNode: `connection` 자동 전달
 
 **출력**: `ohlcv` - OHLCV 데이터프레임
 
@@ -273,14 +288,24 @@ REST API로 1회성 시세 데이터를 조회합니다.
 
 ### AccountNode
 
-REST API로 1회성 계좌 정보를 조회합니다.
+REST API로 1회성 계좌 정보를 조회합니다. BrokerNode의 connection 출력을 연결해야 합니다.
 
 ```json
 {
   "id": "account",
-  "type": "AccountNode"
+  "type": "AccountNode",
+  "config": {
+    "connection": "{{ nodes.broker.connection }}"
+  }
 }
 ```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
+
+**입력** (엣지 연결):
+- BrokerNode → AccountNode: `connection` 자동 전달
 
 **출력**:
 - `held_symbols` - 보유종목 코드
