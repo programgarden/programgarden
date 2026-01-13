@@ -1,3 +1,16 @@
+## [2.1.0] - 2026-01-13
+### Changed
+- feat(nodes): 브로커 연결(connection) 필드 표준화 - 모든 노드에서 명시적 바인딩 필수
+  - `RealMarketDataNode`, `RealAccountNode`, `RealOrderEventNode` (realtime.py)
+  - `MarketDataNode` (data.py)
+  - `WatchlistNode`, `MarketUniverseNode`, `ScreenerNode` (symbol.py)
+  - `ExchangeStatusNode` (trigger.py)
+- feat(nodes): `WatchlistNode`의 InputPort 이름 변경 (`broker` → `connection`)
+- feat(nodes): 모든 connection InputPort를 `required=True`로 변경
+
+### Removed
+- remove(nodes): `WatchlistNode`의 `product` 필드 제거 (connection에서 자동 감지)
+
 ## [2.0.0] - 2026-01-06
 ### Changed
 - feat: 노드 기반 DSL 핵심 타입으로 전면 재설계

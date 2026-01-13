@@ -32,8 +32,12 @@ class MarketDataNode(BaseNode):
     """
 
     type: Literal["MarketDataNode"] = "MarketDataNode"
-    category: NodeCategory = NodeCategory.DATA
+    category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.MarketDataNode.description"
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/marketdata.svg"
+
+    # 브로커 연결 필드 (명시적 바인딩 필수)
+    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
     # MarketDataNode specific config
     fields: List[str] = Field(
@@ -71,31 +75,54 @@ class MarketDataNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === PARAMETERS: 브로커 연결 (필수) ===
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
             # === PARAMETERS: 핵심 조회 설정 ===
             "fields": FieldSchema(
                 name="fields",
                 type=FieldType.ARRAY,
-                description="Fields to query",
+                description="i18n:fields.MarketDataNode.fields",
                 default=["price", "volume", "ohlcv"],
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=["price", "volume", "ohlcv"],
+                expected_type="list[str]",
             ),
             "period": FieldSchema(
                 name="period",
                 type=FieldType.STRING,
-                description="Period for OHLCV (1d, 1h, 5m)",
+                description="i18n:fields.MarketDataNode.period",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="1d",
+                expected_type="str",
             ),
             # === SETTINGS: 부가 설정 ===
             "count": FieldSchema(
                 name="count",
                 type=FieldType.INTEGER,
-                description="Number of data points",
+                description="i18n:fields.MarketDataNode.count",
                 default=100,
                 min_value=1,
                 max_value=1000,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=100,
+                expected_type="int",
             ),
         }
 
@@ -138,6 +165,7 @@ class SQLiteNode(BaseNode):
     type: Literal["SQLiteNode"] = "SQLiteNode"
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.SQLiteNode.description"
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/sqlite.svg"
 
     # SQLite 설정
     db_path: str = Field(
@@ -204,56 +232,77 @@ class SQLiteNode(BaseNode):
             "db_path": FieldSchema(
                 name="db_path",
                 type=FieldType.STRING,
-                description="SQLite DB file path",
+                description="i18n:fields.SQLiteNode.db_path",
                 default="./programgarden_storage.db",
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="./my_strategy_state.db",
+                expected_type="str",
             ),
             "table": FieldSchema(
                 name="table",
                 type=FieldType.STRING,
-                description="Table name",
+                description="i18n:fields.SQLiteNode.table",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="trailing_stop_state",
+                expected_type="str",
             ),
             "key_fields": FieldSchema(
                 name="key_fields",
                 type=FieldType.ARRAY,
-                description="Primary key fields (e.g., ['symbol'])",
+                description="i18n:fields.SQLiteNode.key_fields",
                 required=True,
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=["symbol"],
+                expected_type="list[str]",
             ),
             "save_fields": FieldSchema(
                 name="save_fields",
                 type=FieldType.ARRAY,
-                description="Fields to save",
+                description="i18n:fields.SQLiteNode.save_fields",
                 required=True,
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=["symbol", "peak_price", "peak_pnl_rate", "updated_at"],
+                expected_type="list[str]",
             ),
             "aggregations": FieldSchema(
                 name="aggregations",
                 type=FieldType.OBJECT,
-                description="Aggregation functions per field (e.g., {'peak_price': 'max'})",
+                description="i18n:fields.SQLiteNode.aggregations",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example={"peak_price": "max", "peak_pnl_rate": "max"},
+                expected_type="dict[str, str]",
             ),
             # === SETTINGS: 동기화 설정 ===
             "sync_interval_ms": FieldSchema(
                 name="sync_interval_ms",
                 type=FieldType.INTEGER,
-                description="DB sync interval (milliseconds)",
+                description="i18n:fields.SQLiteNode.sync_interval_ms",
                 default=1000,
                 min_value=100,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=1000,
+                expected_type="int",
             ),
             "sync_on_change_count": FieldSchema(
                 name="sync_on_change_count",
                 type=FieldType.INTEGER,
-                description="Sync when N changes occur",
+                description="i18n:fields.SQLiteNode.sync_on_change_count",
                 default=10,
                 min_value=1,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=10,
+                expected_type="int",
             ),
         }
 
@@ -284,6 +333,7 @@ class PostgresNode(BaseNode):
     type: Literal["PostgresNode"] = "PostgresNode"
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.PostgresNode.description"
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/postgres.svg"
 
     # Credential (공통 패턴)
     credential_id: Optional[str] = Field(
@@ -334,71 +384,96 @@ class PostgresNode(BaseNode):
             "credential_id": FieldSchema(
                 name="credential_id",
                 type=FieldType.CREDENTIAL,
-                description="PostgreSQL credential ID",
+                description="i18n:fields.PostgresNode.credential_id",
                 credential_types=["postgres"],
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
             ),
             "table": FieldSchema(
                 name="table",
                 type=FieldType.STRING,
-                description="Table name",
+                description="i18n:fields.PostgresNode.table",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="trading_state",
+                expected_type="str",
             ),
             "schema_name": FieldSchema(
                 name="schema_name",
                 type=FieldType.STRING,
-                description="Schema name",
+                description="i18n:fields.PostgresNode.schema_name",
                 default="public",
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="public",
+                expected_type="str",
             ),
             "key_fields": FieldSchema(
                 name="key_fields",
                 type=FieldType.ARRAY,
-                description="Primary key fields",
+                description="i18n:fields.PostgresNode.key_fields",
                 required=True,
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=["symbol"],
+                expected_type="list[str]",
             ),
             "save_fields": FieldSchema(
                 name="save_fields",
                 type=FieldType.ARRAY,
-                description="Fields to save",
+                description="i18n:fields.PostgresNode.save_fields",
                 required=True,
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=["symbol", "peak_price", "updated_at"],
+                expected_type="list[str]",
             ),
             "aggregations": FieldSchema(
                 name="aggregations",
                 type=FieldType.OBJECT,
-                description="Aggregation functions per field",
+                description="i18n:fields.PostgresNode.aggregations",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example={"peak_price": "max"},
+                expected_type="dict[str, str]",
             ),
             # === SETTINGS: 연결/동기화 설정 ===
             "sync_interval_ms": FieldSchema(
                 name="sync_interval_ms",
                 type=FieldType.INTEGER,
-                description="DB sync interval (milliseconds)",
+                description="i18n:fields.PostgresNode.sync_interval_ms",
                 default=1000,
                 min_value=100,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=1000,
+                expected_type="int",
             ),
             "sync_on_change_count": FieldSchema(
                 name="sync_on_change_count",
                 type=FieldType.INTEGER,
-                description="Sync when N changes occur",
+                description="i18n:fields.PostgresNode.sync_on_change_count",
                 default=10,
                 min_value=1,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=10,
+                expected_type="int",
             ),
             "connection_timeout": FieldSchema(
                 name="connection_timeout",
                 type=FieldType.INTEGER,
-                description="Connection timeout (seconds)",
+                description="i18n:fields.PostgresNode.connection_timeout",
                 default=30,
                 min_value=5,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=30,
+                expected_type="int",
             ),
         }
 
@@ -426,6 +501,7 @@ class HTTPRequestNode(BaseNode):
     type: Literal["HTTPRequestNode"] = "HTTPRequestNode"
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.HTTPRequestNode.description"
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/httprequest.svg"
 
     # === PARAMETERS: 핵심 HTTP 요청 설정 ===
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = Field(
@@ -452,13 +528,13 @@ class HTTPRequestNode(BaseNode):
 
     _inputs: List[InputPort] = [
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
-        InputPort(name="data", type="any", description="Dynamic data for request", required=False),
+        InputPort(name="data", type="any", description="i18n:ports.http_request_data", required=False),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="response", type="any", description="API response data"),
-        OutputPort(name="status_code", type="number", description="HTTP status code"),
-        OutputPort(name="success", type="boolean", description="Request success flag"),
-        OutputPort(name="error", type="string", description="Error message if failed"),
+        OutputPort(name="response", type="any", description="i18n:ports.http_response"),
+        OutputPort(name="status_code", type="number", description="i18n:ports.http_status_code"),
+        OutputPort(name="success", type="boolean", description="i18n:ports.http_success"),
+        OutputPort(name="error", type="string", description="i18n:ports.http_error"),
     ]
 
     _field_schema: ClassVar[Dict[str, "FieldSchema"]] = {}
@@ -473,46 +549,83 @@ class HTTPRequestNode(BaseNode):
             "method": FieldSchema(
                 name="method", type=FieldType.ENUM, required=False,
                 enum_values=["GET", "POST", "PUT", "PATCH", "DELETE"],
-                description="HTTP method", category=FieldCategory.PARAMETERS
+                description="i18n:fields.HTTPRequestNode.method",
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="POST",
+                expected_type="str",
             ),
             "url": FieldSchema(
                 name="url", type=FieldType.STRING, required=True,
                 expression_enabled=True,
-                description="Request URL", category=FieldCategory.PARAMETERS
+                description="i18n:fields.HTTPRequestNode.url",
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                example="https://api.example.com/v1/data",
+                example_binding="{{ nodes.config.api_endpoint }}",
+                expected_type="str",
             ),
             "query_params": FieldSchema(
                 name="query_params", type=FieldType.KEY_VALUE_PAIRS, required=False,
                 expression_enabled=True,
-                description="Query parameters (+로 추가)", category=FieldCategory.PARAMETERS
+                description="i18n:fields.HTTPRequestNode.query_params",
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example={"symbol": "AAPL", "limit": "100"},
+                expected_type="dict[str, str]",
             ),
             "body": FieldSchema(
                 name="body", type=FieldType.OBJECT, required=False,
                 expression_enabled=True,
-                description="Request body", category=FieldCategory.PARAMETERS
+                description="i18n:fields.HTTPRequestNode.body",
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                example={"action": "buy", "symbol": "AAPL", "quantity": 10},
+                example_binding="{{ nodes.order.request_body }}",
+                expected_type="dict[str, Any]",
             ),
             "credential_id": FieldSchema(
                 name="credential_id", type=FieldType.CREDENTIAL, required=False,
-                description="Credential ID (인증 정보)", category=FieldCategory.PARAMETERS
+                description="i18n:fields.HTTPRequestNode.credential_id",
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                credential_types=["http_bearer", "http_header", "http_basic", "http_query"],
             ),
             "headers": FieldSchema(
                 name="headers", type=FieldType.KEY_VALUE_PAIRS, required=False,
-                description="HTTP headers (+로 추가)", category=FieldCategory.PARAMETERS
+                description="i18n:fields.HTTPRequestNode.headers",
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example={"Content-Type": "application/json", "X-Custom-Header": "value"},
+                expected_type="dict[str, str]",
             ),
             # SETTINGS
             "timeout_seconds": FieldSchema(
                 name="timeout_seconds", type=FieldType.INTEGER, required=False,
                 default=30,
-                description="Request timeout (seconds)", category=FieldCategory.SETTINGS
+                description="i18n:fields.HTTPRequestNode.timeout_seconds",
+                category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=30,
+                expected_type="int",
             ),
             "retry_count": FieldSchema(
                 name="retry_count", type=FieldType.INTEGER, required=False,
                 default=0,
-                description="Number of retries", category=FieldCategory.SETTINGS
+                description="i18n:fields.HTTPRequestNode.retry_count",
+                category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=3,
+                expected_type="int",
             ),
             "retry_delay_ms": FieldSchema(
                 name="retry_delay_ms", type=FieldType.INTEGER, required=False,
                 default=1000,
-                description="Delay between retries (ms)", category=FieldCategory.SETTINGS
+                description="i18n:fields.HTTPRequestNode.retry_delay_ms",
+                category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=1000,
+                expected_type="int",
             ),
         }
 

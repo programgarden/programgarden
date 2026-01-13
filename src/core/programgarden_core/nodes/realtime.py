@@ -7,7 +7,7 @@ Realtime stream nodes:
 - RealOrderEventNode: Realtime order events
 """
 
-from typing import Optional, List, Literal, Dict, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, TYPE_CHECKING, ClassVar
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -29,8 +29,14 @@ class RealMarketDataNode(BaseNode):
     """
 
     type: Literal["RealMarketDataNode"] = "RealMarketDataNode"
-    category: NodeCategory = NodeCategory.REALTIME
+    category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.RealMarketDataNode.description"
+    
+    # CDN 기반 노드 아이콘 URL
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realmarketdata.svg"
+
+    # 브로커 연결 필드 (명시적 바인딩 필수)
+    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
     # RealMarketDataNode specific config
     stay_connected: bool = Field(
@@ -75,30 +81,59 @@ class RealMarketDataNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === PARAMETERS: 브로커 연결 (필수) ===
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
             # === PARAMETERS: 핵심 설정 ===
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="Symbols to subscribe (e.g., AAPL, TSLA). If empty, uses input port.",
+                description="i18n:fields.RealMarketDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                # 바인딩 가이드
+                example=["AAPL", "TSLA", "NVDA"],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=[
+                    "WatchlistNode.symbols",
+                    "ScreenerNode.filtered_symbols",
+                ],
+                expected_type="list[str]",
             ),
             "fields": FieldSchema(
                 name="fields",
                 type=FieldType.ARRAY,
-                description="Fields to receive (price, volume, bid, ask)",
+                description="i18n:fields.RealMarketDataNode.fields",
                 default=["price", "volume"],
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                # 바인딩 불가 필드이지만 예시 제공
+                example=["price", "volume", "bid", "ask"],
+                expected_type="list[str]",
             ),
             # === SETTINGS: 부가 설정 ===
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
-                description="Keep WebSocket connection alive",
+                description="i18n:fields.RealMarketDataNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
             ),
         }
 
@@ -116,8 +151,14 @@ class RealAccountNode(BaseNode):
     """
 
     type: Literal["RealAccountNode"] = "RealAccountNode"
-    category: NodeCategory = NodeCategory.REALTIME
+    category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.RealAccountNode.description"
+    
+    # CDN 기반 노드 아이콘 URL
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realaccount.svg"
+
+    # 브로커 연결 필드 (명시적 바인딩 필수)
+    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
     # RealAccountNode specific config
     stay_connected: bool = Field(
@@ -161,22 +202,40 @@ class RealAccountNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
-            # === SETTINGS: 모두 부가 설정 ===
+            # === PARAMETERS: 브로커 연결 (필수) ===
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
+            # === SETTINGS: 부가 설정 ===
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
-                description="Keep WebSocket connection alive",
+                description="i18n:fields.RealAccountNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
             ),
             "sync_interval_sec": FieldSchema(
                 name="sync_interval_sec",
                 type=FieldType.INTEGER,
-                description="REST API sync interval (seconds)",
+                description="i18n:fields.RealAccountNode.sync_interval_sec",
                 default=60,
                 min_value=10,
                 max_value=3600,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=60,
+                expected_type="int",
             ),
         }
 
@@ -189,8 +248,14 @@ class RealOrderEventNode(BaseNode):
     """
 
     type: Literal["RealOrderEventNode"] = "RealOrderEventNode"
-    category: NodeCategory = NodeCategory.REALTIME
+    category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.RealOrderEventNode.description"
+    
+    # CDN 기반 노드 아이콘 URL
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realorderevent.svg"
+
+    # 브로커 연결 필드 (명시적 바인딩 필수)
+    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -204,3 +269,22 @@ class RealOrderEventNode(BaseNode):
         OutputPort(name="rejected", type="order_event", description="i18n:ports.rejected"),
         OutputPort(name="cancelled", type="order_event", description="i18n:ports.cancelled"),
     ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
+        }

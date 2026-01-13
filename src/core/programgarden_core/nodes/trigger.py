@@ -33,7 +33,7 @@ class ScheduleNode(BaseNode):
     """
 
     type: Literal["ScheduleNode"] = "ScheduleNode"
-    category: NodeCategory = NodeCategory.TRIGGER
+    category: NodeCategory = NodeCategory.SCHEDULE
     description: str = "i18n:nodes.ScheduleNode.description"
 
     # ScheduleNode specific config
@@ -59,25 +59,29 @@ class ScheduleNode(BaseNode):
             "cron": FieldSchema(
                 name="cron",
                 type=FieldType.STRING,
-                description="i18n:fields.ScheduleNode.cron",
+                description="Cron expression. Format: minute hour day month weekday. Examples: */5 * * * * (every 5 min), 0 9 * * 1-5 (9am weekdays)",
                 default="*/5 * * * *",
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                example="*/5 * * * *",
+                expected_type="str",
             ),
             "timezone": FieldSchema(
                 name="timezone",
                 type=FieldType.STRING,
-                description="i18n:fields.ScheduleNode.timezone",
+                description="Timezone for cron schedule. Use IANA timezone names.",
                 default="America/New_York",
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                example="America/New_York",
+                expected_type="str",
             ),
             # === SETTINGS: 부가 설정 ===
             "enabled": FieldSchema(
                 name="enabled",
                 type=FieldType.BOOLEAN,
-                description="i18n:fields.ScheduleNode.enabled",
+                description="Enable/disable the schedule. When disabled, trigger will not fire.",
                 default=True,
                 bindable=False,
                 category=FieldCategory.SETTINGS,
@@ -93,7 +97,7 @@ class TradingHoursFilterNode(BaseNode):
     """
 
     type: Literal["TradingHoursFilterNode"] = "TradingHoursFilterNode"
-    category: NodeCategory = NodeCategory.TRIGGER
+    category: NodeCategory = NodeCategory.SCHEDULE
     description: str = "i18n:nodes.TradingHoursFilterNode.description"
 
     # TradingHoursFilterNode specific config
@@ -127,34 +131,46 @@ class TradingHoursFilterNode(BaseNode):
             "start": FieldSchema(
                 name="start",
                 type=FieldType.STRING,
-                description="Start time (HH:MM)",
+                description="Start time in HH:MM format (24-hour). Signals before this time are blocked.",
                 default="09:30",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="09:30",
+                expected_type="str",
             ),
             "end": FieldSchema(
                 name="end",
                 type=FieldType.STRING,
-                description="End time (HH:MM)",
+                description="End time in HH:MM format (24-hour). Signals after this time are blocked.",
                 default="16:00",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="16:00",
+                expected_type="str",
             ),
             "days": FieldSchema(
                 name="days",
                 type=FieldType.ARRAY,
-                description="Active days",
+                description="Active trading days. Options: mon, tue, wed, thu, fri, sat, sun",
                 default=["mon", "tue", "wed", "thu", "fri"],
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=["mon", "tue", "wed", "thu", "fri"],
+                expected_type="list[str]",
             ),
             # === SETTINGS: 부가 설정 ===
             "timezone": FieldSchema(
                 name="timezone",
                 type=FieldType.STRING,
-                description="Timezone",
+                description="Timezone for time comparison. Use IANA timezone names.",
                 default="America/New_York",
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example="America/New_York",
+                expected_type="str",
             ),
         }
 
@@ -221,8 +237,11 @@ class ExchangeStatusNode(BaseNode):
     """
 
     type: Literal["ExchangeStatusNode"] = "ExchangeStatusNode"
-    category: NodeCategory = NodeCategory.TRIGGER
+    category: NodeCategory = NodeCategory.SCHEDULE
     description: str = "i18n:nodes.ExchangeStatusNode.description"
+
+    # 브로커 연결 필드 (명시적 바인딩 필수)
+    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
     # ExchangeStatusNode specific config
     exchange: str = Field(
@@ -238,7 +257,7 @@ class ExchangeStatusNode(BaseNode):
             name="connection",
             type="broker_connection",
             description="i18n:ports.connection",
-            required=False,
+            required=True,
         ),
     ]
     _outputs: List[OutputPort] = [
@@ -251,6 +270,20 @@ class ExchangeStatusNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === PARAMETERS: 브로커 연결 (필수) ===
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
             # === PARAMETERS: 핵심 거래소 설정 ===
             "exchange": FieldSchema(
                 name="exchange",

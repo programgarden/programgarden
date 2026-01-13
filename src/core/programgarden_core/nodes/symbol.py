@@ -39,15 +39,11 @@ class WatchlistNode(BaseNode):
     """
 
     type: Literal["WatchlistNode"] = "WatchlistNode"
-    category: NodeCategory = NodeCategory.SYMBOL
+    category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.WatchlistNode.description"
 
-    # Product type: overseas_stock or overseas_futures
-    # Auto-detected from BrokerNode if connected, otherwise set manually for exchange list display
-    product: Optional[str] = Field(
-        default=None,
-        description="Product type (overseas_stock, overseas_futures). Auto-detected from BrokerNode. Only used for exchange list display in UI.",
-    )
+    # 브로커 연결 필드 (명시적 바인딩 필수)
+    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
     # Symbol entries: [{exchange: "NASDAQ", symbol: "AAPL"}, ...]
     symbols: List[Dict[str, str]] = Field(
@@ -57,10 +53,10 @@ class WatchlistNode(BaseNode):
 
     _inputs: List[InputPort] = [
         InputPort(
-            name="broker",
+            name="connection",
             type="broker_connection",
-            description="i18n:ports.broker_connection",
-            required=False,
+            description="i18n:ports.connection",
+            required=True,
         ),
     ]
     _outputs: List[OutputPort] = [
@@ -71,18 +67,33 @@ class WatchlistNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === PARAMETERS: 브로커 연결 (필수) ===
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
             # === PARAMETERS: 핵심 설정 ===
-            # product, broker는 BrokerNode에서 자동 감지되므로 UI에 노출하지 않음
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="i18n:fields.WatchlistNode.symbols",
+                description="List of symbols with exchange info. Each entry has 'exchange' (NYSE, NASDAQ, CME, etc.) and 'symbol' (ticker code).",
                 required=True,
                 array_item_type=FieldType.OBJECT,
                 bindable=True,
                 expression_enabled=True,
                 category=FieldCategory.PARAMETERS,
                 ui_component="symbol_editor",
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
+                expected_type="list[dict]",
             ),
         }
 
@@ -95,8 +106,11 @@ class MarketUniverseNode(BaseNode):
     """
 
     type: Literal["MarketUniverseNode"] = "MarketUniverseNode"
-    category: NodeCategory = NodeCategory.SYMBOL
+    category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.MarketUniverseNode.description"
+
+    # 브로커 연결 필드 (명시적 바인딩 필수)
+    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
     # MarketUniverseNode specific config
     universe: str = Field(
@@ -112,7 +126,7 @@ class MarketUniverseNode(BaseNode):
             name="connection",
             type="broker_connection",
             description="i18n:ports.connection",
-            required=False,
+            required=True,
         ),
     ]
     _outputs: List[OutputPort] = [
@@ -123,21 +137,41 @@ class MarketUniverseNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === PARAMETERS: 브로커 연결 (필수) ===
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
             # === PARAMETERS: 핵심 설정 ===
             "universe": FieldSchema(
                 name="universe",
                 type=FieldType.STRING,
-                description="Market/Index (NASDAQ100, SP500, DOW30, etc.)",
+                description="Market/Index to get constituents from. Options: NASDAQ100, SP500, DOW30, RUSSELL2000.",
                 default="NASDAQ100",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="NASDAQ100",
+                expected_type="str",
             ),
             "exchange": FieldSchema(
                 name="exchange",
                 type=FieldType.STRING,
-                description="Exchange filter (NYSE, NASDAQ, etc.)",
+                description="Optional exchange filter. Options: NYSE, NASDAQ, AMEX. Leave empty for all exchanges.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="NASDAQ",
+                expected_type="str",
             ),
         }
 
@@ -150,8 +184,11 @@ class ScreenerNode(BaseNode):
     """
 
     type: Literal["ScreenerNode"] = "ScreenerNode"
-    category: NodeCategory = NodeCategory.SYMBOL
+    category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.ScreenerNode.description"
+
+    # 브로커 연결 필드 (명시적 바인딩 필수)
+    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
     # ScreenerNode specific config
     filters: Dict[str, Any] = Field(
@@ -184,31 +221,54 @@ class ScreenerNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === PARAMETERS: 브로커 연결 (필수) ===
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
             # === PARAMETERS: 핵심 스크리닝 설정 ===
             "filters": FieldSchema(
                 name="filters",
                 type=FieldType.OBJECT,
-                description="Screening conditions",
+                description="Screening conditions. Available filters: market_cap_min, market_cap_max, volume_min, volume_max, sector, pe_ratio_max, dividend_yield_min.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example={"market_cap_min": 10000000000, "volume_min": 1000000},
+                expected_type="dict[str, Any]",
             ),
             "universe": FieldSchema(
                 name="universe",
                 type=FieldType.STRING,
-                description="Target market (ALL, NASDAQ, NYSE, etc.)",
+                description="Target market for screening. ALL: all markets. NASDAQ: NASDAQ only. NYSE: NYSE only.",
                 default="ALL",
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="ALL",
+                expected_type="str",
             ),
             # === SETTINGS: 부가 설정 ===
             "max_results": FieldSchema(
                 name="max_results",
                 type=FieldType.INTEGER,
-                description="Maximum number of results",
+                description="Maximum number of symbols to return. Results are sorted by market cap descending.",
                 default=100,
                 min_value=1,
                 max_value=1000,
                 category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=100,
+                expected_type="int",
             ),
         }
 
@@ -221,7 +281,7 @@ class SymbolFilterNode(BaseNode):
     """
 
     type: Literal["SymbolFilterNode"] = "SymbolFilterNode"
-    category: NodeCategory = NodeCategory.SYMBOL
+    category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.SymbolFilterNode.description"
 
     # SymbolFilterNode specific config
@@ -258,18 +318,26 @@ class SymbolFilterNode(BaseNode):
             "operation": FieldSchema(
                 name="operation",
                 type=FieldType.ENUM,
-                description="Set operation",
+                description="Set operation on symbol lists. union: combine all. intersection: common symbols only. difference: in A but not B. exclude: remove specified symbols.",
                 default="intersection",
                 enum_values=["union", "intersection", "difference", "exclude"],
                 required=True,
                 category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="intersection",
+                expected_type="str",
             ),
             "exclude_symbols": FieldSchema(
                 name="exclude_symbols",
                 type=FieldType.ARRAY,
-                description="Symbols to exclude",
+                description="Symbols to exclude when operation='exclude'. List specific tickers to remove from result.",
                 array_item_type=FieldType.STRING,
                 required=False,
                 category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example=["AAPL", "MSFT"],
+                example_binding="{{ nodes.blacklist.symbols }}",
+                expected_type="list[str]",
             ),
         }
