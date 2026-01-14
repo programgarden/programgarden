@@ -216,28 +216,43 @@ WebSocket을 통한 실시간 데이터 스트림입니다.
 
 REST API와 데이터베이스 연동입니다.
 
-### MarketDataNode
+### MarketDataNode (현재가조회)
 
-REST API로 1회성 시세 데이터를 조회합니다.
+REST API로 **당일 현재가/거래량**을 조회합니다. 과거 N일 데이터가 필요하면 **HistoricalDataNode**를 사용하세요.
 
 ```json
 {
   "id": "market",
   "type": "MarketDataNode",
-  "config": {
-    "symbols": ["AAPL", "NVDA"],
-    "fields": ["price", "volume", "change"]
-  }
+  "connection": "{{ nodes.broker.connection }}",
+  "symbols": [
+    {"exchange": "NASDAQ", "symbol": "AAPL"},
+    {"exchange": "NYSE", "symbol": "IBM"}
+  ],
+  "fields": ["price", "volume", "ohlcv"]
 }
 ```
 
-**출력**: `data` - 요청한 시세 데이터
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
+| `symbols` | array | ✅ | 종목 리스트 (거래소 + 심볼) |
+| `fields` | array | - | 조회 필드 (price, volume, ohlcv) |
+
+> ⚠️ **MarketDataNode vs HistoricalDataNode**
+> - **MarketDataNode**: 당일 현재가 1개 (g3101 API)
+> - **HistoricalDataNode**: N일치 일봉/주봉/월봉 (g3103 API)
+
+**출력**: 
+- `price` - 현재가 `{symbol: {price, change, change_pct}}`
+- `volume` - 거래량 `{symbol: {volume, value}}`
+- `ohlcv` - 당일 OHLCV `{symbol: [{date, open, high, low, close, volume}]}`
 
 ---
 
-### HistoricalDataNode
+### HistoricalDataNode (과거차트조회)
 
-과거 OHLCV 데이터를 조회합니다. **BrokerNode의 connection 출력을 반드시 연결해야 합니다.**
+과거 N일치 OHLCV 차트 데이터를 조회합니다. **BrokerNode의 connection 출력을 반드시 연결해야 합니다.**
 
 ```json
 {
@@ -245,21 +260,23 @@ REST API로 1회성 시세 데이터를 조회합니다.
   "type": "HistoricalDataNode",
   "connection": "{{ nodes.broker.connection }}",
   "symbols": ["AAPL"],
-  "data_type": "daily",
-  "count": 100
+  "interval": "1d",
+  "start_date": "dynamic:days_ago(500)",
+  "end_date": "dynamic:today()"
 }
 ```
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
 | `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
-| `data_type` | "minute" \| "daily" \| "weekly" | ✅ | 데이터 주기 |
-| `count` | number | ✅ | 가져올 데이터 개수 |
+| `interval` | "1d" \| "1w" \| "1M" | - | 데이터 주기 (일봉/주봉/월봉) |
+| `start_date` | string | - | 시작일 (YYYY-MM-DD 또는 dynamic:days_ago(N)) |
+| `end_date` | string | - | 종료일 (YYYY-MM-DD 또는 dynamic:today()) |
 
 **입력** (엣지 연결):
 - BrokerNode → HistoricalDataNode: `connection` 자동 전달
 
-**출력**: `ohlcv` - OHLCV 데이터프레임
+**출력**: `ohlcv_data` - N개 OHLCV 리스트 `{symbol: [{date, open, high, low, close, volume}, ...]}`
 
 ---
 

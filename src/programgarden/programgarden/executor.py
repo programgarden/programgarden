@@ -221,9 +221,10 @@ class GenericNodeExecutor(NodeExecutorBase):
             return {"error": f"Unknown node type: {node_type}"}
         
         # plugin과 fields가 별도로 전달되면 config에 추가 (PluginNode용)
+        # 빈 딕셔너리 {}는 무시 - config에 이미 있는 fields를 덮어쓰지 않음
         if plugin is not None:
             config["plugin"] = plugin.id if hasattr(plugin, "id") else str(plugin)
-        if fields is not None:
+        if fields:  # truthy check: None, {}, [] 모두 무시
             config["fields"] = fields
         
         # 모든 config 값에서 {{ }} 표현식 평가
@@ -234,9 +235,10 @@ class GenericNodeExecutor(NodeExecutorBase):
         if credential_id:
             config = self._inject_credentials(credential_id, config, context, node_id)
         
-        # fields 내부 표현식도 평가 (플러그인 노드용)
-        fields = config.get("fields", {})
-        if fields:
+        # fields 내부 표현식도 평가 (플러그인 노드용 - Dict 타입만)
+        # MarketDataNode 등은 fields가 List[str]이므로 건드리지 않음
+        fields = config.get("fields")
+        if fields and isinstance(fields, dict):
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
             config["fields"] = evaluator.evaluate_fields(fields)
@@ -3268,6 +3270,260 @@ class ConditionNodeExecutor(NodeExecutorBase):
         }
 
 
+class MarketDataNodeExecutor(NodeExecutorBase):
+    """
+    MarketDataNode executor - REST API 현재가 조회 (당일 데이터만)
+    
+    LS Finance Market API를 사용하여 현재 시세를 조회합니다.
+    - 해외주식: g3101 (현재가)
+    - 해외선물: o3101 (현재가)
+    
+    ⚠️ 과거 N일 일봉/주봉/월봉 데이터는 HistoricalDataNode를 사용하세요.
+    """
+
+    # 거래소 코드 매핑 (해외주식 g3101용)
+    # 81: NYSE/AMEX, 82: NASDAQ
+    EXCHANGE_CODES = {
+        "NASDAQ": "82",
+        "NYSE": "81",
+        "AMEX": "81",
+    }
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """현재가 조회"""
+        
+        # 🔍 디버그 로그
+        print(f"🔍 MarketDataNode config keys: {list(config.keys())}", flush=True)
+        print(f"🔍 MarketDataNode config.symbols: {config.get('symbols')}", flush=True)
+        
+        # 입력 symbols 가져오기 (포트 또는 config에서 명시적 입력 필수)
+        input_symbols = context.get_output(f"_input_{node_id}", "symbols")
+        config_symbols = config.get("symbols")
+        symbols = input_symbols or config_symbols
+        
+        print(f"🔍 MarketDataNode input_symbols: {input_symbols}", flush=True)
+        print(f"🔍 MarketDataNode final symbols: {symbols}", flush=True)
+        
+        if not symbols:
+            error_msg = "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요."
+            context.log("error", error_msg, node_id)
+            return {"error": error_msg, "price": {}, "volume": {}, "ohlcv": {}, "symbols": []}
+        
+        # config에서 명시적 connection 확인
+        broker_connection = config.get("connection")
+        print(f"🔍 MarketDataNode connection: {broker_connection}", flush=True)
+        
+        if not broker_connection:
+            context.log("error", "connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
+            return {"error": "connection 필드가 필수입니다", "price": {}, "volume": {}, "ohlcv": {}}
+        
+        product = broker_connection.get("product", "overseas_stock")
+        
+        # 조회할 필드 (현재가 조회 전용 - 과거 데이터는 HistoricalDataNode 사용)
+        fields = config.get("fields", ["price", "volume", "ohlcv"])
+        
+        context.log(
+            "info", 
+            f"Fetching current market data: {len(symbols)} symbols, fields={fields}, product={product}", 
+            node_id
+        )
+        
+        # product별 분기
+        if product == "overseas_stock":
+            result = await self._fetch_overseas_stock(symbols, fields, context, node_id)
+        elif product == "overseas_futureoption":
+            result = await self._fetch_overseas_futures(symbols, fields, context, node_id)
+        else:
+            context.log("warning", f"Unsupported product: {product}, using demo data", node_id)
+            result = self._generate_demo_data(symbols, fields)
+        
+        return result
+
+    async def _fetch_overseas_stock(
+        self,
+        symbols: List[Dict[str, str]],
+        fields: List[str],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """해외주식 현재가 조회 (g3101) - 당일 데이터만 반환"""
+        
+        credential = context.get_credential()
+        if not credential:
+            context.log("warning", "No credential, using demo data", node_id)
+            return self._generate_demo_data(symbols, fields)
+        
+        try:
+            from programgarden_finance.ls.overseas_stock.market.g3101.blocks import G3101InBlock
+            
+            ls, success, error = ensure_ls_login(
+                credential.get("appkey"),
+                credential.get("appsecret"),
+                credential.get("paper_trading", False),
+                context, node_id,
+                caller_name="MarketDataNode(overseas_stock)"
+            )
+            if not success:
+                context.log("warning", f"LS login failed: {error}, using demo data", node_id)
+                return self._generate_demo_data(symbols, fields)
+            
+            api = ls.overseas_stock()
+            
+            price_data = {}
+            volume_data = {}
+            ohlcv_data = {}
+            
+            for symbol_entry in symbols:
+                try:
+                    # 거래소와 심볼 추출
+                    exchange = symbol_entry.get("exchange", "NASDAQ")
+                    symbol = symbol_entry.get("symbol", "")
+                    if not symbol:
+                        continue
+                    
+                    # 거래소 코드 변환 (81: NYSE/AMEX, 82: NASDAQ)
+                    exchange_code = self.EXCHANGE_CODES.get(exchange.upper(), "82")
+                    
+                    # KEY종목코드 생성 (거래소코드 + 심볼, 예: "82AAPL")
+                    keysymbol = f"{exchange_code}{symbol}"
+                    
+                    # g3101 현재가 조회
+                    body = G3101InBlock(
+                        keysymbol=keysymbol,
+                        exchcd=exchange_code,
+                        symbol=symbol,
+                    )
+                    
+                    response = api.market().g3101(body=body).req()
+                    
+                    if response and response.block:
+                        out_block = response.block
+                        
+                        # price 필드
+                        if "price" in fields:
+                            price_data[symbol] = {
+                                "price": float(out_block.price or 0),
+                                "change": float(out_block.diff or 0),
+                                "change_pct": float(out_block.rate or 0),
+                                "timestamp": "",
+                                "exchange": exchange,
+                            }
+                        
+                        # volume 필드
+                        if "volume" in fields:
+                            volume_data[symbol] = {
+                                "volume": int(out_block.volume or 0),
+                                "value": float(out_block.amount or 0),
+                                "exchange": exchange,
+                            }
+                        
+                        # ohlcv 필드 (현재가 기준 단일 데이터)
+                        if "ohlcv" in fields:
+                            from datetime import datetime
+                            ohlcv_data[symbol] = [{
+                                "date": datetime.now().strftime("%Y%m%d"),
+                                "open": float(out_block.open or 0),
+                                "high": float(out_block.high or 0),
+                                "low": float(out_block.low or 0),
+                                "close": float(out_block.price or 0),
+                                "volume": int(out_block.volume or 0),
+                                "exchange": exchange,
+                            }]
+                        
+                        context.log("debug", f"Fetched {exchange}:{symbol}: price={out_block.price}", node_id)
+                    else:
+                        context.log("warning", f"No data for {exchange}:{symbol}", node_id)
+                        
+                except Exception as e:
+                    context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
+                    continue
+            
+            return {
+                "price": price_data,
+                "volume": volume_data,
+                "ohlcv": ohlcv_data,
+                "symbols": list(price_data.keys()),
+            }
+            
+        except ImportError as e:
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._generate_demo_data(symbols, fields)
+        except Exception as e:
+            context.log("error", f"Market data fetch error: {e}", node_id)
+            return self._generate_demo_data(symbols, fields)
+
+    async def _fetch_overseas_futures(
+        self,
+        symbols: List[Dict[str, str]],
+        fields: List[str],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """해외선물 현재가 조회 (o3101) - 당일 데이터만 반환"""
+        # TODO: 해외선물 구현
+        context.log("warning", "overseas_futures market data not yet implemented, using demo data", node_id)
+        return self._generate_demo_data(symbols, fields)
+
+    def _generate_demo_data(self, symbols: List[Dict[str, str]], fields: List[str]) -> Dict[str, Any]:
+        """데모 데이터 생성"""
+        import random
+        from datetime import datetime
+        
+        price_data = {}
+        volume_data = {}
+        ohlcv_data = {}
+        
+        for symbol_entry in symbols:
+            exchange = symbol_entry.get("exchange", "NASDAQ")
+            symbol = symbol_entry.get("symbol", "")
+            if not symbol:
+                continue
+                
+            base_price = random.uniform(50, 500)
+            
+            if "price" in fields:
+                price_data[symbol] = {
+                    "price": round(base_price, 2),
+                    "change": round(random.uniform(-5, 5), 2),
+                    "change_pct": round(random.uniform(-2, 2), 2),
+                    "timestamp": datetime.now().isoformat(),
+                    "exchange": exchange,
+                }
+            
+            if "volume" in fields:
+                volume_data[symbol] = {
+                    "volume": random.randint(100000, 10000000),
+                    "value": round(base_price * random.randint(100000, 10000000), 2),
+                    "exchange": exchange,
+                }
+            
+            if "ohlcv" in fields:
+                ohlcv_data[symbol] = [{
+                    "date": datetime.now().strftime("%Y%m%d"),
+                    "open": round(base_price * 0.99, 2),
+                    "high": round(base_price * 1.02, 2),
+                    "low": round(base_price * 0.98, 2),
+                    "close": round(base_price, 2),
+                    "volume": random.randint(100000, 10000000),
+                    "exchange": exchange,
+                }]
+        
+        symbol_codes = [s.get("symbol") for s in symbols if s.get("symbol")]
+        return {
+            "price": price_data,
+            "volume": volume_data,
+            "ohlcv": ohlcv_data,
+            "symbols": symbol_codes,
+        }
+
+
 class HistoricalDataNodeExecutor(NodeExecutorBase):
     """
     HistoricalDataNode executor - 과거 OHLCV 데이터 조회
@@ -4517,6 +4773,7 @@ class WorkflowExecutor:
             "BrokerNode": BrokerNodeExecutor(),
             "AccountNode": AccountNodeExecutor(),  # 1회성 REST API 조회
             "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
+            "MarketDataNode": MarketDataNodeExecutor(),  # REST API 현재가 조회
             "RealMarketDataNode": RealMarketDataNodeExecutor(),
             "RealOrderEventNode": RealOrderEventNodeExecutor(),  # 실시간 주문 이벤트
             "CustomPnLNode": CustomPnLNodeExecutor(),

@@ -39,15 +39,18 @@ class MarketDataNode(BaseNode):
     # 브로커 연결 필드 (명시적 바인딩 필수)
     connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
-    # MarketDataNode specific config
+    # 종목 리스트 (직접 입력 또는 포트로 받기)
+    # 거래소 정보 포함: [{"exchange": "NASDAQ", "symbol": "AAPL"}, ...]
+    symbols: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="List of symbol entries with exchange and symbol code",
+    )
+
+    # MarketDataNode specific config - 현재가 조회 전용 (과거 데이터는 HistoricalDataNode 사용)
     fields: List[str] = Field(
         default=["price", "volume", "ohlcv"],
-        description="Fields to query",
+        description="Fields to query (price, volume, ohlcv - today only)",
     )
-    period: Optional[str] = Field(
-        default=None, description="Period for OHLCV query (e.g., 1d, 1h, 5m)"
-    )
-    count: int = Field(default=100, description="Number of data points for OHLCV query")
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -89,40 +92,34 @@ class MarketDataNode(BaseNode):
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
             ),
+            # === PARAMETERS: 종목 리스트 ===
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="조회할 종목 리스트입니다. 거래소와 심볼을 함께 입력하세요. 직접 입력하거나 WatchlistNode에서 연결할 수 있습니다.",
+                required=True,
+                default=[],
+                array_item_type=FieldType.OBJECT,
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NYSE", "symbol": "IBM"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols"],
+                expected_type="list[dict]",
+                ui_component="symbol_editor",
+            ),
             # === PARAMETERS: 핵심 조회 설정 ===
             "fields": FieldSchema(
                 name="fields",
                 type=FieldType.ARRAY,
-                description="i18n:fields.MarketDataNode.fields",
+                description="조회할 필드를 선택하세요. price: 현재가, volume: 거래량, ohlcv: 당일 시가/고가/저가/종가. 과거 N일 데이터는 HistoricalDataNode를 사용하세요.",
                 default=["price", "volume", "ohlcv"],
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
                 example=["price", "volume", "ohlcv"],
                 expected_type="list[str]",
-            ),
-            "period": FieldSchema(
-                name="period",
-                type=FieldType.STRING,
-                description="i18n:fields.MarketDataNode.period",
-                required=False,
-                category=FieldCategory.PARAMETERS,
-                bindable=False,
-                example="1d",
-                expected_type="str",
-            ),
-            # === SETTINGS: 부가 설정 ===
-            "count": FieldSchema(
-                name="count",
-                type=FieldType.INTEGER,
-                description="i18n:fields.MarketDataNode.count",
-                default=100,
-                min_value=1,
-                max_value=1000,
-                category=FieldCategory.SETTINGS,
-                bindable=False,
-                example=100,
-                expected_type="int",
             ),
         }
 

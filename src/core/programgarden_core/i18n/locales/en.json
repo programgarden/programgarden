@@ -49,8 +49,8 @@
   "nodes.SymbolFilterNode.name": "Symbol Filter",
   "nodes.SymbolFilterNode.description": "Set operations on symbol lists.",
   
-  "nodes.MarketDataNode.name": "Market Data",
-  "nodes.MarketDataNode.description": "REST API market data query.",
+  "nodes.MarketDataNode.name": "Current Price",
+  "nodes.MarketDataNode.description": "REST API current price and volume query (today only).",
   
   "nodes.AccountNode.name": "Account",
   "nodes.AccountNode.description": "REST API account query.",
@@ -117,8 +117,8 @@
   "nodes.LiquidateNode.name": "Liquidate",
   "nodes.LiquidateNode.description": "Execute emergency or full position liquidation when risk limits are exceeded.",
   
-  "nodes.HistoricalDataNode.name": "Historical Data",
-  "nodes.HistoricalDataNode.description": "Historical OHLCV data for backtesting.",
+  "nodes.HistoricalDataNode.name": "Historical Chart",
+  "nodes.HistoricalDataNode.description": "N-day OHLCV chart data (daily/weekly/monthly bars).",
   
 "nodes.BacktestEngineNode.name": "Backtest Engine",
   "nodes.BacktestEngineNode.description": "Run backtest with signals and historical data, calculate performance metrics.",

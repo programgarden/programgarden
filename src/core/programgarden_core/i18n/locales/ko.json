@@ -40,17 +40,17 @@
   "nodes.WatchlistNode.name": "관심종목",
   "nodes.WatchlistNode.description": "사용자 정의 관심종목 리스트.",
   
-  "nodes.MarketUniverseNode.name": "시장 유니버스",
-  "nodes.MarketUniverseNode.description": "시장/지수 구성 종목.",
+  "nodes.MarketUniverseNode.name": "지수구성종목",
+  "nodes.MarketUniverseNode.description": "NASDAQ100, S&P500 등 지수 구성 종목.",
   
-  "nodes.ScreenerNode.name": "스크리너",
-  "nodes.ScreenerNode.description": "조건으로 종목 필터링.",
+  "nodes.ScreenerNode.name": "종목검색",
+  "nodes.ScreenerNode.description": "시가총액, 거래량 등 조건으로 종목 검색.",
   
-  "nodes.SymbolFilterNode.name": "종목 필터",
-  "nodes.SymbolFilterNode.description": "종목 리스트 집합 연산.",
+  "nodes.SymbolFilterNode.name": "종목필터",
+  "nodes.SymbolFilterNode.description": "종목 리스트 교집합/합집합/차집합 연산.",
   
-  "nodes.MarketDataNode.name": "시세 조회",
-  "nodes.MarketDataNode.description": "REST API 시세 데이터 조회.",
+  "nodes.MarketDataNode.name": "현재가조회",
+  "nodes.MarketDataNode.description": "REST API로 당일 현재가/거래량 조회.",
   
   "nodes.AccountNode.name": "계좌 조회",
   "nodes.AccountNode.description": "REST API 계좌 정보 조회.",
@@ -117,8 +117,8 @@
   "nodes.LiquidateNode.name": "청산",
   "nodes.LiquidateNode.description": "리스크 한도 초과 시 긴급 청산 또는 전량 청산을 실행합니다.",
   
-  "nodes.HistoricalDataNode.name": "과거 데이터",
-  "nodes.HistoricalDataNode.description": "백테스트용 OHLCV 과거 데이터.",
+  "nodes.HistoricalDataNode.name": "과거차트조회",
+  "nodes.HistoricalDataNode.description": "N일치 일봉/주봉/월봉 OHLCV 차트 데이터.",
   
 "nodes.BacktestEngineNode.name": "백테스트 엔진",
   "nodes.BacktestEngineNode.description": "시그널과 과거 데이터로 백테스트 실행 및 성과 지표 계산.",
