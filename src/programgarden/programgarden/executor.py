@@ -3466,10 +3466,102 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """해외선물 현재가 조회 (o3101) - 당일 데이터만 반환"""
-        # TODO: 해외선물 구현
-        context.log("warning", "overseas_futures market data not yet implemented, using demo data", node_id)
-        return self._generate_demo_data(symbols, fields)
+        """해외선물 현재가 조회 (o3105) - 당일 데이터만 반환"""
+        
+        credential = context.get_credential()
+        if not credential:
+            context.log("warning", "No credential, using demo data", node_id)
+            return self._generate_demo_data(symbols, fields)
+        
+        try:
+            from programgarden_finance.ls.overseas_futureoption.market.o3105.blocks import O3105InBlock
+            
+            ls, success, error = ensure_ls_login(
+                credential.get("appkey"),
+                credential.get("appsecret"),
+                credential.get("paper_trading", False),
+                context, node_id,
+                caller_name="MarketDataNode(overseas_futureoption)"
+            )
+            if not success:
+                context.log("warning", f"LS login failed: {error}, using demo data", node_id)
+                return self._generate_demo_data(symbols, fields)
+            
+            api = ls.overseas_futureoption()
+            
+            price_data = {}
+            volume_data = {}
+            ohlcv_data = {}
+            
+            for symbol_entry in symbols:
+                try:
+                    # 해외선물은 exchange 대신 symbol만 사용 (예: "GCGF25", "CLH25")
+                    exchange = symbol_entry.get("exchange", "CME")
+                    symbol = symbol_entry.get("symbol", "")
+                    if not symbol:
+                        continue
+                    
+                    # o3105 현재가 조회 (종목심볼만 필요)
+                    body = O3105InBlock(symbol=symbol)
+                    
+                    response = api.market().o3105(body=body).req()
+                    
+                    if response and response.block:
+                        out_block = response.block
+                        
+                        # price 필드
+                        if "price" in fields:
+                            price_data[symbol] = {
+                                "price": float(out_block.TrdP or 0),
+                                "change": float(out_block.YdiffP or 0),
+                                "change_pct": float(out_block.Diff or 0),
+                                "timestamp": out_block.RcvTm or "",
+                                "exchange": exchange,
+                                "symbol_name": out_block.SymbolNm or symbol,
+                            }
+                        
+                        # volume 필드
+                        if "volume" in fields:
+                            volume_data[symbol] = {
+                                "volume": int(out_block.TotQ or 0),
+                                "value": float(out_block.TotAmt or 0),
+                                "exchange": exchange,
+                            }
+                        
+                        # ohlcv 필드 (현재가 기준 당일 데이터)
+                        if "ohlcv" in fields:
+                            from datetime import datetime
+                            ohlcv_data[symbol] = [{
+                                "date": out_block.KorDate or datetime.now().strftime("%Y%m%d"),
+                                "open": float(out_block.OpenP or 0),
+                                "high": float(out_block.HighP or 0),
+                                "low": float(out_block.LowP or 0),
+                                "close": float(out_block.TrdP or 0),  # 현재가 = 종가
+                                "volume": int(out_block.TotQ or 0),
+                                "exchange": exchange,
+                            }]
+                        
+                        context.log("debug", f"Fetched {exchange}:{symbol}: price={out_block.TrdP}", node_id)
+                    else:
+                        context.log("warning", f"No data for {exchange}:{symbol}", node_id)
+                        
+                except Exception as e:
+                    context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
+                    continue
+            
+            return {
+                "price": price_data,
+                "volume": volume_data,
+                "ohlcv": ohlcv_data,
+                "symbols": list(price_data.keys()),
+            }
+            
+        except ImportError as e:
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._generate_demo_data(symbols, fields)
+        except Exception as e:
+            context.log("error", f"Market data fetch error: {e}", node_id)
+            return self._generate_demo_data(symbols, fields)
 
     def _generate_demo_data(self, symbols: List[Dict[str, str]], fields: List[str]) -> Dict[str, Any]:
         """데모 데이터 생성"""
