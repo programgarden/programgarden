@@ -109,8 +109,8 @@ function getOutputPreview(output: unknown): string | null {
 function getStateStyles(state?: NodeState): string {
   switch (state) {
     case 'running':
-      // 펄스 애니메이션 + 빛나는 테두리
-      return 'animate-pulse ring-2 ring-blue-500 shadow-lg shadow-blue-500/50';
+      // 빛나는 테두리 (반짝임 제거)
+      return 'ring-2 ring-blue-500 shadow-lg shadow-blue-500/50';
     case 'completed':
       return 'ring-2 ring-green-500 bg-green-900/20';
     case 'failed':
@@ -194,7 +194,15 @@ function CustomNode({ data, selected, id }: NodeProps) {
           setEditedLabel(displayLabel);
         }}
       >
-        <NodeIcon nodeType={nodeData.nodeType} />
+        {/* 실행 중일 때 회전 아이콘, 아니면 노드 아이콘 */}
+        {nodeData.state === 'running' ? (
+          <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="currentColor" opacity="0.3"/>
+            <path d="M12 4a8 8 0 018 8h4c0-6.627-5.373-12-12-12v4z" fill="currentColor"/>
+          </svg>
+        ) : (
+          <NodeIcon nodeType={nodeData.nodeType} />
+        )}
         {isEditingLabel ? (
           <input
             type="text"

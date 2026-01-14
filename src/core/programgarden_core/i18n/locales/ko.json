@@ -55,6 +55,8 @@
   "nodes.AccountNode.name": "계좌 조회",
   "nodes.AccountNode.description": "REST API 계좌 정보 조회.",
   
+  "fields.AccountNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
+  
   "nodes.SQLiteNode.name": "SQLite",
   "nodes.SQLiteNode.description": "SQLite 데이터베이스 조회/저장.",
   
@@ -185,9 +187,11 @@
   "ports.start": "시작 신호",
   "ports.bid": "매수호가",
   "ports.ask": "매도호가",
+  "ports.accepted": "접수됨",
   "ports.filled": "체결됨",
-  "ports.rejected": "거부됨",
+  "ports.modified": "정정됨",
   "ports.cancelled": "취소됨",
+  "ports.rejected": "거부됨",
   "ports.market_data_full": "전체 시세 데이터",
   "ports.subscribed_symbols": "구독된 종목 리스트",
   "ports.open": "거래소 개장",
@@ -262,6 +266,10 @@
   "fields.RealAccountNode.tax_rate": "해외주식 거래세율 (%). 미국 0%, 홍콩 0.1%, 일본 0%",
   "fields.RealAccountNode.futures_fee_per_contract": "해외선물 계약당 수수료 (USD, 편도). LS증권 기본 $7.5",
 
+  "fields.RealOrderEventNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+  "fields.RealOrderEventNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
+  "fields.RealOrderEventNode.event_filter": "해외주식 이벤트 필터. 전체(AS0~AS4) 또는 특정 TR만 출력합니다.",
+  "fields.RealOrderEventNode.event_filter_futures": "해외선물 이벤트 필터. 전체(TC1~TC3) 또는 특정 TR만 출력합니다.",
   "fields.RealOrderEventNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지",
 
   "fields.ScheduleNode.cron": "크론 표현식 (예: */5 * * * * = 5분마다)",

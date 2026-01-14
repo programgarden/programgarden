@@ -8,6 +8,7 @@ ProgramGarden Core - Account Nodes
 """
 
 from typing import List, Literal, Dict, TYPE_CHECKING, ClassVar, Optional
+from pydantic import Field
 
 if TYPE_CHECKING:
     from programgarden_core.models.field_binding import FieldSchema
@@ -42,6 +43,12 @@ class AccountNode(BaseNode):
 
     # 설정 가능한 필드 (바인딩 또는 엣지 연결로 설정)
     connection: Optional[Dict] = None  # BrokerNode의 connection 출력
+    
+    # 상품 유형 선택 (해외주식/해외선물)
+    product_type: str = Field(
+        default="overseas_stock",
+        description="i18n:fields.AccountNode.product_type"
+    )
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -78,19 +85,35 @@ class AccountNode(BaseNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """AccountNode의 설정 가능한 필드 스키마."""
-        from programgarden_core.models.field_binding import FieldSchema
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         
         return {
+            # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
                 name="connection",
-                type="object",
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요. 예: {{ nodes.broker_2.connection }}",
+                type=FieldType.OBJECT,
+                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
                 required=True,
                 bindable=True,
                 expression_enabled=True,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_futures", "paper_trading": True},
-                example_binding="{{ nodes.broker_2.connection }}",
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
+            ),
+            # === PARAMETERS: 상품 유형 선택 ===
+            "product_type": FieldSchema(
+                name="product_type",
+                type=FieldType.ENUM,
+                description="i18n:fields.AccountNode.product_type",
+                default="overseas_stock",
+                enum_values=["overseas_stock", "overseas_futures"],
+                enum_labels={
+                    "overseas_stock": "해외주식",
+                    "overseas_futures": "해외선물"
+                },
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
             ),
         }

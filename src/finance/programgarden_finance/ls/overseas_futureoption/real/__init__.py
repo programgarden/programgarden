@@ -71,7 +71,7 @@ from programgarden_core.korea_alias import require_korean_alias
 
 class Real(RealRequestAbstract, BaseReal):
     """
-    LS증권 OpenAPI 실시간 클래스
+    LS증권 OpenAPI 실시간 클래스 (해외선물옵션)
     """
 
     def __init__(
@@ -94,6 +94,39 @@ class Real(RealRequestAbstract, BaseReal):
         if not token_manager:
             raise ValueError("token_manager is required")
         self.token_manager = token_manager
+        self._tc123_connect = False  # 해외선물 주문 구독 상태
+
+    def _add_real_order(self):
+        """해외선물 주문 실시간 구독 (TC1/TC2/TC3)
+        
+        TC1: 주문접수, TC2: 주문응답(체결), TC3: 주문체결
+        어떤 것으로 요청해도 증권사에서 전부 자동 등록되므로 한 번만 요청합니다.
+        """
+        import asyncio
+        import json
+        
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        # TC1, TC2, TC3 중 하나로 요청하면 모두 자동 등록됨
+        if self._tc123_connect is False:
+            self._tc123_connect = True  # 중복 등록 방지
+            req = TC1RealRequest(
+                header=TC1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="1"  # 1: 등록
+                ),
+                body=TC1RealRequestBody(
+                    tr_cd="TC1",
+                    tr_key="",
+                )
+            )
+            req_dict = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            print(f"[해외선물 Real] TC1/TC2/TC3 주문 실시간 구독 요청: {req_dict}")
+            asyncio.create_task(self._ws.send(json.dumps(req_dict)))
 
     @require_korean_alias
     def OVC(self) -> RealOVC:

@@ -170,17 +170,45 @@ WebSocket을 통한 실시간 데이터 스트림입니다.
 {
   "id": "orderEvents",
   "type": "RealOrderEventNode",
-  "connection": "{{ nodes.broker.connection }}"
+  "connection": "{{ nodes.broker.connection }}",
+  "product_type": "overseas_stock"
 }
 ```
 
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|------|------|
-| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
+| 필드 | 타입 | 필수 | 기본값 | 설명 |
+|------|------|------|--------|------|
+| `connection` | object | ✅ | - | BrokerNode의 connection 출력 바인딩 |
+| `product_type` | enum | ❌ | "overseas_stock" | 상품 유형 (overseas_stock, overseas_futures) |
+| `event_filter` | enum | ❌ | "all" | 해외주식 이벤트 필터 (all, AS0~AS4) |
+| `event_filter_futures` | enum | ❌ | "all" | 해외선물 이벤트 필터 (all, TC1~TC3) |
+| `stay_connected` | boolean | ❌ | true | WebSocket 연결 유지 여부 |
 
-**출력**:
-- `event_type` - 이벤트 타입 (filled, rejected, cancelled)
-- `order_data` - 주문 상세 정보
+**출력 (5개 포트)**:
+
+| 포트 | 설명 | 이벤트 |
+|------|------|--------|
+| `accepted` | 주문 접수됨 | 신규/정정/취소 접수 |
+| `filled` | 체결됨 | 주문 체결 |
+| `modified` | 정정 완료 | 주문 정정 완료 |
+| `cancelled` | 취소 완료 | 주문 취소 완료 |
+| `rejected` | 거부됨 | 주문 거부 |
+
+**이벤트 코드 매핑 (AS0 - 해외주식)**:
+| sOrdxctPtnCode | 이벤트 | 출력 포트 |
+|----------------|--------|----------|
+| 01, 02, 03 | 접수 | `accepted` |
+| 11 | 체결 | `filled` |
+| 12 | 정정완료 | `modified` |
+| 13 | 취소완료 | `cancelled` |
+| 14 | 거부 | `rejected` |
+
+**이벤트 코드 매핑 (TC2/TC3 - 해외선물)**:
+| svc_id | ordr_ccd | 출력 포트 |
+|--------|----------|----------|
+| HO02 | 1 | `accepted` |
+| HO02 | 2 | `modified` |
+| HO02 | 3 | `cancelled` |
+| HO03 | - | `rejected` |
 
 ---
 

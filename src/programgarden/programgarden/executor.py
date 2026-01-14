@@ -684,7 +684,8 @@ class AccountNodeExecutor(NodeExecutorBase):
         # connection 정보 추출
         if isinstance(broker_connection, dict):
             provider = broker_connection.get("provider", "ls-sec.co.kr")
-            product = broker_connection.get("product", "overseas_stock")
+            # config의 product_type 우선, connection.product fallback (하위 호환)
+            product = config.get("product_type") or broker_connection.get("product", "overseas_stock")
         else:
             context.log("error", f"AccountNode: connection 타입이 잘못되었습니다: {type(broker_connection)}", node_id)
             return self._empty_result("Invalid connection type")
@@ -1718,6 +1719,545 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         return data
 
 
+class RealOrderEventNodeExecutor(NodeExecutorBase):
+    """
+    RealOrderEventNode executor - 실시간 주문 이벤트 (체결/거부/취소)
+    
+    WebSocket을 통해 주문 체결, 거부, 취소 이벤트를 실시간으로 수신합니다.
+    - 해외주식: AS0~AS4 (체결통보) - 하나만 등록해도 전체 수신
+    - 해외선물: TC1~TC3 (주문접수/확인/체결) - 하나만 등록해도 전체 수신
+    
+    event_filter로 특정 TR만 output하도록 필터링 가능
+    
+    stay_connected 옵션에 따라:
+    - True: WebSocket 연결 유지, 플로우 끝나도 계속 살아있음
+    - False: WebSocket 연결, 플로우 끝나면 cleanup (연결 종료)
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        # 옵션 확인
+        stay_connected = config.get("stay_connected", True)
+        
+        # config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        broker_connection = config.get("connection")
+        
+        # connection 없으면 에러 - 명시적 바인딩 필수
+        if not broker_connection:
+            context.log("error", "RealOrderEventNode: connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
+            return {"error": "Missing connection field - set connection: \"{{ nodes.broker.connection }}\""}
+        
+        provider = broker_connection.get("provider", "ls-sec.co.kr")
+        broker_product = broker_connection.get("product", "overseas_stock")
+        # config의 product_type 우선, connection.product fallback
+        product = config.get("product_type") or broker_product
+        
+        # ========================================
+        # ⚠️ Product 불일치 검증
+        # ========================================
+        if product != broker_product:
+            error_msg = f"Product mismatch: 노드 product_type='{product}' vs 브로커 product='{broker_product}'. 브로커와 동일한 상품을 선택하세요."
+            context.log("error", error_msg, node_id)
+            return {"error": error_msg}
+        
+        # 이벤트 필터 가져오기 (product_type에 따라 다른 필드 사용)
+        if product == "overseas_futures":
+            event_filter = config.get("event_filter_futures", "all")
+        else:
+            event_filter = config.get("event_filter", "all")
+        
+        context.log("info", f"RealOrderEvent: provider={provider}, product={product}, event_filter={event_filter}, stay_connected={stay_connected}", node_id)
+        
+        # 🆕 기존 연결이 있고 event_filter가 변경된 경우 기존 연결 제거 후 재등록
+        # persistent에 저장된 event_filter와 현재 event_filter 비교
+        if stay_connected and context.has_persistent(node_id):
+            existing_filter = context.get_persistent_metadata(node_id, "event_filter")
+            if existing_filter == event_filter:
+                context.log("info", f"Reusing existing RealOrderEvent subscription (filter={event_filter})", node_id)
+                return {"status": "subscribed", "product": product, "event_filter": event_filter}
+            else:
+                # event_filter가 변경됨 - 기존 연결 제거
+                context.log("info", f"event_filter changed ({existing_filter} -> {event_filter}), re-subscribing", node_id)
+                await context.cleanup_persistent(node_id)
+        
+        # ========================================
+        # 브로커별 분기 처리
+        # ========================================
+        if provider == "ls-sec.co.kr":
+            return await self._execute_ls(node_id, product, config, context, stay_connected, event_filter)
+        else:
+            context.log("error", f"Unsupported provider: {provider}", node_id)
+            return {"error": f"Unsupported provider: {provider}"}
+
+    async def _execute_ls(
+        self,
+        node_id: str,
+        product: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        stay_connected: bool,
+        event_filter: str = "all",
+    ) -> Dict[str, Any]:
+        """LS증권 실시간 주문 이벤트 구독"""
+        
+        # secrets에서 인증 정보 가져오기
+        credential = context.get_credential()
+        
+        if not credential:
+            context.log("error", "Credential not found in secrets", node_id)
+            return {"error": "Missing credentials"}
+        
+        appkey = credential.get("appkey")
+        appsecret = credential.get("appsecret")
+        paper_trading = credential.get("paper_trading", False)
+        
+        if not appkey or not appsecret:
+            context.log("error", "appkey/appsecret not found in credential", node_id)
+            return {"error": "Missing appkey/appsecret"}
+        
+        try:
+            ls, success, error = ensure_ls_login(
+                appkey, appsecret, paper_trading, context, node_id,
+                caller_name=f"RealOrderEventNode({product})"
+            )
+            if not success:
+                return {"error": error}
+            
+            # Product별 분기 처리
+            if product == "overseas_stock":
+                return await self._ls_stock_order_event(
+                    ls, node_id, config, context, stay_connected, event_filter
+                )
+            elif product == "overseas_futures":
+                return await self._ls_futures_order_event(
+                    ls, node_id, config, context, stay_connected, event_filter
+                )
+            else:
+                context.log("error", f"Unsupported product for RealOrderEventNode: {product}", node_id)
+                return {"error": f"Unsupported product: {product}"}
+                
+        except ImportError as e:
+            context.log("error", f"finance package not available: {e}", node_id)
+            return {"error": f"finance package error: {e}"}
+        except Exception as e:
+            context.log("error", f"Unexpected error: {e}", node_id)
+            return {"error": str(e)}
+
+    async def _ls_stock_order_event(
+        self,
+        ls,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        stay_connected: bool,
+        event_filter: str = "all",
+    ) -> Dict[str, Any]:
+        """해외주식 실시간 주문 체결 이벤트 (AS0~AS4)
+        
+        AS0~AS4 중 하나만 등록해도 전체 수신됨.
+        여러 노드가 동시에 사용할 수 있도록 마스터 콜백 패턴 사용.
+        """
+        from datetime import datetime
+        
+        product = "overseas_stock"
+        
+        try:
+            # 현재 이벤트 루프 캡처 (콜백에서 사용)
+            loop = asyncio.get_running_loop()
+            
+            # 트리거할 하위 노드 목록
+            trigger_nodes = config.get("_trigger_on_update_nodes", [])
+            
+            # ========================================
+            # 노드별 핸들러 생성 및 등록
+            # ========================================
+            def create_handler(_node_id: str, _event_filter: str, _trigger_nodes: list):
+                """특정 노드용 핸들러 생성 (클로저로 값 캡처)"""
+                
+                def handler(resp):
+                    from datetime import datetime
+                    
+                    # header에서 tr_cd 확인하여 필터링
+                    header = getattr(resp, 'header', None)
+                    tr_cd = getattr(header, 'tr_cd', 'AS0') if header else 'AS0'
+                    
+                    # event_filter가 'all'이 아니면 해당 TR만 처리
+                    if _event_filter != "all" and tr_cd != _event_filter:
+                        return  # 필터링된 TR이 아니면 무시
+                    
+                    # body에서 필드 추출
+                    body = getattr(resp, 'body', resp)
+                    ord_type_code = getattr(body, 'sOrdxctPtnCode', '')
+                    
+                    event_data = {
+                        "timestamp": datetime.now().isoformat(),
+                        "tr_cd": tr_cd,
+                        "event_code": ord_type_code,
+                        "symbol": getattr(body, 'sShtnIsuNo', getattr(body, 'sIsuNo', '')),
+                        "symbol_name": getattr(body, 'sIsuNm', ''),
+                        "order_no": getattr(body, 'sOrdNo', 0),
+                        "orig_order_no": getattr(body, 'sOrgOrdNo', 0),
+                        "side": getattr(body, 'sOrdPtnCode', ''),
+                        "order_qty": int(getattr(body, 'sOrdQty', 0)),
+                        "order_price": float(getattr(body, 'sOrdPrc', 0)),
+                        "remain_qty": int(getattr(body, 'sOrgOrdUnercQty', 0)),
+                        "modified_qty": int(getattr(body, 'sOrgOrdMdfyQty', 0)),
+                        "cancelled_qty": int(getattr(body, 'sOrgOrdCancQty', 0)),
+                        "order_time": getattr(body, 'sOrdTime', ''),
+                        "market_code": getattr(body, 'sOrdMktCode', ''),
+                    }
+                    
+                    # 주문체결유형코드에 따라 포트 및 상태명 결정
+                    port_map = {
+                        '01': ('accepted', '신규접수'),
+                        '02': ('accepted', '정정접수'),
+                        '03': ('accepted', '취소접수'),
+                        '11': ('filled', '체결'),
+                        '12': ('modified', '정정완료'),
+                        '13': ('cancelled', '취소완료'),
+                        '14': ('rejected', '거부'),
+                    }
+                    
+                    port, status_name = port_map.get(ord_type_code, ('accepted', f'코드:{ord_type_code}'))
+                    event_data["status"] = status_name
+                    
+                    context.set_output(_node_id, port, event_data)
+                    
+                    side_name = "매수" if event_data['side'] == '02' else "매도"
+                    
+                    print(f"\n{'='*60}")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📣 [{_node_id}] 해외주식 {status_name} ({side_name})")
+                    print(f"  종목: {event_data['symbol']} ({event_data['symbol_name']})")
+                    print(f"  주문번호: {event_data['order_no']}")
+                    print(f"{'='*60}\n")
+                    
+                    asyncio.run_coroutine_threadsafe(
+                        context.notify_output_update(
+                            node_id=_node_id,
+                            node_type="RealOrderEventNode",
+                            outputs={port: event_data},
+                        ),
+                        loop
+                    )
+                    
+                    asyncio.run_coroutine_threadsafe(
+                        context.emit_event(
+                            event_type="order_event",
+                            source_node_id=_node_id,
+                            data={port: event_data},
+                            trigger_nodes=_trigger_nodes,
+                        ),
+                        loop
+                    )
+                
+                return handler
+            
+            # 핸들러 등록 (AS0~AS4는 모두 같은 콜백으로 수신됨)
+            handler = create_handler(node_id, event_filter, trigger_nodes)
+            context.register_order_event_handler(product, "AS0", node_id, event_filter, handler)
+            
+            # ========================================
+            # 마스터 콜백 설정 (첫 번째 노드만)
+            # ========================================
+            if not context.has_order_event_subscription(product):
+                real_client = ls.overseas_stock().real()
+                if not await real_client.is_connected():
+                    await real_client.connect()
+                
+                context.set_order_event_real_client(product, real_client)
+                
+                # 마스터 콜백: 모든 등록된 핸들러에게 분배
+                def master_callback(resp):
+                    handlers = context.get_order_event_handlers(product, "AS0")
+                    for (handler_node_id, handler_filter, handler_func) in handlers:
+                        try:
+                            handler_func(resp)
+                        except Exception as e:
+                            context.log("error", f"Handler error for {handler_node_id}: {e}", handler_node_id)
+                
+                real_client.AS0().on_as0_message(master_callback)
+                context.log("info", f"Master order event callback registered for {product}", node_id)
+            
+            # ========================================
+            # stay_connected에 따라 등록 방식 결정
+            # ========================================
+            real_client = context.get_order_event_real_client(product)
+            if stay_connected:
+                context.register_persistent(node_id, real_client, metadata={"event_filter": event_filter})
+                context.log("info", f"AS0~AS4 order event subscription started (filter={event_filter}, stay_connected=True)", node_id)
+            else:
+                context.register_cleanup_on_flow_end(node_id, real_client)
+                context.log("info", f"AS0~AS4 order event subscription started (filter={event_filter}, stay_connected=False)", node_id)
+            
+            result = {
+                "status": "subscribed",
+                "product": "overseas_stock",
+                "event_type": "AS0~AS4",
+                "event_filter": event_filter,
+            }
+            
+            asyncio.create_task(context.notify_output_update(
+                node_id=node_id,
+                node_type="RealOrderEventNode",
+                outputs=result,
+            ))
+            
+            return result
+            
+        except Exception as e:
+            context.log("error", f"AS0~AS4 subscription failed: {e}", node_id)
+            return {"error": str(e)}
+
+    async def _ls_futures_order_event(
+        self,
+        ls,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        stay_connected: bool,
+        event_filter: str = "all",
+    ) -> Dict[str, Any]:
+        """해외선물 실시간 주문 이벤트 (TC1/TC2/TC3)
+        
+        TC1: 주문접수 (HO01=ACK, HO04=Pending)
+        TC2: 주문응답 (HO02=확인, HO03=거부)
+        TC3: 주문체결 (CH01=체결)
+        
+        TC1~TC3 중 하나만 등록해도 전체 수신됨.
+        여러 노드가 동시에 사용할 수 있도록 마스터 콜백 패턴 사용:
+        - 첫 번째 노드가 마스터 콜백 등록
+        - 후속 노드들은 핸들러만 등록
+        - 마스터 콜백이 모든 핸들러에게 이벤트 분배
+        """
+        from datetime import datetime
+        
+        product = "overseas_futures"
+        
+        try:
+            # 현재 이벤트 루프 캡처 (콜백에서 사용)
+            loop = asyncio.get_running_loop()
+            
+            # 트리거할 하위 노드 목록
+            trigger_nodes = config.get("_trigger_on_update_nodes", [])
+            
+            # ========================================
+            # 노드별 핸들러 생성 및 등록
+            # ========================================
+            def create_handler(tr_cd: str, _node_id: str, _event_filter: str, _trigger_nodes: list):
+                """특정 노드용 핸들러 생성 (클로저로 값 캡처)"""
+                
+                def handler(resp):
+                    from datetime import datetime
+                    
+                    # event_filter 체크
+                    if _event_filter != "all" and _event_filter != tr_cd:
+                        return
+                    
+                    body = getattr(resp, 'body', resp)
+                    
+                    if tr_cd == "TC1":
+                        event_data = self._parse_tc1_data(body)
+                        port, status_name = self._get_tc1_port_status(event_data)
+                    elif tr_cd == "TC2":
+                        event_data = self._parse_tc2_data(body)
+                        port, status_name = self._get_tc2_port_status(event_data)
+                    elif tr_cd == "TC3":
+                        event_data = self._parse_tc3_data(body)
+                        port, status_name = 'filled', '체결'
+                    else:
+                        return
+                    
+                    event_data["status"] = status_name
+                    context.set_output(_node_id, port, event_data)
+                    
+                    # 콘솔 출력
+                    side_name = "매수" if event_data.get('side') == '2' else "매도"
+                    print(f"\n{'='*60}")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📣 [{_node_id}] 해외선물 {status_name} ({side_name})")
+                    print(f"  종목: {event_data.get('symbol', '')}")
+                    print(f"  주문번호: {event_data.get('order_no', '')}")
+                    print(f"{'='*60}\n")
+                    
+                    # SSE 브로드캐스트
+                    asyncio.run_coroutine_threadsafe(
+                        context.notify_output_update(
+                            node_id=_node_id,
+                            node_type="RealOrderEventNode",
+                            outputs={port: event_data},
+                        ),
+                        loop
+                    )
+                    
+                    # 이벤트 발행
+                    asyncio.run_coroutine_threadsafe(
+                        context.emit_event(
+                            event_type="order_event",
+                            source_node_id=_node_id,
+                            data={port: event_data},
+                            trigger_nodes=_trigger_nodes,
+                        ),
+                        loop
+                    )
+                
+                return handler
+            
+            # 각 TR에 대해 핸들러 등록
+            for tr_cd in ["TC1", "TC2", "TC3"]:
+                handler = create_handler(tr_cd, node_id, event_filter, trigger_nodes)
+                context.register_order_event_handler(product, tr_cd, node_id, event_filter, handler)
+            
+            # ========================================
+            # 마스터 콜백 설정 (첫 번째 노드만)
+            # ========================================
+            if not context.has_order_event_subscription(product):
+                # 실시간 WebSocket 클라이언트 연결
+                real_client = ls.overseas_futureoption().real()
+                if not await real_client.is_connected():
+                    await real_client.connect()
+                
+                context.set_order_event_real_client(product, real_client)
+                
+                # 마스터 콜백: 모든 등록된 핸들러에게 분배
+                def create_master_callback(tr_cd: str):
+                    def master_callback(resp):
+                        handlers = context.get_order_event_handlers(product, tr_cd)
+                        for (handler_node_id, handler_filter, handler_func) in handlers:
+                            try:
+                                handler_func(resp)
+                            except Exception as e:
+                                context.log("error", f"Handler error for {handler_node_id}: {e}", handler_node_id)
+                    return master_callback
+                
+                # TC1, TC2, TC3 마스터 콜백 등록
+                real_client.TC1().on_tc1_message(create_master_callback("TC1"))
+                real_client.TC2().on_tc2_message(create_master_callback("TC2"))
+                real_client.TC3().on_tc3_message(create_master_callback("TC3"))
+                
+                context.log("info", f"Master order event callbacks registered for {product}", node_id)
+            
+            # ========================================
+            # stay_connected에 따라 등록 방식 결정
+            # ========================================
+            real_client = context.get_order_event_real_client(product)
+            if stay_connected:
+                context.register_persistent(node_id, real_client, metadata={"event_filter": event_filter})
+                context.log("info", f"TC1/TC2/TC3 order event subscription started (filter={event_filter}, stay_connected=True)", node_id)
+            else:
+                context.register_cleanup_on_flow_end(node_id, real_client)
+                context.log("info", f"TC1/TC2/TC3 order event subscription started (filter={event_filter}, stay_connected=False)", node_id)
+            
+            result = {
+                "status": "subscribed",
+                "product": "overseas_futures",
+                "event_type": "TC1/TC2/TC3",
+                "event_filter": event_filter,
+            }
+            
+            # 🆕 초기 상태 SSE 브로드캐스트 (UI 반짝임용)
+            asyncio.create_task(context.notify_output_update(
+                node_id=node_id,
+                node_type="RealOrderEventNode",
+                outputs=result,
+            ))
+            
+            return result
+            
+        except Exception as e:
+            context.log("error", f"TC1/TC2/TC3 subscription failed: {e}", node_id)
+            return {"error": str(e)}
+    
+    def _parse_tc1_data(self, body) -> Dict[str, Any]:
+        """TC1 응답 파싱"""
+        from datetime import datetime
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "tr_cd": "TC1",
+            "svc_id": getattr(body, 'svc_id', ''),
+            "order_type": getattr(body, 'ordr_ccd', '1'),
+            "symbol": getattr(body, 'is_cd', ''),
+            "order_no": getattr(body, 'ordr_no', ''),
+            "orig_order_no": getattr(body, 'orgn_ordr_no', ''),
+            "side": getattr(body, 's_b_ccd', ''),
+            "order_qty": int(getattr(body, 'ordr_q', 0) or 0),
+            "order_price": float(getattr(body, 'ordr_prc', 0) or 0),
+            "order_time": getattr(body, 'ordr_tm', ''),
+        }
+    
+    def _get_tc1_port_status(self, event_data: Dict) -> tuple:
+        """TC1 포트 및 상태명 결정"""
+        svc_id = event_data.get("svc_id", "")
+        if svc_id == 'HO01':
+            return 'accepted', '주문접수'
+        elif svc_id == 'HO04':
+            return 'accepted', '주문대기'
+        else:
+            return 'accepted', f'TC1({svc_id})'
+    
+    def _parse_tc2_data(self, body) -> Dict[str, Any]:
+        """TC2 응답 파싱"""
+        from datetime import datetime
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "tr_cd": "TC2",
+            "svc_id": getattr(body, 'svc_id', ''),
+            "order_type": getattr(body, 'ordr_ccd', '1'),
+            "symbol": getattr(body, 'is_cd', ''),
+            "order_no": getattr(body, 'ordr_no', ''),
+            "orig_order_no": getattr(body, 'orgn_ordr_no', ''),
+            "side": getattr(body, 's_b_ccd', ''),
+            "order_qty": int(getattr(body, 'ordr_q', 0) or 0),
+            "order_price": float(getattr(body, 'ordr_prc', 0) or 0),
+            "confirmed_qty": int(getattr(body, 'cnfr_q', 0) or 0),
+            "order_time": getattr(body, 'ordr_tm', ''),
+            "reject_code": getattr(body, 'rfsl_cd', ''),
+            "reject_reason": getattr(body, 'text', ''),
+        }
+    
+    def _get_tc2_port_status(self, event_data: Dict) -> tuple:
+        """TC2 포트 및 상태명 결정"""
+        svc_id = event_data.get("svc_id", "")
+        ordr_ccd = event_data.get("order_type", "1")
+        
+        if svc_id == 'HO03':
+            return 'rejected', '주문거부'
+        elif svc_id == 'HO02':
+            if ordr_ccd == '2':
+                return 'modified', '정정완료'
+            elif ordr_ccd == '3':
+                return 'cancelled', '취소완료'
+            else:
+                return 'accepted', '주문확인'
+        else:
+            return 'accepted', f'TC2({svc_id})'
+    
+    def _parse_tc3_data(self, body) -> Dict[str, Any]:
+        """TC3 응답 파싱"""
+        from datetime import datetime
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "tr_cd": "TC3",
+            "svc_id": getattr(body, 'svc_id', ''),
+            "symbol": getattr(body, 'is_cd', ''),
+            "order_no": getattr(body, 'ordr_no', ''),
+            "orig_order_no": getattr(body, 'orgn_ordr_no', ''),
+            "side": getattr(body, 's_b_ccd', ''),
+            "filled_qty": int(getattr(body, 'ccls_q', 0) or 0),
+            "filled_price": float(getattr(body, 'ccls_prc', 0) or 0),
+            "fill_no": getattr(body, 'ccls_no', ''),
+            "fill_time": getattr(body, 'ccls_tm', ''),
+            "avg_price": float(getattr(body, 'avg_byng_uprc', 0) or 0),
+            "pnl": float(getattr(body, 'clr_pl_amt', 0) or 0),
+            "commission": float(getattr(body, 'ent_fee', 0) or 0),
+            "currency": getattr(body, 'crncy_cd', 'USD'),
+        }
+
+
 class CustomPnLNodeExecutor(NodeExecutorBase):
     """CustomPnLNode executor - 커스텀 수익률 계산 (고급 사용자용)"""
 
@@ -1826,20 +2366,8 @@ class DisplayNodeExecutor(NodeExecutorBase):
             if source_outputs:
                 all_inputs = source_outputs
                 print(f"   [DisplayNode] 소스 노드 '{source_node_id}'에서 직접 데이터 조회: {list(source_outputs.keys())}")
-        else:
-            # _source_node_id가 없으면 input 키에서 positions가 있는 노드 찾기
-            if all_inputs.get("positions"):
-                pass  # 이미 all_inputs에 있음
-            else:
-                # 모든 출력 중 positions를 가진 노드 찾기
-                for ns in context._outputs.keys():
-                    if ns.startswith("_input_"):
-                        continue
-                    ns_outputs = context.get_all_outputs(ns)
-                    if ns_outputs and "positions" in ns_outputs:
-                        all_inputs = ns_outputs
-                        print(f"   [DisplayNode] 노드 '{ns}'에서 positions 데이터 발견")
-                        break
+        # ⚠️ positions fallback 로직 제거 - 상위 노드 출력만 사용해야 함
+        # RealOrderEventNode 등의 출력이 다른 노드의 positions로 덮어씁히는 문제 방지
         
         # 디버깅: 입력 데이터 확인
         print(f"\n🔍 DisplayNode '{node_id}' 입력 데이터:")
@@ -3990,6 +4518,7 @@ class WorkflowExecutor:
             "AccountNode": AccountNodeExecutor(),  # 1회성 REST API 조회
             "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
             "RealMarketDataNode": RealMarketDataNodeExecutor(),
+            "RealOrderEventNode": RealOrderEventNodeExecutor(),  # 실시간 주문 이벤트
             "CustomPnLNode": CustomPnLNodeExecutor(),
             "DisplayNode": DisplayNodeExecutor(),
             "ConditionNode": ConditionNodeExecutor(),
@@ -4243,7 +4772,7 @@ class WorkflowJob:
         result = []
         for node_id, node in self.workflow.nodes.items():
             # 실시간 노드 (stay_connected 설정)
-            if node.node_type in ("RealAccountNode", "RealMarketDataNode"):
+            if node.node_type in ("RealAccountNode", "RealMarketDataNode", "RealOrderEventNode"):
                 if node.config.get("stay_connected", True):
                     result.append(node_id)
             # 영속 노드 (백그라운드 태스크를 등록하는 노드)
@@ -4370,6 +4899,12 @@ class WorkflowJob:
             trigger_nodes = self._find_trigger_nodes(node_id)
             if trigger_nodes:
                 config["_trigger_on_update_nodes"] = trigger_nodes
+            
+            # 🆕 상위 노드 ID를 config에 추가 (DisplayNode 등에서 사용)
+            for edge in self.workflow.edges:
+                if edge.to_node_id == node_id:
+                    config["_source_node_id"] = edge.from_node_id
+                    break  # 첫 번째 상위 노드만 사용
             
             # Resolve expressions in config ({{ input.xxx }}, {{ nodeId.port }})
             config = self._resolve_config_expressions(config)
@@ -4535,6 +5070,11 @@ class WorkflowJob:
             if event.type == "realtime_update":
                 self.stats["realtime_updates"] += 1
                 await self._handle_realtime_update(event)
+            
+            elif event.type == "order_event":
+                # 주문 이벤트도 실시간 업데이트와 동일하게 처리
+                self.stats["realtime_updates"] += 1
+                await self._handle_realtime_update(event)
                 
             elif event.type == "schedule_tick":
                 self.stats["flow_executions"] += 1
@@ -4546,19 +5086,30 @@ class WorkflowJob:
         """
         Handle realtime update event
         
-        Re-executes nodes specified in trigger_nodes (from edge trigger: "on_update")
+        Re-executes nodes specified in trigger_nodes and their downstream nodes.
+        Follows topological order to ensure proper data flow.
         """
         from datetime import datetime
         print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 실시간 업데이트 이벤트 수신: trigger_nodes={event.trigger_nodes}")
         
-        if not event.trigger_nodes:
+        # trigger_nodes가 비어있으면 source_node_id에서 연결된 하위 노드 찾기
+        trigger_nodes = event.trigger_nodes
+        if not trigger_nodes and event.source_node_id:
+            trigger_nodes = self._find_trigger_nodes(event.source_node_id)
+            print(f"  → 자동 탐색된 trigger_nodes: {trigger_nodes}")
+        
+        if not trigger_nodes:
             print(f"  ⚠️ 트리거할 노드 없음, 스킵")
             return
         
-        logger.debug(f"Realtime update from {event.source_node_id}, triggering: {event.trigger_nodes}")
-        print(f"  → {event.source_node_id}에서 트리거: {event.trigger_nodes}")
+        logger.debug(f"Realtime update from {event.source_node_id}, triggering: {trigger_nodes}")
+        print(f"  → {event.source_node_id}에서 트리거: {trigger_nodes}")
         
-        for node_id in event.trigger_nodes:
+        # 🆕 트리거된 노드들 + 하위 노드들을 모두 찾아서 실행 순서대로 정렬
+        nodes_to_execute = self._find_downstream_nodes(trigger_nodes)
+        print(f"  → 실행할 노드 체인: {nodes_to_execute}")
+        
+        for node_id in nodes_to_execute:
             if not self.context.is_running:
                 break
             
@@ -4566,8 +5117,14 @@ class WorkflowJob:
             if not node:
                 continue
             
+            # 실시간 노드는 이미 실행 중이므로 스킵 (무한 루프 방지)
+            if node.node_type in ("RealAccountNode", "RealMarketDataNode", "RealOrderEventNode"):
+                continue
+            
             # Re-execute the triggered node
             try:
+                print(f"    ▶ Re-executing: {node_id} ({node.node_type})")
+                
                 # 소스 노드 ID를 config에 추가하여 최신 데이터 참조 가능하게
                 config_with_source = dict(node.config)
                 config_with_source["_source_node_id"] = event.source_node_id
@@ -4576,6 +5133,21 @@ class WorkflowJob:
                 # emit_event에서 전달된 데이터를 사용하면 타이밍 문제 해결
                 if event.data:
                     config_with_source["_realtime_data"] = event.data
+                
+                # 🆕 입력 데이터 준비 (상위 노드 출력 연결)
+                for edge in self.workflow.edges:
+                    if edge.to_node_id == node_id:
+                        all_outputs = self.context.get_all_outputs(edge.from_node_id)
+                        if all_outputs:
+                            for port_name, port_value in all_outputs.items():
+                                self.context.set_output(
+                                    f"_input_{node_id}",
+                                    port_name,
+                                    port_value,
+                                )
+                
+                # Resolve expressions in config
+                config_with_source = self._resolve_config_expressions(config_with_source)
                 
                 outputs = await self.executor.execute_node(
                     node_id=node_id,
@@ -4588,10 +5160,39 @@ class WorkflowJob:
                 
                 for port_name, value in outputs.items():
                     self.context.set_output(node_id, port_name, value)
+                
+                # 🆕 노드 실행 완료 알림 (UI 업데이트용)
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.COMPLETED,
+                    outputs=outputs,
+                )
                     
             except Exception as e:
                 self.context.log("error", f"Error in triggered node {node_id}: {e}", node_id)
                 self.stats["errors_count"] += 1
+    
+    def _find_downstream_nodes(self, start_nodes: List[str]) -> List[str]:
+        """
+        Find all downstream nodes from start_nodes in topological order.
+        
+        Returns nodes that need to be re-executed when realtime update occurs.
+        """
+        # BFS로 하위 노드 찾기
+        downstream = set(start_nodes)
+        queue = list(start_nodes)
+        
+        while queue:
+            current = queue.pop(0)
+            for edge in self.workflow.edges:
+                if edge.from_node_id == current and edge.to_node_id not in downstream:
+                    downstream.add(edge.to_node_id)
+                    queue.append(edge.to_node_id)
+        
+        # 토폴로지 순서대로 정렬 (workflow.execution_order 기준)
+        ordered = [n for n in self.workflow.execution_order if n in downstream]
+        return ordered
 
     async def pause(self) -> None:
         """Pause execution"""

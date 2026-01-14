@@ -53,8 +53,14 @@ class TestProductMismatch:
         ctx = self._create_context("overseas_futures", "overseas_stock")
         executor = RealMarketDataNodeExecutor()
         
+        # connection 바인딩 필수: broker는 overseas_futures, watchlist는 overseas_stock
+        config = {
+            "connection": {"provider": "ls-sec.co.kr", "product": "overseas_futures"},
+            "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
+        }
+        
         with pytest.raises(ValidationError) as exc_info:
-            await executor.execute("realMarket", "RealMarketDataNode", {}, ctx)
+            await executor.execute("realMarket", "RealMarketDataNode", config, ctx)
         
         assert "Product mismatch" in str(exc_info.value)
         assert "overseas_futures" in str(exc_info.value)
@@ -66,8 +72,14 @@ class TestProductMismatch:
         ctx = self._create_context("overseas_stock", "overseas_stock")
         executor = RealMarketDataNodeExecutor()
         
+        # connection 바인딩 필수
+        config = {
+            "connection": {"provider": "ls-sec.co.kr", "product": "overseas_stock"},
+            "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
+        }
+        
         # 에러 없이 실행되어야 함
-        result = await executor.execute("realMarket", "RealMarketDataNode", {}, ctx)
+        result = await executor.execute("realMarket", "RealMarketDataNode", config, ctx)
         
         assert "price" in result
         assert "AAPL" in result["price"]
@@ -78,7 +90,13 @@ class TestProductMismatch:
         ctx = self._create_context("overseas_futures", "overseas_futures")
         executor = RealMarketDataNodeExecutor()
         
-        result = await executor.execute("realMarket", "RealMarketDataNode", {}, ctx)
+        # connection 바인딩 필수
+        config = {
+            "connection": {"provider": "ls-sec.co.kr", "product": "overseas_futures"},
+            "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
+        }
+        
+        result = await executor.execute("realMarket", "RealMarketDataNode", config, ctx)
         
         assert "price" in result
 
@@ -91,17 +109,25 @@ if __name__ == "__main__":
         print("Test 1: Product mismatch should raise error...")
         ctx = test._create_context("overseas_futures", "overseas_stock")
         executor = RealMarketDataNodeExecutor()
+        config = {
+            "connection": {"provider": "ls-sec.co.kr", "product": "overseas_futures"},
+            "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
+        }
         
         try:
-            await executor.execute("realMarket", "RealMarketDataNode", {}, ctx)
+            await executor.execute("realMarket", "RealMarketDataNode", config, ctx)
             print("❌ FAIL: Should have raised an error")
         except ValidationError as e:
             print(f"✅ PASS: {e}")
         
         print("\nTest 2: Same product should work...")
         ctx = test._create_context("overseas_stock", "overseas_stock")
+        config = {
+            "connection": {"provider": "ls-sec.co.kr", "product": "overseas_stock"},
+            "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
+        }
         try:
-            result = await executor.execute("realMarket", "RealMarketDataNode", {}, ctx)
+            result = await executor.execute("realMarket", "RealMarketDataNode", config, ctx)
             print(f"✅ PASS: {result.get('price', {})}")
         except Exception as e:
             print(f"❌ FAIL: {e}")

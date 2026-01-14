@@ -183,6 +183,14 @@ class ExecutionContext:
         # Stores trackers/connections that should stay alive between flow executions
         self._persistent_nodes: Dict[str, Any] = {}  # node_id -> tracker/connection
         self._persistent_tasks: Dict[str, asyncio.Task] = {}  # node_id -> background task
+        self._persistent_metadata: Dict[str, Dict[str, Any]] = {}  # node_id -> {key: value}
+        
+        # === New: Order Event Dispatcher ===
+        # Multiple RealOrderEventNodes can subscribe to same TR codes
+        # One master callback dispatches to all registered handlers
+        # {product: {tr_cd: [(node_id, event_filter, handler)]}}
+        self._order_event_handlers: Dict[str, Dict[str, List[tuple]]] = {}
+        self._order_event_real_client: Dict[str, Any] = {}  # {product: real_client}
         
         # === New: Cleanup on flow end (stay_connected=False) ===
         # Stores trackers that should be cleaned up after each flow execution
@@ -687,16 +695,19 @@ class ExecutionContext:
 
     # === Persistent Node Management ===
 
-    def register_persistent(self, node_id: str, tracker: Any) -> None:
+    def register_persistent(self, node_id: str, tracker: Any, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
         Register a persistent tracker/connection
         
         Args:
             node_id: Node ID
             tracker: StockAccountTracker or similar object with start()/stop()
+            metadata: Optional metadata (e.g., {"event_filter": "TC1"})
         """
         self._persistent_nodes[node_id] = tracker
-        logger.debug(f"Registered persistent node: {node_id}")
+        if metadata:
+            self._persistent_metadata[node_id] = metadata
+        logger.debug(f"Registered persistent node: {node_id}, metadata={metadata}")
 
     def get_persistent(self, node_id: str) -> Optional[Any]:
         """Get registered persistent tracker"""
@@ -705,10 +716,117 @@ class ExecutionContext:
     def has_persistent(self, node_id: str) -> bool:
         """Check if node has persistent tracker"""
         return node_id in self._persistent_nodes
+    
+    def get_persistent_metadata(self, node_id: str, key: str) -> Optional[Any]:
+        """Get metadata value for a persistent node"""
+        metadata = self._persistent_metadata.get(node_id, {})
+        return metadata.get(key)
+    
+    async def cleanup_persistent(self, node_id: str) -> None:
+        """
+        Cleanup a single persistent node (e.g., when event_filter changes)
+        
+        Args:
+            node_id: Node ID to cleanup
+        """
+        tracker = self._persistent_nodes.pop(node_id, None)
+        if tracker:
+            try:
+                if hasattr(tracker, 'stop'):
+                    if asyncio.iscoroutinefunction(tracker.stop):
+                        await tracker.stop()
+                    else:
+                        tracker.stop()
+                logger.debug(f"Stopped persistent node: {node_id}")
+            except Exception as e:
+                logger.warning(f"Error stopping persistent node {node_id}: {e}")
+        
+        # Cleanup background task
+        task = self._persistent_tasks.pop(node_id, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            logger.debug(f"Cancelled persistent task: {node_id}")
+        
+        # Cleanup metadata
+        self._persistent_metadata.pop(node_id, None)
+        
+        # Cleanup order event handlers for this node
+        self._remove_order_event_handler(node_id)
 
     def register_persistent_task(self, node_id: str, task: asyncio.Task) -> None:
         """Register background task for persistent node"""
         self._persistent_tasks[node_id] = task
+
+    # === Order Event Dispatcher ===
+    
+    def register_order_event_handler(
+        self,
+        product: str,
+        tr_cd: str,
+        node_id: str,
+        event_filter: str,
+        handler: Callable,
+    ) -> None:
+        """
+        Register a handler for order events.
+        
+        Multiple nodes can register handlers for the same TR code.
+        The master callback will dispatch to all registered handlers.
+        
+        Args:
+            product: 'overseas_futures' or 'overseas_stock'
+            tr_cd: TR code (TC1, TC2, TC3 for futures; AS0~AS4 for stocks)
+            node_id: Node ID
+            event_filter: 'all' or specific TR code
+            handler: Callback function(resp) -> None
+        """
+        if product not in self._order_event_handlers:
+            self._order_event_handlers[product] = {}
+        if tr_cd not in self._order_event_handlers[product]:
+            self._order_event_handlers[product][tr_cd] = []
+        
+        # Remove existing handler for this node (if any)
+        self._order_event_handlers[product][tr_cd] = [
+            h for h in self._order_event_handlers[product][tr_cd]
+            if h[0] != node_id
+        ]
+        
+        # Add new handler
+        self._order_event_handlers[product][tr_cd].append((node_id, event_filter, handler))
+        logger.debug(f"Registered order event handler: product={product}, tr_cd={tr_cd}, node_id={node_id}, filter={event_filter}")
+    
+    def _remove_order_event_handler(self, node_id: str) -> None:
+        """Remove all handlers for a specific node"""
+        for product in self._order_event_handlers:
+            for tr_cd in self._order_event_handlers[product]:
+                self._order_event_handlers[product][tr_cd] = [
+                    h for h in self._order_event_handlers[product][tr_cd]
+                    if h[0] != node_id
+                ]
+    
+    def get_order_event_handlers(self, product: str, tr_cd: str) -> List[tuple]:
+        """Get all handlers for a specific product and TR code"""
+        if product not in self._order_event_handlers:
+            return []
+        if tr_cd not in self._order_event_handlers[product]:
+            return []
+        return self._order_event_handlers[product][tr_cd]
+    
+    def has_order_event_subscription(self, product: str) -> bool:
+        """Check if there's already a master subscription for this product"""
+        return product in self._order_event_real_client
+    
+    def set_order_event_real_client(self, product: str, real_client: Any) -> None:
+        """Store the real_client for a product (for master subscription)"""
+        self._order_event_real_client[product] = real_client
+    
+    def get_order_event_real_client(self, product: str) -> Optional[Any]:
+        """Get the real_client for a product"""
+        return self._order_event_real_client.get(product)
 
     async def cleanup_persistent_nodes(self) -> None:
         """
@@ -738,6 +856,7 @@ class ExecutionContext:
         
         self._persistent_nodes.clear()
         self._persistent_tasks.clear()
+        self._persistent_metadata.clear()
 
     # === Cleanup on Flow End (stay_connected=False) ===
 

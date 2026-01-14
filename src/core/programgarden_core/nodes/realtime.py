@@ -336,6 +336,30 @@ class RealOrderEventNode(BaseNode):
 
     # 브로커 연결 필드 (명시적 바인딩 필수)
     connection: Optional[Dict] = None  # BrokerNode의 connection 출력
+    
+    # 상품 유형 선택 (해외주식/해외선물)
+    product_type: str = Field(
+        default="overseas_stock",
+        description="i18n:fields.RealOrderEventNode.product_type"
+    )
+    
+    # 이벤트 필터 - 해외주식 (특정 TR만 수신: all, AS0~AS4)
+    event_filter: str = Field(
+        default="all",
+        description="i18n:fields.RealOrderEventNode.event_filter"
+    )
+    
+    # 이벤트 필터 - 해외선물 (특정 TR만 수신: all, TC1~TC3)
+    event_filter_futures: str = Field(
+        default="all",
+        description="i18n:fields.RealOrderEventNode.event_filter_futures"
+    )
+    
+    # WebSocket 연결 유지 여부
+    stay_connected: bool = Field(
+        default=True,
+        description="i18n:fields.RealOrderEventNode.stay_connected"
+    )
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -345,19 +369,22 @@ class RealOrderEventNode(BaseNode):
         ),
     ]
     _outputs: List[OutputPort] = [
+        OutputPort(name="accepted", type="order_event", description="i18n:ports.accepted"),
         OutputPort(name="filled", type="order_event", description="i18n:ports.filled"),
-        OutputPort(name="rejected", type="order_event", description="i18n:ports.rejected"),
+        OutputPort(name="modified", type="order_event", description="i18n:ports.modified"),
         OutputPort(name="cancelled", type="order_event", description="i18n:ports.cancelled"),
+        OutputPort(name="rejected", type="order_event", description="i18n:ports.rejected"),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                description="i18n:fields.RealOrderEventNode.connection",
                 required=True,
                 bindable=True,
                 expression_enabled=True,
@@ -366,5 +393,64 @@ class RealOrderEventNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
+            ),
+            # === PARAMETERS: 상품 유형 선택 ===
+            "product_type": FieldSchema(
+                name="product_type",
+                type=FieldType.ENUM,
+                description="i18n:fields.RealOrderEventNode.product_type",
+                default="overseas_stock",
+                enum_values=["overseas_stock", "overseas_futures"],
+                enum_labels={
+                    "overseas_stock": "해외주식",
+                    "overseas_futures": "해외선물"
+                },
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+            ),
+            # === PARAMETERS: 이벤트 필터 (해외주식) ===
+            "event_filter": FieldSchema(
+                name="event_filter",
+                type=FieldType.ENUM,
+                description="i18n:fields.RealOrderEventNode.event_filter",
+                default="all",
+                enum_values=["all", "AS0", "AS1", "AS2", "AS3", "AS4"],
+                enum_labels={
+                    "all": "전체 (AS0~AS4)",
+                    "AS0": "AS0 (주문접수)",
+                    "AS1": "AS1 (주문체결)",
+                    "AS2": "AS2 (주문정정)",
+                    "AS3": "AS3 (주문취소)",
+                    "AS4": "AS4 (주문거부)",
+                },
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                visible_when={"product_type": "overseas_stock"},
+            ),
+            # === PARAMETERS: 이벤트 필터 (해외선물) ===
+            "event_filter_futures": FieldSchema(
+                name="event_filter_futures",
+                type=FieldType.ENUM,
+                description="i18n:fields.RealOrderEventNode.event_filter_futures",
+                default="all",
+                enum_values=["all", "TC1", "TC2", "TC3"],
+                enum_labels={
+                    "all": "전체 (TC1~TC3)",
+                    "TC1": "TC1 (주문접수)",
+                    "TC2": "TC2 (주문확인/거부)",
+                    "TC3": "TC3 (체결)",
+                },
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                visible_when={"product_type": "overseas_futures"},
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "stay_connected": FieldSchema(
+                name="stay_connected",
+                type=FieldType.BOOLEAN,
+                description="i18n:fields.RealOrderEventNode.stay_connected",
+                default=True,
+                category=FieldCategory.SETTINGS,
+                bindable=False,
             ),
         }

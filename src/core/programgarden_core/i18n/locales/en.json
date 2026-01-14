@@ -55,6 +55,8 @@
   "nodes.AccountNode.name": "Account",
   "nodes.AccountNode.description": "REST API account query.",
   
+  "fields.AccountNode.product_type": "Select product type. Must match the product connected from BrokerNode.",
+  
   "nodes.SQLiteNode.name": "SQLite",
   "nodes.SQLiteNode.description": "SQLite database query/storage.",
   
@@ -185,9 +187,11 @@
   "ports.start": "Start signal",
   "ports.bid": "Bid price",
   "ports.ask": "Ask price",
+  "ports.accepted": "Order accepted",
   "ports.filled": "Order filled",
-  "ports.rejected": "Order rejected",
+  "ports.modified": "Order modified",
   "ports.cancelled": "Order cancelled",
+  "ports.rejected": "Order rejected",
   "ports.market_data_full": "Full market data",
   "ports.subscribed_symbols": "Subscribed symbols list",
   "ports.open": "Exchange open",
@@ -261,6 +265,12 @@
   "fields.RealAccountNode.commission_rate": "Overseas stocks trading commission rate (%). LS Securities default 0.25%",
   "fields.RealAccountNode.tax_rate": "Overseas stocks transaction tax rate (%). US 0%, HK 0.1%, JP 0%",
   "fields.RealAccountNode.futures_fee_per_contract": "Futures fee per contract (USD, one-way). LS Securities default $7.5",
+
+  "fields.RealOrderEventNode.connection": "Broker connection info. Add a BrokerNode first, then bind its connection output here.",
+  "fields.RealOrderEventNode.product_type": "Select product type. Must match the product from BrokerNode.",
+  "fields.RealOrderEventNode.event_filter": "Overseas stock event filter. Output all (AS0~AS4) or specific TR only.",
+  "fields.RealOrderEventNode.event_filter_futures": "Overseas futures event filter. Output all (TC1~TC3) or specific TR only.",
+  "fields.RealOrderEventNode.stay_connected": "Keep WebSocket connection alive between flow executions.",
 
   "fields.ScheduleNode.cron": "Cron expression (e.g., */5 * * * * = every 5 minutes)",
   "fields.ScheduleNode.timezone": "Timezone",

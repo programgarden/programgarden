@@ -1,0 +1,70 @@
+{
+  "id": "test_multi_order_event",
+  "name": "다중 실시간주문이벤트 테스트",
+  "description": "TC1, TC3 필터를 각각 사용하는 두 개의 RealOrderEventNode 테스트",
+  "nodes": [
+    {
+      "id": "start_1",
+      "type": "StartNode",
+      "position": {"x": 100, "y": 200}
+    },
+    {
+      "id": "broker_2",
+      "type": "BrokerNode",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_futures",
+      "credential_id": "ls-futures",
+      "position": {"x": 300, "y": 200}
+    },
+    {
+      "id": "order_event_tc1",
+      "type": "RealOrderEventNode",
+      "connection": "{{ nodes.broker_2.connection }}",
+      "product_type": "overseas_futures",
+      "event_filter_futures": "TC1",
+      "stay_connected": true,
+      "position": {"x": 550, "y": 100}
+    },
+    {
+      "id": "order_event_tc3",
+      "type": "RealOrderEventNode",
+      "connection": "{{ nodes.broker_2.connection }}",
+      "product_type": "overseas_futures",
+      "event_filter_futures": "TC3",
+      "stay_connected": true,
+      "position": {"x": 550, "y": 300}
+    },
+    {
+      "id": "display_tc1",
+      "type": "DisplayNode",
+      "title": "TC1 주문접수",
+      "source": "{{ nodes.order_event_tc1 }}",
+      "position": {"x": 800, "y": 100}
+    },
+    {
+      "id": "display_tc3",
+      "type": "DisplayNode",
+      "title": "TC3 체결",
+      "source": "{{ nodes.order_event_tc3 }}",
+      "position": {"x": 800, "y": 300}
+    }
+  ],
+  "edges": [
+    {"from": "start_1", "to": "broker_2"},
+    {"from": "broker_2", "to": "order_event_tc1"},
+    {"from": "broker_2", "to": "order_event_tc3"},
+    {"from": "order_event_tc1", "to": "display_tc1"},
+    {"from": "order_event_tc3", "to": "display_tc3"}
+  ],
+  "credentials": [
+    {
+      "id": "ls-futures",
+      "type": "broker_ls",
+      "name": "LS증권 해외선물",
+      "data": {
+        "appkey": "",
+        "appsecret": ""
+      }
+    }
+  ]
+}

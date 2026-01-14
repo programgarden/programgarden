@@ -72,6 +72,15 @@ export const NODE_LABELS: Record<string, NodeLabelInfo> = {
   
   // Realtime
   RealAccountNode: { ko: '실시간 계좌', en: 'Real-time Account' },
+  RealOrderEventNode: { ko: '실시간 주문 이벤트', en: 'Real-time Order Event' },
+  
+  // Market
+  MarketUniverseNode: { ko: '시장 유니버스', en: 'Market Universe' },
+  SymbolFilterNode: { ko: '종목 필터', en: 'Symbol Filter' },
+  ExchangeStatusNode: { ko: '거래소 상태', en: 'Exchange Status' },
+  
+  // HTTP
+  HTTPRequestNode: { ko: 'HTTP 요청', en: 'HTTP Request' },
 };
 
 /**
