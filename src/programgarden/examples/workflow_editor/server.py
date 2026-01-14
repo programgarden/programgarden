@@ -403,6 +403,42 @@ async def get_categories(locale: str = "ko"):
         return JSONResponse({"error": str(e), "categories": []}, status_code=500)
 
 
+@app.get("/api/translations")
+async def get_translations(prefix: str = "outputs", locale: str = "ko"):
+    """
+    번역 문자열 반환 (특정 접두사로 필터링)
+    
+    Args:
+        prefix: 번역 키 접두사 (outputs, fields, nodes, ports 등)
+        locale: 언어 코드 (ko, en)
+    
+    Returns:
+        접두사로 시작하는 모든 번역 키-값 쌍
+    """
+    try:
+        from programgarden_core.i18n.translator import _load_locale, set_locale
+        
+        set_locale(locale)
+        translations = _load_locale(locale)
+        
+        # 접두사로 필터링
+        filtered = {
+            k: v for k, v in translations.items()
+            if k.startswith(f"{prefix}.")
+        }
+        
+        return JSONResponse({
+            "translations": filtered,
+            "locale": locale,
+            "prefix": prefix,
+            "count": len(filtered)
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e), "translations": {}}, status_code=500)
+
+
 # ========================================
 # Plugin Registry API (플러그인 목록 조회)
 # ========================================

@@ -46,12 +46,14 @@ export default function InputTab({
 
         const nodeLabel = (node.data as Record<string, unknown>).label as string 
           || (node.data as Record<string, unknown>).nodeType as string;
+        const nodeType = (node.data as Record<string, unknown>).nodeType as string | undefined;
 
         return (
           <NodeDataTree
             key={node.id}
             nodeId={node.id}
             nodeLabel={nodeLabel}
+            nodeType={nodeType}
             data={nodeData}
             onFieldClick={onFieldClick}
           />

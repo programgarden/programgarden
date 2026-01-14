@@ -396,6 +396,61 @@
   "enums.operator.exactly": "Exactly N",
   "enums.operator.weighted": "Weighted Sum",
 
+  "outputs.common.status": "Current connection status (subscribed/unsubscribed)",
+  "outputs.common.product": "Product type (overseas_stock/overseas_futures)",
+  "outputs.common.error": "Error message if an error occurred",
+
+  "outputs.BrokerNode.connection": "Broker connection info. Connect to other nodes' connection input.",
+  "outputs.BrokerNode.provider": "Broker provider (e.g., ls-sec.co.kr)",
+  "outputs.BrokerNode.product": "Product type (overseas_stock/overseas_futures)",
+  "outputs.BrokerNode.paper_trading": "Paper trading mode (true: paper, false: live)",
+
+  "outputs.RealMarketDataNode.status": "WebSocket connection status",
+  "outputs.RealMarketDataNode.symbols": "Currently subscribed symbol list",
+  "outputs.RealMarketDataNode.price": "Current price by symbol (e.g., {\"AAPL\": 185.50})",
+  "outputs.RealMarketDataNode.volume": "Volume by symbol",
+  "outputs.RealMarketDataNode.bid": "Bid price by symbol",
+  "outputs.RealMarketDataNode.ask": "Ask price by symbol",
+  "outputs.RealMarketDataNode.data": "Full market data (includes price, volume, bid, ask)",
+
+  "outputs.RealAccountNode.status": "WebSocket connection status",
+  "outputs.RealAccountNode.held_symbols": "Currently held symbol list",
+  "outputs.RealAccountNode.balance": "Account balance info (cash, equity, etc.)",
+  "outputs.RealAccountNode.open_orders": "Open orders list",
+  "outputs.RealAccountNode.positions": "Position details (symbol, qty, avg price, P&L, etc.)",
+
+  "outputs.RealOrderEventNode.status": "WebSocket connection status (subscribed)",
+  "outputs.RealOrderEventNode.product": "Product type (overseas_stock/overseas_futures)",
+  "outputs.RealOrderEventNode.event_type": "Available event types (AS0~AS4 or TC1~TC3)",
+  "outputs.RealOrderEventNode.event_filter": "Currently filtering event (all or specific TR code)",
+  "outputs.RealOrderEventNode.accepted": "Order accepted event (new/modify/cancel accepted)",
+  "outputs.RealOrderEventNode.filled": "Order filled event (partial/full fill)",
+  "outputs.RealOrderEventNode.modified": "Order modification completed event",
+  "outputs.RealOrderEventNode.cancelled": "Order cancellation completed event",
+  "outputs.RealOrderEventNode.rejected": "Order rejected event (includes rejection reason)",
+
+  "outputs.AccountNode.held_symbols": "Currently held symbol list",
+  "outputs.AccountNode.balance": "Account balance info",
+  "outputs.AccountNode.open_orders": "Open orders list",
+  "outputs.AccountNode.positions": "Position details",
+
+  "outputs.WatchlistNode.symbols": "Watchlist symbol codes",
+
+  "outputs.ScheduleNode.trigger": "Schedule trigger signal",
+  "outputs.ScheduleNode.next_run": "Next scheduled run time",
+  "outputs.ScheduleNode.last_run": "Last run time",
+
+  "outputs.ConditionNode.passed_symbols": "Symbols that passed the condition",
+  "outputs.ConditionNode.failed_symbols": "Symbols that failed the condition",
+  "outputs.ConditionNode.values": "Calculated values used for condition (e.g., RSI, MACD)",
+
+  "outputs.NewOrderNode.order_result": "Order execution result",
+  "outputs.NewOrderNode.order_ids": "Order ID list",
+  "outputs.NewOrderNode.submitted_orders": "Submitted order details",
+
+  "outputs.PositionSizingNode.quantities": "Calculated order quantities by symbol",
+  "outputs.PositionSizingNode.allocation": "Capital allocation ratio",
+
   "errors.VALIDATION_ERROR": "Workflow validation error",
   "errors.EXECUTION_ERROR": "Workflow execution error",
   "errors.CREDENTIAL_ERROR": "Credential error",

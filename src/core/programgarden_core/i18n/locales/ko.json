@@ -417,6 +417,61 @@
   "enums.operator.exactly": "정확히 N개",
   "enums.operator.weighted": "가중치 합",
 
+  "outputs.common.status": "현재 연결 상태 (subscribed: 구독중, unsubscribed: 구독해제)",
+  "outputs.common.product": "상품 유형 (overseas_stock: 해외주식, overseas_futures: 해외선물)",
+  "outputs.common.error": "에러 발생 시 에러 메시지",
+
+  "outputs.BrokerNode.connection": "증권사 연결 정보. 다른 노드의 connection 입력에 연결하세요.",
+  "outputs.BrokerNode.provider": "증권사 제공자 (예: ls-sec.co.kr)",
+  "outputs.BrokerNode.product": "상품 유형 (overseas_stock: 해외주식, overseas_futures: 해외선물)",
+  "outputs.BrokerNode.paper_trading": "모의투자 여부 (true: 모의투자, false: 실계좌)",
+
+  "outputs.RealMarketDataNode.status": "WebSocket 연결 상태",
+  "outputs.RealMarketDataNode.symbols": "현재 구독 중인 종목 코드 리스트",
+  "outputs.RealMarketDataNode.price": "종목별 현재가 (예: {\"AAPL\": 185.50})",
+  "outputs.RealMarketDataNode.volume": "종목별 거래량",
+  "outputs.RealMarketDataNode.bid": "종목별 매수호가",
+  "outputs.RealMarketDataNode.ask": "종목별 매도호가",
+  "outputs.RealMarketDataNode.data": "전체 시세 데이터 (price, volume, bid, ask 포함)",
+
+  "outputs.RealAccountNode.status": "WebSocket 연결 상태",
+  "outputs.RealAccountNode.held_symbols": "현재 보유 중인 종목 코드 리스트",
+  "outputs.RealAccountNode.balance": "계좌 잔고 정보 (예수금, 평가금액 등)",
+  "outputs.RealAccountNode.open_orders": "미체결 주문 목록",
+  "outputs.RealAccountNode.positions": "보유 포지션 상세 정보 (종목, 수량, 평균단가, 손익 등)",
+
+  "outputs.RealOrderEventNode.status": "WebSocket 연결 상태 (subscribed: 구독중)",
+  "outputs.RealOrderEventNode.product": "상품 유형 (overseas_stock: 해외주식, overseas_futures: 해외선물)",
+  "outputs.RealOrderEventNode.event_type": "수신 가능한 이벤트 종류 (AS0~AS4 또는 TC1~TC3)",
+  "outputs.RealOrderEventNode.event_filter": "현재 필터링 중인 이벤트 (all: 전체, 또는 특정 TR코드)",
+  "outputs.RealOrderEventNode.accepted": "주문 접수 이벤트 (신규/정정/취소 접수 시 발생)",
+  "outputs.RealOrderEventNode.filled": "주문 체결 이벤트 (일부/전량 체결 시 발생)",
+  "outputs.RealOrderEventNode.modified": "주문 정정 완료 이벤트",
+  "outputs.RealOrderEventNode.cancelled": "주문 취소 완료 이벤트",
+  "outputs.RealOrderEventNode.rejected": "주문 거부 이벤트 (거부 사유 포함)",
+
+  "outputs.AccountNode.held_symbols": "현재 보유 중인 종목 코드 리스트",
+  "outputs.AccountNode.balance": "계좌 잔고 정보",
+  "outputs.AccountNode.open_orders": "미체결 주문 목록",
+  "outputs.AccountNode.positions": "보유 포지션 상세 정보",
+
+  "outputs.WatchlistNode.symbols": "관심종목 코드 리스트",
+
+  "outputs.ScheduleNode.trigger": "스케줄 트리거 신호",
+  "outputs.ScheduleNode.next_run": "다음 실행 예정 시간",
+  "outputs.ScheduleNode.last_run": "마지막 실행 시간",
+
+  "outputs.ConditionNode.passed_symbols": "조건을 통과한 종목 리스트",
+  "outputs.ConditionNode.failed_symbols": "조건을 통과하지 못한 종목 리스트",
+  "outputs.ConditionNode.values": "조건 판단에 사용된 계산값 (예: RSI, MACD)",
+
+  "outputs.NewOrderNode.order_result": "주문 실행 결과",
+  "outputs.NewOrderNode.order_ids": "주문번호 목록",
+  "outputs.NewOrderNode.submitted_orders": "제출된 주문 상세 정보",
+
+  "outputs.PositionSizingNode.quantities": "계산된 종목별 주문 수량",
+  "outputs.PositionSizingNode.allocation": "자금 배분 비율",
+
   "errors.VALIDATION_ERROR": "워크플로우 검증 오류",
   "errors.EXECUTION_ERROR": "워크플로우 실행 오류",
   "errors.CREDENTIAL_ERROR": "인증 정보 오류",
