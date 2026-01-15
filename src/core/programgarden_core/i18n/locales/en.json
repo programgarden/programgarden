@@ -467,5 +467,9 @@
   "errors.PLUGIN_NOT_FOUND": "Plugin not found: {plugin_id}",
   "errors.INVALID_EDGE": "Invalid edge connection: {from_node} → {to_node}",
   "errors.CYCLE_DETECTED": "Cycle detected in workflow",
-  "errors.REQUIRED_INPUT_MISSING": "Required input missing: {input_name}"
+  "errors.REQUIRED_INPUT_MISSING": "Required input is missing: {input_name}",
+  "errors.CREDENTIAL_NOT_SET": "Credential is not set. Check BrokerNode's credential_id.",
+  "errors.LS_LOGIN_FAILED": "LS login failed: {error}",
+  "errors.FINANCE_PACKAGE_NOT_AVAILABLE": "Finance package not available: {error}",
+  "errors.MARKET_DATA_FETCH_ERROR": "Market data fetch error: {error}"
 }

@@ -378,10 +378,25 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     
     // nodes 생성
     const processedNodes = state.nodes.map((node) => {
+      // 🔍 디버그: MarketDataNode의 symbols 필드 확인
+      if (node.data.nodeType === 'MarketDataNode') {
+        console.log('🔍 MarketDataNode node.data:', node.data);
+        console.log('🔍 MarketDataNode node.data.symbols:', node.data.symbols);
+        console.log('🔍 MarketDataNode node.data.configSchema:', node.data.configSchema);
+      }
+      
       // input port 이름 목록 (런타임 데이터 제외용)
       const inputPortNames = new Set(
         (node.data.inputs as Array<{ name: string }> | undefined)?.map(p => p.name) || []
       );
+      
+      // configSchema 필드 목록 (사용자 정의 config)
+      const configSchemaKeys = new Set(
+        Object.keys(node.data.configSchema as Record<string, unknown> || {})
+      );
+      
+      // 항상 유지해야 하는 필드 (input port와 config 필드가 동시에 존재하는 dual-purpose 필드)
+      const alwaysKeepFields = new Set(['symbols', 'connection']);
       
       // node.data에서 내부 필드 및 런타임 input 데이터 제외
       const nodeDataEntries = Object.entries(node.data).filter(
@@ -390,8 +405,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           if (['label', 'nodeType', 'category', 'inputs', 'outputs', 'state', 'configSchema'].includes(key)) {
             return false;
           }
-          // input port 이름과 같은 필드 중 바인딩 표현식이 아닌 것(런타임 데이터) 제외
+          // 항상 유지해야 하는 dual-purpose 필드 (input port이자 config 필드)
+          if (alwaysKeepFields.has(key)) {
+            return true;
+          }
+          // input port 이름과 같은 필드 처리
           if (inputPortNames.has(key)) {
+            // configSchema에도 정의되어 있으면 유지
+            if (configSchemaKeys.has(key)) {
+              return true;
+            }
             // 바인딩 표현식 ({{ ... }})이면 유지, 아니면 제외
             if (typeof value === 'string' && value.includes('{{')) {
               return true;

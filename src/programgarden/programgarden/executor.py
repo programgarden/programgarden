@@ -3357,8 +3357,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         
         credential = context.get_credential()
         if not credential:
-            context.log("warning", "No credential, using demo data", node_id)
-            return self._generate_demo_data(symbols, fields)
+            context.log("error", "i18n:errors.CREDENTIAL_NOT_SET", node_id)
+            return self._empty_result("i18n:errors.CREDENTIAL_NOT_SET")
         
         try:
             from programgarden_finance.ls.overseas_stock.market.g3101.blocks import G3101InBlock
@@ -3371,8 +3371,9 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                 caller_name="MarketDataNode(overseas_stock)"
             )
             if not success:
-                context.log("warning", f"LS login failed: {error}, using demo data", node_id)
-                return self._generate_demo_data(symbols, fields)
+                error_msg = f"i18n:errors.LS_LOGIN_FAILED|error={error}"
+                context.log("error", error_msg, node_id)
+                return self._empty_result(error_msg)
             
             api = ls.overseas_stock()
             
@@ -3453,11 +3454,13 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             }
             
         except ImportError as e:
-            context.log("error", f"Finance package not available: {e}", node_id)
-            return self._generate_demo_data(symbols, fields)
+            error_msg = f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}"
+            context.log("error", error_msg, node_id)
+            return self._empty_result(error_msg)
         except Exception as e:
-            context.log("error", f"Market data fetch error: {e}", node_id)
-            return self._generate_demo_data(symbols, fields)
+            error_msg = f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}"
+            context.log("error", error_msg, node_id)
+            return self._empty_result(error_msg)
 
     async def _fetch_overseas_futures(
         self,
@@ -3470,8 +3473,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         
         credential = context.get_credential()
         if not credential:
-            context.log("warning", "No credential, using demo data", node_id)
-            return self._generate_demo_data(symbols, fields)
+            context.log("error", "i18n:errors.CREDENTIAL_NOT_SET", node_id)
+            return self._empty_result("i18n:errors.CREDENTIAL_NOT_SET")
         
         try:
             from programgarden_finance.ls.overseas_futureoption.market.o3105.blocks import O3105InBlock
@@ -3484,8 +3487,9 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                 caller_name="MarketDataNode(overseas_futureoption)"
             )
             if not success:
-                context.log("warning", f"LS login failed: {error}, using demo data", node_id)
-                return self._generate_demo_data(symbols, fields)
+                error_msg = f"i18n:errors.LS_LOGIN_FAILED|error={error}"
+                context.log("error", error_msg, node_id)
+                return self._empty_result(error_msg)
             
             api = ls.overseas_futureoption()
             
@@ -3557,63 +3561,25 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             }
             
         except ImportError as e:
-            context.log("error", f"Finance package not available: {e}", node_id)
-            return self._generate_demo_data(symbols, fields)
+            error_msg = f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}"
+            context.log("error", error_msg, node_id)
+            return self._empty_result(error_msg)
         except Exception as e:
-            context.log("error", f"Market data fetch error: {e}", node_id)
-            return self._generate_demo_data(symbols, fields)
+            error_msg = f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}"
+            context.log("error", error_msg, node_id)
+            return self._empty_result(error_msg)
 
-    def _generate_demo_data(self, symbols: List[Dict[str, str]], fields: List[str]) -> Dict[str, Any]:
-        """데모 데이터 생성"""
-        import random
-        from datetime import datetime
-        
-        price_data = {}
-        volume_data = {}
-        ohlcv_data = {}
-        
-        for symbol_entry in symbols:
-            exchange = symbol_entry.get("exchange", "NASDAQ")
-            symbol = symbol_entry.get("symbol", "")
-            if not symbol:
-                continue
-                
-            base_price = random.uniform(50, 500)
-            
-            if "price" in fields:
-                price_data[symbol] = {
-                    "price": round(base_price, 2),
-                    "change": round(random.uniform(-5, 5), 2),
-                    "change_pct": round(random.uniform(-2, 2), 2),
-                    "timestamp": datetime.now().isoformat(),
-                    "exchange": exchange,
-                }
-            
-            if "volume" in fields:
-                volume_data[symbol] = {
-                    "volume": random.randint(100000, 10000000),
-                    "value": round(base_price * random.randint(100000, 10000000), 2),
-                    "exchange": exchange,
-                }
-            
-            if "ohlcv" in fields:
-                ohlcv_data[symbol] = [{
-                    "date": datetime.now().strftime("%Y%m%d"),
-                    "open": round(base_price * 0.99, 2),
-                    "high": round(base_price * 1.02, 2),
-                    "low": round(base_price * 0.98, 2),
-                    "close": round(base_price, 2),
-                    "volume": random.randint(100000, 10000000),
-                    "exchange": exchange,
-                }]
-        
-        symbol_codes = [s.get("symbol") for s in symbols if s.get("symbol")]
-        return {
-            "price": price_data,
-            "volume": volume_data,
-            "ohlcv": ohlcv_data,
-            "symbols": symbol_codes,
+    def _empty_result(self, error_msg: str = "") -> Dict[str, Any]:
+        """빈 결과 반환 (에러 시)"""
+        result = {
+            "price": {},
+            "volume": {},
+            "ohlcv": {},
+            "symbols": [],
         }
+        if error_msg:
+            result["error"] = error_msg
+        return result
 
 
 class HistoricalDataNodeExecutor(NodeExecutorBase):

@@ -897,6 +897,12 @@ async def run_workflow_inline(request: WorkflowRunRequest):
                         print(f"⚠️ Credential not in store: {cred_id}")
         
         # Convert React Flow format to ProgramGarden format
+        # 🔍 디버그: 각 노드의 symbols 필드 확인
+        for node in request.nodes:
+            if node.get("type") == "MarketDataNode":
+                print(f"🔍 MarketDataNode symbols: {node.get('symbols')}")
+                print(f"🔍 MarketDataNode full config: {node}")
+        
         workflow = {
             "id": request.id,
             "name": request.name,

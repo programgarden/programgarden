@@ -340,11 +340,22 @@ class WorkflowResolver:
             node_type = node_def.get("type")
             category = node_def.get("category", "")
 
+            # Plugin node types where fields should be extracted separately
+            PLUGIN_NODE_TYPES = {"ConditionNode", "NewOrderNode", "ModifyOrderNode", "CancelOrderNode"}
+
             # Extract config (exclude base fields)
-            config = {
-                k: v for k, v in node_def.items()
-                if k not in {"id", "type", "category", "position", "plugin", "fields"}
-            }
+            # For plugin nodes, exclude "fields" from config (will be passed separately)
+            # For non-plugin nodes like MarketDataNode, keep "fields" in config
+            if node_type in PLUGIN_NODE_TYPES:
+                config = {
+                    k: v for k, v in node_def.items()
+                    if k not in {"id", "type", "category", "position", "plugin", "fields"}
+                }
+            else:
+                config = {
+                    k: v for k, v in node_def.items()
+                    if k not in {"id", "type", "category", "position", "plugin"}
+                }
 
             # Load plugin (if applicable)
             plugin = None
