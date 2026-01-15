@@ -492,5 +492,7 @@
   "errors.CREDENTIAL_NOT_SET": "credential이 설정되지 않았습니다. BrokerNode의 credential_id를 확인하세요.",
   "errors.LS_LOGIN_FAILED": "LS 로그인 실패: {error}",
   "errors.FINANCE_PACKAGE_NOT_AVAILABLE": "Finance 패키지를 사용할 수 없습니다: {error}",
-  "errors.MARKET_DATA_FETCH_ERROR": "시세 조회 오류: {error}"
+  "errors.MARKET_DATA_FETCH_ERROR": "시세 조회 오류: {error}",
+  "errors.HISTORICAL_DATA_FETCH_ERROR": "과거 데이터 조회 오류: {error}",
+  "errors.UNSUPPORTED_PRODUCT": "지원하지 않는 상품입니다: {product}"
 }

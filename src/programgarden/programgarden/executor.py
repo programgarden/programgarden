@@ -3341,8 +3341,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         elif product == "overseas_futureoption":
             result = await self._fetch_overseas_futures(symbols, fields, context, node_id)
         else:
-            context.log("warning", f"Unsupported product: {product}, using demo data", node_id)
-            result = self._generate_demo_data(symbols, fields)
+            context.log("error", f"Unsupported product for MarketDataNode: {product}", node_id)
+            result = self._empty_result(f"i18n:errors.UNSUPPORTED_PRODUCT|product={product}")
         
         return result
 
@@ -3652,8 +3652,8 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         elif product == "overseas_futureoption":
             ohlcv_data = await self._fetch_overseas_futures(symbols, start_date, end_date, interval, context, node_id)
         else:
-            context.log("warning", f"Unsupported product: {product}, using demo data", node_id)
-            ohlcv_data = self._generate_demo_data(symbols, start_date, end_date)
+            context.log("error", f"Unsupported product for HistoricalDataNode: {product}", node_id)
+            ohlcv_data = self._empty_historical_result(symbols, f"i18n:errors.UNSUPPORTED_PRODUCT|product={product}")
         
         return {
             "ohlcv_data": ohlcv_data,
@@ -3736,8 +3736,8 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         
         credential = context.get_credential()
         if not credential:
-            context.log("warning", "No credential, using demo data", node_id)
-            return self._generate_demo_data(symbols, start_date, end_date)
+            context.log("error", "Credential not set for HistoricalDataNode", node_id)
+            return self._empty_historical_result(symbols, "i18n:errors.CREDENTIAL_NOT_SET")
         
         try:
             from programgarden_finance.ls.overseas_stock.chart.g3103.blocks import G3103InBlock
@@ -3750,8 +3750,8 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 caller_name="HistoricalDataNode(overseas_stock)"
             )
             if not success:
-                context.log("warning", f"LS login failed: {error}, using demo data", node_id)
-                return self._generate_demo_data(symbols, start_date, end_date)
+                context.log("error", f"LS login failed: {error}", node_id)
+                return self._empty_historical_result(symbols, f"i18n:errors.LS_LOGIN_FAILED|error={error}")
             
             api = ls.overseas_stock()
             
@@ -3810,11 +3810,11 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             return ohlcv_data
             
         except ImportError as e:
-            context.log("warning", f"Finance package not available: {e}, using demo data", node_id)
-            return self._generate_demo_data(symbols, start_date, end_date)
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._empty_historical_result(symbols, f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}")
         except Exception as e:
-            context.log("error", f"Error fetching data: {e}", node_id)
-            return self._generate_demo_data(symbols, start_date, end_date)
+            context.log("error", f"Historical data fetch error: {e}", node_id)
+            return self._empty_historical_result(symbols, f"i18n:errors.HISTORICAL_DATA_FETCH_ERROR|error={e}")
 
     async def _fetch_overseas_futures(
         self,
@@ -3833,8 +3833,8 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         """
         credential = context.get_credential()
         if not credential:
-            context.log("warning", "No credential, using demo data for futures", node_id)
-            return self._generate_demo_data(symbols, start_date, end_date)
+            context.log("error", "Credential not set for HistoricalDataNode(futures)", node_id)
+            return self._empty_historical_result(symbols, "i18n:errors.CREDENTIAL_NOT_SET")
         
         try:
             ls, success, error = ensure_ls_login(
@@ -3845,8 +3845,8 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 caller_name="HistoricalDataNode(overseas_futures)"
             )
             if not success:
-                context.log("warning", f"LS login failed: {error}, using demo data", node_id)
-                return self._generate_demo_data(symbols, start_date, end_date)
+                context.log("error", f"LS login failed: {error}", node_id)
+                return self._empty_historical_result(symbols, f"i18n:errors.LS_LOGIN_FAILED|error={error}")
             
             api = ls.overseas_futureoption()
             ohlcv_data = {}
@@ -3873,11 +3873,11 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             return ohlcv_data
             
         except ImportError as e:
-            context.log("warning", f"Finance package not available: {e}, using demo data", node_id)
-            return self._generate_demo_data(symbols, start_date, end_date)
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._empty_historical_result(symbols, f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}")
         except Exception as e:
-            context.log("error", f"Error fetching futures data: {e}", node_id)
-            return self._generate_demo_data(symbols, start_date, end_date)
+            context.log("error", f"Historical data fetch error: {e}", node_id)
+            return self._empty_historical_result(symbols, f"i18n:errors.HISTORICAL_DATA_FETCH_ERROR|error={e}")
 
     async def _fetch_futures_daily_chart(
         self,
@@ -3961,45 +3961,12 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         bars.sort(key=lambda x: x["date"])
         return bars
 
-    def _generate_demo_data(
-        self,
-        symbols: List[str],
-        start_date: str,
-        end_date: str,
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """데모용 OHLCV 데이터 생성"""
-        from datetime import datetime, timedelta
-        import random
-        
-        ohlcv_data = {}
-        
-        for symbol in symbols:
-            base_price = random.uniform(100, 500)
-            bars = []
-            
-            # 시작일부터 90일치 데이터 생성
-            try:
-                start = datetime.strptime(start_date.replace("-", ""), "%Y%m%d")
-            except:
-                start = datetime.now() - timedelta(days=90)
-            
-            for i in range(90):
-                date = start + timedelta(days=i)
-                change = random.uniform(-0.03, 0.035)
-                base_price *= (1 + change)
-                
-                bars.append({
-                    "date": date.strftime("%Y%m%d"),
-                    "open": round(base_price * 0.99, 2),
-                    "high": round(base_price * 1.02, 2),
-                    "low": round(base_price * 0.98, 2),
-                    "close": round(base_price, 2),
-                    "volume": random.randint(1000000, 10000000),
-                })
-            
-            ohlcv_data[symbol] = bars
-        
-        return ohlcv_data
+    def _empty_historical_result(self, symbols: List[str], error_msg: str = "") -> Dict[str, Any]:
+        """빈 historical 결과 반환 (에러 시)"""
+        result = {symbol: [] for symbol in symbols}
+        if error_msg:
+            result["_error"] = error_msg
+        return result
 
 
 class BacktestEngineNodeExecutor(NodeExecutorBase):

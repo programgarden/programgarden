@@ -471,5 +471,7 @@
   "errors.CREDENTIAL_NOT_SET": "Credential is not set. Check BrokerNode's credential_id.",
   "errors.LS_LOGIN_FAILED": "LS login failed: {error}",
   "errors.FINANCE_PACKAGE_NOT_AVAILABLE": "Finance package not available: {error}",
-  "errors.MARKET_DATA_FETCH_ERROR": "Market data fetch error: {error}"
+  "errors.MARKET_DATA_FETCH_ERROR": "Market data fetch error: {error}",
+  "errors.HISTORICAL_DATA_FETCH_ERROR": "Historical data fetch error: {error}",
+  "errors.UNSUPPORTED_PRODUCT": "Unsupported product: {product}"
 }
