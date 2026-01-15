@@ -1,0 +1,51 @@
+{
+  "id": "realmarket-stock-test",
+  "name": "RealMarketDataNode 해외주식 테스트",
+  "description": "WebSocket GSC를 사용한 실시간 시세 수신 테스트",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode"
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-stock"
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NASDAQ", "symbol": "TSLA"}
+      ]
+    },
+    {
+      "id": "realMarket",
+      "type": "RealMarketDataNode",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "stay_connected": false
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "realMarket"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-stock",
+      "type": "broker_ls",
+      "name": "LS증권 해외주식",
+      "data": {
+        "appkey": "",
+        "appsecret": "",
+        "paper_trading": false
+      }
+    }
+  ]
+}

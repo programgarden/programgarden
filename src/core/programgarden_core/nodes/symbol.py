@@ -6,6 +6,7 @@ Symbol source/filter nodes:
 - MarketUniverseNode: Market universe (NASDAQ100, S&P500, etc.)
 - ScreenerNode: Conditional symbol screening
 - SymbolFilterNode: Symbol list filter/intersection/difference
+- SymbolQueryNode: 전체종목조회 - All tradable symbols from broker API (g3190 for stock, o3101 for futures)
 """
 
 from typing import Optional, List, Literal, Dict, Any, Union, TYPE_CHECKING
@@ -23,32 +24,58 @@ from programgarden_core.nodes.base import (
 from programgarden_core.models.exchange import SymbolEntry, ProductType
 
 
-class WatchlistNode(BaseNode):
+class SymbolQueryNode(BaseNode):
     """
-    User-defined watchlist node
+    전체종목조회 노드 (Symbol Query Node)
 
-    Outputs a list of symbols with exchange information.
-    Each symbol entry contains exchange name (NYSE, NASDAQ, CME, etc.) and symbol code.
+    Queries all tradable symbols from broker API.
+    - overseas_stock: Uses g3190 API (마스터상장종목조회)
+    - overseas_futures: Uses o3101 API (해외선물마스터조회)
     
-    Exchange names are automatically converted to API codes at execution time.
-    - overseas_stock: NYSE/AMEX → 81, NASDAQ → 82
-    - overseas_futures: CME, COMEX, etc. (string codes)
-    
-    Note: Broker information is managed by BrokerNode.
-    WatchlistNode only stores symbols - broker/company info comes from connected BrokerNode.
+    Returns a list of all symbols available for trading on the selected exchange.
     """
 
-    type: Literal["WatchlistNode"] = "WatchlistNode"
+    type: Literal["SymbolQueryNode"] = "SymbolQueryNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.WatchlistNode.description"
+    description: str = "i18n:nodes.SymbolQueryNode.description"
 
     # 브로커 연결 필드 (명시적 바인딩 필수)
     connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
-    # Symbol entries: [{exchange: "NASDAQ", symbol: "AAPL"}, ...]
-    symbols: List[Dict[str, str]] = Field(
-        default_factory=list,
-        description="List of symbol entries with exchange and symbol code",
+    # 상품 유형 선택 (해외주식/해외선물)
+    product_type: str = Field(
+        default="overseas_stock",
+        description="Product type: overseas_stock or overseas_futures",
+    )
+
+    # 거래소 선택 (해외주식)
+    stock_exchange: Optional[str] = Field(
+        default=None,
+        description="Exchange for overseas_stock: NYSE(81), NASDAQ(82), AMEX(83), etc.",
+    )
+    
+    # 국가 선택 (해외주식) - g3190 natcode
+    country: str = Field(
+        default="US",
+        description="Country code for overseas_stock (US, HK, JP, CN, etc.)",
+    )
+    
+    # 거래소 구분 (해외선물) - o3101 gubun
+    futures_exchange: Optional[str] = Field(
+        default=None,
+        description="Exchange for overseas_futures: 1(all), 2(CME), 3(SGX), etc.",
+    )
+    
+    # 월물 필터 (해외선물)
+    futures_contract_month: Optional[str] = Field(
+        default=None,
+        description="Contract month filter for overseas_futures: F, 2026F, front, next",
+    )
+    
+    # 최대 조회 건수
+    max_results: int = Field(
+        default=500,
+        description="Maximum number of symbols to retrieve per request",
     )
 
     _inputs: List[InputPort] = [
@@ -60,7 +87,8 @@ class WatchlistNode(BaseNode):
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="count", type="integer", description="Total symbol count"),
     ]
 
     @classmethod
@@ -71,7 +99,7 @@ class WatchlistNode(BaseNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                description="증권사 연결 정보입니다. BrokerNode를 먼저 추가하고, 그 노드의 connection 출력을 연결하세요.",
                 required=True,
                 bindable=True,
                 expression_enabled=True,
@@ -81,15 +109,130 @@ class WatchlistNode(BaseNode):
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
             ),
+            # === PARAMETERS: 상품 유형 선택 ===
+            "product_type": FieldSchema(
+                name="product_type",
+                type=FieldType.ENUM,
+                description="상품 유형을 선택하세요. 해외주식 또는 해외선물.",
+                default="overseas_stock",
+                enum_values=["overseas_stock", "overseas_futures"],
+                enum_labels={"overseas_stock": "해외주식", "overseas_futures": "해외선물"},
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="overseas_stock",
+                expected_type="str",
+            ),
+            # === PARAMETERS: 해외주식 설정 (overseas_stock 선택시만 표시) ===
+            "country": FieldSchema(
+                name="country",
+                type=FieldType.ENUM,
+                description="국가 코드. US: 미국, HK: 홍콩, JP: 일본, CN: 중국",
+                default="US",
+                enum_values=["US", "HK", "JP", "CN", "VN", "ID"],
+                enum_labels={"US": "미국", "HK": "홍콩", "JP": "일본", "CN": "중국", "VN": "베트남", "ID": "인도네시아"},
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="US",
+                expected_type="str",
+                visible_when={"product_type": "overseas_stock"},
+            ),
+            "stock_exchange": FieldSchema(
+                name="stock_exchange",
+                type=FieldType.ENUM,
+                description="거래소 구분. NYSE/AMEX: 81, NASDAQ: 82, 전체: 빈값",
+                enum_values=["", "81", "82"],
+                enum_labels={"": "전체", "81": "NYSE/AMEX", "82": "NASDAQ"},
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="82",
+                expected_type="str",
+                visible_when={"product_type": "overseas_stock"},
+            ),
+            # === PARAMETERS: 해외선물 설정 (overseas_futures 선택시만 표시) ===
+            "futures_exchange": FieldSchema(
+                name="futures_exchange",
+                type=FieldType.ENUM,
+                description="거래소 구분. 1: 전체, 2: CME, 3: SGX, 4: EUREX, 5: ICE, 6: HKEX, 7: OSE",
+                enum_values=["1", "2", "3", "4", "5", "6", "7"],
+                enum_labels={"1": "전체", "2": "CME", "3": "SGX", "4": "EUREX", "5": "ICE", "6": "HKEX", "7": "OSE"},
+                default="1",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="1",
+                expected_type="str",
+                visible_when={"product_type": "overseas_futures"},
+            ),
+            "futures_contract_month": FieldSchema(
+                name="futures_contract_month",
+                type=FieldType.STRING,
+                description="월물 필터. 예: 'F' (1월), '2026F' (2026년 1월), 'front' (근월물), 'next' (차월물). 월물코드: F=1월, G=2월, H=3월, J=4월, K=5월, M=6월, N=7월, Q=8월, U=9월, V=10월, X=11월, Z=12월",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="front",
+                expected_type="str",
+                placeholder="front, next, F, 2026F",
+                visible_when={"product_type": "overseas_futures"},
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "max_results": FieldSchema(
+                name="max_results",
+                type=FieldType.INTEGER,
+                description="최대 조회 건수. 연속 조회로 전체 데이터를 가져옵니다.",
+                default=500,
+                min_value=100,
+                max_value=10000,
+                category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=500,
+                expected_type="int",
+            ),
+        }
+
+
+class WatchlistNode(BaseNode):
+    """
+    User-defined watchlist node
+
+    Outputs a list of symbols with exchange information.
+    Each symbol entry contains exchange name (NYSE, NASDAQ, CME, etc.) and symbol code.
+    
+    Note: This node only defines symbols. 
+    Broker connection and product type are handled by downstream nodes (RealMarketDataNode, etc.)
+    """
+
+    type: Literal["WatchlistNode"] = "WatchlistNode"
+    category: NodeCategory = NodeCategory.MARKET
+    description: str = "i18n:nodes.WatchlistNode.description"
+
+    # Symbol entries: [{exchange: "NASDAQ", symbol: "AAPL"}, ...]
+    symbols: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="List of symbol entries with exchange and symbol code",
+    )
+
+    _inputs: List[InputPort] = []
+    _outputs: List[OutputPort] = [
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
             # === PARAMETERS: 핵심 설정 ===
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="List of symbols with exchange info. Each entry has 'exchange' (NYSE, NASDAQ, CME, etc.) and 'symbol' (ticker code).",
+                description="관심종목 목록입니다. 각 항목에 거래소(exchange)와 종목코드(symbol)를 입력하세요.",
                 required=True,
                 array_item_type=FieldType.OBJECT,
-                bindable=True,
-                expression_enabled=True,
+                bindable=False,
+                expression_enabled=False,
                 category=FieldCategory.PARAMETERS,
                 ui_component="symbol_editor",
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],

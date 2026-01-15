@@ -99,6 +99,34 @@ class ExchangeRegistry:
                 country="US",
                 currency="USD"
             ),
+            "SGX": ExchangeInfo(
+                code="SGX",
+                name="SGX",
+                full_name="Singapore Exchange",
+                country="SG",
+                currency="USD"
+            ),
+            "EUREX": ExchangeInfo(
+                code="EUREX",
+                name="EUREX",
+                full_name="Eurex Exchange",
+                country="DE",
+                currency="EUR"
+            ),
+            "HKEX": ExchangeInfo(
+                code="HKEX",
+                name="HKEX",
+                full_name="Hong Kong Exchanges",
+                country="HK",
+                currency="HKD"
+            ),
+            "OSE": ExchangeInfo(
+                code="OSE",
+                name="OSE",
+                full_name="Osaka Exchange",
+                country="JP",
+                currency="JPY"
+            ),
             "ICE": ExchangeInfo(
                 code="ICE",
                 name="ICE",

@@ -61,7 +61,7 @@ class NodeTypeRegistry:
             StartNode, BrokerNode,
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
             MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode,
-            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
+            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
             ConditionNode, LogicNode, PerformanceConditionNode,
             PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
@@ -80,7 +80,7 @@ class NodeTypeRegistry:
             # Data
             MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode,
             # Symbol
-            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
+            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
             # Trigger
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
             # Condition

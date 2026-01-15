@@ -1,0 +1,51 @@
+{
+  "id": "historical-data-futures",
+  "name": "해외선물 과거 차트 조회",
+  "description": "항셍선물(HSIF26)의 최근 100일 일봉 차트 데이터를 조회합니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode"
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_futures",
+      "credential_id": "broker-futures"
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"exchange": "HKEX", "symbol": "HSIF26"},
+        {"exchange": "HKEX", "symbol": "HMHF26"}
+      ]
+    },
+    {
+      "id": "history",
+      "type": "HistoricalDataNode",
+      "connection": "{{ nodes.broker.connection }}",
+      "interval": "1d",
+      "start_date": "dynamic:days_ago(100)",
+      "end_date": "dynamic:today()"
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "history"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-futures",
+      "type": "broker_ls",
+      "name": "LS증권 해외선물 모의투자",
+      "data": {
+        "appkey": "",
+        "appsecret": "",
+        "paper_trading": true
+      }
+    }
+  ]
+}

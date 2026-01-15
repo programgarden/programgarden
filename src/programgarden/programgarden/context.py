@@ -722,6 +722,36 @@ class ExecutionContext:
         metadata = self._persistent_metadata.get(node_id, {})
         return metadata.get(key)
     
+    def set_node_state(self, node_id: str, key: str, value: Any) -> None:
+        """
+        Set a state value for a node (e.g., real_client, gsc, ovc)
+        
+        This is a convenient wrapper around persistent_metadata for storing
+        node-specific runtime state like WebSocket clients.
+        
+        Args:
+            node_id: Node ID
+            key: State key (e.g., "real_client", "gsc", "subscribe_symbols")
+            value: State value
+        """
+        if node_id not in self._persistent_metadata:
+            self._persistent_metadata[node_id] = {}
+        self._persistent_metadata[node_id][key] = value
+        logger.debug(f"Node state set: {node_id}.{key}")
+    
+    def get_node_state(self, node_id: str, key: str) -> Optional[Any]:
+        """
+        Get a state value for a node
+        
+        Args:
+            node_id: Node ID
+            key: State key
+            
+        Returns:
+            State value or None if not set
+        """
+        return self.get_persistent_metadata(node_id, key)
+    
     async def cleanup_persistent(self, node_id: str) -> None:
         """
         Cleanup a single persistent node (e.g., when event_filter changes)

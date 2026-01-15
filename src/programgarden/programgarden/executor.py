@@ -98,7 +98,7 @@ def ensure_ls_login(
     """
     LS증권 로그인 보장 헬퍼 함수
     
-    싱글톤 LS 클라이언트의 appkey가 변경되면 재로그인합니다.
+    싱글톤 LS 클라이언트의 appkey 또는 paper_trading이 변경되면 재로그인합니다.
     
     Args:
         appkey: LS증권 appkey
@@ -115,13 +115,22 @@ def ensure_ls_login(
     
     ls = LS.get_instance()
     
-    # 현재 로그인된 appkey와 요청된 appkey가 다르면 재로그인 필요
+    # 현재 로그인된 appkey와 paper_trading 확인
     current_appkey = ls.token_manager.appkey if ls.token_manager else None
-    needs_relogin = not ls.is_logged_in() or (current_appkey and current_appkey != appkey)
+    current_paper_trading = ls.token_manager.paper_trading if ls.token_manager else None
+    
+    # appkey 또는 paper_trading 모드가 다르면 재로그인 필요
+    needs_relogin = (
+        not ls.is_logged_in() or 
+        (current_appkey and current_appkey != appkey) or
+        (current_paper_trading is not None and current_paper_trading != paper_trading)
+    )
     
     if needs_relogin:
         if current_appkey and current_appkey != appkey:
             context.log("info", f"AppKey changed, re-logging in{f' for {caller_name}' if caller_name else ''}", node_id)
+        elif current_paper_trading is not None and current_paper_trading != paper_trading:
+            context.log("info", f"Trading mode changed ({current_paper_trading} → {paper_trading}), re-logging in{f' for {caller_name}' if caller_name else ''}", node_id)
         
         login_result = ls.login(
             appkey=appkey,
@@ -456,9 +465,10 @@ class WatchlistNodeExecutor(NodeExecutorBase):
     """
     WatchlistNode executor
     
-    거래소 + 종목코드 구조를 처리합니다.
-    BrokerNode 연결 시 broker 정보를 가져오고, product 불일치 시 경고합니다.
-    BrokerNode 미연결 시에도 동작하며, 기본값(ls, overseas_stock)을 사용합니다.
+    사용자 정의 관심종목 리스트를 처리합니다.
+    단순히 [{exchange, symbol}] 형태로 정규화하여 출력합니다.
+    
+    connection, product는 필요 없음 - 후속 노드(RealMarketDataNode 등)에서 처리.
     """
 
     async def execute(
@@ -469,78 +479,312 @@ class WatchlistNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
-        from programgarden_core.models.exchange import (
-            exchange_registry, 
-            ProductType, 
-            SymbolEntry
-        )
-        
         symbols_raw = config.get("symbols", [])
-        config_product = config.get("product")  # WatchlistNode 자체 설정
         
-        # BrokerNode로부터 broker 정보 가져오기 (선택)
-        broker_output = context.find_parent_output(node_id, "BrokerNode")
-        
-        if broker_output:
-            broker = broker_output.get("company", "ls")
-            broker_product = broker_output.get("product", "overseas_stock")
-            
-            # WatchlistNode에 product가 설정되어 있고, BrokerNode와 다르면 경고
-            if config_product and config_product != broker_product:
-                context.log(
-                    "warning", 
-                    f"Product mismatch: WatchlistNode({config_product}) vs BrokerNode({broker_product}). "
-                    f"Using WatchlistNode's product setting.",
-                    node_id
-                )
-                product = config_product
-            else:
-                product = config_product or broker_product
-        else:
-            # BrokerNode 미연결: WatchlistNode 자체 설정 또는 기본값 사용
-            broker = "ls"
-            product = config_product or "overseas_stock"
-            context.log("info", f"No BrokerNode connected. Using defaults: broker={broker}, product={product}", node_id)
-        
-        product_type = ProductType(product)
-        
-        # symbols 처리: [{exchange, symbol}, ...] 형태
+        # symbols 처리: [{exchange, symbol}, ...] 형태로 정규화
         processed_symbols = []
         for entry in symbols_raw:
             if isinstance(entry, dict):
                 exchange = entry.get("exchange", "")
                 symbol = entry.get("symbol", "")
                 
-                if exchange and symbol:
-                    # 거래소 이름 → API 코드 변환
-                    exchange_code = exchange_registry.name_to_code(broker, product_type, exchange)
-                    if exchange_code is None:
-                        context.log("warning", f"Unknown exchange: {exchange}, using as-is", node_id)
-                        exchange_code = exchange
-                    
+                if symbol:
                     processed_symbols.append({
-                        "exchange": exchange,           # 원본 이름 유지 (사용자 표시용)
-                        "exchange_code": exchange_code, # API 코드
+                        "exchange": exchange,
                         "symbol": symbol,
                     })
             elif isinstance(entry, str):
-                # 문자열만 있는 경우: 기본 거래소 사용
-                default_exchange = exchange_registry.get_default_exchange(broker, product_type)
-                exchange_code = exchange_registry.name_to_code(broker, product_type, default_exchange) if default_exchange else ""
-                
+                # 문자열만 있는 경우: 거래소 없이 심볼만
                 processed_symbols.append({
-                    "exchange": default_exchange or "",
-                    "exchange_code": exchange_code or "",
+                    "exchange": "",
                     "symbol": entry,
                 })
         
-        context.log("info", f"Watchlist: {len(processed_symbols)} symbols, product={product}, broker={broker}", node_id)
+        context.log("info", f"Watchlist: {len(processed_symbols)} symbols", node_id)
         
         return {
             "symbols": processed_symbols,
-            "product": product,
-            "broker": broker,
         }
+
+
+class SymbolQueryNodeExecutor(NodeExecutorBase):
+    """
+    SymbolQueryNode executor - 전체종목조회
+    
+    해외주식: g3190 API (마스터상장종목조회)
+    해외선물: o3101 API (해외선물마스터조회)
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        from programgarden_core.models.exchange import ProductType
+        
+        # product_type 필드에서 상품 유형 확인 (UI에서 선택)
+        product_type = config.get("product_type", "overseas_stock")
+        
+        # connection에서 paper_trading 확인 (fallback)
+        connection = config.get("connection", {})
+        paper_trading = connection.get("paper_trading", False)
+        
+        # BrokerNode가 set_secret()으로 저장한 credential 가져오기
+        cred = context.get_credential("credential_id")
+        if cred:
+            appkey = cred.get("appkey", "")
+            appsecret = cred.get("appsecret", "")
+            paper_trading = cred.get("paper_trading", paper_trading)
+        else:
+            appkey = ""
+            appsecret = ""
+        
+        if not appkey or not appsecret:
+            context.log("error", "SymbolQueryNode requires valid connection with appkey/appsecret", node_id)
+            return {"symbols": [], "count": 0, "error": "Missing credentials"}
+        
+        max_results = config.get("max_results", 500)
+        
+        # product_type 필드 기준으로 API 분기
+        if product_type == "overseas_futures":
+            return await self._execute_futures_master(
+                node_id, config, context, appkey, appsecret, paper_trading, max_results
+            )
+        else:
+            return await self._execute_stock_master(
+                node_id, config, context, appkey, appsecret, max_results
+            )
+    
+    async def _execute_stock_master(
+        self,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        appkey: str,
+        appsecret: str,
+        max_results: int,
+    ) -> Dict[str, Any]:
+        """해외주식 종목마스터 조회 (g3190)"""
+        from programgarden_finance import LS, g3190
+        
+        ls, success, error = ensure_ls_login(appkey, appsecret, False, context, node_id)
+        if not success:
+            return {"symbols": [], "count": 0, "error": error}
+        
+        country = config.get("country", "US")
+        stock_exchange = config.get("stock_exchange", "")  # 빈값이면 전체
+        
+        # UI 스키마(81/82) → g3190 API exgubun(1/2) 변환
+        # Note: AMEX는 NYSE와 함께 exgubun="1"로 조회됨 (83 옵션 제거)
+        exgubun_mapping = {
+            "": "",      # 전체
+            "81": "1",   # NYSE/AMEX → 1
+            "82": "2",   # NASDAQ → 2
+        }
+        exgubun = exgubun_mapping.get(stock_exchange, stock_exchange)
+        # 1자리 코드가 직접 입력된 경우도 지원 (하위 호환)
+        if stock_exchange in ("1", "2", "3"):
+            exgubun = stock_exchange
+        
+        # g3190 호출
+        all_symbols = []
+        cts_value = ""
+        read_count = min(max_results, 500)
+        
+        try:
+            while True:
+                query = ls.overseas_stock().시세().마스터상장종목조회(
+                    g3190.G3190InBlock(
+                        delaygb="R",
+                        natcode=country,
+                        exgubun=exgubun or "2",  # 2: NASDAQ (기본값)
+                        readcnt=read_count,
+                        cts_value=cts_value
+                    )
+                )
+                
+                result = await query.req_async()
+                
+                if result and hasattr(result, 'block1') and result.block1:
+                    for item in result.block1:
+                        # 거래소 코드 → 이름 매핑
+                        exchcd = getattr(item, 'exchcd', '')
+                        exchange_name = self._stock_exchcd_to_name(exchcd)
+                        
+                        all_symbols.append({
+                            "exchange": exchange_name,
+                            "exchange_code": exchcd,
+                            "symbol": getattr(item, 'symbol', ''),
+                            "name": getattr(item, 'korname', '') or getattr(item, 'engname', ''),
+                            "isin": getattr(item, 'isin', ''),
+                        })
+                    
+                    # 연속 조회
+                    if hasattr(result, 'block') and result.block:
+                        cts_value = getattr(result.block, 'cts_value', '')
+                    
+                    if not cts_value or len(all_symbols) >= max_results:
+                        break
+                else:
+                    break
+                    
+        except Exception as e:
+            context.log("error", f"g3190 API error: {str(e)}", node_id)
+            return {"symbols": [], "count": 0, "error": str(e)}
+        
+        context.log("info", f"전체종목조회 (해외주식): {len(all_symbols)}개 종목 from {country}", node_id)
+        
+        return {
+            "symbols": all_symbols[:max_results],
+            "count": len(all_symbols[:max_results]),
+            "country": country,
+            "product": "overseas_stock",
+        }
+    
+    async def _execute_futures_master(
+        self,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        appkey: str,
+        appsecret: str,
+        paper_trading: bool,
+        max_results: int,
+    ) -> Dict[str, Any]:
+        """해외선물 종목마스터 조회 (o3101)"""
+        from programgarden_finance import LS, o3101
+        
+        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id)
+        if not success:
+            return {"symbols": [], "count": 0, "error": error}
+        
+        futures_exchange = config.get("futures_exchange", "1")  # 1: 전체
+        futures_contract_month = config.get("futures_contract_month", "")  # 월물 필터
+        
+        all_symbols = []
+        
+        try:
+            query = ls.overseas_futureoption().market().해외선물마스터조회(
+                body=o3101.O3101InBlock(gubun=futures_exchange)
+            )
+            
+            result = await query.req_async()
+            
+            if result and hasattr(result, 'block') and result.block:
+                for item in result.block:
+                    # 거래소 코드 → 이름 매핑
+                    exchcd = getattr(item, 'ExchCd', '')
+                    exchange_name = getattr(item, 'ExchNm', '') or self._futures_exchcd_to_name(exchcd)
+                    contract_month = f"{getattr(item, 'LstngYr', '')}{getattr(item, 'LstngM', '')}"
+                    
+                    all_symbols.append({
+                        "exchange": exchange_name,
+                        "exchange_code": exchcd,
+                        "symbol": getattr(item, 'Symbol', ''),
+                        "name": getattr(item, 'SymbolNm', ''),
+                        "base_product": getattr(item, 'BscGdsCd', ''),
+                        "base_product_name": getattr(item, 'BscGdsNm', ''),
+                        "currency": getattr(item, 'CrncyCd', ''),
+                        "contract_month": contract_month,
+                    })
+            
+            # 월물 필터링 적용
+            if futures_contract_month:
+                all_symbols = self._filter_by_contract_month(all_symbols, futures_contract_month)
+                    
+        except Exception as e:
+            context.log("error", f"o3101 API error: {str(e)}", node_id)
+            return {"symbols": [], "count": 0, "error": str(e)}
+        
+        context.log("info", f"전체종목조회 (해외선물): {len(all_symbols)}개 종목, 거래소={futures_exchange}, 월물필터={futures_contract_month or 'none'}", node_id)
+        
+        return {
+            "symbols": all_symbols[:max_results],
+            "count": len(all_symbols[:max_results]),
+            "futures_exchange": futures_exchange,
+            "futures_contract_month": futures_contract_month or None,
+            "product": "overseas_futures",
+        }
+    
+    def _stock_exchcd_to_name(self, exchcd: str) -> str:
+        """해외주식 거래소 코드 → 이름"""
+        # Note: AMEX 종목도 exchcd=81로 반환됨 (NYSE/AMEX 통합)
+        mapping = {
+            "81": "NYSE/AMEX",
+            "82": "NASDAQ",
+            "84": "SEHK",  # 홍콩
+            "85": "TSE",   # 일본
+            "86": "SSE",   # 상해
+            "87": "SZSE",  # 심천
+        }
+        return mapping.get(exchcd, exchcd)
+    
+    def _futures_exchcd_to_name(self, exchcd: str) -> str:
+        """해외선물 거래소 코드 → 이름"""
+        mapping = {
+            "CME": "CME",
+            "COMEX": "COMEX",
+            "NYMEX": "NYMEX",
+            "CBOT": "CBOT",
+            "SGX": "SGX",
+            "HKEX": "HKEX",
+            "OSE": "OSE",
+            "EUREX": "EUREX",
+            "ICE": "ICE",
+        }
+        return mapping.get(exchcd, exchcd)
+    
+    def _filter_by_contract_month(
+        self, symbols: List[Dict[str, Any]], month_filter: str
+    ) -> List[Dict[str, Any]]:
+        """
+        월물 필터링
+        
+        Args:
+            symbols: 종목 리스트
+            month_filter: 월물 필터
+                - "F", "G", ... "Z": 특정 월만 (모든 연도)
+                - "2026F": 특정 연도+월
+                - "front": 근월물 (가장 가까운 만기)
+                - "next": 차월물 (두 번째로 가까운 만기)
+        
+        Returns:
+            필터링된 종목 리스트
+        """
+        if not month_filter or not symbols:
+            return symbols
+        
+        month_filter = month_filter.strip().upper()
+        
+        # front/next: 월물 정렬 후 선택
+        if month_filter in ("FRONT", "NEXT"):
+            # base_product별로 그룹화
+            by_product: Dict[str, List[Dict]] = {}
+            for sym in symbols:
+                bp = sym.get("base_product", "")
+                if bp not in by_product:
+                    by_product[bp] = []
+                by_product[bp].append(sym)
+            
+            result = []
+            for bp, items in by_product.items():
+                # contract_month 기준 정렬 (예: 2026F < 2026G < 2026H)
+                sorted_items = sorted(items, key=lambda x: x.get("contract_month", ""))
+                if month_filter == "FRONT" and sorted_items:
+                    result.append(sorted_items[0])
+                elif month_filter == "NEXT" and len(sorted_items) > 1:
+                    result.append(sorted_items[1])
+            return result
+        
+        # 월 코드만 (예: "F", "G")
+        if len(month_filter) == 1:
+            return [s for s in symbols if s.get("contract_month", "").endswith(month_filter)]
+        
+        # 연도+월 코드 (예: "2026F")
+        return [s for s in symbols if s.get("contract_month", "") == month_filter]
 
 
 class BrokerNodeExecutor(NodeExecutorBase):
@@ -606,6 +850,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "provider": provider,
                 "product": product,
                 "paper_trading": paper_trading,
+                "appkey": appkey,
+                "appsecret": appsecret,
             }
         }
     
@@ -1541,7 +1787,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
 
 
 class RealMarketDataNodeExecutor(NodeExecutorBase):
-    """RealMarketDataNode executor - 실시간 시세"""
+    """RealMarketDataNode executor - 실시간 시세 (WebSocket)"""
 
     async def execute(
         self,
@@ -1551,7 +1797,6 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
-        import random
         from programgarden_core.exceptions import ValidationError, ConnectionError
         
         # ========================================
@@ -1568,27 +1813,12 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.log("error", error_msg, node_id)
             raise ConnectionError(error_msg)
         
-        broker_product = broker_connection.get("product")
+        broker_product = broker_connection.get("product", "overseas_stock")
         
         # ========================================
-        # 2. BrokerNode와 WatchlistNode product 정합성 검증
+        # 2. Symbols 획득 (필드 우선, WatchlistNode 폴백)
         # ========================================
         watchlist_output = context.find_parent_output(node_id, "WatchlistNode")
-        watchlist_product = watchlist_output.get("product") if watchlist_output else None
-        
-        # 둘 다 있고 product가 불일치하면 에러
-        if broker_product and watchlist_product and broker_product != watchlist_product:
-            error_msg = (
-                f"Product mismatch: BrokerNode({broker_product}) ↔ WatchlistNode({watchlist_product}). "
-                f"Cannot subscribe to realtime data with mismatched products. "
-                f"Please ensure BrokerNode and WatchlistNode use the same product type."
-            )
-            context.log("error", error_msg, node_id)
-            raise ValidationError(error_msg, node_id=node_id)
-        
-        # ========================================
-        # 3. Symbols 획득 (필드 우선, 포트 폴백)
-        # ========================================
         symbols_raw = self._resolve_symbols(node_id, config, context, watchlist_output)
         
         if not symbols_raw:
@@ -1602,48 +1832,250 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         
         # symbols 정규화: dict 형태 [{exchange, symbol}] → 문자열 리스트
         symbols = []
+        symbols_with_exchange = []  # 거래소 코드 포함 형식
         for entry in symbols_raw:
             if isinstance(entry, dict):
-                # WatchlistNode 출력 형식: {exchange, symbol}
-                symbols.append(entry.get("symbol", ""))
+                symbol = entry.get("symbol", "")
+                exchange = entry.get("exchange", "")
+                symbols.append(symbol)
+                symbols_with_exchange.append({"symbol": symbol, "exchange": exchange})
             elif isinstance(entry, str):
                 symbols.append(entry)
+                symbols_with_exchange.append({"symbol": entry, "exchange": ""})
         
         # ========================================
-        # 4. 시세 데이터 수신 (TODO: 실제 WebSocket 구현)
+        # 3. stay_connected 설정
         # ========================================
-        # 현재는 약간의 변동을 주는 목업 데이터
+        stay_connected = config.get("stay_connected", True)
+        
+        # ========================================
+        # 4. 상품별 실시간 WebSocket 연결
+        # ========================================
+        if broker_product == "overseas_stock":
+            return await self._execute_stock(
+                node_id, broker_connection, symbols, symbols_with_exchange, 
+                symbols_raw, stay_connected, context
+            )
+        elif broker_product == "overseas_futures":
+            return await self._execute_futures(
+                node_id, broker_connection, symbols, symbols_with_exchange,
+                symbols_raw, stay_connected, context
+            )
+        else:
+            raise ValidationError(f"Unsupported product: {broker_product}", node_id=node_id)
+    
+    async def _execute_stock(
+        self,
+        node_id: str,
+        broker_connection: Dict[str, Any],
+        symbols: List[str],
+        symbols_with_exchange: List[Dict[str, str]],
+        symbols_raw: List,
+        stay_connected: bool,
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """해외주식 실시간 시세 (GSC)"""
+        import asyncio
+        
+        appkey = broker_connection.get("appkey", "")
+        appsecret = broker_connection.get("appsecret", "")
+        paper_trading = broker_connection.get("paper_trading", False)
+        
+        # LS 로그인
+        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "RealMarketDataNode")
+        if not success:
+            from programgarden_core.exceptions import ConnectionError
+            raise ConnectionError(f"LS login failed: {error}")
+        
+        # 실시간 클라이언트 생성 및 연결
+        real_client = ls.overseas_stock().real()
+        await real_client.connect()
+        context.log("info", f"WebSocket connected for overseas_stock", node_id)
+        
+        # GSC 구독 설정
+        gsc = real_client.GSC()
+        
+        # 거래소 코드 포함 심볼 생성: 81AAPL, 82TSLA 형식
+        subscribe_symbols = []
+        for entry in symbols_with_exchange:
+            symbol = entry.get("symbol", "")
+            exchange = entry.get("exchange", "")
+            # 거래소 코드 매핑: NASDAQ=82, NYSE=81, AMEX=83
+            exchange_code = self._get_stock_exchange_code(exchange)
+            subscribe_symbols.append(f"{exchange_code}{symbol}")
+        
+        # 실시간 데이터 저장소
         prices = {}
         volumes = {}
         bids = {}
         asks = {}
-        base_prices = {"NVDA": 875.30, "AAPL": 192.30, "TSLA": 248.90}
+        received_event = asyncio.Event()
         
-        for symbol in symbols:
-            if not symbol:
-                continue
-            base = base_prices.get(symbol, 100.0)
-            # ±0.5% 랜덤 변동
-            variation = base * random.uniform(-0.005, 0.005)
-            price = round(base + variation, 2)
-            prices[symbol] = price
-            volumes[symbol] = random.randint(100000, 10000000)
-            bids[symbol] = round(price - 0.01, 2)
-            asks[symbol] = round(price + 0.01, 2)
+        def on_tick(resp):
+            """GSC 틱 데이터 수신 콜백"""
+            try:
+                # GSCRealResponse에서 데이터 추출
+                block = resp.block if hasattr(resp, 'block') else resp
+                symbol = getattr(block, 'symbol', '') or getattr(block, 'shtn_isu_no', '')
+                # 심볼에서 거래소 코드 제거 (81AAPL → AAPL)
+                if symbol and len(symbol) > 2 and symbol[:2].isdigit():
+                    symbol = symbol[2:]
+                
+                price = float(getattr(block, 'last_prpr', 0) or getattr(block, 'crnt_pric', 0) or 0)
+                volume = int(getattr(block, 'acml_vol', 0) or getattr(block, 'deal_vlum', 0) or 0)
+                
+                if symbol:
+                    prices[symbol] = price
+                    volumes[symbol] = volume
+                    context.log("debug", f"GSC tick: {symbol} price={price} vol={volume}", node_id)
+                    received_event.set()
+            except Exception as e:
+                context.log("warning", f"GSC parse error: {e}", node_id)
         
-        context.log("info", f"Market data received: {symbols}", node_id)
+        gsc.on_gsc_message(on_tick)
+        gsc.add_gsc_symbols(symbols=subscribe_symbols)
+        context.log("info", f"Subscribed to GSC: {subscribe_symbols}", node_id)
         
-        # ========================================
-        # 5. 출력 (symbols echo 포함)
-        # ========================================
+        # 첫 번째 틱 수신 대기 (최대 10초)
+        try:
+            await asyncio.wait_for(received_event.wait(), timeout=10.0)
+        except asyncio.TimeoutError:
+            context.log("warning", f"No tick received within 10s, continuing with empty data", node_id)
+        
+        # stay_connected=False면 연결 종료
+        if not stay_connected:
+            gsc.remove_gsc_symbols(symbols=subscribe_symbols)
+            await real_client.close()
+            context.log("info", f"WebSocket disconnected (stay_connected=False)", node_id)
+        else:
+            # 연결 유지: context에 클라이언트 저장
+            context.set_node_state(node_id, "real_client", real_client)
+            context.set_node_state(node_id, "gsc", gsc)
+            context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
+        
+        context.log("info", f"RealMarketData received: {list(prices.keys())}", node_id)
+        
         return {
-            "symbols": symbols_raw,  # 입력받은 symbols echo (다음 노드에서 사용)
+            "symbols": symbols_raw,
             "price": prices,
             "volume": volumes,
             "bid": bids,
             "ask": asks,
             "data": self._build_full_data(symbols_raw, prices, volumes, bids, asks),
         }
+    
+    async def _execute_futures(
+        self,
+        node_id: str,
+        broker_connection: Dict[str, Any],
+        symbols: List[str],
+        symbols_with_exchange: List[Dict[str, str]],
+        symbols_raw: List,
+        stay_connected: bool,
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """해외선물 실시간 시세 (OVC)"""
+        import asyncio
+        
+        appkey = broker_connection.get("appkey", "")
+        appsecret = broker_connection.get("appsecret", "")
+        paper_trading = broker_connection.get("paper_trading", False)
+        
+        # LS 로그인
+        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "RealMarketDataNode")
+        if not success:
+            from programgarden_core.exceptions import ConnectionError
+            raise ConnectionError(f"LS login failed: {error}")
+        
+        # 실시간 클라이언트 생성 및 연결
+        real_client = ls.overseas_futureoption().real()
+        await real_client.connect()
+        context.log("info", f"WebSocket connected for overseas_futures", node_id)
+        
+        # OVC 구독 설정
+        ovc = real_client.OVC()
+        
+        # 선물 심볼 형식: "ESU25   " (8자리 패딩)
+        subscribe_symbols = []
+        for entry in symbols_with_exchange:
+            symbol = entry.get("symbol", "")
+            # 8자리로 패딩
+            padded_symbol = symbol.ljust(8)
+            subscribe_symbols.append(padded_symbol)
+        
+        # 실시간 데이터 저장소
+        prices = {}
+        volumes = {}
+        bids = {}
+        asks = {}
+        received_event = asyncio.Event()
+        
+        def on_tick(resp):
+            """OVC 틱 데이터 수신 콜백"""
+            try:
+                # OVC 응답 구조: resp.body.symbol, resp.body.curpr 등
+                body = resp.body if hasattr(resp, 'body') and resp.body else resp
+                symbol = getattr(body, 'symbol', '')
+                symbol = symbol.strip() if symbol else ''  # 패딩 제거
+                
+                # OVC 필드: curpr(체결가격), totq(누적체결수량)
+                curpr = getattr(body, 'curpr', '0')
+                totq = getattr(body, 'totq', '0')
+                
+                price = float(curpr) if curpr else 0.0
+                volume = int(totq) if totq else 0
+                
+                if symbol:
+                    prices[symbol] = price
+                    volumes[symbol] = volume
+                    context.log("debug", f"OVC tick: {symbol} price={price} vol={volume}", node_id)
+                    received_event.set()
+            except Exception as e:
+                context.log("warning", f"OVC parse error: {e}", node_id)
+        
+        ovc.on_ovc_message(on_tick)
+        ovc.add_ovc_symbols(symbols=subscribe_symbols)
+        context.log("info", f"Subscribed to OVC: {subscribe_symbols}", node_id)
+        
+        # 첫 번째 틱 수신 대기 (최대 10초)
+        try:
+            await asyncio.wait_for(received_event.wait(), timeout=10.0)
+        except asyncio.TimeoutError:
+            context.log("warning", f"No tick received within 10s, continuing with empty data", node_id)
+        
+        # stay_connected=False면 연결 종료
+        if not stay_connected:
+            ovc.remove_ovc_symbols(symbols=subscribe_symbols)
+            await real_client.close()
+            context.log("info", f"WebSocket disconnected (stay_connected=False)", node_id)
+        else:
+            # 연결 유지: context에 클라이언트 저장
+            context.set_node_state(node_id, "real_client", real_client)
+            context.set_node_state(node_id, "ovc", ovc)
+            context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
+        
+        context.log("info", f"RealMarketData (futures) received: {list(prices.keys())}", node_id)
+        
+        return {
+            "symbols": symbols_raw,
+            "price": prices,
+            "volume": volumes,
+            "bid": bids,
+            "ask": asks,
+            "data": self._build_full_data(symbols_raw, prices, volumes, bids, asks),
+        }
+    
+    def _get_stock_exchange_code(self, exchange: str) -> str:
+        """거래소명을 LS증권 거래소 코드로 변환"""
+        exchange_map = {
+            "NASDAQ": "82",
+            "NYSE": "81",
+            "AMEX": "83",
+            "82": "82",
+            "81": "81",
+            "83": "83",
+        }
+        return exchange_map.get(exchange.upper(), "82")  # 기본값 NASDAQ
     
     def _resolve_symbols(
         self,
@@ -3588,11 +4020,11 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
     """
 
     # 거래소 코드 매핑 (해외주식)
+    # Note: AMEX는 실제로 exchcd=81로 반환됨 (NYSE/AMEX 통합)
     EXCHANGE_CODES = {
         "NASDAQ": "82",
         "NYSE": "81",
-        "AMEX": "83",
-        # 기본값으로 NASDAQ 사용
+        "AMEX": "81",  # AMEX도 81 사용 (NYSE/AMEX 통합)
     }
 
     async def execute(
@@ -3607,12 +4039,40 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         
         # 입력 symbols 가져오기
         input_symbols = context.get_output(f"_input_{node_id}", "symbols")
-        symbols = input_symbols or config.get("symbols", [])
+        symbols_raw = input_symbols or config.get("symbols", [])
+        
+        # symbols 정규화: [{exchange, symbol}] → 문자열 리스트 + exchange 정보 보존
+        symbols = []
+        symbol_exchange_map = {}  # {symbol: exchange_code}
+        for entry in symbols_raw:
+            if isinstance(entry, dict):
+                symbol = entry.get("symbol", "")
+                exchange = entry.get("exchange", "")
+                exchange_code = entry.get("exchange_code", exchange)  # WatchlistNode에서 변환된 코드
+                if symbol:
+                    symbols.append(symbol)
+                    # 거래소 이름 → LS 코드 변환
+                    if exchange_code in ("NASDAQ", "82"):
+                        symbol_exchange_map[symbol] = "82"
+                    elif exchange_code in ("NYSE", "AMEX", "81"):
+                        symbol_exchange_map[symbol] = "81"
+                    elif exchange_code in ("83",):
+                        symbol_exchange_map[symbol] = "83"
+                    else:
+                        symbol_exchange_map[symbol] = exchange_code or "82"  # 기본값 NASDAQ
+            elif isinstance(entry, str):
+                symbols.append(entry)
+                symbol_exchange_map[entry] = "82"  # 기본값 NASDAQ
         
         # positions 데이터 가져오기 (market_code 포함)
         positions = context.get_output(f"_input_{node_id}", "positions")
         if not positions:
             positions = context.get_output("account", "positions") or {}
+        
+        # symbol_exchange_map을 positions에 병합 (positions가 우선)
+        for symbol in symbols:
+            if symbol not in positions:
+                positions[symbol] = {"market_code": symbol_exchange_map.get(symbol, "82")}
         
         if not symbols:
             context.log("warning", "No symbols provided", node_id)
@@ -3765,7 +4225,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             
             for symbol in symbols:
                 try:
-                    # positions에서 market_code 가져오기 (LS증권 거래소 코드: 81=NYSE, 82=NASDAQ, 83=AMEX 등)
+                    # positions에서 market_code 가져오기 (LS증권 거래소 코드: 81=NYSE/AMEX, 82=NASDAQ)
                     exchcd = "82"  # 기본값 NASDAQ
                     if positions and symbol in positions:
                         pos_market_code = positions[symbol].get("market_code", "")
@@ -3963,9 +4423,17 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         bars.sort(key=lambda x: x["date"])
         return bars
 
-    def _empty_historical_result(self, symbols: List[str], error_msg: str = "") -> Dict[str, Any]:
+    def _empty_historical_result(self, symbols: List, error_msg: str = "") -> Dict[str, Any]:
         """빈 historical 결과 반환 (에러 시)"""
-        result = {symbol: [] for symbol in symbols}
+        # symbols가 dict 리스트인 경우 문자열로 변환
+        symbol_keys = []
+        for s in symbols:
+            if isinstance(s, dict):
+                symbol_keys.append(s.get("symbol", str(s)))
+            else:
+                symbol_keys.append(str(s))
+        
+        result = {symbol: [] for symbol in symbol_keys}
         if error_msg:
             result["_error"] = error_msg
         return result
@@ -4791,6 +5259,7 @@ class WorkflowExecutor:
             "StartNode": StartNodeExecutor(),
             "ScheduleNode": ScheduleNodeExecutor(),
             "WatchlistNode": WatchlistNodeExecutor(),
+            "SymbolQueryNode": SymbolQueryNodeExecutor(),
             "BrokerNode": BrokerNodeExecutor(),
             "AccountNode": AccountNodeExecutor(),  # 1회성 REST API 조회
             "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
@@ -4859,7 +5328,7 @@ class WorkflowExecutor:
         workflow_inputs = definition.get("inputs", {})
         
         # Extract workflow credentials for credential_id resolution
-        workflow_credentials = definition.get("credentials", {})
+        workflow_credentials = definition.get("credentials", [])
         
         # === Resource Context Setup ===
         # Priority: explicit resource_limits > workflow definition > auto-detect

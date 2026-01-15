@@ -72,9 +72,9 @@ class RealMarketDataNode(BaseNode):
     ]
 
     # Symbols config field (optional - can also receive from input port)
-    symbols: List[str] = Field(
+    symbols: List[Dict[str, str]] = Field(
         default=[],
-        description="Symbols to subscribe. If empty, uses input port value.",
+        description="Symbols to subscribe with exchange info. Format: [{exchange, symbol}, ...]. If empty, uses input port value.",
     )
 
     @classmethod
@@ -99,20 +99,20 @@ class RealMarketDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="i18n:fields.RealMarketDataNode.symbols",
+                description="구독할 종목 목록입니다. 각 항목은 거래소(exchange)와 종목코드(symbol)를 포함합니다. WatchlistNode의 symbols 출력을 연결하거나 직접 입력하세요.",
                 default=[],
-                array_item_type=FieldType.STRING,
+                array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
                 bindable=True,
                 expression_enabled=True,
-                # 바인딩 가이드
-                example=["AAPL", "TSLA", "NVDA"],
+                ui_component="symbol_editor",
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=[
                     "WatchlistNode.symbols",
                     "ScreenerNode.filtered_symbols",
                 ],
-                expected_type="list[str]",
+                expected_type="list[dict]",
             ),
             "fields": FieldSchema(
                 name="fields",

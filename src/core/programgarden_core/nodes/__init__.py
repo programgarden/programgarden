@@ -6,7 +6,7 @@ ProgramGarden Core - 노드 타입 정의
 - realtime (3): RealMarketDataNode, RealAccountNode, RealOrderEventNode
 - data (5): MarketDataNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode
 - account (1): AccountNode
-- symbol (4): WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode
+- symbol (5): WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode
 - trigger (3): ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode
 - condition (3): ConditionNode, LogicNode, PerformanceConditionNode
 - risk (4): PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode
@@ -32,6 +32,7 @@ from programgarden_core.nodes.symbol import (
     MarketUniverseNode,
     ScreenerNode,
     SymbolFilterNode,
+    SymbolQueryNode,
 )
 from programgarden_core.nodes.trigger import (
     ScheduleNode,
@@ -76,6 +77,7 @@ __all__ = [
     "MarketUniverseNode",
     "ScreenerNode",
     "SymbolFilterNode",
+    "SymbolQueryNode",
     # Trigger
     "ScheduleNode",
     "TradingHoursFilterNode",

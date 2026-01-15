@@ -1,0 +1,51 @@
+{
+  "id": "historical-data-stock",
+  "name": "해외주식 과거 차트 조회",
+  "description": "AAPL, TSLA의 최근 100일 일봉 차트 데이터를 조회합니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode"
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-stock"
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NASDAQ", "symbol": "TSLA"}
+      ]
+    },
+    {
+      "id": "history",
+      "type": "HistoricalDataNode",
+      "connection": "{{ nodes.broker.connection }}",
+      "interval": "1d",
+      "start_date": "dynamic:days_ago(100)",
+      "end_date": "dynamic:today()"
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "history"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-stock",
+      "type": "broker_ls",
+      "name": "LS증권 해외주식",
+      "data": {
+        "appkey": "",
+        "appsecret": "",
+        "paper_trading": false
+      }
+    }
+  ]
+}
