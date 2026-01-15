@@ -405,6 +405,21 @@
   "outputs.BrokerNode.product": "Product type (overseas_stock/overseas_futures)",
   "outputs.BrokerNode.paper_trading": "Paper trading mode (true: paper, false: live)",
 
+  "outputs.MarketDataNode.price": "Current price by symbol. Most recent trade price from API.",
+  "outputs.MarketDataNode.change": "Price change vs previous day. Positive = up, negative = down.",
+  "outputs.MarketDataNode.change_pct": "Percent change vs previous day (%). e.g., -1.5 means 1.5% decline.",
+  "outputs.MarketDataNode.timestamp": "Quote timestamp (HHmmss format). e.g., 143025 = 14:30:25.",
+  "outputs.MarketDataNode.exchange": "Exchange code. e.g., HKEX (Hong Kong), NYSE, NASD (Nasdaq).",
+  "outputs.MarketDataNode.symbol_name": "Full symbol name. e.g., Hang Seng(2026.02).",
+  "outputs.MarketDataNode.volume": "Volume by symbol. Total contracts/shares traded today.",
+  "outputs.MarketDataNode.ohlcv": "Candle data by symbol (open, high, low, close, volume).",
+
+  "outputs.HistoricalDataNode.ohlcv": "Historical candle data by symbol. Each candle includes open, high, low, close, volume.",
+  "outputs.HistoricalDataNode.dates": "List of dates queried. YYYY-MM-DD format.",
+  "outputs.HistoricalDataNode.symbols": "List of symbol codes queried.",
+  "outputs.HistoricalDataNode.interval": "Data interval (1d: daily, 1h: hourly, 5m: 5 minutes, 1m: 1 minute).",
+  "outputs.HistoricalDataNode.count": "Number of data points returned.",
+
   "outputs.RealMarketDataNode.status": "WebSocket connection status",
   "outputs.RealMarketDataNode.symbols": "Currently subscribed symbol list",
   "outputs.RealMarketDataNode.price": "Current price by symbol (e.g., {\"AAPL\": 185.50})",

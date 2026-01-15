@@ -426,6 +426,21 @@
   "outputs.BrokerNode.product": "상품 유형 (overseas_stock: 해외주식, overseas_futures: 해외선물)",
   "outputs.BrokerNode.paper_trading": "모의투자 여부 (true: 모의투자, false: 실계좌)",
 
+  "outputs.MarketDataNode.price": "종목별 현재가. API에서 조회한 가장 최근 거래 가격입니다.",
+  "outputs.MarketDataNode.change": "종목별 전일 대비 가격 변동. 양수면 상승, 음수면 하락입니다.",
+  "outputs.MarketDataNode.change_pct": "종목별 전일 대비 등락률 (%). 예: -1.5면 전일 대비 1.5% 하락.",
+  "outputs.MarketDataNode.timestamp": "시세 조회 시각 (HHmmss 형식). 예: 143025 = 14시 30분 25초.",
+  "outputs.MarketDataNode.exchange": "거래소 코드. 예: HKEX (홍콩), NYSE (뉴욕), NASD (나스닥).",
+  "outputs.MarketDataNode.symbol_name": "종목 정식 명칭. 예: Hang Seng(2026.02).",
+  "outputs.MarketDataNode.volume": "종목별 거래량. 오늘 체결된 총 계약(주식) 수입니다.",
+  "outputs.MarketDataNode.ohlcv": "종목별 캔들 데이터 (시가, 고가, 저가, 종가, 거래량).",
+
+  "outputs.HistoricalDataNode.ohlcv": "종목별 과거 캔들 데이터. 각 캔들은 시가(open), 고가(high), 저가(low), 종가(close), 거래량(volume)을 포함합니다.",
+  "outputs.HistoricalDataNode.dates": "조회된 날짜 리스트. YYYY-MM-DD 형식입니다.",
+  "outputs.HistoricalDataNode.symbols": "조회된 종목 코드 리스트.",
+  "outputs.HistoricalDataNode.interval": "데이터 간격 (1d: 일봉, 1h: 시간봉, 5m: 5분봉, 1m: 1분봉).",
+  "outputs.HistoricalDataNode.count": "조회된 데이터 개수.",
+
   "outputs.RealMarketDataNode.status": "WebSocket 연결 상태",
   "outputs.RealMarketDataNode.symbols": "현재 구독 중인 종목 코드 리스트",
   "outputs.RealMarketDataNode.price": "종목별 현재가 (예: {\"AAPL\": 185.50})",

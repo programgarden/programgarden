@@ -1,7 +1,7 @@
 {
   "id": "futures-marketdata-test",
   "name": "해외선물 현재가 조회",
-  "description": "MarketDataNode로 해외선물 현재가/거래량/OHLCV 조회 (o3105) - 2026년 근월물",
+  "description": "MarketDataNode로 해외선물 현재가/거래량/OHLCV 조회 (o3105) - 홍콩거래소 선물 (모의투자 지원)",
   "nodes": [
     {
       "id": "start_1",
@@ -25,12 +25,12 @@
       "type": "MarketDataNode",
       "category": "market",
       "position": {"x": 700, "y": 200},
-      "description": "해외선물 현재가 조회 (o3105)",
+      "description": "해외선물 현재가 조회 (o3105) - 홍콩 항셍지수",
       "connection": "{{nodes.broker_2.connection}}",
       "symbols": [
-        {"exchange": "CME", "symbol": "GCG26"},
-        {"exchange": "NYMEX", "symbol": "CLG26"},
-        {"exchange": "CME", "symbol": "ESH26"}
+        {"exchange": "HKEX", "symbol": "HSIG26"},
+        {"exchange": "HKEX", "symbol": "HCEIG26"},
+        {"exchange": "HKEX", "symbol": "HTIG26"}
       ],
       "fields": ["price", "volume", "ohlcv"]
     },

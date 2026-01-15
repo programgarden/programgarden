@@ -3335,10 +3335,10 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             node_id
         )
         
-        # product별 분기
+        # product별 분기 (overseas_futures와 overseas_futureoption은 동일)
         if product == "overseas_stock":
             result = await self._fetch_overseas_stock(symbols, fields, context, node_id)
-        elif product == "overseas_futureoption":
+        elif product in ("overseas_futureoption", "overseas_futures"):
             result = await self._fetch_overseas_futures(symbols, fields, context, node_id)
         else:
             context.log("error", f"Unsupported product for MarketDataNode: {product}", node_id)
@@ -3504,7 +3504,9 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                     # o3105 현재가 조회 (종목심볼만 필요)
                     body = O3105InBlock(symbol=symbol)
                     
+                    context.log("debug", f"Calling o3105 for symbol={symbol}", node_id)
                     response = api.market().o3105(body=body).req()
+                    context.log("debug", f"o3105 response: {response}", node_id)
                     
                     if response and response.block:
                         out_block = response.block
@@ -3646,10 +3648,10 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             node_id
         )
         
-        # product별 분기
+        # product별 분기 (overseas_futures와 overseas_futureoption은 동일)
         if product == "overseas_stock":
             ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, positions)
-        elif product == "overseas_futureoption":
+        elif product in ("overseas_futureoption", "overseas_futures"):
             ohlcv_data = await self._fetch_overseas_futures(symbols, start_date, end_date, interval, context, node_id)
         else:
             context.log("error", f"Unsupported product for HistoricalDataNode: {product}", node_id)
