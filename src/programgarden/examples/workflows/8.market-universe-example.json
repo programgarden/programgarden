@@ -1,0 +1,52 @@
+{
+  "id": "market-universe-example",
+  "name": "대표지수 종목 조회 예제",
+  "description": "나스닥 100 지수에 포함된 100개 종목을 자동으로 가져와서 현재가를 조회합니다. MarketUniverseNode는 pytickersymbols 라이브러리를 사용하므로 broker 연결이 필요 없습니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 100, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-stock",
+      "position": {"x": 300, "y": 100}
+    },
+    {
+      "id": "universe",
+      "type": "MarketUniverseNode",
+      "universe": "NASDAQ100",
+      "position": {"x": 300, "y": 300}
+    },
+    {
+      "id": "marketData",
+      "type": "MarketDataNode",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.universe.symbols }}",
+      "fields": ["price", "volume"],
+      "position": {"x": 500, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "start", "to": "universe"},
+    {"from": "broker", "to": "marketData"},
+    {"from": "universe", "to": "marketData"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-stock",
+      "type": "broker_ls",
+      "name": "LS증권 해외주식",
+      "data": {
+        "appkey": "",
+        "appsecret": "",
+        "paper_trading": false
+      }
+    }
+  ]
+}

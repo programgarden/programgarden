@@ -126,10 +126,13 @@ class RealRequestAbstract(ABC):
                     target_uri = None
                     if self._token_manager is not None:
                         target_uri = getattr(self._token_manager, "wss_url", None)
+                    # NOTE: ping_interval=None disables automatic pings from websockets library
+                    # to avoid interference with message reception. Manual pings are sent 
+                    # via recv_timeout to detect stalled connections.
                     async with connect(
                         uri=target_uri or URLS.WSS_URL,
-                        ping_interval=self._ping_interval,
-                        ping_timeout=self._ping_timeout,
+                        ping_interval=None,
+                        ping_timeout=None,
                     ) as ws:
                         self._ws = ws
                         # signal that a connection is available
@@ -142,16 +145,8 @@ class RealRequestAbstract(ABC):
                         # Inner loop: active connection receive loop
                         while not self._stop:
                             try:
-                                # use explicit recv with timeout so stalled connections are detected
-                                raw = await asyncio.wait_for(ws.recv(), timeout=self._recv_timeout)
-                            except asyncio.TimeoutError:
-                                # no message received within recv_timeout; send a ping and continue
-                                try:
-                                    await ws.ping()
-                                except Exception:
-                                    # ping failed; break to reconnect
-                                    break
-                                continue
+                                # blocking recv - no timeout for real-time streaming
+                                raw = await ws.recv()
                             except asyncio.CancelledError:
                                 # propagate cancellation so outer task can stop cleanly
                                 raise

@@ -507,6 +507,392 @@ class WatchlistNodeExecutor(NodeExecutorBase):
         }
 
 
+class SymbolFilterNodeExecutor(NodeExecutorBase):
+    """
+    SymbolFilterNode executor - 종목 비교/필터
+    
+    두 종목 리스트 간 집합 연산:
+    - difference: A - B (차집합) - 중복 매수 방지에 활용
+    - intersection: A ∩ B (교집합) - 복합 조건 충족 종목
+    - union: A ∪ B (합집합) - 여러 소스 통합
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        operation = config.get("operation", "difference")
+        input_a = config.get("input_a", [])
+        input_b = config.get("input_b", [])
+        
+        # 종목 코드만 추출하여 집합으로 변환
+        def extract_symbols(symbol_list: List) -> set:
+            result = set()
+            for item in symbol_list:
+                if isinstance(item, dict):
+                    symbol = item.get("symbol", "")
+                    if symbol:
+                        result.add(symbol)
+                elif isinstance(item, str):
+                    result.add(item)
+            return result
+        
+        # 원본 종목 정보 유지를 위한 매핑
+        def build_symbol_map(symbol_list: List) -> Dict[str, Dict]:
+            result = {}
+            for item in symbol_list:
+                if isinstance(item, dict):
+                    symbol = item.get("symbol", "")
+                    if symbol and symbol not in result:
+                        result[symbol] = item
+                elif isinstance(item, str):
+                    if item not in result:
+                        result[item] = {"symbol": item, "exchange": ""}
+            return result
+        
+        set_a = extract_symbols(input_a)
+        set_b = extract_symbols(input_b)
+        map_a = build_symbol_map(input_a)
+        map_b = build_symbol_map(input_b)
+        
+        # 집합 연산 수행
+        if operation == "difference":
+            result_symbols = set_a - set_b
+            source_map = map_a
+        elif operation == "intersection":
+            result_symbols = set_a & set_b
+            source_map = map_a
+        elif operation == "union":
+            result_symbols = set_a | set_b
+            source_map = {**map_b, **map_a}  # A가 우선
+        else:
+            context.log("warning", f"Unknown operation: {operation}, using difference", node_id)
+            result_symbols = set_a - set_b
+            source_map = map_a
+        
+        # 결과를 원본 형식으로 복원
+        output_symbols = []
+        for symbol in result_symbols:
+            if symbol in source_map:
+                output_symbols.append(source_map[symbol])
+            else:
+                output_symbols.append({"symbol": symbol, "exchange": ""})
+        
+        context.log("info", f"SymbolFilter ({operation}): {len(set_a)} - {len(set_b)} = {len(output_symbols)} symbols", node_id)
+        
+        return {
+            "symbols": output_symbols,
+            "count": len(output_symbols),
+        }
+
+
+class MarketUniverseNodeExecutor(NodeExecutorBase):
+    """
+    MarketUniverseNode executor - 대표지수 종목
+    
+    ⚠️ 해외주식(overseas_stock) 전용 노드입니다. 해외선물은 지원하지 않습니다.
+    
+    pytickersymbols 라이브러리를 활용하여 미국 대표지수 구성종목을 조회합니다.
+    Broker 연결 없이 독립적으로 실행됩니다.
+    
+    지원 인덱스 (LS증권 거래 가능 거래소):
+    - NASDAQ 100 (~101개)
+    - S&P 500 (~503개)
+    - S&P 100
+    - DOW JONES (다우존스 30)
+    
+    Note: pytickersymbols는 유럽/아시아 인덱스도 지원하지만,
+          LS증권에서 거래 가능한 미국 인덱스만 권장합니다.
+    """
+    
+    # 인덱스별 심볼 캐시 (앱 실행 중 재사용)
+    _cache: Dict[str, List[Dict[str, str]]] = {}
+    _cache_time: Dict[str, float] = {}
+    CACHE_TTL = 3600 * 24  # 24시간 캐시
+    
+    # 사용자 입력 → pytickersymbols 인덱스명 매핑 (미국 인덱스)
+    INDEX_MAPPING = {
+        "NASDAQ100": "NASDAQ 100",
+        "NASDAQ 100": "NASDAQ 100",
+        "SP500": "S&P 500",
+        "S&P500": "S&P 500",
+        "S&P 500": "S&P 500",
+        "SP100": "S&P 100",
+        "S&P100": "S&P 100",
+        "S&P 100": "S&P 100",
+        "DOW30": "DOW JONES",
+        "DOW JONES": "DOW JONES",
+        "DOWJONES": "DOW JONES",
+    }
+    
+    # 인덱스별 기본 거래소 매핑
+    INDEX_EXCHANGE_MAPPING = {
+        "NASDAQ 100": "NASDAQ",
+        "S&P 500": "",  # 혼합 (NYSE, NASDAQ)
+        "S&P 100": "",
+        "DOW JONES": "",
+    }
+    
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        import time
+        
+        universe = config.get("universe", "NASDAQ100")
+        
+        # 사용자 입력을 pytickersymbols 인덱스명으로 변환
+        pts_index = self.INDEX_MAPPING.get(universe, universe)
+        
+        # 캐시 확인
+        now = time.time()
+        if pts_index in self._cache:
+            cache_age = now - self._cache_time.get(pts_index, 0)
+            if cache_age < self.CACHE_TTL:
+                symbols = self._cache[pts_index]
+                context.log("info", f"MarketUniverse ({pts_index}): {len(symbols)} symbols (cached)", node_id)
+                return {"symbols": symbols, "count": len(symbols)}
+        
+        # pytickersymbols로 조회 (동기 라이브러리이므로 to_thread 사용)
+        try:
+            symbols = await self._fetch_index_constituents(pts_index, context, node_id)
+            
+            # 캐시 저장
+            self._cache[pts_index] = symbols
+            self._cache_time[pts_index] = now
+            
+            context.log("info", f"MarketUniverse ({pts_index}): {len(symbols)} symbols", node_id)
+            return {"symbols": symbols, "count": len(symbols)}
+            
+        except Exception as e:
+            context.log("error", f"MarketUniverse fetch failed: {e}", node_id)
+            return {"symbols": [], "count": 0, "error": str(e)}
+    
+    async def _fetch_index_constituents(
+        self,
+        index_name: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, str]]:
+        """pytickersymbols를 사용하여 인덱스 구성종목 조회"""
+        import asyncio
+        
+        def _sync_fetch():
+            """동기 함수 - pytickersymbols는 동기 라이브러리"""
+            from pytickersymbols import PyTickerSymbols
+            
+            pts = PyTickerSymbols()
+            available_indices = pts.get_all_indices()
+            
+            if index_name not in available_indices:
+                raise ValueError(
+                    f"Unknown index: {index_name}. "
+                    f"Available indices: {', '.join(available_indices)}"
+                )
+            
+            stocks = list(pts.get_stocks_by_index(index_name))
+            
+            # 기본 거래소 결정
+            default_exchange = self.INDEX_EXCHANGE_MAPPING.get(index_name, "")
+            
+            symbols = []
+            for stock in stocks:
+                symbol = stock.get("symbol", "")
+                if not symbol:
+                    continue
+                
+                # 거래소 정보 추출 (있으면 사용, 없으면 기본값)
+                exchange = default_exchange
+                stock_symbols = stock.get("symbols", [])
+                for sym_info in stock_symbols:
+                    if sym_info.get("yahoo"):
+                        # yahoo 심볼에서 거래소 힌트 추출 가능
+                        yahoo_sym = sym_info.get("yahoo", "")
+                        if "." in yahoo_sym:
+                            # 예: "7203.T" → 도쿄 거래소
+                            suffix = yahoo_sym.split(".")[-1]
+                            exchange_hints = {
+                                "T": "TSE",  # Tokyo
+                                "L": "LSE",  # London
+                                "PA": "EPA",  # Paris
+                                "DE": "FRA",  # Frankfurt
+                                "F": "FRA",
+                            }
+                            exchange = exchange_hints.get(suffix, exchange)
+                        break
+                
+                symbols.append({
+                    "exchange": exchange,
+                    "symbol": symbol,
+                    "name": stock.get("name", ""),
+                })
+            
+            return symbols
+        
+        # 동기 호출을 thread pool에서 실행하여 이벤트 루프 블로킹 방지
+        result = await asyncio.to_thread(_sync_fetch)
+        return result
+
+
+class ScreenerNodeExecutor(NodeExecutorBase):
+    """
+    ScreenerNode executor - 조건으로 종목찾기
+    
+    Yahoo Finance API를 활용하여 시가총액, 거래량 등 조건으로 종목을 검색합니다.
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        market_cap_min = config.get("market_cap_min")
+        market_cap_max = config.get("market_cap_max")
+        volume_min = config.get("volume_min")
+        sector = config.get("sector")
+        exchange = config.get("exchange")
+        max_results = config.get("max_results", 100)
+        
+        # 입력으로 받은 종목 리스트 (선택사항)
+        input_symbols = config.get("symbols", [])
+        
+        try:
+            if input_symbols:
+                # 입력 종목에서 필터링
+                symbols = await self._filter_symbols(
+                    input_symbols, market_cap_min, market_cap_max, 
+                    volume_min, sector, exchange, max_results, context, node_id
+                )
+            else:
+                # 전체 시장에서 검색
+                symbols = await self._search_market(
+                    market_cap_min, market_cap_max,
+                    volume_min, sector, exchange, max_results, context, node_id
+                )
+            
+            context.log("info", f"Screener: {len(symbols)} symbols matched", node_id)
+            return {"symbols": symbols, "count": len(symbols)}
+            
+        except Exception as e:
+            context.log("error", f"Screener failed: {e}", node_id)
+            return {"symbols": [], "count": 0, "error": str(e)}
+    
+    async def _filter_symbols(
+        self,
+        symbols: List[Dict],
+        market_cap_min: Optional[float],
+        market_cap_max: Optional[float],
+        volume_min: Optional[int],
+        sector: Optional[str],
+        exchange: Optional[str],
+        max_results: int,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, str]]:
+        """입력 종목 리스트에서 조건 필터링"""
+        import asyncio
+        
+        tickers = [s.get("symbol", s) if isinstance(s, dict) else s for s in symbols]
+        
+        # yfinance 동기 호출을 thread pool에서 실행 (이벤트 루프 블로킹 방지)
+        def _sync_filter():
+            import yfinance as yf
+            filtered = []
+            
+            for ticker in tickers[:max_results * 2]:  # 여유분 확보
+                try:
+                    stock = yf.Ticker(ticker)
+                    info = stock.info
+                    
+                    # 필터 조건 확인
+                    mcap = info.get("marketCap", 0)
+                    vol = info.get("averageVolume", 0)
+                    stock_sector = info.get("sector", "")
+                    stock_exchange = info.get("exchange", "")
+                    
+                    # 거래소 매핑 (yfinance 코드 → 표준 이름)
+                    ex_map = {"NMS": "NASDAQ", "NGM": "NASDAQ", "NYQ": "NYSE", "ASE": "AMEX", "NCM": "NASDAQ"}
+                    mapped_exchange = ex_map.get(stock_exchange, stock_exchange)
+                    
+                    if market_cap_min and mcap < market_cap_min:
+                        continue
+                    if market_cap_max and mcap > market_cap_max:
+                        continue
+                    if volume_min and vol < volume_min:
+                        continue
+                    # sector 정규화 비교 (대소문자, 띄어쓰기 무시)
+                    if sector:
+                        normalized_input = sector.lower().replace(" ", "").replace("-", "").replace("_", "")
+                        normalized_stock = stock_sector.lower().replace(" ", "").replace("-", "").replace("_", "")
+                        if normalized_input != normalized_stock:
+                            continue
+                    # exchange 필터 (매핑된 값으로 비교)
+                    if exchange and exchange.upper() not in mapped_exchange.upper():
+                        continue
+                    
+                    filtered.append({
+                        "exchange": mapped_exchange,
+                        "symbol": ticker,
+                        "market_cap": mcap,
+                        "volume": vol,
+                        "sector": stock_sector,
+                    })
+                    
+                    if len(filtered) >= max_results:
+                        break
+                        
+                except Exception as e:
+                    # 동기 함수에서는 context 사용 불가, 그냥 skip
+                    continue
+            
+            # 시가총액 내림차순 정렬
+            filtered.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
+            return filtered[:max_results]
+        
+        # thread pool에서 실행하여 이벤트 루프 블로킹 방지
+        result = await asyncio.to_thread(_sync_filter)
+        return result
+    
+    async def _search_market(
+        self,
+        market_cap_min: Optional[float],
+        market_cap_max: Optional[float],
+        volume_min: Optional[int],
+        sector: Optional[str],
+        exchange: Optional[str],
+        max_results: int,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, str]]:
+        """전체 시장에서 조건 검색 (S&P500 기반)"""
+        # 기본적으로 S&P500에서 필터링
+        universe_executor = MarketUniverseNodeExecutor()
+        universe_result = await universe_executor.execute(
+            node_id=f"{node_id}_universe",
+            node_type="MarketUniverseNode",
+            config={"universe": "SP500"},
+            context=context,
+        )
+        
+        input_symbols = universe_result.get("symbols", [])
+        
+        return await self._filter_symbols(
+            input_symbols, market_cap_min, market_cap_max,
+            volume_min, sector, exchange, max_results, context, node_id
+        )
+
+
 class SymbolQueryNodeExecutor(NodeExecutorBase):
     """
     SymbolQueryNode executor - 전체종목조회
@@ -1876,10 +2262,14 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외주식 실시간 시세 (GSC)"""
         import asyncio
+        from datetime import datetime
         
         appkey = broker_connection.get("appkey", "")
         appsecret = broker_connection.get("appsecret", "")
         paper_trading = broker_connection.get("paper_trading", False)
+        
+        # 현재 이벤트 루프 캡처 (콜백에서 사용)
+        loop = asyncio.get_running_loop()
         
         # LS 로그인
         ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "RealMarketDataNode")
@@ -1890,7 +2280,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         # 실시간 클라이언트 생성 및 연결
         real_client = ls.overseas_stock().real()
         await real_client.connect()
-        context.log("info", f"WebSocket connected for overseas_stock", node_id)
+        context.log("info", f"WebSocket connected for overseas_stock (paper_trading={paper_trading})", node_id)
         
         # GSC 구독 설정
         gsc = real_client.GSC()
@@ -1904,57 +2294,100 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             exchange_code = self._get_stock_exchange_code(exchange)
             subscribe_symbols.append(f"{exchange_code}{symbol}")
         
-        # 실시간 데이터 저장소
+        # 실시간 데이터 저장소 (콜백에서 업데이트됨)
         prices = {}
         volumes = {}
         bids = {}
         asks = {}
-        received_event = asyncio.Event()
+        
+        # 트리거할 하위 노드 목록 (RealOrderEventNode 패턴)
+        # 참고: _execute_stock()에서는 config 파라미터가 없으므로 빈 리스트 사용
+        # TODO: execute() → _execute_stock()로 config 전달하여 개선
+        trigger_nodes = []  # 추후 config.get("_trigger_on_update_nodes", []) 전달 필요
         
         def on_tick(resp):
-            """GSC 틱 데이터 수신 콜백"""
+            """GSC 틱 데이터 수신 콜백 - 체결 시 실시간 업데이트"""
             try:
-                # GSCRealResponse에서 데이터 추출
-                block = resp.block if hasattr(resp, 'block') else resp
-                symbol = getattr(block, 'symbol', '') or getattr(block, 'shtn_isu_no', '')
-                # 심볼에서 거래소 코드 제거 (81AAPL → AAPL)
-                if symbol and len(symbol) > 2 and symbol[:2].isdigit():
-                    symbol = symbol[2:]
+                # GSCRealResponse.body에서 데이터 추출
+                body = resp.body if hasattr(resp, 'body') else None
                 
-                price = float(getattr(block, 'last_prpr', 0) or getattr(block, 'crnt_pric', 0) or 0)
-                volume = int(getattr(block, 'acml_vol', 0) or getattr(block, 'deal_vlum', 0) or 0)
+                # body가 None이면 구독 확인 메시지 (무시)
+                if body is None:
+                    context.log("debug", f"GSC subscription confirmed: {resp.rsp_msg if hasattr(resp, 'rsp_msg') else ''}", node_id)
+                    return
                 
-                if symbol:
+                # GSCRealResponseBody 필드: symbol, price, totq, open, high, low 등
+                symbol = getattr(body, 'symbol', '')
+                price = float(getattr(body, 'price', 0) or 0)
+                volume = int(getattr(body, 'totq', 0) or 0)
+                
+                if symbol and price > 0:
                     prices[symbol] = price
                     volumes[symbol] = volume
-                    context.log("debug", f"GSC tick: {symbol} price={price} vol={volume}", node_id)
-                    received_event.set()
+                    
+                    # 콘솔 출력 (RealOrderEventNode 패턴)
+                    print(f"\n{'='*60}")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] GSC 체결")
+                    print(f"  종목: {symbol}  가격: ${price:,.2f}  거래량: {volume:,}")
+                    print(f"{'='*60}\n")
+                    
+                    # 실시간 데이터 context에 업데이트
+                    full_data = self._build_full_data(symbols_raw, prices, volumes, bids, asks)
+                    context.set_output(node_id, "price", prices.copy())
+                    context.set_output(node_id, "volume", volumes.copy())
+                    context.set_output(node_id, "data", full_data)
+                    
+                    output_data = {
+                        "price": prices.copy(),
+                        "volume": volumes.copy(),
+                        "symbol": symbol,
+                        "data": full_data,
+                    }
+                    
+                    # SSE 브로드캐스트 (스레드 안전하게)
+                    asyncio.run_coroutine_threadsafe(
+                        context.notify_output_update(
+                            node_id=node_id,
+                            node_type="RealMarketDataNode",
+                            outputs=output_data,
+                        ),
+                        loop
+                    )
+                    
+                    # 후속 노드 트리거 (RealOrderEventNode 패턴)
+                    asyncio.run_coroutine_threadsafe(
+                        context.emit_event(
+                            event_type="market_data",
+                            source_node_id=node_id,
+                            data=output_data,
+                            trigger_nodes=trigger_nodes,
+                        ),
+                        loop
+                    )
             except Exception as e:
                 context.log("warning", f"GSC parse error: {e}", node_id)
         
         gsc.on_gsc_message(on_tick)
         gsc.add_gsc_symbols(symbols=subscribe_symbols)
-        context.log("info", f"Subscribed to GSC: {subscribe_symbols}", node_id)
+        context.log("info", f"Subscribed to GSC: {subscribe_symbols} (체결 시 실시간 업데이트)", node_id)
         
-        # 첫 번째 틱 수신 대기 (최대 10초)
-        try:
-            await asyncio.wait_for(received_event.wait(), timeout=10.0)
-        except asyncio.TimeoutError:
-            context.log("warning", f"No tick received within 10s, continuing with empty data", node_id)
+        # 타임아웃 없음 - 체결은 언제 올지 모름 (장 외 시간에는 오지 않음)
+        # stay_connected=true면 구독 유지, false면 즉시 종료
         
-        # stay_connected=False면 연결 종료
         if not stay_connected:
+            # stay_connected=False: 구독만 설정하고 즉시 종료 (1회성 조회 용도 아님)
+            context.log("warning", f"stay_connected=False for realtime node - no data will be received", node_id)
             gsc.remove_gsc_symbols(symbols=subscribe_symbols)
             await real_client.close()
             context.log("info", f"WebSocket disconnected (stay_connected=False)", node_id)
         else:
-            # 연결 유지: context에 클라이언트 저장
-            context.set_node_state(node_id, "real_client", real_client)
+            # 연결 유지: register_persistent로 WebSocket 연결 유지 (RealOrderEventNode 패턴)
+            context.register_persistent(node_id, real_client)
             context.set_node_state(node_id, "gsc", gsc)
             context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
+            context.log("info", f"GSC subscription active - waiting for ticks...", node_id)
         
-        context.log("info", f"RealMarketData received: {list(prices.keys())}", node_id)
-        
+        # 초기 반환: 빈 데이터 (체결 시 콜백에서 업데이트)
         return {
             "symbols": symbols_raw,
             "price": prices,
@@ -1976,10 +2409,14 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외선물 실시간 시세 (OVC)"""
         import asyncio
+        from datetime import datetime
         
         appkey = broker_connection.get("appkey", "")
         appsecret = broker_connection.get("appsecret", "")
         paper_trading = broker_connection.get("paper_trading", False)
+        
+        # 현재 이벤트 루프 캡처 (콜백에서 사용)
+        loop = asyncio.get_running_loop()
         
         # LS 로그인
         ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "RealMarketDataNode")
@@ -1990,7 +2427,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         # 실시간 클라이언트 생성 및 연결
         real_client = ls.overseas_futureoption().real()
         await real_client.connect()
-        context.log("info", f"WebSocket connected for overseas_futures", node_id)
+        context.log("info", f"WebSocket connected for overseas_futures (paper_trading={paper_trading})", node_id)
         
         # OVC 구독 설정
         ovc = real_client.OVC()
@@ -2003,18 +2440,26 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             padded_symbol = symbol.ljust(8)
             subscribe_symbols.append(padded_symbol)
         
-        # 실시간 데이터 저장소
+        # 실시간 데이터 저장소 (콜백에서 업데이트됨)
         prices = {}
         volumes = {}
         bids = {}
         asks = {}
-        received_event = asyncio.Event()
+        
+        # 트리거할 하위 노드 목록 (RealOrderEventNode 패턴)
+        # 참고: _execute_futures()에서는 config 파라미터가 없으므로 빈 리스트 사용
+        # TODO: execute() → _execute_futures()로 config 전달하여 개선
+        trigger_nodes = []  # 추후 config.get("_trigger_on_update_nodes", []) 전달 필요
         
         def on_tick(resp):
-            """OVC 틱 데이터 수신 콜백"""
+            """OVC 틱 데이터 수신 콜백 - 체결 시 실시간 업데이트"""
             try:
-                # OVC 응답 구조: resp.body.symbol, resp.body.curpr 등
-                body = resp.body if hasattr(resp, 'body') and resp.body else resp
+                # OVC 응답 구조: resp.body가 None이면 구독 확인 메시지 (무시)
+                if not hasattr(resp, 'body') or resp.body is None:
+                    context.log("debug", f"OVC subscription confirmed: {resp.rsp_msg if hasattr(resp, 'rsp_msg') else 'OK'}", node_id)
+                    return
+                
+                body = resp.body
                 symbol = getattr(body, 'symbol', '')
                 symbol = symbol.strip() if symbol else ''  # 패딩 제거
                 
@@ -2023,39 +2468,75 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                 totq = getattr(body, 'totq', '0')
                 
                 price = float(curpr) if curpr else 0.0
-                volume = int(totq) if totq else 0
+                volume = int(float(totq)) if totq else 0
                 
-                if symbol:
+                if symbol and price > 0:
                     prices[symbol] = price
                     volumes[symbol] = volume
-                    context.log("debug", f"OVC tick: {symbol} price={price} vol={volume}", node_id)
-                    received_event.set()
+                    
+                    # 콘솔 출력 (RealOrderEventNode 패턴)
+                    print(f"\n{'='*60}")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] OVC 체결")
+                    print(f"  종목: {symbol}  가격: {price:,.2f}  거래량: {volume:,}")
+                    print(f"{'='*60}\n")
+                    
+                    # 실시간 데이터 context에 업데이트
+                    full_data = self._build_full_data(symbols_raw, prices, volumes, bids, asks)
+                    context.set_output(node_id, "price", prices.copy())
+                    context.set_output(node_id, "volume", volumes.copy())
+                    context.set_output(node_id, "data", full_data)
+                    
+                    output_data = {
+                        "price": prices.copy(),
+                        "volume": volumes.copy(),
+                        "symbol": symbol,
+                        "data": full_data,
+                    }
+                    
+                    # SSE 브로드캐스트 (스레드 안전하게)
+                    asyncio.run_coroutine_threadsafe(
+                        context.notify_output_update(
+                            node_id=node_id,
+                            node_type="RealMarketDataNode",
+                            outputs=output_data,
+                        ),
+                        loop
+                    )
+                    
+                    # 후속 노드 트리거 (RealOrderEventNode 패턴)
+                    asyncio.run_coroutine_threadsafe(
+                        context.emit_event(
+                            event_type="market_data",
+                            source_node_id=node_id,
+                            data=output_data,
+                            trigger_nodes=trigger_nodes,
+                        ),
+                        loop
+                    )
             except Exception as e:
                 context.log("warning", f"OVC parse error: {e}", node_id)
         
         ovc.on_ovc_message(on_tick)
         ovc.add_ovc_symbols(symbols=subscribe_symbols)
-        context.log("info", f"Subscribed to OVC: {subscribe_symbols}", node_id)
+        context.log("info", f"Subscribed to OVC: {subscribe_symbols} (체결 시 실시간 업데이트)", node_id)
         
-        # 첫 번째 틱 수신 대기 (최대 10초)
-        try:
-            await asyncio.wait_for(received_event.wait(), timeout=10.0)
-        except asyncio.TimeoutError:
-            context.log("warning", f"No tick received within 10s, continuing with empty data", node_id)
+        # 타임아웃 없음 - 체결은 언제 올지 모름
+        # stay_connected=true면 구독 유지, false면 즉시 종료
         
-        # stay_connected=False면 연결 종료
         if not stay_connected:
+            # stay_connected=False: 구독만 설정하고 즉시 종료 (1회성 조회 용도 아님)
+            context.log("warning", f"stay_connected=False for realtime node - no data will be received", node_id)
             ovc.remove_ovc_symbols(symbols=subscribe_symbols)
             await real_client.close()
             context.log("info", f"WebSocket disconnected (stay_connected=False)", node_id)
         else:
-            # 연결 유지: context에 클라이언트 저장
-            context.set_node_state(node_id, "real_client", real_client)
+            # 연결 유지: register_persistent로 WebSocket 연결 유지 (RealOrderEventNode 패턴)
+            context.register_persistent(node_id, real_client)
             context.set_node_state(node_id, "ovc", ovc)
             context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
+            context.log("info", f"OVC subscription active - waiting for ticks...", node_id)
         
-        context.log("info", f"RealMarketData (futures) received: {list(prices.keys())}", node_id)
-        
+        # 초기 반환: 빈 데이터 (체결 시 콜백에서 업데이트)
         return {
             "symbols": symbols_raw,
             "price": prices,
@@ -5260,6 +5741,9 @@ class WorkflowExecutor:
             "ScheduleNode": ScheduleNodeExecutor(),
             "WatchlistNode": WatchlistNodeExecutor(),
             "SymbolQueryNode": SymbolQueryNodeExecutor(),
+            "SymbolFilterNode": SymbolFilterNodeExecutor(),
+            "MarketUniverseNode": MarketUniverseNodeExecutor(),
+            "ScreenerNode": ScreenerNodeExecutor(),
             "BrokerNode": BrokerNodeExecutor(),
             "AccountNode": AccountNodeExecutor(),  # 1회성 REST API 조회
             "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
@@ -5822,6 +6306,14 @@ class WorkflowJob:
                 # 주문 이벤트도 실시간 업데이트와 동일하게 처리
                 self.stats["realtime_updates"] += 1
                 await self._handle_realtime_update(event)
+            
+            elif event.type == "market_data":
+                # RealMarketDataNode에서 발생하는 시세 이벤트 → DisplayNode 트리거
+                try:
+                    self.stats["realtime_updates"] += 1
+                    await self._handle_realtime_update(event)
+                except Exception as e:
+                    logger.warning(f"market_data event handling error: {e}")
                 
             elif event.type == "schedule_tick":
                 self.stats["flow_executions"] += 1

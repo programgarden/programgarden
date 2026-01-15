@@ -752,6 +752,38 @@ class ExecutionContext:
         """
         return self.get_persistent_metadata(node_id, key)
     
+    def emit_realtime_update(self, node_id: str, data: Dict[str, Any]) -> None:
+        """
+        Emit a realtime update event from a node.
+        
+        Called by realtime nodes (RealMarketDataNode, RealAccountNode, etc.)
+        when new tick data arrives. This can trigger downstream node execution
+        or notify listeners of real-time data changes.
+        
+        Args:
+            node_id: The node emitting the update
+            data: The update payload (e.g., {"symbol": "AAPL", "price": 150.0})
+        """
+        # Log the realtime update
+        logger.debug(f"Realtime update from {node_id}: {data}")
+        
+        # Notify listeners if any are registered
+        if self._listener:
+            try:
+                # Create a log event for realtime updates (could be a dedicated event type later)
+                self._listener.on_log(LogEvent(
+                    node_id=node_id,
+                    level="debug",
+                    message=f"Realtime: {data.get('symbol', '')} price={data.get('price', '')} vol={data.get('volume', '')}",
+                    extra=data,
+                ))
+            except Exception as e:
+                logger.warning(f"Error notifying listener of realtime update: {e}")
+        
+        # TODO: Future enhancement - trigger downstream nodes in real-time
+        # This would require an event-driven execution model where nodes
+        # can be re-executed when their input data changes.
+    
     async def cleanup_persistent(self, node_id: str) -> None:
         """
         Cleanup a single persistent node (e.g., when event_filter changes)
@@ -862,15 +894,47 @@ class ExecutionContext:
         """
         Cleanup all persistent nodes (call on job stop)
         """
-        # Stop all trackers
+        # 먼저 실시간 구독 해제 (gsc, ovc 등)
+        for node_id in list(self._persistent_metadata.keys()):
+            metadata = self._persistent_metadata.get(node_id, {})
+            
+            # GSC 구독 해제 (해외주식)
+            gsc = metadata.get("gsc")
+            subscribe_symbols = metadata.get("subscribe_symbols", [])
+            if gsc and subscribe_symbols:
+                try:
+                    gsc.remove_gsc_symbols(symbols=subscribe_symbols)
+                    logger.debug(f"Removed GSC subscription for {node_id}: {subscribe_symbols}")
+                except Exception as e:
+                    logger.warning(f"Error removing GSC symbols for {node_id}: {e}")
+            
+            # OVC 구독 해제 (해외선물)
+            ovc = metadata.get("ovc")
+            if ovc and subscribe_symbols:
+                try:
+                    ovc.remove_ovc_symbols(symbols=subscribe_symbols)
+                    logger.debug(f"Removed OVC subscription for {node_id}: {subscribe_symbols}")
+                except Exception as e:
+                    logger.warning(f"Error removing OVC symbols for {node_id}: {e}")
+        
+        # Stop/Close all trackers (WebSocket clients 등)
         for node_id, tracker in self._persistent_nodes.items():
             try:
+                # stop() 메서드 호출
                 if hasattr(tracker, 'stop'):
                     if asyncio.iscoroutinefunction(tracker.stop):
                         await tracker.stop()
                     else:
                         tracker.stop()
-                logger.debug(f"Stopped persistent node: {node_id}")
+                    logger.debug(f"Stopped persistent node: {node_id}")
+                
+                # close() 메서드 호출 (WebSocket 클라이언트)
+                if hasattr(tracker, 'close'):
+                    if asyncio.iscoroutinefunction(tracker.close):
+                        await tracker.close()
+                    else:
+                        tracker.close()
+                    logger.debug(f"Closed persistent node: {node_id}")
             except Exception as e:
                 logger.warning(f"Error stopping persistent node {node_id}: {e}")
         
@@ -1007,6 +1071,9 @@ class ExecutionContext:
                 await listener.on_node_state_change(event)
             except Exception as e:
                 logger.warning(f"Listener error on_node_state_change: {e}")
+        
+        # 🆕 이벤트 루프에 제어권을 돌려줘서 SSE 스트림이 전송될 수 있도록 함
+        await asyncio.sleep(0)
 
     async def notify_edge_state(
         self,
@@ -1044,6 +1111,9 @@ class ExecutionContext:
                 await listener.on_edge_state_change(event)
             except Exception as e:
                 logger.warning(f"Listener error on_edge_state_change: {e}")
+        
+        # SSE 스트림 전송을 위해 이벤트 루프에 제어권 양보
+        await asyncio.sleep(0)
 
     async def notify_log(
         self,
@@ -1069,6 +1139,9 @@ class ExecutionContext:
                 await listener.on_log(event)
             except Exception as e:
                 logger.warning(f"Listener error on_log: {e}")
+        
+        # SSE 스트림 전송을 위해 이벤트 루프에 제어권 양보
+        await asyncio.sleep(0)
 
     async def notify_job_state(self, state: str, stats: Optional[Dict[str, Any]] = None) -> None:
         """Notify all listeners about job state change."""
@@ -1086,6 +1159,9 @@ class ExecutionContext:
                 await listener.on_job_state_change(event)
             except Exception as e:
                 logger.warning(f"Listener error on_job_state_change: {e}")
+        
+        # SSE 스트림 전송을 위해 이벤트 루프에 제어권 양보
+        await asyncio.sleep(0)
 
     async def notify_output_update(
         self,

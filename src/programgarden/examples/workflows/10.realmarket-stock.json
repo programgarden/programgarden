@@ -1,0 +1,191 @@
+{
+  "id": "realmarket-stock-test",
+  "name": "RealMarketDataNode 해외주식 테스트",
+  "description": "WebSocket GSC를 사용한 실시간 시세 수신 테스트",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {
+        "x": 100,
+        "y": 200
+      },
+      "lastOutput": {
+        "start": true
+      }
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "position": {
+        "x": 300,
+        "y": 200
+      },
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "7c5caa90-f013-44fd-855d-410437c86737",
+      "lastOutput": {
+        "connected": true,
+        "connection": {
+          "provider": "ls-sec.co.kr",
+          "product": "overseas_stock",
+          "paper_trading": false,
+          "appkey": "[REDACTED]",
+          "appsecret": "[REDACTED]"
+        }
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "market",
+      "position": {
+        "x": 500,
+        "y": 200
+      },
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": [
+        {
+          "exchange": "NASDAQ",
+          "symbol": "AAPL"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "TSLA"
+        }
+      ],
+      "lastOutput": {
+        "symbols": [
+          {
+            "exchange": "NASDAQ",
+            "symbol": "AAPL"
+          },
+          {
+            "exchange": "NASDAQ",
+            "symbol": "TSLA"
+          }
+        ]
+      }
+    },
+    {
+      "id": "realMarket",
+      "type": "RealMarketDataNode",
+      "category": "market",
+      "position": {
+        "x": 700,
+        "y": 200
+      },
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "stay_connected": true,
+      "lastOutput": {
+        "symbols": [
+          {
+            "exchange": "NASDAQ",
+            "symbol": "AAPL"
+          },
+          {
+            "exchange": "NASDAQ",
+            "symbol": "TSLA"
+          }
+        ],
+        "price": {},
+        "volume": {},
+        "bid": {},
+        "ask": {},
+        "data": {
+          "AAPL": {
+            "symbol": "AAPL",
+            "exchange": "NASDAQ",
+            "price": null,
+            "volume": null,
+            "bid": null,
+            "ask": null
+          },
+          "TSLA": {
+            "symbol": "TSLA",
+            "exchange": "NASDAQ",
+            "price": null,
+            "volume": null,
+            "bid": null,
+            "ask": null
+          }
+        }
+      }
+    },
+    {
+      "id": "display_1",
+      "type": "DisplayNode",
+      "category": "analysis",
+      "position": {
+        "x": 885,
+        "y": 165
+      },
+      "description": "차트/테이블 시각화.",
+      "width": 300,
+      "height": 200,
+      "lastOutput": {
+        "rendered": true,
+        "chart_type": "table",
+        "title": "",
+        "options": {},
+        "table_data": [
+          {
+            "AAPL": {
+              "symbol": "AAPL",
+              "exchange": "NASDAQ",
+              "price": null,
+              "volume": null,
+              "bid": null,
+              "ask": null
+            },
+            "TSLA": {
+              "symbol": "TSLA",
+              "exchange": "NASDAQ",
+              "price": null,
+              "volume": null,
+              "bid": null,
+              "ask": null
+            }
+          }
+        ]
+      },
+      "size": {
+        "width": 300,
+        "height": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "realMarket"
+    },
+    {
+      "from": "realMarket",
+      "to": "display_1"
+    }
+  ],
+  "credentials": [
+    {
+      "id": "7c5caa90-f013-44fd-855d-410437c86737",
+      "type": "broker_ls",
+      "name": "LS 해외주식",
+      "data": {
+        "appkey": "",
+        "appsecret": "",
+        "paper_trading": ""
+      }
+    }
+  ]
+}

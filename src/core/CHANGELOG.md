@@ -1,3 +1,10 @@
+## [2.2.0] - 2026-01-15
+### Changed
+- feat(nodes): ScreenerNode 필드 구조 변경 (filters 객체 → 개별 필드)
+  - `market_cap_min`, `market_cap_max`, `volume_min`, `sector`, `exchange`, `max_results`
+- feat(nodes): ENUM 타입 필드들을 STRING 타입으로 변경 (expression 바인딩 지원)
+  - `HistoricalDataNode.interval`, `ScheduleNode.mode` 등
+
 ## [2.1.0] - 2026-01-13
 ### Changed
 - feat(nodes): 브로커 연결(connection) 필드 표준화 - 모든 노드에서 명시적 바인딩 필수

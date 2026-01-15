@@ -106,9 +106,13 @@ WebSocket을 통한 실시간 데이터 스트림입니다.
 - BrokerNode → RealMarketDataNode: `connection` 자동 전달
 
 **출력**:
-- `price` - 현재가
-- `volume` - 거래량
-- `bid_ask` - 호가 정보
+- `price` - 현재가 `{symbol: price}`
+- `volume` - 거래량 `{symbol: volume}`
+- `data` - 전체 데이터 `{symbol: {symbol, exchange, price, volume, bid, ask}}`
+- `bid` - 매수호가
+- `ask` - 매도호가
+
+**실시간 업데이트**: 체결 발생 시 출력 데이터가 자동으로 업데이트되며, 연결된 DisplayNode도 함께 갱신됩니다.
 
 **stay_connected 동작**:
 | 값 | 동작 |
@@ -391,54 +395,84 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
 
 ### MarketUniverseNode
 
-시장 전체 종목을 가져옵니다. **BrokerNode의 connection 출력을 반드시 연결해야 합니다.**
+글로벌 대표 지수의 구성 종목을 가져옵니다.
+
+> ⚠️ **해외주식(overseas_stock) 전용** 노드입니다. 해외선물은 지원하지 않습니다.
+>
+> 💡 **Broker 연결 불필요**: pytickersymbols 라이브러리를 사용하여 독립적으로 실행됩니다.
 
 ```json
 {
   "id": "universe",
   "type": "MarketUniverseNode",
-  "connection": "{{ nodes.broker.connection }}",
   "universe": "NASDAQ100"
 }
 ```
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
-| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
-| `universe` | string | ✅ | 시장/인덱스 이름 |
+| `universe` | string | ✅ | 인덱스 이름 |
 
-| 지원 마켓 | 설명 |
-|----------|------|
-| `NASDAQ100` | 나스닥 100 종목 |
-| `SP500` | S&P 500 종목 |
-| `DOW30` | 다우존스 30 종목 |
+**지원 인덱스 (미국 거래소):**
+
+| 인덱스 | 설명 |
+|--------|------|
+| `NASDAQ100` | 나스닥 100 (~101개) |
+| `SP500` | S&P 500 (~503개) |
+| `SP100` | S&P 100 |
+| `DOW30` | 다우존스 30 |
+
+> 💡 pytickersymbols 라이브러리는 유럽/아시아 인덱스도 지원하지만, LS증권에서 거래 가능한 미국 인덱스만 권장합니다.
+
+**출력**:
+- `symbols` - 종목 리스트 `[{exchange, symbol, name}, ...]`
+- `count` - 종목 수
 
 ---
 
 ### ScreenerNode
 
-조건부 종목 스크리닝입니다. **BrokerNode의 connection 출력을 반드시 연결해야 합니다.**
+조건부 종목 스크리닝입니다.
+
+> ⚠️ **해외주식(overseas_stock) 전용** 노드입니다. 해외선물은 `SymbolQueryNode`를 사용하세요.
+>
+> 💡 **Broker 연결 불필요**: yfinance 라이브러리를 사용하여 독립적으로 실행됩니다.
 
 ```json
 {
   "id": "screener",
   "type": "ScreenerNode",
-  "connection": "{{ nodes.broker.connection }}",
-  "filters": {
-    "market_cap_min": 10000000000,
-    "volume_min": 1000000
-  },
-  "universe": "ALL"
+  "market_cap_min": 100000000000,
+  "volume_min": 1000000,
+  "sector": "Technology",
+  "exchange": "NASDAQ",
+  "max_results": 10,
+  "symbols": "{{ nodes.watchlist.symbols }}"
 }
 ```
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
-| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
-| `filters` | object | ❌ | 스크리닝 조건 |
-| `universe` | string | ❌ | 대상 시장 (기본: ALL) |
+| `symbols` | expression | ❌ | 입력 종목 리스트 (예: `{{ nodes.watchlist.symbols }}`) |
+| `market_cap_min` | number | ❌ | 최소 시가총액 (USD) |
+| `market_cap_max` | number | ❌ | 최대 시가총액 (USD) |
+| `volume_min` | number | ❌ | 최소 거래량 |
+| `sector` | string | ❌ | 섹터 필터 (Technology, Healthcare 등) |
+| `exchange` | string | ❌ | 거래소 필터 (NASDAQ, NYSE, AMEX) |
+| `max_results` | number | ❌ | 최대 결과 수 (기본: 20) |
 
-**출력**: `symbols` - 조건을 만족하는 종목 리스트
+**거래소 매핑** (yfinance 코드 → 표준 이름):
+| yfinance | 표준명 |
+|----------|--------|
+| NMS, NGM, NCM | NASDAQ |
+| NYQ | NYSE |
+| ASE | AMEX |
+
+**출력**:
+- `symbols` - 조건을 만족하는 종목 리스트 `[{exchange, symbol, market_cap, volume, sector}, ...]`
+- `count` - 결과 종목 수
+
+> 📦 **의존성**: yfinance 라이브러리 사용 (`pip install yfinance`)
 
 ---
 
@@ -797,18 +831,24 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
 
 ### DisplayNode
 
-차트/테이블을 생성합니다.
+차트/테이블을 생성합니다. **실시간 노드(RealMarketDataNode, RealAccountNode)와 연결하면 데이터가 실시간으로 업데이트됩니다.**
 
 ```json
 {
   "id": "chart",
   "type": "DisplayNode",
   "config": {
-    "chart_type": "candlestick",
-    "data": "{{ nodes.history.ohlcv }}"
+    "chart_type": "table",
+    "data": "{{ nodes.realMarket.data }}"
   }
 }
 ```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `chart_type` | string | ❌ | 차트 유형 (기본: table) |
+| `title` | string | ❌ | 차트 제목 |
+| `options` | object | ❌ | 정렬, 필터 등 옵션 |
 
 | 차트 타입 | 설명 |
 |----------|------|
@@ -816,6 +856,21 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
 | `candlestick` | 캔들스틱 차트 |
 | `bar` | 바 차트 |
 | `table` | 테이블 |
+
+**실시간 데이터 연동**:
+
+DisplayNode는 실시간 노드와 연결 시 자동으로 데이터를 갱신합니다:
+
+```
+RealMarketDataNode ──data──▶ DisplayNode (실시간 시세 테이블)
+RealAccountNode ──positions──▶ DisplayNode (실시간 포지션 테이블)
+```
+
+| 소스 노드 | 지원 출력 포트 | 용도 |
+|----------|---------------|------|
+| `RealMarketDataNode` | `data`, `price`, `volume` | 실시간 시세 표시 |
+| `RealAccountNode` | `positions`, `balance` | 실시간 포지션/잔고 표시 |
+| `BacktestEngineNode` | `equity_curve`, `summary` | 백테스트 결과 차트 |
 
 ---
 

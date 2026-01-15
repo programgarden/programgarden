@@ -1,40 +1,45 @@
 {
-  "id": "realmarket-stock-test",
-  "name": "RealMarketDataNode 해외주식 테스트",
-  "description": "WebSocket GSC를 사용한 실시간 시세 수신 테스트",
+  "id": "watchlist-stock-test",
+  "name": "WatchlistNode 해외주식 테스트",
+  "description": "사용자 정의 관심종목 리스트 설정 및 MarketDataNode 연동 테스트",
   "nodes": [
     {
       "id": "start",
-      "type": "StartNode"
+      "type": "StartNode",
+      "position": {"x": 100, "y": 200}
     },
     {
       "id": "broker",
       "type": "BrokerNode",
       "provider": "ls-sec.co.kr",
       "product": "overseas_stock",
-      "credential_id": "broker-stock"
+      "credential_id": "broker-stock",
+      "position": {"x": 300, "y": 200}
     },
     {
       "id": "watchlist",
       "type": "WatchlistNode",
-      "connection": "{{ nodes.broker.connection }}",
       "symbols": [
         {"exchange": "NASDAQ", "symbol": "AAPL"},
-        {"exchange": "NASDAQ", "symbol": "TSLA"}
-      ]
+        {"exchange": "NASDAQ", "symbol": "NVDA"},
+        {"exchange": "NASDAQ", "symbol": "TSLA"},
+        {"exchange": "NYSE", "symbol": "PLTR"}
+      ],
+      "position": {"x": 500, "y": 200}
     },
     {
-      "id": "realMarket",
-      "type": "RealMarketDataNode",
+      "id": "marketData",
+      "type": "MarketDataNode",
       "connection": "{{ nodes.broker.connection }}",
       "symbols": "{{ nodes.watchlist.symbols }}",
-      "stay_connected": false
+      "fields": ["price", "volume"],
+      "position": {"x": 700, "y": 200}
     }
   ],
   "edges": [
     {"from": "start", "to": "broker"},
     {"from": "broker", "to": "watchlist"},
-    {"from": "watchlist", "to": "realMarket"}
+    {"from": "watchlist", "to": "marketData"}
   ],
   "credentials": [
     {

@@ -37,17 +37,19 @@
   "enums.paper_trading.true": "모의투자",
   "enums.paper_trading.false": "실계좌",
   
-  "nodes.WatchlistNode.name": "관심종목",
-  "nodes.WatchlistNode.description": "사용자 정의 관심종목 리스트.",
+  "nodes.WatchlistNode.name": "내 관심종목",
+  "nodes.WatchlistNode.description": "내가 직접 선택한 종목들을 관리합니다. 예: AAPL, TSLA 등 원하는 종목을 추가하세요.",
   
-  "nodes.MarketUniverseNode.name": "지수구성종목",
-  "nodes.MarketUniverseNode.description": "NASDAQ100, S&P500 등 지수 구성 종목.",
+  "nodes.MarketUniverseNode.name": "대표지수 종목",
+  "nodes.MarketUniverseNode.description": "⚠️ 해외주식 전용. 미국 대표 지수(NASDAQ100, SP500, SP100, DOW30)에 포함된 종목을 자동으로 가져옵니다. 예: 나스닥100 선택 시 애플, 테슬라 등 100개 종목이 자동 추가됩니다.",
   
-  "nodes.ScreenerNode.name": "종목검색",
-  "nodes.ScreenerNode.description": "시가총액, 거래량 등 조건으로 종목 검색.",
+  "fields.MarketUniverseNode.universe": "가져올 지수를 입력하세요. ⚠️ 해외주식 전용입니다. 가능한 값: NASDAQ100(나스닥 100), SP500(S&P 500), SP100(S&P 100), DOW30(다우존스 30)",
   
-  "nodes.SymbolFilterNode.name": "종목필터",
-  "nodes.SymbolFilterNode.description": "종목 리스트 교집합/합집합/차집합 연산.",
+  "nodes.ScreenerNode.name": "조건으로 종목찾기",
+  "nodes.ScreenerNode.description": "시가총액 100억 이상, 거래량 100만주 이상 같은 조건으로 종목을 검색합니다. 유동성 낮은 종목을 자동으로 걸러냅니다. (해외주식만 지원, 해외선물은 '전체종목조회' 사용)",
+  
+  "nodes.SymbolFilterNode.name": "종목 비교/필터",
+  "nodes.SymbolFilterNode.description": "두 종목 리스트를 비교합니다. 예: 관심종목 중 아직 보유하지 않은 종목만 골라내기, 중복 매수 방지에 활용됩니다.",
   
   "nodes.MarketDataNode.name": "현재가조회",
   "nodes.MarketDataNode.description": "REST API로 당일 현재가/거래량 조회.",

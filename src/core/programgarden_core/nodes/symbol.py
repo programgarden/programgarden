@@ -243,77 +243,52 @@ class WatchlistNode(BaseNode):
 
 class MarketUniverseNode(BaseNode):
     """
-    Market universe node
-
-    Outputs constituent symbols of a specific market/index
+    대표지수 종목 노드 (Market Universe Node)
+    
+    ⚠️ 해외주식(overseas_stock) 전용 노드입니다. 해외선물은 지원하지 않습니다.
+    
+    S&P500, NASDAQ100 등 미국 대표 지수의 구성 종목을 자동으로 가져옵니다.
+    pytickersymbols 라이브러리를 활용하여 최신 인덱스 구성종목을 조회합니다.
+    Broker 연결 없이 독립적으로 실행됩니다.
+    
+    지원 인덱스 (LS증권 거래 가능):
+    - NASDAQ100: 나스닥 100 (~101개)
+    - SP500: S&P 500 (~503개)
+    - SP100: S&P 100
+    - DOW30: 다우존스 30
     """
 
     type: Literal["MarketUniverseNode"] = "MarketUniverseNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.MarketUniverseNode.description"
 
-    # 브로커 연결 필드 (명시적 바인딩 필수)
-    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
-
-    # MarketUniverseNode specific config
+    # 인덱스 선택
     universe: str = Field(
         default="NASDAQ100",
-        description="Market/Index (NASDAQ100, SP500, DOW30, RUSSELL2000, etc.)",
-    )
-    exchange: Optional[str] = Field(
-        default=None, description="Exchange filter (NYSE, NASDAQ, AMEX, etc.)"
+        description="대표 지수 선택 (NASDAQ100, SP500, DOW30 등). 해외주식 전용.",
     )
 
-    _inputs: List[InputPort] = [
-        InputPort(
-            name="connection",
-            type="broker_connection",
-            description="i18n:ports.connection",
-            required=True,
-        ),
-    ]
+    _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="count", type="integer", description="종목 수"),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
-            # === PARAMETERS: 브로커 연결 (필수) ===
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
-                required=True,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.PARAMETERS,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="broker_connection",
-            ),
-            # === PARAMETERS: 핵심 설정 ===
             "universe": FieldSchema(
                 name="universe",
                 type=FieldType.STRING,
-                description="Market/Index to get constituents from. Options: NASDAQ100, SP500, DOW30, RUSSELL2000.",
+                description="i18n:fields.MarketUniverseNode.universe",
                 default="NASDAQ100",
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                bindable=True,
+                expression_enabled=True,
                 example="NASDAQ100",
-                expected_type="str",
-            ),
-            "exchange": FieldSchema(
-                name="exchange",
-                type=FieldType.STRING,
-                description="Optional exchange filter. Options: NYSE, NASDAQ, AMEX. Leave empty for all exchanges.",
-                required=False,
-                category=FieldCategory.PARAMETERS,
-                bindable=False,
-                example="NASDAQ",
+                placeholder="NASDAQ100, SP500, SP100, DOW30",
                 expected_type="str",
             ),
         }
@@ -321,93 +296,123 @@ class MarketUniverseNode(BaseNode):
 
 class ScreenerNode(BaseNode):
     """
-    Conditional symbol screening node
-
-    Filters symbols based on market cap, volume, sector, etc.
+    조건으로 종목찾기 노드 (Screener Node)
+    
+    시가총액, 거래량, 섹터 등 조건을 설정하면
+    해당 조건을 만족하는 종목만 골라냅니다.
+    Yahoo Finance API를 활용합니다.
     """
 
     type: Literal["ScreenerNode"] = "ScreenerNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.ScreenerNode.description"
 
-    # 브로커 연결 필드 (명시적 바인딩 필수)
-    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
-
-    # ScreenerNode specific config
-    filters: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Screening conditions (e.g., {'market_cap_min': 10e9, 'volume_min': 1e6})",
+    # 스크리닝 조건
+    market_cap_min: Optional[float] = Field(
+        default=None,
+        description="최소 시가총액 (달러). 예: 10000000000 = 100억 달러",
     )
-    universe: str = Field(
-        default="ALL", description="Target market for screening (ALL, NASDAQ, NYSE, etc.)"
+    market_cap_max: Optional[float] = Field(
+        default=None,
+        description="최대 시가총액 (달러)",
     )
-    max_results: int = Field(default=100, description="Maximum number of results")
+    volume_min: Optional[int] = Field(
+        default=None,
+        description="최소 평균 거래량 (주). 예: 1000000 = 100만주",
+    )
+    sector: Optional[str] = Field(
+        default=None,
+        description="섹터 필터 (Technology, Healthcare, Finance 등)",
+    )
+    exchange: Optional[str] = Field(
+        default=None,
+        description="거래소 필터 (NASDAQ, NYSE, AMEX)",
+    )
+    max_results: int = Field(
+        default=100, 
+        description="최대 결과 수"
+    )
 
     _inputs: List[InputPort] = [
         InputPort(
-            name="connection",
-            type="broker_connection",
-            description="i18n:ports.connection",
-        ),
-        InputPort(
-            name="trigger",
-            type="signal",
-            description="i18n:ports.trigger",
+            name="symbols",
+            type="symbol_list",
+            description="필터링할 종목 리스트 (선택사항). 없으면 전체 시장에서 검색",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="count", type="integer", description="결과 종목 수"),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
-            # === PARAMETERS: 브로커 연결 (필수) ===
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
-                required=True,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.PARAMETERS,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="broker_connection",
-            ),
-            # === PARAMETERS: 핵심 스크리닝 설정 ===
-            "filters": FieldSchema(
-                name="filters",
-                type=FieldType.OBJECT,
-                description="Screening conditions. Available filters: market_cap_min, market_cap_max, volume_min, volume_max, sector, pe_ratio_max, dividend_yield_min.",
+            "market_cap_min": FieldSchema(
+                name="market_cap_min",
+                type=FieldType.NUMBER,
+                description="최소 시가총액을 입력하세요 (달러 단위). 예: 100억 달러 = 10000000000. 유동성 낮은 소형주를 제외하려면 설정하세요.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
-                example={"market_cap_min": 10000000000, "volume_min": 1000000},
-                expected_type="dict[str, Any]",
+                example=10000000000,
+                placeholder="예: 10000000000 (100억 달러)",
+                expected_type="float",
             ),
-            "universe": FieldSchema(
-                name="universe",
-                type=FieldType.STRING,
-                description="Target market for screening. ALL: all markets. NASDAQ: NASDAQ only. NYSE: NYSE only.",
-                default="ALL",
-                required=True,
+            "market_cap_max": FieldSchema(
+                name="market_cap_max",
+                type=FieldType.NUMBER,
+                description="최대 시가총액을 입력하세요. 중소형주만 찾으려면 설정하세요.",
+                required=False,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
-                example="ALL",
+                example=50000000000,
+                expected_type="float",
+            ),
+            "volume_min": FieldSchema(
+                name="volume_min",
+                type=FieldType.INTEGER,
+                description="최소 평균 거래량 (주 단위). 예: 100만주 = 1000000. 거래량이 적은 종목은 주문 체결이 어려울 수 있습니다.",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=1000000,
+                placeholder="예: 1000000 (100만주)",
+                expected_type="int",
+            ),
+            "sector": FieldSchema(
+                name="sector",
+                type=FieldType.STRING,
+                description="특정 섹터만 찾으려면 입력하세요. 가능한 값: Technology(기술), Healthcare(헬스케어), Financial Services(금융), Consumer Cyclical(경기소비재), Communication Services(커뮤니케이션), Industrials(산업재), Consumer Defensive(필수소비재), Energy(에너지), Utilities(유틸리티), Real Estate(부동산), Basic Materials(소재). 비워두면 전체 섹터.",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example="Technology",
+                placeholder="예: Technology, Healthcare",
                 expected_type="str",
             ),
-            # === SETTINGS: 부가 설정 ===
+            "exchange": FieldSchema(
+                name="exchange",
+                type=FieldType.STRING,
+                description="특정 거래소 종목만 찾으려면 입력하세요. 가능한 값: NASDAQ(나스닥), NYSE(뉴욕증권거래소), AMEX(아멕스). 비워두면 전체 거래소.",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                example="NASDAQ",
+                placeholder="예: NASDAQ, NYSE",
+                expected_type="str",
+            ),
             "max_results": FieldSchema(
                 name="max_results",
                 type=FieldType.INTEGER,
-                description="Maximum number of symbols to return. Results are sorted by market cap descending.",
+                description="최대 몇 개 종목을 가져올지 설정하세요. 시가총액 큰 순으로 정렬됩니다.",
                 default=100,
                 min_value=1,
-                max_value=1000,
+                max_value=500,
                 category=FieldCategory.SETTINGS,
                 bindable=False,
                 example=100,
@@ -418,69 +423,93 @@ class ScreenerNode(BaseNode):
 
 class SymbolFilterNode(BaseNode):
     """
-    Symbol list filter/set operation node
-
-    Performs intersection/union/difference operations on multiple symbol lists
+    종목 비교/필터 노드 (Symbol Filter Node)
+    
+    두 종목 리스트를 비교하여 교집합, 합집합, 차집합을 계산합니다.
+    
+    사용 예시:
+    - 관심종목 - 보유종목 = 신규 매수 대상 (중복 매수 방지)
+    - RSI과매도 ∩ MACD골든크로스 = 강력 매수 신호
     """
 
     type: Literal["SymbolFilterNode"] = "SymbolFilterNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.SymbolFilterNode.description"
 
-    # SymbolFilterNode specific config
-    operation: Literal["union", "intersection", "difference", "exclude"] = Field(
-        default="intersection",
-        description="Set operation (union, intersection, difference, exclude)",
+    # 집합 연산 종류
+    operation: Literal["difference", "intersection", "union"] = Field(
+        default="difference",
+        description="집합 연산 종류",
     )
-    exclude_symbols: List[str] = Field(
-        default_factory=list, description="Symbols to exclude (for exclude operation)"
+    
+    # input_a, input_b는 바인딩으로 받음
+    input_a: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="첫 번째 종목 리스트 (필수)",
+    )
+    input_b: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="두 번째 종목 리스트 (선택)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="input_a",
             type="symbol_list",
-            description="First symbol list",
+            description="첫 번째 종목 리스트 (예: 관심종목)",
+            required=True,
         ),
         InputPort(
             name="input_b",
             type="symbol_list",
-            description="Second symbol list",
+            description="두 번째 종목 리스트 (예: 보유종목)",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="count", type="integer", description="결과 종목 수"),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
-            # === PARAMETERS: 모두 핵심 설정 ===
             "operation": FieldSchema(
                 name="operation",
-                type=FieldType.ENUM,
-                description="Set operation on symbol lists. union: combine all. intersection: common symbols only. difference: in A but not B. exclude: remove specified symbols.",
-                default="intersection",
-                enum_values=["union", "intersection", "difference", "exclude"],
+                type=FieldType.STRING,
+                description="어떤 비교를 할지 입력하세요. 가능한 값: difference(차집합, A에만 있고 B에는 없는 종목 - 중복 매수 방지), intersection(교집합, A와 B 모두에 있는 종목), union(합집합, A 또는 B에 있는 모든 종목).",
+                default="difference",
                 required=True,
-                category=FieldCategory.PARAMETERS,
-                bindable=False,
-                example="intersection",
-                expected_type="str",
-            ),
-            "exclude_symbols": FieldSchema(
-                name="exclude_symbols",
-                type=FieldType.ARRAY,
-                description="Symbols to exclude when operation='exclude'. List specific tickers to remove from result.",
-                array_item_type=FieldType.STRING,
-                required=False,
                 category=FieldCategory.PARAMETERS,
                 bindable=True,
                 expression_enabled=True,
-                example=["AAPL", "MSFT"],
-                example_binding="{{ nodes.blacklist.symbols }}",
-                expected_type="list[str]",
+                example="difference",
+                placeholder="예: difference, intersection, union",
+                expected_type="str",
+            ),
+            "input_a": FieldSchema(
+                name="input_a",
+                type=FieldType.ARRAY,
+                description="첫 번째 종목 리스트입니다. WatchlistNode나 다른 노드의 symbols 출력을 연결하세요.",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols", "MarketUniverseNode.symbols", "ScreenerNode.symbols", "AccountNode.held_symbols"],
+                expected_type="list[dict]",
+            ),
+            "input_b": FieldSchema(
+                name="input_b",
+                type=FieldType.ARRAY,
+                description="두 번째 종목 리스트입니다. 비교할 대상을 연결하세요. 예: 보유종목(AccountNode.held_symbols)",
+                required=False,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                example_binding="{{ nodes.account.held_symbols }}",
+                bindable_sources=["WatchlistNode.symbols", "AccountNode.held_symbols", "ConditionNode.passed_symbols"],
+                expected_type="list[dict]",
             ),
         }

@@ -318,8 +318,13 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | 노드 | 설명 |
 |------|------|
 | `BacktestEngineNode` | OHLCV 데이터 기반 백테스트 시뮬레이션 실행 |
-| `DisplayNode` | 차트/테이블 시각화 |
+| `DisplayNode` | 차트/테이블 시각화 (실시간 노드 연동 지원) |
 | `CustomPnLNode` | 커스텀 손익 계산 (멀티계좌, 벤치마크 비교 등) |
+
+**DisplayNode 실시간 연동:**
+- `RealMarketDataNode` → `DisplayNode`: 실시간 시세 테이블
+- `RealAccountNode` → `DisplayNode`: 실시간 포지션/잔고 테이블
+- 체결 발생 시 DisplayNode가 자동으로 재실행되어 최신 데이터 표시
 
 **BacktestEngineNode 기능:**
 - OHLCV 데이터 기반 수익률 시뮬레이션

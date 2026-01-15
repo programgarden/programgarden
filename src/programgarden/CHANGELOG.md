@@ -1,3 +1,14 @@
+## [2.1.0] - 2026-01-15
+### Fixed
+- fix: SSE 실시간 이벤트 지연 문제 해결 (13초 → 0.5초)
+  - `context.py`: 모든 `notify_*` 메서드에 `await asyncio.sleep(0)` 추가
+  - `executor.py`: yfinance 호출을 `asyncio.to_thread()`로 감싸 비동기 처리
+
+### Changed
+- feat: ScreenerNode 거래소 매핑 추가 (NMS→NASDAQ, NYQ→NYSE 등)
+- feat: ScreenerNode sector 정규화 (대소문자, 띄어쓰기 무시)
+- feat: 노드 스키마 ENUM 필드를 STRING 타입으로 변경 (expression 바인딩 지원)
+
 ## [2.0.0] - 2026-01-06
 ### Changed
 - feat: 노드 기반 DSL 아키텍처로 전면 재설계

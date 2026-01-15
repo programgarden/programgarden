@@ -1,18 +1,20 @@
 {
-  "id": "realmarket-futures-test",
-  "name": "RealMarketDataNode 해외선물 테스트",
-  "description": "WebSocket OVC를 사용한 실시간 시세 수신 테스트 (모의투자)",
+  "id": "watchlist-futures-test",
+  "name": "WatchlistNode 해외선물 테스트",
+  "description": "사용자 정의 관심종목 리스트 설정 및 MarketDataNode 연동 테스트 (모의투자)",
   "nodes": [
     {
       "id": "start",
-      "type": "StartNode"
+      "type": "StartNode",
+      "position": {"x": 100, "y": 200}
     },
     {
       "id": "broker",
       "type": "BrokerNode",
       "provider": "ls-sec.co.kr",
       "product": "overseas_futures",
-      "credential_id": "broker-futures"
+      "credential_id": "broker-futures",
+      "position": {"x": 300, "y": 200}
     },
     {
       "id": "watchlist",
@@ -20,27 +22,30 @@
       "symbols": [
         {"exchange": "HKEX", "symbol": "HSIG26"},
         {"exchange": "HKEX", "symbol": "HCEIG26"},
-        {"exchange": "HKEX", "symbol": "HTIG26"}
-      ]
+        {"exchange": "CME", "symbol": "ESH26"},
+        {"exchange": "CME", "symbol": "NQH26"}
+      ],
+      "position": {"x": 500, "y": 200}
     },
     {
-      "id": "realMarket",
-      "type": "RealMarketDataNode",
+      "id": "marketData",
+      "type": "MarketDataNode",
       "connection": "{{ nodes.broker.connection }}",
       "symbols": "{{ nodes.watchlist.symbols }}",
-      "stay_connected": true
+      "fields": ["price", "volume"],
+      "position": {"x": 700, "y": 200}
     }
   ],
   "edges": [
     {"from": "start", "to": "broker"},
     {"from": "broker", "to": "watchlist"},
-    {"from": "watchlist", "to": "realMarket"}
+    {"from": "watchlist", "to": "marketData"}
   ],
   "credentials": [
     {
       "id": "broker-futures",
       "type": "broker_ls",
-      "name": "LS증권 해외선물 (모의투자)",
+      "name": "LS증권 해외선물 모의투자",
       "data": {
         "appkey": "",
         "appsecret": "",
