@@ -76,6 +76,7 @@ export const NODE_LABELS: Record<string, NodeLabelInfo> = {
   
   // Market
   MarketUniverseNode: { ko: '시장 유니버스', en: 'Market Universe' },
+  SymbolQueryNode: { ko: '전체 종목 조회', en: 'All Symbols' },
   SymbolFilterNode: { ko: '종목 필터', en: 'Symbol Filter' },
   ExchangeStatusNode: { ko: '거래소 상태', en: 'Exchange Status' },
   

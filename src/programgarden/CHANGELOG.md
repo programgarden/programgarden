@@ -1,3 +1,16 @@
+## [2.2.0] - 2026-01-16
+### Fixed
+- fix(executor): SymbolFilterNode NoneType 에러 수정
+  - `input_a`, `input_b`가 None일 때 빈 리스트로 처리
+  - `extract_symbols()`, `build_symbol_map()` None 체크 추가
+- fix(expression): `ExpressionContext.to_dict()` 단일 출력 평탄화 제거
+  - `nodes.nodeId.port` 표현식이 항상 정상 작동하도록 수정
+
+### Added
+- feat(i18n): SymbolQueryNode 다국어 지원 추가
+- feat(workflow): 11.symbol-filter-example.json 예제 추가
+- feat(frontend): nodeLabels.ts에 SymbolQueryNode 라벨 추가
+
 ## [2.1.0] - 2026-01-15
 ### Fixed
 - fix: SSE 실시간 이벤트 지연 문제 해결 (13초 → 0.5초)

@@ -40,6 +40,9 @@
   "nodes.WatchlistNode.name": "내 관심종목",
   "nodes.WatchlistNode.description": "내가 직접 선택한 종목들을 관리합니다. 예: AAPL, TSLA 등 원하는 종목을 추가하세요.",
   
+  "nodes.SymbolQueryNode.name": "전체 종목 조회",
+  "nodes.SymbolQueryNode.description": "거래소에서 거래 가능한 전체 종목 목록을 가져옵니다.",
+  
   "nodes.MarketUniverseNode.name": "대표지수 종목",
   "nodes.MarketUniverseNode.description": "⚠️ 해외주식 전용. 미국 대표 지수(NASDAQ100, SP500, SP100, DOW30)에 포함된 종목을 자동으로 가져옵니다. 예: 나스닥100 선택 시 애플, 테슬라 등 100개 종목이 자동 추가됩니다.",
   

@@ -40,6 +40,9 @@
   "nodes.WatchlistNode.name": "My Watchlist",
   "nodes.WatchlistNode.description": "Manage your personally selected stocks. Example: Add AAPL, TSLA, or any stocks you want to track.",
   
+  "nodes.SymbolQueryNode.name": "All Symbols",
+  "nodes.SymbolQueryNode.description": "Fetch all tradable symbols from the exchange.",
+  
   "nodes.MarketUniverseNode.name": "Index Stocks",
   "nodes.MarketUniverseNode.description": "⚠️ Overseas stocks only. Get all stocks from US major indices (NASDAQ100, SP500, SP100, DOW30). Example: Selecting NASDAQ 100 adds Apple, Tesla, and 98 other top tech stocks.",
   

@@ -1,0 +1,200 @@
+{
+  "id": "symbol-filter-example",
+  "name": "종목 비교/필터 예제",
+  "description": "관심종목과 보유종목을 비교하여 아직 보유하지 않은 종목만 골라냅니다. 중복 매수 방지에 활용됩니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {
+        "x": 100,
+        "y": 200
+      },
+      "lastOutput": {
+        "start": true
+      }
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "position": {
+        "x": 300,
+        "y": 200
+      },
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "7c5caa90-f013-44fd-855d-410437c86737",
+      "lastOutput": {
+        "connected": true,
+        "connection": {
+          "provider": "ls-sec.co.kr",
+          "product": "overseas_stock",
+          "paper_trading": false,
+          "appkey": "[REDACTED]",
+          "appsecret": "[REDACTED]"
+        }
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "market",
+      "position": {
+        "x": 500,
+        "y": 100
+      },
+      "symbols": [
+        {
+          "exchange": "NASDAQ",
+          "symbol": "AAPL"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "NVDA"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "TSLA"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "MSFT"
+        },
+        {
+          "exchange": "NYSE",
+          "symbol": "PLTR"
+        }
+      ],
+      "lastOutput": {
+        "symbols": [
+          {
+            "exchange": "NASDAQ",
+            "symbol": "AAPL"
+          },
+          {
+            "exchange": "NASDAQ",
+            "symbol": "NVDA"
+          },
+          {
+            "exchange": "NASDAQ",
+            "symbol": "TSLA"
+          },
+          {
+            "exchange": "NASDAQ",
+            "symbol": "MSFT"
+          },
+          {
+            "exchange": "NYSE",
+            "symbol": "PLTR"
+          }
+        ]
+      }
+    },
+    {
+      "id": "account",
+      "type": "AccountNode",
+      "category": "account",
+      "position": {
+        "x": 500,
+        "y": 300
+      },
+      "connection": "{{ nodes.broker.connection }}",
+      "product_type": "overseas_stock",
+      "lastOutput": {
+        "held_symbols": [
+          "GOSS"
+        ],
+        "positions": {
+          "GOSS": {
+            "symbol": "GOSS",
+            "name": "고사머 바이오",
+            "qty": 8,
+            "avg_price": 3.229,
+            "current_price": 2.495,
+            "pnl_rate": -22.732692,
+            "pnl_amount": -5.8724,
+            "currency": "USD",
+            "market": "NASDAQ",
+            "eval_amount": 19.96,
+            "purchase_amount": 25.8324
+          }
+        },
+        "balance": {
+          "total_pnl_rate": -22.73,
+          "cash_krw": 6,
+          "stock_eval_krw": 29490,
+          "total_eval_krw": 38167,
+          "total_pnl_krw": -8676
+        }
+      }
+    },
+    {
+      "id": "filter",
+      "type": "SymbolFilterNode",
+      "category": "market",
+      "position": {
+        "x": 750,
+        "y": 200
+      },
+      "operation": "difference",
+      "input_a": "{{ nodes.watchlist.symbols }}",
+      "input_b": "{{ nodes.account.held_symbols }}"
+    },
+    {
+      "id": "display_1",
+      "type": "DisplayNode",
+      "category": "analysis",
+      "position": {
+        "x": 945,
+        "y": 150
+      },
+      "description": "차트/테이블 시각화.",
+      "width": 300,
+      "height": 200,
+      "size": {
+        "width": 300,
+        "height": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "watchlist",
+      "to": "filter"
+    },
+    {
+      "from": "account",
+      "to": "filter"
+    },
+    {
+      "from": "filter",
+      "to": "display_1"
+    }
+  ],
+  "credentials": [
+    {
+      "id": "7c5caa90-f013-44fd-855d-410437c86737",
+      "type": "broker_ls",
+      "name": "LS 해외주식",
+      "data": {
+        "appkey": "",
+        "appsecret": "",
+        "paper_trading": ""
+      }
+    }
+  ]
+}

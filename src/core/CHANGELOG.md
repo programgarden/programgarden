@@ -1,3 +1,14 @@
+## [2.3.0] - 2026-01-16
+### Fixed
+- fix(expression): `ExpressionContext.to_dict()` 수정
+  - 단일 출력 노드도 dict 형식 유지 (평탄화 제거)
+  - `{{ nodes.watchlist.symbols }}` 표현식 정상 작동
+
+### Added
+- feat(i18n): SymbolQueryNode 번역 키 추가
+  - ko: "전체 종목 조회"
+  - en: "All Symbols"
+
 ## [2.2.0] - 2026-01-15
 ### Changed
 - feat(nodes): ScreenerNode 필드 구조 변경 (filters 객체 → 개별 필드)

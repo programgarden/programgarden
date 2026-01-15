@@ -526,11 +526,13 @@ class SymbolFilterNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         operation = config.get("operation", "difference")
-        input_a = config.get("input_a", [])
-        input_b = config.get("input_b", [])
+        input_a = config.get("input_a") or []  # None 대응
+        input_b = config.get("input_b") or []  # None 대응
         
         # 종목 코드만 추출하여 집합으로 변환
         def extract_symbols(symbol_list: List) -> set:
+            if not symbol_list:
+                return set()
             result = set()
             for item in symbol_list:
                 if isinstance(item, dict):
@@ -543,6 +545,8 @@ class SymbolFilterNodeExecutor(NodeExecutorBase):
         
         # 원본 종목 정보 유지를 위한 매핑
         def build_symbol_map(symbol_list: List) -> Dict[str, Dict]:
+            if not symbol_list:
+                return {}
             result = {}
             for item in symbol_list:
                 if isinstance(item, dict):
