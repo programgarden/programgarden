@@ -3357,7 +3357,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         
         credential = context.get_credential()
         if not credential:
-            context.log("error", "i18n:errors.CREDENTIAL_NOT_SET", node_id)
+            context.log("error", "Credential not set. Check BrokerNode credential_id.", node_id)
             return self._empty_result("i18n:errors.CREDENTIAL_NOT_SET")
         
         try:
@@ -3371,9 +3371,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                 caller_name="MarketDataNode(overseas_stock)"
             )
             if not success:
-                error_msg = f"i18n:errors.LS_LOGIN_FAILED|error={error}"
-                context.log("error", error_msg, node_id)
-                return self._empty_result(error_msg)
+                context.log("error", f"LS login failed: {error}", node_id)
+                return self._empty_result(f"i18n:errors.LS_LOGIN_FAILED|error={error}")
             
             api = ls.overseas_stock()
             
@@ -3454,13 +3453,11 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             }
             
         except ImportError as e:
-            error_msg = f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}"
-            context.log("error", error_msg, node_id)
-            return self._empty_result(error_msg)
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._empty_result(f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}")
         except Exception as e:
-            error_msg = f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}"
-            context.log("error", error_msg, node_id)
-            return self._empty_result(error_msg)
+            context.log("error", f"Market data fetch error: {e}", node_id)
+            return self._empty_result(f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}")
 
     async def _fetch_overseas_futures(
         self,
@@ -3473,7 +3470,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         
         credential = context.get_credential()
         if not credential:
-            context.log("error", "i18n:errors.CREDENTIAL_NOT_SET", node_id)
+            context.log("error", "Credential not set. Check BrokerNode credential_id.", node_id)
             return self._empty_result("i18n:errors.CREDENTIAL_NOT_SET")
         
         try:
@@ -3487,9 +3484,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                 caller_name="MarketDataNode(overseas_futureoption)"
             )
             if not success:
-                error_msg = f"i18n:errors.LS_LOGIN_FAILED|error={error}"
-                context.log("error", error_msg, node_id)
-                return self._empty_result(error_msg)
+                context.log("error", f"LS login failed: {error}", node_id)
+                return self._empty_result(f"i18n:errors.LS_LOGIN_FAILED|error={error}")
             
             api = ls.overseas_futureoption()
             
@@ -3561,13 +3557,11 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             }
             
         except ImportError as e:
-            error_msg = f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}"
-            context.log("error", error_msg, node_id)
-            return self._empty_result(error_msg)
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._empty_result(f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}")
         except Exception as e:
-            error_msg = f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}"
-            context.log("error", error_msg, node_id)
-            return self._empty_result(error_msg)
+            context.log("error", f"Market data fetch error: {e}", node_id)
+            return self._empty_result(f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}")
 
     def _empty_result(self, error_msg: str = "") -> Dict[str, Any]:
         """빈 결과 반환 (에러 시)"""
