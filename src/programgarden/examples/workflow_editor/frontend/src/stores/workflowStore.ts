@@ -401,8 +401,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       // node.data에서 내부 필드 및 런타임 input 데이터 제외
       const nodeDataEntries = Object.entries(node.data).filter(
         ([key, value]) => {
-          // 내부 관리 필드 제외
-          if (['label', 'nodeType', 'category', 'inputs', 'outputs', 'state', 'configSchema'].includes(key)) {
+          // 내부 관리 필드 제외 (lastOutput: 실행 결과 데이터)
+          if (['label', 'nodeType', 'category', 'inputs', 'outputs', 'state', 'configSchema', 'lastOutput'].includes(key)) {
             return false;
           }
           // 항상 유지해야 하는 dual-purpose 필드 (input port이자 config 필드)

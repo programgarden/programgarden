@@ -1,0 +1,78 @@
+{
+  "id": "condition-profittarget-realtime-futures",
+  "version": "1.0.0",
+  "name": "ProfitTarget 조건 - 실시간 해외선물",
+  "description": "RealMarketDataNode + RealAccountNode로 선물 익절 조건 평가",
+  "tags": ["condition", "profittarget", "realtime", "overseas_futures"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_futures",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "realAccount",
+      "type": "RealAccountNode",
+      "category": "account",
+      "connection": "{{ nodes.broker.connection }}",
+      "stay_connected": false,
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "realMarket",
+      "type": "RealMarketDataNode",
+      "category": "realtime",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.realAccount.held_symbols }}",
+      "stay_connected": false,
+      "position": {"x": 550, "y": 200}
+    },
+    {
+      "id": "profitTargetCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "ProfitTarget",
+      "fields": {
+        "percent": 3.0
+      },
+      "ohlcv_data": "{{ nodes.realMarket.ohlcv_data }}",
+      "position_data": "{{ nodes.realAccount.positions }}",
+      "symbols": "{{ nodes.realAccount.held_symbols }}",
+      "position": {"x": 750, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "table",
+      "title": "선물 익절 조건 결과",
+      "data": "{{ nodes.profitTargetCondition.values }}",
+      "position": {"x": 950, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "realAccount"},
+    {"from": "realAccount", "to": "realMarket"},
+    {"from": "realMarket", "to": "profitTargetCondition"},
+    {"from": "profitTargetCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 선물 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": true}
+    }
+  ]
+}

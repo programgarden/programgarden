@@ -547,15 +547,20 @@ class SymbolFilterNodeExecutor(NodeExecutorBase):
         def build_symbol_map(symbol_list: List) -> Dict[str, Dict]:
             if not symbol_list:
                 return {}
+            from programgarden_core.models import normalize_symbol
             result = {}
             for item in symbol_list:
                 if isinstance(item, dict):
                     symbol = item.get("symbol", "")
                     if symbol and symbol not in result:
-                        result[symbol] = item
+                        # exchange가 없으면 추정
+                        if item.get("exchange"):
+                            result[symbol] = item
+                        else:
+                            result[symbol] = normalize_symbol(symbol)
                 elif isinstance(item, str):
                     if item not in result:
-                        result[item] = {"symbol": item, "exchange": ""}
+                        result[item] = normalize_symbol(item)
             return result
         
         set_a = extract_symbols(input_a)
@@ -2298,57 +2303,74 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             exchange_code = self._get_stock_exchange_code(exchange)
             subscribe_symbols.append(f"{exchange_code}{symbol}")
         
-        # 실시간 데이터 저장소 (콜백에서 업데이트됨)
-        prices = {}
-        volumes = {}
-        bids = {}
-        asks = {}
+        # 실시간 OHLCV 데이터 저장소 (콜백에서 틱마다 누적)
+        # 형식: {symbol: {date, open, high, low, close, volume}}
+        ohlcv_bars = {}
         
         # 트리거할 하위 노드 목록 (RealOrderEventNode 패턴)
-        # 참고: _execute_stock()에서는 config 파라미터가 없으므로 빈 리스트 사용
-        # TODO: execute() → _execute_stock()로 config 전달하여 개선
-        trigger_nodes = []  # 추후 config.get("_trigger_on_update_nodes", []) 전달 필요
+        trigger_nodes = []
         
         def on_tick(resp):
-            """GSC 틱 데이터 수신 콜백 - 체결 시 실시간 업데이트"""
+            """GSC 틱 데이터 수신 콜백 - OHLCV 형식으로 누적"""
             try:
-                # GSCRealResponse.body에서 데이터 추출
                 body = resp.body if hasattr(resp, 'body') else None
                 
-                # body가 None이면 구독 확인 메시지 (무시)
                 if body is None:
                     context.log("debug", f"GSC subscription confirmed: {resp.rsp_msg if hasattr(resp, 'rsp_msg') else ''}", node_id)
                     return
                 
-                # GSCRealResponseBody 필드: symbol, price, totq, open, high, low 등
+                # GSCRealResponseBody 필드 추출
                 symbol = getattr(body, 'symbol', '')
                 price = float(getattr(body, 'price', 0) or 0)
+                tick_open = float(getattr(body, 'open', 0) or 0)
+                tick_high = float(getattr(body, 'high', 0) or 0)
+                tick_low = float(getattr(body, 'low', 0) or 0)
                 volume = int(getattr(body, 'totq', 0) or 0)
+                date = getattr(body, 'kordate', '') or datetime.now().strftime('%Y%m%d')
                 
                 if symbol and price > 0:
-                    prices[symbol] = price
-                    volumes[symbol] = volume
+                    # OHLCV 바 업데이트 (당일 누적)
+                    if symbol not in ohlcv_bars or ohlcv_bars[symbol].get('date') != date:
+                        # 첫 틱 또는 새 날짜: 초기화
+                        ohlcv_bars[symbol] = {
+                            "date": date,
+                            "open": tick_open if tick_open > 0 else price,
+                            "high": tick_high if tick_high > 0 else price,
+                            "low": tick_low if tick_low > 0 else price,
+                            "close": price,
+                            "volume": volume,
+                        }
+                    else:
+                        # 이후 틱: 누적 (high/low는 틱에서 제공되므로 그대로 사용)
+                        bar = ohlcv_bars[symbol]
+                        if tick_high > 0:
+                            bar["high"] = tick_high
+                        if tick_low > 0:
+                            bar["low"] = tick_low
+                        bar["close"] = price
+                        bar["volume"] = volume
                     
-                    # 콘솔 출력 (RealOrderEventNode 패턴)
+                    # 콘솔 출력
                     print(f"\n{'='*60}")
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] GSC 체결")
                     print(f"  종목: {symbol}  가격: ${price:,.2f}  거래량: {volume:,}")
+                    print(f"  OHLCV: O={ohlcv_bars[symbol]['open']:.2f} H={ohlcv_bars[symbol]['high']:.2f} L={ohlcv_bars[symbol]['low']:.2f} C={price:.2f}")
                     print(f"{'='*60}\n")
                     
-                    # 실시간 데이터 context에 업데이트
-                    full_data = self._build_full_data(symbols_raw, prices, volumes, bids, asks)
-                    context.set_output(node_id, "price", prices.copy())
-                    context.set_output(node_id, "volume", volumes.copy())
-                    context.set_output(node_id, "data", full_data)
+                    # OHLCV 데이터 형식으로 변환: {symbol: [bar]}
+                    ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
+                    
+                    # context에 업데이트
+                    context.set_output(node_id, "ohlcv_data", ohlcv_data)
+                    context.set_output(node_id, "data", ohlcv_data)
                     
                     output_data = {
-                        "price": prices.copy(),
-                        "volume": volumes.copy(),
+                        "ohlcv_data": ohlcv_data,
                         "symbol": symbol,
-                        "data": full_data,
+                        "data": ohlcv_data,
                     }
                     
-                    # SSE 브로드캐스트 (스레드 안전하게)
+                    # SSE 브로드캐스트
                     asyncio.run_coroutine_threadsafe(
                         context.notify_output_update(
                             node_id=node_id,
@@ -2358,7 +2380,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                         loop
                     )
                     
-                    # 후속 노드 트리거 (RealOrderEventNode 패턴)
+                    # 후속 노드 트리거
                     asyncio.run_coroutine_threadsafe(
                         context.emit_event(
                             event_type="market_data",
@@ -2391,14 +2413,11 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
             context.log("info", f"GSC subscription active - waiting for ticks...", node_id)
         
-        # 초기 반환: 빈 데이터 (체결 시 콜백에서 업데이트)
+        # 초기 반환: 빈 OHLCV 데이터 (체결 시 콜백에서 업데이트)
         return {
             "symbols": symbols_raw,
-            "price": prices,
-            "volume": volumes,
-            "bid": bids,
-            "ask": asks,
-            "data": self._build_full_data(symbols_raw, prices, volumes, bids, asks),
+            "ohlcv_data": {},
+            "data": {},
         }
     
     async def _execute_futures(
@@ -2444,60 +2463,76 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             padded_symbol = symbol.ljust(8)
             subscribe_symbols.append(padded_symbol)
         
-        # 실시간 데이터 저장소 (콜백에서 업데이트됨)
-        prices = {}
-        volumes = {}
-        bids = {}
-        asks = {}
+        # 실시간 OHLCV 데이터 저장소 (콜백에서 틱마다 누적)
+        ohlcv_bars = {}
         
-        # 트리거할 하위 노드 목록 (RealOrderEventNode 패턴)
-        # 참고: _execute_futures()에서는 config 파라미터가 없으므로 빈 리스트 사용
-        # TODO: execute() → _execute_futures()로 config 전달하여 개선
-        trigger_nodes = []  # 추후 config.get("_trigger_on_update_nodes", []) 전달 필요
+        # 트리거할 하위 노드 목록
+        trigger_nodes = []
         
         def on_tick(resp):
-            """OVC 틱 데이터 수신 콜백 - 체결 시 실시간 업데이트"""
+            """OVC 틱 데이터 수신 콜백 - OHLCV 형식으로 누적"""
             try:
-                # OVC 응답 구조: resp.body가 None이면 구독 확인 메시지 (무시)
                 if not hasattr(resp, 'body') or resp.body is None:
                     context.log("debug", f"OVC subscription confirmed: {resp.rsp_msg if hasattr(resp, 'rsp_msg') else 'OK'}", node_id)
                     return
                 
                 body = resp.body
                 symbol = getattr(body, 'symbol', '')
-                symbol = symbol.strip() if symbol else ''  # 패딩 제거
+                symbol = symbol.strip() if symbol else ''
                 
-                # OVC 필드: curpr(체결가격), totq(누적체결수량)
+                # OVC 필드 추출
                 curpr = getattr(body, 'curpr', '0')
+                tick_open = getattr(body, 'open', '0')
+                tick_high = getattr(body, 'high', '0')
+                tick_low = getattr(body, 'low', '0')
                 totq = getattr(body, 'totq', '0')
+                date = getattr(body, 'kordate', '') or datetime.now().strftime('%Y%m%d')
                 
                 price = float(curpr) if curpr else 0.0
+                tick_open_f = float(tick_open) if tick_open else 0.0
+                tick_high_f = float(tick_high) if tick_high else 0.0
+                tick_low_f = float(tick_low) if tick_low else 0.0
                 volume = int(float(totq)) if totq else 0
                 
                 if symbol and price > 0:
-                    prices[symbol] = price
-                    volumes[symbol] = volume
+                    # OHLCV 바 업데이트
+                    if symbol not in ohlcv_bars or ohlcv_bars[symbol].get('date') != date:
+                        ohlcv_bars[symbol] = {
+                            "date": date,
+                            "open": tick_open_f if tick_open_f > 0 else price,
+                            "high": tick_high_f if tick_high_f > 0 else price,
+                            "low": tick_low_f if tick_low_f > 0 else price,
+                            "close": price,
+                            "volume": volume,
+                        }
+                    else:
+                        bar = ohlcv_bars[symbol]
+                        if tick_high_f > 0:
+                            bar["high"] = tick_high_f
+                        if tick_low_f > 0:
+                            bar["low"] = tick_low_f
+                        bar["close"] = price
+                        bar["volume"] = volume
                     
-                    # 콘솔 출력 (RealOrderEventNode 패턴)
+                    # 콘솔 출력
                     print(f"\n{'='*60}")
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] OVC 체결")
                     print(f"  종목: {symbol}  가격: {price:,.2f}  거래량: {volume:,}")
+                    print(f"  OHLCV: O={ohlcv_bars[symbol]['open']:.2f} H={ohlcv_bars[symbol]['high']:.2f} L={ohlcv_bars[symbol]['low']:.2f} C={price:.2f}")
                     print(f"{'='*60}\n")
                     
-                    # 실시간 데이터 context에 업데이트
-                    full_data = self._build_full_data(symbols_raw, prices, volumes, bids, asks)
-                    context.set_output(node_id, "price", prices.copy())
-                    context.set_output(node_id, "volume", volumes.copy())
-                    context.set_output(node_id, "data", full_data)
+                    # OHLCV 데이터 형식으로 변환
+                    ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
+                    
+                    context.set_output(node_id, "ohlcv_data", ohlcv_data)
+                    context.set_output(node_id, "data", ohlcv_data)
                     
                     output_data = {
-                        "price": prices.copy(),
-                        "volume": volumes.copy(),
+                        "ohlcv_data": ohlcv_data,
                         "symbol": symbol,
-                        "data": full_data,
+                        "data": ohlcv_data,
                     }
                     
-                    # SSE 브로드캐스트 (스레드 안전하게)
                     asyncio.run_coroutine_threadsafe(
                         context.notify_output_update(
                             node_id=node_id,
@@ -2507,7 +2542,6 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                         loop
                     )
                     
-                    # 후속 노드 트리거 (RealOrderEventNode 패턴)
                     asyncio.run_coroutine_threadsafe(
                         context.emit_event(
                             event_type="market_data",
@@ -2540,14 +2574,11 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
             context.log("info", f"OVC subscription active - waiting for ticks...", node_id)
         
-        # 초기 반환: 빈 데이터 (체결 시 콜백에서 업데이트)
+        # 초기 반환: 빈 OHLCV 데이터
         return {
             "symbols": symbols_raw,
-            "price": prices,
-            "volume": volumes,
-            "bid": bids,
-            "ask": asks,
-            "data": self._build_full_data(symbols_raw, prices, volumes, bids, asks),
+            "ohlcv_data": {},
+            "data": {},
         }
     
     def _get_stock_exchange_code(self, exchange: str) -> str:
@@ -3235,7 +3266,17 @@ class CustomPnLNodeExecutor(NodeExecutorBase):
 
 
 class DisplayNodeExecutor(NodeExecutorBase):
-    """DisplayNode executor - 테이블/차트 표시"""
+    """
+    DisplayNode executor - 명시적 chart_type 기반 시각화
+    
+    chart_type별 필수 필드:
+    - table: data
+    - line: data, x_field, y_field
+    - multi_line: data, x_field, y_field, series_key
+    - candlestick: data, date_field, open_field, high_field, low_field, close_field
+    - bar: data, x_field, y_field
+    - summary: data (raw JSON 표시)
+    """
 
     def _format_value(self, value) -> str:
         """값을 출력용 문자열로 포맷팅"""
@@ -3254,6 +3295,32 @@ class DisplayNodeExecutor(NodeExecutorBase):
             return str(value)[:15] + "..." if len(str(value)) > 15 else str(value)
         return str(value)[:20]
 
+    def _get_data(self, config: Dict[str, Any], context: ExecutionContext, node_id: str) -> Any:
+        """data 필드 또는 엣지에서 데이터 가져오기"""
+        # 1. config의 data 필드가 바인딩 표현식인 경우 이미 평가됨
+        data = config.get("data")
+        if data is not None:
+            return data
+        
+        # 2. 엣지로 연결된 입력 데이터
+        input_namespace = f"_input_{node_id}"
+        all_inputs = context.get_all_outputs(input_namespace) if hasattr(context, 'get_all_outputs') else {}
+        
+        # 실시간 데이터 우선
+        realtime_data = config.get("_realtime_data")
+        if realtime_data:
+            all_inputs = {**all_inputs, **realtime_data}
+        
+        # 소스 노드에서 직접 조회
+        source_node_id = config.get("_source_node_id")
+        if source_node_id and not realtime_data:
+            source_outputs = context.get_all_outputs(source_node_id)
+            if source_outputs:
+                all_inputs = source_outputs
+        
+        # data 포트 또는 첫 번째 입력
+        return all_inputs.get("data") or (next(iter(all_inputs.values()), None) if all_inputs else None)
+
     async def execute(
         self,
         node_id: str,
@@ -3263,459 +3330,34 @@ class DisplayNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         from datetime import datetime
+        import json
         
-        # 입력 데이터 가져오기 (다양한 소스 지원)
-        # 1. _input_{node_id}에서 모든 포트의 데이터 수집 (초기 실행 시)
-        input_namespace = f"_input_{node_id}"
-        all_inputs = context.get_all_outputs(input_namespace) if hasattr(context, 'get_all_outputs') else {}
-        
-        # 🆕 0. 실시간 업데이트: 이벤트에서 직접 전달된 데이터 우선 사용 (가장 최신)
-        realtime_data = config.get("_realtime_data")
-        if realtime_data:
-            # 이벤트 데이터를 직접 사용 (타이밍 문제 해결)
-            all_inputs = {**all_inputs, **realtime_data}
-            print(f"   [DisplayNode] 실시간 이벤트 데이터 사용: {list(realtime_data.keys())}")
-        
-        # 2. 실시간 업데이트: 상위 노드의 최신 데이터 직접 조회 (fallback)
-        # input_namespace의 데이터가 오래된 경우를 대비하여 소스 노드에서 직접 가져옴
-        source_node_id = config.get("_source_node_id")
-        if source_node_id and not realtime_data:
-            # 소스 노드의 최신 output 가져오기
-            source_outputs = context.get_all_outputs(source_node_id)
-            if source_outputs:
-                all_inputs = source_outputs
-                print(f"   [DisplayNode] 소스 노드 '{source_node_id}'에서 직접 데이터 조회: {list(source_outputs.keys())}")
-        # ⚠️ positions fallback 로직 제거 - 상위 노드 출력만 사용해야 함
-        # RealOrderEventNode 등의 출력이 다른 노드의 positions로 덮어씁히는 문제 방지
-        
-        # 디버깅: 입력 데이터 확인
-        print(f"\n🔍 DisplayNode '{node_id}' 입력 데이터:")
-        print(f"   - all_inputs keys: {list(all_inputs.keys())}")
-        for k, v in all_inputs.items():
-            v_type = type(v).__name__
-            v_preview = str(v)[:100] if v else "None"
-            print(f"   - {k} ({v_type}): {v_preview}...")
-        
-        context.log("debug", f"DisplayNode inputs from {input_namespace}: {list(all_inputs.keys())}", node_id)
-        
-        # === 여러 백테스트 노드에서 데이터 수집 ===
-        metrics_list = []  # 성과 지표 배열 (radar/table용)
-        trades_list = []   # 거래 내역 배열 (bar chart 집계용)
-        
-        if all_inputs:
-            for key, value in all_inputs.items():
-                if isinstance(value, dict):
-                    # metrics/summary 형식인지 확인 (total_return, sharpe_ratio 등의 키 보유)
-                    if any(k in value for k in ["total_return", "sharpe_ratio", "max_drawdown"]):
-                        # 소스 노드에서 strategy_name 조회
-                        source_node = key.split(".")[0] if "." in key else key
-                        # strategy_name이 이미 있으면 사용, 없으면 소스 노드 이름
-                        strategy_name = value.get("strategy_name") or source_node
-                        metrics_with_name = {**value, "strategy_name": strategy_name}
-                        metrics_list.append(metrics_with_name)
-                elif isinstance(value, list) and len(value) > 0:
-                    # trades 배열인지 확인
-                    first = value[0]
-                    if isinstance(first, dict) and "symbol" in first and "action" in first:
-                        trades_list.extend(value)
-        
-        # 개별 포트에서도 시도 (data, summary, positions 등)
-        # 🔧 실시간 데이터가 있으면 그것을 우선 사용
-        if realtime_data and "positions" in realtime_data:
-            input_data = realtime_data["positions"]
-        else:
-            input_data = (
-                context.get_output(input_namespace, "data") or
-                context.get_output(input_namespace, "summary") or
-                context.get_output(input_namespace, "positions") or
-                context.get_output(input_namespace, "input")
-            )
-        
-        
-        # 2. equity_curve 데이터 (라인 차트용)
-        equity_data = context.get_output(input_namespace, "equity_curve")
-        
-        # 3. backtestEngine에서 직접 조회 (fallback)
-        if not equity_data:
-            equity_data = context.get_output("backtestEngine", "equity_curve")
-        
-        # 4. data 포트에 equity_curve 리스트가 들어온 경우 처리
-        if not equity_data and isinstance(input_data, list) and len(input_data) > 0:
-            # equity_curve 형식인지 확인 (date와 value 키가 있는 dict 리스트)
-            first_item = input_data[0] if input_data else {}
-            if isinstance(first_item, dict) and "date" in first_item and "value" in first_item:
-                equity_data = input_data
-        
-        
-        # 5. account.positions (실시간 PnL)
-        positions_data = context.get_output("account", "positions") or {}
-        
-        # 6. all_inputs에서 첫 번째 데이터 가져오기 (fallback)
-        first_input = None
-        if all_inputs:
-            first_input = next(iter(all_inputs.values()), None)
-        
-        # 우선순위: input_data > equity_data > all_inputs > positions
-        data = input_data or first_input or positions_data or {}
-        
-        context.log("debug", f"DisplayNode data resolved: type={type(data).__name__}, equity_data={equity_data is not None}", node_id)
-        
-        # balance 정보도 가져오기
-        balance = context.get_output("account", "balance") or {}
-        
-        chart_type = config.get("chart_type", "table")
+        chart_type = config.get("chart_type", "summary")
         title = config.get("title", "")
-        options = config.get("options", {})
         
-        if chart_type == "table" and data:
-            # 테이블 출력
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\n{title} [{now}]")
-            
-            # 데이터 형태에 따른 분기 처리
-            # 1. dict of dicts: {symbol: {field: value, ...}} - 포지션 형태
-            # 2. list of dicts: [{field: value}, ...] - 일반 테이블
-            # 3. flat dict: {field: value} - 단순 메트릭
-            
-            is_positions_format = (
-                isinstance(data, dict) and 
-                data and 
-                all(isinstance(v, dict) for v in data.values())
-            )
-            
-            is_list_format = isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict)
-            is_flat_dict = isinstance(data, dict) and data and not is_positions_format
-            
-            if is_positions_format:
-                # 포지션 형태 (원래 로직)
-                print("=" * 100)
-                print(f"{'Symbol':<10} {'Name':<15} {'Qty':>10} {'Avg Price':>12} {'Cur Price':>12} {'PnL Rate':>10} {'PnL Amount':>14}")
-                print("-" * 100)
-                
-                # 정렬
-                sort_by = options.get("sort_by", "symbol")
-                sort_order = options.get("sort_order", "asc")
-                sorted_data = sorted(
-                    data.values(),
-                    key=lambda x: x.get(sort_by, 0) if isinstance(x.get(sort_by, 0), (int, float)) else str(x.get(sort_by, "")),
-                    reverse=(sort_order == "desc"),
-                )
-                
-                for row in sorted_data:
-                    pnl_rate = row.get("pnl_rate", 0)
-                    pnl_amount = row.get("pnl_amount", 0)
-                    pnl_sign = "+" if pnl_rate >= 0 else ""
-                    pnl_color = "\033[92m" if pnl_rate >= 0 else "\033[91m"  # Green/Red
-                    reset = "\033[0m"
-                    
-                    currency = row.get("currency", "USD")
-                    currency_symbol = "$" if currency == "USD" else currency + " "
-                    
-                    # qty가 float인 경우 (소수점 주식)
-                    qty = row.get("qty", 0)
-                    qty_str = f"{qty:>10.4f}" if isinstance(qty, float) and qty != int(qty) else f"{int(qty):>10}"
-                    
-                    # name 축약 (15자 이내)
-                    name = row.get("name", row.get("symbol", ""))[:15]
-                    
-                    print(
-                        f"{row.get('symbol', ''):<10} "
-                        f"{name:<15} "
-                        f"{qty_str} "
-                        f"{currency_symbol}{row.get('avg_price', 0):>10.4f} "
-                        f"{currency_symbol}{row.get('current_price', 0):>10.4f} "
-                        f"{pnl_color}{pnl_sign}{pnl_rate:>8.2f}%{reset} "
-                        f"{pnl_color}{pnl_sign}{currency_symbol}{pnl_amount:>12.2f}{reset}"
-                    )
-                
-                print("-" * 100)
-                total_pnl = sum(r.get("pnl_amount", 0) for r in data.values())
-                total_sign = "+" if total_pnl >= 0 else ""
-                total_color = "\033[92m" if total_pnl >= 0 else "\033[91m"
-                print(f"{'Total':<10} {'':<15} {'':<10} {'':<12} {'':<12} {'':<10} {total_color}{total_sign}${total_pnl:>12.2f}\033[0m")
-                
-                # balance 정보 표시
-                if balance:
-                    print("-" * 100)
-                    if "total_pnl_rate" in balance:
-                        total_rate = balance.get("total_pnl_rate", 0)
-                        rate_color = "\033[92m" if total_rate >= 0 else "\033[91m"
-                        rate_sign = "+" if total_rate >= 0 else ""
-                        print(f"총 수익률: {rate_color}{rate_sign}{total_rate:.2f}%\033[0m")
-                    if "total_eval_krw" in balance:
-                        print(f"총 평가금액(원화): ₩{balance.get('total_eval_krw', 0):,.0f}")
-                    if "total_pnl_krw" in balance:
-                        pnl_krw = balance.get("total_pnl_krw", 0)
-                        krw_color = "\033[92m" if pnl_krw >= 0 else "\033[91m"
-                        krw_sign = "+" if pnl_krw >= 0 else ""
-                        print(f"총 평가손익(원화): {krw_color}{krw_sign}₩{pnl_krw:,.0f}\033[0m")
-            
-            elif is_list_format:
-                # 리스트 형태 테이블 (백테스트 summary 리스트 등)
-                print("=" * 80)
-                if data:
-                    columns = list(data[0].keys())
-                    header = " | ".join(f"{col:<15}" for col in columns[:6])  # 최대 6컬럼
-                    print(header)
-                    print("-" * 80)
-                    for row in data[:20]:  # 최대 20행
-                        values = " | ".join(
-                            f"{self._format_value(row.get(col)):<15}" for col in columns[:6]
-                        )
-                        print(values)
-            
-            elif is_flat_dict:
-                # 단순 key-value 형태 (메트릭)
-                print("=" * 50)
-                sort_by = options.get("sort_by")
-                items = list(data.items())
-                if sort_by and sort_by in data:
-                    # sort_by 키를 기준으로 정렬하지 않고 그냥 표시
-                    pass
-                for key, value in items:
-                    formatted = self._format_value(value)
-                    print(f"  {key:<25}: {formatted}")
-            
-            print("=" * 80 if not is_positions_format else "=" * 100)
+        # 데이터 가져오기
+        data = self._get_data(config, context, node_id)
         
-        context.log("info", f"Display rendered: {chart_type}", node_id)
+        context.log("debug", f"DisplayNode '{node_id}': chart_type={chart_type}, data_type={type(data).__name__}", node_id)
         
-        # 프론트엔드로 전달할 데이터 구성
+        # 출력 데이터 구성
         output_data = {
             "rendered": True,
             "chart_type": chart_type,
             "title": title,
-            "options": options,
         }
         
-        # 차트 타입별 데이터 포맷팅
-        if chart_type == "line":
-            # 라인 차트용 데이터 (equity_curve 등)
-            chart_data = None
-            if equity_data:
-                chart_data = equity_data
-            elif isinstance(data, dict) and "equity_curve" in data:
-                chart_data = data["equity_curve"]
-            elif isinstance(data, list):
-                chart_data = data
-            else:
-                chart_data = data
-            
-            output_data["chart_data"] = chart_data
-            
-            # 콘솔에 간단한 라인 차트 요약 출력
-            if chart_data and isinstance(chart_data, list) and len(chart_data) > 0:
-                from datetime import datetime
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"\n{title} [{now}]")
-                print("=" * 80)
-                
-                # 시작/끝 값
-                first = chart_data[0] if chart_data else {}
-                last = chart_data[-1] if chart_data else {}
-                
-                start_value = first.get("value", 0)
-                end_value = last.get("value", 0)
-                start_date = first.get("date", "N/A")
-                end_date = last.get("date", "N/A")
-                
-                # 수익률 계산
-                if start_value > 0:
-                    total_return = (end_value - start_value) / start_value * 100
-                else:
-                    total_return = 0
-                
-                return_sign = "+" if total_return >= 0 else ""
-                return_color = "\033[92m" if total_return >= 0 else "\033[91m"
-                reset = "\033[0m"
-                
-                print(f"📊 데이터 포인트: {len(chart_data)}일")
-                print(f"📅 기간: {start_date} ~ {end_date}")
-                print(f"💵 시작 자산: ${start_value:,.2f}")
-                print(f"💵 최종 자산: ${end_value:,.2f}")
-                print(f"📈 총 수익률: {return_color}{return_sign}{total_return:.2f}%{reset}")
-                
-                # 자산 최고/최저점 (equity curve)
-                values = [d.get("value", 0) for d in chart_data]
-                max_val = max(values)
-                min_val = min(values)
-                print(f"📈 자산 최고점: ${max_val:,.2f}")
-                print(f"📉 자산 최저점: ${min_val:,.2f}")
-                
-                # MDD
-                peak = values[0]
-                max_dd = 0
-                for v in values:
-                    if v > peak:
-                        peak = v
-                    dd = (peak - v) / peak * 100 if peak > 0 else 0
-                    if dd > max_dd:
-                        max_dd = dd
-                print(f"⚠️  최대 낙폭: {max_dd:.2f}%")
-                print("=" * 80)
-        elif chart_type == "radar":
-            # Radar 차트용 데이터 (metrics_list 사용)
-            if metrics_list:
-                output_data["data"] = metrics_list
-                context.log("info", f"Radar chart: {len(metrics_list)} strategies", node_id)
-            elif isinstance(data, list):
-                output_data["data"] = data
-            elif isinstance(data, dict):
-                # 단일 metrics 객체인 경우 배열로 감싸기
-                output_data["data"] = [data]
-            else:
-                output_data["data"] = []
-        elif chart_type == "bar":
-            # Bar 차트용 데이터
-            # trades 데이터 결정 (trades_list 또는 data)
-            trades_to_process = trades_list if trades_list else []
-            
-            # data가 trades 형식인지 확인
-            if not trades_to_process and isinstance(data, list) and len(data) > 0:
-                first = data[0] if data else {}
-                if isinstance(first, dict) and "symbol" in first and "action" in first:
-                    trades_to_process = data
-            
-            if trades_to_process:
-                # 종목별 투자 비중 및 손익 계산
-                symbol_stats = {}
-                for trade in trades_to_process:
-                    symbol = trade.get("symbol", "unknown")
-                    action = trade.get("action", "")
-                    price = trade.get("price", 0)
-                    qty = trade.get("qty", 0)
-                    cost = trade.get("cost", price * qty)
-                    
-                    if symbol not in symbol_stats:
-                        symbol_stats[symbol] = {"buy_cost": 0, "sell_revenue": 0, "buy_qty": 0, "sell_qty": 0}
-                    
-                    if action == "buy":
-                        symbol_stats[symbol]["buy_cost"] += cost
-                        symbol_stats[symbol]["buy_qty"] += qty
-                    elif action == "sell":
-                        symbol_stats[symbol]["sell_revenue"] += price * qty
-                        symbol_stats[symbol]["sell_qty"] += qty
-                
-                # 종목별 기여도 계산
-                bar_data = []
-                has_sells = any(s["sell_qty"] > 0 for s in symbol_stats.values())
-                
-                for symbol, stats in symbol_stats.items():
-                    if has_sells and stats["sell_qty"] > 0:
-                        # 매도가 있는 경우: 실현 손익
-                        avg_buy = stats["buy_cost"] / stats["buy_qty"] if stats["buy_qty"] > 0 else 0
-                        profit = stats["sell_revenue"] - (avg_buy * stats["sell_qty"])
-                        bar_data.append({"name": symbol, "value": round(profit, 2)})
-                    else:
-                        # 매도가 없는 경우 (Buy & Hold): 투자 금액 표시
-                        bar_data.append({"name": symbol, "value": round(stats["buy_cost"], 2)})
-                
-                # 값 순으로 정렬
-                bar_data.sort(key=lambda x: x["value"], reverse=True)
-                output_data["data"] = bar_data
-                
-                label = "실현 손익" if has_sells else "투자 금액"
-                context.log("info", f"Bar chart ({label}): {len(bar_data)} symbols from {len(trades_to_process)} trades", node_id)
-            elif isinstance(data, list) and len(data) > 0:
-                # 일반 배열 데이터
-                output_data["data"] = data
-            elif isinstance(data, dict):
-                output_data["data"] = [{"name": k, "value": v} for k, v in data.items() if isinstance(v, (int, float))]
-            else:
-                output_data["data"] = []
-        else:
-            # 테이블용 데이터 - 구조화된 객체 배열로 전달
-            if metrics_list:
-                # 여러 전략의 metrics를 테이블로 표시
-                output_data["table_data"] = metrics_list
-            elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-                # 이미 객체 배열인 경우 그대로 사용
-                output_data["table_data"] = data
-            elif isinstance(data, dict) and data:
-                # 단일 dict → 객체 배열로 감싸기 (빈 dict 제외)
-                output_data["table_data"] = [data]
-            elif isinstance(data, bool) or data is None:
-                # boolean이나 None은 빈 배열로 (fallback에서 처리됨)
-                output_data["table_data"] = []
-            else:
-                # 기타 primitive 값도 빈 배열로 (fallback에서 raw로 처리됨)
-                output_data["table_data"] = []
-        
-        # Notify listeners for inline display visualization
-        # Prepare chart data for frontend
-        frontend_chart_data = None
-        if chart_type == "line":
-            frontend_chart_data = output_data.get("chart_data")
-        elif chart_type in ("radar", "bar"):
-            frontend_chart_data = output_data.get("data")
-        elif chart_type == "table":
-            frontend_chart_data = output_data.get("table_data")
-        elif chart_type == "candlestick":
-            # OHLC data
-            frontend_chart_data = equity_data or data
-        elif chart_type in ("scatter", "heatmap"):
-            frontend_chart_data = data
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # ========================================
-        # Fallback: 차트 데이터가 없거나 의미없는 데이터면 raw data를 JSON으로 표시
+        # chart_type별 처리
         # ========================================
-        # 의미없는 데이터 체크:
-        # - None
-        # - 빈 list/dict
-        # - boolean 단독 값 (connected: true 같은 신호)
-        # - [True], [False] 같은 신호만 있는 배열
-        def _is_meaningful_data(d):
-            if d is None:
-                return False
-            if isinstance(d, bool):
-                return False  # boolean 단독은 의미없음
-            if isinstance(d, (list, tuple)):
-                if not d:
-                    return False  # 빈 배열
-                # [True], [False] 같은 신호만 있는 배열 체크
-                if all(isinstance(x, bool) for x in d):
-                    return False
-            if isinstance(d, dict) and not d:
-                return False  # 빈 dict
-            return True
         
-        if not _is_meaningful_data(frontend_chart_data):
-            # 원본 데이터가 있으면 raw로 출력
-            # all_inputs 전체를 구조화하여 표시 (이전 노드의 전체 output)
-            raw_data = {}
-            
-            # all_inputs에서 의미있는 값만 추출
-            if all_inputs:
-                for k, v in all_inputs.items():
-                    # boolean 신호(connected, rendered 등)가 아닌 실제 데이터만 포함
-                    if v is not None and not isinstance(v, bool):
-                        raw_data[k] = v
-                    elif isinstance(v, bool):
-                        # boolean도 포함하되 구조 내에 다른 데이터가 있으면 함께 표시
-                        raw_data[k] = v
-            
-            # raw_data가 비어있으면 원본 all_inputs 사용
-            if not raw_data and all_inputs:
-                raw_data = dict(all_inputs)
-            
-            # 그래도 비어있으면 결과 없음 메시지
-            if not raw_data:
-                raw_data = {
-                    "status": "no_data",
-                    "message": "이전 노드에서 전달된 데이터가 없습니다",
-                    "timestamp": datetime.now().isoformat(),
-                }
-            
-            context.log("info", f"DisplayNode: chart_type '{chart_type}'에 맞는 데이터 없음, raw JSON으로 표시", node_id)
-            
-            # 콘솔에 raw JSON 출력
-            import json
-            from datetime import datetime
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\n📋 {title or 'Previous Node Output'} [{now}]")
+        if chart_type == "summary":
+            # Raw JSON 표시
+            print(f"\n📋 {title or 'Data Summary'} [{now}]")
             print("=" * 60)
             try:
-                # Pydantic 모델이나 특수 객체 처리
                 def serialize(obj):
                     if hasattr(obj, 'model_dump'):
                         return obj.model_dump()
@@ -3727,30 +3369,262 @@ class DisplayNodeExecutor(NodeExecutorBase):
                         return [serialize(v) for v in obj]
                     return obj
                 
-                serialized = serialize(raw_data)
+                serialized = serialize(data)
                 print(json.dumps(serialized, indent=2, ensure_ascii=False, default=str))
             except Exception as e:
                 print(f"(직렬화 실패: {e})")
-                print(str(raw_data)[:500])
+                print(str(data)[:500])
             print("=" * 60 + "\n")
             
-            # 프론트엔드로 raw 데이터 전송 (테이블 형식으로)
-            frontend_chart_data = raw_data
-            chart_type = "raw"  # 프론트엔드에서 JSON viewer로 처리
-            output_data["chart_type"] = "raw"
-            output_data["raw_data"] = raw_data
+            output_data["data"] = data
+            
+        elif chart_type == "table":
+            # 테이블 표시
+            columns = config.get("columns")
+            limit = config.get("limit", 10)
+            sort_by = config.get("sort_by")
+            sort_order = config.get("sort_order", "desc")
+            
+            print(f"\n📊 {title or 'Table'} [{now}]")
+            print("=" * 80)
+            
+            # 데이터 형식 판단
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                # 리스트 형태
+                rows = data
+                if sort_by and sort_by in (rows[0] if rows else {}):
+                    rows = sorted(rows, key=lambda x: x.get(sort_by, 0), reverse=(sort_order == "desc"))
+                rows = rows[:limit]
+                
+                cols = columns or list(rows[0].keys())[:8]
+                header = " | ".join(f"{c:<12}" for c in cols)
+                print(header)
+                print("-" * 80)
+                for row in rows:
+                    values = " | ".join(f"{self._format_value(row.get(c)):<12}" for c in cols)
+                    print(values)
+                    
+            elif isinstance(data, dict):
+                # dict of dicts (symbol: {field: value}) 또는 flat dict
+                if data and all(isinstance(v, dict) for v in data.values()):
+                    # dict of dicts
+                    items = list(data.items())
+                    if sort_by:
+                        items = sorted(items, key=lambda x: x[1].get(sort_by, 0), reverse=(sort_order == "desc"))
+                    items = items[:limit]
+                    
+                    if items:
+                        cols = columns or list(items[0][1].keys())[:6]
+                        header = f"{'Key':<12} | " + " | ".join(f"{c:<12}" for c in cols)
+                        print(header)
+                        print("-" * 80)
+                        for key, val in items:
+                            values = f"{key:<12} | " + " | ".join(f"{self._format_value(val.get(c)):<12}" for c in cols)
+                            print(values)
+                else:
+                    # flat dict
+                    for k, v in list(data.items())[:limit]:
+                        print(f"  {k:<25}: {self._format_value(v)}")
+            
+            print("=" * 80 + "\n")
+            output_data["data"] = data
+            
+        elif chart_type == "line":
+            # 단일 라인 차트
+            x_field = config.get("x_field")
+            y_field = config.get("y_field")
+            
+            if not x_field or not y_field:
+                context.log("error", f"line 차트에 x_field, y_field 필수", node_id)
+                return {"rendered": False, "error": "x_field, y_field 필수"}
+            
+            print(f"\n📈 {title or 'Line Chart'} [{now}]")
+            print("=" * 60)
+            
+            if isinstance(data, list) and len(data) > 0:
+                first = data[0]
+                last = data[-1]
+                print(f"📊 데이터 포인트: {len(data)}개")
+                print(f"📅 X축 범위: {first.get(x_field)} ~ {last.get(x_field)}")
+                print(f"📈 Y축({y_field}) 시작: {self._format_value(first.get(y_field))}")
+                print(f"📈 Y축({y_field}) 끝: {self._format_value(last.get(y_field))}")
+                
+                # 최대/최소
+                values = [d.get(y_field, 0) for d in data if d.get(y_field) is not None]
+                if values:
+                    print(f"📈 최대: {self._format_value(max(values))}")
+                    print(f"📉 최소: {self._format_value(min(values))}")
+            else:
+                print("(데이터 없음)")
+            
+            print("=" * 60 + "\n")
+            output_data["data"] = data
+            output_data["x_field"] = x_field
+            output_data["y_field"] = y_field
+            
+        elif chart_type == "multi_line":
+            # 멀티 라인 차트 (심볼별)
+            x_field = config.get("x_field")
+            y_field = config.get("y_field")
+            series_key = config.get("series_key")
+            limit = config.get("limit", 10)
+            sort_by = config.get("sort_by")
+            sort_order = config.get("sort_order", "desc")
+            
+            if not x_field or not y_field or not series_key:
+                context.log("error", f"multi_line 차트에 x_field, y_field, series_key 필수", node_id)
+                return {"rendered": False, "error": "x_field, y_field, series_key 필수"}
+            
+            print(f"\n📈 {title or 'Multi-Line Chart'} [{now}]")
+            print("=" * 80)
+            
+            # data가 평탄화된 배열 형식인 경우 [{symbol, date, value, ...}, ...]
+            if isinstance(data, list):
+                # series_key로 그룹핑
+                from collections import defaultdict
+                grouped = defaultdict(list)
+                for row in data:
+                    if isinstance(row, dict):
+                        key = row.get(series_key, "unknown")
+                        grouped[key].append(row)
+                
+                series_items = list(grouped.items())
+                
+                # 정렬 (마지막 값 기준)
+                if sort_by:
+                    def get_last_value(item):
+                        symbol, rows = item
+                        if rows and len(rows) > 0:
+                            return rows[-1].get(sort_by, 0)
+                        return 0
+                    series_items = sorted(series_items, key=get_last_value, reverse=(sort_order == "desc"))
+                
+                series_items = series_items[:limit]
+                
+                print(f"📊 시리즈 수: {len(series_items)}개 (limit: {limit})")
+                print("-" * 80)
+                print(f"{'Series':<12} | {'Points':<8} | {f'First {y_field}':<15} | {f'Last {y_field}':<15}")
+                print("-" * 80)
+                
+                for symbol, rows in series_items:
+                    if isinstance(rows, list) and len(rows) > 0:
+                        first_val = rows[0].get(y_field, 0)
+                        last_val = rows[-1].get(y_field, 0)
+                        print(f"{symbol:<12} | {len(rows):<8} | {self._format_value(first_val):<15} | {self._format_value(last_val):<15}")
+            
+            print("=" * 80 + "\n")
+            output_data["data"] = data
+            output_data["x_field"] = x_field
+            output_data["y_field"] = y_field
+            output_data["series_key"] = series_key
+            
+        elif chart_type == "candlestick":
+            # 캔들스틱 차트
+            date_field = config.get("date_field")
+            open_field = config.get("open_field")
+            high_field = config.get("high_field")
+            low_field = config.get("low_field")
+            close_field = config.get("close_field")
+            volume_field = config.get("volume_field")
+            
+            required = [date_field, open_field, high_field, low_field, close_field]
+            if not all(required):
+                context.log("error", f"candlestick 차트에 date_field, open_field, high_field, low_field, close_field 필수", node_id)
+                return {"rendered": False, "error": "OHLC 필드 필수"}
+            
+            print(f"\n📊 {title or 'Candlestick Chart'} [{now}]")
+            print("=" * 80)
+            
+            if isinstance(data, list) and len(data) > 0:
+                first = data[0]
+                last = data[-1]
+                print(f"📊 캔들 수: {len(data)}개")
+                print(f"📅 기간: {first.get(date_field)} ~ {last.get(date_field)}")
+                print(f"💵 시작 종가: {self._format_value(first.get(close_field))}")
+                print(f"💵 최종 종가: {self._format_value(last.get(close_field))}")
+                
+                # 수익률
+                start_price = first.get(close_field, 0)
+                end_price = last.get(close_field, 0)
+                if start_price > 0:
+                    pct_change = (end_price - start_price) / start_price * 100
+                    sign = "+" if pct_change >= 0 else ""
+                    color = "\033[92m" if pct_change >= 0 else "\033[91m"
+                    print(f"📈 변동률: {color}{sign}{pct_change:.2f}%\033[0m")
+            else:
+                print("(데이터 없음)")
+            
+            print("=" * 80 + "\n")
+            output_data["data"] = data
+            output_data["date_field"] = date_field
+            output_data["open_field"] = open_field
+            output_data["high_field"] = high_field
+            output_data["low_field"] = low_field
+            output_data["close_field"] = close_field
+            if volume_field:
+                output_data["volume_field"] = volume_field
+            
+        elif chart_type == "bar":
+            # 바 차트
+            x_field = config.get("x_field")
+            y_field = config.get("y_field")
+            
+            if not x_field or not y_field:
+                context.log("error", f"bar 차트에 x_field, y_field 필수", node_id)
+                return {"rendered": False, "error": "x_field, y_field 필수"}
+            
+            print(f"\n📊 {title or 'Bar Chart'} [{now}]")
+            print("=" * 60)
+            
+            if isinstance(data, list) and len(data) > 0:
+                print(f"{'Bar':<20} | {y_field}")
+                print("-" * 60)
+                for item in data[:20]:
+                    x_val = item.get(x_field, "")
+                    y_val = item.get(y_field, 0)
+                    print(f"{str(x_val):<20} | {self._format_value(y_val)}")
+            elif isinstance(data, dict):
+                print(f"{'Key':<20} | {'Value'}")
+                print("-" * 60)
+                for k, v in list(data.items())[:20]:
+                    print(f"{str(k):<20} | {self._format_value(v)}")
+            
+            print("=" * 60 + "\n")
+            output_data["data"] = data
+            output_data["x_field"] = x_field
+            output_data["y_field"] = y_field
         
-        # 항상 display_data 이벤트 전송 (데이터가 없어도)
+        else:
+            # 알 수 없는 chart_type
+            context.log("warning", f"알 수 없는 chart_type: {chart_type}, summary로 처리", node_id)
+            output_data["data"] = data
+        
+        # Notify listeners for frontend
         await context.notify_display_data(
             node_id=node_id,
             chart_type=chart_type,
-                title=title,
-                data=frontend_chart_data,
-                x_label=config.get("x_label"),
-                y_label=config.get("y_label"),
-                options=options,
-            )
+            title=title,
+            data=output_data.get("data"),
+            x_label=config.get("x_field"),
+            y_label=config.get("y_field"),
+            options={
+                "x_field": config.get("x_field"),
+                "y_field": config.get("y_field"),
+                "series_key": config.get("series_key"),
+                "date_field": config.get("date_field"),
+                "open_field": config.get("open_field"),
+                "high_field": config.get("high_field"),
+                "low_field": config.get("low_field"),
+                "close_field": config.get("close_field"),
+                "volume_field": config.get("volume_field"),
+                "columns": config.get("columns"),
+                "limit": config.get("limit"),
+                "sort_by": config.get("sort_by"),
+                "sort_order": config.get("sort_order"),
+            },
+        )
         
+        context.log("info", f"Display rendered: {chart_type}", node_id)
         return output_data
 
 
@@ -3758,17 +3632,21 @@ class ConditionNodeExecutor(NodeExecutorBase):
     """
     ConditionNode executor (plugin-based)
     
-    두 가지 모드 지원:
-    1. 실시간 모드: 단일 시점 price_data → result: bool
-    2. 백테스트 모드: 시계열 ohlcv_data → signals: list
+    DisplayNode-like 패턴:
+    - 입력: data (평탄화된 배열), field_mapping (필드 매핑)
+    - 출력: passed_symbols, failed_symbols, values
     
-    입력 데이터 형태를 자동 감지하여 모드 결정.
-    리소스 관리 시스템과 연동하여 배치 크기 및 속도를 조절합니다.
-    플러그인은 PluginSandbox를 통해 타임아웃 보호됩니다.
+    data 필드는 flatten() 표현식으로 시계열 데이터를 평탄화하여 전달:
+    예: "data": "{{ flatten(nodes.historicaldata_1.values, 'time_series') }}"
     
-    포트 바인딩:
-    config에 price_data, symbols 등의 표현식({{ nodes.xxx.yyy }})이 있으면
-    해당 표현식을 평가하여 데이터를 가져옵니다.
+    field_mapping으로 커스텀 필드명 매핑 가능:
+    예: close_field="adj_close", date_field="trading_date"
+    
+    출력 형식:
+    - passed_symbols: [{exchange, symbol}, ...] (거래소 정보 포함)
+    - failed_symbols: [{exchange, symbol}, ...]
+    - symbol_results: [{symbol, exchange, rsi, price, ...}, ...]
+    - values: [{symbol, exchange, time_series: [...], ...}, ...]
     """
 
     def _resolve_port_binding(
@@ -3856,45 +3734,66 @@ class ConditionNodeExecutor(NodeExecutorBase):
         try:
             # === 명시적 바인딩으로 데이터 가져오기 ===
             # 모든 config 값에서 {{ }} 표현식 평가
-            original_price_data_expr = config.get("price_data")
+            original_data_expr = config.get("data")
             print(f"\n🔍 ConditionNode '{node_id}' 바인딩 평가:")
-            print(f"   - price_data 원본: {original_price_data_expr}")
+            print(f"   - data 원본: {original_data_expr}")
             
             config = evaluate_all_bindings(config, context, node_id)
             
-            # 필수 데이터 추출
-            price_data = config.get("price_data", {})
-            volume_data = config.get("volume_data")
+            # 필드 매핑 추출
+            field_mapping = {
+                "close_field": config.get("close_field", "close"),
+                "open_field": config.get("open_field", "open"),
+                "high_field": config.get("high_field", "high"),
+                "low_field": config.get("low_field", "low"),
+                "volume_field": config.get("volume_field", "volume"),
+                "date_field": config.get("date_field", "date"),
+                "symbol_field": config.get("symbol_field", "symbol"),
+                "exchange_field": config.get("exchange_field", "exchange"),
+            }
+            
+            # 필수 데이터 추출 (새 형식: data)
+            data = config.get("data", [])
             position_data = config.get("position_data")
             held_symbols = config.get("held_symbols", [])
             symbols = config.get("symbols", [])
             
-            # symbols가 비어있으면 price_data에서 자동 추출
-            if not symbols and price_data and isinstance(price_data, dict):
-                symbols = list(price_data.keys())
+            # symbols가 비어있으면 data에서 자동 추출
+            symbol_field = field_mapping["symbol_field"]
+            exchange_field = field_mapping["exchange_field"]
+            if not symbols and data and isinstance(data, list):
+                # 플랫 배열에서 고유 종목 추출
+                seen = set()
+                for item in data:
+                    if isinstance(item, dict):
+                        sym = item.get(symbol_field, "")
+                        if sym and sym not in seen:
+                            seen.add(sym)
+                            symbols.append({
+                                "symbol": sym,
+                                "exchange": item.get(exchange_field, "NASDAQ")
+                            })
                 print(f"   - symbols 자동 추출: {symbols}")
             
-            print(f"   - price_data 평가 후: {type(price_data).__name__} = {price_data}")
+            print(f"   - data 평가 후: {type(data).__name__}, {len(data) if isinstance(data, list) else 0} rows")
             print(f"   - symbols: {symbols}")
+            print(f"   - field_mapping: {field_mapping}")
             
-            # price_data가 없으면 에러
-            if not price_data:
+            # data가 없으면 에러
+            if not data:
                 context.log("error", 
-                    f"ConditionNode '{node_id}': price_data가 설정되지 않았습니다. "
-                    f"config에 price_data: {{{{ nodes.realMarket.price }}}} 형태로 추가하세요.",
+                    f"ConditionNode '{node_id}': data가 설정되지 않았습니다. "
+                    f"config에 data: {{{{ flatten(nodes.historicaldata_1.values, 'time_series') }}}} 형태로 추가하세요.",
                     node_id
                 )
                 return {
                     "result": False,
                     "passed_symbols": [],
                     "failed_symbols": [],
-                    "values": {},
-                    "error": "missing_price_data",
-                    "error_message": "price_data가 설정되지 않았습니다. 사용 가능: RealMarketDataNode.price, MarketDataNode.price, HistoricalDataNode.ohlcv",
+                    "values": [],
+                    "error": "missing_data",
+                    "error_message": "data가 설정되지 않았습니다. 예: flatten(nodes.historicaldata_1.values, 'time_series')",
                 }
-            
-            # 시계열 데이터 확인
-            ohlcv_data = price_data
             
             # fields 표현식 평가
             evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
@@ -3903,27 +3802,22 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 evaluator = ExpressionEvaluator(expr_context)
                 evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
             
-            # 시계열 모드 감지
-            is_timeseries = self._is_timeseries_data(ohlcv_data)
+            # symbols 정규화 (거래소 정보 포함)
+            from programgarden_core.models import symbols_to_dict_list, extract_symbol_codes
+            normalized_symbols = symbols_to_dict_list(symbols)
+            symbol_codes = extract_symbol_codes(symbols)  # 플러그인 호출용
             
-            if is_timeseries:
-                # 백테스트 모드: 시계열 전체에 대해 시그널 생성
-                context.log("info", f"Condition running in backtest mode (timeseries)", node_id)
-                return await self._execute_backtest_mode(
-                    node_id, ohlcv_data, evaluated_fields, plugin, context, sandbox,
-                    plugin_id=plugin_id,
-                    batch_size=recommended_batch_size
-                )
-            else:
-                # 실시간 모드: 단일 시점 평가
-                context.log("info", f"Condition running in realtime mode", node_id)
-                return await self._execute_realtime_mode(
-                    node_id, symbols, price_data, evaluated_fields, plugin, context, sandbox,
-                    plugin_id=plugin_id,
-                    volume_data=volume_data,
-                    held_symbols=held_symbols,
-                    position_data=position_data,
-                )
+            # 플러그인 실행 (새 형식)
+            context.log("info", f"Condition running with {len(data)} data rows", node_id)
+            
+            return await self._execute_condition_plugin(
+                node_id, normalized_symbols, data, evaluated_fields, 
+                plugin, context, sandbox,
+                plugin_id=plugin_id,
+                field_mapping=field_mapping,
+                held_symbols=held_symbols,
+                position_data=position_data,
+            )
         except PluginTimeoutError as e:
             context.log("error", f"Plugin timeout: {e}", node_id)
             return {
@@ -3940,67 +3834,73 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 weight=hints.get_weight() if hasattr(hints, 'get_weight') else 1.0,
             )
 
-    def _is_timeseries_data(self, data: Any) -> bool:
-        """시계열 데이터인지 확인"""
-        if not data:
-            return False
-        
-        # {symbol: [{date, open, high, low, close, volume}, ...]} 형태인지 확인
-        if isinstance(data, dict):
-            first_value = next(iter(data.values()), None)
-            if isinstance(first_value, list) and len(first_value) > 1:
-                # 리스트가 2개 이상이고 date 필드가 있으면 시계열
-                if isinstance(first_value[0], dict) and "date" in first_value[0]:
-                    return True
-        
-        return False
-
-    async def _execute_realtime_mode(
+    async def _execute_condition_plugin(
         self,
         node_id: str,
-        symbols: List[str],
-        price_data: Dict[str, Any],
-        fields: Dict[str, Any],
+        normalized_symbols: List[Dict[str, str]],  # [{exchange, symbol}, ...]
+        data: List[Dict[str, Any]],  # 평탄화된 데이터 [{date, close, symbol, exchange, ...}, ...]
+        fields: Dict[str, Any],  # 플러그인 파라미터 (period, threshold 등)
         plugin: Optional[Callable],
         context: ExecutionContext,
         sandbox: "PluginSandbox",
         plugin_id: str = "Unknown",
-        volume_data: Optional[Dict[str, Any]] = None,
+        field_mapping: Optional[Dict[str, str]] = None,
         held_symbols: Optional[List[str]] = None,
         position_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """실시간 모드: 단일 시점 평가 (샌드박스 적용)"""
+        """
+        조건 플러그인 실행 (새 형식: data + field_mapping)
+        
+        입력:
+        - data: 평탄화된 배열 [{date, close, symbol, exchange, ...}, ...]
+        - field_mapping: 필드 매핑 {close_field: "close", date_field: "date", ...}
+        - fields: 플러그인 파라미터
+        - normalized_symbols: 평가 대상 심볼 [{exchange, symbol}, ...]
+        
+        출력:
+        - passed_symbols: [{exchange, symbol}, ...]
+        - failed_symbols: [{exchange, symbol}, ...]
+        - symbol_results: [{symbol, exchange, rsi, ...}, ...]
+        - values: [{symbol, exchange, time_series: [...], ...}, ...]
+        """
         from programgarden.plugin import PluginSandbox, PluginTimeoutError
         
         passed_symbols = []
         failed_symbols = []
-        values = {}
-
+        symbol_results = []
+        values = []
+        
+        if field_mapping is None:
+            field_mapping = {}
+        
         if plugin:
-            # 플러그인에 전달할 추가 데이터 준비
+            # 플러그인에 전달할 kwargs
             plugin_kwargs = {
-                "symbols": symbols,
-                "price_data": price_data,
-                "fields": fields,
+                "data": data,  # 평탄화된 배열
+                "fields": fields,  # 플러그인 파라미터
+                "field_mapping": field_mapping,  # 필드 매핑
+                "symbols": normalized_symbols,  # [{exchange, symbol}, ...]
             }
-            # 추가 포트 데이터가 있으면 포함
-            if volume_data:
-                plugin_kwargs["volume_data"] = volume_data
+            
+            # 추가 포트 데이터
             if held_symbols:
                 plugin_kwargs["held_symbols"] = held_symbols
             if position_data:
                 plugin_kwargs["position_data"] = position_data
             
-            # 샌드박스에서 플러그인 실행
             try:
-                if len(symbols) > sandbox._default_batch_size:
+                # 종목 수에 따라 배치 처리 결정
+                symbol_codes = [s["symbol"] for s in normalized_symbols]
+                
+                if len(symbol_codes) > sandbox._default_batch_size:
                     # 대량 종목은 배치 처리
                     result = await sandbox.execute_batched(
                         plugin_id=plugin_id,
                         plugin_callable=plugin,
-                        symbols=symbols,
-                        price_data=price_data,
+                        symbols=symbol_codes,
+                        data=data,
                         fields=fields,
+                        field_mapping=field_mapping,
                     )
                 else:
                     # 일반 실행
@@ -4012,179 +3912,597 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 
                 passed_symbols = result.get("passed_symbols", [])
                 failed_symbols = result.get("failed_symbols", [])
-                values = result.get("values", {})
+                symbol_results = result.get("symbol_results", [])
+                values = result.get("values", [])
+                
             except PluginTimeoutError as e:
                 context.log("error", f"Plugin timeout: {e}", node_id)
-                failed_symbols = symbols
+                failed_symbols = normalized_symbols
             except Exception as e:
                 context.log("error", f"Plugin error: {e}", node_id)
-                failed_symbols = symbols
+                import traceback
+                context.log("debug", f"Plugin traceback: {traceback.format_exc()}", node_id)
+                failed_symbols = normalized_symbols
         else:
             # 플러그인 없으면 모두 통과
-            passed_symbols = symbols
-            for symbol in symbols:
-                values[symbol] = {"result": True}
-
+            passed_symbols = normalized_symbols
+            for sym in normalized_symbols:
+                symbol_results.append({
+                    "symbol": sym["symbol"], 
+                    "exchange": sym.get("exchange", "UNKNOWN"), 
+                    "result": True
+                })
+        
         context.log(
             "info",
-            f"Condition evaluated: {len(passed_symbols)}/{len(symbols)} passed",
+            f"Condition evaluated: {len(passed_symbols)}/{len(normalized_symbols)} passed",
             node_id,
         )
-
+        
         return {
-            "symbols": symbols,  # 입력 symbols echo
+            "symbols": normalized_symbols,  # 입력 symbols (거래소 포함)
             "result": len(passed_symbols) > 0,
-            "passed_symbols": passed_symbols,
-            "failed_symbols": failed_symbols,
-            "values": values,
+            "passed_symbols": passed_symbols,  # [{exchange, symbol}, ...]
+            "failed_symbols": failed_symbols,  # [{exchange, symbol}, ...]
+            "symbol_results": symbol_results,  # [{symbol, exchange, rsi, price, ...}, ...]
+            "values": values,  # [{symbol, exchange, time_series: [...], ...}, ...]
         }
 
-    async def _execute_backtest_mode(
+
+class LogicNodeExecutor(NodeExecutorBase):
+    """
+    LogicNode executor - 조건 조합
+    
+    여러 ConditionNode의 결과를 조합하여 최종 조건 판정.
+    
+    지원 연산자:
+    - all: 모든 조건 만족 (AND)
+    - any: 하나 이상 만족 (OR)
+    - not: 모든 조건 불만족
+    - xor: 정확히 하나만 만족
+    - at_least: N개 이상 만족 (threshold 필요)
+    - at_most: N개 이하 만족 (threshold 필요)
+    - exactly: 정확히 N개 만족 (threshold 필요)
+    - weighted: 가중치 합이 threshold 이상 (weights, threshold 필요)
+    
+    입력: 각 ConditionNode의 condition_id 바인딩 (conditions 필드)
+    출력: result (bool), passed_symbols (list)
+    """
+
+    async def execute(
         self,
         node_id: str,
-        ohlcv_data: Dict[str, List[Dict]],
-        fields: Dict[str, Any],
-        plugin: Optional[Callable],
+        node_type: str,
+        config: Dict[str, Any],
         context: ExecutionContext,
-        sandbox: "PluginSandbox",
-        plugin_id: str = "Unknown",
-        batch_size: int = 10,
+        **kwargs,
     ) -> Dict[str, Any]:
-        """
-        백테스트 모드: 시계열 전체에 대해 시그널 생성 (샌드박스 적용)
+        """조건 조합 실행"""
         
-        각 bar에 대해 플러그인을 호출하여 시그널 시계열 생성.
-        플러그인은 해당 시점까지의 데이터만 받음 (미래 데이터 누출 방지).
+        # config에서 표현식 평가
+        config = evaluate_all_bindings(config, context, node_id)
         
-        리소스 관리:
-        - batch_size 단위로 처리 후 리소스 상태 체크
-        - 리소스 부족 시 recommended_delay 적용
-        """
-        from programgarden.plugin import PluginTimeoutError
+        operator = config.get("operator", "all")
+        threshold = config.get("threshold")
+        weights = config.get("weights", {})
+        conditions = config.get("conditions", [])  # ConditionNode ID 목록
         
-        signals = []
-        all_values = {}
+        context.log("info", f"LogicNode executing with operator='{operator}', conditions={conditions}", node_id)
         
-        # 첫 번째 종목의 날짜 리스트 기준
-        if not ohlcv_data:
-            return {"signals": [], "result": False}
+        # 각 조건 노드의 결과 수집
+        condition_results: List[Dict[str, Any]] = []
+        all_passed_symbols: List[List[str]] = []
         
-        first_symbol = list(ohlcv_data.keys())[0]
-        bars = ohlcv_data.get(first_symbol, [])
-        symbols = list(ohlcv_data.keys())
-        
-        # 최소 데이터 포인트 (지표 계산에 필요)
-        min_bars = fields.get("period", 14) + 5
-        
-        # 배치 처리
-        batch_count = 0
-        
-        for i, bar in enumerate(bars):
-            date = bar.get("date", "")
+        for cond_id in conditions:
+            # 조건 노드 출력 가져오기
+            cond_result = context.get_output(cond_id, "result")
+            cond_passed = context.get_output(cond_id, "passed_symbols") or []
+            cond_symbol_results = context.get_output(cond_id, "symbol_results") or {}
             
-            # 충분한 데이터가 없으면 hold
-            if i < min_bars:
-                signals.append({
-                    "date": date,
-                    "signal": "hold",
-                    "symbols": [],
-                    "values": {},
-                })
-                continue
-            
-            # 배치 단위 리소스 체크 (batch_size마다)
-            batch_count += 1
-            if batch_count >= batch_size:
-                batch_count = 0
-                # 리소스 상태 확인 (권한 재획득 아님, 상태만 체크)
-                if context.resource:
-                    check = await context.check_resources_before_task(
-                        task_type="ConditionNode",
-                        weight=0.5,  # 배치 체크는 가벼움
-                        timeout=5.0,
-                    )
-                    if check.get("can_proceed"):
-                        # 권장 지연 적용
-                        delay = check.get("recommended_delay", 0)
-                        if delay > 0:
-                            await asyncio.sleep(delay)
-                        # 리소스 반환
-                        await context.release_resources_after_task("ConditionNode", 0.5)
-                    else:
-                        # 리소스 부족 시 잠시 대기
-                        context.log("debug", f"Resource throttle at bar {i}, waiting...", node_id)
-                        await asyncio.sleep(0.5)
-                        await context.release_resources_after_task("ConditionNode", 0.5)
-            
-            # 해당 시점까지의 데이터만 추출 (미래 데이터 누출 방지)
-            context_data = {}
-            for symbol, symbol_bars in ohlcv_data.items():
-                context_data[symbol] = {
-                    "prices": [b["close"] for b in symbol_bars[:i+1]],
-                    "volumes": [b.get("volume", 0) for b in symbol_bars[:i+1]],
-                    "current": symbol_bars[i] if i < len(symbol_bars) else {},
-                }
-            
-            # 플러그인 호출 (샌드박스 적용)
-            if plugin:
-                try:
-                    result = await sandbox.execute(
-                        plugin_id=f"{plugin_id}:bar{i}",
-                        plugin_callable=plugin,
-                        kwargs={"symbols": symbols, "price_data": context_data, "fields": fields},
-                        timeout=10.0,  # 개별 bar는 짧은 타임아웃
-                    )
-                    passed = result.get("passed_symbols", [])
-                    values = result.get("values", {})
-                    
-                    # 시그널 결정
-                    if passed:
-                        signal_type = "buy"  # 조건 충족 = 매수 신호
-                    else:
-                        signal_type = "hold"
-                    
-                    signals.append({
-                        "date": date,
-                        "signal": signal_type,
-                        "symbols": passed,
-                        "values": values,
-                    })
-                    
-                    # 값 저장
-                    for symbol, val in values.items():
-                        if symbol not in all_values:
-                            all_values[symbol] = []
-                        all_values[symbol].append({"date": date, **val})
-                
-                except PluginTimeoutError:
-                    context.log("warning", f"Plugin timeout at {date}", node_id)
-                    signals.append({"date": date, "signal": "hold", "symbols": [], "values": {}})
-                except Exception as e:
-                    context.log("warning", f"Plugin error at {date}: {e}", node_id)
-                    signals.append({"date": date, "signal": "hold", "symbols": [], "values": {}})
-            else:
-                # 플러그인 없으면 데모용 신호 생성
-                import random
-                signal_type = random.choices(["buy", "hold", "sell"], weights=[0.1, 0.8, 0.1])[0]
-                signals.append({
-                    "date": date,
-                    "signal": signal_type,
-                    "symbols": symbols if signal_type == "buy" else [],
-                    "values": {},
-                })
+            condition_results.append({
+                "id": cond_id,
+                "result": bool(cond_result),
+                "passed_symbols": cond_passed,
+                "symbol_results": cond_symbol_results,
+            })
+            all_passed_symbols.append(cond_passed if isinstance(cond_passed, list) else [])
+        
+        if not condition_results:
+            context.log("warning", "No condition results to combine", node_id)
+            return {"result": False, "passed_symbols": [], "details": []}
+        
+        # 연산자별 로직 실행
+        final_result, final_passed_symbols = self._apply_operator(
+            operator=operator,
+            results=condition_results,
+            all_passed_symbols=all_passed_symbols,
+            threshold=threshold,
+            weights=weights,
+            context=context,
+            node_id=node_id,
+        )
         
         context.log(
             "info",
-            f"Generated {len(signals)} signals, {sum(1 for s in signals if s['signal'] == 'buy')} buy signals",
+            f"LogicNode result: {final_result}, passed_symbols: {len(final_passed_symbols)}",
             node_id,
         )
         
         return {
-            "symbols": symbols,  # 입력 symbols echo
-            "signals": signals,
-            "result": any(s["signal"] == "buy" for s in signals),
-            "values_timeseries": all_values,
+            "result": final_result,
+            "passed_symbols": final_passed_symbols,
+            "details": condition_results,  # 각 조건 결과 디테일
         }
+
+    def _apply_operator(
+        self,
+        operator: str,
+        results: List[Dict[str, Any]],
+        all_passed_symbols: List[List[str]],
+        threshold: Optional[int],
+        weights: Dict[str, float],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> tuple:
+        """
+        연산자 적용
+        
+        Returns:
+            (final_result: bool, final_passed_symbols: List[str])
+        """
+        # 각 조건의 bool 결과 목록
+        bool_results = [r["result"] for r in results]
+        passed_count = sum(1 for r in bool_results if r)
+        
+        # 종목 코드 → 전체 정보 매핑 (거래소 정보 보존)
+        # passed_symbols가 [{exchange, symbol}] 또는 ["AAPL"] 형식일 수 있음
+        def build_symbol_map(symbols_list: List) -> Dict[str, Dict[str, str]]:
+            """종목 리스트에서 code → {exchange, symbol} 매핑 생성"""
+            result = {}
+            for sym in symbols_list:
+                if isinstance(sym, dict):
+                    code = sym.get("symbol", "")
+                    if code and code not in result:
+                        result[code] = sym
+                elif isinstance(sym, str) and sym:
+                    if sym not in result:
+                        # 레거시 형식: 거래소 추정
+                        from programgarden_core.models import normalize_symbol
+                        result[sym] = normalize_symbol(sym)
+            return result
+        
+        # 모든 조건의 종목 매핑 통합
+        all_symbol_maps = [build_symbol_map(s) for s in all_passed_symbols]
+        combined_map: Dict[str, Dict[str, str]] = {}
+        for m in all_symbol_maps:
+            for code, info in m.items():
+                if code not in combined_map:
+                    combined_map[code] = info
+        
+        # 기본: 모든 조건이 공유하는 종목 (intersection)
+        def intersection_symbols() -> List[Dict[str, str]]:
+            if not all_passed_symbols:
+                return []
+            # 각 조건의 종목 코드 집합
+            def extract_codes(symbols: List) -> set:
+                codes = set()
+                for s in symbols:
+                    if isinstance(s, dict):
+                        codes.add(s.get("symbol", ""))
+                    elif isinstance(s, str):
+                        codes.add(s)
+                return codes
+            
+            sets = [extract_codes(s) for s in all_passed_symbols if s]
+            if not sets:
+                return []
+            common = sets[0]
+            for s in sets[1:]:
+                common &= s
+            # 코드를 {exchange, symbol} 형식으로 복원
+            return [combined_map.get(code, {"exchange": "", "symbol": code}) for code in common if code]
+        
+        # union: 하나라도 포함된 종목
+        def union_symbols() -> List[Dict[str, str]]:
+            if not all_passed_symbols:
+                return []
+            codes = set()
+            for s in all_passed_symbols:
+                for sym in s:
+                    if isinstance(sym, dict):
+                        codes.add(sym.get("symbol", ""))
+                    elif isinstance(sym, str):
+                        codes.add(sym)
+            # 코드를 {exchange, symbol} 형식으로 복원
+            return [combined_map.get(code, {"exchange": "", "symbol": code}) for code in codes if code]
+        
+        # 연산자별 처리
+        if operator == "all":
+            # AND: 모든 조건 만족
+            final_result = all(bool_results)
+            final_passed = intersection_symbols() if final_result else []
+            
+        elif operator == "any":
+            # OR: 하나 이상 만족
+            final_result = any(bool_results)
+            final_passed = union_symbols() if final_result else []
+            
+        elif operator == "not":
+            # NOT: 모든 조건 불만족
+            final_result = not any(bool_results)
+            # not이면 passed_symbols는 빈 배열 (조건 불만족이 목표)
+            final_passed = []
+            
+        elif operator == "xor":
+            # XOR: 정확히 하나만 만족
+            final_result = passed_count == 1
+            if final_result:
+                # 만족한 조건의 passed_symbols 반환
+                for i, r in enumerate(bool_results):
+                    if r:
+                        final_passed = all_passed_symbols[i] if all_passed_symbols else []
+                        break
+                else:
+                    final_passed = []
+            else:
+                final_passed = []
+                
+        elif operator == "at_least":
+            # N개 이상 만족
+            if threshold is None:
+                context.log("warning", "at_least requires threshold, defaulting to 1", node_id)
+                threshold = 1
+            final_result = passed_count >= threshold
+            final_passed = union_symbols() if final_result else []
+            
+        elif operator == "at_most":
+            # N개 이하 만족
+            if threshold is None:
+                context.log("warning", "at_most requires threshold, defaulting to 1", node_id)
+                threshold = 1
+            final_result = passed_count <= threshold
+            final_passed = union_symbols() if final_result else []
+            
+        elif operator == "exactly":
+            # 정확히 N개 만족
+            if threshold is None:
+                context.log("warning", "exactly requires threshold, defaulting to 1", node_id)
+                threshold = 1
+            final_result = passed_count == threshold
+            final_passed = union_symbols() if final_result else []
+            
+        elif operator == "weighted":
+            # 가중치 합산
+            if threshold is None:
+                context.log("warning", "weighted requires threshold, defaulting to 0.5", node_id)
+                threshold = 0.5
+            
+            total_weight = 0.0
+            for r in results:
+                cond_id = r["id"]
+                if r["result"]:
+                    # weights에 ID가 없으면 기본 1.0
+                    w = weights.get(cond_id, 1.0)
+                    total_weight += w
+            
+            final_result = total_weight >= threshold
+            final_passed = union_symbols() if final_result else []
+            context.log("debug", f"Weighted sum: {total_weight} >= {threshold} = {final_result}", node_id)
+            
+        else:
+            context.log("warning", f"Unknown operator: {operator}, defaulting to 'all'", node_id)
+            final_result = all(bool_results)
+            final_passed = intersection_symbols() if final_result else []
+        
+        return final_result, final_passed
+
+
+class PerformanceConditionNodeExecutor(NodeExecutorBase):
+    """
+    PerformanceConditionNode executor - 성과 기반 조건 평가
+    
+    계좌 데이터, 백테스트 결과, 거래 내역에서 성과 지표를 계산하고
+    조건 충족 여부를 평가합니다.
+    
+    지원 지표:
+    - pnl_rate: 수익률 (%)
+    - pnl_amount: 손익 금액
+    - mdd: 최대 낙폭 (%)
+    - win_rate: 승률 (%)
+    - sharpe_ratio: 샤프 비율
+    - profit_factor: 수익 팩터
+    - avg_win: 평균 수익
+    - avg_loss: 평균 손실
+    - consecutive_wins: 연속 수익 횟수
+    - consecutive_losses: 연속 손실 횟수
+    - total_trades: 총 거래 횟수
+    - daily_pnl: 일일 손익
+    """
+
+    # 연산자 매핑
+    OPERATORS = {
+        "gt": lambda a, b: a > b,
+        "lt": lambda a, b: a < b,
+        "gte": lambda a, b: a >= b,
+        "lte": lambda a, b: a <= b,
+        "eq": lambda a, b: a == b,
+        "ne": lambda a, b: a != b,
+    }
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """성과 기반 조건 평가"""
+        
+        # 설정 추출
+        metric = config.get("metric", "pnl_rate")
+        operator = config.get("operator", "gt")
+        threshold = config.get("threshold", 0.0)
+        symbol_filter = config.get("symbol_filter")
+        time_period = config.get("time_period")  # TODO: 시간 기반 필터링 구현
+        
+        context.log(
+            "info", 
+            f"Evaluating performance: {metric} {operator} {threshold}", 
+            node_id
+        )
+        
+        # 입력 데이터 가져오기
+        position_data = config.get("position_data") or {}
+        balance_data = config.get("balance_data") or {}
+        equity_curve = config.get("equity_curve") or []
+        trade_history = config.get("trade_history") or []
+        
+        # 종목 필터 적용
+        if symbol_filter and position_data:
+            position_data = {
+                k: v for k, v in position_data.items() 
+                if k in symbol_filter
+            }
+        
+        # 지표 계산
+        metric_value = self._calculate_metric(
+            metric=metric,
+            position_data=position_data,
+            balance_data=balance_data,
+            equity_curve=equity_curve,
+            trade_history=trade_history,
+            context=context,
+            node_id=node_id,
+        )
+        
+        # 조건 평가
+        compare_fn = self.OPERATORS.get(operator, lambda a, b: a > b)
+        passed = compare_fn(metric_value, threshold)
+        
+        # 연산자 기호 매핑
+        operator_symbols = {
+            "gt": ">",
+            "lt": "<",
+            "gte": ">=",
+            "lte": "<=",
+            "eq": "==",
+            "ne": "!=",
+        }
+        op_symbol = operator_symbols.get(operator, "?")
+        
+        context.log(
+            "info", 
+            f"Performance condition: {metric}={metric_value:.4f} {op_symbol} {threshold} => {'PASSED' if passed else 'FAILED'}", 
+            node_id
+        )
+        
+        # 결과 구성
+        result = {
+            "passed": passed,
+            "metric": metric,
+            "metric_value": metric_value,
+            "operator": operator,
+            "threshold": threshold,
+            "comparison": f"{metric_value:.4f} {op_symbol} {threshold}",
+        }
+        
+        details = {
+            "metric": metric,
+            "value": metric_value,
+            "threshold": threshold,
+            "operator": operator,
+            "passed": passed,
+            "symbol_filter": symbol_filter,
+            "time_period": time_period,
+            "input_summary": {
+                "positions_count": len(position_data),
+                "equity_points": len(equity_curve),
+                "trades_count": len(trade_history),
+            },
+        }
+        
+        return {
+            "result": result,
+            "passed": passed,
+            "metric_value": metric_value,
+            "details": details,
+        }
+
+    def _calculate_metric(
+        self,
+        metric: str,
+        position_data: Dict[str, Any],
+        balance_data: Dict[str, Any],
+        equity_curve: List[Dict[str, Any]],
+        trade_history: List[Dict[str, Any]],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> float:
+        """지표 계산"""
+        
+        if metric == "pnl_rate":
+            # 수익률: 포지션 평균 수익률 또는 전체 자산 수익률
+            if position_data:
+                rates = [
+                    p.get("pnl_rate", p.get("return_rate_percent", 0))
+                    for p in position_data.values()
+                    if isinstance(p, dict)
+                ]
+                return sum(rates) / len(rates) if rates else 0.0
+            elif equity_curve and len(equity_curve) >= 2:
+                first = equity_curve[0].get("equity", equity_curve[0].get("value", 0))
+                last = equity_curve[-1].get("equity", equity_curve[-1].get("value", 0))
+                return ((last - first) / first * 100) if first > 0 else 0.0
+            return 0.0
+            
+        elif metric == "pnl_amount":
+            # 손익 금액 합계
+            if position_data:
+                amounts = [
+                    p.get("pnl_amount", p.get("profit", 0))
+                    for p in position_data.values()
+                    if isinstance(p, dict)
+                ]
+                return sum(amounts)
+            elif trade_history:
+                return sum(t.get("pnl", t.get("profit", 0)) for t in trade_history)
+            return 0.0
+            
+        elif metric == "mdd":
+            # 최대 낙폭 (%)
+            if not equity_curve:
+                return 0.0
+            
+            peak = 0.0
+            max_drawdown = 0.0
+            
+            for point in equity_curve:
+                value = point.get("equity", point.get("value", 0))
+                if value > peak:
+                    peak = value
+                if peak > 0:
+                    drawdown = (peak - value) / peak * 100
+                    max_drawdown = max(max_drawdown, drawdown)
+            
+            return max_drawdown
+            
+        elif metric == "win_rate":
+            # 승률 (%)
+            if not trade_history:
+                return 0.0
+            
+            wins = sum(1 for t in trade_history if t.get("pnl", t.get("profit", 0)) > 0)
+            total = len(trade_history)
+            
+            return (wins / total * 100) if total > 0 else 0.0
+            
+        elif metric == "sharpe_ratio":
+            # 샤프 비율 (일일 수익률 기준, 무위험 이자율 0 가정)
+            if len(equity_curve) < 2:
+                return 0.0
+            
+            import math
+            
+            # 일일 수익률 계산
+            returns = []
+            for i in range(1, len(equity_curve)):
+                prev = equity_curve[i-1].get("equity", equity_curve[i-1].get("value", 0))
+                curr = equity_curve[i].get("equity", equity_curve[i].get("value", 0))
+                if prev > 0:
+                    returns.append((curr - prev) / prev)
+            
+            if not returns:
+                return 0.0
+            
+            mean_return = sum(returns) / len(returns)
+            variance = sum((r - mean_return) ** 2 for r in returns) / len(returns)
+            std_dev = math.sqrt(variance) if variance > 0 else 0.0001
+            
+            # 연간화 (252 거래일 가정)
+            annualized_sharpe = (mean_return / std_dev) * math.sqrt(252)
+            
+            return annualized_sharpe
+            
+        elif metric == "profit_factor":
+            # 수익 팩터 (총 수익 / 총 손실)
+            if not trade_history:
+                return 0.0
+            
+            total_profit = sum(
+                t.get("pnl", t.get("profit", 0)) 
+                for t in trade_history 
+                if t.get("pnl", t.get("profit", 0)) > 0
+            )
+            total_loss = abs(sum(
+                t.get("pnl", t.get("profit", 0)) 
+                for t in trade_history 
+                if t.get("pnl", t.get("profit", 0)) < 0
+            ))
+            
+            return (total_profit / total_loss) if total_loss > 0 else float('inf')
+            
+        elif metric == "avg_win":
+            # 평균 수익
+            wins = [
+                t.get("pnl", t.get("profit", 0)) 
+                for t in trade_history 
+                if t.get("pnl", t.get("profit", 0)) > 0
+            ]
+            return sum(wins) / len(wins) if wins else 0.0
+            
+        elif metric == "avg_loss":
+            # 평균 손실 (절대값)
+            losses = [
+                abs(t.get("pnl", t.get("profit", 0)))
+                for t in trade_history 
+                if t.get("pnl", t.get("profit", 0)) < 0
+            ]
+            return sum(losses) / len(losses) if losses else 0.0
+            
+        elif metric == "consecutive_wins":
+            # 현재 연속 수익 횟수
+            if not trade_history:
+                return 0
+            
+            count = 0
+            for t in reversed(trade_history):
+                if t.get("pnl", t.get("profit", 0)) > 0:
+                    count += 1
+                else:
+                    break
+            return float(count)
+            
+        elif metric == "consecutive_losses":
+            # 현재 연속 손실 횟수
+            if not trade_history:
+                return 0
+            
+            count = 0
+            for t in reversed(trade_history):
+                if t.get("pnl", t.get("profit", 0)) < 0:
+                    count += 1
+                else:
+                    break
+            return float(count)
+            
+        elif metric == "total_trades":
+            # 총 거래 횟수
+            return float(len(trade_history))
+            
+        elif metric == "daily_pnl":
+            # 오늘 손익 (가장 최근 equity 변화)
+            if len(equity_curve) < 2:
+                return 0.0
+            
+            prev = equity_curve[-2].get("equity", equity_curve[-2].get("value", 0))
+            curr = equity_curve[-1].get("equity", equity_curve[-1].get("value", 0))
+            
+            return curr - prev
+            
+        else:
+            context.log("warning", f"Unknown metric: {metric}, returning 0", node_id)
+            return 0.0
 
 
 class MarketDataNodeExecutor(NodeExecutorBase):
@@ -4522,9 +4840,20 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """과거 데이터 조회"""
         
-        # 입력 symbols 가져오기
+        # symbols 획득 (config 필드 우선, input port 폴백)
+        # config.symbols: 직접 입력 또는 바인딩 표현식 (평가 후 값)
+        config_symbols = config.get("symbols")
         input_symbols = context.get_output(f"_input_{node_id}", "symbols")
-        symbols_raw = input_symbols or config.get("symbols", [])
+        
+        # config가 있으면 config 사용, 없으면 input port 사용
+        if config_symbols:
+            symbols_raw = config_symbols
+            context.log("debug", f"Using config.symbols: {len(symbols_raw) if symbols_raw else 0} items", node_id)
+        elif input_symbols:
+            symbols_raw = input_symbols
+            context.log("debug", f"Using input port symbols: {len(symbols_raw) if symbols_raw else 0} items", node_id)
+        else:
+            symbols_raw = []
         
         # symbols 정규화: [{exchange, symbol}] → 문자열 리스트 + exchange 정보 보존
         symbols = []
@@ -4595,16 +4924,17 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         
         # product별 분기 (overseas_futures와 overseas_futureoption은 동일)
         if product == "overseas_stock":
-            ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, positions)
+            ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, positions, symbol_exchange_map, symbols_raw)
         elif product in ("overseas_futureoption", "overseas_futures"):
-            ohlcv_data = await self._fetch_overseas_futures(symbols, start_date, end_date, interval, context, node_id)
+            ohlcv_data = await self._fetch_overseas_futures(symbols, start_date, end_date, interval, context, node_id, symbols_raw)
         else:
             context.log("error", f"Unsupported product for HistoricalDataNode: {product}", node_id)
-            ohlcv_data = self._empty_historical_result(symbols, f"i18n:errors.UNSUPPORTED_PRODUCT|product={product}")
+            ohlcv_data = self._empty_historical_result(symbols_raw, f"i18n:errors.UNSUPPORTED_PRODUCT|product={product}")
         
+        # 출력: values (time_series 포함 배열 형식)
         return {
-            "ohlcv_data": ohlcv_data,
-            "symbols": list(ohlcv_data.keys()),
+            "values": ohlcv_data,  # [{symbol, exchange, time_series: [...]}, ...]
+            "symbols": [item.get("symbol") for item in ohlcv_data if isinstance(item, dict)],
             "period": f"{start_date}~{end_date}",
             "interval": interval,
         }
@@ -4678,8 +5008,13 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
         positions: Dict[str, Any] = None,
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """해외주식 차트 데이터 조회 (g3103)"""
+        symbol_exchange_map: Dict[str, str] = None,
+        symbols_raw: List[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """해외주식 차트 데이터 조회 (g3103)
+        
+        반환: [{symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}, ...]
+        """
         
         credential = context.get_credential()
         if not credential:
@@ -4706,7 +5041,19 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             gubun_map = {"1d": "2", "1w": "3", "1M": "4"}
             gubun = gubun_map.get(interval, "2")
             
-            ohlcv_data = {}
+            # 거래소 코드 매핑 (역변환용)
+            exchcd_to_exchange = {"82": "NASDAQ", "81": "NYSE", "83": "AMEX"}
+            
+            # symbols_raw에서 exchange 정보 추출
+            symbol_to_exchange = {}
+            if symbols_raw:
+                for entry in symbols_raw:
+                    if isinstance(entry, dict):
+                        sym = entry.get("symbol", "")
+                        exch = entry.get("exchange", "NASDAQ")
+                        symbol_to_exchange[sym] = exch
+            
+            result_list = []  # [{symbol, exchange, time_series: [...]}, ...]
             
             for symbol in symbols:
                 try:
@@ -4716,6 +5063,9 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                         pos_market_code = positions[symbol].get("market_code", "")
                         if pos_market_code:
                             exchcd = pos_market_code
+                    
+                    # symbols_raw에서 exchange 정보 가져오기 (우선순위: symbols_raw > exchcd 변환)
+                    exchange = symbol_to_exchange.get(symbol) or exchcd_to_exchange.get(exchcd, "NASDAQ")
                     
                     keysymbol = f"{exchcd}{symbol}"
                     
@@ -4744,17 +5094,31 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                             })
                         # 날짜순 정렬 (오래된 것부터)
                         bars.sort(key=lambda x: x["date"])
-                        ohlcv_data[symbol] = bars
+                        result_list.append({
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "time_series": bars,
+                        })
                         context.log("debug", f"Fetched {len(bars)} bars for {symbol}", node_id)
                     else:
                         context.log("warning", f"No data for {symbol}", node_id)
-                        ohlcv_data[symbol] = []
+                        result_list.append({
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "time_series": [],
+                        })
                         
                 except Exception as e:
                     context.log("warning", f"Error fetching {symbol}: {e}", node_id)
-                    ohlcv_data[symbol] = []
+                    # symbols_raw에서 exchange 정보 가져오기
+                    exchange = symbol_to_exchange.get(symbol, "NASDAQ")
+                    result_list.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "time_series": [],
+                    })
             
-            return ohlcv_data
+            return result_list
             
         except ImportError as e:
             context.log("error", f"Finance package not available: {e}", node_id)
@@ -4771,17 +5135,20 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         interval: str,
         context: ExecutionContext,
         node_id: str,
-    ) -> Dict[str, List[Dict[str, Any]]]:
+        symbols_raw: List[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         해외선물 차트 데이터 조회 (o3108 일봉 / o3103 분봉)
         
         - 일봉/주봉/월봉: o3108
         - 분봉 (30초, 1분, 30분 등): o3103
+        
+        반환: [{symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}, ...]
         """
         credential = context.get_credential()
         if not credential:
             context.log("error", "Credential not set for HistoricalDataNode(futures)", node_id)
-            return self._empty_historical_result(symbols, "i18n:errors.CREDENTIAL_NOT_SET")
+            return self._empty_historical_result(symbols_raw or [], "i18n:errors.CREDENTIAL_NOT_SET")
         
         try:
             ls, success, error = ensure_ls_login(
@@ -4793,10 +5160,19 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             )
             if not success:
                 context.log("error", f"LS login failed: {error}", node_id)
-                return self._empty_historical_result(symbols, f"i18n:errors.LS_LOGIN_FAILED|error={error}")
+                return self._empty_historical_result(symbols_raw or [], f"i18n:errors.LS_LOGIN_FAILED|error={error}")
             
             api = ls.overseas_futureoption()
-            ohlcv_data = {}
+            result_list = []
+            
+            # symbols_raw에서 exchange 정보 추출
+            symbol_to_exchange = {}
+            if symbols_raw:
+                for entry in symbols_raw:
+                    if isinstance(entry, dict):
+                        sym = entry.get("symbol", "")
+                        exch = entry.get("exchange", "CME")  # 선물 기본값 CME
+                        symbol_to_exchange[sym] = exch
             
             # interval별 분기
             is_minute_data = interval in ["1min", "5min", "15min", "30min", "30s"]
@@ -4810,14 +5186,24 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                         # 일봉/주봉/월봉: o3108
                         bars = await self._fetch_futures_daily_chart(api, symbol, start_date, end_date, interval, context, node_id)
                     
-                    ohlcv_data[symbol] = bars
+                    exchange = symbol_to_exchange.get(symbol, "CME")
+                    result_list.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "time_series": bars,
+                    })
                     context.log("debug", f"Fetched {len(bars)} bars for {symbol}", node_id)
                     
                 except Exception as e:
                     context.log("warning", f"Error fetching futures {symbol}: {e}", node_id)
-                    ohlcv_data[symbol] = []
+                    exchange = symbol_to_exchange.get(symbol, "CME")
+                    result_list.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "time_series": [],
+                    })
             
-            return ohlcv_data
+            return result_list
             
         except ImportError as e:
             context.log("error", f"Finance package not available: {e}", node_id)
@@ -4908,20 +5294,28 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         bars.sort(key=lambda x: x["date"])
         return bars
 
-    def _empty_historical_result(self, symbols: List, error_msg: str = "") -> Dict[str, Any]:
-        """빈 historical 결과 반환 (에러 시)"""
-        # symbols가 dict 리스트인 경우 문자열로 변환
-        symbol_keys = []
-        for s in symbols:
-            if isinstance(s, dict):
-                symbol_keys.append(s.get("symbol", str(s)))
-            else:
-                symbol_keys.append(str(s))
+    def _empty_historical_result(self, symbols_raw: List, error_msg: str = "") -> List[Dict[str, Any]]:
+        """빈 historical 결과 반환 (에러 시)
         
-        result = {symbol: [] for symbol in symbol_keys}
-        if error_msg:
-            result["_error"] = error_msg
-        return result
+        반환 형식: [{symbol, exchange, time_series: [], _error: "..."}, ...]
+        """
+        result_list = []
+        for s in symbols_raw:
+            if isinstance(s, dict):
+                result_list.append({
+                    "symbol": s.get("symbol", ""),
+                    "exchange": s.get("exchange", "NASDAQ"),
+                    "time_series": [],
+                    "_error": error_msg,
+                })
+            else:
+                result_list.append({
+                    "symbol": str(s),
+                    "exchange": "NASDAQ",
+                    "time_series": [],
+                    "_error": error_msg,
+                })
+        return result_list
 
 
 class BacktestEngineNodeExecutor(NodeExecutorBase):
@@ -4974,10 +5368,19 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             if not ohlcv_data:
                 ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
             
+            # signals 가져오기 (플랫 배열 또는 values 형식 지원)
             signals = context.get_output(f"_input_{node_id}", "signals")
             if not signals:
                 # ConditionNode에서 온 시그널
                 signals = context.get_output(f"_input_{node_id}", "entry_signal") or []
+            
+            # values 형식 지원: [{symbol, exchange, time_series: [{date, ..., signal}, ...]}, ...] → 플랫 배열로 변환
+            values = context.get_output(f"_input_{node_id}", "values")
+            if values and isinstance(values, list):
+                # values에서 signal 필드가 있는 엔트리 추출
+                extracted_signals = self._extract_signals_from_values(values)
+                if extracted_signals:
+                    signals = extracted_signals
             
             # 설정
             initial_capital = config.get("initial_capital", 10000)
@@ -5008,9 +5411,41 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                 node_id
             )
             
+            # values 생성: equity_curve를 종목별 그룹화 형식으로도 제공
+            backtest_values = []
+            if result["equity_curve"]:
+                # 포트폴리오 전체 time_series
+                backtest_values.append({
+                    "symbol": "_portfolio",
+                    "exchange": "_portfolio",
+                    "time_series": result["equity_curve"],
+                })
+                
+                # 각 종목별 trade 정보를 values에 추가
+                symbol_trades = {}
+                for trade in result["trades"]:
+                    symbol = trade.get("symbol", "_unknown")
+                    if symbol not in symbol_trades:
+                        symbol_trades[symbol] = []
+                    symbol_trades[symbol].append({
+                        "date": trade.get("date"),
+                        "price": trade.get("price"),
+                        "signal": trade.get("action"),
+                        "qty": trade.get("qty"),
+                    })
+                
+                for symbol, trades in symbol_trades.items():
+                    backtest_values.append({
+                        "symbol": symbol,
+                        "exchange": "UNKNOWN",  # trade에서 exchange 정보가 없으면 UNKNOWN
+                        "time_series": trades,
+                    })
+            
             return {
                 "equity_curve": result["equity_curve"],
                 "trades": result["trades"],
+                "signals": signals if isinstance(signals, list) else [],  # 입력 signals 전달 (DisplayNode용)
+                "values": backtest_values,  # 종목별 그룹화 형식: [{symbol, exchange, time_series: [...]}, ...]
                 "metrics": metrics,
                 "summary": {
                     **metrics,
@@ -5025,6 +5460,46 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                 task_type="BacktestEngineNode",
                 weight=3.0,
             )
+
+    def _extract_signals_from_values(
+        self,
+        values: List[Dict],
+    ) -> List[Dict]:
+        """
+        values 형식에서 signal 필드가 있는 엔트리를 추출하여 플랫 배열로 변환
+        
+        입력: [{symbol: "AAPL", exchange: "NASDAQ", time_series: [{date, close, rsi, signal: "buy"}, ...]}, ...]
+        출력: [{date, symbol: "AAPL", signal: "buy", action: "buy", price}, ...]
+        """
+        signals = []
+        
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            
+            symbol = item.get("symbol", "")
+            time_series = item.get("time_series", [])
+            
+            if not isinstance(time_series, list):
+                continue
+            
+            for bar in time_series:
+                if not isinstance(bar, dict):
+                    continue
+                
+                signal = bar.get("signal")
+                if signal and signal in ("buy", "sell"):
+                    signals.append({
+                        "date": bar.get("date", ""),
+                        "symbol": symbol,
+                        "signal": signal,
+                        "action": signal,
+                        "price": bar.get("close", bar.get("price", 0)),
+                    })
+        
+        # 날짜순 정렬
+        signals.sort(key=lambda x: x.get("date", ""))
+        return signals
 
     def _run_simulation(
         self,
@@ -5757,6 +6232,8 @@ class WorkflowExecutor:
             "CustomPnLNode": CustomPnLNodeExecutor(),
             "DisplayNode": DisplayNodeExecutor(),
             "ConditionNode": ConditionNodeExecutor(),
+            "LogicNode": LogicNodeExecutor(),  # 조건 조합
+            "PerformanceConditionNode": PerformanceConditionNodeExecutor(),  # 성과 조건
             # Backtest nodes
             "HistoricalDataNode": HistoricalDataNodeExecutor(),
             "BacktestEngineNode": BacktestEngineNodeExecutor(),

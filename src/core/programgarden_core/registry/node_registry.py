@@ -311,6 +311,8 @@ class NodeTypeRegistry:
                 # === 조건부 표시 필드 추가 ===
                 if hasattr(fs, 'visible_when') and fs.visible_when:
                     field_schema["visible_when"] = fs.visible_when
+                if hasattr(fs, 'depends_on') and fs.depends_on:
+                    field_schema["depends_on"] = fs.depends_on
             else:
                 # Pydantic 필드에서 추출
                 field_type = str(field_info.annotation) if field_info.annotation else "any"

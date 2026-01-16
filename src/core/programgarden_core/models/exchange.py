@@ -246,3 +246,159 @@ class SymbolEntry(BaseModel):
         if code is None:
             raise ValueError(f"Unknown exchange: {self.exchange}")
         return code
+    
+    def to_dict(self) -> dict:
+        """dict 형태로 변환 (JSON 직렬화용)"""
+        return {"exchange": self.exchange, "symbol": self.symbol}
+    
+    @classmethod
+    def from_any(cls, value: any) -> "SymbolEntry":
+        """
+        다양한 형식에서 SymbolEntry로 변환
+        
+        Args:
+            value: 다음 형식 중 하나
+                - SymbolEntry 인스턴스
+                - {"exchange": "NASDAQ", "symbol": "AAPL"}
+                - "AAPL" (문자열 - 기본 거래소 추정)
+                
+        Returns:
+            SymbolEntry 인스턴스
+        """
+        if isinstance(value, SymbolEntry):
+            return value
+        
+        if isinstance(value, dict):
+            exchange = value.get("exchange")
+            symbol = value.get("symbol")
+            
+            if not symbol:
+                raise ValueError(f"Symbol is required: {value}")
+            
+            if not exchange:
+                # 거래소 없으면 추정 시도
+                exchange = _guess_exchange(symbol)
+            
+            return cls(exchange=exchange, symbol=symbol)
+        
+        if isinstance(value, str):
+            # 문자열인 경우 거래소 추정
+            exchange = _guess_exchange(value)
+            return cls(exchange=exchange, symbol=value)
+        
+        raise ValueError(f"Cannot convert to SymbolEntry: {type(value).__name__} = {value}")
+
+
+def _guess_exchange(symbol: str) -> str:
+    """
+    종목코드로 거래소 추정 (fallback용)
+    
+    주의: 정확하지 않을 수 있으므로 명시적 거래소 지정 권장
+    """
+    # 해외선물 패턴 (예: NQH25, ESZ24, GCG25)
+    import re
+    if re.match(r"^[A-Z]{2,4}[FGHJKMNQUVXZ]\d{2}$", symbol.upper()):
+        # 선물 심볼 패턴: 2-4글자 + 월코드(1글자) + 연도(2자리)
+        prefix = symbol[:2].upper()
+        # 주요 선물 거래소 추정
+        if prefix in ("NQ", "ES", "MNQ", "MES", "RTY"):
+            return "CME"
+        elif prefix in ("GC", "SI", "HG"):
+            return "COMEX"
+        elif prefix in ("CL", "NG"):
+            return "NYMEX"
+        return "CME"  # 기본값
+    
+    # 해외주식은 기본 NASDAQ (미국 주식 다수)
+    return "NASDAQ"
+
+
+def normalize_symbol(value: any) -> SymbolEntry:
+    """
+    다양한 형식을 SymbolEntry로 정규화
+    
+    Args:
+        value: SymbolEntry, dict, 또는 str
+        
+    Returns:
+        SymbolEntry 인스턴스
+    """
+    return SymbolEntry.from_any(value)
+
+
+def normalize_symbols(values: list) -> list:
+    """
+    종목 리스트를 SymbolEntry 리스트로 정규화
+    
+    Args:
+        values: 다양한 형식의 종목 리스트
+        
+    Returns:
+        SymbolEntry 인스턴스 리스트
+    """
+    if not values:
+        return []
+    
+    result = []
+    for v in values:
+        try:
+            entry = normalize_symbol(v)
+            result.append(entry)
+        except ValueError as e:
+            # 변환 실패한 항목은 경고 후 스킵
+            import logging
+            logging.warning(f"Failed to normalize symbol: {v} - {e}")
+    
+    return result
+
+
+def symbols_to_dict_list(symbols: list) -> list:
+    """
+    SymbolEntry 리스트를 dict 리스트로 변환 (JSON 직렬화용)
+    
+    Args:
+        symbols: SymbolEntry 또는 dict 리스트
+        
+    Returns:
+        [{"exchange": "NASDAQ", "symbol": "AAPL"}, ...] 형태
+    """
+    result = []
+    for s in symbols:
+        if isinstance(s, SymbolEntry):
+            result.append(s.to_dict())
+        elif isinstance(s, dict):
+            # 이미 dict면 exchange 포함 여부 확인
+            if "exchange" in s and "symbol" in s:
+                result.append({"exchange": s["exchange"], "symbol": s["symbol"]})
+            elif "symbol" in s:
+                # exchange 없으면 추정
+                sym = s["symbol"]
+                exchange = _guess_exchange(sym)
+                result.append({"exchange": exchange, "symbol": sym})
+        elif isinstance(s, str):
+            # 문자열이면 거래소 추정
+            exchange = _guess_exchange(s)
+            result.append({"exchange": exchange, "symbol": s})
+    
+    return result
+
+
+def extract_symbol_codes(symbols: list) -> list:
+    """
+    종목 리스트에서 종목코드만 추출 (하위호환용)
+    
+    Args:
+        symbols: SymbolEntry, dict, 또는 str 리스트
+        
+    Returns:
+        ["AAPL", "TSLA", ...] 형태의 문자열 리스트
+    """
+    result = []
+    for s in symbols:
+        if isinstance(s, SymbolEntry):
+            result.append(s.symbol)
+        elif isinstance(s, dict):
+            result.append(s.get("symbol", str(s)))
+        elif isinstance(s, str):
+            result.append(s)
+    return result

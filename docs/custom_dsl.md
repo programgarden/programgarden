@@ -324,22 +324,47 @@ class PluginResult(TypedDict):
   "value": 28.5,
   "symbol": "AAPL",
   "analysis": {
-    "time_series": [
-      {"timestamp": "2026-01-05T14:30:00Z", "rsi": 32.1},
-      {"timestamp": "2026-01-05T14:35:00Z", "rsi": 28.5}
-    ],
-    "distribution": {
-      "oversold": 15,
-      "neutral": 60,
-      "overbought": 25
-    },
-    "threshold": {
-      "value": 30,
-      "direction": "below"
-    },
-    "comparison": "28.5 < 30 → passed"
+    "indicator": "RSI",
+    "period": 14,
+    "threshold": 30,
+    "direction": "below",
+    "comparison": "RSI < 30 → passed"
   }
 }
+```
+
+**조건 플러그인 전체 반환 구조:**
+
+```json
+{
+  "passed_symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
+  "failed_symbols": [{"exchange": "NASDAQ", "symbol": "NVDA"}],
+  "symbol_results": [
+    {"symbol": "AAPL", "exchange": "NASDAQ", "rsi": 28.5, "current_price": 192.30},
+    {"symbol": "NVDA", "exchange": "NASDAQ", "rsi": 65.2, "current_price": 450.50}
+  ],
+  "values": [
+    {
+      "symbol": "AAPL",
+      "exchange": "NASDAQ",
+      "time_series": [
+        {"date": "20251224", "open": 272.34, "high": 275.43, "low": 272.19, "close": 273.81, "volume": 17910574, "rsi": 33.54},
+        {"date": "20251225", "open": 274.00, "high": 276.50, "low": 273.00, "close": 275.20, "volume": 15000000, "rsi": 28.50}
+      ]
+    }
+  ],
+  "result": true,
+  "analysis": {...}
+}
+```
+
+| 필드 | 설명 |
+|------|------|
+| `passed_symbols` | 조건 통과 종목 (거래소 정보 포함) |
+| `failed_symbols` | 조건 미통과 종목 |
+| `symbol_results` | 종목별 계산 결과 (RSI 값, 현재가 등) |
+| `values` | 종목별 그룹화된 시계열 데이터 (DisplayNode 차트용) |
+| `result` | 조건 통과 여부 (passed_symbols > 0) |
 ```
 
 ### 4.2 조건 플러그인 (ConditionNode용)

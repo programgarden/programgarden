@@ -327,7 +327,7 @@
 
   "fields.ConditionNode.plugin": "조건 플러그인 (RSI, MACD 등)",
   "fields.ConditionNode.params": "플러그인 파라미터",
-  "fields.ConditionNode.price_data": "가격 데이터 (예: {{ nodes.marketData.ohlcv }})",
+  "fields.ConditionNode.ohlcv_data": "OHLCV 데이터 (예: {{ nodes.realMarket.ohlcv_data }} 또는 {{ nodes.historical.ohlcv_data }})",
   "fields.ConditionNode.volume_data": "거래량 데이터 (예: {{ nodes.marketData.volume }})",
   "fields.ConditionNode.symbols": "종목 리스트 (예: {{ nodes.watchlist.symbols }})",
   "fields.ConditionNode.held_symbols": "보유 종목 (예: {{ nodes.account.held_symbols }})",
@@ -363,6 +363,7 @@
   "fields.LiquidateNode.target_symbols": "청산할 종목 목록 (mode='symbol' 시에만 사용)",
   "fields.LiquidateNode.positions": "포지션 데이터입니다. 계좌 노드에서 바인딩합니다.",
 
+  "fields.HistoricalDataNode.symbols": "조회할 종목 목록. 바인딩 또는 직접 입력 ([거래소: NASDAQ, 종목: AAPL형식])",
   "fields.HistoricalDataNode.period": "데이터 기간",
   "fields.HistoricalDataNode.interval": "봉 간격",
   "fields.HistoricalDataNode.start_date": "백테스트 시작일. YYYY-MM-DD 또는 dynamic 표현식 (예: dynamic:months_ago(3) = 3개월 전)",

@@ -1,0 +1,64 @@
+{
+  "id": "perf-totaltrades-futures",
+  "version": "1.0.0",
+  "name": "PerformanceConditionNode total_trades - 해외선물",
+  "description": "거래 횟수 조건 (총 거래 >= 10회)",
+  "tags": ["performance", "total_trades", "overseas_futures"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_futures",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "account",
+      "type": "AccountNode",
+      "category": "account",
+      "connection": "{{ nodes.broker.connection }}",
+      "position": {"x": 400, "y": 200}
+    },
+    {
+      "id": "perfCondition",
+      "type": "PerformanceConditionNode",
+      "category": "condition",
+      "metric": "total_trades",
+      "operator": "gte",
+      "threshold": 10.0,
+      "trade_history": "{{ nodes.account.trade_history }}",
+      "position": {"x": 600, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "table",
+      "title": "거래 횟수 조건 결과",
+      "data": "{{ nodes.perfCondition.details }}",
+      "position": {"x": 850, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "account"},
+    {"from": "account", "to": "perfCondition"},
+    {"from": "perfCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 선물 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": true}
+    }
+  ]
+}

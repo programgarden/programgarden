@@ -330,7 +330,7 @@ function CandlestickRenderer({ data }: { data: unknown[] }) {
   );
 }
 
-export default function ChartRenderer({ type, data, xLabel, yLabel, options: _options }: ChartProps) {
+export default function ChartRenderer({ type, data, xLabel, yLabel, options }: ChartProps) {
   // Safety check for data - handle both array and object
   const isEmpty = !data || (Array.isArray(data) ? data.length === 0 : Object.keys(data).length === 0);
   
@@ -387,6 +387,86 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options: _op
           </LineChart>
         </ResponsiveContainer>
       );
+
+    case 'multi_line': {
+      // Multi-line chart: multiple series grouped by series_key
+      // Data format: [{symbol: 'AAPL', date: '20250101', rsi: 28.5}, ...]
+      const seriesKey = (options?.series_key as string) || 'symbol';
+      const xFieldKey = (options?.x_field as string) || xKey;
+      const yFieldKey = (options?.y_field as string) || yKey;
+      
+      // Group data by series_key
+      const groupedData: Record<string, Record<string, unknown>[]> = {};
+      (data as Record<string, unknown>[]).forEach((item) => {
+        const key = String(item[seriesKey] || 'unknown');
+        if (!groupedData[key]) {
+          groupedData[key] = [];
+        }
+        groupedData[key].push(item);
+      });
+      
+      const seriesNames = Object.keys(groupedData);
+      
+      // Merge all data points with series-specific y values
+      // Result: [{date: '20250101', AAPL: 28.5, NVDA: 45.2}, ...]
+      const mergedData: Record<string, unknown>[] = [];
+      const allXValues = new Set<string>();
+      
+      Object.entries(groupedData).forEach(([, items]) => {
+        items.forEach((item) => {
+          allXValues.add(String(item[xFieldKey]));
+        });
+      });
+      
+      // Sort x values (works for dates like '20250101')
+      const sortedXValues = Array.from(allXValues).sort();
+      
+      sortedXValues.forEach((xVal) => {
+        const point: Record<string, unknown> = { [xFieldKey]: xVal };
+        seriesNames.forEach((series) => {
+          const item = groupedData[series]?.find((i) => String(i[xFieldKey]) === xVal);
+          point[series] = item ? item[yFieldKey] : null;
+        });
+        mergedData.push(point);
+      });
+      
+      // Line colors for different series
+      const lineColors = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6', '#f97316'];
+      
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={mergedData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <XAxis 
+              dataKey={xFieldKey}
+              tick={{ fontSize: 9, fill: '#9ca3af' }}
+              label={xLabel ? { value: xLabel, position: 'bottom', fontSize: 10, fill: '#9ca3af' } : undefined}
+            />
+            <YAxis 
+              tick={{ fontSize: 9, fill: '#9ca3af' }}
+              label={yLabel ? { value: yLabel, angle: -90, position: 'left', fontSize: 10, fill: '#9ca3af' } : undefined}
+            />
+            <Tooltip
+              contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', fontSize: 11 }}
+              labelStyle={{ color: '#fff' }}
+            />
+            {seriesNames.map((series, idx) => (
+              <Line
+                key={series}
+                type="monotone"
+                dataKey={series}
+                name={series}
+                stroke={lineColors[idx % lineColors.length]}
+                strokeWidth={2}
+                dot={mergedData.length <= 30}
+                activeDot={{ r: 4 }}
+                connectNulls
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      );
+    }
 
     case 'bar':
       return (

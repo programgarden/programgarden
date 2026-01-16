@@ -1,0 +1,90 @@
+{
+  "id": "perf-profitfactor-futures",
+  "version": "1.0.0",
+  "name": "PerformanceConditionNode profit_factor - 해외선물",
+  "description": "Profit Factor 조건 (PF >= 1.5)",
+  "tags": ["performance", "profit_factor", "overseas_futures"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_futures",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "CME", "symbol": "NQU25"},
+        {"exchange": "CME", "symbol": "ESU25"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "history",
+      "type": "HistoricalDataNode",
+      "category": "data",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "interval": "1d",
+      "start_date": "dynamic:days_ago(90)",
+      "end_date": "dynamic:today()",
+      "position": {"x": 500, "y": 200}
+    },
+    {
+      "id": "backtest",
+      "type": "BacktestEngineNode",
+      "category": "backtest",
+      "initial_capital": 50000,
+      "commission_rate": 0.0005,
+      "ohlcv_data": "{{ nodes.history.ohlcv_data }}",
+      "position": {"x": 700, "y": 200}
+    },
+    {
+      "id": "perfCondition",
+      "type": "PerformanceConditionNode",
+      "category": "condition",
+      "metric": "profit_factor",
+      "operator": "gte",
+      "threshold": 1.5,
+      "trade_history": "{{ nodes.backtest.trades }}",
+      "equity_curve": "{{ nodes.backtest.equity_curve }}",
+      "position": {"x": 900, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "table",
+      "title": "Profit Factor 조건 결과",
+      "data": "{{ nodes.perfCondition.details }}",
+      "position": {"x": 1100, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "history"},
+    {"from": "history", "to": "backtest"},
+    {"from": "backtest", "to": "perfCondition"},
+    {"from": "perfCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 선물 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": true}
+    }
+  ]
+}

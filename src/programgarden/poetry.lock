@@ -1595,12 +1595,29 @@ dev = ["pre-commit", "tox"]
 testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
+name = "programgarden-community"
+version = "2.0.0"
+description = "ProgramGarden Community - 전략 플러그인 모음"
+optional = false
+python-versions = ">=3.12"
+groups = ["dev"]
+files = []
+develop = true
+
+[package.dependencies]
+programgarden-core = {path = "../core", develop = true}
+
+[package.source]
+type = "directory"
+url = "../community"
+
+[[package]]
 name = "programgarden-core"
 version = "2.0.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
-groups = ["main"]
+groups = ["main", "dev"]
 files = []
 develop = true
 
@@ -2620,4 +2637,4 @@ repair = ["scipy (>=1.6.3)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "877eedfaf797f60b76ae9d20b764295c5b29d0b1a1a896fa607382ae3629c19f"
+content-hash = "459a0d92450ac08668cfc726f7c6f81eedf041e6c5f174b607fbf3d1e90ab5a9"

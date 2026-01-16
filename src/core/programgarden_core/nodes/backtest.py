@@ -33,6 +33,10 @@ class HistoricalDataNode(BaseNode):
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/historicaldata.svg"
 
     # HistoricalDataNode specific config
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Target symbols with exchange [{exchange, symbol}]",
+    )
     start_date: str = Field(
         default="dynamic:months_ago(3)",
         description="Start date (YYYY-MM-DD or dynamic:months_ago(N))",
@@ -74,6 +78,25 @@ class HistoricalDataNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === PARAMETERS: 종목 설정 ===
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="i18n:fields.HistoricalDataNode.symbols",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                placeholder="{{ nodes.watchlist.symbols }}",
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NYSE", "symbol": "IBM"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=[
+                    "WatchlistNode.symbols",
+                    "ScreenerNode.filtered_symbols",
+                    "MarketUniverseNode.symbols",
+                ],
+                expected_type="list[{exchange: str, symbol: str}]",
+            ),
             # === PARAMETERS: 핵심 데이터 조회 설정 ===
             "start_date": FieldSchema(
                 name="start_date",
@@ -386,61 +409,4 @@ class BacktestEngineNode(BaseNode):
         }
 
 
-class PerformanceConditionNode(BaseNode):
-    """
-    Performance condition validation node
-
-    Validates whether backtest results meet specified criteria
-    """
-
-    type: Literal["PerformanceConditionNode"] = "PerformanceConditionNode"
-    category: NodeCategory = NodeCategory.CONDITION
-    description: str = "i18n:nodes.PerformanceConditionNode.description"
-
-    # PerformanceConditionNode specific config
-    conditions: dict = Field(
-        default_factory=dict,
-        description="Performance conditions (e.g., {'total_return': '>0', 'max_drawdown': '<10'})",
-    )
-
-    _inputs: List[InputPort] = [
-        InputPort(
-            name="performance_data",
-            type="performance_summary",
-            description="i18n:ports.performance_data",
-        ),
-    ]
-    _outputs: List[OutputPort] = [
-        OutputPort(
-            name="passed",
-            type="signal",
-            description="i18n:ports.passed",
-        ),
-        OutputPort(
-            name="failed",
-            type="signal",
-            description="i18n:ports.failed",
-        ),
-        OutputPort(
-            name="result",
-            type="dict",
-            description="i18n:ports.result",
-        ),
-    ]
-
-    @classmethod
-    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
-        return {
-            # === PARAMETERS: 핵심 조건 설정 ===
-            "conditions": FieldSchema(
-                name="conditions",
-                type=FieldType.OBJECT,
-                description="Performance validation conditions. Use comparison operators: '>N', '<N', '>=N', '<=N'. Available metrics: total_return, max_drawdown, sharpe_ratio, win_rate.",
-                required=True,
-                category=FieldCategory.PARAMETERS,
-                bindable=False,
-                example={"total_return": ">0", "max_drawdown": "<10", "sharpe_ratio": ">1.0"},
-                expected_type="dict[str, str]",
-            ),
-        }
+# PerformanceConditionNode는 condition.py로 이전됨 (더 풍부한 필드 지원)

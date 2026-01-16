@@ -291,7 +291,7 @@
   "fields.LogicNode.weights": "Weights (for weighted operator)",
 
   "fields.ConditionNode.plugin": "Condition plugin (RSI, MACD, etc.)",
-  "fields.ConditionNode.price_data": "Price data binding (e.g., {{ nodes.marketData.ohlcv }})",
+  "fields.ConditionNode.ohlcv_data": "OHLCV data binding (e.g., {{ nodes.realMarket.ohlcv_data }} or {{ nodes.historical.ohlcv_data }})",
   "fields.ConditionNode.volume_data": "Volume data binding (e.g., {{ nodes.marketData.volume }})",
   "fields.ConditionNode.symbols": "Symbol list binding (e.g., {{ nodes.watchlist.symbols }})",
   "fields.ConditionNode.held_symbols": "Held symbols binding (e.g., {{ nodes.account.held_symbols }})",
@@ -337,6 +337,8 @@
   "fields.LiquidateNode.order_type": "Liquidation order type. Market order recommended for emergency.",
   "fields.LiquidateNode.target_symbols": "Symbols to liquidate (only when mode='symbol')",
   "fields.LiquidateNode.positions": "Position data. Bind from account node.",
+
+  "fields.HistoricalDataNode.symbols": "Target symbols. Binding or direct input ([{exchange: NASDAQ, symbol: AAPL}])",
 
   "fields.PortfolioNode.total_capital": "Total portfolio capital",
   "fields.PortfolioNode.allocation_method": "Capital allocation method",

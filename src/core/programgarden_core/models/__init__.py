@@ -59,6 +59,10 @@ from programgarden_core.models.exchange import (
     ExchangeRegistry,
     exchange_registry,
     SymbolEntry,
+    normalize_symbol,
+    normalize_symbols,
+    symbols_to_dict_list,
+    extract_symbol_codes,
 )
 
 __all__ = [
@@ -114,4 +118,8 @@ __all__ = [
     "ExchangeRegistry",
     "exchange_registry",
     "SymbolEntry",
+    "normalize_symbol",
+    "normalize_symbols",
+    "symbols_to_dict_list",
+    "extract_symbol_codes",
 ]

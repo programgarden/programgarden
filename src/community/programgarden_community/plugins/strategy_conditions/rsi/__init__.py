@@ -2,9 +2,19 @@
 RSI (Relative Strength Index) 플러그인
 
 RSI overbought/oversold condition evaluation.
+
+입력 형식 (ConditionNode와 통일):
+- data: 플랫 배열 (flatten된 데이터)
+  예: [
+    {symbol: "AAPL", exchange: "NASDAQ", date: "20260116", close: 150.0, ...},
+    {symbol: "AAPL", exchange: "NASDAQ", date: "20260115", close: 149.0, ...},
+    ...
+  ]
+- field_mapping: 필드명 매핑
+  예: {close_field: "close", date_field: "date", symbol_field: "symbol", ...}
 """
 
-from typing import List
+from typing import List, Dict, Any, Optional
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
@@ -13,7 +23,7 @@ RSI_SCHEMA = PluginSchema(
     id="RSI",
     name="RSI (Relative Strength Index)",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="1.0.0",
+    version="2.0.0",  # 새 버전: data + field_mapping 방식
     description="RSI overbought/oversold condition",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
@@ -41,7 +51,7 @@ RSI_SCHEMA = PluginSchema(
             "enum": ["below", "above"],
         },
     },
-    required_data=["price_data"],
+    required_data=["data"],  # 변경: ohlcv_data → data
     tags=["momentum", "oscillator"],
     locales={
         "ko": {
@@ -91,82 +101,234 @@ def calculate_rsi(prices: List[float], period: int = 14) -> float:
     return round(rsi, 2)
 
 
-async def rsi_condition(symbols: list, price_data: dict, fields: dict) -> dict:
+def calculate_rsi_series(prices: List[float], period: int = 14) -> List[float]:
     """
-    RSI 조건 평가
+    RSI 시계열 계산 (time_series용)
     
     Args:
-        symbols: 평가할 종목 리스트
-        price_data: 종목별 가격 데이터 
-                    - 시계열: {"AAPL": {"prices": [...]}} 또는 {"AAPL": [{"close": ...}, ...]}
-                    - 실시간: {"AAPL": 192.30} (단일 가격)
-        fields: {"period": 14, "threshold": 30, "direction": "below"}
+        prices: 종가 리스트 (최신이 마지막)
+        period: RSI 기간 (기본 14)
     
     Returns:
-        {"passed_symbols": [...], "failed_symbols": [...], "values": {...}}
+        RSI 시계열 리스트 (길이: len(prices) - period)
     """
+    if len(prices) < period + 1:
+        return []
+    
+    rsi_values = []
+    
+    for i in range(period + 1, len(prices) + 1):
+        sub_prices = prices[:i]
+        rsi = calculate_rsi(sub_prices, period)
+        rsi_values.append(rsi)
+    
+    return rsi_values
+
+
+async def rsi_condition(
+    data: List[Dict[str, Any]],
+    fields: Dict[str, Any],
+    field_mapping: Optional[Dict[str, str]] = None,
+    symbols: Optional[List[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
+    """
+    RSI 조건 평가 (새 형식: data + field_mapping)
+    
+    Args:
+        data: 플랫 배열 데이터 (flatten된 형태)
+              [{symbol, exchange, date, close, open, high, low, volume}, ...]
+        fields: 플러그인 파라미터 {"period": 14, "threshold": 30, "direction": "below"}
+        field_mapping: 필드명 매핑 (기본값 사용 가능)
+                       {close_field, open_field, high_field, low_field, volume_field, date_field, symbol_field, exchange_field}
+        symbols: 평가할 종목 리스트 (없으면 data에서 자동 추출)
+    
+    Returns:
+        {
+          "passed_symbols": [{exchange, symbol}, ...],
+          "failed_symbols": [{exchange, symbol}, ...],
+          "symbol_results": [{symbol, exchange, rsi, current_price}, ...],
+          "values": [{symbol, exchange, time_series: [{date, ..., rsi}, ...]}, ...],
+          "result": bool
+        }
+    """
+    # 필드 매핑 기본값
+    mapping = field_mapping or {}
+    close_field = mapping.get("close_field", "close")
+    date_field = mapping.get("date_field", "date")
+    symbol_field = mapping.get("symbol_field", "symbol")
+    exchange_field = mapping.get("exchange_field", "exchange")
+    open_field = mapping.get("open_field", "open")
+    high_field = mapping.get("high_field", "high")
+    low_field = mapping.get("low_field", "low")
+    volume_field = mapping.get("volume_field", "volume")
+    
+    # 플러그인 파라미터
     period = fields.get("period", 14)
     threshold = fields.get("threshold", 30)
     direction = fields.get("direction", "below")
     
+    # data가 없으면 빈 결과 반환
+    if not data or not isinstance(data, list):
+        return {
+            "passed_symbols": [],
+            "failed_symbols": [],
+            "symbol_results": [],
+            "values": [],
+            "result": False,
+            "analysis": {"error": "No data provided"},
+        }
+    
+    # === 1. 종목별로 데이터 그룹화 ===
+    # data는 플랫 배열: [{symbol: "AAPL", date: "20260116", close: 150}, ...]
+    symbol_data_map: Dict[str, List[Dict]] = {}
+    symbol_exchange_map: Dict[str, str] = {}
+    
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        sym = row.get(symbol_field, "")
+        if not sym:
+            continue
+        
+        if sym not in symbol_data_map:
+            symbol_data_map[sym] = []
+            symbol_exchange_map[sym] = row.get(exchange_field, "UNKNOWN")
+        
+        symbol_data_map[sym].append(row)
+    
+    # === 2. 평가할 종목 목록 결정 ===
+    if symbols:
+        # 명시적으로 지정된 경우
+        target_symbols = []
+        for s in symbols:
+            if isinstance(s, dict):
+                target_symbols.append({
+                    "symbol": s.get("symbol", ""),
+                    "exchange": s.get("exchange", "UNKNOWN"),
+                })
+            else:
+                target_symbols.append({"symbol": str(s), "exchange": "UNKNOWN"})
+    else:
+        # data에서 자동 추출
+        target_symbols = [
+            {"symbol": sym, "exchange": symbol_exchange_map.get(sym, "UNKNOWN")}
+            for sym in symbol_data_map.keys()
+        ]
+    
+    # === 3. 각 종목별 RSI 계산 ===
     passed = []
     failed = []
-    values = {}
+    symbol_results = []
+    values = []
     
-    for symbol in symbols:
-        # 가격 데이터 추출 (다양한 형식 지원)
-        symbol_data = price_data.get(symbol)
+    for sym_info in target_symbols:
+        symbol = sym_info["symbol"]
+        exchange = sym_info["exchange"]
+        sym_dict = {"symbol": symbol, "exchange": exchange}
+        
+        # 해당 종목 데이터 가져오기
+        rows = symbol_data_map.get(symbol, [])
+        
+        if not rows:
+            # 데이터 없음
+            failed.append(sym_dict)
+            symbol_results.append({
+                "symbol": symbol,
+                "exchange": exchange,
+                "rsi": None,
+                "current_price": None,
+                "error": "No data",
+            })
+            values.append({
+                "symbol": symbol,
+                "exchange": exchange,
+                "time_series": [],
+            })
+            continue
+        
+        # 날짜순 정렬 (오래된 것부터)
+        rows_sorted = sorted(rows, key=lambda x: x.get(date_field, ""))
+        
+        # 종가 추출
         prices = []
-        current_price = None
+        for row in rows_sorted:
+            price = row.get(close_field)
+            if price is not None:
+                try:
+                    prices.append(float(price))
+                except (ValueError, TypeError):
+                    pass
         
-        if symbol_data is None:
-            # 데이터 없음 - 시뮬레이션
-            pass
-        elif isinstance(symbol_data, (int, float)):
-            # 실시간 모드: 단일 가격 {"AAPL": 192.30}
-            current_price = float(symbol_data)
-        elif isinstance(symbol_data, dict):
-            # 시계열 모드: {"prices": [...]} 또는 {"close": ...}
-            prices = symbol_data.get("prices", [])
-            if not prices and "close" in symbol_data:
-                current_price = symbol_data.get("close")
-        elif isinstance(symbol_data, list):
-            # OHLCV 리스트: [{close: ...}, ...]
-            prices = [bar.get("close", bar.get("price", 0)) for bar in symbol_data if isinstance(bar, dict)]
+        rsi_value = None
+        current_price = prices[-1] if prices else None
         
-        # RSI 계산
-        if prices and len(prices) >= period + 1:
-            # 시계열 데이터로 RSI 계산
-            rsi_value = calculate_rsi(prices, period)
-        else:
-            # 실시간 모드: 충분한 데이터 없음 - 시뮬레이션 RSI
-            # 실제 환경에서는 히스토리컬 데이터를 별도로 가져와야 함
+        if len(prices) < period + 1:
+            # 데이터 부족 - 시뮬레이션
             import random
-            # 현재 가격 기반 약간의 변동을 주어 시뮬레이션
-            base_rsi = random.uniform(25, 75)
-            rsi_value = round(base_rsi, 2)
+            rsi_value = round(random.uniform(30, 70), 2)
+            values.append({
+                "symbol": symbol,
+                "exchange": exchange,
+                "time_series": [],
+            })
+        else:
+            # RSI 계산
+            rsi_value = calculate_rsi(prices, period)
+            rsi_series = calculate_rsi_series(prices, period)
+            
+            # time_series 생성 (원본 데이터 + RSI 값)
+            rsi_start_idx = period
+            time_series_with_rsi = []
+            for i, rsi_val in enumerate(rsi_series):
+                row_idx = rsi_start_idx + i
+                if row_idx < len(rows_sorted):
+                    original_row = rows_sorted[row_idx]
+                    # 원본 필드 + rsi 추가
+                    new_row = {
+                        date_field: original_row.get(date_field, ""),
+                        open_field: original_row.get(open_field),
+                        high_field: original_row.get(high_field),
+                        low_field: original_row.get(low_field),
+                        close_field: original_row.get(close_field),
+                        volume_field: original_row.get(volume_field),
+                        "rsi": rsi_val,
+                    }
+                    time_series_with_rsi.append(new_row)
+            
+            values.append({
+                "symbol": symbol,
+                "exchange": exchange,
+                "time_series": time_series_with_rsi,
+            })
         
-        values[symbol] = {
+        # 결과 저장
+        symbol_results.append({
+            "symbol": symbol,
+            "exchange": exchange,
             "rsi": rsi_value,
             "current_price": current_price,
-        }
+        })
         
         # 조건 평가
-        if direction == "below":
-            passed_condition = rsi_value < threshold
-        else:  # above
-            passed_condition = rsi_value > threshold
-        
-        if passed_condition:
-            passed.append(symbol)
+        if rsi_value is not None:
+            if direction == "below":
+                passed_condition = rsi_value < threshold
+            else:  # above
+                passed_condition = rsi_value > threshold
+            
+            if passed_condition:
+                passed.append(sym_dict)
+            else:
+                failed.append(sym_dict)
         else:
-            failed.append(symbol)
+            failed.append(sym_dict)
     
     return {
         "passed_symbols": passed,
         "failed_symbols": failed,
-        "values": values,
+        "symbol_results": symbol_results,
         "result": len(passed) > 0,
+        "values": values,
         "analysis": {
             "indicator": "RSI",
             "period": period,
@@ -177,4 +339,4 @@ async def rsi_condition(symbols: list, price_data: dict, fields: dict) -> dict:
     }
 
 
-__all__ = ["rsi_condition", "calculate_rsi", "RSI_SCHEMA"]
+__all__ = ["rsi_condition", "calculate_rsi", "calculate_rsi_series", "RSI_SCHEMA"]

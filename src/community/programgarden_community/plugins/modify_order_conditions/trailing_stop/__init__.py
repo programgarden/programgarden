@@ -30,7 +30,7 @@ TRAILING_STOP_SCHEMA = PluginSchema(
 )
 
 
-async def tracking_price_modifier(target_orders: list, price_data: dict, fields: dict) -> dict:
+async def tracking_price_modifier(target_orders: list, ohlcv_data: dict, fields: dict) -> dict:
     """가격 추적 정정"""
     gap_percent = fields.get("price_gap_percent", 0.5)
     max_mods = fields.get("max_modifications", 5)
@@ -39,7 +39,15 @@ async def tracking_price_modifier(target_orders: list, price_data: dict, fields:
     
     for order in target_orders:
         symbol = order.get("symbol")
-        current_price = price_data.get(symbol, {}).get("current_price", order.get("price", 100))
+        
+        # OHLCV 데이터에서 현재가 추출
+        symbol_data = ohlcv_data.get(symbol, {})
+        if isinstance(symbol_data, list) and symbol_data:
+            current_price = symbol_data[-1].get("close", order.get("price", 100))
+        elif isinstance(symbol_data, dict):
+            current_price = symbol_data.get("close", symbol_data.get("current_price", order.get("price", 100)))
+        else:
+            current_price = order.get("price", 100)
         
         if order.get("side") == "buy":
             new_price = current_price * (1 - gap_percent / 100)

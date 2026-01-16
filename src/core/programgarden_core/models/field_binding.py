@@ -30,6 +30,7 @@ class FieldCategory(str, Enum):
 
     PARAMETERS = "parameters"  # 핵심 설정 (method, url, headers, body 등)
     SETTINGS = "settings"      # 부가 설정 (timeout, retry, ssl 등)
+    ADVANCED = "advanced"      # 고급 설정 (기본값으로 충분, 보통 숨김)
 
 
 class FieldSchema(BaseModel):
@@ -140,6 +141,22 @@ class FieldSchema(BaseModel):
     visible_when: Optional[Dict[str, Any]] = Field(
         default=None,
         description="조건부 표시 조건 (예: {'product': 'overseas_stock'}는 product 필드가 'overseas_stock'일 때만 표시)",
+    )
+    
+    # chart_type별 필드 조건부 표시 (DisplayNode용)
+    depends_on: Optional[Dict[str, List[str]]] = Field(
+        default=None,
+        description="다른 필드 값에 따른 조건부 표시 (예: {'chart_type': ['line', 'bar']})",
+    )
+    
+    # 고급 옵션 (기본 숨김)
+    collapsed: bool = Field(
+        default=False,
+        description="기본적으로 접혀있는 필드 (고급 옵션)",
+    )
+    help_text: Optional[str] = Field(
+        default=None,
+        description="추가 도움말 텍스트",
     )
 
     model_config = ConfigDict(use_enum_values=True)

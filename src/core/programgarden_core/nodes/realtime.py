@@ -62,12 +62,7 @@ class RealMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.subscribed_symbols"),
-        OutputPort(name="price", type="market_data", description="i18n:ports.price_data"),
-        OutputPort(
-            name="volume", type="market_data", description="i18n:ports.volume_data"
-        ),
-        OutputPort(name="bid", type="market_data", description="i18n:ports.bid"),
-        OutputPort(name="ask", type="market_data", description="i18n:ports.ask"),
+        OutputPort(name="ohlcv_data", type="ohlcv_data", description="i18n:ports.ohlcv_data"),
         OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full"),
     ]
 

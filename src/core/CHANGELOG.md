@@ -1,3 +1,18 @@
+## [2.4.0] - 2026-01-16
+
+### Added
+- feat(nodes): `LogicNode` 스키마 구현 (condition.py)
+  - 8개 연산자: all, any, not, xor, at_least, at_most, exactly, weighted
+  - conditions, threshold, weights 필드 지원
+- feat(nodes): `PerformanceConditionNode` 스키마 구현 (condition.py)
+  - 12개 지표: pnl_rate, mdd, win_rate, sharpe_ratio, profit_factor 등
+  - 6개 비교 연산자: gt, lt, gte, lte, eq, ne
+- feat(i18n): LogicNode, PerformanceConditionNode 다국어 지원 (ko.json, en.json)
+- feat(nodes): DisplayNode에 chart_data 출력 포트 추가
+
+### Changed
+- refactor(nodes): PerformanceConditionNode를 backtest.py에서 condition.py로 이전
+
 ## [2.3.0] - 2026-01-16
 ### Fixed
 - fix(expression): `ExpressionContext.to_dict()` 수정

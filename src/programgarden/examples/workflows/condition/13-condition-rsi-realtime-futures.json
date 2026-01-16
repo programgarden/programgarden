@@ -1,0 +1,81 @@
+{
+  "id": "condition-rsi-realtime-futures",
+  "version": "1.0.0",
+  "name": "RSI 조건 - 실시간 해외선물",
+  "description": "RealMarketDataNode에서 실시간 선물 가격을 받아 RSI 조건 평가",
+  "tags": ["condition", "rsi", "realtime", "overseas_futures"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_futures",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "CME", "symbol": "NQU25"},
+        {"exchange": "CME", "symbol": "ESU25"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "realMarket",
+      "type": "RealMarketDataNode",
+      "category": "realtime",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "stay_connected": false,
+      "position": {"x": 550, "y": 200}
+    },
+    {
+      "id": "rsiCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "RSI",
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "ohlcv_data": "{{ nodes.realMarket.ohlcv_data }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 750, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "table",
+      "title": "선물 RSI 조건 결과",
+      "data": "{{ nodes.rsiCondition.values }}",
+      "position": {"x": 950, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "realMarket"},
+    {"from": "realMarket", "to": "rsiCondition"},
+    {"from": "rsiCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 선물 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": true}
+    }
+  ]
+}

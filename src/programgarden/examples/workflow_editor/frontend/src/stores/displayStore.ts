@@ -5,7 +5,7 @@ import { create } from 'zustand';
  */
 export interface DisplayData {
   nodeId: string;
-  chartType: 'line' | 'candlestick' | 'bar' | 'scatter' | 'radar' | 'heatmap' | 'table';
+  chartType: 'line' | 'multi_line' | 'candlestick' | 'bar' | 'scatter' | 'radar' | 'heatmap' | 'table' | 'summary' | 'raw';
   title?: string;
   data: unknown[];
   xLabel?: string;

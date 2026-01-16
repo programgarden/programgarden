@@ -1,0 +1,82 @@
+{
+  "id": "condition-volumespike-realtime-stock",
+  "version": "1.0.0",
+  "name": "VolumeSpike 조건 - 실시간 해외주식",
+  "description": "RealMarketDataNode에서 실시간 거래량을 받아 거래량 급증 조건 평가",
+  "tags": ["condition", "volumespike", "realtime", "overseas_stock"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NASDAQ", "symbol": "TSLA"},
+        {"exchange": "NASDAQ", "symbol": "NVDA"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "realMarket",
+      "type": "RealMarketDataNode",
+      "category": "realtime",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "stay_connected": false,
+      "position": {"x": 550, "y": 200}
+    },
+    {
+      "id": "volumeSpikeCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "VolumeSpike",
+      "fields": {
+        "period": 20,
+        "multiplier": 2.0
+      },
+      "ohlcv_data": "{{ nodes.realMarket.ohlcv_data }}",
+      "volume_data": "{{ nodes.realMarket.volume }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 750, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "table",
+      "title": "VolumeSpike 조건 결과",
+      "data": "{{ nodes.volumeSpikeCondition.values }}",
+      "position": {"x": 950, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "realMarket"},
+    {"from": "realMarket", "to": "volumeSpikeCondition"},
+    {"from": "volumeSpikeCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": false}
+    }
+  ]
+}

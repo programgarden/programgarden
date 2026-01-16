@@ -13,6 +13,7 @@ Jinja2 스타일 {{ }} 표현식 평가기
 - 날짜 함수: {{ today() }}, {{ days_ago(30) }}
 - 통계 함수: {{ avg(prices) }}, {{ median(values) }}
 - 금융 함수: {{ pct_change(100, 110) }}, {{ discount(price, 5) }}
+- 배열 유틸: {{ pluck(items, 'name') }}, {{ pluck(data, 'a.b.c') }}
 
 보안:
 - eval 대신 안전한 표현식 평가 사용
@@ -28,6 +29,84 @@ import math
 import statistics
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass, field
+
+
+def _get_nested_value(obj: Any, path: str) -> Any:
+    """
+    객체에서 점 표기법 경로로 중첩 값 추출
+    
+    예: _get_nested_value({'a': {'b': {'c': 1}}}, 'a.b.c') → 1
+    """
+    keys = path.split('.')
+    current = obj
+    for key in keys:
+        if current is None:
+            return None
+        if isinstance(current, dict):
+            current = current.get(key)
+        else:
+            current = getattr(current, key, None)
+    return current
+
+
+def _pluck(lst: List[Any], path: str) -> List[Any]:
+    """
+    배열의 각 요소에서 특정 경로의 값을 추출
+    
+    지원 형식:
+    - pluck(items, 'name') → 단일 키
+    - pluck(items, 'details.price') → 다중 중첩 (점 표기법)
+    
+    예:
+    >>> data = [{'a': {'b': 1}}, {'a': {'b': 2}}]
+    >>> pluck(data, 'a.b')
+    [1, 2]
+    
+    >>> values = [{'symbol': 'AAPL', 'time_series': [...]}, ...]
+    >>> pluck(values, 'time_series')
+    [[...], [...]]
+    """
+    if not isinstance(lst, (list, tuple)):
+        return []
+    return [_get_nested_value(item, path) for item in lst]
+
+
+def _flatten(lst: List[Any], nested_key: str) -> List[Any]:
+    """
+    배열의 각 요소에서 중첩 배열을 평탄화하면서 부모 필드를 유지
+    
+    예:
+    >>> data = [
+    ...     {'symbol': 'AAPL', 'time_series': [{'date': '20251224', 'rsi': 33.5}]},
+    ...     {'symbol': 'TSLA', 'time_series': [{'date': '20251224', 'rsi': 62.1}]},
+    ... ]
+    >>> flatten(data, 'time_series')
+    [
+        {'symbol': 'AAPL', 'date': '20251224', 'rsi': 33.5},
+        {'symbol': 'TSLA', 'date': '20251224', 'rsi': 62.1},
+    ]
+    """
+    if not isinstance(lst, (list, tuple)):
+        return []
+    
+    result = []
+    for item in lst:
+        if not isinstance(item, dict):
+            continue
+        
+        nested_rows = item.get(nested_key, [])
+        if not isinstance(nested_rows, (list, tuple)):
+            continue
+        
+        # 부모 필드 추출 (nested_key 제외)
+        parent_fields = {k: v for k, v in item.items() if k != nested_key}
+        
+        # 각 중첩 행에 부모 필드 병합
+        for row in nested_rows:
+            if isinstance(row, dict):
+                result.append({**parent_fields, **row})
+    
+    return result
 
 
 class ExpressionError(Exception):
@@ -221,6 +300,8 @@ class SafeEvaluator:
         "first": lambda lst: lst[0] if lst else None,
         "last": lambda lst: lst[-1] if lst else None,
         "count": len,
+        "pluck": _pluck,  # 배열에서 특정 키 값 추출 (다중 중첩 지원)
+        "flatten": _flatten,  # 중첩 배열 평탄화 (부모 필드 유지)
         
         # ═══════════════════════════════════════════════════════════════
         # 포맷팅 함수

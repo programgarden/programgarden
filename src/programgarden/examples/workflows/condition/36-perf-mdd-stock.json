@@ -1,0 +1,89 @@
+{
+  "id": "perf-mdd-stock",
+  "version": "1.0.0",
+  "name": "PerformanceConditionNode mdd - 해외주식",
+  "description": "MDD 조건 (최대 낙폭 < 10%)",
+  "tags": ["performance", "mdd", "overseas_stock"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NASDAQ", "symbol": "NVDA"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "history",
+      "type": "HistoricalDataNode",
+      "category": "data",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "interval": "1d",
+      "start_date": "dynamic:days_ago(100)",
+      "end_date": "dynamic:today()",
+      "position": {"x": 500, "y": 200}
+    },
+    {
+      "id": "backtest",
+      "type": "BacktestEngineNode",
+      "category": "backtest",
+      "initial_capital": 10000,
+      "commission_rate": 0.001,
+      "ohlcv_data": "{{ nodes.history.ohlcv_data }}",
+      "position": {"x": 700, "y": 200}
+    },
+    {
+      "id": "perfCondition",
+      "type": "PerformanceConditionNode",
+      "category": "condition",
+      "metric": "mdd",
+      "operator": "lt",
+      "threshold": 10.0,
+      "equity_curve": "{{ nodes.backtest.equity_curve }}",
+      "position": {"x": 900, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "table",
+      "title": "MDD 조건 결과",
+      "data": "{{ nodes.perfCondition.details }}",
+      "position": {"x": 1100, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "history"},
+    {"from": "history", "to": "backtest"},
+    {"from": "backtest", "to": "perfCondition"},
+    {"from": "perfCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": false}
+    }
+  ]
+}

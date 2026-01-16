@@ -1,0 +1,85 @@
+{
+  "id": "condition-macd-backtest-futures",
+  "version": "1.0.0",
+  "name": "MACD 조건 - 백테스트 해외선물",
+  "description": "HistoricalDataNode에서 과거 OHLCV를 받아 선물 MACD 조건 평가",
+  "tags": ["condition", "macd", "backtest", "overseas_futures"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_futures",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "CME", "symbol": "NQU25"},
+        {"exchange": "CME", "symbol": "ESU25"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "historical",
+      "type": "HistoricalDataNode",
+      "category": "data",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "interval": "1d",
+      "start_date": "dynamic:days_ago(100)",
+      "end_date": "dynamic:today()",
+      "position": {"x": 550, "y": 200}
+    },
+    {
+      "id": "macdCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "MACD",
+      "mode": "backtest",
+      "fields": {
+        "fast_period": 12,
+        "slow_period": 26,
+        "signal_period": 9,
+        "signal": "bullish_cross"
+      },
+      "ohlcv_data": "{{ nodes.historical.ohlcv_data }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 750, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "line",
+      "title": "선물 MACD 백테스트 결과",
+      "data": "{{ nodes.macdCondition.signals }}",
+      "position": {"x": 950, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "macdCondition"},
+    {"from": "macdCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 선물 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": true}
+    }
+  ]
+}

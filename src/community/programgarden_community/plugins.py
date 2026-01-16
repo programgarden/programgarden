@@ -24,15 +24,15 @@ def register_all_plugins() -> None:
             id="RSI",
             name="RSI (Relative Strength Index)",
             category=PluginCategory.STRATEGY_CONDITION,
-            version="1.0.0",
-            description="RSI overbought/oversold condition",
+            version="2.0.0",
+            description="RSI overbought/oversold condition (data + field_mapping 패턴)",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "period": {"type": "int", "default": 14, "description": "RSI period"},
                 "threshold": {"type": "float", "default": 30, "description": "Threshold value"},
                 "direction": {"type": "string", "enum": ["below", "above"], "default": "below", "description": "Direction"},
             },
-            required_data=["price_data"],
+            required_data=["data"],
             tags=["momentum", "oscillator"],
             locales={
                 "ko": {
@@ -54,8 +54,8 @@ def register_all_plugins() -> None:
             id="MACD",
             name="MACD (Moving Average Convergence Divergence)",
             category=PluginCategory.STRATEGY_CONDITION,
-            version="1.0.0",
-            description="MACD 크로스오버 조건",
+            version="2.0.0",
+            description="MACD 크로스오버 조건 (data + field_mapping 패턴)",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "fast_period": {"type": "int", "default": 12},
@@ -63,7 +63,7 @@ def register_all_plugins() -> None:
                 "signal_period": {"type": "int", "default": 9},
                 "signal": {"type": "string", "enum": ["bullish_cross", "bearish_cross"], "default": "bullish_cross"},
             },
-            required_data=["price_data"],
+            required_data=["data"],
             tags=["trend", "momentum"],
         ),
     )
@@ -76,15 +76,15 @@ def register_all_plugins() -> None:
             id="BollingerBands",
             name="Bollinger Bands",
             category=PluginCategory.STRATEGY_CONDITION,
-            version="1.0.0",
-            description="볼린저밴드 조건",
+            version="2.0.0",
+            description="볼린저밴드 조건 (data + field_mapping 패턴)",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "period": {"type": "int", "default": 20},
                 "std": {"type": "float", "default": 2},
                 "position": {"type": "string", "enum": ["below_lower", "above_upper"], "default": "below_lower"},
             },
-            required_data=["price_data"],
+            required_data=["data"],
             tags=["volatility", "mean-reversion"],
         ),
     )
@@ -117,13 +117,13 @@ def register_all_plugins() -> None:
             id="ProfitTarget",
             name="Profit Target (익절)",
             category=PluginCategory.STRATEGY_CONDITION,
-            version="1.0.0",
-            description="목표 수익률 도달 조건",
+            version="2.0.0",
+            description="목표 수익률 도달 조건 (data + field_mapping 패턴)",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "percent": {"type": "float", "default": 5, "description": "목표 수익률 (%)"},
             },
-            required_data=["position_data", "price_data"],
+            required_data=["data"],
             tags=["exit", "profit"],
         ),
     )
@@ -136,13 +136,13 @@ def register_all_plugins() -> None:
             id="StopLoss",
             name="Stop Loss (손절)",
             category=PluginCategory.STRATEGY_CONDITION,
-            version="1.0.0",
-            description="손절 조건",
+            version="2.0.0",
+            description="손절 조건 (data + field_mapping 패턴)",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "percent": {"type": "float", "default": -3, "description": "손절 비율 (%, 음수)"},
             },
-            required_data=["position_data", "price_data"],
+            required_data=["data"],
             tags=["exit", "risk"],
         ),
     )
@@ -354,17 +354,17 @@ def calculate_bollinger_bands(prices: list, period: int = 20, std_dev: float = 2
 
 # === 플러그인 구현 ===
 
-async def _rsi_condition(symbols: list, price_data: dict, fields: dict) -> dict:
+async def _rsi_condition(symbols: list, ohlcv_data: dict, fields: dict) -> dict:
     """
     RSI 조건 평가
     
     Args:
         symbols: 평가할 종목 리스트
-        price_data: 종목별 가격 데이터 {"AAPL": {"prices": [...]}}
+        ohlcv_data: 종목별 OHLCV 데이터 {"AAPL": [{"close": ...}, ...]}
         fields: {"period": 14, "threshold": 30, "direction": "below"}
     
     Returns:
-        {"passed_symbols": [...], "failed_symbols": [...], "values": {...}}
+        {"passed_symbols": [...], "failed_symbols": [...], "symbol_results": {...}}
     """
     period = fields.get("period", 14)
     threshold = fields.get("threshold", 30)
@@ -375,9 +375,16 @@ async def _rsi_condition(symbols: list, price_data: dict, fields: dict) -> dict:
     values = {}
     
     for symbol in symbols:
-        # 가격 데이터 추출
-        symbol_data = price_data.get(symbol, {})
-        prices = symbol_data.get("prices", [])
+        # OHLCV 데이터 추출
+        symbol_data = ohlcv_data.get(symbol, {})
+        
+        # OHLCV 리스트에서 종가 추출
+        if isinstance(symbol_data, list):
+            prices = [bar.get("close", 0) for bar in symbol_data if isinstance(bar, dict)]
+        elif isinstance(symbol_data, dict):
+            prices = symbol_data.get("prices", [])
+        else:
+            prices = []
         
         # 가격 데이터가 없으면 시뮬레이션 데이터 사용
         if not prices:
@@ -387,7 +394,7 @@ async def _rsi_condition(symbols: list, price_data: dict, fields: dict) -> dict:
         else:
             rsi_value = calculate_rsi(prices, period)
         
-        values[symbol] = {"rsi": rsi_value}
+        symbol_results[symbol] = {"rsi": rsi_value}
         
         # 조건 평가
         if direction == "below":
@@ -403,18 +410,18 @@ async def _rsi_condition(symbols: list, price_data: dict, fields: dict) -> dict:
     return {
         "passed_symbols": passed,
         "failed_symbols": failed,
-        "values": values,
+        "symbol_results": symbol_results,
         "result": len(passed) > 0,
     }
 
 
-async def _macd_condition(symbols: list, price_data: dict, fields: dict) -> dict:
+async def _macd_condition(symbols: list, ohlcv_data: dict, fields: dict) -> dict:
     """
     MACD 조건 평가
     
     Args:
         symbols: 평가할 종목 리스트
-        price_data: 종목별 가격 데이터
+        ohlcv_data: 종목별 OHLCV 데이터
         fields: {"fast_period": 12, "slow_period": 26, "signal_period": 9, "signal": "bullish_cross"}
     """
     fast = fields.get("fast_period", 12)
@@ -424,11 +431,18 @@ async def _macd_condition(symbols: list, price_data: dict, fields: dict) -> dict
     
     passed = []
     failed = []
-    values = {}
+    symbol_results = {}
     
     for symbol in symbols:
-        symbol_data = price_data.get(symbol, {})
-        prices = symbol_data.get("prices", [])
+        symbol_data = ohlcv_data.get(symbol, {})
+        
+        # OHLCV 리스트에서 종가 추출
+        if isinstance(symbol_data, list):
+            prices = [bar.get("close", 0) for bar in symbol_data if isinstance(bar, dict)]
+        elif isinstance(symbol_data, dict):
+            prices = symbol_data.get("prices", [])
+        else:
+            prices = []
         
         if not prices:
             # 테스트용
@@ -441,7 +455,7 @@ async def _macd_condition(symbols: list, price_data: dict, fields: dict) -> dict
         else:
             macd_data = calculate_macd(prices, fast, slow, signal_period)
         
-        values[symbol] = macd_data
+        symbol_results[symbol] = macd_data
         
         # 조건 평가
         if signal_type == "bullish_cross":
@@ -458,12 +472,12 @@ async def _macd_condition(symbols: list, price_data: dict, fields: dict) -> dict
     return {
         "passed_symbols": passed,
         "failed_symbols": failed,
-        "values": values,
+        "symbol_results": symbol_results,
         "result": len(passed) > 0,
     }
 
 
-async def _bollinger_condition(symbols: list, price_data: dict, fields: dict) -> dict:
+async def _bollinger_condition(symbols: list, ohlcv_data: dict, fields: dict) -> dict:
     """
     볼린저밴드 조건 평가
     """
@@ -473,12 +487,21 @@ async def _bollinger_condition(symbols: list, price_data: dict, fields: dict) ->
     
     passed = []
     failed = []
-    values = {}
+    symbol_results = {}
     
     for symbol in symbols:
-        symbol_data = price_data.get(symbol, {})
-        prices = symbol_data.get("prices", [])
-        current_price = symbol_data.get("current_price", prices[-1] if prices else 100)
+        symbol_data = ohlcv_data.get(symbol, {})
+        
+        # OHLCV 리스트에서 종가 추출
+        if isinstance(symbol_data, list):
+            prices = [bar.get("close", 0) for bar in symbol_data if isinstance(bar, dict)]
+            current_price = prices[-1] if prices else 100
+        elif isinstance(symbol_data, dict):
+            prices = symbol_data.get("prices", [])
+            current_price = symbol_data.get("current_price", symbol_data.get("close", prices[-1] if prices else 100))
+        else:
+            prices = []
+            current_price = 100
         
         if not prices:
             bb_data = {"upper": 102, "middle": 100, "lower": 98}
@@ -486,7 +509,7 @@ async def _bollinger_condition(symbols: list, price_data: dict, fields: dict) ->
             bb_data = calculate_bollinger_bands(prices, period, std)
         
         bb_data["current_price"] = current_price
-        values[symbol] = bb_data
+        symbol_results[symbol] = bb_data
         
         if position == "below_lower":
             passed_condition = current_price < bb_data["lower"]
@@ -501,7 +524,7 @@ async def _bollinger_condition(symbols: list, price_data: dict, fields: dict) ->
     return {
         "passed_symbols": passed,
         "failed_symbols": failed,
-        "values": values,
+        "symbol_results": symbol_results,
         "result": len(passed) > 0,
     }
 
@@ -513,7 +536,7 @@ async def _volume_spike_condition(symbols: list, volume_data: dict, fields: dict
     
     passed = []
     failed = []
-    values = {}
+    symbol_results = {}
     
     for symbol in symbols:
         symbol_data = volume_data.get(symbol, {})
@@ -525,7 +548,7 @@ async def _volume_spike_condition(symbols: list, volume_data: dict, fields: dict
         else:
             avg_volume = 500000  # 기본값
         
-        values[symbol] = {
+        symbol_results[symbol] = {
             "current_volume": current_volume,
             "avg_volume": avg_volume,
             "ratio": current_volume / avg_volume if avg_volume > 0 else 0,
@@ -539,26 +562,34 @@ async def _volume_spike_condition(symbols: list, volume_data: dict, fields: dict
     return {
         "passed_symbols": passed,
         "failed_symbols": failed,
-        "values": values,
+        "symbol_results": symbol_results,
         "result": len(passed) > 0,
     }
 
 
-async def _profit_target_condition(symbols: list, position_data: dict, price_data: dict, fields: dict) -> dict:
+async def _profit_target_condition(symbols: list, position_data: dict, ohlcv_data: dict, fields: dict) -> dict:
     """익절 조건 평가"""
     target_percent = fields.get("percent", 5)
     
     passed = []
     failed = []
-    values = {}
+    symbol_results = {}
     
     for symbol in symbols:
         position = position_data.get(symbol, {})
         avg_price = position.get("avg_price", 100)
-        current_price = price_data.get(symbol, {}).get("current_price", 100)
+        
+        # OHLCV 데이터에서 현재가 추출
+        symbol_data = ohlcv_data.get(symbol, {})
+        if isinstance(symbol_data, list) and symbol_data:
+            current_price = symbol_data[-1].get("close", 100)
+        elif isinstance(symbol_data, dict):
+            current_price = symbol_data.get("close", symbol_data.get("current_price", 100))
+        else:
+            current_price = 100
         
         pnl_rate = ((current_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
-        values[symbol] = {"pnl_rate": round(pnl_rate, 2), "avg_price": avg_price, "current_price": current_price}
+        symbol_results[symbol] = {"pnl_rate": round(pnl_rate, 2), "avg_price": avg_price, "current_price": current_price}
         
         if pnl_rate >= target_percent:
             passed.append(symbol)
@@ -568,26 +599,34 @@ async def _profit_target_condition(symbols: list, position_data: dict, price_dat
     return {
         "passed_symbols": passed,
         "failed_symbols": failed,
-        "values": values,
+        "symbol_results": symbol_results,
         "result": len(passed) > 0,
     }
 
 
-async def _stop_loss_condition(symbols: list, position_data: dict, price_data: dict, fields: dict) -> dict:
+async def _stop_loss_condition(symbols: list, position_data: dict, ohlcv_data: dict, fields: dict) -> dict:
     """손절 조건 평가"""
     stop_percent = fields.get("percent", -3)
     
     passed = []
     failed = []
-    values = {}
+    symbol_results = {}
     
     for symbol in symbols:
         position = position_data.get(symbol, {})
         avg_price = position.get("avg_price", 100)
-        current_price = price_data.get(symbol, {}).get("current_price", 100)
+        
+        # OHLCV 데이터에서 현재가 추출
+        symbol_data = ohlcv_data.get(symbol, {})
+        if isinstance(symbol_data, list) and symbol_data:
+            current_price = symbol_data[-1].get("close", 100)
+        elif isinstance(symbol_data, dict):
+            current_price = symbol_data.get("close", symbol_data.get("current_price", 100))
+        else:
+            current_price = 100
         
         pnl_rate = ((current_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
-        values[symbol] = {"pnl_rate": round(pnl_rate, 2)}
+        symbol_results[symbol] = {"pnl_rate": round(pnl_rate, 2)}
         
         if pnl_rate <= stop_percent:
             passed.append(symbol)
@@ -597,7 +636,7 @@ async def _stop_loss_condition(symbols: list, position_data: dict, price_data: d
     return {
         "passed_symbols": passed,
         "failed_symbols": failed,
-        "values": values,
+        "symbol_results": symbol_results,
         "result": len(passed) > 0,
     }
 
@@ -676,7 +715,7 @@ async def _limit_order(symbols: list, quantities: dict, prices: dict, fields: di
     }
 
 
-async def _tracking_price_modifier(target_orders: list, price_data: dict, fields: dict) -> dict:
+async def _tracking_price_modifier(target_orders: list, ohlcv_data: dict, fields: dict) -> dict:
     """가격 추적 정정"""
     gap_percent = fields.get("price_gap_percent", 0.5)
     max_mods = fields.get("max_modifications", 5)
@@ -685,7 +724,15 @@ async def _tracking_price_modifier(target_orders: list, price_data: dict, fields
     
     for order in target_orders:
         symbol = order.get("symbol")
-        current_price = price_data.get(symbol, {}).get("current_price", order.get("price", 100))
+        
+        # OHLCV 데이터에서 현재가 추출
+        symbol_data = ohlcv_data.get(symbol, {})
+        if isinstance(symbol_data, list) and symbol_data:
+            current_price = symbol_data[-1].get("close", order.get("price", 100))
+        elif isinstance(symbol_data, dict):
+            current_price = symbol_data.get("close", symbol_data.get("current_price", order.get("price", 100)))
+        else:
+            current_price = order.get("price", 100)
         
         # 현재가 기준 새 주문가 계산
         if order.get("side") == "buy":

@@ -843,12 +843,11 @@ async def delete_credential(credential_id: str):
 # ========================================
 # Workflow Execution API
 # ========================================
-
 @app.post("/api/workflow/run-inline")
 async def run_workflow_inline(request: WorkflowRunRequest):
     """JSON 워크플로우 직접 실행 (저장 없이)"""
     global current_job
-    
+
     # Check if already running
     if current_job and current_job.status == "running":
         return JSONResponse(
@@ -942,7 +941,6 @@ async def run_workflow_inline(request: WorkflowRunRequest):
             status_code=500
         )
 
-
 @app.post("/api/workflow/validate")
 async def validate_workflow(request: WorkflowRunRequest):
     """워크플로우 유효성 검증"""
@@ -976,7 +974,6 @@ async def validate_workflow(request: WorkflowRunRequest):
         "errors": errors,
         "warnings": warnings,
     })
-
 
 def main(host: str = "0.0.0.0", port: int = 8766):
     """Run the server."""

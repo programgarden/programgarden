@@ -20,7 +20,7 @@ export interface ConfigField {
   required: boolean;
   default?: unknown;
   description?: string;
-  category?: 'parameters' | 'settings';  // Field category for UI grouping
+  category?: 'parameters' | 'settings' | 'advanced';  // Field category for UI grouping
   enum_values?: string[];
   enum_labels?: Record<string, string>;  // enum 값에 대한 라벨 (예: {"overseas_stock": "해외주식"})
   bindable?: boolean;
@@ -37,6 +37,12 @@ export interface ConfigField {
   
   // === 조건부 표시 필드 ===
   visible_when?: Record<string, unknown>;  // 조건부 표시 조건 (예: {"product": "overseas_stock"})
+  depends_on?: Record<string, string[]>;   // chart_type별 필드 표시 조건 (예: {"chart_type": ["line", "bar"]})
+  
+  // === 고급 옵션 필드 ===
+  collapsed?: boolean;    // 기본적으로 접혀있는 필드
+  help_text?: string;     // 추가 도움말 텍스트
+  group?: string;         // 필드 그룹 (예: 'field_mapping')
 }
 
 export interface NodeTypeSchema {

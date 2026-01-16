@@ -277,7 +277,7 @@ class PluginSandbox:
         # 배치 분할 실행
         all_passed = []
         all_failed = []
-        all_values = {}
+        all_symbol_results = {}
         
         for i in range(0, len(symbols), batch_size):
             batch = symbols[i:i + batch_size]
@@ -299,7 +299,7 @@ class PluginSandbox:
                 
                 all_passed.extend(result.get("passed_symbols", []))
                 all_failed.extend(result.get("failed_symbols", []))
-                all_values.update(result.get("values", {}))
+                all_symbol_results.update(result.get("symbol_results", {}))
                 
             except PluginTimeoutError:
                 # 타임아웃된 배치는 failed로 처리
@@ -316,7 +316,7 @@ class PluginSandbox:
         return {
             "passed_symbols": all_passed,
             "failed_symbols": all_failed,
-            "values": all_values,
+            "symbol_results": all_symbol_results,
             "result": len(all_passed) > 0,
             "batched": True,
             "batch_count": (len(symbols) + batch_size - 1) // batch_size,

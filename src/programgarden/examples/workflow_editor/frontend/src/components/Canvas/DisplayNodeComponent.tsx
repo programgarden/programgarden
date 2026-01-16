@@ -117,6 +117,7 @@ function DisplayNodeComponent({ id, data, selected }: NodeProps) {
               data={displayData.data}
               xLabel={nodeData.x_label}
               yLabel={nodeData.y_label}
+              options={displayData.options}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 text-xs gap-2">

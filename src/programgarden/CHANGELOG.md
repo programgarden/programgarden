@@ -1,3 +1,21 @@
+## [2.3.0] - 2026-01-16
+
+### Added
+- feat(executor): `LogicNodeExecutor` 구현 (~206줄)
+  - 8개 연산자 지원: all, any, not, xor, at_least, at_most, exactly, weighted
+  - 종목별 교집합 계산 (`evaluate_intersection_for_symbols`)
+- feat(executor): `PerformanceConditionNodeExecutor` 구현 (~280줄)
+  - 12개 지표: pnl_rate, pnl_amount, mdd, win_rate, sharpe_ratio 등
+  - 6개 비교 연산자 지원
+- feat(workflows): Condition 카테고리 예제 워크플로우 42개 추가
+  - ConditionNode: 01~18 (RSI, MACD, Bollinger, VolumeSpike, ProfitTarget, StopLoss)
+  - LogicNode: 19~34 (all, any, not, xor, at_least, at_most, exactly, weighted)
+  - PerformanceConditionNode: 35~42 (pnl_rate, mdd, win_rate, sharpe 등)
+- feat(frontend): DisplayNode 차트 데이터 SSE 연동 개선
+
+### Changed
+- refactor(workflows): Python 워크플로우 파일을 JSON 포맷으로 마이그레이션
+
 ## [2.2.0] - 2026-01-16
 ### Fixed
 - fix(executor): SymbolFilterNode NoneType 에러 수정

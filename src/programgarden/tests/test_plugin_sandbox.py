@@ -124,7 +124,7 @@ class TestPluginSandbox:
             return {
                 "passed_symbols": symbols[:1],
                 "failed_symbols": symbols[1:],
-                "values": {s: {"result": True} for s in symbols},
+                "symbol_results": {s: {"result": True} for s in symbols},
             }
         
         result = await sandbox.execute(
@@ -189,7 +189,7 @@ class TestPluginSandbox:
             return {
                 "passed_symbols": symbols,
                 "failed_symbols": [],
-                "values": {},
+                "symbol_results": {},
             }
         
         symbols = ["AAPL", "NVDA", "GOOGL", "MSFT", "META", "AMZN", "TSLA"]
@@ -218,7 +218,7 @@ class TestPluginSandbox:
             call_count += 1
             if call_count == 2:  # 두 번째 배치만 느림
                 await asyncio.sleep(1.0)
-            return {"passed_symbols": symbols, "failed_symbols": [], "values": {}}
+            return {"passed_symbols": symbols, "failed_symbols": [], "symbol_results": {}}
         
         symbols = ["AAPL", "NVDA", "GOOGL", "MSFT"]
         

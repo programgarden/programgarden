@@ -1,0 +1,111 @@
+{
+  "id": "logic-exactly-futures",
+  "version": "1.0.0",
+  "name": "LogicNode exactly - 해외선물",
+  "description": "3개 조건 중 정확히 2개 만족해야 통과",
+  "tags": ["logic", "exactly", "overseas_futures"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_futures",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "CME", "symbol": "NQU25"},
+        {"exchange": "CME", "symbol": "ESU25"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "realMarket",
+      "type": "RealMarketDataNode",
+      "category": "realtime",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "stay_connected": false,
+      "position": {"x": 500, "y": 200}
+    },
+    {
+      "id": "rsiCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "RSI",
+      "fields": {"period": 14, "threshold": 30, "direction": "below"},
+      "ohlcv_data": "{{ nodes.realMarket.ohlcv_data }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 700, "y": 50}
+    },
+    {
+      "id": "macdCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "MACD",
+      "fields": {"fast_period": 12, "slow_period": 26, "signal_period": 9, "signal": "bullish_cross"},
+      "ohlcv_data": "{{ nodes.realMarket.ohlcv_data }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 700, "y": 200}
+    },
+    {
+      "id": "bollingerCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "BollingerBands",
+      "fields": {"period": 20, "std": 2.0, "position": "below_lower"},
+      "ohlcv_data": "{{ nodes.realMarket.ohlcv_data }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 700, "y": 350}
+    },
+    {
+      "id": "logic",
+      "type": "LogicNode",
+      "category": "condition",
+      "operator": "exactly",
+      "threshold": 2,
+      "conditions": ["rsiCondition", "macdCondition", "bollingerCondition"],
+      "position": {"x": 950, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "table",
+      "title": "선물 Logic EXACTLY 결과 (=2/3)",
+      "data": "{{ nodes.logic.details }}",
+      "position": {"x": 1150, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "realMarket"},
+    {"from": "realMarket", "to": "rsiCondition"},
+    {"from": "realMarket", "to": "macdCondition"},
+    {"from": "realMarket", "to": "bollingerCondition"},
+    {"from": "rsiCondition", "to": "logic"},
+    {"from": "macdCondition", "to": "logic"},
+    {"from": "bollingerCondition", "to": "logic"},
+    {"from": "logic", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 선물 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": true}
+    }
+  ]
+}

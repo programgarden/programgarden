@@ -3,7 +3,7 @@ import { useWorkflowStore } from '@/stores/workflowStore';
 import { getCategoryColor } from '@/utils/nodeColors';
 import { getNodeLabel } from '@/utils/nodeLabels';
 import { findUpstreamNodes } from '@/utils/graphUtils';
-import { Trash2, Info } from 'lucide-react';
+import { Trash2, Info, ChevronDown, ChevronRight } from 'lucide-react';
 import { ConfigField } from '@/types/workflow';
 import { useCredentials } from '@/hooks/useCredentials';
 import { usePlugins, getDefaultFieldsFromSchema } from '@/hooks/usePlugins';
@@ -22,30 +22,45 @@ const NODE_CREDENTIAL_TYPES: Record<string, string> = {
 };
 
 /**
- * visible_when 조건을 체크하여 필드가 표시되어야 하는지 확인
- * @param visibleWhen 조건 객체 (예: {"product": "overseas_stock"} 또는 {"method": ["a", "b"]})
+ * visible_when 또는 depends_on 조건을 체크하여 필드가 표시되어야 하는지 확인
+ * @param schema 필드 스키마 (visible_when 또는 depends_on 포함 가능)
  * @param nodeData 현재 노드 데이터
  * @returns 필드가 표시되어야 하면 true, 숨겨야 하면 false
  */
 function shouldShowField(
-  visibleWhen: Record<string, unknown> | undefined,
+  schema: ConfigField | undefined,
   nodeData: Record<string, unknown>
 ): boolean {
-  // visible_when이 없으면 항상 표시
-  if (!visibleWhen) return true;
+  if (!schema) return true;
   
-  // 모든 조건이 만족해야 표시
-  return Object.entries(visibleWhen).every(([key, expectedValue]) => {
-    const actualValue = nodeData[key];
-    
-    // 배열인 경우: OR 조건 (actualValue가 배열 내 값 중 하나와 일치)
-    if (Array.isArray(expectedValue)) {
-      return expectedValue.includes(actualValue);
-    }
-    
-    // 단일 값인 경우: 정확히 일치
-    return actualValue === expectedValue;
-  });
+  // visible_when 조건 체크 (기존 로직)
+  const visibleWhen = schema.visible_when;
+  if (visibleWhen) {
+    const visibleWhenMatch = Object.entries(visibleWhen).every(([key, expectedValue]) => {
+      const actualValue = nodeData[key];
+      if (Array.isArray(expectedValue)) {
+        return expectedValue.includes(actualValue);
+      }
+      return actualValue === expectedValue;
+    });
+    if (!visibleWhenMatch) return false;
+  }
+  
+  // depends_on 조건 체크 (DisplayNode chart_type별 필드용)
+  // depends_on: { "chart_type": ["line", "bar"] } 형식
+  const dependsOn = schema.depends_on as Record<string, string[]> | undefined;
+  if (dependsOn) {
+    const dependsOnMatch = Object.entries(dependsOn).every(([key, allowedValues]) => {
+      const actualValue = nodeData[key];
+      if (Array.isArray(allowedValues)) {
+        return allowedValues.includes(actualValue as string);
+      }
+      return actualValue === allowedValues;
+    });
+    if (!dependsOnMatch) return false;
+  }
+  
+  return true;
 }
 
 // Tab button component
@@ -74,6 +89,8 @@ function TabButton({
 
 export default function PropertiesPanel() {
   const [activeTab, setActiveTab] = useState<'input' | 'parameters' | 'settings' | 'output'>('parameters');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showFieldMapping, setShowFieldMapping] = useState(false);
   const { nodes, edges, selectedNodeId, updateNodeData, removeNode, nodeOutputs, addCredential, nodeTypes } = useWorkflowStore();
   const { credentials, credentialTypes, createCredential, loading: credLoading } = useCredentials();
   const [showCredentialModal, setShowCredentialModal] = useState(false);
@@ -296,7 +313,12 @@ export default function PropertiesPanel() {
                 ([, schema]) => schema.category === 'parameters' || !schema.category
               );
               
-              if (paramFields.length === 0) {
+              // Advanced fields (고급 설정)
+              const advancedFields = Object.entries(configSchema).filter(
+                ([, schema]) => schema.category === 'advanced'
+              );
+              
+              if (paramFields.length === 0 && advancedFields.length === 0) {
                 return (
                   <div className="text-center text-gray-500 py-8">
                     <p className="text-sm">No parameters for this node</p>
@@ -311,10 +333,20 @@ export default function PropertiesPanel() {
               const currentPluginId = nodeData.plugin as string | undefined;
               
               // fields 필드는 PluginFieldsGroup에서 처리하므로 제외
-              // visible_when 조건에 따라 필드 필터링
+              // visible_when/depends_on 조건에 따라 필드 필터링
+              // field_mapping 그룹은 별도 섹션으로 분리
+              const fieldMappingFields = paramFields
+                .filter(([, schema]) => schema.group === 'field_mapping')
+                .filter(([, schema]) => shouldShowField(schema, nodeData));
+              
               const filteredParamFields = paramFields
                 .filter(([key]) => !isPluginNode || key !== 'fields')
-                .filter(([, schema]) => shouldShowField(schema.visible_when, nodeData));
+                .filter(([, schema]) => schema.group !== 'field_mapping')  // field_mapping 그룹 제외
+                .filter(([, schema]) => shouldShowField(schema, nodeData));
+              
+              // Advanced 필드도 조건에 따라 필터링
+              const filteredAdvancedFields = advancedFields
+                .filter(([, schema]) => shouldShowField(schema, nodeData));
               
               return (
                 <>
@@ -352,6 +384,48 @@ export default function PropertiesPanel() {
                           }
                         }}
                       />
+                      
+                      {/* data 필드 바로 다음에 필드 매핑 섹션 표시 */}
+                      {key === 'data' && fieldMappingFields.length > 0 && (
+                        <div className="mt-3 ml-2 border-l-2 border-gray-700 pl-3">
+                          <button
+                            onClick={() => setShowFieldMapping(!showFieldMapping)}
+                            className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-200 transition-colors w-full mb-2"
+                          >
+                            {showFieldMapping ? (
+                              <ChevronDown className="w-3 h-3" />
+                            ) : (
+                              <ChevronRight className="w-3 h-3" />
+                            )}
+                            <span>필드명 매핑</span>
+                            <span className="text-gray-500 text-[10px]">(기본값 사용 가능)</span>
+                          </button>
+                          
+                          {showFieldMapping && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] text-gray-500 mb-2">
+                                💡 커스텀 데이터 소스 사용 시에만 변경하세요
+                              </p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {fieldMappingFields.map(([mappingKey, mappingSchema]) => (
+                                  <div key={mappingKey} className="flex flex-col">
+                                    <label className="text-[10px] text-gray-400 mb-0.5">
+                                      {mappingKey.replace('_field', '')}
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={String(nodeData[mappingKey] || mappingSchema.default || '')}
+                                      onChange={(e) => handleFieldChange(mappingKey, e.target.value)}
+                                      placeholder={String(mappingSchema.placeholder || mappingSchema.default || '')}
+                                      className="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-blue-500 focus:outline-none"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                   
@@ -374,6 +448,55 @@ export default function PropertiesPanel() {
                       </p>
                     </div>
                   )}
+                  
+                  {/* Advanced 필드 (접을 수 있는 섹션) */}
+                  {filteredAdvancedFields.length > 0 && (
+                    <div className="mt-6 border-t border-gray-700 pt-4">
+                      <button
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-200 transition-colors w-full"
+                      >
+                        {showAdvanced ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                        <span className="font-medium">고급 옵션</span>
+                        <span className="text-gray-500">({filteredAdvancedFields.length})</span>
+                      </button>
+                      
+                      {showAdvanced && (
+                        <div className="mt-3 space-y-4 pl-2 border-l-2 border-gray-700">
+                          <p className="text-xs text-gray-500 mb-3">
+                            💡 기본값으로 충분합니다. 커스텀 데이터 소스 사용 시에만 변경하세요.
+                          </p>
+                          {filteredAdvancedFields.map(([key, schema]) => (
+                            <div key={key}>
+                              <BindableField
+                                label={key.replace(/_/g, ' ')}
+                                fieldKey={key}
+                                value={nodeData[key]}
+                                onChange={(value) => handleFieldChange(key, value)}
+                                onFocus={() => handleFieldFocus(key)}
+                                schema={schema}
+                                credentials={credentials}
+                                credentialTypes={credentialTypes}
+                                onOpenCredentialModal={handleOpenCredentialModal}
+                                credentialLoading={credLoading}
+                                requiredCredentialType={requiredCredentialType}
+                              />
+                              {/* help_text 표시 */}
+                              {schema.help_text && (
+                                <p className="text-xs text-gray-500 mt-1 ml-1">
+                                  {schema.help_text}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               );
             })()}
@@ -384,11 +507,11 @@ export default function PropertiesPanel() {
         {activeTab === 'settings' && (
           <div className="space-y-4">
             {hasConfigSchema && (() => {
-              // visible_when 조건에 따라 필드 필터링
+              // visible_when/depends_on 조건에 따라 필드 필터링
               const settingsFields = Object.entries(configSchema).filter(
                 ([, schema]) => 
                   schema.category === 'settings' && 
-                  shouldShowField(schema.visible_when, nodeData)
+                  shouldShowField(schema, nodeData)
               );
               
               if (settingsFields.length === 0) {

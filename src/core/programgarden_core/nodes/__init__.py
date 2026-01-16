@@ -39,7 +39,7 @@ from programgarden_core.nodes.trigger import (
     TradingHoursFilterNode,
     ExchangeStatusNode,
 )
-from programgarden_core.nodes.condition import ConditionNode, LogicNode
+from programgarden_core.nodes.condition import ConditionNode, LogicNode, PerformanceConditionNode
 from programgarden_core.nodes.risk import PositionSizingNode, RiskGuardNode, RiskConditionNode
 from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
 # event 노드는 커뮤니티 노드(TelegramNode 등)로 대체됨
@@ -47,7 +47,7 @@ from programgarden_core.nodes.display import DisplayNode
 from programgarden_core.nodes.backtest import (
     HistoricalDataNode,
     BacktestEngineNode,
-    PerformanceConditionNode,
+    # PerformanceConditionNode는 condition.py에서 import됨
 )
 from programgarden_core.nodes.portfolio import PortfolioNode
 from programgarden_core.nodes.job import DeployNode, TradingHaltNode, JobControlNode
