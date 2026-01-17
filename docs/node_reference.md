@@ -151,6 +151,14 @@ WebSocket을 통한 실시간 데이터 스트림입니다.
 - `open_orders` - 미체결 주문 목록
 - `positions` - 보유종목 상세 (실시간 수익률 포함)
 
+**에러 처리**:
+
+> ⚠️ **중요**: API 에러 발생 시 플로우가 즉시 중단됩니다.
+>
+> - 보유종목/예수금 조회 실패 시 `RuntimeError` 발생
+> - 빈 데이터로 플로우가 진행되면 잘못된 매매 의사결정 위험이 있어 이를 방지합니다
+> - 에러 메시지는 실행 로그에 표시됩니다
+
 **positions 구조 예시**:
 ```json
 {
@@ -594,6 +602,7 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
   "id": "rsi",
   "type": "ConditionNode",
   "plugin": "RSI",
+  "data": "{{ flatten(nodes.historicaldata_1.values, 'time_series') }}",
   "fields": {
     "period": 14,
     "oversold": 30,
@@ -605,22 +614,50 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
 | `plugin` | string | ✅ | 플러그인 ID |
+| `data` | expression | 조건부 | OHLCV 데이터 바인딩 (시계열 플러그인용) |
+| `positions` | expression | 조건부 | 포지션 데이터 바인딩 (익절/손절 플러그인용) |
 | `fields` | object | ❌ | 플러그인 파라미터 |
+
+**플러그인별 필수 입력**:
+
+| 플러그인 타입 | 필수 입력 | 예시 플러그인 |
+|--------------|----------|--------------|
+| 시계열 기반 | `data` | RSI, MACD, BollingerBands, VolumeSpike |
+| 포지션 기반 | `positions` | ProfitTarget (v3.0.0), StopLoss (v3.0.0) |
 
 **출력**:
 - `passed` - 조건 통과 여부
 - `passed_symbols` - 조건을 통과한 종목 리스트
 - `analysis` - 분석 데이터 (플러그인별 상이)
 
-**사용 가능한 플러그인**:
+**시계열 기반 플러그인** (`data` 필수):
 | 플러그인 | 설명 | 주요 파라미터 |
 |----------|------|---------------|
 | `RSI` | 상대강도지수 | period, oversold, overbought |
 | `MACD` | 이동평균수렴확산 | fast, slow, signal |
 | `BollingerBands` | 볼린저밴드 | period, num_std |
 | `VolumeSpike` | 거래량 급증 | threshold_ratio |
+
+**포지션 기반 플러그인** (`positions` 필수) - v3.0.0:
+| 플러그인 | 설명 | 주요 파라미터 |
+|----------|------|---------------|
 | `ProfitTarget` | 익절 조건 | target_percent |
 | `StopLoss` | 손절 조건 | loss_percent |
+
+> **v3.0.0**: ProfitTarget/StopLoss는 `positions` 데이터만 필요합니다. positions에 `pnl_rate` 필드가 포함되어 있어야 합니다.
+
+**익절/손절 조건 예시**:
+```json
+{
+  "id": "profitTarget",
+  "type": "ConditionNode",
+  "plugin": "ProfitTarget",
+  "positions": "{{ nodes.realAccount.positions }}",
+  "fields": {
+    "target_percent": 5.0
+  }
+}
+```
 
 > 📖 전체 플러그인 목록: [조건 플러그인 목록](strategies/stock_condition.md)
 

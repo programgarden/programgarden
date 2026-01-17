@@ -1648,6 +1648,9 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         except ImportError as e:
             context.log("error", f"finance package not available: {e}", node_id)
             return self._empty_result(f"finance package error: {e}")
+        except RuntimeError:
+            # API 에러 등으로 플로우 중단이 필요한 경우 - 상위로 전파
+            raise
         except Exception as e:
             context.log("error", f"Unexpected error: {e}", node_id)
             return self._empty_result(str(e))
@@ -1741,7 +1744,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 트리거할 하위 노드 목록 (클로저로 캡처)
             trigger_nodes = config.get("_trigger_on_update_nodes", [])
-            print(f"[RealAccountNode] 트리거 대상 노드: {trigger_nodes}")
+            logger.debug(f"[RealAccountNode] 트리거 대상 노드: {trigger_nodes}")
             
             # 현재 이벤트 루프 캡처 (콜백에서 사용)
             loop = asyncio.get_running_loop()
@@ -1775,13 +1778,13 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     loop
                 )
                 
-                # 디버깅용 print
+                # 디버깅용 logger
                 from datetime import datetime
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 해외주식 포지션 업데이트:")
+                logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 해외주식 포지션 업데이트:")
                 for sym, pos in positions.items():
                     if hasattr(pos, 'pnl_rate'):
-                        print(f"  {sym}: 현재가=${pos.current_price:.2f}, 수익률={pos.pnl_rate:.2f}%")
-                print(f"  → 트리거할 노드: {trigger_nodes}")
+                        logger.debug(f"  {sym}: 현재가=${pos.current_price:.2f}, 수익률={pos.pnl_rate:.2f}%")
+                logger.debug(f"  → 트리거할 노드: {trigger_nodes}")
                 
                 # 이벤트 큐에 추가 (스레드 안전하게)
                 asyncio.run_coroutine_threadsafe(
@@ -1799,6 +1802,16 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             # Tracker 시작
             await tracker.start()
             
+            # 🆕 서버 에러 확인 - 에러 시 플로우 중단
+            tracker_errors = tracker.get_last_errors()
+            if tracker_errors:
+                for error_key, error_msg in tracker_errors.items():
+                    context.log("error", f"⚠️ 증권사 API 오류 ({error_key}): {error_msg}", node_id)
+                
+                # 에러 발생 시 플로우 중단 (빈 데이터로 진행하면 잘못된 의사결정 위험)
+                error_summary = ", ".join(tracker_errors.values())
+                raise RuntimeError(f"RealAccountNode 초기화 실패: {error_summary}")
+            
             # ========================================
             # stay_connected에 따라 등록 방식 결정
             # ========================================
@@ -1811,13 +1824,13 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 context.register_cleanup_on_flow_end(node_id, tracker)
                 context.log("info", f"StockAccountTracker started (stay_connected=False, will cleanup after flow)", node_id)
             
-            # 초기 데이터 반환
+            # 초기 데이터 반환 (여기까지 도달했다면 에러 없이 정상)
             result = self._get_stock_tracker_data(tracker)
             
-            # 데이터가 비어있는지 확인
+            # 데이터가 비어있는지 확인 (에러 없이 정상 케이스)
             positions_count = len(result.get('positions', {}))
             if positions_count == 0:
-                context.log("warning", "⚠️ 해외주식 보유종목이 없거나 API 조회에 실패했습니다. (장 마감 시간이거나 잔고가 없을 수 있음)", node_id)
+                context.log("info", "ℹ️ 해외주식 보유종목이 없습니다. (잔고가 없거나 장 마감 시간일 수 있음)", node_id)
             
             # SSE로 즉시 전송되도록 context.set_output 호출
             for key, value in result.items():
@@ -1830,14 +1843,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 outputs=result,
             ))
             
-            print(f"\n{'='*60}")
-            print(f"[RealAccountNode] 해외주식 실시간 계좌 데이터")
-            print(f"{'='*60}")
-            print(f"보유 종목: {result.get('symbols', [])}")
-            print(f"잔고: {result.get('balance', {})}")
+            logger.debug(f"\n{'='*60}")
+            logger.debug(f"[RealAccountNode] 해외주식 실시간 계좌 데이터")
+            logger.debug(f"{'='*60}")
+            logger.debug(f"보유 종목: {result.get('symbols', [])}")
+            logger.debug(f"잔고: {result.get('balance', {})}")
             for sym, pos in result.get('positions', {}).items():
-                print(f"  - {sym}: 수량={pos.get('qty')}, 평단가=${pos.get('avg_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 수익률={pos.get('pnl_rate'):.2f}%")
-            print(f"{'='*60}\n")
+                logger.debug(f"  - {sym}: 수량={pos.get('qty')}, 평단가=${pos.get('avg_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 수익률={pos.get('pnl_rate'):.2f}%")
+            logger.debug(f"{'='*60}\n")
             
             context.log("info", f"Initial account data loaded: {len(result.get('positions', {}))} positions", node_id)
             return result
@@ -1908,7 +1921,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 트리거할 하위 노드 목록 (클로저로 캡처)
             trigger_nodes = config.get("_trigger_on_update_nodes", [])
-            print(f"[RealAccountNode/Futures] 트리거 대상 노드: {trigger_nodes}")
+            logger.debug(f"[RealAccountNode/Futures] 트리거 대상 노드: {trigger_nodes}")
             
             # 현재 이벤트 루프 캡처 (콜백에서 사용)
             loop = asyncio.get_running_loop()
@@ -1926,16 +1939,19 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     elif hasattr(pos, 'pnl_rate') and pos.pnl_rate is not None:
                         pnl_rate = float(pos.pnl_rate)
                     
+                    is_long = getattr(pos, 'is_long', True)
                     serialized_positions[sym] = {
                         "symbol": sym,
-                        "name": getattr(pos, 'symbol', sym),
-                        "is_long": getattr(pos, 'is_long', True),
+                        "exchange": getattr(pos, 'exchange_code', ''),
+                        "name": getattr(pos, 'symbol_name', sym),
+                        "is_long": is_long,
+                        "direction": "LONG" if is_long else "SHORT",
                         "qty": int(getattr(pos, 'quantity', 0)),
                         "entry_price": float(getattr(pos, 'entry_price', 0)),
                         "current_price": float(getattr(pos, 'current_price', 0)),
                         "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
                         "pnl_rate": pnl_rate,
-                        "currency": "USD",
+                        "currency": getattr(pos, 'currency', 'USD'),
                     }
                 
                 # 컨텍스트에 최신 데이터 저장
@@ -1951,14 +1967,15 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     loop
                 )
                 
-                # 디버깅용 print
+                # 디버깅용 logger
                 from datetime import datetime
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 해외선물 포지션 업데이트:")
+                logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 해외선물 포지션 업데이트:")
                 for sym, pos in positions.items():
-                    direction = '롱' if getattr(pos, 'is_long', True) else '숏'
+                    direction = 'LONG' if getattr(pos, 'is_long', True) else 'SHORT'
+                    exchange = getattr(pos, 'exchange_code', '')
                     pnl = getattr(pos, 'pnl_amount', 0)
-                    print(f"  {sym} ({direction}): 현재가=${getattr(pos, 'current_price', 0):.2f}, 손익=${pnl:.2f}")
-                print(f"  → 트리거할 노드: {trigger_nodes}")
+                    logger.debug(f"  {sym}@{exchange} ({direction}): 현재가=${getattr(pos, 'current_price', 0):.2f}, 손익=${pnl:.2f}")
+                logger.debug(f"  → 트리거할 노드: {trigger_nodes}")
                 
                 # 이벤트 큐에 추가 (스레드 안전하게)
                 asyncio.run_coroutine_threadsafe(
@@ -1990,6 +2007,16 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             # Tracker 시작
             await tracker.start()
             
+            # 🆕 서버 에러 확인 - 에러 시 플로우 중단
+            tracker_errors = tracker.get_last_errors()
+            if tracker_errors:
+                for error_key, error_msg in tracker_errors.items():
+                    context.log("error", f"⚠️ 증권사 API 오류 ({error_key}): {error_msg}", node_id)
+                
+                # 에러 발생 시 플로우 중단 (빈 데이터로 진행하면 잘못된 의사결정 위험)
+                error_summary = ", ".join(tracker_errors.values())
+                raise RuntimeError(f"RealAccountNode 초기화 실패: {error_summary}")
+            
             # stay_connected에 따라 등록
             if stay_connected:
                 context.register_persistent(node_id, tracker)
@@ -1998,8 +2025,13 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 context.register_cleanup_on_flow_end(node_id, tracker)
                 context.log("info", f"FuturesAccountTracker started (stay_connected=False, will cleanup after flow)", node_id)
             
-            # 초기 데이터 반환
+            # 초기 데이터 반환 (여기까지 도달했다면 에러 없이 정상)
             result = self._get_futures_tracker_data(tracker)
+            
+            # 데이터가 비어있는지 확인 (에러 없이 정상 케이스)
+            positions_count = len(result.get('positions', {}))
+            if positions_count == 0:
+                context.log("info", "ℹ️ 해외선물 보유종목이 없습니다. (포지션이 없거나 장 마감 시간일 수 있음)", node_id)
             
             # SSE로 즉시 전송되도록 context.set_output 호출
             for key, value in result.items():
@@ -2012,16 +2044,16 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 outputs=result,
             ))
             
-            print(f"\n{'='*60}")
-            print(f"[RealAccountNode] 해외선물 실시간 계좌 데이터")
-            print(f"{'='*60}")
-            print(f"보유 종목: {result.get('symbols', [])}")
-            print(f"잔고: {result.get('balance', {})}")
+            logger.debug(f"\n{'='*60}")
+            logger.debug(f"[RealAccountNode] 해외선물 실시간 계좌 데이터")
+            logger.debug(f"{'='*60}")
+            logger.debug(f"보유 종목: {result.get('symbols', [])}")
+            logger.debug(f"잔고: {result.get('balance', {})}")
             for sym, pos in result.get('positions', {}).items():
                 direction = '롱' if pos.get('is_long') else '숏'
-                print(f"  - {sym} ({direction}): 수량={pos.get('qty')}, 진입가=${pos.get('entry_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 손익=${pos.get('pnl_amount'):.2f}")
-            print(f"미체결: {list(result.get('open_orders', {}).keys())}")
-            print(f"{'='*60}\n")
+                logger.debug(f"  - {sym} ({direction}): 수량={pos.get('qty')}, 진입가=${pos.get('entry_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 손익=${pos.get('pnl_amount'):.2f}")
+            logger.debug(f"미체결: {list(result.get('open_orders', {}).keys())}")
+            logger.debug(f"{'='*60}\n")
             
             context.log("info", f"Initial futures data loaded: {len(result.get('positions', {}))} positions", node_id)
             return result
@@ -2088,11 +2120,27 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         else:
             balance = {"cash": 0.0, "total_value": 0.0}
         
+        # open_orders 추출
+        open_orders = {}
+        if hasattr(tracker, 'get_open_orders'):
+            for order_no, order in tracker.get_open_orders().items():
+                open_orders[order_no] = {
+                    "order_no": order_no,
+                    "symbol": getattr(order, 'symbol', ''),
+                    "exchange": getattr(order, 'exchange_code', getattr(order, 'market_code', '')),
+                    "order_type": getattr(order, 'order_type', ''),
+                    "order_price": float(getattr(order, 'order_price', 0)),
+                    "order_qty": int(getattr(order, 'order_qty', 0)),
+                    "filled_qty": int(getattr(order, 'filled_qty', 0)),
+                    "remaining_qty": int(getattr(order, 'remaining_qty', getattr(order, 'order_qty', 0)) or 0),
+                }
+        
         return {
             "symbols": symbols,
             "held_symbols": symbols,
             "positions": positions,
             "balance": balance,
+            "open_orders": open_orders,
         }
 
     def _get_futures_tracker_data(self, tracker) -> Dict[str, Any]:
@@ -2107,16 +2155,19 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             elif hasattr(pos, 'pnl_rate') and pos.pnl_rate is not None:
                 pnl_rate = float(pos.pnl_rate)
             
+            is_long = getattr(pos, 'is_long', True)
             positions[symbol] = {
                 "symbol": symbol,
-                "name": getattr(pos, 'symbol', symbol),
-                "is_long": getattr(pos, 'is_long', True),
+                "exchange": getattr(pos, 'exchange_code', ''),
+                "name": getattr(pos, 'symbol_name', symbol),
+                "is_long": is_long,
+                "direction": "LONG" if is_long else "SHORT",
                 "qty": int(getattr(pos, 'quantity', 0)),
                 "entry_price": float(getattr(pos, 'entry_price', 0)),
                 "current_price": float(getattr(pos, 'current_price', 0)),
                 "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
                 "pnl_rate": pnl_rate,
-                "currency": "USD",
+                "currency": getattr(pos, 'currency', 'USD'),
             }
         
         symbols = list(positions.keys())
@@ -2142,10 +2193,13 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         open_orders = {}
         if hasattr(tracker, 'get_open_orders'):
             for order_no, order in tracker.get_open_orders().items():
+                is_long = getattr(order, 'is_long', True)
                 open_orders[order_no] = {
                     "order_no": order_no,
                     "symbol": getattr(order, 'symbol', ''),
-                    "is_long": getattr(order, 'is_long', True),
+                    "exchange": getattr(order, 'exchange_code', ''),
+                    "is_long": is_long,
+                    "direction": "LONG" if is_long else "SHORT",
                     "order_price": float(getattr(order, 'order_price', 0)),
                     "order_qty": int(getattr(order, 'order_qty', 0)),
                     "remaining_qty": int(getattr(order, 'remaining_qty', 0)),
@@ -2351,11 +2405,11 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                         bar["volume"] = volume
                     
                     # 콘솔 출력
-                    print(f"\n{'='*60}")
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] GSC 체결")
-                    print(f"  종목: {symbol}  가격: ${price:,.2f}  거래량: {volume:,}")
-                    print(f"  OHLCV: O={ohlcv_bars[symbol]['open']:.2f} H={ohlcv_bars[symbol]['high']:.2f} L={ohlcv_bars[symbol]['low']:.2f} C={price:.2f}")
-                    print(f"{'='*60}\n")
+                    logger.debug(f"\n{'='*60}")
+                    logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] GSC 체결")
+                    logger.debug(f"  종목: {symbol}  가격: ${price:,.2f}  거래량: {volume:,}")
+                    logger.debug(f"  OHLCV: O={ohlcv_bars[symbol]['open']:.2f} H={ohlcv_bars[symbol]['high']:.2f} L={ohlcv_bars[symbol]['low']:.2f} C={price:.2f}")
+                    logger.debug(f"{'='*60}\n")
                     
                     # OHLCV 데이터 형식으로 변환: {symbol: [bar]}
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
@@ -2515,11 +2569,11 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                         bar["volume"] = volume
                     
                     # 콘솔 출력
-                    print(f"\n{'='*60}")
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] OVC 체결")
-                    print(f"  종목: {symbol}  가격: {price:,.2f}  거래량: {volume:,}")
-                    print(f"  OHLCV: O={ohlcv_bars[symbol]['open']:.2f} H={ohlcv_bars[symbol]['high']:.2f} L={ohlcv_bars[symbol]['low']:.2f} C={price:.2f}")
-                    print(f"{'='*60}\n")
+                    logger.debug(f"\n{'='*60}")
+                    logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] OVC 체결")
+                    logger.debug(f"  종목: {symbol}  가격: {price:,.2f}  거래량: {volume:,}")
+                    logger.debug(f"  OHLCV: O={ohlcv_bars[symbol]['open']:.2f} H={ohlcv_bars[symbol]['high']:.2f} L={ohlcv_bars[symbol]['low']:.2f} C={price:.2f}")
+                    logger.debug(f"{'='*60}\n")
                     
                     # OHLCV 데이터 형식으로 변환
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
@@ -2881,11 +2935,11 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                     
                     side_name = "매수" if event_data['side'] == '02' else "매도"
                     
-                    print(f"\n{'='*60}")
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📣 [{_node_id}] 해외주식 {status_name} ({side_name})")
-                    print(f"  종목: {event_data['symbol']} ({event_data['symbol_name']})")
-                    print(f"  주문번호: {event_data['order_no']}")
-                    print(f"{'='*60}\n")
+                    logger.debug(f"\n{'='*60}")
+                    logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] 📣 [{_node_id}] 해외주식 {status_name} ({side_name})")
+                    logger.debug(f"  종목: {event_data['symbol']} ({event_data['symbol_name']})")
+                    logger.debug(f"  주문번호: {event_data['order_no']}")
+                    logger.debug(f"{'='*60}\n")
                     
                     asyncio.run_coroutine_threadsafe(
                         context.notify_output_update(
@@ -3028,11 +3082,11 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                     
                     # 콘솔 출력
                     side_name = "매수" if event_data.get('side') == '2' else "매도"
-                    print(f"\n{'='*60}")
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📣 [{_node_id}] 해외선물 {status_name} ({side_name})")
-                    print(f"  종목: {event_data.get('symbol', '')}")
-                    print(f"  주문번호: {event_data.get('order_no', '')}")
-                    print(f"{'='*60}\n")
+                    logger.debug(f"\n{'='*60}")
+                    logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] 📣 [{_node_id}] 해외선물 {status_name} ({side_name})")
+                    logger.debug(f"  종목: {event_data.get('symbol', '')}")
+                    logger.debug(f"  주문번호: {event_data.get('order_no', '')}")
+                    logger.debug(f"{'='*60}\n")
                     
                     # SSE 브로드캐스트
                     asyncio.run_coroutine_threadsafe(
@@ -3732,13 +3786,111 @@ class ConditionNodeExecutor(NodeExecutorBase):
         )
         
         try:
+            # === 플러그인 스키마에서 required_data 확인 ===
+            # 먼저 community 플러그인 레지스트리 초기화 (자동 등록)
+            try:
+                import programgarden_community  # 플러그인 자동 등록 트리거
+            except ImportError:
+                pass  # community 패키지 없어도 동작
+            
+            from programgarden_core import PluginRegistry
+            plugin_registry = PluginRegistry()
+            plugin_schema = plugin_registry.get_schema(plugin_id)
+            required_data = plugin_schema.required_data if plugin_schema else ["data"]
+            
+            # positions 기반 플러그인인지 확인 (ProfitTarget, StopLoss 등)
+            is_positions_based = "positions" in required_data and "data" not in required_data
+            
             # === 명시적 바인딩으로 데이터 가져오기 ===
             # 모든 config 값에서 {{ }} 표현식 평가
             original_data_expr = config.get("data")
+            original_positions_expr = config.get("positions")
             print(f"\n🔍 ConditionNode '{node_id}' 바인딩 평가:")
-            print(f"   - data 원본: {original_data_expr}")
+            print(f"   - plugin: {plugin_id}, required_data: {required_data}")
+            print(f"   - is_positions_based: {is_positions_based}")
             
             config = evaluate_all_bindings(config, context, node_id)
+            
+            # === positions 기반 플러그인 처리 (ProfitTarget, StopLoss) ===
+            if is_positions_based:
+                positions = config.get("positions", {})
+                print(f"   - positions 평가 후: {type(positions).__name__}, {len(positions) if isinstance(positions, dict) else 0} items")
+                
+                if not positions:
+                    context.log("error", 
+                        f"ConditionNode '{node_id}': positions가 설정되지 않았습니다. "
+                        f"config에 positions: {{{{ nodes.realAccount.positions }}}} 형태로 추가하세요.",
+                        node_id
+                    )
+                    return {
+                        "result": False,
+                        "passed_symbols": [],
+                        "failed_symbols": [],
+                        "values": [],
+                        "error": "missing_positions",
+                        "error_message": "positions가 설정되지 않았습니다. 예: {{ nodes.realAccount.positions }}",
+                    }
+                
+                # fields 표현식 평가
+                evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
+                if evaluated_fields:
+                    expr_context = context.get_expression_context()
+                    evaluator = ExpressionEvaluator(expr_context)
+                    evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
+                
+                # positions 기반 플러그인 직접 실행
+                context.log("info", f"Condition (positions-based) running with {len(positions)} positions", node_id)
+                
+                if plugin:
+                    try:
+                        result = await sandbox.execute(
+                            plugin_id=plugin_id,
+                            plugin_callable=plugin,
+                            kwargs={
+                                "positions": positions,
+                                "fields": evaluated_fields,
+                            },
+                        )
+                        
+                        context.log(
+                            "info",
+                            f"Condition evaluated: {len(result.get('passed_symbols', []))}/{len(positions)} passed",
+                            node_id,
+                        )
+                        
+                        return {
+                            "symbols": list(positions.keys()),
+                            "result": result.get("result", False),
+                            "passed_symbols": result.get("passed_symbols", []),
+                            "failed_symbols": result.get("failed_symbols", []),
+                            "symbol_results": result.get("symbol_results", []),
+                            "values": result.get("values", []),
+                        }
+                    except Exception as e:
+                        context.log("error", f"Plugin error: {e}", node_id)
+                        import traceback
+                        context.log("debug", f"Plugin traceback: {traceback.format_exc()}", node_id)
+                        return {
+                            "result": False,
+                            "passed_symbols": [],
+                            "failed_symbols": [],
+                            "values": [],
+                            "error": str(e),
+                        }
+                else:
+                    # 플러그인 없으면 모두 통과
+                    passed_symbols = [{"symbol": s, "exchange": "UNKNOWN"} for s in positions.keys()]
+                    return {
+                        "symbols": list(positions.keys()),
+                        "result": True,
+                        "passed_symbols": passed_symbols,
+                        "failed_symbols": [],
+                        "symbol_results": [],
+                        "values": [],
+                    }
+            
+            # === 기존 data 기반 플러그인 처리 (RSI, MACD 등) ===
+            print(f"   - data 원본: {original_data_expr}")
             
             # 필드 매핑 추출
             field_mapping = {

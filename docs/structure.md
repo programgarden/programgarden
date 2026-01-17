@@ -277,6 +277,13 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | 연결 방식 | WebSocket (실시간) | REST API (1회) |
 | 사용 시점 | 실시간 수익률 모니터링 | 잔고 스냅샷 조회 |
 
+**에러 처리:**
+
+> ⚠️ **API 에러 발생 시 플로우가 즉시 중단됩니다.**
+> - 보유종목/예수금 조회 실패 시 `RuntimeError` 발생
+> - 빈 데이터로 플로우가 진행되면 잘못된 매매 의사결정 위험이 있어 이를 방지합니다
+> - 에러 메시지는 실행 로그에 표시됩니다
+
 ```json
 // 실시간 수익률 모니터링
 {"id": "realAccount", "type": "RealAccountNode", "category": "account", "stay_connected": true}
