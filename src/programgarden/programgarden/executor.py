@@ -4892,16 +4892,10 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             context.log("warning", "No symbols provided", node_id)
             return {"ohlcv_data": {}, "symbols": []}
         
-        # 기간 설정
+        # 기간 설정 ({{ today_yyyymmdd() }}, {{ days_ago_yyyymmdd(100) }} 바인딩 사용)
         start_date = config.get("start_date", "")
         end_date = config.get("end_date", "")
         interval = config.get("interval", "1d")  # 1d, 1w, 1m, 1min 등
-        
-        # dynamic: 표현식 처리
-        if start_date.startswith("dynamic:"):
-            start_date = self._resolve_dynamic_date(start_date)
-        if end_date.startswith("dynamic:"):
-            end_date = self._resolve_dynamic_date(end_date)
         
         # 날짜 형식 변환: YYYY-MM-DD → YYYYMMDD (finance 패키지 요구사항)
         start_date = self._normalize_date_format(start_date)
@@ -4938,32 +4932,6 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             "period": f"{start_date}~{end_date}",
             "interval": interval,
         }
-
-    def _resolve_dynamic_date(self, expr: str) -> str:
-        """dynamic: 표현식 해석"""
-        from datetime import datetime, timedelta
-        
-        today = datetime.now()
-        
-        if "today()" in expr:
-            return today.strftime("%Y%m%d")
-        elif "months_ago(" in expr:
-            # dynamic:months_ago(3)
-            import re
-            match = re.search(r'months_ago\((\d+)\)', expr)
-            if match:
-                months = int(match.group(1))
-                result = today - timedelta(days=months * 30)
-                return result.strftime("%Y%m%d")
-        elif "days_ago(" in expr:
-            import re
-            match = re.search(r'days_ago\((\d+)\)', expr)
-            if match:
-                days = int(match.group(1))
-                result = today - timedelta(days=days)
-                return result.strftime("%Y%m%d")
-        
-        return expr.replace("dynamic:", "")
 
     def _normalize_date_format(self, date_str: str) -> str:
         """
@@ -5011,7 +4979,11 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         symbol_exchange_map: Dict[str, str] = None,
         symbols_raw: List[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        """해외주식 차트 데이터 조회 (g3103)
+        """해외주식 차트 데이터 조회 (g3204)
+        
+        g3204 API 사용 (sdate, edate, qrycnt 지원):
+        - g3103: date 기준 최근 30개만 반환 (제한적)
+        - g3204: 시작일~종료일 범위, 최대 500개 조회 가능
         
         반환: [{symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}, ...]
         """
@@ -5022,7 +4994,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             return self._empty_historical_result(symbols, "i18n:errors.CREDENTIAL_NOT_SET")
         
         try:
-            from programgarden_finance.ls.overseas_stock.chart.g3103.blocks import G3103InBlock
+            from programgarden_finance.ls.overseas_stock.chart.g3204.blocks import G3204InBlock
             
             ls, success, error = ensure_ls_login(
                 credential.get("appkey"),
@@ -5037,8 +5009,8 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             
             api = ls.overseas_stock()
             
-            # interval → gubun 변환
-            gubun_map = {"1d": "2", "1w": "3", "1M": "4"}
+            # interval → gubun 변환 (g3204: 2=일, 3=주, 4=월, 5=년)
+            gubun_map = {"1d": "2", "1w": "3", "1M": "4", "1Y": "5"}
             gubun = gubun_map.get(interval, "2")
             
             # 거래소 코드 매핑 (역변환용)
@@ -5069,27 +5041,32 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                     
                     keysymbol = f"{exchcd}{symbol}"
                     
-                    # end_date는 이미 YYYYMMDD 형식으로 정규화됨
-                    body = G3103InBlock(
+                    # g3204 API 사용 (sdate, edate, qrycnt 지원)
+                    body = G3204InBlock(
+                        sujung="Y",  # 수정주가 적용
+                        delaygb="R",
+                        comp_yn="N",
                         keysymbol=keysymbol,
                         exchcd=exchcd,
                         symbol=symbol,
                         gubun=gubun,
-                        date=end_date,
+                        qrycnt=500,  # 최대 500개 조회
+                        sdate=start_date,
+                        edate=end_date,
                     )
                     
                     # chart()는 메서드, req_async() 사용
-                    result = await api.chart().g3103(body=body).req_async()
+                    result = await api.chart().g3204(body=body).req_async()
                     
                     if result.block1:
                         bars = []
                         for item in result.block1:
                             bars.append({
-                                "date": item.chedate,
+                                "date": item.date,  # g3204는 date 필드 사용 (g3103은 chedate)
                                 "open": float(item.open) if item.open else 0,
                                 "high": float(item.high) if item.high else 0,
                                 "low": float(item.low) if item.low else 0,
-                                "close": float(item.price) if item.price else 0,
+                                "close": float(item.close) if item.close else 0,
                                 "volume": int(item.volume) if item.volume else 0,
                             })
                         # 날짜순 정렬 (오래된 것부터)
@@ -5099,7 +5076,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                             "exchange": exchange,
                             "time_series": bars,
                         })
-                        context.log("debug", f"Fetched {len(bars)} bars for {symbol}", node_id)
+                        context.log("debug", f"Fetched {len(bars)} bars for {symbol} ({start_date}~{end_date})", node_id)
                     else:
                         context.log("warning", f"No data for {symbol}", node_id)
                         result_list.append({

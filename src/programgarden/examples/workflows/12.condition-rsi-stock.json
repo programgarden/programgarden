@@ -30,8 +30,8 @@
       "type": "HistoricalDataNode",
       "connection": "{{ nodes.broker.connection }}",
       "interval": "1d",
-      "start_date": "dynamic:days_ago(100)",
-      "end_date": "dynamic:today()",
+      "start_date": "{{ days_ago_yyyymmdd(100) }}",
+      "end_date": "{{ today_yyyymmdd() }}",
       "position": {"x": 700, "y": 200}
     },
     {

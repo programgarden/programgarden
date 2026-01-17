@@ -321,8 +321,11 @@
   "fields.AlertNode.message_template": "메시지 템플릿 (변수 사용 가능)",
   "fields.AlertNode.credential_id": "알림 서비스 인증정보",
 
-  "fields.DisplayNode.chart_type": "차트 유형 (line, candlestick, bar)",
+  "fields.DisplayNode.chart_type": "차트 유형 (table, line, multi_line, candlestick, bar, summary)",
   "fields.DisplayNode.title": "차트 제목",
+  "fields.DisplayNode.x_field": "X축 필드명 (보통 date)",
+  "fields.DisplayNode.y_fields": "Y축 필드명. 단일 값('close') 또는 배열(['macd', 'macd_signal', 'histogram'])",
+  "fields.DisplayNode.series_key": "시리즈 구분 키 (multi_line용, 예: symbol)",
   "fields.DisplayNode.show_volume": "거래량 표시 여부",
 
   "fields.ConditionNode.plugin": "조건 플러그인 (RSI, MACD 등)",
@@ -366,8 +369,8 @@
   "fields.HistoricalDataNode.symbols": "조회할 종목 목록. 바인딩 또는 직접 입력 ([거래소: NASDAQ, 종목: AAPL형식])",
   "fields.HistoricalDataNode.period": "데이터 기간",
   "fields.HistoricalDataNode.interval": "봉 간격",
-  "fields.HistoricalDataNode.start_date": "백테스트 시작일. YYYY-MM-DD 또는 dynamic 표현식 (예: dynamic:months_ago(3) = 3개월 전)",
-  "fields.HistoricalDataNode.end_date": "백테스트 종료일. YYYY-MM-DD 또는 dynamic 표현식 (예: dynamic:today() = 오늘)",
+  "fields.HistoricalDataNode.start_date": "백테스트 시작일. YYYY-MM-DD 또는 바인딩 (예: {{ months_ago_yyyymmdd(3) }} = 3개월 전)",
+  "fields.HistoricalDataNode.end_date": "백테스트 종료일. YYYY-MM-DD 또는 바인딩 (예: {{ today_yyyymmdd() }} = 오늘)",
   "fields.HistoricalDataNode.adjust": "수정 주가 적용 (액분/배당 반영). 정확한 백테스트를 위해 권장.",
 
   "fields.MarketDataNode.fields": "조회할 필드: price (현재가), volume (거래량), ohlcv (캔들 데이터)",

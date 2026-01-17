@@ -38,12 +38,12 @@ class HistoricalDataNode(BaseNode):
         description="Target symbols with exchange [{exchange, symbol}]",
     )
     start_date: str = Field(
-        default="dynamic:months_ago(3)",
-        description="Start date (YYYY-MM-DD or dynamic:months_ago(N))",
+        default="{{ months_ago_yyyymmdd(3) }}",
+        description="Start date (YYYY-MM-DD or {{ months_ago_yyyymmdd(N) }})",
     )
     end_date: str = Field(
-        default="dynamic:today()",
-        description="End date (YYYY-MM-DD or dynamic:today())",
+        default="{{ today_yyyymmdd() }}",
+        description="End date (YYYY-MM-DD or {{ today_yyyymmdd() }})",
     )
     interval: str = Field(
         default="1d",
@@ -102,7 +102,7 @@ class HistoricalDataNode(BaseNode):
                 name="start_date",
                 type=FieldType.STRING,
                 description="i18n:fields.HistoricalDataNode.start_date",
-                default="dynamic:months_ago(3)",
+                default="{{ months_ago_yyyymmdd(3) }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
@@ -113,7 +113,7 @@ class HistoricalDataNode(BaseNode):
                 name="end_date",
                 type=FieldType.STRING,
                 description="i18n:fields.HistoricalDataNode.end_date",
-                default="dynamic:today()",
+                default="{{ today_yyyymmdd() }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,

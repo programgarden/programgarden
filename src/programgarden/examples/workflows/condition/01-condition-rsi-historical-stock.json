@@ -55,8 +55,12 @@
         "x": 750,
         "y": 200
       },
-      "plugin": "RSI",
+      "plugin": "MACD",
       "fields": {
+        "fast_period": 12,
+        "slow_period": 26,
+        "signal_period": 9,
+        "signal_type": "bullish_cross",
         "period": 14,
         "threshold": 30,
         "direction": "below"
@@ -88,8 +92,8 @@
       },
       "description": "N일치 일봉/주봉/월봉 OHLCV 차트 데이터.",
       "symbols": "{{ nodes.watchlist.symbols }}",
-      "start_date": "dynamic:months_ago(3)",
-      "end_date": "dynamic:today()",
+      "start_date": "{{ months_ago_yyyymmdd(6) }}",
+      "end_date": "{{ today_yyyymmdd() }}",
       "interval": "1d",
       "adjust": true,
       "customLabel": "과거 데이터"
@@ -120,13 +124,9 @@
   "credentials": [
     {
       "id": "7c5caa90-f013-44fd-855d-410437c86737",
-      "type": "broker_ls",
-      "name": "LS 해외주식",
-      "data": {
-        "appkey": "",
-        "appsecret": "",
-        "paper_trading": ""
-      }
+      "type": "unknown",
+      "name": "7c5caa90-f013-44fd-855d-410437c86737",
+      "data": {}
     }
   ]
 }

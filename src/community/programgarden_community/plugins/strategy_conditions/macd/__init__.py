@@ -152,12 +152,28 @@ async def macd_condition(
     signal_period = fields.get("signal_period", 9)
     signal_type = fields.get("signal_type", "bullish_cross")
     
-    # 데이터가 비어있으면 빈 결과 반환
+    # MACD 최소 데이터 요구사항
+    min_required = slow + signal_period  # 26 + 9 = 35일
+    
+    # 데이터가 비어있으면 상세 에러 반환
     if not data:
+        # symbols가 있으면 각 종목에 에러 정보 추가
+        symbol_results = []
+        for sym_info in (symbols or []):
+            if isinstance(sym_info, dict):
+                symbol_results.append({
+                    "symbol": sym_info.get("symbol", ""),
+                    "exchange": sym_info.get("exchange", "UNKNOWN"),
+                    "macd": 0,
+                    "signal": 0,
+                    "histogram": 0,
+                    "error": "insufficient_data",
+                    "error_detail": f"No data provided. Need at least {min_required} days. Check if HistoricalDataNode returned empty time_series.",
+                })
         return {
             "passed_symbols": [],
             "failed_symbols": symbols or [],
-            "symbol_results": [],
+            "symbol_results": symbol_results,
             "values": [],
             "result": False,
         }
@@ -203,8 +219,11 @@ async def macd_condition(
         # 종가 추출
         prices = [float(row.get(close_field, 0)) for row in symbol_data if row.get(close_field)]
         
-        if len(prices) < slow + signal_period:
-            # 데이터 부족
+        # MACD 최소 데이터 요구사항: slow + signal_period = 35일
+        min_required = slow + signal_period
+        
+        if len(prices) < min_required:
+            # 데이터 부족 - 상세 에러 정보 포함
             failed.append(sym_dict)
             symbol_results.append({
                 "symbol": symbol,
@@ -213,6 +232,7 @@ async def macd_condition(
                 "signal": 0,
                 "histogram": 0,
                 "error": "insufficient_data",
+                "error_detail": f"Need {min_required} days, got {len(prices)} (raw rows: {len(symbol_data)})",
             })
             continue
         

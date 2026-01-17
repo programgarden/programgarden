@@ -332,16 +332,19 @@ values = [
 "symbols": "{{ input.symbols }}"
 ```
 
-### `dynamic:` 접두사 제거
+### 날짜 함수
 
-`dynamic:` 접두사는 불필요합니다. 직접 함수를 호출하세요.
+날짜 바인딩 함수를 사용하세요:
 
 ```python
-# ❌ 이전 방식
-"start_date": "dynamic:months_ago($input.backtest_months)"
+# 오늘 날짜 (YYYYMMDD)
+"end_date": "{{ today_yyyymmdd() }}"
 
-# ✅ 새 방식
-"start_date": "{{ days_ago(input.backtest_months * 30) }}"
+# N일 전 (YYYYMMDD)
+"start_date": "{{ days_ago_yyyymmdd(100) }}"
+
+# N개월 전 (YYYYMMDD)
+"start_date": "{{ months_ago_yyyymmdd(3) }}"
 ```
 
 ---

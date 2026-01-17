@@ -349,8 +349,8 @@
   "fields.PortfolioNode.capital_sharing": "Share capital between strategies",
   "fields.PortfolioNode.reserve_percent": "Cash reserve percentage (%)",
 
-  "fields.HistoricalDataNode.start_date": "Backtest start date. Format: YYYY-MM-DD or dynamic expression (e.g., dynamic:months_ago(3) = 3 months ago)",
-  "fields.HistoricalDataNode.end_date": "Backtest end date. Format: YYYY-MM-DD or dynamic expression (e.g., dynamic:today() = today)",
+  "fields.HistoricalDataNode.start_date": "Backtest start date. Format: YYYY-MM-DD or binding (e.g., {{ months_ago_yyyymmdd(3) }} = 3 months ago)",
+  "fields.HistoricalDataNode.end_date": "Backtest end date. Format: YYYY-MM-DD or binding (e.g., {{ today_yyyymmdd() }} = today)",
   "fields.HistoricalDataNode.interval": "Data interval/timeframe. Options: 1m (1 minute), 5m, 15m, 1h (hourly), 1d (daily).",
   "fields.HistoricalDataNode.adjust": "Apply adjusted prices (split/dividend adjusted). Recommended for accurate backtesting.",
 

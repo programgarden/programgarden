@@ -47,8 +47,8 @@ WORKFLOW = {
                 {"exchange": "NASDAQ", "symbol": "TSLA"}
             ],
             "interval": "1d",
-            "start_date": "dynamic:days_ago(30)",
-            "end_date": "dynamic:today()"
+            "start_date": "{{ days_ago_yyyymmdd(30) }}",
+            "end_date": "{{ today_yyyymmdd() }}"
         },
         {
             "id": "display_4",

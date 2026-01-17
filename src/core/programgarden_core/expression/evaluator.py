@@ -278,8 +278,13 @@ class SafeEvaluator:
         # ═══════════════════════════════════════════════════════════════
         "today": lambda: date.today().isoformat(),
         "now": lambda: datetime.now().isoformat()[:19],
+        "today": lambda: date.today().isoformat(),
+        "today_yyyymmdd": lambda: date.today().strftime("%Y%m%d"),
         "days_ago": lambda n: (date.today() - timedelta(days=int(n))).isoformat(),
+        "days_ago_yyyymmdd": lambda n: (date.today() - timedelta(days=int(n))).strftime("%Y%m%d"),
         "days_later": lambda n: (date.today() + timedelta(days=int(n))).isoformat(),
+        "months_ago": lambda n: (date.today() - timedelta(days=int(n) * 30)).isoformat(),
+        "months_ago_yyyymmdd": lambda n: (date.today() - timedelta(days=int(n) * 30)).strftime("%Y%m%d"),
         "year_start": lambda: date(date.today().year, 1, 1).isoformat(),
         "year_end": lambda: date(date.today().year, 12, 31).isoformat(),
         "month_start": lambda: date.today().replace(day=1).isoformat(),
