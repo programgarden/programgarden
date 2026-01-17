@@ -47,6 +47,14 @@ from programgarden.tools import (
     analyze_performance,
 )
 
+# Auto-load community plugins on import
+try:
+    from programgarden_community import register_all_plugins
+    register_all_plugins()
+except ImportError:
+    # Community package not installed
+    pass
+
 __version__ = "2.0.0"
 __all__ = [
     # Core

@@ -667,11 +667,19 @@ function renderDisplayData(data) {
     const options = typeof data.options === 'string' ? JSON.parse(data.options) : (data.options || {});
     const chartData = data.data || data.chart_data || data.table_data || data;
     
-    console.log(`[renderDisplayData] chartType=${chartType}`, { data, chartData, options });
+    // Merge x_field, y_field from top-level data into options
+    const mergedOptions = {
+        ...options,
+        x_field: data.x_field || options.x_field,
+        y_field: data.y_field || options.y_field,
+        series_key: data.series_key || options.series_key,
+    };
+    
+    console.log(`[renderDisplayData] chartType=${chartType}`, { data, chartData, mergedOptions });
     
     // Line chart rendering
     if (chartType === 'line') {
-        return renderLineChart(chartData, options);
+        return renderLineChart(chartData, mergedOptions);
     }
     
     // Radar (Spider) chart rendering
@@ -810,6 +818,10 @@ function renderLineChart(data, options) {
     // Generate unique canvas ID
     const canvasId = 'chart-' + Math.random().toString(36).substr(2, 9);
     
+    // Get field names from options (with fallbacks)
+    const xField = options.x_field || 'date';
+    const yField = options.y_field || 'value';
+    
     // Schedule chart creation after DOM update
     setTimeout(() => {
         const canvas = document.getElementById(canvasId);
@@ -824,9 +836,10 @@ function renderLineChart(data, options) {
         let labels, values, benchmarkValues;
         
         if (Array.isArray(data)) {
-            // Array format: [{date: '2025-01-01', value: 100}, ...]
-            labels = data.map(d => d.date || d.timestamp || d.x || '');
-            values = data.map(d => d.portfolio_value || d.value || d.y || d);
+            // Array format: [{x_field: '...', y_field: ...}, ...]
+            // Use dynamic field names from options
+            labels = data.map(d => d[xField] || d.date || d.timestamp || d.x || '');
+            values = data.map(d => d[yField] || d.portfolio_value || d.value || d.y || d);
             if (data[0]?.benchmark) {
                 benchmarkValues = data.map(d => d.benchmark);
             }

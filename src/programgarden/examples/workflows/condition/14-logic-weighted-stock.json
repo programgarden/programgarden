@@ -1,0 +1,104 @@
+{
+  "id": "logic-weighted-stock",
+  "version": "1.0.0",
+  "name": "LogicNode WEIGHTED - 해외주식",
+  "description": "조건별 가중치 합산 점수가 임계값 이상이면 통과",
+  "tags": ["logic", "weighted", "overseas_stock", "bar"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "GOOGL"},
+        {"exchange": "NYSE", "symbol": "META"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "historical",
+      "type": "HistoricalDataNode",
+      "category": "market",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "start_date": "{{ months_ago_yyyymmdd(6) }}",
+      "end_date": "{{ today_yyyymmdd() }}",
+      "interval": "1d",
+      "position": {"x": 500, "y": 200}
+    },
+    {
+      "id": "rsiCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "RSI",
+      "fields": {"period": 14, "threshold": 30, "direction": "below"},
+      "data": "{{ flatten(nodes.historical.values, 'time_series') }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 700, "y": 100}
+    },
+    {
+      "id": "macdCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "MACD",
+      "fields": {"fast_period": 12, "slow_period": 26, "signal_period": 9, "signal": "bullish_cross"},
+      "data": "{{ flatten(nodes.historical.values, 'time_series') }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 700, "y": 300}
+    },
+    {
+      "id": "logic",
+      "type": "LogicNode",
+      "category": "condition",
+      "operator": "weighted",
+      "threshold": 0.6,
+      "weights": {"rsiCondition": 0.4, "macdCondition": 0.6},
+      "conditions": ["rsiCondition", "macdCondition"],
+      "position": {"x": 900, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "bar",
+      "title": "조건별 가중치 점수",
+      "data": "{{ nodes.logic.weight_scores }}",
+      "x_field": "condition",
+      "y_field": "weighted_score",
+      "position": {"x": 1100, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "rsiCondition"},
+    {"from": "historical", "to": "macdCondition"},
+    {"from": "rsiCondition", "to": "logic"},
+    {"from": "macdCondition", "to": "logic"},
+    {"from": "logic", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": false}
+    }
+  ]
+}

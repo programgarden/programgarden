@@ -529,42 +529,22 @@ async def _bollinger_condition(symbols: list, ohlcv_data: dict, fields: dict) ->
     }
 
 
-async def _volume_spike_condition(symbols: list, volume_data: dict, fields: dict) -> dict:
+async def _volume_spike_condition(
+    data: list = None,
+    fields: dict = None,
+    field_mapping: dict = None,
+    symbols: list = None,
+    **kwargs,
+) -> dict:
     """거래량 급증 조건 평가"""
-    period = fields.get("period", 20)
-    multiplier = fields.get("multiplier", 2)
-    
-    passed = []
-    failed = []
-    symbol_results = {}
-    
-    for symbol in symbols:
-        symbol_data = volume_data.get(symbol, {})
-        volumes = symbol_data.get("volumes", [])
-        current_volume = symbol_data.get("current_volume", 1000000)
-        
-        if volumes and len(volumes) >= period:
-            avg_volume = sum(volumes[-period:]) / period
-        else:
-            avg_volume = 500000  # 기본값
-        
-        symbol_results[symbol] = {
-            "current_volume": current_volume,
-            "avg_volume": avg_volume,
-            "ratio": current_volume / avg_volume if avg_volume > 0 else 0,
-        }
-        
-        if current_volume > avg_volume * multiplier:
-            passed.append(symbol)
-        else:
-            failed.append(symbol)
-    
-    return {
-        "passed_symbols": passed,
-        "failed_symbols": failed,
-        "symbol_results": symbol_results,
-        "result": len(passed) > 0,
-    }
+    from programgarden_community.plugins.strategy_conditions.volume_spike import volume_spike_condition
+    return await volume_spike_condition(
+        data=data,
+        fields=fields,
+        field_mapping=field_mapping,
+        symbols=symbols,
+        **kwargs,
+    )
 
 
 async def _profit_target_condition(symbols: list, position_data: dict, ohlcv_data: dict, fields: dict) -> dict:

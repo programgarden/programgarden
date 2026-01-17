@@ -1,0 +1,65 @@
+{
+  "id": "stoploss-stock",
+  "version": "1.0.0",
+  "name": "손절 조건 - 해외주식 실시간",
+  "description": "손실률 5% 이상 시 손절 신호 - table 차트",
+  "tags": ["condition", "stoploss", "realtime", "overseas_stock", "table"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "realAccount",
+      "type": "RealAccountNode",
+      "category": "realtime",
+      "connection": "{{ nodes.broker.connection }}",
+      "stay_connected": false,
+      "position": {"x": 400, "y": 200}
+    },
+    {
+      "id": "stoplossCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "StopLoss",
+      "fields": {"loss_percent": 5.0},
+      "positions": "{{ nodes.realAccount.positions }}",
+      "position": {"x": 600, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "table",
+      "title": "손절 대상 종목",
+      "data": "{{ nodes.stoplossCondition.passed_symbols }}",
+      "columns": ["symbol", "exchange", "pnl_rate", "current_price"],
+      "position": {"x": 850, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "realAccount"},
+    {"from": "realAccount", "to": "stoplossCondition"},
+    {"from": "stoplossCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": false}
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "id": "macd-stock-historical",
+  "version": "1.0.0",
+  "name": "MACD 조건 - 해외주식 과거데이터",
+  "description": "MACD 골든크로스 조건 평가 - line 차트",
+  "tags": ["condition", "macd", "historical", "overseas_stock", "line"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NYSE", "symbol": "IBM"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "historical",
+      "type": "HistoricalDataNode",
+      "category": "market",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "start_date": "{{ months_ago_yyyymmdd(6) }}",
+      "end_date": "{{ today_yyyymmdd() }}",
+      "interval": "1d",
+      "position": {"x": 550, "y": 200}
+    },
+    {
+      "id": "macdCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "MACD",
+      "fields": {"fast_period": 12, "slow_period": 26, "signal_period": 9, "signal": "bullish_cross"},
+      "data": "{{ flatten(nodes.historical.values, 'time_series') }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 750, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "line",
+      "title": "MACD 시계열",
+      "data": "{{ flatten(nodes.macdCondition.values, 'time_series') }}",
+      "x_field": "date",
+      "y_field": "macd",
+      "position": {"x": 950, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "macdCondition"},
+    {"from": "macdCondition", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": false}
+    }
+  ]
+}

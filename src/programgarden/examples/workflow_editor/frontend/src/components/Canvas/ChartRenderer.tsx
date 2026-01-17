@@ -354,11 +354,21 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
   }
   
   const keys = Object.keys(firstItem);
-  const xKey = keys.find((k) => ['x', 'date', 'time', 'name', 'label'].includes(k.toLowerCase())) || keys[0];
-  const yKey = keys.find((k) => ['y', 'value', 'price', 'amount'].includes(k.toLowerCase())) || keys[1] || keys[0];
+  // x_field, y_field는 명시적으로 지정해야 함 (자동 추론 제거)
+  const xKey = options?.x_field as string | undefined;
+  const yKey = options?.y_field as string | undefined;
 
   switch (type) {
     case 'line':
+      // line 차트는 x_field, y_field 필수
+      if (!xKey || !yKey) {
+        return (
+          <div className="flex items-center justify-center h-full text-yellow-400 text-xs p-2">
+            ⚠️ line 차트에는 x_field, y_field 지정 필요<br/>
+            사용 가능한 필드: {keys.join(', ')}
+          </div>
+        );
+      }
       return (
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data as Record<string, unknown>[]}>
@@ -391,9 +401,18 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
     case 'multi_line': {
       // Multi-line chart: multiple series grouped by series_key
       // Data format: [{symbol: 'AAPL', date: '20250101', rsi: 28.5}, ...]
+      // multi_line도 x_field, y_field, series_key 필수
+      if (!xKey || !yKey) {
+        return (
+          <div className="flex items-center justify-center h-full text-yellow-400 text-xs p-2">
+            ⚠️ multi_line 차트에는 x_field, y_field, series_key 지정 필요<br/>
+            사용 가능한 필드: {keys.join(', ')}
+          </div>
+        );
+      }
       const seriesKey = (options?.series_key as string) || 'symbol';
-      const xFieldKey = (options?.x_field as string) || xKey;
-      const yFieldKey = (options?.y_field as string) || yKey;
+      const xFieldKey = xKey;
+      const yFieldKey = yKey;
       
       // Group data by series_key
       const groupedData: Record<string, Record<string, unknown>[]> = {};
@@ -505,8 +524,8 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
       const radarData = data.map((item) => {
         const d = item as Record<string, unknown>;
         return {
-          subject: d.subject || d.name || d.label || d[xKey],
-          value: d.value || d[yKey],
+          subject: d.subject || d.name || d.label || (xKey ? d[xKey] : ''),
+          value: d.value || (yKey ? d[yKey] : 0),
           fullMark: 100,
         };
       });

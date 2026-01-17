@@ -1,0 +1,111 @@
+{
+  "id": "backtest-summary-stock",
+  "version": "1.0.0",
+  "name": "백테스트 요약 DisplayNode - 해외주식",
+  "description": "BacktestEngineNode summary 출력 - 다양한 성과지표 bar 차트",
+  "tags": ["backtest", "summary", "display", "overseas_stock", "bar"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NASDAQ", "symbol": "GOOGL"}
+      ],
+      "position": {"x": 350, "y": 100}
+    },
+    {
+      "id": "historical",
+      "type": "HistoricalDataNode",
+      "category": "market",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "start_date": "{{ days_ago_yyyymmdd(365) }}",
+      "end_date": "{{ today_yyyymmdd() }}",
+      "interval": "1d",
+      "position": {"x": 550, "y": 200}
+    },
+    {
+      "id": "rsiCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "RSI",
+      "mode": "backtest",
+      "fields": {"period": 14, "threshold": 30, "direction": "below"},
+      "ohlcv_data": "{{ nodes.historical.ohlcv_data }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 750, "y": 200}
+    },
+    {
+      "id": "backtest",
+      "type": "BacktestEngineNode",
+      "category": "backtest",
+      "initial_capital": 10000,
+      "commission_rate": 0.001,
+      "ohlcv_data": "{{ nodes.historical.ohlcv_data }}",
+      "signals": "{{ nodes.rsiCondition.signals }}",
+      "position_sizing": "kelly",
+      "exit_rules": {
+        "stop_loss_percent": 5,
+        "take_profit_percent": 15
+      },
+      "position": {"x": 950, "y": 200}
+    },
+    {
+      "id": "displaySummary",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "bar",
+      "title": "백테스트 성과 요약",
+      "data": "{{ nodes.backtest.summary }}",
+      "x_field": "metric",
+      "y_field": "value",
+      "position": {"x": 1150, "y": 100}
+    },
+    {
+      "id": "displayEquity",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "equity_curve",
+      "title": "자산곡선",
+      "data": "{{ nodes.backtest.equity_curve }}",
+      "x_field": "date",
+      "y_field": "equity",
+      "benchmark_field": "benchmark",
+      "position": {"x": 1150, "y": 300}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "rsiCondition"},
+    {"from": "rsiCondition", "to": "backtest"},
+    {"from": "backtest", "to": "displaySummary"},
+    {"from": "backtest", "to": "displayEquity"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": false}
+    }
+  ]
+}

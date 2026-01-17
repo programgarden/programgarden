@@ -1,0 +1,133 @@
+{
+  "id": "portfolio-dual-strategy",
+  "version": "1.0.0",
+  "name": "PortfolioNode 듀얼 전략 - 해외주식",
+  "description": "RSI + MACD 두 전략 백테스트 결과를 포트폴리오로 합산",
+  "tags": ["portfolio", "backtest", "overseas_stock", "multi_line"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "category": "infra",
+      "position": {"x": 50, "y": 250}
+    },
+    {
+      "id": "broker",
+      "type": "BrokerNode",
+      "category": "infra",
+      "provider": "ls-sec.co.kr",
+      "product": "overseas_stock",
+      "credential_id": "broker-cred",
+      "position": {"x": 200, "y": 250}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "category": "symbol",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NASDAQ", "symbol": "NVDA"},
+        {"exchange": "NASDAQ", "symbol": "MSFT"}
+      ],
+      "position": {"x": 350, "y": 150}
+    },
+    {
+      "id": "historical",
+      "type": "HistoricalDataNode",
+      "category": "market",
+      "connection": "{{ nodes.broker.connection }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "start_date": "{{ days_ago_yyyymmdd(365) }}",
+      "end_date": "{{ today_yyyymmdd() }}",
+      "interval": "1d",
+      "position": {"x": 550, "y": 250}
+    },
+    {
+      "id": "rsiCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "RSI",
+      "mode": "backtest",
+      "fields": {"period": 14, "threshold": 30, "direction": "below"},
+      "ohlcv_data": "{{ nodes.historical.ohlcv_data }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 750, "y": 100}
+    },
+    {
+      "id": "macdCondition",
+      "type": "ConditionNode",
+      "category": "condition",
+      "plugin": "MACD",
+      "mode": "backtest",
+      "fields": {"fast_period": 12, "slow_period": 26, "signal_period": 9, "signal": "bullish_cross"},
+      "ohlcv_data": "{{ nodes.historical.ohlcv_data }}",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 750, "y": 400}
+    },
+    {
+      "id": "backtestRSI",
+      "type": "BacktestEngineNode",
+      "category": "backtest",
+      "initial_capital": 5000,
+      "commission_rate": 0.001,
+      "ohlcv_data": "{{ nodes.historical.ohlcv_data }}",
+      "signals": "{{ nodes.rsiCondition.signals }}",
+      "position": {"x": 950, "y": 100}
+    },
+    {
+      "id": "backtestMACD",
+      "type": "BacktestEngineNode",
+      "category": "backtest",
+      "initial_capital": 5000,
+      "commission_rate": 0.001,
+      "ohlcv_data": "{{ nodes.historical.ohlcv_data }}",
+      "signals": "{{ nodes.macdCondition.signals }}",
+      "position": {"x": 950, "y": 400}
+    },
+    {
+      "id": "portfolio",
+      "type": "PortfolioNode",
+      "category": "risk",
+      "total_capital": 10000,
+      "allocation_method": "equal",
+      "rebalance_rule": "none",
+      "strategy_results": [
+        "{{ nodes.backtestRSI.equity_curve }}",
+        "{{ nodes.backtestMACD.equity_curve }}"
+      ],
+      "position": {"x": 1150, "y": 250}
+    },
+    {
+      "id": "display",
+      "type": "DisplayNode",
+      "category": "display",
+      "chart_type": "multi_line",
+      "title": "전략별 자산곡선 비교",
+      "data": "{{ nodes.portfolio.combined_equity }}",
+      "x_field": "date",
+      "y_field": "equity",
+      "series_key": "strategy",
+      "position": {"x": 1350, "y": 250}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "rsiCondition"},
+    {"from": "historical", "to": "macdCondition"},
+    {"from": "rsiCondition", "to": "backtestRSI"},
+    {"from": "macdCondition", "to": "backtestMACD"},
+    {"from": "backtestRSI", "to": "portfolio"},
+    {"from": "backtestMACD", "to": "portfolio"},
+    {"from": "portfolio", "to": "display"}
+  ],
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls",
+      "name": "LS증권 API",
+      "data": {"appkey": "", "appsecret": "", "paper_trading": false}
+    }
+  ]
+}
