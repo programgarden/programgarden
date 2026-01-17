@@ -837,10 +837,11 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
 {
   "id": "chart",
   "type": "DisplayNode",
-  "config": {
-    "chart_type": "table",
-    "data": "{{ nodes.realMarket.data }}"
-  }
+  "chart_type": "line",
+  "title": "RSI 시계열",
+  "data": "{{ flatten(nodes.rsiCondition.values, 'time_series') }}",
+  "x_field": "date",
+  "y_field": "rsi"
 }
 ```
 
@@ -848,14 +849,22 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
 |------|------|------|------|
 | `chart_type` | string | ❌ | 차트 유형 (기본: table) |
 | `title` | string | ❌ | 차트 제목 |
-| `options` | object | ❌ | 정렬, 필터 등 옵션 |
+| `data` | expression | ✅ | 차트 데이터 (배열) |
+| `x_field` | string | ⚠️ | X축 필드명 (line/multi_line/bar **필수**) |
+| `y_field` | string | ⚠️ | Y축 필드명 (line/multi_line/bar **필수**) |
+| `series_key` | string | ❌ | multi_line에서 시리즈 구분 키 |
+| `columns` | string[] | ❌ | table에서 표시할 컬럼 |
 
-| 차트 타입 | 설명 |
-|----------|------|
-| `line` | 라인 차트 |
-| `candlestick` | 캔들스틱 차트 |
-| `bar` | 바 차트 |
-| `table` | 테이블 |
+| 차트 타입 | 필수 필드 | 설명 |
+|----------|----------|------|
+| `line` | `x_field`, `y_field` | 단일 라인 차트 |
+| `multi_line` | `x_field`, `y_field`, `series_key` | 다중 라인 차트 (종목별) |
+| `candlestick` | `x_field`, `open_field`, `high_field`, `low_field`, `close_field` | 캔들스틱 차트 |
+| `bar` | `x_field`, `y_field` | 바 차트 |
+| `equity_curve` | `x_field`, `y_field` | 자산곡선 (benchmark_field 선택) |
+| `table` | - | 테이블 (columns로 컬럼 지정) |
+
+> ⚠️ **중요**: `line`, `multi_line`, `bar` 차트는 `x_field`와 `y_field`를 **명시적으로 지정**해야 합니다. 자동 추론은 지원하지 않습니다.
 
 **실시간 데이터 연동**:
 

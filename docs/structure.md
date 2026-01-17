@@ -321,6 +321,19 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | `DisplayNode` | 차트/테이블 시각화 (실시간 노드 연동 지원) |
 | `CustomPnLNode` | 커스텀 손익 계산 (멀티계좌, 벤치마크 비교 등) |
 
+**DisplayNode 차트 타입:**
+
+| 차트 타입 | 필수 필드 | 설명 |
+|----------|----------|------|
+| `line` | `x_field`, `y_field` | 단일 라인 차트 |
+| `multi_line` | `x_field`, `y_field`, `series_key` | 다중 라인 차트 (종목별) |
+| `candlestick` | `x_field`, `open/high/low/close_field` | 캔들스틱 차트 |
+| `bar` | `x_field`, `y_field` | 바 차트 |
+| `equity_curve` | `x_field`, `y_field` | 자산곡선 |
+| `table` | - | 테이블 (columns 지정) |
+
+> ⚠️ **중요**: `line`, `multi_line`, `bar` 차트는 `x_field`와 `y_field`를 **명시적으로 지정**해야 합니다.
+
 **DisplayNode 실시간 연동:**
 - `RealMarketDataNode` → `DisplayNode`: 실시간 시세 테이블
 - `RealAccountNode` → `DisplayNode`: 실시간 포지션/잔고 테이블
