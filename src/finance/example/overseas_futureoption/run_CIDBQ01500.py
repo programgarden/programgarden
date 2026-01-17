@@ -17,7 +17,8 @@ async def test_req_CIDBQ01500():
 
     login_result = ls.login(
         appkey=os.getenv("APPKEY_FUTURE_FAKE"),
-        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE")
+        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE"),
+        paper_trading=True
     )
 
     if login_result is False:
@@ -32,7 +33,7 @@ async def test_req_CIDBQ01500():
             RecCnt="1",
             AcntTpCode="1",
             FcmAcntNo="",
-            QryDt="20251101",
+            QryDt="20260117",
             BalTpCode="2"
         )
     )

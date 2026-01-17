@@ -87,14 +87,10 @@ class ConditionNode(PluginNode):
         description="Field name for exchange",
     )
     
-    # === 고급: 추가 입력 (익절/손절 조건에서만 사용) ===
-    held_symbols: Any = Field(
+    # === 익절/손절 플러그인 전용 입력 ===
+    positions: Any = Field(
         default=None,
-        description="Held symbols binding - 익절/손절 조건에서만 필요",
-    )
-    position_data: Any = Field(
-        default=None,
-        description="Position data binding - 익절/손절 조건에서만 필요",
+        description="Positions data binding - 익절/손절 플러그인용 (pnl_rate 포함)",
     )
 
     _inputs: List[InputPort] = [
@@ -105,13 +101,7 @@ class ConditionNode(PluginNode):
             description="i18n:ports.data",
         ),
         InputPort(
-            name="held_symbols",
-            type="symbol_list",
-            description="i18n:ports.held_symbols",
-            required=False,
-        ),
-        InputPort(
-            name="position_data",
+            name="positions",
             type="position_data",
             description="i18n:ports.positions",
             required=False,
@@ -248,43 +238,25 @@ class ConditionNode(PluginNode):
                 group="field_mapping",
             ),
             # === PLUGIN-SPECIFIC: 익절/손절 플러그인에서만 표시 ===
-            "held_symbols": FieldSchema(
-                name="held_symbols",
+            # positions: v3.0.0+ 플러그인용 (ProfitTarget, StopLoss)
+            "positions": FieldSchema(
+                name="positions",
                 type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.held_symbols",
+                description="i18n:fields.ConditionNode.positions",
                 required=False,
                 bindable=True,
                 expression_enabled=True,
                 category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.account.held_symbols }}",
-                example=["AAPL", "TSLA"],
-                example_binding="{{ nodes.account.held_symbols }}",
-                bindable_sources=[
-                    "RealAccountNode.held_symbols",
-                    "AccountNode.held_symbols",
-                ],
-                expected_type="list[str]",
-                visible_when={"plugin": ["ProfitTarget", "StopLoss", "TrailingStop"]},
-                help_text="익절/손절 조건에서 보유 종목 확인용",
-            ),
-            "position_data": FieldSchema(
-                name="position_data",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.position_data",
-                required=False,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.account.positions }}",
-                example={"AAPL": {"qty": 10, "avg_price": 150.0}},
-                example_binding="{{ nodes.account.positions }}",
+                placeholder="{{ nodes.realAccount.positions }}",
+                example={"AAPL": {"qty": 10, "avg_price": 150.0, "pnl_rate": 5.5}},
+                example_binding="{{ nodes.realAccount.positions }}",
                 bindable_sources=[
                     "RealAccountNode.positions",
                     "AccountNode.positions",
                 ],
                 expected_type="dict[str, any]",
                 visible_when={"plugin": ["ProfitTarget", "StopLoss", "TrailingStop"]},
-                help_text="익절/손절 조건에서 평균 매입가 확인용",
+                help_text="보유 포지션 데이터 (수익률 포함)",
             ),
             "symbol_field": FieldSchema(
                 name="symbol_field",

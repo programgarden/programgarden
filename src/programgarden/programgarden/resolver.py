@@ -345,11 +345,12 @@ class WorkflowResolver:
 
             # Extract config (exclude base fields)
             # For plugin nodes, exclude "fields" from config (will be passed separately)
+            # But keep "plugin" in config for plugin_id lookup
             # For non-plugin nodes like MarketDataNode, keep "fields" in config
             if node_type in PLUGIN_NODE_TYPES:
                 config = {
                     k: v for k, v in node_def.items()
-                    if k not in {"id", "type", "category", "position", "plugin", "fields"}
+                    if k not in {"id", "type", "category", "position", "fields"}  # "plugin" 유지
                 }
             else:
                 config = {

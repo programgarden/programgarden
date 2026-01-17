@@ -1,15 +1,14 @@
 """
 Profit Target (익절) 플러그인
 
-입력 형식 (ConditionNode와 통일):
-- data: 평탄화된 배열 [{date, close, symbol, exchange, ...}, ...]
-- fields: {percent}
-- field_mapping: {close_field, symbol_field, exchange_field}
-- symbols: [{exchange, symbol}, ...]
-- position_data: 포지션 정보 (선택)
+입력 형식:
+- positions: RealAccountNode의 positions 출력 {symbol: {pnl_rate, current_price, ...}}
+- fields: {target_percent}
+
+※ 시계열 데이터(data) 불필요 - positions의 pnl_rate를 직접 사용
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
@@ -18,78 +17,81 @@ PROFIT_TARGET_SCHEMA = PluginSchema(
     id="ProfitTarget",
     name="Profit Target",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="2.0.0",
+    version="3.0.0",
     description="Checks if holdings have reached the target profit rate. Example: Sell to realize profit when gain exceeds 5%.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
-        "percent": {"type": "float", "default": 5.0, "title": "Target Profit (%)"},
+        "target_percent": {"type": "float", "default": 5.0, "title": "Target Profit (%)"},
     },
-    required_data=["data"],
-    tags=["exit", "profit"],
+    required_data=["positions"],  # 시계열 데이터 불필요, positions만 필요
+    tags=["exit", "profit", "realtime"],
     locales={
         "ko": {
             "name": "목표 수익률 (Profit Target)",
             "description": "보유 종목이 목표 수익률에 도달했는지 확인합니다. 예: 5% 이상 수익이 나면 매도하여 수익 실현.",
-            "fields.percent": "목표 수익률 (%)",
+            "fields.target_percent": "목표 수익률 (%)",
         },
     },
 )
 
 
 async def profit_target_condition(
-    data: List[Dict[str, Any]],
-    fields: Dict[str, Any],
-    field_mapping: Optional[Dict[str, str]] = None,
-    symbols: Optional[List[Dict[str, str]]] = None,
-    position_data: Optional[Dict[str, Any]] = None,
+    positions: Optional[Dict[str, Any]] = None,
+    fields: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> dict:
-    if field_mapping is None:
-        field_mapping = {}
-    if position_data is None:
-        position_data = {}
+    """
+    익절 조건 플러그인
     
-    close_field = field_mapping.get("close_field", "close")
-    symbol_field = field_mapping.get("symbol_field", "symbol")
-    exchange_field = field_mapping.get("exchange_field", "exchange")
+    Args:
+        positions: RealAccountNode의 positions 출력
+                   {symbol: {pnl_rate, current_price, avg_price, qty, ...}}
+        fields: {target_percent: 목표 수익률 %}
     
-    target_percent = fields.get("percent", 5.0)
+    Returns:
+        passed_symbols: 목표 수익률 달성 종목
+        failed_symbols: 미달성 종목
+        symbol_results: 종목별 상세 결과
+    """
+    if positions is None:
+        positions = {}
+    if fields is None:
+        fields = {}
     
-    if not data:
-        return {"passed_symbols": [], "failed_symbols": symbols or [], "symbol_results": [], "values": [], "result": False}
+    target_percent = fields.get("target_percent", fields.get("percent", 5.0))
     
-    grouped_data: Dict[str, List[Dict[str, Any]]] = {}
-    symbol_exchange_map: Dict[str, str] = {}
+    if not positions:
+        return {
+            "passed_symbols": [], 
+            "failed_symbols": [], 
+            "symbol_results": [], 
+            "values": [], 
+            "result": False,
+            "error": "positions 데이터가 없습니다. RealAccountNode 또는 AccountNode의 positions를 연결하세요.",
+        }
     
-    for row in data:
-        sym = row.get(symbol_field, "UNKNOWN")
-        if sym not in grouped_data:
-            grouped_data[sym] = []
-            symbol_exchange_map[sym] = row.get(exchange_field, "UNKNOWN")
-        grouped_data[sym].append(row)
+    passed, failed, symbol_results = [], [], []
     
-    if not symbols:
-        symbols = [{"symbol": s, "exchange": symbol_exchange_map.get(s, "UNKNOWN")} for s in grouped_data.keys()]
-    
-    passed, failed, symbol_results, values = [], [], [], []
-    
-    for sym_info in symbols:
-        symbol = sym_info.get("symbol", "") if isinstance(sym_info, dict) else str(sym_info)
-        exchange = sym_info.get("exchange", "UNKNOWN") if isinstance(sym_info, dict) else symbol_exchange_map.get(symbol, "UNKNOWN")
-        sym_dict = {"exchange": exchange, "symbol": symbol}
+    for symbol, pos_data in positions.items():
+        # positions에서 직접 pnl_rate 사용 (이미 계산되어 있음)
+        pnl_rate = pos_data.get("pnl_rate", 0)
+        current_price = pos_data.get("current_price", 0)
+        exchange = pos_data.get("market_code", "UNKNOWN")
         
-        position = position_data.get(symbol, {})
-        avg_price = position.get("avg_price", 100)
+        # market_code를 거래소명으로 변환
+        exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
+        exchange_name = exchange_map.get(exchange, exchange)
         
-        symbol_data = grouped_data.get(symbol, [])
-        if symbol_data:
-            current_price = float(symbol_data[-1].get(close_field, 100))
-        else:
-            current_price = 100
+        sym_dict = {"exchange": exchange_name, "symbol": symbol}
         
-        pnl_rate = ((current_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0
-        symbol_results.append({"symbol": symbol, "exchange": exchange, "pnl_rate": round(pnl_rate, 2), "current_price": current_price})
-        values.append({"symbol": symbol, "exchange": exchange, "time_series": []})
+        symbol_results.append({
+            "symbol": symbol, 
+            "exchange": exchange_name, 
+            "pnl_rate": round(pnl_rate, 2), 
+            "current_price": current_price,
+            "target_percent": target_percent,
+            "reached": pnl_rate >= target_percent,
+        })
         
         if pnl_rate >= target_percent:
             passed.append(sym_dict)
@@ -97,10 +99,17 @@ async def profit_target_condition(
             failed.append(sym_dict)
     
     return {
-        "passed_symbols": passed, "failed_symbols": failed,
-        "symbol_results": symbol_results, "values": values,
+        "passed_symbols": passed, 
+        "failed_symbols": failed,
+        "symbol_results": symbol_results, 
+        "values": [],  # 시계열 데이터 없음
         "result": len(passed) > 0,
-        "analysis": {"indicator": "ProfitTarget", "target_percent": target_percent},
+        "analysis": {
+            "indicator": "ProfitTarget", 
+            "target_percent": target_percent,
+            "total_positions": len(positions),
+            "reached_count": len(passed),
+        },
     }
 
 

@@ -174,6 +174,9 @@ class FuturesOpenOrder(BaseModel):
     symbol_name: str = Field(default="", description="종목명")
     """종목명"""
     
+    exchange_code: str = Field(default="", description="거래소코드")
+    """거래소코드 (HKEX, CME 등)"""
+    
     is_long: bool = Field(default=True, description="True: 매수, False: 매도")
     """True: 매수, False: 매도"""
     

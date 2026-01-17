@@ -2,7 +2,7 @@
   "id": "stoploss-stock",
   "version": "1.0.0",
   "name": "손절 조건 - 해외주식 실시간",
-  "description": "손실률 5% 이상 시 손절 신호 - table 차트",
+  "description": "손실률 -5% 이하 시 손절 신호 - table 차트",
   "tags": ["condition", "stoploss", "realtime", "overseas_stock", "table"],
   "nodes": [
     {
@@ -33,7 +33,7 @@
       "type": "ConditionNode",
       "category": "condition",
       "plugin": "StopLoss",
-      "fields": {"loss_percent": 5.0},
+      "fields": {"stop_percent": -5.0},
       "positions": "{{ nodes.realAccount.positions }}",
       "position": {"x": 600, "y": 200}
     },
@@ -43,8 +43,8 @@
       "category": "display",
       "chart_type": "table",
       "title": "손절 대상 종목",
-      "data": "{{ nodes.stoplossCondition.passed_symbols }}",
-      "columns": ["symbol", "exchange", "pnl_rate", "current_price"],
+      "data": "{{ nodes.stoplossCondition.symbol_results }}",
+      "columns": ["symbol", "exchange", "pnl_rate", "current_price", "stop_percent", "triggered"],
       "position": {"x": 850, "y": 200}
     }
   ],

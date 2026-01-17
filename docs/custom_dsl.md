@@ -365,11 +365,83 @@ class PluginResult(TypedDict):
 | `symbol_results` | 종목별 계산 결과 (RSI 값, 현재가 등) |
 | `values` | 종목별 그룹화된 시계열 데이터 (DisplayNode 차트용) |
 | `result` | 조건 통과 여부 (passed_symbols > 0) |
-```
 
 ### 4.2 조건 플러그인 (ConditionNode용)
 
-#### 해외 주식 조건 예시
+조건 플러그인은 **필요 데이터 타입**에 따라 두 종류로 나뉩니다:
+
+| 플러그인 타입 | required_data | 필수 입력 | 예시 |
+|--------------|---------------|----------|------|
+| 시계열 기반 | `["data"]` | OHLCV 배열 | RSI, MACD, BollingerBands |
+| 포지션 기반 | `["positions"]` | 포지션 데이터 (pnl_rate 포함) | ProfitTarget, StopLoss |
+
+#### 시계열 기반 플러그인 예시 (RSI)
+
+```python
+from programgarden_core import (
+    BaseStrategyConditionOverseasStock,
+    BaseStrategyConditionResponseOverseasStockType,
+)
+
+class RSI(BaseStrategyConditionOverseasStock):
+    id = "RSI"
+    version = "1.0.0"
+    description = "상대강도지수 조건"
+    securities = ["ls-sec.co.kr"]
+    required_data = ["data"]  # OHLCV 시계열 데이터 필요
+
+    def __init__(self, period: int = 14, oversold: float = 30):
+        super().__init__()
+        self.period = period
+        self.oversold = oversold
+
+    async def execute(self) -> BaseStrategyConditionResponseOverseasStockType:
+        # self.data에서 OHLCV 데이터 접근
+        # RSI 계산 후 조건 평가
+        return {...}
+```
+
+#### 포지션 기반 플러그인 예시 (ProfitTarget v3.0.0)
+
+```python
+from programgarden_core import (
+    BaseStrategyConditionOverseasStock,
+    BaseStrategyConditionResponseOverseasStockType,
+)
+
+class ProfitTarget(BaseStrategyConditionOverseasStock):
+    id = "ProfitTarget"
+    version = "3.0.0"
+    description = "목표 수익률 도달 조건"
+    securities = ["ls-sec.co.kr"]
+    required_data = ["positions"]  # 포지션 데이터만 필요 (시계열 불필요)
+
+    def __init__(self, target_percent: float = 5.0):
+        super().__init__()
+        self.target_percent = target_percent
+
+    async def execute(self) -> BaseStrategyConditionResponseOverseasStockType:
+        # self.positions에서 직접 pnl_rate 확인
+        # positions = {"AAPL": {"qty": 10, "pnl_rate": 5.5}, ...}
+        passed_symbols = []
+        for symbol, pos in (self.positions or {}).items():
+            pnl_rate = pos.get("pnl_rate", 0)
+            if pnl_rate >= self.target_percent:
+                passed_symbols.append({"symbol": symbol, "exchange": pos.get("exchange", "")})
+        
+        return {
+            "condition_id": self.id,
+            "success": len(passed_symbols) > 0,
+            "passed_symbols": passed_symbols,
+            "data": {"target": self.target_percent},
+            "product": "overseas_stock",
+        }
+```
+
+> **v3.0.0 변경사항**: ProfitTarget/StopLoss 플러그인은 `positions` 데이터의 `pnl_rate`를 직접 사용합니다.
+> 시계열 데이터(data)를 통한 수익률 계산이 불필요하여 훨씬 간단해졌습니다.
+
+#### 해외 주식 시계열 조건 예시
 
 ```python
 from programgarden_core import (

@@ -313,6 +313,9 @@ class NodeTypeRegistry:
                     field_schema["visible_when"] = fs.visible_when
                 if hasattr(fs, 'depends_on') and fs.depends_on:
                     field_schema["depends_on"] = fs.depends_on
+                # === 필드 그룹 (UI에서 그룹핑용) ===
+                if hasattr(fs, 'group') and fs.group:
+                    field_schema["group"] = fs.group
             else:
                 # Pydantic 필드에서 추출
                 field_type = str(field_info.annotation) if field_info.annotation else "any"

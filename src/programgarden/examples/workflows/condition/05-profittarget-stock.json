@@ -43,8 +43,8 @@
       "category": "display",
       "chart_type": "table",
       "title": "익절 대상 종목",
-      "data": "{{ nodes.profitCondition.passed_symbols }}",
-      "columns": ["symbol", "exchange", "pnl_rate", "current_price"],
+      "data": "{{ nodes.profitCondition.symbol_results }}",
+      "columns": ["symbol", "exchange", "pnl_rate", "current_price", "target_percent", "reached"],
       "position": {"x": 850, "y": 200}
     }
   ],

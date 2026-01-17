@@ -8,10 +8,13 @@
 - 주문 체결 시 즉시 갱신
 """
 
+import logging
 from decimal import Decimal
 from typing import Dict, List, Optional, Callable, Any, Set
 from datetime import datetime
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 from .models import (
     FuturesPositionItem,
@@ -82,6 +85,9 @@ class FuturesAccountTracker:
         # Task 관리
         self._refresh_task: Optional[asyncio.Task] = None
         self._is_running = False
+        
+        # 에러 상태 저장 (서버 오류 등)
+        self._last_errors: Dict[str, str] = {}
     
     async def start(self):
         """추적 시작"""
@@ -149,23 +155,49 @@ class FuturesAccountTracker:
     
     async def _fetch_positions(self):
         """보유포지션 조회 (CIDBQ01500)"""
+        logger.debug("[_fetch_positions] 조회 시작")
+        
         try:
             from ..accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
             from datetime import datetime as dt
+            
+            query_date = dt.now().strftime("%Y%m%d")
+            logger.debug(f"[_fetch_positions] 요청 파라미터: QryDt={query_date}")
             
             tr = self._accno_client.CIDBQ01500(
                 body=CIDBQ01500InBlock1(
                     RecCnt=1,
                     AcntTpCode="1",  # 위탁
-                    QryDt=dt.now().strftime("%Y%m%d"),
+                    QryDt=query_date,
                     BalTpCode="1",   # 합산
                     FcmAcntNo=""
                 )
             )
             resp = await tr.req_async()
             
-            # 00000: 실전 정상, 00136: 모의투자 정상, 00707: 모의투자 데이터없음
-            if resp.rsp_cd in ("00000", "00136", "00707"):
+            # 응답 로깅
+            logger.debug(f"[_fetch_positions] rsp_cd={resp.rsp_cd}, rsp_msg={getattr(resp, 'rsp_msg', '')}")
+            logger.debug(f"[_fetch_positions] error_msg={getattr(resp, 'error_msg', None)}")
+            
+            block2_count = len(resp.block2) if hasattr(resp, 'block2') and resp.block2 else 0
+            logger.debug(f"[_fetch_positions] block2 개수: {block2_count}")
+            
+            # 첫 번째 아이템 상세 로깅
+            if hasattr(resp, 'block2') and resp.block2:
+                first = resp.block2[0]
+                logger.debug(
+                    f"[_fetch_positions] 첫번째 포지션: "
+                    f"IsuCodeVal={getattr(first, 'IsuCodeVal', '')}, "
+                    f"IsuNm={getattr(first, 'IsuNm', '')}, "
+                    f"BalQty={getattr(first, 'BalQty', 0)}, "
+                    f"BnsTpCode={getattr(first, 'BnsTpCode', '')}, "
+                    f"PchsPrc={getattr(first, 'PchsPrc', 0)}, "
+                    f"OvrsDrvtNowPrc={getattr(first, 'OvrsDrvtNowPrc', 0)}"
+                )
+            
+            # 에러 메시지가 없으면 성공으로 처리
+            if not resp.error_msg:
+                logger.info(f"[_fetch_positions] 응답 성공 (rsp_cd={resp.rsp_cd})")
                 now = datetime.now()
                 old_symbols = set(self._positions.keys())
                 self._positions.clear()
@@ -177,9 +209,16 @@ class FuturesAccountTracker:
                         is_long = getattr(item, 'BnsTpCode', '2') == '2'  # 2: 매수
                         currency = getattr(item, 'CrcyCodeVal', 'USD')
                         
+                        # SymbolSpecManager에서 거래소 코드 조회
+                        spec = self._spec_manager.get_spec(symbol)
+                        exchange_code = spec.exchange_code if spec else ""
+                        if not exchange_code:
+                            logger.warning(f"[_fetch_positions] {symbol}의 exchange_code를 찾을 수 없음")
+                        
                         position = FuturesPositionItem(
                             symbol=symbol,
                             symbol_name=getattr(item, 'IsuNm', ''),
+                            exchange_code=exchange_code,
                             is_long=is_long,
                             quantity=int(getattr(item, 'BalQty', 0)),
                             entry_price=Decimal(str(getattr(item, 'PchsPrc', 0))),
@@ -204,6 +243,11 @@ class FuturesAccountTracker:
                                 position.pnl_rate = -position.pnl_rate
                         
                         self._positions[symbol] = position
+                        logger.debug(f"[_fetch_positions] 포지션 추가: {symbol}@{exchange_code} ({'LONG' if is_long else 'SHORT'}) x{position.quantity}")
+                    
+                    logger.info(f"[_fetch_positions] 총 {len(self._positions)}개 포지션 로드 완료")
+                else:
+                    logger.info("[_fetch_positions] 보유 포지션 없음")
                 
                 # 구독 동기화
                 new_symbols = set(self._positions.keys())
@@ -212,11 +256,23 @@ class FuturesAccountTracker:
                 
                 self._notify_position_change()
                 
+                # 성공 시 에러 상태 클리어
+                self._last_errors.pop("positions", None)
+            else:
+                # HTTP 500 등 서버 에러 시 에러 저장
+                error_msg = f"[포지션 조회 실패] {resp.rsp_msg} (코드: {resp.rsp_cd})"
+                self._last_errors["positions"] = error_msg
+                logger.warning(f"[_fetch_positions] 응답 실패: {resp.error_msg} (rsp_cd={resp.rsp_cd})")
+                
         except Exception as e:
-            print(f"[FuturesAccountTracker] 보유포지션 조회 실패: {e}")
+            error_msg = f"[포지션 조회 실패] {str(e)}"
+            self._last_errors["positions"] = error_msg
+            logger.error(f"[_fetch_positions] 조회 실패: {e}", exc_info=True)
     
     async def _fetch_balance(self):
         """예수금/증거금 조회 (CIDBQ03000)"""
+        logger.debug("[_fetch_balance] 조회 시작")
+        
         try:
             from ..accno.CIDBQ03000.blocks import CIDBQ03000InBlock1
             
@@ -229,8 +285,16 @@ class FuturesAccountTracker:
             )
             resp = await tr.req_async()
             
-            # 성공: error_msg 없고 rsp_cd가 숫자로 시작
-            if not resp.error_msg and resp.rsp_cd and resp.rsp_cd[0].isdigit():
+            # 응답 로깅
+            logger.debug(f"[_fetch_balance] rsp_cd={resp.rsp_cd}, rsp_msg={getattr(resp, 'rsp_msg', '')}")
+            logger.debug(f"[_fetch_balance] error_msg={getattr(resp, 'error_msg', None)}")
+            
+            block2_count = len(resp.block2) if hasattr(resp, 'block2') and resp.block2 else 0
+            logger.debug(f"[_fetch_balance] block2 개수: {block2_count}")
+            
+            # 에러 메시지가 없으면 성공으로 처리
+            if not resp.error_msg:
+                logger.info(f"[_fetch_balance] 응답 성공 (rsp_cd={resp.rsp_cd})")
                 now = datetime.now()
                 
                 # block2에 통화별 예수금 데이터가 있음 (첫번째 USD 기준)
@@ -238,7 +302,9 @@ class FuturesAccountTracker:
                     # USD 데이터 찾기 (없으면 첫번째 사용)
                     item = None
                     for b in resp.block2:
-                        if getattr(b, 'CrcyObjCode', '') == 'USD':
+                        currency_code = getattr(b, 'CrcyObjCode', '')
+                        logger.debug(f"[_fetch_balance] 통화별 데이터: {currency_code}")
+                        if currency_code == 'USD':
                             item = b
                             break
                     if item is None and resp.block2:
@@ -256,22 +322,45 @@ class FuturesAccountTracker:
                             last_updated=now
                         )
                         
+                        logger.info(
+                            f"[_fetch_balance] 예수금=${self._balance.deposit:.2f}, "
+                            f"주문가능=${self._balance.orderable_amount:.2f}, "
+                            f"증거금=${self._balance.total_margin:.2f}"
+                        )
+                        
                         self._notify_balance_change()
+                else:
+                    logger.info("[_fetch_balance] 예수금 데이터 없음")
+                
+                # 성공 시 에러 상태 클리어
+                self._last_errors.pop("balance", None)
+            else:
+                # HTTP 500 등 서버 에러 시 에러 저장
+                error_msg = f"[예수금 조회 실패] {resp.rsp_msg} (코드: {resp.rsp_cd})"
+                self._last_errors["balance"] = error_msg
+                logger.warning(f"[_fetch_balance] 응답 실패: {resp.error_msg} (rsp_cd={resp.rsp_cd})")
                 
         except Exception as e:
-            print(f"[FuturesAccountTracker] 예수금 조회 실패: {e}")
+            error_msg = f"[예수금 조회 실패] {str(e)}"
+            self._last_errors["balance"] = error_msg
+            logger.error(f"[_fetch_balance] 조회 실패: {e}", exc_info=True)
     
     async def _fetch_open_orders(self):
         """미체결 주문 조회 (CIDBQ01800)"""
+        logger.debug("[_fetch_open_orders] 조회 시작")
+        
         try:
             from ..accno.CIDBQ01800.blocks import CIDBQ01800InBlock1
             from datetime import datetime as dt
+            
+            query_date = dt.now().strftime("%Y%m%d")
+            logger.debug(f"[_fetch_open_orders] 요청 파라미터: OrdDt={query_date}")
             
             tr = self._accno_client.CIDBQ01800(
                 body=CIDBQ01800InBlock1(
                     RecCnt=1,
                     IsuCodeVal="",   # 전체 종목
-                    OrdDt=dt.now().strftime("%Y%m%d"),
+                    OrdDt=query_date,
                     ThdayTpCode="",
                     OrdStatCode="2",  # 2: 미체결
                     BnsTpCode="0",    # 0: 전체
@@ -282,18 +371,33 @@ class FuturesAccountTracker:
             )
             resp = await tr.req_async()
             
-            # 성공: error_msg 없고 rsp_cd가 숫자로 시작
-            if not resp.error_msg and resp.rsp_cd and resp.rsp_cd[0].isdigit():
+            # 응답 로깅
+            logger.debug(f"[_fetch_open_orders] rsp_cd={resp.rsp_cd}, rsp_msg={getattr(resp, 'rsp_msg', '')}")
+            logger.debug(f"[_fetch_open_orders] error_msg={getattr(resp, 'error_msg', None)}")
+            
+            block2_count = len(resp.block2) if hasattr(resp, 'block2') and resp.block2 else 0
+            logger.debug(f"[_fetch_open_orders] block2 개수: {block2_count}")
+            
+            # 에러 메시지가 없으면 성공으로 처리
+            if not resp.error_msg:
+                logger.info(f"[_fetch_open_orders] 응답 성공 (rsp_cd={resp.rsp_cd})")
                 now = datetime.now()
                 self._open_orders.clear()
                 
                 # block2에 미체결 데이터가 있음
                 if hasattr(resp, 'block2') and resp.block2:
                     for item in resp.block2:
+                        symbol = getattr(item, 'IsuCodeVal', '')
+                        
+                        # SymbolSpecManager에서 거래소 코드 조회
+                        spec = self._spec_manager.get_spec(symbol)
+                        exchange_code = spec.exchange_code if spec else ""
+                        
                         order = FuturesOpenOrder(
                             order_no=str(getattr(item, 'OrdNo', '')),
-                            symbol=getattr(item, 'IsuCodeVal', ''),
+                            symbol=symbol,
                             symbol_name=getattr(item, 'IsuNm', ''),
+                            exchange_code=exchange_code,
                             is_long=getattr(item, 'BnsTpCode', '2') == '2',
                             order_type=getattr(item, 'OrdPtnCode', ''),
                             order_qty=getattr(item, 'OrdQty', 0),
@@ -305,11 +409,30 @@ class FuturesAccountTracker:
                             last_updated=now
                         )
                         self._open_orders[order.order_no] = order
+                        logger.debug(
+                            f"[_fetch_open_orders] 미체결 추가: #{order.order_no} "
+                            f"{order.symbol}@{exchange_code} {'매수' if order.is_long else '매도'} "
+                            f"{order.order_qty}계약 @{order.order_price}"
+                        )
+                    
+                    logger.info(f"[_fetch_open_orders] 총 {len(self._open_orders)}개 미체결 로드 완료")
+                else:
+                    logger.info("[_fetch_open_orders] 미체결 주문 없음")
                 
                 self._notify_open_orders_change()
                 
+                # 성공 시 에러 상태 클리어
+                self._last_errors.pop("open_orders", None)
+            else:
+                # HTTP 500 등 서버 에러 시 에러 저장
+                error_msg = f"[미체결 조회 실패] {resp.rsp_msg} (코드: {resp.rsp_cd})"
+                self._last_errors["open_orders"] = error_msg
+                logger.warning(f"[_fetch_open_orders] 응답 실패: {resp.error_msg} (rsp_cd={resp.rsp_cd})")
+                
         except Exception as e:
-            print(f"[FuturesAccountTracker] 미체결 조회 실패: {e}")
+            error_msg = f"[미체결 조회 실패] {str(e)}"
+            self._last_errors["open_orders"] = error_msg
+            logger.error(f"[_fetch_open_orders] 조회 실패: {e}", exc_info=True)
     
     async def _setup_subscriptions(self):
         """실시간 구독 설정 (OVC 틱, TC 주문 이벤트)"""
@@ -411,7 +534,7 @@ class FuturesAccountTracker:
                 self._notify_position_change()
                 
         except Exception as e:
-            print(f"[FuturesAccountTracker] 틱 처리 오류: {e}")
+            logger.error(f"[_on_tick_received] 틱 처리 오류: {e}")
     
     def _on_order_event(self, resp):
         """주문 이벤트 수신 → 체결 시 재조회"""
@@ -420,10 +543,11 @@ class FuturesAccountTracker:
             service_id = getattr(resp.body, 'svcId', '')
             
             if service_id == 'HO02':
+                logger.info("[_on_order_event] 체결 이벤트 수신, 재조회 예약")
                 asyncio.create_task(self._delayed_refresh())
                 
         except Exception as e:
-            print(f"[FuturesAccountTracker] 주문 이벤트 처리 오류: {e}")
+            logger.error(f"[_on_order_event] 주문 이벤트 처리 오류: {e}")
     
     async def _delayed_refresh(self):
         """체결 후 지연 재조회"""
@@ -499,6 +623,17 @@ class FuturesAccountTracker:
     def get_open_orders(self) -> Dict[str, FuturesOpenOrder]:
         """미체결 주문 조회"""
         return self._open_orders.copy()
+    
+    def get_last_errors(self) -> Dict[str, str]:
+        """마지막 에러 상태 조회
+        
+        Returns:
+            Dict[str, str]: 키별 에러 메시지
+                - "positions": 포지션 조회 에러
+                - "balance": 예수금 조회 에러
+                - "open_orders": 미체결 조회 에러
+        """
+        return self._last_errors.copy()
     
     def get_current_price(self, symbol: str) -> Optional[Decimal]:
         """실시간 현재가 조회"""

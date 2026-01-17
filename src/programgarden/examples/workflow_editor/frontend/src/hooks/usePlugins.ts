@@ -25,6 +25,7 @@ export interface PluginSchema {
   fields_schema: Record<string, PluginFieldSchema>;
   tags?: string[];
   locales?: Record<string, Record<string, string>>;  // 다국어 지원
+  required_data?: string[];  // 필요한 데이터 타입 (예: ['data'], ['positions'])
 }
 
 // 플러그인 목록에서 간략 정보

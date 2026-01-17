@@ -8,6 +8,7 @@
 - WebSocket 공유 및 중복 방지
 """
 
+import logging
 from decimal import Decimal
 from typing import Dict, List, Optional, Callable, Any, Set
 from datetime import datetime
@@ -21,6 +22,8 @@ from .models import (
 )
 from .calculator import StockPnLCalculator
 from .subscription_manager import SubscriptionManager
+
+logger = logging.getLogger(__name__)
 
 
 class StockAccountTracker:
@@ -82,6 +85,9 @@ class StockAccountTracker:
         # Task 관리
         self._refresh_task: Optional[asyncio.Task] = None
         self._is_running = False
+        
+        # 에러 상태 저장 (서버 오류 등)
+        self._last_errors: Dict[str, str] = {}
     
     async def start(self):
         """추적 시작"""
@@ -208,12 +214,19 @@ class StockAccountTracker:
                 # 콜백 호출
                 self._notify_position_change()
                 self._notify_balance_change()
+                
+                # 성공 시 에러 상태 클리어
+                self._last_errors.pop("positions", None)
             else:
                 # API 에러 응답
-                print(f"[StockAccountTracker] COSOQ00201 응답 코드 {resp.rsp_cd}: {getattr(resp, 'rsp_msg', 'Unknown error')}")
+                error_msg = f"[포지션 조회 실패] {getattr(resp, 'rsp_msg', 'Unknown error')} (코드: {resp.rsp_cd})"
+                self._last_errors["positions"] = error_msg
+                logger.warning(f"[_fetch_positions] 응답 실패: {error_msg}")
                 
         except Exception as e:
-            print(f"COSOQ00201 request failed with status: {e}")
+            error_msg = f"[포지션 조회 실패] {str(e)}"
+            self._last_errors["positions"] = error_msg
+            logger.error(f"[_fetch_positions] 조회 실패: {e}", exc_info=True)
     
     async def _fetch_open_orders(self):
         """미체결 주문 조회 (COSAQ00102)"""
@@ -264,8 +277,18 @@ class StockAccountTracker:
                 
                 self._notify_open_orders_change()
                 
+                # 성공 시 에러 상태 클리어
+                self._last_errors.pop("open_orders", None)
+            else:
+                # API 에러 응답
+                error_msg = f"[미체결 조회 실패] {getattr(resp, 'rsp_msg', 'Unknown error')} (코드: {resp.rsp_cd})"
+                self._last_errors["open_orders"] = error_msg
+                logger.warning(f"[_fetch_open_orders] 응답 실패: {error_msg}")
+                
         except Exception as e:
-            print(f"[StockAccountTracker] 미체결 조회 실패: {e}")
+            error_msg = f"[미체결 조회 실패] {str(e)}"
+            self._last_errors["open_orders"] = error_msg
+            logger.error(f"[_fetch_open_orders] 조회 실패: {e}", exc_info=True)
     
     async def _setup_subscriptions(self):
         """실시간 구독 설정 (GSC 틱, AS 주문 이벤트)"""
@@ -464,6 +487,16 @@ class StockAccountTracker:
     def get_open_orders(self) -> Dict[str, StockOpenOrder]:
         """미체결 주문 조회"""
         return self._open_orders.copy()
+    
+    def get_last_errors(self) -> Dict[str, str]:
+        """마지막 에러 상태 조회
+        
+        Returns:
+            Dict[str, str]: 키별 에러 메시지
+                - "positions": 포지션 조회 에러
+                - "open_orders": 미체결 조회 에러
+        """
+        return self._last_errors.copy()
     
     def get_current_price(self, symbol: str) -> Optional[Decimal]:
         """실시간 현재가 조회"""

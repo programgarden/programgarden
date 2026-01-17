@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { getCategoryColor } from '@/utils/nodeColors';
 import { getNodeLabel } from '@/utils/nodeLabels';
@@ -97,6 +97,9 @@ export default function PropertiesPanel() {
   const [credentialTypeForModal, setCredentialTypeForModal] = useState<string | undefined>();
   const { getPluginsForNodeType, getPluginSchema } = usePlugins();
   
+  // 현재 선택된 플러그인의 required_data (positions 기반인지 data 기반인지 확인용)
+  const [pluginRequiredData, setPluginRequiredData] = useState<string[]>([]);
+  
   // useRef로 마지막 포커스된 필드 기억 (탭 전환해도 유지)
   const lastFocusedFieldRef = useRef<string | null>(null);
 
@@ -126,6 +129,25 @@ export default function PropertiesPanel() {
     // 최신 nodeTypes에서 config_schema 가져오기, 없으면 노드에 저장된 것 사용
     return (schema?.config_schema || (selectedNode.data as Record<string, unknown>).configSchema || {}) as Record<string, ConfigField>;
   }, [selectedNode, nodeTypes]);
+
+  // 플러그인 선택 시 required_data 로드
+  useEffect(() => {
+    const loadPluginRequiredData = async () => {
+      if (!selectedNode) {
+        setPluginRequiredData([]);
+        return;
+      }
+      const nodeData = selectedNode.data as Record<string, unknown>;
+      const pluginId = nodeData.plugin as string | undefined;
+      if (!pluginId) {
+        setPluginRequiredData([]);
+        return;
+      }
+      const schema = await getPluginSchema(pluginId);
+      setPluginRequiredData(schema?.required_data || ['data']);
+    };
+    loadPluginRequiredData();
+  }, [selectedNode, getPluginSchema]);
 
   // 필드 클릭 핸들러 (Input 탭에서 필드 클릭 시)
   const handleFieldClick = useCallback((expression: string) => {
@@ -332,16 +354,31 @@ export default function PropertiesPanel() {
               const isPluginNode = ['ConditionNode'].includes(nodeType);
               const currentPluginId = nodeData.plugin as string | undefined;
               
+              // positions 기반 플러그인인지 확인 (required_data에 positions만 있고 data가 없으면)
+              const isPositionsBasedPlugin = isPluginNode && 
+                pluginRequiredData.includes('positions') && 
+                !pluginRequiredData.includes('data');
+              
+              // field_mapping 필드 목록 (시계열 데이터용 - positions 기반 플러그인에서는 불필요)
+              const fieldMappingFieldNames = ['close_field', 'open_field', 'high_field', 'low_field', 'volume_field', 'date_field', 'symbol_field', 'exchange_field'];
+              // 레거시 필드 (positions로 대체됨)
+              const legacyFieldNames = ['position_data', 'held_symbols'];
+              
               // fields 필드는 PluginFieldsGroup에서 처리하므로 제외
               // visible_when/depends_on 조건에 따라 필드 필터링
               // field_mapping 그룹은 별도 섹션으로 분리
-              const fieldMappingFields = paramFields
-                .filter(([, schema]) => schema.group === 'field_mapping')
-                .filter(([, schema]) => shouldShowField(schema, nodeData));
+              // positions 기반 플러그인이면 field_mapping 그룹 전체 숨김
+              const fieldMappingFields = isPositionsBasedPlugin 
+                ? []
+                : paramFields
+                    .filter(([key, schema]) => schema.group === 'field_mapping' || fieldMappingFieldNames.includes(key))
+                    .filter(([, schema]) => shouldShowField(schema, nodeData));
               
+              // positions 기반 플러그인이면 data 필드, field_mapping 필드, 레거시 필드 숨김
               const filteredParamFields = paramFields
                 .filter(([key]) => !isPluginNode || key !== 'fields')
-                .filter(([, schema]) => schema.group !== 'field_mapping')  // field_mapping 그룹 제외
+                .filter(([key, schema]) => schema.group !== 'field_mapping' && !fieldMappingFieldNames.includes(key))  // field_mapping 제외
+                .filter(([key]) => !isPositionsBasedPlugin || (key !== 'data' && !legacyFieldNames.includes(key)))  // positions 기반이면 data/레거시 숨김
                 .filter(([, schema]) => shouldShowField(schema, nodeData));
               
               // Advanced 필드도 조건에 따라 필터링
@@ -373,7 +410,7 @@ export default function PropertiesPanel() {
                         onPluginChange={async (pluginId) => {
                           // 플러그인 변경 시 fields 완전 초기화 후 새 기본값 설정
                           handleFieldChange('plugin', pluginId);
-                          // 플러그인 스키마 가져와서 기본값 설정
+                          // 플러그인 스키마 가져와서 기본값 설정 및 required_data 업데이트
                           const pluginSchema = await getPluginSchema(pluginId);
                           if (pluginSchema?.fields_schema) {
                             const defaultFields = getDefaultFieldsFromSchema(pluginSchema.fields_schema);
@@ -382,6 +419,8 @@ export default function PropertiesPanel() {
                           } else {
                             handleFieldChange('fields', {});
                           }
+                          // required_data 업데이트 (positions 기반/data 기반 판단용)
+                          setPluginRequiredData(pluginSchema?.required_data || ['data']);
                         }}
                       />
                       
