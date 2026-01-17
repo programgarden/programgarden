@@ -16,16 +16,23 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 
 PROFIT_TARGET_SCHEMA = PluginSchema(
     id="ProfitTarget",
-    name="Profit Target (익절)",
+    name="Profit Target",
     category=PluginCategory.STRATEGY_CONDITION,
     version="2.0.0",
-    description="목표 수익률 도달 조건 (data + field_mapping 패턴)",
+    description="Checks if holdings have reached the target profit rate. Example: Sell to realize profit when gain exceeds 5%.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
-        "percent": {"type": "float", "default": 5.0, "title": "목표 수익률 (%)"},
+        "percent": {"type": "float", "default": 5.0, "title": "Target Profit (%)"},
     },
     required_data=["data"],
     tags=["exit", "profit"],
+    locales={
+        "ko": {
+            "name": "목표 수익률 (Profit Target)",
+            "description": "보유 종목이 목표 수익률에 도달했는지 확인합니다. 예: 5% 이상 수익이 나면 매도하여 수익 실현.",
+            "fields.percent": "목표 수익률 (%)",
+        },
+    },
 )
 
 

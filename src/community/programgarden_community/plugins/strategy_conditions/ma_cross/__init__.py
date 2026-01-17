@@ -15,18 +15,27 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 
 MA_CROSS_SCHEMA = PluginSchema(
     id="MovingAverageCross",
-    name="이동평균선 크로스 (Golden/Dead Cross)",
+    name="Moving Average Cross",
     category=PluginCategory.STRATEGY_CONDITION,
     version="2.0.0",
-    description="단기/장기 이동평균선 크로스오버 조건 (data + field_mapping 패턴)",
+    description="Golden Cross (bullish) when short MA crosses above long MA, Dead Cross (bearish) when crossing below.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
-        "short_period": {"type": "int", "default": 5, "title": "단기 MA 기간"},
-        "long_period": {"type": "int", "default": 20, "title": "장기 MA 기간"},
-        "cross_type": {"type": "string", "default": "golden", "enum": ["golden", "dead"]},
+        "short_period": {"type": "int", "default": 5, "title": "Short MA Period"},
+        "long_period": {"type": "int", "default": 20, "title": "Long MA Period"},
+        "cross_type": {"type": "string", "default": "golden", "enum": ["golden", "dead"], "title": "Cross Type"},
     },
     required_data=["data"],
     tags=["trend", "moving_average", "crossover"],
+    locales={
+        "ko": {
+            "name": "이동평균선 크로스 (MA Cross)",
+            "description": "단기 이동평균이 장기 이동평균을 위로 돌파하면 골든크로스(상승 신호), 아래로 돌파하면 데드크로스(하락 신호)로 해석합니다.",
+            "fields.short_period": "단기 MA 기간",
+            "fields.long_period": "장기 MA 기간",
+            "fields.cross_type": "크로스 유형",
+        },
+    },
 )
 
 

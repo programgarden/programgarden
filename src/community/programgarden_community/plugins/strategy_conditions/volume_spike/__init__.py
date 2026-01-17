@@ -17,25 +17,33 @@ VOLUME_SPIKE_SCHEMA = PluginSchema(
     name="Volume Spike",
     category=PluginCategory.STRATEGY_CONDITION,
     version="1.1.0",
-    description="거래량 급증 조건",
+    description="Finds stocks with significantly higher trading volume than usual. Volume spikes can signal increased interest or trend changes.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
         "period": {
             "type": "int",
             "default": 20,
-            "title": "평균 기간",
+            "title": "Average Period",
             "ge": 5,
         },
         "multiplier": {
             "type": "float",
             "default": 2.0,
-            "title": "배수",
-            "description": "평균 거래량 대비 배수",
+            "title": "Multiplier",
+            "description": "Multiplier compared to average volume",
             "ge": 1.0,
         },
     },
     required_data=["data"],
     tags=["volume"],
+    locales={
+        "ko": {
+            "name": "거래량 급증 (Volume Spike)",
+            "description": "평소보다 거래량이 크게 증가한 종목을 찾습니다. 거래량 급증은 관심 증가나 추세 변화의 신호일 수 있습니다.",
+            "fields.period": "평균 기간",
+            "fields.multiplier": "배수",
+        },
+    },
 )
 
 

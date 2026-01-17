@@ -16,16 +16,23 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 
 STOP_LOSS_SCHEMA = PluginSchema(
     id="StopLoss",
-    name="Stop Loss (손절)",
+    name="Stop Loss",
     category=PluginCategory.STRATEGY_CONDITION,
     version="2.0.0",
-    description="손절 조건 (data + field_mapping 패턴)",
+    description="Sells when losses exceed the set threshold to prevent larger losses. Example: Auto-sell at -3% loss.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
-        "percent": {"type": "float", "default": -3.0, "title": "손절 비율 (%)"},
+        "percent": {"type": "float", "default": -3.0, "title": "Stop Loss (%)"},
     },
     required_data=["data"],
     tags=["exit", "risk"],
+    locales={
+        "ko": {
+            "name": "손절 라인 (Stop Loss)",
+            "description": "보유 종목의 손실이 설정한 기준을 넘으면 매도하여 더 큰 손실을 방지합니다. 예: -3% 손실 시 자동 매도.",
+            "fields.percent": "손절 비율 (%)",
+        },
+    },
 )
 
 

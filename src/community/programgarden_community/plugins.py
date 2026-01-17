@@ -22,10 +22,10 @@ def register_all_plugins() -> None:
         plugin_callable=_rsi_condition,
         schema=PluginSchema(
             id="RSI",
-            name="RSI (Relative Strength Index)",
+            name="RSI (상대강도지수)",
             category=PluginCategory.STRATEGY_CONDITION,
             version="2.0.0",
-            description="RSI overbought/oversold condition (data + field_mapping 패턴)",
+            description="주가가 과매도(너무 많이 팔림) 또는 과매수(너무 많이 삼) 상태인지 판단합니다. RSI가 30 이하면 싸게 살 수 있는 기회, 70 이상이면 비싸게 팔 수 있는 기회를 나타냅니다.",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "period": {"type": "int", "default": 14, "description": "RSI period"},
@@ -52,10 +52,10 @@ def register_all_plugins() -> None:
         plugin_callable=_macd_condition,
         schema=PluginSchema(
             id="MACD",
-            name="MACD (Moving Average Convergence Divergence)",
+            name="MACD (이동평균 수렴확산)",
             category=PluginCategory.STRATEGY_CONDITION,
             version="2.0.0",
-            description="MACD 크로스오버 조건 (data + field_mapping 패턴)",
+            description="단기와 장기 이동평균의 교차를 통해 추세 전환점을 찾습니다. MACD 선이 신호선을 위로 돌파하면 상승 신호, 아래로 돌파하면 하락 신호로 해석합니다.",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "fast_period": {"type": "int", "default": 12},
@@ -74,10 +74,10 @@ def register_all_plugins() -> None:
         plugin_callable=_bollinger_condition,
         schema=PluginSchema(
             id="BollingerBands",
-            name="Bollinger Bands",
+            name="볼린저밴드",
             category=PluginCategory.STRATEGY_CONDITION,
             version="2.0.0",
-            description="볼린저밴드 조건 (data + field_mapping 패턴)",
+            description="주가가 평균에서 얼마나 벗어났는지 판단합니다. 하단 밴드 근처면 저평가, 상단 밴드 근처면 고평가 상태를 나타냅니다.",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "period": {"type": "int", "default": 20},
@@ -95,10 +95,10 @@ def register_all_plugins() -> None:
         plugin_callable=_volume_spike_condition,
         schema=PluginSchema(
             id="VolumeSpike",
-            name="Volume Spike",
+            name="거래량 급증",
             category=PluginCategory.STRATEGY_CONDITION,
             version="1.0.0",
-            description="거래량 급증 조건",
+            description="평소보다 거래량이 크게 증가한 종목을 찾습니다. 거래량 급증은 관심 증가나 추세 변화의 신호일 수 있습니다.",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "period": {"type": "int", "default": 20, "description": "평균 기간"},
@@ -115,10 +115,10 @@ def register_all_plugins() -> None:
         plugin_callable=_profit_target_condition,
         schema=PluginSchema(
             id="ProfitTarget",
-            name="Profit Target (익절)",
+            name="목표 수익률 (익절)",
             category=PluginCategory.STRATEGY_CONDITION,
             version="2.0.0",
-            description="목표 수익률 도달 조건 (data + field_mapping 패턴)",
+            description="보유 종목이 목표 수익률에 도달했는지 확인합니다. 예: 5% 이상 수익이 나면 매도하여 수익 실현.",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "percent": {"type": "float", "default": 5, "description": "목표 수익률 (%)"},
@@ -134,10 +134,10 @@ def register_all_plugins() -> None:
         plugin_callable=_stop_loss_condition,
         schema=PluginSchema(
             id="StopLoss",
-            name="Stop Loss (손절)",
+            name="손절 라인",
             category=PluginCategory.STRATEGY_CONDITION,
             version="2.0.0",
-            description="손절 조건 (data + field_mapping 패턴)",
+            description="보유 종목의 손실이 설정한 기준을 넘으면 매도하여 더 큰 손실을 방지합니다. 예: -3% 손실 시 자동 매도.",
             products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
             fields_schema={
                 "percent": {"type": "float", "default": -3, "description": "손절 비율 (%, 음수)"},
@@ -155,10 +155,10 @@ def register_all_plugins() -> None:
         plugin_callable=_market_order,
         schema=PluginSchema(
             id="MarketOrder",
-            name="Market Order (시장가 주문)",
+            name="시장가 주문",
             category=PluginCategory.NEW_ORDER,
             version="1.0.0",
-            description="시장가 주문 실행",
+            description="현재 시장 가격으로 즉시 매수/매도합니다. 빠른 체결이 중요할 때 사용합니다.",
             products=[ProductType.OVERSEAS_STOCK],
             fields_schema={
                 "side": {"type": "string", "enum": ["buy", "sell"], "required": True},
@@ -174,10 +174,10 @@ def register_all_plugins() -> None:
         plugin_callable=_limit_order,
         schema=PluginSchema(
             id="LimitOrder",
-            name="Limit Order (지정가 주문)",
+            name="지정가 주문",
             category=PluginCategory.NEW_ORDER,
             version="1.0.0",
-            description="지정가 주문 실행",
+            description="원하는 가격을 지정하여 주문합니다. 해당 가격에 도달해야 체결되므로 원하는 가격에 매수/매도할 수 있습니다.",
             products=[ProductType.OVERSEAS_STOCK],
             fields_schema={
                 "side": {"type": "string", "enum": ["buy", "sell"], "required": True},
@@ -196,10 +196,10 @@ def register_all_plugins() -> None:
         plugin_callable=_tracking_price_modifier,
         schema=PluginSchema(
             id="TrackingPriceModifier",
-            name="Tracking Price Modifier (가격 추적 정정)",
+            name="가격 추적 정정",
             category=PluginCategory.MODIFY_ORDER,
             version="1.0.0",
-            description="현재가를 추적하여 지정가 정정",
+            description="미체결 주문의 가격을 현재가에 맞춰 자동 정정합니다. 주가가 움직여도 체결 확률을 높일 수 있습니다.",
             products=[ProductType.OVERSEAS_STOCK],
             fields_schema={
                 "price_gap_percent": {"type": "float", "default": 0.5, "description": "현재가 대비 가격 차이 (%)"},
@@ -217,10 +217,10 @@ def register_all_plugins() -> None:
         plugin_callable=_time_stop_canceller,
         schema=PluginSchema(
             id="TimeStopCanceller",
-            name="Time Stop Canceller (시간 초과 취소)",
+            name="시간 초과 취소",
             category=PluginCategory.CANCEL_ORDER,
             version="1.0.0",
-            description="지정 시간 초과 시 미체결 주문 취소",
+            description="주문 후 일정 시간이 지나도 체결되지 않으면 자동으로 취소합니다. 예: 30분 내 미체결 시 취소.",
             products=[ProductType.OVERSEAS_STOCK],
             fields_schema={
                 "timeout_minutes": {"type": "int", "default": 30, "description": "타임아웃 (분)"},

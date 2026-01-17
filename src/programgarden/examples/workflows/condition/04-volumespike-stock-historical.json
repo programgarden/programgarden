@@ -1,81 +1,126 @@
 {
   "id": "volumespike-stock-historical",
-  "version": "1.0.0",
   "name": "거래량급증 조건 - 해외주식 과거데이터",
   "description": "20일 평균 대비 200% 이상 거래량 급증 - bar 차트",
-  "tags": ["condition", "volumespike", "historical", "overseas_stock", "bar"],
   "nodes": [
     {
       "id": "start",
       "type": "StartNode",
       "category": "infra",
-      "position": {"x": 50, "y": 200}
+      "position": {
+        "x": 50,
+        "y": 200
+      }
     },
     {
       "id": "broker",
       "type": "BrokerNode",
       "category": "infra",
+      "position": {
+        "x": 200,
+        "y": 200
+      },
       "provider": "ls-sec.co.kr",
       "product": "overseas_stock",
-      "credential_id": "broker-cred",
-      "position": {"x": 200, "y": 200}
+      "credential_id": "7c5caa90-f013-44fd-855d-410437c86737"
     },
     {
       "id": "watchlist",
       "type": "WatchlistNode",
       "category": "symbol",
+      "position": {
+        "x": 350,
+        "y": 100
+      },
       "symbols": [
-        {"exchange": "NASDAQ", "symbol": "NVDA"},
-        {"exchange": "NASDAQ", "symbol": "AMD"}
-      ],
-      "position": {"x": 350, "y": 100}
+        {
+          "exchange": "NASDAQ",
+          "symbol": "NVDA"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "AMD"
+        }
+      ]
     },
     {
       "id": "historical",
       "type": "HistoricalDataNode",
       "category": "market",
+      "position": {
+        "x": 550,
+        "y": 200
+      },
       "connection": "{{ nodes.broker.connection }}",
       "symbols": "{{ nodes.watchlist.symbols }}",
       "start_date": "{{ months_ago_yyyymmdd(2) }}",
       "end_date": "{{ today_yyyymmdd() }}",
-      "interval": "1d",
-      "position": {"x": 550, "y": 200}
+      "interval": "1d"
     },
     {
       "id": "volumeCondition",
       "type": "ConditionNode",
       "category": "condition",
+      "position": {
+        "x": 750,
+        "y": 200
+      },
       "plugin": "VolumeSpike",
-      "fields": {"period": 20, "threshold_ratio": 2.0},
+      "fields": {
+        "period": 20,
+        "multiplier": 2,
+        "threshold_ratio": 2
+      },
       "data": "{{ flatten(nodes.historical.values, 'time_series') }}",
-      "symbols": "{{ nodes.watchlist.symbols }}",
-      "position": {"x": 750, "y": 200}
+      "symbols": "{{ nodes.watchlist.symbols }}"
     },
     {
       "id": "display",
       "type": "DisplayNode",
       "category": "display",
+      "position": {
+        "x": 950,
+        "y": 200
+      },
       "chart_type": "bar",
       "title": "거래량 비교 (현재 vs 평균)",
       "data": "{{ nodes.volumeCondition.symbol_results }}",
       "x_field": "symbol",
-      "y_field": "volume_ratio",
-      "position": {"x": 950, "y": 200}
+      "y_field": "ratio"
     }
   ],
   "edges": [
-    {"from": "start", "to": "broker"},
-    {"from": "broker", "to": "watchlist"},
-    {"from": "watchlist", "to": "historical"},
-    {"from": "historical", "to": "volumeCondition"},
-    {"from": "volumeCondition", "to": "display"}
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "volumeCondition"
+    },
+    {
+      "from": "volumeCondition",
+      "to": "display"
+    }
   ],
   "credentials": [
     {
-      "id": "broker-cred",
+      "id": "7c5caa90-f013-44fd-855d-410437c86737",
       "type": "broker_ls",
-      "name": "LS증권 API",
-      "data": {"appkey": "", "appsecret": "", "paper_trading": false}
+      "name": "LS 해외주식",
+      "data": {
+        "appkey": "",
+        "appsecret": "",
+        "paper_trading": ""
+      }
     }
   ]
 }

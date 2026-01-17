@@ -24,36 +24,46 @@ MACD_SCHEMA = PluginSchema(
     name="MACD (Moving Average Convergence Divergence)",
     category=PluginCategory.STRATEGY_CONDITION,
     version="2.0.0",
-    description="MACD 크로스오버 조건 (data + field_mapping 패턴)",
+    description="Finds trend reversal points through crossovers of short and long moving averages. Bullish when MACD crosses above signal line, bearish when crossing below.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
         "fast_period": {
             "type": "int",
             "default": 12,
-            "title": "빠른 EMA 기간",
+            "title": "Fast EMA Period",
             "ge": 2,
         },
         "slow_period": {
             "type": "int",
             "default": 26,
-            "title": "느린 EMA 기간",
+            "title": "Slow EMA Period",
             "ge": 5,
         },
         "signal_period": {
             "type": "int",
             "default": 9,
-            "title": "시그널 기간",
+            "title": "Signal Period",
             "ge": 2,
         },
         "signal_type": {
             "type": "string",
             "default": "bullish_cross",
-            "title": "신호 유형",
+            "title": "Signal Type",
             "enum": ["bullish_cross", "bearish_cross"],
         },
     },
     required_data=["data"],
     tags=["trend", "momentum"],
+    locales={
+        "ko": {
+            "name": "MACD (이동평균 수렴확산)",
+            "description": "단기와 장기 이동평균의 교차를 통해 추세 전환점을 찾습니다. MACD 선이 신호선을 위로 돌파하면 상승 신호, 아래로 돌파하면 하락 신호로 해석합니다.",
+            "fields.fast_period": "빠른 EMA 기간",
+            "fields.slow_period": "느린 EMA 기간",
+            "fields.signal_period": "신호 기간",
+            "fields.signal_type": "신호 유형",
+        },
+    },
 )
 
 

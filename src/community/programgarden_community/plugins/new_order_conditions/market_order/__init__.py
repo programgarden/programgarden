@@ -8,31 +8,40 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 
 MARKET_ORDER_SCHEMA = PluginSchema(
     id="MarketOrder",
-    name="Market Order (시장가 주문)",
+    name="Market Order",
     category=PluginCategory.NEW_ORDER,
     version="1.0.0",
-    description="시장가 주문 실행",
+    description="Executes buy/sell immediately at current market price. Use when fast execution is important.",
     products=[ProductType.OVERSEAS_STOCK],
     fields_schema={
         "side": {
             "type": "string",
-            "title": "매수/매도",
+            "title": "Buy/Sell",
             "enum": ["buy", "sell"],
             "required": True,
         },
         "amount_type": {
             "type": "string",
             "default": "fixed",
-            "title": "수량 계산 방식",
+            "title": "Amount Type",
             "enum": ["percent_balance", "fixed", "all"],
         },
         "amount": {
             "type": "float",
             "default": 10,
-            "title": "수량 또는 비율",
+            "title": "Amount or Ratio",
         },
     },
     tags=["order", "market"],
+    locales={
+        "ko": {
+            "name": "시장가 주문 (Market Order)",
+            "description": "현재 시장 가격으로 즉시 매수/매도합니다. 빠른 체결이 중요할 때 사용합니다.",
+            "fields.side": "매수/매도",
+            "fields.amount_type": "수량 계산 방식",
+            "fields.amount": "수량 또는 비율",
+        },
+    },
 )
 
 

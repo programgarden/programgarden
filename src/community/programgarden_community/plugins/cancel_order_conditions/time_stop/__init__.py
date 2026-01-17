@@ -9,20 +9,27 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 
 TIME_STOP_SCHEMA = PluginSchema(
     id="TimeStop",
-    name="Time Stop (시간 초과 취소)",
+    name="Time Stop",
     category=PluginCategory.CANCEL_ORDER,
     version="1.0.0",
-    description="지정 시간 초과 시 미체결 주문 취소",
+    description="Automatically cancels orders if not filled within specified time. Example: Cancel if unfilled after 30 minutes.",
     products=[ProductType.OVERSEAS_STOCK],
     fields_schema={
         "timeout_minutes": {
             "type": "int",
             "default": 30,
-            "title": "타임아웃 (분)",
+            "title": "Timeout (minutes)",
             "ge": 1,
         },
     },
     tags=["cancel", "timeout"],
+    locales={
+        "ko": {
+            "name": "시간 초과 취소 (Time Stop)",
+            "description": "주문 후 일정 시간이 지나도 체결되지 않으면 자동으로 취소합니다. 예: 30분 내 미체결 시 취소.",
+            "fields.timeout_minutes": "타임아웃 (분)",
+        },
+    },
 )
 
 

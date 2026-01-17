@@ -27,8 +27,15 @@ export interface PluginSchema {
   locales?: Record<string, Record<string, string>>;  // 다국어 지원
 }
 
+// 플러그인 목록에서 간략 정보
+export interface PluginSummary {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface PluginsByCategory {
-  [category: string]: string[];
+  [category: string]: PluginSummary[];
 }
 
 // 노드 타입과 플러그인 카테고리 매핑
@@ -124,6 +131,12 @@ export function getDefaultFieldsFromSchema(
   return defaults;
 }
 
+// 브라우저 언어 감지 (ko, en 중 선택)
+function detectLocale(): string {
+  const browserLang = navigator.language || 'en';
+  return browserLang.startsWith('ko') ? 'ko' : 'en';
+}
+
 export function usePlugins() {
   const [plugins, setPlugins] = useState<PluginsByCategory>({});
   const [loading, setLoading] = useState(true);
@@ -131,12 +144,15 @@ export function usePlugins() {
   
   // 플러그인 스키마 캐시 (중복 fetch 방지)
   const schemaCache = useRef<Map<string, PluginSchema>>(new Map());
+  
+  // 현재 locale
+  const locale = detectLocale();
 
   // 전체 플러그인 목록 로드
   useEffect(() => {
     const fetchPlugins = async () => {
       try {
-        const res = await fetch('/api/plugins');
+        const res = await fetch(`/api/plugins?locale=${locale}`);
         if (!res.ok) throw new Error('Failed to fetch plugins');
         const data = await res.json();
         setPlugins(data.plugins || {});
@@ -148,10 +164,10 @@ export function usePlugins() {
     };
 
     fetchPlugins();
-  }, []);
+  }, [locale]);
 
-  // 노드 타입에 맞는 플러그인 목록 반환
-  const getPluginsForNodeType = useCallback((nodeType: string): string[] => {
+  // 노드 타입에 맞는 플러그인 목록 반환 (id, name, description 포함)
+  const getPluginsForNodeType = useCallback((nodeType: string): PluginSummary[] => {
     const category = NODE_TYPE_TO_PLUGIN_CATEGORY[nodeType];
     if (!category) return [];
     return plugins[category] || [];

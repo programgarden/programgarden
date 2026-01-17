@@ -8,31 +8,40 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 
 LIMIT_ORDER_SCHEMA = PluginSchema(
     id="LimitOrder",
-    name="Limit Order (지정가 주문)",
+    name="Limit Order",
     category=PluginCategory.NEW_ORDER,
     version="1.0.0",
-    description="지정가 주문 실행",
+    description="Places order at a specified price. Only executes when the price is reached, allowing you to buy/sell at your desired price.",
     products=[ProductType.OVERSEAS_STOCK],
     fields_schema={
         "side": {
             "type": "string",
-            "title": "매수/매도",
+            "title": "Buy/Sell",
             "enum": ["buy", "sell"],
             "required": True,
         },
         "price_type": {
             "type": "string",
             "default": "fixed",
-            "title": "가격 방식",
+            "title": "Price Type",
             "enum": ["fixed", "percent_from_current"],
         },
         "price": {
             "type": "float",
-            "title": "주문 가격",
-            "description": "fixed: 고정가격, percent: 현재가 대비 %",
+            "title": "Order Price",
+            "description": "fixed: absolute price, percent: % from current",
         },
     },
     tags=["order", "limit"],
+    locales={
+        "ko": {
+            "name": "지정가 주문 (Limit Order)",
+            "description": "원하는 가격을 지정하여 주문합니다. 해당 가격에 도달해야 체결되므로 원하는 가격에 매수/매도할 수 있습니다.",
+            "fields.side": "매수/매도",
+            "fields.price_type": "가격 방식",
+            "fields.price": "주문 가격",
+        },
+    },
 )
 
 

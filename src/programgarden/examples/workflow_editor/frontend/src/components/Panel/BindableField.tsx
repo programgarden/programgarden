@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { ConfigField, Credential, CredentialTypeSchema } from '@/types/workflow';
 import { Plus, X, Lock, Key } from 'lucide-react';
 import SymbolEditor from './SymbolEditor';
+import { PluginSummary } from '@/hooks/usePlugins';
 
 // 민감한 헤더 키 목록 (대소문자 무시)
 const SENSITIVE_HEADER_KEYS = [
@@ -44,7 +45,7 @@ interface BindableFieldProps {
   nodeData?: Record<string, unknown>;
   onNodeDataChange?: (key: string, value: unknown) => void;
   // Plugin 관련 props (plugin 필드용)
-  availablePlugins?: string[];
+  availablePlugins?: PluginSummary[];
   onPluginChange?: (pluginId: string) => void;
 }
 
@@ -202,6 +203,9 @@ export default function BindableField({
   
   // Plugin 타입 (드롭다운)
   if (isPluginField && availablePlugins && availablePlugins.length > 0) {
+    // 현재 선택된 플러그인 정보
+    const currentPlugin = availablePlugins.find(p => p.id === value);
+    
     return (
       <div>
         <div className="flex items-center justify-between mb-1">
@@ -227,12 +231,18 @@ export default function BindableField({
           className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
         >
           <option value="">Select plugin...</option>
-          {availablePlugins.map(pluginId => (
-            <option key={pluginId} value={pluginId}>
-              {pluginId}
+          {availablePlugins.map(plugin => (
+            <option key={plugin.id} value={plugin.id}>
+              {plugin.name || plugin.id}
             </option>
           ))}
         </select>
+        {/* 선택된 플러그인의 설명 표시 */}
+        {currentPlugin?.description && (
+          <p className="text-xs text-gray-400 mt-1.5 p-2 bg-gray-800/50 rounded border border-gray-700">
+            📝 {currentPlugin.description}
+          </p>
+        )}
         {!value && (
           <p className="text-xs text-amber-500/70 mt-1.5">
             💡 Select a plugin to configure its parameters

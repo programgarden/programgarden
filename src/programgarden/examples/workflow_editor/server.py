@@ -444,16 +444,17 @@ async def get_translations(prefix: str = "outputs", locale: str = "ko"):
 # ========================================
 
 @app.get("/api/plugins")
-async def get_plugins(category: Optional[str] = None, product: Optional[str] = None):
+async def get_plugins(category: Optional[str] = None, product: Optional[str] = None, locale: str = "en"):
     """
     플러그인 목록 반환
     
     Args:
         category: 필터링할 카테고리 (strategy_condition, new_order, modify_order, cancel_order)
         product: 필터링할 상품 (overseas_stock, overseas_futures)
+        locale: 언어 코드 (en, ko) - 기본값 en
     
     Returns:
-        카테고리별 플러그인 ID 목록
+        카테고리별 플러그인 ID 목록 (name, description은 locale에 따라 반환)
     """
     try:
         from programgarden_core.registry import PluginRegistry
@@ -473,8 +474,15 @@ async def get_plugins(category: Optional[str] = None, product: Optional[str] = N
         for cat in categories_to_check:
             plugins = registry.list_plugins(category=cat, product=product_filter)
             if plugins:
-                # PluginSchema 객체에서 ID만 추출
-                result[cat.value] = [p.id if hasattr(p, 'id') else str(p) for p in plugins]
+                # PluginSchema 객체에서 ID, name, description 추출 (locale 적용)
+                result[cat.value] = [
+                    {
+                        "id": p.id if hasattr(p, 'id') else str(p),
+                        "name": p.get_localized_name(locale) if hasattr(p, 'get_localized_name') else (getattr(p, 'name', None) or p.id),
+                        "description": p.get_localized_description(locale) if hasattr(p, 'get_localized_description') else (getattr(p, 'description', None) or ""),
+                    }
+                    for p in plugins
+                ]
         
         return JSONResponse({"plugins": result})
     except Exception as e:

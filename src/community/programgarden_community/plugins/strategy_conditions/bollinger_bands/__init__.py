@@ -24,32 +24,41 @@ BOLLINGER_SCHEMA = PluginSchema(
     name="Bollinger Bands",
     category=PluginCategory.STRATEGY_CONDITION,
     version="2.0.0",
-    description="볼린저밴드 조건 (data + field_mapping 패턴)",
+    description="Measures how far the price has deviated from the average. Near the lower band indicates undervalued, near the upper band indicates overvalued.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
         "period": {
             "type": "int",
             "default": 20,
-            "title": "이동평균 기간",
+            "title": "MA Period",
             "ge": 5,
             "le": 100,
         },
         "std_dev": {
             "type": "float",
             "default": 2.0,
-            "title": "표준편차 배수",
+            "title": "Std Dev Multiplier",
             "ge": 0.5,
             "le": 4.0,
         },
         "position": {
             "type": "string",
             "default": "below_lower",
-            "title": "조건 위치",
+            "title": "Condition Position",
             "enum": ["below_lower", "above_upper"],
         },
     },
     required_data=["data"],
     tags=["volatility", "mean-reversion"],
+    locales={
+        "ko": {
+            "name": "볼린저밴드 (Bollinger Bands)",
+            "description": "주가가 평균에서 얼마나 벗어났는지 판단합니다. 하단 밴드 근처면 저평가, 상단 밴드 근처면 고평가 상태를 나타냅니다.",
+            "fields.period": "이동평균 기간",
+            "fields.std_dev": "표준편차 배수",
+            "fields.position": "조건 위치",
+        },
+    },
 )
 
 

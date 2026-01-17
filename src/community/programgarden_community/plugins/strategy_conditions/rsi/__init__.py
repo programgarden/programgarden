@@ -23,8 +23,8 @@ RSI_SCHEMA = PluginSchema(
     id="RSI",
     name="RSI (Relative Strength Index)",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="2.0.0",  # 새 버전: data + field_mapping 방식
-    description="RSI overbought/oversold condition",
+    version="2.0.0",
+    description="Identifies overbought or oversold conditions. RSI below 30 suggests a buying opportunity, above 70 suggests a selling opportunity.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
         "period": {
@@ -51,12 +51,12 @@ RSI_SCHEMA = PluginSchema(
             "enum": ["below", "above"],
         },
     },
-    required_data=["data"],  # 변경: ohlcv_data → data
+    required_data=["data"],
     tags=["momentum", "oscillator"],
     locales={
         "ko": {
             "name": "RSI (상대강도지수)",
-            "description": "RSI 과매수/과매도 조건",
+            "description": "주가가 과매도(너무 많이 팔림) 또는 과매수(너무 많이 삼) 상태인지 판단합니다. RSI가 30 이하면 싸게 살 수 있는 기회, 70 이상이면 비싸게 팔 수 있는 기회를 나타냅니다.",
             "fields.period": "RSI 계산에 사용할 기간",
             "fields.threshold": "과매도/과매수 판단 기준값",
             "fields.direction": "방향 (below: 과매도, above: 과매수)",

@@ -17,19 +17,29 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 
 DUAL_MOMENTUM_SCHEMA = PluginSchema(
     id="DualMomentum",
-    name="듀얼 모멘텀 (Dual Momentum)",
+    name="Dual Momentum",
     category=PluginCategory.STRATEGY_CONDITION,
     version="2.0.0",
-    description="절대 모멘텀 + 상대 모멘텀 결합 전략 (data + field_mapping 패턴)",
+    description="Combines absolute momentum (recent returns) and relative momentum (vs benchmark). Invests in stocks with strong upward trends.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
-        "lookback_period": {"type": "int", "default": 252, "title": "룩백 기간"},
-        "absolute_threshold": {"type": "float", "default": 0.0, "title": "절대 모멘텀 임계값 (%)"},
-        "use_relative": {"type": "bool", "default": True, "title": "상대 모멘텀 사용"},
-        "relative_benchmark": {"type": "string", "default": "SHY", "enum": ["SHY", "BIL", "CASH"]},
+        "lookback_period": {"type": "int", "default": 252, "title": "Lookback Period"},
+        "absolute_threshold": {"type": "float", "default": 0.0, "title": "Absolute Threshold (%)"},
+        "use_relative": {"type": "bool", "default": True, "title": "Use Relative Momentum"},
+        "relative_benchmark": {"type": "string", "default": "SHY", "enum": ["SHY", "BIL", "CASH"], "title": "Benchmark"},
     },
     required_data=["data"],
     tags=["momentum", "trend", "asset_allocation"],
+    locales={
+        "ko": {
+            "name": "듀얼 모멘텀 (Dual Momentum)",
+            "description": "절대 모멘텀(최근 수익률)과 상대 모멘텀(벤치마크 대비 성과)을 결합한 전략입니다. 상승세가 강한 종목에 투자합니다.",
+            "fields.lookback_period": "룩백 기간",
+            "fields.absolute_threshold": "절대 모멘텀 임계값 (%)",
+            "fields.use_relative": "상대 모멘텀 사용",
+            "fields.relative_benchmark": "벤치마크",
+        },
+    },
 )
 
 

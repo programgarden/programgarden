@@ -8,25 +8,33 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 
 TRAILING_STOP_SCHEMA = PluginSchema(
     id="TrailingStop",
-    name="Trailing Stop (가격 추적 정정)",
+    name="Trailing Stop",
     category=PluginCategory.MODIFY_ORDER,
     version="1.0.0",
-    description="현재가를 추적하여 지정가 정정",
+    description="Automatically adjusts unfilled order prices to track current price. Increases execution probability even when price moves.",
     products=[ProductType.OVERSEAS_STOCK],
     fields_schema={
         "price_gap_percent": {
             "type": "float",
             "default": 0.5,
-            "title": "가격 차이 (%)",
-            "description": "현재가 대비 주문가 차이",
+            "title": "Price Gap (%)",
+            "description": "Difference from current price",
         },
         "max_modifications": {
             "type": "int",
             "default": 5,
-            "title": "최대 정정 횟수",
+            "title": "Max Modifications",
         },
     },
     tags=["modify", "tracking"],
+    locales={
+        "ko": {
+            "name": "가격 추적 정정 (Trailing Stop)",
+            "description": "미체결 주문의 가격을 현재가에 맞춰 자동 정정합니다. 주가가 움직여도 체결 확률을 높일 수 있습니다.",
+            "fields.price_gap_percent": "가격 차이 (%)",
+            "fields.max_modifications": "최대 정정 횟수",
+        },
+    },
 )
 
 
