@@ -5650,7 +5650,7 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
     BacktestEngineNode executor - 백테스트 시뮬레이션 엔진
     
     입력:
-    - ohlcv_data: 종목별 OHLCV 데이터
+    - data: 종목별 OHLCV 데이터 (플랫 배열)
     - signals: 종목별 매매 시그널 시계열
     
     출력:
@@ -5690,13 +5690,30 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             }
         
         try:
-            # 입력 데이터 가져오기
-            ohlcv_data = context.get_output(f"_input_{node_id}", "ohlcv_data")
-            if not ohlcv_data:
-                ohlcv_data = context.get_output("historicalData", "ohlcv_data") or {}
+            # === 입력 데이터 가져오기 ===
+            # 1. 우선 config에서 직접 바인딩된 data 사용 (expression 평가 후)
+            flat_data = config.get("data")
+            
+            # 2. data가 없으면 _input_{node_id}에서 시도
+            if not flat_data:
+                flat_data = context.get_output(f"_input_{node_id}", "data")
+            
+            # 3. 레거시 호환: ohlcv_data 포트
+            if not flat_data:
+                flat_data = context.get_output(f"_input_{node_id}", "ohlcv_data")
+            if not flat_data:
+                flat_data = context.get_output("historicalData", "ohlcv_data") or []
+            
+            # 필드 매핑 설정
+            close_field = config.get("close_field", "close")
+            date_field = config.get("date_field", "date")
+            symbol_field = config.get("symbol_field", "symbol")
+            
+            # 플랫 배열 → 종목별 딕셔너리로 변환
+            ohlcv_data = self._convert_flat_to_symbol_dict(flat_data, symbol_field, date_field, close_field)
             
             # signals 가져오기 (플랫 배열 또는 values 형식 지원)
-            signals = context.get_output(f"_input_{node_id}", "signals")
+            signals = config.get("signals") or context.get_output(f"_input_{node_id}", "signals")
             if not signals:
                 # ConditionNode에서 온 시그널
                 signals = context.get_output(f"_input_{node_id}", "entry_signal") or []
@@ -5787,6 +5804,55 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                 task_type="BacktestEngineNode",
                 weight=3.0,
             )
+
+    def _convert_flat_to_symbol_dict(
+        self,
+        flat_data: Any,
+        symbol_field: str = "symbol",
+        date_field: str = "date",
+        close_field: str = "close",
+    ) -> Dict[str, List[Dict]]:
+        """
+        플랫 배열을 종목별 딕셔너리로 변환
+        
+        입력: [{symbol: "AAPL", date: "20260101", close: 150, ...}, ...]
+        출력: {"AAPL": [{date: "20260101", close: 150, ...}, ...]}
+        """
+        if not flat_data:
+            return {}
+        
+        if not isinstance(flat_data, list):
+            return {}
+        
+        result: Dict[str, List[Dict]] = {}
+        
+        for item in flat_data:
+            if not isinstance(item, dict):
+                continue
+            
+            symbol = item.get(symbol_field, "")
+            if not symbol:
+                continue
+            
+            if symbol not in result:
+                result[symbol] = []
+            
+            # 필드 매핑 적용 (표준 필드명으로 변환)
+            normalized = {
+                "date": item.get(date_field, ""),
+                "close": item.get(close_field, 0),
+                "open": item.get("open", item.get(close_field, 0)),
+                "high": item.get("high", item.get(close_field, 0)),
+                "low": item.get("low", item.get(close_field, 0)),
+                "volume": item.get("volume", 0),
+            }
+            result[symbol].append(normalized)
+        
+        # 날짜순 정렬
+        for symbol in result:
+            result[symbol].sort(key=lambda x: x.get("date", ""))
+        
+        return result
 
     def _extract_signals_from_values(
         self,

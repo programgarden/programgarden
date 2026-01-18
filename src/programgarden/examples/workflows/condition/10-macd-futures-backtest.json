@@ -25,7 +25,7 @@
       "type": "WatchlistNode",
       "category": "symbol",
       "symbols": [
-        {"exchange": "CME", "symbol": "NQH25"}
+        {"exchange": "HKEX", "symbol": "HSIG26"}
       ],
       "position": {"x": 350, "y": 100}
     },

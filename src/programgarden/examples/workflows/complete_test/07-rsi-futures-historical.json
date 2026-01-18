@@ -1,7 +1,7 @@
 {
-  "id": "rsi-stock-backtest",
-  "name": "RSI 백테스트 - 해외주식",
-  "description": "RSI 기반 매매 시뮬레이션 + equity_curve 차트",
+  "id": "rsi-futures-historical",
+  "name": "RSI 조건 - 해외선물 과거데이터",
+  "description": "항셍/H지수 선물 RSI 과매도 조건 - table 차트",
   "nodes": [
     {
       "id": "start",
@@ -21,8 +21,8 @@
         "y": 200
       },
       "provider": "ls-sec.co.kr",
-      "product": "overseas_stock",
-      "credential_id": "7c5caa90-f013-44fd-855d-410437c86737"
+      "product": "overseas_futures",
+      "credential_id": "2126e9c2-3da4-4da7-9d98-e6fead52e4ac"
     },
     {
       "id": "watchlist",
@@ -34,12 +34,12 @@
       },
       "symbols": [
         {
-          "exchange": "NASDAQ",
-          "symbol": "AAPL"
+          "exchange": "HKEX",
+          "symbol": "HSIG26"
         },
         {
-          "exchange": "NASDAQ",
-          "symbol": "MSFT"
+          "exchange": "HKEX",
+          "symbol": "HHIG26"
         }
       ]
     },
@@ -53,9 +53,10 @@
       },
       "connection": "{{ nodes.broker.connection }}",
       "symbols": "{{ nodes.watchlist.symbols }}",
-      "start_date": "{{ days_ago_yyyymmdd(1000) }}",
+      "start_date": "{{ months_ago_yyyymmdd(6) }}",
       "end_date": "{{ today_yyyymmdd() }}",
-      "interval": "1d"
+      "interval": "1d",
+      "customLabel": "과거 데이터"
     },
     {
       "id": "rsiCondition",
@@ -66,7 +67,6 @@
         "y": 200
       },
       "plugin": "RSI",
-      "mode": "backtest",
       "fields": {
         "period": 14,
         "threshold": 30,
@@ -76,44 +76,25 @@
       "symbols": "{{ nodes.watchlist.symbols }}"
     },
     {
-      "id": "backtest",
-      "type": "BacktestEngineNode",
-      "category": "backtest",
-      "position": {
-        "x": 950,
-        "y": 200
-      },
-      "initial_capital": 10000,
-      "commission_rate": 0.001,
-      "slippage": 0.0005,
-      "position_sizing": "kelly",
-      "kelly_fraction": 0.25,
-      "max_position_percent": 10,
-      "stop_loss_percent": 5,
-      "take_profit_percent": 15,
-      "trailing_stop_percent": 3,
-      "benchmark": "SPY",
-      "risk_free_rate": 0.02,
-      "allow_short": false,
-      "allow_fractional": true,
-      "strategy_name": "RSI 과매도 전략",
-      "data": "{{ flatten(nodes.historical.values, 'time_series') }}",
-      "signals": "{{ nodes.rsiCondition.signals }}"
-    },
-    {
       "id": "display",
       "type": "DisplayNode",
       "category": "display",
       "position": {
-        "x": 1150,
+        "x": 950,
         "y": 200
       },
-      "chart_type": "equity_curve",
-      "title": "RSI 전략 자산곡선",
-      "data": "{{ nodes.backtest.equity_curve }}",
+      "chart_type": "multi_line",
+      "title": "선물 RSI 결과",
+      "data": "{{ flatten(nodes.rsiCondition.values, 'time_series') }}",
+      "columns": [
+        "symbol",
+        "exchange",
+        "rsi",
+        "current_price"
+      ],
       "x_field": "date",
-      "y_field": "equity",
-      "benchmark_field": "benchmark"
+      "y_field": "rsi",
+      "series_key": "symbol"
     }
   ],
   "edges": [
@@ -135,18 +116,14 @@
     },
     {
       "from": "rsiCondition",
-      "to": "backtest"
-    },
-    {
-      "from": "backtest",
       "to": "display"
     }
   ],
   "credentials": [
     {
-      "id": "7c5caa90-f013-44fd-855d-410437c86737",
+      "id": "2126e9c2-3da4-4da7-9d98-e6fead52e4ac",
       "type": "broker_ls",
-      "name": "LS 해외주식",
+      "name": "LS 해외선물 모의투자",
       "data": {
         "appkey": "",
         "appsecret": "",

@@ -63,9 +63,9 @@ class HistoricalDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="ohlcv_data",
-            type="ohlcv_data",
-            description="i18n:ports.ohlcv_data",
+            name="values",
+            type="array",
+            description="i18n:ports.values",
         ),
         OutputPort(
             name="symbols",
@@ -156,68 +156,128 @@ class BacktestEngineNode(BaseNode):
     description: str = "i18n:nodes.BacktestEngineNode.description"
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Input data binding (required for UI rendering)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    data: Any = Field(
+        default=None,
+        description="OHLCV data for backtest (e.g., {{ flatten(nodes.historical.values, 'time_series') }})",
+    )
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Field mapping (for custom data sources)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    close_field: str = Field(
+        default="close",
+        description="Field name for close price",
+    )
+    open_field: str = Field(
+        default="open",
+        description="Field name for open price",
+    )
+    high_field: str = Field(
+        default="high",
+        description="Field name for high price",
+    )
+    low_field: str = Field(
+        default="low",
+        description="Field name for low price",
+    )
+    volume_field: str = Field(
+        default="volume",
+        description="Field name for volume",
+    )
+    date_field: str = Field(
+        default="date",
+        description="Field name for date/time",
+    )
+    symbol_field: str = Field(
+        default="symbol",
+        description="Field name for symbol identifier",
+    )
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # Basic backtest config
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     initial_capital: float = Field(
         default=10000,
-        description="Initial capital (can be overridden by parent PortfolioNode)",
+        description="i18n:fields.BacktestEngineNode.initial_capital",
     )
     commission_rate: float = Field(
         default=0.001,
-        description="Commission rate (0.001 = 0.1%)",
+        description="i18n:fields.BacktestEngineNode.commission_rate",
     )
     slippage: float = Field(
         default=0.0005,
-        description="Slippage (0.0005 = 0.05%)",
+        description="i18n:fields.BacktestEngineNode.slippage",
     )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # Position sizing config (extended)
+    # Position sizing config
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     position_sizing: Literal["equal_weight", "kelly", "fixed_percent", "fixed_amount", "atr_based"] = Field(
         default="equal_weight",
-        description="Position sizing method",
+        description="i18n:fields.BacktestEngineNode.position_sizing",
     )
-    position_sizing_config: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Position sizing detailed config (method-specific parameters)",
+    # Position sizing 개별 필드 (position_sizing 값에 따라 UI에서 동적 표시)
+    kelly_fraction: Optional[float] = Field(
+        default=0.25,
+        description="i18n:fields.BacktestEngineNode.kelly_fraction",
     )
-    # position_sizing_config 예시:
-    # {
-    #     "max_position_percent": 10.0,   # 종목당 최대 비중 (%)
-    #     "kelly_fraction": 0.25,         # Kelly 비율 (0.25 = 1/4 Kelly)
-    #     "fixed_amount": 1000,           # 고정 금액 (fixed_amount 방식)
-    #     "fixed_percent": 5.0,           # 고정 비율 (%) (fixed_percent 방식)
-    #     "atr_risk_percent": 1.0,        # ATR 리스크 % (atr_based 방식)
-    #     "atr_period": 14,               # ATR 계산 기간
-    # }
+    max_position_percent: Optional[float] = Field(
+        default=10.0,
+        description="i18n:fields.BacktestEngineNode.max_position_percent",
+    )
+    fixed_percent: Optional[float] = Field(
+        default=5.0,
+        description="i18n:fields.BacktestEngineNode.fixed_percent",
+    )
+    fixed_amount: Optional[float] = Field(
+        default=1000.0,
+        description="i18n:fields.BacktestEngineNode.fixed_amount",
+    )
+    atr_risk_percent: Optional[float] = Field(
+        default=1.0,
+        description="i18n:fields.BacktestEngineNode.atr_risk_percent",
+    )
+    atr_period: Optional[int] = Field(
+        default=14,
+        description="i18n:fields.BacktestEngineNode.atr_period",
+    )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # Exit rules config (extended)
+    # Exit rules config (개별 필드)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    exit_rules: Optional[Dict[str, Any]] = Field(
+    stop_loss_percent: Optional[float] = Field(
         default=None,
-        description="Exit rules for automatic position closing",
+        description="i18n:fields.BacktestEngineNode.stop_loss_percent",
     )
-    # exit_rules 예시:
-    # {
-    #     "stop_loss_percent": 5.0,       # 손절 % (매수가 대비)
-    #     "take_profit_percent": 15.0,    # 익절 % (매수가 대비)
-    #     "trailing_stop_percent": 3.0,   # 트레일링 스탑 % (고점 대비)
-    #     "max_holding_days": 30,         # 최대 보유 기간 (일)
-    #     "time_stop_days": 10,           # 시간 손절 (N일 후 수익 없으면 청산)
-    # }
+    take_profit_percent: Optional[float] = Field(
+        default=None,
+        description="i18n:fields.BacktestEngineNode.take_profit_percent",
+    )
+    trailing_stop_percent: Optional[float] = Field(
+        default=None,
+        description="i18n:fields.BacktestEngineNode.trailing_stop_percent",
+    )
+    max_holding_days: Optional[int] = Field(
+        default=None,
+        description="i18n:fields.BacktestEngineNode.max_holding_days",
+    )
+    time_stop_days: Optional[int] = Field(
+        default=None,
+        description="i18n:fields.BacktestEngineNode.time_stop_days",
+    )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # Result analysis config
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     benchmark: Optional[str] = Field(
         default=None,
-        description="Benchmark symbol (e.g., SPY)",
+        description="i18n:fields.BacktestEngineNode.benchmark",
     )
     risk_free_rate: float = Field(
         default=0.02,
-        description="Risk-free rate (for Sharpe ratio calculation)",
+        description="i18n:fields.BacktestEngineNode.risk_free_rate",
     )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -225,11 +285,11 @@ class BacktestEngineNode(BaseNode):
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     allow_short: bool = Field(
         default=False,
-        description="Allow short selling",
+        description="i18n:fields.BacktestEngineNode.allow_short",
     )
     allow_fractional: bool = Field(
         default=True,
-        description="Allow fractional shares",
+        description="i18n:fields.BacktestEngineNode.allow_fractional",
     )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -237,14 +297,14 @@ class BacktestEngineNode(BaseNode):
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     strategy_name: Optional[str] = Field(
         default=None,
-        description="Strategy name (for display purposes)",
+        description="i18n:fields.BacktestEngineNode.strategy_name",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
-            name="ohlcv_data",
-            type="ohlcv_data",
-            description="i18n:ports.ohlcv_data",
+            name="data",
+            type="array",
+            description="i18n:ports.data",
         ),
         InputPort(
             name="signals",
@@ -286,11 +346,105 @@ class BacktestEngineNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
         return {
+            # === DATA: 입력 데이터 바인딩 ===
+            "data": FieldSchema(
+                name="data",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.data",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ flatten(nodes.historical.values, 'time_series') }}",
+                example=[
+                    {"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260116", "close": 150.0, "open": 148.5, "high": 151.0, "low": 147.8, "volume": 1000000},
+                ],
+                example_binding="{{ flatten(nodes.historical.values, 'time_series') }}",
+                connectable_from=["HistoricalDataNode.values", "ConditionNode.values"],
+            ),
+            # === FIELD MAPPING: 필드명 매핑 (기본값 사용 가능) ===
+            "close_field": FieldSchema(
+                name="close_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.close_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="close",
+                placeholder="close",
+                group="field_mapping",
+            ),
+            "open_field": FieldSchema(
+                name="open_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.open_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="open",
+                placeholder="open",
+                group="field_mapping",
+            ),
+            "high_field": FieldSchema(
+                name="high_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.high_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="high",
+                placeholder="high",
+                group="field_mapping",
+            ),
+            "low_field": FieldSchema(
+                name="low_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.low_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="low",
+                placeholder="low",
+                group="field_mapping",
+            ),
+            "volume_field": FieldSchema(
+                name="volume_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.volume_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="volume",
+                placeholder="volume",
+                group="field_mapping",
+            ),
+            "date_field": FieldSchema(
+                name="date_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.date_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="date",
+                placeholder="date",
+                group="field_mapping",
+            ),
+            "symbol_field": FieldSchema(
+                name="symbol_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.symbol_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="symbol",
+                placeholder="symbol",
+                group="field_mapping",
+            ),
             # === PARAMETERS: 핵심 백테스트 설정 ===
             "initial_capital": FieldSchema(
                 name="initial_capital",
                 type=FieldType.NUMBER,
-                description="Initial capital for backtest. Can be overridden by parent PortfolioNode allocation.",
+                description="i18n:fields.BacktestEngineNode.initial_capital",
                 default=10000,
                 min_value=100,
                 category=FieldCategory.PARAMETERS,
@@ -304,39 +458,166 @@ class BacktestEngineNode(BaseNode):
             "position_sizing": FieldSchema(
                 name="position_sizing",
                 type=FieldType.ENUM,
-                description="Position sizing method. equal_weight: divide equally. kelly: Kelly criterion. fixed_percent: fixed % of capital. fixed_amount: fixed dollar amount. atr_based: ATR volatility-based.",
+                description="i18n:fields.BacktestEngineNode.position_sizing",
                 default="equal_weight",
                 enum_values=["equal_weight", "kelly", "fixed_percent", "fixed_amount", "atr_based"],
+                enum_labels={
+                    "equal_weight": "i18n:enums.position_sizing.equal_weight",
+                    "kelly": "i18n:enums.position_sizing.kelly",
+                    "fixed_percent": "i18n:enums.position_sizing.fixed_percent",
+                    "fixed_amount": "i18n:enums.position_sizing.fixed_amount",
+                    "atr_based": "i18n:enums.position_sizing.atr_based",
+                },
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
                 example="equal_weight",
                 expected_type="str",
             ),
-            "position_sizing_config": FieldSchema(
-                name="position_sizing_config",
-                type=FieldType.OBJECT,
-                description="Position sizing parameters. Options: max_position_percent, kelly_fraction, fixed_amount, fixed_percent, atr_risk_percent, atr_period.",
-                required=False,
+            # === Position Sizing 개별 필드 (depends_on으로 동적 표시) ===
+            "kelly_fraction": FieldSchema(
+                name="kelly_fraction",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BacktestEngineNode.kelly_fraction",
+                default=0.25,
+                min_value=0.1,
+                max_value=1.0,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
-                example={"max_position_percent": 10.0, "kelly_fraction": 0.25},
-                expected_type="dict[str, Any]",
+                depends_on={"position_sizing": ["kelly"]},
+                example=0.25,
+                expected_type="float",
             ),
-            "exit_rules": FieldSchema(
-                name="exit_rules",
-                type=FieldType.OBJECT,
-                description="Automatic exit rules. Options: stop_loss_percent, take_profit_percent, trailing_stop_percent, max_holding_days, time_stop_days.",
-                required=False,
+            "max_position_percent": FieldSchema(
+                name="max_position_percent",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BacktestEngineNode.max_position_percent",
+                default=10.0,
+                min_value=1.0,
+                max_value=100.0,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
-                example={"stop_loss_percent": 5.0, "take_profit_percent": 15.0, "trailing_stop_percent": 3.0},
-                expected_type="dict[str, Any]",
+                depends_on={"position_sizing": ["kelly", "fixed_percent", "atr_based"]},
+                example=10.0,
+                expected_type="float",
             ),
+            "fixed_percent": FieldSchema(
+                name="fixed_percent",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BacktestEngineNode.fixed_percent",
+                default=5.0,
+                min_value=0.1,
+                max_value=100.0,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                depends_on={"position_sizing": ["fixed_percent"]},
+                example=5.0,
+                expected_type="float",
+            ),
+            "fixed_amount": FieldSchema(
+                name="fixed_amount",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BacktestEngineNode.fixed_amount",
+                default=1000.0,
+                min_value=1.0,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                depends_on={"position_sizing": ["fixed_amount"]},
+                example=1000.0,
+                expected_type="float",
+            ),
+            "atr_risk_percent": FieldSchema(
+                name="atr_risk_percent",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BacktestEngineNode.atr_risk_percent",
+                default=1.0,
+                min_value=0.1,
+                max_value=10.0,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                depends_on={"position_sizing": ["atr_based"]},
+                example=1.0,
+                expected_type="float",
+            ),
+            "atr_period": FieldSchema(
+                name="atr_period",
+                type=FieldType.INTEGER,
+                description="i18n:fields.BacktestEngineNode.atr_period",
+                default=14,
+                min_value=1,
+                max_value=100,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                depends_on={"position_sizing": ["atr_based"]},
+                example=14,
+                expected_type="int",
+            ),
+            # === Exit Rules 개별 필드 (항상 표시, 선택 입력) ===
+            "stop_loss_percent": FieldSchema(
+                name="stop_loss_percent",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BacktestEngineNode.stop_loss_percent",
+                default=None,
+                min_value=0.1,
+                max_value=50.0,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=5.0,
+                expected_type="float",
+            ),
+            "take_profit_percent": FieldSchema(
+                name="take_profit_percent",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BacktestEngineNode.take_profit_percent",
+                default=None,
+                min_value=0.1,
+                max_value=100.0,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=15.0,
+                expected_type="float",
+            ),
+            "trailing_stop_percent": FieldSchema(
+                name="trailing_stop_percent",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BacktestEngineNode.trailing_stop_percent",
+                default=None,
+                min_value=0.1,
+                max_value=50.0,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example=3.0,
+                expected_type="float",
+            ),
+            "max_holding_days": FieldSchema(
+                name="max_holding_days",
+                type=FieldType.INTEGER,
+                description="i18n:fields.BacktestEngineNode.max_holding_days",
+                default=None,
+                min_value=1,
+                max_value=365,
+                category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=30,
+                expected_type="int",
+            ),
+            "time_stop_days": FieldSchema(
+                name="time_stop_days",
+                type=FieldType.INTEGER,
+                description="i18n:fields.BacktestEngineNode.time_stop_days",
+                default=None,
+                min_value=1,
+                max_value=365,
+                category=FieldCategory.SETTINGS,
+                bindable=False,
+                example=10,
+                expected_type="int",
+            ),
+            # === PARAMETERS: 벤치마크 ===
             "benchmark": FieldSchema(
                 name="benchmark",
                 type=FieldType.STRING,
-                description="Benchmark symbol for comparison. Common options: SPY, QQQ, IWM.",
+                description="i18n:fields.BacktestEngineNode.benchmark",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
@@ -347,7 +628,7 @@ class BacktestEngineNode(BaseNode):
             "commission_rate": FieldSchema(
                 name="commission_rate",
                 type=FieldType.NUMBER,
-                description="Commission rate as decimal. e.g., 0.001 = 0.1% per trade.",
+                description="i18n:fields.BacktestEngineNode.commission_rate",
                 default=0.001,
                 min_value=0,
                 max_value=0.1,
@@ -359,7 +640,7 @@ class BacktestEngineNode(BaseNode):
             "slippage": FieldSchema(
                 name="slippage",
                 type=FieldType.NUMBER,
-                description="Slippage as decimal. e.g., 0.0005 = 0.05% price impact.",
+                description="i18n:fields.BacktestEngineNode.slippage",
                 default=0.0005,
                 min_value=0,
                 max_value=0.1,
@@ -371,7 +652,7 @@ class BacktestEngineNode(BaseNode):
             "risk_free_rate": FieldSchema(
                 name="risk_free_rate",
                 type=FieldType.NUMBER,
-                description="Annual risk-free rate for Sharpe ratio calculation. e.g., 0.02 = 2%.",
+                description="i18n:fields.BacktestEngineNode.risk_free_rate",
                 default=0.02,
                 min_value=0,
                 max_value=0.2,
@@ -383,7 +664,7 @@ class BacktestEngineNode(BaseNode):
             "allow_short": FieldSchema(
                 name="allow_short",
                 type=FieldType.BOOLEAN,
-                description="Allow short selling. When true, negative signals create short positions.",
+                description="i18n:fields.BacktestEngineNode.allow_short",
                 default=False,
                 category=FieldCategory.SETTINGS,
                 bindable=False,
@@ -391,7 +672,7 @@ class BacktestEngineNode(BaseNode):
             "allow_fractional": FieldSchema(
                 name="allow_fractional",
                 type=FieldType.BOOLEAN,
-                description="Allow fractional shares. When false, positions are rounded to whole shares.",
+                description="i18n:fields.BacktestEngineNode.allow_fractional",
                 default=True,
                 category=FieldCategory.SETTINGS,
                 bindable=False,
@@ -399,7 +680,7 @@ class BacktestEngineNode(BaseNode):
             "strategy_name": FieldSchema(
                 name="strategy_name",
                 type=FieldType.STRING,
-                description="Strategy name for display in reports and charts.",
+                description="i18n:fields.BacktestEngineNode.strategy_name",
                 required=False,
                 category=FieldCategory.SETTINGS,
                 bindable=False,
