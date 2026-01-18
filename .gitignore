@@ -770,3 +770,5 @@ pip-selfcheck.json
 .vscode/
 */.vscode/
 .github/
+# Examples (local testing)
+src/programgarden/examples/
