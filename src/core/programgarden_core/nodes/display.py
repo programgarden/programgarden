@@ -132,6 +132,19 @@ class DisplayNode(BaseNode):
     )
     
     # ========================================
+    # 시그널 마커 (line, multi_line, candlestick)
+    # ========================================
+    signal_field: Optional[str] = Field(
+        default=None,
+        description="시그널 필드명 (예: signal). buy/sell 값이 있으면 마커 표시",
+    )
+    
+    side_field: Optional[str] = Field(
+        default=None,
+        description="포지션 방향 필드명 (예: side). long/short 구분. 미지정시 long으로 간주",
+    )
+    
+    # ========================================
     # table 전용
     # ========================================
     columns: Optional[List[str]] = Field(
@@ -343,5 +356,21 @@ class DisplayNode(BaseNode):
                 description="표시할 컬럼 목록",
                 category=FieldCategory.SETTINGS,
                 depends_on={"chart_type": ["table"]},
+            ),
+            "signal_field": FieldSchema(
+                name="signal_field",
+                type=FieldType.STRING,
+                description="시그널 필드명 (buy/sell 마커 표시)",
+                placeholder="signal",
+                category=FieldCategory.PARAMETERS,
+                depends_on={"chart_type": ["line", "multi_line", "candlestick"]},
+            ),
+            "side_field": FieldSchema(
+                name="side_field",
+                type=FieldType.STRING,
+                description="포지션 방향 필드명 (long/short 구분)",
+                placeholder="side",
+                category=FieldCategory.PARAMETERS,
+                depends_on={"chart_type": ["line", "multi_line", "candlestick"]},
             ),
         }

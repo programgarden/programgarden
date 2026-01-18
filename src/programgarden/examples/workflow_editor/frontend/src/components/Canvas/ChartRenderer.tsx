@@ -2,6 +2,7 @@
  * ChartRenderer - Recharts-based chart rendering component
  * 
  * Supports: line, candlestick, bar, scatter, radar, heatmap, table
+ * Signal markers: buy/sell signals with long/short sides
  */
 import {
   LineChart,
@@ -21,6 +22,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
+  ReferenceDot,
 } from 'recharts';
 
 interface ChartProps {
@@ -36,6 +38,136 @@ const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'
 
 // Suppress unused variable warning - COLORS used in render functions
 void COLORS;
+
+// Signal marker configuration
+const SIGNAL_MARKERS: Record<string, { color: string; label: string; shape: string }> = {
+  'buy_long': { color: '#22c55e', label: 'B', shape: '▲' },   // 초록 - 롱 진입
+  'sell_long': { color: '#ef4444', label: 'S', shape: '▼' },  // 빨강 - 롱 청산
+  'sell_short': { color: '#3b82f6', label: 'S', shape: '▼' }, // 파랑 - 숏 진입
+  'buy_short': { color: '#f97316', label: 'B', shape: '▲' },  // 주황 - 숏 청산
+};
+
+/**
+ * Extract signal markers from data
+ */
+function extractSignalMarkers(
+  data: Record<string, unknown>[],
+  xField: string,
+  yField: string,
+  signalField: string,
+  sideField?: string,
+  seriesKey?: string,
+): Array<{
+  x: unknown;
+  y: number;
+  signal: string;
+  side: string;
+  color: string;
+  label: string;
+  series?: string;
+}> {
+  const markers: Array<{
+    x: unknown;
+    y: number;
+    signal: string;
+    side: string;
+    color: string;
+    label: string;
+    series?: string;
+  }> = [];
+
+  data.forEach((item) => {
+    const signalVal = item[signalField];
+    if (!signalVal) return;
+
+    const signal = String(signalVal).toLowerCase();
+    if (signal !== 'buy' && signal !== 'sell') return;
+
+    // Determine side (default: long)
+    let side = 'long';
+    if (sideField && item[sideField]) {
+      const sideVal = String(item[sideField]).toLowerCase();
+      side = sideVal === 'short' ? 'short' : 'long';
+    }
+
+    const markerKey = `${signal}_${side}`;
+    const markerConfig = SIGNAL_MARKERS[markerKey] || SIGNAL_MARKERS['buy_long'];
+
+    markers.push({
+      x: item[xField],
+      y: Number(item[yField]) || 0,
+      signal,
+      side,
+      color: markerConfig.color,
+      label: markerConfig.label,
+      series: seriesKey ? String(item[seriesKey] || '') : undefined,
+    });
+  });
+
+  return markers;
+}
+
+/**
+ * Custom dot component for signal markers
+ */
+interface SignalDotProps {
+  cx?: number;
+  cy?: number;
+  payload?: Record<string, unknown>;
+  signalField: string;
+  sideField?: string;
+}
+
+function SignalDot({ cx, cy, payload, signalField, sideField }: SignalDotProps) {
+  if (!cx || !cy || !payload) return null;
+
+  const signalVal = payload[signalField];
+  if (!signalVal) return null;
+
+  const signal = String(signalVal).toLowerCase();
+  if (signal !== 'buy' && signal !== 'sell') return null;
+
+  // Determine side
+  let side = 'long';
+  if (sideField && payload[sideField]) {
+    const sideVal = String(payload[sideField]).toLowerCase();
+    side = sideVal === 'short' ? 'short' : 'long';
+  }
+
+  const markerKey = `${signal}_${side}`;
+  const config = SIGNAL_MARKERS[markerKey] || SIGNAL_MARKERS['buy_long'];
+
+  // Draw marker
+  const isBuy = signal === 'buy';
+  const yOffset = isBuy ? -12 : 12;
+
+  return (
+    <g>
+      {/* Triangle marker */}
+      <polygon
+        points={
+          isBuy
+            ? `${cx},${cy + yOffset} ${cx - 6},${cy + yOffset + 10} ${cx + 6},${cy + yOffset + 10}`
+            : `${cx},${cy + yOffset} ${cx - 6},${cy + yOffset - 10} ${cx + 6},${cy + yOffset - 10}`
+        }
+        fill={config.color}
+        stroke={config.color}
+        strokeWidth={1}
+      />
+      {/* Label */}
+      <text
+        x={cx}
+        y={isBuy ? cy + yOffset + 6 : cy + yOffset - 4}
+        textAnchor="middle"
+        fill="#fff"
+        fontSize={8}
+        fontWeight="bold"
+      >
+        {config.label}
+      </text>
+    </g>
+  );
+}
 
 /**
  * Format cell value for display in table
@@ -283,23 +415,38 @@ function HeatmapRenderer({ data }: { data: unknown[] }) {
 
 /**
  * Candlestick renderer (simplified using bar chart)
+ * Supports signal markers for buy/sell signals
  */
-function CandlestickRenderer({ data }: { data: unknown[] }) {
+interface CandlestickRendererProps {
+  data: unknown[];
+  options?: Record<string, unknown>;
+}
+
+function CandlestickRenderer({ data, options }: CandlestickRendererProps) {
   if (!data || data.length === 0) {
     return <div className="text-gray-500 text-xs">No data</div>;
   }
 
+  // Get field names from options (or use defaults)
+  const dateField = (options?.date_field as string) || 'date';
+  const openField = (options?.open_field as string) || 'open';
+  const highField = (options?.high_field as string) || 'high';
+  const lowField = (options?.low_field as string) || 'low';
+  const closeField = (options?.close_field as string) || 'close';
+  const signalField = options?.signal_field as string | undefined;
+  const sideField = options?.side_field as string | undefined;
+
   // Transform OHLC data for visualization
   const chartData = data.map((item) => {
     const d = item as Record<string, unknown>;
-    const open = Number(d.open) || 0;
-    const close = Number(d.close) || 0;
-    const high = Number(d.high) || 0;
-    const low = Number(d.low) || 0;
+    const open = Number(d[openField]) || 0;
+    const close = Number(d[closeField]) || 0;
+    const high = Number(d[highField]) || 0;
+    const low = Number(d[lowField]) || 0;
     const isUp = close >= open;
     
     return {
-      x: d.x || d.date || d.time,
+      x: d[dateField] || d.x || d.time,
       open,
       close,
       high,
@@ -307,8 +454,22 @@ function CandlestickRenderer({ data }: { data: unknown[] }) {
       body: Math.abs(close - open),
       bodyStart: Math.min(open, close),
       isUp,
+      // Signal data
+      signal: signalField ? d[signalField] : null,
+      side: sideField ? d[sideField] : null,
     };
   });
+
+  // Extract signal markers
+  const signalMarkers = signalField
+    ? extractSignalMarkers(
+        data as Record<string, unknown>[],
+        dateField,
+        closeField,
+        signalField,
+        sideField
+      )
+    : [];
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -319,12 +480,32 @@ function CandlestickRenderer({ data }: { data: unknown[] }) {
         <Tooltip
           contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151' }}
           labelStyle={{ color: '#fff' }}
+          formatter={(value: number | undefined, name?: string) => {
+            if (name === 'body' || value === undefined) return null;
+            return [value.toFixed(2), name || ''];
+          }}
         />
         <Bar dataKey="body" stackId="a">
           {chartData.map((entry, index) => (
             <Cell key={index} fill={entry.isUp ? '#22c55e' : '#ef4444'} />
           ))}
         </Bar>
+        {/* Signal markers */}
+        {signalMarkers.map((marker, idx) => (
+          <ReferenceDot
+            key={`signal-${idx}`}
+            x={marker.x as string}
+            y={marker.y}
+            r={0}
+            label={{
+              value: marker.label,
+              position: marker.signal === 'buy' ? 'top' : 'bottom',
+              fill: marker.color,
+              fontSize: 10,
+              fontWeight: 'bold',
+            }}
+          />
+        ))}
       </BarChart>
     </ResponsiveContainer>
   );
@@ -359,7 +540,7 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
   const yKey = options?.y_field as string | undefined;
 
   switch (type) {
-    case 'line':
+    case 'line': {
       // line 차트는 x_field, y_field 필수
       if (!xKey || !yKey) {
         return (
@@ -369,6 +550,14 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
           </div>
         );
       }
+      
+      // Signal markers
+      const signalField = options?.signal_field as string | undefined;
+      const sideField = options?.side_field as string | undefined;
+      const signalMarkers = signalField
+        ? extractSignalMarkers(data as Record<string, unknown>[], xKey, yKey, signalField, sideField)
+        : [];
+      
       return (
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data as Record<string, unknown>[]}>
@@ -391,12 +580,32 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
               dataKey={yKey} 
               stroke="#8b5cf6" 
               strokeWidth={2} 
-              dot={data.length <= 20}
+              dot={signalField 
+                ? (props) => <SignalDot {...props} signalField={signalField} sideField={sideField} />
+                : data.length <= 20
+              }
               activeDot={{ r: 4 }}
             />
+            {/* Signal markers as reference dots */}
+            {signalMarkers.map((marker, idx) => (
+              <ReferenceDot
+                key={`signal-${idx}`}
+                x={marker.x as string}
+                y={marker.y}
+                r={0}
+                label={{
+                  value: `${marker.label}`,
+                  position: marker.signal === 'buy' ? 'top' : 'bottom',
+                  fill: marker.color,
+                  fontSize: 10,
+                  fontWeight: 'bold',
+                }}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       );
+    }
 
     case 'multi_line': {
       // Multi-line chart: multiple series grouped by series_key
@@ -414,6 +623,13 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
       const xFieldKey = xKey;
       const yFieldKey = yKey;
       
+      // Signal markers
+      const signalField = options?.signal_field as string | undefined;
+      const sideField = options?.side_field as string | undefined;
+      const signalMarkers = signalField
+        ? extractSignalMarkers(data as Record<string, unknown>[], xFieldKey, yFieldKey, signalField, sideField, seriesKey)
+        : [];
+      
       // Group data by series_key
       const groupedData: Record<string, Record<string, unknown>[]> = {};
       (data as Record<string, unknown>[]).forEach((item) => {
@@ -427,7 +643,7 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
       const seriesNames = Object.keys(groupedData);
       
       // Merge all data points with series-specific y values
-      // Result: [{date: '20250101', AAPL: 28.5, NVDA: 45.2}, ...]
+      // Result: [{date: '20250101', AAPL: 28.5, NVDA: 45.2, _signals: [...] }, ...]
       const mergedData: Record<string, unknown>[] = [];
       const allXValues = new Set<string>();
       
@@ -445,6 +661,19 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
         seriesNames.forEach((series) => {
           const item = groupedData[series]?.find((i) => String(i[xFieldKey]) === xVal);
           point[series] = item ? item[yFieldKey] : null;
+          
+          // Store signal info for this series at this x value
+          if (signalField && item) {
+            const sig = item[signalField];
+            if (sig) {
+              if (!point._signals) point._signals = {};
+              (point._signals as Record<string, unknown>)[series] = {
+                signal: sig,
+                side: sideField ? item[sideField] : 'long',
+                y: item[yFieldKey],
+              };
+            }
+          }
         });
         mergedData.push(point);
       });
@@ -480,6 +709,22 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
                 dot={mergedData.length <= 30}
                 activeDot={{ r: 4 }}
                 connectNulls
+              />
+            ))}
+            {/* Signal markers */}
+            {signalMarkers.map((marker, idx) => (
+              <ReferenceDot
+                key={`signal-${idx}`}
+                x={marker.x as string}
+                y={marker.y}
+                r={0}
+                label={{
+                  value: `${marker.label}`,
+                  position: marker.signal === 'buy' ? 'top' : 'bottom',
+                  fill: marker.color,
+                  fontSize: 9,
+                  fontWeight: 'bold',
+                }}
               />
             ))}
           </LineChart>
@@ -550,7 +795,7 @@ export default function ChartRenderer({ type, data, xLabel, yLabel, options }: C
       );
 
     case 'candlestick':
-      return <CandlestickRenderer data={data} />;
+      return <CandlestickRenderer data={data} options={options} />;
 
     case 'heatmap':
       return <HeatmapRenderer data={data} />;

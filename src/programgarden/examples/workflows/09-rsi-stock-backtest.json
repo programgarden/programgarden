@@ -136,9 +136,14 @@
         "x": 1450,
         "y": 100
       },
-      "chart_type": "table",
+      "chart_type": "multi_line",
       "title": "전략 비교 지표",
-      "data": "{{ nodes.benchmark_compare.comparison_metrics }}"
+      "data": "{{ flatten(nodes.rsiCondition.values, 'time_series') }}",
+      "x_field": "date",
+      "y_field": "rsi",
+      "series_key": "symbol",
+      "signal_field": "signal",
+      "side_field": "side"
     },
     {
       "id": "display_ranking",
@@ -198,13 +203,9 @@
   "credentials": [
     {
       "id": "7c5caa90-f013-44fd-855d-410437c86737",
-      "type": "broker_ls",
-      "name": "LS 해외주식",
-      "data": {
-        "appkey": "",
-        "appsecret": "",
-        "paper_trading": ""
-      }
+      "type": "unknown",
+      "name": "7c5caa90-f013-44fd-855d-410437c86737",
+      "data": {}
     }
   ]
 }

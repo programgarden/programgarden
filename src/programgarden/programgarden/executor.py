@@ -3685,6 +3685,8 @@ class DisplayNodeExecutor(NodeExecutorBase):
             # 단일 라인 차트
             x_field = config.get("x_field")
             y_field = config.get("y_field")
+            signal_field = config.get("signal_field")
+            side_field = config.get("side_field")
             
             if not x_field or not y_field:
                 context.log("error", f"line 차트에 x_field, y_field 필수", node_id)
@@ -3706,6 +3708,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 if values:
                     print(f"📈 최대: {self._format_value(max(values))}")
                     print(f"📉 최소: {self._format_value(min(values))}")
+                
+                # 시그널 마커 표시
+                if signal_field:
+                    signals = self._extract_signals(data, x_field, signal_field, side_field)
+                    if signals:
+                        print(f"\n🎯 시그널 ({len(signals)}개):")
+                        for sig in signals[:10]:  # 최대 10개만 표시
+                            print(f"  {sig['marker']} {sig['x']} ({sig['signal']}/{sig['side']})")
+                        if len(signals) > 10:
+                            print(f"  ... 외 {len(signals) - 10}개")
             else:
                 print("(데이터 없음)")
             
@@ -3713,6 +3725,10 @@ class DisplayNodeExecutor(NodeExecutorBase):
             output_data["data"] = data
             output_data["x_field"] = x_field
             output_data["y_field"] = y_field
+            if signal_field:
+                output_data["signal_field"] = signal_field
+            if side_field:
+                output_data["side_field"] = side_field
             
         elif chart_type == "multi_line":
             # 멀티 라인 차트 (심볼별)
@@ -3722,6 +3738,8 @@ class DisplayNodeExecutor(NodeExecutorBase):
             limit = config.get("limit", 10)
             sort_by = config.get("sort_by")
             sort_order = config.get("sort_order", "desc")
+            signal_field = config.get("signal_field")
+            side_field = config.get("side_field")
             
             if not x_field or not y_field or not series_key:
                 context.log("error", f"multi_line 차트에 x_field, y_field, series_key 필수", node_id)
@@ -3763,12 +3781,27 @@ class DisplayNodeExecutor(NodeExecutorBase):
                         first_val = rows[0].get(y_field, 0)
                         last_val = rows[-1].get(y_field, 0)
                         print(f"{symbol:<12} | {len(rows):<8} | {self._format_value(first_val):<15} | {self._format_value(last_val):<15}")
+                
+                # 시그널 마커 표시
+                if signal_field:
+                    signals = self._extract_signals(data, x_field, signal_field, side_field, series_key)
+                    if signals:
+                        print(f"\n🎯 시그널 ({len(signals)}개):")
+                        for sig in signals[:15]:  # 최대 15개만 표시
+                            series_info = f" [{sig.get('series', '')}]" if sig.get('series') else ""
+                            print(f"  {sig['marker']} {sig['x']}{series_info} ({sig['signal']}/{sig['side']})")
+                        if len(signals) > 15:
+                            print(f"  ... 외 {len(signals) - 15}개")
             
             print("=" * 80 + "\n")
             output_data["data"] = data
             output_data["x_field"] = x_field
             output_data["y_field"] = y_field
             output_data["series_key"] = series_key
+            if signal_field:
+                output_data["signal_field"] = signal_field
+            if side_field:
+                output_data["side_field"] = side_field
             
         elif chart_type == "candlestick":
             # 캔들스틱 차트
@@ -3778,6 +3811,8 @@ class DisplayNodeExecutor(NodeExecutorBase):
             low_field = config.get("low_field")
             close_field = config.get("close_field")
             volume_field = config.get("volume_field")
+            signal_field = config.get("signal_field")
+            side_field = config.get("side_field")
             
             required = [date_field, open_field, high_field, low_field, close_field]
             if not all(required):
@@ -3803,6 +3838,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
                     sign = "+" if pct_change >= 0 else ""
                     color = "\033[92m" if pct_change >= 0 else "\033[91m"
                     print(f"📈 변동률: {color}{sign}{pct_change:.2f}%\033[0m")
+                
+                # 시그널 마커 표시
+                if signal_field:
+                    signals = self._extract_signals(data, date_field, signal_field, side_field)
+                    if signals:
+                        print(f"\n🎯 시그널 ({len(signals)}개):")
+                        for sig in signals[:10]:  # 최대 10개만 표시
+                            print(f"  {sig['marker']} {sig['x']} ({sig['signal']}/{sig['side']})")
+                        if len(signals) > 10:
+                            print(f"  ... 외 {len(signals) - 10}개")
             else:
                 print("(데이터 없음)")
             
@@ -3815,6 +3860,10 @@ class DisplayNodeExecutor(NodeExecutorBase):
             output_data["close_field"] = close_field
             if volume_field:
                 output_data["volume_field"] = volume_field
+            if signal_field:
+                output_data["signal_field"] = signal_field
+            if side_field:
+                output_data["side_field"] = side_field
             
         elif chart_type == "bar":
             # 바 차트
@@ -3873,11 +3922,77 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 "limit": config.get("limit"),
                 "sort_by": config.get("sort_by"),
                 "sort_order": config.get("sort_order"),
+                "signal_field": config.get("signal_field"),
+                "side_field": config.get("side_field"),
             },
         )
         
         context.log("info", f"Display rendered: {chart_type}", node_id)
         return output_data
+    
+    def _extract_signals(
+        self,
+        data: List[Dict[str, Any]],
+        x_field: str,
+        signal_field: str,
+        side_field: Optional[str] = None,
+        series_key: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        데이터에서 시그널 마커 정보 추출
+        
+        Returns:
+            [{"x": "2025-01-15", "signal": "buy", "side": "long", "marker": "[B:L]", "series": "AAPL"}, ...]
+        """
+        signals = []
+        
+        # 시그널 마커 매핑
+        SIGNAL_MARKERS = {
+            ("buy", "long"): "[B:L]",      # 🟢 롱 진입
+            ("sell", "long"): "[S:L]",     # 🔴 롱 청산
+            ("sell", "short"): "[S:S]",    # 🔵 숏 진입
+            ("buy", "short"): "[B:S]",     # 🟠 숏 청산
+        }
+        
+        for row in data:
+            if not isinstance(row, dict):
+                continue
+            
+            signal_val = row.get(signal_field)
+            if not signal_val:
+                continue
+            
+            # signal 정규화
+            signal = str(signal_val).lower()
+            if signal not in ("buy", "sell"):
+                continue
+            
+            # side 결정 (기본값: long)
+            side = "long"
+            if side_field:
+                side_val = row.get(side_field)
+                if side_val:
+                    side = str(side_val).lower()
+                    if side not in ("long", "short"):
+                        side = "long"
+            
+            # 마커 결정
+            marker = SIGNAL_MARKERS.get((signal, side), f"[{signal[0].upper()}:{side[0].upper()}]")
+            
+            sig_info = {
+                "x": row.get(x_field, ""),
+                "signal": signal,
+                "side": side,
+                "marker": marker,
+            }
+            
+            # 시리즈 키가 있으면 추가
+            if series_key:
+                sig_info["series"] = row.get(series_key, "")
+            
+            signals.append(sig_info)
+        
+        return signals
 
 
 class ConditionNodeExecutor(NodeExecutorBase):

@@ -50,8 +50,15 @@ function shouldShowField(
   // depends_on: { "chart_type": ["line", "bar"] } 형식
   const dependsOn = schema.depends_on as Record<string, string[]> | undefined;
   if (dependsOn) {
+    // DEBUG: depends_on 조건 체크 로그
+    console.log('[shouldShowField] depends_on check:', {
+      dependsOn,
+      nodeDataKeys: Object.keys(nodeData),
+      chart_type: nodeData['chart_type'],
+    });
     const dependsOnMatch = Object.entries(dependsOn).every(([key, allowedValues]) => {
       const actualValue = nodeData[key];
+      console.log(`[shouldShowField] key=${key}, actualValue=${actualValue}, allowedValues=`, allowedValues);
       if (Array.isArray(allowedValues)) {
         return allowedValues.includes(actualValue as string);
       }
