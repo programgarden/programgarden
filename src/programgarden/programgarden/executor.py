@@ -5708,6 +5708,8 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             close_field = config.get("close_field", "close")
             date_field = config.get("date_field", "date")
             symbol_field = config.get("symbol_field", "symbol")
+            signal_field = config.get("signal_field", "signal")
+            side_field = config.get("side_field", "side")
             
             # 플랫 배열 → 종목별 딕셔너리로 변환
             ohlcv_data = self._convert_flat_to_symbol_dict(flat_data, symbol_field, date_field, close_field)
@@ -5722,7 +5724,7 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             values = context.get_output(f"_input_{node_id}", "values")
             if values and isinstance(values, list):
                 # values에서 signal 필드가 있는 엔트리 추출
-                extracted_signals = self._extract_signals_from_values(values)
+                extracted_signals = self._extract_signals_from_values(values, signal_field, side_field)
                 if extracted_signals:
                     signals = extracted_signals
             
@@ -5730,6 +5732,7 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             initial_capital = config.get("initial_capital", 10000)
             commission_rate = config.get("commission_rate", 0.001)
             slippage = config.get("slippage", 0.0005)
+            allow_short = config.get("allow_short", False)
             
             context.log(
                 "info", 
@@ -5744,6 +5747,7 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                 initial_capital=initial_capital,
                 commission_rate=commission_rate,
                 slippage=slippage,
+                allow_short=allow_short,
             )
             
             # 성과 지표 계산
@@ -5857,12 +5861,14 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
     def _extract_signals_from_values(
         self,
         values: List[Dict],
+        signal_field: str = "signal",
+        side_field: str = "side",
     ) -> List[Dict]:
         """
         values 형식에서 signal 필드가 있는 엔트리를 추출하여 플랫 배열로 변환
         
-        입력: [{symbol: "AAPL", exchange: "NASDAQ", time_series: [{date, close, rsi, signal: "buy"}, ...]}, ...]
-        출력: [{date, symbol: "AAPL", signal: "buy", action: "buy", price}, ...]
+        입력: [{symbol: "AAPL", exchange: "NASDAQ", time_series: [{date, close, rsi, signal: "buy", side: "long"}, ...]}, ...]
+        출력: [{date, symbol: "AAPL", signal: "buy", side: "long", action: "buy", price}, ...]
         """
         signals = []
         
@@ -5880,12 +5886,14 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                 if not isinstance(bar, dict):
                     continue
                 
-                signal = bar.get("signal")
+                signal = bar.get(signal_field)
+                side = bar.get(side_field, "long")  # 기본값: long
                 if signal and signal in ("buy", "sell"):
                     signals.append({
                         "date": bar.get("date", ""),
                         "symbol": symbol,
                         "signal": signal,
+                        "side": side,
                         "action": signal,
                         "price": bar.get("close", bar.get("price", 0)),
                     })
@@ -5901,14 +5909,16 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
         initial_capital: float,
         commission_rate: float,
         slippage: float,
+        allow_short: bool = False,
     ) -> Dict[str, Any]:
-        """백테스트 시뮬레이션 실행"""
+        """백테스트 시뮬레이션 실행 (양방향 지원)"""
         
         equity_curve = []
         trades = []
         
         cash = initial_capital
-        positions = {}  # {symbol: {"qty": 10, "avg_price": 100}}
+        # 양방향 포지션 관리: {symbol: {long_qty, long_avg, short_qty, short_avg}}
+        positions = {}
         
         # 모든 날짜 수집 (첫 번째 종목 기준)
         if not ohlcv_data:
@@ -5929,7 +5939,6 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
         # ========================================
         # Buy & Hold 전략: signals가 없거나 빈 리스트면 첫날 전종목 매수
         # ========================================
-        # signals가 bool, None, 빈 리스트 등일 때 처리
         use_buy_and_hold = (
             not signals or 
             not isinstance(signals, list) or 
@@ -5961,12 +5970,16 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                         cost = qty * price * (1 + commission_rate)
                         
                         cash -= cost
-                        positions[symbol] = {"qty": qty, "avg_price": price}
+                        positions[symbol] = {
+                            "long_qty": qty, "long_avg": price,
+                            "short_qty": 0, "short_avg": 0,
+                        }
                         
                         trades.append({
                             "date": date,
                             "symbol": symbol,
                             "action": "buy",
+                            "side": "long",
                             "price": price,
                             "qty": qty,
                             "cost": cost,
@@ -5981,61 +5994,129 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                 for sig in day_signals:
                     symbol = sig.get("symbol", "")
                     action = sig.get("signal", sig.get("action", "hold"))
+                    side = sig.get("side", "long")
                     price = prices.get(symbol, 0)
                     
-                    if action == "buy" and price > 0 and cash > 0:
-                        # 매수: 자본의 10%씩
-                        amount = cash * 0.1
-                        qty = amount / (price * (1 + slippage))
-                        cost = qty * price * (1 + commission_rate)
-                        
-                        if cost <= cash:
-                            cash -= cost
-                            if symbol not in positions:
-                                positions[symbol] = {"qty": 0, "avg_price": 0}
-                            
-                            # 평균 단가 계산
-                            old_qty = positions[symbol]["qty"]
-                            old_avg = positions[symbol]["avg_price"]
-                            new_qty = old_qty + qty
-                            new_avg = (old_qty * old_avg + qty * price) / new_qty if new_qty > 0 else price
-                            
-                            positions[symbol] = {"qty": new_qty, "avg_price": new_avg}
-                            
-                            trades.append({
-                                "date": date,
-                                "symbol": symbol,
-                                "action": "buy",
-                                "price": price,
-                                "qty": qty,
-                                "cost": cost,
-                            })
+                    # 포지션 초기화
+                    if symbol not in positions:
+                        positions[symbol] = {
+                            "long_qty": 0, "long_avg": 0,
+                            "short_qty": 0, "short_avg": 0,
+                        }
+                    pos = positions[symbol]
                     
-                    elif action == "sell" and symbol in positions and positions[symbol]["qty"] > 0:
-                        # 매도: 전량 매도
-                        qty = positions[symbol]["qty"]
-                        proceeds = qty * price * (1 - commission_rate)
-                        pnl = proceeds - qty * positions[symbol]["avg_price"]
+                    if action == "buy" and price > 0:
+                        if side == "long":
+                            # 롱 매수: cash → long_qty 증가
+                            if cash > 0:
+                                amount = cash * 0.1
+                                qty = amount / (price * (1 + slippage))
+                                cost = qty * price * (1 + commission_rate)
+                                
+                                if cost <= cash:
+                                    cash -= cost
+                                    old_qty = pos["long_qty"]
+                                    old_avg = pos["long_avg"]
+                                    new_qty = old_qty + qty
+                                    new_avg = (old_qty * old_avg + qty * price) / new_qty if new_qty > 0 else price
+                                    
+                                    pos["long_qty"] = new_qty
+                                    pos["long_avg"] = new_avg
+                                    
+                                    trades.append({
+                                        "date": date,
+                                        "symbol": symbol,
+                                        "action": "buy",
+                                        "side": "long",
+                                        "price": price,
+                                        "qty": qty,
+                                        "cost": cost,
+                                    })
                         
-                        cash += proceeds
-                        positions[symbol] = {"qty": 0, "avg_price": 0}
+                        elif side == "short" and allow_short:
+                            # 숗 커버: short_qty 감소 → cash (손익 정산)
+                            if pos["short_qty"] > 0:
+                                qty = pos["short_qty"]
+                                # 숗 청산: (진입가 - 현재가) * 수량
+                                pnl = (pos["short_avg"] - price) * qty
+                                proceeds = qty * pos["short_avg"] + pnl - (qty * price * commission_rate)
+                                
+                                cash += proceeds
+                                pos["short_qty"] = 0
+                                pos["short_avg"] = 0
+                                
+                                trades.append({
+                                    "date": date,
+                                    "symbol": symbol,
+                                    "action": "cover",
+                                    "side": "short",
+                                    "price": price,
+                                    "qty": qty,
+                                    "proceeds": proceeds,
+                                    "pnl": pnl,
+                                })
+                    
+                    elif action == "sell" and price > 0:
+                        if side == "long":
+                            # 롱 청산: long_qty 감소 → cash (손익 정산)
+                            if pos["long_qty"] > 0:
+                                qty = pos["long_qty"]
+                                proceeds = qty * price * (1 - commission_rate)
+                                pnl = proceeds - qty * pos["long_avg"]
+                                
+                                cash += proceeds
+                                pos["long_qty"] = 0
+                                pos["long_avg"] = 0
+                                
+                                trades.append({
+                                    "date": date,
+                                    "symbol": symbol,
+                                    "action": "sell",
+                                    "side": "long",
+                                    "price": price,
+                                    "qty": qty,
+                                    "proceeds": proceeds,
+                                    "pnl": pnl,
+                                })
                         
-                        trades.append({
-                            "date": date,
-                            "symbol": symbol,
-                            "action": "sell",
-                            "price": price,
-                            "qty": qty,
-                            "proceeds": proceeds,
-                            "pnl": pnl,
-                        })
+                        elif side == "short" and allow_short:
+                            # 숗 진입: cash → short_qty 증가
+                            if cash > 0:
+                                amount = cash * 0.1
+                                qty = amount / (price * (1 + slippage))
+                                # 숗 진입 시 증거금 차감 (단순화: 가격만큼 예치)
+                                margin = qty * price * (1 + commission_rate)
+                                
+                                if margin <= cash:
+                                    cash -= margin
+                                    old_qty = pos["short_qty"]
+                                    old_avg = pos["short_avg"]
+                                    new_qty = old_qty + qty
+                                    new_avg = (old_qty * old_avg + qty * price) / new_qty if new_qty > 0 else price
+                                    
+                                    pos["short_qty"] = new_qty
+                                    pos["short_avg"] = new_avg
+                                    
+                                    trades.append({
+                                        "date": date,
+                                        "symbol": symbol,
+                                        "action": "short",
+                                        "side": "short",
+                                        "price": price,
+                                        "qty": qty,
+                                        "margin": margin,
+                                    })
             
-            # 포트폴리오 가치 계산
+            # 포트폴리오 가치 계산 (양방향)
             portfolio_value = cash
             for symbol, pos in positions.items():
-                if pos["qty"] > 0:
-                    price = prices.get(symbol, pos["avg_price"])
-                    portfolio_value += pos["qty"] * price
+                price = prices.get(symbol, 0)
+                if pos.get("long_qty", 0) > 0:
+                    portfolio_value += pos["long_qty"] * price
+                if pos.get("short_qty", 0) > 0:
+                    # 숗 포지션 가치: 증거금 + 미실현 손익
+                    short_pnl = (pos["short_avg"] - price) * pos["short_qty"]
+                    portfolio_value += pos["short_qty"] * pos["short_avg"] + short_pnl
             
             equity_curve.append({
                 "date": date,
@@ -6591,6 +6672,358 @@ class PortfolioNodeExecutor(NodeExecutorBase):
         }
 
 
+class BenchmarkCompareNodeExecutor(NodeExecutorBase):
+    """
+    BenchmarkCompareNode executor - 벤치마크 비교 분석
+    
+    여러 백테스트 결과(equity_curve)를 비교 분석합니다.
+    전략 vs 전략, 전략 vs Buy&Hold 등 다양한 비교를 지원합니다.
+    
+    입력:
+    - strategies: BacktestEngineNode 출력 목록 (equity_curve, metrics 포함)
+    
+    출력:
+    - combined_curve: 통합 차트 데이터 (날짜별 모든 전략 값)
+    - comparison_metrics: 전략별 비교 지표 (return, sharpe, mdd, calmar)
+    - ranking: ranking_metric 기준 순위
+    - strategies_meta: 전략 메타 정보 (index, id, label)
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """벤치마크 비교 실행"""
+        
+        # 설정 읽기
+        strategies_input = config.get("strategies", [])
+        ranking_metric = config.get("ranking_metric", "sharpe")
+        
+        # 전략 결과 파싱
+        parsed = self._parse_strategies(strategies_input, context, node_id)
+        
+        if not parsed["strategies"]:
+            context.log("warning", "No strategy results to compare", node_id)
+            return {
+                "combined_curve": [],
+                "comparison_metrics": [],
+                "ranking": [],
+                "strategies_meta": [],
+            }
+        
+        context.log(
+            "info",
+            f"Comparing {len(parsed['strategies'])} strategies, ranking by {ranking_metric}",
+            node_id
+        )
+        
+        # 날짜 정렬 및 통합 차트 데이터 생성
+        combined_curve = self._combine_curves(parsed["strategies"], parsed["meta"])
+        
+        # 비교 지표 계산
+        comparison_metrics = self._calculate_comparison_metrics(parsed["strategies"], parsed["meta"])
+        
+        # 순위 결정
+        ranking = self._rank_strategies(comparison_metrics, ranking_metric)
+        
+        return {
+            "combined_curve": combined_curve,
+            "comparison_metrics": comparison_metrics,
+            "ranking": ranking,
+            "strategies_meta": parsed["meta"],
+        }
+
+    def _parse_strategies(
+        self,
+        strategies_input: Any,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """
+        strategies 입력에서 equity_curve와 메타 정보 추출
+        
+        지원 형식:
+        1. BacktestEngineNode 전체 출력: {equity_curve: [...], metrics: {...}, strategy_name: "..."}
+        2. equity_curve 직접: [{date, value}, ...]
+        3. 바인딩 배열: [{{ nodes.bt1 }}, {{ nodes.bt2 }}]
+        4. 딕셔너리 내 바인딩: [{strategy_name: "...", equity_curve: "{{ nodes.bt1.equity_curve }}"}]
+        """
+        from programgarden_core.expression import ExpressionEvaluator
+        
+        result = {
+            "strategies": [],  # [{equity_curve: [...], metrics: {...}}, ...]
+            "meta": [],  # [{index, id, label}, ...]
+        }
+        
+        if not strategies_input:
+            return result
+        
+        # 표현식 평가기 준비
+        expr_context = context.get_expression_context()
+        evaluator = ExpressionEvaluator(expr_context)
+        
+        def evaluate_recursive(value: Any) -> Any:
+            """딕셔너리/리스트 내부 표현식을 재귀적으로 평가"""
+            if isinstance(value, str) and "{{" in value:
+                try:
+                    return evaluator.evaluate(value)
+                except Exception as e:
+                    context.log("warning", f"Expression evaluation failed: {value} - {e}", node_id)
+                    return value
+            elif isinstance(value, dict):
+                return {k: evaluate_recursive(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [evaluate_recursive(v) for v in value]
+            return value
+        
+        # 단일 객체를 배열로 변환
+        if not isinstance(strategies_input, list):
+            strategies_input = [strategies_input]
+        
+        for idx, item in enumerate(strategies_input):
+            if not item:
+                continue
+            
+            # 딕셔너리 내부의 표현식을 먼저 평가 (equity_curve: "{{ }}" 등)
+            if isinstance(item, dict):
+                item = evaluate_recursive(item)
+            
+            strategy_data = {}
+            meta = {
+                "index": idx,
+                "id": f"strategy_{idx}",
+                "label": f"Strategy {idx + 1}",
+            }
+            
+            # BacktestEngineNode 전체 출력인 경우
+            if isinstance(item, dict):
+                if "equity_curve" in item:
+                    strategy_data["equity_curve"] = item["equity_curve"]
+                    strategy_data["metrics"] = item.get("metrics", item.get("summary", {}))
+                    
+                    # label 결정
+                    if item.get("strategy_name"):
+                        meta["label"] = item["strategy_name"]
+                    
+                    # id 결정 (바인딩 표현식에서 노드 ID 추출 시도)
+                    if item.get("_source_node_id"):
+                        meta["id"] = item["_source_node_id"]
+                
+                # equity_curve가 직접 전달된 경우 (배열 형식)
+                elif isinstance(item.get("date"), str) or (
+                    isinstance(item, list) and item and isinstance(item[0], dict) and "date" in item[0]
+                ):
+                    # 단일 포인트인 경우 배열로 변환
+                    if "date" in item:
+                        strategy_data["equity_curve"] = [item]
+                    else:
+                        strategy_data["equity_curve"] = item
+                    strategy_data["metrics"] = {}
+                
+                # values 형식인 경우 (time_series 포함)
+                elif "time_series" in item:
+                    ts = item.get("time_series", [])
+                    # time_series에서 value/equity 필드가 있는 경우 equity_curve로 변환
+                    equity_curve = []
+                    for point in ts:
+                        if isinstance(point, dict):
+                            date = point.get("date", "")
+                            value = point.get("value", point.get("equity", point.get("close", 0)))
+                            if date and value:
+                                equity_curve.append({"date": date, "value": value})
+                    
+                    if equity_curve:
+                        strategy_data["equity_curve"] = equity_curve
+                        strategy_data["metrics"] = {}
+                        
+                        if item.get("symbol"):
+                            meta["label"] = f"{item['symbol']} Strategy"
+                            meta["id"] = item["symbol"]
+            
+            # 배열이 직접 전달된 경우 (equity_curve 배열)
+            elif isinstance(item, list) and item and isinstance(item[0], dict):
+                strategy_data["equity_curve"] = item
+                strategy_data["metrics"] = {}
+            
+            if strategy_data.get("equity_curve"):
+                result["strategies"].append(strategy_data)
+                result["meta"].append(meta)
+        
+        return result
+
+    def _combine_curves(
+        self,
+        strategies: List[Dict],
+        meta: List[Dict],
+    ) -> List[Dict]:
+        """
+        여러 equity_curve를 날짜별로 통합
+        
+        출력: [{date: "20260101", values: [10500, 10200, 10100]}, ...]
+        """
+        if not strategies:
+            return []
+        
+        # 모든 날짜 수집 및 정렬
+        all_dates = set()
+        for s in strategies:
+            for point in s.get("equity_curve", []):
+                all_dates.add(point.get("date", ""))
+        
+        all_dates = sorted(all_dates)
+        
+        # 날짜별 값 수집
+        combined = []
+        for date in all_dates:
+            if not date:
+                continue
+            
+            values = []
+            for s in strategies:
+                # 해당 날짜의 값 찾기
+                value = None
+                for point in s.get("equity_curve", []):
+                    if point.get("date") == date:
+                        value = point.get("value", 0)
+                        break
+                
+                # 값이 없으면 이전 값 사용 (forward fill)
+                if value is None:
+                    # 해당 날짜 이전의 가장 최근 값 찾기
+                    for point in reversed(s.get("equity_curve", [])):
+                        if point.get("date", "") <= date:
+                            value = point.get("value", 0)
+                            break
+                
+                values.append(value if value is not None else 0)
+            
+            combined.append({
+                "date": date,
+                "values": values,
+            })
+        
+        return combined
+
+    def _calculate_comparison_metrics(
+        self,
+        strategies: List[Dict],
+        meta: List[Dict],
+    ) -> List[Dict]:
+        """
+        각 전략의 비교 지표 계산
+        
+        출력: [{index, id, label, return, sharpe, mdd, calmar}, ...]
+        """
+        import math
+        
+        result = []
+        
+        for idx, (strategy, m) in enumerate(zip(strategies, meta)):
+            equity_curve = strategy.get("equity_curve", [])
+            metrics = strategy.get("metrics", {})
+            
+            # 기존 metrics가 있으면 사용
+            total_return = metrics.get("total_return")
+            sharpe = metrics.get("sharpe_ratio")
+            mdd = metrics.get("max_drawdown")
+            
+            # 없으면 직접 계산
+            if equity_curve and len(equity_curve) >= 2:
+                values = [p.get("value", 0) for p in equity_curve]
+                initial = values[0] if values[0] > 0 else 1
+                final = values[-1]
+                
+                # 총 수익률
+                if total_return is None:
+                    total_return = (final - initial) / initial * 100
+                
+                # MDD
+                if mdd is None:
+                    peak = values[0]
+                    max_dd = 0
+                    for v in values:
+                        if v > peak:
+                            peak = v
+                        if peak > 0:
+                            dd = (peak - v) / peak * 100
+                            if dd > max_dd:
+                                max_dd = dd
+                    mdd = max_dd
+                
+                # Sharpe
+                if sharpe is None:
+                    daily_returns = []
+                    for i in range(1, len(values)):
+                        if values[i-1] > 0:
+                            daily_returns.append((values[i] - values[i-1]) / values[i-1])
+                    
+                    if daily_returns:
+                        avg = sum(daily_returns) / len(daily_returns)
+                        std = math.sqrt(sum((r - avg) ** 2 for r in daily_returns) / len(daily_returns))
+                        sharpe = (avg / std) * math.sqrt(252) if std > 0 else 0
+                    else:
+                        sharpe = 0
+            else:
+                total_return = total_return or 0
+                sharpe = sharpe or 0
+                mdd = mdd or 0
+            
+            # Calmar 계산 (연환산 수익률 / MDD)
+            # 간단히 total_return / mdd로 계산
+            calmar = abs(total_return / mdd) if mdd and mdd > 0 else 0
+            
+            result.append({
+                "index": m["index"],
+                "id": m["id"],
+                "label": m["label"],
+                "return": round(total_return, 2) if total_return else 0,
+                "sharpe": round(sharpe, 2) if sharpe else 0,
+                "mdd": round(mdd, 2) if mdd else 0,
+                "calmar": round(calmar, 2),
+            })
+        
+        return result
+
+    def _rank_strategies(
+        self,
+        metrics: List[Dict],
+        ranking_metric: str,
+    ) -> List[Dict]:
+        """
+        ranking_metric 기준으로 순위 결정
+        
+        출력: [{rank, index, id, label, <metric_value>}, ...]
+        """
+        if not metrics:
+            return []
+        
+        # 정렬 기준 결정 (높을수록 좋은 지표)
+        # MDD는 낮을수록 좋으므로 reverse=False
+        reverse = ranking_metric != "mdd"
+        
+        sorted_metrics = sorted(
+            metrics,
+            key=lambda x: x.get(ranking_metric, 0) if ranking_metric != "mdd" else -x.get(ranking_metric, 0),
+            reverse=reverse
+        )
+        
+        result = []
+        for rank, m in enumerate(sorted_metrics, 1):
+            result.append({
+                "rank": rank,
+                "index": m["index"],
+                "id": m["id"],
+                "label": m["label"],
+                ranking_metric: m.get(ranking_metric, 0),
+            })
+        
+        return result
+
+
 class WorkflowExecutor:
     """
     Workflow execution engine
@@ -6631,6 +7064,7 @@ class WorkflowExecutor:
             # Backtest nodes
             "HistoricalDataNode": HistoricalDataNodeExecutor(),
             "BacktestEngineNode": BacktestEngineNodeExecutor(),
+            "BenchmarkCompareNode": BenchmarkCompareNodeExecutor(),
             # Portfolio node
             "PortfolioNode": PortfolioNodeExecutor(),
         }

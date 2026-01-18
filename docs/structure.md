@@ -203,7 +203,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | `risk` | 리스크 관리, 포트폴리오 배분 | RiskGuardNode, RiskConditionNode, PortfolioNode |
 | `schedule` | 시간 기반 트리거, 거래시간 필터 | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode |
 | `data` | 외부 DB 및 API 연동 | SQLiteNode, PostgresNode, HTTPRequestNode |
-| `analysis` | 백테스트, 차트, 성과 계산 | BacktestEngineNode, DisplayNode, CustomPnLNode |
+| `analysis` | 백테스트, 차트, 성과 계산 | BacktestEngineNode, BenchmarkCompareNode, DisplayNode, CustomPnLNode |
 | `system` | Job 제어, 알림, 서브플로우 | DeployNode, TradingHaltNode, JobControlNode |
 
 ---
@@ -326,6 +326,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | 노드 | 설명 |
 |------|------|
 | `BacktestEngineNode` | OHLCV 데이터 기반 백테스트 시뮬레이션 실행 |
+| `BenchmarkCompareNode` | 여러 백테스트 결과 비교 분석 (전략 vs 전략, 전략 vs Buy&Hold) |
 | `DisplayNode` | 차트/테이블 시각화 (실시간 노드 연동 지원) |
 | `CustomPnLNode` | 커스텀 손익 계산 (멀티계좌, 벤치마크 비교 등) |
 

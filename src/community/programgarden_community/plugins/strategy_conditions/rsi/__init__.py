@@ -276,14 +276,26 @@ async def rsi_condition(
             rsi_value = calculate_rsi(prices, period)
             rsi_series = calculate_rsi_series(prices, period)
             
-            # time_series 생성 (원본 데이터 + RSI 값)
+            # time_series 생성 (원본 데이터 + RSI 값 + signal/side)
             rsi_start_idx = period
             time_series_with_rsi = []
             for i, rsi_val in enumerate(rsi_series):
                 row_idx = rsi_start_idx + i
                 if row_idx < len(rows_sorted):
                     original_row = rows_sorted[row_idx]
-                    # 원본 필드 + rsi 추가
+                    
+                    # signal, side 결정
+                    signal = None
+                    side = "long"
+                    if rsi_val is not None:
+                        if direction == "below" and rsi_val < threshold:
+                            signal = "buy"
+                            side = "long"
+                        elif direction == "above" and rsi_val > threshold:
+                            signal = "sell"
+                            side = "long"  # 해외주식 기본, 해외선물은 executor에서 allow_short 처리
+                    
+                    # 원본 필드 + rsi + signal/side 추가
                     new_row = {
                         date_field: original_row.get(date_field, ""),
                         open_field: original_row.get(open_field),
@@ -292,6 +304,8 @@ async def rsi_condition(
                         close_field: original_row.get(close_field),
                         volume_field: original_row.get(volume_field),
                         "rsi": rsi_val,
+                        "signal": signal,
+                        "side": side,
                     }
                     time_series_with_rsi.append(new_row)
             

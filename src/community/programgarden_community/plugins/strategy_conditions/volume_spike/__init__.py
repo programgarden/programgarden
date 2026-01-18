@@ -180,7 +180,7 @@ async def volume_spike_condition(
         else:
             failed_symbols.append({"symbol": sym, "exchange": exchange})
         
-        # values에 시계열 데이터 포함 (DisplayNode용)
+        # values에 시계열 데이터 포함 (DisplayNode용 + signal/side)
         time_series = []
         for i, row in enumerate(rows_sorted):
             vol = row.get(volume_field, 0)
@@ -191,12 +191,20 @@ async def volume_spike_condition(
             else:
                 avg = vol
             
+            is_spike = vol > avg * multiplier if avg > 0 else False
+            
+            # signal, side 결정 (거래량 급증 시 매수 신호)
+            signal = "buy" if is_spike else None
+            side = "long"
+            
             time_series.append({
                 date_field: row.get(date_field, ""),
                 volume_field: vol,
                 "avg_volume": round(avg, 2),
                 "ratio": round(vol / avg, 2) if avg > 0 else 0,
-                "spike": vol > avg * multiplier if avg > 0 else False,
+                "spike": is_spike,
+                "signal": signal,
+                "side": side,
             })
         
         values.append({

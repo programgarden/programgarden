@@ -1,7 +1,7 @@
 {
   "id": "rsi-stock-backtest",
-  "name": "RSI 백테스트 - 해외주식",
-  "description": "RSI 기반 매매 시뮬레이션 + equity_curve 차트",
+  "name": "RSI 백테스트 + 벤치마크 비교",
+  "description": "RSI 전략 vs Buy&Hold 벤치마크 비교 분석",
   "nodes": [
     {
       "id": "start",
@@ -36,10 +36,6 @@
         {
           "exchange": "NASDAQ",
           "symbol": "AAPL"
-        },
-        {
-          "exchange": "NASDAQ",
-          "symbol": "MSFT"
         }
       ]
     },
@@ -53,7 +49,7 @@
       },
       "connection": "{{ nodes.broker.connection }}",
       "symbols": "{{ nodes.watchlist.symbols }}",
-      "start_date": "{{ days_ago_yyyymmdd(1000) }}",
+      "start_date": "{{ days_ago_yyyymmdd(500) }}",
       "end_date": "{{ today_yyyymmdd() }}",
       "interval": "1d"
     },
@@ -63,7 +59,7 @@
       "category": "condition",
       "position": {
         "x": 750,
-        "y": 200
+        "y": 100
       },
       "plugin": "RSI",
       "mode": "backtest",
@@ -76,23 +72,17 @@
       "symbols": "{{ nodes.watchlist.symbols }}"
     },
     {
-      "id": "backtest",
+      "id": "backtest_rsi",
       "type": "BacktestEngineNode",
       "category": "backtest",
       "position": {
         "x": 950,
-        "y": 200
+        "y": 100
       },
       "initial_capital": 10000,
       "commission_rate": 0.001,
       "slippage": 0.0005,
-      "position_sizing": "kelly",
-      "kelly_fraction": 0.25,
-      "max_position_percent": 10,
-      "stop_loss_percent": 5,
-      "take_profit_percent": 15,
-      "trailing_stop_percent": 3,
-      "benchmark": "SPY",
+      "position_sizing": "equal_weight",
       "risk_free_rate": 0.02,
       "allow_short": false,
       "allow_fractional": true,
@@ -101,19 +91,66 @@
       "signals": "{{ nodes.rsiCondition.signals }}"
     },
     {
-      "id": "display",
+      "id": "backtest_buyhold",
+      "type": "BacktestEngineNode",
+      "category": "backtest",
+      "position": {
+        "x": 950,
+        "y": 300
+      },
+      "initial_capital": 10000,
+      "commission_rate": 0.001,
+      "slippage": 0.0005,
+      "position_sizing": "equal_weight",
+      "risk_free_rate": 0.02,
+      "allow_short": false,
+      "allow_fractional": true,
+      "strategy_name": "Buy & Hold",
+      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
+    },
+    {
+      "id": "benchmark_compare",
+      "type": "BenchmarkCompareNode",
+      "category": "analysis",
+      "position": {
+        "x": 1200,
+        "y": 200
+      },
+      "strategies": [
+        {
+          "strategy_name": "RSI 과매도 전략",
+          "equity_curve": "{{ nodes.backtest_rsi.equity_curve }}"
+        },
+        {
+          "strategy_name": "Buy & Hold",
+          "equity_curve": "{{ nodes.backtest_buyhold.equity_curve }}"
+        }
+      ],
+      "ranking_metric": "sharpe"
+    },
+    {
+      "id": "display_metrics",
       "type": "DisplayNode",
       "category": "display",
       "position": {
-        "x": 1150,
-        "y": 200
+        "x": 1450,
+        "y": 100
       },
-      "chart_type": "equity_curve",
-      "title": "RSI 전략 자산곡선",
-      "data": "{{ nodes.backtest.equity_curve }}",
-      "x_field": "date",
-      "y_field": "equity",
-      "benchmark_field": "benchmark"
+      "chart_type": "table",
+      "title": "전략 비교 지표",
+      "data": "{{ nodes.benchmark_compare.comparison_metrics }}"
+    },
+    {
+      "id": "display_ranking",
+      "type": "DisplayNode",
+      "category": "display",
+      "position": {
+        "x": 1450,
+        "y": 300
+      },
+      "chart_type": "table",
+      "title": "전략 순위 (Sharpe 기준)",
+      "data": "{{ nodes.benchmark_compare.ranking }}"
     }
   ],
   "edges": [
@@ -134,12 +171,28 @@
       "to": "rsiCondition"
     },
     {
-      "from": "rsiCondition",
-      "to": "backtest"
+      "from": "historical",
+      "to": "backtest_buyhold"
     },
     {
-      "from": "backtest",
-      "to": "display"
+      "from": "rsiCondition",
+      "to": "backtest_rsi"
+    },
+    {
+      "from": "backtest_rsi",
+      "to": "benchmark_compare"
+    },
+    {
+      "from": "backtest_buyhold",
+      "to": "benchmark_compare"
+    },
+    {
+      "from": "benchmark_compare",
+      "to": "display_metrics"
+    },
+    {
+      "from": "benchmark_compare",
+      "to": "display_ranking"
     }
   ],
   "credentials": [

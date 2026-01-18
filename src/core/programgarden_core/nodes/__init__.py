@@ -47,6 +47,7 @@ from programgarden_core.nodes.display import DisplayNode
 from programgarden_core.nodes.backtest import (
     HistoricalDataNode,
     BacktestEngineNode,
+    BenchmarkCompareNode,
     # PerformanceConditionNode는 condition.py에서 import됨
 )
 from programgarden_core.nodes.portfolio import PortfolioNode
@@ -100,8 +101,9 @@ __all__ = [
     # Event - 커뮤니티 노드(TelegramNode 등)로 대체됨
     # Display
     "DisplayNode",
-    # Backtest
+    # Backtest/Analysis
     "BacktestEngineNode",
+    "BenchmarkCompareNode",
     # Job
     "DeployNode",
     "TradingHaltNode",

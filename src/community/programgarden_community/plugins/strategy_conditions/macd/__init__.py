@@ -257,13 +257,32 @@ async def macd_condition(
             **macd_data,
         })
         
-        # time_series 구성 (OHLCV + MACD)
+        # time_series 구성 (OHLCV + MACD + signal/side)
         time_series = []
         macd_start_idx = slow + signal_period - 1
         for i, macd_val in enumerate(macd_series):
             bar_idx = macd_start_idx + i
             if bar_idx < len(symbol_data):
                 row = symbol_data[bar_idx]
+                
+                # signal, side 결정 (histogram 기준)
+                signal = None
+                side = "long"
+                hist = macd_val.get("histogram", 0)
+                macd_line = macd_val.get("macd", 0)
+                
+                # 이전 바의 histogram과 비교하여 크로스 감지
+                if i > 0:
+                    prev_hist = macd_series[i-1].get("histogram", 0)
+                    # bullish cross: histogram이 음수에서 양수로 전환
+                    if prev_hist < 0 and hist >= 0:
+                        signal = "buy"
+                        side = "long"
+                    # bearish cross: histogram이 양수에서 음수로 전환
+                    elif prev_hist > 0 and hist <= 0:
+                        signal = "sell"
+                        side = "long"  # 해외주식 기본
+                
                 time_series.append({
                     "date": row.get(date_field, ""),
                     "open": row.get("open"),
@@ -274,6 +293,8 @@ async def macd_condition(
                     "macd": macd_val.get("macd"),
                     "macd_signal": macd_val.get("signal"),
                     "histogram": macd_val.get("histogram"),
+                    "signal": signal,
+                    "side": side,
                 })
         
         values.append({

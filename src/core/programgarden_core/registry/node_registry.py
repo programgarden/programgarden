@@ -67,7 +67,7 @@ class NodeTypeRegistry:
             PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
             NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
             DisplayNode,
-            BacktestEngineNode,
+            BacktestEngineNode, BenchmarkCompareNode,
             DeployNode, TradingHaltNode, JobControlNode,
             CustomPnLNode,
         )
@@ -92,8 +92,8 @@ class NodeTypeRegistry:
             # Event - 커뮤니티 노드(TelegramNode 등)로 대체됨
             # Display
             DisplayNode,
-            # Backtest
-            BacktestEngineNode,
+            # Backtest/Analysis
+            BacktestEngineNode, BenchmarkCompareNode,
             # Job
             DeployNode, TradingHaltNode, JobControlNode,
             # Calculation

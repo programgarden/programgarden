@@ -1029,6 +1029,54 @@ RealAccountNode ──positions──▶ DisplayNode (실시간 포지션 테이
 
 ---
 
+### BenchmarkCompareNode
+
+여러 백테스트 결과를 비교 분석합니다.
+
+```json
+{
+  "id": "compare",
+  "type": "BenchmarkCompareNode",
+  "strategies": [
+    "{{ nodes.backtestRSI }}",
+    "{{ nodes.backtestSPY }}"
+  ],
+  "ranking_metric": "sharpe"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `strategies` | array | ✅ | BacktestEngineNode 출력 배열 (바인딩) |
+| `ranking_metric` | string | ❌ | 순위 기준 지표 (기본: sharpe) |
+
+**ranking_metric 옵션**:
+
+| 값 | 설명 |
+|-----|------|
+| `sharpe` | 샤프 비율 (높을수록 좋음) |
+| `return` | 총 수익률 (높을수록 좋음) |
+| `mdd` | 최대 낙폭 (낮을수록 좋음) |
+| `calmar` | Calmar 비율 (높을수록 좋음) |
+
+**출력**:
+- `combined_curve` - 통합 자산 곡선 `[{date, values: [전략1값, 전략2값, ...]}, ...]`
+- `comparison_metrics` - 전략별 비교 지표 `[{index, id, label, return, sharpe, mdd, calmar}, ...]`
+- `ranking` - 순위 `[{rank, index, id, label, <metric>}, ...]`
+- `strategies_meta` - 전략 메타 정보 `[{index, id, label}, ...]`
+
+**사용 예시**:
+
+```
+BacktestEngineNode (RSI 전략) ──┐
+                               ├──▶ BenchmarkCompareNode ──▶ DisplayNode
+BacktestEngineNode (SPY Buy&Hold) ──┘
+```
+
+> 💡 **SPY Buy&Hold 설정**: BacktestEngineNode의 `signals` 입력 없이 `data`만 제공하면 자동으로 Buy & Hold 전략이 적용됩니다.
+
+---
+
 ## 14. job - Job 제어
 
 ### DeployNode
@@ -1108,7 +1156,7 @@ RealAccountNode ──positions──▶ DisplayNode (실시간 포지션 테이
 | `event` | 이벤트/알림 | EventHandlerNode, AlertNode |
 | `display` | 시각화 | DisplayNode |
 | `group` | 서브플로우 | GroupNode |
-| `backtest` | 백테스트 | BacktestEngineNode |
+| `backtest` | 백테스트 | BacktestEngineNode, BenchmarkCompareNode |
 | `job` | Job 제어 | DeployNode, JobControlNode |
 | `calculation` | 계산 | PnLCalculatorNode |
 

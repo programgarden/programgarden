@@ -193,13 +193,27 @@ async def bollinger_condition(
             "current_price": current_price,
         })
         
-        # time_series 구성
+        # time_series 구성 (+ signal/side)
         time_series = []
         bb_start_idx = period - 1
         for i, bb_val in enumerate(bb_series):
             bar_idx = bb_start_idx + i
             if bar_idx < len(symbol_data):
                 row = symbol_data[bar_idx]
+                close_price = row.get(close_field, 0)
+                bb_lower = bb_val.get("lower", 0)
+                bb_upper = bb_val.get("upper", 0)
+                
+                # signal, side 결정
+                signal = None
+                side = "long"
+                if close_price < bb_lower:
+                    signal = "buy"
+                    side = "long"
+                elif close_price > bb_upper:
+                    signal = "sell"
+                    side = "long"  # 해외주식 기본
+                
                 time_series.append({
                     "date": row.get(date_field, ""),
                     "open": row.get("open"),
@@ -210,6 +224,8 @@ async def bollinger_condition(
                     "bb_upper": bb_val.get("upper"),
                     "bb_middle": bb_val.get("middle"),
                     "bb_lower": bb_val.get("lower"),
+                    "signal": signal,
+                    "side": side,
                 })
         
         values.append({

@@ -137,6 +137,9 @@
 "nodes.BacktestEngineNode.name": "백테스트 엔진",
   "nodes.BacktestEngineNode.description": "시그널과 과거 데이터로 백테스트 실행 및 성과 지표 계산.",
   
+  "nodes.BenchmarkCompareNode.name": "벤치마크 비교",
+  "nodes.BenchmarkCompareNode.description": "여러 백테스트 결과를 비교 분석합니다. 전략 vs 전략, 전략 vs Buy&Hold 등 다양한 비교를 지원합니다.",
+  
   "nodes.PerformanceConditionNode.name": "성과 조건",
   "nodes.PerformanceConditionNode.description": "성과 기준 충족 여부 검증.",
   
@@ -262,6 +265,11 @@
   "ports.rebalance_orders": "리밸런싱 주문",
   "ports.rebalance_signal": "리밸런싱 신호",
   "ports.allocated_capital": "배분된 자본",
+  "ports.strategies": "전략 결과 리스트",
+  "ports.combined_curve": "통합 자산 곡선",
+  "ports.comparison_metrics": "비교 지표",
+  "ports.ranking": "전략 순위",
+  "ports.strategies_meta": "전략 메타 정보",
 
   "fields.BrokerNode.provider": "브로커 제공자",
   "fields.BrokerNode.product": "상품 유형 (해외주식/해외선물옵션)",
@@ -422,6 +430,8 @@
   "fields.BacktestEngineNode.volume_field": "거래량 필드명 (기본: volume)",
   "fields.BacktestEngineNode.date_field": "날짜 필드명 (기본: date)",
   "fields.BacktestEngineNode.symbol_field": "종목 필드명 (기본: symbol)",
+  "fields.BacktestEngineNode.signal_field": "시그널 필드명 (기본: signal). 값: buy, sell",
+  "fields.BacktestEngineNode.side_field": "포지션 방향 필드명 (기본: side). 값: long, short (해외선물용)",
   "fields.BacktestEngineNode.initial_capital": "초기 자본금 (USD)",
   "fields.BacktestEngineNode.commission_rate": "수수료율 (0.001 = 0.1%)",
   "fields.BacktestEngineNode.slippage": "슬리피지 (0.0005 = 0.05%)",
@@ -448,6 +458,14 @@
   "enums.position_sizing.fixed_percent": "고정 비율",
   "enums.position_sizing.fixed_amount": "고정 금액",
   "enums.position_sizing.atr_based": "ATR 기반",
+
+  "fields.BenchmarkCompareNode.strategies": "비교할 전략 결과 리스트. BacktestEngineNode의 출력 또는 equity_curve를 바인딩하세요.",
+  "fields.BenchmarkCompareNode.ranking_metric": "순위 결정 기준 지표",
+  
+  "enums.ranking_metric.sharpe": "샤프 비율",
+  "enums.ranking_metric.return": "수익률",
+  "enums.ranking_metric.mdd": "MDD (최대낙폭)",
+  "enums.ranking_metric.calmar": "Calmar 비율",
 
   "enums.allocation_method.equal": "균등 배분",
   "enums.allocation_method.custom": "커스텀 배분",

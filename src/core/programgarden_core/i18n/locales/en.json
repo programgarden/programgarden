@@ -137,6 +137,9 @@
 "nodes.BacktestEngineNode.name": "Backtest Engine",
   "nodes.BacktestEngineNode.description": "Run backtest with signals and historical data, calculate performance metrics.",
   
+  "nodes.BenchmarkCompareNode.name": "Benchmark Compare",
+  "nodes.BenchmarkCompareNode.description": "Compare and analyze multiple backtest results. Supports strategy vs strategy, strategy vs Buy&Hold comparisons.",
+  
   "nodes.PerformanceConditionNode.name": "Performance Condition",
   "nodes.PerformanceConditionNode.description": "Validate performance meets criteria.",
   
@@ -262,6 +265,11 @@
   "ports.rebalance_orders": "Rebalance orders",
   "ports.rebalance_signal": "Rebalance signal",
   "ports.allocated_capital": "Allocated capital",
+  "ports.strategies": "List of strategy results",
+  "ports.combined_curve": "Combined equity curve",
+  "ports.comparison_metrics": "Comparison metrics",
+  "ports.ranking": "Strategy ranking",
+  "ports.strategies_meta": "Strategy metadata",
 
   "fields.BrokerNode.provider": "Broker provider",
   "fields.BrokerNode.product": "Product type (overseas_stock/overseas_futures)",
@@ -403,6 +411,8 @@
   "fields.BacktestEngineNode.volume_field": "Volume field name (default: volume)",
   "fields.BacktestEngineNode.date_field": "Date field name (default: date)",
   "fields.BacktestEngineNode.symbol_field": "Symbol field name (default: symbol)",
+  "fields.BacktestEngineNode.signal_field": "Signal field name (default: signal). Values: buy, sell",
+  "fields.BacktestEngineNode.side_field": "Position side field name (default: side). Values: long, short (for futures)",
   "fields.BacktestEngineNode.initial_capital": "Initial capital (USD)",
   "fields.BacktestEngineNode.commission_rate": "Commission rate (0.001 = 0.1%)",
   "fields.BacktestEngineNode.slippage": "Slippage (0.0005 = 0.05%)",
@@ -429,6 +439,14 @@
   "enums.position_sizing.fixed_percent": "Fixed Percent",
   "enums.position_sizing.fixed_amount": "Fixed Amount",
   "enums.position_sizing.atr_based": "ATR Based",
+
+  "fields.BenchmarkCompareNode.strategies": "List of strategy results to compare. Bind BacktestEngineNode output or equity_curve.",
+  "fields.BenchmarkCompareNode.ranking_metric": "Metric for ranking strategies",
+  
+  "enums.ranking_metric.sharpe": "Sharpe Ratio",
+  "enums.ranking_metric.return": "Total Return",
+  "enums.ranking_metric.mdd": "MDD (Max Drawdown)",
+  "enums.ranking_metric.calmar": "Calmar Ratio",
 
   "enums.allocation_method.equal": "Equal Weight",
   "enums.allocation_method.custom": "Custom Allocation",

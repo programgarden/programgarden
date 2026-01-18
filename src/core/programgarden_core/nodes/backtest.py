@@ -194,6 +194,14 @@ class BacktestEngineNode(BaseNode):
         default="symbol",
         description="Field name for symbol identifier",
     )
+    signal_field: str = Field(
+        default="signal",
+        description="Field name for trading signal (buy/sell)",
+    )
+    side_field: str = Field(
+        default="side",
+        description="Field name for position side (long/short, for futures)",
+    )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # Basic backtest config
@@ -271,10 +279,7 @@ class BacktestEngineNode(BaseNode):
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # Result analysis config
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    benchmark: Optional[str] = Field(
-        default=None,
-        description="i18n:fields.BacktestEngineNode.benchmark",
-    )
+    # benchmark 필드 제거됨 - BenchmarkCompareNode 사용
     risk_free_rate: float = Field(
         default=0.02,
         description="i18n:fields.BacktestEngineNode.risk_free_rate",
@@ -438,6 +443,28 @@ class BacktestEngineNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 default="symbol",
                 placeholder="symbol",
+                group="field_mapping",
+            ),
+            "signal_field": FieldSchema(
+                name="signal_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.signal_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="signal",
+                placeholder="signal",
+                group="field_mapping",
+            ),
+            "side_field": FieldSchema(
+                name="side_field",
+                type=FieldType.STRING,
+                description="i18n:fields.BacktestEngineNode.side_field",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                default="side",
+                placeholder="side",
                 group="field_mapping",
             ),
             # === PARAMETERS: 핵심 백테스트 설정 ===
@@ -613,17 +640,7 @@ class BacktestEngineNode(BaseNode):
                 example=10,
                 expected_type="int",
             ),
-            # === PARAMETERS: 벤치마크 ===
-            "benchmark": FieldSchema(
-                name="benchmark",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.benchmark",
-                required=False,
-                category=FieldCategory.PARAMETERS,
-                bindable=False,
-                example="SPY",
-                expected_type="str",
-            ),
+            # benchmark 필드 제거됨 - BenchmarkCompareNode 사용
             # === SETTINGS: 부가 설정 ===
             "commission_rate": FieldSchema(
                 name="commission_rate",
@@ -691,3 +708,103 @@ class BacktestEngineNode(BaseNode):
 
 
 # PerformanceConditionNode는 condition.py로 이전됨 (더 풍부한 필드 지원)
+
+
+class BenchmarkCompareNode(BaseNode):
+    """
+    Benchmark comparison node
+
+    Compares multiple backtest results (equity curves) and calculates
+    comparison metrics, rankings, and combined visualization data.
+    """
+
+    type: Literal["BenchmarkCompareNode"] = "BenchmarkCompareNode"
+    category: NodeCategory = NodeCategory.ANALYSIS
+    description: str = "i18n:nodes.BenchmarkCompareNode.description"
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/benchmark-compare.svg"
+
+    # Dynamic input: multiple equity_curve bindings
+    strategies: List[Any] = Field(
+        default_factory=list,
+        description="List of equity_curve data from BacktestEngineNode or strategy results",
+    )
+
+    # Comparison settings
+    ranking_metric: Literal["sharpe", "return", "mdd", "calmar"] = Field(
+        default="sharpe",
+        description="i18n:fields.BenchmarkCompareNode.ranking_metric",
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="strategies",
+            type="array",
+            description="i18n:ports.strategies",
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="combined_curve",
+            type="array",
+            description="i18n:ports.combined_curve",
+        ),
+        OutputPort(
+            name="comparison_metrics",
+            type="array",
+            description="i18n:ports.comparison_metrics",
+        ),
+        OutputPort(
+            name="ranking",
+            type="array",
+            description="i18n:ports.ranking",
+        ),
+        OutputPort(
+            name="strategies_meta",
+            type="array",
+            description="i18n:ports.strategies_meta",
+        ),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            "strategies": FieldSchema(
+                name="strategies",
+                type=FieldType.ARRAY,
+                description="i18n:fields.BenchmarkCompareNode.strategies",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                bindable=True,
+                expression_enabled=True,
+                placeholder="[{{ nodes.backtest_rsi.equity_curve }}, {{ nodes.backtest_spy.equity_curve }}]",
+                example=[
+                    {"strategy_name": "RSI Strategy", "equity_curve": [{"date": "20260101", "equity": 10500}]},
+                    {"strategy_name": "SPY Buy&Hold", "equity_curve": [{"date": "20260101", "equity": 10200}]},
+                ],
+                example_binding="[{{ nodes.backtest_rsi }}, {{ nodes.backtest_spy }}]",
+                bindable_sources=[
+                    "BacktestEngineNode.equity_curve",
+                    "BacktestEngineNode",
+                ],
+                expected_type="list[dict | equity_curve]",
+            ),
+            "ranking_metric": FieldSchema(
+                name="ranking_metric",
+                type=FieldType.ENUM,
+                description="i18n:fields.BenchmarkCompareNode.ranking_metric",
+                default="sharpe",
+                enum_values=["sharpe", "return", "mdd", "calmar"],
+                enum_labels={
+                    "sharpe": "i18n:enums.ranking_metric.sharpe",
+                    "return": "i18n:enums.ranking_metric.return",
+                    "mdd": "i18n:enums.ranking_metric.mdd",
+                    "calmar": "i18n:enums.ranking_metric.calmar",
+                },
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                bindable=False,
+                example="sharpe",
+                expected_type="str",
+            ),
+        }

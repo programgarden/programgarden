@@ -127,7 +127,40 @@ async def ma_cross_condition(
             "status": "bullish" if is_bullish else "bearish",
         })
         
-        values.append({"symbol": symbol, "exchange": exchange, "time_series": []})
+        # time_series 생성 (signal, side 포함)
+        time_series = []
+        ma_start_idx = long_period - 1
+        for i in range(ma_start_idx, len(symbol_data)):
+            row = symbol_data[i]
+            short_idx = i - (long_period - short_period)
+            short_ma = short_ma_series[short_idx] if 0 <= short_idx < len(short_ma_series) else 0
+            long_ma = long_ma_series[i - ma_start_idx] if i - ma_start_idx < len(long_ma_series) else 0
+            
+            # signal, side 결정 (크로스 감지)
+            signal = None
+            side = "long"
+            if i > ma_start_idx:
+                prev_short = short_ma_series[short_idx - 1] if 0 <= short_idx - 1 < len(short_ma_series) else 0
+                prev_long = long_ma_series[i - ma_start_idx - 1] if i - ma_start_idx - 1 < len(long_ma_series) else 0
+                # 골든 크로스: 단기가 장기를 상향 돌파
+                if prev_short <= prev_long and short_ma > long_ma:
+                    signal = "buy"
+                    side = "long"
+                # 데드 크로스: 단기가 장기를 하향 돌파
+                elif prev_short >= prev_long and short_ma < long_ma:
+                    signal = "sell"
+                    side = "long"
+            
+            time_series.append({
+                "date": row.get(date_field, ""),
+                "close": row.get(close_field),
+                "short_ma": round(short_ma, 4),
+                "long_ma": round(long_ma, 4),
+                "signal": signal,
+                "side": side,
+            })
+        
+        values.append({"symbol": symbol, "exchange": exchange, "time_series": time_series})
         
         if (cross_type == "golden" and is_bullish) or (cross_type == "dead" and not is_bullish):
             passed.append(sym_dict)

@@ -127,7 +127,23 @@ async def dual_momentum_condition(
             "absolute_pass": absolute_pass, "relative_pass": relative_pass,
             "status": "passed" if passed_condition else "failed",
         })
-        values.append({"symbol": symbol, "exchange": exchange, "time_series": []})
+        
+        # time_series 생성 (signal, side 포함)
+        # 마지막 바에만 signal 추가 (모멘텀 전략은 주기적 리밸런싱)
+        time_series = []
+        if symbol_data:
+            last_row = symbol_data[-1]
+            signal = "buy" if passed_condition else None
+            side = "long"
+            time_series.append({
+                "date": last_row.get(date_field, ""),
+                "close": last_row.get(close_field),
+                "momentum": round(momentum, 2),
+                "signal": signal,
+                "side": side,
+            })
+        
+        values.append({"symbol": symbol, "exchange": exchange, "time_series": time_series})
         
         if passed_condition:
             passed.append(sym_dict)
