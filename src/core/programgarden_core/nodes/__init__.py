@@ -19,7 +19,7 @@ ProgramGarden Core - 노드 타입 정의
 """
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, Position
-from programgarden_core.nodes.infra import StartNode, BrokerNode
+from programgarden_core.nodes.infra import StartNode, BrokerNode, ThrottleNode
 from programgarden_core.nodes.realtime import (
     RealMarketDataNode,
     RealAccountNode,
@@ -61,6 +61,7 @@ __all__ = [
     # Infra
     "StartNode",
     "BrokerNode",
+    "ThrottleNode",
     # Realtime
     "RealMarketDataNode",
     "RealAccountNode",

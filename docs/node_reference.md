@@ -78,6 +78,57 @@ ProgramGarden에서 사용할 수 있는 모든 노드의 상세 설명입니다
 
 ---
 
+### ThrottleNode
+
+실시간 데이터 흐름을 제어하여 하위 노드의 과도한 실행을 방지합니다.
+
+```json
+{
+  "id": "throttle",
+  "type": "ThrottleNode",
+  "mode": "latest",
+  "interval_sec": 5,
+  "pass_first": true
+}
+```
+
+| 필드 | 타입 | 필수 | 기본값 | 설명 |
+|------|------|------|--------|------|
+| `mode` | `"skip"` \| `"latest"` | ❌ | `"latest"` | 쿨다운 중 데이터 처리 방식 |
+| `interval_sec` | number | ❌ | `5` | 최소 실행 간격 (초), 범위: 0.1~300 |
+| `pass_first` | boolean | ❌ | `true` | 첫 번째 데이터 즉시 통과 여부 |
+
+**모드 설명**:
+
+| 모드 | 동작 | 사용 케이스 |
+|------|------|------------|
+| `skip` | 쿨다운 중 들어오는 데이터 무시 | 단순히 실행 빈도만 줄이고 싶을 때 |
+| `latest` | 쿨다운 중 최신 데이터만 보관, 쿨다운 끝나면 실행 | 항상 최신 상태 반영이 중요할 때 (권장) |
+
+**입력**: 상위 노드의 모든 출력 (투명 전달)
+
+**출력**:
+- 입력받은 데이터 그대로 출력 (투명 프록시)
+- `_throttle_stats` - 쓰로틀 통계 `{skipped_count, countdown_sec, last_passed_at}`
+
+**사용 예시**:
+
+```
+RealAccountNode ──(빈번한 이벤트)──▶ ThrottleNode ──(5초마다)──▶ ConditionNode ──▶ OrderNode
+```
+
+> ⚠️ **주의**: `_throttled: true`가 반환되면 하위 노드 실행이 중단됩니다.
+
+**latest 모드 동작**:
+```
+시간 →  0s    1s    2s    3s    4s    5s    6s
+이벤트    A     B     C     D     -     E     F
+통과     A    skip  skip  skip         D*    E
+              (최신 보관)              쿨다운 끝나면 D 실행
+```
+
+---
+
 ## 2. realtime - 실시간 스트림
 
 WebSocket을 통한 실시간 데이터 스트림입니다.

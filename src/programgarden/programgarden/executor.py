@@ -336,6 +336,204 @@ class StartNodeExecutor(NodeExecutorBase):
         return {"start": True}
 
 
+class ThrottleNodeExecutor(NodeExecutorBase):
+    """
+    ThrottleNode executor
+    
+    Controls data flow frequency from realtime nodes to prevent excessive
+    execution of downstream nodes and API rate limiting.
+    
+    Modes:
+    - skip: Ignore incoming data during cooldown
+    - latest: Keep only the latest data during cooldown, execute when cooldown ends
+    
+    State is persisted in context.node_state to track:
+    - last_passed_at: When data last passed through
+    - skipped_count: Cumulative count of skipped executions
+    - pending_data: Latest data waiting to be processed (latest mode only)
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        from programgarden_core.bases.listener import NodeState
+        
+        mode = config.get("mode", "latest")
+        interval_sec = config.get("interval_sec", 5.0)
+        pass_first = config.get("pass_first", True)
+        
+        # State key for this node
+        state_key = "_throttle_state"
+        throttle_state = context.get_node_state(node_id, state_key) or {
+            "last_passed_at": None,
+            "skipped_count": 0,
+            "pending_data": None,
+        }
+        
+        now = datetime.now()
+        last_passed = throttle_state.get("last_passed_at")
+        
+        # Collect input data from upstream nodes
+        input_data = self._collect_input_data(node_id, config, context)
+        
+        # First execution with pass_first=True
+        if last_passed is None:
+            if pass_first:
+                return await self._pass_through(
+                    node_id, node_type, context, input_data, throttle_state, state_key
+                )
+            else:
+                # No data to pass yet, just store and wait
+                throttle_state["pending_data"] = input_data
+                throttle_state["last_passed_at"] = now
+                context.set_node_state(node_id, state_key, throttle_state)
+                context.log("debug", f"First data stored, waiting for interval ({interval_sec}s)", node_id)
+                return {
+                    "_throttled": True,
+                    "_throttle_stats": {
+                        "countdown_sec": interval_sec,
+                        "skipped_count": 0,
+                        "mode": mode,
+                    }
+                }
+        
+        # Cooldown check
+        if isinstance(last_passed, str):
+            last_passed = datetime.fromisoformat(last_passed)
+        
+        elapsed = (now - last_passed).total_seconds()
+        remaining = interval_sec - elapsed
+        
+        if remaining > 0:
+            # Still in cooldown
+            throttle_state["skipped_count"] = throttle_state.get("skipped_count", 0) + 1
+            
+            if mode == "latest":
+                # Keep the latest data
+                throttle_state["pending_data"] = input_data
+            
+            # Save state
+            context.set_node_state(node_id, state_key, throttle_state)
+            
+            # SSE notification for throttling state
+            await context.notify_node_state(
+                node_id=node_id,
+                node_type=node_type,
+                state=NodeState.THROTTLING,
+                outputs={
+                    "_throttle_stats": {
+                        "countdown_sec": round(remaining, 1),
+                        "skipped_count": throttle_state["skipped_count"],
+                        "mode": mode,
+                    }
+                },
+            )
+            
+            context.log(
+                "debug", 
+                f"Throttled ({mode}): {remaining:.1f}s remaining, skipped: {throttle_state['skipped_count']}", 
+                node_id
+            )
+            
+            # Return throttled result - downstream nodes should not execute
+            return {
+                "_throttled": True,
+                "_throttle_stats": {
+                    "countdown_sec": round(remaining, 1),
+                    "skipped_count": throttle_state["skipped_count"],
+                    "mode": mode,
+                }
+            }
+        
+        # Cooldown finished - pass through
+        # In latest mode, use pending data if available
+        if mode == "latest" and throttle_state.get("pending_data"):
+            input_data = throttle_state["pending_data"]
+            context.log("debug", "Using pending data (latest mode)", node_id)
+        
+        return await self._pass_through(
+            node_id, node_type, context, input_data, throttle_state, state_key
+        )
+    
+    async def _pass_through(
+        self,
+        node_id: str,
+        node_type: str,
+        context: ExecutionContext,
+        input_data: Dict[str, Any],
+        throttle_state: Dict[str, Any],
+        state_key: str,
+    ) -> Dict[str, Any]:
+        """Process data pass-through"""
+        from programgarden_core.bases.listener import NodeState
+        
+        now = datetime.now()
+        throttle_state["last_passed_at"] = now.isoformat()
+        throttle_state["pending_data"] = None
+        # Keep skipped_count for cumulative stats
+        
+        context.set_node_state(node_id, state_key, throttle_state)
+        
+        # Pass input data as output (transparent proxy)
+        outputs = dict(input_data) if input_data else {}
+        outputs["_throttle_stats"] = {
+            "skipped_count": throttle_state.get("skipped_count", 0),
+            "last_passed_at": now.isoformat(),
+            "passed": True,
+        }
+        
+        # SSE notification for pass-through
+        await context.notify_node_state(
+            node_id=node_id,
+            node_type=node_type,
+            state=NodeState.COMPLETED,
+            outputs=outputs,
+        )
+        
+        context.log(
+            "info", 
+            f"Data passed through (total skipped: {throttle_state.get('skipped_count', 0)})", 
+            node_id
+        )
+        
+        return outputs
+    
+    def _collect_input_data(
+        self, 
+        node_id: str, 
+        config: Dict[str, Any],
+        context: ExecutionContext
+    ) -> Dict[str, Any]:
+        """Collect all data from upstream nodes"""
+        input_data = {}
+        
+        # Check if we have realtime data from event
+        if "_realtime_data" in config:
+            input_data.update(config["_realtime_data"])
+        
+        # Get workflow edges to find upstream nodes
+        workflow_edges = getattr(context, '_workflow_edges', None)
+        if workflow_edges:
+            for edge in workflow_edges:
+                to_node = edge.get("to") or edge.get("to_node_id")
+                if to_node == node_id:
+                    from_node = edge.get("from") or edge.get("from_node_id")
+                    if from_node:
+                        all_outputs = context.get_all_outputs(from_node)
+                        if all_outputs:
+                            # Filter out internal fields
+                            for key, value in all_outputs.items():
+                                if not key.startswith("_"):
+                                    input_data[key] = value
+        
+        return input_data
+
+
 class ScheduleNodeExecutor(NodeExecutorBase):
     """
     ScheduleNode executor
@@ -6346,6 +6544,7 @@ class WorkflowExecutor:
         """Initialize per-node-type executors"""
         return {
             "StartNode": StartNodeExecutor(),
+            "ThrottleNode": ThrottleNodeExecutor(),
             "ScheduleNode": ScheduleNodeExecutor(),
             "WatchlistNode": WatchlistNodeExecutor(),
             "SymbolQueryNode": SymbolQueryNodeExecutor(),
@@ -7006,6 +7205,14 @@ class WorkflowJob:
                     plugin=node.plugin,
                     fields=node.fields,
                 )
+                
+                # 🆕 ThrottleNode에서 _throttled=True 반환 시 하위 노드 실행 중단
+                if outputs.get("_throttled"):
+                    print(f"    ⏸️ Throttled: {node_id} - stopping downstream execution")
+                    # 출력은 저장하되 하위 노드 실행은 중단
+                    for port_name, value in outputs.items():
+                        self.context.set_output(node_id, port_name, value)
+                    break  # 체인 실행 중단
                 
                 for port_name, value in outputs.items():
                     self.context.set_output(node_id, port_name, value)

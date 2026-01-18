@@ -32,6 +32,15 @@
   "nodes.BrokerNode.name": "브로커",
   "nodes.BrokerNode.description": "OpenAPI 연결을 위한 증권사 설정. credential_id로 인증 정보 참조.",
   
+  "nodes.ThrottleNode.name": "쓰로틀",
+  "nodes.ThrottleNode.description": "데이터 흐름을 제어하여 하위 노드의 과도한 실행을 방지합니다. 실시간 노드 뒤에 배치하여 API 호출 빈도를 조절하세요.",
+  "fields.ThrottleNode.mode": "모드를 선택하세요. skip: 쿨다운 중 데이터 무시, latest: 최신 데이터만 보관 후 실행",
+  "fields.ThrottleNode.interval_sec": "최소 실행 간격 (초). 이 시간 내에 들어오는 데이터는 모드에 따라 처리됩니다.",
+  "fields.ThrottleNode.pass_first": "첫 번째 데이터를 즉시 통과시킬지 여부",
+  "enums.throttle_mode.skip": "무시 (skip)",
+  "enums.throttle_mode.latest": "최신 유지 (latest)",
+  "ports.throttle_stats": "쓰로틀 통계 (스킵 횟수, 카운트다운 등)",
+  
   "enums.product.overseas_stock": "해외주식 (모의투자 미지원)",
   "enums.product.overseas_futures": "해외선물 (모의투자 지원)",
   "enums.paper_trading.true": "모의투자",

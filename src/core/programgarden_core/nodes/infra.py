@@ -125,3 +125,84 @@ class BrokerNode(BaseNode):
             ),
             # paper_trading은 credential에서 관리됨 (broker_ls.paper_trading)
         }
+
+
+class ThrottleNode(BaseNode):
+    """
+    Data flow control node (Throttle)
+    
+    Controls the frequency of data flow from realtime nodes to prevent
+    excessive execution of downstream nodes and API rate limiting.
+    
+    Modes:
+    - skip: Ignore incoming data during cooldown
+    - latest: Keep only the latest data during cooldown, execute when cooldown ends
+    """
+    
+    type: Literal["ThrottleNode"] = "ThrottleNode"
+    category: NodeCategory = NodeCategory.INFRA
+    description: str = "i18n:nodes.ThrottleNode.description"
+    
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/throttle.svg"
+    
+    # ThrottleNode specific config
+    mode: Literal["skip", "latest"] = Field(
+        default="latest",
+        description="Cooldown mode: skip (ignore) or latest (keep newest)"
+    )
+    interval_sec: float = Field(
+        default=5.0,
+        ge=0.1,
+        le=300.0,
+        description="Minimum execution interval in seconds"
+    )
+    pass_first: bool = Field(
+        default=True,
+        description="Pass first data immediately without waiting"
+    )
+    
+    _inputs: List[InputPort] = [
+        InputPort(name="data", type="any", description="i18n:ports.data")
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="data", type="any", description="i18n:ports.data"),
+        OutputPort(name="_throttle_stats", type="object", description="i18n:ports.throttle_stats"),
+    ]
+    
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            "mode": FieldSchema(
+                name="mode",
+                type=FieldType.ENUM,
+                description="i18n:fields.ThrottleNode.mode",
+                default="latest",
+                enum_values=["skip", "latest"],
+                enum_labels={
+                    "skip": "i18n:enums.throttle_mode.skip",
+                    "latest": "i18n:enums.throttle_mode.latest"
+                },
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                expected_type="str",
+            ),
+            "interval_sec": FieldSchema(
+                name="interval_sec",
+                type=FieldType.NUMBER,
+                description="i18n:fields.ThrottleNode.interval_sec",
+                default=5.0,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                expected_type="float",
+            ),
+            "pass_first": FieldSchema(
+                name="pass_first",
+                type=FieldType.BOOLEAN,
+                description="i18n:fields.ThrottleNode.pass_first",
+                default=True,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                expected_type="bool",
+            ),
+        }

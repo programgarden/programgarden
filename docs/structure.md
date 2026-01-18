@@ -195,7 +195,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 
 | Category | 용도 | 주요 노드 |
 |----------|------|----------|
-| `infra` | 워크플로우 시작점, 브로커 연결 | StartNode, BrokerNode |
+| `infra` | 워크플로우 시작점, 브로커 연결, 흐름 제어 | StartNode, BrokerNode, ThrottleNode |
 | `account` | 잔고, 포지션, 체결 내역 | AccountNode, RealAccountNode, RealOrderEventNode |
 | `market` | 시세, 종목 목록, 과거 데이터 | WatchlistNode, ScreenerNode, MarketDataNode, HistoricalDataNode, RealMarketDataNode |
 | `condition` | 매매 조건 판단, 논리 연산 | ConditionNode, LogicNode, PerformanceConditionNode |
@@ -216,6 +216,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 |------|------|
 | `StartNode` | 워크플로우 진입점 (Definition당 1개 필수) |
 | `BrokerNode` | 증권사 연결 (provider, product, account) |
+| `ThrottleNode` | 실시간 데이터 흐름 제어 (mode, interval_sec) |
 
 ### Connection 필수 노드
 

@@ -40,6 +40,7 @@ class NodeState(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
+    THROTTLING = "throttling"
 
 
 class EdgeState(str, Enum):

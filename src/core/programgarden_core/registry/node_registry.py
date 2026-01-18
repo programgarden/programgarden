@@ -58,7 +58,7 @@ class NodeTypeRegistry:
         """Register built-in node types"""
         # 지연 임포트로 순환 참조 방지
         from programgarden_core.nodes import (
-            StartNode, BrokerNode,
+            StartNode, BrokerNode, ThrottleNode,
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
             MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode,
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
@@ -74,7 +74,7 @@ class NodeTypeRegistry:
 
         node_classes = [
             # Infra
-            StartNode, BrokerNode,
+            StartNode, BrokerNode, ThrottleNode,
             # Realtime
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
             # Data

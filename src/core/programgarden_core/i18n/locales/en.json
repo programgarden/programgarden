@@ -32,6 +32,15 @@
   "nodes.BrokerNode.name": "Broker",
   "nodes.BrokerNode.description": "Broker connection for OpenAPI. References credentials via credential_id.",
   
+  "nodes.ThrottleNode.name": "Throttle",
+  "nodes.ThrottleNode.description": "Controls data flow to prevent excessive execution of downstream nodes. Place after realtime nodes to control API call frequency.",
+  "fields.ThrottleNode.mode": "Select mode. skip: ignore data during cooldown, latest: keep only newest data and execute after cooldown",
+  "fields.ThrottleNode.interval_sec": "Minimum execution interval (seconds). Data within this time is processed according to mode.",
+  "fields.ThrottleNode.pass_first": "Whether to pass the first data immediately",
+  "enums.throttle_mode.skip": "Skip",
+  "enums.throttle_mode.latest": "Keep Latest",
+  "ports.throttle_stats": "Throttle stats (skip count, countdown, etc.)",
+  
   "enums.product.overseas_stock": "Overseas Stock (paper trading not supported)",
   "enums.product.overseas_futures": "Overseas Futures (paper trading supported)",
   "enums.paper_trading.true": "Paper Trading",
