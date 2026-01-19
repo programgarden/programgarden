@@ -229,7 +229,7 @@ class WatchlistNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 핵심 설정 ===
             "symbols": FieldSchema(
@@ -238,11 +238,12 @@ class WatchlistNode(BaseNode):
                 description="관심종목 목록입니다. 각 항목에 거래소(exchange)와 종목코드(symbol)를 입력하세요.",
                 required=True,
                 array_item_type=FieldType.OBJECT,
-                bindable=False,
-                expression_enabled=False,
+                expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.SYMBOL_EDITOR,
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
+                example_binding="{{ nodes.universe.symbols }}",
+                bindable_sources=["MarketUniverseNode.symbols", "ScreenerNode.symbols"],
                 expected_type="list[dict]",
             ),
         }

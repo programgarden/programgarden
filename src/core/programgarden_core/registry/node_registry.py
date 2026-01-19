@@ -286,10 +286,9 @@ class NodeTypeRegistry:
                     field_schema["enum_values"] = fs.enum_values
                 if fs.enum_labels:
                     field_schema["enum_labels"] = fs.enum_labels
-                if fs.bindable is not None:
-                    field_schema["bindable"] = fs.bindable
-                if fs.expression_enabled is not None:
-                    field_schema["expression_enabled"] = fs.expression_enabled
+                # === expression_mode ===
+                if hasattr(fs, 'expression_mode') and fs.expression_mode:
+                    field_schema["expression_mode"] = fs.expression_mode.value if hasattr(fs.expression_mode, 'value') else str(fs.expression_mode)
                 # category 추가 (PARAMETERS/SETTINGS)
                 if fs.category is not None:
                     field_schema["category"] = fs.category.value if hasattr(fs.category, 'value') else str(fs.category)

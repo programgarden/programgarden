@@ -87,7 +87,7 @@ class BrokerNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 핵심 연결 설정 ===
             "provider": FieldSchema(
@@ -97,7 +97,7 @@ class BrokerNode(BaseNode):
                 default="ls-sec.co.kr",
                 enum_values=["ls-sec.co.kr"],
                 enum_labels={"ls-sec.co.kr": "LS증권"},
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.SELECT,
                 example="ls-sec.co.kr",
@@ -113,7 +113,7 @@ class BrokerNode(BaseNode):
                     "overseas_stock": "i18n:enums.product.overseas_stock",
                     "overseas_futures": "i18n:enums.product.overseas_futures"
                 },
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.SELECT,
                 example="overseas_stock",
@@ -124,7 +124,7 @@ class BrokerNode(BaseNode):
                 type=FieldType.CREDENTIAL,
                 description="i18n:fields.BrokerNode.credential_id",
                 default=None,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CREDENTIAL_SELECT,
                 credential_types=["broker_ls"],
@@ -179,7 +179,7 @@ class ThrottleNode(BaseNode):
     
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             "mode": FieldSchema(
                 name="mode",
@@ -191,7 +191,7 @@ class ThrottleNode(BaseNode):
                     "skip": "i18n:enums.throttle_mode.skip",
                     "latest": "i18n:enums.throttle_mode.latest"
                 },
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.SELECT,
                 example="latest",
@@ -204,7 +204,7 @@ class ThrottleNode(BaseNode):
                 default=5.0,
                 min_value=0.1,
                 max_value=300.0,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.NUMBER_INPUT,
                 placeholder="5.0",
@@ -216,7 +216,7 @@ class ThrottleNode(BaseNode):
                 type=FieldType.BOOLEAN,
                 description="i18n:fields.ThrottleNode.pass_first",
                 default=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CHECKBOX,
                 example=True,

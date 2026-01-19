@@ -68,7 +68,7 @@ class MarketDataNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -76,8 +76,7 @@ class MarketDataNode(BaseNode):
                 type=FieldType.OBJECT,
                 description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
                 required=True,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
                 example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
                 example_binding="{{ nodes.broker.connection }}",
@@ -94,8 +93,7 @@ class MarketDataNode(BaseNode):
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NYSE", "symbol": "IBM"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=["WatchlistNode.symbols", "ScreenerNode.symbols", "MarketUniverseNode.symbols"],
@@ -110,7 +108,7 @@ class MarketDataNode(BaseNode):
                 description="거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
                 default="exchange",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 placeholder="exchange",
                 group="field_mapping",
@@ -122,7 +120,7 @@ class MarketDataNode(BaseNode):
                 description="종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
                 default="symbol",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 placeholder="symbol",
                 group="field_mapping",

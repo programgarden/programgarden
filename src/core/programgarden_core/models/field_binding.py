@@ -33,12 +33,29 @@ class FieldCategory(str, Enum):
     ADVANCED = "advanced"      # 고급 설정 (기본값으로 충분, 보통 숨김)
 
 
+class ExpressionMode(str, Enum):
+    """
+    필드의 Expression 허용 모드
+    
+    클라이언트 UI 렌더링 가이드:
+    - FIXED_ONLY: ui_component에 따른 입력 컴포넌트만 표시 (토글 없음)
+    - EXPRESSION_ONLY: {{ }} 바인딩 에디터만 표시 (토글 없음)
+    - BOTH: [Fixed | Expression] 토글 버튼 + 선택에 따른 입력
+    """
+    
+    FIXED_ONLY = "fixed_only"          # 고정값만 가능 (토글 없음)
+    EXPRESSION_ONLY = "expression_only"  # Expression만 가능 (바인딩 필수)
+    BOTH = "both"                       # Fixed + Expression 둘 다 (토글 표시)
+
+
 class UIComponent(str, Enum):
     """
     UI 컴포넌트 타입 (전역 상수)
     
-    모든 컴포넌트는 바인딩을 지원합니다.
-    bindable=True인 필드는 바인딩 모드로 전환 가능합니다.
+    expression_mode에 따른 UI 렌더링:
+    - fixed_only: ui_component에 따른 입력 컴포넌트만 표시
+    - expression_only: BINDING_INPUT ({{ }} 에디터)만 표시
+    - both: [Fixed | Expression] 토글 + 선택에 따른 입력
     
     FieldType → UIComponent 기본 매핑:
     - ENUM → SELECT
@@ -105,14 +122,25 @@ class FieldSchema(BaseModel):
     동적 폼을 생성합니다.
 
     Example:
+        # 고정값만 가능 (설정 필드)
         FieldSchema(
-            name="quantity",
-            type=FieldType.INTEGER,
-            description="주문 수량",
-            required=True,
-            bindable=True,
-            expression_enabled=True,
-            category=FieldCategory.PARAMETERS,
+            name="method",
+            type=FieldType.ENUM,
+            expression_mode=ExpressionMode.FIXED_ONLY,
+        )
+        
+        # 바인딩 필수 (연결 필드)
+        FieldSchema(
+            name="connection",
+            type=FieldType.OBJECT,
+            expression_mode=ExpressionMode.EXPRESSION_ONLY,
+        )
+        
+        # Fixed/Expression 둘 다 가능 (기본값)
+        FieldSchema(
+            name="symbols",
+            type=FieldType.ARRAY,
+            expression_mode=ExpressionMode.BOTH,
         )
     """
 
@@ -146,14 +174,12 @@ class FieldSchema(BaseModel):
     )
 
     # 바인딩 옵션
-    bindable: bool = Field(
-        default=True, description="다른 노드 출력과 바인딩 가능 여부"
-    )
-    expression_enabled: bool = Field(
-        default=False, description="{{ }} 표현식 사용 가능 여부"
+    expression_mode: ExpressionMode = Field(
+        default=ExpressionMode.BOTH,
+        description="Fixed/Expression 허용 모드. fixed_only: 고정값만, expression_only: 바인딩 필수, both: 토글 표시"
     )
     
-    # === 바인딩 가이드 (신규) ===
+    # === 바인딩 가이드 ===
     example: Optional[Any] = Field(
         default=None,
         description="예시 값 (기대하는 데이터 형태)",

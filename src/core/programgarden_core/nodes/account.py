@@ -85,7 +85,7 @@ class AccountNode(BaseNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """AccountNode의 설정 가능한 필드 스키마."""
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
@@ -94,8 +94,7 @@ class AccountNode(BaseNode):
                 type=FieldType.OBJECT,
                 description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
                 required=True,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
                 example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
                 example_binding="{{ nodes.broker.connection }}",
@@ -114,6 +113,6 @@ class AccountNode(BaseNode):
                     "overseas_futures": "해외선물"
                 },
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
             ),
         }

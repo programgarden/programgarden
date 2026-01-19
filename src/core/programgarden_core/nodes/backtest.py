@@ -76,7 +76,7 @@ class HistoricalDataNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 종목 설정 ===
             "symbols": FieldSchema(
@@ -85,8 +85,7 @@ class HistoricalDataNode(BaseNode):
                 description="종목 리스트. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 placeholder="{{ nodes.watchlist.symbols }}",
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NYSE", "symbol": "IBM"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
@@ -106,7 +105,7 @@ class HistoricalDataNode(BaseNode):
                 description="거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
                 default="exchange",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 placeholder="exchange",
                 group="field_mapping",
@@ -118,7 +117,7 @@ class HistoricalDataNode(BaseNode):
                 description="종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
                 default="symbol",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 placeholder="symbol",
                 group="field_mapping",
@@ -132,10 +131,11 @@ class HistoricalDataNode(BaseNode):
                 default="{{ months_ago_yyyymmdd(3) }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.BOTH,
                 example="2024-01-01",
                 expected_type="str",
                 ui_component=UIComponent.TEXT_INPUT,
+                help_text="날짜 직접 입력 또는 {{ months_ago_yyyymmdd(N) }} 표현식 사용",
             ),
             "end_date": FieldSchema(
                 name="end_date",
@@ -144,10 +144,11 @@ class HistoricalDataNode(BaseNode):
                 default="{{ today_yyyymmdd() }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.BOTH,
                 example="2024-12-31",
                 expected_type="str",
                 ui_component=UIComponent.TEXT_INPUT,
+                help_text="날짜 직접 입력 또는 {{ today_yyyymmdd() }} 표현식 사용",
             ),
             "interval": FieldSchema(
                 name="interval",
@@ -158,7 +159,7 @@ class HistoricalDataNode(BaseNode):
                 enum_values=["1m", "5m", "15m", "1h", "1d", "1w", "1M"],
                 enum_labels={"1m": "1분", "5m": "5분", "15m": "15분", "1h": "1시간", "1d": "1일", "1w": "1주", "1M": "1개월"},
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="1d",
                 expected_type="str",
                 ui_component=UIComponent.SELECT,
@@ -170,7 +171,7 @@ class HistoricalDataNode(BaseNode):
                 description="i18n:fields.HistoricalDataNode.adjust",
                 default=True,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CHECKBOX,
             ),
         }
