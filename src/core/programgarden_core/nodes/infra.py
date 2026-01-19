@@ -92,11 +92,14 @@ class BrokerNode(BaseNode):
             # === PARAMETERS: 핵심 연결 설정 ===
             "provider": FieldSchema(
                 name="provider",
-                type=FieldType.STRING,
+                type=FieldType.ENUM,
                 description="i18n:fields.BrokerNode.provider",
                 default="ls-sec.co.kr",
+                enum_values=["ls-sec.co.kr"],
+                enum_labels={"ls-sec.co.kr": "LS증권"},
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                ui_component="select",
                 example="ls-sec.co.kr",
                 expected_type="str",
             ),
@@ -112,6 +115,8 @@ class BrokerNode(BaseNode):
                 },
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                ui_component="select",
+                example="overseas_stock",
                 expected_type="str",
             ),
             "credential_id": FieldSchema(
@@ -121,7 +126,10 @@ class BrokerNode(BaseNode):
                 default=None,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                ui_component="select:credential",
                 credential_types=["broker_ls"],
+                example="my-broker-cred",
+                expected_type="str",
             ),
             # paper_trading은 credential에서 관리됨 (broker_ls.paper_trading)
         }
@@ -185,6 +193,8 @@ class ThrottleNode(BaseNode):
                 },
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                ui_component="select",
+                example="latest",
                 expected_type="str",
             ),
             "interval_sec": FieldSchema(
@@ -192,8 +202,13 @@ class ThrottleNode(BaseNode):
                 type=FieldType.NUMBER,
                 description="i18n:fields.ThrottleNode.interval_sec",
                 default=5.0,
+                min_value=0.1,
+                max_value=300.0,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                ui_component="number_input",
+                placeholder="5.0",
+                example=5.0,
                 expected_type="float",
             ),
             "pass_first": FieldSchema(
@@ -203,6 +218,8 @@ class ThrottleNode(BaseNode):
                 default=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                ui_component="checkbox",
+                example=True,
                 expected_type="bool",
             ),
         }
