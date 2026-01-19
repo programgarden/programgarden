@@ -15,8 +15,11 @@ ProgramGarden Community - TelegramNode
         {"bot_token": "123456:ABC...", "chat_id": "880982510"}
 """
 
-from typing import Literal, List, Optional, Dict, Any, ClassVar
+from typing import Literal, List, Optional, Dict, Any, ClassVar, TYPE_CHECKING
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
     BaseNotificationNode,
@@ -65,6 +68,43 @@ class TelegramNode(BaseNotificationNode):
             description="Telegram message ID for reference",
         ),
     ]
+    
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        """
+        TelegramNode 필드 스키마 정의
+        
+        expression_mode:
+        - template: BOTH (고정값 또는 {{ }} 표현식 모두 사용 가능)
+        - credential_id: FIXED_ONLY (고정값만 허용)
+        """
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
+        return {
+            # === PARAMETERS: 핵심 설정 ===
+            "template": FieldSchema(
+                name="template",
+                type=FieldType.STRING,
+                description="메시지 템플릿. Jinja2 스타일 변수 사용 가능 (예: {{symbol}}, {{price}})",
+                default="",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="🎯 체결: {{symbol}} {{quantity}}주 @ {{price}}",
+                example="📈 {{symbol}} RSI: {{rsi}} → 매수 신호!",
+                expected_type="str",
+            ),
+            "credential_id": FieldSchema(
+                name="credential_id",
+                type=FieldType.STRING,
+                description="텔레그램 봇 credential ID. credentials 섹션에 {bot_token, chat_id} 정의 필요",
+                required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                placeholder="telegram-bot-001",
+                example="telegram-bot-001",
+                expected_type="str",
+            ),
+        }
     
     async def execute(self, context: Any) -> Dict[str, Any]:
         """

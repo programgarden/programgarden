@@ -107,7 +107,7 @@ class CustomPnLNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 핵심 계산 설정 ===
             "mode": FieldSchema(
@@ -117,7 +117,7 @@ class CustomPnLNode(BaseNode):
                 default="realtime",
                 enum_values=["realtime", "batch"],
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="realtime",
                 expected_type="str",
             ),
@@ -127,7 +127,7 @@ class CustomPnLNode(BaseNode):
                 description="Base currency for P&L calculation. All values will be converted to this currency.",
                 default="USD",
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="USD",
                 expected_type="str",
             ),
@@ -140,7 +140,7 @@ class CustomPnLNode(BaseNode):
                 min_value=0,
                 max_value=0.1,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=0.0025,
                 expected_type="float",
             ),
@@ -150,6 +150,6 @@ class CustomPnLNode(BaseNode):
                 description="Include commission in P&L calculation. When true, P&L is reduced by commission.",
                 default=True,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
             ),
         }

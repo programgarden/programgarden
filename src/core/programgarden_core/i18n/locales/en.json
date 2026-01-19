@@ -131,9 +131,6 @@
   "nodes.CancelOrderNode.name": "Cancel Order",
   "nodes.CancelOrderNode.description": "Cancel existing open orders.",
   
-  "nodes.LiquidateNode.name": "Liquidate",
-  "nodes.LiquidateNode.description": "Execute emergency or full position liquidation when risk limits are exceeded.",
-  
   "nodes.HistoricalDataNode.name": "Historical Chart",
   "nodes.HistoricalDataNode.description": "N-day OHLCV chart data (daily/weekly/monthly bars).",
   
@@ -357,12 +354,6 @@
   "fields.CancelOrderNode.market_code": "[Overseas Stock] Select market code.",
   "fields.CancelOrderNode.original_order_id": "Original order ID to cancel. Select from open orders.",
   "fields.CancelOrderNode.symbol": "Symbol code.",
-
-  "fields.LiquidateNode.product": "Select product type.",
-  "fields.LiquidateNode.mode": "Liquidation mode. all: close all, symbol: specific symbols, losing: losing positions, profitable: profitable positions",
-  "fields.LiquidateNode.order_type": "Liquidation order type. Market order recommended for emergency.",
-  "fields.LiquidateNode.target_symbols": "Symbols to liquidate (only when mode='symbol')",
-  "fields.LiquidateNode.positions": "Position data. Bind from account node.",
 
   "fields.HistoricalDataNode.symbols": "Target symbols. Binding or direct input ([{exchange: NASDAQ, symbol: AAPL}])",
 

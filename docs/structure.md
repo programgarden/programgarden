@@ -199,7 +199,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | `account` | 잔고, 포지션, 체결 내역 | AccountNode, RealAccountNode, RealOrderEventNode |
 | `market` | 시세, 종목 목록, 과거 데이터 | WatchlistNode, ScreenerNode, MarketDataNode, HistoricalDataNode, RealMarketDataNode |
 | `condition` | 매매 조건 판단, 논리 연산 | ConditionNode, LogicNode |
-| `order` | 신규/정정/취소 주문, 포지션 사이징 | NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode, PositionSizingNode |
+| `order` | 신규/정정/취소 주문, 포지션 사이징 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode |
 | `risk` | 리스크 관리, 포트폴리오 배분 | RiskGuardNode, RiskConditionNode, PortfolioNode |
 | `schedule` | 시간 기반 트리거, 거래시간 필터 | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode |
 | `data` | 외부 DB 및 API 연동 | SQLiteNode, PostgresNode, HTTPRequestNode |
@@ -234,7 +234,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 |----------|------|
 | account | `AccountNode`, `RealAccountNode`, `RealOrderEventNode` |
 | market | `MarketDataNode`, `HistoricalDataNode`, `RealMarketDataNode` |
-| order | `NewOrderNode`, `ModifyOrderNode`, `CancelOrderNode`, `LiquidateNode` |
+| order | `NewOrderNode`, `ModifyOrderNode`, `CancelOrderNode` |
 
 > **중요**: 자동 브로커 감지 없음. 사용자가 명시적으로 connection 필드를 설정해야 합니다.
 
@@ -445,7 +445,6 @@ BacktestEngine₄ ──┘
 | `NewOrderNode` | 신규 주문 실행 |
 | `ModifyOrderNode` | 정정 주문 실행 |
 | `CancelOrderNode` | 취소 주문 실행 |
-| `LiquidateNode` | 포지션 청산 |
 | `PositionSizingNode` | 포지션 크기 계산 (Kelly, 고정, ATR 기반) |
 
 ---

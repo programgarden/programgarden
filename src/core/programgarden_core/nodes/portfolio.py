@@ -154,7 +154,7 @@ class PortfolioNode(BaseNode):
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 핵심 자본 배분 설정 ===
             "total_capital": FieldSchema(
@@ -164,8 +164,7 @@ class PortfolioNode(BaseNode):
                 default=100000.0,
                 required=False,
                 min_value=0,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 group="basic",
                 disabled_when="has_incoming_portfolio_edge",
                 override_source="parent_portfolio.allocation * parent_portfolio.total_capital",
@@ -186,7 +185,7 @@ class PortfolioNode(BaseNode):
                 default="equal",
                 enum_values=["equal", "custom", "risk_parity", "momentum"],
                 required=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 group="allocation",
                 category=FieldCategory.PARAMETERS,
                 example="equal",
@@ -197,7 +196,7 @@ class PortfolioNode(BaseNode):
                 type=FieldType.OBJECT,
                 description="Custom allocation weights when allocation_method='custom'. Keys are strategy IDs, values are weights (sum should be 1.0).",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 group="allocation",
                 ui_component=UIComponent.KEY_VALUE_EDITOR,
                 ui_hint="show_when_allocation_method_is_custom",
@@ -213,7 +212,7 @@ class PortfolioNode(BaseNode):
                 default="none",
                 enum_values=["none", "periodic", "drift", "both"],
                 required=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 group="rebalancing",
                 category=FieldCategory.SETTINGS,
                 example="periodic",
@@ -225,7 +224,7 @@ class PortfolioNode(BaseNode):
                 description="Rebalancing frequency when rebalance_rule is 'periodic' or 'both'.",
                 enum_values=["daily", "weekly", "monthly", "quarterly"],
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 group="rebalancing",
                 ui_hint="show_when_rebalance_rule_is_periodic_or_both",
                 category=FieldCategory.SETTINGS,
@@ -240,8 +239,7 @@ class PortfolioNode(BaseNode):
                 min_value=0.1,
                 max_value=50.0,
                 required=False,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 group="rebalancing",
                 ui_hint="show_when_rebalance_rule_is_drift_or_both",
                 category=FieldCategory.SETTINGS,
@@ -254,7 +252,7 @@ class PortfolioNode(BaseNode):
                 description="Allow capital sharing between strategies. When true, idle capital can be reallocated to other strategies.",
                 default=True,
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 group="capital",
                 category=FieldCategory.SETTINGS,
             ),
@@ -266,8 +264,7 @@ class PortfolioNode(BaseNode):
                 min_value=0,
                 max_value=100,
                 required=False,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 group="capital",
                 category=FieldCategory.SETTINGS,
                 example=5.0,

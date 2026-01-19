@@ -131,9 +131,6 @@
   "nodes.CancelOrderNode.name": "주문 취소",
   "nodes.CancelOrderNode.description": "기존 미체결 주문을 취소합니다.",
   
-  "nodes.LiquidateNode.name": "청산",
-  "nodes.LiquidateNode.description": "리스크 한도 초과 시 긴급 청산 또는 전량 청산을 실행합니다.",
-  
   "nodes.HistoricalDataNode.name": "과거차트조회",
   "nodes.HistoricalDataNode.description": "N일치 일봉/주봉/월봉 OHLCV 차트 데이터.",
   
@@ -385,12 +382,6 @@
   "fields.CancelOrderNode.market_code": "[해외주식] 시장 코드를 선택합니다.",
   "fields.CancelOrderNode.original_order_id": "취소할 원주문번호입니다. 미체결 주문 목록에서 선택합니다.",
   "fields.CancelOrderNode.symbol": "종목 코드입니다.",
-
-  "fields.LiquidateNode.product": "상품 유형을 선택합니다.",
-  "fields.LiquidateNode.mode": "청산 모드입니다. all: 전체 청산, symbol: 특정 종목, losing: 손실 포지션, profitable: 수익 포지션",
-  "fields.LiquidateNode.order_type": "청산 주문 유형입니다. 긴급 청산은 시장가를 권장합니다.",
-  "fields.LiquidateNode.target_symbols": "청산할 종목 목록 (mode='symbol' 시에만 사용)",
-  "fields.LiquidateNode.positions": "포지션 데이터입니다. 계좌 노드에서 바인딩합니다.",
 
   "fields.HistoricalDataNode.symbols": "조회할 종목 목록. 바인딩 또는 직접 입력 ([거래소: NASDAQ, 종목: AAPL형식])",
   "fields.HistoricalDataNode.period": "데이터 기간",

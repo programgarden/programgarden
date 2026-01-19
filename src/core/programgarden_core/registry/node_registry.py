@@ -65,7 +65,7 @@ class NodeTypeRegistry:
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
             ConditionNode, LogicNode,
             PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
-            NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
+            NewOrderNode, ModifyOrderNode, CancelOrderNode,
             DisplayNode,
             BacktestEngineNode, BenchmarkCompareNode,
             DeployNode, TradingHaltNode, JobControlNode,
@@ -88,7 +88,7 @@ class NodeTypeRegistry:
             # Risk
             PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
             # Order
-            NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
+            NewOrderNode, ModifyOrderNode, CancelOrderNode,
             # Event - 커뮤니티 노드(TelegramNode 등)로 대체됨
             # Display
             DisplayNode,

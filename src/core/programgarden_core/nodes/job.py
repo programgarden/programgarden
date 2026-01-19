@@ -78,7 +78,7 @@ class DeployNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 핵심 배포 설정 ===
             "mode": FieldSchema(
@@ -89,7 +89,7 @@ class DeployNode(BaseNode):
                 enum_values=["live", "paper", "dry_run"],
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="paper",
                 expected_type="str",
             ),
@@ -99,7 +99,7 @@ class DeployNode(BaseNode):
                 description="Enable paper trading. When true, orders are simulated.",
                 default=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
             ),
             # === SETTINGS: 부가 설정 ===
             "schedule_type": FieldSchema(
@@ -109,7 +109,7 @@ class DeployNode(BaseNode):
                 default="immediate",
                 enum_values=["immediate", "scheduled"],
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="immediate",
                 expected_type="str",
             ),
@@ -119,7 +119,7 @@ class DeployNode(BaseNode):
                 description="Scheduled deployment time in ISO 8601 format. Only used when schedule_type='scheduled'.",
                 required=False,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="2024-01-15T09:30:00-05:00",
                 expected_type="str",
             ),
@@ -173,7 +173,7 @@ class TradingHaltNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 핵심 설정 ===
             "duration_hours": FieldSchema(
@@ -183,7 +183,7 @@ class TradingHaltNode(BaseNode):
                 default=24,
                 min_value=0.1,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=24,
                 expected_type="float",
             ),
@@ -193,8 +193,7 @@ class TradingHaltNode(BaseNode):
                 description="Reason for trading halt. Logged for audit trail.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 example="Daily loss limit exceeded",
                 example_binding="{{ nodes.riskGuard.halt_reason }}",
                 bindable_sources=["RiskGuardNode.halt_reason"],
@@ -207,7 +206,7 @@ class TradingHaltNode(BaseNode):
                 description="Condition for automatic resume. Options: 'next_trading_day', 'manual', or custom condition.",
                 required=False,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="next_trading_day",
                 expected_type="str",
             ),
@@ -256,7 +255,7 @@ class JobControlNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 모두 핵심 제어 설정 ===
             "action": FieldSchema(
@@ -266,7 +265,7 @@ class JobControlNode(BaseNode):
                 enum_values=["pause", "resume", "stop", "restart"],
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="pause",
                 expected_type="str",
             ),
@@ -276,8 +275,7 @@ class JobControlNode(BaseNode):
                 description="Target Job ID to control. Leave empty to control current job.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 example="job_abc123",
                 expected_type="str",
             ),

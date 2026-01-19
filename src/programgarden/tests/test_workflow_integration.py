@@ -339,7 +339,7 @@ class TestWorkflowNodeTypes:
             "ConditionNode", "LogicNode",
             # order
             "NewOrderNode", "ModifyOrderNode", "CancelOrderNode",
-            "LiquidateNode", "PositionSizingNode",
+            "PositionSizingNode",
             # risk
             "RiskGuardNode", "RiskConditionNode", "PortfolioNode",
             # schedule

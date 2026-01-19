@@ -268,7 +268,7 @@ class ExchangeStatusNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -276,8 +276,7 @@ class ExchangeStatusNode(BaseNode):
                 type=FieldType.OBJECT,
                 description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
                 required=True,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
                 example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
                 example_binding="{{ nodes.broker.connection }}",
@@ -291,6 +290,7 @@ class ExchangeStatusNode(BaseNode):
                 description="Exchange code (NYSE, NASDAQ, CME, etc.)",
                 default="NYSE",
                 required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
             ),
             # === SETTINGS: 부가 설정 ===
@@ -299,6 +299,7 @@ class ExchangeStatusNode(BaseNode):
                 type=FieldType.BOOLEAN,
                 description="Check holidays",
                 default=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
             ),
         }

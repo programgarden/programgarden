@@ -10,7 +10,7 @@ ProgramGarden Core - 노드 타입 정의
 - trigger (3): ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode
 - condition (2): ConditionNode, LogicNode
 - risk (4): PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode
-- order (4): NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
+- order (3): NewOrderNode, ModifyOrderNode, CancelOrderNode
 - event (3): EventHandlerNode, ErrorHandlerNode, AlertNode
 - display (1): DisplayNode
 - backtest (1): BacktestEngineNode
@@ -41,7 +41,7 @@ from programgarden_core.nodes.trigger import (
 )
 from programgarden_core.nodes.condition import ConditionNode, LogicNode
 from programgarden_core.nodes.risk import PositionSizingNode, RiskGuardNode, RiskConditionNode
-from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
+from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode
 # event 노드는 커뮤니티 노드(TelegramNode 등)로 대체됨
 from programgarden_core.nodes.display import DisplayNode
 from programgarden_core.nodes.backtest import (
@@ -96,7 +96,6 @@ __all__ = [
     "NewOrderNode",
     "ModifyOrderNode",
     "CancelOrderNode",
-    "LiquidateNode",
     # Event - 커뮤니티 노드(TelegramNode 등)로 대체됨
     # Display
     "DisplayNode",

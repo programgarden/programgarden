@@ -228,7 +228,7 @@ class SQLiteNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 핵심 스토리지 설정 ===
             "db_path": FieldSchema(
@@ -237,7 +237,7 @@ class SQLiteNode(BaseNode):
                 description="i18n:fields.SQLiteNode.db_path",
                 default="./programgarden_storage.db",
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="./my_strategy_state.db",
                 expected_type="str",
             ),
@@ -247,7 +247,7 @@ class SQLiteNode(BaseNode):
                 description="i18n:fields.SQLiteNode.table",
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="trailing_stop_state",
                 expected_type="str",
             ),
@@ -258,7 +258,7 @@ class SQLiteNode(BaseNode):
                 required=True,
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=["symbol"],
                 expected_type="list[str]",
             ),
@@ -269,7 +269,7 @@ class SQLiteNode(BaseNode):
                 required=True,
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=["symbol", "peak_price", "peak_pnl_rate", "updated_at"],
                 expected_type="list[str]",
             ),
@@ -279,7 +279,7 @@ class SQLiteNode(BaseNode):
                 description="i18n:fields.SQLiteNode.aggregations",
                 required=False,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example={"peak_price": "max", "peak_pnl_rate": "max"},
                 expected_type="dict[str, str]",
             ),
@@ -291,7 +291,7 @@ class SQLiteNode(BaseNode):
                 default=1000,
                 min_value=100,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=1000,
                 expected_type="int",
             ),
@@ -302,7 +302,7 @@ class SQLiteNode(BaseNode):
                 default=10,
                 min_value=1,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=10,
                 expected_type="int",
             ),
@@ -380,7 +380,7 @@ class PostgresNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 핵심 스토리지 설정 ===
             "credential_id": FieldSchema(
@@ -389,7 +389,7 @@ class PostgresNode(BaseNode):
                 description="i18n:fields.PostgresNode.credential_id",
                 credential_types=["postgres"],
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
             ),
             "table": FieldSchema(
                 name="table",
@@ -397,7 +397,7 @@ class PostgresNode(BaseNode):
                 description="i18n:fields.PostgresNode.table",
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="trading_state",
                 expected_type="str",
             ),
@@ -407,7 +407,7 @@ class PostgresNode(BaseNode):
                 description="i18n:fields.PostgresNode.schema_name",
                 default="public",
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="public",
                 expected_type="str",
             ),
@@ -418,7 +418,7 @@ class PostgresNode(BaseNode):
                 required=True,
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=["symbol"],
                 expected_type="list[str]",
             ),
@@ -429,7 +429,7 @@ class PostgresNode(BaseNode):
                 required=True,
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=["symbol", "peak_price", "updated_at"],
                 expected_type="list[str]",
             ),
@@ -439,7 +439,7 @@ class PostgresNode(BaseNode):
                 description="i18n:fields.PostgresNode.aggregations",
                 required=False,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example={"peak_price": "max"},
                 expected_type="dict[str, str]",
             ),
@@ -451,7 +451,7 @@ class PostgresNode(BaseNode):
                 default=1000,
                 min_value=100,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=1000,
                 expected_type="int",
             ),
@@ -462,7 +462,7 @@ class PostgresNode(BaseNode):
                 default=10,
                 min_value=1,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=10,
                 expected_type="int",
             ),
@@ -473,7 +473,7 @@ class PostgresNode(BaseNode):
                 default=30,
                 min_value=5,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=30,
                 expected_type="int",
             ),
