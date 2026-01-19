@@ -63,7 +63,7 @@ class UIComponent(str, Enum):
     - NUMBER/INTEGER → NUMBER_INPUT
     - BOOLEAN → CHECKBOX
     - STRING → TEXT_INPUT
-    - ARRAY (직접 편집) → SYMBOL_EDITOR, CONDITION_LIST 등
+    - ARRAY[OBJECT] (직접 편집) → OBJECT_ARRAY_TABLE, SYMBOL_EDITOR 등
     - ARRAY (바인딩 전용) → BINDING_INPUT
     - OBJECT (바인딩 전용) → BINDING_INPUT
     """
@@ -80,7 +80,7 @@ class UIComponent(str, Enum):
     CREDENTIAL_SELECT = "credential_select"  # Credential 선택 드롭다운
     PLUGIN_SELECT = "plugin_select"          # 플러그인 선택 드롭다운 (ConditionNode 등)
     SYMBOL_EDITOR = "symbol_editor"          # 종목 편집기 (exchange + symbol 쌍, fx 토글로 바인딩 지원)
-    CONDITION_LIST = "condition_list"        # 조건 리스트 편집기 (LogicNode용)
+    OBJECT_ARRAY_TABLE = "object_array_table"  # 객체 배열 테이블 (object_schema 기반, 행 추가/삭제)
     KEY_VALUE_EDITOR = "key_value_editor"    # 키-값 쌍 편집기 (HTTP headers 등)
     FIELD_MAPPING_EDITOR = "field_mapping_editor"  # 필드 매핑 편집기 (from→to 변환 테이블)
     CODE_EDITOR = "code_editor"              # 코드/JSON 편집기

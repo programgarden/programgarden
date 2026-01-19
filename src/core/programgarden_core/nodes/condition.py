@@ -137,7 +137,7 @@ class ConditionNode(PluginNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 플러그인 선택 ===
             "plugin": FieldSchema(
@@ -145,7 +145,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.plugin",
                 required=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.PLUGIN_SELECT,
             ),
@@ -155,8 +155,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.data",
                 required=True,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 placeholder="{{ flatten(nodes.historicaldata_1.values, 'time_series') }}",
                 example=[
@@ -176,7 +175,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.close_field",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 default="close",
                 placeholder="close",
@@ -187,7 +186,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.open_field",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 default="open",
                 placeholder="open",
@@ -198,7 +197,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.high_field",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 default="high",
                 placeholder="high",
@@ -209,7 +208,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.low_field",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 default="low",
                 placeholder="low",
@@ -220,7 +219,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.volume_field",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 default="volume",
                 placeholder="volume",
@@ -231,7 +230,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.date_field",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 default="date",
                 placeholder="date",
@@ -244,8 +243,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.positions",
                 required=False,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 placeholder="{{ nodes.realAccount.positions }}",
                 example={"AAPL": {"qty": 10, "avg_price": 150.0, "pnl_rate": 5.5}},
@@ -263,7 +261,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.symbol_field",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 default="symbol",
                 placeholder="symbol",
@@ -274,7 +272,7 @@ class ConditionNode(PluginNode):
                 type=FieldType.STRING,
                 description="i18n:fields.ConditionNode.exchange_field",
                 required=False,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 default="exchange",
                 placeholder="exchange",
@@ -332,7 +330,7 @@ class LogicNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 모두 핵심 논리 연산 설정 ===
             "operator": FieldSchema(
@@ -352,7 +350,7 @@ class LogicNode(BaseNode):
                     "weighted": "i18n:enums.operator.weighted",
                 },
                 required=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 help_text="i18n:fields.LogicNode.operator.help_text",
             ),
@@ -360,8 +358,7 @@ class LogicNode(BaseNode):
                 name="threshold",
                 type=FieldType.NUMBER,  # weighted는 소수점 필요 (0.6 등)
                 description="i18n:fields.LogicNode.threshold",
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 visible_when={"operator": ["at_least", "at_most", "exactly", "weighted"]},
                 help_text="i18n:fields.LogicNode.threshold.help_text",
@@ -373,10 +370,9 @@ class LogicNode(BaseNode):
                 array_item_type=FieldType.OBJECT,
                 description="i18n:fields.LogicNode.conditions",
                 required=True,
-                bindable=False,
-                expression_enabled=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.CONDITION_LIST,
+                ui_component=UIComponent.OBJECT_ARRAY_TABLE,
                 example=[
                     {
                         "is_condition_met": "{{ nodes.rsiCondition.result }}",
@@ -388,7 +384,7 @@ class LogicNode(BaseNode):
                     {
                         "name": "is_condition_met",
                         "type": "STRING",
-                        "expression_enabled": True,
+                        "expression_mode": "expression_only",
                         "required": True,
                         "description": "i18n:fields.LogicNode.conditions.is_condition_met",
                         "placeholder": "{{ nodes.conditionNodeId.result }}",
@@ -396,7 +392,7 @@ class LogicNode(BaseNode):
                     {
                         "name": "passed_symbols",
                         "type": "STRING",
-                        "expression_enabled": True,
+                        "expression_mode": "expression_only",
                         "required": True,
                         "description": "i18n:fields.LogicNode.conditions.passed_symbols",
                         "placeholder": "{{ nodes.conditionNodeId.passed_symbols }}",
@@ -404,6 +400,7 @@ class LogicNode(BaseNode):
                     {
                         "name": "weight",
                         "type": "NUMBER",
+                        "expression_mode": "fixed_only",
                         "required": False,
                         "description": "i18n:fields.LogicNode.conditions.weight",
                         "placeholder": "0.5",

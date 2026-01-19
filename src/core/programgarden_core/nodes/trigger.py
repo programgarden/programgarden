@@ -53,7 +53,7 @@ class ScheduleNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 핵심 스케줄 설정 ===
             "cron": FieldSchema(
@@ -62,7 +62,7 @@ class ScheduleNode(BaseNode):
                 description="Cron expression. Format: minute hour day month weekday. Examples: */5 * * * * (every 5 min), 0 9 * * 1-5 (9am weekdays)",
                 default="*/5 * * * *",
                 required=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 example="*/5 * * * *",
                 expected_type="str",
@@ -72,7 +72,7 @@ class ScheduleNode(BaseNode):
                 type=FieldType.STRING,
                 description="Timezone for cron schedule. Use IANA timezone names.",
                 default="America/New_York",
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 example="America/New_York",
                 expected_type="str",
@@ -83,7 +83,7 @@ class ScheduleNode(BaseNode):
                 type=FieldType.BOOLEAN,
                 description="Enable/disable the schedule. When disabled, trigger will not fire.",
                 default=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
             ),
         }
@@ -125,7 +125,7 @@ class TradingHoursFilterNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 핵심 거래시간 설정 ===
             "start": FieldSchema(
@@ -135,7 +135,7 @@ class TradingHoursFilterNode(BaseNode):
                 default="09:30",
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="09:30",
                 expected_type="str",
             ),
@@ -146,7 +146,7 @@ class TradingHoursFilterNode(BaseNode):
                 default="16:00",
                 required=True,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="16:00",
                 expected_type="str",
             ),
@@ -157,7 +157,7 @@ class TradingHoursFilterNode(BaseNode):
                 default=["mon", "tue", "wed", "thu", "fri"],
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=["mon", "tue", "wed", "thu", "fri"],
                 expected_type="list[str]",
             ),
@@ -168,7 +168,7 @@ class TradingHoursFilterNode(BaseNode):
                 description="Timezone for time comparison. Use IANA timezone names.",
                 default="America/New_York",
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="America/New_York",
                 expected_type="str",
             ),

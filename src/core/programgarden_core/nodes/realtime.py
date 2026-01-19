@@ -228,7 +228,7 @@ class RealAccountNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -236,8 +236,7 @@ class RealAccountNode(BaseNode):
                 type=FieldType.OBJECT,
                 description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
                 required=True,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
                 example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
                 example_binding="{{ nodes.broker.connection }}",
@@ -257,7 +256,7 @@ class RealAccountNode(BaseNode):
                     "overseas_futures": "해외선물"
                 },
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 해외주식 수수료/세금 (overseas_stock 선택 시만 표시) ===
@@ -269,8 +268,7 @@ class RealAccountNode(BaseNode):
                 min_value=0,
                 max_value=5,
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=0.25,
                 expected_type="float",
                 visible_when={"product_type": "overseas_stock"},
@@ -284,8 +282,7 @@ class RealAccountNode(BaseNode):
                 min_value=0,
                 max_value=1,
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=0.0,
                 expected_type="float",
                 visible_when={"product_type": "overseas_stock"},
@@ -300,8 +297,7 @@ class RealAccountNode(BaseNode):
                 min_value=0,
                 max_value=100,
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=7.5,
                 expected_type="float",
                 visible_when={"product_type": "overseas_futures"},
@@ -314,7 +310,7 @@ class RealAccountNode(BaseNode):
                 description="i18n:fields.RealAccountNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CHECKBOX,
             ),
             "sync_interval_sec": FieldSchema(
@@ -325,7 +321,7 @@ class RealAccountNode(BaseNode):
                 min_value=10,
                 max_value=3600,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=60,
                 expected_type="int",
                 ui_component=UIComponent.NUMBER_INPUT,
@@ -391,7 +387,7 @@ class RealOrderEventNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -399,8 +395,7 @@ class RealOrderEventNode(BaseNode):
                 type=FieldType.OBJECT,
                 description="i18n:fields.RealOrderEventNode.connection",
                 required=True,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
                 example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
                 example_binding="{{ nodes.broker.connection }}",
@@ -420,7 +415,7 @@ class RealOrderEventNode(BaseNode):
                     "overseas_futures": "해외선물"
                 },
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 이벤트 필터 (해외주식) ===
@@ -439,7 +434,7 @@ class RealOrderEventNode(BaseNode):
                     "AS4": "AS4 (주문거부)",
                 },
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 visible_when={"product_type": "overseas_stock"},
                 ui_component=UIComponent.SELECT,
             ),
@@ -457,7 +452,7 @@ class RealOrderEventNode(BaseNode):
                     "TC3": "TC3 (체결)",
                 },
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 visible_when={"product_type": "overseas_futures"},
                 ui_component=UIComponent.SELECT,
             ),
@@ -468,7 +463,7 @@ class RealOrderEventNode(BaseNode):
                 description="i18n:fields.RealOrderEventNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CHECKBOX,
             ),
         }

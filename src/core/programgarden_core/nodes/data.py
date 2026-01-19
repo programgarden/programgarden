@@ -544,7 +544,7 @@ class HTTPRequestNode(BaseNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """노드의 설정 가능한 필드 스키마 반환"""
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         
         return {
             # PARAMETERS
@@ -553,17 +553,16 @@ class HTTPRequestNode(BaseNode):
                 enum_values=["GET", "POST", "PUT", "PATCH", "DELETE"],
                 description="i18n:fields.HTTPRequestNode.method",
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example="POST",
                 expected_type="str",
                 ui_component=UIComponent.SELECT,
             ),
             "url": FieldSchema(
                 name="url", type=FieldType.STRING, required=True,
-                expression_enabled=True,
                 description="i18n:fields.HTTPRequestNode.url",
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
+                expression_mode=ExpressionMode.BOTH,
                 example="https://api.example.com/v1/data",
                 example_binding="{{ nodes.config.api_endpoint }}",
                 expected_type="str",
@@ -572,10 +571,9 @@ class HTTPRequestNode(BaseNode):
             ),
             "query_params": FieldSchema(
                 name="query_params", type=FieldType.KEY_VALUE_PAIRS, required=False,
-                expression_enabled=True,
                 description="i18n:fields.HTTPRequestNode.query_params",
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.BOTH,
                 example={"symbol": "AAPL", "limit": "100"},
                 expected_type="dict[str, str]",
                 ui_component=UIComponent.KEY_VALUE_EDITOR,
@@ -586,10 +584,9 @@ class HTTPRequestNode(BaseNode):
             ),
             "body": FieldSchema(
                 name="body", type=FieldType.OBJECT, required=False,
-                expression_enabled=True,
                 description="i18n:fields.HTTPRequestNode.body",
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
+                expression_mode=ExpressionMode.BOTH,
                 example={"action": "buy", "symbol": "AAPL", "quantity": 10},
                 example_binding="{{ nodes.order.request_body }}",
                 expected_type="dict[str, Any]",
@@ -600,7 +597,7 @@ class HTTPRequestNode(BaseNode):
                 name="credential_id", type=FieldType.CREDENTIAL, required=False,
                 description="i18n:fields.HTTPRequestNode.credential_id",
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 credential_types=["http_bearer", "http_header", "http_basic", "http_query"],
                 ui_component=UIComponent.CREDENTIAL_SELECT,
             ),
@@ -608,7 +605,7 @@ class HTTPRequestNode(BaseNode):
                 name="headers", type=FieldType.KEY_VALUE_PAIRS, required=False,
                 description="i18n:fields.HTTPRequestNode.headers",
                 category=FieldCategory.PARAMETERS,
-                bindable=False,
+                expression_mode=ExpressionMode.BOTH,
                 example={"Content-Type": "application/json", "X-Custom-Header": "value"},
                 expected_type="dict[str, str]",
                 ui_component=UIComponent.KEY_VALUE_EDITOR,
@@ -624,7 +621,7 @@ class HTTPRequestNode(BaseNode):
                 default=30,
                 description="i18n:fields.HTTPRequestNode.timeout_seconds",
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=30,
                 expected_type="int",
                 ui_component=UIComponent.NUMBER_INPUT,
@@ -637,7 +634,7 @@ class HTTPRequestNode(BaseNode):
                 default=0,
                 description="i18n:fields.HTTPRequestNode.retry_count",
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=3,
                 expected_type="int",
                 ui_component=UIComponent.NUMBER_INPUT,
@@ -650,7 +647,7 @@ class HTTPRequestNode(BaseNode):
                 default=1000,
                 description="i18n:fields.HTTPRequestNode.retry_delay_ms",
                 category=FieldCategory.SETTINGS,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 example=1000,
                 expected_type="int",
                 ui_component=UIComponent.NUMBER_INPUT,
@@ -851,7 +848,7 @@ class FieldMappingNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === PARAMETERS: 입력 데이터 ===
             "data": FieldSchema(
@@ -859,8 +856,7 @@ class FieldMappingNode(BaseNode):
                 type=FieldType.OBJECT,  # ANY 대신 OBJECT 사용 (list/dict/nested dict 모두 수용)
                 description="i18n:fields.FieldMappingNode.data",
                 required=True,
-                bindable=True,
-                expression_enabled=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.BINDING_INPUT,
                 example=[{"lastPrice": 150, "vol": 1000000}],
@@ -875,7 +871,7 @@ class FieldMappingNode(BaseNode):
                 array_item_type=FieldType.OBJECT,
                 description="i18n:fields.FieldMappingNode.mappings",
                 required=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.FIELD_MAPPING_EDITOR,
                 child_of="data",  # data 필드 아래 들여쓰기되어 표시
@@ -913,7 +909,7 @@ class FieldMappingNode(BaseNode):
                 type=FieldType.BOOLEAN,
                 description="i18n:fields.FieldMappingNode.preserve_unmapped",
                 default=True,
-                bindable=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
                 ui_component=UIComponent.CHECKBOX,
                 example=True,
