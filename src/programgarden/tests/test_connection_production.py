@@ -254,7 +254,6 @@ def test_market_data_production():
                 "type": "MarketDataNode",
                 "connection": "{{ nodes.broker.connection }}",
                 "symbols": "{{ nodes.watchlist.symbols }}",
-                "fields": ["price", "change", "volume"],
             },
         ],
         "edges": [
@@ -305,15 +304,15 @@ def test_market_data_production():
     print(f"  - symbols: {symbols}")
     
     print(f"\n📊 MarketDataNode 출력:")
-    prices = market.get("prices", {})
-    for symbol, data in prices.items():
-        print(f"  - {symbol}: ${data.get('price', 'N/A')} ({data.get('change', 'N/A')}%)")
+    values = market.get("values", [])
+    for item in values:
+        print(f"  - {item.get('symbol', 'N/A')}: ${item.get('price', 'N/A')} ({item.get('change_pct', 'N/A')}%)")
     
     status = job.status
     print(f"\n  실행 상태: {status}")
     
-    # 성공 여부: completed 상태이고 가격 데이터가 있어야 함
-    has_data = len(prices) > 0
+    # 성공 여부: completed 상태이고 데이터가 있어야 함
+    has_data = len(values) > 0
     return status == "completed" and has_data
 
 

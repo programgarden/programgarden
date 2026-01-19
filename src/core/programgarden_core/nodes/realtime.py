@@ -45,10 +45,6 @@ class RealMarketDataNode(BaseNode):
         "If True, maintains realtime stream until explicit stop(). "
         "If False, disconnects after single data fetch.",
     )
-    fields: List[str] = Field(
-        default=["price", "volume"],
-        description="Fields to receive (price, volume, bid, ask, etc.)",
-    )
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -74,7 +70,7 @@ class RealMarketDataNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -89,6 +85,7 @@ class RealMarketDataNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
             # === PARAMETERS: 핵심 설정 ===
             "symbols": FieldSchema(
@@ -101,7 +98,6 @@ class RealMarketDataNode(BaseNode):
                 bindable=True,
                 expression_enabled=True,
                 # RealMarketDataNode에서는 symbols를 WatchlistNode에서 바인딩받으므로 직접 편집 UI 불필요
-                # ui_component="symbol_editor"를 제거하여 바인딩 필드로만 표시
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=[
@@ -109,18 +105,7 @@ class RealMarketDataNode(BaseNode):
                     "ScreenerNode.filtered_symbols",
                 ],
                 expected_type="list[dict]",
-            ),
-            "fields": FieldSchema(
-                name="fields",
-                type=FieldType.ARRAY,
-                description="i18n:fields.RealMarketDataNode.fields",
-                default=["price", "volume"],
-                array_item_type=FieldType.STRING,
-                category=FieldCategory.PARAMETERS,
-                bindable=False,
-                # 바인딩 불가 필드이지만 예시 제공
-                example=["price", "volume", "bid", "ask"],
-                expected_type="list[str]",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
             # === SETTINGS: 부가 설정 ===
             "stay_connected": FieldSchema(
@@ -130,6 +115,7 @@ class RealMarketDataNode(BaseNode):
                 default=True,
                 category=FieldCategory.SETTINGS,
                 bindable=False,
+                ui_component=UIComponent.CHECKBOX,
             ),
         }
 
@@ -218,7 +204,7 @@ class RealAccountNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -233,6 +219,7 @@ class RealAccountNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
             # === PARAMETERS: 상품 유형 선택 ===
             "product_type": FieldSchema(
@@ -247,6 +234,7 @@ class RealAccountNode(BaseNode):
                 },
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
+                ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 해외주식 수수료/세금 (overseas_stock 선택 시만 표시) ===
             "commission_rate": FieldSchema(
@@ -262,6 +250,7 @@ class RealAccountNode(BaseNode):
                 example=0.25,
                 expected_type="float",
                 visible_when={"product_type": "overseas_stock"},
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
             "tax_rate": FieldSchema(
                 name="tax_rate",
@@ -276,6 +265,7 @@ class RealAccountNode(BaseNode):
                 example=0.0,
                 expected_type="float",
                 visible_when={"product_type": "overseas_stock"},
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
             # === PARAMETERS: 해외선물 수수료 (overseas_futures 선택 시만 표시) ===
             "futures_fee_per_contract": FieldSchema(
@@ -291,6 +281,7 @@ class RealAccountNode(BaseNode):
                 example=7.5,
                 expected_type="float",
                 visible_when={"product_type": "overseas_futures"},
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
             # === SETTINGS: 부가 설정 ===
             "stay_connected": FieldSchema(
@@ -300,6 +291,7 @@ class RealAccountNode(BaseNode):
                 default=True,
                 category=FieldCategory.SETTINGS,
                 bindable=False,
+                ui_component=UIComponent.CHECKBOX,
             ),
             "sync_interval_sec": FieldSchema(
                 name="sync_interval_sec",
@@ -312,6 +304,7 @@ class RealAccountNode(BaseNode):
                 bindable=False,
                 example=60,
                 expected_type="int",
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
         }
 
@@ -374,7 +367,7 @@ class RealOrderEventNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -389,6 +382,7 @@ class RealOrderEventNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
             # === PARAMETERS: 상품 유형 선택 ===
             "product_type": FieldSchema(
@@ -403,6 +397,7 @@ class RealOrderEventNode(BaseNode):
                 },
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
+                ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 이벤트 필터 (해외주식) ===
             "event_filter": FieldSchema(
@@ -422,6 +417,7 @@ class RealOrderEventNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
                 visible_when={"product_type": "overseas_stock"},
+                ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 이벤트 필터 (해외선물) ===
             "event_filter_futures": FieldSchema(
@@ -439,6 +435,7 @@ class RealOrderEventNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
                 visible_when={"product_type": "overseas_futures"},
+                ui_component=UIComponent.SELECT,
             ),
             # === SETTINGS: 부가 설정 ===
             "stay_connected": FieldSchema(
@@ -448,5 +445,6 @@ class RealOrderEventNode(BaseNode):
                 default=True,
                 category=FieldCategory.SETTINGS,
                 bindable=False,
+                ui_component=UIComponent.CHECKBOX,
             ),
         }

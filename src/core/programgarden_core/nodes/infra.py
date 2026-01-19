@@ -87,7 +87,7 @@ class BrokerNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 핵심 연결 설정 ===
             "provider": FieldSchema(
@@ -99,7 +99,7 @@ class BrokerNode(BaseNode):
                 enum_labels={"ls-sec.co.kr": "LS증권"},
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="ls-sec.co.kr",
                 expected_type="str",
             ),
@@ -115,7 +115,7 @@ class BrokerNode(BaseNode):
                 },
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="overseas_stock",
                 expected_type="str",
             ),
@@ -126,7 +126,7 @@ class BrokerNode(BaseNode):
                 default=None,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select:credential",
+                ui_component=UIComponent.CREDENTIAL_SELECT,
                 credential_types=["broker_ls"],
                 example="my-broker-cred",
                 expected_type="str",
@@ -179,7 +179,7 @@ class ThrottleNode(BaseNode):
     
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             "mode": FieldSchema(
                 name="mode",
@@ -193,7 +193,7 @@ class ThrottleNode(BaseNode):
                 },
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="latest",
                 expected_type="str",
             ),
@@ -206,7 +206,7 @@ class ThrottleNode(BaseNode):
                 max_value=300.0,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="number_input",
+                ui_component=UIComponent.NUMBER_INPUT,
                 placeholder="5.0",
                 example=5.0,
                 expected_type="float",
@@ -218,7 +218,7 @@ class ThrottleNode(BaseNode):
                 default=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="checkbox",
+                ui_component=UIComponent.CHECKBOX,
                 example=True,
                 expected_type="bool",
             ),

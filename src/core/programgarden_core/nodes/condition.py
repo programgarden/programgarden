@@ -137,7 +137,7 @@ class ConditionNode(PluginNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 플러그인 선택 ===
             "plugin": FieldSchema(
@@ -147,7 +147,7 @@ class ConditionNode(PluginNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="plugin_selector",
+                ui_component=UIComponent.PLUGIN_SELECT,
             ),
             # === DATA: 입력 데이터 ===
             "data": FieldSchema(
@@ -332,7 +332,7 @@ class LogicNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 모두 핵심 논리 연산 설정 ===
             "operator": FieldSchema(
@@ -376,7 +376,7 @@ class LogicNode(BaseNode):
                 bindable=False,
                 expression_enabled=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="condition_list",
+                ui_component=UIComponent.CONDITION_LIST,
                 example=[
                     {
                         "is_condition_met": "{{ nodes.rsiCondition.result }}",

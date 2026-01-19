@@ -93,7 +93,7 @@ class SymbolQueryNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -108,6 +108,7 @@ class SymbolQueryNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
             # === PARAMETERS: 상품 유형 선택 ===
             "product_type": FieldSchema(
@@ -122,6 +123,7 @@ class SymbolQueryNode(BaseNode):
                 bindable=False,
                 example="overseas_stock",
                 expected_type="str",
+                ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 해외주식 설정 (overseas_stock 선택시만 표시) ===
             "country": FieldSchema(
@@ -137,6 +139,7 @@ class SymbolQueryNode(BaseNode):
                 example="US",
                 expected_type="str",
                 visible_when={"product_type": "overseas_stock"},
+                ui_component=UIComponent.SELECT,
             ),
             "stock_exchange": FieldSchema(
                 name="stock_exchange",
@@ -150,6 +153,7 @@ class SymbolQueryNode(BaseNode):
                 example="82",
                 expected_type="str",
                 visible_when={"product_type": "overseas_stock"},
+                ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 해외선물 설정 (overseas_futures 선택시만 표시) ===
             "futures_exchange": FieldSchema(
@@ -165,6 +169,7 @@ class SymbolQueryNode(BaseNode):
                 example="1",
                 expected_type="str",
                 visible_when={"product_type": "overseas_futures"},
+                ui_component=UIComponent.SELECT,
             ),
             "futures_contract_month": FieldSchema(
                 name="futures_contract_month",
@@ -177,6 +182,7 @@ class SymbolQueryNode(BaseNode):
                 expected_type="str",
                 placeholder="front, next, F, 2026F",
                 visible_when={"product_type": "overseas_futures"},
+                ui_component=UIComponent.TEXT_INPUT,
             ),
             # === SETTINGS: 부가 설정 ===
             "max_results": FieldSchema(
@@ -190,6 +196,7 @@ class SymbolQueryNode(BaseNode):
                 bindable=False,
                 example=500,
                 expected_type="int",
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
         }
 
@@ -222,7 +229,7 @@ class WatchlistNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 핵심 설정 ===
             "symbols": FieldSchema(
@@ -234,7 +241,7 @@ class WatchlistNode(BaseNode):
                 bindable=False,
                 expression_enabled=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="symbol_editor",
+                ui_component=UIComponent.SYMBOL_EDITOR,
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
                 expected_type="list[dict]",
             ),
@@ -276,20 +283,21 @@ class MarketUniverseNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             "universe": FieldSchema(
                 name="universe",
-                type=FieldType.STRING,
+                type=FieldType.ENUM,
                 description="i18n:fields.MarketUniverseNode.universe",
                 default="NASDAQ100",
                 required=True,
+                enum_values=["NASDAQ100", "SP500", "SP100", "DOW30"],
+                enum_labels={"NASDAQ100": "나스닥 100", "SP500": "S&P 500", "SP100": "S&P 100", "DOW30": "다우존스 30"},
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                bindable=False,
                 example="NASDAQ100",
-                placeholder="NASDAQ100, SP500, SP100, DOW30",
                 expected_type="str",
+                ui_component=UIComponent.SELECT,
             ),
         }
 
@@ -348,7 +356,7 @@ class ScreenerNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             "market_cap_min": FieldSchema(
                 name="market_cap_min",
@@ -360,6 +368,7 @@ class ScreenerNode(BaseNode):
                 example=10000000000,
                 placeholder="예: 10000000000 (100억 달러)",
                 expected_type="float",
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
             "market_cap_max": FieldSchema(
                 name="market_cap_max",
@@ -370,6 +379,7 @@ class ScreenerNode(BaseNode):
                 bindable=False,
                 example=50000000000,
                 expected_type="float",
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
             "volume_min": FieldSchema(
                 name="volume_min",
@@ -381,30 +391,33 @@ class ScreenerNode(BaseNode):
                 example=1000000,
                 placeholder="예: 1000000 (100만주)",
                 expected_type="int",
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
             "sector": FieldSchema(
                 name="sector",
-                type=FieldType.STRING,
-                description="특정 섹터만 찾으려면 입력하세요. 가능한 값: Technology(기술), Healthcare(헬스케어), Financial Services(금융), Consumer Cyclical(경기소비재), Communication Services(커뮤니케이션), Industrials(산업재), Consumer Defensive(필수소비재), Energy(에너지), Utilities(유틸리티), Real Estate(부동산), Basic Materials(소재). 비워두면 전체 섹터.",
+                type=FieldType.ENUM,
+                description="특정 섹터만 찾으려면 선택하세요. 비워두면 전체 섹터.",
                 required=False,
+                enum_values=["", "Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Communication Services", "Industrials", "Consumer Defensive", "Energy", "Utilities", "Real Estate", "Basic Materials"],
+                enum_labels={"": "전체", "Technology": "기술", "Healthcare": "헬스케어", "Financial Services": "금융", "Consumer Cyclical": "경기소비재", "Communication Services": "커뮤니케이션", "Industrials": "산업재", "Consumer Defensive": "필수소비재", "Energy": "에너지", "Utilities": "유틸리티", "Real Estate": "부동산", "Basic Materials": "소재"},
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                bindable=False,
                 example="Technology",
-                placeholder="예: Technology, Healthcare",
                 expected_type="str",
+                ui_component=UIComponent.SELECT,
             ),
             "exchange": FieldSchema(
                 name="exchange",
-                type=FieldType.STRING,
-                description="특정 거래소 종목만 찾으려면 입력하세요. 가능한 값: NASDAQ(나스닥), NYSE(뉴욕증권거래소), AMEX(아멕스). 비워두면 전체 거래소.",
+                type=FieldType.ENUM,
+                description="특정 거래소 종목만 찾으려면 선택하세요. 비워두면 전체 거래소.",
                 required=False,
+                enum_values=["", "NASDAQ", "NYSE", "AMEX"],
+                enum_labels={"": "전체", "NASDAQ": "나스닥", "NYSE": "뉴욕증권거래소", "AMEX": "아멕스"},
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                bindable=False,
                 example="NASDAQ",
-                placeholder="예: NASDAQ, NYSE",
                 expected_type="str",
+                ui_component=UIComponent.SELECT,
             ),
             "max_results": FieldSchema(
                 name="max_results",
@@ -417,6 +430,7 @@ class ScreenerNode(BaseNode):
                 bindable=False,
                 example=100,
                 expected_type="int",
+                ui_component=UIComponent.NUMBER_INPUT,
             ),
         }
 
@@ -473,20 +487,21 @@ class SymbolFilterNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             "operation": FieldSchema(
                 name="operation",
-                type=FieldType.STRING,
-                description="어떤 비교를 할지 입력하세요. 가능한 값: difference(차집합, A에만 있고 B에는 없는 종목 - 중복 매수 방지), intersection(교집합, A와 B 모두에 있는 종목), union(합집합, A 또는 B에 있는 모든 종목).",
+                type=FieldType.ENUM,
+                description="어떤 비교를 할지 선택하세요.",
                 default="difference",
                 required=True,
+                enum_values=["difference", "intersection", "union"],
+                enum_labels={"difference": "차집합 (A-B, 중복 매수 방지)", "intersection": "교집합 (A∩B)", "union": "합집합 (A∪B)"},
                 category=FieldCategory.PARAMETERS,
-                bindable=True,
-                expression_enabled=True,
+                bindable=False,
                 example="difference",
-                placeholder="예: difference, intersection, union",
                 expected_type="str",
+                ui_component=UIComponent.SELECT,
             ),
             "input_a": FieldSchema(
                 name="input_a",
@@ -499,6 +514,7 @@ class SymbolFilterNode(BaseNode):
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=["WatchlistNode.symbols", "MarketUniverseNode.symbols", "ScreenerNode.symbols", "AccountNode.held_symbols"],
                 expected_type="list[dict]",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
             "input_b": FieldSchema(
                 name="input_b",
@@ -511,5 +527,6 @@ class SymbolFilterNode(BaseNode):
                 example_binding="{{ nodes.account.held_symbols }}",
                 bindable_sources=["WatchlistNode.symbols", "AccountNode.held_symbols", "ConditionNode.passed_symbols"],
                 expected_type="list[dict]",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
         }

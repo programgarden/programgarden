@@ -76,7 +76,7 @@ class HistoricalDataNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 종목 설정 ===
             "symbols": FieldSchema(
@@ -96,6 +96,7 @@ class HistoricalDataNode(BaseNode):
                     "MarketUniverseNode.symbols",
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
             # === PARAMETERS: 핵심 데이터 조회 설정 ===
             "start_date": FieldSchema(
@@ -108,6 +109,7 @@ class HistoricalDataNode(BaseNode):
                 bindable=False,
                 example="2024-01-01",
                 expected_type="str",
+                ui_component=UIComponent.TEXT_INPUT,
             ),
             "end_date": FieldSchema(
                 name="end_date",
@@ -119,17 +121,21 @@ class HistoricalDataNode(BaseNode):
                 bindable=False,
                 example="2024-12-31",
                 expected_type="str",
+                ui_component=UIComponent.TEXT_INPUT,
             ),
             "interval": FieldSchema(
                 name="interval",
-                type=FieldType.STRING,
+                type=FieldType.ENUM,
                 description="i18n:fields.HistoricalDataNode.interval",
                 default="1d",
                 required=True,
+                enum_values=["1m", "5m", "15m", "1h", "1d", "1w", "1M"],
+                enum_labels={"1m": "1분", "5m": "5분", "15m": "15분", "1h": "1시간", "1d": "1일", "1w": "1주", "1M": "1개월"},
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
                 example="1d",
                 expected_type="str",
+                ui_component=UIComponent.SELECT,
             ),
             # === SETTINGS: 부가 설정 ===
             "adjust": FieldSchema(
@@ -139,6 +145,7 @@ class HistoricalDataNode(BaseNode):
                 default=True,
                 category=FieldCategory.SETTINGS,
                 bindable=False,
+                ui_component=UIComponent.CHECKBOX,
             ),
         }
 

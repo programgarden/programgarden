@@ -32,6 +32,7 @@ from programgarden_core.models.field_binding import (
     FieldSchema,
     FieldType,
     FieldCategory,
+    UIComponent,
     FieldValueType,
     FieldsDict,
     parse_field_value,

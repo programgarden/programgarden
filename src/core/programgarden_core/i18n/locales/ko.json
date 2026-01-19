@@ -170,6 +170,7 @@
   "ports.symbols": "종목 리스트",
   "ports.connection": "브로커 연결",
   "ports.trigger": "트리거 신호",
+  "ports.market_data_values": "시세 데이터 (종목별 가격/거래량)",
   "ports.price_data": "가격 데이터",
   "ports.volume_data": "거래량 데이터",
   "ports.balance": "계좌 잔고",
@@ -282,7 +283,6 @@
 
   "fields.RealMarketDataNode.symbols": "구독할 종목 코드 (AAPL, TSLA 등). 비어있으면 입력 포트 값 사용.",
   "fields.RealMarketDataNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지. True면 stop() 호출 전까지 실시간 스트림 유지. False면 데이터 1회 수신 후 연결 종료.",
-  "fields.RealMarketDataNode.fields": "수신할 필드 (price, volume, bid, ask 등)",
 
   "fields.RealAccountNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지. True+스케줄: 스케줄 대기 중에도 유지. True-스케줄: stop() 호출 전까지 유지. False: 플로우 종료 시 연결 종료.",
   "fields.RealAccountNode.sync_interval_sec": "REST API 동기화 간격 (초)",
@@ -399,7 +399,6 @@
   "fields.HistoricalDataNode.end_date": "백테스트 종료일. YYYY-MM-DD 또는 바인딩 (예: {{ today_yyyymmdd() }} = 오늘)",
   "fields.HistoricalDataNode.adjust": "수정 주가 적용 (액분/배당 반영). 정확한 백테스트를 위해 권장.",
 
-  "fields.MarketDataNode.fields": "조회할 필드: price (현재가), volume (거래량), ohlcv (캔들 데이터)",
   "fields.MarketDataNode.period": "OHLCV 데이터 기간. 옵션: 1d (일봉), 1h (시간봉), 5m (5분봉), 1m (1분봉)",
   "fields.MarketDataNode.count": "조회할 OHLCV 데이터 개수",
 

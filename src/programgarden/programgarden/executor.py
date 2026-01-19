@@ -4732,7 +4732,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         if not symbols:
             error_msg = "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요."
             context.log("error", error_msg, node_id)
-            return {"error": error_msg, "price": {}, "volume": {}, "ohlcv": {}, "symbols": []}
+            return {"error": error_msg, "values": []}
         
         # config에서 명시적 connection 확인
         broker_connection = config.get("connection")
@@ -4740,24 +4740,21 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         
         if not broker_connection:
             context.log("error", "connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
-            return {"error": "connection 필드가 필수입니다", "price": {}, "volume": {}, "ohlcv": {}}
+            return {"error": "connection 필드가 필수입니다", "values": []}
         
         product = broker_connection.get("product", "overseas_stock")
         
-        # 조회할 필드 (현재가 조회 전용 - 과거 데이터는 HistoricalDataNode 사용)
-        fields = config.get("fields", ["price", "volume", "ohlcv"])
-        
         context.log(
             "info", 
-            f"Fetching current market data: {len(symbols)} symbols, fields={fields}, product={product}", 
+            f"Fetching current market data: {len(symbols)} symbols, product={product}", 
             node_id
         )
         
         # product별 분기 (overseas_futures와 overseas_futureoption은 동일)
         if product == "overseas_stock":
-            result = await self._fetch_overseas_stock(symbols, fields, context, node_id)
+            result = await self._fetch_overseas_stock(symbols, context, node_id)
         elif product in ("overseas_futureoption", "overseas_futures"):
-            result = await self._fetch_overseas_futures(symbols, fields, context, node_id)
+            result = await self._fetch_overseas_futures(symbols, context, node_id)
         else:
             context.log("error", f"Unsupported product for MarketDataNode: {product}", node_id)
             result = self._empty_result(f"i18n:errors.UNSUPPORTED_PRODUCT|product={product}")
@@ -4767,7 +4764,6 @@ class MarketDataNodeExecutor(NodeExecutorBase):
     async def _fetch_overseas_stock(
         self,
         symbols: List[Dict[str, str]],
-        fields: List[str],
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
@@ -4794,9 +4790,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             
             api = ls.overseas_stock()
             
-            price_data = {}
-            volume_data = {}
-            ohlcv_data = {}
+            values = []
             
             for symbol_entry in symbols:
                 try:
@@ -4823,37 +4817,21 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                     
                     if response and response.block:
                         out_block = response.block
+                        from datetime import datetime
                         
-                        # price 필드
-                        if "price" in fields:
-                            price_data[symbol] = {
-                                "price": float(out_block.price or 0),
-                                "change": float(out_block.diff or 0),
-                                "change_pct": float(out_block.rate or 0),
-                                "timestamp": "",
-                                "exchange": exchange,
-                            }
-                        
-                        # volume 필드
-                        if "volume" in fields:
-                            volume_data[symbol] = {
-                                "volume": int(out_block.volume or 0),
-                                "value": float(out_block.amount or 0),
-                                "exchange": exchange,
-                            }
-                        
-                        # ohlcv 필드 (현재가 기준 단일 데이터)
-                        if "ohlcv" in fields:
-                            from datetime import datetime
-                            ohlcv_data[symbol] = [{
-                                "date": datetime.now().strftime("%Y%m%d"),
-                                "open": float(out_block.open or 0),
-                                "high": float(out_block.high or 0),
-                                "low": float(out_block.low or 0),
-                                "close": float(out_block.price or 0),
-                                "volume": int(out_block.volume or 0),
-                                "exchange": exchange,
-                            }]
+                        # values 배열에 단일 항목 추가
+                        values.append({
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "price": float(out_block.price or 0),
+                            "change": float(out_block.diff or 0),
+                            "change_pct": float(out_block.rate or 0),
+                            "volume": int(out_block.volume or 0),
+                            "open": float(out_block.open or 0),
+                            "high": float(out_block.high or 0),
+                            "low": float(out_block.low or 0),
+                            "close": float(out_block.price or 0),
+                        })
                         
                         context.log("debug", f"Fetched {exchange}:{symbol}: price={out_block.price}", node_id)
                     else:
@@ -4863,12 +4841,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                     context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
                     continue
             
-            return {
-                "price": price_data,
-                "volume": volume_data,
-                "ohlcv": ohlcv_data,
-                "symbols": list(price_data.keys()),
-            }
+            return {"values": values}
             
         except ImportError as e:
             context.log("error", f"Finance package not available: {e}", node_id)
@@ -4880,7 +4853,6 @@ class MarketDataNodeExecutor(NodeExecutorBase):
     async def _fetch_overseas_futures(
         self,
         symbols: List[Dict[str, str]],
-        fields: List[str],
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
@@ -4907,9 +4879,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             
             api = ls.overseas_futureoption()
             
-            price_data = {}
-            volume_data = {}
-            ohlcv_data = {}
+            values = []
             
             for symbol_entry in symbols:
                 try:
@@ -4928,38 +4898,22 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                     
                     if response and response.block:
                         out_block = response.block
+                        from datetime import datetime
                         
-                        # price 필드
-                        if "price" in fields:
-                            price_data[symbol] = {
-                                "price": float(out_block.TrdP or 0),
-                                "change": float(out_block.YdiffP or 0),
-                                "change_pct": float(out_block.Diff or 0),
-                                "timestamp": out_block.RcvTm or "",
-                                "exchange": exchange,
-                                "symbol_name": out_block.SymbolNm or symbol,
-                            }
-                        
-                        # volume 필드
-                        if "volume" in fields:
-                            volume_data[symbol] = {
-                                "volume": int(out_block.TotQ or 0),
-                                "value": float(out_block.TotAmt or 0),
-                                "exchange": exchange,
-                            }
-                        
-                        # ohlcv 필드 (현재가 기준 당일 데이터)
-                        if "ohlcv" in fields:
-                            from datetime import datetime
-                            ohlcv_data[symbol] = [{
-                                "date": out_block.KorDate or datetime.now().strftime("%Y%m%d"),
-                                "open": float(out_block.OpenP or 0),
-                                "high": float(out_block.HighP or 0),
-                                "low": float(out_block.LowP or 0),
-                                "close": float(out_block.TrdP or 0),  # 현재가 = 종가
-                                "volume": int(out_block.TotQ or 0),
-                                "exchange": exchange,
-                            }]
+                        # values 배열에 단일 항목 추가
+                        values.append({
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "symbol_name": out_block.SymbolNm or symbol,
+                            "price": float(out_block.TrdP or 0),
+                            "change": float(out_block.YdiffP or 0),
+                            "change_pct": float(out_block.Diff or 0),
+                            "volume": int(out_block.TotQ or 0),
+                            "open": float(out_block.OpenP or 0),
+                            "high": float(out_block.HighP or 0),
+                            "low": float(out_block.LowP or 0),
+                            "close": float(out_block.TrdP or 0),  # 현재가 = 종가
+                        })
                         
                         context.log("debug", f"Fetched {exchange}:{symbol}: price={out_block.TrdP}", node_id)
                     else:
@@ -4969,12 +4923,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                     context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
                     continue
             
-            return {
-                "price": price_data,
-                "volume": volume_data,
-                "ohlcv": ohlcv_data,
-                "symbols": list(price_data.keys()),
-            }
+            return {"values": values}
             
         except ImportError as e:
             context.log("error", f"Finance package not available: {e}", node_id)
@@ -4985,12 +4934,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
 
     def _empty_result(self, error_msg: str = "") -> Dict[str, Any]:
         """빈 결과 반환 (에러 시)"""
-        result = {
-            "price": {},
-            "volume": {},
-            "ohlcv": {},
-            "symbols": [],
-        }
+        result = {"values": []}
         if error_msg:
             result["error"] = error_msg
         return result

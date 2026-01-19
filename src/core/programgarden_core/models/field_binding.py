@@ -33,6 +33,69 @@ class FieldCategory(str, Enum):
     ADVANCED = "advanced"      # 고급 설정 (기본값으로 충분, 보통 숨김)
 
 
+class UIComponent(str, Enum):
+    """
+    UI 컴포넌트 타입 (전역 상수)
+    
+    모든 컴포넌트는 바인딩을 지원합니다.
+    bindable=True인 필드는 바인딩 모드로 전환 가능합니다.
+    
+    FieldType → UIComponent 기본 매핑:
+    - ENUM → SELECT
+    - CREDENTIAL → CREDENTIAL_SELECT  
+    - NUMBER/INTEGER → NUMBER_INPUT
+    - BOOLEAN → CHECKBOX
+    - STRING → TEXT_INPUT
+    - ARRAY (직접 편집) → SYMBOL_EDITOR, CONDITION_LIST 등
+    - ARRAY (바인딩 전용) → BINDING_INPUT
+    - OBJECT (바인딩 전용) → BINDING_INPUT
+    """
+    
+    # === 기본 입력 컴포넌트 ===
+    TEXT_INPUT = "text_input"              # 짧은 텍스트 입력
+    TEXTAREA = "textarea"                  # 긴 텍스트 입력 (여러 줄)
+    NUMBER_INPUT = "number_input"          # 숫자 입력 (스피너 포함)
+    CHECKBOX = "checkbox"                  # 불리언 체크박스
+    SELECT = "select"                      # 드롭다운 선택 (ENUM용)
+    MULTI_SELECT = "multi_select"          # 다중 선택 (배열용)
+    
+    # === 특수 입력 컴포넌트 ===
+    CREDENTIAL_SELECT = "credential_select"  # Credential 선택 드롭다운
+    PLUGIN_SELECT = "plugin_select"          # 플러그인 선택 드롭다운 (ConditionNode 등)
+    SYMBOL_EDITOR = "symbol_editor"          # 종목 편집기 (exchange + symbol 쌍)
+    CONDITION_LIST = "condition_list"        # 조건 리스트 편집기 (LogicNode용)
+    KEY_VALUE_EDITOR = "key_value_editor"    # 키-값 쌍 편집기 (HTTP headers 등)
+    CODE_EDITOR = "code_editor"              # 코드/JSON 편집기
+    
+    # === 바인딩 전용 컴포넌트 ===
+    BINDING_INPUT = "binding_input"          # 바인딩 입력 ({{ nodes.xxx.yyy }} 전용)
+    
+    # === 날짜/시간 컴포넌트 ===
+    DATE_PICKER = "date_picker"              # 날짜 선택기
+    TIME_PICKER = "time_picker"              # 시간 선택기
+    DATETIME_PICKER = "datetime_picker"      # 날짜+시간 선택기
+    
+    # === 슬라이더/범위 ===
+    SLIDER = "slider"                        # 슬라이더 (범위 값)
+    RANGE_SLIDER = "range_slider"            # 범위 슬라이더 (min-max)
+    
+    @classmethod
+    def get_default_for_field_type(cls, field_type: "FieldType") -> "UIComponent":
+        """FieldType에 대한 기본 UIComponent 반환"""
+        mapping = {
+            FieldType.STRING: cls.TEXT_INPUT,
+            FieldType.NUMBER: cls.NUMBER_INPUT,
+            FieldType.INTEGER: cls.NUMBER_INPUT,
+            FieldType.BOOLEAN: cls.CHECKBOX,
+            FieldType.ENUM: cls.SELECT,
+            FieldType.ARRAY: cls.TEXT_INPUT,  # 배열은 상황에 따라 다름
+            FieldType.OBJECT: cls.BINDING_INPUT,  # 객체는 보통 바인딩
+            FieldType.KEY_VALUE_PAIRS: cls.KEY_VALUE_EDITOR,
+            FieldType.CREDENTIAL: cls.CREDENTIAL_SELECT,
+        }
+        return mapping.get(field_type, cls.TEXT_INPUT)
+
+
 class FieldSchema(BaseModel):
     """
     노드 필드 스키마 (UI 렌더링 및 검증용)
@@ -108,9 +171,9 @@ class FieldSchema(BaseModel):
     )
 
     # UI 힌트
-    ui_component: Optional[str] = Field(
+    ui_component: Optional[UIComponent] = Field(
         default=None,
-        description="UI 컴포넌트 힌트 (dropdown, slider, textarea 등)",
+        description="UI 컴포넌트 타입. None이면 FieldType에 따른 기본 컴포넌트 사용. 모든 컴포넌트는 바인딩 지원.",
     )
     placeholder: Optional[str] = Field(
         default=None, description="입력 필드 placeholder"

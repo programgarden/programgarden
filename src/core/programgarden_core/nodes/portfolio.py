@@ -154,7 +154,7 @@ class PortfolioNode(BaseNode):
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 핵심 자본 배분 설정 ===
             "total_capital": FieldSchema(
@@ -199,7 +199,7 @@ class PortfolioNode(BaseNode):
                 required=False,
                 bindable=False,
                 group="allocation",
-                ui_component="key_value_editor",
+                ui_component=UIComponent.KEY_VALUE_EDITOR,
                 ui_hint="show_when_allocation_method_is_custom",
                 category=FieldCategory.PARAMETERS,
                 example={"momentum_strategy": 0.4, "mean_reversion": 0.3, "trend_following": 0.3},

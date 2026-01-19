@@ -141,7 +141,7 @@ class NewOrderNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # ═══════════════════════════════════════════════════════════════
             # PARAMETERS: 핵심 주문 설정
@@ -159,7 +159,7 @@ class NewOrderNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="overseas_stock",
                 expected_type="str",
             ),
@@ -176,7 +176,7 @@ class NewOrderNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="buy",
                 expected_type="str",
             ),
@@ -193,7 +193,7 @@ class NewOrderNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="limit",
                 expected_type="str",
             ),
@@ -213,7 +213,7 @@ class NewOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 visible_when={"product": "overseas_stock"},
                 example="NASDAQ",
                 expected_type="str",
@@ -235,7 +235,7 @@ class NewOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 visible_when={"product": "overseas_stock"},
                 example="limit",
                 expected_type="str",
@@ -251,7 +251,7 @@ class NewOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="input",
+                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"product": "overseas_futures"},
                 placeholder="CME",
                 example="CME",
@@ -264,7 +264,7 @@ class NewOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="input",
+                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"product": "overseas_futures"},
                 placeholder="202503",
                 example="202503",
@@ -432,7 +432,7 @@ class ModifyOrderNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # ═══════════════════════════════════════════════════════════════
             # PARAMETERS: 상품 유형 선택
@@ -450,7 +450,7 @@ class ModifyOrderNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="overseas_stock",
                 expected_type="str",
             ),
@@ -466,7 +466,7 @@ class ModifyOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 visible_when={"product": "overseas_stock"},
                 example="NASDAQ",
                 expected_type="str",
@@ -484,7 +484,7 @@ class ModifyOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 visible_when={"product": "overseas_stock"},
                 example="limit",
                 expected_type="str",
@@ -500,7 +500,7 @@ class ModifyOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="input",
+                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"product": "overseas_futures"},
                 placeholder="CME",
                 example="CME",
@@ -513,7 +513,7 @@ class ModifyOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="input",
+                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"product": "overseas_futures"},
                 placeholder="202503",
                 example="202503",
@@ -667,7 +667,7 @@ class CancelOrderNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # ═══════════════════════════════════════════════════════════════
             # PARAMETERS: 상품 유형 선택
@@ -685,7 +685,7 @@ class CancelOrderNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="overseas_stock",
                 expected_type="str",
             ),
@@ -701,7 +701,7 @@ class CancelOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 visible_when={"product": "overseas_stock"},
                 example="NASDAQ",
                 expected_type="str",
@@ -717,7 +717,7 @@ class CancelOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="input",
+                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"product": "overseas_futures"},
                 placeholder="CME",
                 example="CME",
@@ -730,7 +730,7 @@ class CancelOrderNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="input",
+                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"product": "overseas_futures"},
                 placeholder="202503",
                 example="202503",
@@ -861,7 +861,7 @@ class LiquidateNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # ═══════════════════════════════════════════════════════════════
             # PARAMETERS: 상품 및 청산 설정
@@ -879,7 +879,7 @@ class LiquidateNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="overseas_stock",
                 expected_type="str",
             ),
@@ -899,7 +899,7 @@ class LiquidateNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 visible_when={"product": "overseas_stock"},
                 example="NASDAQ",
                 expected_type="str",
@@ -915,7 +915,7 @@ class LiquidateNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="input",
+                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"product": "overseas_futures"},
                 placeholder="CME",
                 example="CME",
@@ -928,7 +928,7 @@ class LiquidateNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="input",
+                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"product": "overseas_futures"},
                 placeholder="202503",
                 example="202503",
@@ -950,7 +950,7 @@ class LiquidateNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="all",
                 expected_type="str",
             ),
@@ -967,7 +967,7 @@ class LiquidateNode(BaseNode):
                 required=False,
                 bindable=False,
                 category=FieldCategory.SETTINGS,
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
                 example="market",
                 expected_type="str",
             ),

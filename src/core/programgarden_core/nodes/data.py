@@ -46,12 +46,6 @@ class MarketDataNode(BaseNode):
         description="List of symbol entries with exchange and symbol code",
     )
 
-    # MarketDataNode specific config - 현재가 조회 전용 (과거 데이터는 HistoricalDataNode 사용)
-    fields: List[str] = Field(
-        default=["price", "volume", "ohlcv"],
-        description="Fields to query (price, volume, ohlcv - today only)",
-    )
-
     _inputs: List[InputPort] = [
         InputPort(
             name="connection",
@@ -69,14 +63,12 @@ class MarketDataNode(BaseNode):
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="price", type="market_data", description="i18n:ports.price_data"),
-        OutputPort(name="volume", type="market_data", description="i18n:ports.volume_data"),
-        OutputPort(name="ohlcv", type="ohlcv_data", description="i18n:ports.ohlcv_data"),
+        OutputPort(name="values", type="market_data_list", description="i18n:ports.market_data_values"),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
             "connection": FieldSchema(
@@ -91,6 +83,7 @@ class MarketDataNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
+                ui_component=UIComponent.BINDING_INPUT,
             ),
             # === PARAMETERS: 종목 리스트 ===
             "symbols": FieldSchema(
@@ -107,19 +100,7 @@ class MarketDataNode(BaseNode):
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=["WatchlistNode.symbols"],
                 expected_type="list[dict]",
-                ui_component="symbol_editor",
-            ),
-            # === PARAMETERS: 핵심 조회 설정 ===
-            "fields": FieldSchema(
-                name="fields",
-                type=FieldType.ARRAY,
-                description="조회할 필드를 선택하세요. price: 현재가, volume: 거래량, ohlcv: 당일 시가/고가/저가/종가. 과거 N일 데이터는 HistoricalDataNode를 사용하세요.",
-                default=["price", "volume", "ohlcv"],
-                array_item_type=FieldType.STRING,
-                category=FieldCategory.PARAMETERS,
-                bindable=False,
-                example=["price", "volume", "ohlcv"],
-                expected_type="list[str]",
+                ui_component=UIComponent.SYMBOL_EDITOR,
             ),
         }
 
@@ -539,7 +520,7 @@ class HTTPRequestNode(BaseNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """노드의 설정 가능한 필드 스키마 반환"""
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         
         return {
             # PARAMETERS
@@ -551,7 +532,7 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example="POST",
                 expected_type="str",
-                ui_component="select",
+                ui_component=UIComponent.SELECT,
             ),
             "url": FieldSchema(
                 name="url", type=FieldType.STRING, required=True,
@@ -562,7 +543,7 @@ class HTTPRequestNode(BaseNode):
                 example="https://api.example.com/v1/data",
                 example_binding="{{ nodes.config.api_endpoint }}",
                 expected_type="str",
-                ui_component="text_input",
+                ui_component=UIComponent.TEXT_INPUT,
                 placeholder="https://api.example.com/v1/data",
             ),
             "query_params": FieldSchema(
@@ -573,7 +554,7 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example={"symbol": "AAPL", "limit": "100"},
                 expected_type="dict[str, str]",
-                ui_component="table:key_value",
+                ui_component=UIComponent.KEY_VALUE_EDITOR,
                 object_schema=[
                     {"name": "key", "type": "STRING", "description": "파라미터 이름"},
                     {"name": "value", "type": "STRING", "description": "파라미터 값"},
@@ -588,7 +569,7 @@ class HTTPRequestNode(BaseNode):
                 example={"action": "buy", "symbol": "AAPL", "quantity": 10},
                 example_binding="{{ nodes.order.request_body }}",
                 expected_type="dict[str, Any]",
-                ui_component="textarea",
+                ui_component=UIComponent.TEXTAREA,
                 placeholder='{"action": "buy", "symbol": "AAPL", "quantity": 10}',
             ),
             "credential_id": FieldSchema(
@@ -597,7 +578,7 @@ class HTTPRequestNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
                 credential_types=["http_bearer", "http_header", "http_basic", "http_query"],
-                ui_component="select:credential",
+                ui_component=UIComponent.CREDENTIAL_SELECT,
             ),
             "headers": FieldSchema(
                 name="headers", type=FieldType.KEY_VALUE_PAIRS, required=False,
@@ -606,7 +587,7 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example={"Content-Type": "application/json", "X-Custom-Header": "value"},
                 expected_type="dict[str, str]",
-                ui_component="table:key_value",
+                ui_component=UIComponent.KEY_VALUE_EDITOR,
                 object_schema=[
                     {"name": "key", "type": "STRING", "description": "헤더 이름"},
                     {"name": "value", "type": "STRING", "description": "헤더 값"},
@@ -622,7 +603,7 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example=30,
                 expected_type="int",
-                ui_component="number_input",
+                ui_component=UIComponent.NUMBER_INPUT,
                 min_value=1,
                 max_value=300,
                 group="advanced",
@@ -635,7 +616,7 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example=3,
                 expected_type="int",
-                ui_component="number_input",
+                ui_component=UIComponent.NUMBER_INPUT,
                 min_value=0,
                 max_value=10,
                 group="advanced",
@@ -648,7 +629,7 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example=1000,
                 expected_type="int",
-                ui_component="number_input",
+                ui_component=UIComponent.NUMBER_INPUT,
                 min_value=100,
                 max_value=60000,
                 group="advanced",
@@ -842,7 +823,7 @@ class FieldMappingNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent
         return {
             # === PARAMETERS: 입력 데이터 ===
             "data": FieldSchema(
@@ -853,7 +834,7 @@ class FieldMappingNode(BaseNode):
                 bindable=True,
                 expression_enabled=True,
                 category=FieldCategory.PARAMETERS,
-                ui_component="binding_input",
+                ui_component=UIComponent.BINDING_INPUT,
                 example=[{"lastPrice": 150, "vol": 1000000}],
                 example_binding="{{ nodes.api.response.data }}",
                 bindable_sources=["HTTPRequestNode.response"],
@@ -868,7 +849,7 @@ class FieldMappingNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component="mapping_table",
+                ui_component=UIComponent.KEY_VALUE_EDITOR,
                 default=[],
                 example=[
                     {"from": "lastPrice", "to": "close", "description": "마지막 체결가 → 종가"},
@@ -913,7 +894,7 @@ class FieldMappingNode(BaseNode):
                 default=True,
                 bindable=False,
                 category=FieldCategory.SETTINGS,
-                ui_component="checkbox",
+                ui_component=UIComponent.CHECKBOX,
                 example=True,
                 expected_type="bool",
             ),
