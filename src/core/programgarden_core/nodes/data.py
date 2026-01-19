@@ -89,7 +89,7 @@ class MarketDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="조회할 종목 리스트입니다. 거래소와 심볼을 함께 입력하세요. 직접 입력하거나 WatchlistNode에서 연결할 수 있습니다.",
+                description="종목 리스트. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
                 required=True,
                 default=[],
                 array_item_type=FieldType.OBJECT,
@@ -98,9 +98,35 @@ class MarketDataNode(BaseNode):
                 expression_enabled=True,
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NYSE", "symbol": "IBM"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
-                bindable_sources=["WatchlistNode.symbols"],
-                expected_type="list[dict]",
+                bindable_sources=["WatchlistNode.symbols", "ScreenerNode.symbols", "MarketUniverseNode.symbols"],
+                expected_type="list[{exchange: str, symbol: str}]",
                 ui_component=UIComponent.SYMBOL_EDITOR,
+                help_text="직접 입력 또는 바인딩 가능 (fx 토글)",
+            ),
+            # === FIELD MAPPING: 필드명 매핑 (symbols 바로 하단에 표시) ===
+            "exchange_field": FieldSchema(
+                name="exchange_field",
+                type=FieldType.STRING,
+                description="거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
+                default="exchange",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                placeholder="exchange",
+                group="field_mapping",
+                collapsed=True,
+            ),
+            "symbol_field": FieldSchema(
+                name="symbol_field",
+                type=FieldType.STRING,
+                description="종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
+                default="symbol",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                placeholder="symbol",
+                group="field_mapping",
+                collapsed=True,
             ),
         }
 
@@ -782,6 +808,10 @@ class FieldMappingNode(BaseNode):
     mappings: List[Dict[str, str]] = Field(
         default_factory=list,
         description="Field name mapping rules [{from, to, description}, ...]",
+        json_schema_extra={
+            "ui_component": "field_mapping_editor",
+            "help_text": "i18n:fields.FieldMappingNode.mappings",
+        },
     )
 
     # 매핑되지 않은 필드 유지 여부
@@ -840,7 +870,7 @@ class FieldMappingNode(BaseNode):
                 bindable_sources=["HTTPRequestNode.response"],
                 expected_type="list[dict] | dict | dict[str, dict]",
             ),
-            # === PARAMETERS: 매핑 테이블 ===
+            # === PARAMETERS: 매핑 테이블 (data의 하위 필드) ===
             "mappings": FieldSchema(
                 name="mappings",
                 type=FieldType.ARRAY,
@@ -849,12 +879,13 @@ class FieldMappingNode(BaseNode):
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.KEY_VALUE_EDITOR,
+                ui_component=UIComponent.FIELD_MAPPING_EDITOR,
+                child_of="data",  # data 필드 아래 들여쓰기되어 표시
                 default=[],
                 example=[
-                    {"from": "lastPrice", "to": "close", "description": "마지막 체결가 → 종가"},
-                    {"from": "vol", "to": "volume", "description": "당일 누적 거래량"},
-                    {"from": "tradeDate", "to": "date", "description": "거래일자 (YYYYMMDD 형식)"},
+                    {"from": "lastPrice", "to": "close"},
+                    {"from": "vol", "to": "volume"},
+                    {"from": "tradeDate", "to": "date"},
                 ],
                 expected_type="list[dict]",
                 object_schema=[
@@ -864,7 +895,7 @@ class FieldMappingNode(BaseNode):
                         "required": True,
                         "description": "i18n:fields.FieldMappingNode.mappings.from",
                         "placeholder": "원본 필드명 (예: lastPrice)",
-                        "ui_width": "35%",
+                        "ui_width": "50%",
                     },
                     {
                         "name": "to",
@@ -872,19 +903,11 @@ class FieldMappingNode(BaseNode):
                         "required": True,
                         "description": "i18n:fields.FieldMappingNode.mappings.to",
                         "placeholder": "표준 필드명 (예: close)",
-                        "ui_width": "30%",
+                        "ui_width": "50%",
                         "suggestions": ["symbol", "exchange", "date", "open", "high", "low", "close", "volume"],
                     },
-                    {
-                        "name": "description",
-                        "type": "STRING",
-                        "required": False,
-                        "description": "i18n:fields.FieldMappingNode.mappings.description",
-                        "placeholder": "이 필드의 의미 설명 (AI 에이전트용)",
-                        "ui_width": "35%",
-                    },
                 ],
-                help_text="(+) 버튼으로 매핑 규칙 추가. description을 자세히 기록하여 유지관리하세요.",
+                help_text="(+) 버튼으로 매핑 규칙 추가",
             ),
             # === SETTINGS: 부가 설정 ===
             "preserve_unmapped": FieldSchema(

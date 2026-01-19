@@ -319,6 +319,9 @@ class NodeTypeRegistry:
                 # === 배열 항목 스키마 (condition_list 등) ===
                 if hasattr(fs, 'object_schema') and fs.object_schema:
                     field_schema["object_schema"] = fs.object_schema
+                # === 부모-자식 관계 (계층적 UI 표시용) ===
+                if hasattr(fs, 'child_of') and fs.child_of:
+                    field_schema["child_of"] = fs.child_of
             else:
                 # Pydantic 필드에서 추출
                 field_type = str(field_info.annotation) if field_info.annotation else "any"

@@ -82,7 +82,7 @@ class HistoricalDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="i18n:fields.HistoricalDataNode.symbols",
+                description="종목 리스트. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 bindable=True,
@@ -92,11 +92,37 @@ class HistoricalDataNode(BaseNode):
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=[
                     "WatchlistNode.symbols",
-                    "ScreenerNode.filtered_symbols",
+                    "ScreenerNode.symbols",
                     "MarketUniverseNode.symbols",
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
-                ui_component=UIComponent.BINDING_INPUT,
+                ui_component=UIComponent.SYMBOL_EDITOR,
+                help_text="직접 입력 또는 바인딩 가능 (fx 토글)",
+            ),
+            # === FIELD MAPPING: 필드명 매핑 (symbols 바로 하단에 표시) ===
+            "exchange_field": FieldSchema(
+                name="exchange_field",
+                type=FieldType.STRING,
+                description="거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
+                default="exchange",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                placeholder="exchange",
+                group="field_mapping",
+                collapsed=True,
+            ),
+            "symbol_field": FieldSchema(
+                name="symbol_field",
+                type=FieldType.STRING,
+                description="종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
+                default="symbol",
+                required=False,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                placeholder="symbol",
+                group="field_mapping",
+                collapsed=True,
             ),
             # === PARAMETERS: 핵심 데이터 조회 설정 ===
             "start_date": FieldSchema(

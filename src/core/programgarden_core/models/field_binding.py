@@ -62,9 +62,10 @@ class UIComponent(str, Enum):
     # === 특수 입력 컴포넌트 ===
     CREDENTIAL_SELECT = "credential_select"  # Credential 선택 드롭다운
     PLUGIN_SELECT = "plugin_select"          # 플러그인 선택 드롭다운 (ConditionNode 등)
-    SYMBOL_EDITOR = "symbol_editor"          # 종목 편집기 (exchange + symbol 쌍)
+    SYMBOL_EDITOR = "symbol_editor"          # 종목 편집기 (exchange + symbol 쌍, fx 토글로 바인딩 지원)
     CONDITION_LIST = "condition_list"        # 조건 리스트 편집기 (LogicNode용)
     KEY_VALUE_EDITOR = "key_value_editor"    # 키-값 쌍 편집기 (HTTP headers 등)
+    FIELD_MAPPING_EDITOR = "field_mapping_editor"  # 필드 매핑 편집기 (from→to 변환 테이블)
     CODE_EDITOR = "code_editor"              # 코드/JSON 편집기
     
     # === 바인딩 전용 컴포넌트 ===
@@ -216,6 +217,12 @@ class FieldSchema(BaseModel):
     object_schema: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         description="테이블 컬럼 정의 (예: [{name: 'key', type: 'STRING'}, {name: 'value', type: 'STRING'}])",
+    )
+    
+    # 부모-자식 필드 관계 (계층적 UI 렌더링용)
+    child_of: Optional[str] = Field(
+        default=None,
+        description="부모 필드명. 지정 시 부모 필드 아래 들여쓰기되어 표시됨 (예: 'data')",
     )
     
     # 고급 옵션 (기본 숨김)
