@@ -150,9 +150,9 @@ class FieldSchema(BaseModel):
     )
     
     # 배열/객체 타입의 항목 스키마 (condition_list, key_value_editor 등)
-    object_schema: Optional[Dict[str, Any]] = Field(
+    object_schema: Optional[List[Dict[str, Any]]] = Field(
         default=None,
-        description="배열 항목의 객체 스키마 (예: condition_list의 is_condition_met, passed_symbols, weight 필드 정의)",
+        description="테이블 컬럼 정의 (예: [{name: 'key', type: 'STRING'}, {name: 'value', type: 'STRING'}])",
     )
     
     # 고급 옵션 (기본 숨김)

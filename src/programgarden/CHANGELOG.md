@@ -1,3 +1,10 @@
+## [2.4.0] - 2026-01-19
+
+### Removed
+- refactor(executor): `PerformanceConditionNodeExecutor` 삭제 (~280줄)
+  - 노드 복잡성 감소를 위해 제거
+  - 필요시 향후 재추가 예정
+
 ## [2.3.0] - 2026-01-16
 
 ### Added

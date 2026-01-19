@@ -3,8 +3,7 @@ Phase 3: Condition Category 노드 실제 API 테스트
 
 테스트 대상:
 1. ConditionNode (RSI 플러그인) - 해외주식/해외선물
-2. LogicNode (all 연산자) - 해외주식/해외선물  
-3. PerformanceConditionNode (pnl_rate) - 해외주식/해외선물
+2. LogicNode (all 연산자) - 해외주식/해외선물
 
 실행 방법:
     cd src/programgarden && poetry run python examples/test_condition_nodes.py
@@ -356,170 +355,6 @@ async def test_logic_node_stock(credentials):
         return False
 
 
-async def test_performance_node_stock(credentials):
-    """PerformanceConditionNode 테스트 - 해외주식"""
-    print("\n" + "="*60)
-    print("🧪 TEST 4: PerformanceConditionNode (pnl_rate) - 해외주식")
-    print("="*60)
-    
-    cred = credentials.get("LS 해외주식", {})
-    if not cred or not cred.get("appkey"):
-        print("❌ LS 해외주식 credential not found or empty")
-        return False
-    
-    workflow = {
-        "id": "test-perf-stock",
-        "name": "Test PerformanceConditionNode - Stock",
-        "version": "1.0.0",
-        "nodes": [
-            {"id": "start", "type": "StartNode", "category": "infra"},
-            {
-                "id": "broker",
-                "type": "BrokerNode",
-                "category": "infra",
-                "provider": "ls-sec.co.kr",
-                "product": "overseas_stock",
-                "credential_id": "broker-cred"
-            },
-            {
-                "id": "realAccount",
-                "type": "RealAccountNode",
-                "category": "realtime",
-                "connection": "{{ nodes.broker.connection }}",
-                "stay_connected": False
-            },
-            {
-                "id": "perfCondition",
-                "type": "PerformanceConditionNode",
-                "category": "condition",
-                "metric": "pnl_rate",
-                "operator": "gt",
-                "threshold": -100.0,
-                "position_data": "{{ nodes.realAccount.positions }}"
-            }
-        ],
-        "edges": [
-            {"from": "start", "to": "broker"},
-            {"from": "broker", "to": "realAccount"},
-            {"from": "realAccount", "to": "perfCondition"}
-        ],
-        "credentials": [
-            {
-                "id": "broker-cred",
-                "type": "broker_ls",
-                "name": "LS증권 API",
-                "data": {
-                    "appkey": cred.get("appkey", ""),
-                    "appsecret": cred.get("appsecret", ""),
-                    "paper_trading": cred.get("paper_trading", False)
-                }
-            }
-        ]
-    }
-    
-    try:
-        executor = WorkflowExecutor()
-        job = await executor.execute(workflow)
-        
-        # Job이 완료될 때까지 대기
-        await asyncio.sleep(5)
-        await job.stop()
-        
-        perf_result = job.context.get_all_outputs("perfCondition")
-        print(f"✅ Performance Condition Result:")
-        print(f"   - passed: {perf_result.get('passed', 'N/A')}")
-        print(f"   - metric_value: {perf_result.get('metric_value', 'N/A')}")
-        print(f"   - details: {perf_result.get('details', {})}")
-        return True
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-async def test_performance_node_futures(credentials):
-    """PerformanceConditionNode 테스트 - 해외선물"""
-    print("\n" + "="*60)
-    print("🧪 TEST 5: PerformanceConditionNode (pnl_rate) - 해외선물 모의투자")
-    print("="*60)
-    
-    cred = credentials.get("LS 해외선물 모의투자", {})
-    if not cred or not cred.get("appkey"):
-        print("❌ LS 해외선물 모의투자 credential not found or empty")
-        return False
-    
-    workflow = {
-        "id": "test-perf-futures",
-        "name": "Test PerformanceConditionNode - Futures",
-        "version": "1.0.0",
-        "nodes": [
-            {"id": "start", "type": "StartNode", "category": "infra"},
-            {
-                "id": "broker",
-                "type": "BrokerNode",
-                "category": "infra",
-                "provider": "ls-sec.co.kr",
-                "product": "overseas_futures",
-                "credential_id": "broker-cred"
-            },
-            {
-                "id": "realAccount",
-                "type": "RealAccountNode",
-                "category": "realtime",
-                "connection": "{{ nodes.broker.connection }}",
-                "stay_connected": False
-            },
-            {
-                "id": "perfCondition",
-                "type": "PerformanceConditionNode",
-                "category": "condition",
-                "metric": "pnl_rate",
-                "operator": "gt",
-                "threshold": -100.0,
-                "position_data": "{{ nodes.realAccount.positions }}"
-            }
-        ],
-        "edges": [
-            {"from": "start", "to": "broker"},
-            {"from": "broker", "to": "realAccount"},
-            {"from": "realAccount", "to": "perfCondition"}
-        ],
-        "credentials": [
-            {
-                "id": "broker-cred",
-                "type": "broker_ls",
-                "name": "LS증권 선물 API",
-                "data": {
-                    "appkey": cred.get("appkey", ""),
-                    "appsecret": cred.get("appsecret", ""),
-                    "paper_trading": cred.get("paper_trading", True)
-                }
-            }
-        ]
-    }
-    
-    try:
-        executor = WorkflowExecutor()
-        job = await executor.execute(workflow)
-        
-        # Job이 완료될 때까지 대기
-        await asyncio.sleep(5)
-        await job.stop()
-        
-        perf_result = job.context.get_all_outputs("perfCondition")
-        print(f"✅ Performance Condition Result:")
-        print(f"   - passed: {perf_result.get('passed', 'N/A')}")
-        print(f"   - metric_value: {perf_result.get('metric_value', 'N/A')}")
-        print(f"   - details: {perf_result.get('details', {})}")
-        return True
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
 async def main():
     print("🚀 Phase 3: Condition Category 노드 API 테스트")
     print("=" * 60)
@@ -534,8 +369,6 @@ async def main():
     results["ConditionNode-Stock"] = await test_condition_node_stock(credentials)
     results["ConditionNode-Futures"] = await test_condition_node_futures(credentials)
     results["LogicNode-Stock"] = await test_logic_node_stock(credentials)
-    results["PerformanceConditionNode-Stock"] = await test_performance_node_stock(credentials)
-    results["PerformanceConditionNode-Futures"] = await test_performance_node_futures(credentials)
     
     # 결과 요약
     print("\n" + "="*60)

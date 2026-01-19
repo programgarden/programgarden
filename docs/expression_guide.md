@@ -261,20 +261,6 @@ values = [
 }
 ```
 
-### 성과 조건 검증
-
-```python
-{
-    "id": "performanceCheck",
-    "type": "PerformanceConditionNode",
-    "conditions": {
-        "total_return": ">{{ input.min_return }}",
-        "max_drawdown": "<{{ input.max_mdd }}",
-        "sharpe_ratio": ">{{ input.min_sharpe }}"
-    }
-}
-```
-
 ### 알림 메시지 포맷팅
 
 ```python

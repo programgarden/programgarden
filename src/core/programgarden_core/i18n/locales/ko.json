@@ -80,6 +80,9 @@
   "nodes.HTTPRequestNode.name": "HTTP 요청",
   "nodes.HTTPRequestNode.description": "외부 REST API 호출.",
   
+  "nodes.FieldMappingNode.name": "필드명 매핑",
+  "nodes.FieldMappingNode.description": "데이터의 필드명을 표준 형식으로 변환합니다. 외부 API 응답을 OHLCV 형식으로 정규화하세요.",
+  
   "nodes.CustomPnLNode.name": "커스텀 손익",
   "nodes.CustomPnLNode.description": "커스텀 손익 계산 로직.",
   
@@ -139,9 +142,6 @@
   
   "nodes.BenchmarkCompareNode.name": "벤치마크 비교",
   "nodes.BenchmarkCompareNode.description": "여러 백테스트 결과를 비교 분석합니다. 전략 vs 전략, 전략 vs Buy&Hold 등 다양한 비교를 지원합니다.",
-  
-  "nodes.PerformanceConditionNode.name": "성과 조건",
-  "nodes.PerformanceConditionNode.description": "성과 기준 충족 여부 검증.",
   
   "nodes.EventHandlerNode.name": "이벤트 핸들러",
   "nodes.EventHandlerNode.description": "주문 이벤트 처리 (체결, 거부, 취소).",
@@ -228,6 +228,9 @@
   "ports.http_status_code": "HTTP 상태 코드",
   "ports.http_success": "요청 성공 여부",
   "ports.http_error": "에러 메시지",
+  "ports.mapped_data": "변환된 데이터",
+  "ports.original_fields": "원본 필드명 목록",
+  "ports.mapped_fields": "매핑된 필드명 목록",
   
   "ports.order_trigger": "주문 실행 트리거",
   "ports.order_symbols": "주문 대상 종목 목록",
@@ -308,7 +311,7 @@
   "fields.LogicNode.threshold": "임계값 (at_least, at_most, exactly, weighted 연산자용)",
   "fields.LogicNode.threshold.help_text": "• at_least/at_most/exactly: 통과해야 할 조건 개수 (정수)\n  예) threshold=2 → 2개 이상/이하/정확히\n• weighted: 통과 기준 점수 (0~1 사이 소수)\n  예) threshold=0.6 → 가중치 합이 60% 이상이면 통과",
   "fields.LogicNode.conditions": "조건 목록",
-  "fields.LogicNode.conditions.help_text": "논리 연산에 포함할 조건들을 설정합니다.\n\n각 조건에는 다음을 입력합니다:\n• is_condition_met: 조건 부합 여부 ({{ nodes.노드ID.result }})\n• passed_symbols: 통과된 종목 ({{ nodes.노드ID.passed_symbols }})\n• weight: 가중치 (weighted 연산자 사용 시)\n\n💡 ConditionNode, LogicNode, PerformanceConditionNode 등 result 출력이 있는 노드를 연결할 수 있습니다.",
+  "fields.LogicNode.conditions.help_text": "논리 연산에 포함할 조건들을 설정합니다.\n\n각 조건에는 다음을 입력합니다:\n• is_condition_met: 조건 부합 여부 ({{ nodes.노드ID.result }})\n• passed_symbols: 통과된 종목 ({{ nodes.노드ID.passed_symbols }})\n• weight: 가중치 (weighted 연산자 사용 시)\n\n💡 ConditionNode, LogicNode 등 result 출력이 있는 노드를 연결할 수 있습니다.",
   "fields.LogicNode.conditions.is_condition_met": "조건 부합 여부",
   "fields.LogicNode.conditions.passed_symbols": "통과된 종목",
   "fields.LogicNode.conditions.weight": "가중치",
@@ -427,6 +430,13 @@
   "fields.HTTPRequestNode.timeout_seconds": "요청 타임아웃 (초). 이 시간 내 응답 없으면 실패.",
   "fields.HTTPRequestNode.retry_count": "실패 시 재시도 횟수. 0 = 재시도 안 함.",
   "fields.HTTPRequestNode.retry_delay_ms": "재시도 간격 (밀리초)",
+
+  "fields.FieldMappingNode.data": "변환할 입력 데이터. HTTPRequestNode 응답이나 다른 노드 출력을 바인딩하세요.",
+  "fields.FieldMappingNode.mappings": "필드명 매핑 테이블. 원본 필드명(from)을 표준 필드명(to)으로 변환합니다.",
+  "fields.FieldMappingNode.mappings.from": "원본 필드명 (API 응답의 실제 필드명)",
+  "fields.FieldMappingNode.mappings.to": "표준 필드명 (예: close, volume, date)",
+  "fields.FieldMappingNode.mappings.description": "필드 설명 (AI 에이전트 자동 매핑용)",
+  "fields.FieldMappingNode.preserve_unmapped": "매핑되지 않은 필드 유지 여부. 체크하면 원본 필드도 함께 출력됩니다.",
 
   "fields.BacktestEngineNode.data": "OHLCV 시계열 데이터 (HistoricalDataNode 연결)",
   "fields.BacktestEngineNode.close_field": "종가 필드명 (기본: close)",

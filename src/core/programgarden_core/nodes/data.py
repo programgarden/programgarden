@@ -551,6 +551,7 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example="POST",
                 expected_type="str",
+                ui_component="select",
             ),
             "url": FieldSchema(
                 name="url", type=FieldType.STRING, required=True,
@@ -561,6 +562,8 @@ class HTTPRequestNode(BaseNode):
                 example="https://api.example.com/v1/data",
                 example_binding="{{ nodes.config.api_endpoint }}",
                 expected_type="str",
+                ui_component="text_input",
+                placeholder="https://api.example.com/v1/data",
             ),
             "query_params": FieldSchema(
                 name="query_params", type=FieldType.KEY_VALUE_PAIRS, required=False,
@@ -570,6 +573,11 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example={"symbol": "AAPL", "limit": "100"},
                 expected_type="dict[str, str]",
+                ui_component="table:key_value",
+                object_schema=[
+                    {"name": "key", "type": "STRING", "description": "파라미터 이름"},
+                    {"name": "value", "type": "STRING", "description": "파라미터 값"},
+                ],
             ),
             "body": FieldSchema(
                 name="body", type=FieldType.OBJECT, required=False,
@@ -580,6 +588,8 @@ class HTTPRequestNode(BaseNode):
                 example={"action": "buy", "symbol": "AAPL", "quantity": 10},
                 example_binding="{{ nodes.order.request_body }}",
                 expected_type="dict[str, Any]",
+                ui_component="textarea",
+                placeholder='{"action": "buy", "symbol": "AAPL", "quantity": 10}',
             ),
             "credential_id": FieldSchema(
                 name="credential_id", type=FieldType.CREDENTIAL, required=False,
@@ -587,6 +597,7 @@ class HTTPRequestNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 bindable=False,
                 credential_types=["http_bearer", "http_header", "http_basic", "http_query"],
+                ui_component="select:credential",
             ),
             "headers": FieldSchema(
                 name="headers", type=FieldType.KEY_VALUE_PAIRS, required=False,
@@ -595,6 +606,12 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example={"Content-Type": "application/json", "X-Custom-Header": "value"},
                 expected_type="dict[str, str]",
+                ui_component="table:key_value",
+                object_schema=[
+                    {"name": "key", "type": "STRING", "description": "헤더 이름"},
+                    {"name": "value", "type": "STRING", "description": "헤더 값"},
+                ],
+                group="advanced",
             ),
             # SETTINGS
             "timeout_seconds": FieldSchema(
@@ -605,6 +622,10 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example=30,
                 expected_type="int",
+                ui_component="number_input",
+                min_value=1,
+                max_value=300,
+                group="advanced",
             ),
             "retry_count": FieldSchema(
                 name="retry_count", type=FieldType.INTEGER, required=False,
@@ -614,6 +635,10 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example=3,
                 expected_type="int",
+                ui_component="number_input",
+                min_value=0,
+                max_value=10,
+                group="advanced",
             ),
             "retry_delay_ms": FieldSchema(
                 name="retry_delay_ms", type=FieldType.INTEGER, required=False,
@@ -623,6 +648,10 @@ class HTTPRequestNode(BaseNode):
                 bindable=False,
                 example=1000,
                 expected_type="int",
+                ui_component="number_input",
+                min_value=100,
+                max_value=60000,
+                group="advanced",
             ),
         }
 
@@ -724,4 +753,229 @@ class HTTPRequestNode(BaseNode):
             "status_code": 0,
             "success": False,
             "error": last_error,
+        }
+
+
+class FieldMappingNode(BaseNode):
+    """
+    필드명 매핑 노드
+    
+    데이터의 필드명을 표준 형식으로 변환합니다.
+    외부 API, 다양한 데이터 소스의 필드명을 ProgramGarden 표준 형식으로 통일합니다.
+    
+    주요 용도:
+    - 외부 API 응답의 필드명을 표준 OHLCV 형식으로 변환
+    - HTTPRequestNode → ConditionNode 사이에서 데이터 정규화
+    - AI 에이전트가 description을 참고하여 자동 매핑 제안
+    
+    지원 데이터 타입:
+    - list[dict]: 각 dict의 키 이름 변환
+    - dict: dict의 키 이름 변환
+    - dict[str, dict]: 중첩 dict의 키 이름 변환
+    
+    Example DSL:
+        {
+            "id": "mapper",
+            "type": "FieldMappingNode",
+            "data": "{{ nodes.api.response.data }}",
+            "mappings": [
+                {"from": "lastPrice", "to": "close", "description": "마지막 체결가 → 종가"},
+                {"from": "vol", "to": "volume", "description": "당일 누적 거래량"}
+            ],
+            "preserve_unmapped": true
+        }
+    """
+
+    type: Literal["FieldMappingNode"] = "FieldMappingNode"
+    category: NodeCategory = NodeCategory.DATA
+    description: str = "i18n:nodes.FieldMappingNode.description"
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/fieldmapping.svg"
+
+    # 입력 데이터 (바인딩 지원)
+    data: Optional[Any] = Field(
+        default=None,
+        description="Input data to transform (list[dict], dict, or dict[str, dict])",
+    )
+
+    # 필드명 매핑 테이블
+    mappings: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="Field name mapping rules [{from, to, description}, ...]",
+    )
+
+    # 매핑되지 않은 필드 유지 여부
+    preserve_unmapped: bool = Field(
+        default=True,
+        description="Whether to keep unmapped fields in output",
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="data",
+            type="any",
+            description="i18n:ports.data",
+        ),
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.trigger",
+            required=False,
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="mapped_data",
+            type="any",
+            description="i18n:ports.mapped_data",
+        ),
+        OutputPort(
+            name="original_fields",
+            type="array",
+            description="i18n:ports.original_fields",
+        ),
+        OutputPort(
+            name="mapped_fields",
+            type="array",
+            description="i18n:ports.mapped_fields",
+        ),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+        return {
+            # === PARAMETERS: 입력 데이터 ===
+            "data": FieldSchema(
+                name="data",
+                type=FieldType.OBJECT,  # ANY 대신 OBJECT 사용 (list/dict/nested dict 모두 수용)
+                description="i18n:fields.FieldMappingNode.data",
+                required=True,
+                bindable=True,
+                expression_enabled=True,
+                category=FieldCategory.PARAMETERS,
+                ui_component="binding_input",
+                example=[{"lastPrice": 150, "vol": 1000000}],
+                example_binding="{{ nodes.api.response.data }}",
+                bindable_sources=["HTTPRequestNode.response"],
+                expected_type="list[dict] | dict | dict[str, dict]",
+            ),
+            # === PARAMETERS: 매핑 테이블 ===
+            "mappings": FieldSchema(
+                name="mappings",
+                type=FieldType.ARRAY,
+                array_item_type=FieldType.OBJECT,
+                description="i18n:fields.FieldMappingNode.mappings",
+                required=True,
+                bindable=False,
+                category=FieldCategory.PARAMETERS,
+                ui_component="mapping_table",
+                default=[],
+                example=[
+                    {"from": "lastPrice", "to": "close", "description": "마지막 체결가 → 종가"},
+                    {"from": "vol", "to": "volume", "description": "당일 누적 거래량"},
+                    {"from": "tradeDate", "to": "date", "description": "거래일자 (YYYYMMDD 형식)"},
+                ],
+                expected_type="list[dict]",
+                object_schema=[
+                    {
+                        "name": "from",
+                        "type": "STRING",
+                        "required": True,
+                        "description": "i18n:fields.FieldMappingNode.mappings.from",
+                        "placeholder": "원본 필드명 (예: lastPrice)",
+                        "ui_width": "35%",
+                    },
+                    {
+                        "name": "to",
+                        "type": "STRING",
+                        "required": True,
+                        "description": "i18n:fields.FieldMappingNode.mappings.to",
+                        "placeholder": "표준 필드명 (예: close)",
+                        "ui_width": "30%",
+                        "suggestions": ["symbol", "exchange", "date", "open", "high", "low", "close", "volume"],
+                    },
+                    {
+                        "name": "description",
+                        "type": "STRING",
+                        "required": False,
+                        "description": "i18n:fields.FieldMappingNode.mappings.description",
+                        "placeholder": "이 필드의 의미 설명 (AI 에이전트용)",
+                        "ui_width": "35%",
+                    },
+                ],
+                help_text="(+) 버튼으로 매핑 규칙 추가. description을 자세히 기록하여 유지관리하세요.",
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "preserve_unmapped": FieldSchema(
+                name="preserve_unmapped",
+                type=FieldType.BOOLEAN,
+                description="i18n:fields.FieldMappingNode.preserve_unmapped",
+                default=True,
+                bindable=False,
+                category=FieldCategory.SETTINGS,
+                ui_component="checkbox",
+                example=True,
+                expected_type="bool",
+            ),
+        }
+
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """
+        필드명 매핑 실행
+        
+        Returns:
+            {
+                "mapped_data": 변환된 데이터,
+                "original_fields": 원본 필드명 목록,
+                "mapped_fields": 매핑된 필드명 목록
+            }
+        """
+        data = self.data
+        if data is None:
+            return {
+                "mapped_data": None,
+                "original_fields": [],
+                "mapped_fields": [],
+            }
+
+        # 매핑 딕셔너리 생성 (from -> to)
+        mapping_dict = {m["from"]: m["to"] for m in self.mappings if "from" in m and "to" in m}
+        
+        original_fields: set = set()
+        mapped_fields: set = set()
+
+        def transform_dict(d: Dict[str, Any]) -> Dict[str, Any]:
+            """단일 dict 변환"""
+            result = {}
+            for key, value in d.items():
+                original_fields.add(key)
+                if key in mapping_dict:
+                    new_key = mapping_dict[key]
+                    mapped_fields.add(new_key)
+                    result[new_key] = value
+                elif self.preserve_unmapped:
+                    result[key] = value
+            return result
+
+        # 데이터 타입별 처리
+        if isinstance(data, list):
+            # list[dict] 처리
+            mapped_data = [transform_dict(item) if isinstance(item, dict) else item for item in data]
+        elif isinstance(data, dict):
+            # dict 또는 dict[str, dict] 처리
+            first_value = next(iter(data.values()), None) if data else None
+            if isinstance(first_value, dict):
+                # dict[str, dict] (중첩 dict)
+                mapped_data = {key: transform_dict(val) if isinstance(val, dict) else val for key, val in data.items()}
+            else:
+                # 일반 dict
+                mapped_data = transform_dict(data)
+        else:
+            # 변환 불가능한 타입은 그대로 반환
+            mapped_data = data
+
+        return {
+            "mapped_data": mapped_data,
+            "original_fields": sorted(list(original_fields)),
+            "mapped_fields": sorted(list(mapped_fields)),
         }

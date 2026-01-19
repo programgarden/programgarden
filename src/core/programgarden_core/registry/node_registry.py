@@ -60,10 +60,10 @@ class NodeTypeRegistry:
         from programgarden_core.nodes import (
             StartNode, BrokerNode, ThrottleNode,
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
-            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode,
+            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
-            ConditionNode, LogicNode, PerformanceConditionNode,
+            ConditionNode, LogicNode,
             PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
             NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode,
             DisplayNode,
@@ -78,13 +78,13 @@ class NodeTypeRegistry:
             # Realtime
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
             # Data
-            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode,
+            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
             # Symbol
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
             # Trigger
             ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
             # Condition
-            ConditionNode, LogicNode, PerformanceConditionNode,
+            ConditionNode, LogicNode,
             # Risk
             PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
             # Order

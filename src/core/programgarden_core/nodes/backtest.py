@@ -707,9 +707,6 @@ class BacktestEngineNode(BaseNode):
         }
 
 
-# PerformanceConditionNode는 condition.py로 이전됨 (더 풍부한 필드 지원)
-
-
 class BenchmarkCompareNode(BaseNode):
     """
     Benchmark comparison node

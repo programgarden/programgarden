@@ -25,6 +25,21 @@ from .subscription_manager import SubscriptionManager
 
 logger = logging.getLogger(__name__)
 
+# LS증권 API 응답 코드
+SUCCESS_CODES = {"00000", "00001"}  # 정상 응답
+
+# "데이터 없음" 판단 패턴 (rsp_msg에서 확인)
+NO_DATA_PATTERNS = ["없습니다", "없음", "no data", "not found", "조회내역"]
+
+
+def is_no_data_response(rsp_cd: str, rsp_msg: str) -> bool:
+    """응답이 '데이터 없음' 케이스인지 판단"""
+    # 성공 코드가 아니고, 메시지에 "없음" 패턴이 있으면 데이터 없음
+    if rsp_cd in SUCCESS_CODES:
+        return False
+    msg_lower = (rsp_msg or "").lower()
+    return any(pattern in msg_lower for pattern in NO_DATA_PATTERNS)
+
 
 class StockAccountTracker:
     """
@@ -159,6 +174,27 @@ class StockAccountTracker:
             )
             resp = await tr.req_async()
             
+            # 응답 코드 확인
+            rsp_cd = getattr(resp, 'rsp_cd', '')
+            rsp_msg = getattr(resp, 'rsp_msg', '')
+            
+            # "데이터 없음" 응답 → 정상 케이스 (빈 데이터)
+            if is_no_data_response(rsp_cd, rsp_msg):
+                logger.info(f"[_fetch_positions] 보유종목 없음 (rsp_cd={rsp_cd}, msg={rsp_msg})")
+                self._positions.clear()
+                self._balances.clear()
+                self._notify_position_change()
+                self._notify_balance_change()
+                self._last_errors.pop("positions", None)
+                return
+            
+            # 성공이 아닌 다른 응답 → 에러
+            if rsp_cd and rsp_cd not in SUCCESS_CODES:
+                error_msg = f"[포지션 조회 실패] rsp_cd={rsp_cd}, msg={rsp_msg}"
+                self._last_errors["positions"] = error_msg
+                logger.error(f"[_fetch_positions] {error_msg}")
+                return
+            
             # block 데이터 처리 (block이 비어있으면 보유종목 없음 = 정상 케이스)
             now = datetime.now()
             
@@ -247,6 +283,25 @@ class StockAccountTracker:
                 )
             )
             resp = await tr.req_async()
+            
+            # 응답 코드 확인
+            rsp_cd = getattr(resp, 'rsp_cd', '')
+            rsp_msg = getattr(resp, 'rsp_msg', '')
+            
+            # "데이터 없음" 응답 → 정상 케이스 (빈 데이터)
+            if is_no_data_response(rsp_cd, rsp_msg):
+                logger.info(f"[_fetch_open_orders] 미체결 주문 없음 (rsp_cd={rsp_cd}, msg={rsp_msg})")
+                self._open_orders.clear()
+                self._notify_open_orders_change()
+                self._last_errors.pop("open_orders", None)
+                return
+            
+            # 성공이 아닌 다른 응답 → 에러
+            if rsp_cd and rsp_cd not in SUCCESS_CODES:
+                error_msg = f"[미체결 조회 실패] rsp_cd={rsp_cd}, msg={rsp_msg}"
+                self._last_errors["open_orders"] = error_msg
+                logger.error(f"[_fetch_open_orders] {error_msg}")
+                return
             
             # block 데이터 처리 (block이 비어있으면 미체결 없음 = 정상 케이스)
             now = datetime.now()

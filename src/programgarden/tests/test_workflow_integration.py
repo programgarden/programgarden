@@ -336,7 +336,7 @@ class TestWorkflowNodeTypes:
             "MarketUniverseNode", "ScreenerNode", "MarketDataNode",
             "HistoricalDataNode", "RealMarketDataNode",
             # condition
-            "ConditionNode", "LogicNode", "PerformanceConditionNode",
+            "ConditionNode", "LogicNode",
             # order
             "NewOrderNode", "ModifyOrderNode", "CancelOrderNode",
             "LiquidateNode", "PositionSizingNode",

@@ -4,11 +4,11 @@ ProgramGarden Core - 노드 타입 정의
 38개 노드 타입을 15개 카테고리로 분류:
 - infra (2): StartNode, BrokerNode
 - realtime (3): RealMarketDataNode, RealAccountNode, RealOrderEventNode
-- data (5): MarketDataNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode
+- data (6): MarketDataNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode
 - account (1): AccountNode
 - symbol (5): WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode
 - trigger (3): ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode
-- condition (3): ConditionNode, LogicNode, PerformanceConditionNode
+- condition (2): ConditionNode, LogicNode
 - risk (4): PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode
 - order (4): NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
 - event (3): EventHandlerNode, ErrorHandlerNode, AlertNode
@@ -25,7 +25,7 @@ from programgarden_core.nodes.realtime import (
     RealAccountNode,
     RealOrderEventNode,
 )
-from programgarden_core.nodes.data import MarketDataNode, SQLiteNode, PostgresNode, HTTPRequestNode
+from programgarden_core.nodes.data import MarketDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode
 from programgarden_core.nodes.account import AccountNode
 from programgarden_core.nodes.symbol import (
     WatchlistNode,
@@ -39,7 +39,7 @@ from programgarden_core.nodes.trigger import (
     TradingHoursFilterNode,
     ExchangeStatusNode,
 )
-from programgarden_core.nodes.condition import ConditionNode, LogicNode, PerformanceConditionNode
+from programgarden_core.nodes.condition import ConditionNode, LogicNode
 from programgarden_core.nodes.risk import PositionSizingNode, RiskGuardNode, RiskConditionNode
 from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode
 # event 노드는 커뮤니티 노드(TelegramNode 등)로 대체됨
@@ -48,7 +48,6 @@ from programgarden_core.nodes.backtest import (
     HistoricalDataNode,
     BacktestEngineNode,
     BenchmarkCompareNode,
-    # PerformanceConditionNode는 condition.py에서 import됨
 )
 from programgarden_core.nodes.portfolio import PortfolioNode
 from programgarden_core.nodes.job import DeployNode, TradingHaltNode, JobControlNode
@@ -74,6 +73,7 @@ __all__ = [
     "SQLiteNode",
     "PostgresNode",
     "HTTPRequestNode",
+    "FieldMappingNode",
     # Symbol
     "WatchlistNode",
     "MarketUniverseNode",
@@ -87,7 +87,6 @@ __all__ = [
     # Condition
     "ConditionNode",
     "LogicNode",
-    "PerformanceConditionNode",
     # Risk
     "PositionSizingNode",
     "RiskGuardNode",

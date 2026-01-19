@@ -384,276 +384,32 @@ class LogicNode(BaseNode):
                     }
                 ],
                 help_text="i18n:fields.LogicNode.conditions.help_text",
-                object_schema={
-                    "is_condition_met": {
-                        "type": "string",
+                object_schema=[
+                    {
+                        "name": "is_condition_met",
+                        "type": "STRING",
                         "expression_enabled": True,
                         "required": True,
                         "description": "i18n:fields.LogicNode.conditions.is_condition_met",
                         "placeholder": "{{ nodes.conditionNodeId.result }}",
                     },
-                    "passed_symbols": {
-                        "type": "string",
+                    {
+                        "name": "passed_symbols",
+                        "type": "STRING",
                         "expression_enabled": True,
                         "required": True,
                         "description": "i18n:fields.LogicNode.conditions.passed_symbols",
                         "placeholder": "{{ nodes.conditionNodeId.passed_symbols }}",
                     },
-                    "weight": {
-                        "type": "number",
+                    {
+                        "name": "weight",
+                        "type": "NUMBER",
                         "required": False,
                         "description": "i18n:fields.LogicNode.conditions.weight",
                         "placeholder": "0.5",
                         "visible_when": {"operator": ["weighted"]},
                         "default": 1.0,
                     },
-                },
-            ),
-        }
-
-
-class PerformanceConditionNode(BaseNode):
-    """
-    Performance-based condition node
-
-    Evaluates performance metrics (P&L, MDD, win rate, Sharpe ratio, etc.)
-    from account or backtest data
-    """
-
-    type: Literal["PerformanceConditionNode"] = "PerformanceConditionNode"
-    category: NodeCategory = NodeCategory.CONDITION
-    description: str = "i18n:nodes.PerformanceConditionNode.description"
-
-    # === 포트 바인딩 필드 ===
-    position_data: Any = Field(
-        default=None,
-        description="Position data binding (e.g., {{ nodes.account.positions }})",
-    )
-    balance_data: Any = Field(
-        default=None,
-        description="Balance data binding (e.g., {{ nodes.account.balance }})",
-    )
-    equity_curve: Any = Field(
-        default=None,
-        description="Equity curve data binding (e.g., {{ nodes.backtest.equity_curve }})",
-    )
-    trade_history: Any = Field(
-        default=None,
-        description="Trade history binding (e.g., {{ nodes.account.trade_history }})",
-    )
-
-    # === 성과 조건 설정 ===
-    metric: Literal[
-        "pnl_rate",           # 수익률 (%)
-        "pnl_amount",         # 손익 금액
-        "mdd",                # 최대 낙폭 (%)
-        "win_rate",           # 승률 (%)
-        "sharpe_ratio",       # 샤프 비율
-        "profit_factor",      # 수익 팩터
-        "avg_win",            # 평균 수익
-        "avg_loss",           # 평균 손실
-        "consecutive_wins",   # 연속 수익 횟수
-        "consecutive_losses", # 연속 손실 횟수
-        "total_trades",       # 총 거래 횟수
-        "daily_pnl",          # 일일 손익
-    ] = Field(
-        default="pnl_rate",
-        description="Performance metric to evaluate",
-    )
-
-    operator: Literal["gt", "lt", "gte", "lte", "eq", "ne"] = Field(
-        default="gt",
-        description="Comparison operator (gt=>, lt=<, gte=>=, lte=<=, eq===, ne=!=)",
-    )
-
-    threshold: float = Field(
-        default=0.0,
-        description="Threshold value to compare against",
-    )
-
-    # === 선택적 필터 ===
-    symbol_filter: Optional[List[str]] = Field(
-        default=None,
-        description="Filter specific symbols (None = all symbols)",
-    )
-    time_period: Optional[str] = Field(
-        default=None,
-        description="Time period for calculation (e.g., '1d', '1w', '1m', 'ytd', 'all')",
-    )
-
-    _inputs: List[InputPort] = [
-        InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
-        InputPort(
-            name="position_data",
-            type="position_data",
-            description="i18n:ports.positions",
-            required=False,
-        ),
-        InputPort(
-            name="balance_data",
-            type="balance_data",
-            description="i18n:ports.balance",
-            required=False,
-        ),
-        InputPort(
-            name="equity_curve",
-            type="equity_curve",
-            description="i18n:ports.equity_curve",
-            required=False,
-        ),
-        InputPort(
-            name="trade_history",
-            type="trade_list",
-            description="i18n:ports.trade_history",
-            required=False,
-        ),
-    ]
-    _outputs: List[OutputPort] = [
-        OutputPort(
-            name="result",
-            type="condition_result",
-            description="i18n:ports.result",
-        ),
-        OutputPort(
-            name="passed",
-            type="bool",
-            description="i18n:ports.passed",
-        ),
-        OutputPort(
-            name="metric_value",
-            type="float",
-            description="i18n:ports.metric_value",
-        ),
-        OutputPort(
-            name="details",
-            type="dict",
-            description="i18n:ports.details",
-        ),
-    ]
-
-    @classmethod
-    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
-        return {
-            # === PARAMETERS: 포트 바인딩 필드 ===
-            "position_data": FieldSchema(
-                name="position_data",
-                type=FieldType.STRING,
-                description="i18n:fields.PerformanceConditionNode.position_data",
-                required=False,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.account.positions }}",
-                example={"AAPL": {"qty": 10, "avg_price": 150.0, "pnl_rate": 5.2}},
-                example_binding="{{ nodes.account.positions }}",
-                bindable_sources=[
-                    "RealAccountNode.positions",
-                    "AccountNode.positions",
                 ],
-                expected_type="dict[str, any]",
-            ),
-            "balance_data": FieldSchema(
-                name="balance_data",
-                type=FieldType.STRING,
-                description="i18n:fields.PerformanceConditionNode.balance_data",
-                required=False,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.account.balance }}",
-                example={"total": 100000, "available": 50000},
-                example_binding="{{ nodes.account.balance }}",
-                bindable_sources=[
-                    "RealAccountNode.balance",
-                    "AccountNode.balance",
-                ],
-                expected_type="dict[str, float]",
-            ),
-            "equity_curve": FieldSchema(
-                name="equity_curve",
-                type=FieldType.STRING,
-                description="i18n:fields.PerformanceConditionNode.equity_curve",
-                required=False,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.backtest.equity_curve }}",
-                example=[{"date": "2024-01-01", "equity": 10000}, {"date": "2024-01-02", "equity": 10250}],
-                example_binding="{{ nodes.backtest.equity_curve }}",
-                bindable_sources=[
-                    "BacktestEngineNode.equity_curve",
-                ],
-                expected_type="list[dict]",
-            ),
-            "trade_history": FieldSchema(
-                name="trade_history",
-                type=FieldType.STRING,
-                description="i18n:fields.PerformanceConditionNode.trade_history",
-                required=False,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.account.trade_history }}",
-                example=[{"symbol": "AAPL", "pnl": 500}, {"symbol": "TSLA", "pnl": -200}],
-                example_binding="{{ nodes.account.trade_history }}",
-                bindable_sources=[
-                    "AccountNode.trade_history",
-                ],
-                expected_type="list[dict]",
-            ),
-            # === PARAMETERS: 성과 조건 설정 ===
-            "metric": FieldSchema(
-                name="metric",
-                type=FieldType.ENUM,
-                description="i18n:fields.PerformanceConditionNode.metric",
-                default="pnl_rate",
-                enum_values=[
-                    "pnl_rate", "pnl_amount", "mdd", "win_rate", "sharpe_ratio",
-                    "profit_factor", "avg_win", "avg_loss", "consecutive_wins",
-                    "consecutive_losses", "total_trades", "daily_pnl"
-                ],
-                required=True,
-                bindable=False,
-                category=FieldCategory.PARAMETERS,
-            ),
-            "operator": FieldSchema(
-                name="operator",
-                type=FieldType.ENUM,
-                description="i18n:fields.PerformanceConditionNode.operator",
-                default="gt",
-                enum_values=["gt", "lt", "gte", "lte", "eq", "ne"],
-                required=True,
-                bindable=False,
-                category=FieldCategory.PARAMETERS,
-            ),
-            "threshold": FieldSchema(
-                name="threshold",
-                type=FieldType.NUMBER,
-                description="i18n:fields.PerformanceConditionNode.threshold",
-                default=0.0,
-                required=True,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.PARAMETERS,
-            ),
-            # === ADVANCED: 선택적 필터 ===
-            "symbol_filter": FieldSchema(
-                name="symbol_filter",
-                type=FieldType.ARRAY,
-                description="i18n:fields.PerformanceConditionNode.symbol_filter",
-                required=False,
-                bindable=True,
-                expression_enabled=True,
-                category=FieldCategory.SETTINGS,
-            ),
-            "time_period": FieldSchema(
-                name="time_period",
-                type=FieldType.ENUM,
-                description="i18n:fields.PerformanceConditionNode.time_period",
-                enum_values=["1d", "1w", "1m", "3m", "ytd", "all"],
-                required=False,
-                bindable=False,
-                category=FieldCategory.SETTINGS,
             ),
         }

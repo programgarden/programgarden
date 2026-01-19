@@ -198,7 +198,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | `infra` | 워크플로우 시작점, 브로커 연결, 흐름 제어 | StartNode, BrokerNode, ThrottleNode |
 | `account` | 잔고, 포지션, 체결 내역 | AccountNode, RealAccountNode, RealOrderEventNode |
 | `market` | 시세, 종목 목록, 과거 데이터 | WatchlistNode, ScreenerNode, MarketDataNode, HistoricalDataNode, RealMarketDataNode |
-| `condition` | 매매 조건 판단, 논리 연산 | ConditionNode, LogicNode, PerformanceConditionNode |
+| `condition` | 매매 조건 판단, 논리 연산 | ConditionNode, LogicNode |
 | `order` | 신규/정정/취소 주문, 포지션 사이징 | NewOrderNode, ModifyOrderNode, CancelOrderNode, LiquidateNode, PositionSizingNode |
 | `risk` | 리스크 관리, 포트폴리오 배분 | RiskGuardNode, RiskConditionNode, PortfolioNode |
 | `schedule` | 시간 기반 트리거, 거래시간 필터 | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode |
@@ -319,7 +319,6 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 |------|------|
 | `ConditionNode` | 조건 플러그인 실행 (RSI, MACD 등) |
 | `LogicNode` | 조건 조합 (all/any/xor/at_least/weighted) |
-| `PerformanceConditionNode` | 성과 기반 조건 (수익률, MDD, 승률 등) |
 
 ### 5.6 분석 노드 (analysis)
 

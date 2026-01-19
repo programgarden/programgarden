@@ -13,8 +13,9 @@ async def run_example():
     ls = LS.get_instance()
 
     login_result = ls.login(
-        appkey=os.getenv("APPKEY"),
-        appsecretkey=os.getenv("APPSECRET")
+        appkey=os.getenv("APPKEY_FUTURE_FAKE"),
+        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE"),
+        paper_trading=True,
     )
 
     if login_result is False:
@@ -28,7 +29,7 @@ async def run_example():
     await client.connect()
 
     ovc = client.OVC()
-    ovc.add_ovc_symbols(symbols=["ESU25   "])
+    ovc.add_ovc_symbols(symbols=["ESZ25   "])
     ovc.on_ovc_message(on_message)
 
     await asyncio.sleep(60)

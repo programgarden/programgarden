@@ -80,6 +80,9 @@
   "nodes.HTTPRequestNode.name": "HTTP Request",
   "nodes.HTTPRequestNode.description": "External REST API call.",
   
+  "nodes.FieldMappingNode.name": "Field Mapping",
+  "nodes.FieldMappingNode.description": "Transform field names to standard format. Normalize external API responses to OHLCV format.",
+  
   "nodes.CustomPnLNode.name": "Custom P&L",
   "nodes.CustomPnLNode.description": "Custom P&L calculation logic.",
   
@@ -139,9 +142,6 @@
   
   "nodes.BenchmarkCompareNode.name": "Benchmark Compare",
   "nodes.BenchmarkCompareNode.description": "Compare and analyze multiple backtest results. Supports strategy vs strategy, strategy vs Buy&Hold comparisons.",
-  
-  "nodes.PerformanceConditionNode.name": "Performance Condition",
-  "nodes.PerformanceConditionNode.description": "Validate performance meets criteria.",
   
   "nodes.EventHandlerNode.name": "Event Handler",
   "nodes.EventHandlerNode.description": "Handle order events (filled, rejected, cancelled).",
@@ -228,6 +228,9 @@
   "ports.http_status_code": "HTTP status code",
   "ports.http_success": "Request success flag",
   "ports.http_error": "Error message",
+  "ports.mapped_data": "Transformed data",
+  "ports.original_fields": "Original field names list",
+  "ports.mapped_fields": "Mapped field names list",
   
   "ports.order_trigger": "Order execution trigger",
   "ports.order_symbols": "Target symbols list",
@@ -308,7 +311,7 @@
   "fields.LogicNode.threshold": "Threshold value (for at_least, at_most, exactly, weighted operators)",
   "fields.LogicNode.threshold.help_text": "• at_least/at_most/exactly: Number of conditions required (integer)\n  e.g., threshold=2 → at least/most/exactly 2 must pass\n• weighted: Score threshold (decimal 0~1)\n  e.g., threshold=0.6 → pass if weighted sum ≥ 60%",
   "fields.LogicNode.conditions": "Conditions",
-  "fields.LogicNode.conditions.help_text": "Configure conditions for logical operation.\n\nEach condition requires:\n• is_condition_met: Whether condition is met ({{ nodes.nodeId.result }})\n• passed_symbols: Symbols that passed ({{ nodes.nodeId.passed_symbols }})\n• weight: Weight value (for weighted operator)\n\n💡 You can connect ConditionNode, LogicNode, PerformanceConditionNode, or any node with result output.",
+  "fields.LogicNode.conditions.help_text": "Configure conditions for logical operation.\n\nEach condition requires:\n• is_condition_met: Whether condition is met ({{ nodes.nodeId.result }})\n• passed_symbols: Symbols that passed ({{ nodes.nodeId.passed_symbols }})\n• weight: Weight value (for weighted operator)\n\n💡 You can connect ConditionNode, LogicNode, or any node with result output.",
   "fields.LogicNode.conditions.is_condition_met": "Condition Met",
   "fields.LogicNode.conditions.passed_symbols": "Passed Symbols",
   "fields.LogicNode.conditions.weight": "Weight",
@@ -408,6 +411,13 @@
   "fields.HTTPRequestNode.timeout_seconds": "Request timeout in seconds. Request fails if no response within this time.",
   "fields.HTTPRequestNode.retry_count": "Number of retry attempts on failure. 0 = no retry.",
   "fields.HTTPRequestNode.retry_delay_ms": "Delay between retries in milliseconds",
+
+  "fields.FieldMappingNode.data": "Input data to transform. Bind from HTTPRequestNode response or other node outputs.",
+  "fields.FieldMappingNode.mappings": "Field name mapping table. Converts source field names (from) to standard field names (to).",
+  "fields.FieldMappingNode.mappings.from": "Source field name (actual field name from API response)",
+  "fields.FieldMappingNode.mappings.to": "Standard field name (e.g., close, volume, date)",
+  "fields.FieldMappingNode.mappings.description": "Field description (for AI agent auto-mapping)",
+  "fields.FieldMappingNode.preserve_unmapped": "Whether to keep unmapped fields. If checked, original fields are also included in output.",
 
   "fields.BacktestEngineNode.data": "OHLCV time series data (connect from HistoricalDataNode)",
   "fields.BacktestEngineNode.close_field": "Close price field name (default: close)",

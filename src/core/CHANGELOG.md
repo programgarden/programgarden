@@ -1,3 +1,12 @@
+## [2.5.0] - 2026-01-19
+
+### Removed
+- refactor(nodes): `PerformanceConditionNode` 삭제
+  - 노드 복잡성 감소를 위해 제거
+  - 필요시 향후 재추가 예정
+  - 익절/손절 조건은 ConditionNode + ProfitTarget/StopLoss 플러그인으로 대체
+- refactor(i18n): PerformanceConditionNode 관련 번역 키 제거
+
 ## [2.4.0] - 2026-01-16
 
 ### Added
