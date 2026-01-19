@@ -50,7 +50,7 @@ class NodeCategory(str, Enum):
 
 
 class Position(BaseModel):
-    """Flutter UI용 노드 위치"""
+    """클라이언트 UI용 노드 위치"""
 
     x: float = 0.0
     y: float = 0.0
@@ -83,7 +83,7 @@ class BaseNode(BaseModel):
         id: 노드 고유 ID (워크플로우 내에서 유일)
         type: 노드 타입 (클래스명)
         category: 노드 카테고리
-        position: Flutter UI용 위치 (선택적)
+        position: 클라이언트 UI용 위치 (선택적)
         config: 노드별 설정
         description: 노드 설명
     """
@@ -92,7 +92,7 @@ class BaseNode(BaseModel):
     type: str = Field(..., description="노드 타입")
     category: NodeCategory = Field(..., description="노드 카테고리")
     position: Optional[Position] = Field(
-        default=None, description="Flutter UI용 노드 위치"
+        default=None, description="클라이언트 UI용 노드 위치"
     )
     config: Dict[str, Any] = Field(default_factory=dict, description="노드 설정")
     description: Optional[str] = Field(default=None, description="노드 설명")

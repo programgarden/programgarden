@@ -4428,9 +4428,9 @@ class LogicNodeExecutor(NodeExecutorBase):
     - at_least: N개 이상 만족 (threshold 필요)
     - at_most: N개 이하 만족 (threshold 필요)
     - exactly: 정확히 N개 만족 (threshold 필요)
-    - weighted: 가중치 합이 threshold 이상 (weights, threshold 필요)
+    - weighted: 가중치 합이 threshold 이상 (conditions 내 weight 사용)
     
-    입력: 각 ConditionNode의 condition_id 바인딩 (conditions 필드)
+    입력: conditions 필드 (각 조건의 is_condition_met, passed_symbols, weight 바인딩)
     출력: result (bool), passed_symbols (list)
     """
 
@@ -4449,31 +4449,55 @@ class LogicNodeExecutor(NodeExecutorBase):
         
         operator = config.get("operator", "all")
         threshold = config.get("threshold")
-        weights = config.get("weights", {})
-        conditions = config.get("conditions", [])  # ConditionNode ID 목록
+        conditions = config.get("conditions", [])  # 조건 객체 목록
         
-        context.log("info", f"LogicNode executing with operator='{operator}', conditions={conditions}", node_id)
+        # conditions 필수 검증
+        if not conditions:
+            context.log("error", "LogicNode requires at least one condition in 'conditions' field", node_id)
+            return {"result": False, "passed_symbols": [], "details": [], "error": "conditions field is required"}
         
-        # 각 조건 노드의 결과 수집
+        context.log("info", f"LogicNode executing with operator='{operator}', conditions_count={len(conditions)}", node_id)
+        
+        # 각 조건 결과 수집
         condition_results: List[Dict[str, Any]] = []
         all_passed_symbols: List[List[str]] = []
+        weights: Dict[int, float] = {}  # index -> weight
         
-        for cond_id in conditions:
-            # 조건 노드 출력 가져오기
-            cond_result = context.get_output(cond_id, "result")
-            cond_passed = context.get_output(cond_id, "passed_symbols") or []
-            cond_symbol_results = context.get_output(cond_id, "symbol_results") or {}
+        for idx, cond in enumerate(conditions):
+            # 조건 객체 검증
+            if not isinstance(cond, dict):
+                context.log("warning", f"Condition at index {idx} is not a dict, skipping", node_id)
+                continue
+            
+            # is_condition_met 필수
+            is_met = cond.get("is_condition_met")
+            if is_met is None:
+                context.log("warning", f"Condition at index {idx} missing 'is_condition_met', treating as False", node_id)
+                is_met = False
+            
+            # passed_symbols 필수
+            passed_symbols = cond.get("passed_symbols")
+            if passed_symbols is None:
+                passed_symbols = []
+            if not isinstance(passed_symbols, list):
+                passed_symbols = []
+            
+            # weight (optional, default 1.0)
+            weight = cond.get("weight", 1.0)
+            if not isinstance(weight, (int, float)):
+                weight = 1.0
+            weights[idx] = float(weight)
             
             condition_results.append({
-                "id": cond_id,
-                "result": bool(cond_result),
-                "passed_symbols": cond_passed,
-                "symbol_results": cond_symbol_results,
+                "index": idx,
+                "result": bool(is_met),
+                "passed_symbols": passed_symbols,
+                "weight": weight,
             })
-            all_passed_symbols.append(cond_passed if isinstance(cond_passed, list) else [])
+            all_passed_symbols.append(passed_symbols if isinstance(passed_symbols, list) else [])
         
         if not condition_results:
-            context.log("warning", "No condition results to combine", node_id)
+            context.log("warning", "No valid condition results to combine", node_id)
             return {"result": False, "passed_symbols": [], "details": []}
         
         # 연산자별 로직 실행
@@ -4504,13 +4528,16 @@ class LogicNodeExecutor(NodeExecutorBase):
         operator: str,
         results: List[Dict[str, Any]],
         all_passed_symbols: List[List[str]],
-        threshold: Optional[int],
-        weights: Dict[str, float],
+        threshold: Optional[float],
+        weights: Dict[int, float],
         context: ExecutionContext,
         node_id: str,
     ) -> tuple:
         """
         연산자 적용
+        
+        Args:
+            weights: index -> weight 매핑 (conditions 내부 weight에서 추출)
         
         Returns:
             (final_result: bool, final_passed_symbols: List[str])
@@ -4643,11 +4670,10 @@ class LogicNodeExecutor(NodeExecutorBase):
                 threshold = 0.5
             
             total_weight = 0.0
-            for r in results:
-                cond_id = r["id"]
+            for i, r in enumerate(results):
                 if r["result"]:
-                    # weights에 ID가 없으면 기본 1.0
-                    w = weights.get(cond_id, 1.0)
+                    # weights에 index가 없으면 기본 1.0
+                    w = weights.get(i, 1.0)
                     total_weight += w
             
             final_result = total_weight >= threshold

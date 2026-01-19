@@ -37,7 +37,7 @@ class FieldSchema(BaseModel):
     """
     노드 필드 스키마 (UI 렌더링 및 검증용)
 
-    백엔드에서 정의하고, 클라이언트(Flutter)가 이를 기반으로
+    백엔드에서 정의하고, 클라이언트(React/Flutter 등)가 이를 기반으로
     동적 폼을 생성합니다.
 
     Example:
@@ -147,6 +147,12 @@ class FieldSchema(BaseModel):
     depends_on: Optional[Dict[str, List[str]]] = Field(
         default=None,
         description="다른 필드 값에 따른 조건부 표시 (예: {'chart_type': ['line', 'bar']})",
+    )
+    
+    # 배열/객체 타입의 항목 스키마 (condition_list, key_value_editor 등)
+    object_schema: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="배열 항목의 객체 스키마 (예: condition_list의 is_condition_met, passed_symbols, weight 필드 정의)",
     )
     
     # 고급 옵션 (기본 숨김)

@@ -94,13 +94,14 @@ class RealMarketDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="구독할 종목 목록입니다. 각 항목은 거래소(exchange)와 종목코드(symbol)를 포함합니다. WatchlistNode의 symbols 출력을 연결하거나 직접 입력하세요.",
+                description="구독할 종목 목록입니다. WatchlistNode의 symbols 출력을 연결하세요.",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
                 bindable=True,
                 expression_enabled=True,
-                ui_component="symbol_editor",
+                # RealMarketDataNode에서는 symbols를 WatchlistNode에서 바인딩받으므로 직접 편집 UI 불필요
+                # ui_component="symbol_editor"를 제거하여 바인딩 필드로만 표시
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=[

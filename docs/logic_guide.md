@@ -35,23 +35,29 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "all",
-    "threshold": 2
-  }
+  "operator": "all",
+  "conditions": [
+    {
+      "is_condition_met": "{{ nodes.rsi.result }}",
+      "passed_symbols": "{{ nodes.rsi.passed_symbols }}"
+    },
+    {
+      "is_condition_met": "{{ nodes.macd.result }}",
+      "passed_symbols": "{{ nodes.macd.passed_symbols }}"
+    }
+  ]
 }
 ```
 
-여러 ConditionNode의 결과를 LogicNode에 연결합니다:
+**conditions 배열 항목 구조:**
 
-```json
-"edges": [
-  {"from": "rsi.result", "to": "logic.input"},
-  {"from": "macd.result", "to": "logic.input"},
-  {"from": "volume.result", "to": "logic.input"},
-  {"from": "logic.passed_symbols", "to": "order.symbols"}
-]
-```
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `is_condition_met` | expression | ✅ | 조건 통과 여부 바인딩 |
+| `passed_symbols` | expression | ✅ | 통과한 종목 목록 바인딩 |
+| `weight` | number | ❌ | 가중치 (기본: 1.0, weighted 연산자용) |
+
+여러 ConditionNode의 결과를 LogicNode의 `conditions` 배열에서 명시적으로 바인딩합니다.
 
 ---
 
@@ -91,9 +97,11 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "all"
-  }
+  "operator": "all",
+  "conditions": [
+    {"is_condition_met": "{{ nodes.condition1.result }}", "passed_symbols": "{{ nodes.condition1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition2.result }}", "passed_symbols": "{{ nodes.condition2.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -118,9 +126,11 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "any"
-  }
+  "operator": "any",
+  "conditions": [
+    {"is_condition_met": "{{ nodes.condition1.result }}", "passed_symbols": "{{ nodes.condition1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition2.result }}", "passed_symbols": "{{ nodes.condition2.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -145,9 +155,11 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "not"
-  }
+  "operator": "not",
+  "conditions": [
+    {"is_condition_met": "{{ nodes.condition1.result }}", "passed_symbols": "{{ nodes.condition1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition2.result }}", "passed_symbols": "{{ nodes.condition2.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -172,9 +184,11 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "xor"
-  }
+  "operator": "xor",
+  "conditions": [
+    {"is_condition_met": "{{ nodes.condition1.result }}", "passed_symbols": "{{ nodes.condition1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition2.result }}", "passed_symbols": "{{ nodes.condition2.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -199,10 +213,13 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "at_least",
-    "threshold": 2
-  }
+  "operator": "at_least",
+  "threshold": 2,
+  "conditions": [
+    {"is_condition_met": "{{ nodes.condition1.result }}", "passed_symbols": "{{ nodes.condition1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition2.result }}", "passed_symbols": "{{ nodes.condition2.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition3.result }}", "passed_symbols": "{{ nodes.condition3.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -227,10 +244,13 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "at_most",
-    "threshold": 1
-  }
+  "operator": "at_most",
+  "threshold": 1,
+  "conditions": [
+    {"is_condition_met": "{{ nodes.condition1.result }}", "passed_symbols": "{{ nodes.condition1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition2.result }}", "passed_symbols": "{{ nodes.condition2.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition3.result }}", "passed_symbols": "{{ nodes.condition3.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -255,10 +275,13 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "exactly",
-    "threshold": 2
-  }
+  "operator": "exactly",
+  "threshold": 2,
+  "conditions": [
+    {"is_condition_met": "{{ nodes.condition1.result }}", "passed_symbols": "{{ nodes.condition1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition2.result }}", "passed_symbols": "{{ nodes.condition2.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.condition3.result }}", "passed_symbols": "{{ nodes.condition3.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -289,7 +312,7 @@
 
 **DSL 작성 예시**:
 
-먼저 각 ConditionNode에서 weight를 설정합니다:
+각 조건에 weight를 설정합니다:
 
 ```json
 {
@@ -299,48 +322,56 @@
       "type": "ConditionNode",
       "plugin": "RSI",
       "fields": {"period": 14, "oversold": 30},
-      "config": {"weight": 0.3}
+      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
     },
     {
       "id": "macd",
       "type": "ConditionNode",
       "plugin": "MACD",
       "fields": {},
-      "config": {"weight": 0.3}
+      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
     },
     {
       "id": "volume",
       "type": "ConditionNode",
       "plugin": "VolumeSpike",
       "fields": {},
-      "config": {"weight": 0.2}
+      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
     },
     {
       "id": "trend",
       "type": "ConditionNode",
       "plugin": "ADX",
       "fields": {},
-      "config": {"weight": 0.2}
+      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
     },
     {
       "id": "logic",
       "type": "LogicNode",
-      "config": {
-        "operator": "weighted",
-        "threshold": 0.6
-      }
+      "operator": "weighted",
+      "threshold": 0.6,
+      "conditions": [
+        {"is_condition_met": "{{ nodes.rsi.result }}", "passed_symbols": "{{ nodes.rsi.passed_symbols }}", "weight": 0.3},
+        {"is_condition_met": "{{ nodes.macd.result }}", "passed_symbols": "{{ nodes.macd.passed_symbols }}", "weight": 0.3},
+        {"is_condition_met": "{{ nodes.volume.result }}", "passed_symbols": "{{ nodes.volume.passed_symbols }}", "weight": 0.2},
+        {"is_condition_met": "{{ nodes.trend.result }}", "passed_symbols": "{{ nodes.trend.passed_symbols }}", "weight": 0.2}
+      ]
     }
   ],
   "edges": [
-    {"from": "rsi.result", "to": "logic.input"},
-    {"from": "macd.result", "to": "logic.input"},
-    {"from": "volume.result", "to": "logic.input"},
-    {"from": "trend.result", "to": "logic.input"}
+    {"from": "historical", "to": "rsi"},
+    {"from": "historical", "to": "macd"},
+    {"from": "historical", "to": "volume"},
+    {"from": "historical", "to": "trend"},
+    {"from": "rsi", "to": "logic"},
+    {"from": "macd", "to": "logic"},
+    {"from": "volume", "to": "logic"},
+    {"from": "trend", "to": "logic"}
   ]
 }
 ```
 
-> ⚠️ **주의**: weight를 지정하지 않으면 기본값이 **0**이므로, 조건이 통과해도 점수에 반영되지 않습니다.
+> ⚠️ **주의**: weight를 지정하지 않으면 기본값이 **1.0**입니다.
 
 ---
 
@@ -379,25 +410,33 @@
 ```json
 {
   "nodes": [
-    {"id": "suneung", "type": "ConditionNode", "plugin": "Test1"},
-    {"id": "naesin", "type": "ConditionNode", "plugin": "Test2"},
-    {"id": "interview", "type": "ConditionNode", "plugin": "Interview"},
+    {"id": "suneung", "type": "ConditionNode", "plugin": "Test1", "data": "..."},
+    {"id": "naesin", "type": "ConditionNode", "plugin": "Test2", "data": "..."},
+    {"id": "interview", "type": "ConditionNode", "plugin": "Interview", "data": "..."},
     {
       "id": "groupA",
       "type": "LogicNode",
-      "config": {"operator": "any"}
+      "operator": "any",
+      "conditions": [
+        {"is_condition_met": "{{ nodes.suneung.result }}", "passed_symbols": "{{ nodes.suneung.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.naesin.result }}", "passed_symbols": "{{ nodes.naesin.passed_symbols }}"}
+      ]
     },
     {
       "id": "finalLogic",
       "type": "LogicNode",
-      "config": {"operator": "all"}
+      "operator": "all",
+      "conditions": [
+        {"is_condition_met": "{{ nodes.groupA.result }}", "passed_symbols": "{{ nodes.groupA.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.interview.result }}", "passed_symbols": "{{ nodes.interview.passed_symbols }}"}
+      ]
     }
   ],
   "edges": [
-    {"from": "suneung.result", "to": "groupA.input"},
-    {"from": "naesin.result", "to": "groupA.input"},
-    {"from": "groupA.result", "to": "finalLogic.input"},
-    {"from": "interview.result", "to": "finalLogic.input"}
+    {"from": "suneung", "to": "groupA"},
+    {"from": "naesin", "to": "groupA"},
+    {"from": "groupA", "to": "finalLogic"},
+    {"from": "interview", "to": "finalLogic"}
   ]
 }
 ```
@@ -425,26 +464,33 @@
 ```json
 {
   "nodes": [
-    {"id": "adx", "type": "ConditionNode", "plugin": "ADX", "fields": {"min_value": 25}},
-    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "fields": {"oversold": 30}},
-    {"id": "stochastic", "type": "ConditionNode", "plugin": "Stochastic", "fields": {"oversold": 20}},
+    {"id": "adx", "type": "ConditionNode", "plugin": "ADX", "fields": {"min_value": 25}, "data": "..."},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "fields": {"oversold": 30}, "data": "..."},
+    {"id": "stochastic", "type": "ConditionNode", "plugin": "Stochastic", "fields": {"oversold": 20}, "data": "..."},
     {
       "id": "oversoldGroup",
       "type": "LogicNode",
-      "config": {"operator": "any"}
+      "operator": "any",
+      "conditions": [
+        {"is_condition_met": "{{ nodes.rsi.result }}", "passed_symbols": "{{ nodes.rsi.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.stochastic.result }}", "passed_symbols": "{{ nodes.stochastic.passed_symbols }}"}
+      ]
     },
     {
       "id": "finalLogic",
       "type": "LogicNode",
-      "config": {"operator": "all"}
+      "operator": "all",
+      "conditions": [
+        {"is_condition_met": "{{ nodes.adx.result }}", "passed_symbols": "{{ nodes.adx.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.oversoldGroup.result }}", "passed_symbols": "{{ nodes.oversoldGroup.passed_symbols }}"}
+      ]
     }
   ],
   "edges": [
-    {"from": "rsi.result", "to": "oversoldGroup.input"},
-    {"from": "stochastic.result", "to": "oversoldGroup.input"},
-    {"from": "adx.result", "to": "finalLogic.input"},
-    {"from": "oversoldGroup.result", "to": "finalLogic.input"},
-    {"from": "finalLogic.passed_symbols", "to": "order.symbols"}
+    {"from": "rsi", "to": "oversoldGroup"},
+    {"from": "stochastic", "to": "oversoldGroup"},
+    {"from": "adx", "to": "finalLogic"},
+    {"from": "oversoldGroup", "to": "finalLogic"}
   ]
 }
 ```
@@ -479,7 +525,11 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {"operator": "all"}
+  "operator": "all",
+  "conditions": [
+    {"is_condition_met": "{{ nodes.cond1.result }}", "passed_symbols": "{{ nodes.cond1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.cond2.result }}", "passed_symbols": "{{ nodes.cond2.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -496,7 +546,11 @@
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {"operator": "any"}
+  "operator": "any",
+  "conditions": [
+    {"is_condition_met": "{{ nodes.cond1.result }}", "passed_symbols": "{{ nodes.cond1.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.cond2.result }}", "passed_symbols": "{{ nodes.cond2.passed_symbols }}"}
+  ]
 }
 ```
 
@@ -509,16 +563,17 @@
 
 **상황**: 여러 지표를 종합적으로 판단하고 싶음
 
-각 조건에 weight 설정 후:
-
 ```json
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "weighted",
-    "threshold": 0.6
-  }
+  "operator": "weighted",
+  "threshold": 0.6,
+  "conditions": [
+    {"is_condition_met": "{{ nodes.cond1.result }}", "passed_symbols": "{{ nodes.cond1.passed_symbols }}", "weight": 0.4},
+    {"is_condition_met": "{{ nodes.cond2.result }}", "passed_symbols": "{{ nodes.cond2.passed_symbols }}", "weight": 0.35},
+    {"is_condition_met": "{{ nodes.cond3.result }}", "passed_symbols": "{{ nodes.cond3.passed_symbols }}", "weight": 0.25}
+  ]
 }
 ```
 
@@ -534,17 +589,33 @@
 ```json
 {
   "nodes": [
-    {"id": "adxFilter", "type": "ConditionNode", "plugin": "ADX", "fields": {"min_value": 25}},
-    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI"},
-    {"id": "stochasticRSI", "type": "ConditionNode", "plugin": "StochasticRSI"},
-    {"id": "signalGroup", "type": "LogicNode", "config": {"operator": "any"}},
-    {"id": "finalLogic", "type": "LogicNode", "config": {"operator": "all"}}
+    {"id": "adxFilter", "type": "ConditionNode", "plugin": "ADX", "fields": {"min_value": 25}, "data": "..."},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "data": "..."},
+    {"id": "stochasticRSI", "type": "ConditionNode", "plugin": "StochasticRSI", "data": "..."},
+    {
+      "id": "signalGroup",
+      "type": "LogicNode",
+      "operator": "any",
+      "conditions": [
+        {"is_condition_met": "{{ nodes.rsi.result }}", "passed_symbols": "{{ nodes.rsi.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.stochasticRSI.result }}", "passed_symbols": "{{ nodes.stochasticRSI.passed_symbols }}"}
+      ]
+    },
+    {
+      "id": "finalLogic",
+      "type": "LogicNode",
+      "operator": "all",
+      "conditions": [
+        {"is_condition_met": "{{ nodes.adxFilter.result }}", "passed_symbols": "{{ nodes.adxFilter.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.signalGroup.result }}", "passed_symbols": "{{ nodes.signalGroup.passed_symbols }}"}
+      ]
+    }
   ],
   "edges": [
-    {"from": "rsi.result", "to": "signalGroup.input"},
-    {"from": "stochasticRSI.result", "to": "signalGroup.input"},
-    {"from": "adxFilter.result", "to": "finalLogic.input"},
-    {"from": "signalGroup.result", "to": "finalLogic.input"}
+    {"from": "rsi", "to": "signalGroup"},
+    {"from": "stochasticRSI", "to": "signalGroup"},
+    {"from": "adxFilter", "to": "finalLogic"},
+    {"from": "signalGroup", "to": "finalLogic"}
   ]
 }
 ```
@@ -581,7 +652,165 @@
 
 ---
 
-## 8. 용어 정리
+## 8. conditions 입력 방법 (weighted 연산자 상세)
+
+> 📌 **이 섹션은 `weighted` 연산자를 처음 사용하는 분을 위한 상세 가이드입니다.**
+
+### 8.1 기본 개념
+
+`weighted` 연산자는 각 조건에 **중요도(가중치)**를 부여합니다.
+학교 성적처럼 중간고사 40%, 기말고사 60%로 비중을 다르게 주는 것과 같습니다.
+
+### 8.2 입력 형식
+
+LogicNode의 `conditions` 배열에서 각 항목에 `weight` 필드를 추가합니다:
+
+```json
+"conditions": [
+  {"is_condition_met": "{{ nodes.rsiCondition.result }}", "passed_symbols": "{{ nodes.rsiCondition.passed_symbols }}", "weight": 0.4},
+  {"is_condition_met": "{{ nodes.macdCondition.result }}", "passed_symbols": "{{ nodes.macdCondition.passed_symbols }}", "weight": 0.6}
+]
+```
+
+| 구성요소 | 설명 | 예시 |
+|----------|------|------|
+| **is_condition_met** | 조건 통과 여부 바인딩 | `"{{ nodes.rsiCondition.result }}"` |
+| **passed_symbols** | 통과 종목 목록 바인딩 | `"{{ nodes.rsiCondition.passed_symbols }}"` |
+| **weight** | 0~1 사이의 소수 (0.4 = 40%), 선택사항 (기본: 1.0) | `0.4` |
+
+### 8.3 실전 예시
+
+#### 예시 1: RSI 40% + MACD 60%
+
+RSI보다 MACD를 더 중요하게 보고 싶을 때:
+
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "operator": "weighted",
+  "threshold": 0.6,
+  "conditions": [
+    {"is_condition_met": "{{ nodes.rsiCondition.result }}", "passed_symbols": "{{ nodes.rsiCondition.passed_symbols }}", "weight": 0.4},
+    {"is_condition_met": "{{ nodes.macdCondition.result }}", "passed_symbols": "{{ nodes.macdCondition.passed_symbols }}", "weight": 0.6}
+  ]
+}
+```
+
+**결과 해석:**
+
+| 상황 | RSI (0.4) | MACD (0.6) | 합계 | threshold 0.6 | 결과 |
+|------|:---------:|:----------:|:----:|:-------------:|:----:|
+| 둘 다 통과 | 0.4 | 0.6 | 1.0 | 1.0 ≥ 0.6 | ✅ 통과 |
+| RSI만 통과 | 0.4 | 0 | 0.4 | 0.4 < 0.6 | ❌ 실패 |
+| MACD만 통과 | 0 | 0.6 | 0.6 | 0.6 ≥ 0.6 | ✅ 통과 |
+| 둘 다 실패 | 0 | 0 | 0 | 0 < 0.6 | ❌ 실패 |
+
+> 💡 **해석**: MACD만 통과해도 60%이므로 통과! RSI만 통과하면 40%라 실패.
+
+#### 예시 2: 3개 조건 균등 배분
+
+모든 조건을 동등하게 취급할 때:
+
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "operator": "weighted",
+  "threshold": 0.66,
+  "conditions": [
+    {"is_condition_met": "{{ nodes.rsiCondition.result }}", "passed_symbols": "{{ nodes.rsiCondition.passed_symbols }}", "weight": 0.33},
+    {"is_condition_met": "{{ nodes.macdCondition.result }}", "passed_symbols": "{{ nodes.macdCondition.passed_symbols }}", "weight": 0.33},
+    {"is_condition_met": "{{ nodes.volumeCondition.result }}", "passed_symbols": "{{ nodes.volumeCondition.passed_symbols }}", "weight": 0.34}
+  ]
+}
+```
+
+> 💡 **해석**: 3개 중 2개 이상 통과해야 66% 이상! (0.33 + 0.33 = 0.66)
+
+#### 예시 3: 핵심 조건 + 보조 조건
+
+핵심 지표는 높은 가중치, 보조 지표는 낮은 가중치:
+
+```json
+{
+  "conditions": [
+    {"is_condition_met": "{{ nodes.rsiCondition.result }}", "passed_symbols": "{{ nodes.rsiCondition.passed_symbols }}", "weight": 0.5},
+    {"is_condition_met": "{{ nodes.macdCondition.result }}", "passed_symbols": "{{ nodes.macdCondition.passed_symbols }}", "weight": 0.3},
+    {"is_condition_met": "{{ nodes.volumeCondition.result }}", "passed_symbols": "{{ nodes.volumeCondition.passed_symbols }}", "weight": 0.2}
+  ],
+  "threshold": 0.5
+}
+```
+
+> 💡 **해석**: RSI만 통과해도 50%로 통과 가능! 보조 지표는 추가 확신용.
+
+### 8.4 자주 하는 실수
+
+#### ❌ 실수 1: is_condition_met 또는 passed_symbols 누락
+
+```json
+// 잘못된 예: passed_symbols 누락
+"conditions": [
+  {"is_condition_met": "{{ nodes.rsi.result }}", "weight": 0.5}
+]
+```
+
+→ 필수 필드 누락으로 오류 발생
+
+#### ❌ 실수 2: 가중치 합계가 1이 아님
+
+```json
+// 주의: 합계가 1.5
+"conditions": [
+  {"...", "weight": 0.5},
+  {"...", "weight": 0.5},
+  {"...", "weight": 0.5}
+]
+```
+
+→ 동작은 하지만 threshold 해석이 어려움
+
+#### ❌ 실수 3: conditions 없이 weighted 사용
+
+```json
+{
+  "operator": "weighted",
+  "threshold": 0.6
+  // conditions 누락!
+}
+```
+
+→ 조건이 없어서 항상 실패
+
+#### ✅ 올바른 예시
+
+```json
+{
+  "operator": "weighted",
+  "threshold": 0.6,
+  "conditions": [
+    {"is_condition_met": "{{ nodes.rsiCondition.result }}", "passed_symbols": "{{ nodes.rsiCondition.passed_symbols }}", "weight": 0.4},
+    {"is_condition_met": "{{ nodes.macdCondition.result }}", "passed_symbols": "{{ nodes.macdCondition.passed_symbols }}", "weight": 0.6}
+  ]
+}
+```
+
+### 8.5 가중치 설계 팁
+
+| 상황 | 권장 설정 |
+|------|----------|
+| 모든 조건 동등 | 균등 배분 (1/n) |
+| 핵심 지표 1개 + 보조 여러개 | 핵심 50~60%, 나머지 분배 |
+| 확인용 조건 추가 | 기존 유지 + 새 조건에 10~20% |
+
+**가중치 합계 = 1.0 권장 이유:**
+- threshold를 백분율로 직관적 해석 가능
+- 0.6 = "60% 이상의 조건이 충족되면"
+
+---
+
+## 9. 용어 정리
 
 | 용어 | 의미 |
 |------|------|

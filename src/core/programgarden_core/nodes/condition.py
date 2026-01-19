@@ -299,13 +299,13 @@ class LogicNode(BaseNode):
         default="all",
         description="Logical operator (all=AND, any=OR, not, xor, at_least, at_most, exactly, weighted)",
     )
-    threshold: Optional[int] = Field(
+    threshold: Optional[float] = Field(
         default=None,
-        description="Threshold value (for at_least, at_most, exactly operators)",
+        description="Threshold value (for at_least, at_most, exactly, weighted operators)",
     )
-    weights: Optional[Dict[str, float]] = Field(
-        default=None,
-        description="Weights (for weighted operator, weight per input ID)",
+    conditions: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of conditions to combine (each condition has is_condition_met, passed_symbols, and optionally weight)",
     )
 
     _inputs: List[InputPort] = [
@@ -341,24 +341,73 @@ class LogicNode(BaseNode):
                 description="i18n:fields.LogicNode.operator",
                 default="all",
                 enum_values=["all", "any", "not", "xor", "at_least", "at_most", "exactly", "weighted"],
+                enum_labels={
+                    "all": "i18n:enums.operator.all",
+                    "any": "i18n:enums.operator.any",
+                    "not": "i18n:enums.operator.not",
+                    "xor": "i18n:enums.operator.xor",
+                    "at_least": "i18n:enums.operator.at_least",
+                    "at_most": "i18n:enums.operator.at_most",
+                    "exactly": "i18n:enums.operator.exactly",
+                    "weighted": "i18n:enums.operator.weighted",
+                },
                 required=True,
                 bindable=False,
                 category=FieldCategory.PARAMETERS,
+                help_text="i18n:fields.LogicNode.operator.help_text",
             ),
             "threshold": FieldSchema(
                 name="threshold",
-                type=FieldType.INTEGER,
+                type=FieldType.NUMBER,  # weighted는 소수점 필요 (0.6 등)
                 description="i18n:fields.LogicNode.threshold",
                 bindable=True,
                 expression_enabled=True,
                 category=FieldCategory.PARAMETERS,
+                visible_when={"operator": ["at_least", "at_most", "exactly", "weighted"]},
+                help_text="i18n:fields.LogicNode.threshold.help_text",
+                placeholder="2 또는 0.6",
             ),
-            "weights": FieldSchema(
-                name="weights",
-                type=FieldType.OBJECT,
-                description="i18n:fields.LogicNode.weights",
+            "conditions": FieldSchema(
+                name="conditions",
+                type=FieldType.ARRAY,
+                array_item_type=FieldType.OBJECT,
+                description="i18n:fields.LogicNode.conditions",
+                required=True,
                 bindable=False,
+                expression_enabled=False,
                 category=FieldCategory.PARAMETERS,
+                ui_component="condition_list",
+                example=[
+                    {
+                        "is_condition_met": "{{ nodes.rsiCondition.result }}",
+                        "passed_symbols": "{{ nodes.rsiCondition.passed_symbols }}"
+                    }
+                ],
+                help_text="i18n:fields.LogicNode.conditions.help_text",
+                object_schema={
+                    "is_condition_met": {
+                        "type": "string",
+                        "expression_enabled": True,
+                        "required": True,
+                        "description": "i18n:fields.LogicNode.conditions.is_condition_met",
+                        "placeholder": "{{ nodes.conditionNodeId.result }}",
+                    },
+                    "passed_symbols": {
+                        "type": "string",
+                        "expression_enabled": True,
+                        "required": True,
+                        "description": "i18n:fields.LogicNode.conditions.passed_symbols",
+                        "placeholder": "{{ nodes.conditionNodeId.passed_symbols }}",
+                    },
+                    "weight": {
+                        "type": "number",
+                        "required": False,
+                        "description": "i18n:fields.LogicNode.conditions.weight",
+                        "placeholder": "0.5",
+                        "visible_when": {"operator": ["weighted"]},
+                        "default": 1.0,
+                    },
+                },
             ),
         }
 

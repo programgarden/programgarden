@@ -316,6 +316,9 @@ class NodeTypeRegistry:
                 # === 필드 그룹 (UI에서 그룹핑용) ===
                 if hasattr(fs, 'group') and fs.group:
                     field_schema["group"] = fs.group
+                # === 배열 항목 스키마 (condition_list 등) ===
+                if hasattr(fs, 'object_schema') and fs.object_schema:
+                    field_schema["object_schema"] = fs.object_schema
             else:
                 # Pydantic 필드에서 추출
                 field_type = str(field_info.annotation) if field_info.annotation else "any"

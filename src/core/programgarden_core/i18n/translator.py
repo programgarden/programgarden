@@ -145,6 +145,7 @@ def _translate_field(field_name: str, field: Dict[str, Any], locale: str, node_t
     If no translation found, keep original description.
     
     Also translates enum_labels if they contain i18n keys.
+    Also recursively translates object_schema if present.
     """
     result = field.copy()
     
@@ -174,6 +175,21 @@ def _translate_field(field_name: str, field: Dict[str, Any], locale: str, node_t
                 # Keep original label
                 translated_labels[enum_value] = label
         result["enum_labels"] = translated_labels
+    
+    # Recursively translate object_schema (for condition_list, key_value_editor, etc.)
+    if "object_schema" in result and isinstance(result["object_schema"], dict):
+        translated_object_schema = {}
+        for sub_field_name, sub_field in result["object_schema"].items():
+            if isinstance(sub_field, dict):
+                # Translate nested field with parent context
+                # Use key like: fields.{NodeType}.{parent_field}.{sub_field}
+                nested_node_type = f"{node_type}.{field_name}" if node_type else field_name
+                translated_object_schema[sub_field_name] = _translate_field(
+                    sub_field_name, sub_field, locale, nested_node_type
+                )
+            else:
+                translated_object_schema[sub_field_name] = sub_field
+        result["object_schema"] = translated_object_schema
     
     return result
 

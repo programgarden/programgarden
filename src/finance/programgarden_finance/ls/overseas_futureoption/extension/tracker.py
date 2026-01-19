@@ -195,74 +195,67 @@ class FuturesAccountTracker:
                     f"OvrsDrvtNowPrc={getattr(first, 'OvrsDrvtNowPrc', 0)}"
                 )
             
-            # 에러 메시지가 없으면 성공으로 처리
-            if not resp.error_msg:
-                logger.info(f"[_fetch_positions] 응답 성공 (rsp_cd={resp.rsp_cd})")
-                now = datetime.now()
-                old_symbols = set(self._positions.keys())
-                self._positions.clear()
-                
-                # block2에 보유포지션 데이터가 있음
-                if hasattr(resp, 'block2') and resp.block2:
-                    for item in resp.block2:
-                        symbol = getattr(item, 'IsuCodeVal', '')
-                        is_long = getattr(item, 'BnsTpCode', '2') == '2'  # 2: 매수
-                        currency = getattr(item, 'CrcyCodeVal', 'USD')
-                        
-                        # SymbolSpecManager에서 거래소 코드 조회
-                        spec = self._spec_manager.get_spec(symbol)
-                        exchange_code = spec.exchange_code if spec else ""
-                        if not exchange_code:
-                            logger.warning(f"[_fetch_positions] {symbol}의 exchange_code를 찾을 수 없음")
-                        
-                        position = FuturesPositionItem(
-                            symbol=symbol,
-                            symbol_name=getattr(item, 'IsuNm', ''),
-                            exchange_code=exchange_code,
-                            is_long=is_long,
-                            quantity=int(getattr(item, 'BalQty', 0)),
-                            entry_price=Decimal(str(getattr(item, 'PchsPrc', 0))),
-                            current_price=Decimal(str(getattr(item, 'OvrsDrvtNowPrc', 0))),
-                            pnl_amount=Decimal(str(getattr(item, 'AbrdFutsEvalPnlAmt', 0))),
-                            opening_margin=Decimal(str(getattr(item, 'CsgnMgn', 0))),
-                            maintenance_margin=Decimal(str(getattr(item, 'MaintMgn', 0))),
-                            margin_call_rate=Decimal(str(getattr(item, 'MgnclRat', 0))),
-                            currency=currency,
-                            last_updated=now
-                        )
-                        
-                        # 현재가 저장
-                        self._current_prices[symbol] = position.current_price
-                        
-                        # 손익률 계산
-                        if position.entry_price > 0:
-                            position.pnl_rate = (
-                                (position.current_price - position.entry_price) / position.entry_price * 100
-                            )
-                            if not is_long:
-                                position.pnl_rate = -position.pnl_rate
-                        
-                        self._positions[symbol] = position
-                        logger.debug(f"[_fetch_positions] 포지션 추가: {symbol}@{exchange_code} ({'LONG' if is_long else 'SHORT'}) x{position.quantity}")
+            # block 데이터 처리 (block이 비어있으면 보유포지션 없음 = 정상 케이스)
+            now = datetime.now()
+            old_symbols = set(self._positions.keys())
+            self._positions.clear()
+            
+            # block2에 보유포지션 데이터가 있음
+            if hasattr(resp, 'block2') and resp.block2:
+                for item in resp.block2:
+                    symbol = getattr(item, 'IsuCodeVal', '')
+                    is_long = getattr(item, 'BnsTpCode', '2') == '2'  # 2: 매수
+                    currency = getattr(item, 'CrcyCodeVal', 'USD')
                     
-                    logger.info(f"[_fetch_positions] 총 {len(self._positions)}개 포지션 로드 완료")
-                else:
-                    logger.info("[_fetch_positions] 보유 포지션 없음")
+                    # SymbolSpecManager에서 거래소 코드 조회
+                    spec = self._spec_manager.get_spec(symbol)
+                    exchange_code = spec.exchange_code if spec else ""
+                    if not exchange_code:
+                        logger.warning(f"[_fetch_positions] {symbol}의 exchange_code를 찾을 수 없음")
+                    
+                    position = FuturesPositionItem(
+                        symbol=symbol,
+                        symbol_name=getattr(item, 'IsuNm', ''),
+                        exchange_code=exchange_code,
+                        is_long=is_long,
+                        quantity=int(getattr(item, 'BalQty', 0)),
+                        entry_price=Decimal(str(getattr(item, 'PchsPrc', 0))),
+                        current_price=Decimal(str(getattr(item, 'OvrsDrvtNowPrc', 0))),
+                        pnl_amount=Decimal(str(getattr(item, 'AbrdFutsEvalPnlAmt', 0))),
+                        opening_margin=Decimal(str(getattr(item, 'CsgnMgn', 0))),
+                        maintenance_margin=Decimal(str(getattr(item, 'MaintMgn', 0))),
+                        margin_call_rate=Decimal(str(getattr(item, 'MgnclRat', 0))),
+                        currency=currency,
+                        last_updated=now
+                    )
+                    
+                    # 현재가 저장
+                    self._current_prices[symbol] = position.current_price
+                    
+                    # 손익률 계산
+                    if position.entry_price > 0:
+                        position.pnl_rate = (
+                            (position.current_price - position.entry_price) / position.entry_price * 100
+                        )
+                        if not is_long:
+                            position.pnl_rate = -position.pnl_rate
+                    
+                    self._positions[symbol] = position
+                    logger.debug(f"[_fetch_positions] 포지션 추가: {symbol}@{exchange_code} ({'LONG' if is_long else 'SHORT'}) x{position.quantity}")
                 
-                # 구독 동기화
-                new_symbols = set(self._positions.keys())
-                if old_symbols != new_symbols and self._real_client:
-                    await self._sync_tick_subscriptions()
-                
-                self._notify_position_change()
-                
-                # 성공 시 에러 상태 클리어
-                self._last_errors.pop("positions", None)
+                logger.info(f"[_fetch_positions] 총 {len(self._positions)}개 포지션 로드 완료")
             else:
-                # HTTP 500 등 서버 에러 시 에러 저장
-                error_msg = f"[포지션 조회 실패] {resp.rsp_msg} (코드: {resp.rsp_cd})"
-                self._last_errors["positions"] = error_msg
-                logger.warning(f"[_fetch_positions] 응답 실패: {resp.error_msg} (rsp_cd={resp.rsp_cd})")
+                logger.info("[_fetch_positions] 보유 포지션 없음")
+            
+            # 구독 동기화
+            new_symbols = set(self._positions.keys())
+            if old_symbols != new_symbols and self._real_client:
+                await self._sync_tick_subscriptions()
+            
+            self._notify_position_change()
+            
+            # 성공 시 에러 상태 클리어
+            self._last_errors.pop("positions", None)
                 
         except Exception as e:
             error_msg = f"[포지션 조회 실패] {str(e)}"
@@ -292,53 +285,48 @@ class FuturesAccountTracker:
             block2_count = len(resp.block2) if hasattr(resp, 'block2') and resp.block2 else 0
             logger.debug(f"[_fetch_balance] block2 개수: {block2_count}")
             
-            # 에러 메시지가 없으면 성공으로 처리
-            if not resp.error_msg:
-                logger.info(f"[_fetch_balance] 응답 성공 (rsp_cd={resp.rsp_cd})")
-                now = datetime.now()
+            # block 데이터 처리 (block이 비어있으면 예수금 없음 = 정상 케이스)
+            now = datetime.now()
+            
+            # block2에 통화별 예수금 데이터가 있음 (첫번째 USD 기준)
+            if hasattr(resp, 'block2') and resp.block2:
+                # USD 데이터 찾기 (없으면 첫번째 사용)
+                item = None
+                for b in resp.block2:
+                    currency_code = getattr(b, 'CrcyObjCode', '')
+                    logger.debug(f"[_fetch_balance] 통화별 데이터: {currency_code}")
+                    if currency_code == 'USD':
+                        item = b
+                        break
+                if item is None and resp.block2:
+                    item = resp.block2[0]
                 
-                # block2에 통화별 예수금 데이터가 있음 (첫번째 USD 기준)
-                if hasattr(resp, 'block2') and resp.block2:
-                    # USD 데이터 찾기 (없으면 첫번째 사용)
-                    item = None
-                    for b in resp.block2:
-                        currency_code = getattr(b, 'CrcyObjCode', '')
-                        logger.debug(f"[_fetch_balance] 통화별 데이터: {currency_code}")
-                        if currency_code == 'USD':
-                            item = b
-                            break
-                    if item is None and resp.block2:
-                        item = resp.block2[0]
+                if item:
+                    self._balance = FuturesBalanceInfo(
+                        deposit=Decimal(str(getattr(item, 'OvrsFutsDps', 0))),
+                        total_margin=Decimal(str(getattr(item, 'AbrdFutsCsgnMgn', 0))),
+                        orderable_amount=Decimal(str(getattr(item, 'AbrdFutsOrdAbleAmt', 0))),
+                        withdrawable_amount=Decimal(str(getattr(item, 'AbrdFutsWthdwAbleAmt', 0))),
+                        pnl_amount=Decimal(str(getattr(item, 'AbrdFutsEvalPnlAmt', 0))),
+                        realized_pnl=Decimal(str(getattr(item, 'AbrdFutsLqdtPnlAmt', 0))),
+                        currency=getattr(item, 'CrcyObjCode', 'USD'),
+                        last_updated=now
+                    )
                     
-                    if item:
-                        self._balance = FuturesBalanceInfo(
-                            deposit=Decimal(str(getattr(item, 'OvrsFutsDps', 0))),
-                            total_margin=Decimal(str(getattr(item, 'AbrdFutsCsgnMgn', 0))),
-                            orderable_amount=Decimal(str(getattr(item, 'AbrdFutsOrdAbleAmt', 0))),
-                            withdrawable_amount=Decimal(str(getattr(item, 'AbrdFutsWthdwAbleAmt', 0))),
-                            pnl_amount=Decimal(str(getattr(item, 'AbrdFutsEvalPnlAmt', 0))),
-                            realized_pnl=Decimal(str(getattr(item, 'AbrdFutsLqdtPnlAmt', 0))),
-                            currency=getattr(item, 'CrcyObjCode', 'USD'),
-                            last_updated=now
-                        )
-                        
-                        logger.info(
-                            f"[_fetch_balance] 예수금=${self._balance.deposit:.2f}, "
-                            f"주문가능=${self._balance.orderable_amount:.2f}, "
-                            f"증거금=${self._balance.total_margin:.2f}"
-                        )
-                        
-                        self._notify_balance_change()
-                else:
-                    logger.info("[_fetch_balance] 예수금 데이터 없음")
-                
-                # 성공 시 에러 상태 클리어
-                self._last_errors.pop("balance", None)
+                    logger.info(
+                        f"[_fetch_balance] 예수금=${self._balance.deposit:.2f}, "
+                        f"주문가능=${self._balance.orderable_amount:.2f}, "
+                        f"증거금=${self._balance.total_margin:.2f}"
+                    )
+                    
+                    self._notify_balance_change()
             else:
-                # HTTP 500 등 서버 에러 시 에러 저장
-                error_msg = f"[예수금 조회 실패] {resp.rsp_msg} (코드: {resp.rsp_cd})"
-                self._last_errors["balance"] = error_msg
-                logger.warning(f"[_fetch_balance] 응답 실패: {resp.error_msg} (rsp_cd={resp.rsp_cd})")
+                logger.info("[_fetch_balance] 예수금 데이터 없음")
+                self._balance = None
+                self._notify_balance_change()
+            
+            # 성공 시 에러 상태 클리어
+            self._last_errors.pop("balance", None)
                 
         except Exception as e:
             error_msg = f"[예수금 조회 실패] {str(e)}"
@@ -378,56 +366,49 @@ class FuturesAccountTracker:
             block2_count = len(resp.block2) if hasattr(resp, 'block2') and resp.block2 else 0
             logger.debug(f"[_fetch_open_orders] block2 개수: {block2_count}")
             
-            # 에러 메시지가 없으면 성공으로 처리
-            if not resp.error_msg:
-                logger.info(f"[_fetch_open_orders] 응답 성공 (rsp_cd={resp.rsp_cd})")
-                now = datetime.now()
-                self._open_orders.clear()
-                
-                # block2에 미체결 데이터가 있음
-                if hasattr(resp, 'block2') and resp.block2:
-                    for item in resp.block2:
-                        symbol = getattr(item, 'IsuCodeVal', '')
-                        
-                        # SymbolSpecManager에서 거래소 코드 조회
-                        spec = self._spec_manager.get_spec(symbol)
-                        exchange_code = spec.exchange_code if spec else ""
-                        
-                        order = FuturesOpenOrder(
-                            order_no=str(getattr(item, 'OrdNo', '')),
-                            symbol=symbol,
-                            symbol_name=getattr(item, 'IsuNm', ''),
-                            exchange_code=exchange_code,
-                            is_long=getattr(item, 'BnsTpCode', '2') == '2',
-                            order_type=getattr(item, 'OrdPtnCode', ''),
-                            order_qty=getattr(item, 'OrdQty', 0),
-                            order_price=Decimal(str(getattr(item, 'OrdPrc', 0))),
-                            executed_qty=getattr(item, 'ExecQty', 0),
-                            remaining_qty=getattr(item, 'UnexecQty', 0),
-                            order_time=getattr(item, 'OrdTime', ''),
-                            order_status=getattr(item, 'OrdStatCode', ''),
-                            last_updated=now
-                        )
-                        self._open_orders[order.order_no] = order
-                        logger.debug(
-                            f"[_fetch_open_orders] 미체결 추가: #{order.order_no} "
-                            f"{order.symbol}@{exchange_code} {'매수' if order.is_long else '매도'} "
-                            f"{order.order_qty}계약 @{order.order_price}"
-                        )
+            # block 데이터 처리 (block이 비어있으면 미체결 없음 = 정상 케이스)
+            now = datetime.now()
+            self._open_orders.clear()
+            
+            # block2에 미체결 데이터가 있음
+            if hasattr(resp, 'block2') and resp.block2:
+                for item in resp.block2:
+                    symbol = getattr(item, 'IsuCodeVal', '')
                     
-                    logger.info(f"[_fetch_open_orders] 총 {len(self._open_orders)}개 미체결 로드 완료")
-                else:
-                    logger.info("[_fetch_open_orders] 미체결 주문 없음")
+                    # SymbolSpecManager에서 거래소 코드 조회
+                    spec = self._spec_manager.get_spec(symbol)
+                    exchange_code = spec.exchange_code if spec else ""
+                    
+                    order = FuturesOpenOrder(
+                        order_no=str(getattr(item, 'OrdNo', '')),
+                        symbol=symbol,
+                        symbol_name=getattr(item, 'IsuNm', ''),
+                        exchange_code=exchange_code,
+                        is_long=getattr(item, 'BnsTpCode', '2') == '2',
+                        order_type=getattr(item, 'OrdPtnCode', ''),
+                        order_qty=getattr(item, 'OrdQty', 0),
+                        order_price=Decimal(str(getattr(item, 'OrdPrc', 0))),
+                        executed_qty=getattr(item, 'ExecQty', 0),
+                        remaining_qty=getattr(item, 'UnexecQty', 0),
+                        order_time=getattr(item, 'OrdTime', ''),
+                        order_status=getattr(item, 'OrdStatCode', ''),
+                        last_updated=now
+                    )
+                    self._open_orders[order.order_no] = order
+                    logger.debug(
+                        f"[_fetch_open_orders] 미체결 추가: #{order.order_no} "
+                        f"{order.symbol}@{exchange_code} {'매수' if order.is_long else '매도'} "
+                        f"{order.order_qty}계약 @{order.order_price}"
+                    )
                 
-                self._notify_open_orders_change()
-                
-                # 성공 시 에러 상태 클리어
-                self._last_errors.pop("open_orders", None)
+                logger.info(f"[_fetch_open_orders] 총 {len(self._open_orders)}개 미체결 로드 완료")
             else:
-                # HTTP 500 등 서버 에러 시 에러 저장
-                error_msg = f"[미체결 조회 실패] {resp.rsp_msg} (코드: {resp.rsp_cd})"
-                self._last_errors["open_orders"] = error_msg
-                logger.warning(f"[_fetch_open_orders] 응답 실패: {resp.error_msg} (rsp_cd={resp.rsp_cd})")
+                logger.info("[_fetch_open_orders] 미체결 주문 없음")
+            
+            self._notify_open_orders_change()
+            
+            # 성공 시 에러 상태 클리어
+            self._last_errors.pop("open_orders", None)
                 
         except Exception as e:
             error_msg = f"[미체결 조회 실패] {str(e)}"

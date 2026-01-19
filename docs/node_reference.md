@@ -722,25 +722,80 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "all",
-    "conditions": ["rsi", "macd"]
-  }
+  "operator": "all",
+  "conditions": [
+    {
+      "is_condition_met": "{{ nodes.rsiCondition.result }}",
+      "passed_symbols": "{{ nodes.rsiCondition.passed_symbols }}"
+    },
+    {
+      "is_condition_met": "{{ nodes.macdCondition.result }}",
+      "passed_symbols": "{{ nodes.macdCondition.passed_symbols }}"
+    }
+  ]
 }
 ```
 
-| 연산자 | 설명 | threshold |
-|--------|------|-----------|
+| 필드 | 타입 | 필수 | 기본값 | 표시 조건 | 설명 |
+|------|------|:----:|--------|----------|------|
+| `operator` | enum | ✅ | `"all"` | 항상 | 논리 연산자 |
+| `threshold` | number | ❌ | - | `at_least`, `at_most`, `exactly`, `weighted` 선택 시 | 임계값 |
+| `conditions` | array | ✅ | `[]` | 항상 | 조건 목록 (객체 배열) |
+
+**conditions 배열 항목 구조:**
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `is_condition_met` | expression | ✅ | 조건 통과 여부 (`{{ nodes.xxx.result }}`) |
+| `passed_symbols` | expression | ✅ | 통과한 종목 목록 (`{{ nodes.xxx.passed_symbols }}`) |
+| `weight` | number | ❌ | 가중치 (기본: 1.0, `weighted` 연산자에서만 사용) |
+
+**연산자별 설명:**
+
+| 연산자 | 설명 | threshold 필요 |
+|--------|------|:--------------:|
 | `all` | 모든 조건 만족 (AND) | ❌ |
 | `any` | 하나 이상 만족 (OR) | ❌ |
 | `not` | 모든 조건 불만족 | ❌ |
 | `xor` | 정확히 하나만 만족 | ❌ |
-| `at_least` | N개 이상 만족 | ✅ |
-| `at_most` | N개 이하 만족 | ✅ |
-| `exactly` | 정확히 N개 만족 | ✅ |
-| `weighted` | 가중치 합이 threshold 이상 | ✅ |
+| `at_least` | N개 이상 만족 | ✅ (정수) |
+| `at_most` | N개 이하 만족 | ✅ (정수) |
+| `exactly` | 정확히 N개 만족 | ✅ (정수) |
+| `weighted` | 가중치 합이 threshold 이상 | ✅ (0~1 소수) |
 
-> 📖 상세 가이드: [Logic 가이드](logic_guide.md)
+**weighted 연산자 사용 시 conditions에 weight 포함:**
+
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "operator": "weighted",
+  "threshold": 0.6,
+  "conditions": [
+    {
+      "is_condition_met": "{{ nodes.rsiCondition.result }}",
+      "passed_symbols": "{{ nodes.rsiCondition.passed_symbols }}",
+      "weight": 0.4
+    },
+    {
+      "is_condition_met": "{{ nodes.macdCondition.result }}",
+      "passed_symbols": "{{ nodes.macdCondition.passed_symbols }}",
+      "weight": 0.35
+    },
+    {
+      "is_condition_met": "{{ nodes.bollingerCondition.result }}",
+      "passed_symbols": "{{ nodes.bollingerCondition.passed_symbols }}",
+      "weight": 0.25
+    }
+  ]
+}
+```
+
+- `weight` 값: 0~1 사이 소수 (0.4 = 40%)
+- 가중치 합계를 1.0으로 맞추면 threshold를 백분율로 해석 가능
+- `weight` 미지정 시 기본값 1.0
+
+> 📖 상세 가이드: [Logic 가이드](logic_guide.md#weighted-가중치-합산)
 
 ---
 

@@ -159,69 +159,65 @@ class StockAccountTracker:
             )
             resp = await tr.req_async()
             
-            # 00000: 정상, 00001: 조회완료 (둘 다 성공)
-            if resp.rsp_cd in ("00000", "00001"):
-                now = datetime.now()
-                
-                # 통화별 잔고 (OutBlock3)
-                self._balances.clear()
-                if hasattr(resp, 'block3') and resp.block3:
-                    for item in resp.block3:
-                        balance = StockBalanceInfo(
-                            currency_code=item.CrcyCode,
-                            deposit=Decimal(str(item.FcurrDps)),
-                            orderable_amount=Decimal(str(item.FcurrOrdAbleAmt)),
-                            eval_amount=Decimal(str(item.FcurrEvalAmt)),
-                            pnl_amount=Decimal(str(item.FcurrEvalPnlAmt)),
-                            pnl_rate=Decimal(str(item.PnlRat)),
-                            exchange_rate=Decimal(str(item.BaseXchrat)),
-                            deposit_krw=Decimal(str(item.DpsConvEvalAmt)),
-                            last_updated=now
-                        )
-                        self._balances[item.CrcyCode] = balance
-                
-                # 종목별 잔고 (OutBlock4)
-                old_symbols = set(self._positions.keys())
-                self._positions.clear()
-                
-                if hasattr(resp, 'block4') and resp.block4:
-                    for item in resp.block4:
-                        symbol = item.ShtnIsuNo  # 단축종목번호 (예: SOXL)
-                        position = StockPositionItem(
-                            symbol=symbol,
-                            symbol_name=item.JpnMktHanglIsuNm or symbol,
-                            currency_code=item.CrcyCode,
-                            quantity=item.AstkBalQty,
-                            sellable_quantity=item.AstkSellAbleQty,
-                            buy_price=Decimal(str(item.FcstckUprc)),
-                            current_price=Decimal(str(item.OvrsScrtsCurpri)),
-                            buy_amount=Decimal(str(item.FcurrBuyAmt)),
-                            eval_amount=Decimal(str(item.FcurrEvalAmt)),
-                            pnl_amount=Decimal(str(item.FcurrEvalPnlAmt)),
-                            pnl_rate=Decimal(str(item.PnlRat)),
-                            exchange_rate=Decimal(str(item.BaseXchrat)),
-                            market_code=item.FcurrMktCode,
-                            last_updated=now
-                        )
-                        self._positions[symbol] = position
-                        self._current_prices[symbol] = position.current_price
-                
-                # 구독 동기화 (종목 변경 시)
-                new_symbols = set(self._positions.keys())
-                if old_symbols != new_symbols and self._real_client:
-                    await self._sync_tick_subscriptions()
-                
-                # 콜백 호출
-                self._notify_position_change()
-                self._notify_balance_change()
-                
-                # 성공 시 에러 상태 클리어
-                self._last_errors.pop("positions", None)
+            # block 데이터 처리 (block이 비어있으면 보유종목 없음 = 정상 케이스)
+            now = datetime.now()
+            
+            # 통화별 잔고 (OutBlock3)
+            self._balances.clear()
+            if hasattr(resp, 'block3') and resp.block3:
+                for item in resp.block3:
+                    balance = StockBalanceInfo(
+                        currency_code=item.CrcyCode,
+                        deposit=Decimal(str(item.FcurrDps)),
+                        orderable_amount=Decimal(str(item.FcurrOrdAbleAmt)),
+                        eval_amount=Decimal(str(item.FcurrEvalAmt)),
+                        pnl_amount=Decimal(str(item.FcurrEvalPnlAmt)),
+                        pnl_rate=Decimal(str(item.PnlRat)),
+                        exchange_rate=Decimal(str(item.BaseXchrat)),
+                        deposit_krw=Decimal(str(item.DpsConvEvalAmt)),
+                        last_updated=now
+                    )
+                    self._balances[item.CrcyCode] = balance
+            
+            # 종목별 잔고 (OutBlock4)
+            old_symbols = set(self._positions.keys())
+            self._positions.clear()
+            
+            if hasattr(resp, 'block4') and resp.block4:
+                for item in resp.block4:
+                    symbol = item.ShtnIsuNo  # 단축종목번호 (예: SOXL)
+                    position = StockPositionItem(
+                        symbol=symbol,
+                        symbol_name=item.JpnMktHanglIsuNm or symbol,
+                        currency_code=item.CrcyCode,
+                        quantity=item.AstkBalQty,
+                        sellable_quantity=item.AstkSellAbleQty,
+                        buy_price=Decimal(str(item.FcstckUprc)),
+                        current_price=Decimal(str(item.OvrsScrtsCurpri)),
+                        buy_amount=Decimal(str(item.FcurrBuyAmt)),
+                        eval_amount=Decimal(str(item.FcurrEvalAmt)),
+                        pnl_amount=Decimal(str(item.FcurrEvalPnlAmt)),
+                        pnl_rate=Decimal(str(item.PnlRat)),
+                        exchange_rate=Decimal(str(item.BaseXchrat)),
+                        market_code=item.FcurrMktCode,
+                        last_updated=now
+                    )
+                    self._positions[symbol] = position
+                    self._current_prices[symbol] = position.current_price
             else:
-                # API 에러 응답
-                error_msg = f"[포지션 조회 실패] {getattr(resp, 'rsp_msg', 'Unknown error')} (코드: {resp.rsp_cd})"
-                self._last_errors["positions"] = error_msg
-                logger.warning(f"[_fetch_positions] 응답 실패: {error_msg}")
+                logger.info("[_fetch_positions] 보유종목 없음")
+            
+            # 구독 동기화 (종목 변경 시)
+            new_symbols = set(self._positions.keys())
+            if old_symbols != new_symbols and self._real_client:
+                await self._sync_tick_subscriptions()
+            
+            # 콜백 호출
+            self._notify_position_change()
+            self._notify_balance_change()
+            
+            # 성공 시 에러 상태 클리어
+            self._last_errors.pop("positions", None)
                 
         except Exception as e:
             error_msg = f"[포지션 조회 실패] {str(e)}"
@@ -252,38 +248,34 @@ class StockAccountTracker:
             )
             resp = await tr.req_async()
             
-            # 00000: 정상, 00001: 조회완료 (둘 다 성공)
-            if resp.rsp_cd in ("00000", "00001"):
-                now = datetime.now()
-                self._open_orders.clear()
-                
-                if hasattr(resp, 'block1') and resp.block1:
-                    for item in resp.block1:
-                        order = StockOpenOrder(
-                            order_no=getattr(item, 'OrdNo', ''),
-                            symbol=getattr(item, 'IsuNo', ''),
-                            symbol_name=getattr(item, 'IsuNm', ''),
-                            order_type=getattr(item, 'OrdPtnCode', ''),
-                            order_qty=getattr(item, 'OrdQty', 0),
-                            order_price=Decimal(str(getattr(item, 'OrdPrc', 0))),
-                            executed_qty=getattr(item, 'ExecQty', 0),
-                            remaining_qty=getattr(item, 'UnexecQty', 0),
-                            order_time=getattr(item, 'OrdTime', ''),
-                            order_status=getattr(item, 'OrdStatCode', ''),
-                            currency_code=getattr(item, 'CrcyCode', 'USD'),
-                            last_updated=now
-                        )
-                        self._open_orders[order.order_no] = order
-                
-                self._notify_open_orders_change()
-                
-                # 성공 시 에러 상태 클리어
-                self._last_errors.pop("open_orders", None)
+            # block 데이터 처리 (block이 비어있으면 미체결 없음 = 정상 케이스)
+            now = datetime.now()
+            self._open_orders.clear()
+            
+            if hasattr(resp, 'block1') and resp.block1:
+                for item in resp.block1:
+                    order = StockOpenOrder(
+                        order_no=getattr(item, 'OrdNo', ''),
+                        symbol=getattr(item, 'IsuNo', ''),
+                        symbol_name=getattr(item, 'IsuNm', ''),
+                        order_type=getattr(item, 'OrdPtnCode', ''),
+                        order_qty=getattr(item, 'OrdQty', 0),
+                        order_price=Decimal(str(getattr(item, 'OrdPrc', 0))),
+                        executed_qty=getattr(item, 'ExecQty', 0),
+                        remaining_qty=getattr(item, 'UnexecQty', 0),
+                        order_time=getattr(item, 'OrdTime', ''),
+                        order_status=getattr(item, 'OrdStatCode', ''),
+                        currency_code=getattr(item, 'CrcyCode', 'USD'),
+                        last_updated=now
+                    )
+                    self._open_orders[order.order_no] = order
             else:
-                # API 에러 응답
-                error_msg = f"[미체결 조회 실패] {getattr(resp, 'rsp_msg', 'Unknown error')} (코드: {resp.rsp_cd})"
-                self._last_errors["open_orders"] = error_msg
-                logger.warning(f"[_fetch_open_orders] 응답 실패: {error_msg}")
+                logger.info("[_fetch_open_orders] 미체결 주문 없음")
+            
+            self._notify_open_orders_change()
+            
+            # 성공 시 에러 상태 클리어
+            self._last_errors.pop("open_orders", None)
                 
         except Exception as e:
             error_msg = f"[미체결 조회 실패] {str(e)}"
