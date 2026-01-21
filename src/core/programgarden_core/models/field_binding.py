@@ -146,6 +146,10 @@ class FieldSchema(BaseModel):
 
     name: str = Field(..., description="필드 이름")
     type: FieldType = Field(..., description="필드 데이터 타입")
+    display_name: Optional[str] = Field(
+        default=None, 
+        description="필드 라벨 (UI 표시용). i18n 키 또는 직접 값. 없으면 필드명을 Title Case로 변환"
+    )
     description: Optional[str] = Field(default=None, description="필드 설명")
     category: FieldCategory = Field(
         default=FieldCategory.PARAMETERS,

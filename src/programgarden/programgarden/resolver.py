@@ -227,7 +227,7 @@ class WorkflowResolver:
         nodes_by_id: Dict[str, Dict],
     ) -> bool:
         """
-        Check if node has BrokerNode as an ancestor (BFS traversal).
+        Check if node has BrokerNode as an ancestor (backward traversal).
         """
         from collections import deque
         
@@ -403,37 +403,53 @@ class WorkflowResolver:
         edges: List[ResolvedEdge],
     ) -> List[str]:
         """
-        Topological sort (Kahn's algorithm)
+        Topological sort (DFS-based)
 
-        Sorts DAG nodes by dependency order
+        Sorts DAG nodes by dependency order using depth-first search.
+        Executes one path completely before moving to the next path.
+        
+        Algorithm: DFS pre-order traversal that respects dependency constraints.
+        When visiting a node, first ensure all its dependencies are visited.
         """
-        # Calculate in-degree
-        in_degree: Dict[str, int] = {node_id: 0 for node_id in nodes}
+        # Build adjacency list and reverse adjacency (dependencies)
         adjacency: Dict[str, List[str]] = {node_id: [] for node_id in nodes}
+        dependencies: Dict[str, List[str]] = {node_id: [] for node_id in nodes}
+        in_degree: Dict[str, int] = {node_id: 0 for node_id in nodes}
 
         for edge in edges:
-            if edge.to_node_id in in_degree:
-                in_degree[edge.to_node_id] += 1
             if edge.from_node_id in adjacency:
                 adjacency[edge.from_node_id].append(edge.to_node_id)
+            if edge.to_node_id in dependencies:
+                dependencies[edge.to_node_id].append(edge.from_node_id)
+            if edge.to_node_id in in_degree:
+                in_degree[edge.to_node_id] += 1
 
-        # Start with nodes having in-degree 0
-        queue = [node_id for node_id, degree in in_degree.items() if degree == 0]
+        visited = set()
         result = []
 
-        while queue:
-            node_id = queue.pop(0)
-            result.append(node_id)
+        def visit(node_id: str) -> None:
+            """Visit a node, ensuring all dependencies are visited first."""
+            if node_id in visited:
+                return
+            # First, visit all dependencies (pre-requisites)
+            for dep in dependencies.get(node_id, []):
+                visit(dep)
+            # Mark as visited and add to result
+            if node_id not in visited:
+                visited.add(node_id)
+                result.append(node_id)
+            # Then visit children in order (DFS into each path)
+            for child in adjacency.get(node_id, []):
+                visit(child)
 
-            for neighbor in adjacency.get(node_id, []):
-                in_degree[neighbor] -= 1
-                if in_degree[neighbor] == 0:
-                    queue.append(neighbor)
+        # Start from nodes with in-degree 0 (root nodes)
+        start_nodes = [n for n, d in in_degree.items() if d == 0]
+        for node_id in start_nodes:
+            visit(node_id)
 
-        # Check for circular references
-        if len(result) != len(nodes):
-            # If circular reference exists, add remaining nodes (warning)
-            remaining = [n for n in nodes if n not in result]
-            result.extend(remaining)
+        # Check for circular references: add unvisited nodes
+        for node_id in nodes:
+            if node_id not in visited:
+                visit(node_id)
 
         return result

@@ -3460,63 +3460,6 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         }
 
 
-class CustomPnLNodeExecutor(NodeExecutorBase):
-    """CustomPnLNode executor - 커스텀 수익률 계산 (고급 사용자용)"""
-
-    async def execute(
-        self,
-        node_id: str,
-        node_type: str,
-        config: Dict[str, Any],
-        context: ExecutionContext,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        # 입력 데이터 가져오기
-        positions = context.get_output("account", "positions") or {}
-        current_prices = context.get_output("realMarket", "price") or {}
-        
-        # 커스텀 설정
-        custom_commission = config.get("commission_rate", 0.0025)  # 기본 0.25%
-        include_commission = config.get("include_commission", True)
-        
-        position_pnl = {}
-        total_pnl_amount = 0.0
-        
-        for symbol, pos in positions.items():
-            current_price = current_prices.get(symbol, pos.get("current_price", 0))
-            avg_price = pos.get("avg_price", 0)
-            qty = pos.get("qty", 0)
-            
-            if avg_price > 0:
-                pnl_rate = ((current_price - avg_price) / avg_price) * 100
-                pnl_amount = (current_price - avg_price) * qty
-                
-                # 커스텀 수수료 적용
-                if include_commission:
-                    commission = (avg_price * qty + current_price * qty) * custom_commission
-                    pnl_amount -= commission
-            else:
-                pnl_rate = 0.0
-                pnl_amount = 0.0
-            
-            position_pnl[symbol] = {
-                "symbol": symbol,
-                "qty": qty,
-                "avg_price": avg_price,
-                "current_price": current_price,
-                "pnl_rate": round(pnl_rate, 2),
-                "pnl_amount": round(pnl_amount, 2),
-            }
-            total_pnl_amount += pnl_amount
-        
-        context.log("info", f"Custom PnL calculated: {len(position_pnl)} positions", node_id)
-        return {
-            "position_pnl": position_pnl,
-            "daily_pnl": round(total_pnl_amount, 2),
-            "summary": {"total_positions": len(position_pnl), "total_pnl": total_pnl_amount},
-        }
-
-
 class DisplayNodeExecutor(NodeExecutorBase):
     """
     DisplayNode executor - 명시적 chart_type 기반 시각화
@@ -6449,6 +6392,568 @@ class PortfolioNodeExecutor(NodeExecutorBase):
         }
 
 
+class PositionSizingNodeExecutor(NodeExecutorBase):
+    """
+    PositionSizingNode executor - 포지션 크기 계산
+    
+    지원하는 포지션 사이징 방법:
+    1. fixed_percent: 계좌의 일정 비율을 종목 수로 균등 분할
+    2. fixed_amount: 종목당 고정 금액 투자
+    3. kelly: 켈리 공식 기반 최적 투자 비율 (조정 가능)
+    4. atr_based: ATR 기반 리스크 관리형 사이징
+    
+    입력:
+    - symbols: 투자할 종목 리스트 [{symbol, exchange, price?, ...}, ...]
+    - balance: 예수금/매수가능금액 정보
+    - price_data: 시세 데이터 (kelly, atr_based 방식에서 필요)
+    
+    출력:
+    - quantity: 종목별 주문 수량 {symbol: qty, ...}
+    - symbols: 입력 종목 리스트 그대로 전달
+    - allocation: 종목별 배분 비율 {symbol: percent, ...}
+    - total_amount: 총 투자 예정 금액
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """포지션 사이징 실행"""
+        
+        # 바인딩 평가
+        evaluated = evaluate_all_bindings(config, context, node_id)
+        
+        # 필수 입력 추출
+        symbols_input = evaluated.get("symbols", [])
+        balance_data = evaluated.get("balance", {})
+        price_data = evaluated.get("price_data", {})
+        
+        # 설정 추출
+        method = evaluated.get("method", "fixed_percent")
+        max_percent = float(evaluated.get("max_percent", 10.0))
+        fixed_amount = evaluated.get("fixed_amount")
+        kelly_fraction = float(evaluated.get("kelly_fraction", 0.25))
+        atr_risk_percent = float(evaluated.get("atr_risk_percent", 1.0))
+        
+        # 종목 리스트 정규화
+        symbols = self._normalize_symbols(symbols_input)
+        
+        if not symbols:
+            context.log("warning", "No symbols provided for position sizing", node_id)
+            return self._empty_result()
+        
+        # 예수금 추출 (해외주식/해외선물 공통)
+        available_balance = self._extract_balance(balance_data)
+        
+        if available_balance <= 0:
+            context.log("warning", f"No available balance: {available_balance}", node_id)
+            return self._empty_result()
+        
+        context.log(
+            "info",
+            f"Position sizing: method={method}, symbols={len(symbols)}, balance={available_balance:,.0f}",
+            node_id
+        )
+        
+        # 방법별 수량 계산
+        if method == "fixed_percent":
+            result = self._calc_fixed_percent(
+                symbols, available_balance, max_percent, price_data, context, node_id
+            )
+        elif method == "fixed_amount":
+            result = self._calc_fixed_amount(
+                symbols, fixed_amount, price_data, context, node_id
+            )
+        elif method == "kelly":
+            result = self._calc_kelly(
+                symbols, available_balance, max_percent, kelly_fraction, 
+                price_data, context, node_id
+            )
+        elif method == "atr_based":
+            result = self._calc_atr_based(
+                symbols, available_balance, max_percent, atr_risk_percent,
+                price_data, context, node_id
+            )
+        else:
+            context.log("error", f"Unknown sizing method: {method}", node_id)
+            return self._empty_result()
+        
+        # 결과에 원본 symbols 추가
+        result["symbols"] = symbols_input
+        
+        return result
+
+    def _normalize_symbols(self, symbols_input: Any) -> List[Dict[str, Any]]:
+        """
+        종목 입력을 정규화
+        
+        지원 형식:
+        - List[str]: ["AAPL", "NVDA"]
+        - List[dict]: [{"symbol": "AAPL", "exchange": "NASDAQ"}, ...]
+        - Dict: {"AAPL": {...}, "NVDA": {...}}
+        """
+        if not symbols_input:
+            return []
+        
+        if isinstance(symbols_input, dict):
+            # {"AAPL": {...}, "NVDA": {...}} 형식
+            return [
+                {"symbol": k, **v} if isinstance(v, dict) else {"symbol": k}
+                for k, v in symbols_input.items()
+            ]
+        
+        if isinstance(symbols_input, list):
+            result = []
+            for item in symbols_input:
+                if isinstance(item, str):
+                    result.append({"symbol": item})
+                elif isinstance(item, dict):
+                    result.append(item)
+            return result
+        
+        return []
+
+    def _extract_balance(self, balance_data: Any) -> float:
+        """
+        예수금 데이터에서 매수가능금액 추출
+        
+        지원 형식:
+        - float/int: 직접 금액
+        - dict: {fcurr_ord_able_amt, balance, available, ...}
+        - list: [{fcurr_ord_able_amt, ...}, ...]
+        """
+        if isinstance(balance_data, (int, float)):
+            return float(balance_data)
+        
+        if isinstance(balance_data, dict):
+            # 해외주식 예수금 필드
+            for key in ["fcurr_ord_able_amt", "ord_able_amt", "available", "balance"]:
+                if key in balance_data:
+                    try:
+                        return float(balance_data[key])
+                    except (ValueError, TypeError):
+                        continue
+        
+        if isinstance(balance_data, list) and balance_data:
+            # 첫 번째 항목에서 추출
+            return self._extract_balance(balance_data[0])
+        
+        return 0.0
+
+    def _get_price(
+        self, 
+        symbol: str, 
+        symbol_data: Dict[str, Any],
+        price_data: Any,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Optional[float]:
+        """
+        종목의 현재가 추출
+        
+        우선순위:
+        1. symbol_data에 price 포함
+        2. price_data에서 조회
+        """
+        # 1. symbol_data에서 직접
+        for key in ["price", "current_price", "close", "last"]:
+            if key in symbol_data:
+                try:
+                    return float(symbol_data[key])
+                except (ValueError, TypeError):
+                    continue
+        
+        # 2. price_data에서 조회
+        if price_data:
+            if isinstance(price_data, dict):
+                # {symbol: price} 또는 {symbol: {price: ...}}
+                if symbol in price_data:
+                    val = price_data[symbol]
+                    if isinstance(val, (int, float)):
+                        return float(val)
+                    elif isinstance(val, dict):
+                        for key in ["price", "current_price", "close", "last"]:
+                            if key in val:
+                                try:
+                                    return float(val[key])
+                                except (ValueError, TypeError):
+                                    continue
+            elif isinstance(price_data, list):
+                # [{symbol: "AAPL", price: 150}, ...]
+                for item in price_data:
+                    if isinstance(item, dict) and item.get("symbol") == symbol:
+                        for key in ["price", "current_price", "close", "last"]:
+                            if key in item:
+                                try:
+                                    return float(item[key])
+                                except (ValueError, TypeError):
+                                    continue
+        
+        return None
+
+    def _calc_fixed_percent(
+        self,
+        symbols: List[Dict[str, Any]],
+        balance: float,
+        max_percent: float,
+        price_data: Any,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """
+        고정 비율 방식
+        
+        계좌의 max_percent%를 종목 수로 균등 분할
+        예: balance=10000, max_percent=10, symbols=2개
+            → 종목당 500 (10000 * 10% / 2)
+        """
+        num_symbols = len(symbols)
+        total_invest = balance * (max_percent / 100.0)
+        per_symbol_amount = total_invest / num_symbols
+        
+        quantity = {}
+        allocation = {}
+        total_amount = 0.0
+        
+        for sym_data in symbols:
+            symbol = sym_data.get("symbol", "")
+            if not symbol:
+                continue
+            
+            price = self._get_price(symbol, sym_data, price_data, context, node_id)
+            
+            if price and price > 0:
+                qty = int(per_symbol_amount / price)
+                if qty > 0:
+                    quantity[symbol] = qty
+                    allocation[symbol] = round(max_percent / num_symbols, 2)
+                    total_amount += qty * price
+            else:
+                context.log(
+                    "warning", 
+                    f"No price for {symbol}, skipping position sizing", 
+                    node_id
+                )
+        
+        context.log(
+            "info",
+            f"[fixed_percent] Allocated {len(quantity)} symbols, "
+            f"total_amount={total_amount:,.0f}, per_symbol={per_symbol_amount:,.0f}",
+            node_id
+        )
+        
+        return {
+            "quantity": quantity,
+            "allocation": allocation,
+            "total_amount": round(total_amount, 2),
+            "method": "fixed_percent",
+            "config": {
+                "max_percent": max_percent,
+                "per_symbol_amount": round(per_symbol_amount, 2),
+            }
+        }
+
+    def _calc_fixed_amount(
+        self,
+        symbols: List[Dict[str, Any]],
+        fixed_amount: Optional[float],
+        price_data: Any,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """
+        고정 금액 방식
+        
+        각 종목에 fixed_amount 만큼 투자
+        예: fixed_amount=1000, AAPL 가격=150
+            → AAPL 수량 = 6주 (1000 / 150)
+        """
+        if not fixed_amount or fixed_amount <= 0:
+            context.log("error", "fixed_amount is required for fixed_amount method", node_id)
+            return self._empty_result()
+        
+        quantity = {}
+        allocation = {}
+        total_amount = 0.0
+        
+        for sym_data in symbols:
+            symbol = sym_data.get("symbol", "")
+            if not symbol:
+                continue
+            
+            price = self._get_price(symbol, sym_data, price_data, context, node_id)
+            
+            if price and price > 0:
+                qty = int(fixed_amount / price)
+                if qty > 0:
+                    quantity[symbol] = qty
+                    actual_invest = qty * price
+                    allocation[symbol] = round(actual_invest / fixed_amount * 100, 2)
+                    total_amount += actual_invest
+            else:
+                context.log(
+                    "warning",
+                    f"No price for {symbol}, skipping position sizing",
+                    node_id
+                )
+        
+        context.log(
+            "info",
+            f"[fixed_amount] Allocated {len(quantity)} symbols, "
+            f"total_amount={total_amount:,.0f}, per_symbol={fixed_amount:,.0f}",
+            node_id
+        )
+        
+        return {
+            "quantity": quantity,
+            "allocation": allocation,
+            "total_amount": round(total_amount, 2),
+            "method": "fixed_amount",
+            "config": {
+                "fixed_amount": fixed_amount,
+            }
+        }
+
+    def _calc_kelly(
+        self,
+        symbols: List[Dict[str, Any]],
+        balance: float,
+        max_percent: float,
+        kelly_fraction: float,
+        price_data: Any,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """
+        켈리 공식 방식
+        
+        켈리 비율: f* = (p * b - q) / b
+        - p: 승률, q: 패률 (1-p), b: 손익비
+        
+        symbol_data에 win_rate, profit_ratio 포함 필요
+        없으면 기본값 사용 (win_rate=0.5, profit_ratio=1.5)
+        
+        kelly_fraction으로 보수적 조정 (0.25 = 1/4 켈리)
+        max_percent로 상한선 제한
+        """
+        quantity = {}
+        allocation = {}
+        total_amount = 0.0
+        
+        for sym_data in symbols:
+            symbol = sym_data.get("symbol", "")
+            if not symbol:
+                continue
+            
+            # 승률/손익비 추출 (없으면 기본값)
+            win_rate = float(sym_data.get("win_rate", 0.5))
+            profit_ratio = float(sym_data.get("profit_ratio", 1.5))  # 이익/손실 비율
+            
+            # 켈리 비율 계산
+            # f* = (p * b - q) / b = (win_rate * profit_ratio - (1 - win_rate)) / profit_ratio
+            q = 1 - win_rate
+            kelly_full = (win_rate * profit_ratio - q) / profit_ratio if profit_ratio > 0 else 0
+            
+            # 음수면 베팅하지 않음
+            if kelly_full <= 0:
+                context.log(
+                    "info",
+                    f"[kelly] {symbol}: negative kelly ({kelly_full:.2%}), skip",
+                    node_id
+                )
+                continue
+            
+            # kelly_fraction 적용 및 max_percent 상한 제한
+            kelly_adjusted = kelly_full * kelly_fraction
+            final_percent = min(kelly_adjusted * 100, max_percent)
+            
+            invest_amount = balance * (final_percent / 100.0)
+            price = self._get_price(symbol, sym_data, price_data, context, node_id)
+            
+            if price and price > 0:
+                qty = int(invest_amount / price)
+                if qty > 0:
+                    quantity[symbol] = qty
+                    allocation[symbol] = round(final_percent, 2)
+                    total_amount += qty * price
+                    
+                    context.log(
+                        "debug",
+                        f"[kelly] {symbol}: win_rate={win_rate:.0%}, "
+                        f"profit_ratio={profit_ratio:.1f}, kelly_full={kelly_full:.2%}, "
+                        f"adjusted={final_percent:.2f}%, qty={qty}",
+                        node_id
+                    )
+            else:
+                context.log(
+                    "warning",
+                    f"No price for {symbol}, skipping position sizing",
+                    node_id
+                )
+        
+        context.log(
+            "info",
+            f"[kelly] Allocated {len(quantity)} symbols, "
+            f"total_amount={total_amount:,.0f}, kelly_fraction={kelly_fraction}",
+            node_id
+        )
+        
+        return {
+            "quantity": quantity,
+            "allocation": allocation,
+            "total_amount": round(total_amount, 2),
+            "method": "kelly",
+            "config": {
+                "kelly_fraction": kelly_fraction,
+                "max_percent": max_percent,
+            }
+        }
+
+    def _calc_atr_based(
+        self,
+        symbols: List[Dict[str, Any]],
+        balance: float,
+        max_percent: float,
+        atr_risk_percent: float,
+        price_data: Any,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """
+        ATR 기반 리스크 관리 방식
+        
+        수량 = (계좌 × 리스크%) / ATR
+        
+        예: balance=10000, atr_risk_percent=1%, ATR=5
+            → 수량 = (10000 × 0.01) / 5 = 20주
+            → ATR만큼 가격이 하락해도 계좌의 1%만 손실
+        
+        symbol_data 또는 price_data에 atr 포함 필요
+        없으면 가격의 2%를 ATR로 추정
+        
+        max_percent로 상한선 제한
+        """
+        quantity = {}
+        allocation = {}
+        total_amount = 0.0
+        
+        risk_amount = balance * (atr_risk_percent / 100.0)
+        
+        for sym_data in symbols:
+            symbol = sym_data.get("symbol", "")
+            if not symbol:
+                continue
+            
+            price = self._get_price(symbol, sym_data, price_data, context, node_id)
+            if not price or price <= 0:
+                context.log(
+                    "warning",
+                    f"No price for {symbol}, skipping position sizing",
+                    node_id
+                )
+                continue
+            
+            # ATR 추출 (없으면 가격의 2%로 추정)
+            atr = self._get_atr(symbol, sym_data, price_data)
+            if atr is None or atr <= 0:
+                atr = price * 0.02  # 기본값: 가격의 2%
+                context.log(
+                    "debug",
+                    f"[atr_based] {symbol}: No ATR, using estimated {atr:.2f} (2% of price)",
+                    node_id
+                )
+            
+            # ATR 기반 수량 계산
+            qty_by_atr = int(risk_amount / atr) if atr > 0 else 0
+            invest_by_atr = qty_by_atr * price
+            
+            # max_percent 상한 적용
+            max_invest = balance * (max_percent / 100.0)
+            if invest_by_atr > max_invest:
+                qty_by_atr = int(max_invest / price)
+                invest_by_atr = qty_by_atr * price
+            
+            if qty_by_atr > 0:
+                quantity[symbol] = qty_by_atr
+                allocation[symbol] = round(invest_by_atr / balance * 100, 2)
+                total_amount += invest_by_atr
+                
+                context.log(
+                    "debug",
+                    f"[atr_based] {symbol}: price={price:.2f}, atr={atr:.2f}, "
+                    f"risk_amount={risk_amount:.0f}, qty={qty_by_atr}, "
+                    f"invest={invest_by_atr:.0f}",
+                    node_id
+                )
+        
+        context.log(
+            "info",
+            f"[atr_based] Allocated {len(quantity)} symbols, "
+            f"total_amount={total_amount:,.0f}, risk_per_trade={risk_amount:,.0f}",
+            node_id
+        )
+        
+        return {
+            "quantity": quantity,
+            "allocation": allocation,
+            "total_amount": round(total_amount, 2),
+            "method": "atr_based",
+            "config": {
+                "atr_risk_percent": atr_risk_percent,
+                "max_percent": max_percent,
+                "risk_amount": round(risk_amount, 2),
+            }
+        }
+
+    def _get_atr(
+        self,
+        symbol: str,
+        symbol_data: Dict[str, Any],
+        price_data: Any,
+    ) -> Optional[float]:
+        """종목의 ATR 추출"""
+        # 1. symbol_data에서 직접
+        if "atr" in symbol_data:
+            try:
+                return float(symbol_data["atr"])
+            except (ValueError, TypeError):
+                pass
+        
+        # 2. price_data에서 조회
+        if price_data:
+            if isinstance(price_data, dict) and symbol in price_data:
+                val = price_data[symbol]
+                if isinstance(val, dict) and "atr" in val:
+                    try:
+                        return float(val["atr"])
+                    except (ValueError, TypeError):
+                        pass
+            elif isinstance(price_data, list):
+                for item in price_data:
+                    if isinstance(item, dict) and item.get("symbol") == symbol and "atr" in item:
+                        try:
+                            return float(item["atr"])
+                        except (ValueError, TypeError):
+                            pass
+        
+        return None
+
+    def _empty_result(self) -> Dict[str, Any]:
+        """빈 결과 반환"""
+        return {
+            "quantity": {},
+            "allocation": {},
+            "total_amount": 0.0,
+            "symbols": [],
+            "method": None,
+            "config": {},
+        }
+
+
 class BenchmarkCompareNodeExecutor(NodeExecutorBase):
     """
     BenchmarkCompareNode executor - 벤치마크 비교 분석
@@ -7898,7 +8403,6 @@ class WorkflowExecutor:
             "MarketDataNode": MarketDataNodeExecutor(),  # REST API 현재가 조회
             "RealMarketDataNode": RealMarketDataNodeExecutor(),
             "RealOrderEventNode": RealOrderEventNodeExecutor(),  # 실시간 주문 이벤트
-            "CustomPnLNode": CustomPnLNodeExecutor(),
             "DisplayNode": DisplayNodeExecutor(),
             "ConditionNode": ConditionNodeExecutor(),
             "LogicNode": LogicNodeExecutor(),  # 조건 조합
@@ -7908,6 +8412,8 @@ class WorkflowExecutor:
             "BenchmarkCompareNode": BenchmarkCompareNodeExecutor(),
             # Portfolio node
             "PortfolioNode": PortfolioNodeExecutor(),
+            # Position sizing node
+            "PositionSizingNode": PositionSizingNodeExecutor(),
             # Order nodes
             "NewOrderNode": NewOrderNodeExecutor(),
             "ModifyOrderNode": ModifyOrderNodeExecutor(),
@@ -8579,17 +9085,18 @@ class WorkflowJob:
         Find all downstream nodes from start_nodes in topological order.
         
         Returns nodes that need to be re-executed when realtime update occurs.
+        Uses DFS to follow one path completely before moving to the next.
         """
-        # BFS로 하위 노드 찾기
+        # DFS로 하위 노드 찾기
         downstream = set(start_nodes)
-        queue = list(start_nodes)
+        stack = list(start_nodes)
         
-        while queue:
-            current = queue.pop(0)
+        while stack:
+            current = stack.pop()  # DFS: LIFO
             for edge in self.workflow.edges:
                 if edge.from_node_id == current and edge.to_node_id not in downstream:
                     downstream.add(edge.to_node_id)
-                    queue.append(edge.to_node_id)
+                    stack.append(edge.to_node_id)
         
         # 토폴로지 순서대로 정렬 (workflow.execution_order 기준)
         ordered = [n for n in self.workflow.execution_order if n in downstream]

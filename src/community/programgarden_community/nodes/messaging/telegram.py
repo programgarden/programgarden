@@ -22,12 +22,12 @@ if TYPE_CHECKING:
     from programgarden_core.models.field_binding import FieldSchema
 
 from programgarden_core.nodes.base import (
-    BaseNotificationNode,
+    BaseMessagingNode,
     OutputPort,
 )
 
 
-class TelegramNode(BaseNotificationNode):
+class TelegramNode(BaseMessagingNode):
     """
     텔레그램 메시지 전송 노드
     

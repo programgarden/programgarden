@@ -62,14 +62,12 @@ class NodeTypeRegistry:
             RealMarketDataNode, RealAccountNode, RealOrderEventNode,
             MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
-            ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
+            ScheduleNode, TradingHoursFilterNode,
             ConditionNode, LogicNode,
-            PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
+            PositionSizingNode, PortfolioNode,
             NewOrderNode, ModifyOrderNode, CancelOrderNode,
             DisplayNode,
             BacktestEngineNode, BenchmarkCompareNode,
-            DeployNode, TradingHaltNode, JobControlNode,
-            CustomPnLNode,
         )
 
         node_classes = [
@@ -82,22 +80,18 @@ class NodeTypeRegistry:
             # Symbol
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
             # Trigger
-            ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode,
+            ScheduleNode, TradingHoursFilterNode,
             # Condition
             ConditionNode, LogicNode,
             # Risk
-            PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode,
+            PositionSizingNode, PortfolioNode,
             # Order
             NewOrderNode, ModifyOrderNode, CancelOrderNode,
-            # Event - 커뮤니티 노드(TelegramNode 등)로 대체됨
+            # messaging - 커뮤니티 노드(TelegramNode 등)에서 등록
             # Display
             DisplayNode,
             # Backtest/Analysis
             BacktestEngineNode, BenchmarkCompareNode,
-            # Job
-            DeployNode, TradingHaltNode, JobControlNode,
-            # Calculation
-            CustomPnLNode,
         ]
 
         for node_class in node_classes:
@@ -213,11 +207,10 @@ class NodeTypeRegistry:
                 "condition": "https://cdn-icons-png.flaticon.com/512/1828/1828643.png",
                 "risk": "https://cdn-icons-png.flaticon.com/512/2345/2345338.png",
                 "order": "https://cdn-icons-png.flaticon.com/512/3144/3144456.png",
-                "event": "https://cdn-icons-png.flaticon.com/512/3239/3239952.png",
+                "messaging": "https://cdn-icons-png.flaticon.com/512/3239/3239952.png",
                 "display": "https://cdn-icons-png.flaticon.com/512/2920/2920349.png",
                 "backtest": "https://cdn-icons-png.flaticon.com/512/2920/2920244.png",
                 "job": "https://cdn-icons-png.flaticon.com/512/1087/1087815.png",
-                "calculation": "https://cdn-icons-png.flaticon.com/512/897/897368.png",
             }
             cat_value = instance.category.value if hasattr(instance.category, 'value') else instance.category
             img_url = category_icons.get(cat_value, "https://cdn-icons-png.flaticon.com/512/2099/2099058.png")
@@ -282,6 +275,9 @@ class NodeTypeRegistry:
                     field_schema["default"] = fs.default
                 if fs.description:
                     field_schema["description"] = fs.description
+                # === display_name (UI 라벨) ===
+                if hasattr(fs, 'display_name') and fs.display_name:
+                    field_schema["display_name"] = fs.display_name
                 if fs.enum_values:
                     field_schema["enum_values"] = fs.enum_values
                 if fs.enum_labels:
@@ -321,6 +317,9 @@ class NodeTypeRegistry:
                 # === 부모-자식 관계 (계층적 UI 표시용) ===
                 if hasattr(fs, 'child_of') and fs.child_of:
                     field_schema["child_of"] = fs.child_of
+                # === placeholder 추가 ===
+                if hasattr(fs, 'placeholder') and fs.placeholder:
+                    field_schema["placeholder"] = fs.placeholder
             else:
                 # Pydantic 필드에서 추출
                 field_type = str(field_info.annotation) if field_info.annotation else "any"

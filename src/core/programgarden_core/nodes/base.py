@@ -45,8 +45,11 @@ class NodeCategory(str, Enum):
     # 분석: 백테스트, 차트, 성과 계산
     ANALYSIS = "analysis"
     
-    # 시스템: Job 제어, 알림, 서브플로우
+    # 시스템: Job 제어, 서브플로우
     SYSTEM = "system"
+    
+    # 메시징: 텔레그램, 슬랙, 디스코드 등 알림
+    MESSAGING = "messaging"
 
 
 class Position(BaseModel):
@@ -169,9 +172,9 @@ class PluginNode(BaseNode):
         return any(is_expression(v) for v in self.fields.values())
 
 
-class BaseNotificationNode(BaseNode):
+class BaseMessagingNode(BaseNode):
     """
-    알림/메시징 노드의 베이스 클래스 (커뮤니티 확장용)
+    메시징 노드의 베이스 클래스 (커뮤니티 확장용)
     
     TelegramNode, SlackNode, DiscordNode 등이 상속.
     각 노드는 execute() 메서드를 구현해야 함.
@@ -181,7 +184,7 @@ class BaseNotificationNode(BaseNode):
         credential 값을 노드 필드에 자동 주입합니다.
         
         Example:
-            class TelegramNode(BaseNotificationNode):
+            class TelegramNode(BaseMessagingNode):
                 bot_token: Optional[str] = None  # credential에서 자동 주입됨
                 chat_id: Optional[str] = None
                 
@@ -190,7 +193,7 @@ class BaseNotificationNode(BaseNode):
                     url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
     """
     
-    category: NodeCategory = NodeCategory.SYSTEM
+    category: NodeCategory = NodeCategory.MESSAGING
     
     # 메시지 템플릿
     template: Optional[str] = Field(

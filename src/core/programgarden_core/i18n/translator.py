@@ -146,8 +146,28 @@ def _translate_field(field_name: str, field: Dict[str, Any], locale: str, node_t
     
     Also translates enum_labels if they contain i18n keys.
     Also recursively translates object_schema if present.
+    Also generates display_name with Title Case fallback.
     """
     result = field.copy()
+    
+    # === display_name 번역 또는 생성 ===
+    if "display_name" in result and isinstance(result["display_name"], str):
+        dn = result["display_name"]
+        if dn.startswith("i18n:"):
+            result["display_name"] = t(dn[5:], locale)
+    else:
+        # Auto-generate: fieldNames.{NodeType}.{field_name} 또는 Title Case fallback
+        if node_type:
+            auto_key = f"fieldNames.{node_type}.{field_name}"
+            translated = t(auto_key, locale)
+            if translated != auto_key:
+                result["display_name"] = translated
+            else:
+                # Title Case fallback: product_type → "Product Type"
+                result["display_name"] = field_name.replace("_", " ").title()
+        else:
+            # No node_type context, use Title Case
+            result["display_name"] = field_name.replace("_", " ").title()
     
     # Translate description
     if "description" in result and isinstance(result["description"], str):

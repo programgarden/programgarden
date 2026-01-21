@@ -4,7 +4,6 @@ ProgramGarden Core - Trigger Nodes
 Trigger/filter nodes:
 - ScheduleNode: Cron schedule trigger
 - TradingHoursFilterNode: Trading hours filter
-- ExchangeStatusNode: Exchange status check
 """
 
 from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
@@ -227,79 +226,3 @@ class TradingHoursFilterNode(BaseNode):
         
         context.log("info", "Trading hours active, passing through", self.id)
         return {"passed": True}
-
-
-class ExchangeStatusNode(BaseNode):
-    """
-    Exchange status check node
-
-    Checks exchange open/close/holiday status
-    """
-
-    type: Literal["ExchangeStatusNode"] = "ExchangeStatusNode"
-    category: NodeCategory = NodeCategory.SCHEDULE
-    description: str = "i18n:nodes.ExchangeStatusNode.description"
-
-    # 브로커 연결 필드 (명시적 바인딩 필수)
-    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
-
-    # ExchangeStatusNode specific config
-    exchange: str = Field(
-        default="NYSE", description="Exchange code (NYSE, NASDAQ, CME, etc.)"
-    )
-    check_holidays: bool = Field(
-        default=True, description="Check holidays"
-    )
-
-    _inputs: List[InputPort] = [
-        InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
-        InputPort(
-            name="connection",
-            type="broker_connection",
-            description="i18n:ports.connection",
-            required=True,
-        ),
-    ]
-    _outputs: List[OutputPort] = [
-        OutputPort(name="open", type="signal", description="i18n:ports.open"),
-        OutputPort(name="closed", type="signal", description="i18n:ports.closed"),
-        OutputPort(name="holiday", type="signal", description="i18n:ports.holiday"),
-    ]
-
-    @classmethod
-    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
-        return {
-            # === PARAMETERS: 브로커 연결 (필수) ===
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="broker_connection",
-            ),
-            # === PARAMETERS: 핵심 거래소 설정 ===
-            "exchange": FieldSchema(
-                name="exchange",
-                type=FieldType.STRING,
-                description="Exchange code (NYSE, NASDAQ, CME, etc.)",
-                default="NYSE",
-                required=True,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-            ),
-            # === SETTINGS: 부가 설정 ===
-            "check_holidays": FieldSchema(
-                name="check_holidays",
-                type=FieldType.BOOLEAN,
-                description="Check holidays",
-                default=True,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.SETTINGS,
-            ),
-        }

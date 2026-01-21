@@ -3,7 +3,6 @@ ProgramGarden Core - Risk Nodes
 
 Risk management nodes:
 - PositionSizingNode: Position size calculation
-- RiskGuardNode: Daily loss limit, max position constraints
 """
 
 from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
@@ -30,6 +29,20 @@ class PositionSizingNode(BaseNode):
     type: Literal["PositionSizingNode"] = "PositionSizingNode"
     category: NodeCategory = NodeCategory.ORDER
     description: str = "i18n:nodes.PositionSizingNode.description"
+
+    # === 바인딩 필드 (다른 노드에서 값 수신) ===
+    symbols: Any = Field(
+        default=None,
+        description="투자할 종목 목록 (ConditionNode.passed_symbols 또는 WatchlistNode.symbols 바인딩)",
+    )
+    balance: Any = Field(
+        default=None,
+        description="예수금/매수가능금액 (AccountNode.balance 또는 RealAccountNode.balance 바인딩)",
+    )
+    price_data: Any = Field(
+        default=None,
+        description="종목별 현재가 데이터 (MarketDataNode.price 또는 RealMarketDataNode.price 바인딩)",
+    )
 
     # PositionSizingNode specific config
     method: Literal["fixed_percent", "fixed_amount", "kelly", "atr_based"] = Field(
@@ -88,6 +101,43 @@ class PositionSizingNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
+            # === INPUTS: 바인딩 또는 직접 입력 ===
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="i18n:fields.PositionSizingNode.symbols",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,  # 바인딩 또는 직접 입력
+                category=FieldCategory.PARAMETERS,
+                ui_component="symbol_editor",  # 종목 에디터 UI
+                example_binding="{{ nodes.conditionNode.passed_symbols }}",
+                bindable_sources=["ConditionNode.passed_symbols", "WatchlistNode.symbols"],
+                expected_type="symbol_list",
+            ),
+            "balance": FieldSchema(
+                name="balance",
+                type=FieldType.NUMBER,  # 숫자 입력
+                description="i18n:fields.PositionSizingNode.balance",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,  # 바인딩 또는 직접 숫자 입력
+                category=FieldCategory.PARAMETERS,
+                placeholder="10000000",
+                example_binding="{{ nodes.account.balance }}",
+                bindable_sources=["AccountNode.balance", "RealAccountNode.balance"],
+                expected_type="number",
+            ),
+            "price_data": FieldSchema(
+                name="price_data",
+                type=FieldType.OBJECT,
+                description="i18n:fields.PositionSizingNode.price_data",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,  # 바인딩 또는 직접 JSON 입력
+                category=FieldCategory.PARAMETERS,
+                example={"AAPL": 150.0, "NVDA": 450.0},  # 직접 입력 예시
+                example_binding="{{ nodes.marketData.price }}",
+                bindable_sources=["MarketDataNode.price", "RealMarketDataNode.price"],
+                expected_type="market_data",
+            ),
             # === PARAMETERS: 핵심 포지션 사이징 설정 ===
             "method": FieldSchema(
                 name="method",
@@ -152,214 +202,5 @@ class PositionSizingNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.SETTINGS,
                 visible_when={"method": "atr_based"},
-            ),
-        }
-
-
-class RiskGuardNode(BaseNode):
-    """
-    Risk guard node
-
-    Risk management for daily loss limit, max positions, consecutive losses
-    """
-
-    type: Literal["RiskGuardNode"] = "RiskGuardNode"
-    category: NodeCategory = NodeCategory.RISK
-    description: str = "i18n:nodes.RiskGuardNode.description"
-
-    # RiskGuardNode specific config
-    max_daily_loss: Optional[float] = Field(
-        default=None,
-        description="Max daily loss amount (negative, e.g., -500)",
-    )
-    max_daily_loss_percent: Optional[float] = Field(
-        default=None,
-        description="Max daily loss percentage (%, e.g., -5)",
-    )
-    max_positions: Optional[int] = Field(
-        default=None,
-        description="Max concurrent positions",
-    )
-    max_position_per_symbol: Optional[float] = Field(
-        default=None,
-        description="Max position percentage per symbol (%)",
-    )
-    max_consecutive_losses: Optional[int] = Field(
-        default=None,
-        description="Max consecutive losses (count)",
-    )
-    cooldown_after_loss_minutes: Optional[int] = Field(
-        default=None,
-        description="Cooldown period after loss (minutes)",
-    )
-
-    _inputs: List[InputPort] = [
-        InputPort(
-            name="symbols",
-            type="symbol_list",
-            description="i18n:ports.symbols",
-        ),
-        InputPort(
-            name="account_state",
-            type="account_data",
-            description="i18n:ports.account_state",
-        ),
-    ]
-    _outputs: List[OutputPort] = [
-        OutputPort(
-            name="approved_symbols",
-            type="symbol_list",
-            description="i18n:ports.approved_symbols",
-        ),
-        OutputPort(
-            name="blocked_symbols",
-            type="symbol_list",
-            description="i18n:ports.blocked_symbols",
-        ),
-        OutputPort(
-            name="blocked_reason",
-            type="string",
-            description="i18n:ports.blocked_reason",
-        ),
-    ]
-
-    @classmethod
-    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
-        return {
-            # === PARAMETERS: 핵심 리스크 한도 설정 ===
-            "max_daily_loss": FieldSchema(
-                name="max_daily_loss",
-                type=FieldType.NUMBER,
-                description="Max daily loss amount (e.g., -500)",
-                required=False,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.PARAMETERS,
-            ),
-            "max_daily_loss_percent": FieldSchema(
-                name="max_daily_loss_percent",
-                type=FieldType.NUMBER,
-                description="Max daily loss % (e.g., -5)",
-                required=False,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.PARAMETERS,
-            ),
-            "max_positions": FieldSchema(
-                name="max_positions",
-                type=FieldType.INTEGER,
-                description="Max concurrent positions",
-                required=False,
-                min_value=1,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.PARAMETERS,
-            ),
-            "max_position_per_symbol": FieldSchema(
-                name="max_position_per_symbol",
-                type=FieldType.NUMBER,
-                description="Max position % per symbol",
-                required=False,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.PARAMETERS,
-            ),
-            # === SETTINGS: 부가 설정 ===
-            "max_consecutive_losses": FieldSchema(
-                name="max_consecutive_losses",
-                type=FieldType.INTEGER,
-                description="Max consecutive losses",
-                required=False,
-                min_value=1,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.SETTINGS,
-            ),
-            "cooldown_after_loss_minutes": FieldSchema(
-                name="cooldown_after_loss_minutes",
-                type=FieldType.INTEGER,
-                description="Cooldown after loss (minutes)",
-                required=False,
-                min_value=1,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.SETTINGS,
-            ),
-        }
-
-
-class RiskConditionNode(BaseNode):
-    """
-    Risk condition evaluation node
-
-    Evaluates risk conditions based on realtime P&L, trade count, etc.
-    """
-
-    type: Literal["RiskConditionNode"] = "RiskConditionNode"
-    category: NodeCategory = NodeCategory.RISK
-    description: str = "i18n:nodes.RiskConditionNode.description"
-
-    # RiskConditionNode specific config
-    rule: Literal["daily_pnl", "position_pnl", "daily_trade_count", "consecutive_losses"] = Field(
-        default="daily_pnl",
-        description="Risk rule to evaluate",
-    )
-    threshold: float = Field(
-        default=-500.0,
-        description="Threshold value",
-    )
-    operator: Literal["<=", "<", ">=", ">", "==", "!="] = Field(
-        default="<=",
-        description="Comparison operator",
-    )
-
-    _inputs: List[InputPort] = [
-        InputPort(
-            name="value",
-            type="float",
-            description="Value to evaluate",
-        ),
-    ]
-    _outputs: List[OutputPort] = [
-        OutputPort(
-            name="result",
-            type="bool",
-            description="i18n:ports.result",
-        ),
-        OutputPort(
-            name="current_value",
-            type="float",
-            description="i18n:ports.current_value",
-        ),
-    ]
-
-    @classmethod
-    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
-        return {
-            # === PARAMETERS: 모두 핵심 조건 설정 ===
-            "rule": FieldSchema(
-                name="rule",
-                type=FieldType.ENUM,
-                description="Risk rule to evaluate",
-                default="daily_pnl",
-                enum_values=["daily_pnl", "position_pnl", "daily_trade_count", "consecutive_losses"],
-                required=True,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-            ),
-            "threshold": FieldSchema(
-                name="threshold",
-                type=FieldType.NUMBER,
-                description="Threshold value",
-                default=-500.0,
-                required=True,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.PARAMETERS,
-            ),
-            "operator": FieldSchema(
-                name="operator",
-                type=FieldType.ENUM,
-                description="Comparison operator",
-                default="<=",
-                enum_values=["<=", "<", ">=", ">", "==", "!="],
-                required=True,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
             ),
         }

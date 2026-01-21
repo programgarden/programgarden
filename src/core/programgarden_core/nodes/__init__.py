@@ -1,21 +1,19 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-38개 노드 타입을 15개 카테고리로 분류:
-- infra (2): StartNode, BrokerNode
+31개 노드 타입을 10개 카테고리로 분류:
+- infra (3): StartNode, BrokerNode, ThrottleNode
 - realtime (3): RealMarketDataNode, RealAccountNode, RealOrderEventNode
 - data (6): MarketDataNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode
 - account (1): AccountNode
 - symbol (5): WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode
-- trigger (3): ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode
+- trigger (2): ScheduleNode, TradingHoursFilterNode
 - condition (2): ConditionNode, LogicNode
-- risk (4): PositionSizingNode, RiskGuardNode, RiskConditionNode, PortfolioNode
+- risk (2): PositionSizingNode, PortfolioNode
 - order (3): NewOrderNode, ModifyOrderNode, CancelOrderNode
-- event (3): EventHandlerNode, ErrorHandlerNode, AlertNode
 - display (1): DisplayNode
-- backtest (1): BacktestEngineNode
-- job (3): DeployNode, TradingHaltNode, JobControlNode
-- calculation (1): PnLCalculatorNode
+- backtest (2): BacktestEngineNode, BenchmarkCompareNode
+- messaging: 커뮤니티 노드 (TelegramNode 등)
 """
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, Position
@@ -37,12 +35,11 @@ from programgarden_core.nodes.symbol import (
 from programgarden_core.nodes.trigger import (
     ScheduleNode,
     TradingHoursFilterNode,
-    ExchangeStatusNode,
 )
 from programgarden_core.nodes.condition import ConditionNode, LogicNode
-from programgarden_core.nodes.risk import PositionSizingNode, RiskGuardNode, RiskConditionNode
+from programgarden_core.nodes.risk import PositionSizingNode
 from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode
-# event 노드는 커뮤니티 노드(TelegramNode 등)로 대체됨
+# messaging 노드는 커뮤니티 패키지(TelegramNode 등)에서 제공
 from programgarden_core.nodes.display import DisplayNode
 from programgarden_core.nodes.backtest import (
     HistoricalDataNode,
@@ -50,8 +47,6 @@ from programgarden_core.nodes.backtest import (
     BenchmarkCompareNode,
 )
 from programgarden_core.nodes.portfolio import PortfolioNode
-from programgarden_core.nodes.job import DeployNode, TradingHaltNode, JobControlNode
-from programgarden_core.nodes.calculation import CustomPnLNode
 
 __all__ = [
     # Base
@@ -83,29 +78,20 @@ __all__ = [
     # Trigger
     "ScheduleNode",
     "TradingHoursFilterNode",
-    "ExchangeStatusNode",
     # Condition
     "ConditionNode",
     "LogicNode",
     # Risk
     "PositionSizingNode",
-    "RiskGuardNode",
-    "RiskConditionNode",
     "PortfolioNode",
     # Order
     "NewOrderNode",
     "ModifyOrderNode",
     "CancelOrderNode",
-    # Event - 커뮤니티 노드(TelegramNode 등)로 대체됨
+    # messaging - 커뮤니티 노드(TelegramNode 등)에서 제공
     # Display
     "DisplayNode",
     # Backtest/Analysis
     "BacktestEngineNode",
     "BenchmarkCompareNode",
-    # Job
-    "DeployNode",
-    "TradingHaltNode",
-    "JobControlNode",
-    # Calculation
-    "CustomPnLNode",
 ]

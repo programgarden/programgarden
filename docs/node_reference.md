@@ -635,28 +635,6 @@ REST API로 1회성 계좌 정보를 조회합니다. **BrokerNode의 connection
 
 ---
 
-### ExchangeStatusNode
-
-거래소 상태를 체크합니다. **BrokerNode의 connection 출력을 반드시 연결해야 합니다.**
-
-```json
-{
-  "id": "exchangeStatus",
-  "type": "ExchangeStatusNode",
-  "connection": "{{ nodes.broker.connection }}",
-  "exchange": "NYSE"
-}
-```
-
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|------|------|
-| `connection` | object | ✅ | BrokerNode의 connection 출력 바인딩 |
-| `exchange` | string | ✅ | 거래소 코드 (NYSE, NASDAQ 등) |
-
-**출력**: `status` - 거래소 상태 (open, closed, holiday)
-
----
-
 ## 7. condition - 조건 평가
 
 ### ConditionNode
@@ -1147,47 +1125,7 @@ BacktestEngineNode (SPY Buy&Hold) ──┘
 
 ---
 
-## 14. job - Job 제어
-
-### DeployNode
-
-워크플로우를 배포합니다.
-
-```json
-{
-  "id": "deploy",
-  "type": "DeployNode",
-  "config": {
-    "environment": "production"
-  }
-}
-```
-
----
-
-### JobControlNode
-
-실행 중인 Job을 제어합니다.
-
-```json
-{
-  "id": "control",
-  "type": "JobControlNode",
-  "config": {
-    "action": "pause"
-  }
-}
-```
-
-| 액션 | 설명 |
-|------|------|
-| `pause` | 일시 정지 |
-| `resume` | 재개 |
-| `stop` | 종료 |
-
----
-
-## 15. calculation - 계산
+## 14. calculation - 계산
 
 ### PnLCalculatorNode
 
@@ -1221,13 +1159,10 @@ BacktestEngineNode (SPY Buy&Hold) ──┘
 | `symbol` | 종목 소스 | WatchlistNode, ScreenerNode |
 | `trigger` | 스케줄/시간 | ScheduleNode, TradingHoursFilterNode |
 | `condition` | 조건 평가 | ConditionNode, LogicNode |
-| `risk` | 리스크 관리 | PositionSizingNode, RiskGuardNode, PortfolioNode |
+| `risk` | 리스크 관리 | PositionSizingNode, PortfolioNode |
 | `order` | 주문 실행 | NewOrderNode, ModifyOrderNode, CancelOrderNode |
-| `event` | 이벤트/알림 | EventHandlerNode, AlertNode |
 | `display` | 시각화 | DisplayNode |
-| `group` | 서브플로우 | GroupNode |
 | `backtest` | 백테스트 | BacktestEngineNode, BenchmarkCompareNode |
-| `job` | Job 제어 | DeployNode, JobControlNode |
 | `calculation` | 계산 | PnLCalculatorNode |
 
 ---

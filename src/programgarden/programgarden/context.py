@@ -219,7 +219,7 @@ class ExecutionContext:
         """
         Build reverse adjacency list from edges and node type mapping.
         
-        This enables efficient BFS traversal to find ancestor nodes.
+        This enables efficient backward traversal to find ancestor nodes.
         
         Args:
             edges: List of ResolvedEdge or dict with from/to keys
@@ -256,7 +256,7 @@ class ExecutionContext:
         target_node_type: str,
     ) -> List[Tuple[str, int, Dict[str, Any]]]:
         """
-        Find all ancestor nodes of a specific type using BFS.
+        Find all ancestor nodes of a specific type using backward traversal.
         
         Traverses the DAG backwards from current_node_id to find all
         nodes of target_node_type, returning them sorted by distance.

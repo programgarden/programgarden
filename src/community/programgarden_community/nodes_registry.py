@@ -54,9 +54,9 @@ def get_community_node_list() -> list:
     return [
         {
             "type": "TelegramNode",
-            "category": "event",
+            "category": "messaging",
             "description": "Send messages via Telegram Bot API",
             "requires_credential": True,
         },
-        # 향후 추가될 노드들...
+        # 향후 추가될 노드들: SlackNode, DiscordNode, etc.
     ]

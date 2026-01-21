@@ -27,7 +27,8 @@ if env_path.exists():
     logger.info(f"Loaded .env from {env_path}")
 
 # 암호화 유틸리티
-sys.path.insert(0, str(Path(__file__).parent / "workflow_editor"))
+workflow_editor_path = Path(__file__).parent.parent / "examples" / "workflow_editor"
+sys.path.insert(0, str(workflow_editor_path))
 from encryption import decrypt_data
 
 # 경로 설정
@@ -35,7 +36,7 @@ WORKFLOW_PATH = Path(__file__).parent / "workflows" / "condition" / "01-conditio
 
 def load_credentials():
     """credentials.json 로드 및 복호화"""
-    cred_path = Path(__file__).parent / "workflow_editor" / "credentials.json"
+    cred_path = workflow_editor_path / "credentials.json"
     
     with open(cred_path) as f:
         data = json.load(f)

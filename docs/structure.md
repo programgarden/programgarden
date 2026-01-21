@@ -201,10 +201,9 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 | `condition` | 매매 조건 판단, 논리 연산 | ConditionNode, LogicNode |
 | `order` | 신규/정정/취소 주문, 포지션 사이징 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode |
 | `risk` | 리스크 관리, 포트폴리오 배분 | RiskGuardNode, RiskConditionNode, PortfolioNode |
-| `schedule` | 시간 기반 트리거, 거래시간 필터 | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode |
+| `schedule` | 시간 기반 트리거, 거래시간 필터 | ScheduleNode, TradingHoursFilterNode |
 | `data` | 외부 DB 및 API 연동 | SQLiteNode, PostgresNode, HTTPRequestNode |
 | `analysis` | 백테스트, 차트, 성과 계산 | BacktestEngineNode, BenchmarkCompareNode, DisplayNode, CustomPnLNode |
-| `system` | Job 제어, 알림, 서브플로우 | DeployNode, TradingHaltNode, JobControlNode |
 
 ---
 
