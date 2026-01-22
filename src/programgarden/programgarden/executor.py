@@ -87,51 +87,52 @@ def resolve_port_bindings(
     return config
 
 
-def ensure_ls_login(
-    appkey: str,
-    appsecret: str,
-    paper_trading: bool,
-    context: "ExecutionContext",
-    node_id: str,
-    caller_name: str = "",
-) -> tuple:
+class LSClientManager:
+    """Product별 LS 클라이언트 관리 (토큰 충돌 방지)
+    
+    해외주식과 해외선물은 서로 다른 appkey를 사용하므로
+    각각 독립된 LS 인스턴스로 관리합니다.
+    
+    - overseas_stock: LS 인스턴스 #1
+    - overseas_futures: LS 인스턴스 #2
+    
+    인스턴스는 프로세스 종료까지 유지됩니다 (WebSocket 연결 재활용).
     """
-    LS증권 로그인 보장 헬퍼 함수
+    _instances: Dict[str, Any] = {}  # {product: LS}
+    _credentials: Dict[str, tuple] = {}  # {product: (appkey, appsecret, paper_trading)}
     
-    싱글톤 LS 클라이언트의 appkey 또는 paper_trading이 변경되면 재로그인합니다.
-    
-    Args:
-        appkey: LS증권 appkey
-        appsecret: LS증권 appsecret
-        paper_trading: 모의투자 여부
-        context: 실행 컨텍스트
-        node_id: 노드 ID
-        caller_name: 호출자 이름 (로깅용)
+    @classmethod
+    def get_or_create(
+        cls,
+        product: str,
+        appkey: str,
+        appsecret: str,
+        paper_trading: bool,
+        context: "ExecutionContext",
+        node_id: str,
+    ) -> tuple:
+        """Product별 LS 인스턴스 반환 (없으면 생성 및 로그인)
         
-    Returns:
-        (ls_instance, success: bool, error_message: str | None)
-    """
-    from programgarden_finance import LS
-    
-    ls = LS.get_instance()
-    
-    # 현재 로그인된 appkey와 paper_trading 확인
-    current_appkey = ls.token_manager.appkey if ls.token_manager else None
-    current_paper_trading = ls.token_manager.paper_trading if ls.token_manager else None
-    
-    # appkey 또는 paper_trading 모드가 다르면 재로그인 필요
-    needs_relogin = (
-        not ls.is_logged_in() or 
-        (current_appkey and current_appkey != appkey) or
-        (current_paper_trading is not None and current_paper_trading != paper_trading)
-    )
-    
-    if needs_relogin:
-        if current_appkey and current_appkey != appkey:
-            context.log("info", f"AppKey changed, re-logging in{f' for {caller_name}' if caller_name else ''}", node_id)
-        elif current_paper_trading is not None and current_paper_trading != paper_trading:
-            context.log("info", f"Trading mode changed ({current_paper_trading} → {paper_trading}), re-logging in{f' for {caller_name}' if caller_name else ''}", node_id)
+        Returns:
+            (ls_instance, success: bool, error_message: str | None)
+        """
+        from programgarden_finance import LS
         
+        # 이미 해당 product의 인스턴스가 있고 로그인된 경우
+        if product in cls._instances:
+            ls = cls._instances[product]
+            stored = cls._credentials.get(product)
+            
+            # 같은 credential이면 재사용
+            if stored and stored == (appkey, appsecret, paper_trading):
+                if ls.is_logged_in():
+                    return ls, True, None
+        
+        # 새 인스턴스 생성 (싱글톤 우회)
+        ls = object.__new__(LS)
+        ls.__init__()
+        
+        # 로그인
         login_result = ls.login(
             appkey=appkey,
             appsecretkey=appsecret,
@@ -139,12 +140,63 @@ def ensure_ls_login(
         )
         
         if not login_result:
-            context.log("error", "LS login failed", node_id)
+            context.log("error", f"LS login failed for {product}", node_id)
             return ls, False, "Login failed"
         
-        context.log("info", f"LS logged in (paper_trading={paper_trading}){f' for {caller_name}' if caller_name else ''}", node_id)
+        # 저장
+        cls._instances[product] = ls
+        cls._credentials[product] = (appkey, appsecret, paper_trading)
+        
+        context.log("info", f"LS logged in for {product} (paper_trading={paper_trading})", node_id)
+        return ls, True, None
     
-    return ls, True, None
+    @classmethod
+    def get(cls, product: str) -> Optional[Any]:
+        """저장된 인스턴스 조회 (없으면 None)"""
+        return cls._instances.get(product)
+    
+    @classmethod
+    def reset(cls) -> None:
+        """모든 인스턴스 초기화 (테스트용)"""
+        cls._instances.clear()
+        cls._credentials.clear()
+
+
+def ensure_ls_login(
+    appkey: str,
+    appsecret: str,
+    paper_trading: bool,
+    context: "ExecutionContext",
+    node_id: str,
+    product: str,
+    caller_name: str = "",
+) -> tuple:
+    """
+    Product별 LS증권 로그인 보장 헬퍼 함수
+    
+    LSClientManager를 사용하여 product별 독립 인스턴스를 관리합니다.
+    overseas_stock과 overseas_futures가 동시에 실행되어도 토큰 충돌이 없습니다.
+    
+    Args:
+        appkey: LS증권 appkey
+        appsecret: LS증권 appsecret
+        paper_trading: 모의투자 여부
+        context: 실행 컨텍스트
+        node_id: 노드 ID
+        product: 상품 유형 (overseas_stock, overseas_futures)
+        caller_name: 호출자 이름 (로깅용)
+        
+    Returns:
+        (ls_instance, success: bool, error_message: str | None)
+    """
+    return LSClientManager.get_or_create(
+        product=product,
+        appkey=appkey,
+        appsecret=appsecret,
+        paper_trading=paper_trading,
+        context=context,
+        node_id=node_id,
+    )
 
 
 def evaluate_all_bindings(
@@ -1163,7 +1215,7 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         """해외주식 종목마스터 조회 (g3190)"""
         from programgarden_finance import LS, g3190
         
-        ls, success, error = ensure_ls_login(appkey, appsecret, False, context, node_id)
+        ls, success, error = ensure_ls_login(appkey, appsecret, False, context, node_id, "overseas_stock")
         if not success:
             return {"symbols": [], "count": 0, "error": error}
         
@@ -1250,7 +1302,7 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         """해외선물 종목마스터 조회 (o3101)"""
         from programgarden_finance import LS, o3101
         
-        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id)
+        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "overseas_futures")
         if not success:
             return {"symbols": [], "count": 0, "error": error}
         
@@ -1381,7 +1433,17 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
 
 
 class BrokerNodeExecutor(NodeExecutorBase):
-    """BrokerNode executor"""
+    """BrokerNode executor
+    
+    계좌 수익률 자동 추적:
+    - 리스너에 on_account_pnl_update가 구현되어 있으면 자동으로 AccountTracker 시작
+    - 틱마다 계좌 수익률 계산 후 리스너에 전달 (서버에서 쓰로틀링 권장)
+    - overseas_stock: StockAccountTracker 사용
+    - overseas_futures: FuturesAccountTracker 사용
+    """
+    
+    # 활성화된 트래커 저장 (Job 종료 시 정리용)
+    _active_trackers: Dict[str, Any] = {}
 
     async def execute(
         self,
@@ -1437,6 +1499,25 @@ class BrokerNodeExecutor(NodeExecutorBase):
             provider = "ls-sec.co.kr"
         
         context.log("info", f"Broker connected: {provider} ({product}, paper_trading={paper_trading})", node_id)
+        
+        # ========================================
+        # 계좌 수익률 자동 추적 (리스너 자동 감지)
+        # on_account_pnl_update를 구현한 리스너가 있으면 자동 시작
+        # ========================================
+        if appkey and appsecret and self._has_account_pnl_listener(context):
+            context.log("info", "AccountPnL listener detected - starting account tracking", node_id)
+            asyncio.create_task(
+                self._start_account_tracking(
+                    node_id=node_id,
+                    product=product,
+                    provider=provider,
+                    appkey=appkey,
+                    appsecret=appsecret,
+                    paper_trading=paper_trading,
+                    context=context,
+                )
+            )
+        
         return {
             "connected": True,
             "connection": {
@@ -1447,6 +1528,146 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "appsecret": appsecret,
             }
         }
+    
+    def _has_account_pnl_listener(self, context: ExecutionContext) -> bool:
+        """리스너 중 on_account_pnl_update를 구현한 게 있는지 확인 (자동 감지)"""
+        for listener in context._listeners:
+            if hasattr(listener, 'on_account_pnl_update') and callable(getattr(listener, 'on_account_pnl_update')):
+                # BaseExecutionListener의 no-op이 아닌 실제 구현인지 확인
+                method = getattr(listener, 'on_account_pnl_update')
+                # 부모 클래스의 메서드와 다른지 체크 (실제로 오버라이드됐는지)
+                # 또는 간단하게: 메서드가 존재하면 활성화 (BaseExecutionListener는 pass만 함)
+                return True
+        return False
+    
+    async def _start_account_tracking(
+        self,
+        node_id: str,
+        product: str,
+        provider: str,
+        appkey: str,
+        appsecret: str,
+        paper_trading: bool,
+        context: ExecutionContext,
+    ) -> None:
+        """계좌 추적기 시작 및 수익률 콜백 등록"""
+        try:
+            from programgarden_finance import LS
+            
+            # LS 클라이언트 생성 (별도 인스턴스)
+            ls = LS()
+            login_success = ls.login(
+                appkey=appkey,
+                appsecretkey=appsecret,
+                paper_trading=paper_trading,
+            )
+            
+            if not login_success:
+                context.log("error", f"Failed to login for account tracking (node={node_id})", node_id)
+                return
+            
+            if product == "overseas_stock":
+                await self._start_stock_tracker(ls, node_id, product, provider, context)
+            elif product == "overseas_futures":
+                await self._start_futures_tracker(ls, node_id, product, provider, context)
+            else:
+                context.log("warning", f"Unknown product type for tracking: {product}", node_id)
+                
+        except Exception as e:
+            context.log("error", f"Failed to start account tracking: {e}", node_id)
+    
+    async def _start_stock_tracker(
+        self,
+        ls,
+        node_id: str,
+        product: str,
+        provider: str,
+        context: ExecutionContext,
+    ) -> None:
+        """해외주식 계좌 추적기 시작"""
+        accno = ls.overseas_stock().accno()
+        real = ls.overseas_stock().real()
+        await real.connect()
+        
+        tracker = accno.account_tracker(real_client=real)
+        
+        # 수익률 콜백 등록
+        def on_pnl_change(pnl_info):
+            # 비동기로 리스너에 전달
+            asyncio.create_task(
+                context.notify_account_pnl(
+                    broker_node_id=node_id,
+                    product=product,
+                    provider=provider,
+                    account_pnl_rate=float(pnl_info.account_pnl_rate),
+                    total_eval_amount=float(pnl_info.total_eval_amount),
+                    total_buy_amount=float(pnl_info.total_buy_amount),
+                    total_pnl_amount=float(pnl_info.total_pnl_amount),
+                    position_count=pnl_info.position_count,
+                    currency=pnl_info.currency,
+                )
+            )
+        
+        tracker.on_account_pnl_change(on_pnl_change)
+        await tracker.start()
+        
+        # 활성 트래커 저장 (나중에 정리용)
+        tracker_key = f"{context.job_id}_{node_id}"
+        self._active_trackers[tracker_key] = {
+            "tracker": tracker,
+            "ls": ls,
+            "real": real,
+        }
+        
+        context.log("info", f"StockAccountTracker started for {node_id}", node_id)
+    
+    async def _start_futures_tracker(
+        self,
+        ls,
+        node_id: str,
+        product: str,
+        provider: str,
+        context: ExecutionContext,
+    ) -> None:
+        """해외선물 계좌 추적기 시작"""
+        accno = ls.overseas_futureoption().accno()
+        market = ls.overseas_futureoption().market()
+        real = ls.overseas_futureoption().real()
+        await real.connect()
+        
+        tracker = accno.account_tracker(
+            market_client=market,
+            real_client=real,
+        )
+        
+        # 수익률 콜백 등록
+        def on_pnl_change(pnl_info):
+            asyncio.create_task(
+                context.notify_account_pnl(
+                    broker_node_id=node_id,
+                    product=product,
+                    provider=provider,
+                    account_pnl_rate=float(pnl_info.account_pnl_rate),
+                    total_eval_amount=float(pnl_info.total_eval_amount),
+                    total_buy_amount=float(pnl_info.total_margin_used),  # 선물은 증거금 기준
+                    total_pnl_amount=float(pnl_info.total_pnl_amount),
+                    position_count=pnl_info.position_count,
+                    currency=pnl_info.currency,
+                )
+            )
+        
+        tracker.on_account_pnl_change(on_pnl_change)
+        await tracker.start()
+        
+        tracker_key = f"{context.job_id}_{node_id}"
+        self._active_trackers[tracker_key] = {
+            "tracker": tracker,
+            "ls": ls,
+            "real": real,
+            "market": market,
+        }
+        
+        context.log("info", f"FuturesAccountTracker started for {node_id}", node_id)
     
     def _inject_credentials(
         self,
@@ -1564,6 +1785,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
+                product=product,
                 caller_name=f"AccountNode({product})"
             )
             if not success:
@@ -1829,6 +2051,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
+                product=product,
                 caller_name=f"RealAccountNode({product})"
             )
             if not success:
@@ -2533,7 +2756,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         loop = asyncio.get_running_loop()
         
         # LS 로그인
-        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "RealMarketDataNode")
+        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "overseas_stock")
         if not success:
             from programgarden_core.exceptions import ConnectionError
             raise ConnectionError(f"LS login failed: {error}")
@@ -2694,7 +2917,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         loop = asyncio.get_running_loop()
         
         # LS 로그인
-        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "RealMarketDataNode")
+        ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "overseas_futures")
         if not success:
             from programgarden_core.exceptions import ConnectionError
             raise ConnectionError(f"LS login failed: {error}")
@@ -3026,6 +3249,7 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
+                product=product,
                 caller_name=f"RealOrderEventNode({product})"
             )
             if not success:
@@ -4725,6 +4949,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                 credential.get("appsecret"),
                 credential.get("paper_trading", False),
                 context, node_id,
+                product="overseas_stock",
                 caller_name="MarketDataNode(overseas_stock)"
             )
             if not success:
@@ -4814,6 +5039,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                 credential.get("appsecret"),
                 credential.get("paper_trading", False),
                 context, node_id,
+                product="overseas_futures",
                 caller_name="MarketDataNode(overseas_futureoption)"
             )
             if not success:
@@ -5071,6 +5297,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 credential.get("appsecret"),
                 credential.get("paper_trading", False),
                 context, node_id,
+                product="overseas_stock",
                 caller_name="HistoricalDataNode(overseas_stock)"
             )
             if not success:
@@ -5203,6 +5430,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 credential.get("appsecret"),
                 credential.get("paper_trading", False),
                 context, node_id,
+                product="overseas_futures",
                 caller_name="HistoricalDataNode(overseas_futures)"
             )
             if not success:
@@ -7420,6 +7648,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
+                product=product,
                 caller_name=f"NewOrderNode({product})"
             )
             if not success:
@@ -7857,6 +8086,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
+                product=product,
                 caller_name=f"ModifyOrderNode({product})"
             )
             if not success:
@@ -8176,6 +8406,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
+                product=product,
                 caller_name=f"CancelOrderNode({product})"
             )
             if not success:

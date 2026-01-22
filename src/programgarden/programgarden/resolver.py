@@ -163,7 +163,38 @@ class WorkflowResolver:
         # 6. Required input port connection validation
         self._validate_required_connections(workflow, registry, result)
 
+        # 7. BrokerNode 중복 검증 (같은 product는 1개만 허용)
+        self._validate_broker_nodes(workflow, result)
+
         return result
+
+    def _validate_broker_nodes(
+        self,
+        workflow,
+        result: ValidationResult,
+    ) -> None:
+        """
+        같은 product의 BrokerNode가 중복되지 않는지 검증.
+        
+        - overseas_stock BrokerNode는 1개만 허용
+        - overseas_futures BrokerNode는 1개만 허용
+        - 다른 product끼리는 공존 가능 (overseas_stock + overseas_futures)
+        """
+        broker_products: Dict[str, str] = {}  # {product: node_id}
+        
+        for node in workflow.nodes:
+            if node.get("type") == "BrokerNode":
+                node_id = node.get("id")
+                product = node.get("product", "overseas_stock")
+                
+                if product in broker_products:
+                    result.add_error(
+                        f"Duplicate BrokerNode for product '{product}'. "
+                        f"Nodes '{broker_products[product]}' and '{node_id}' both use '{product}'. "
+                        f"Only one BrokerNode per product is allowed."
+                    )
+                else:
+                    broker_products[product] = node_id
 
     def _validate_required_connections(
         self,

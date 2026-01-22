@@ -772,3 +772,7 @@ pip-selfcheck.json
 .github/
 # Examples (local testing)
 src/programgarden/examples/
+
+# SQLite DB storage (runtime data)
+programgarden_data/
+**/programgarden_data/

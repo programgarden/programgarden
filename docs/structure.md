@@ -573,7 +573,51 @@ RSI_SCHEMA = PluginSchema(
 | `verified` | 60초 | 500MB | 500 |
 | `community` | 30초 | 100MB | 100 |
 
-### 8.5 자동 감지
+### 8.5 ExecutionListener 콜백 (6개)
+
+워크플로우 실행 중 이벤트를 수신하는 리스너입니다:
+
+| 콜백 | 설명 |
+|------|------|
+| `on_node_state_change` | 노드 상태 변경 (pending/running/completed/failed) |
+| `on_edge_state_change` | 엣지 상태 변경 |
+| `on_log` | 로그 이벤트 |
+| `on_job_state_change` | Job 상태 변경 |
+| `on_display_data` | 디스플레이 데이터 |
+| `on_account_pnl_update` | **계좌 실시간 수익률** (자동 감지) |
+
+**계좌 수익률 자동 추적**:
+- 리스너에 `on_account_pnl_update` 메서드 구현 시 **자동 감지**
+- BrokerNode 실행 시 AccountTracker 자동 시작
+- 틱마다 계좌 수익률 계산 후 리스너에 `AccountPnLEvent` 전달
+
+```python
+from programgarden_core.bases import BaseExecutionListener, AccountPnLEvent
+
+class MyListener(BaseExecutionListener):
+    async def on_account_pnl_update(self, event: AccountPnLEvent):
+        print(f"수익률: {event.account_pnl_rate}%")
+
+job = await pg.run_async(workflow, listeners=[MyListener()])
+```
+
+**AccountPnLEvent 필드**:
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `job_id` | str | Job ID |
+| `broker_node_id` | str | BrokerNode ID (다중 브로커 구분) |
+| `product` | str | overseas_stock / overseas_futures |
+| `provider` | str | ls-sec.co.kr |
+| `account_pnl_rate` | Decimal | 총 수익률 (%) |
+| `total_eval_amount` | Decimal | 총 평가금액 |
+| `total_buy_amount` | Decimal | 총 매입금액 |
+| `total_pnl_amount` | Decimal | 총 손익금액 |
+| `position_count` | int | 보유 포지션 수 |
+| `currency` | str | 통화 (USD) |
+| `timestamp` | datetime | 이벤트 시간 |
+
+### 8.6 자동 감지
 
 `resource_limits`를 생략하면 시스템 리소스를 자동 감지합니다:
 

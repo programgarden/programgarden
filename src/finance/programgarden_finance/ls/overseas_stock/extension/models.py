@@ -224,3 +224,15 @@ class StockOpenOrder(BaseModel):
     
     last_updated: Optional[datetime] = Field(default=None, description="마지막 업데이트 시간")
     """마지막 업데이트 시간"""
+
+
+class AccountPnLInfo(BaseModel):
+    """계좌 전체 수익률 정보"""
+    
+    account_pnl_rate: Decimal = Field(default=Decimal("0"), description="계좌 수익률 (%)")
+    total_eval_amount: Decimal = Field(default=Decimal("0"), description="총 평가금액")
+    total_buy_amount: Decimal = Field(default=Decimal("0"), description="총 매입금액")
+    total_pnl_amount: Decimal = Field(default=Decimal("0"), description="총 평가손익")
+    position_count: int = Field(default=0, description="보유종목 수")
+    currency: str = Field(default="USD", description="기준 통화")
+    last_updated: Optional[datetime] = Field(default=None, description="마지막 업데이트")

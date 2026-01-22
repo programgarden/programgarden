@@ -27,6 +27,7 @@ from programgarden_core.bases.listener import (
     LogEvent,
     JobStateEvent,
     DisplayDataEvent,
+    AccountPnLEvent,
 )
 
 logger = logging.getLogger("programgarden.context")
@@ -1230,6 +1231,60 @@ class ExecutionContext:
                     await listener.on_display_data(event)
             except Exception as e:
                 logger.warning(f"Listener error on_display_data: {e}")
+    
+    async def notify_account_pnl(
+        self,
+        broker_node_id: str,
+        product: str,
+        provider: str,
+        account_pnl_rate: float,
+        total_eval_amount: float,
+        total_buy_amount: float,
+        total_pnl_amount: float,
+        position_count: int,
+        currency: str = "USD",
+    ) -> None:
+        """Notify all listeners about account P&L update.
+        
+        BrokerNode에서 계좌 추적기(AccountTracker)가 수익률 변경 시 호출합니다.
+        서버에서 사용자 대회/랭킹 등에 활용할 수 있습니다.
+        
+        Args:
+            broker_node_id: BrokerNode ID
+            product: 상품 유형 (overseas_stock, overseas_futures)
+            provider: 증권사 (ls-sec.co.kr)
+            account_pnl_rate: 계좌 총 수익률 (%)
+            total_eval_amount: 총 평가금액
+            total_buy_amount: 총 매입금액/사용증거금
+            total_pnl_amount: 총 평가손익
+            position_count: 보유 포지션 수
+            currency: 통화 (기본 USD)
+        """
+        logger.debug(f"📡 notify_account_pnl: {broker_node_id} ({product}) pnl_rate={account_pnl_rate:.2f}%")
+        
+        if not self._listeners:
+            return
+        
+        event = AccountPnLEvent(
+            job_id=self.job_id,
+            broker_node_id=broker_node_id,
+            product=product,
+            provider=provider,
+            account_pnl_rate=account_pnl_rate,
+            total_eval_amount=total_eval_amount,
+            total_buy_amount=total_buy_amount,
+            total_pnl_amount=total_pnl_amount,
+            position_count=position_count,
+            currency=currency,
+        )
+        
+        for listener in self._listeners:
+            try:
+                # 리스너가 on_account_pnl_update를 구현했는지 확인 (자동 감지)
+                if hasattr(listener, 'on_account_pnl_update'):
+                    await listener.on_account_pnl_update(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_account_pnl_update: {e}")
 
     def _sanitize_outputs(self, outputs: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Remove sensitive information from outputs."""

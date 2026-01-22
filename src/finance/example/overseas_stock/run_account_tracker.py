@@ -87,6 +87,19 @@ def on_open_orders_change(orders):
         print(f"  #{order.order_no}: {order.symbol} {side} {order.order_qty}주 @ ${order.order_price}")
 
 
+def on_account_pnl_change(pnl_info):
+    """계좌 전체 수익률 변경 시 호출 (신규 추가)"""
+    pnl_rate = float(pnl_info.account_pnl_rate)
+    emoji = "📈" if pnl_rate >= 0 else "📉"
+    sign = "+" if pnl_rate >= 0 else ""
+    
+    print(f"\n{emoji} 계좌 수익률: {sign}{pnl_rate:.2f}% | "
+          f"평가액: ${float(pnl_info.total_eval_amount):,.2f} | "
+          f"매입액: ${float(pnl_info.total_buy_amount):,.2f} | "
+          f"손익: ${float(pnl_info.total_pnl_amount):,.2f} | "
+          f"종목수: {pnl_info.position_count}")
+
+
 # ===== 메인 함수 =====
 
 async def run_example():
@@ -129,6 +142,7 @@ async def run_example():
     tracker.on_position_change(on_position_change)
     tracker.on_balance_change(on_balance_change)
     tracker.on_open_orders_change(on_open_orders_change)
+    tracker.on_account_pnl_change(on_account_pnl_change)  # 계좌 수익률 콜백 추가
     
     # 추적 시작
     print("🚀 실시간 추적 시작...\n")

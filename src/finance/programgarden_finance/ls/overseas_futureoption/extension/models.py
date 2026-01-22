@@ -203,3 +203,28 @@ class FuturesOpenOrder(BaseModel):
     
     last_updated: Optional[datetime] = Field(default=None, description="마지막 업데이트 시간")
     """마지막 업데이트 시간"""
+
+
+class AccountPnLInfo(BaseModel):
+    """계좌 전체 수익률 정보 모델"""
+    
+    account_pnl_rate: Decimal = Field(default=Decimal("0"), description="계좌 총 수익률 (%)")
+    """계좌 총 수익률 (%)"""
+    
+    total_eval_amount: Decimal = Field(default=Decimal("0"), description="총 평가금액")
+    """총 평가금액"""
+    
+    total_margin_used: Decimal = Field(default=Decimal("0"), description="총 사용 증거금")
+    """총 사용 증거금"""
+    
+    total_pnl_amount: Decimal = Field(default=Decimal("0"), description="총 평가손익")
+    """총 평가손익"""
+    
+    position_count: int = Field(default=0, description="보유 포지션 수")
+    """보유 포지션 수"""
+    
+    currency: str = Field(default="USD", description="통화")
+    """통화"""
+    
+    last_updated: Optional[datetime] = Field(default=None, description="마지막 업데이트 시간")
+    """마지막 업데이트 시간"""

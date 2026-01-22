@@ -6,6 +6,7 @@
 - 실시간 틱 데이터로 손익 계산
 - 주문 체결 시 즉시 갱신
 - WebSocket 공유 및 중복 방지
+- 계좌 전체 수익률 계산 및 콜백 지원
 """
 
 import logging
@@ -19,6 +20,7 @@ from .models import (
     StockBalanceInfo,
     StockOpenOrder,
     CommissionConfig,
+    AccountPnLInfo,
 )
 from .calculator import StockPnLCalculator
 from .subscription_manager import SubscriptionManager
@@ -92,10 +94,14 @@ class StockAccountTracker:
         self._open_orders: Dict[str, StockOpenOrder] = {}
         self._current_prices: Dict[str, Decimal] = {}
         
+        # 계좌 수익률 캐시
+        self._account_pnl: Optional[AccountPnLInfo] = None
+        
         # 콜백
         self._on_position_change_callbacks: List[Callable] = []
         self._on_balance_change_callbacks: List[Callable] = []
         self._on_open_orders_change_callbacks: List[Callable] = []
+        self._on_account_pnl_change_callbacks: List[Callable] = []  # 계좌 수익률 콜백
         
         # Task 관리
         self._refresh_task: Optional[asyncio.Task] = None
@@ -185,6 +191,7 @@ class StockAccountTracker:
                 self._balances.clear()
                 self._notify_position_change()
                 self._notify_balance_change()
+                self._calculate_and_notify_account_pnl()  # 계좌 수익률 갱신
                 self._last_errors.pop("positions", None)
                 return
             
@@ -251,6 +258,7 @@ class StockAccountTracker:
             # 콜백 호출
             self._notify_position_change()
             self._notify_balance_change()
+            self._calculate_and_notify_account_pnl()  # 계좌 수익률 갱신
             
             # 성공 시 에러 상태 클리어
             self._last_errors.pop("positions", None)
@@ -438,6 +446,7 @@ class StockAccountTracker:
                 pos.eval_amount = price * pos.quantity
                 
                 self._notify_position_change()
+                self._calculate_and_notify_account_pnl()  # 틱마다 계좌 수익률 갱신
                 
         except Exception as e:
             print(f"[StockAccountTracker] 틱 처리 오류: {e}")
@@ -468,6 +477,34 @@ class StockAccountTracker:
             if self._is_running:
                 await self._fetch_all_data()
     
+    # ===== 계좌 수익률 계산 =====
+    def _calculate_account_pnl(self) -> AccountPnLInfo:
+        """전체 계좌 수익률 계산 (총 평가손익 / 총 매입금액)"""
+        total_buy = Decimal("0")
+        total_eval = Decimal("0")
+        
+        for pos in self._positions.values():
+            total_buy += pos.buy_amount
+            total_eval += pos.eval_amount
+        
+        total_pnl = total_eval - total_buy
+        pnl_rate = (total_pnl / total_buy * 100) if total_buy > 0 else Decimal("0")
+        
+        return AccountPnLInfo(
+            account_pnl_rate=pnl_rate,
+            total_eval_amount=total_eval,
+            total_buy_amount=total_buy,
+            total_pnl_amount=total_pnl,
+            position_count=len(self._positions),
+            currency="USD",  # 기본 통화
+            last_updated=datetime.now(),
+        )
+    
+    def _calculate_and_notify_account_pnl(self):
+        """계좌 수익률 계산 후 콜백 호출"""
+        self._account_pnl = self._calculate_account_pnl()
+        self._notify_account_pnl_change()
+    
     # ===== 콜백 등록 =====
     def on_position_change(self, callback: Callable[[Dict[str, StockPositionItem]], Any]):
         """보유종목 변경 콜백 등록"""
@@ -480,6 +517,19 @@ class StockAccountTracker:
     def on_open_orders_change(self, callback: Callable[[Dict[str, StockOpenOrder]], Any]):
         """미체결 주문 변경 콜백 등록"""
         self._on_open_orders_change_callbacks.append(callback)
+    
+    def on_account_pnl_change(self, callback: Callable[[AccountPnLInfo], Any]):
+        """계좌 수익률 변경 콜백 등록
+        
+        틱 수신마다 호출됩니다. 필요시 서버에서 쓰로틀링하세요.
+        
+        Args:
+            callback: AccountPnLInfo를 인자로 받는 콜백 함수
+        
+        Example:
+            tracker.on_account_pnl_change(lambda pnl: print(f"계좌 수익률: {pnl.account_pnl_rate:.2f}%"))
+        """
+        self._on_account_pnl_change_callbacks.append(callback)
     
     def _notify_position_change(self):
         """보유종목 변경 알림"""
@@ -514,6 +564,20 @@ class StockAccountTracker:
             except Exception:
                 pass
     
+    def _notify_account_pnl_change(self):
+        """계좌 수익률 변경 알림"""
+        if self._account_pnl is None:
+            return
+        
+        for callback in self._on_account_pnl_change_callbacks:
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    asyncio.create_task(callback(self._account_pnl))
+                else:
+                    callback(self._account_pnl)
+            except Exception:
+                pass
+    
     # ===== 데이터 조회 =====
     def get_positions(self) -> Dict[str, StockPositionItem]:
         """현재 보유종목 조회"""
@@ -534,6 +598,10 @@ class StockAccountTracker:
     def get_open_orders(self) -> Dict[str, StockOpenOrder]:
         """미체결 주문 조회"""
         return self._open_orders.copy()
+    
+    def get_account_pnl(self) -> Optional[AccountPnLInfo]:
+        """현재 계좌 수익률 조회"""
+        return self._account_pnl
     
     def get_last_errors(self) -> Dict[str, str]:
         """마지막 에러 상태 조회

@@ -33,7 +33,8 @@ async def run_example():
     
     login_result = ls.login(
         appkey=os.getenv("APPKEY_FUTURE_FAKE"),
-        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE")
+        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE"),
+        paper_trading=True,  # 모의투자
     )
     
     if login_result is False:
@@ -130,10 +131,23 @@ async def run_example():
             print(f"  체결수량: {order.executed_qty}계약")
             print(f"  미체결수량: {order.remaining_qty}계약")
     
+    def on_account_pnl_change(pnl_info):
+        """계좌 전체 수익률 변경 시 호출 (신규 추가)"""
+        pnl_rate = float(pnl_info.account_pnl_rate)
+        emoji = "📈" if pnl_rate >= 0 else "📉"
+        sign = "+" if pnl_rate >= 0 else ""
+        
+        print(f"\n{emoji} 계좌 수익률: {sign}{pnl_rate:.2f}% | "
+              f"평가액: ${float(pnl_info.total_eval_amount):,.2f} | "
+              f"증거금: ${float(pnl_info.total_margin_used):,.2f} | "
+              f"손익: ${float(pnl_info.total_pnl_amount):,.2f} | "
+              f"포지션수: {pnl_info.position_count}")
+    
     # 콜백 등록
     tracker.on_position_change(on_position_change)
     tracker.on_balance_change(on_balance_change)
     tracker.on_open_orders_change(on_open_orders_change)
+    tracker.on_account_pnl_change(on_account_pnl_change)  # 계좌 수익률 콜백 추가
     
     # 5. 추적 시작 (o3121로 종목 명세 로드됨)
     print("🚀 계좌 추적 시작...")
