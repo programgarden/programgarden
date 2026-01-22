@@ -129,38 +129,38 @@ class MarketDataNode(BaseNode):
         }
 
 
-class AggregationType(str):
-    """집계 함수 타입"""
-    MAX = "max"
-    MIN = "min"
-    SUM = "sum"
-    COUNT = "count"
-    LAST = "last"
-    FIRST = "first"
-    AVG = "avg"
-
-
 class SQLiteNode(BaseNode):
     """
-    로컬 SQLite 데이터베이스 노드
+    로컬 SQLite 데이터베이스 노드 (단순 DB)
 
-    로컬 파일 기반 SQLite DB에 데이터를 저장/조회합니다.
-    메모리 캐시 + 주기적 DB 동기화로 실시간 데이터 처리에 적합합니다.
+    워크스페이스의 programgarden_data/ 폴더에 SQLite DB를 생성하고,
+    두 가지 모드로 데이터를 조회/저장합니다.
+    
+    운영 모드:
+    - execute_query: 직접 SQL 쿼리 실행 (고급 사용자용)
+    - simple: GUI 기반 간단 조작 (select, insert, update, delete, upsert)
     
     주요 용도:
     - 트레일링스탑 High Water Mark (최고점) 추적
     - 전략 상태 저장/복구 (Graceful Restart)
     - 로컬 데이터 캐싱
     
-    Example config:
+    Example config (simple 모드 - select):
         {
-            "db_path": "./programgarden_storage.db",
-            "table": "trailing_stop_state",
-            "key_fields": ["symbol"],
-            "save_fields": ["symbol", "peak_price", "peak_pnl_rate", "updated_at"],
-            "aggregations": {"peak_price": "max", "peak_pnl_rate": "max"},
-            "sync_interval_ms": 1000,
-            "sync_on_change_count": 10
+            "db_name": "my_strategy.db",
+            "operation": "simple",
+            "table": "peak_tracker",
+            "action": "select",
+            "columns": ["symbol", "peak_price"],
+            "where_clause": "symbol = :symbol"
+        }
+    
+    Example config (execute_query 모드):
+        {
+            "db_name": "my_strategy.db",
+            "operation": "execute_query",
+            "query": "SELECT * FROM peak_tracker WHERE symbol = :symbol",
+            "parameters": {"symbol": "AAPL"}
         }
     """
 
@@ -169,142 +169,246 @@ class SQLiteNode(BaseNode):
     description: str = "i18n:nodes.SQLiteNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/sqlite.svg"
 
-    # SQLite 설정
-    db_path: str = Field(
-        default="./programgarden_storage.db",
-        description="SQLite DB 파일 경로",
+    # === 기본 설정 ===
+    db_name: str = Field(
+        default="default.db",
+        description="데이터베이스 파일명 (programgarden_data/ 폴더 내)",
     )
-    table: str = Field(..., description="테이블 이름")
-    key_fields: List[str] = Field(
-        ...,
-        description="Primary Key 필드 목록 (예: ['symbol'])",
+    
+    # 운영 모드
+    operation: Literal["execute_query", "simple"] = Field(
+        default="simple",
+        description="운영 모드: execute_query(직접 SQL) 또는 simple(GUI 기반)",
     )
-    save_fields: List[str] = Field(
-        ...,
-        description="저장할 필드 목록 (예: ['symbol', 'peak_price', 'updated_at'])",
-    )
-
-    # 집계 설정 (메모리 캐시에서 계산)
-    aggregations: Optional[dict] = Field(
+    
+    # === execute_query 모드 전용 ===
+    query: Optional[str] = Field(
         default=None,
-        description="필드별 집계 함수 (예: {'peak_price': 'max', 'peak_pnl_rate': 'max'})",
+        description="실행할 SQL 쿼리 (execute_query 모드)",
     )
-
-    # 동기화 설정
-    sync_interval_ms: int = Field(
-        default=1000,
-        description="DB 동기화 주기 (밀리초)",
+    parameters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="쿼리 파라미터 (SQL 인젝션 방지용 바인딩)",
     )
-    sync_on_change_count: int = Field(
-        default=10,
-        description="변경 횟수 기준 동기화 (N번 변경 시 즉시 저장)",
+    
+    # === simple 모드 전용 ===
+    table: Optional[str] = Field(
+        default=None,
+        description="테이블 이름 (simple 모드)",
+    )
+    action: Optional[Literal["select", "insert", "update", "delete", "upsert"]] = Field(
+        default="select",
+        description="수행할 액션 (simple 모드)",
+    )
+    columns: Optional[List[str]] = Field(
+        default=None,
+        description="조회/삽입할 컬럼 목록 (select, insert용)",
+    )
+    where_clause: Optional[str] = Field(
+        default=None,
+        description="WHERE 조건절 (select, update, delete용). 예: 'symbol = :symbol'",
+    )
+    values: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="삽입/수정할 값 (insert, update, upsert용)",
+    )
+    on_conflict: Optional[str] = Field(
+        default=None,
+        description="충돌 시 기준 컬럼 (upsert용). 예: 'symbol'",
     )
 
     _inputs: List[InputPort] = [
-        InputPort(
-            name="data",
-            type="any",
-            description="i18n:ports.data_to_save",
-        ),
         InputPort(
             name="trigger",
             type="signal",
             description="i18n:ports.trigger",
             required=False,
         ),
+        InputPort(
+            name="data",
+            type="any",
+            description="i18n:ports.sql_input_data",
+            required=False,
+        ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="saved",
-            type="any",
-            description="i18n:ports.saved_data",
+            name="rows",
+            type="array",
+            description="i18n:ports.storage_rows",
         ),
         OutputPort(
-            name="loaded",
-            type="any",
-            description="i18n:ports.loaded_data",
+            name="affected_count",
+            type="integer",
+            description="i18n:ports.storage_affected_count",
+        ),
+        OutputPort(
+            name="last_insert_id",
+            type="integer",
+            description="i18n:ports.sql_last_insert_id",
         ),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode, UIComponent
         return {
-            # === PARAMETERS: 핵심 스토리지 설정 ===
-            "db_path": FieldSchema(
-                name="db_path",
+            # === PARAMETERS: 기본 설정 ===
+            "db_name": FieldSchema(
+                name="db_name",
                 type=FieldType.STRING,
-                description="i18n:fields.SQLiteNode.db_path",
-                default="./programgarden_storage.db",
+                description="i18n:fields.SQLiteNode.db_name",
+                default="default.db",
+                required=True,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                example="./my_strategy_state.db",
+                ui_component=UIComponent.CREATABLE_SELECT,
+                ui_options={
+                    "source": "programgarden_data",
+                    "file_extension": ".db",
+                    "create_label": "i18n:ui.create_new_database",
+                    "deletable": True,
+                    "delete_confirm": "i18n:ui.confirm_delete_database",
+                },
+                example="my_strategy.db",
                 expected_type="str",
             ),
+            "operation": FieldSchema(
+                name="operation",
+                type=FieldType.ENUM,
+                description="i18n:fields.SQLiteNode.operation",
+                default="simple",
+                required=True,
+                enum_values=["execute_query", "simple"],
+                enum_labels={
+                    "execute_query": "i18n:enums.sqlite_operation.execute_query",
+                    "simple": "i18n:enums.sqlite_operation.simple",
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.SELECT,
+            ),
+            
+            # === execute_query 모드 전용 ===
+            "query": FieldSchema(
+                name="query",
+                type=FieldType.STRING,
+                description="i18n:fields.SQLiteNode.query",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.CODE_EDITOR,
+                ui_options={"language": "sql"},
+                visible_when={"operation": "execute_query"},
+                example="SELECT * FROM peak_tracker WHERE symbol = :symbol",
+                expected_type="str",
+            ),
+            "parameters": FieldSchema(
+                name="parameters",
+                type=FieldType.KEY_VALUE_PAIRS,
+                description="i18n:fields.SQLiteNode.parameters",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.KEY_VALUE_EDITOR,
+                visible_when={"operation": "execute_query"},
+                example={"symbol": "AAPL"},
+                expected_type="dict[str, any]",
+            ),
+            
+            # === simple 모드 전용 ===
             "table": FieldSchema(
                 name="table",
                 type=FieldType.STRING,
                 description="i18n:fields.SQLiteNode.table",
-                required=True,
-                category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                example="trailing_stop_state",
-                expected_type="str",
-            ),
-            "key_fields": FieldSchema(
-                name="key_fields",
-                type=FieldType.ARRAY,
-                description="i18n:fields.SQLiteNode.key_fields",
-                required=True,
-                array_item_type=FieldType.STRING,
-                category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                example=["symbol"],
-                expected_type="list[str]",
-            ),
-            "save_fields": FieldSchema(
-                name="save_fields",
-                type=FieldType.ARRAY,
-                description="i18n:fields.SQLiteNode.save_fields",
-                required=True,
-                array_item_type=FieldType.STRING,
-                category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                example=["symbol", "peak_price", "peak_pnl_rate", "updated_at"],
-                expected_type="list[str]",
-            ),
-            "aggregations": FieldSchema(
-                name="aggregations",
-                type=FieldType.OBJECT,
-                description="i18n:fields.SQLiteNode.aggregations",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                example={"peak_price": "max", "peak_pnl_rate": "max"},
-                expected_type="dict[str, str]",
+                ui_component=UIComponent.CREATABLE_SELECT,
+                ui_options={
+                    "source_api": "/api/sqlite/{db_name}/tables",
+                    "depends_on": "db_name",
+                    "create_label": "i18n:ui.create_new_table",
+                    "empty_message": "i18n:ui.no_tables_create_first",
+                },
+                visible_when={"operation": "simple"},
+                example="peak_tracker",
+                expected_type="str",
             ),
-            # === SETTINGS: 동기화 설정 ===
-            "sync_interval_ms": FieldSchema(
-                name="sync_interval_ms",
-                type=FieldType.INTEGER,
-                description="i18n:fields.SQLiteNode.sync_interval_ms",
-                default=1000,
-                min_value=100,
-                category=FieldCategory.SETTINGS,
+            "action": FieldSchema(
+                name="action",
+                type=FieldType.ENUM,
+                description="i18n:fields.SQLiteNode.action",
+                default="select",
+                required=False,
+                enum_values=["select", "insert", "update", "delete", "upsert"],
+                enum_labels={
+                    "select": "i18n:enums.sqlite_action.select",
+                    "insert": "i18n:enums.sqlite_action.insert",
+                    "update": "i18n:enums.sqlite_action.update",
+                    "delete": "i18n:enums.sqlite_action.delete",
+                    "upsert": "i18n:enums.sqlite_action.upsert",
+                },
+                category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                example=1000,
-                expected_type="int",
+                ui_component=UIComponent.SELECT,
+                visible_when={"operation": "simple"},
             ),
-            "sync_on_change_count": FieldSchema(
-                name="sync_on_change_count",
-                type=FieldType.INTEGER,
-                description="i18n:fields.SQLiteNode.sync_on_change_count",
-                default=10,
-                min_value=1,
-                category=FieldCategory.SETTINGS,
+            "columns": FieldSchema(
+                name="columns",
+                type=FieldType.ARRAY,
+                description="i18n:fields.SQLiteNode.columns",
+                required=False,
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                example=10,
-                expected_type="int",
+                ui_component=UIComponent.MULTI_SELECT,
+                ui_options={
+                    "source_api": "/api/sqlite/{db_name}/tables/{table}/columns",
+                    "depends_on": ["db_name", "table"],
+                    "empty_message": "i18n:ui.select_table_first",
+                },
+                visible_when={"operation": "simple", "action": ["select", "insert"]},
+                example=["symbol", "peak_price", "updated_at"],
+                expected_type="list[str]",
+                help_text="i18n:fields.SQLiteNode.columns_help",
+            ),
+            "where_clause": FieldSchema(
+                name="where_clause",
+                type=FieldType.STRING,
+                description="i18n:fields.SQLiteNode.where_clause_detailed",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.TEXT_INPUT,
+                visible_when={"operation": "simple", "action": ["select", "update", "delete"]},
+                example="symbol = :symbol",
+                expected_type="str",
+            ),
+            "values": FieldSchema(
+                name="values",
+                type=FieldType.KEY_VALUE_PAIRS,
+                description="i18n:fields.SQLiteNode.values",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.KEY_VALUE_EDITOR,
+                visible_when={"operation": "simple", "action": ["insert", "update", "upsert"]},
+                example={"symbol": "AAPL", "peak_price": 195.50},
+                expected_type="dict[str, any]",
+            ),
+            "on_conflict": FieldSchema(
+                name="on_conflict",
+                type=FieldType.STRING,
+                description="i18n:fields.SQLiteNode.on_conflict",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.TEXT_INPUT,
+                visible_when={"operation": "simple", "action": "upsert"},
+                example="symbol",
+                expected_type="str",
+                help_text="i18n:fields.SQLiteNode.on_conflict_help",
             ),
         }
 

@@ -290,7 +290,10 @@ class NodeTypeRegistry:
                     field_schema["category"] = fs.category.value if hasattr(fs.category, 'value') else str(fs.category)
                 # ui_component 추가 (symbol_editor 등)
                 if hasattr(fs, 'ui_component') and fs.ui_component:
-                    field_schema["ui_component"] = fs.ui_component
+                    field_schema["ui_component"] = fs.ui_component.value if hasattr(fs.ui_component, 'value') else str(fs.ui_component)
+                # ui_options 추가 (ui_component 세부 설정)
+                if hasattr(fs, 'ui_options') and fs.ui_options:
+                    field_schema["ui_options"] = fs.ui_options
                 # ui_hint 추가
                 if hasattr(fs, 'ui_hint') and fs.ui_hint:
                     field_schema["ui_hint"] = fs.ui_hint

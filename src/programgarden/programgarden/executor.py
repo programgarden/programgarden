@@ -8371,6 +8371,235 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         }
 
 
+class SQLiteNodeExecutor(NodeExecutorBase):
+    """
+    SQLiteNode executor
+    
+    로컬 SQLite 데이터베이스 조작:
+    - execute_query 모드: 직접 SQL 쿼리 실행
+    - simple 모드: GUI 기반 CRUD 조작 (select, insert, update, delete, upsert)
+    
+    DB 파일은 {workspace}/programgarden_data/ 폴더에 자동 생성됩니다.
+    """
+    
+    def __init__(self):
+        self._connections: Dict[str, Any] = {}  # db_path -> connection 캐시
+    
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        import aiosqlite
+        import os
+        from programgarden.database.query_builder import SQLQueryBuilder
+        
+        db_name = config.get("db_name", "default.db")
+        operation = config.get("operation", "simple")
+        
+        # programgarden_data/ 폴더 경로 구성
+        # context.workspace_path 또는 현재 작업 디렉토리 사용
+        workspace_path = getattr(context, 'workspace_path', None) or os.getcwd()
+        data_dir = os.path.join(workspace_path, "programgarden_data")
+        
+        # 폴더 생성 (없으면)
+        os.makedirs(data_dir, exist_ok=True)
+        
+        db_path = os.path.join(data_dir, db_name)
+        context.log("debug", f"SQLite DB path: {db_path}", node_id)
+        
+        try:
+            async with aiosqlite.connect(db_path) as db:
+                # Row를 dict로 변환하도록 설정
+                db.row_factory = aiosqlite.Row
+                
+                if operation == "execute_query":
+                    return await self._execute_query_mode(db, config, context, node_id)
+                else:
+                    return await self._execute_simple_mode(db, config, context, node_id)
+                    
+        except Exception as e:
+            context.log("error", f"SQLite execution error: {e}", node_id)
+            return {
+                "rows": [],
+                "affected_count": 0,
+                "last_insert_id": None,
+                "error": str(e),
+            }
+    
+    async def _execute_query_mode(
+        self,
+        db,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """execute_query 모드: 직접 SQL 쿼리 실행"""
+        query = config.get("query", "")
+        parameters = config.get("parameters") or {}
+        
+        if not query:
+            context.log("warning", "Empty query provided", node_id)
+            return {
+                "rows": [],
+                "affected_count": 0,
+                "last_insert_id": None,
+            }
+        
+        context.log("debug", f"Executing SQL: {query[:100]}...", node_id)
+        
+        # SELECT 쿼리인지 확인
+        is_select = query.strip().upper().startswith("SELECT")
+        
+        async with db.execute(query, parameters) as cursor:
+            if is_select:
+                rows = await cursor.fetchall()
+                # Row 객체를 dict로 변환
+                result_rows = [dict(row) for row in rows]
+                context.log("info", f"Query returned {len(result_rows)} rows", node_id)
+                return {
+                    "rows": result_rows,
+                    "affected_count": len(result_rows),
+                    "last_insert_id": None,
+                }
+            else:
+                await db.commit()
+                affected = cursor.rowcount
+                last_id = cursor.lastrowid
+                context.log("info", f"Query affected {affected} rows, last_insert_id={last_id}", node_id)
+                return {
+                    "rows": [],
+                    "affected_count": affected,
+                    "last_insert_id": last_id,
+                }
+    
+    async def _execute_simple_mode(
+        self,
+        db,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """simple 모드: GUI 기반 CRUD 조작"""
+        from programgarden.database.query_builder import SQLQueryBuilder
+        
+        table = config.get("table", "")
+        action = config.get("action", "select")
+        columns = config.get("columns") or []
+        where_clause = config.get("where_clause", "")
+        values = config.get("values") or {}
+        on_conflict = config.get("on_conflict", "")
+        
+        # 입력 데이터 포트에서 values 대체 가능
+        input_data = config.get("data")
+        if input_data and isinstance(input_data, dict):
+            values = {**values, **input_data}
+        
+        if not table:
+            context.log("warning", "Table name is required for simple mode", node_id)
+            return {
+                "rows": [],
+                "affected_count": 0,
+                "last_insert_id": None,
+            }
+        
+        try:
+            if action == "select":
+                query = SQLQueryBuilder.build_select(table, columns or None, where_clause or None)
+                params = SQLQueryBuilder.extract_params_from_where(where_clause, values)
+                
+                async with db.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+                    result_rows = [dict(row) for row in rows]
+                    context.log("info", f"SELECT {table}: {len(result_rows)} rows", node_id)
+                    return {
+                        "rows": result_rows,
+                        "affected_count": len(result_rows),
+                        "last_insert_id": None,
+                    }
+            
+            elif action == "insert":
+                cols = columns if columns else list(values.keys())
+                query = SQLQueryBuilder.build_insert(table, cols)
+                
+                async with db.execute(query, values) as cursor:
+                    await db.commit()
+                    context.log("info", f"INSERT {table}: 1 row, last_id={cursor.lastrowid}", node_id)
+                    return {
+                        "rows": [],
+                        "affected_count": 1,
+                        "last_insert_id": cursor.lastrowid,
+                    }
+            
+            elif action == "update":
+                cols = list(values.keys())
+                query = SQLQueryBuilder.build_update(table, cols, where_clause or None)
+                params = {**values, **SQLQueryBuilder.extract_params_from_where(where_clause, values)}
+                
+                async with db.execute(query, params) as cursor:
+                    await db.commit()
+                    context.log("info", f"UPDATE {table}: {cursor.rowcount} rows affected", node_id)
+                    return {
+                        "rows": [],
+                        "affected_count": cursor.rowcount,
+                        "last_insert_id": None,
+                    }
+            
+            elif action == "delete":
+                query = SQLQueryBuilder.build_delete(table, where_clause or None)
+                params = SQLQueryBuilder.extract_params_from_where(where_clause, values)
+                
+                async with db.execute(query, params) as cursor:
+                    await db.commit()
+                    context.log("info", f"DELETE {table}: {cursor.rowcount} rows affected", node_id)
+                    return {
+                        "rows": [],
+                        "affected_count": cursor.rowcount,
+                        "last_insert_id": None,
+                    }
+            
+            elif action == "upsert":
+                if not on_conflict:
+                    context.log("warning", "on_conflict column is required for upsert", node_id)
+                    return {
+                        "rows": [],
+                        "affected_count": 0,
+                        "last_insert_id": None,
+                    }
+                
+                cols = columns if columns else list(values.keys())
+                query = SQLQueryBuilder.build_upsert(table, cols, on_conflict)
+                
+                async with db.execute(query, values) as cursor:
+                    await db.commit()
+                    context.log("info", f"UPSERT {table}: last_id={cursor.lastrowid}", node_id)
+                    return {
+                        "rows": [],
+                        "affected_count": cursor.rowcount,
+                        "last_insert_id": cursor.lastrowid,
+                    }
+            
+            else:
+                context.log("warning", f"Unknown action: {action}", node_id)
+                return {
+                    "rows": [],
+                    "affected_count": 0,
+                    "last_insert_id": None,
+                }
+                
+        except Exception as e:
+            context.log("error", f"Simple mode error ({action}): {e}", node_id)
+            return {
+                "rows": [],
+                "affected_count": 0,
+                "last_insert_id": None,
+                "error": str(e),
+            }
+
+
 class WorkflowExecutor:
     """
     Workflow execution engine
@@ -8418,6 +8647,8 @@ class WorkflowExecutor:
             "NewOrderNode": NewOrderNodeExecutor(),
             "ModifyOrderNode": ModifyOrderNodeExecutor(),
             "CancelOrderNode": CancelOrderNodeExecutor(),
+            # Data nodes
+            "SQLiteNode": SQLiteNodeExecutor(),
         }
 
     def validate(self, definition: Dict[str, Any]) -> ValidationResult:

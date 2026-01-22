@@ -1,3 +1,35 @@
+## [2.7.0] - 2026-01-22
+
+### Changed
+- feat(nodes): `SQLiteNode` UI 개선 스키마 (data.py)
+  - `db_name`: `deletable`, `delete_confirm` 옵션 추가 (파일 삭제 기능)
+  - `table`: `creatable_select` + 동적 API (`source_api`, `depends_on`)
+  - `columns`: `multi_select` + 동적 API (테이블 의존)
+  - `where_clause`: 상세 설명 (`where_clause_detailed`)
+- feat(i18n): SQLiteNode UI 번역 추가 (ko.json, en.json)
+  - `ui.create_new_table`, `ui.confirm_delete_database` 등 6개 키
+  - `fields.SQLiteNode.where_clause_detailed` 상세 예시 포함
+
+## [2.6.0] - 2026-01-20
+
+### Added
+- feat(bases): `BaseStorageNode` 베이스 클래스 추가 (bases/storage.py)
+  - 모든 저장소 노드의 공통 입출력 포트 (trigger, rows, affected_count)
+- feat(bases): `BaseSQLNode` 베이스 클래스 추가 (bases/sql.py)
+  - SQL 데이터베이스 노드의 공통 스키마 (operation, query, parameters, action, table 등)
+- feat(models): `UIComponent.CREATABLE_SELECT` 추가 (field_binding.py)
+  - 기존 목록에서 선택하거나 새로 생성 가능한 드롭다운
+
+### Changed
+- refactor(nodes): `SQLiteNode` 스키마 완전 재설계 (data.py)
+  - 기존 필드 제거: key_fields, save_fields, aggregations, sync_interval_ms, sync_on_change_count
+  - 새 필드 추가: db_name, operation, query, parameters, table, action, columns, where_clause, values, on_conflict
+  - 두 가지 모드 지원: `execute_query` (직접 쿼리), `simple` (GUI 기반 CRUD)
+  - 5개 액션: select, insert, update, delete, upsert
+- feat(i18n): SQLiteNode 새 스키마 번역 추가 (ko.json, en.json)
+  - 노드명: "단순 DB" / "Simple DB"
+  - 모든 필드/enum 레이블 다국어 지원
+
 ## [2.5.0] - 2026-01-19
 
 ### Removed

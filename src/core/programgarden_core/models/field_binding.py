@@ -84,6 +84,7 @@ class UIComponent(str, Enum):
     KEY_VALUE_EDITOR = "key_value_editor"    # 키-값 쌍 편집기 (HTTP headers 등)
     FIELD_MAPPING_EDITOR = "field_mapping_editor"  # 필드 매핑 편집기 (from→to 변환 테이블)
     CODE_EDITOR = "code_editor"              # 코드/JSON 편집기
+    CREATABLE_SELECT = "creatable_select"    # 생성 가능한 선택기 (기존 목록 + 새로 생성)
     
     # === 바인딩 전용 컴포넌트 ===
     BINDING_INPUT = "binding_input"          # 바인딩 입력 ({{ nodes.xxx.yyy }} 전용)
@@ -205,6 +206,10 @@ class FieldSchema(BaseModel):
     ui_component: Optional[UIComponent] = Field(
         default=None,
         description="UI 컴포넌트 타입. None이면 FieldType에 따른 기본 컴포넌트 사용. 모든 컴포넌트는 바인딩 지원.",
+    )
+    ui_options: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="UI 컴포넌트 세부 옵션 (예: code_editor의 language, creatable_select의 file_extension 등)",
     )
     placeholder: Optional[str] = Field(
         default=None, description="입력 필드 placeholder"

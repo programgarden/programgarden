@@ -1,3 +1,45 @@
+## [2.6.0] - 2026-01-22
+
+### Added
+- feat(tools): `sqlite_tools.py` 모듈 추가 (~320줄)
+  - `list_database_files()`: programgarden_data/ 폴더의 DB 파일 목록
+  - `delete_database_file()`: DB 파일 삭제 (경로 탈출 방지)
+  - `list_tables()`: DB의 테이블 목록 조회
+  - `list_columns()`: 테이블의 컬럼 정보 조회
+  - `create_table()`: 새 테이블 생성
+- feat(server): SQLite 동적 API 엔드포인트 추가
+  - `DELETE /api/files/{source}/{filename}`: DB 파일 삭제
+  - `GET /api/sqlite/{db_name}/tables`: 테이블 목록 조회
+  - `GET /api/sqlite/{db_name}/tables/{table}/columns`: 컬럼 목록 조회
+  - `POST /api/sqlite/{db_name}/tables`: 테이블 생성
+- feat(frontend): SQLiteNode UI 개선
+  - creatable_select: `deletable` 옵션 (삭제 버튼 + 확인 다이얼로그)
+  - creatable_select/multi_select: `source_api` 동적 옵션 로딩
+  - depends_on 필드 변경 시 옵션 자동 재로드
+- feat(tests): SQLiteTools 테스트 10개 추가
+  - 파일 목록, 삭제, 경로 탈출 방지, 테이블/컬럼 조회, 테이블 생성
+- feat(tests): Server SQLite API 테스트 6개 추가
+  - 엔드포인트 동작 검증, 경로 탈출 방지, 에러 처리
+
+## [2.5.0] - 2026-01-20
+
+### Added
+- feat(executor): `SQLiteNodeExecutor` 구현 (~210줄)
+  - 두 가지 모드: `execute_query` (직접 SQL), `simple` (자동 쿼리 생성)
+  - 5개 액션: select, insert, update, delete, upsert
+  - SQL Injection 방지 (식별자 검증, 파라미터 바인딩)
+  - `programgarden_data/` 폴더 자동 생성
+- feat(database): `SQLQueryBuilder` 유틸리티 클래스 추가 (database/query_builder.py)
+  - `validate_identifier()`: 테이블/컬럼명 검증 (SQL Injection 방지)
+  - `build_select()`, `build_insert()`, `build_update()`, `build_delete()`, `build_upsert()`
+  - `extract_params_from_where()`: WHERE 절 파라미터 추출
+- feat(tests): SQLiteNode 단위 테스트 22개 추가
+  - SQLQueryBuilder 14개: 식별자 검증, 각 쿼리 빌드 함수, SQL Injection 방지
+  - SQLiteNodeExecutor 8개: 두 모드 및 5개 액션 테스트
+
+### Dependencies
+- deps: `aiosqlite ^0.20.0` 추가 (비동기 SQLite 작업)
+
 ## [2.4.0] - 2026-01-19
 
 ### Removed

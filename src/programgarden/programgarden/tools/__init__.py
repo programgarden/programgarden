@@ -41,6 +41,18 @@ from programgarden.tools.event_tools import (
     get_job_summary,
     analyze_performance,
 )
+from programgarden.tools.sqlite_tools import (
+    list_database_files,
+    delete_database_file,
+    list_tables,
+    list_columns,
+    create_table,
+    api_list_databases,
+    api_delete_database,
+    api_list_tables,
+    api_list_columns,
+    api_create_table,
+)
 
 __all__ = [
     # Registry
@@ -74,4 +86,15 @@ __all__ = [
     "get_events",
     "get_job_summary",
     "analyze_performance",
+    # SQLite
+    "list_database_files",
+    "delete_database_file",
+    "list_tables",
+    "list_columns",
+    "create_table",
+    "api_list_databases",
+    "api_delete_database",
+    "api_list_tables",
+    "api_list_columns",
+    "api_create_table",
 ]
