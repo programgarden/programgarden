@@ -27,8 +27,8 @@ async def test_req_cosoq01400():
             RecCnt=1,
             QryTpCode="1",
             CntryCode="001",
-            SrtDt="20250401",
-            EndDt="20250426",
+            SrtDt="20251201",
+            EndDt="20260123",
             BnsTpCode="0",
             RsvOrdCndiCode="00",
             RsvOrdStatCode="1"
