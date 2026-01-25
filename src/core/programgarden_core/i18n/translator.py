@@ -128,6 +128,10 @@ def translate_schema(schema: Dict[str, Any], locale: Optional[str] = None) -> Di
     if "widget_schema" in result and isinstance(result["widget_schema"], dict):
         result["widget_schema"] = _translate_widget_schema(result["widget_schema"], loc, node_type)
     
+    # Translate settings_widget_schema (SETTINGS 탭 위젯)
+    if "settings_widget_schema" in result and isinstance(result["settings_widget_schema"], dict):
+        result["settings_widget_schema"] = _translate_widget_schema(result["settings_widget_schema"], loc, node_type)
+    
     return result
 
 
@@ -233,6 +237,17 @@ def _translate_widget_schema(widget: Dict[str, Any], locale: str, node_type: str
                 translated = t(auto_key, locale)
                 if translated != auto_key:
                     args["label"] = translated
+        
+        # Translate labelText at args level (for checkbox widgets)
+        if "labelText" in args and isinstance(args["labelText"], str):
+            label_text = args["labelText"]
+            if label_text.startswith("i18n:"):
+                args["labelText"] = t(label_text[5:], locale)
+            elif field_id and node_type:
+                auto_key = f"fieldNames.{node_type}.{field_id}"
+                translated = t(auto_key, locale)
+                if translated != auto_key:
+                    args["labelText"] = translated
         
         if "helperText" in args and isinstance(args["helperText"], str):
             helper = args["helperText"]

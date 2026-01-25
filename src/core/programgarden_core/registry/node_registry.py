@@ -261,9 +261,21 @@ class NodeTypeRegistry:
         parameters_children = []
         settings_children = []
         
+        # 노드 타입명 추출 (i18n 키 생성용)
+        node_type = node_class.__name__
+        
         for name, fs in field_schemas.items():
             try:
-                widget = fs.to_json_dynamic_widget()
+                # 카테고리에 따라 다른 위젯 생성
+                if fs.category == FieldCategory.SETTINGS:
+                    # SETTINGS: 토글 없이 직접 위젯 생성
+                    widget = fs.to_simple_widget()
+                    # SETTINGS 위젯에 i18n labelText 추가
+                    widget = self._add_i18n_label_to_settings_widget(widget, node_type, name)
+                else:
+                    # PARAMETERS: 기존 토글 위젯
+                    widget = fs.to_json_dynamic_widget()
+                
                 widget["fieldKey"] = name  # Pydantic 모델 필드명 (Flutter 코드 생성기 호환)
                 widget["field_key_of_pydantic"] = name  # i18n 번역 및 테스트용
                 
@@ -304,6 +316,39 @@ class NodeTypeRegistry:
         } if settings_children else None
         
         return widget_schema, settings_widget_schema
+    
+    def _add_i18n_label_to_settings_widget(
+        self, widget: Dict[str, Any], node_type: str, field_name: str
+    ) -> Dict[str, Any]:
+        """
+        SETTINGS 위젯에 i18n labelText 추가
+        
+        checkbox는 decoration이 없으므로 labelText를 args에 직접 추가하고,
+        다른 위젯은 decoration.labelText에 i18n 키를 설정합니다.
+        
+        Args:
+            widget: 위젯 딕셔너리
+            node_type: 노드 타입명 (예: "RealAccountNode")
+            field_name: 필드명 (예: "stay_connected")
+            
+        Returns:
+            i18n labelText가 추가된 위젯
+        """
+        i18n_label_key = f"i18n:fieldNames.{node_type}.{field_name}"
+        
+        if "args" not in widget:
+            widget["args"] = {}
+        
+        if widget.get("type") == "checkbox":
+            # checkbox는 labelText를 args에 직접 추가
+            widget["args"]["labelText"] = i18n_label_key
+        else:
+            # 다른 위젯은 decoration.labelText에 추가
+            if "decoration" not in widget["args"]:
+                widget["args"]["decoration"] = {}
+            widget["args"]["decoration"]["labelText"] = i18n_label_key
+        
+        return widget
     
     def _wrap_conditional(self, widget: Dict[str, Any], visible_when: Dict[str, Any], field_key: str) -> Dict[str, Any]:
         """

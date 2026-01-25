@@ -66,10 +66,10 @@
   "nodes.SymbolFilterNode.description": "Compare two stock lists. Example: Find watchlist stocks you don't own yet, prevent duplicate purchases.",
   
   "nodes.MarketDataNode.name": "Current Price",
-  "nodes.MarketDataNode.description": "REST API current price and volume query (today only).",
+  "nodes.MarketDataNode.description": "Get the current price and volume for symbols. Use when you don't need live updates, just a one-time snapshot.",
   
   "nodes.AccountNode.name": "Account",
-  "nodes.AccountNode.description": "REST API account query.",
+  "nodes.AccountNode.description": "Get your holdings, cash balance, and open orders once. Use when you don't need live updates.",
   
   "fields.AccountNode.product_type": "Select product type. Must match the product connected from BrokerNode.",
   
@@ -93,13 +93,13 @@
   "fields.TelegramNode.credential_id": "Telegram credential ID. Select credential containing bot_token and chat_id.",
   
   "nodes.RealMarketDataNode.name": "Real Market Data",
-  "nodes.RealMarketDataNode.description": "Realtime market data stream via WebSocket.",
+  "nodes.RealMarketDataNode.description": "Get live prices, volume, and quotes for your symbols. Updates automatically every time a trade happens.",
   
   "nodes.RealAccountNode.name": "Real Account",
-  "nodes.RealAccountNode.description": "Realtime account info with P&L.",
+  "nodes.RealAccountNode.description": "Get your holdings, cash balance, open orders, and live P&L. Your profit/loss updates automatically as prices change.",
   
   "nodes.RealOrderEventNode.name": "Real Order Event",
-  "nodes.RealOrderEventNode.description": "Realtime order fill/reject/cancel events.",
+  "nodes.RealOrderEventNode.description": "Get notified when orders are submitted, filled, modified, cancelled, or rejected. Connect to Telegram alerts or add extra order logic.",
   
   "nodes.ScheduleNode.name": "Schedule",
   "nodes.ScheduleNode.description": "Cron-based schedule trigger.",
@@ -129,7 +129,7 @@
   "nodes.CancelOrderNode.description": "Cancel existing open orders.",
   
   "nodes.HistoricalDataNode.name": "Historical Chart",
-  "nodes.HistoricalDataNode.description": "N-day OHLCV chart data (daily/weekly/monthly bars).",
+  "nodes.HistoricalDataNode.description": "Get past chart data. Choose a date range and bar type (daily/weekly/monthly) to get open, high, low, close, and volume data.",
   
 "nodes.BacktestEngineNode.name": "Backtest Engine",
   "nodes.BacktestEngineNode.description": "Run backtest with signals and historical data, calculate performance metrics.",
@@ -266,11 +266,11 @@
   "fields.WatchlistNode.symbols": "List of symbol codes",
 
   "fields.RealMarketDataNode.symbols": "Symbols to subscribe (e.g., AAPL, TSLA). If empty, uses input port value.",
-  "fields.RealMarketDataNode.stay_connected": "Keep WebSocket connection alive between flow executions. True: maintains stream until explicit stop(). False: disconnects after single data fetch.",
+  "fields.RealMarketDataNode.stay_connected": "✅ ON: Keep receiving live prices continuously. Stays connected until you manually stop.\n❌ OFF: Get prices once and disconnect automatically.",
   "fields.RealMarketDataNode.fields": "Fields to receive (price, volume, bid, ask)",
 
-  "fields.RealAccountNode.stay_connected": "Keep WebSocket connection alive. True with ScheduleNode: stays alive during schedule wait. True without ScheduleNode: stays alive until explicit stop(). False: disconnects after each flow.",
-  "fields.RealAccountNode.sync_interval_sec": "REST API sync interval (seconds)",
+  "fields.RealAccountNode.stay_connected": "✅ ON: Keep receiving live account updates. Your P&L updates in real-time even while waiting for scheduled runs.\n❌ OFF: Get account info once and disconnect.",
+  "fields.RealAccountNode.sync_interval_sec": "How often to refresh account data (seconds). Example: 60 = refresh balance/positions every minute.",
   "fields.RealAccountNode.product_type": "Select product type. Fee fields will change based on selection.",
   "fields.RealAccountNode.commission_rate": "Overseas stocks trading commission rate (%). LS Securities default 0.25%",
   "fields.RealAccountNode.tax_rate": "Overseas stocks transaction tax rate (%). US 0%, HK 0.1%, JP 0%",
@@ -280,7 +280,7 @@
   "fields.RealOrderEventNode.product_type": "Select product type. Must match the product from BrokerNode.",
   "fields.RealOrderEventNode.event_filter": "Overseas stock event filter. Output all (AS0~AS4) or specific TR only.",
   "fields.RealOrderEventNode.event_filter_futures": "Overseas futures event filter. Output all (TC1~TC3) or specific TR only.",
-  "fields.RealOrderEventNode.stay_connected": "Keep WebSocket connection alive between flow executions.",
+  "fields.RealOrderEventNode.stay_connected": "✅ ON: Keep receiving order fill/reject/cancel alerts continuously.\n❌ OFF: Get events once and disconnect.",
 
   "fields.ScheduleNode.cron": "Cron expression (e.g., */5 * * * * = every 5 minutes)",
   "fields.ScheduleNode.timezone": "Timezone",
@@ -407,9 +407,9 @@
   "fields.PostgresNode.key_fields": "Primary key fields for upsert operations",
   "fields.PostgresNode.save_fields": "Fields to save to database",
   "fields.PostgresNode.aggregations": "Aggregation functions per field. Options: max, min, sum, count, last, first, avg",
-  "fields.PostgresNode.sync_interval_ms": "DB sync interval in milliseconds",
-  "fields.PostgresNode.sync_on_change_count": "Sync immediately when N changes occur",
-  "fields.PostgresNode.connection_timeout": "Connection timeout in seconds",
+  "fields.PostgresNode.sync_interval_ms": "How often to save to database (milliseconds). 1000 = save every second.",
+  "fields.PostgresNode.sync_on_change_count": "Save immediately when N changes occur. Example: 10 = save after every 10 changes.",
+  "fields.PostgresNode.connection_timeout": "How long to wait for DB connection (seconds). Fails if can't connect in this time.",
 
   "fields.HTTPRequestNode.method": "HTTP method for the request",
   "fields.HTTPRequestNode.url": "Request URL. Supports {{ }} expressions for dynamic values.",
@@ -417,7 +417,7 @@
   "fields.HTTPRequestNode.body": "Request body for POST/PUT/PATCH. Automatically serialized to JSON.",
   "fields.HTTPRequestNode.credential_id": "Credential ID for authentication. Supports: http_bearer, http_header, http_basic, http_query",
   "fields.HTTPRequestNode.headers": "HTTP headers. Click + to add custom headers (e.g., Content-Type, X-API-Key).",
-  "fields.HTTPRequestNode.timeout_seconds": "Request timeout in seconds. Request fails if no response within this time.",
+  "fields.HTTPRequestNode.timeout_seconds": "How long to wait for a response (seconds). If no response in this time, it fails. Increase for slow APIs.",
   "fields.HTTPRequestNode.retry_count": "Number of retry attempts on failure. 0 = no retry.",
   "fields.HTTPRequestNode.retry_delay_ms": "Delay between retries in milliseconds",
 

@@ -66,10 +66,10 @@
   "nodes.SymbolFilterNode.description": "두 종목 리스트를 비교합니다. 예: 관심종목 중 아직 보유하지 않은 종목만 골라내기, 중복 매수 방지에 활용됩니다.",
   
   "nodes.MarketDataNode.name": "현재가조회",
-  "nodes.MarketDataNode.description": "REST API로 당일 현재가/거래량 조회.",
+  "nodes.MarketDataNode.description": "종목의 현재가와 거래량을 한 번 조회합니다. 실시간이 필요 없고 조회 시점의 데이터만 필요할 때 사용하세요.",
   
   "nodes.AccountNode.name": "계좌 조회",
-  "nodes.AccountNode.description": "REST API 계좌 정보 조회.",
+  "nodes.AccountNode.description": "보유종목, 예수금, 미체결 주문을 한 번 조회합니다. 실시간 업데이트가 필요 없을 때 사용하세요.",
   
   "fields.AccountNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
   
@@ -93,13 +93,13 @@
   "fields.TelegramNode.credential_id": "텔레그램 인증정보 ID. bot_token과 chat_id가 포함된 credential을 선택하세요.",
   
   "nodes.RealMarketDataNode.name": "실시간 시세",
-  "nodes.RealMarketDataNode.description": "WebSocket 실시간 시세 스트림.",
+  "nodes.RealMarketDataNode.description": "종목의 현재가, 거래량, 호가를 실시간으로 받습니다. 체결이 발생할 때마다 자동으로 업데이트됩니다.",
   
   "nodes.RealAccountNode.name": "실시간 계좌",
-  "nodes.RealAccountNode.description": "실시간 계좌 정보 및 손익.",
+  "nodes.RealAccountNode.description": "보유종목, 예수금, 미체결 주문, 실시간 수익률을 받습니다. 시세가 변할 때마다 손익이 자동으로 업데이트됩니다.",
   
   "nodes.RealOrderEventNode.name": "실시간 주문 이벤트",
-  "nodes.RealOrderEventNode.description": "실시간 체결/거부/취소 이벤트.",
+  "nodes.RealOrderEventNode.description": "주문이 접수/체결/정정/취소/거부될 때마다 알림을 받습니다. 텔레그램 알림이나 추가 주문 로직에 연결하세요.",
   
   "nodes.ScheduleNode.name": "스케줄",
   "nodes.ScheduleNode.description": "크론 기반 스케줄 트리거.",
@@ -129,7 +129,7 @@
   "nodes.CancelOrderNode.description": "기존 미체결 주문을 취소합니다.",
   
   "nodes.HistoricalDataNode.name": "과거차트조회",
-  "nodes.HistoricalDataNode.description": "N일치 일봉/주봉/월봉 OHLCV 차트 데이터.",
+  "nodes.HistoricalDataNode.description": "과거 차트 데이터를 가져옵니다. 기간과 봉 종류(일봉/주봉/월봉)를 선택하면 시가, 고가, 저가, 종가, 거래량 데이터를 받을 수 있습니다.",
   
 "nodes.BacktestEngineNode.name": "백테스트 엔진",
   "nodes.BacktestEngineNode.description": "시그널과 과거 데이터로 백테스트 실행 및 성과 지표 계산.",
@@ -267,10 +267,10 @@
   "fields.WatchlistNode.symbols": "종목 코드 리스트",
 
   "fields.RealMarketDataNode.symbols": "구독할 종목 코드 (AAPL, TSLA 등). 비어있으면 입력 포트 값 사용.",
-  "fields.RealMarketDataNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지. True면 stop() 호출 전까지 실시간 스트림 유지. False면 데이터 1회 수신 후 연결 종료.",
+  "fields.RealMarketDataNode.stay_connected": "✅ 켜면: 실시간 시세를 계속 받습니다. 수동으로 중지할 때까지 유지됩니다.\n❌ 끄면: 시세를 한 번만 받고 자동으로 끊깁니다.",
 
-  "fields.RealAccountNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지. True+스케줄: 스케줄 대기 중에도 유지. True-스케줄: stop() 호출 전까지 유지. False: 플로우 종료 시 연결 종료.",
-  "fields.RealAccountNode.sync_interval_sec": "REST API 동기화 간격 (초)",
+  "fields.RealAccountNode.stay_connected": "✅ 켜면: 실시간 계좌 정보를 계속 받습니다. 스케줄 대기 중에도 수익률이 실시간으로 업데이트됩니다.\n❌ 끄면: 계좌 정보를 한 번만 조회하고 끊깁니다.",
+  "fields.RealAccountNode.sync_interval_sec": "계좌 정보를 다시 불러오는 주기 (초). 예: 60 입력하면 1분마다 잔고/포지션을 새로고침합니다.",
   "fields.RealAccountNode.product_type": "상품 유형을 선택하세요. 선택에 따라 수수료 설정 필드가 변경됩니다.",
   "fields.RealAccountNode.commission_rate": "해외주식 매매 수수료율 (%). LS증권 기본 0.25%",
   "fields.RealAccountNode.tax_rate": "해외주식 거래세율 (%). 미국 0%, 홍콩 0.1%, 일본 0%",
@@ -280,7 +280,7 @@
   "fields.RealOrderEventNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
   "fields.RealOrderEventNode.event_filter": "해외주식 이벤트 필터. 전체(AS0~AS4) 또는 특정 TR만 출력합니다.",
   "fields.RealOrderEventNode.event_filter_futures": "해외선물 이벤트 필터. 전체(TC1~TC3) 또는 특정 TR만 출력합니다.",
-  "fields.RealOrderEventNode.stay_connected": "플로우 실행 사이에도 WebSocket 연결 유지",
+  "fields.RealOrderEventNode.stay_connected": "✅ 켜면: 주문 체결/거부/취소 알림을 계속 받습니다.\n❌ 끄면: 이벤트를 한 번만 받고 끊깁니다.",
 
   "fields.ScheduleNode.cron": "크론 표현식 (예: */5 * * * * = 5분마다)",
   "fields.ScheduleNode.timezone": "타임존",
@@ -416,9 +416,9 @@
   "fields.PostgresNode.key_fields": "UPSERT 연산을 위한 Primary Key 필드",
   "fields.PostgresNode.save_fields": "데이터베이스에 저장할 필드 목록",
   "fields.PostgresNode.aggregations": "필드별 집계 함수. 옵션: max, min, sum, count, last, first, avg",
-  "fields.PostgresNode.sync_interval_ms": "DB 동기화 주기 (밀리초)",
-  "fields.PostgresNode.sync_on_change_count": "N번 변경 시 즉시 동기화",
-  "fields.PostgresNode.connection_timeout": "연결 타임아웃 (초)",
+  "fields.PostgresNode.sync_interval_ms": "데이터베이스에 저장하는 주기 (밀리초). 1000 = 1초마다 저장.",
+  "fields.PostgresNode.sync_on_change_count": "변경이 N번 쌓이면 바로 저장합니다. 예: 10 입력하면 10번 변경될 때마다 즉시 저장.",
+  "fields.PostgresNode.connection_timeout": "DB 연결 대기 시간 (초). 이 시간이 지나도 연결이 안 되면 실패합니다.",
 
   "fields.HTTPRequestNode.method": "HTTP 요청 메서드",
   "fields.HTTPRequestNode.url": "요청 URL. {{ }} 표현식으로 동적 값 사용 가능.",
@@ -426,7 +426,7 @@
   "fields.HTTPRequestNode.body": "요청 본문 (POST/PUT/PATCH용). 자동으로 JSON 직렬화됨.",
   "fields.HTTPRequestNode.credential_id": "인증정보 ID. 지원: http_bearer, http_header, http_basic, http_query",
   "fields.HTTPRequestNode.headers": "HTTP 헤더. + 버튼으로 커스텀 헤더 추가 (예: Content-Type, X-API-Key).",
-  "fields.HTTPRequestNode.timeout_seconds": "요청 타임아웃 (초). 이 시간 내 응답 없으면 실패.",
+  "fields.HTTPRequestNode.timeout_seconds": "응답 대기 시간 (초). 이 시간이 지나도 응답이 없으면 실패 처리됩니다. 느린 API는 값을 높이세요.",
   "fields.HTTPRequestNode.retry_count": "실패 시 재시도 횟수. 0 = 재시도 안 함.",
   "fields.HTTPRequestNode.retry_delay_ms": "재시도 간격 (밀리초)",
 

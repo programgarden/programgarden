@@ -278,6 +278,27 @@ class FieldSchema(BaseModel):
 
     model_config = ConfigDict(use_enum_values=True)
     
+    def to_simple_widget(self) -> Dict[str, Any]:
+        """
+        SETTINGS 카테고리용 단순 위젯 생성 (토글 없음)
+        
+        expression_mode를 무시하고 ui_component에 따른 위젯만 생성합니다.
+        settings 필드는 고정값만 사용하므로 Fixed/Expression 토글이 불필요합니다.
+        
+        Returns:
+            dict: json_dynamic_widget 호환 JSON 구조 (토글 없음)
+        """
+        ui_comp = self.ui_component
+        if ui_comp is None:
+            ui_comp = UIComponent.get_default_for_field_type(self.type)
+        
+        label = self.display_name or self.name.replace("_", " ").title()
+        decoration: Dict[str, Any] = {"labelText": label}
+        if self.placeholder:
+            decoration["hintText"] = self.placeholder
+        
+        return self._map_ui_component_to_widget(ui_comp, decoration)
+    
     def to_json_dynamic_widget(self) -> Dict[str, Any]:
         """
         FieldSchema를 json_dynamic_widget JSON 형태로 변환
@@ -317,8 +338,6 @@ class FieldSchema(BaseModel):
         
         # FIXED_ONLY: fixed만 고정 표시 (전환 불가)
         return self._build_toggle_widget(ui_comp, decoration, locked_mode="fixed")
-        
-        return widget
     
     def _map_ui_component_to_widget(
         self, 
@@ -357,11 +376,15 @@ class FieldSchema(BaseModel):
         
         # CHECKBOX
         if ui_comp == UIComponent.CHECKBOX:
+            args: Dict[str, Any] = {
+                "value": self.default if isinstance(self.default, bool) else False
+            }
+            # helperText 추가 (description 사용, i18n 키 지원)
+            if self.description:
+                args["helperText"] = self.description
             return {
                 "type": "checkbox",
-                "args": {
-                    "value": self.default if isinstance(self.default, bool) else False
-                }
+                "args": args
             }
         
         # SELECT (드롭다운)
