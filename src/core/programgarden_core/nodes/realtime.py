@@ -236,7 +236,7 @@ class RealAccountNode(BaseNode):
                 type=FieldType.OBJECT,
                 description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
                 required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,  # 바인딩 필수
                 category=FieldCategory.PARAMETERS,
                 example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
                 example_binding="{{ nodes.broker.connection }}",
@@ -268,8 +268,9 @@ class RealAccountNode(BaseNode):
                 min_value=0,
                 max_value=5,
                 category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
+                expression_mode=ExpressionMode.BOTH,  # Fixed/Expression 토글 지원
                 example=0.25,
+                example_binding="{{ nodes.config.commission_rate }}",
                 expected_type="float",
                 visible_when={"product_type": "overseas_stock"},
                 ui_component=UIComponent.NUMBER_INPUT,
@@ -282,8 +283,9 @@ class RealAccountNode(BaseNode):
                 min_value=0,
                 max_value=1,
                 category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
+                expression_mode=ExpressionMode.BOTH,  # Fixed/Expression 토글 지원
                 example=0.0,
+                example_binding="{{ nodes.config.tax_rate }}",
                 expected_type="float",
                 visible_when={"product_type": "overseas_stock"},
                 ui_component=UIComponent.NUMBER_INPUT,
@@ -297,7 +299,8 @@ class RealAccountNode(BaseNode):
                 min_value=0,
                 max_value=100,
                 category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
+                expression_mode=ExpressionMode.BOTH,  # Fixed/Expression 토글 지원
+                example_binding="{{ nodes.config.futures_fee }}",
                 example=7.5,
                 expected_type="float",
                 visible_when={"product_type": "overseas_futures"},

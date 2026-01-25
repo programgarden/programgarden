@@ -301,27 +301,22 @@ class FieldSchema(BaseModel):
         # 표시 이름 결정 (display_name > name의 Title Case)
         label = self.display_name or self.name.replace("_", " ").title()
         
-        # 기본 decoration 구성
+        # 기본 decoration 구성 (helperText는 args에서 관리)
         decoration: Dict[str, Any] = {"labelText": label}
-        if self.description:
-            decoration["helperText"] = self.description
         if self.placeholder:
             decoration["hintText"] = self.placeholder
         
         # expression_mode에 따른 처리
+        # EXPRESSION_ONLY: fx만 고정 표시 (전환 불가)
         if self.expression_mode == ExpressionMode.EXPRESSION_ONLY:
-            # 바인딩 전용: {{ }} 접두사/접미사 + 힌트
-            decoration["prefixText"] = "{{ "
-            decoration["suffixText"] = " }}"
-            if self.example_binding:
-                decoration["hintText"] = self.example_binding
-            return {
-                "type": "text_form_field",
-                "args": {"decoration": decoration}
-            }
+            return self._build_toggle_widget(ui_comp, decoration, locked_mode="expression")
         
-        # UIComponent별 위젯 매핑
-        widget = self._map_ui_component_to_widget(ui_comp, decoration)
+        # BOTH 모드: Fixed/Expression 토글 위젯 (전환 가능)
+        if self.expression_mode == ExpressionMode.BOTH:
+            return self._build_toggle_widget(ui_comp, decoration, locked_mode=None)
+        
+        # FIXED_ONLY: fixed만 고정 표시 (전환 불가)
+        return self._build_toggle_widget(ui_comp, decoration, locked_mode="fixed")
         
         return widget
     
@@ -349,11 +344,12 @@ class FieldSchema(BaseModel):
                 args["initialValue"] = str(self.default)
             return {"type": "text_form_field", "args": args}
         
-        # NUMBER_INPUT
+        # NUMBER_INPUT (숫자 입력 필드)
         if ui_comp == UIComponent.NUMBER_INPUT:
             args: Dict[str, Any] = {
+                "fieldKey": self.name,
                 "decoration": decoration,
-                "keyboardType": "number",  # 문자열로 지정
+                "keyboardType": "number",
             }
             if self.default is not None:
                 args["initialValue"] = str(self.default)
@@ -401,10 +397,8 @@ class FieldSchema(BaseModel):
                 args["credentialTypes"] = credential_type_infos
             return {"type": "custom_credential_select", "args": args}
         
-        # BINDING_INPUT ({{ }} 전용)
+        # BINDING_INPUT ({{ }} 전용) - prefixText/suffixText는 클라이언트에서 처리
         if ui_comp == UIComponent.BINDING_INPUT:
-            decoration["prefixText"] = "{{ "
-            decoration["suffixText"] = " }}"
             if self.example_binding:
                 decoration["hintText"] = self.example_binding
             return {
@@ -497,6 +491,98 @@ class FieldSchema(BaseModel):
         if self.default is not None:
             args["initialValue"] = str(self.default)
         return {"type": "text_form_field", "args": args}
+    
+    def _build_toggle_widget(
+        self,
+        ui_comp: "UIComponent",
+        decoration: Dict[str, Any],
+        locked_mode: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        custom_expression_toggle 위젯 생성
+        
+        Fixed/Expression 토글 버튼과 함께 선택에 따른 입력 위젯을 렌더링합니다.
+        
+        Args:
+            ui_comp: UI 컴포넌트 타입
+            decoration: 라벨, 설명 등 장식 정보
+            locked_mode: 고정 모드 ("fixed", "expression", None)
+                - "fixed": fixed만 표시, 토글 비활성화
+                - "expression": expression(fx)만 표시, 토글 비활성화
+                - None: BOTH 모드, 토글 전환 가능
+            
+        Returns:
+            dict: custom_expression_toggle 위젯 JSON
+        """
+        # Fixed 위젯 (ui_component에 따른 입력)
+        fixed_widget = self._build_fixed_widget(ui_comp, decoration.copy())
+        
+        # Expression 위젯 (바인딩 입력)
+        expression_widget = self._build_expression_field(decoration.copy())
+        
+        # 기본 모드 결정: locked_mode가 있으면 해당 모드, 없으면 fixed
+        default_mode = locked_mode if locked_mode else "fixed"
+        
+        args: Dict[str, Any] = {
+            "fieldKey": self.name,
+            "label": decoration.get("labelText", self.name),
+            "defaultMode": default_mode,
+            "expressionHint": self.example_binding,
+            "fixedWidget": fixed_widget,
+            "expressionWidget": expression_widget,
+        }
+        
+        # helperText 분리: fixed/expression 모드별로 다른 설명 표시
+        # description: fixed 모드용 설명 (필드 기본 설명)
+        # help_text: expression 모드용 설명 (바인딩 가이드)
+        if self.description:
+            args["fixedHelperText"] = self.description
+        if self.help_text:
+            args["expressionHelperText"] = self.help_text
+        elif self.example_binding:
+            # help_text가 없으면 example_binding을 힌트로 사용
+            args["expressionHelperText"] = f"예: {self.example_binding}"
+        
+        # lockedMode가 있으면 토글 비활성화
+        if locked_mode:
+            args["lockedMode"] = locked_mode
+        
+        return {
+            "type": "custom_expression_toggle",
+            "args": args
+        }
+    
+    def _build_fixed_widget(
+        self,
+        ui_comp: "UIComponent",
+        decoration: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Fixed 모드용 위젯 생성 (BOTH 모드의 토글에서 사용)
+        
+        기존 _map_ui_component_to_widget과 동일하지만 토글 내부용으로 사용됩니다.
+        """
+        return self._map_ui_component_to_widget(ui_comp, decoration)
+    
+    def _build_expression_field(
+        self,
+        decoration: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Expression 모드용 바인딩 입력 필드 생성
+        
+        {{ nodes.xxx.yyy }} 형태의 바인딩 표현식을 입력받는 텍스트 필드입니다.
+        """
+        if self.example_binding:
+            decoration["hintText"] = self.example_binding
+        
+        return {
+            "type": "text_form_field",
+            "args": {
+                "fieldKey": self.name,
+                "decoration": decoration,
+            }
+        }
 
 
 class FieldValueType(str, Enum):

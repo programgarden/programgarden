@@ -152,7 +152,13 @@ def _translate_widget_schema(widget: Dict[str, Any], locale: str, node_type: str
     - Recursively handles children arrays
     """
     result = widget.copy()
-    field_id = widget.get("field_key_of_pydantic")
+    
+    # Try multiple field_id sources (different widgets use different keys)
+    field_id = (
+        widget.get("field_key_of_pydantic") 
+        or (widget.get("args", {}).get("fieldKey"))
+        or (widget.get("args", {}).get("decoration", {}).get("fieldId"))
+    )
     
     # Translate args.decoration
     if "args" in result and isinstance(result["args"], dict):
@@ -209,6 +215,50 @@ def _translate_widget_schema(widget: Dict[str, Any], locale: str, node_type: str
             args["onTrue"] = _translate_widget_schema(args["onTrue"], locale, node_type)
         if "child" in args and isinstance(args["child"], dict):
             args["child"] = _translate_widget_schema(args["child"], locale, node_type)
+        
+        # Translate custom_expression_toggle's fixedWidget/expressionWidget
+        if "fixedWidget" in args and isinstance(args["fixedWidget"], dict):
+            args["fixedWidget"] = _translate_widget_schema(args["fixedWidget"], locale, node_type)
+        if "expressionWidget" in args and isinstance(args["expressionWidget"], dict):
+            args["expressionWidget"] = _translate_widget_schema(args["expressionWidget"], locale, node_type)
+        
+        # Translate label and helperText at args level (for custom widgets like custom_expression_toggle)
+        if "label" in args and isinstance(args["label"], str):
+            label = args["label"]
+            if label.startswith("i18n:"):
+                args["label"] = t(label[5:], locale)
+            elif field_id and node_type:
+                # Try auto-generated key for label (same as labelText)
+                auto_key = f"fieldNames.{node_type}.{field_id}"
+                translated = t(auto_key, locale)
+                if translated != auto_key:
+                    args["label"] = translated
+        
+        if "helperText" in args and isinstance(args["helperText"], str):
+            helper = args["helperText"]
+            if helper.startswith("i18n:"):
+                args["helperText"] = t(helper[5:], locale)
+            elif field_id and node_type:
+                auto_key = f"fields.{node_type}.{field_id}"
+                translated = t(auto_key, locale)
+                if translated != auto_key:
+                    args["helperText"] = translated
+        
+        # Translate fixedHelperText and expressionHelperText (for custom_expression_toggle)
+        if "fixedHelperText" in args and isinstance(args["fixedHelperText"], str):
+            helper = args["fixedHelperText"]
+            if helper.startswith("i18n:"):
+                args["fixedHelperText"] = t(helper[5:], locale)
+            elif field_id and node_type:
+                auto_key = f"fields.{node_type}.{field_id}"
+                translated = t(auto_key, locale)
+                if translated != auto_key:
+                    args["fixedHelperText"] = translated
+        
+        if "expressionHelperText" in args and isinstance(args["expressionHelperText"], str):
+            helper = args["expressionHelperText"]
+            if helper.startswith("i18n:"):
+                args["expressionHelperText"] = t(helper[5:], locale)
         
         result["args"] = args
     

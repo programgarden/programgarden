@@ -265,6 +265,7 @@ class NodeTypeRegistry:
             try:
                 widget = fs.to_json_dynamic_widget()
                 widget["fieldKey"] = name  # Pydantic 모델 필드명 (Flutter 코드 생성기 호환)
+                widget["field_key_of_pydantic"] = name  # i18n 번역 및 테스트용
                 
                 # fieldKey를 args 안에도 추가 (json_dynamic_widget 빌더가 args에서 읽음)
                 if "args" in widget:
