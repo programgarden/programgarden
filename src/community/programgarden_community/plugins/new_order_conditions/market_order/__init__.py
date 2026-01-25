@@ -12,7 +12,7 @@ MARKET_ORDER_SCHEMA = PluginSchema(
     category=PluginCategory.NEW_ORDER,
     version="1.0.0",
     description="Executes buy/sell immediately at current market price. Use when fast execution is important.",
-    products=[ProductType.OVERSEAS_STOCK],
+    products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
         "side": {
             "type": "string",

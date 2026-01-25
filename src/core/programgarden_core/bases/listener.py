@@ -213,6 +213,203 @@ class AccountPnLEvent:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
+@dataclass
+class PositionDetail:
+    """
+    Position detail for workflow P&L tracking.
+    
+    Attributes:
+        symbol: Symbol code (e.g., "AAPL")
+        exchange: Exchange code (e.g., "NASDAQ")
+        quantity: Number of shares
+        avg_price: Average buy price
+        current_price: Current market price
+        pnl_amount: P&L amount (current - buy)
+        pnl_rate: P&L rate (%)
+    """
+    symbol: str
+    exchange: str
+    quantity: int
+    avg_price: Union[Decimal, float]
+    current_price: Union[Decimal, float]
+    pnl_amount: Union[Decimal, float]
+    pnl_rate: Union[Decimal, float]
+
+
+@dataclass
+class WorkflowPnLEvent:
+    """
+    Event emitted when workflow position P&L is updated.
+    
+    Unlike AccountPnLEvent which tracks the entire account,
+    WorkflowPnLEvent separates workflow positions from manual positions
+    using FIFO (First-In-First-Out) tracking.
+    
+    Used for competition ranking where only workflow-generated trades
+    should be counted for official scoring.
+    
+    Attributes:
+        job_id: Job identifier
+        broker_node_id: BrokerNode ID
+        product: Product type ("overseas_stock" or "overseas_futures")
+        
+        # Workflow position P&L
+        workflow_pnl_rate: Workflow position P&L rate (%)
+        workflow_eval_amount: Workflow evaluation amount
+        workflow_buy_amount: Workflow buy amount
+        workflow_pnl_amount: Workflow P&L amount
+        
+        # Other (manual/unknown) position P&L
+        other_pnl_rate: Other position P&L rate (%)
+        other_eval_amount: Other evaluation amount
+        other_buy_amount: Other buy amount
+        other_pnl_amount: Other P&L amount
+        
+        # Total account P&L
+        total_pnl_rate: Total P&L rate (%)
+        total_eval_amount: Total evaluation amount
+        total_buy_amount: Total buy amount
+        total_pnl_amount: Total P&L amount
+        
+        # Position details
+        workflow_positions: List of workflow position details
+        other_positions: List of other position details
+        
+        # Trust metrics
+        trust_score: Trust score (0-100)
+        anomaly_count: Number of detected anomalies
+        
+        currency: Base currency
+        timestamp: Event timestamp
+    
+    New Fields (v2.0):
+        # Workflow product-specific P&L
+        workflow_stock_pnl_rate: Stock-only workflow P&L rate (%)
+        workflow_stock_pnl_amount: Stock-only workflow P&L amount
+        workflow_futures_pnl_rate: Futures-only workflow P&L rate (%)
+        workflow_futures_pnl_amount: Futures-only workflow P&L amount
+        
+        # Account total P&L
+        account_total_pnl_rate: Entire account P&L rate (%)
+        account_total_pnl_amount: Entire account P&L amount
+        account_total_eval_amount: Entire account evaluation amount
+        account_total_buy_amount: Entire account buy amount
+        
+        # Account product-specific P&L
+        account_stock_pnl_rate: Stock-only account P&L rate (%)
+        account_stock_pnl_amount: Stock-only account P&L amount
+        account_futures_pnl_rate: Futures-only account P&L rate (%)
+        account_futures_pnl_amount: Futures-only account P&L amount
+        
+        # Metadata
+        workflow_start_datetime: Job start datetime (fixed reference)
+        workflow_elapsed_days: Days since workflow started
+        
+        # Competition fields (only if listener has start_date)
+        competition_start_date: Competition start date (YYYYMMDD)
+        competition_workflow_pnl_rate: Workflow P&L from competition start date
+        competition_workflow_pnl_amount: Workflow P&L amount from competition start date
+        competition_workflow_stock_pnl_rate: Stock workflow P&L from competition start date
+        competition_workflow_stock_pnl_amount: Stock workflow P&L amount from competition start date
+        competition_workflow_futures_pnl_rate: Futures workflow P&L from competition start date
+        competition_workflow_futures_pnl_amount: Futures workflow P&L amount from competition start date
+        competition_account_pnl_rate: Account P&L from competition start date
+        competition_account_pnl_amount: Account P&L amount from competition start date
+        competition_account_stock_pnl_rate: Stock account P&L from competition start date
+        competition_account_stock_pnl_amount: Stock account P&L amount from competition start date
+        competition_account_futures_pnl_rate: Futures account P&L from competition start date
+        competition_account_futures_pnl_amount: Futures account P&L amount from competition start date
+    
+    Example:
+        class CompetitionListener(BaseExecutionListener):
+            def __init__(self):
+                super().__init__(start_date="20260115")  # 대회 시작일
+            
+            async def on_workflow_pnl_update(self, event: WorkflowPnLEvent) -> None:
+                # Use workflow_pnl_rate for official competition ranking
+                await update_leaderboard(event.job_id, event.workflow_pnl_rate)
+                # Use competition_workflow_pnl_rate if start_date filtering is needed
+                if event.competition_workflow_pnl_rate is not None:
+                    print(f"Competition P&L: {event.competition_workflow_pnl_rate}%")
+    """
+    job_id: str
+    broker_node_id: str
+    product: str  # "overseas_stock" | "overseas_futures"
+    
+    # Workflow position P&L
+    workflow_pnl_rate: Union[Decimal, float]
+    workflow_eval_amount: Union[Decimal, float]
+    workflow_buy_amount: Union[Decimal, float]
+    workflow_pnl_amount: Union[Decimal, float]
+    
+    # Other (manual/unknown) position P&L
+    other_pnl_rate: Union[Decimal, float]
+    other_eval_amount: Union[Decimal, float]
+    other_buy_amount: Union[Decimal, float]
+    other_pnl_amount: Union[Decimal, float]
+    
+    # Total account P&L
+    total_pnl_rate: Union[Decimal, float]
+    total_eval_amount: Union[Decimal, float]
+    total_buy_amount: Union[Decimal, float]
+    total_pnl_amount: Union[Decimal, float]
+    
+    # Position details
+    workflow_positions: list = field(default_factory=list)  # List[PositionDetail]
+    other_positions: list = field(default_factory=list)     # List[PositionDetail]
+    
+    # Trust metrics
+    trust_score: int = 100  # 0-100, starts at 100
+    anomaly_count: int = 0
+    
+    # Metadata
+    currency: str = "USD"
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    
+    # ========== NEW FIELDS (v2.0) ==========
+    
+    # Workflow product-specific P&L
+    workflow_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    workflow_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    workflow_futures_pnl_rate: Optional[Union[Decimal, float]] = None
+    workflow_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+    
+    # Account total P&L (all brokers combined)
+    account_total_pnl_rate: Optional[Union[Decimal, float]] = None
+    account_total_pnl_amount: Optional[Union[Decimal, float]] = None
+    account_total_eval_amount: Optional[Union[Decimal, float]] = None
+    account_total_buy_amount: Optional[Union[Decimal, float]] = None
+    
+    # Account product-specific P&L
+    account_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    account_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    account_futures_pnl_rate: Optional[Union[Decimal, float]] = None
+    account_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+    
+    # Workflow metadata
+    workflow_start_datetime: Optional[datetime] = None  # Job start time (fixed)
+    workflow_elapsed_days: Optional[int] = None  # Days since workflow started
+    
+    # Competition fields (calculated when listener has start_date)
+    competition_start_date: Optional[str] = None  # YYYYMMDD format
+    
+    # Competition workflow P&L
+    competition_workflow_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_workflow_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_workflow_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_workflow_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_workflow_futures_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_workflow_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+    
+    # Competition account P&L
+    competition_account_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_account_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_account_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_account_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_account_futures_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_account_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+
+
 @runtime_checkable
 class ExecutionListener(Protocol):
     """
@@ -287,6 +484,19 @@ class ExecutionListener(Protocol):
             event: AccountPnLEvent with account P&L data.
         """
         ...
+    
+    async def on_workflow_pnl_update(self, event: 'WorkflowPnLEvent') -> None:
+        """
+        Called when workflow position P&L is updated (realtime tracking).
+        
+        Unlike on_account_pnl_update which tracks the entire account,
+        this event separates workflow-generated positions from manual positions
+        using FIFO tracking. Use this for competition ranking.
+        
+        Args:
+            event: WorkflowPnLEvent with workflow-specific P&L data.
+        """
+        ...
 
 
 class BaseExecutionListener:
@@ -294,12 +504,30 @@ class BaseExecutionListener:
     Base implementation of ExecutionListener with no-op methods.
     Subclass this to implement only the callbacks you need.
     
+    Args:
+        start_date: Optional competition start date (YYYYMMDD format).
+                    If provided, competition_* fields in WorkflowPnLEvent
+                    will be calculated from this date.
+    
     Example:
         class MyListener(BaseExecutionListener):
+            def __init__(self):
+                super().__init__(start_date="20260115")  # 대회 시작일
+            
             async def on_node_state_change(self, event):
                 if event.state == NodeState.COMPLETED:
                     print(f"✓ {event.node_id} completed")
     """
+    
+    def __init__(self, start_date: Optional[str] = None):
+        """
+        Initialize the listener.
+        
+        Args:
+            start_date: Competition start date (YYYYMMDD format).
+                       Used to filter P&L calculation from this date.
+        """
+        self.pnl_start_date = start_date
     
     async def on_node_state_change(self, event: NodeStateEvent) -> None:
         """Default implementation: do nothing"""
@@ -324,6 +552,10 @@ class BaseExecutionListener:
     async def on_account_pnl_update(self, event: AccountPnLEvent) -> None:
         """Default implementation: do nothing"""
         pass
+    
+    async def on_workflow_pnl_update(self, event: WorkflowPnLEvent) -> None:
+        """Default implementation: do nothing"""
+        pass
 
 
 class ConsoleExecutionListener(BaseExecutionListener):
@@ -334,11 +566,13 @@ class ConsoleExecutionListener(BaseExecutionListener):
         job = await pg.run_async(workflow, listeners=[ConsoleExecutionListener()])
     """
     
-    def __init__(self, verbose: bool = False):
+    def __init__(self, verbose: bool = False, start_date: Optional[str] = None):
         """
         Args:
             verbose: If True, also print edge events. If False, only node/job events.
+            start_date: Optional competition start date (YYYYMMDD format).
         """
+        super().__init__(start_date=start_date)
         self.verbose = verbose
     
     async def on_node_state_change(self, event: NodeStateEvent) -> None:
@@ -410,3 +644,17 @@ class ConsoleExecutionListener(BaseExecutionListener):
         print(f"{emoji} [{event.broker_node_id}] {color}{pnl_rate:+.2f}%{reset} "
               f"(eval: {float(event.total_eval_amount):,.2f} {event.currency}, "
               f"positions: {event.position_count})")
+    
+    async def on_workflow_pnl_update(self, event: WorkflowPnLEvent) -> None:
+        """Print workflow P&L update for debugging"""
+        wf_pnl = float(event.workflow_pnl_rate)
+        total_pnl = float(event.total_pnl_rate)
+        
+        wf_emoji = "📈" if wf_pnl >= 0 else "📉"
+        wf_color = "\033[92m" if wf_pnl >= 0 else "\033[91m"
+        reset = "\033[0m"
+        
+        trust_badge = "🟢" if event.trust_score >= 80 else "🟡" if event.trust_score >= 50 else "🔴"
+        
+        print(f"{wf_emoji} [{event.broker_node_id}] Workflow: {wf_color}{wf_pnl:+.2f}%{reset} "
+              f"| Total: {total_pnl:+.2f}% | Trust: {trust_badge} {event.trust_score}")

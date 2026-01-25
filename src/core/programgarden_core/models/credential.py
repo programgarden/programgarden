@@ -15,38 +15,20 @@ from enum import Enum
 # Credential Type Schema (n8n 스타일)
 # ============================================================
 
-class CredentialFieldType(str, Enum):
-    """Field input types for UI rendering"""
-    STRING = "string"
-    PASSWORD = "password"             # Masked input
-    BOOLEAN = "boolean"
-    NUMBER = "number"
-    SELECT = "select"                 # Dropdown
-
-
-class CredentialField(BaseModel):
-    """Single field definition in a credential schema"""
-    key: str = Field(..., description="Field key (e.g., 'appkey')")
-    label: str = Field(..., description="Display label (e.g., 'App Key')")
-    field_type: CredentialFieldType = Field(default=CredentialFieldType.STRING)
-    required: bool = Field(default=True)
-    default: Optional[Any] = Field(default=None)
-    description: Optional[str] = Field(default=None)
-    options: Optional[List[str]] = Field(default=None, description="Options for SELECT type")
-
-    model_config = ConfigDict(use_enum_values=True)
-
-
 class CredentialTypeSchema(BaseModel):
     """
     Schema definition for a credential type.
     Defines what fields are needed for a specific service.
     """
-    type_id: str = Field(..., description="Unique identifier (e.g., 'broker_ls')")
+    type_id: str = Field(..., description="Unique identifier (e.g., 'broker_ls_stock')")
     name: str = Field(..., description="Display name (e.g., 'LS Securities')")
     description: Optional[str] = Field(default=None)
-    icon: Optional[str] = Field(default=None, description="Icon emoji or URL")
-    fields: List[CredentialField] = Field(default_factory=list)
+    
+    # json_dynamic_widget 형식의 폼 스키마 (필수)
+    widget_schema: Dict[str, Any] = Field(
+        ...,
+        description="json_dynamic_widget 형식의 폼 스키마"
+    )
     
     # For plugin-defined credentials
     plugin_id: Optional[str] = Field(default=None, description="Plugin that defines this type")
@@ -76,162 +58,267 @@ class Credential(BaseModel):
 
 
 # Built-in credential type schemas
+# 디자인(레이아웃, 간격, 스타일) 요소는 포함하지 않음 - 클라이언트 개발자가 직접 구현
 BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
-    "broker_ls": CredentialTypeSchema(
-        type_id="broker_ls",
-        name="LS Securities",
-        description="LS증권 OpenAPI 인증 정보",
-        icon="🏦",
-        fields=[
-            CredentialField(
-                key="appkey",
-                label="App Key",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="LS증권에서 발급받은 App Key"
-            ),
-            CredentialField(
-                key="appsecret",
-                label="App Secret",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="LS증권에서 발급받은 App Secret"
-            ),
-            CredentialField(
-                key="paper_trading",
-                label="Paper Trading",
-                field_type=CredentialFieldType.BOOLEAN,
-                required=False,
-                default=True,
-                description="모의투자 모드 사용"
-            ),
-        ]
+    # ============================================================
+    # LS증권 해외주식 (overseas_stock) - 모의투자 미지원
+    # ============================================================
+    "broker_ls_stock": CredentialTypeSchema(
+        type_id="broker_ls_stock",
+        name="LS증권 해외주식",
+        description="해외주식 OpenAPI 인증 정보",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-ls-stock-cred",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "appkey",
+                    "type": "password",
+                    "label": "App Key",
+                    "description": "LS증권에서 발급받은 App Key",
+                    "required": True
+                },
+                {
+                    "key": "appsecret",
+                    "type": "password",
+                    "label": "App Secret",
+                    "description": "LS증권에서 발급받은 App Secret",
+                    "required": True
+                }
+            ]
+        }
     ),
+    # ============================================================
+    # LS증권 해외선물 (overseas_futures) - 모의투자 지원
+    # ============================================================
+    "broker_ls_futures": CredentialTypeSchema(
+        type_id="broker_ls_futures",
+        name="LS증권 해외선물",
+        description="해외선물 OpenAPI 인증 정보",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-ls-futures-cred",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "appkey",
+                    "type": "password",
+                    "label": "App Key",
+                    "description": "LS증권에서 발급받은 App Key",
+                    "required": True
+                },
+                {
+                    "key": "appsecret",
+                    "type": "password",
+                    "label": "App Secret",
+                    "description": "LS증권에서 발급받은 App Secret",
+                    "required": True
+                },
+                {
+                    "key": "paper_trading",
+                    "type": "boolean",
+                    "label": "모의투자",
+                    "description": "실제 주문 없이 테스트 모드로 실행",
+                    "default": False
+                }
+            ]
+        }
+    ),
+    # ============================================================
+    # Telegram Bot
+    # ============================================================
     "telegram": CredentialTypeSchema(
         type_id="telegram",
         name="Telegram Bot",
         description="텔레그램 봇 알림 설정",
-        icon="📱",
-        fields=[
-            CredentialField(
-                key="bot_token",
-                label="Bot Token",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="BotFather에서 발급받은 토큰"
-            ),
-            CredentialField(
-                key="chat_id",
-                label="Chat ID",
-                field_type=CredentialFieldType.STRING,
-                required=True,
-                description="메시지를 보낼 채팅 ID"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-telegram-bot",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "bot_token",
+                    "type": "password",
+                    "label": "Bot Token",
+                    "description": "BotFather에서 발급받은 토큰",
+                    "required": True
+                },
+                {
+                    "key": "chat_id",
+                    "type": "text",
+                    "label": "Chat ID",
+                    "description": "메시지를 보낼 채팅 ID",
+                    "required": True
+                }
+            ]
+        }
     ),
+    # ============================================================
+    # OpenAI
+    # ============================================================
     "openai": CredentialTypeSchema(
         type_id="openai",
         name="OpenAI",
         description="OpenAI API 키",
-        icon="🤖",
-        fields=[
-            CredentialField(
-                key="api_key",
-                label="API Key",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="OpenAI API Key (sk-...)"
-            ),
-            CredentialField(
-                key="organization",
-                label="Organization ID",
-                field_type=CredentialFieldType.STRING,
-                required=False,
-                description="조직 ID (선택)"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-openai-key",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "api_key",
+                    "type": "password",
+                    "label": "API Key",
+                    "description": "OpenAI API Key (sk-...)",
+                    "required": True
+                },
+                {
+                    "key": "organization",
+                    "type": "text",
+                    "label": "Organization ID",
+                    "description": "조직 ID (선택)",
+                    "required": False
+                }
+            ]
+        }
     ),
+    # ============================================================
+    # Slack Webhook
+    # ============================================================
     "slack": CredentialTypeSchema(
         type_id="slack",
         name="Slack Webhook",
         description="Slack Incoming Webhook",
-        icon="💬",
-        fields=[
-            CredentialField(
-                key="webhook_url",
-                label="Webhook URL",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="Slack Incoming Webhook URL"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-slack-webhook",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "webhook_url",
+                    "type": "password",
+                    "label": "Webhook URL",
+                    "description": "Slack Incoming Webhook URL",
+                    "required": True
+                }
+            ]
+        }
     ),
+    # ============================================================
+    # Discord Webhook
+    # ============================================================
     "discord": CredentialTypeSchema(
         type_id="discord",
         name="Discord Webhook",
         description="Discord Webhook 알림",
-        icon="🎮",
-        fields=[
-            CredentialField(
-                key="webhook_url",
-                label="Webhook URL",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="Discord Webhook URL"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-discord-webhook",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "webhook_url",
+                    "type": "password",
+                    "label": "Webhook URL",
+                    "description": "Discord Webhook URL",
+                    "required": True
+                }
+            ]
+        }
     ),
+    # ============================================================
+    # PostgreSQL
+    # ============================================================
     "postgres": CredentialTypeSchema(
         type_id="postgres",
         name="PostgreSQL",
         description="PostgreSQL 데이터베이스 연결 정보",
-        icon="🐘",
-        fields=[
-            CredentialField(
-                key="host",
-                label="Host",
-                field_type=CredentialFieldType.STRING,
-                required=True,
-                description="데이터베이스 호스트 주소"
-            ),
-            CredentialField(
-                key="port",
-                label="Port",
-                field_type=CredentialFieldType.NUMBER,
-                required=False,
-                default=5432,
-                description="포트 번호"
-            ),
-            CredentialField(
-                key="database",
-                label="Database",
-                field_type=CredentialFieldType.STRING,
-                required=True,
-                description="데이터베이스 이름"
-            ),
-            CredentialField(
-                key="username",
-                label="Username",
-                field_type=CredentialFieldType.STRING,
-                required=True,
-                description="사용자 이름"
-            ),
-            CredentialField(
-                key="password",
-                label="Password",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="비밀번호"
-            ),
-            CredentialField(
-                key="ssl_enabled",
-                label="SSL Enabled",
-                field_type=CredentialFieldType.BOOLEAN,
-                required=False,
-                default=False,
-                description="SSL 연결 사용"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-postgres-db",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "host",
+                    "type": "text",
+                    "label": "Host",
+                    "description": "데이터베이스 호스트 주소",
+                    "required": True
+                },
+                {
+                    "key": "port",
+                    "type": "number",
+                    "label": "Port",
+                    "description": "포트 번호 (기본: 5432)",
+                    "default": 5432,
+                    "required": True
+                },
+                {
+                    "key": "database",
+                    "type": "text",
+                    "label": "Database",
+                    "description": "데이터베이스 이름",
+                    "required": True
+                },
+                {
+                    "key": "username",
+                    "type": "text",
+                    "label": "Username",
+                    "description": "사용자 이름",
+                    "required": True
+                },
+                {
+                    "key": "password",
+                    "type": "password",
+                    "label": "Password",
+                    "description": "비밀번호",
+                    "required": True
+                },
+                {
+                    "key": "ssl_enabled",
+                    "type": "boolean",
+                    "label": "SSL 연결",
+                    "description": "SSL/TLS 암호화 연결 사용",
+                    "default": False
+                }
+            ]
+        }
     ),
     # ============================================================
     # HTTP Authentication Types (HTTPRequestNode용)
@@ -240,101 +327,139 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
         type_id="http_bearer",
         name="HTTP Bearer Token",
         description="Bearer Token 인증 (Authorization: Bearer <token>)",
-        icon="🔑",
-        fields=[
-            CredentialField(
-                key="token",
-                label="Bearer Token",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="Bearer Token 값"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-bearer-token",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "token",
+                    "type": "password",
+                    "label": "Bearer Token",
+                    "description": "Bearer Token 값",
+                    "required": True
+                }
+            ]
+        }
     ),
     "http_header": CredentialTypeSchema(
         type_id="http_header",
         name="HTTP Header Auth",
         description="커스텀 헤더 인증 (X-API-Key 등)",
-        icon="📋",
-        fields=[
-            CredentialField(
-                key="header_name",
-                label="Header Name",
-                field_type=CredentialFieldType.STRING,
-                required=True,
-                default="X-API-Key",
-                description="헤더 이름 (예: X-API-Key, Authorization)"
-            ),
-            CredentialField(
-                key="header_value",
-                label="Header Value",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="헤더 값 (API 키 등)"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-api-key",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "header_name",
+                    "type": "text",
+                    "label": "Header Name",
+                    "description": "헤더 이름 (예: X-API-Key, Authorization)",
+                    "default": "X-API-Key",
+                    "required": True
+                },
+                {
+                    "key": "header_value",
+                    "type": "password",
+                    "label": "Header Value",
+                    "description": "헤더 값 (API 키 등)",
+                    "required": True
+                }
+            ]
+        }
     ),
     "http_basic": CredentialTypeSchema(
         type_id="http_basic",
         name="HTTP Basic Auth",
         description="Basic Authentication (username:password)",
-        icon="👤",
-        fields=[
-            CredentialField(
-                key="username",
-                label="Username",
-                field_type=CredentialFieldType.STRING,
-                required=True,
-                description="사용자 이름"
-            ),
-            CredentialField(
-                key="password",
-                label="Password",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="비밀번호"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-basic-auth",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "username",
+                    "type": "text",
+                    "label": "Username",
+                    "description": "사용자 이름",
+                    "required": True
+                },
+                {
+                    "key": "password",
+                    "type": "password",
+                    "label": "Password",
+                    "description": "비밀번호",
+                    "required": True
+                }
+            ]
+        }
     ),
     "http_query": CredentialTypeSchema(
         type_id="http_query",
         name="HTTP Query Parameter Auth",
         description="쿼리 파라미터 인증 (?api_key=xxx)",
-        icon="❓",
-        fields=[
-            CredentialField(
-                key="param_name",
-                label="Parameter Name",
-                field_type=CredentialFieldType.STRING,
-                required=True,
-                default="api_key",
-                description="쿼리 파라미터 이름"
-            ),
-            CredentialField(
-                key="param_value",
-                label="Parameter Value",
-                field_type=CredentialFieldType.PASSWORD,
-                required=True,
-                description="쿼리 파라미터 값"
-            ),
-        ]
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-query-auth",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "param_name",
+                    "type": "text",
+                    "label": "Parameter Name",
+                    "description": "쿼리 파라미터 이름",
+                    "default": "api_key",
+                    "required": True
+                },
+                {
+                    "key": "param_value",
+                    "type": "password",
+                    "label": "Parameter Value",
+                    "description": "쿼리 파라미터 값",
+                    "required": True
+                }
+            ]
+        }
     ),
     "http_custom": CredentialTypeSchema(
         type_id="http_custom",
         name="Custom HTTP Credential",
-        description="커스텀 HTTP 인증 - Headers, Query Params, Body에 사용할 값들을 자유롭게 정의. 워크플로우에는 credential_id만 저장되고, 실제 값은 서버에서 주입됩니다.",
-        icon="⚙️",
-        fields=[
-            # 이 필드들은 UI 힌트용 - 실제 데이터는 동적 key-value로 저장
-            CredentialField(
-                key="_ui_type",
-                label="UI Type",
-                field_type=CredentialFieldType.STRING,
-                required=False,
-                default="dynamic_sections",
-                description="UI 렌더링 타입 (internal)"
-            ),
-        ]
+        description="커스텀 HTTP 인증 - Headers, Query Params, Body에 사용할 값들을 자유롭게 정의",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-custom-auth",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                }
+            ],
+            "dynamic": True,
+            "dynamic_description": "커스텀 HTTP Credential은 동적으로 key-value 쌍을 정의할 수 있습니다. 서버 API를 통해 관리하세요."
+        }
     ),
 }
 

@@ -72,7 +72,7 @@ ProgramGarden에서 사용할 수 있는 모든 노드의 상세 설명입니다
 > - `overseas_stock`: 해외주식 (모의투자 미지원)
 > - `overseas_futures`: 해외선물 (모의투자 지원)
 >
-> **모의투자 설정**: `paper_trading`은 credential의 `broker_ls.paper_trading`에서 관리됩니다.
+> **모의투자 설정**: `paper_trading`은 `broker_ls_futures` credential에서 관리됩니다.
 
 **출력**: `connection` - 증권사 연결 객체
 

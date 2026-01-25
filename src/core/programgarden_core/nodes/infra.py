@@ -127,7 +127,7 @@ class BrokerNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CREDENTIAL_SELECT,
-                credential_types=["broker_ls"],
+                credential_types=["broker_ls_stock", "broker_ls_futures"],
                 example="my-broker-cred",
                 expected_type="str",
             ),

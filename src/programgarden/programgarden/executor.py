@@ -1501,11 +1501,45 @@ class BrokerNodeExecutor(NodeExecutorBase):
         context.log("info", f"Broker connected: {provider} ({product}, paper_trading={paper_trading})", node_id)
         
         # ========================================
-        # 계좌 수익률 자동 추적 (리스너 자동 감지)
-        # on_account_pnl_update를 구현한 리스너가 있으면 자동 시작
+        # 워크플로우 포지션 추적기 초기화 (리스너 자동 감지)
+        # on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작
         # ========================================
-        if appkey and appsecret and self._has_account_pnl_listener(context):
-            context.log("info", "AccountPnL listener detected - starting account tracking", node_id)
+        context.init_workflow_position_tracker(
+            broker_node_id=node_id,
+            product=product,
+        )
+        
+        # ========================================
+        # Fallback: 체결내역 조회로 시장가 주문 가격 복구
+        # 연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우 대비
+        # ========================================
+        if appkey and appsecret:
+            asyncio.create_task(
+                self._sync_fill_prices_from_history(
+                    node_id=node_id,
+                    product=product,
+                    appkey=appkey,
+                    appsecret=appsecret,
+                    paper_trading=paper_trading,
+                    context=context,
+                )
+            )
+        
+        # ========================================
+        # 계좌 수익률 자동 추적 (리스너 자동 감지)
+        # on_account_pnl_update 또는 on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작
+        # ========================================
+        has_account_listener = self._has_account_pnl_listener(context)
+        has_workflow_listener = self._has_workflow_pnl_listener(context)
+        
+        if appkey and appsecret and (has_account_listener or has_workflow_listener):
+            listeners_detected = []
+            if has_account_listener:
+                listeners_detected.append("AccountPnL")
+            if has_workflow_listener:
+                listeners_detected.append("WorkflowPnL")
+            
+            context.log("info", f"{', '.join(listeners_detected)} listener(s) detected - starting account tracking", node_id)
             asyncio.create_task(
                 self._start_account_tracking(
                     node_id=node_id,
@@ -1515,7 +1549,27 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     appsecret=appsecret,
                     paper_trading=paper_trading,
                     context=context,
+                    emit_account_pnl=has_account_listener,
+                    emit_workflow_pnl=has_workflow_listener,
                 )
+            )
+        
+        # ========================================
+        # 워크플로우 체결 이벤트 자동 구독 (FIFO 포지션 추적용)
+        # on_workflow_pnl_update 리스너가 있으면 체결/정정/취소 이벤트 구독
+        # 
+        # await로 실행하여 WebSocket 연결이 완료된 후 다음 노드 진행
+        # 이렇게 해야 주문 시점에 체결 이벤트를 수신할 수 있음
+        # ========================================
+        if appkey and appsecret and has_workflow_listener:
+            context.log("info", "Starting workflow fill event subscription for FIFO tracking", node_id)
+            await self._subscribe_workflow_fill_events(
+                node_id=node_id,
+                product=product,
+                appkey=appkey,
+                appsecret=appsecret,
+                paper_trading=paper_trading,
+                context=context,
             )
         
         return {
@@ -1530,15 +1584,470 @@ class BrokerNodeExecutor(NodeExecutorBase):
         }
     
     def _has_account_pnl_listener(self, context: ExecutionContext) -> bool:
-        """리스너 중 on_account_pnl_update를 구현한 게 있는지 확인 (자동 감지)"""
+        """리스너 중 on_account_pnl_update를 실제로 오버라이드한 게 있는지 확인"""
+        from programgarden_core.bases import BaseExecutionListener
+        
         for listener in context._listeners:
-            if hasattr(listener, 'on_account_pnl_update') and callable(getattr(listener, 'on_account_pnl_update')):
-                # BaseExecutionListener의 no-op이 아닌 실제 구현인지 확인
-                method = getattr(listener, 'on_account_pnl_update')
-                # 부모 클래스의 메서드와 다른지 체크 (실제로 오버라이드됐는지)
-                # 또는 간단하게: 메서드가 존재하면 활성화 (BaseExecutionListener는 pass만 함)
+            listener_class = type(listener)
+            if 'on_account_pnl_update' in listener_class.__dict__:
                 return True
+            for cls in listener_class.__mro__:
+                if cls is BaseExecutionListener:
+                    break
+                if 'on_account_pnl_update' in cls.__dict__:
+                    return True
         return False
+    
+    def _has_workflow_pnl_listener(self, context: ExecutionContext) -> bool:
+        """리스너 중 on_workflow_pnl_update를 실제로 오버라이드한 게 있는지 확인"""
+        from programgarden_core.bases import BaseExecutionListener
+        
+        for listener in context._listeners:
+            listener_class = type(listener)
+            if 'on_workflow_pnl_update' in listener_class.__dict__:
+                return True
+            for cls in listener_class.__mro__:
+                if cls is BaseExecutionListener:
+                    break
+                if 'on_workflow_pnl_update' in cls.__dict__:
+                    return True
+        return False
+    
+    async def _subscribe_workflow_fill_events(
+        self,
+        node_id: str,
+        product: str,
+        appkey: str,
+        appsecret: str,
+        paper_trading: bool,
+        context: ExecutionContext,
+    ) -> None:
+        """워크플로우 체결 이벤트 구독 (FIFO 포지션 추적용)
+        
+        체결('11'), 정정완료('12'), 취소완료('13') 이벤트를 수신하여
+        WorkflowPositionTracker에 기록합니다.
+        
+        Note: ensure_ls_login()을 사용하여 RealMarketDataNode와 동일한
+        LS 인스턴스를 공유합니다. 이로써 하나의 WebSocket 연결에서
+        GSC(시세)와 AS0/AS1(주문) 이벤트를 모두 수신합니다.
+        """
+        try:
+            from datetime import datetime
+            
+            # ensure_ls_login으로 동일한 LS 인스턴스 사용 (RealMarketDataNode와 공유)
+            ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, product)
+            
+            if not success:
+                context.log("error", f"Failed to login for fill event subscription (node={node_id}): {error}", node_id)
+                return
+            
+            context.log("info", f"Using shared LS instance for fill event subscription (product={product})", node_id)
+            
+            if product == "overseas_stock":
+                await self._subscribe_stock_fill_events(ls, node_id, context)
+            elif product == "overseas_futures":
+                await self._subscribe_futures_fill_events(ls, node_id, context)
+            else:
+                context.log("warning", f"Unknown product type for fill subscription: {product}", node_id)
+                
+        except Exception as e:
+            context.log("error", f"Failed to subscribe fill events: {e}", node_id)
+    
+    async def _subscribe_stock_fill_events(
+        self,
+        ls,
+        node_id: str,
+        context: ExecutionContext,
+    ) -> None:
+        """해외주식 체결 이벤트 구독
+        
+        AS0~AS4 이벤트 구조:
+        - AS0: 주문 접수 (01: 신규, 03: 취소접수)
+        - AS1: 주문 체결 (sExecQty > 0 일 때 체결)
+        - AS0/AS1: 정정완료(12), 취소완료(13), 거부(14)
+        
+        _add_real_order()가 한번 호출되면 AS0~AS4 전부 자동 등록되지만,
+        콜백은 TR별로 따로 등록해야 함.
+        """
+        from datetime import datetime
+        
+        real = ls.overseas_stock().real()
+        await real.connect()
+        
+        # 이벤트 루프 캡처
+        loop = asyncio.get_running_loop()
+        
+        def on_as0_event(resp):
+            """AS0: 주문 접수/정정완료/취소완료 이벤트 처리"""
+            try:
+                body = getattr(resp, 'body', resp)
+                ord_type_code = getattr(body, 'sOrdxctPtnCode', '')
+                
+                logger.info(f"📡 AS0 event: type={ord_type_code}")
+                
+                # 필요한 필드 추출
+                order_no = str(getattr(body, 'sOrdNo', ''))
+                order_date = getattr(body, 'sOrdDt', datetime.now().strftime('%Y%m%d'))
+                
+                if ord_type_code == '12':  # 정정완료
+                    quantity = int(getattr(body, 'sOrdQty', 0))
+                    price = float(getattr(body, 'sOrdPrc', 0))
+                    new_qty = int(getattr(body, 'sOrgOrdMdfyQty', 0)) or quantity
+                    new_price = price
+                    asyncio.run_coroutine_threadsafe(
+                        context.modify_workflow_order(
+                            order_no=order_no,
+                            order_date=order_date,
+                            new_quantity=new_qty if new_qty > 0 else None,
+                            new_price=new_price if new_price > 0 else None,
+                        ),
+                        loop
+                    )
+                    logger.debug(f"📌 Workflow order modified: {order_no}")
+                
+                elif ord_type_code == '13':  # 취소완료
+                    asyncio.run_coroutine_threadsafe(
+                        context.cancel_workflow_order(
+                            order_no=order_no,
+                            order_date=order_date,
+                        ),
+                        loop
+                    )
+                    logger.debug(f"📌 Workflow order cancelled: {order_no}")
+                    
+            except Exception as e:
+                logger.warning(f"Error processing AS0 event: {e}")
+        
+        def on_as1_event(resp):
+            """AS1: 주문 체결 이벤트 처리"""
+            try:
+                body = getattr(resp, 'body', resp)
+                
+                # AS1 체결 전용 필드
+                exec_qty = int(getattr(body, 'sExecQty', 0))
+                exec_price = float(getattr(body, 'sExecPrc', 0))
+                
+                if exec_qty <= 0:
+                    # 체결 수량이 0이면 체결 이벤트가 아님
+                    return
+                
+                logger.info(f"📡 AS1 fill event: qty={exec_qty}, price={exec_price}")
+                
+                # 필요한 필드 추출
+                order_no = str(getattr(body, 'sOrdNo', ''))
+                order_date = datetime.now().strftime('%Y%m%d')  # AS1에는 sOrdDt 없음
+                symbol = getattr(body, 'sShtnIsuNo', getattr(body, 'sIsuNo', ''))
+                market_code = getattr(body, 'sOrdMktCode', '82')
+                side_code = getattr(body, 'sOrdPtnCode', '')  # 01: 매도, 02: 매수
+                fill_time = getattr(body, 'proctm', datetime.now().strftime('%H%M%S000'))
+                
+                # 시장코드 → 거래소 변환
+                exchange_map = {'81': 'NYSE', '82': 'NASDAQ', '83': 'AMEX'}
+                exchange = exchange_map.get(market_code, 'NASDAQ')
+                
+                # 매매구분 (AS1: sOrdPtnCode 또는 sBnsTp)
+                bns_tp = getattr(body, 'sBnsTp', '')  # 1: 매도, 2: 매수
+                if bns_tp:
+                    side = 'buy' if bns_tp == '2' else 'sell'
+                else:
+                    side = 'buy' if side_code == '02' else 'sell'
+                
+                async def record_and_refresh():
+                    """체결 기록 후 AccountTracker refresh"""
+                    await context.record_workflow_fill(
+                        order_no=order_no,
+                        order_date=order_date,
+                        symbol=symbol,
+                        exchange=exchange,
+                        side=side,
+                        quantity=exec_qty,
+                        price=exec_price,
+                        fill_time=fill_time,
+                        commda_code='40',  # OPEN API
+                    )
+                    
+                    # AccountTracker refresh로 PnL 이벤트 강제 트리거
+                    tracker_key = f"{context.job_id}_{node_id}"
+                    tracker_info = self._active_trackers.get(tracker_key)
+                    if tracker_info and "tracker" in tracker_info:
+                        tracker = tracker_info["tracker"]
+                        if hasattr(tracker, 'refresh_now'):
+                            await tracker.refresh_now()
+                            logger.debug(f"📊 AccountTracker refreshed after fill")
+                
+                asyncio.run_coroutine_threadsafe(record_and_refresh(), loop)
+                logger.info(f"📌 Workflow fill recorded: {symbol} {side} {exec_qty}@{exec_price}")
+                    
+            except Exception as e:
+                logger.warning(f"Error processing AS1 event: {e}")
+        
+        # AS0 구독 등록 (접수/정정완료/취소완료)
+        real.AS0().on_as0_message(on_as0_event)
+        
+        # AS1 구독 등록 (체결)
+        real.AS1().on_as1_message(on_as1_event)
+        
+        # 활성 구독 저장 (나중에 정리용)
+        sub_key = f"{context.job_id}_{node_id}_fill_sub"
+        self._active_trackers[sub_key] = {
+            "ls": ls,
+            "real": real,
+            "type": "fill_subscription",
+        }
+        
+        context.log("info", f"Workflow fill event subscription started (AS0+AS1)", node_id)
+    
+    async def _subscribe_futures_fill_events(
+        self,
+        ls,
+        node_id: str,
+        context: ExecutionContext,
+    ) -> None:
+        """해외선물 체결 이벤트 구독"""
+        from datetime import datetime
+        
+        real = ls.overseas_futureoption().real()
+        await real.connect()
+        
+        # 이벤트 루프 캡처
+        loop = asyncio.get_running_loop()
+        
+        def on_order_event(resp):
+            """체결/정정/취소 이벤트 처리 (TC2/TC3)"""
+            try:
+                body = getattr(resp, 'body', resp)
+                header = getattr(resp, 'header', None)
+                svc_id = getattr(header, 'svc_id', '') if header else ''
+                
+                order_no = str(getattr(body, 'ordr_no', ''))
+                order_date = getattr(body, 'ordr_dt', datetime.now().strftime('%Y%m%d'))
+                symbol = getattr(body, 'is_cd', '')
+                side_code = getattr(body, 'slby_tp_cd', '')
+                quantity = int(getattr(body, 'ordr_qty', 0) or getattr(body, 'ccld_qty', 0))
+                price = float(getattr(body, 'ordr_prc', 0) or getattr(body, 'ccld_prc', 0))
+                fill_time = getattr(body, 'ccld_tm', datetime.now().strftime('%H%M%S000'))
+                ordr_ccd = getattr(body, 'ordr_ccd', '')  # 1=신규, 2=정정, 3=취소
+                
+                # 매매구분
+                side = 'buy' if side_code == '1' else 'sell'
+                
+                if svc_id == 'HO02':  # 체결 통보
+                    if ordr_ccd == '1':  # 신규 체결
+                        if price > 0 and quantity > 0:
+                            asyncio.run_coroutine_threadsafe(
+                                context.record_workflow_fill(
+                                    order_no=order_no,
+                                    order_date=order_date,
+                                    symbol=symbol,
+                                    exchange='FUTURES',
+                                    side=side,
+                                    quantity=quantity,
+                                    price=price,
+                                    fill_time=fill_time,
+                                    commda_code='40',
+                                ),
+                                loop
+                            )
+                    elif ordr_ccd == '2':  # 정정 완료
+                        asyncio.run_coroutine_threadsafe(
+                            context.modify_workflow_order(
+                                order_no=order_no,
+                                order_date=order_date,
+                                new_quantity=quantity if quantity > 0 else None,
+                                new_price=price if price > 0 else None,
+                            ),
+                            loop
+                        )
+                    elif ordr_ccd == '3':  # 취소 완료
+                        asyncio.run_coroutine_threadsafe(
+                            context.cancel_workflow_order(
+                                order_no=order_no,
+                                order_date=order_date,
+                            ),
+                            loop
+                        )
+                        
+            except Exception as e:
+                logger.warning(f"Error processing futures order event: {e}")
+        
+        # TC2 구독 등록
+        real.TC2().on_tc2_message(on_order_event)
+        
+        # 활성 구독 저장
+        sub_key = f"{context.job_id}_{node_id}_fill_sub"
+        self._active_trackers[sub_key] = {
+            "ls": ls,
+            "real": real,
+            "type": "fill_subscription",
+        }
+        
+        context.log("info", f"Workflow fill event subscription started (TC2)", node_id)
+
+    async def _sync_fill_prices_from_history(
+        self,
+        node_id: str,
+        product: str,
+        appkey: str,
+        appsecret: str,
+        paper_trading: bool,
+        context: ExecutionContext,
+    ) -> None:
+        """체결내역 조회로 시장가 주문 가격 복구 (Fallback)
+        
+        연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우,
+        체결내역 API를 조회하여 가격이 0인 주문의 실제 체결 가격을 업데이트합니다.
+        """
+        try:
+            # 가격이 0인 주문이 있는지 확인
+            orders_without_price = context.get_workflow_orders_without_fill_price()
+            if not orders_without_price:
+                return
+            
+            context.log("info", f"Found {len(orders_without_price)} orders without fill price - syncing from history", node_id)
+            
+            from programgarden_finance import LS
+            
+            ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id)
+            if not success:
+                context.log("warning", f"Failed to login for fill price sync: {error}", node_id)
+                return
+            
+            if product == "overseas_stock":
+                await self._sync_stock_fill_prices(ls, orders_without_price, context, node_id)
+            elif product == "overseas_futures":
+                await self._sync_futures_fill_prices(ls, orders_without_price, context, node_id)
+                
+        except Exception as e:
+            context.log("warning", f"Failed to sync fill prices from history: {e}", node_id)
+    
+    async def _sync_stock_fill_prices(
+        self,
+        ls,
+        orders: list,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> None:
+        """해외주식 체결내역에서 FIFO 포지션 동기화
+        
+        연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우,
+        체결내역 API를 조회하여 FIFO 포지션을 생성합니다.
+        """
+        try:
+            from programgarden_finance import COSAQ00102
+            from programgarden_finance.ls.models import SetupOptions
+            
+            # 오늘 날짜 기준 체결내역 조회 (COSAQ00102 = 주문체결내역조회)
+            today = datetime.now().strftime("%Y%m%d")
+            
+            response = ls.overseas_stock().accno().cosaq00102(
+                body=COSAQ00102.COSAQ00102InBlock1(
+                    RecCnt=1,
+                    QryTpCode="1",  # 계좌별
+                    BkseqTpCode="1",  # 역순
+                    OrdMktCode="00",  # 전체 시장
+                    BnsTpCode="0",  # 전체 (매수/매도)
+                    IsuNo="",  # 전체 종목
+                    SrtOrdNo=999999999,  # 역순 시작
+                    OrdDt=today,  # 오늘 날짜
+                    ExecYn="1",  # 체결만 조회
+                    CrcyCode="000",  # 전체 통화
+                    ThdayBnsAppYn="0",
+                    LoanBalHldYn="0",
+                ),
+                options=SetupOptions(on_rate_limit="wait"),
+            )
+            result = await response.req_async()
+            
+            if not result or not result.block3:
+                context.log("debug", "No fill history found for today", node_id)
+                return
+            
+            # 시장코드 → 거래소 매핑
+            market_to_exchange = {'81': 'NYSE', '82': 'NASDAQ', '83': 'AMEX'}
+            
+            # 체결내역에서 상세 정보 추출 (block3 = 주문/체결 상세)
+            fill_history = []
+            for item in result.block3:
+                order_no = str(getattr(item, 'OrdNo', 0))
+                fill_price = float(getattr(item, 'OvrsExecPrc', 0))
+                fill_qty = int(getattr(item, 'ExecQty', 0))
+                symbol = str(getattr(item, 'ShtnIsuNo', getattr(item, 'IsuNo', '')))
+                market_code = str(getattr(item, 'OrdMktCode', '82'))
+                side_code = str(getattr(item, 'BnsTpCode', ''))  # 1=매도, 2=매수
+                fill_time = str(getattr(item, 'ExecTime', ''))
+                
+                # 시장코드 → 거래소
+                exchange = market_to_exchange.get(market_code, 'NASDAQ')
+                # 매매구분
+                side = 'sell' if side_code == '1' else 'buy'
+                
+                if order_no and fill_price > 0 and fill_qty > 0 and symbol:
+                    fill_history.append({
+                        "order_no": order_no,
+                        "order_date": today,
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "side": side,
+                        "quantity": fill_qty,
+                        "price": fill_price,
+                        "fill_time": fill_time,
+                    })
+            
+            if fill_history:
+                # 1. 가격 업데이트 (기존 로직)
+                simple_history = [{"order_no": f["order_no"], "order_date": f["order_date"], "fill_price": f["price"]} for f in fill_history]
+                updated = context.sync_workflow_fill_prices_from_history(simple_history)
+                if updated > 0:
+                    context.log("info", f"Synced {updated} order fill prices from stock history", node_id)
+                
+                # 2. FIFO 포지션 생성 (새 로직)
+                processed = context.sync_workflow_fills_from_history(fill_history)
+                if processed > 0:
+                    context.log("info", f"Created {processed} FIFO positions from stock fill history", node_id)
+                    
+        except Exception as e:
+            context.log("warning", f"Failed to sync stock fills: {e}", node_id)
+    
+    async def _sync_futures_fill_prices(
+        self,
+        ls,
+        orders: list,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> None:
+        """해외선물 체결내역에서 가격 동기화"""
+        try:
+            from programgarden_finance import CIDBQ01800
+            
+            # 오늘 날짜 기준 체결내역 조회
+            today = datetime.now().strftime("%Y%m%d")
+            
+            response = ls.overseas_futureoption().accno().해외선물체결내역조회(
+                body=CIDBQ01800.CIDBQ01800InBlock(
+                    QryDt=today,
+                )
+            )
+            result = await response.req_async()
+            
+            if not result or not hasattr(result, 'block1') or not result.block1:
+                return
+            
+            # 체결내역에서 주문번호별 가격 추출
+            fill_history = []
+            for item in result.block1:
+                fill_history.append({
+                    "order_no": str(getattr(item, 'OrdNo', '')),
+                    "order_date": today,
+                    "fill_price": float(getattr(item, 'ExecPrc', 0)),
+                })
+            
+            if fill_history:
+                updated = context.sync_workflow_fill_prices_from_history(fill_history)
+                if updated > 0:
+                    context.log("info", f"Synced {updated} order fill prices from futures history", node_id)
+                    
+        except Exception as e:
+            context.log("warning", f"Failed to sync futures fill prices: {e}", node_id)
     
     async def _start_account_tracking(
         self,
@@ -1549,8 +2058,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
         appsecret: str,
         paper_trading: bool,
         context: ExecutionContext,
+        emit_account_pnl: bool = True,
+        emit_workflow_pnl: bool = False,
     ) -> None:
-        """계좌 추적기 시작 및 수익률 콜백 등록"""
+        """계좌 추적기 시작 및 수익률 콜백 등록
+        
+        Args:
+            emit_account_pnl: on_account_pnl_update 콜백 호출 여부
+            emit_workflow_pnl: on_workflow_pnl_update 콜백 호출 여부
+        """
         try:
             from programgarden_finance import LS
             
@@ -1567,9 +2083,17 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 return
             
             if product == "overseas_stock":
-                await self._start_stock_tracker(ls, node_id, product, provider, context)
+                await self._start_stock_tracker(
+                    ls, node_id, product, provider, context,
+                    emit_account_pnl=emit_account_pnl,
+                    emit_workflow_pnl=emit_workflow_pnl,
+                )
             elif product == "overseas_futures":
-                await self._start_futures_tracker(ls, node_id, product, provider, context)
+                await self._start_futures_tracker(
+                    ls, node_id, product, provider, context,
+                    emit_account_pnl=emit_account_pnl,
+                    emit_workflow_pnl=emit_workflow_pnl,
+                )
             else:
                 context.log("warning", f"Unknown product type for tracking: {product}", node_id)
                 
@@ -1583,6 +2107,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
         product: str,
         provider: str,
         context: ExecutionContext,
+        emit_account_pnl: bool = True,
+        emit_workflow_pnl: bool = False,
     ) -> None:
         """해외주식 계좌 추적기 시작"""
         accno = ls.overseas_stock().accno()
@@ -1594,19 +2120,55 @@ class BrokerNodeExecutor(NodeExecutorBase):
         # 수익률 콜백 등록
         def on_pnl_change(pnl_info):
             # 비동기로 리스너에 전달
-            asyncio.create_task(
-                context.notify_account_pnl(
-                    broker_node_id=node_id,
-                    product=product,
-                    provider=provider,
-                    account_pnl_rate=float(pnl_info.account_pnl_rate),
-                    total_eval_amount=float(pnl_info.total_eval_amount),
-                    total_buy_amount=float(pnl_info.total_buy_amount),
-                    total_pnl_amount=float(pnl_info.total_pnl_amount),
-                    position_count=pnl_info.position_count,
-                    currency=pnl_info.currency,
+            
+            # 1. 계좌 수익률 (on_account_pnl_update)
+            if emit_account_pnl:
+                asyncio.create_task(
+                    context.notify_account_pnl(
+                        broker_node_id=node_id,
+                        product=product,
+                        provider=provider,
+                        account_pnl_rate=float(pnl_info.account_pnl_rate),
+                        total_eval_amount=float(pnl_info.total_eval_amount),
+                        total_buy_amount=float(pnl_info.total_buy_amount),
+                        total_pnl_amount=float(pnl_info.total_pnl_amount),
+                        position_count=pnl_info.position_count,
+                        currency=pnl_info.currency,
+                    )
                 )
-            )
+            
+            # 2. 워크플로우 수익률 (on_workflow_pnl_update)
+            if emit_workflow_pnl:
+                # tracker에서 현재 positions 조회 (AccountPnLInfo에는 positions가 없음)
+                current_prices = {}
+                account_positions = {}
+                
+                positions = tracker.get_positions()  # Dict[symbol, StockPositionItem]
+                if positions:
+                    for symbol, pos_item in positions.items():
+                        # StockPositionItem에서 현재가 추출
+                        if hasattr(pos_item, 'current_price') and pos_item.current_price:
+                            current_prices[symbol] = float(pos_item.current_price)
+                        # 전체 포지션 정보도 전달
+                        account_positions[symbol] = {
+                            "symbol": symbol,
+                            "quantity": int(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
+                            "buy_price": float(pos_item.buy_price) if hasattr(pos_item, 'buy_price') else 0,
+                            "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
+                            "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
+                            "product": product,  # 상품 유형 (overseas_stock)
+                        }
+                
+                asyncio.create_task(
+                    context.notify_workflow_pnl(
+                        broker_node_id=node_id,
+                        product=product,
+                        provider=provider,
+                        current_prices=current_prices,
+                        account_positions=account_positions if account_positions else None,
+                        currency=pnl_info.currency if hasattr(pnl_info, 'currency') else "USD",
+                    )
+                )
         
         tracker.on_account_pnl_change(on_pnl_change)
         await tracker.start()
@@ -1628,6 +2190,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
         product: str,
         provider: str,
         context: ExecutionContext,
+        emit_account_pnl: bool = True,
+        emit_workflow_pnl: bool = False,
     ) -> None:
         """해외선물 계좌 추적기 시작"""
         accno = ls.overseas_futureoption().accno()
@@ -1642,19 +2206,53 @@ class BrokerNodeExecutor(NodeExecutorBase):
         
         # 수익률 콜백 등록
         def on_pnl_change(pnl_info):
-            asyncio.create_task(
-                context.notify_account_pnl(
-                    broker_node_id=node_id,
-                    product=product,
-                    provider=provider,
-                    account_pnl_rate=float(pnl_info.account_pnl_rate),
-                    total_eval_amount=float(pnl_info.total_eval_amount),
-                    total_buy_amount=float(pnl_info.total_margin_used),  # 선물은 증거금 기준
-                    total_pnl_amount=float(pnl_info.total_pnl_amount),
-                    position_count=pnl_info.position_count,
-                    currency=pnl_info.currency,
+            # 1. 계좌 수익률 (on_account_pnl_update)
+            if emit_account_pnl:
+                asyncio.create_task(
+                    context.notify_account_pnl(
+                        broker_node_id=node_id,
+                        product=product,
+                        provider=provider,
+                        account_pnl_rate=float(pnl_info.account_pnl_rate),
+                        total_eval_amount=float(pnl_info.total_eval_amount),
+                        total_buy_amount=float(pnl_info.total_margin_used),  # 선물은 증거금 기준
+                        total_pnl_amount=float(pnl_info.total_pnl_amount),
+                        position_count=pnl_info.position_count,
+                        currency=pnl_info.currency,
+                    )
                 )
-            )
+            
+            # 2. 워크플로우 수익률 (on_workflow_pnl_update)
+            if emit_workflow_pnl:
+                # tracker에서 현재 positions 조회
+                current_prices = {}
+                account_positions = {}
+                
+                positions = tracker.get_positions()  # Dict[symbol, FuturesPositionItem]
+                if positions:
+                    for symbol, pos_item in positions.items():
+                        if hasattr(pos_item, 'current_price') and pos_item.current_price:
+                            current_prices[symbol] = float(pos_item.current_price)
+                        account_positions[symbol] = {
+                            "symbol": symbol,
+                            "quantity": int(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
+                            "buy_price": float(pos_item.entry_price) if hasattr(pos_item, 'entry_price') else 0,
+                            "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
+                            "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
+                            "side": pos_item.side if hasattr(pos_item, 'side') else "long",
+                            "product": product,  # 상품 유형 (overseas_futures)
+                        }
+                
+                asyncio.create_task(
+                    context.notify_workflow_pnl(
+                        broker_node_id=node_id,
+                        product=product,
+                        provider=provider,
+                        current_prices=current_prices,
+                        account_positions=account_positions if account_positions else None,
+                        currency=pnl_info.currency if hasattr(pnl_info, 'currency') else "USD",
+                    )
+                )
         
         tracker.on_account_pnl_change(on_pnl_change)
         await tracker.start()
@@ -2184,6 +2782,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                         "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
                         "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
                         "currency": getattr(pos, 'currency_code', 'USD'),
+                        "product": "overseas_stock",  # 상품 유형
                     }
                 
                 # 컨텍스트에 최신 데이터 저장
@@ -2373,6 +2972,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                         "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
                         "pnl_rate": pnl_rate,
                         "currency": getattr(pos, 'currency', 'USD'),
+                        "product": "overseas_futures",  # 상품 유형
                     }
                 
                 # 컨텍스트에 최신 데이터 저장
@@ -3353,6 +3953,16 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                     port, status_name = port_map.get(ord_type_code, ('accepted', f'코드:{ord_type_code}'))
                     event_data["status"] = status_name
                     
+                    # 체결 이벤트('11')일 때 시장가 주문의 가격 업데이트
+                    if ord_type_code == '11' and event_data['order_price'] > 0:
+                        order_no_str = str(event_data['order_no'])
+                        order_date = getattr(body, 'sOrdDt', datetime.now().strftime('%Y%m%d'))
+                        context.update_workflow_order_fill_price(
+                            order_no=order_no_str,
+                            order_date=order_date,
+                            fill_price=event_data['order_price'],
+                        )
+                    
                     context.set_output(_node_id, port, event_data)
                     
                     side_name = "매수" if event_data['side'] == '02' else "매도"
@@ -3496,6 +4106,17 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                     elif tr_cd == "TC3":
                         event_data = self._parse_tc3_data(body)
                         port, status_name = 'filled', '체결'
+                        
+                        # 체결 시 시장가 주문의 가격 업데이트
+                        fill_price = event_data.get('fill_price', 0)
+                        if fill_price > 0:
+                            order_no_str = str(event_data.get('order_no', ''))
+                            order_date = event_data.get('order_date', datetime.now().strftime('%Y%m%d'))
+                            context.update_workflow_order_fill_price(
+                                order_no=order_no_str,
+                                order_date=order_date,
+                                fill_price=fill_price,
+                            )
                     else:
                         return
                     
@@ -7717,7 +8338,12 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """해외주식 신규주문 실행 (COSAT00301)"""
+        """해외주식 신규주문 실행 (COSAT00301)
+        
+        해외주식 주문 규칙:
+        - 매수: 지정가(00)만 가능 → 시장가 요청 시 현재가로 지정가 변환
+        - 매도: 시장가(03), 지정가(00) 둘 다 가능
+        """
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
         from programgarden_finance.ls.models import SetupOptions
         
@@ -7727,6 +8353,12 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         # 호가유형코드
         price_type = config.get("price_type", order_type)
         ordprc_ptn_code = self.STOCK_PRICE_TYPE_CODES.get(price_type, "00")
+        
+        # 해외주식 매수는 지정가만 가능 - 시장가 요청 시 지정가로 변환
+        is_buy = (side == "buy")
+        if is_buy and ordprc_ptn_code == "03":
+            context.log("info", "해외주식 매수는 지정가만 가능 - 현재가로 지정가 주문 전환", node_id)
+            ordprc_ptn_code = "00"  # 지정가로 변환
         
         order_ids = {}
         submitted_orders = []
@@ -7740,13 +8372,38 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 continue
             
             price = prices.get(symbol, 0.0)
-            # 시장가 주문은 가격 0
-            if ordprc_ptn_code == "03":  # 시장가
-                price = 0.0
-            
-            # 시장 코드 결정
             exchange = info.get("exchange", "NASDAQ")
             ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
+            
+            # 매수 지정가 주문인데 가격이 없으면 현재가 조회
+            if is_buy and ordprc_ptn_code == "00" and price <= 0:
+                try:
+                    current_price = await self._get_current_price(ls, symbol, ord_mkt_code, context, node_id)
+                    if current_price and current_price > 0:
+                        price = current_price
+                        context.log("info", f"현재가 조회: {symbol} = ${price}", node_id)
+                    else:
+                        context.log("warning", f"현재가 조회 실패: {symbol} - 주문 건너뜀", node_id)
+                        fail_count += 1
+                        submitted_orders.append({
+                            "symbol": symbol, "exchange": exchange, "side": side,
+                            "quantity": qty, "price": 0, "status": "failed",
+                            "error": "현재가 조회 실패",
+                        })
+                        continue
+                except Exception as e:
+                    context.log("warning", f"현재가 조회 예외: {symbol} - {e}", node_id)
+                    fail_count += 1
+                    submitted_orders.append({
+                        "symbol": symbol, "exchange": exchange, "side": side,
+                        "quantity": qty, "price": 0, "status": "failed",
+                        "error": str(e),
+                    })
+                    continue
+            
+            # 매도 시장가 주문은 가격 0
+            if side == "sell" and ordprc_ptn_code == "03":
+                price = 0.0
             
             try:
                 order_api = ls.overseas_stock().주문().cosat00301(
@@ -7796,6 +8453,19 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     })
                     context.log("info", f"Order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
                     
+                    # Record workflow order for FIFO tracking
+                    from datetime import datetime as dt
+                    context.record_workflow_order(
+                        order_no=order_no,
+                        order_date=dt.now().strftime("%Y%m%d"),
+                        symbol=symbol,
+                        exchange=exchange,
+                        side=side,
+                        quantity=qty,
+                        price=price,
+                        node_id=node_id,
+                    )
+                    
             except Exception as e:
                 context.log("warning", f"Order exception for {symbol}: {e}", node_id)
                 fail_count += 1
@@ -7815,6 +8485,10 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             node_id
         )
         
+        # 참고: 시장가 주문 체결은 AS0 실시간 이벤트로 추적됨
+        # _subscribe_workflow_fill_events()에서 AS0 구독 시작
+        # 체결 이벤트 → record_workflow_fill() → FIFO 포지션 생성
+        
         return {
             "order_result": {
                 "success": success_count > 0,
@@ -7828,6 +8502,161 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             "order_ids": order_ids,
             "submitted_orders": submitted_orders,
         }
+
+    async def _get_current_price(
+        self,
+        ls,
+        symbol: str,
+        market_code: str,
+        context: "ExecutionContext",
+        node_id: str,
+    ) -> Optional[float]:
+        """해외주식 현재가 조회 (g3101)
+        
+        Args:
+            ls: LS 클라이언트
+            symbol: 종목코드
+            market_code: 시장코드 (81=NYSE, 82=NASDAQ)
+            context: 실행 컨텍스트
+            node_id: 노드 ID
+            
+        Returns:
+            현재가 (조회 실패 시 None)
+        """
+        try:
+            from programgarden_finance import g3101
+            from programgarden_finance.ls.models import SetupOptions
+            
+            keysymbol = f"{market_code}{symbol}"
+            
+            result = ls.overseas_stock().market().현재가조회(
+                g3101.G3101InBlock(
+                    delaygb="R",
+                    keysymbol=keysymbol,
+                    exchcd=market_code,
+                    symbol=symbol,
+                ),
+                options=SetupOptions(on_rate_limit="wait"),
+            )
+            
+            response = await result.req_async()
+            
+            if response.error_msg:
+                context.log("debug", f"현재가 조회 실패: {symbol} - {response.error_msg}", node_id)
+                return None
+            
+            if response.block and response.block.price:
+                return float(response.block.price)
+            
+            return None
+            
+        except Exception as e:
+            context.log("debug", f"현재가 조회 예외: {symbol} - {e}", node_id)
+            return None
+
+    async def _sync_fills_after_market_order(
+        self,
+        ls,
+        submitted_orders: list,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> None:
+        """시장가 주문 후 체결내역 동기화 (FIFO 포지션 생성)
+        
+        시장가 주문은 즉시 체결되므로, 잠시 대기 후 체결내역을 조회하여
+        FIFO 포지션을 생성합니다.
+        """
+        try:
+            # 체결 처리 대기 (5초) - AccountTracker와의 Rate Limit 충돌 방지
+            await asyncio.sleep(5)
+            
+            from programgarden_finance import COSAQ00102
+            from programgarden_finance.ls.models import SetupOptions
+            from datetime import datetime
+            
+            today = datetime.now().strftime("%Y%m%d")
+            
+            context.log("debug", f"Querying fill history for {len(submitted_orders)} orders", node_id)
+            
+            # 체결내역 조회 (COSAQ00102 = 주문체결내역조회)
+            # 참고: run_cosaq00102.py example
+            response = ls.overseas_stock().accno().cosaq00102(
+                body=COSAQ00102.COSAQ00102InBlock1(
+                    RecCnt=1,
+                    QryTpCode="1",  # 계좌별
+                    BkseqTpCode="1",  # 역순
+                    OrdMktCode="00",  # 전체 시장
+                    BnsTpCode="0",  # 전체 (매수/매도)
+                    IsuNo="",  # 전체 종목
+                    SrtOrdNo=999999999,  # 역순 시작
+                    OrdDt=today,  # 오늘 날짜
+                    ExecYn="1",  # 체결만 조회
+                    CrcyCode="000",  # 전체 통화
+                    ThdayBnsAppYn="0",
+                    LoanBalHldYn="0",
+                ),
+                options=SetupOptions(on_rate_limit="wait"),
+            )
+            result = await response.req_async()
+            
+            context.log("debug", f"Fill history query result: block3={len(result.block3) if result and result.block3 else 0} items", node_id)
+            
+            if not result or not result.block3:
+                context.log("debug", "No fill history found after market order", node_id)
+                return
+            
+            # 주문번호 → 주문정보 매핑
+            order_info_map = {
+                order.get("order_id"): order
+                for order in submitted_orders
+                if order.get("status") == "submitted" and order.get("order_id")
+            }
+            
+            # 시장코드 → 거래소 매핑
+            market_to_exchange = {'81': 'NYSE', '82': 'NASDAQ', '83': 'AMEX'}
+            
+            fill_history = []
+            for item in result.block3:
+                # COSAQ00102OutBlock3 필드명 사용
+                order_no = str(getattr(item, 'OrdNo', 0))
+                
+                # 방금 제출한 주문인지 확인
+                if order_no not in order_info_map:
+                    continue
+                
+                order_info = order_info_map[order_no]
+                fill_price = float(getattr(item, 'OvrsExecPrc', 0) or getattr(item, 'OvrsOrdPrc', 0))
+                fill_qty = int(getattr(item, 'ExecQty', 0))
+                symbol = order_info.get("symbol", "")
+                exchange = order_info.get("exchange", "NASDAQ")
+                side = order_info.get("side", "buy")
+                fill_time = str(getattr(item, 'ExecTime', '') or getattr(item, 'OrdTime', ''))
+                
+                if fill_price > 0 and fill_qty > 0 and symbol:
+                    fill_history.append({
+                        "order_no": order_no,
+                        "order_date": today,
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "side": side,
+                        "quantity": fill_qty,
+                        "price": fill_price,
+                        "fill_time": fill_time,
+                    })
+                    context.log("debug", f"Found fill: {symbol} {side} {fill_qty}@{fill_price}", node_id)
+            
+            if fill_history:
+                # FIFO 포지션 생성
+                processed = context.sync_workflow_fills_from_history(fill_history)
+                if processed > 0:
+                    context.log("info", f"Created {processed} FIFO positions from market order fills", node_id)
+                else:
+                    context.log("debug", "No new FIFO positions created (already processed)", node_id)
+            else:
+                context.log("debug", "No fills found for submitted orders", node_id)
+                
+        except Exception as e:
+            context.log("warning", f"Failed to sync fills after market order: {e}", node_id)
 
     async def _execute_overseas_futures(
         self,
@@ -7926,6 +8755,19 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                         "order_type": order_type,
                     })
                     context.log("info", f"Futures order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
+                    
+                    # Record workflow order for FIFO tracking
+                    from datetime import datetime as dt
+                    context.record_workflow_order(
+                        order_no=order_no,
+                        order_date=dt.now().strftime("%Y%m%d"),
+                        symbol=symbol,
+                        exchange=exchange_code,
+                        side=side,
+                        quantity=qty,
+                        price=price,
+                        node_id=node_id,
+                    )
                     
             except Exception as e:
                 context.log("warning", f"Futures order exception for {symbol}: {e}", node_id)
@@ -8991,6 +9833,9 @@ class WorkflowExecutor:
             context=context,
             executor=self,
         )
+        
+        # Set workflow job reference for start datetime access
+        context.set_workflow_job(job)
 
         self._jobs[job_id] = job
 
@@ -9064,6 +9909,10 @@ class WorkflowJob:
         self.status = "pending"
         self.started_at: Optional[datetime] = None
         self.completed_at: Optional[datetime] = None
+        
+        # Workflow start datetime (fixed, UTC) for PnL tracking
+        from datetime import timezone
+        self.workflow_start_datetime: datetime = datetime.now(timezone.utc)
 
         # Statistics
         self.stats = {

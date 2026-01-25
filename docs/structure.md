@@ -92,7 +92,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
     {"from": "rsi", "to": "order"}
   ],
   "credentials": [
-    {"id": "my-broker-cred", "type": "broker_ls", "name": "LS증권 API", "data": {"appkey": "", "appsecret": ""}}
+    {"id": "my-broker-cred", "type": "broker_ls_stock", "name": "LS증권 해외주식", "data": {"appkey": "", "appsecret": ""}}
   ]
 }
 ```
@@ -111,8 +111,17 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
   "credentials": [
     {
       "id": "broker-cred",
-      "type": "broker_ls",
-      "name": "LS증권 API",
+      "type": "broker_ls_stock",
+      "name": "LS증권 해외주식",
+      "data": {
+        "appkey": "",
+        "appsecret": ""
+      }
+    },
+    {
+      "id": "broker-futures-cred",
+      "type": "broker_ls_futures",
+      "name": "LS증권 해외선물",
       "data": {
         "appkey": "",
         "appsecret": "",
@@ -136,7 +145,8 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 
 | 타입 | 설명 | data 필드 |
 |------|------|----------|
-| `broker_ls` | LS증권 API | `appkey`, `appsecret`, `paper_trading` |
+| `broker_ls_stock` | LS증권 해외주식 | `appkey`, `appsecret` |
+| `broker_ls_futures` | LS증권 해외선물 | `appkey`, `appsecret`, `paper_trading` |
 | `telegram` | 텔레그램 봇 | `bot_token`, `chat_id` |
 | `postgres` | PostgreSQL DB | `host`, `port`, `database`, `username`, `password` |
 | `http_custom` | 커스텀 HTTP 인증 | 배열: `[{type, key, value, label}, ...]` |
@@ -573,7 +583,7 @@ RSI_SCHEMA = PluginSchema(
 | `verified` | 60초 | 500MB | 500 |
 | `community` | 30초 | 100MB | 100 |
 
-### 8.5 ExecutionListener 콜백 (6개)
+### 8.5 ExecutionListener 콜백 (7개)
 
 워크플로우 실행 중 이벤트를 수신하는 리스너입니다:
 
@@ -585,6 +595,7 @@ RSI_SCHEMA = PluginSchema(
 | `on_job_state_change` | Job 상태 변경 |
 | `on_display_data` | 디스플레이 데이터 |
 | `on_account_pnl_update` | **계좌 실시간 수익률** (자동 감지) |
+| `on_workflow_pnl_update` | **워크플로우 포지션 수익률** (자동 감지, FIFO 기반) |
 
 **계좌 수익률 자동 추적**:
 - 리스너에 `on_account_pnl_update` 메서드 구현 시 **자동 감지**
@@ -601,6 +612,24 @@ class MyListener(BaseExecutionListener):
 job = await pg.run_async(workflow, listeners=[MyListener()])
 ```
 
+**워크플로우 포지션 수익률 추적** (대회/순위용):
+- 리스너에 `on_workflow_pnl_update` 메서드 구현 시 **자동 감지**
+- 워크플로우 주문과 수동 주문을 FIFO 방식으로 분리 추적
+- 대회 공식 순위 산정에 사용 (조작 방어 기능 포함)
+
+```python
+from programgarden_core.bases import BaseExecutionListener, WorkflowPnLEvent
+
+class CompetitionListener(BaseExecutionListener):
+    async def on_workflow_pnl_update(self, event: WorkflowPnLEvent):
+        # 워크플로우 수익률만 순위에 반영
+        print(f"워크플로우: {event.workflow_pnl_rate}%")
+        print(f"전체: {event.total_pnl_rate}%")
+        print(f"신뢰도: {event.trust_score}")
+
+job = await pg.run_async(workflow, listeners=[CompetitionListener()])
+```
+
 **AccountPnLEvent 필드**:
 
 | 필드 | 타입 | 설명 |
@@ -614,6 +643,26 @@ job = await pg.run_async(workflow, listeners=[MyListener()])
 | `total_buy_amount` | Decimal | 총 매입금액 |
 | `total_pnl_amount` | Decimal | 총 손익금액 |
 | `position_count` | int | 보유 포지션 수 |
+| `currency` | str | 통화 (USD) |
+| `timestamp` | datetime | 이벤트 시간 |
+
+**WorkflowPnLEvent 필드** (대회/순위용):
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `job_id` | str | Job ID |
+| `broker_node_id` | str | BrokerNode ID |
+| `product` | str | overseas_stock / overseas_futures |
+| `workflow_pnl_rate` | Decimal | 워크플로우 수익률 (%) |
+| `workflow_eval_amount` | Decimal | 워크플로우 평가금액 |
+| `workflow_buy_amount` | Decimal | 워크플로우 매입금액 |
+| `workflow_pnl_amount` | Decimal | 워크플로우 손익금액 |
+| `other_pnl_rate` | Decimal | 그 외 수익률 (%) |
+| `total_pnl_rate` | Decimal | 전체 수익률 (%) |
+| `workflow_positions` | list | 워크플로우 포지션 상세 |
+| `other_positions` | list | 그 외 포지션 상세 |
+| `trust_score` | int | 신뢰도 점수 (0-100) |
+| `anomaly_count` | int | 이상 거래 건수 |
 | `currency` | str | 통화 (USD) |
 | `timestamp` | datetime | 이벤트 시간 |
 

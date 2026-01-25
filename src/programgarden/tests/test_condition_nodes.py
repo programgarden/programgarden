@@ -121,7 +121,7 @@ async def test_condition_node_stock(credentials):
         "credentials": [
             {
                 "id": "broker-cred",
-                "type": "broker_ls",
+                "type": "broker_ls_stock",
                 "name": "LS증권 API",
                 "data": {
                     "appkey": cred.get("appkey", ""),
@@ -214,7 +214,7 @@ async def test_condition_node_futures(credentials):
         "credentials": [
             {
                 "id": "broker-cred",
-                "type": "broker_ls",
+                "type": "broker_ls_futures",
                 "name": "LS증권 선물 API",
                 "data": {
                     "appkey": cred.get("appkey", ""),
@@ -324,7 +324,7 @@ async def test_logic_node_stock(credentials):
         "credentials": [
             {
                 "id": "broker-cred",
-                "type": "broker_ls",
+                "type": "broker_ls_stock",
                 "name": "LS증권 API",
                 "data": {
                     "appkey": cred.get("appkey", ""),

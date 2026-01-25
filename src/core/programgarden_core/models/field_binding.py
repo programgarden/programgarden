@@ -269,8 +269,234 @@ class FieldSchema(BaseModel):
         default=None,
         description="추가 도움말 텍스트",
     )
+    
+    # Credential 타입 필터 (CREDENTIAL_SELECT 전용)
+    credential_types: Optional[List[str]] = Field(
+        default=None,
+        description="CREDENTIAL_SELECT에서 표시할 credential 타입 목록 (예: ['broker_ls', 'telegram'])",
+    )
 
     model_config = ConfigDict(use_enum_values=True)
+    
+    def to_json_dynamic_widget(self) -> Dict[str, Any]:
+        """
+        FieldSchema를 json_dynamic_widget JSON 형태로 변환
+        
+        Flutter 클라이언트에서 json_dynamic_widget 패키지로 동적 폼을 렌더링하기 위한
+        JSON 구조를 생성합니다.
+        
+        Returns:
+            dict: json_dynamic_widget 호환 JSON 구조
+            
+        Example:
+            >>> fs = FieldSchema(name="provider", type=FieldType.ENUM, ...)
+            >>> widget = fs.to_json_dynamic_widget()
+            >>> # {"type": "dropdown_button_form_field", "args": {...}}
+        """
+        # UI 컴포넌트 결정 (명시적 지정 > 타입 기반 기본값)
+        ui_comp = self.ui_component
+        if ui_comp is None:
+            ui_comp = UIComponent.get_default_for_field_type(self.type)
+        
+        # 표시 이름 결정 (display_name > name의 Title Case)
+        label = self.display_name or self.name.replace("_", " ").title()
+        
+        # 기본 decoration 구성
+        decoration: Dict[str, Any] = {"labelText": label}
+        if self.description:
+            decoration["helperText"] = self.description
+        if self.placeholder:
+            decoration["hintText"] = self.placeholder
+        
+        # expression_mode에 따른 처리
+        if self.expression_mode == ExpressionMode.EXPRESSION_ONLY:
+            # 바인딩 전용: {{ }} 접두사/접미사 + 힌트
+            decoration["prefixText"] = "{{ "
+            decoration["suffixText"] = " }}"
+            if self.example_binding:
+                decoration["hintText"] = self.example_binding
+            return {
+                "type": "text_form_field",
+                "args": {"decoration": decoration}
+            }
+        
+        # UIComponent별 위젯 매핑
+        widget = self._map_ui_component_to_widget(ui_comp, decoration)
+        
+        return widget
+    
+    def _map_ui_component_to_widget(
+        self, 
+        ui_comp: "UIComponent", 
+        decoration: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """UIComponent를 json_dynamic_widget 타입으로 매핑"""
+        
+        # TEXT_INPUT
+        if ui_comp == UIComponent.TEXT_INPUT:
+            args: Dict[str, Any] = {"decoration": decoration}
+            if self.default is not None:
+                args["initialValue"] = str(self.default)
+            return {"type": "text_form_field", "args": args}
+        
+        # TEXTAREA
+        if ui_comp == UIComponent.TEXTAREA:
+            args: Dict[str, Any] = {
+                "decoration": decoration,
+                "maxLines": 5,
+            }
+            if self.default is not None:
+                args["initialValue"] = str(self.default)
+            return {"type": "text_form_field", "args": args}
+        
+        # NUMBER_INPUT
+        if ui_comp == UIComponent.NUMBER_INPUT:
+            args: Dict[str, Any] = {
+                "decoration": decoration,
+                "keyboardType": "number",  # 문자열로 지정
+            }
+            if self.default is not None:
+                args["initialValue"] = str(self.default)
+            return {"type": "text_form_field", "args": args}
+        
+        # CHECKBOX
+        if ui_comp == UIComponent.CHECKBOX:
+            return {
+                "type": "checkbox",
+                "args": {
+                    "value": self.default if isinstance(self.default, bool) else False
+                }
+            }
+        
+        # SELECT (드롭다운)
+        if ui_comp == UIComponent.SELECT:
+            items = self.enum_values or []
+            # enum_labels가 있으면 Flutter에서 표시용으로 사용
+            args: Dict[str, Any] = {
+                "decoration": decoration,
+                "items": items,
+            }
+            if self.default is not None:
+                args["value"] = self.default
+            if self.enum_labels:
+                args["itemLabels"] = self.enum_labels
+            return {"type": "dropdown_button_form_field", "args": args}
+        
+        # CREDENTIAL_SELECT (커스텀)
+        if ui_comp == UIComponent.CREDENTIAL_SELECT:
+            args: Dict[str, Any] = {
+                "decoration": decoration,
+                "items": [],  # 런타임에 credential 목록으로 채움
+            }
+            if self.credential_types:
+                # credential type_id와 name을 함께 전달
+                from .credential import BUILTIN_CREDENTIAL_SCHEMAS
+                credential_type_infos = []
+                for type_id in self.credential_types:
+                    schema = BUILTIN_CREDENTIAL_SCHEMAS.get(type_id)
+                    credential_type_infos.append({
+                        "type_id": type_id,
+                        "name": schema.name if schema else type_id,
+                    })
+                args["credentialTypes"] = credential_type_infos
+            return {"type": "custom_credential_select", "args": args}
+        
+        # BINDING_INPUT ({{ }} 전용)
+        if ui_comp == UIComponent.BINDING_INPUT:
+            decoration["prefixText"] = "{{ "
+            decoration["suffixText"] = " }}"
+            if self.example_binding:
+                decoration["hintText"] = self.example_binding
+            return {
+                "type": "text_form_field",
+                "args": {"decoration": decoration}
+            }
+        
+        # PLUGIN_SELECT (커스텀)
+        if ui_comp == UIComponent.PLUGIN_SELECT:
+            return {
+                "type": "custom_plugin_select",
+                "args": {"decoration": decoration},
+            }
+        
+        # SYMBOL_EDITOR (커스텀)
+        if ui_comp == UIComponent.SYMBOL_EDITOR:
+            return {
+                "type": "custom_symbol_editor",
+                "args": {
+                    "decoration": decoration,
+                    "expressionMode": self.expression_mode.value if hasattr(self.expression_mode, 'value') else str(self.expression_mode),
+                },
+            }
+        
+        # KEY_VALUE_EDITOR (커스텀)
+        if ui_comp == UIComponent.KEY_VALUE_EDITOR:
+            return {
+                "type": "custom_key_value_editor",
+                "args": {
+                    "decoration": decoration,
+                    "objectSchema": self.object_schema,
+                },
+            }
+        
+        # OBJECT_ARRAY_TABLE (커스텀)
+        if ui_comp == UIComponent.OBJECT_ARRAY_TABLE:
+            return {
+                "type": "custom_object_array_table",
+                "args": {
+                    "decoration": decoration,
+                    "objectSchema": self.object_schema,
+                },
+            }
+        
+        # CODE_EDITOR (커스텀)
+        if ui_comp == UIComponent.CODE_EDITOR:
+            ui_opts = self.ui_options or {}
+            return {
+                "type": "custom_code_editor",
+                "args": {
+                    "decoration": decoration,
+                    "language": ui_opts.get("language", "sql"),
+                },
+            }
+        
+        # CREATABLE_SELECT (커스텀)
+        if ui_comp == UIComponent.CREATABLE_SELECT:
+            ui_opts = self.ui_options or {}
+            return {
+                "type": "custom_creatable_select",
+                "args": {
+                    "decoration": decoration,
+                    "source": ui_opts.get("source"),
+                    "fileExtension": ui_opts.get("file_extension"),
+                    "createLabel": ui_opts.get("create_label"),
+                    "deletable": ui_opts.get("deletable", False),
+                },
+            }
+        
+        # DATE_PICKER (커스텀)
+        if ui_comp == UIComponent.DATE_PICKER:
+            return {
+                "type": "custom_date_picker",
+                "args": {"decoration": decoration},
+            }
+        
+        # SLIDER (built-in)
+        if ui_comp == UIComponent.SLIDER:
+            return {
+                "type": "slider",
+                "args": {
+                    "min": float(self.min_value or 0),
+                    "max": float(self.max_value or 100),
+                    "value": float(self.default or 0),
+                }
+            }
+        
+        # 기본값: TEXT_INPUT
+        args: Dict[str, Any] = {"decoration": decoration}
+        if self.default is not None:
+            args["initialValue"] = str(self.default)
+        return {"type": "text_form_field", "args": args}
 
 
 class FieldValueType(str, Enum):

@@ -23,8 +23,6 @@ from programgarden_core.models.credential import (
     # n8n style credential system
     Credential,
     CredentialTypeSchema,
-    CredentialField,
-    CredentialFieldType,
     BUILTIN_CREDENTIAL_SCHEMAS,
 )
 from programgarden_core.models.event import Event, EventType
@@ -86,8 +84,6 @@ __all__ = [
     # Credential (n8n style)
     "Credential",
     "CredentialTypeSchema",
-    "CredentialField",
-    "CredentialFieldType",
     "BUILTIN_CREDENTIAL_SCHEMAS",
     # Event
     "Event",

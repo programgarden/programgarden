@@ -18,8 +18,6 @@ import uuid
 from programgarden_core.models.credential import (
     Credential,
     CredentialTypeSchema,
-    CredentialField,
-    CredentialFieldType,
     BUILTIN_CREDENTIAL_SCHEMAS,
 )
 

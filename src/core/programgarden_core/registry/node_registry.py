@@ -31,6 +31,14 @@ class NodeTypeSchema(BaseModel):
         default_factory=dict,
         description="Configuration schema",
     )
+    widget_schema: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="json_dynamic_widget schema for Flutter form rendering (PARAMETERS fields)",
+    )
+    settings_widget_schema: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="json_dynamic_widget schema for Settings tab (SETTINGS fields)",
+    )
 
 
 class NodeTypeRegistry:
@@ -215,6 +223,7 @@ class NodeTypeRegistry:
             cat_value = instance.category.value if hasattr(instance.category, 'value') else instance.category
             img_url = category_icons.get(cat_value, "https://cdn-icons-png.flaticon.com/512/2099/2099058.png")
         
+        widget_schema, settings_widget_schema = self._build_widget_schemas(node_class)
         schema = NodeTypeSchema(
             node_type=type_name,
             category=instance.category.value if hasattr(instance.category, 'value') else instance.category,
@@ -223,8 +232,122 @@ class NodeTypeRegistry:
             inputs=[inp.model_dump() for inp in instance.get_inputs()],
             outputs=[out.model_dump() for out in instance.get_outputs()],
             config_schema=self._extract_config_schema(node_class),
+            widget_schema=widget_schema,
+            settings_widget_schema=settings_widget_schema,
         )
         self._schemas[type_name] = schema
+
+    def _build_widget_schemas(self, node_class: Type[BaseNode]) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """
+        노드의 설정 폼을 PARAMETERS/SETTINGS로 분리하여 json_dynamic_widget JSON으로 변환
+        
+        Args:
+            node_class: 노드 클래스
+            
+        Returns:
+            tuple: (widget_schema, settings_widget_schema)
+            - widget_schema: PARAMETERS 카테고리 필드들 (메인 폼)
+            - settings_widget_schema: SETTINGS 카테고리 필드들 (설정 탭)
+        """
+        from programgarden_core.models.field_binding import FieldCategory
+        
+        if not hasattr(node_class, 'get_field_schema'):
+            return None, None
+        
+        field_schemas = node_class.get_field_schema()
+        if not field_schemas:
+            return None, None
+        
+        parameters_children = []
+        settings_children = []
+        
+        for name, fs in field_schemas.items():
+            try:
+                widget = fs.to_json_dynamic_widget()
+                widget["fieldKey"] = name  # Pydantic 모델 필드명 (Flutter 코드 생성기 호환)
+                
+                # fieldKey를 args 안에도 추가 (json_dynamic_widget 빌더가 args에서 읽음)
+                if "args" in widget:
+                    widget["args"]["fieldKey"] = name
+                
+                # visible_when 조건부 표시: json_dynamic_widget의 conditional 위젯으로 감싸기
+                if fs.visible_when:
+                    widget = self._wrap_conditional(widget, fs.visible_when, name)
+                
+                # 카테고리에 따라 분리
+                if fs.category == FieldCategory.SETTINGS:
+                    settings_children.append(widget)
+                else:
+                    # PARAMETERS 또는 None (기본값)
+                    parameters_children.append(widget)
+                    
+            except Exception as e:
+                # 변환 실패 시 기본 텍스트 필드로 폴백 (PARAMETERS에 추가)
+                parameters_children.append({
+                    "type": "text_form_field",
+                    "fieldKey": name,
+                    "args": {
+                        "decoration": {"labelText": name, "helperText": f"(conversion error: {str(e)})"}
+                    }
+                })
+        
+        # 각 스키마 생성 (children이 없으면 None)
+        widget_schema = {
+            "type": "column",
+            "args": {"children": parameters_children}
+        } if parameters_children else None
+        
+        settings_widget_schema = {
+            "type": "column",
+            "args": {"children": settings_children}
+        } if settings_children else None
+        
+        return widget_schema, settings_widget_schema
+    
+    def _wrap_conditional(self, widget: Dict[str, Any], visible_when: Dict[str, Any], field_key: str) -> Dict[str, Any]:
+        """
+        visible_when 조건을 json_dynamic_widget의 conditional 위젯으로 감싸기
+        
+        json_dynamic_widget 표준 conditional 형식:
+        {
+            "type": "conditional",
+            "listen": ["field_name"],  // 이 변수가 변경되면 위젯 리빌드
+            "args": {
+                "conditional": {"values": {"field_name": "expected_value"}},
+                "onTrue": { /* 조건 만족 시 표시할 위젯 */ }
+            }
+        }
+        
+        Args:
+            widget: 원본 위젯
+            visible_when: 조건 딕셔너리 (예: {"product_type": "overseas_stock"})
+            field_key: 필드 키 (Pydantic 모델 필드명)
+            
+        Returns:
+            conditional 위젯으로 감싼 구조
+        """
+        # listen 배열: visible_when의 모든 키를 감시
+        listen_fields = list(visible_when.keys())
+        
+        # conditional values 구성
+        # 배열 값은 첫 번째 값만 사용 (json_dynamic_widget 제한)
+        conditional_values = {}
+        for field, value in visible_when.items():
+            if isinstance(value, list):
+                # 배열인 경우 첫 번째 값 사용
+                conditional_values[field] = value[0] if value else None
+            else:
+                conditional_values[field] = value
+        
+        return {
+            "type": "conditional",
+            "listen": listen_fields,
+            "fieldKey": field_key,  # Flutter 코드 생성기 호환
+            "args": {
+                "conditional": {"values": conditional_values},
+                "onTrue": widget
+            }
+        }
 
     def _extract_config_schema(self, node_class: Type[BaseNode]) -> Dict[str, Any]:
         """Extract config schema from node class

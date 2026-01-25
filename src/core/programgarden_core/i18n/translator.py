@@ -124,6 +124,10 @@ def translate_schema(schema: Dict[str, Any], locale: Optional[str] = None) -> Di
             for k, v in result["config_schema"].items()
         }
     
+    # Translate widget_schema (Flutter dynamic widget JSON)
+    if "widget_schema" in result and isinstance(result["widget_schema"], dict):
+        result["widget_schema"] = _translate_widget_schema(result["widget_schema"], loc, node_type)
+    
     return result
 
 
@@ -134,6 +138,80 @@ def _translate_port(port: Dict[str, Any], locale: str) -> Dict[str, Any]:
         key = result["description"]
         if key.startswith("i18n:"):
             result["description"] = t(key[5:], locale)
+    return result
+
+
+def _translate_widget_schema(widget: Dict[str, Any], locale: str, node_type: str = "") -> Dict[str, Any]:
+    """
+    Translate widget_schema recursively.
+    
+    Translates:
+    - decoration.labelText: fieldNames.{NodeType}.{field_id} or Title Case fallback
+    - decoration.helperText: fields.{NodeType}.{field_id} or i18n: prefix
+    - itemLabels: i18n: prefix for dropdown options
+    - Recursively handles children arrays
+    """
+    result = widget.copy()
+    field_id = widget.get("field_key_of_pydantic")
+    
+    # Translate args.decoration
+    if "args" in result and isinstance(result["args"], dict):
+        args = result["args"].copy()
+        
+        if "decoration" in args and isinstance(args["decoration"], dict):
+            decoration = args["decoration"].copy()
+            
+            # Translate labelText (display name)
+            if "labelText" in decoration:
+                label = decoration["labelText"]
+                if isinstance(label, str) and label.startswith("i18n:"):
+                    decoration["labelText"] = t(label[5:], locale)
+                elif field_id and node_type:
+                    auto_key = f"fieldNames.{node_type}.{field_id}"
+                    translated = t(auto_key, locale)
+                    if translated != auto_key:
+                        decoration["labelText"] = translated
+                # Otherwise keep original or Title Case already applied
+            
+            # Translate helperText (description)
+            if "helperText" in decoration:
+                helper = decoration["helperText"]
+                if isinstance(helper, str):
+                    if helper.startswith("i18n:"):
+                        decoration["helperText"] = t(helper[5:], locale)
+                    elif field_id and node_type:
+                        # Try auto-generated key
+                        auto_key = f"fields.{node_type}.{field_id}"
+                        translated = t(auto_key, locale)
+                        if translated != auto_key:
+                            decoration["helperText"] = translated
+            
+            args["decoration"] = decoration
+        
+        # Translate itemLabels (dropdown option labels)
+        if "itemLabels" in args and isinstance(args["itemLabels"], dict):
+            item_labels = args["itemLabels"].copy()
+            for key, label in item_labels.items():
+                if isinstance(label, str) and label.startswith("i18n:"):
+                    item_labels[key] = t(label[5:], locale)
+            args["itemLabels"] = item_labels
+        
+        # Recursively translate children array
+        if "children" in args and isinstance(args["children"], list):
+            args["children"] = [
+                _translate_widget_schema(child, locale, node_type) 
+                if isinstance(child, dict) else child
+                for child in args["children"]
+            ]
+        
+        # Translate conditional widget's child/onTrue
+        if "onTrue" in args and isinstance(args["onTrue"], dict):
+            args["onTrue"] = _translate_widget_schema(args["onTrue"], locale, node_type)
+        if "child" in args and isinstance(args["child"], dict):
+            args["child"] = _translate_widget_schema(args["child"], locale, node_type)
+        
+        result["args"] = args
+    
     return result
 
 

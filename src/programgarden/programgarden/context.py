@@ -28,6 +28,8 @@ from programgarden_core.bases.listener import (
     JobStateEvent,
     DisplayDataEvent,
     AccountPnLEvent,
+    WorkflowPnLEvent,
+    PositionDetail,
 )
 
 logger = logging.getLogger("programgarden.context")
@@ -199,6 +201,13 @@ class ExecutionContext:
         
         # === New: Execution Listeners (for UI/Server callbacks) ===
         self._listeners: List[ExecutionListener] = []
+        
+        # === New: Workflow Position Tracker ===
+        # Tracks workflow positions separately using FIFO for competition ranking
+        self._workflow_position_tracker: Optional[Any] = None  # WorkflowPositionTracker (lazy init)
+        
+        # === New: WorkflowJob reference (for start datetime access) ===
+        self._workflow_job: Optional[Any] = None  # WorkflowJob
         
         # === New: Resource Context (for CPU/RAM/Disk throttling) ===
         self._resource_context = resource_context
@@ -1041,6 +1050,18 @@ class ExecutionContext:
         """
         self._listeners = list(listeners) if listeners else []
 
+    def set_workflow_job(self, job: Any) -> None:
+        """
+        Set workflow job reference for start datetime access.
+        
+        This enables notify_workflow_pnl to include workflow_start_datetime
+        and workflow_elapsed_days in events.
+        
+        Args:
+            job: WorkflowJob instance
+        """
+        self._workflow_job = job
+
     async def notify_node_state(
         self,
         node_id: str,
@@ -1285,6 +1306,643 @@ class ExecutionContext:
                     await listener.on_account_pnl_update(event)
             except Exception as e:
                 logger.warning(f"Listener error on_account_pnl_update: {e}")
+
+    async def notify_workflow_pnl(
+        self,
+        broker_node_id: str,
+        product: str,
+        provider: str,
+        current_prices: Dict[str, float],
+        account_positions: Optional[Dict[str, Any]],
+        currency: str = "USD",
+    ) -> None:
+        """Notify all listeners about workflow P&L update (확장 버전).
+        
+        BrokerNode의 AccountTracker에서 틱마다 호출됩니다.
+        WorkflowPositionTracker를 사용하여 워크플로우 포지션과 그 외 포지션을 분리하고
+        각각의 수익률을 계산하여 리스너에 전달합니다.
+        
+        리스너별로 다른 pnl_start_date를 적용하여 각각의 대회 기준 이벤트를 생성합니다.
+        
+        Args:
+            broker_node_id: BrokerNode ID
+            product: 상품 유형 (overseas_stock, overseas_futures)
+            provider: 증권사 (ls-sec.co.kr)
+            current_prices: 현재가 {symbol: price}
+            account_positions: 계좌 전체 포지션 {symbol: {quantity, buy_price, current_price, pnl_rate}}
+            currency: 통화 (기본 USD)
+        """
+        if not self._listeners:
+            return
+        
+        # 메타 정보 준비
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        workflow_start = None
+        elapsed_days = None
+        
+        if self._workflow_job is not None:
+            workflow_start = getattr(self._workflow_job, 'workflow_start_datetime', None)
+            if workflow_start:
+                elapsed_days = (now - workflow_start).days
+        
+        # 1. 기본 워크플로우 수익률 계산 (전체 기간)
+        base_workflow_result = self._calculate_workflow_pnl(
+            current_prices=current_prices,
+            all_positions=account_positions,
+            product=product,
+            start_date=None,  # 전체 기간
+        )
+        
+        # 2. 계좌 전체 수익률 계산
+        account_result = self._calculate_account_pnl(
+            account_positions=account_positions,
+            start_date=None,
+        )
+        
+        # 3. 리스너별 이벤트 생성 및 전달
+        for listener in self._listeners:
+            try:
+                if not hasattr(listener, 'on_workflow_pnl_update'):
+                    continue
+                
+                # 리스너별 start_date 확인
+                listener_start_date = getattr(listener, 'pnl_start_date', None)
+                
+                # 기본 이벤트 데이터
+                event_data = {
+                    "job_id": self.job_id,
+                    "broker_node_id": broker_node_id,
+                    "product": product,
+                    "timestamp": now,
+                    
+                    # 워크플로우 기본 (전체)
+                    "workflow_pnl_rate": base_workflow_result.get("workflow_pnl_rate", 0.0),
+                    "workflow_eval_amount": base_workflow_result.get("workflow_eval_amount", 0.0),
+                    "workflow_buy_amount": base_workflow_result.get("workflow_buy_amount", 0.0),
+                    "workflow_pnl_amount": base_workflow_result.get("workflow_pnl_amount", 0.0),
+                    
+                    # 기존 other/total 필드
+                    "other_pnl_rate": base_workflow_result.get("other_pnl_rate", 0.0),
+                    "other_eval_amount": base_workflow_result.get("other_eval_amount", 0.0),
+                    "other_buy_amount": base_workflow_result.get("other_buy_amount", 0.0),
+                    "other_pnl_amount": base_workflow_result.get("other_pnl_amount", 0.0),
+                    "total_pnl_rate": base_workflow_result.get("total_pnl_rate", 0.0),
+                    "total_eval_amount": base_workflow_result.get("total_eval_amount", 0.0),
+                    "total_buy_amount": base_workflow_result.get("total_buy_amount", 0.0),
+                    "total_pnl_amount": base_workflow_result.get("total_pnl_amount", 0.0),
+                    
+                    "workflow_positions": base_workflow_result.get("workflow_positions", []),
+                    "other_positions": base_workflow_result.get("other_positions", []),
+                    "trust_score": base_workflow_result.get("trust_score", 100),
+                    "anomaly_count": base_workflow_result.get("anomaly_count", 0),
+                    "currency": currency,
+                    
+                    # 신규 필드: 워크플로우 상품별
+                    "workflow_stock_pnl_rate": base_workflow_result.get("workflow_stock_pnl_rate"),
+                    "workflow_stock_pnl_amount": base_workflow_result.get("workflow_stock_pnl_amount"),
+                    "workflow_futures_pnl_rate": base_workflow_result.get("workflow_futures_pnl_rate"),
+                    "workflow_futures_pnl_amount": base_workflow_result.get("workflow_futures_pnl_amount"),
+                    
+                    # 신규 필드: 계좌 전체/상품별
+                    "account_total_pnl_rate": account_result.get("account_total_pnl_rate"),
+                    "account_total_pnl_amount": account_result.get("account_total_pnl_amount"),
+                    "account_total_eval_amount": account_result.get("account_total_eval_amount"),
+                    "account_total_buy_amount": account_result.get("account_total_buy_amount"),
+                    "account_stock_pnl_rate": account_result.get("account_stock_pnl_rate"),
+                    "account_stock_pnl_amount": account_result.get("account_stock_pnl_amount"),
+                    "account_futures_pnl_rate": account_result.get("account_futures_pnl_rate"),
+                    "account_futures_pnl_amount": account_result.get("account_futures_pnl_amount"),
+                    
+                    # 메타 정보
+                    "workflow_start_datetime": workflow_start,
+                    "workflow_elapsed_days": elapsed_days,
+                }
+                
+                # 대회 기준 필드 (start_date가 있는 리스너만)
+                if listener_start_date:
+                    # 대회 기준 재계산
+                    competition_workflow = self._calculate_workflow_pnl(
+                        current_prices=current_prices,
+                        all_positions=account_positions,
+                        product=product,
+                        start_date=listener_start_date,
+                    )
+                    competition_account = self._calculate_account_pnl(
+                        account_positions=account_positions,
+                        start_date=listener_start_date,
+                    )
+                    
+                    event_data.update({
+                        "competition_start_date": listener_start_date,
+                        "competition_workflow_pnl_rate": competition_workflow.get("workflow_pnl_rate"),
+                        "competition_workflow_pnl_amount": competition_workflow.get("workflow_pnl_amount"),
+                        "competition_workflow_stock_pnl_rate": competition_workflow.get("workflow_stock_pnl_rate"),
+                        "competition_workflow_stock_pnl_amount": competition_workflow.get("workflow_stock_pnl_amount"),
+                        "competition_workflow_futures_pnl_rate": competition_workflow.get("workflow_futures_pnl_rate"),
+                        "competition_workflow_futures_pnl_amount": competition_workflow.get("workflow_futures_pnl_amount"),
+                        "competition_account_pnl_rate": competition_account.get("account_total_pnl_rate"),
+                        "competition_account_pnl_amount": competition_account.get("account_total_pnl_amount"),
+                        "competition_account_stock_pnl_rate": competition_account.get("account_stock_pnl_rate"),
+                        "competition_account_stock_pnl_amount": competition_account.get("account_stock_pnl_amount"),
+                        "competition_account_futures_pnl_rate": competition_account.get("account_futures_pnl_rate"),
+                        "competition_account_futures_pnl_amount": competition_account.get("account_futures_pnl_amount"),
+                    })
+                
+                event = WorkflowPnLEvent(**event_data)
+                await listener.on_workflow_pnl_update(event)
+                
+            except Exception as e:
+                logger.warning(f"Listener error on_workflow_pnl_update: {e}")
+        
+        # 디버그 로그
+        wf_rate = base_workflow_result.get("workflow_pnl_rate", 0.0)
+        logger.debug(f"📡 notify_workflow_pnl: {broker_node_id} ({product}) wf_rate={wf_rate:.2f}%")
+
+    def _calculate_workflow_pnl(
+        self,
+        current_prices: Dict[str, float],
+        all_positions: Optional[Dict[str, Any]],
+        product: str = "overseas_stock",
+        start_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """워크플로우 수익률 계산 (start_date 필터 지원).
+        
+        Args:
+            current_prices: 현재가 {symbol: price}
+            all_positions: 전체 포지션
+            product: 현재 상품 유형 (overseas_stock, overseas_futures)
+            start_date: 필터 시작일 (YYYYMMDD)
+        
+        Returns:
+            워크플로우 수익률 데이터 dict
+        """
+        # 트래커 없으면 기본값 (모든 포지션이 "other")
+        if self._workflow_position_tracker is None:
+            # 트래커 없음 = 모든 포지션이 "other"
+            total_eval = 0.0
+            total_buy = 0.0
+            other_positions_list = []
+            
+            if all_positions:
+                for symbol, pos in all_positions.items():
+                    qty = pos.get("quantity", 0)
+                    buy_price = pos.get("buy_price", 0)
+                    current_price = pos.get("current_price", 0)
+                    pnl_rate = pos.get("pnl_rate", 0)
+                    
+                    eval_amt = qty * current_price
+                    buy_amt = qty * buy_price
+                    pnl_amt = eval_amt - buy_amt
+                    
+                    total_eval += eval_amt
+                    total_buy += buy_amt
+                    
+                    other_positions_list.append(PositionDetail(
+                        symbol=symbol,
+                        exchange=pos.get("exchange", ""),
+                        quantity=qty,
+                        avg_price=buy_price,
+                        current_price=current_price,
+                        pnl_amount=pnl_amt,
+                        pnl_rate=pnl_rate,
+                    ))
+            
+            total_pnl = total_eval - total_buy
+            total_pnl_rate = (total_pnl / total_buy * 100) if total_buy > 0 else 0.0
+            
+            return {
+                "workflow_pnl_rate": 0.0,
+                "workflow_eval_amount": 0.0,
+                "workflow_buy_amount": 0.0,
+                "workflow_pnl_amount": 0.0,
+                "other_pnl_rate": total_pnl_rate,
+                "other_eval_amount": total_eval,
+                "other_buy_amount": total_buy,
+                "other_pnl_amount": total_pnl,
+                "total_pnl_rate": total_pnl_rate,
+                "total_eval_amount": total_eval,
+                "total_buy_amount": total_buy,
+                "total_pnl_amount": total_pnl,
+                "workflow_positions": [],
+                "other_positions": other_positions_list,
+                "trust_score": 100,
+                "anomaly_count": 0,
+                # 상품별 필드는 tracker에서 채움 (여기서는 None)
+                "workflow_stock_pnl_rate": None,
+                "workflow_stock_pnl_amount": None,
+                "workflow_futures_pnl_rate": None,
+                "workflow_futures_pnl_amount": None,
+            }
+        
+        # WorkflowPositionTracker로 FIFO 기반 분리 계산
+        try:
+            return self._workflow_position_tracker.calculate_pnl(
+                current_prices=current_prices,
+                all_positions=all_positions or {},
+                start_date=start_date,  # 날짜 필터
+            )
+        except Exception as e:
+            logger.warning(f"calculate_workflow_pnl failed: {e}")
+            return {
+                "workflow_pnl_rate": 0.0,
+                "workflow_eval_amount": 0.0,
+                "workflow_buy_amount": 0.0,
+                "workflow_pnl_amount": 0.0,
+                "other_pnl_rate": 0.0,
+                "other_eval_amount": 0.0,
+                "other_buy_amount": 0.0,
+                "other_pnl_amount": 0.0,
+                "total_pnl_rate": 0.0,
+                "total_eval_amount": 0.0,
+                "total_buy_amount": 0.0,
+                "total_pnl_amount": 0.0,
+                "workflow_positions": [],
+                "other_positions": [],
+                "trust_score": 100,
+                "anomaly_count": 0,
+            }
+
+    def _calculate_account_pnl(
+        self,
+        account_positions: Optional[Dict[str, Any]],
+        start_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """계좌 전체 수익률 계산.
+        
+        Args:
+            account_positions: 계좌 전체 포지션
+            start_date: 필터 시작일 (현재 미사용, 향후 확장)
+        
+        Returns:
+            계좌 수익률 데이터 dict
+        """
+        if not account_positions:
+            return {}
+        
+        # 상품별 분류
+        stock_positions = {}
+        futures_positions = {}
+        
+        for symbol, pos in account_positions.items():
+            pos_product = pos.get("product", "overseas_stock")
+            if pos_product == "overseas_stock":
+                stock_positions[symbol] = pos
+            elif pos_product == "overseas_futures":
+                futures_positions[symbol] = pos
+        
+        # 상품별 수익률 계산
+        def calc_pnl(positions: Dict[str, Any]) -> Dict[str, float]:
+            total_eval = 0.0
+            total_buy = 0.0
+            for pos in positions.values():
+                qty = pos.get("quantity", 0) or pos.get("qty", 0)
+                buy_price = pos.get("buy_price", 0) or pos.get("avg_price", 0)
+                current_price = pos.get("current_price", buy_price)
+                total_eval += qty * current_price
+                total_buy += qty * buy_price
+            pnl_amount = total_eval - total_buy
+            pnl_rate = (pnl_amount / total_buy * 100) if total_buy > 0 else 0.0
+            return {
+                "eval": total_eval,
+                "buy": total_buy,
+                "pnl_amount": pnl_amount,
+                "pnl_rate": pnl_rate,
+            }
+        
+        stock_result = calc_pnl(stock_positions)
+        futures_result = calc_pnl(futures_positions)
+        
+        # 전체 합산
+        total_eval = stock_result["eval"] + futures_result["eval"]
+        total_buy = stock_result["buy"] + futures_result["buy"]
+        total_pnl = total_eval - total_buy
+        total_pnl_rate = (total_pnl / total_buy * 100) if total_buy > 0 else 0.0
+        
+        return {
+            "account_total_pnl_rate": total_pnl_rate,
+            "account_total_pnl_amount": total_pnl,
+            "account_total_eval_amount": total_eval,
+            "account_total_buy_amount": total_buy,
+            "account_stock_pnl_rate": stock_result["pnl_rate"],
+            "account_stock_pnl_amount": stock_result["pnl_amount"],
+            "account_futures_pnl_rate": futures_result["pnl_rate"],
+            "account_futures_pnl_amount": futures_result["pnl_amount"],
+        }
+
+    def init_workflow_position_tracker(
+        self,
+        broker_node_id: str,
+        product: str = "overseas_stock",
+    ) -> None:
+        """Initialize workflow position tracker for FIFO-based position tracking.
+        
+        on_workflow_pnl_update 리스너가 등록된 경우에만 트래커를 초기화합니다.
+        주문 발생 시 자동으로 포지션을 기록하고, 틱마다 워크플로우 수익률을 계산합니다.
+        
+        Args:
+            broker_node_id: BrokerNode ID
+            product: 상품 유형 (overseas_stock, overseas_futures)
+        """
+        # 리스너 중 on_workflow_pnl_update를 구현한 것이 있는지 확인
+        has_workflow_listener = any(
+            hasattr(listener, 'on_workflow_pnl_update') 
+            and callable(getattr(listener, 'on_workflow_pnl_update', None))
+            for listener in self._listeners
+        )
+        
+        if not has_workflow_listener:
+            logger.debug("No workflow_pnl listener registered, skipping tracker init")
+            return
+        
+        if self._workflow_position_tracker is not None:
+            logger.debug("Workflow position tracker already initialized")
+            return
+        
+        try:
+            from programgarden.database import WorkflowPositionTracker
+            from pathlib import Path
+            
+            # DB 경로: programgarden_data/{workflow_id}_workflow.db
+            # 워크플로우 ID 사용 (워크플로우당 1개 DB 유지)
+            db_dir = Path("programgarden_data")
+            db_dir.mkdir(parents=True, exist_ok=True)
+            db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
+            db_path = str(db_dir / db_filename)
+            
+            self._workflow_position_tracker = WorkflowPositionTracker(
+                db_path=db_path,
+                job_id=self.job_id,
+                broker_node_id=broker_node_id,
+                product=product,
+            )
+            
+            logger.info(f"Workflow position tracker initialized: {db_path}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to init workflow position tracker: {e}")
+            self._workflow_position_tracker = None
+
+    def record_workflow_order(
+        self,
+        order_no: str,
+        order_date: str,
+        symbol: str,
+        exchange: str,
+        side: str,
+        quantity: int,
+        price: float,
+        node_id: str,
+    ) -> None:
+        """Record workflow order for FIFO tracking.
+        
+        NewOrderNode에서 주문 성공 시 호출하여 주문을 기록합니다.
+        나중에 체결 시 이 정보로 워크플로우 주문 여부를 판단합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            symbol: 종목코드
+            exchange: 거래소
+            side: 매매구분 ("buy" | "sell")
+            quantity: 수량
+            price: 가격
+            node_id: 주문을 실행한 노드 ID
+        """
+        if self._workflow_position_tracker is None:
+            return
+        
+        try:
+            self._workflow_position_tracker.record_order(
+                order_no=order_no,
+                order_date=order_date,
+                symbol=symbol,
+                exchange=exchange,
+                side=side,
+                quantity=quantity,
+                price=price,
+                job_id=self.job_id,
+                node_id=node_id,
+            )
+            logger.debug(f"Recorded workflow order: {order_no} ({symbol} {side} {quantity})")
+        except Exception as e:
+            logger.warning(f"Failed to record workflow order: {e}")
+
+    def update_workflow_order_fill_price(
+        self,
+        order_no: str,
+        order_date: str,
+        fill_price: float,
+    ) -> bool:
+        """Update fill price for market orders.
+        
+        시장가 주문은 주문 시점에 가격을 알 수 없으므로,
+        체결 이벤트 수신 시 실제 체결 가격으로 업데이트합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            fill_price: 체결 가격
+            
+        Returns:
+            업데이트 성공 여부
+        """
+        if self._workflow_position_tracker is None:
+            return False
+        
+        try:
+            return self._workflow_position_tracker.update_order_fill_price(
+                order_no=order_no,
+                order_date=order_date,
+                fill_price=fill_price,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update order fill price: {e}")
+            return False
+
+    async def record_workflow_fill(
+        self,
+        order_no: str,
+        order_date: str,
+        symbol: str,
+        exchange: str,
+        side: str,
+        quantity: int,
+        price: float,
+        fill_time: str,
+        commda_code: str = "40",
+    ) -> str:
+        """Record fill event for FIFO position tracking.
+        
+        체결 이벤트 수신 시 호출하여 포지션 로트를 생성/청산합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            symbol: 종목코드
+            exchange: 거래소
+            side: 매매구분 ("buy" | "sell")
+            quantity: 체결 수량
+            price: 체결 가격
+            fill_time: 체결시각 (HHMMSSsss)
+            commda_code: 매체구분코드 ("40"=OPEN API, 기타=수동)
+            
+        Returns:
+            분류 결과: "workflow" | "manual" | "unknown_api" | "pending"
+        """
+        if self._workflow_position_tracker is None:
+            logger.debug("Workflow position tracker not initialized, skipping record_fill")
+            return "skipped"
+        
+        try:
+            result = await self._workflow_position_tracker.record_fill(
+                order_no=order_no,
+                order_date=order_date,
+                symbol=symbol,
+                exchange=exchange,
+                side=side,
+                quantity=quantity,
+                price=price,
+                fill_time=fill_time,
+                commda_code=commda_code,
+            )
+            logger.info(f"Recorded workflow fill: {order_no} ({symbol} {side} {quantity}@{price}) → {result}")
+            return result
+        except Exception as e:
+            logger.warning(f"Failed to record workflow fill: {e}")
+            return "error"
+
+    async def cancel_workflow_order(
+        self,
+        order_no: str,
+        order_date: str,
+    ) -> bool:
+        """Cancel a workflow order (mark as cancelled).
+        
+        취소 완료 이벤트 수신 시 호출하여 주문 상태를 업데이트합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            
+        Returns:
+            취소 성공 여부
+        """
+        if self._workflow_position_tracker is None:
+            return False
+        
+        try:
+            return self._workflow_position_tracker.cancel_order(order_no, order_date)
+        except Exception as e:
+            logger.warning(f"Failed to cancel workflow order: {e}")
+            return False
+
+    async def modify_workflow_order(
+        self,
+        order_no: str,
+        order_date: str,
+        new_quantity: Optional[int] = None,
+        new_price: Optional[float] = None,
+    ) -> bool:
+        """Modify a workflow order (update quantity/price).
+        
+        정정 완료 이벤트 수신 시 호출하여 주문 정보를 업데이트합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            new_quantity: 새 수량 (None이면 변경 안함)
+            new_price: 새 가격 (None이면 변경 안함)
+            
+        Returns:
+            정정 성공 여부
+        """
+        if self._workflow_position_tracker is None:
+            return False
+        
+        try:
+            return self._workflow_position_tracker.modify_order(
+                order_no, order_date, new_quantity, new_price
+            )
+        except Exception as e:
+            logger.warning(f"Failed to modify workflow order: {e}")
+            return False
+
+    def get_workflow_orders_without_fill_price(self) -> list:
+        """Get orders without fill price (for fallback sync).
+        
+        연결 끊김 등으로 체결 이벤트를 놓친 경우,
+        체결내역 조회로 가격을 복구하기 위해 사용합니다.
+        
+        Returns:
+            가격이 0인 주문 목록
+        """
+        if self._workflow_position_tracker is None:
+            return []
+        
+        try:
+            return self._workflow_position_tracker.get_orders_without_fill_price()
+        except Exception as e:
+            logger.warning(f"Failed to get orders without fill price: {e}")
+            return []
+
+    def sync_workflow_fill_prices_from_history(
+        self,
+        fill_history: list,
+    ) -> int:
+        """Sync fill prices from trade history API (fallback).
+        
+        체결내역 API 응답으로 시장가 주문의 가격을 복구합니다.
+        
+        Args:
+            fill_history: 체결내역 리스트
+                [{"order_no": "123", "order_date": "20260123", "fill_price": 2.82}, ...]
+            
+        Returns:
+            업데이트된 주문 수
+        """
+        if self._workflow_position_tracker is None:
+            return 0
+        
+        try:
+            return self._workflow_position_tracker.sync_fill_prices_from_history(fill_history)
+        except Exception as e:
+            logger.warning(f"Failed to sync fill prices from history: {e}")
+            return 0
+
+    def sync_workflow_fills_from_history(
+        self,
+        fill_history: list,
+    ) -> int:
+        """Sync fills and create positions from trade history API (fallback).
+        
+        체결내역 API 응답으로 FIFO 포지션을 생성합니다.
+        이 메서드는 실시간 체결 이벤트를 놓친 경우 fallback으로 사용합니다.
+        
+        Args:
+            fill_history: 체결내역 리스트
+                [{
+                    "order_no": "123",
+                    "order_date": "20260123",
+                    "symbol": "AAPL",
+                    "exchange": "NASDAQ",
+                    "side": "buy",
+                    "quantity": 10,
+                    "price": 192.50,
+                    "fill_time": "093000000"
+                }, ...]
+            
+        Returns:
+            처리된 체결 수
+        """
+        if self._workflow_position_tracker is None:
+            return 0
+        
+        try:
+            return self._workflow_position_tracker.sync_fills_from_history(fill_history)
+        except Exception as e:
+            logger.warning(f"Failed to sync fills from history: {e}")
+            return 0
 
     def _sanitize_outputs(self, outputs: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Remove sensitive information from outputs."""
