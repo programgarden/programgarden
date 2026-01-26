@@ -76,7 +76,8 @@ class RealMarketDataNode(BaseNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                display_name="i18n:fieldNames.RealMarketDataNode.connection",
+                description="i18n:fields.RealMarketDataNode.connection",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -84,13 +85,14 @@ class RealMarketDataNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
-                ui_component=UIComponent.BINDING_INPUT,
+                # ui_component 생략 → EXPRESSION_ONLY + OBJECT 타입에서 바인딩 입력 자동
             ),
-            # === PARAMETERS: 핵심 설정 ===
+            # === PARAMETERS: 종목 리스트 ===
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="종목 리스트. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
+                display_name="i18n:fieldNames.RealMarketDataNode.symbols",
+                description="i18n:fields.RealMarketDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
@@ -103,14 +105,15 @@ class RealMarketDataNode(BaseNode):
                     "MarketUniverseNode.symbols",
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
-                ui_component=UIComponent.SYMBOL_EDITOR,
-                help_text="직접 입력 또는 바인딩 가능 (fx 토글)",
+                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
+                help_text="i18n:fields.RealMarketDataNode.symbols.help_text",
             ),
-            # === FIELD MAPPING: 필드명 매핑 (symbols 바로 하단에 표시) ===
+            # === PARAMETERS: 필드 매핑 (접힌 상태) ===
             "exchange_field": FieldSchema(
                 name="exchange_field",
                 type=FieldType.STRING,
-                description="거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
+                display_name="i18n:fieldNames.RealMarketDataNode.exchange_field",
+                description="i18n:fields.RealMarketDataNode.exchange_field",
                 default="exchange",
                 required=False,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -122,7 +125,8 @@ class RealMarketDataNode(BaseNode):
             "symbol_field": FieldSchema(
                 name="symbol_field",
                 type=FieldType.STRING,
-                description="종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
+                display_name="i18n:fieldNames.RealMarketDataNode.symbol_field",
+                description="i18n:fields.RealMarketDataNode.symbol_field",
                 default="symbol",
                 required=False,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -135,11 +139,12 @@ class RealMarketDataNode(BaseNode):
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
+                display_name="i18n:fieldNames.RealMarketDataNode.stay_connected",
                 description="i18n:fields.RealMarketDataNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.CHECKBOX,
+                # ui_component 생략 → BOOLEAN 타입에서 checkbox 자동 추론
             ),
         }
 

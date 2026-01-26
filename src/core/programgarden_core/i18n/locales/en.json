@@ -268,7 +268,11 @@
 
   "fields.WatchlistNode.symbols": "List of symbol codes",
 
+  "fields.RealMarketDataNode.connection": "Broker connection info. First add a BrokerNode, then connect its connection output here.",
   "fields.RealMarketDataNode.symbols": "Symbols to subscribe (e.g., AAPL, TSLA). If empty, uses input port value.",
+  "fields.RealMarketDataNode.symbols.help_text": "Enter directly or use binding (fx toggle)",
+  "fields.RealMarketDataNode.exchange_field": "Exchange field name (for mapping when binding data has different field names)",
+  "fields.RealMarketDataNode.symbol_field": "Symbol field name (for mapping when binding data has different field names)",
   "fields.RealMarketDataNode.stay_connected": "✅ ON: Keep receiving live prices continuously. Stays connected until you manually stop.\n❌ OFF: Get prices once and disconnect automatically.",
   "fields.RealMarketDataNode.fields": "Fields to receive (price, volume, bid, ask)",
 
