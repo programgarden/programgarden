@@ -33,6 +33,14 @@ class HistoricalDataNode(BaseNode):
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/historicaldata.svg"
 
     # HistoricalDataNode specific config
+    connection: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Broker connection info",
+    )
+    product_type: str = Field(
+        default="overseas_stock",
+        description="Product type (overseas_stock, overseas_futures)",
+    )
     symbols: Optional[List[Dict[str, str]]] = Field(
         default=None,
         description="Target symbols with exchange [{exchange, symbol}]",
@@ -56,6 +64,12 @@ class HistoricalDataNode(BaseNode):
 
     _inputs: List[InputPort] = [
         InputPort(
+            name="connection",
+            type="broker_connection",
+            description="i18n:ports.connection",
+            required=True,
+        ),
+        InputPort(
             name="symbols",
             type="symbol_list",
             description="i18n:ports.symbols",
@@ -78,15 +92,46 @@ class HistoricalDataNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
+            # === PARAMETERS: 브로커 연결 ===
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.HistoricalDataNode.connection",
+                description="i18n:fields.HistoricalDataNode.connection",
+                required=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="broker_connection",
+            ),
+            # === PARAMETERS: 상품 유형 ===
+            "product_type": FieldSchema(
+                name="product_type",
+                type=FieldType.ENUM,
+                display_name="i18n:fieldNames.HistoricalDataNode.product_type",
+                description="i18n:fields.HistoricalDataNode.product_type",
+                default="overseas_stock",
+                enum_values=["overseas_stock", "overseas_futures"],
+                enum_labels={
+                    "overseas_stock": "i18n:enums.product_type.overseas_stock",
+                    "overseas_futures": "i18n:enums.product_type.overseas_futures"
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.SELECT,
+            ),
             # === PARAMETERS: 종목 설정 ===
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="종목 리스트. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
-                required=True,
+                display_name="i18n:fieldNames.HistoricalDataNode.symbols",
+                description="i18n:fields.HistoricalDataNode.symbols",
+                default=[],
+                array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
-                placeholder="{{ nodes.watchlist.symbols }}",
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NYSE", "symbol": "IBM"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=[
@@ -95,38 +140,35 @@ class HistoricalDataNode(BaseNode):
                     "MarketUniverseNode.symbols",
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
-                ui_component=UIComponent.SYMBOL_EDITOR,
-                help_text="직접 입력 또는 바인딩 가능 (fx 토글)",
-            ),
-            # === FIELD MAPPING: 필드명 매핑 (symbols 바로 하단에 표시) ===
-            "exchange_field": FieldSchema(
-                name="exchange_field",
-                type=FieldType.STRING,
-                description="거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
-                default="exchange",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="exchange",
-                group="field_mapping",
-                collapsed=True,
-            ),
-            "symbol_field": FieldSchema(
-                name="symbol_field",
-                type=FieldType.STRING,
-                description="종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
-                default="symbol",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="symbol",
-                group="field_mapping",
-                collapsed=True,
+                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
+                help_text="i18n:fields.HistoricalDataNode.symbols.help_text",
+                object_schema=[
+                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.HistoricalDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.HistoricalDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "AAPL"},
+                ],
+                ui_options={
+                    "product_type_field": "product_type",
+                    "exchanges_by_product": {
+                        "overseas_stock": [
+                            {"value": "NASDAQ", "label": "NASDAQ"},
+                            {"value": "NYSE", "label": "NYSE"},
+                            {"value": "AMEX", "label": "AMEX"},
+                        ],
+                        "overseas_futures": [
+                            {"value": "CME", "label": "CME (시카고상업거래소)"},
+                            {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
+                            {"value": "SGX", "label": "SGX (싱가포르거래소)"},
+                            {"value": "HKEX", "label": "HKEX (홍콩선물거래소)"},
+                        ],
+                    },
+                    "default_product_type": "overseas_stock",
+                },
             ),
             # === PARAMETERS: 핵심 데이터 조회 설정 ===
             "start_date": FieldSchema(
                 name="start_date",
                 type=FieldType.STRING,
+                display_name="i18n:fieldNames.HistoricalDataNode.start_date",
                 description="i18n:fields.HistoricalDataNode.start_date",
                 default="{{ months_ago_yyyymmdd(3) }}",
                 required=True,
@@ -135,11 +177,12 @@ class HistoricalDataNode(BaseNode):
                 example="2024-01-01",
                 expected_type="str",
                 ui_component=UIComponent.TEXT_INPUT,
-                help_text="날짜 직접 입력 또는 {{ months_ago_yyyymmdd(N) }} 표현식 사용",
+                help_text="i18n:fields.HistoricalDataNode.start_date.help_text",
             ),
             "end_date": FieldSchema(
                 name="end_date",
                 type=FieldType.STRING,
+                display_name="i18n:fieldNames.HistoricalDataNode.end_date",
                 description="i18n:fields.HistoricalDataNode.end_date",
                 default="{{ today_yyyymmdd() }}",
                 required=True,
@@ -148,16 +191,25 @@ class HistoricalDataNode(BaseNode):
                 example="2024-12-31",
                 expected_type="str",
                 ui_component=UIComponent.TEXT_INPUT,
-                help_text="날짜 직접 입력 또는 {{ today_yyyymmdd() }} 표현식 사용",
+                help_text="i18n:fields.HistoricalDataNode.end_date.help_text",
             ),
             "interval": FieldSchema(
                 name="interval",
                 type=FieldType.ENUM,
+                display_name="i18n:fieldNames.HistoricalDataNode.interval",
                 description="i18n:fields.HistoricalDataNode.interval",
                 default="1d",
                 required=True,
                 enum_values=["1m", "5m", "15m", "1h", "1d", "1w", "1M"],
-                enum_labels={"1m": "1분", "5m": "5분", "15m": "15분", "1h": "1시간", "1d": "1일", "1w": "1주", "1M": "1개월"},
+                enum_labels={
+                    "1m": "i18n:enums.interval.1m",
+                    "5m": "i18n:enums.interval.5m",
+                    "15m": "i18n:enums.interval.15m",
+                    "1h": "i18n:enums.interval.1h",
+                    "1d": "i18n:enums.interval.1d",
+                    "1w": "i18n:enums.interval.1w",
+                    "1M": "i18n:enums.interval.1M"
+                },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="1d",
@@ -168,6 +220,7 @@ class HistoricalDataNode(BaseNode):
             "adjust": FieldSchema(
                 name="adjust",
                 type=FieldType.BOOLEAN,
+                display_name="i18n:fieldNames.HistoricalDataNode.adjust",
                 description="i18n:fields.HistoricalDataNode.adjust",
                 default=True,
                 category=FieldCategory.SETTINGS,

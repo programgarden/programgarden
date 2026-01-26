@@ -384,11 +384,18 @@
   "fields.CancelOrderNode.original_order_id": "취소할 원주문번호입니다. 미체결 주문 목록에서 선택합니다.",
   "fields.CancelOrderNode.symbol": "종목 코드입니다.",
 
-  "fields.HistoricalDataNode.symbols": "조회할 종목 목록. 바인딩 또는 직접 입력 ([거래소: NASDAQ, 종목: AAPL형식])",
+  "fields.HistoricalDataNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+  "fields.HistoricalDataNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
+  "fields.HistoricalDataNode.symbols": "조회할 종목 리스트입니다. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
+  "fields.HistoricalDataNode.symbols.exchange": "거래소",
+  "fields.HistoricalDataNode.symbols.symbol": "종목코드",
+  "fields.HistoricalDataNode.symbols.help_text": "직접 입력 또는 바인딩 가능 (fx 토글)",
   "fields.HistoricalDataNode.period": "데이터 기간",
   "fields.HistoricalDataNode.interval": "봉 간격",
   "fields.HistoricalDataNode.start_date": "백테스트 시작일. YYYY-MM-DD 또는 바인딩 (예: {{ months_ago_yyyymmdd(3) }} = 3개월 전)",
+  "fields.HistoricalDataNode.start_date.help_text": "날짜 직접 입력 또는 {{ months_ago_yyyymmdd(N) }} 표현식 사용",
   "fields.HistoricalDataNode.end_date": "백테스트 종료일. YYYY-MM-DD 또는 바인딩 (예: {{ today_yyyymmdd() }} = 오늘)",
+  "fields.HistoricalDataNode.end_date.help_text": "날짜 직접 입력 또는 {{ today_yyyymmdd() }} 표현식 사용",
   "fields.HistoricalDataNode.adjust": "수정 주가 적용 (액분/배당 반영). 정확한 백테스트를 위해 권장.",
 
   "fields.MarketDataNode.period": "OHLCV 데이터 기간. 옵션: 1d (일봉), 1h (시간봉), 5m (5분봉), 1m (1분봉)",
@@ -642,9 +649,9 @@
   "fieldNames.SymbolFilterNode.input_b": "입력B",
 
 
+  "fieldNames.HistoricalDataNode.connection": "브로커연결",
+  "fieldNames.HistoricalDataNode.product_type": "상품유형",
   "fieldNames.HistoricalDataNode.symbols": "종목",
-  "fieldNames.HistoricalDataNode.exchange_field": "거래소필드",
-  "fieldNames.HistoricalDataNode.symbol_field": "종목코드필드",
   "fieldNames.HistoricalDataNode.start_date": "시작일",
   "fieldNames.HistoricalDataNode.end_date": "종료일",
   "fieldNames.HistoricalDataNode.interval": "주기",
@@ -819,6 +826,14 @@
 
   "enums.product_type.overseas_stock": "해외주식",
   "enums.product_type.overseas_futures": "해외선물",
+
+  "enums.interval.1m": "1분",
+  "enums.interval.5m": "5분",
+  "enums.interval.15m": "15분",
+  "enums.interval.1h": "1시간",
+  "enums.interval.1d": "1일",
+  "enums.interval.1w": "1주",
+  "enums.interval.1M": "1개월",
 
   "enums.event_filter.all": "전체",
   "enums.event_filter.AS0": "주문접수",
