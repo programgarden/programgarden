@@ -597,9 +597,22 @@ class FieldSchema(BaseModel):
         
         # === DATE_PICKER ===
         if ui_comp in (UIComponent.DATE_PICKER, UIComponent.CUSTOM_DATE_PICKER):
+            args: Dict[str, Any] = {
+                "fieldKey": self.name,
+                "decoration": decoration,
+            }
+            if self.default:
+                args["initialValue"] = self.default
+            # ui_options에서 firstDate, lastDate, dateFormat 추출
+            if ui_opts.get("firstDate"):
+                args["firstDate"] = ui_opts["firstDate"]
+            if ui_opts.get("lastDate"):
+                args["lastDate"] = ui_opts["lastDate"]
+            if ui_opts.get("dateFormat"):
+                args["dateFormat"] = ui_opts["dateFormat"]
             return {
                 "type": "custom_date_picker",
-                "args": {"decoration": decoration},
+                "args": args,
             }
         
         # === TIME_PICKER ===

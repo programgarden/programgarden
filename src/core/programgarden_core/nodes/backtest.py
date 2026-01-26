@@ -176,7 +176,7 @@ class HistoricalDataNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 example="2024-01-01",
                 expected_type="str",
-                ui_component=UIComponent.TEXT_INPUT,
+                ui_component=UIComponent.DATE_PICKER,
                 help_text="i18n:fields.HistoricalDataNode.start_date.help_text",
             ),
             "end_date": FieldSchema(
@@ -190,7 +190,7 @@ class HistoricalDataNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 example="2024-12-31",
                 expected_type="str",
-                ui_component=UIComponent.TEXT_INPUT,
+                ui_component=UIComponent.DATE_PICKER,
                 help_text="i18n:fields.HistoricalDataNode.end_date.help_text",
             ),
             "interval": FieldSchema(

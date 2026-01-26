@@ -392,9 +392,9 @@
   "fields.HistoricalDataNode.symbols.help_text": "직접 입력 또는 바인딩 가능 (fx 토글)",
   "fields.HistoricalDataNode.period": "데이터 기간",
   "fields.HistoricalDataNode.interval": "봉 간격",
-  "fields.HistoricalDataNode.start_date": "백테스트 시작일. YYYY-MM-DD 또는 바인딩 (예: {{ months_ago_yyyymmdd(3) }} = 3개월 전)",
+  "fields.HistoricalDataNode.start_date": "백테스트 시작일",
   "fields.HistoricalDataNode.start_date.help_text": "날짜 직접 입력 또는 {{ months_ago_yyyymmdd(N) }} 표현식 사용",
-  "fields.HistoricalDataNode.end_date": "백테스트 종료일. YYYY-MM-DD 또는 바인딩 (예: {{ today_yyyymmdd() }} = 오늘)",
+  "fields.HistoricalDataNode.end_date": "백테스트 종료일",
   "fields.HistoricalDataNode.end_date.help_text": "날짜 직접 입력 또는 {{ today_yyyymmdd() }} 표현식 사용",
   "fields.HistoricalDataNode.adjust": "수정 주가 적용 (액분/배당 반영). 정확한 백테스트를 위해 권장.",
 

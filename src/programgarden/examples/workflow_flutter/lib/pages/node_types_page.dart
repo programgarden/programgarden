@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:json_dynamic_widget/json_dynamic_widget.dart';
 import '../widgets/checkbox_builder.dart';
 import '../widgets/credential_select_builder.dart';
+import '../widgets/date_picker_builder.dart';
 import '../widgets/plugin_select_builder.dart';
 import '../widgets/symbol_editor_builder.dart';
 import '../widgets/reactive_dropdown_builder.dart';
@@ -76,6 +77,12 @@ class ProgramGardenWidgetRegistry {
     registry.registerCustomBuilder(
       'checkbox',
       JsonWidgetBuilderContainer(builder: CheckboxBuilder.fromDynamic),
+    );
+
+    // custom_date_picker: 날짜 선택 위젯
+    registry.registerCustomBuilder(
+      'custom_${DatePickerBuilder.kType}',
+      JsonWidgetBuilderContainer(builder: DatePickerBuilder.fromDynamic),
     );
   }
 }
