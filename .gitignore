@@ -358,7 +358,6 @@ $RECYCLE.BIN/
 .vscode/
 */.vscode/
 .github/
-# Examples (local testing)
 src/programgarden/examples/**/*.json
 .env*
 
