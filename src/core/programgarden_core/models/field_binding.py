@@ -50,69 +50,140 @@ class ExpressionMode(str, Enum):
 
 class UIComponent(str, Enum):
     """
-    UI 컴포넌트 타입 (전역 상수)
+    UI 컴포넌트 타입 (json_dynamic_widget 타입명과 동일)
     
-    expression_mode에 따른 UI 렌더링:
-    - fixed_only: ui_component에 따른 입력 컴포넌트만 표시
-    - expression_only: BINDING_INPUT ({{ }} 에디터)만 표시
-    - both: [Fixed | Expression] 토글 + 선택에 따른 입력
+    사용 가이드:
+    - 기본 위젯: ui_component 생략 → FieldType에서 자동 추론
+    - 세부 옵션: ui_options로 지정 (keyboardType, maxLines 등)
+    - 커스텀 위젯: ui_component 명시 필수 (CUSTOM_* 접두사)
     
-    FieldType → UIComponent 기본 매핑:
-    - ENUM → SELECT
-    - CREDENTIAL → CREDENTIAL_SELECT  
-    - NUMBER/INTEGER → NUMBER_INPUT
-    - BOOLEAN → CHECKBOX
-    - STRING → TEXT_INPUT
-    - ARRAY[OBJECT] (직접 편집) → OBJECT_ARRAY_TABLE, SYMBOL_EDITOR 등
-    - ARRAY (바인딩 전용) → BINDING_INPUT
-    - OBJECT (바인딩 전용) → BINDING_INPUT
+    FieldType → json_dynamic_widget 자동 매핑:
+    - STRING → text_form_field
+    - NUMBER/INTEGER → text_form_field (keyboardType: number 자동 적용)
+    - BOOLEAN → checkbox
+    - ENUM → dropdown_button_form_field
+    - CREDENTIAL → custom_credential_select
+    - KEY_VALUE_PAIRS → custom_key_value_editor
     """
     
-    # === 기본 입력 컴포넌트 ===
-    TEXT_INPUT = "text_input"              # 짧은 텍스트 입력
-    TEXTAREA = "textarea"                  # 긴 텍스트 입력 (여러 줄)
-    NUMBER_INPUT = "number_input"          # 숫자 입력 (스피너 포함)
-    CHECKBOX = "checkbox"                  # 불리언 체크박스
-    SELECT = "select"                      # 드롭다운 선택 (ENUM용)
-    MULTI_SELECT = "multi_select"          # 다중 선택 (배열용)
+    # === json_dynamic_widget 네이티브 타입 ===
+    TEXT_FORM_FIELD = "text_form_field"
+    CHECKBOX = "checkbox"
+    DROPDOWN_BUTTON_FORM_FIELD = "dropdown_button_form_field"
+    SLIDER = "slider"
     
-    # === 특수 입력 컴포넌트 ===
-    CREDENTIAL_SELECT = "credential_select"  # Credential 선택 드롭다운
-    PLUGIN_SELECT = "plugin_select"          # 플러그인 선택 드롭다운 (ConditionNode 등)
-    SYMBOL_EDITOR = "symbol_editor"          # 종목 편집기 (exchange + symbol 쌍, fx 토글로 바인딩 지원)
-    OBJECT_ARRAY_TABLE = "object_array_table"  # 객체 배열 테이블 (object_schema 기반, 행 추가/삭제)
-    KEY_VALUE_EDITOR = "key_value_editor"    # 키-값 쌍 편집기 (HTTP headers 등)
-    FIELD_MAPPING_EDITOR = "field_mapping_editor"  # 필드 매핑 편집기 (from→to 변환 테이블)
-    CODE_EDITOR = "code_editor"              # 코드/JSON 편집기
-    CREATABLE_SELECT = "creatable_select"    # 생성 가능한 선택기 (기존 목록 + 새로 생성)
+    # === ProgramGarden 커스텀 위젯 ===
+    CUSTOM_CREDENTIAL_SELECT = "custom_credential_select"
+    CUSTOM_SYMBOL_EDITOR = "custom_symbol_editor"
+    CUSTOM_EXPRESSION_TOGGLE = "custom_expression_toggle"
+    CUSTOM_KEY_VALUE_EDITOR = "custom_key_value_editor"
+    CUSTOM_OBJECT_ARRAY_TABLE = "custom_object_array_table"
+    CUSTOM_CODE_EDITOR = "custom_code_editor"
+    CUSTOM_CREATABLE_SELECT = "custom_creatable_select"
+    CUSTOM_DATE_PICKER = "custom_date_picker"
+    CUSTOM_TIME_PICKER = "custom_time_picker"
+    CUSTOM_DATETIME_PICKER = "custom_datetime_picker"
+    CUSTOM_PLUGIN_SELECT = "custom_plugin_select"
+    CUSTOM_FIELD_MAPPING_EDITOR = "custom_field_mapping_editor"
     
-    # === 바인딩 전용 컴포넌트 ===
-    BINDING_INPUT = "binding_input"          # 바인딩 입력 ({{ nodes.xxx.yyy }} 전용)
+    # === 레거시 호환 (deprecated, 추후 제거 예정) ===
+    # 아래 타입들은 FieldType 자동 매핑 또는 ui_options로 대체됩니다
+    TEXT_INPUT = "text_input"              # → 생략 (STRING 타입 기본값)
+    TEXTAREA = "textarea"                  # → ui_options={"maxLines": 5}
+    NUMBER_INPUT = "number_input"          # → 생략 (NUMBER 타입 자동)
+    SELECT = "select"                      # → 생략 (ENUM 타입 자동)
+    MULTI_SELECT = "multi_select"          # → ui_options={"multiple": True}
+    BINDING_INPUT = "binding_input"        # → expression_mode로 처리
+    CREDENTIAL_SELECT = "credential_select"  # → CUSTOM_CREDENTIAL_SELECT
+    PLUGIN_SELECT = "plugin_select"          # → CUSTOM_PLUGIN_SELECT
+    SYMBOL_EDITOR = "symbol_editor"          # → CUSTOM_SYMBOL_EDITOR
+    OBJECT_ARRAY_TABLE = "object_array_table"  # → CUSTOM_OBJECT_ARRAY_TABLE
+    KEY_VALUE_EDITOR = "key_value_editor"    # → CUSTOM_KEY_VALUE_EDITOR
+    CODE_EDITOR = "code_editor"              # → CUSTOM_CODE_EDITOR
+    CREATABLE_SELECT = "creatable_select"    # → CUSTOM_CREATABLE_SELECT
+    DATE_PICKER = "date_picker"              # → CUSTOM_DATE_PICKER
+    TIME_PICKER = "time_picker"              # → CUSTOM_TIME_PICKER
+    DATETIME_PICKER = "datetime_picker"      # → CUSTOM_DATETIME_PICKER
+    FIELD_MAPPING_EDITOR = "field_mapping_editor"  # → CUSTOM_FIELD_MAPPING_EDITOR
+    RANGE_SLIDER = "range_slider"            # → ui_options={"range": True}
     
-    # === 날짜/시간 컴포넌트 ===
-    DATE_PICKER = "date_picker"              # 날짜 선택기
-    TIME_PICKER = "time_picker"              # 시간 선택기
-    DATETIME_PICKER = "datetime_picker"      # 날짜+시간 선택기
-    
-    # === 슬라이더/범위 ===
-    SLIDER = "slider"                        # 슬라이더 (범위 값)
-    RANGE_SLIDER = "range_slider"            # 범위 슬라이더 (min-max)
+    @classmethod
+    def get_default_widget_type(cls, field_type: "FieldType") -> str:
+        """FieldType에 대한 기본 json_dynamic_widget 타입 반환"""
+        mapping = {
+            FieldType.STRING: "text_form_field",
+            FieldType.NUMBER: "text_form_field",
+            FieldType.INTEGER: "text_form_field",
+            FieldType.BOOLEAN: "checkbox",
+            FieldType.ENUM: "dropdown_button_form_field",
+            FieldType.ARRAY: "text_form_field",
+            FieldType.OBJECT: "text_form_field",
+            FieldType.KEY_VALUE_PAIRS: "custom_key_value_editor",
+            FieldType.CREDENTIAL: "custom_credential_select",
+        }
+        return mapping.get(field_type, "text_form_field")
     
     @classmethod
     def get_default_for_field_type(cls, field_type: "FieldType") -> "UIComponent":
-        """FieldType에 대한 기본 UIComponent 반환"""
+        """FieldType에 대한 기본 UIComponent 반환 (레거시 호환용)"""
         mapping = {
             FieldType.STRING: cls.TEXT_INPUT,
             FieldType.NUMBER: cls.NUMBER_INPUT,
             FieldType.INTEGER: cls.NUMBER_INPUT,
             FieldType.BOOLEAN: cls.CHECKBOX,
             FieldType.ENUM: cls.SELECT,
-            FieldType.ARRAY: cls.TEXT_INPUT,  # 배열은 상황에 따라 다름
-            FieldType.OBJECT: cls.BINDING_INPUT,  # 객체는 보통 바인딩
+            FieldType.ARRAY: cls.TEXT_INPUT,
+            FieldType.OBJECT: cls.BINDING_INPUT,
             FieldType.KEY_VALUE_PAIRS: cls.KEY_VALUE_EDITOR,
             FieldType.CREDENTIAL: cls.CREDENTIAL_SELECT,
         }
         return mapping.get(field_type, cls.TEXT_INPUT)
+    
+    @classmethod
+    def to_widget_type(cls, ui_component: Optional["UIComponent"], field_type: "FieldType") -> str:
+        """UIComponent를 json_dynamic_widget 타입으로 변환"""
+        if ui_component is None:
+            return cls.get_default_widget_type(field_type)
+        
+        # 레거시 타입 → json_dynamic_widget 네이티브/커스텀 타입 매핑
+        legacy_mapping = {
+            cls.TEXT_INPUT: "text_form_field",
+            cls.TEXTAREA: "text_form_field",  # maxLines로 구분
+            cls.NUMBER_INPUT: "text_form_field",  # keyboardType으로 구분
+            cls.SELECT: "dropdown_button_form_field",
+            cls.MULTI_SELECT: "dropdown_button_form_field",  # multiple: true로 구분
+            cls.CHECKBOX: "checkbox",
+            cls.SLIDER: "slider",
+            cls.BINDING_INPUT: "text_form_field",
+            # 커스텀 타입
+            cls.CREDENTIAL_SELECT: "custom_credential_select",
+            cls.CUSTOM_CREDENTIAL_SELECT: "custom_credential_select",
+            cls.PLUGIN_SELECT: "custom_plugin_select",
+            cls.CUSTOM_PLUGIN_SELECT: "custom_plugin_select",
+            cls.SYMBOL_EDITOR: "custom_symbol_editor",
+            cls.CUSTOM_SYMBOL_EDITOR: "custom_symbol_editor",
+            cls.OBJECT_ARRAY_TABLE: "custom_object_array_table",
+            cls.CUSTOM_OBJECT_ARRAY_TABLE: "custom_object_array_table",
+            cls.KEY_VALUE_EDITOR: "custom_key_value_editor",
+            cls.CUSTOM_KEY_VALUE_EDITOR: "custom_key_value_editor",
+            cls.CODE_EDITOR: "custom_code_editor",
+            cls.CUSTOM_CODE_EDITOR: "custom_code_editor",
+            cls.CREATABLE_SELECT: "custom_creatable_select",
+            cls.CUSTOM_CREATABLE_SELECT: "custom_creatable_select",
+            cls.DATE_PICKER: "custom_date_picker",
+            cls.CUSTOM_DATE_PICKER: "custom_date_picker",
+            cls.TIME_PICKER: "custom_time_picker",
+            cls.CUSTOM_TIME_PICKER: "custom_time_picker",
+            cls.DATETIME_PICKER: "custom_datetime_picker",
+            cls.CUSTOM_DATETIME_PICKER: "custom_datetime_picker",
+            cls.FIELD_MAPPING_EDITOR: "custom_field_mapping_editor",
+            cls.CUSTOM_FIELD_MAPPING_EDITOR: "custom_field_mapping_editor",
+            cls.RANGE_SLIDER: "slider",  # range: true로 구분
+            # 네이티브 타입
+            cls.TEXT_FORM_FIELD: "text_form_field",
+            cls.DROPDOWN_BUTTON_FORM_FIELD: "dropdown_button_form_field",
+        }
+        return legacy_mapping.get(ui_component, "text_form_field")
 
 
 class FieldSchema(BaseModel):
@@ -344,53 +415,59 @@ class FieldSchema(BaseModel):
         ui_comp: "UIComponent", 
         decoration: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """UIComponent를 json_dynamic_widget 타입으로 매핑"""
+        """UIComponent를 json_dynamic_widget 타입으로 매핑
         
-        # TEXT_INPUT
-        if ui_comp == UIComponent.TEXT_INPUT:
+        ui_options가 있으면 해당 옵션을 적용합니다.
+        FieldType에 따른 기본 옵션도 자동 적용됩니다.
+        """
+        ui_opts = self.ui_options or {}
+        
+        # === TEXT_FORM_FIELD 계열 ===
+        # TEXT_INPUT, TEXTAREA, NUMBER_INPUT, BINDING_INPUT 모두 text_form_field 사용
+        if ui_comp in (UIComponent.TEXT_INPUT, UIComponent.TEXT_FORM_FIELD):
             args: Dict[str, Any] = {"decoration": decoration}
             if self.default is not None:
                 args["initialValue"] = str(self.default)
+            # ui_options 적용
+            if ui_opts.get("maxLines"):
+                args["maxLines"] = ui_opts["maxLines"]
+            if ui_opts.get("keyboardType"):
+                args["keyboardType"] = ui_opts["keyboardType"]
             return {"type": "text_form_field", "args": args}
         
-        # TEXTAREA
+        # TEXTAREA (maxLines 자동 적용)
         if ui_comp == UIComponent.TEXTAREA:
             args: Dict[str, Any] = {
                 "decoration": decoration,
-                "maxLines": 5,
+                "maxLines": ui_opts.get("maxLines", 5),
             }
             if self.default is not None:
                 args["initialValue"] = str(self.default)
             return {"type": "text_form_field", "args": args}
         
-        # NUMBER_INPUT (숫자 입력 필드)
+        # NUMBER_INPUT (keyboardType 자동 적용)
         if ui_comp == UIComponent.NUMBER_INPUT:
             args: Dict[str, Any] = {
                 "fieldKey": self.name,
                 "decoration": decoration,
-                "keyboardType": "number",
+                "keyboardType": ui_opts.get("keyboardType", "number"),
             }
             if self.default is not None:
                 args["initialValue"] = str(self.default)
             return {"type": "text_form_field", "args": args}
         
-        # CHECKBOX
+        # === CHECKBOX ===
         if ui_comp == UIComponent.CHECKBOX:
             args: Dict[str, Any] = {
                 "value": self.default if isinstance(self.default, bool) else False
             }
-            # helperText 추가 (description 사용, i18n 키 지원)
             if self.description:
                 args["helperText"] = self.description
-            return {
-                "type": "checkbox",
-                "args": args
-            }
+            return {"type": "checkbox", "args": args}
         
-        # SELECT (드롭다운)
-        if ui_comp == UIComponent.SELECT:
+        # === SELECT / DROPDOWN ===
+        if ui_comp in (UIComponent.SELECT, UIComponent.DROPDOWN_BUTTON_FORM_FIELD):
             items = self.enum_values or []
-            # enum_labels가 있으면 Flutter에서 표시용으로 사용
             args: Dict[str, Any] = {
                 "decoration": decoration,
                 "items": items,
@@ -399,16 +476,32 @@ class FieldSchema(BaseModel):
                 args["value"] = self.default
             if self.enum_labels:
                 args["itemLabels"] = self.enum_labels
+            # 다중 선택 지원
+            if ui_opts.get("multiple"):
+                args["multiple"] = True
             return {"type": "dropdown_button_form_field", "args": args}
         
-        # CREDENTIAL_SELECT (커스텀)
-        if ui_comp == UIComponent.CREDENTIAL_SELECT:
+        # MULTI_SELECT (multiple: true 자동 적용)
+        if ui_comp == UIComponent.MULTI_SELECT:
+            items = self.enum_values or []
             args: Dict[str, Any] = {
                 "decoration": decoration,
-                "items": [],  # 런타임에 credential 목록으로 채움
+                "items": items,
+                "multiple": True,
+            }
+            if self.default is not None:
+                args["value"] = self.default
+            if self.enum_labels:
+                args["itemLabels"] = self.enum_labels
+            return {"type": "dropdown_button_form_field", "args": args}
+        
+        # === CREDENTIAL_SELECT (레거시 + 신규 CUSTOM_*) ===
+        if ui_comp in (UIComponent.CREDENTIAL_SELECT, UIComponent.CUSTOM_CREDENTIAL_SELECT):
+            args: Dict[str, Any] = {
+                "decoration": decoration,
+                "items": [],
             }
             if self.credential_types:
-                # credential type_id와 name을 함께 전달
                 from .credential import BUILTIN_CREDENTIAL_SCHEMAS
                 credential_type_infos = []
                 for type_id in self.credential_types:
@@ -420,24 +513,21 @@ class FieldSchema(BaseModel):
                 args["credentialTypes"] = credential_type_infos
             return {"type": "custom_credential_select", "args": args}
         
-        # BINDING_INPUT ({{ }} 전용) - prefixText/suffixText는 클라이언트에서 처리
+        # BINDING_INPUT
         if ui_comp == UIComponent.BINDING_INPUT:
             if self.example_binding:
                 decoration["hintText"] = self.example_binding
-            return {
-                "type": "text_form_field",
-                "args": {"decoration": decoration}
-            }
+            return {"type": "text_form_field", "args": {"decoration": decoration}}
         
-        # PLUGIN_SELECT (커스텀)
-        if ui_comp == UIComponent.PLUGIN_SELECT:
+        # === PLUGIN_SELECT ===
+        if ui_comp in (UIComponent.PLUGIN_SELECT, UIComponent.CUSTOM_PLUGIN_SELECT):
             return {
                 "type": "custom_plugin_select",
                 "args": {"decoration": decoration},
             }
         
-        # SYMBOL_EDITOR (커스텀)
-        if ui_comp == UIComponent.SYMBOL_EDITOR:
+        # === SYMBOL_EDITOR ===
+        if ui_comp in (UIComponent.SYMBOL_EDITOR, UIComponent.CUSTOM_SYMBOL_EDITOR):
             return {
                 "type": "custom_symbol_editor",
                 "args": {
@@ -446,8 +536,8 @@ class FieldSchema(BaseModel):
                 },
             }
         
-        # KEY_VALUE_EDITOR (커스텀)
-        if ui_comp == UIComponent.KEY_VALUE_EDITOR:
+        # === KEY_VALUE_EDITOR ===
+        if ui_comp in (UIComponent.KEY_VALUE_EDITOR, UIComponent.CUSTOM_KEY_VALUE_EDITOR):
             return {
                 "type": "custom_key_value_editor",
                 "args": {
@@ -456,8 +546,8 @@ class FieldSchema(BaseModel):
                 },
             }
         
-        # OBJECT_ARRAY_TABLE (커스텀)
-        if ui_comp == UIComponent.OBJECT_ARRAY_TABLE:
+        # === OBJECT_ARRAY_TABLE ===
+        if ui_comp in (UIComponent.OBJECT_ARRAY_TABLE, UIComponent.CUSTOM_OBJECT_ARRAY_TABLE):
             return {
                 "type": "custom_object_array_table",
                 "args": {
@@ -466,9 +556,8 @@ class FieldSchema(BaseModel):
                 },
             }
         
-        # CODE_EDITOR (커스텀)
-        if ui_comp == UIComponent.CODE_EDITOR:
-            ui_opts = self.ui_options or {}
+        # === CODE_EDITOR ===
+        if ui_comp in (UIComponent.CODE_EDITOR, UIComponent.CUSTOM_CODE_EDITOR):
             return {
                 "type": "custom_code_editor",
                 "args": {
@@ -477,9 +566,8 @@ class FieldSchema(BaseModel):
                 },
             }
         
-        # CREATABLE_SELECT (커스텀)
-        if ui_comp == UIComponent.CREATABLE_SELECT:
-            ui_opts = self.ui_options or {}
+        # === CREATABLE_SELECT ===
+        if ui_comp in (UIComponent.CREATABLE_SELECT, UIComponent.CUSTOM_CREATABLE_SELECT):
             return {
                 "type": "custom_creatable_select",
                 "args": {
@@ -491,28 +579,73 @@ class FieldSchema(BaseModel):
                 },
             }
         
-        # DATE_PICKER (커스텀)
-        if ui_comp == UIComponent.DATE_PICKER:
+        # === DATE_PICKER ===
+        if ui_comp in (UIComponent.DATE_PICKER, UIComponent.CUSTOM_DATE_PICKER):
             return {
                 "type": "custom_date_picker",
                 "args": {"decoration": decoration},
             }
         
-        # SLIDER (built-in)
+        # === TIME_PICKER ===
+        if ui_comp in (UIComponent.TIME_PICKER, UIComponent.CUSTOM_TIME_PICKER):
+            return {
+                "type": "custom_time_picker",
+                "args": {"decoration": decoration},
+            }
+        
+        # === DATETIME_PICKER ===
+        if ui_comp in (UIComponent.DATETIME_PICKER, UIComponent.CUSTOM_DATETIME_PICKER):
+            return {
+                "type": "custom_datetime_picker",
+                "args": {"decoration": decoration},
+            }
+        
+        # === FIELD_MAPPING_EDITOR ===
+        if ui_comp in (UIComponent.FIELD_MAPPING_EDITOR, UIComponent.CUSTOM_FIELD_MAPPING_EDITOR):
+            return {
+                "type": "custom_field_mapping_editor",
+                "args": {
+                    "decoration": decoration,
+                    "objectSchema": self.object_schema,
+                },
+            }
+        
+        # === SLIDER ===
         if ui_comp == UIComponent.SLIDER:
+            args: Dict[str, Any] = {
+                "min": float(self.min_value or 0),
+                "max": float(self.max_value or 100),
+                "value": float(self.default or 0),
+            }
+            if ui_opts.get("range"):
+                args["range"] = True
+            return {"type": "slider", "args": args}
+        
+        # RANGE_SLIDER (range: true 자동 적용)
+        if ui_comp == UIComponent.RANGE_SLIDER:
             return {
                 "type": "slider",
                 "args": {
                     "min": float(self.min_value or 0),
                     "max": float(self.max_value or 100),
                     "value": float(self.default or 0),
-                }
+                    "range": True,
+                },
             }
         
-        # 기본값: TEXT_INPUT
+        # === 기본값: TEXT_FORM_FIELD ===
+        # FieldType에 따른 기본 옵션 자동 적용
         args: Dict[str, Any] = {"decoration": decoration}
         if self.default is not None:
             args["initialValue"] = str(self.default)
+        # NUMBER/INTEGER 타입은 keyboardType: number 자동 적용
+        if self.type in (FieldType.NUMBER, FieldType.INTEGER):
+            args["keyboardType"] = ui_opts.get("keyboardType", "number")
+        # ui_options 적용
+        if ui_opts.get("maxLines"):
+            args["maxLines"] = ui_opts["maxLines"]
+        if ui_opts.get("keyboardType") and self.type not in (FieldType.NUMBER, FieldType.INTEGER):
+            args["keyboardType"] = ui_opts["keyboardType"]
         return {"type": "text_form_field", "args": args}
     
     def _build_toggle_widget(

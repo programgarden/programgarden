@@ -86,13 +86,15 @@ class AccountNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """AccountNode의 설정 가능한 필드 스키마."""
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
-        
+
         return {
             # === PARAMETERS: 브로커 연결 (필수) ===
+            # OBJECT 타입 + EXPRESSION_ONLY → 바인딩 입력 필드 자동 생성
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                display_name="i18n:fields.AccountNode.connection",
+                description="i18n:fields.AccountNode.connection.description",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -102,15 +104,17 @@ class AccountNode(BaseNode):
                 expected_type="broker_connection",
             ),
             # === PARAMETERS: 상품 유형 선택 ===
+            # ENUM 타입 → dropdown_button_form_field 자동 생성
             "product_type": FieldSchema(
                 name="product_type",
                 type=FieldType.ENUM,
-                description="i18n:fields.AccountNode.product_type",
+                display_name="i18n:fields.AccountNode.product_type",
+                description="i18n:fields.AccountNode.product_type.description",
                 default="overseas_stock",
                 enum_values=["overseas_stock", "overseas_futures"],
                 enum_labels={
-                    "overseas_stock": "해외주식",
-                    "overseas_futures": "해외선물"
+                    "overseas_stock": "i18n:enums.product_type.overseas_stock",
+                    "overseas_futures": "i18n:enums.product_type.overseas_futures"
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,

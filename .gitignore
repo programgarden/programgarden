@@ -776,3 +776,4 @@ src/programgarden/examples/
 # SQLite DB storage (runtime data)
 programgarden_data/
 **/programgarden_data/
+.claude/

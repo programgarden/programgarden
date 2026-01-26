@@ -70,8 +70,11 @@
   
   "nodes.AccountNode.name": "계좌 조회",
   "nodes.AccountNode.description": "보유종목, 예수금, 미체결 주문을 한 번 조회합니다. 실시간 업데이트가 필요 없을 때 사용하세요.",
-  
-  "fields.AccountNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
+
+  "fields.AccountNode.connection": "브로커 연결",
+  "fields.AccountNode.connection.description": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+  "fields.AccountNode.product_type": "상품 유형",
+  "fields.AccountNode.product_type.description": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
   
   "nodes.SQLiteNode.name": "단순 DB",
   "nodes.SQLiteNode.description": "로컬 SQLite 데이터베이스로 데이터를 저장하고 조회합니다. 직접 SQL 작성 또는 GUI로 간단 조작이 가능합니다.",
@@ -802,5 +805,8 @@
   "errors.FINANCE_PACKAGE_NOT_AVAILABLE": "Finance 패키지를 사용할 수 없습니다: {error}",
   "errors.MARKET_DATA_FETCH_ERROR": "시세 조회 오류: {error}",
   "errors.HISTORICAL_DATA_FETCH_ERROR": "과거 데이터 조회 오류: {error}",
-  "errors.UNSUPPORTED_PRODUCT": "지원하지 않는 상품입니다: {product}"
+  "errors.UNSUPPORTED_PRODUCT": "지원하지 않는 상품입니다: {product}",
+
+  "enums.product_type.overseas_stock": "해외주식",
+  "enums.product_type.overseas_futures": "해외선물"
 }

@@ -70,8 +70,11 @@
   
   "nodes.AccountNode.name": "Account",
   "nodes.AccountNode.description": "Get your holdings, cash balance, and open orders once. Use when you don't need live updates.",
-  
-  "fields.AccountNode.product_type": "Select product type. Must match the product connected from BrokerNode.",
+
+  "fields.AccountNode.connection": "Broker Connection",
+  "fields.AccountNode.connection.description": "Broker connection info. Add a BrokerNode first, then bind its connection output here.",
+  "fields.AccountNode.product_type": "Product Type",
+  "fields.AccountNode.product_type.description": "Select product type. Must match the product connected from BrokerNode.",
   
   "nodes.SQLiteNode.name": "Simple DB",
   "nodes.SQLiteNode.description": "Local SQLite database for storing and querying data. Supports direct SQL queries or simple GUI operations.",
@@ -793,5 +796,8 @@
   "errors.FINANCE_PACKAGE_NOT_AVAILABLE": "Finance package not available: {error}",
   "errors.MARKET_DATA_FETCH_ERROR": "Market data fetch error: {error}",
   "errors.HISTORICAL_DATA_FETCH_ERROR": "Historical data fetch error: {error}",
-  "errors.UNSUPPORTED_PRODUCT": "Unsupported product: {product}"
+  "errors.UNSUPPORTED_PRODUCT": "Unsupported product: {product}",
+
+  "enums.product_type.overseas_stock": "Overseas Stock",
+  "enums.product_type.overseas_futures": "Overseas Futures"
 }
