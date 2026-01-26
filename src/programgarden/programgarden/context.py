@@ -204,7 +204,9 @@ class ExecutionContext:
         # === New: Workflow Position Tracker ===
         # Tracks workflow positions separately using FIFO for competition ranking
         self._workflow_position_tracker: Optional[Any] = None  # WorkflowPositionTracker (lazy init)
-        
+        self._workflow_broker_node_id: Optional[str] = None  # BrokerNode ID for PnL refresh
+        self._workflow_product: str = "overseas_stock"  # Product type for PnL refresh
+
         # === New: WorkflowJob reference (for start datetime access) ===
         self._workflow_job: Optional[Any] = None  # WorkflowJob
         
@@ -1624,7 +1626,11 @@ class ExecutionContext:
                 broker_node_id=broker_node_id,
                 product=product,
             )
-            
+
+            # PnL refresh용 정보 저장
+            self._workflow_broker_node_id = broker_node_id
+            self._workflow_product = product
+
             logger.info(f"Workflow position tracker initialized: {db_path}")
             
         except Exception as e:
@@ -1755,6 +1761,24 @@ class ExecutionContext:
                 commda_code=commda_code,
             )
             logger.info(f"Recorded workflow fill: {order_no} ({symbol} {side} {quantity}@{price}) → {result}")
+
+            # 체결 후 PnL refresh 트리거
+            if result == "workflow" and self._workflow_broker_node_id:
+                try:
+                    # 현재가로 PnL 계산 (체결가 사용)
+                    current_prices = {symbol: price}
+                    await self.notify_workflow_pnl(
+                        broker_node_id=self._workflow_broker_node_id,
+                        product=self._workflow_product,
+                        provider="ls-sec.co.kr",
+                        current_prices=current_prices,
+                        account_positions=None,  # 전체 포지션은 나중에 업데이트됨
+                        currency="USD",
+                    )
+                    logger.info(f"PnL refresh triggered after fill: {symbol}")
+                except Exception as pnl_err:
+                    logger.warning(f"Failed to trigger PnL refresh: {pnl_err}")
+
             return result
         except Exception as e:
             logger.warning(f"Failed to record workflow fill: {e}")
