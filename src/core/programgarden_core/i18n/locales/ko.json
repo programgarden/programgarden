@@ -271,6 +271,8 @@
 
   "fields.RealMarketDataNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.RealMarketDataNode.symbols": "구독할 종목 코드 (AAPL, TSLA 등). 비어있으면 입력 포트 값 사용.",
+  "fields.RealMarketDataNode.symbols.exchange": "거래소",
+  "fields.RealMarketDataNode.symbols.symbol": "종목코드",
   "fields.RealMarketDataNode.symbols.help_text": "직접 입력 또는 바인딩 가능 (fx 토글)",
   "fields.RealMarketDataNode.exchange_field": "거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
   "fields.RealMarketDataNode.symbol_field": "종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",

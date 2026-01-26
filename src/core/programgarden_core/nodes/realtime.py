@@ -107,6 +107,45 @@ class RealMarketDataNode(BaseNode):
                 expected_type="list[{exchange: str, symbol: str}]",
                 ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
                 help_text="i18n:fields.RealMarketDataNode.symbols.help_text",
+                # 테이블 컬럼 정의
+                object_schema=[
+                    {
+                        "name": "exchange",
+                        "type": "ENUM",
+                        "label": "i18n:fields.RealMarketDataNode.symbols.exchange",
+                        "required": True,
+                        "expression_mode": "fixed_only",
+                    },
+                    {
+                        "name": "symbol",
+                        "type": "STRING",
+                        "label": "i18n:fields.RealMarketDataNode.symbols.symbol",
+                        "required": True,
+                        "expression_mode": "fixed_only",
+                        "placeholder": "AAPL",
+                    },
+                ],
+                # 상품유형별 거래소 목록
+                ui_options={
+                    "exchanges_by_product": {
+                        "overseas_stock": [
+                            {"value": "NASDAQ", "label": "NASDAQ"},
+                            {"value": "NYSE", "label": "NYSE"},
+                            {"value": "AMEX", "label": "AMEX"},
+                            {"value": "SEHK", "label": "홍콩거래소"},
+                            {"value": "TSE", "label": "도쿄거래소"},
+                            {"value": "SSE", "label": "상해거래소"},
+                            {"value": "SZSE", "label": "심천거래소"},
+                        ],
+                        "overseas_futures": [
+                            {"value": "CME", "label": "CME (시카고상업거래소)"},
+                            {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
+                            {"value": "SGX", "label": "SGX (싱가포르거래소)"},
+                            {"value": "HKEX", "label": "HKEX (홍콩선물거래소)"},
+                        ],
+                    },
+                    "default_product_type": "overseas_stock",
+                },
             ),
             # === PARAMETERS: 필드 매핑 (접힌 상태) ===
             "exchange_field": FieldSchema(

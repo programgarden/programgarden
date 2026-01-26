@@ -528,13 +528,20 @@ class FieldSchema(BaseModel):
         
         # === SYMBOL_EDITOR ===
         if ui_comp in (UIComponent.SYMBOL_EDITOR, UIComponent.CUSTOM_SYMBOL_EDITOR):
-            return {
-                "type": "custom_symbol_editor",
-                "args": {
-                    "decoration": decoration,
-                    "expressionMode": self.expression_mode.value if hasattr(self.expression_mode, 'value') else str(self.expression_mode),
-                },
+            args: Dict[str, Any] = {
+                "decoration": decoration,
+                "expressionMode": self.expression_mode.value if hasattr(self.expression_mode, 'value') else str(self.expression_mode),
             }
+            # object_schema 추가 (테이블 컬럼 정의)
+            if self.object_schema:
+                args["objectSchema"] = self.object_schema
+            # ui_options 추가 (상품유형별 거래소 목록 등)
+            if self.ui_options:
+                args["uiOptions"] = self.ui_options
+            # 바인딩 힌트 추가
+            if self.example_binding:
+                args["expressionHint"] = self.example_binding
+            return {"type": "custom_symbol_editor", "args": args}
         
         # === KEY_VALUE_EDITOR ===
         if ui_comp in (UIComponent.KEY_VALUE_EDITOR, UIComponent.CUSTOM_KEY_VALUE_EDITOR):
