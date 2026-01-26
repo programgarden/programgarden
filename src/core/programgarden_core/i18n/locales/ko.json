@@ -281,8 +281,8 @@
 
   "fields.RealOrderEventNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.RealOrderEventNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
-  "fields.RealOrderEventNode.event_filter": "해외주식 이벤트 필터. 전체(AS0~AS4) 또는 특정 TR만 출력합니다.",
-  "fields.RealOrderEventNode.event_filter_futures": "해외선물 이벤트 필터. 전체(TC1~TC3) 또는 특정 TR만 출력합니다.",
+  "fields.RealOrderEventNode.event_filter": "받고 싶은 주문 알림을 선택하세요. '전체'를 선택하면 모든 주문 이벤트를 받습니다.",
+  "fields.RealOrderEventNode.event_filter_futures": "받고 싶은 주문 알림을 선택하세요. '전체'를 선택하면 모든 주문 이벤트를 받습니다.",
   "fields.RealOrderEventNode.stay_connected": "✅ 켜면: 주문 체결/거부/취소 알림을 계속 받습니다.\n❌ 끄면: 이벤트를 한 번만 받고 끊깁니다.",
 
   "fields.ScheduleNode.cron": "크론 표현식 (예: */5 * * * * = 5분마다)",
@@ -808,5 +808,17 @@
   "errors.UNSUPPORTED_PRODUCT": "지원하지 않는 상품입니다: {product}",
 
   "enums.product_type.overseas_stock": "해외주식",
-  "enums.product_type.overseas_futures": "해외선물"
+  "enums.product_type.overseas_futures": "해외선물",
+
+  "enums.event_filter.all": "전체",
+  "enums.event_filter.AS0": "주문접수",
+  "enums.event_filter.AS1": "주문체결",
+  "enums.event_filter.AS2": "주문정정",
+  "enums.event_filter.AS3": "주문취소",
+  "enums.event_filter.AS4": "주문거부",
+
+  "enums.event_filter_futures.all": "전체",
+  "enums.event_filter_futures.TC1": "주문접수",
+  "enums.event_filter_futures.TC2": "주문확인/거부",
+  "enums.event_filter_futures.TC3": "체결"
 }

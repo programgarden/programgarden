@@ -414,8 +414,8 @@ class RealOrderEventNode(BaseNode):
                 default="overseas_stock",
                 enum_values=["overseas_stock", "overseas_futures"],
                 enum_labels={
-                    "overseas_stock": "해외주식",
-                    "overseas_futures": "해외선물"
+                    "overseas_stock": "i18n:enums.product_type.overseas_stock",
+                    "overseas_futures": "i18n:enums.product_type.overseas_futures"
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -429,12 +429,12 @@ class RealOrderEventNode(BaseNode):
                 default="all",
                 enum_values=["all", "AS0", "AS1", "AS2", "AS3", "AS4"],
                 enum_labels={
-                    "all": "전체 (AS0~AS4)",
-                    "AS0": "AS0 (주문접수)",
-                    "AS1": "AS1 (주문체결)",
-                    "AS2": "AS2 (주문정정)",
-                    "AS3": "AS3 (주문취소)",
-                    "AS4": "AS4 (주문거부)",
+                    "all": "i18n:enums.event_filter.all",
+                    "AS0": "i18n:enums.event_filter.AS0",
+                    "AS1": "i18n:enums.event_filter.AS1",
+                    "AS2": "i18n:enums.event_filter.AS2",
+                    "AS3": "i18n:enums.event_filter.AS3",
+                    "AS4": "i18n:enums.event_filter.AS4"
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -449,10 +449,10 @@ class RealOrderEventNode(BaseNode):
                 default="all",
                 enum_values=["all", "TC1", "TC2", "TC3"],
                 enum_labels={
-                    "all": "전체 (TC1~TC3)",
-                    "TC1": "TC1 (주문접수)",
-                    "TC2": "TC2 (주문확인/거부)",
-                    "TC3": "TC3 (체결)",
+                    "all": "i18n:enums.event_filter_futures.all",
+                    "TC1": "i18n:enums.event_filter_futures.TC1",
+                    "TC2": "i18n:enums.event_filter_futures.TC2",
+                    "TC3": "i18n:enums.event_filter_futures.TC3"
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
