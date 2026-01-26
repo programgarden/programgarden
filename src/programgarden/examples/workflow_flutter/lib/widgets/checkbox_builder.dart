@@ -3,10 +3,7 @@ import 'package:json_dynamic_widget/json_dynamic_widget.dart';
 
 part 'checkbox_builder.g.dart';
 
-/// Checkbox 빌더 - helperText 지원
-///
-/// json_dynamic_widget 기본 checkbox는 helperText를 지원하지 않아
-/// 커스텀 빌더로 구현합니다.
+/// Checkbox 빌더
 ///
 /// JSON 스키마 예시:
 /// ```json
@@ -14,11 +11,12 @@ part 'checkbox_builder.g.dart';
 ///   "type": "checkbox",
 ///   "args": {
 ///     "value": true,
-///     "helperText": "WebSocket 연결을 유지합니다",
 ///     "fieldKey": "stay_connected"
 ///   }
 /// }
 /// ```
+///
+/// helperText는 custom_expression_toggle의 fixedHelperText로 관리됩니다.
 @jsonWidget
 abstract class _CheckboxBuilder extends JsonWidgetBuilder {
   const _CheckboxBuilder({required super.args});
@@ -36,14 +34,12 @@ class _CheckboxWidget extends StatefulWidget {
   const _CheckboxWidget({
     super.key,
     this.value,
-    this.helperText,
     this.fieldKey,
     this.labelText,
     @JsonBuildArg() required this.data,
   });
 
   final bool? value;
-  final String? helperText;
   final String? fieldKey;
   final String? labelText;
   final JsonWidgetData data;
@@ -115,17 +111,6 @@ class _CheckboxWidgetState extends State<_CheckboxWidget> {
               ),
           ],
         ),
-        // helperText 표시
-        if (widget.helperText != null && widget.helperText!.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(left: 48.0, top: 4.0),
-            child: Text(
-              widget.helperText!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.hintColor,
-              ),
-            ),
-          ),
       ],
     );
   }

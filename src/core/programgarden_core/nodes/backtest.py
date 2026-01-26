@@ -58,7 +58,7 @@ class HistoricalDataNode(BaseNode):
         description="Data interval (1m, 5m, 15m, 1h, 1d)",
     )
     adjust: bool = Field(
-        default=True,
+        default=False,
         description="Apply adjusted prices",
     )
 
@@ -216,15 +216,16 @@ class HistoricalDataNode(BaseNode):
                 expected_type="str",
                 ui_component=UIComponent.SELECT,
             ),
-            # === SETTINGS: 부가 설정 ===
+            # === PARAMETERS: 수정주가 설정 ===
             "adjust": FieldSchema(
                 name="adjust",
                 type=FieldType.BOOLEAN,
                 display_name="i18n:fieldNames.HistoricalDataNode.adjust",
-                description="i18n:fields.HistoricalDataNode.adjust",
-                default=True,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
+                description="i18n:fields.HistoricalDataNode.adjust.short",
+                help_text="i18n:fields.HistoricalDataNode.adjust.detail",
+                default=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
                 ui_component=UIComponent.CHECKBOX,
             ),
         }

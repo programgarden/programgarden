@@ -467,11 +467,13 @@ class FieldSchema(BaseModel):
         
         # === CHECKBOX ===
         if ui_comp == UIComponent.CHECKBOX:
+            # labelText: 체크박스 옆에 표시되는 제목 (display_name 사용)
+            label = self.display_name or self.name.replace("_", " ").title()
             args: Dict[str, Any] = {
-                "value": self.default if isinstance(self.default, bool) else False
+                "value": self.default if isinstance(self.default, bool) else False,
+                "labelText": label,
             }
-            if self.description:
-                args["helperText"] = self.description
+            # helperText는 custom_expression_toggle의 fixedHelperText로 관리됨
             return {"type": "checkbox", "args": args}
         
         # === SELECT / DROPDOWN ===

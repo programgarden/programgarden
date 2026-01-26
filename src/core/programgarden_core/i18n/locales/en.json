@@ -379,7 +379,8 @@
   "fields.HistoricalDataNode.start_date": "Backtest start date",
   "fields.HistoricalDataNode.end_date": "Backtest end date",
   "fields.HistoricalDataNode.interval": "Data interval/timeframe. Options: 1m (1 minute), 5m, 15m, 1h (hourly), 1d (daily).",
-  "fields.HistoricalDataNode.adjust": "Apply adjusted prices (split/dividend adjusted). Recommended for accurate backtesting.",
+  "fields.HistoricalDataNode.adjust.short": "Apply adjusted prices (split/dividend adjusted)",
+  "fields.HistoricalDataNode.adjust.detail": "Not recommended for backtesting as it may distort historical price levels.",
 
   "fields.MarketDataNode.fields": "Fields to query: price (current price), volume, ohlcv (candle data)",
   "fields.MarketDataNode.period": "Period for OHLCV data. Options: 1d (daily), 1h (hourly), 5m (5 minutes), 1m (1 minute)",

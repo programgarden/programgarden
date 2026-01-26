@@ -396,7 +396,8 @@
   "fields.HistoricalDataNode.start_date.help_text": "날짜 직접 입력 또는 {{ months_ago_yyyymmdd(N) }} 표현식 사용",
   "fields.HistoricalDataNode.end_date": "백테스트 종료일",
   "fields.HistoricalDataNode.end_date.help_text": "날짜 직접 입력 또는 {{ today_yyyymmdd() }} 표현식 사용",
-  "fields.HistoricalDataNode.adjust": "수정 주가 적용 (액분/배당 반영). 정확한 백테스트를 위해 권장.",
+  "fields.HistoricalDataNode.adjust.short": "수정 주가 적용 (액분/배당 반영)",
+  "fields.HistoricalDataNode.adjust.detail": "가격 수준이 변경되어 백테스팅 결과가 왜곡될 수 있으므로 미적용 권장.",
 
   "fields.MarketDataNode.period": "OHLCV 데이터 기간. 옵션: 1d (일봉), 1h (시간봉), 5m (5분봉), 1m (1분봉)",
   "fields.MarketDataNode.count": "조회할 OHLCV 데이터 개수",
