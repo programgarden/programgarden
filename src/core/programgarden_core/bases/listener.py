@@ -167,53 +167,6 @@ class DisplayDataEvent:
 
 
 @dataclass
-class AccountPnLEvent:
-    """
-    Event emitted when account P&L (profit and loss) is updated.
-    
-    Used for real-time account tracking when BrokerNode is present.
-    Emitted on every tick received for held positions.
-    
-    Server developers can throttle these events as needed.
-    
-    Attributes:
-        job_id: Job identifier
-        broker_node_id: BrokerNode ID that owns this account
-        product: Product type ("overseas_stock" or "overseas_futures")
-        provider: Broker provider (e.g., "ls-sec.co.kr")
-        account_pnl_rate: Account P&L rate (total_pnl / total_buy * 100)
-        total_eval_amount: Total evaluation amount
-        total_buy_amount: Total buy amount
-        total_pnl_amount: Total P&L amount (eval - buy)
-        position_count: Number of held positions
-        currency: Base currency (e.g., "USD")
-        timestamp: Event timestamp
-    
-    Example:
-        class MyListener(BaseExecutionListener):
-            async def on_account_pnl_update(self, event: AccountPnLEvent) -> None:
-                print(f"Account P&L: {event.account_pnl_rate:.2f}%")
-                # Save to DB for competition ranking
-                await db.update_ranking(event.job_id, event.account_pnl_rate)
-    """
-    job_id: str
-    broker_node_id: str
-    product: str  # "overseas_stock" | "overseas_futures"
-    provider: str  # "ls-sec.co.kr"
-    
-    # Account P&L data
-    account_pnl_rate: Union[Decimal, float]  # Total P&L rate (%)
-    total_eval_amount: Union[Decimal, float]  # Total evaluation amount
-    total_buy_amount: Union[Decimal, float]   # Total buy amount
-    total_pnl_amount: Union[Decimal, float]   # Total P&L amount
-    
-    # Metadata
-    position_count: int  # Number of held positions
-    currency: str = "USD"  # Base currency
-    timestamp: datetime = field(default_factory=datetime.utcnow)
-
-
-@dataclass
 class PositionDetail:
     """
     Position detail for workflow P&L tracking.
@@ -294,6 +247,7 @@ class WorkflowPnLEvent:
         account_total_pnl_amount: Entire account P&L amount
         account_total_eval_amount: Entire account evaluation amount
         account_total_buy_amount: Entire account buy amount
+        total_position_count: Total number of held positions (replaces AccountPnLEvent.position_count)
         
         # Account product-specific P&L
         account_stock_pnl_rate: Stock-only account P&L rate (%)
@@ -379,6 +333,9 @@ class WorkflowPnLEvent:
     account_total_pnl_amount: Optional[Union[Decimal, float]] = None
     account_total_eval_amount: Optional[Union[Decimal, float]] = None
     account_total_buy_amount: Optional[Union[Decimal, float]] = None
+
+    # Total position count (replaces AccountPnLEvent.position_count)
+    total_position_count: int = 0
     
     # Account product-specific P&L
     account_stock_pnl_rate: Optional[Union[Decimal, float]] = None
@@ -424,7 +381,7 @@ class ExecutionListener(Protocol):
         on_log: Called when log entry is created
         on_job_state_change: Called when job state changes
         on_display_data: Called when DisplayNode produces visualization data
-        on_account_pnl_update: Called when account P&L is updated (realtime)
+        on_workflow_pnl_update: Called when workflow P&L is updated (realtime)
     """
     
     async def on_node_state_change(self, event: NodeStateEvent) -> None:
@@ -471,28 +428,15 @@ class ExecutionListener(Protocol):
             event: DisplayDataEvent with chart_type, data, etc.
         """
         ...
-    
-    async def on_account_pnl_update(self, event: 'AccountPnLEvent') -> None:
-        """
-        Called when account P&L is updated (realtime tracking).
-        
-        This event is emitted on every tick for held positions when
-        a listener with this method is registered. Server developers
-        can implement throttling as needed.
-        
-        Args:
-            event: AccountPnLEvent with account P&L data.
-        """
-        ...
-    
+
     async def on_workflow_pnl_update(self, event: 'WorkflowPnLEvent') -> None:
         """
         Called when workflow position P&L is updated (realtime tracking).
-        
-        Unlike on_account_pnl_update which tracks the entire account,
-        this event separates workflow-generated positions from manual positions
-        using FIFO tracking. Use this for competition ranking.
-        
+
+        Tracks both workflow-generated positions and manual positions separately
+        using FIFO tracking. Includes total account P&L and position count.
+        Use this for competition ranking.
+
         Args:
             event: WorkflowPnLEvent with workflow-specific P&L data.
         """
@@ -548,11 +492,7 @@ class BaseExecutionListener:
     async def on_display_data(self, event: DisplayDataEvent) -> None:
         """Default implementation: do nothing"""
         pass
-    
-    async def on_account_pnl_update(self, event: AccountPnLEvent) -> None:
-        """Default implementation: do nothing"""
-        pass
-    
+
     async def on_workflow_pnl_update(self, event: WorkflowPnLEvent) -> None:
         """Default implementation: do nothing"""
         pass
@@ -633,28 +573,18 @@ class ConsoleExecutionListener(BaseExecutionListener):
         print(f"\n{emoji} Job [{event.job_id}] → {event.state}")
         if event.stats:
             print(f"   Stats: {event.stats}")
-    
-    async def on_account_pnl_update(self, event: AccountPnLEvent) -> None:
-        """Print account P&L update for debugging"""
-        pnl_rate = float(event.account_pnl_rate)
-        emoji = "📈" if pnl_rate >= 0 else "📉"
-        color = "\033[92m" if pnl_rate >= 0 else "\033[91m"  # Green or Red
-        reset = "\033[0m"
-        
-        print(f"{emoji} [{event.broker_node_id}] {color}{pnl_rate:+.2f}%{reset} "
-              f"(eval: {float(event.total_eval_amount):,.2f} {event.currency}, "
-              f"positions: {event.position_count})")
-    
+
     async def on_workflow_pnl_update(self, event: WorkflowPnLEvent) -> None:
         """Print workflow P&L update for debugging"""
         wf_pnl = float(event.workflow_pnl_rate)
         total_pnl = float(event.total_pnl_rate)
-        
+
         wf_emoji = "📈" if wf_pnl >= 0 else "📉"
         wf_color = "\033[92m" if wf_pnl >= 0 else "\033[91m"
         reset = "\033[0m"
-        
+
         trust_badge = "🟢" if event.trust_score >= 80 else "🟡" if event.trust_score >= 50 else "🔴"
-        
+
         print(f"{wf_emoji} [{event.broker_node_id}] Workflow: {wf_color}{wf_pnl:+.2f}%{reset} "
-              f"| Total: {total_pnl:+.2f}% | Trust: {trust_badge} {event.trust_score}")
+              f"| Total: {total_pnl:+.2f}% | Positions: {event.total_position_count} "
+              f"| Trust: {trust_badge} {event.trust_score}")

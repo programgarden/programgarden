@@ -1434,10 +1434,10 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
 
 class BrokerNodeExecutor(NodeExecutorBase):
     """BrokerNode executor
-    
+
     계좌 수익률 자동 추적:
-    - 리스너에 on_account_pnl_update가 구현되어 있으면 자동으로 AccountTracker 시작
-    - 틱마다 계좌 수익률 계산 후 리스너에 전달 (서버에서 쓰로틀링 권장)
+    - 리스너에 on_workflow_pnl_update가 구현되어 있으면 자동으로 AccountTracker 시작
+    - 틱마다 워크플로우/계좌 수익률 계산 후 리스너에 전달 (서버에서 쓰로틀링 권장)
     - overseas_stock: StockAccountTracker 사용
     - overseas_futures: FuturesAccountTracker 사용
     """
@@ -1527,19 +1527,12 @@ class BrokerNodeExecutor(NodeExecutorBase):
         
         # ========================================
         # 계좌 수익률 자동 추적 (리스너 자동 감지)
-        # on_account_pnl_update 또는 on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작
+        # on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작
         # ========================================
-        has_account_listener = self._has_account_pnl_listener(context)
         has_workflow_listener = self._has_workflow_pnl_listener(context)
-        
-        if appkey and appsecret and (has_account_listener or has_workflow_listener):
-            listeners_detected = []
-            if has_account_listener:
-                listeners_detected.append("AccountPnL")
-            if has_workflow_listener:
-                listeners_detected.append("WorkflowPnL")
-            
-            context.log("info", f"{', '.join(listeners_detected)} listener(s) detected - starting account tracking", node_id)
+
+        if appkey and appsecret and has_workflow_listener:
+            context.log("info", "WorkflowPnL listener detected - starting account tracking", node_id)
             asyncio.create_task(
                 self._start_account_tracking(
                     node_id=node_id,
@@ -1549,8 +1542,6 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     appsecret=appsecret,
                     paper_trading=paper_trading,
                     context=context,
-                    emit_account_pnl=has_account_listener,
-                    emit_workflow_pnl=has_workflow_listener,
                 )
             )
         
@@ -1582,22 +1573,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "appsecret": appsecret,
             }
         }
-    
-    def _has_account_pnl_listener(self, context: ExecutionContext) -> bool:
-        """리스너 중 on_account_pnl_update를 실제로 오버라이드한 게 있는지 확인"""
-        from programgarden_core.bases import BaseExecutionListener
-        
-        for listener in context._listeners:
-            listener_class = type(listener)
-            if 'on_account_pnl_update' in listener_class.__dict__:
-                return True
-            for cls in listener_class.__mro__:
-                if cls is BaseExecutionListener:
-                    break
-                if 'on_account_pnl_update' in cls.__dict__:
-                    return True
-        return False
-    
+
     def _has_workflow_pnl_listener(self, context: ExecutionContext) -> bool:
         """리스너 중 on_workflow_pnl_update를 실제로 오버라이드한 게 있는지 확인"""
         from programgarden_core.bases import BaseExecutionListener
@@ -2058,15 +2034,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
         appsecret: str,
         paper_trading: bool,
         context: ExecutionContext,
-        emit_account_pnl: bool = True,
-        emit_workflow_pnl: bool = False,
     ) -> None:
-        """계좌 추적기 시작 및 수익률 콜백 등록
-        
-        Args:
-            emit_account_pnl: on_account_pnl_update 콜백 호출 여부
-            emit_workflow_pnl: on_workflow_pnl_update 콜백 호출 여부
-        """
+        """계좌 추적기 시작 및 수익률 콜백 등록"""
         try:
             from programgarden_finance import LS
             
@@ -2085,14 +2054,10 @@ class BrokerNodeExecutor(NodeExecutorBase):
             if product == "overseas_stock":
                 await self._start_stock_tracker(
                     ls, node_id, product, provider, context,
-                    emit_account_pnl=emit_account_pnl,
-                    emit_workflow_pnl=emit_workflow_pnl,
                 )
             elif product == "overseas_futures":
                 await self._start_futures_tracker(
                     ls, node_id, product, provider, context,
-                    emit_account_pnl=emit_account_pnl,
-                    emit_workflow_pnl=emit_workflow_pnl,
                 )
             else:
                 context.log("warning", f"Unknown product type for tracking: {product}", node_id)
@@ -2107,69 +2072,47 @@ class BrokerNodeExecutor(NodeExecutorBase):
         product: str,
         provider: str,
         context: ExecutionContext,
-        emit_account_pnl: bool = True,
-        emit_workflow_pnl: bool = False,
     ) -> None:
         """해외주식 계좌 추적기 시작"""
         accno = ls.overseas_stock().accno()
         real = ls.overseas_stock().real()
         await real.connect()
-        
+
         tracker = accno.account_tracker(real_client=real)
-        
+
         # 수익률 콜백 등록
         def on_pnl_change(pnl_info):
-            # 비동기로 리스너에 전달
-            
-            # 1. 계좌 수익률 (on_account_pnl_update)
-            if emit_account_pnl:
-                asyncio.create_task(
-                    context.notify_account_pnl(
-                        broker_node_id=node_id,
-                        product=product,
-                        provider=provider,
-                        account_pnl_rate=float(pnl_info.account_pnl_rate),
-                        total_eval_amount=float(pnl_info.total_eval_amount),
-                        total_buy_amount=float(pnl_info.total_buy_amount),
-                        total_pnl_amount=float(pnl_info.total_pnl_amount),
-                        position_count=pnl_info.position_count,
-                        currency=pnl_info.currency,
-                    )
+            # tracker에서 현재 positions 조회 (AccountPnLInfo에는 positions가 없음)
+            current_prices = {}
+            account_positions = {}
+
+            positions = tracker.get_positions()  # Dict[symbol, StockPositionItem]
+            if positions:
+                for symbol, pos_item in positions.items():
+                    # StockPositionItem에서 현재가 추출
+                    if hasattr(pos_item, 'current_price') and pos_item.current_price:
+                        current_prices[symbol] = float(pos_item.current_price)
+                    # 전체 포지션 정보도 전달
+                    account_positions[symbol] = {
+                        "symbol": symbol,
+                        "quantity": int(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
+                        "buy_price": float(pos_item.buy_price) if hasattr(pos_item, 'buy_price') else 0,
+                        "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
+                        "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
+                        "product": product,  # 상품 유형 (overseas_stock)
+                    }
+
+            asyncio.create_task(
+                context.notify_workflow_pnl(
+                    broker_node_id=node_id,
+                    product=product,
+                    provider=provider,
+                    current_prices=current_prices,
+                    account_positions=account_positions if account_positions else None,
+                    currency=pnl_info.currency if hasattr(pnl_info, 'currency') else "USD",
                 )
-            
-            # 2. 워크플로우 수익률 (on_workflow_pnl_update)
-            if emit_workflow_pnl:
-                # tracker에서 현재 positions 조회 (AccountPnLInfo에는 positions가 없음)
-                current_prices = {}
-                account_positions = {}
-                
-                positions = tracker.get_positions()  # Dict[symbol, StockPositionItem]
-                if positions:
-                    for symbol, pos_item in positions.items():
-                        # StockPositionItem에서 현재가 추출
-                        if hasattr(pos_item, 'current_price') and pos_item.current_price:
-                            current_prices[symbol] = float(pos_item.current_price)
-                        # 전체 포지션 정보도 전달
-                        account_positions[symbol] = {
-                            "symbol": symbol,
-                            "quantity": int(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
-                            "buy_price": float(pos_item.buy_price) if hasattr(pos_item, 'buy_price') else 0,
-                            "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
-                            "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
-                            "product": product,  # 상품 유형 (overseas_stock)
-                        }
-                
-                asyncio.create_task(
-                    context.notify_workflow_pnl(
-                        broker_node_id=node_id,
-                        product=product,
-                        provider=provider,
-                        current_prices=current_prices,
-                        account_positions=account_positions if account_positions else None,
-                        currency=pnl_info.currency if hasattr(pnl_info, 'currency') else "USD",
-                    )
-                )
-        
+            )
+
         tracker.on_account_pnl_change(on_pnl_change)
         await tracker.start()
         
@@ -2190,70 +2133,50 @@ class BrokerNodeExecutor(NodeExecutorBase):
         product: str,
         provider: str,
         context: ExecutionContext,
-        emit_account_pnl: bool = True,
-        emit_workflow_pnl: bool = False,
     ) -> None:
         """해외선물 계좌 추적기 시작"""
         accno = ls.overseas_futureoption().accno()
         market = ls.overseas_futureoption().market()
         real = ls.overseas_futureoption().real()
         await real.connect()
-        
+
         tracker = accno.account_tracker(
             market_client=market,
             real_client=real,
         )
-        
+
         # 수익률 콜백 등록
         def on_pnl_change(pnl_info):
-            # 1. 계좌 수익률 (on_account_pnl_update)
-            if emit_account_pnl:
-                asyncio.create_task(
-                    context.notify_account_pnl(
-                        broker_node_id=node_id,
-                        product=product,
-                        provider=provider,
-                        account_pnl_rate=float(pnl_info.account_pnl_rate),
-                        total_eval_amount=float(pnl_info.total_eval_amount),
-                        total_buy_amount=float(pnl_info.total_margin_used),  # 선물은 증거금 기준
-                        total_pnl_amount=float(pnl_info.total_pnl_amount),
-                        position_count=pnl_info.position_count,
-                        currency=pnl_info.currency,
-                    )
+            # tracker에서 현재 positions 조회
+            current_prices = {}
+            account_positions = {}
+
+            positions = tracker.get_positions()  # Dict[symbol, FuturesPositionItem]
+            if positions:
+                for symbol, pos_item in positions.items():
+                    if hasattr(pos_item, 'current_price') and pos_item.current_price:
+                        current_prices[symbol] = float(pos_item.current_price)
+                    account_positions[symbol] = {
+                        "symbol": symbol,
+                        "quantity": int(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
+                        "buy_price": float(pos_item.entry_price) if hasattr(pos_item, 'entry_price') else 0,
+                        "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
+                        "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
+                        "side": pos_item.side if hasattr(pos_item, 'side') else "long",
+                        "product": product,  # 상품 유형 (overseas_futures)
+                    }
+
+            asyncio.create_task(
+                context.notify_workflow_pnl(
+                    broker_node_id=node_id,
+                    product=product,
+                    provider=provider,
+                    current_prices=current_prices,
+                    account_positions=account_positions if account_positions else None,
+                    currency=pnl_info.currency if hasattr(pnl_info, 'currency') else "USD",
                 )
-            
-            # 2. 워크플로우 수익률 (on_workflow_pnl_update)
-            if emit_workflow_pnl:
-                # tracker에서 현재 positions 조회
-                current_prices = {}
-                account_positions = {}
-                
-                positions = tracker.get_positions()  # Dict[symbol, FuturesPositionItem]
-                if positions:
-                    for symbol, pos_item in positions.items():
-                        if hasattr(pos_item, 'current_price') and pos_item.current_price:
-                            current_prices[symbol] = float(pos_item.current_price)
-                        account_positions[symbol] = {
-                            "symbol": symbol,
-                            "quantity": int(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
-                            "buy_price": float(pos_item.entry_price) if hasattr(pos_item, 'entry_price') else 0,
-                            "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
-                            "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
-                            "side": pos_item.side if hasattr(pos_item, 'side') else "long",
-                            "product": product,  # 상품 유형 (overseas_futures)
-                        }
-                
-                asyncio.create_task(
-                    context.notify_workflow_pnl(
-                        broker_node_id=node_id,
-                        product=product,
-                        provider=provider,
-                        current_prices=current_prices,
-                        account_positions=account_positions if account_positions else None,
-                        currency=pnl_info.currency if hasattr(pnl_info, 'currency') else "USD",
-                    )
-                )
-        
+            )
+
         tracker.on_account_pnl_change(on_pnl_change)
         await tracker.start()
         

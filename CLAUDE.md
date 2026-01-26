@@ -74,21 +74,19 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 - **Plugins**: Referenced via `plugin` field in ConditionNode, NewOrderNode, etc.
 - **Credentials**: Referenced by `credential_id`, defined in `credentials` section as a list
 
-### Node Categories (11)
+### Node Categories (9)
 
 | Category | Nodes |
 |----------|-------|
 | infra | StartNode, BrokerNode, ThrottleNode |
 | account | AccountNode, RealAccountNode, RealOrderEventNode |
-| market | WatchlistNode, MarketDataNode, HistoricalDataNode, RealMarketDataNode |
-| condition | ConditionNode, LogicNode, PerformanceConditionNode |
+| market | WatchlistNode, MarketDataNode, HistoricalDataNode, RealMarketDataNode, SymbolQueryNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode |
+| condition | ConditionNode, LogicNode |
 | order | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode |
 | risk | PortfolioNode |
-| schedule | ScheduleNode, TradingHoursFilterNode, ExchangeStatusNode |
-| data | SQLiteNode, PostgresNode, HTTPRequestNode |
+| schedule | ScheduleNode, TradingHoursFilterNode |
+| data | SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode |
 | analysis | BacktestEngineNode, DisplayNode, BenchmarkCompareNode |
-| system | DeployNode |
-| messaging | TelegramNode (Community) |
 
 ### ExecutionListener Callbacks
 
@@ -99,8 +97,7 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 | `on_log` | Log events |
 | `on_job_state_change` | Job state change |
 | `on_display_data` | Display data |
-| `on_account_pnl_update` | Real-time account P&L (auto-detected) |
-| `on_workflow_pnl_update` | Workflow position P&L (FIFO-based, for competitions) |
+| `on_workflow_pnl_update` | Real-time workflow/account P&L (FIFO-based, auto-detected) |
 
 ## Node Development
 
