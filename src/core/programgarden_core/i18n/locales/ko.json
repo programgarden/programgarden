@@ -67,6 +67,16 @@
   
   "nodes.MarketDataNode.name": "현재가조회",
   "nodes.MarketDataNode.description": "종목의 현재가와 거래량을 한 번 조회합니다. 실시간이 필요 없고 조회 시점의 데이터만 필요할 때 사용하세요.",
+
+  "fieldNames.MarketDataNode.connection": "브로커연결",
+  "fieldNames.MarketDataNode.symbols": "종목",
+  "fields.MarketDataNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+  "fields.MarketDataNode.symbols": "조회할 종목 리스트입니다. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
+  "fields.MarketDataNode.symbols.exchange": "거래소",
+  "fields.MarketDataNode.symbols.symbol": "종목코드",
+  "fields.MarketDataNode.symbols.help_text": "직접 입력 또는 바인딩 가능 (fx 토글)",
+  "fields.MarketDataNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
+  "fieldNames.MarketDataNode.product_type": "상품유형",
   
   "nodes.AccountNode.name": "계좌 조회",
   "nodes.AccountNode.description": "보유종목, 예수금, 미체결 주문을 한 번 조회합니다. 실시간 업데이트가 필요 없을 때 사용하세요.",
@@ -274,9 +284,9 @@
   "fields.RealMarketDataNode.symbols.exchange": "거래소",
   "fields.RealMarketDataNode.symbols.symbol": "종목코드",
   "fields.RealMarketDataNode.symbols.help_text": "직접 입력 또는 바인딩 가능 (fx 토글)",
-  "fields.RealMarketDataNode.exchange_field": "거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
-  "fields.RealMarketDataNode.symbol_field": "종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
+  "fields.RealMarketDataNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
   "fields.RealMarketDataNode.stay_connected": "✅ 켜면: 실시간 시세를 계속 받습니다. 수동으로 중지할 때까지 유지됩니다.\n❌ 끄면: 시세를 한 번만 받고 자동으로 끊깁니다.",
+  "fieldNames.RealMarketDataNode.product_type": "상품유형",
 
   "fields.RealAccountNode.stay_connected": "✅ 켜면: 실시간 계좌 정보를 계속 받습니다. 스케줄 대기 중에도 수익률이 실시간으로 업데이트됩니다.\n❌ 끄면: 계좌 정보를 한 번만 조회하고 끊깁니다.",
   "fields.RealAccountNode.sync_interval_sec": "계좌 정보를 다시 불러오는 주기 (초). 예: 60 입력하면 1분마다 잔고/포지션을 새로고침합니다.",
@@ -588,8 +598,6 @@
 
   "fieldNames.RealMarketDataNode.connection": "브로커연결",
   "fieldNames.RealMarketDataNode.symbols": "종목",
-  "fieldNames.RealMarketDataNode.exchange_field": "거래소필드",
-  "fieldNames.RealMarketDataNode.symbol_field": "종목코드필드",
   "fieldNames.RealMarketDataNode.stay_connected": "연결유지",
 
   "fieldNames.RealAccountNode.connection": "브로커연결",
@@ -633,10 +641,6 @@
   "fieldNames.SymbolFilterNode.input_a": "입력A",
   "fieldNames.SymbolFilterNode.input_b": "입력B",
 
-  "fieldNames.MarketDataNode.connection": "브로커연결",
-  "fieldNames.MarketDataNode.symbols": "종목",
-  "fieldNames.MarketDataNode.exchange_field": "거래소필드",
-  "fieldNames.MarketDataNode.symbol_field": "종목코드필드",
 
   "fieldNames.HistoricalDataNode.symbols": "종목",
   "fieldNames.HistoricalDataNode.exchange_field": "거래소필드",

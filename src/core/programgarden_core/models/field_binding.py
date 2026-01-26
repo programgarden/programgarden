@@ -397,16 +397,25 @@ class FieldSchema(BaseModel):
         decoration: Dict[str, Any] = {"labelText": label}
         if self.placeholder:
             decoration["hintText"] = self.placeholder
-        
+
+        # 자체 토글을 포함하는 커스텀 위젯들은 직접 렌더링 (expression_toggle 래핑 생략)
+        # 이 위젯들은 내부에서 자체적으로 Fixed/Expression 토글을 처리함
+        self_toggle_widgets = {
+            UIComponent.CUSTOM_SYMBOL_EDITOR,
+            UIComponent.SYMBOL_EDITOR,
+        }
+        if ui_comp in self_toggle_widgets:
+            return self._map_ui_component_to_widget(ui_comp, decoration)
+
         # expression_mode에 따른 처리
         # EXPRESSION_ONLY: fx만 고정 표시 (전환 불가)
         if self.expression_mode == ExpressionMode.EXPRESSION_ONLY:
             return self._build_toggle_widget(ui_comp, decoration, locked_mode="expression")
-        
+
         # BOTH 모드: Fixed/Expression 토글 위젯 (전환 가능)
         if self.expression_mode == ExpressionMode.BOTH:
             return self._build_toggle_widget(ui_comp, decoration, locked_mode=None)
-        
+
         # FIXED_ONLY: fixed만 고정 표시 (전환 불가)
         return self._build_toggle_widget(ui_comp, decoration, locked_mode="fixed")
     

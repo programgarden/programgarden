@@ -39,6 +39,12 @@ class MarketDataNode(BaseNode):
     # 브로커 연결 필드 (명시적 바인딩 필수)
     connection: Optional[Dict] = None  # BrokerNode의 connection 출력
 
+    # 상품 유형 선택 (해외주식/해외선물)
+    product_type: str = Field(
+        default="overseas_stock",
+        description="상품 유형 선택 (해외주식/해외선물)"
+    )
+
     # 종목 리스트 (직접 입력 또는 포트로 받기)
     # 거래소 정보 포함: [{"exchange": "NASDAQ", "symbol": "AAPL"}, ...]
     symbols: List[Dict[str, str]] = Field(
@@ -74,7 +80,8 @@ class MarketDataNode(BaseNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
+                display_name="i18n:fieldNames.MarketDataNode.connection",
+                description="i18n:fields.MarketDataNode.connection",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -82,49 +89,80 @@ class MarketDataNode(BaseNode):
                 example_binding="{{ nodes.broker.connection }}",
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
-                ui_component=UIComponent.BINDING_INPUT,
+                # ui_component 생략 → EXPRESSION_ONLY + OBJECT 타입에서 바인딩 입력 자동
+            ),
+            # === PARAMETERS: 상품 유형 선택 ===
+            "product_type": FieldSchema(
+                name="product_type",
+                type=FieldType.ENUM,
+                display_name="i18n:fieldNames.MarketDataNode.product_type",
+                description="i18n:fields.MarketDataNode.product_type",
+                default="overseas_stock",
+                enum_values=["overseas_stock", "overseas_futures"],
+                enum_labels={
+                    "overseas_stock": "i18n:enums.product_type.overseas_stock",
+                    "overseas_futures": "i18n:enums.product_type.overseas_futures"
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 종목 리스트 ===
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="종목 리스트. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
-                required=True,
+                display_name="i18n:fieldNames.MarketDataNode.symbols",
+                description="i18n:fields.MarketDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
-                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NYSE", "symbol": "IBM"}],
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
-                bindable_sources=["WatchlistNode.symbols", "ScreenerNode.symbols", "MarketUniverseNode.symbols"],
+                bindable_sources=[
+                    "WatchlistNode.symbols",
+                    "ScreenerNode.symbols",
+                    "MarketUniverseNode.symbols",
+                ],
                 expected_type="list[{exchange: str, symbol: str}]",
-                ui_component=UIComponent.SYMBOL_EDITOR,
-                help_text="직접 입력 또는 바인딩 가능 (fx 토글)",
-            ),
-            # === FIELD MAPPING: 필드명 매핑 (symbols 바로 하단에 표시) ===
-            "exchange_field": FieldSchema(
-                name="exchange_field",
-                type=FieldType.STRING,
-                description="거래소 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
-                default="exchange",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="exchange",
-                group="field_mapping",
-                collapsed=True,
-            ),
-            "symbol_field": FieldSchema(
-                name="symbol_field",
-                type=FieldType.STRING,
-                description="종목코드 필드명 (바인딩 데이터의 필드명이 다를 때 매핑)",
-                default="symbol",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="symbol",
-                group="field_mapping",
-                collapsed=True,
+                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
+                help_text="i18n:fields.MarketDataNode.symbols.help_text",
+                # 테이블 컬럼 정의
+                object_schema=[
+                    {
+                        "name": "exchange",
+                        "type": "ENUM",
+                        "label": "i18n:fields.MarketDataNode.symbols.exchange",
+                        "required": True,
+                        "expression_mode": "fixed_only",
+                    },
+                    {
+                        "name": "symbol",
+                        "type": "STRING",
+                        "label": "i18n:fields.MarketDataNode.symbols.symbol",
+                        "required": True,
+                        "expression_mode": "fixed_only",
+                        "placeholder": "AAPL",
+                    },
+                ],
+                # 상품유형별 거래소 목록
+                ui_options={
+                    "product_type_field": "product_type",  # 참조할 상품유형 필드
+                    "exchanges_by_product": {
+                        "overseas_stock": [
+                            {"value": "NASDAQ", "label": "NASDAQ"},
+                            {"value": "NYSE", "label": "NYSE"},
+                            {"value": "AMEX", "label": "AMEX"},
+                        ],
+                        "overseas_futures": [
+                            {"value": "CME", "label": "CME (시카고상업거래소)"},
+                            {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
+                            {"value": "SGX", "label": "SGX (싱가포르거래소)"},
+                            {"value": "HKEX", "label": "HKEX (홍콩선물거래소)"},
+                        ],
+                    },
+                    "default_product_type": "overseas_stock",
+                },
             ),
         }
 

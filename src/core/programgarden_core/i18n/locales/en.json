@@ -67,6 +67,16 @@
   
   "nodes.MarketDataNode.name": "Current Price",
   "nodes.MarketDataNode.description": "Get the current price and volume for symbols. Use when you don't need live updates, just a one-time snapshot.",
+
+  "fieldNames.MarketDataNode.connection": "Broker Connection",
+  "fieldNames.MarketDataNode.symbols": "Symbols",
+  "fields.MarketDataNode.connection": "Broker connection info. Add a BrokerNode first and connect its connection output here.",
+  "fields.MarketDataNode.symbols": "List of symbols to query. You can enter directly or bind from another node.",
+  "fields.MarketDataNode.symbols.exchange": "Exchange",
+  "fields.MarketDataNode.symbols.symbol": "Symbol",
+  "fields.MarketDataNode.symbols.help_text": "Enter directly or bind (fx toggle)",
+  "fields.MarketDataNode.product_type": "Select product type. Must match the product from BrokerNode.",
+  "fieldNames.MarketDataNode.product_type": "Product Type",
   
   "nodes.AccountNode.name": "Account",
   "nodes.AccountNode.description": "Get your holdings, cash balance, and open orders once. Use when you don't need live updates.",
@@ -273,10 +283,10 @@
   "fields.RealMarketDataNode.symbols.exchange": "Exchange",
   "fields.RealMarketDataNode.symbols.symbol": "Symbol",
   "fields.RealMarketDataNode.symbols.help_text": "Enter directly or use binding (fx toggle)",
-  "fields.RealMarketDataNode.exchange_field": "Exchange field name (for mapping when binding data has different field names)",
-  "fields.RealMarketDataNode.symbol_field": "Symbol field name (for mapping when binding data has different field names)",
+  "fields.RealMarketDataNode.product_type": "Select product type. Must match the product from BrokerNode.",
   "fields.RealMarketDataNode.stay_connected": "✅ ON: Keep receiving live prices continuously. Stays connected until you manually stop.\n❌ OFF: Get prices once and disconnect automatically.",
   "fields.RealMarketDataNode.fields": "Fields to receive (price, volume, bid, ask)",
+  "fieldNames.RealMarketDataNode.product_type": "Product Type",
 
   "fields.RealAccountNode.stay_connected": "✅ ON: Keep receiving live account updates. Your P&L updates in real-time even while waiting for scheduled runs.\n❌ OFF: Get account info once and disconnect.",
   "fields.RealAccountNode.sync_interval_sec": "How often to refresh account data (seconds). Example: 60 = refresh balance/positions every minute.",
@@ -579,8 +589,6 @@
 
   "fieldNames.RealMarketDataNode.connection": "Broker Connection",
   "fieldNames.RealMarketDataNode.symbols": "Symbols",
-  "fieldNames.RealMarketDataNode.exchange_field": "Exchange Field",
-  "fieldNames.RealMarketDataNode.symbol_field": "Symbol Field",
   "fieldNames.RealMarketDataNode.stay_connected": "Stay Connected",
 
   "fieldNames.RealAccountNode.connection": "Broker Connection",
@@ -624,10 +632,6 @@
   "fieldNames.SymbolFilterNode.input_a": "Input A",
   "fieldNames.SymbolFilterNode.input_b": "Input B",
 
-  "fieldNames.MarketDataNode.connection": "Broker Connection",
-  "fieldNames.MarketDataNode.symbols": "Symbols",
-  "fieldNames.MarketDataNode.exchange_field": "Exchange Field",
-  "fieldNames.MarketDataNode.symbol_field": "Symbol Field",
 
   "fieldNames.HistoricalDataNode.symbols": "Symbols",
   "fieldNames.HistoricalDataNode.exchange_field": "Exchange Field",

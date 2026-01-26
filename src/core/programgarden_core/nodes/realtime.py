@@ -62,6 +62,12 @@ class RealMarketDataNode(BaseNode):
         OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full"),
     ]
 
+    # 상품 유형 선택 (해외주식/해외선물)
+    product_type: str = Field(
+        default="overseas_stock",
+        description="상품 유형 선택 (해외주식/해외선물)"
+    )
+
     # Symbols config field (optional - can also receive from input port)
     symbols: List[Dict[str, str]] = Field(
         default=[],
@@ -86,6 +92,22 @@ class RealMarketDataNode(BaseNode):
                 bindable_sources=["BrokerNode.connection"],
                 expected_type="broker_connection",
                 # ui_component 생략 → EXPRESSION_ONLY + OBJECT 타입에서 바인딩 입력 자동
+            ),
+            # === PARAMETERS: 상품 유형 선택 ===
+            "product_type": FieldSchema(
+                name="product_type",
+                type=FieldType.ENUM,
+                display_name="i18n:fieldNames.RealMarketDataNode.product_type",
+                description="i18n:fields.RealMarketDataNode.product_type",
+                default="overseas_stock",
+                enum_values=["overseas_stock", "overseas_futures"],
+                enum_labels={
+                    "overseas_stock": "i18n:enums.product_type.overseas_stock",
+                    "overseas_futures": "i18n:enums.product_type.overseas_futures"
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.SELECT,
             ),
             # === PARAMETERS: 종목 리스트 ===
             "symbols": FieldSchema(
@@ -127,15 +149,12 @@ class RealMarketDataNode(BaseNode):
                 ],
                 # 상품유형별 거래소 목록
                 ui_options={
+                    "product_type_field": "product_type",  # 참조할 상품유형 필드
                     "exchanges_by_product": {
                         "overseas_stock": [
                             {"value": "NASDAQ", "label": "NASDAQ"},
                             {"value": "NYSE", "label": "NYSE"},
                             {"value": "AMEX", "label": "AMEX"},
-                            {"value": "SEHK", "label": "홍콩거래소"},
-                            {"value": "TSE", "label": "도쿄거래소"},
-                            {"value": "SSE", "label": "상해거래소"},
-                            {"value": "SZSE", "label": "심천거래소"},
                         ],
                         "overseas_futures": [
                             {"value": "CME", "label": "CME (시카고상업거래소)"},
@@ -146,33 +165,6 @@ class RealMarketDataNode(BaseNode):
                     },
                     "default_product_type": "overseas_stock",
                 },
-            ),
-            # === PARAMETERS: 필드 매핑 (접힌 상태) ===
-            "exchange_field": FieldSchema(
-                name="exchange_field",
-                type=FieldType.STRING,
-                display_name="i18n:fieldNames.RealMarketDataNode.exchange_field",
-                description="i18n:fields.RealMarketDataNode.exchange_field",
-                default="exchange",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="exchange",
-                group="field_mapping",
-                collapsed=True,
-            ),
-            "symbol_field": FieldSchema(
-                name="symbol_field",
-                type=FieldType.STRING,
-                display_name="i18n:fieldNames.RealMarketDataNode.symbol_field",
-                description="i18n:fields.RealMarketDataNode.symbol_field",
-                default="symbol",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="symbol",
-                group="field_mapping",
-                collapsed=True,
             ),
             # === SETTINGS: 부가 설정 ===
             "stay_connected": FieldSchema(
