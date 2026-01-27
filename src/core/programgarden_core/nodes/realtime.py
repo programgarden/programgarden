@@ -78,21 +78,6 @@ class RealMarketDataNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
-            # === PARAMETERS: 브로커 연결 (필수) ===
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                display_name="i18n:fieldNames.RealMarketDataNode.connection",
-                description="i18n:fields.RealMarketDataNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="broker_connection",
-                # ui_component 생략 → EXPRESSION_ONLY + OBJECT 타입에서 바인딩 입력 자동
-            ),
             # === PARAMETERS: 상품 유형 선택 ===
             "product_type": FieldSchema(
                 name="product_type",
@@ -266,20 +251,6 @@ class RealAccountNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
-            # === PARAMETERS: 브로커 연결 (필수) ===
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,  # 바인딩 필수
-                category=FieldCategory.PARAMETERS,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="broker_connection",
-                ui_component=UIComponent.BINDING_INPUT,
-            ),
             # === PARAMETERS: 상품 유형 선택 ===
             "product_type": FieldSchema(
                 name="product_type",
@@ -428,20 +399,6 @@ class RealOrderEventNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
-            # === PARAMETERS: 브로커 연결 (필수) ===
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="i18n:fields.RealOrderEventNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="broker_connection",
-                ui_component=UIComponent.BINDING_INPUT,
-            ),
             # === PARAMETERS: 상품 유형 선택 ===
             "product_type": FieldSchema(
                 name="product_type",

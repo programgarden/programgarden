@@ -148,18 +148,6 @@ class OverseasStockNewOrderNode(BaseOrderNode):
             FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         )
         return {
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="i18n:fields.OverseasStockNewOrderNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.broker.connection }}",
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="dict",
-            ),
             "side": FieldSchema(
                 name="side",
                 type=FieldType.ENUM,
@@ -308,18 +296,6 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
             FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         )
         return {
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="i18n:fields.OverseasStockModifyOrderNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.broker.connection }}",
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="dict",
-            ),
             "price_type": FieldSchema(
                 name="price_type",
                 type=FieldType.ENUM,
@@ -444,18 +420,6 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
             FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         )
         return {
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="i18n:fields.OverseasStockCancelOrderNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.broker.connection }}",
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="dict",
-            ),
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
@@ -529,18 +493,6 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
             FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         )
         return {
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="i18n:fields.OverseasFuturesNewOrderNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.broker.connection }}",
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="dict",
-            ),
             "side": FieldSchema(
                 name="side",
                 type=FieldType.ENUM,
@@ -674,18 +626,6 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
             FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         )
         return {
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="i18n:fields.OverseasFuturesModifyOrderNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.broker.connection }}",
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="dict",
-            ),
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
@@ -793,18 +733,6 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
             FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         )
         return {
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                description="i18n:fields.OverseasFuturesCancelOrderNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.broker.connection }}",
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="dict",
-            ),
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,

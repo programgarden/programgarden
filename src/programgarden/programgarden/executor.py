@@ -2295,16 +2295,11 @@ class BrokerNodeExecutor(NodeExecutorBase):
 class AccountNodeExecutor(NodeExecutorBase):
     """
     AccountNode executor - 계좌 잔고 1회 조회 (REST API)
-    
+
     RealAccountNode와 달리 WebSocket 연결 없이 REST API로 1회만 조회합니다.
-    
-    Connection 획득 방법:
-    1. config에서 명시적으로 지정된 connection (바인딩 표현식 지원)
-    2. input 포트로 연결된 BrokerNode의 connection
-    
-    예시:
-      - 바인딩: "connection": "{{ nodes.broker_2.connection }}"
-      - 엣지 연결: BrokerNode → AccountNode
+
+    Connection 획득:
+    - product_scope + broker_provider 매칭으로 BrokerNode에서 자동 주입 (Phase 5)
     """
 
     async def execute(
@@ -2315,14 +2310,13 @@ class AccountNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
-        # config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
-        # 예: "connection": "{{ nodes.broker_2.connection }}"
+        # config에서 connection 확인 (자동 주입 또는 명시적 바인딩)
         broker_connection = config.get("connection")
         
-        # connection 없으면 에러 - 명시적 바인딩 필수
+        # connection 없으면 에러 - 자동 주입 또는 명시적 바인딩 필요
         if not broker_connection:
-            context.log("error", "AccountNode: connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
-            return self._empty_result("Missing connection field - set connection: \"{{ nodes.broker.connection }}\"")
+            context.log("error", "AccountNode: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
+            return self._empty_result("Missing connection - no matching BrokerNode found in workflow")
         
         # connection 정보 추출
         if isinstance(broker_connection, dict):
@@ -2571,14 +2565,13 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         sync_interval_sec = config.get("sync_interval_sec", 60)
         
         
-        # config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
-        # 예: "connection": "{{ nodes.broker_2.connection }}"
+        # config에서 connection 확인 (자동 주입 또는 명시적 바인딩)
         broker_connection = config.get("connection")
         
-        # connection 없으면 에러 - 명시적 바인딩 필수
+        # connection 없으면 에러 - 자동 주입 또는 명시적 바인딩 필요
         if not broker_connection:
-            context.log("error", "RealAccountNode: connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
-            return {"error": "Missing connection field - set connection: \"{{ nodes.broker.connection }}\""}
+            context.log("error", "RealAccountNode: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
+            return {"error": "Missing connection - no matching BrokerNode found in workflow"}
         
         provider = broker_connection.get("provider", "ls-sec.co.kr")
         product = broker_connection.get("product", "overseas_stock")
@@ -3257,11 +3250,11 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         # ========================================
         broker_connection = config.get("connection")
         
-        # connection 없으면 에러 - 명시적 바인딩 필수
+        # connection 없으면 에러 - 자동 주입 또는 명시적 바인딩 필요
         if not broker_connection:
             error_msg = (
-                f"RealMarketDataNode: connection 필드가 필수입니다. "
-                f"connection: \"{{{{ nodes.broker.connection }}}}\"를 설정하세요."
+                f"RealMarketDataNode: connection이 자동 주입되지 않았습니다. "
+                f"매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요."
             )
             context.log("error", error_msg, node_id)
             raise ConnectionError(error_msg)
@@ -3753,13 +3746,13 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         # 옵션 확인
         stay_connected = config.get("stay_connected", True)
         
-        # config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
+        # config에서 connection 확인 (자동 주입 또는 명시적 바인딩)
         broker_connection = config.get("connection")
-        
-        # connection 없으면 에러 - 명시적 바인딩 필수
+
+        # connection 없으면 에러 - 자동 주입 또는 명시적 바인딩 필요
         if not broker_connection:
-            context.log("error", "RealOrderEventNode: connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
-            return {"error": "Missing connection field - set connection: \"{{ nodes.broker.connection }}\""}
+            context.log("error", "RealOrderEventNode: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
+            return {"error": "Missing connection - no matching BrokerNode found in workflow"}
         
         provider = broker_connection.get("provider", "ls-sec.co.kr")
         broker_product = broker_connection.get("product", "overseas_stock")
@@ -5510,8 +5503,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         print(f"🔍 MarketDataNode connection: {broker_connection}", flush=True)
         
         if not broker_connection:
-            context.log("error", "connection 필드가 필수입니다. connection: \"{{ nodes.broker.connection }}\"를 설정하세요.", node_id)
-            return {"error": "connection 필드가 필수입니다", "values": []}
+            context.log("error", "connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
+            return {"error": "Missing connection - no matching BrokerNode found in workflow", "values": []}
         
         product = broker_connection.get("product", "overseas_stock")
         
@@ -5801,14 +5794,13 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         start_date = self._normalize_date_format(start_date)
         end_date = self._normalize_date_format(end_date)
         
-        # config에서 명시적 connection 확인 (바인딩 표현식 해석됨)
-        # 예: "connection": "{{ nodes.broker_2.connection }}"
+        # config에서 connection 확인 (자동 주입 또는 명시적 바인딩)
         broker_connection = config.get("connection")
-        
+
         # connection 없으면 기본값 사용 (HistoricalDataNode는 선택적)
         product = broker_connection.get("product", "overseas_stock") if broker_connection else "overseas_stock"
         if not broker_connection:
-            context.log("warning", "connection 필드가 없습니다. 기본값(overseas_stock) 사용. connection: \"{{ nodes.broker.connection }}\"를 설정하면 정확한 product를 사용합니다.", node_id)
+            context.log("warning", "connection이 자동 주입되지 않았습니다. 기본값(overseas_stock) 사용.", node_id)
         
         context.log(
             "info", 
@@ -8194,8 +8186,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         # === 1. Connection 확인 ===
         broker_connection = config.get("connection")
         if not broker_connection:
-            context.log("error", f"{node_type}: connection 필드가 필수입니다.", node_id)
-            return self._error_result("Missing connection field")
+            context.log("error", f"{node_type}: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode를 확인하세요.", node_id)
+            return self._error_result("Missing connection - no matching BrokerNode found")
 
         if not isinstance(broker_connection, dict):
             context.log("error", f"{node_type}: connection 타입 오류: {type(broker_connection)}", node_id)
@@ -8852,8 +8844,8 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         # === 1. Connection 확인 ===
         broker_connection = config.get("connection")
         if not broker_connection:
-            context.log("error", f"{node_type}: connection 필드가 필수입니다.", node_id)
-            return self._error_result("Missing connection field")
+            context.log("error", f"{node_type}: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode를 확인하세요.", node_id)
+            return self._error_result("Missing connection - no matching BrokerNode found")
 
         if not isinstance(broker_connection, dict):
             context.log("error", f"{node_type}: connection 타입 오류: {type(broker_connection)}", node_id)
@@ -9166,8 +9158,8 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         # === 1. Connection 확인 ===
         broker_connection = config.get("connection")
         if not broker_connection:
-            context.log("error", f"{node_type}: connection 필드가 필수입니다.", node_id)
-            return self._error_result("Missing connection field")
+            context.log("error", f"{node_type}: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode를 확인하세요.", node_id)
+            return self._error_result("Missing connection - no matching BrokerNode found")
 
         if not isinstance(broker_connection, dict):
             context.log("error", f"{node_type}: connection 타입 오류: {type(broker_connection)}", node_id)
@@ -10076,6 +10068,9 @@ class WorkflowJob:
             # Resolve expressions in config ({{ input.xxx }}, {{ nodeId.port }})
             config = self._resolve_config_expressions(config)
 
+            # Auto-inject connection from matching BrokerNode (Phase 5)
+            config = self._auto_inject_connection(node_id, node, config)
+
             # Connect inputs (get values from edges) + 🆕 엣지 알림
             for edge in self.workflow.edges:
                 if edge.to_node_id == node_id:
@@ -10191,12 +10186,72 @@ class WorkflowJob:
                     trigger_nodes.append(edge.to_node_id)
         return trigger_nodes
 
+    def _auto_inject_connection(
+        self,
+        node_id: str,
+        node: "ResolvedNode",
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        product_scope에 맞는 BrokerNode의 connection 출력을 자동 주입.
+
+        Phase 5: product_scope + broker_provider 매칭으로 BrokerNode의
+        connection 출력을 자동으로 config에 주입합니다.
+
+        동작:
+        1. product_scope가 ALL인 범용 노드 → 주입 불필요 (스킵)
+        2. 매칭되는 BrokerNode의 connection 출력 → 자동 주입
+
+        Args:
+            node_id: 현재 노드 ID
+            node: ResolvedNode (product_scope 포함)
+            config: 노드 config (표현식 이미 resolve됨)
+
+        Returns:
+            connection이 주입된 config
+        """
+        # 1. 범용 노드(product_scope=ALL)는 connection 불필요
+        if node.product_scope == "all":
+            return config
+
+        # 3. 매칭되는 BrokerNode의 connection 출력 검색
+        #    product_scope + broker_provider 둘 다 매칭되어야 주입
+        for other_id, other_node in self.workflow.nodes.items():
+            # product_scope 매칭
+            if other_node.product_scope == "all":
+                continue
+            if other_node.product_scope != node.product_scope:
+                continue
+
+            # broker_provider 매칭 (ALL은 모든 것과 호환)
+            if (node.broker_provider != "all"
+                    and other_node.broker_provider != "all"
+                    and other_node.broker_provider != node.broker_provider):
+                continue
+
+            # BrokerNode 여부 확인: connection 출력이 있는 노드
+            other_outputs = self.context.get_all_outputs(other_id)
+            if "connection" in other_outputs:
+                config = config.copy()
+                config["connection"] = other_outputs["connection"]
+                self.context.log(
+                    "debug",
+                    f"Auto-injected connection from {other_id} "
+                    f"(product_scope={node.product_scope}, "
+                    f"broker_provider={node.broker_provider})",
+                    node_id,
+                )
+                return config
+
+        # 매칭 실패 시 원본 반환 (노드 executor에서 에러 처리)
+        return config
+
     def _resolve_config_expressions(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Config 내의 {{ }} 표현식을 resolve.
-        
+
         예: "{{ input.total_capital }}" → 100000
-        
+
         지원 표현식:
         - {{ input.xxx }}: 워크플로우 inputs 파라미터
         - {{ nodeId.port }}: 이전 노드 출력값
@@ -10323,7 +10378,10 @@ class WorkflowJob:
                 
                 # Resolve expressions in config
                 config_with_source = self._resolve_config_expressions(config_with_source)
-                
+
+                # Auto-inject connection from matching BrokerNode (Phase 5)
+                config_with_source = self._auto_inject_connection(node_id, node, config_with_source)
+
                 outputs = await self.executor.execute_node(
                     node_id=node_id,
                     node_type=node.node_type,

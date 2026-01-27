@@ -82,9 +82,7 @@
   "nodes.MarketDataNode.name": "Current Price",
   "nodes.MarketDataNode.description": "Get the current price and volume for symbols. Use when you don't need live updates, just a one-time snapshot.",
 
-  "fieldNames.MarketDataNode.connection": "Broker Connection",
   "fieldNames.MarketDataNode.symbols": "Symbols",
-  "fields.MarketDataNode.connection": "Broker connection info. Add a BrokerNode first and connect its connection output here.",
   "fields.MarketDataNode.symbols": "List of symbols to query. You can enter directly or bind from another node.",
   "fields.MarketDataNode.symbols.exchange": "Exchange",
   "fields.MarketDataNode.symbols.symbol": "Symbol",
@@ -95,8 +93,6 @@
   "nodes.AccountNode.name": "Account",
   "nodes.AccountNode.description": "Get your holdings, cash balance, and open orders once. Use when you don't need live updates.",
 
-  "fields.AccountNode.connection": "Broker Connection",
-  "fields.AccountNode.connection.description": "Broker connection info. Add a BrokerNode first, then bind its connection output here.",
   "fields.AccountNode.product_type": "Product Type",
   "fields.AccountNode.product_type.description": "Select product type. Must match the product connected from BrokerNode.",
   
@@ -292,7 +288,6 @@
 
   "fields.WatchlistNode.symbols": "List of symbol codes",
 
-  "fields.RealMarketDataNode.connection": "Broker connection info. First add a BrokerNode, then connect its connection output here.",
   "fields.RealMarketDataNode.symbols": "Symbols to subscribe (e.g., AAPL, TSLA). If empty, uses input port value.",
   "fields.RealMarketDataNode.symbols.exchange": "Exchange",
   "fields.RealMarketDataNode.symbols.symbol": "Symbol",
@@ -309,7 +304,6 @@
   "fields.RealAccountNode.tax_rate": "Overseas stocks transaction tax rate (%). US 0%, HK 0.1%, JP 0%",
   "fields.RealAccountNode.futures_fee_per_contract": "Futures fee per contract (USD, one-way). LS Securities default $7.5",
 
-  "fields.RealOrderEventNode.connection": "Broker connection info. Add a BrokerNode first, then bind its connection output here.",
   "fields.RealOrderEventNode.product_type": "Select product type. Must match the product from BrokerNode.",
   "fields.RealOrderEventNode.event_filter": "Overseas stock event filter. Output all (AS0~AS4) or specific TR only.",
   "fields.RealOrderEventNode.event_filter_futures": "Overseas futures event filter. Output all (TC1~TC3) or specific TR only.",
@@ -602,11 +596,9 @@
   "fieldNames.ThrottleNode.interval_sec": "Interval (sec)",
   "fieldNames.ThrottleNode.pass_first": "Pass First",
 
-  "fieldNames.RealMarketDataNode.connection": "Broker Connection",
   "fieldNames.RealMarketDataNode.symbols": "Symbols",
   "fieldNames.RealMarketDataNode.stay_connected": "Stay Connected",
 
-  "fieldNames.RealAccountNode.connection": "Broker Connection",
   "fieldNames.RealAccountNode.product_type": "Product Type",
   "fieldNames.RealAccountNode.commission_rate": "Commission Rate",
   "fieldNames.RealAccountNode.tax_rate": "Tax Rate",
@@ -614,16 +606,13 @@
   "fieldNames.RealAccountNode.stay_connected": "Stay Connected",
   "fieldNames.RealAccountNode.sync_interval_sec": "Sync Interval (sec)",
 
-  "fieldNames.RealOrderEventNode.connection": "Broker Connection",
   "fieldNames.RealOrderEventNode.product_type": "Product Type",
   "fieldNames.RealOrderEventNode.event_filter": "Event Filter",
   "fieldNames.RealOrderEventNode.event_filter_futures": "Futures Event Filter",
   "fieldNames.RealOrderEventNode.stay_connected": "Stay Connected",
 
-  "fieldNames.AccountNode.connection": "Broker Connection",
   "fieldNames.AccountNode.product_type": "Product Type",
 
-  "fieldNames.SymbolQueryNode.connection": "Broker Connection",
   "fieldNames.SymbolQueryNode.product_type": "Product Type",
   "fieldNames.SymbolQueryNode.country": "Country",
   "fieldNames.SymbolQueryNode.stock_exchange": "Stock Exchange",

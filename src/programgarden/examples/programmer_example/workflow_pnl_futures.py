@@ -114,7 +114,6 @@ TEST_WORKFLOW = {
             "id": "entry_order",
             "type": "OverseasFuturesNewOrderNode",
             "plugin": "LimitOrder",
-            "connection": "{{ nodes.broker.connection }}",
             "side": "buy",  # 롱 진입
             "order_type": "limit",
             "orders": [{"exchange": "HKEX", "symbol": "HMCEF26", "quantity": 1, "price": 0}],
@@ -124,7 +123,6 @@ TEST_WORKFLOW = {
             "id": "exit_order",
             "type": "OverseasFuturesNewOrderNode",
             "plugin": "LimitOrder",
-            "connection": "{{ nodes.broker.connection }}",
             "side": "sell",  # 롱 청산
             "order_type": "limit",
             "orders": [{"exchange": "HKEX", "symbol": "HMCEF26", "quantity": 1, "price": 0}],

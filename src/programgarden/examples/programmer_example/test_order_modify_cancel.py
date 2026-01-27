@@ -75,7 +75,6 @@ async def test_new_order():
             {
                 "id": "new_order",
                 "type": "OverseasStockNewOrderNode",
-                "connection": "{{ nodes.broker.connection }}",
                 "side": "buy",
                 "order_type": "limit",
                 "orders": [
@@ -140,7 +139,6 @@ async def test_modify_order(order_id: str):
             {
                 "id": "modify_order",
                 "type": "OverseasStockModifyOrderNode",
-                "connection": "{{ nodes.broker.connection }}",
                 "original_order_id": order_id,
                 "symbol": TEST_SYMBOL,
                 "exchange": TEST_EXCHANGE,
@@ -205,7 +203,6 @@ async def test_cancel_order(order_id: str):
             {
                 "id": "cancel_order",
                 "type": "OverseasStockCancelOrderNode",
-                "connection": "{{ nodes.broker.connection }}",
                 "original_order_id": order_id,
                 "symbol": TEST_SYMBOL,
                 "exchange": TEST_EXCHANGE,

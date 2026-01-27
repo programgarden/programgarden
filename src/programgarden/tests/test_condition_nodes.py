@@ -98,7 +98,6 @@ async def test_condition_node_stock(credentials):
                 "id": "realMarket",
                 "type": "RealMarketDataNode",
                 "category": "realtime",
-                "connection": "{{ nodes.broker.connection }}",
                 "symbols": "{{ nodes.watchlist.symbols }}",
                 "stay_connected": False
             },
@@ -191,7 +190,6 @@ async def test_condition_node_futures(credentials):
                 "id": "realMarket",
                 "type": "RealMarketDataNode",
                 "category": "realtime",
-                "connection": "{{ nodes.broker.connection }}",
                 "symbols": "{{ nodes.watchlist.symbols }}",
                 "stay_connected": False
             },
@@ -282,7 +280,6 @@ async def test_logic_node_stock(credentials):
                 "id": "realMarket",
                 "type": "RealMarketDataNode",
                 "category": "realtime",
-                "connection": "{{ nodes.broker.connection }}",
                 "symbols": "{{ nodes.watchlist.symbols }}",
                 "stay_connected": False
             },

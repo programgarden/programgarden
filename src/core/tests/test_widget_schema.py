@@ -106,14 +106,14 @@ class TestFieldSchemaToJsonDynamicWidget:
     def test_expression_only_mode(self):
         """EXPRESSION_ONLY 모드 (바인딩 전용 - lockedMode="expression")"""
         fs = FieldSchema(
-            name="connection",
+            name="data",
             type=FieldType.OBJECT,
-            description="브로커 연결",
+            description="입력 데이터",
             expression_mode=ExpressionMode.EXPRESSION_ONLY,
-            example_binding="{{ nodes.broker.connection }}",
+            example_binding="{{ nodes.source.values }}",
         )
         widget = fs.to_json_dynamic_widget()
-        
+
         assert widget["type"] == "custom_expression_toggle"
         assert widget["args"]["lockedMode"] == "expression"  # expression 고정
         assert widget["args"]["defaultMode"] == "expression"
@@ -123,7 +123,7 @@ class TestFieldSchemaToJsonDynamicWidget:
         # prefixText/suffixText 없음 - 사용자가 {{ }}를 자유롭게 입력
         assert "prefixText" not in expr_widget["args"]["decoration"]
         assert "suffixText" not in expr_widget["args"]["decoration"]
-        assert expr_widget["args"]["decoration"]["hintText"] == "{{ nodes.broker.connection }}"
+        assert expr_widget["args"]["decoration"]["hintText"] == "{{ nodes.source.values }}"
 
     def test_binding_input_component(self):
         """BINDING_INPUT 컴포넌트 (EXPRESSION_ONLY)"""

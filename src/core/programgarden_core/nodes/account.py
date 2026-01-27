@@ -88,21 +88,6 @@ class AccountNode(BaseNode):
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
 
         return {
-            # === PARAMETERS: 브로커 연결 (필수) ===
-            # OBJECT 타입 + EXPRESSION_ONLY → 바인딩 입력 필드 자동 생성
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                display_name="i18n:fields.AccountNode.connection",
-                description="i18n:fields.AccountNode.connection.description",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="broker_connection",
-            ),
             # === PARAMETERS: 상품 유형 선택 ===
             # ENUM 타입 → dropdown_button_form_field 자동 생성
             "product_type": FieldSchema(

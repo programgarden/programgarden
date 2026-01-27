@@ -94,9 +94,7 @@
   "nodes.OverseasFuturesMarketDataNode.name": "해외선물 현재가",
   "nodes.OverseasFuturesMarketDataNode.description": "해외선물 종목의 현재가와 거래량을 조회합니다. (CME, EUREX, SGX, HKEX 등)",
 
-  "fieldNames.MarketDataNode.connection": "브로커연결",
   "fieldNames.MarketDataNode.symbols": "종목",
-  "fields.MarketDataNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.MarketDataNode.symbols": "조회할 종목 리스트입니다. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
   "fields.MarketDataNode.symbols.exchange": "거래소",
   "fields.MarketDataNode.symbols.symbol": "종목코드",
@@ -113,8 +111,6 @@
   "nodes.OverseasFuturesAccountNode.name": "해외선물 계좌 조회",
   "nodes.OverseasFuturesAccountNode.description": "해외선물 보유종목, 예수금, 미체결 주문을 한 번 조회합니다. 실시간이 필요하면 OverseasFuturesRealAccountNode를 사용하세요.",
 
-  "fields.AccountNode.connection": "브로커 연결",
-  "fields.AccountNode.connection.description": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.AccountNode.product_type": "상품 유형",
   "fields.AccountNode.product_type.description": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
   
@@ -353,7 +349,6 @@
 
   "fields.WatchlistNode.symbols": "종목 코드 리스트",
 
-  "fields.RealMarketDataNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.RealMarketDataNode.symbols": "구독할 종목 코드 (AAPL, TSLA 등). 비어있으면 입력 포트 값 사용.",
   "fields.RealMarketDataNode.symbols.exchange": "거래소",
   "fields.RealMarketDataNode.symbols.symbol": "종목코드",
@@ -401,7 +396,6 @@
   "fieldNames.OverseasFuturesRealAccountNode.stay_connected": "연결유지",
   "fieldNames.OverseasFuturesRealAccountNode.sync_interval_sec": "동기화주기(초)",
 
-  "fields.RealOrderEventNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.RealOrderEventNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
   "fields.RealOrderEventNode.event_filter": "받고 싶은 주문 알림을 선택하세요. '전체'를 선택하면 모든 주문 이벤트를 받습니다.",
   "fields.RealOrderEventNode.event_filter_futures": "받고 싶은 주문 알림을 선택하세요. '전체'를 선택하면 모든 주문 이벤트를 받습니다.",
@@ -500,14 +494,12 @@
   "fields.CancelOrderNode.original_order_id": "취소할 원주문번호입니다. 미체결 주문 목록에서 선택합니다.",
   "fields.CancelOrderNode.symbol": "종목 코드입니다.",
 
-  "fields.OverseasStockNewOrderNode.connection": "증권사 연결 정보입니다. BrokerNode의 connection 출력을 바인딩하세요.",
   "fields.OverseasStockNewOrderNode.side": "매수(buy) 또는 매도(sell)를 선택합니다.",
   "fields.OverseasStockNewOrderNode.order_type": "주문 유형입니다. 시장가는 즉시 체결, 지정가는 원하는 가격에 주문합니다.",
   "fields.OverseasStockNewOrderNode.price_type": "호가 유형입니다. LOO/LOC/MOO/MOC는 미국 시장 특수 주문입니다.",
   "fields.OverseasStockNewOrderNode.orders": "주문할 종목 목록입니다. MarketDataNode.values를 바인딩하면 종목별 시세를 자동으로 사용합니다.",
   "fieldNames.OverseasStockNewOrderNode.orders": "주문목록",
 
-  "fields.OverseasStockModifyOrderNode.connection": "증권사 연결 정보입니다.",
   "fields.OverseasStockModifyOrderNode.price_type": "호가 유형을 선택합니다.",
   "fields.OverseasStockModifyOrderNode.original_order_id": "정정할 원주문번호입니다.",
   "fields.OverseasStockModifyOrderNode.symbol": "종목 코드입니다.",
@@ -515,26 +507,22 @@
   "fields.OverseasStockModifyOrderNode.new_quantity": "정정할 수량입니다. 입력하지 않으면 기존 수량이 유지됩니다.",
   "fields.OverseasStockModifyOrderNode.new_price": "정정할 가격입니다. 입력하지 않으면 기존 가격이 유지됩니다.",
 
-  "fields.OverseasStockCancelOrderNode.connection": "증권사 연결 정보입니다.",
   "fields.OverseasStockCancelOrderNode.original_order_id": "취소할 원주문번호입니다.",
   "fields.OverseasStockCancelOrderNode.symbol": "종목 코드입니다.",
   "fields.OverseasStockCancelOrderNode.exchange": "거래소를 선택합니다.",
 
-  "fields.OverseasFuturesNewOrderNode.connection": "증권사 연결 정보입니다. BrokerNode의 connection 출력을 바인딩하세요.",
   "fields.OverseasFuturesNewOrderNode.side": "매수(buy) 또는 매도(sell)를 선택합니다.",
   "fields.OverseasFuturesNewOrderNode.order_type": "주문 유형입니다. 시장가는 즉시 체결, 지정가는 원하는 가격에 주문합니다.",
   "fields.OverseasFuturesNewOrderNode.expiry_month": "만기년월입니다. YYYYMM 형식으로 입력합니다.",
   "fields.OverseasFuturesNewOrderNode.orders": "주문할 종목 목록입니다. MarketDataNode.values를 바인딩하면 종목별 시세를 자동으로 사용합니다.",
   "fieldNames.OverseasFuturesNewOrderNode.orders": "주문목록",
 
-  "fields.OverseasFuturesModifyOrderNode.connection": "증권사 연결 정보입니다.",
   "fields.OverseasFuturesModifyOrderNode.original_order_id": "정정할 원주문번호입니다.",
   "fields.OverseasFuturesModifyOrderNode.symbol": "종목 코드입니다.",
   "fields.OverseasFuturesModifyOrderNode.exchange": "거래소를 선택합니다.",
   "fields.OverseasFuturesModifyOrderNode.new_quantity": "정정할 수량입니다.",
   "fields.OverseasFuturesModifyOrderNode.new_price": "정정할 가격입니다.",
 
-  "fields.OverseasFuturesCancelOrderNode.connection": "증권사 연결 정보입니다.",
   "fields.OverseasFuturesCancelOrderNode.original_order_id": "취소할 원주문번호입니다.",
   "fields.OverseasFuturesCancelOrderNode.symbol": "종목 코드입니다.",
   "fields.OverseasFuturesCancelOrderNode.exchange": "거래소를 선택합니다.",
@@ -545,7 +533,6 @@
   "fields.orders.price": "가격",
   "ports.orders_input": "주문 목록 입력",
 
-  "fields.HistoricalDataNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.HistoricalDataNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
   "fields.HistoricalDataNode.symbols": "조회할 종목 리스트입니다. 직접 입력하거나 다른 노드에서 바인딩할 수 있습니다.",
   "fields.HistoricalDataNode.symbols.exchange": "거래소",
@@ -765,11 +752,9 @@
   "fieldNames.ThrottleNode.interval_sec": "실행간격(초)",
   "fieldNames.ThrottleNode.pass_first": "첫데이터통과",
 
-  "fieldNames.RealMarketDataNode.connection": "브로커연결",
   "fieldNames.RealMarketDataNode.symbols": "종목",
   "fieldNames.RealMarketDataNode.stay_connected": "연결유지",
 
-  "fieldNames.RealAccountNode.connection": "브로커연결",
   "fieldNames.RealAccountNode.product_type": "상품유형",
   "fieldNames.RealAccountNode.commission_rate": "수수료율",
   "fieldNames.RealAccountNode.tax_rate": "세율",
@@ -777,16 +762,13 @@
   "fieldNames.RealAccountNode.stay_connected": "연결유지",
   "fieldNames.RealAccountNode.sync_interval_sec": "동기화주기(초)",
 
-  "fieldNames.RealOrderEventNode.connection": "브로커연결",
   "fieldNames.RealOrderEventNode.product_type": "상품유형",
   "fieldNames.RealOrderEventNode.event_filter": "이벤트필터",
   "fieldNames.RealOrderEventNode.event_filter_futures": "선물이벤트필터",
   "fieldNames.RealOrderEventNode.stay_connected": "연결유지",
 
-  "fieldNames.AccountNode.connection": "브로커연결",
   "fieldNames.AccountNode.product_type": "상품유형",
 
-  "fieldNames.SymbolQueryNode.connection": "브로커연결",
   "fieldNames.SymbolQueryNode.product_type": "상품유형",
   "fieldNames.SymbolQueryNode.country": "국가",
   "fieldNames.SymbolQueryNode.stock_exchange": "주식거래소",
@@ -819,7 +801,6 @@
   "fieldNames.SymbolFilterNode.input_b": "입력B",
 
 
-  "fieldNames.HistoricalDataNode.connection": "브로커연결",
   "fieldNames.HistoricalDataNode.product_type": "상품유형",
   "fieldNames.HistoricalDataNode.symbols": "종목",
   "fieldNames.HistoricalDataNode.start_date": "시작일",

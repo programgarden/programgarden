@@ -283,7 +283,6 @@ def create_workflow() -> dict:
             "id": "order",
             "type": "OverseasStockNewOrderNode",
             "plugin": plugin,
-            "connection": "{{ nodes.broker.connection }}",
             "side": TEST_SIDE,
             "order_type": order_type,
             "orders": [
