@@ -1,13 +1,13 @@
 """
 ProgramGarden Core - Order Nodes
 
-순수 주문 실행 노드 (전략 로직은 ConditionNode에서 처리):
-- NewOrderNode: 신규 주문 실행 (해외주식/해외선물)
-- ModifyOrderNode: 정정 주문 실행
-- CancelOrderNode: 취소 주문 실행
+상품별 주문 노드 (해외주식 3개 + 해외선물 3개 = 총 6개):
+- StockNewOrderNode, StockModifyOrderNode, StockCancelOrderNode (해외주식)
+- FuturesNewOrderNode, FuturesModifyOrderNode, FuturesCancelOrderNode (해외선물)
 
-모든 전략/조건 계산(RSI, 수량 결정 등)은 ConditionNode/PositionSizingNode에서 처리하고,
-주문 노드는 결정된 값을 받아 증권사 API를 호출하는 역할만 담당합니다.
+입력 구조:
+- NewOrder: orders 배열 [{symbol, exchange, quantity, price}, ...]
+- Modify/Cancel: original_order_id, symbol, exchange 단일 필드
 """
 
 from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
@@ -25,35 +25,25 @@ from programgarden_core.nodes.base import (
 
 
 # =============================================================================
-# 신규 주문 노드
+# 베이스 클래스
 # =============================================================================
 
-class NewOrderNode(BaseNode):
+class BaseOrderNode(BaseNode):
     """
-    신규 주문 실행 노드
+    주문 노드 공통 베이스 클래스
 
-    ConditionNode에서 계산된 매매 대상 종목과 PositionSizingNode에서 결정된
-    수량을 받아 증권사 API로 실제 주문을 실행합니다.
-
-    지원 상품:
-    - overseas_stock: 해외주식 (미국 NYSE/NASDAQ)
-    - overseas_futures: 해외선물옵션
-
-    주문 흐름:
-    1. ConditionNode → passed_symbols (매수/매도 대상 종목)
-    2. PositionSizingNode → quantities (종목별 수량)
-    3. NewOrderNode → 실제 주문 실행
+    모든 주문 노드가 공유하는 공통 필드와 포트를 정의합니다.
     """
 
-    type: Literal["NewOrderNode"] = "NewOrderNode"
     category: NodeCategory = NodeCategory.ORDER
-    description: str = "i18n:nodes.NewOrderNode.description"
 
-    # === 상품 및 주문 유형 선택 ===
-    product: Literal["overseas_stock", "overseas_futures"] = Field(
-        default="overseas_stock",
-        description="상품 유형 (overseas_stock: 해외주식, overseas_futures: 해외선물)",
+    # 브로커 연결 (필수)
+    connection: Optional[Dict] = Field(
+        default=None,
+        description="브로커 연결 정보 (BrokerNode.connection 바인딩)",
     )
+
+    # 공통 주문 설정
     side: Literal["buy", "sell"] = Field(
         default="buy",
         description="매매 구분 (buy: 매수, sell: 매도)",
@@ -63,38 +53,10 @@ class NewOrderNode(BaseNode):
         description="주문 유형 (market: 시장가, limit: 지정가)",
     )
 
-    # === 해외주식 전용 필드 ===
-    market_code: Optional[Literal["NYSE", "NASDAQ"]] = Field(
-        default=None,
-        description="[해외주식] 시장 코드 (NYSE: 뉴욕, NASDAQ: 나스닥)",
-    )
-    price_type: Optional[Literal["limit", "market", "LOO", "LOC", "MOO", "MOC"]] = Field(
-        default="limit",
-        description="[해외주식] 호가 유형 (limit: 지정가, market: 시장가, LOO/LOC/MOO/MOC: 미국 특수주문)",
-    )
-
-    # === 해외선물 전용 필드 ===
-    exchange_code: Optional[str] = Field(
-        default=None,
-        description="[해외선물] 거래소 코드 (예: CME, EUREX)",
-    )
-    expiry_month: Optional[str] = Field(
-        default=None,
-        description="[해외선물] 만기년월 (예: 202503)",
-    )
-
-    # === 바인딩 필드 (다른 노드에서 값 수신) ===
-    symbols: Any = Field(
-        default=None,
-        description="주문 대상 종목 목록 (ConditionNode.passed_symbols 바인딩)",
-    )
-    quantities: Any = Field(
-        default=None,
-        description="종목별 주문 수량 (PositionSizingNode.quantities 바인딩)",
-    )
-    prices: Any = Field(
-        default=None,
-        description="종목별 주문 가격 (지정가 주문 시, RealMarketDataNode.price 바인딩)",
+    # 주문 입력
+    orders: Any = Field(
+        default_factory=list,
+        description="주문 목록 [{symbol, exchange, quantity, price}, ...]",
     )
 
     _inputs: List[InputPort] = [
@@ -104,19 +66,9 @@ class NewOrderNode(BaseNode):
             description="i18n:ports.order_trigger",
         ),
         InputPort(
-            name="symbols",
-            type="symbol_list",
-            description="i18n:ports.order_symbols",
-        ),
-        InputPort(
-            name="quantities",
-            type="dict",
-            description="i18n:ports.order_quantities",
-        ),
-        InputPort(
-            name="prices",
-            type="dict",
-            description="i18n:ports.order_prices",
+            name="orders",
+            type="order_list",
+            description="i18n:ports.orders_input",
             required=False,
         ),
     ]
@@ -127,45 +79,86 @@ class NewOrderNode(BaseNode):
             description="i18n:ports.order_result",
         ),
         OutputPort(
-            name="order_ids",
-            type="dict",
-            description="i18n:ports.order_ids",
-        ),
-        OutputPort(
             name="submitted_orders",
             type="order_list",
             description="i18n:ports.submitted_orders",
         ),
     ]
 
+
+class BaseModifyOrderNode(BaseNode):
+    """
+    정정/취소 주문 노드 공통 베이스 클래스
+    """
+
+    category: NodeCategory = NodeCategory.ORDER
+
+    # 브로커 연결 (필수)
+    connection: Optional[Dict] = Field(
+        default=None,
+        description="브로커 연결 정보 (BrokerNode.connection 바인딩)",
+    )
+
+    # 정정/취소 대상
+    original_order_id: Any = Field(
+        default=None,
+        description="정정/취소할 원주문번호",
+    )
+    symbol: Any = Field(
+        default=None,
+        description="종목 코드",
+    )
+    exchange: Any = Field(
+        default=None,
+        description="거래소 코드",
+    )
+
+
+# =============================================================================
+# 해외주식 주문 노드
+# =============================================================================
+
+class StockNewOrderNode(BaseOrderNode):
+    """
+    해외주식 신규주문 노드
+
+    미국 주식(NYSE, NASDAQ, AMEX) 신규주문을 실행합니다.
+    orders 필드에 주문할 종목 목록을 바인딩하세요.
+
+    API: COSAT00301 (해외주식 신규주문)
+    """
+
+    type: Literal["StockNewOrderNode"] = "StockNewOrderNode"
+    description: str = "i18n:nodes.StockNewOrderNode.description"
+
+    # 해외주식 전용 필드
+    price_type: Literal["limit", "market", "LOO", "LOC", "MOO", "MOC"] = Field(
+        default="limit",
+        description="호가 유형 (limit, market, LOO, LOC, MOO, MOC)",
+    )
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        )
         return {
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 핵심 주문 설정
-            # ═══════════════════════════════════════════════════════════════
-            "product": FieldSchema(
-                name="product",
-                type=FieldType.ENUM,
-                description="i18n:fields.NewOrderNode.product",
-                default="overseas_stock",
-                enum_values=["overseas_stock", "overseas_futures"],
-                enum_labels={
-                    "overseas_stock": "해외주식 (미국 NYSE/NASDAQ)",
-                    "overseas_futures": "해외선물옵션 (CME, EUREX 등)",
-                },
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="i18n:fields.StockNewOrderNode.connection",
                 required=True,
-                expression_mode=ExpressionMode.FIXED_ONLY,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
-                example="overseas_stock",
-                expected_type="str",
+                placeholder="{{ nodes.broker.connection }}",
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="dict",
             ),
             "side": FieldSchema(
                 name="side",
                 type=FieldType.ENUM,
-                description="i18n:fields.NewOrderNode.side",
+                description="i18n:fields.StockNewOrderNode.side",
                 default="buy",
                 enum_values=["buy", "sell"],
                 enum_labels={
@@ -176,51 +169,28 @@ class NewOrderNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.SELECT,
-                example="buy",
                 expected_type="str",
             ),
             "order_type": FieldSchema(
                 name="order_type",
                 type=FieldType.ENUM,
-                description="i18n:fields.NewOrderNode.order_type",
+                description="i18n:fields.StockNewOrderNode.order_type",
                 default="limit",
                 enum_values=["market", "limit"],
                 enum_labels={
-                    "market": "시장가 (Market) - 즉시 체결",
-                    "limit": "지정가 (Limit) - 가격 지정",
+                    "market": "시장가 (Market)",
+                    "limit": "지정가 (Limit)",
                 },
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.SELECT,
-                example="limit",
-                expected_type="str",
-            ),
-
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 해외주식 전용 설정
-            # ═══════════════════════════════════════════════════════════════
-            "market_code": FieldSchema(
-                name="market_code",
-                type=FieldType.ENUM,
-                description="i18n:fields.NewOrderNode.market_code",
-                enum_values=["NYSE", "NASDAQ"],
-                enum_labels={
-                    "NYSE": "뉴욕증권거래소 (NYSE)",
-                    "NASDAQ": "나스닥 (NASDAQ)",
-                },
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
-                visible_when={"product": "overseas_stock"},
-                example="NASDAQ",
                 expected_type="str",
             ),
             "price_type": FieldSchema(
                 name="price_type",
                 type=FieldType.ENUM,
-                description="i18n:fields.NewOrderNode.price_type",
+                description="i18n:fields.StockNewOrderNode.price_type",
                 default="limit",
                 enum_values=["limit", "market", "LOO", "LOC", "MOO", "MOC"],
                 enum_labels={
@@ -235,153 +205,66 @@ class NewOrderNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.SELECT,
-                visible_when={"product": "overseas_stock"},
-                example="limit",
                 expected_type="str",
             ),
-
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 해외선물 전용 설정
-            # ═══════════════════════════════════════════════════════════════
-            "exchange_code": FieldSchema(
-                name="exchange_code",
-                type=FieldType.STRING,
-                description="i18n:fields.NewOrderNode.exchange_code",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.TEXT_INPUT,
-                visible_when={"product": "overseas_futures"},
-                placeholder="CME",
-                example="CME",
-                expected_type="str",
-            ),
-            "expiry_month": FieldSchema(
-                name="expiry_month",
-                type=FieldType.STRING,
-                description="i18n:fields.NewOrderNode.expiry_month",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.TEXT_INPUT,
-                visible_when={"product": "overseas_futures"},
-                placeholder="202503",
-                example="202503",
-                expected_type="str",
-            ),
-
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 바인딩 필드 (다른 노드에서 데이터 수신)
-            # ═══════════════════════════════════════════════════════════════
-            "symbols": FieldSchema(
-                name="symbols",
-                type=FieldType.STRING,
-                description="i18n:fields.NewOrderNode.symbols",
+            "orders": FieldSchema(
+                name="orders",
+                type=FieldType.ARRAY,
+                array_item_type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.StockNewOrderNode.orders",
+                description="i18n:fields.StockNewOrderNode.orders",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.condition.passed_symbols }}",
-                example=["AAPL", "TSLA", "NVDA"],
-                example_binding="{{ nodes.condition.passed_symbols }}",
+                ui_component=UIComponent.CUSTOM_ORDER_LIST_EDITOR,
+                example=[
+                    {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 10, "price": 150.0}
+                ],
+                example_binding="{{ nodes.marketdata.values }}",
                 bindable_sources=[
+                    "MarketDataNode.values",
                     "ConditionNode.passed_symbols",
-                    "LogicNode.passed_symbols",
-                    "WatchlistNode.symbols",
                 ],
-                expected_type="list[str]",
-            ),
-            "quantities": FieldSchema(
-                name="quantities",
-                type=FieldType.STRING,
-                description="i18n:fields.NewOrderNode.quantities",
-                required=True,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.sizing.quantities }}",
-                example={"AAPL": 10, "TSLA": 5, "NVDA": 3},
-                example_binding="{{ nodes.sizing.quantities }}",
-                bindable_sources=[
-                    "PositionSizingNode.quantities",
+                object_schema=[
+                    {"name": "symbol", "type": "STRING", "required": True,
+                     "label": "i18n:fields.orders.symbol"},
+                    {"name": "exchange", "type": "ENUM", "required": True,
+                     "enum_values": ["NYSE", "NASDAQ", "AMEX"],
+                     "label": "i18n:fields.orders.exchange"},
+                    {"name": "quantity", "type": "INTEGER", "required": True,
+                     "label": "i18n:fields.orders.quantity"},
+                    {"name": "price", "type": "NUMBER", "required": False,
+                     "label": "i18n:fields.orders.price"},
                 ],
-                expected_type="dict[str, int]",
-            ),
-            "prices": FieldSchema(
-                name="prices",
-                type=FieldType.STRING,
-                description="i18n:fields.NewOrderNode.prices",
-                required=False,
-                expression_mode=ExpressionMode.BOTH,
-                category=FieldCategory.PARAMETERS,
-                visible_when={"order_type": "limit"},
-                placeholder="{{ nodes.realMarket.price }}",
-                example={"AAPL": 150.50, "TSLA": 250.00, "NVDA": 500.00},
-                example_binding="{{ nodes.realMarket.price }}",
-                bindable_sources=[
-                    "RealMarketDataNode.price",
-                    "MarketDataNode.price",
-                ],
-                expected_type="dict[str, float]",
-                help_text="지정가 주문 시 종목별 주문 가격. 시장가 주문 시 불필요.",
+                expected_type="list[dict]",
             ),
         }
 
 
-# =============================================================================
-# 정정 주문 노드
-# =============================================================================
-
-class ModifyOrderNode(BaseNode):
+class StockModifyOrderNode(BaseModifyOrderNode):
     """
-    정정 주문 실행 노드
+    해외주식 정정주문 노드
 
     기존 미체결 주문의 가격이나 수량을 정정합니다.
-    정정할 주문 정보는 RealAccountNode.open_orders에서 바인딩합니다.
+
+    API: COSAT00302 (해외주식 정정주문)
     """
 
-    type: Literal["ModifyOrderNode"] = "ModifyOrderNode"
-    category: NodeCategory = NodeCategory.ORDER
-    description: str = "i18n:nodes.ModifyOrderNode.description"
+    type: Literal["StockModifyOrderNode"] = "StockModifyOrderNode"
+    description: str = "i18n:nodes.StockModifyOrderNode.description"
 
-    # === 상품 유형 선택 ===
-    product: Literal["overseas_stock", "overseas_futures"] = Field(
-        default="overseas_stock",
-        description="상품 유형 (overseas_stock: 해외주식, overseas_futures: 해외선물)",
-    )
-
-    # === 해외주식 전용 필드 ===
-    market_code: Optional[Literal["NYSE", "NASDAQ"]] = Field(
-        default=None,
-        description="[해외주식] 시장 코드",
-    )
-    price_type: Optional[Literal["limit", "market"]] = Field(
+    # 해외주식 전용 필드
+    price_type: Literal["limit", "market"] = Field(
         default="limit",
-        description="[해외주식] 호가 유형",
+        description="호가 유형",
     )
 
-    # === 해외선물 전용 필드 ===
-    exchange_code: Optional[str] = Field(
-        default=None,
-        description="[해외선물] 거래소 코드 (예: CME, EUREX)",
-    )
-    expiry_month: Optional[str] = Field(
-        default=None,
-        description="[해외선물] 만기년월 (예: 202503)",
-    )
-
-    # === 바인딩 필드 ===
-    original_order_id: Any = Field(
-        default=None,
-        description="정정할 원주문번호",
-    )
-    symbol: Any = Field(
-        default=None,
-        description="종목 코드",
-    )
-    new_quantity: Any = Field(
+    # 정정 대상
+    new_quantity: Optional[int] = Field(
         default=None,
         description="정정할 수량 (변경하지 않으면 기존 수량 유지)",
     )
-    new_price: Any = Field(
+    new_price: Optional[float] = Field(
         default=None,
         description="정정할 가격 (변경하지 않으면 기존 가격 유지)",
     )
@@ -396,23 +279,6 @@ class ModifyOrderNode(BaseNode):
             name="original_order_id",
             type="string",
             description="i18n:ports.original_order_id",
-        ),
-        InputPort(
-            name="symbol",
-            type="string",
-            description="i18n:ports.symbol",
-        ),
-        InputPort(
-            name="new_quantity",
-            type="number",
-            description="i18n:ports.new_quantity",
-            required=False,
-        ),
-        InputPort(
-            name="new_price",
-            type="number",
-            description="i18n:ports.new_price",
-            required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
@@ -430,49 +296,26 @@ class ModifyOrderNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        )
         return {
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 상품 유형 선택
-            # ═══════════════════════════════════════════════════════════════
-            "product": FieldSchema(
-                name="product",
-                type=FieldType.ENUM,
-                description="i18n:fields.ModifyOrderNode.product",
-                default="overseas_stock",
-                enum_values=["overseas_stock", "overseas_futures"],
-                enum_labels={
-                    "overseas_stock": "해외주식 (미국 NYSE/NASDAQ)",
-                    "overseas_futures": "해외선물옵션",
-                },
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="i18n:fields.StockModifyOrderNode.connection",
                 required=True,
-                expression_mode=ExpressionMode.FIXED_ONLY,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
-                example="overseas_stock",
-                expected_type="str",
-            ),
-            "market_code": FieldSchema(
-                name="market_code",
-                type=FieldType.ENUM,
-                description="i18n:fields.ModifyOrderNode.market_code",
-                enum_values=["NYSE", "NASDAQ"],
-                enum_labels={
-                    "NYSE": "뉴욕증권거래소 (NYSE)",
-                    "NASDAQ": "나스닥 (NASDAQ)",
-                },
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
-                visible_when={"product": "overseas_stock"},
-                example="NASDAQ",
-                expected_type="str",
+                placeholder="{{ nodes.broker.connection }}",
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="dict",
             ),
             "price_type": FieldSchema(
                 name="price_type",
                 type=FieldType.ENUM,
-                description="i18n:fields.ModifyOrderNode.price_type",
+                description="i18n:fields.StockModifyOrderNode.price_type",
                 default="limit",
                 enum_values=["limit", "market"],
                 enum_labels={
@@ -483,153 +326,81 @@ class ModifyOrderNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.SELECT,
-                visible_when={"product": "overseas_stock"},
-                example="limit",
                 expected_type="str",
             ),
-
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 해외선물 전용 설정
-            # ═══════════════════════════════════════════════════════════════
-            "exchange_code": FieldSchema(
-                name="exchange_code",
-                type=FieldType.STRING,
-                description="i18n:fields.ModifyOrderNode.exchange_code",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.TEXT_INPUT,
-                visible_when={"product": "overseas_futures"},
-                placeholder="CME",
-                example="CME",
-                expected_type="str",
-            ),
-            "expiry_month": FieldSchema(
-                name="expiry_month",
-                type=FieldType.STRING,
-                description="i18n:fields.ModifyOrderNode.expiry_month",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.TEXT_INPUT,
-                visible_when={"product": "overseas_futures"},
-                placeholder="202503",
-                example="202503",
-                expected_type="str",
-            ),
-
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 정정 대상 정보 (바인딩)
-            # ═══════════════════════════════════════════════════════════════
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
-                description="i18n:fields.ModifyOrderNode.original_order_id",
+                description="i18n:fields.StockModifyOrderNode.original_order_id",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 placeholder="{{ nodes.account.selected_order.order_id }}",
-                example="ORD20260113001",
+                example="ORD20260127001",
                 example_binding="{{ nodes.account.selected_order.order_id }}",
                 bindable_sources=[
                     "RealAccountNode.open_orders[].order_id",
-                    "NewOrderNode.order_ids",
+                    "StockNewOrderNode.order_result.order_id",
                 ],
                 expected_type="str",
             ),
             "symbol": FieldSchema(
                 name="symbol",
                 type=FieldType.STRING,
-                description="i18n:fields.ModifyOrderNode.symbol",
+                description="i18n:fields.StockModifyOrderNode.symbol",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.account.selected_order.symbol }}",
+                placeholder="AAPL",
                 example="AAPL",
-                example_binding="{{ nodes.account.selected_order.symbol }}",
-                bindable_sources=[
-                    "RealAccountNode.open_orders[].symbol",
-                ],
+                expected_type="str",
+            ),
+            "exchange": FieldSchema(
+                name="exchange",
+                type=FieldType.ENUM,
+                description="i18n:fields.StockModifyOrderNode.exchange",
+                enum_values=["NYSE", "NASDAQ", "AMEX"],
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "new_quantity": FieldSchema(
                 name="new_quantity",
-                type=FieldType.NUMBER,
-                description="i18n:fields.ModifyOrderNode.new_quantity",
+                type=FieldType.INTEGER,
+                description="i18n:fields.StockModifyOrderNode.new_quantity",
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 placeholder="10",
-                example=10,
                 expected_type="int",
             ),
             "new_price": FieldSchema(
                 name="new_price",
                 type=FieldType.NUMBER,
-                description="i18n:fields.ModifyOrderNode.new_price",
+                description="i18n:fields.StockModifyOrderNode.new_price",
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 visible_when={"price_type": "limit"},
                 placeholder="155.50",
-                example=155.50,
-                example_binding="{{ nodes.realMarket.price.AAPL }}",
-                bindable_sources=[
-                    "RealMarketDataNode.price",
-                ],
                 expected_type="float",
-                help_text="지정가 정정 시 새 가격. 시장가 정정 시 불필요.",
             ),
         }
 
 
-# =============================================================================
-# 취소 주문 노드
-# =============================================================================
-
-class CancelOrderNode(BaseNode):
+class StockCancelOrderNode(BaseModifyOrderNode):
     """
-    취소 주문 실행 노드
+    해외주식 취소주문 노드
 
     기존 미체결 주문을 취소합니다.
-    취소할 주문 정보는 RealAccountNode.open_orders에서 바인딩합니다.
+
+    API: COSAT00303 (해외주식 취소주문)
     """
 
-    type: Literal["CancelOrderNode"] = "CancelOrderNode"
-    category: NodeCategory = NodeCategory.ORDER
-    description: str = "i18n:nodes.CancelOrderNode.description"
-
-    # === 상품 유형 선택 ===
-    product: Literal["overseas_stock", "overseas_futures"] = Field(
-        default="overseas_stock",
-        description="상품 유형",
-    )
-
-    # === 해외주식 전용 필드 ===
-    market_code: Optional[Literal["NYSE", "NASDAQ"]] = Field(
-        default=None,
-        description="[해외주식] 시장 코드",
-    )
-
-    # === 해외선물 전용 필드 ===
-    exchange_code: Optional[str] = Field(
-        default=None,
-        description="[해외선물] 거래소 코드 (예: CME, EUREX)",
-    )
-    expiry_month: Optional[str] = Field(
-        default=None,
-        description="[해외선물] 만기년월 (예: 202503)",
-    )
-
-    # === 바인딩 필드 ===
-    original_order_id: Any = Field(
-        default=None,
-        description="취소할 원주문번호",
-    )
-    symbol: Any = Field(
-        default=None,
-        description="종목 코드",
-    )
+    type: Literal["StockCancelOrderNode"] = "StockCancelOrderNode"
+    description: str = "i18n:nodes.StockCancelOrderNode.description"
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -641,11 +412,6 @@ class CancelOrderNode(BaseNode):
             name="original_order_id",
             type="string",
             description="i18n:ports.original_order_id",
-        ),
-        InputPort(
-            name="symbol",
-            type="string",
-            description="i18n:ports.symbol",
         ),
     ]
     _outputs: List[OutputPort] = [
@@ -663,108 +429,398 @@ class CancelOrderNode(BaseNode):
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        )
         return {
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 상품 유형 선택
-            # ═══════════════════════════════════════════════════════════════
-            "product": FieldSchema(
-                name="product",
-                type=FieldType.ENUM,
-                description="i18n:fields.CancelOrderNode.product",
-                default="overseas_stock",
-                enum_values=["overseas_stock", "overseas_futures"],
-                enum_labels={
-                    "overseas_stock": "해외주식 (미국 NYSE/NASDAQ)",
-                    "overseas_futures": "해외선물옵션",
-                },
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="i18n:fields.StockCancelOrderNode.connection",
                 required=True,
-                expression_mode=ExpressionMode.FIXED_ONLY,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
-                example="overseas_stock",
-                expected_type="str",
+                placeholder="{{ nodes.broker.connection }}",
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="dict",
             ),
-            "market_code": FieldSchema(
-                name="market_code",
-                type=FieldType.ENUM,
-                description="i18n:fields.CancelOrderNode.market_code",
-                enum_values=["NYSE", "NASDAQ"],
-                enum_labels={
-                    "NYSE": "뉴욕증권거래소 (NYSE)",
-                    "NASDAQ": "나스닥 (NASDAQ)",
-                },
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
-                visible_when={"product": "overseas_stock"},
-                example="NASDAQ",
-                expected_type="str",
-            ),
-
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 해외선물 전용 설정
-            # ═══════════════════════════════════════════════════════════════
-            "exchange_code": FieldSchema(
-                name="exchange_code",
-                type=FieldType.STRING,
-                description="i18n:fields.CancelOrderNode.exchange_code",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.TEXT_INPUT,
-                visible_when={"product": "overseas_futures"},
-                placeholder="CME",
-                example="CME",
-                expected_type="str",
-            ),
-            "expiry_month": FieldSchema(
-                name="expiry_month",
-                type=FieldType.STRING,
-                description="i18n:fields.CancelOrderNode.expiry_month",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.TEXT_INPUT,
-                visible_when={"product": "overseas_futures"},
-                placeholder="202503",
-                example="202503",
-                expected_type="str",
-            ),
-
-            # ═══════════════════════════════════════════════════════════════
-            # PARAMETERS: 취소 대상 정보 (바인딩)
-            # ═══════════════════════════════════════════════════════════════
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
-                description="i18n:fields.CancelOrderNode.original_order_id",
+                description="i18n:fields.StockCancelOrderNode.original_order_id",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 placeholder="{{ nodes.account.selected_order.order_id }}",
-                example="ORD20260113001",
+                example="ORD20260127001",
                 example_binding="{{ nodes.account.selected_order.order_id }}",
                 bindable_sources=[
                     "RealAccountNode.open_orders[].order_id",
-                    "NewOrderNode.order_ids",
+                    "StockNewOrderNode.order_result.order_id",
                 ],
                 expected_type="str",
             ),
             "symbol": FieldSchema(
                 name="symbol",
                 type=FieldType.STRING,
-                description="i18n:fields.CancelOrderNode.symbol",
+                description="i18n:fields.StockCancelOrderNode.symbol",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.account.selected_order.symbol }}",
+                placeholder="AAPL",
                 example="AAPL",
-                example_binding="{{ nodes.account.selected_order.symbol }}",
-                bindable_sources=[
-                    "RealAccountNode.open_orders[].symbol",
+                expected_type="str",
+            ),
+            "exchange": FieldSchema(
+                name="exchange",
+                type=FieldType.ENUM,
+                description="i18n:fields.StockCancelOrderNode.exchange",
+                enum_values=["NYSE", "NASDAQ", "AMEX"],
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.SELECT,
+                expected_type="str",
+            ),
+        }
+
+
+# =============================================================================
+# 해외선물 주문 노드
+# =============================================================================
+
+class FuturesNewOrderNode(BaseOrderNode):
+    """
+    해외선물 신규주문 노드
+
+    해외선물(CME, EUREX, SGX, HKEX 등) 신규주문을 실행합니다.
+    orders 필드에 주문할 종목 목록을 바인딩하세요.
+
+    API: CIDBT00100 (해외선물 신규주문)
+    """
+
+    type: Literal["FuturesNewOrderNode"] = "FuturesNewOrderNode"
+    description: str = "i18n:nodes.FuturesNewOrderNode.description"
+
+    # 해외선물 전용 필드
+    expiry_month: Optional[str] = Field(
+        default=None,
+        description="만기년월 (예: 202503)",
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        )
+        return {
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="i18n:fields.FuturesNewOrderNode.connection",
+                required=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ nodes.broker.connection }}",
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="dict",
+            ),
+            "side": FieldSchema(
+                name="side",
+                type=FieldType.ENUM,
+                description="i18n:fields.FuturesNewOrderNode.side",
+                default="buy",
+                enum_values=["buy", "sell"],
+                enum_labels={
+                    "buy": "매수 (Buy)",
+                    "sell": "매도 (Sell)",
+                },
+                required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.SELECT,
+                expected_type="str",
+            ),
+            "order_type": FieldSchema(
+                name="order_type",
+                type=FieldType.ENUM,
+                description="i18n:fields.FuturesNewOrderNode.order_type",
+                default="limit",
+                enum_values=["market", "limit"],
+                enum_labels={
+                    "market": "시장가 (Market)",
+                    "limit": "지정가 (Limit)",
+                },
+                required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.SELECT,
+                expected_type="str",
+            ),
+            "expiry_month": FieldSchema(
+                name="expiry_month",
+                type=FieldType.STRING,
+                description="i18n:fields.FuturesNewOrderNode.expiry_month",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="202503",
+                example="202503",
+                expected_type="str",
+            ),
+            "orders": FieldSchema(
+                name="orders",
+                type=FieldType.ARRAY,
+                array_item_type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.FuturesNewOrderNode.orders",
+                description="i18n:fields.FuturesNewOrderNode.orders",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.CUSTOM_ORDER_LIST_EDITOR,
+                example=[
+                    {"symbol": "NQH25", "exchange": "CME", "quantity": 1, "price": 21000.0}
                 ],
+                example_binding="{{ nodes.marketdata.values }}",
+                bindable_sources=[
+                    "MarketDataNode.values",
+                    "ConditionNode.passed_symbols",
+                ],
+                object_schema=[
+                    {"name": "symbol", "type": "STRING", "required": True,
+                     "label": "i18n:fields.orders.symbol"},
+                    {"name": "exchange", "type": "ENUM", "required": True,
+                     "enum_values": ["CME", "EUREX", "SGX", "HKEX"],
+                     "label": "i18n:fields.orders.exchange"},
+                    {"name": "quantity", "type": "INTEGER", "required": True,
+                     "label": "i18n:fields.orders.quantity"},
+                    {"name": "price", "type": "NUMBER", "required": False,
+                     "label": "i18n:fields.orders.price"},
+                ],
+                expected_type="list[dict]",
+            ),
+        }
+
+
+class FuturesModifyOrderNode(BaseModifyOrderNode):
+    """
+    해외선물 정정주문 노드
+
+    기존 미체결 주문의 가격이나 수량을 정정합니다.
+
+    API: CIDBT00200 (해외선물 정정주문)
+    """
+
+    type: Literal["FuturesModifyOrderNode"] = "FuturesModifyOrderNode"
+    description: str = "i18n:nodes.FuturesModifyOrderNode.description"
+
+    # 정정 대상
+    new_quantity: Optional[int] = Field(
+        default=None,
+        description="정정할 수량",
+    )
+    new_price: Optional[float] = Field(
+        default=None,
+        description="정정할 가격",
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.modify_trigger",
+        ),
+        InputPort(
+            name="original_order_id",
+            type="string",
+            description="i18n:ports.original_order_id",
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="modify_result",
+            type="order_result",
+            description="i18n:ports.modify_result",
+        ),
+        OutputPort(
+            name="modified_order_id",
+            type="string",
+            description="i18n:ports.modified_order_id",
+        ),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        )
+        return {
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="i18n:fields.FuturesModifyOrderNode.connection",
+                required=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ nodes.broker.connection }}",
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="dict",
+            ),
+            "original_order_id": FieldSchema(
+                name="original_order_id",
+                type=FieldType.STRING,
+                description="i18n:fields.FuturesModifyOrderNode.original_order_id",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ nodes.account.selected_order.order_id }}",
+                example="ORD20260127001",
+                example_binding="{{ nodes.account.selected_order.order_id }}",
+                bindable_sources=[
+                    "RealAccountNode.open_orders[].order_id",
+                    "FuturesNewOrderNode.order_result.order_id",
+                ],
+                expected_type="str",
+            ),
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.STRING,
+                description="i18n:fields.FuturesModifyOrderNode.symbol",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="NQH25",
+                example="NQH25",
+                expected_type="str",
+            ),
+            "exchange": FieldSchema(
+                name="exchange",
+                type=FieldType.ENUM,
+                description="i18n:fields.FuturesModifyOrderNode.exchange",
+                enum_values=["CME", "EUREX", "SGX", "HKEX"],
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.SELECT,
+                expected_type="str",
+            ),
+            "new_quantity": FieldSchema(
+                name="new_quantity",
+                type=FieldType.INTEGER,
+                description="i18n:fields.FuturesModifyOrderNode.new_quantity",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="1",
+                expected_type="int",
+            ),
+            "new_price": FieldSchema(
+                name="new_price",
+                type=FieldType.NUMBER,
+                description="i18n:fields.FuturesModifyOrderNode.new_price",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="21000.0",
+                expected_type="float",
+            ),
+        }
+
+
+class FuturesCancelOrderNode(BaseModifyOrderNode):
+    """
+    해외선물 취소주문 노드
+
+    기존 미체결 주문을 취소합니다.
+
+    API: CIDBT00300 (해외선물 취소주문)
+    """
+
+    type: Literal["FuturesCancelOrderNode"] = "FuturesCancelOrderNode"
+    description: str = "i18n:nodes.FuturesCancelOrderNode.description"
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.cancel_trigger",
+        ),
+        InputPort(
+            name="original_order_id",
+            type="string",
+            description="i18n:ports.original_order_id",
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="cancel_result",
+            type="order_result",
+            description="i18n:ports.cancel_result",
+        ),
+        OutputPort(
+            name="cancelled_order_id",
+            type="string",
+            description="i18n:ports.cancelled_order_id",
+        ),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        )
+        return {
+            "connection": FieldSchema(
+                name="connection",
+                type=FieldType.OBJECT,
+                description="i18n:fields.FuturesCancelOrderNode.connection",
+                required=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ nodes.broker.connection }}",
+                example_binding="{{ nodes.broker.connection }}",
+                bindable_sources=["BrokerNode.connection"],
+                expected_type="dict",
+            ),
+            "original_order_id": FieldSchema(
+                name="original_order_id",
+                type=FieldType.STRING,
+                description="i18n:fields.FuturesCancelOrderNode.original_order_id",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ nodes.account.selected_order.order_id }}",
+                example="ORD20260127001",
+                example_binding="{{ nodes.account.selected_order.order_id }}",
+                bindable_sources=[
+                    "RealAccountNode.open_orders[].order_id",
+                    "FuturesNewOrderNode.order_result.order_id",
+                ],
+                expected_type="str",
+            ),
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.STRING,
+                description="i18n:fields.FuturesCancelOrderNode.symbol",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="NQH25",
+                example="NQH25",
+                expected_type="str",
+            ),
+            "exchange": FieldSchema(
+                name="exchange",
+                type=FieldType.ENUM,
+                description="i18n:fields.FuturesCancelOrderNode.exchange",
+                enum_values=["CME", "EUREX", "SGX", "HKEX"],
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
         }

@@ -73,7 +73,8 @@ class NodeTypeRegistry:
             ScheduleNode, TradingHoursFilterNode,
             ConditionNode, LogicNode,
             PositionSizingNode, PortfolioNode,
-            NewOrderNode, ModifyOrderNode, CancelOrderNode,
+            StockNewOrderNode, StockModifyOrderNode, StockCancelOrderNode,
+            FuturesNewOrderNode, FuturesModifyOrderNode, FuturesCancelOrderNode,
             DisplayNode,
             BacktestEngineNode, BenchmarkCompareNode,
         )
@@ -93,8 +94,10 @@ class NodeTypeRegistry:
             ConditionNode, LogicNode,
             # Risk
             PositionSizingNode, PortfolioNode,
-            # Order
-            NewOrderNode, ModifyOrderNode, CancelOrderNode,
+            # Order (해외주식)
+            StockNewOrderNode, StockModifyOrderNode, StockCancelOrderNode,
+            # Order (해외선물)
+            FuturesNewOrderNode, FuturesModifyOrderNode, FuturesCancelOrderNode,
             # messaging - 커뮤니티 노드(TelegramNode 등)에서 등록
             # Display
             DisplayNode,

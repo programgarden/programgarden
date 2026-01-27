@@ -343,31 +343,31 @@ class TestNodeTypeRegistryWidgetSchema:
         assert interval_widget["args"]["lockedMode"] == "fixed"
         assert interval_widget["args"]["fixedWidget"]["type"] == "dropdown_button_form_field"
 
-    def test_new_order_node_widget_schema_with_visible_when(self):
-        """NewOrderNode의 visible_when 조건부 필드 확인 (json_dynamic_widget conditional 형식)"""
+    def test_stock_modify_order_node_widget_schema_with_visible_when(self):
+        """StockModifyOrderNode의 visible_when 조건부 필드 확인 (json_dynamic_widget conditional 형식)"""
         registry = NodeTypeRegistry()
-        schema = registry.get_schema("NewOrderNode")
-        
+        schema = registry.get_schema("StockModifyOrderNode")
+
         assert schema is not None
         assert schema.widget_schema is not None
-        
+
         children = schema.widget_schema["args"]["children"]
-        
-        # market_code는 visible_when: {"product": "overseas_stock"}
-        market_code_widget = next(
-            (w for w in children if w.get("args", {}).get("onTrue", {}).get("field_key_of_pydantic") == "market_code"
-             or w.get("field_key_of_pydantic") == "market_code"),
+
+        # new_price는 visible_when: {"price_type": "limit"}
+        new_price_widget = next(
+            (w for w in children if w.get("args", {}).get("onTrue", {}).get("field_key_of_pydantic") == "new_price"
+             or w.get("field_key_of_pydantic") == "new_price"),
             None
         )
         # conditional로 감싸져 있어야 함
-        assert market_code_widget is not None
-        if market_code_widget["type"] == "conditional":
+        assert new_price_widget is not None
+        if new_price_widget["type"] == "conditional":
             # json_dynamic_widget 표준 형식: listen + conditional.values
-            assert "listen" in market_code_widget
-            assert "product" in market_code_widget["listen"]
-            assert "conditional" in market_code_widget["args"]
-            assert market_code_widget["args"]["conditional"]["values"]["product"] == "overseas_stock"
-            assert "onTrue" in market_code_widget["args"]
+            assert "listen" in new_price_widget
+            assert "price_type" in new_price_widget["listen"]
+            assert "conditional" in new_price_widget["args"]
+            assert new_price_widget["args"]["conditional"]["values"]["price_type"] == "limit"
+            assert "onTrue" in new_price_widget["args"]
 
     def test_start_node_empty_widget_schema(self):
         """StartNode는 설정 필드가 없어 widget_schema가 비어있음"""

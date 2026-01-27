@@ -8679,12 +8679,12 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if qty <= 0:
                 context.log("debug", f"Skip {symbol}: quantity={qty}", node_id)
                 continue
-            
+
             price = prices.get(symbol, 0.0)
             # 시장가 주문도 가격 0으로 전송
             if abrd_futs_ord_ptn_code == "1":  # 시장가
                 price = 0.0
-            
+
             try:
                 order_api = ls.overseas_futureoption().order().CIDBT00100(
                     CIDBT00100InBlock1(

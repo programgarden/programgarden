@@ -134,12 +134,30 @@
   
   "nodes.NewOrderNode.name": "신규 주문",
   "nodes.NewOrderNode.description": "증권사 API로 신규 주문을 실행합니다. 상품 유형과 매매 구분을 선택하고, ConditionNode와 PositionSizingNode에서 계산된 종목/수량을 바인딩합니다.",
-  
+
   "nodes.ModifyOrderNode.name": "주문 정정",
   "nodes.ModifyOrderNode.description": "기존 미체결 주문의 가격이나 수량을 정정합니다.",
-  
+
   "nodes.CancelOrderNode.name": "주문 취소",
   "nodes.CancelOrderNode.description": "기존 미체결 주문을 취소합니다.",
+
+  "nodes.StockNewOrderNode.name": "해외주식 신규주문",
+  "nodes.StockNewOrderNode.description": "미국 주식(NYSE, NASDAQ, AMEX) 신규주문을 실행합니다. orders 필드에 MarketDataNode 출력을 바인딩하면 종목별 시세를 자동으로 사용합니다.",
+
+  "nodes.StockModifyOrderNode.name": "해외주식 정정주문",
+  "nodes.StockModifyOrderNode.description": "미국 주식 미체결 주문의 가격이나 수량을 정정합니다.",
+
+  "nodes.StockCancelOrderNode.name": "해외주식 취소주문",
+  "nodes.StockCancelOrderNode.description": "미국 주식 미체결 주문을 취소합니다.",
+
+  "nodes.FuturesNewOrderNode.name": "해외선물 신규주문",
+  "nodes.FuturesNewOrderNode.description": "해외선물(CME, EUREX, SGX, HKEX 등) 신규주문을 실행합니다. orders 필드에 MarketDataNode 출력을 바인딩하면 종목별 시세를 자동으로 사용합니다.",
+
+  "nodes.FuturesModifyOrderNode.name": "해외선물 정정주문",
+  "nodes.FuturesModifyOrderNode.description": "해외선물 미체결 주문의 가격이나 수량을 정정합니다.",
+
+  "nodes.FuturesCancelOrderNode.name": "해외선물 취소주문",
+  "nodes.FuturesCancelOrderNode.description": "해외선물 미체결 주문을 취소합니다.",
   
   "nodes.HistoricalDataNode.name": "과거차트조회",
   "nodes.HistoricalDataNode.description": "과거 차트 데이터를 가져옵니다. 기간과 봉 종류(일봉/주봉/월봉)를 선택하면 시가, 고가, 저가, 종가, 거래량 데이터를 받을 수 있습니다.",
@@ -383,6 +401,51 @@
   "fields.CancelOrderNode.market_code": "[해외주식] 시장 코드를 선택합니다.",
   "fields.CancelOrderNode.original_order_id": "취소할 원주문번호입니다. 미체결 주문 목록에서 선택합니다.",
   "fields.CancelOrderNode.symbol": "종목 코드입니다.",
+
+  "fields.StockNewOrderNode.connection": "증권사 연결 정보입니다. BrokerNode의 connection 출력을 바인딩하세요.",
+  "fields.StockNewOrderNode.side": "매수(buy) 또는 매도(sell)를 선택합니다.",
+  "fields.StockNewOrderNode.order_type": "주문 유형입니다. 시장가는 즉시 체결, 지정가는 원하는 가격에 주문합니다.",
+  "fields.StockNewOrderNode.price_type": "호가 유형입니다. LOO/LOC/MOO/MOC는 미국 시장 특수 주문입니다.",
+  "fields.StockNewOrderNode.orders": "주문할 종목 목록입니다. MarketDataNode.values를 바인딩하면 종목별 시세를 자동으로 사용합니다.",
+  "fieldNames.StockNewOrderNode.orders": "주문목록",
+
+  "fields.StockModifyOrderNode.connection": "증권사 연결 정보입니다.",
+  "fields.StockModifyOrderNode.price_type": "호가 유형을 선택합니다.",
+  "fields.StockModifyOrderNode.original_order_id": "정정할 원주문번호입니다.",
+  "fields.StockModifyOrderNode.symbol": "종목 코드입니다.",
+  "fields.StockModifyOrderNode.exchange": "거래소를 선택합니다.",
+  "fields.StockModifyOrderNode.new_quantity": "정정할 수량입니다. 입력하지 않으면 기존 수량이 유지됩니다.",
+  "fields.StockModifyOrderNode.new_price": "정정할 가격입니다. 입력하지 않으면 기존 가격이 유지됩니다.",
+
+  "fields.StockCancelOrderNode.connection": "증권사 연결 정보입니다.",
+  "fields.StockCancelOrderNode.original_order_id": "취소할 원주문번호입니다.",
+  "fields.StockCancelOrderNode.symbol": "종목 코드입니다.",
+  "fields.StockCancelOrderNode.exchange": "거래소를 선택합니다.",
+
+  "fields.FuturesNewOrderNode.connection": "증권사 연결 정보입니다. BrokerNode의 connection 출력을 바인딩하세요.",
+  "fields.FuturesNewOrderNode.side": "매수(buy) 또는 매도(sell)를 선택합니다.",
+  "fields.FuturesNewOrderNode.order_type": "주문 유형입니다. 시장가는 즉시 체결, 지정가는 원하는 가격에 주문합니다.",
+  "fields.FuturesNewOrderNode.expiry_month": "만기년월입니다. YYYYMM 형식으로 입력합니다.",
+  "fields.FuturesNewOrderNode.orders": "주문할 종목 목록입니다. MarketDataNode.values를 바인딩하면 종목별 시세를 자동으로 사용합니다.",
+  "fieldNames.FuturesNewOrderNode.orders": "주문목록",
+
+  "fields.FuturesModifyOrderNode.connection": "증권사 연결 정보입니다.",
+  "fields.FuturesModifyOrderNode.original_order_id": "정정할 원주문번호입니다.",
+  "fields.FuturesModifyOrderNode.symbol": "종목 코드입니다.",
+  "fields.FuturesModifyOrderNode.exchange": "거래소를 선택합니다.",
+  "fields.FuturesModifyOrderNode.new_quantity": "정정할 수량입니다.",
+  "fields.FuturesModifyOrderNode.new_price": "정정할 가격입니다.",
+
+  "fields.FuturesCancelOrderNode.connection": "증권사 연결 정보입니다.",
+  "fields.FuturesCancelOrderNode.original_order_id": "취소할 원주문번호입니다.",
+  "fields.FuturesCancelOrderNode.symbol": "종목 코드입니다.",
+  "fields.FuturesCancelOrderNode.exchange": "거래소를 선택합니다.",
+
+  "fields.orders.symbol": "종목코드",
+  "fields.orders.exchange": "거래소",
+  "fields.orders.quantity": "수량",
+  "fields.orders.price": "가격",
+  "ports.orders_input": "주문 목록 입력",
 
   "fields.HistoricalDataNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.HistoricalDataNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",

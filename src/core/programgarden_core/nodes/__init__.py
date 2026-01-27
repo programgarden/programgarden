@@ -1,7 +1,7 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-31개 노드 타입을 10개 카테고리로 분류:
+34개 노드 타입을 10개 카테고리로 분류:
 - infra (3): StartNode, BrokerNode, ThrottleNode
 - realtime (3): RealMarketDataNode, RealAccountNode, RealOrderEventNode
 - data (6): MarketDataNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode
@@ -10,7 +10,8 @@ ProgramGarden Core - 노드 타입 정의
 - trigger (2): ScheduleNode, TradingHoursFilterNode
 - condition (2): ConditionNode, LogicNode
 - risk (2): PositionSizingNode, PortfolioNode
-- order (3): NewOrderNode, ModifyOrderNode, CancelOrderNode
+- order (6): StockNewOrderNode, StockModifyOrderNode, StockCancelOrderNode,
+             FuturesNewOrderNode, FuturesModifyOrderNode, FuturesCancelOrderNode
 - display (1): DisplayNode
 - backtest (2): BacktestEngineNode, BenchmarkCompareNode
 - messaging: 커뮤니티 노드 (TelegramNode 등)
@@ -38,7 +39,14 @@ from programgarden_core.nodes.trigger import (
 )
 from programgarden_core.nodes.condition import ConditionNode, LogicNode
 from programgarden_core.nodes.risk import PositionSizingNode
-from programgarden_core.nodes.order import NewOrderNode, ModifyOrderNode, CancelOrderNode
+from programgarden_core.nodes.order import (
+    StockNewOrderNode,
+    StockModifyOrderNode,
+    StockCancelOrderNode,
+    FuturesNewOrderNode,
+    FuturesModifyOrderNode,
+    FuturesCancelOrderNode,
+)
 # messaging 노드는 커뮤니티 패키지(TelegramNode 등)에서 제공
 from programgarden_core.nodes.display import DisplayNode
 from programgarden_core.nodes.backtest import (
@@ -84,10 +92,14 @@ __all__ = [
     # Risk
     "PositionSizingNode",
     "PortfolioNode",
-    # Order
-    "NewOrderNode",
-    "ModifyOrderNode",
-    "CancelOrderNode",
+    # Order (해외주식)
+    "StockNewOrderNode",
+    "StockModifyOrderNode",
+    "StockCancelOrderNode",
+    # Order (해외선물)
+    "FuturesNewOrderNode",
+    "FuturesModifyOrderNode",
+    "FuturesCancelOrderNode",
     # messaging - 커뮤니티 노드(TelegramNode 등)에서 제공
     # Display
     "DisplayNode",

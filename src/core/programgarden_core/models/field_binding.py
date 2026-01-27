@@ -85,7 +85,8 @@ class UIComponent(str, Enum):
     CUSTOM_DATETIME_PICKER = "custom_datetime_picker"
     CUSTOM_PLUGIN_SELECT = "custom_plugin_select"
     CUSTOM_FIELD_MAPPING_EDITOR = "custom_field_mapping_editor"
-    
+    CUSTOM_ORDER_LIST_EDITOR = "custom_order_list_editor"  # 주문 목록 에디터 (symbol, exchange, quantity, price 행 단위 입력)
+
     # === 레거시 호환 (deprecated, 추후 제거 예정) ===
     # 아래 타입들은 FieldType 자동 매핑 또는 ui_options로 대체됩니다
     TEXT_INPUT = "text_input"              # → 생략 (STRING 타입 기본값)
