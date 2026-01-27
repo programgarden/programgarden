@@ -11,10 +11,23 @@ from pydantic import BaseModel, ConfigDict, Field
 from programgarden_core.models.field_binding import FieldSchema, FieldType
 
 
+class ProductScope(str, Enum):
+    """노드가 지원하는 상품 범위"""
+    STOCK = "overseas_stock"        # 해외주식 전용
+    FUTURES = "overseas_futures"    # 해외선물 전용
+    ALL = "all"                     # 상품 무관 (범용)
+
+
+class BrokerProvider(str, Enum):
+    """지원 증권사"""
+    LS = "ls-sec.co.kr"             # LS증권
+    ALL = "all"                     # 증권사 무관 (범용)
+
+
 class NodeCategory(str, Enum):
     """
     노드 카테고리 (10개 - 금융 도메인 기준)
-    
+
     투자자가 직관적으로 이해할 수 있는 금융 용어 기반 분류
     """
 
@@ -105,6 +118,8 @@ class BaseNode(BaseModel):
     _outputs: List[OutputPort] = []
     _field_schema: ClassVar[Dict[str, FieldSchema]] = {}
     _img_url: ClassVar[Optional[str]] = None  # 노드 아이콘 이미지 URL
+    _product_scope: ClassVar[ProductScope] = ProductScope.ALL
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.ALL
 
     model_config = ConfigDict(use_enum_values=True, extra="allow")
 

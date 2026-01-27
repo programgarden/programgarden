@@ -8,7 +8,7 @@ AI can query "what node types are available?"
 from typing import Optional, List, Dict, Any, Type
 from pydantic import BaseModel, Field
 
-from programgarden_core.nodes.base import BaseNode, NodeCategory, InputPort, OutputPort
+from programgarden_core.nodes.base import BaseNode, NodeCategory, InputPort, OutputPort, ProductScope, BrokerProvider
 from programgarden_core.i18n import translate_schema, translate_category
 
 
@@ -19,6 +19,8 @@ class NodeTypeSchema(BaseModel):
     category: str = Field(..., description="Node category")
     description: Optional[str] = Field(default=None, description="Node description")
     img_url: Optional[str] = Field(default=None, description="Node icon image URL")
+    product_scope: str = Field(default="all", description="Product scope: overseas_stock | overseas_futures | all")
+    broker_provider: str = Field(default="all", description="Broker provider: ls-sec.co.kr | all")
     inputs: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="Input port definitions",
@@ -66,10 +68,24 @@ class NodeTypeRegistry:
         """Register built-in node types"""
         # 지연 임포트로 순환 참조 방지
         from programgarden_core.nodes import (
-            StartNode, BrokerNode, ThrottleNode,
-            RealMarketDataNode, RealAccountNode, RealOrderEventNode,
-            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
-            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
+            StartNode, ThrottleNode,
+            StockBrokerNode, FuturesBrokerNode,
+            # Market - Stock (해외주식)
+            StockMarketDataNode, StockHistoricalDataNode,
+            StockRealMarketDataNode,
+            StockSymbolQueryNode,
+            # Market - Futures (해외선물)
+            FuturesMarketDataNode, FuturesHistoricalDataNode,
+            FuturesRealMarketDataNode,
+            FuturesSymbolQueryNode,
+            # Account - Stock (해외주식)
+            StockAccountNode, StockRealAccountNode, StockRealOrderEventNode,
+            # Account - Futures (해외선물)
+            FuturesAccountNode, FuturesRealAccountNode, FuturesRealOrderEventNode,
+            # Data (상품 무관)
+            SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
+            # Symbol (상품 무관)
+            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             ScheduleNode, TradingHoursFilterNode,
             ConditionNode, LogicNode,
             PositionSizingNode, PortfolioNode,
@@ -81,13 +97,25 @@ class NodeTypeRegistry:
 
         node_classes = [
             # Infra
-            StartNode, BrokerNode, ThrottleNode,
-            # Realtime
-            RealMarketDataNode, RealAccountNode, RealOrderEventNode,
-            # Data
-            MarketDataNode, AccountNode, HistoricalDataNode, SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
-            # Symbol
-            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode,
+            StartNode, ThrottleNode,
+            # Broker (상품별 분리)
+            StockBrokerNode, FuturesBrokerNode,
+            # Market - Stock (해외주식)
+            StockMarketDataNode, StockHistoricalDataNode,
+            StockRealMarketDataNode,
+            StockSymbolQueryNode,
+            # Market - Futures (해외선물)
+            FuturesMarketDataNode, FuturesHistoricalDataNode,
+            FuturesRealMarketDataNode,
+            FuturesSymbolQueryNode,
+            # Account - Stock (해외주식)
+            StockAccountNode, StockRealAccountNode, StockRealOrderEventNode,
+            # Account - Futures (해외선물)
+            FuturesAccountNode, FuturesRealAccountNode, FuturesRealOrderEventNode,
+            # Data (상품 무관)
+            SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
+            # Symbol (상품 무관)
+            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             # Trigger
             ScheduleNode, TradingHoursFilterNode,
             # Condition
@@ -226,12 +254,20 @@ class NodeTypeRegistry:
             cat_value = instance.category.value if hasattr(instance.category, 'value') else instance.category
             img_url = category_icons.get(cat_value, "https://cdn-icons-png.flaticon.com/512/2099/2099058.png")
         
+        # product_scope, broker_provider 추출
+        product_scope = getattr(node_class, '_product_scope', ProductScope.ALL)
+        broker_provider = getattr(node_class, '_broker_provider', BrokerProvider.ALL)
+        product_scope_value = product_scope.value if hasattr(product_scope, 'value') else str(product_scope)
+        broker_provider_value = broker_provider.value if hasattr(broker_provider, 'value') else str(broker_provider)
+
         widget_schema, settings_widget_schema = self._build_widget_schemas(node_class)
         schema = NodeTypeSchema(
             node_type=type_name,
             category=instance.category.value if hasattr(instance.category, 'value') else instance.category,
             description=description,
             img_url=img_url,
+            product_scope=product_scope_value,
+            broker_provider=broker_provider_value,
             inputs=[inp.model_dump() for inp in instance.get_inputs()],
             outputs=[out.model_dump() for out in instance.get_outputs()],
             config_schema=self._extract_config_schema(node_class),
@@ -534,11 +570,12 @@ class NodeTypeRegistry:
             ]
         return list(self._registry.keys())
 
-    def list_schemas(self, category: Optional[str] = None, locale: Optional[str] = None) -> List[NodeTypeSchema]:
-        """List registered node schemas (for AI agents) with optional locale translation"""
+    def list_schemas(self, category: Optional[str] = None, locale: Optional[str] = None, product_scope: Optional[str] = None) -> List[NodeTypeSchema]:
+        """List registered node schemas (for AI agents) with optional locale translation and product_scope filter"""
         schemas = [
             schema for schema in self._schemas.values()
-            if not category or schema.category == category
+            if (not category or schema.category == category)
+            and (not product_scope or schema.product_scope == product_scope or schema.product_scope == "all")
         ]
         
         if locale:

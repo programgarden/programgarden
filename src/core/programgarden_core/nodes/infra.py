@@ -1,9 +1,9 @@
 """
 ProgramGarden Core - Infra Nodes
 
-Infrastructure/connection nodes:
+Infrastructure nodes:
 - StartNode: Workflow entry point
-- BrokerNode: Broker connection
+- ThrottleNode: Data flow control
 """
 
 from typing import Optional, List, Literal, Dict, TYPE_CHECKING, ClassVar
@@ -43,96 +43,6 @@ class StartNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """StartNode has no configurable fields."""
         return {}
-
-
-class BrokerNode(BaseNode):
-    """
-    Broker connection node
-
-    Broker configuration for OpenAPI connection.
-    Credentials are provided via credential_id which references stored credentials.
-    
-    Note:
-    - overseas_stock: 모의투자 미지원 (LS증권 제한)
-    - overseas_futures: 모의투자 지원
-    """
-
-    type: Literal["BrokerNode"] = "BrokerNode"
-    category: NodeCategory = NodeCategory.INFRA
-    description: str = "i18n:nodes.BrokerNode.description"
-    
-    # CDN 기반 노드 아이콘 URL (TODO: 실제 CDN URL로 교체)
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker.svg"
-
-    # BrokerNode specific config
-    provider: str = Field(
-        default="ls-sec.co.kr", description="Broker provider (currently only LS Securities supported)"
-    )
-    product: Literal["overseas_stock", "overseas_futures"] = Field(
-        default="overseas_stock", description="Product type"
-    )
-    credential_id: Optional[str] = Field(
-        default=None, description="Reference to stored credentials"
-    )
-    # paper_trading은 credential에서 관리 (broker_ls.paper_trading)
-
-    _inputs: List[InputPort] = []
-    _outputs: List[OutputPort] = [
-        OutputPort(
-            name="connection",
-            type="broker_connection",
-            description="i18n:ports.connection",
-        )
-    ]
-
-    @classmethod
-    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
-        return {
-            # === PARAMETERS: 핵심 연결 설정 ===
-            "provider": FieldSchema(
-                name="provider",
-                type=FieldType.ENUM,
-                description="i18n:fields.BrokerNode.provider",
-                default="ls-sec.co.kr",
-                enum_values=["ls-sec.co.kr"],
-                enum_labels={"ls-sec.co.kr": "LS증권"},
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
-                example="ls-sec.co.kr",
-                expected_type="str",
-            ),
-            "product": FieldSchema(
-                name="product",
-                type=FieldType.ENUM,
-                description="i18n:fields.BrokerNode.product",
-                default="overseas_stock",
-                enum_values=["overseas_stock", "overseas_futures"],
-                enum_labels={
-                    "overseas_stock": "i18n:enums.product.overseas_stock",
-                    "overseas_futures": "i18n:enums.product.overseas_futures"
-                },
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
-                example="overseas_stock",
-                expected_type="str",
-            ),
-            "credential_id": FieldSchema(
-                name="credential_id",
-                type=FieldType.CREDENTIAL,
-                description="i18n:fields.BrokerNode.credential_id",
-                default=None,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.CREDENTIAL_SELECT,
-                credential_types=["broker_ls_stock", "broker_ls_futures"],
-                example="my-broker-cred",
-                expected_type="str",
-            ),
-            # paper_trading은 credential에서 관리됨 (broker_ls.paper_trading)
-        }
 
 
 class ThrottleNode(BaseNode):

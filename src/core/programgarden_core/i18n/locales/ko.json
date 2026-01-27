@@ -33,6 +33,20 @@
   
   "nodes.BrokerNode.name": "브로커",
   "nodes.BrokerNode.description": "OpenAPI 연결을 위한 증권사 설정. credential_id로 인증 정보 참조.",
+
+  "nodes.StockBrokerNode.name": "해외주식 브로커",
+  "nodes.StockBrokerNode.description": "해외주식 거래를 위한 LS증권 OpenAPI 연결. 모의투자 미지원.",
+  "fields.StockBrokerNode.provider": "증권사 제공자",
+  "fields.StockBrokerNode.credential_id": "해외주식 인증정보를 선택하세요",
+  "fieldNames.StockBrokerNode.provider": "증권사",
+  "fieldNames.StockBrokerNode.credential_id": "인증정보",
+
+  "nodes.FuturesBrokerNode.name": "해외선물 브로커",
+  "nodes.FuturesBrokerNode.description": "해외선물 거래를 위한 LS증권 OpenAPI 연결. 모의투자 지원.",
+  "fields.FuturesBrokerNode.provider": "증권사 제공자",
+  "fields.FuturesBrokerNode.credential_id": "해외선물 인증정보를 선택하세요",
+  "fieldNames.FuturesBrokerNode.provider": "증권사",
+  "fieldNames.FuturesBrokerNode.credential_id": "인증정보",
   
   "nodes.ThrottleNode.name": "속도 제어",
   "nodes.ThrottleNode.description": "데이터 흐름을 제어하여 하위 노드의 과도한 실행을 방지합니다. 실시간 노드 뒤에 배치하여 API 호출 빈도를 조절하세요.",
@@ -67,6 +81,12 @@
   
   "nodes.MarketDataNode.name": "현재가조회",
   "nodes.MarketDataNode.description": "종목의 현재가와 거래량을 한 번 조회합니다. 실시간이 필요 없고 조회 시점의 데이터만 필요할 때 사용하세요.",
+
+  "nodes.StockMarketDataNode.name": "해외주식 현재가",
+  "nodes.StockMarketDataNode.description": "해외주식 종목의 현재가와 거래량을 조회합니다. (NYSE, NASDAQ, AMEX)",
+
+  "nodes.FuturesMarketDataNode.name": "해외선물 현재가",
+  "nodes.FuturesMarketDataNode.description": "해외선물 종목의 현재가와 거래량을 조회합니다. (CME, EUREX, SGX, HKEX 등)",
 
   "fieldNames.MarketDataNode.connection": "브로커연결",
   "fieldNames.MarketDataNode.symbols": "종목",
@@ -161,7 +181,13 @@
   
   "nodes.HistoricalDataNode.name": "과거차트조회",
   "nodes.HistoricalDataNode.description": "과거 차트 데이터를 가져옵니다. 기간과 봉 종류(일봉/주봉/월봉)를 선택하면 시가, 고가, 저가, 종가, 거래량 데이터를 받을 수 있습니다.",
-  
+
+  "nodes.StockHistoricalDataNode.name": "해외주식 과거데이터",
+  "nodes.StockHistoricalDataNode.description": "해외주식 종목의 과거 OHLCV 데이터를 조회합니다. (NYSE, NASDAQ, AMEX)",
+
+  "nodes.FuturesHistoricalDataNode.name": "해외선물 과거데이터",
+  "nodes.FuturesHistoricalDataNode.description": "해외선물 종목의 과거 OHLCV 데이터를 조회합니다. (CME, EUREX, SGX, HKEX 등)",
+
 "nodes.BacktestEngineNode.name": "백테스트 엔진",
   "nodes.BacktestEngineNode.description": "시그널과 과거 데이터로 백테스트 실행 및 성과 지표 계산.",
   

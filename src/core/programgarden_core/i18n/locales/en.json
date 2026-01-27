@@ -33,6 +33,20 @@
   
   "nodes.BrokerNode.name": "Broker",
   "nodes.BrokerNode.description": "Broker connection for OpenAPI. References credentials via credential_id.",
+
+  "nodes.StockBrokerNode.name": "Stock Broker",
+  "nodes.StockBrokerNode.description": "LS Securities OpenAPI connection for overseas stock trading. Paper trading not supported.",
+  "fields.StockBrokerNode.provider": "Broker provider",
+  "fields.StockBrokerNode.credential_id": "Select overseas stock credentials",
+  "fieldNames.StockBrokerNode.provider": "Broker",
+  "fieldNames.StockBrokerNode.credential_id": "Credential",
+
+  "nodes.FuturesBrokerNode.name": "Futures Broker",
+  "nodes.FuturesBrokerNode.description": "LS Securities OpenAPI connection for overseas futures trading. Paper trading supported.",
+  "fields.FuturesBrokerNode.provider": "Broker provider",
+  "fields.FuturesBrokerNode.credential_id": "Select overseas futures credentials",
+  "fieldNames.FuturesBrokerNode.provider": "Broker",
+  "fieldNames.FuturesBrokerNode.credential_id": "Credential",
   
   "nodes.ThrottleNode.name": "Throttle",
   "nodes.ThrottleNode.description": "Controls data flow to prevent excessive execution of downstream nodes. Place after realtime nodes to control API call frequency.",

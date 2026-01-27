@@ -1,13 +1,17 @@
 """
 ProgramGarden Core - Data Nodes
 
-Data query nodes:
-- MarketDataNode: REST API market data query
+Data query/storage nodes:
 - SQLiteNode: Local SQLite database
 - PostgresNode: External PostgreSQL database
 - HTTPRequestNode: External REST API request
+- FieldMappingNode: Field name mapping
 
-계좌 조회는 account/AccountNode 참조
+MarketDataNode는 상품별 분리됨:
+- data_stock.py → StockMarketDataNode
+- data_futures.py → FuturesMarketDataNode
+
+계좌 조회는 account_stock/account_futures 참조
 """
 
 from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
@@ -22,149 +26,6 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
 )
-
-
-class MarketDataNode(BaseNode):
-    """
-    REST API one-time market data query node
-
-    Fetches market data at a specific point in time via REST API
-    """
-
-    type: Literal["MarketDataNode"] = "MarketDataNode"
-    category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.MarketDataNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/marketdata.svg"
-
-    # 브로커 연결 필드 (명시적 바인딩 필수)
-    connection: Optional[Dict] = None  # BrokerNode의 connection 출력
-
-    # 상품 유형 선택 (해외주식/해외선물)
-    product_type: str = Field(
-        default="overseas_stock",
-        description="상품 유형 선택 (해외주식/해외선물)"
-    )
-
-    # 종목 리스트 (직접 입력 또는 포트로 받기)
-    # 거래소 정보 포함: [{"exchange": "NASDAQ", "symbol": "AAPL"}, ...]
-    symbols: List[Dict[str, str]] = Field(
-        default_factory=list,
-        description="List of symbol entries with exchange and symbol code",
-    )
-
-    _inputs: List[InputPort] = [
-        InputPort(
-            name="connection",
-            type="broker_connection",
-            description="i18n:ports.connection",
-        ),
-        InputPort(
-            name="symbols", type="symbol_list", description="i18n:ports.symbols"
-        ),
-        InputPort(
-            name="trigger",
-            type="signal",
-            description="i18n:ports.trigger",
-            required=False,
-        ),
-    ]
-    _outputs: List[OutputPort] = [
-        OutputPort(name="values", type="market_data_list", description="i18n:ports.market_data_values"),
-    ]
-
-    @classmethod
-    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
-        return {
-            # === PARAMETERS: 브로커 연결 (필수) ===
-            "connection": FieldSchema(
-                name="connection",
-                type=FieldType.OBJECT,
-                display_name="i18n:fieldNames.MarketDataNode.connection",
-                description="i18n:fields.MarketDataNode.connection",
-                required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                category=FieldCategory.PARAMETERS,
-                example={"provider": "ls-sec.co.kr", "product": "overseas_stock", "paper_trading": False},
-                example_binding="{{ nodes.broker.connection }}",
-                bindable_sources=["BrokerNode.connection"],
-                expected_type="broker_connection",
-                # ui_component 생략 → EXPRESSION_ONLY + OBJECT 타입에서 바인딩 입력 자동
-            ),
-            # === PARAMETERS: 상품 유형 선택 ===
-            "product_type": FieldSchema(
-                name="product_type",
-                type=FieldType.ENUM,
-                display_name="i18n:fieldNames.MarketDataNode.product_type",
-                description="i18n:fields.MarketDataNode.product_type",
-                default="overseas_stock",
-                enum_values=["overseas_stock", "overseas_futures"],
-                enum_labels={
-                    "overseas_stock": "i18n:enums.product_type.overseas_stock",
-                    "overseas_futures": "i18n:enums.product_type.overseas_futures"
-                },
-                category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.SELECT,
-            ),
-            # === PARAMETERS: 종목 리스트 ===
-            "symbols": FieldSchema(
-                name="symbols",
-                type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.MarketDataNode.symbols",
-                description="i18n:fields.MarketDataNode.symbols",
-                default=[],
-                array_item_type=FieldType.OBJECT,
-                category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.BOTH,
-                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
-                example_binding="{{ nodes.watchlist.symbols }}",
-                bindable_sources=[
-                    "WatchlistNode.symbols",
-                    "ScreenerNode.symbols",
-                    "MarketUniverseNode.symbols",
-                ],
-                expected_type="list[{exchange: str, symbol: str}]",
-                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.MarketDataNode.symbols.help_text",
-                # 테이블 컬럼 정의
-                object_schema=[
-                    {
-                        "name": "exchange",
-                        "type": "ENUM",
-                        "label": "i18n:fields.MarketDataNode.symbols.exchange",
-                        "required": True,
-                        "expression_mode": "fixed_only",
-                    },
-                    {
-                        "name": "symbol",
-                        "type": "STRING",
-                        "label": "i18n:fields.MarketDataNode.symbols.symbol",
-                        "required": True,
-                        "expression_mode": "fixed_only",
-                        "placeholder": "AAPL",
-                    },
-                ],
-                # 상품유형별 거래소 목록
-                ui_options={
-                    "product_type_field": "product_type",  # 참조할 상품유형 필드
-                    "exchanges_by_product": {
-                        "overseas_stock": [
-                            {"value": "NASDAQ", "label": "NASDAQ"},
-                            {"value": "NYSE", "label": "NYSE"},
-                            {"value": "AMEX", "label": "AMEX"},
-                        ],
-                        "overseas_futures": [
-                            {"value": "CME", "label": "CME (시카고상업거래소)"},
-                            {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
-                            {"value": "SGX", "label": "SGX (싱가포르거래소)"},
-                            {"value": "HKEX", "label": "HKEX (홍콩선물거래소)"},
-                        ],
-                    },
-                    "default_product_type": "overseas_stock",
-                },
-            ),
-        }
 
 
 class SQLiteNode(BaseNode):
