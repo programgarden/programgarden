@@ -8725,7 +8725,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 else:
                     order_no = ""
                     if response.block2:
-                        order_no = str(response.block2.OrdNo) if hasattr(response.block2, "OrdNo") and response.block2.OrdNo else ""
+                        # 해외선물 주문번호 필드: OvrsFutsOrdNo
+                        order_no = str(response.block2.OvrsFutsOrdNo) if hasattr(response.block2, "OvrsFutsOrdNo") and response.block2.OvrsFutsOrdNo else ""
 
                     order_ids[symbol] = order_no
                     success_count += 1
@@ -9080,8 +9081,9 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             
             new_order_no = ""
             if response.block2:
-                new_order_no = str(response.block2.OrdNo) if hasattr(response.block2, "OrdNo") and response.block2.OrdNo else ""
-            
+                # 해외선물 정정 주문번호 필드: OvrsFutsOrdNo
+                new_order_no = str(response.block2.OvrsFutsOrdNo) if hasattr(response.block2, "OvrsFutsOrdNo") and response.block2.OvrsFutsOrdNo else ""
+
             context.log(
                 "info",
                 f"Futures order modified: {symbol} original={original_order_id} → new={new_order_no}",

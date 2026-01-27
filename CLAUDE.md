@@ -139,6 +139,7 @@ Always use arrays with `symbol` and `exchange` fields, never use symbol as dicti
 Available through `.claude/commands/`:
 - `/pg-plan` - Create optimization plan
 - `/pg-catch` - Git context recovery after `/clear`
+- `/pg-commit` - Detailed git commit with comprehensive message
 - `/pg-node` - Add/modify nodes
 - `/pg-node-validate` - Validate node schema
 - `/pg-node-list` - List registered nodes

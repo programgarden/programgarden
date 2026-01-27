@@ -112,26 +112,22 @@ TEST_WORKFLOW = {
         },
         {
             "id": "entry_order",
-            "type": "NewOrderNode",
+            "type": "FuturesNewOrderNode",
             "plugin": "LimitOrder",
             "connection": "{{ nodes.broker.connection }}",
-            "product": "overseas_futures",
             "side": "buy",  # 롱 진입
             "order_type": "limit",
-            "symbols": [{"exchange": "HKEX", "symbol": "HMCEF26"}],
-            "quantities": {"HMCEF26": 1},
+            "orders": [{"exchange": "HKEX", "symbol": "HMCEF26", "quantity": 1, "price": 0}],
             "price_offset": 0  # 매도1호가에 매수 (즉시 체결 유도)
         },
         {
             "id": "exit_order",
-            "type": "NewOrderNode",
+            "type": "FuturesNewOrderNode",
             "plugin": "LimitOrder",
             "connection": "{{ nodes.broker.connection }}",
-            "product": "overseas_futures",
             "side": "sell",  # 롱 청산
             "order_type": "limit",
-            "symbols": [{"exchange": "HKEX", "symbol": "HMCEF26"}],
-            "quantities": {"HMCEF26": 1},
+            "orders": [{"exchange": "HKEX", "symbol": "HMCEF26", "quantity": 1, "price": 0}],
             "price_offset": 0  # 매수1호가에 매도 (즉시 체결 유도)
         }
     ],

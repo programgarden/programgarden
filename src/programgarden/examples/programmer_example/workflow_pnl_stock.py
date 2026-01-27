@@ -281,15 +281,14 @@ def create_workflow() -> dict:
 
         nodes.append({
             "id": "order",
-            "type": "NewOrderNode",
+            "type": "StockNewOrderNode",
             "plugin": plugin,
             "connection": "{{ nodes.broker.connection }}",
-            "product": "overseas_stock",
             "side": TEST_SIDE,
             "order_type": order_type,
-            "symbols": [{"exchange": TEST_EXCHANGE, "symbol": TEST_SYMBOL}],
-            "quantities": {TEST_SYMBOL: TEST_QUANTITY},
-            "prices": {TEST_SYMBOL: TEST_PRICE} if TEST_PRICE > 0 else {}
+            "orders": [
+                {"exchange": TEST_EXCHANGE, "symbol": TEST_SYMBOL, "quantity": TEST_QUANTITY, "price": TEST_PRICE}
+            ],
         })
         edges.append({"from": "broker", "to": "order"})
 
