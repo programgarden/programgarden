@@ -2,7 +2,7 @@
 ProgramGarden Core - Stock Symbol Query Node
 
 해외주식 전체종목조회:
-- StockSymbolQueryNode: 해외주식 전체 거래 가능 종목 조회 (g3190 API)
+- OverseasStockSymbolQueryNode: 해외주식 전체 거래 가능 종목 조회 (g3190 API)
 """
 
 from typing import Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -21,7 +21,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class StockSymbolQueryNode(BaseNode):
+class OverseasStockSymbolQueryNode(BaseNode):
     """
     해외주식 전체종목조회 노드
 
@@ -29,9 +29,9 @@ class StockSymbolQueryNode(BaseNode):
     g3190 API (마스터상장종목조회) 사용.
     """
 
-    type: Literal["StockSymbolQueryNode"] = "StockSymbolQueryNode"
+    type: Literal["OverseasStockSymbolQueryNode"] = "OverseasStockSymbolQueryNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.StockSymbolQueryNode.description"
+    description: str = "i18n:nodes.OverseasStockSymbolQueryNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/symbolquery_stock.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS

@@ -8,8 +8,8 @@ Data query/storage nodes:
 - FieldMappingNode: Field name mapping
 
 MarketDataNode는 상품별 분리됨:
-- data_stock.py → StockMarketDataNode
-- data_futures.py → FuturesMarketDataNode
+- data_stock.py → OverseasStockMarketDataNode
+- data_futures.py → OverseasFuturesMarketDataNode
 
 계좌 조회는 account_stock/account_futures 참조
 """

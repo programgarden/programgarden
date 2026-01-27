@@ -34,19 +34,19 @@
   "nodes.BrokerNode.name": "브로커",
   "nodes.BrokerNode.description": "OpenAPI 연결을 위한 증권사 설정. credential_id로 인증 정보 참조.",
 
-  "nodes.StockBrokerNode.name": "해외주식 브로커",
-  "nodes.StockBrokerNode.description": "해외주식 거래를 위한 LS증권 OpenAPI 연결. 모의투자 미지원.",
-  "fields.StockBrokerNode.provider": "증권사 제공자",
-  "fields.StockBrokerNode.credential_id": "해외주식 인증정보를 선택하세요",
-  "fieldNames.StockBrokerNode.provider": "증권사",
-  "fieldNames.StockBrokerNode.credential_id": "인증정보",
+  "nodes.OverseasStockBrokerNode.name": "해외주식 브로커",
+  "nodes.OverseasStockBrokerNode.description": "해외주식 거래를 위한 LS증권 OpenAPI 연결. 모의투자 미지원.",
+  "fields.OverseasStockBrokerNode.provider": "증권사 제공자",
+  "fields.OverseasStockBrokerNode.credential_id": "해외주식 인증정보를 선택하세요",
+  "fieldNames.OverseasStockBrokerNode.provider": "증권사",
+  "fieldNames.OverseasStockBrokerNode.credential_id": "인증정보",
 
-  "nodes.FuturesBrokerNode.name": "해외선물 브로커",
-  "nodes.FuturesBrokerNode.description": "해외선물 거래를 위한 LS증권 OpenAPI 연결. 모의투자 지원.",
-  "fields.FuturesBrokerNode.provider": "증권사 제공자",
-  "fields.FuturesBrokerNode.credential_id": "해외선물 인증정보를 선택하세요",
-  "fieldNames.FuturesBrokerNode.provider": "증권사",
-  "fieldNames.FuturesBrokerNode.credential_id": "인증정보",
+  "nodes.OverseasFuturesBrokerNode.name": "해외선물 브로커",
+  "nodes.OverseasFuturesBrokerNode.description": "해외선물 거래를 위한 LS증권 OpenAPI 연결. 모의투자 지원.",
+  "fields.OverseasFuturesBrokerNode.provider": "증권사 제공자",
+  "fields.OverseasFuturesBrokerNode.credential_id": "해외선물 인증정보를 선택하세요",
+  "fieldNames.OverseasFuturesBrokerNode.provider": "증권사",
+  "fieldNames.OverseasFuturesBrokerNode.credential_id": "인증정보",
   
   "nodes.ThrottleNode.name": "속도 제어",
   "nodes.ThrottleNode.description": "데이터 흐름을 제어하여 하위 노드의 과도한 실행을 방지합니다. 실시간 노드 뒤에 배치하여 API 호출 빈도를 조절하세요.",
@@ -67,6 +67,12 @@
   
   "nodes.SymbolQueryNode.name": "전체 종목 조회",
   "nodes.SymbolQueryNode.description": "거래소에서 거래 가능한 전체 종목 목록을 가져옵니다.",
+
+  "nodes.OverseasStockSymbolQueryNode.name": "해외주식 종목 조회",
+  "nodes.OverseasStockSymbolQueryNode.description": "해외주식 전체 거래 가능 종목을 조회합니다. (NYSE, NASDAQ, AMEX)",
+
+  "nodes.OverseasFuturesSymbolQueryNode.name": "해외선물 종목 조회",
+  "nodes.OverseasFuturesSymbolQueryNode.description": "해외선물 전체 거래 가능 종목을 조회합니다. (CME, EUREX, SGX, HKEX 등)",
   
   "nodes.MarketUniverseNode.name": "대표지수 종목",
   "nodes.MarketUniverseNode.description": "⚠️ 해외주식 전용. 미국 대표 지수(NASDAQ100, SP500, SP100, DOW30)에 포함된 종목을 자동으로 가져옵니다. 예: 나스닥100 선택 시 애플, 테슬라 등 100개 종목이 자동 추가됩니다.",
@@ -82,11 +88,11 @@
   "nodes.MarketDataNode.name": "현재가조회",
   "nodes.MarketDataNode.description": "종목의 현재가와 거래량을 한 번 조회합니다. 실시간이 필요 없고 조회 시점의 데이터만 필요할 때 사용하세요.",
 
-  "nodes.StockMarketDataNode.name": "해외주식 현재가",
-  "nodes.StockMarketDataNode.description": "해외주식 종목의 현재가와 거래량을 조회합니다. (NYSE, NASDAQ, AMEX)",
+  "nodes.OverseasStockMarketDataNode.name": "해외주식 현재가",
+  "nodes.OverseasStockMarketDataNode.description": "해외주식 종목의 현재가와 거래량을 조회합니다. (NYSE, NASDAQ, AMEX)",
 
-  "nodes.FuturesMarketDataNode.name": "해외선물 현재가",
-  "nodes.FuturesMarketDataNode.description": "해외선물 종목의 현재가와 거래량을 조회합니다. (CME, EUREX, SGX, HKEX 등)",
+  "nodes.OverseasFuturesMarketDataNode.name": "해외선물 현재가",
+  "nodes.OverseasFuturesMarketDataNode.description": "해외선물 종목의 현재가와 거래량을 조회합니다. (CME, EUREX, SGX, HKEX 등)",
 
   "fieldNames.MarketDataNode.connection": "브로커연결",
   "fieldNames.MarketDataNode.symbols": "종목",
@@ -100,6 +106,12 @@
   
   "nodes.AccountNode.name": "계좌 조회",
   "nodes.AccountNode.description": "보유종목, 예수금, 미체결 주문을 한 번 조회합니다. 실시간 업데이트가 필요 없을 때 사용하세요.",
+
+  "nodes.OverseasStockAccountNode.name": "해외주식 계좌 조회",
+  "nodes.OverseasStockAccountNode.description": "해외주식 보유종목, 예수금, 미체결 주문을 한 번 조회합니다. 실시간이 필요하면 OverseasStockRealAccountNode를 사용하세요.",
+
+  "nodes.OverseasFuturesAccountNode.name": "해외선물 계좌 조회",
+  "nodes.OverseasFuturesAccountNode.description": "해외선물 보유종목, 예수금, 미체결 주문을 한 번 조회합니다. 실시간이 필요하면 OverseasFuturesRealAccountNode를 사용하세요.",
 
   "fields.AccountNode.connection": "브로커 연결",
   "fields.AccountNode.connection.description": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
@@ -127,12 +139,30 @@
   
   "nodes.RealMarketDataNode.name": "실시간 시세",
   "nodes.RealMarketDataNode.description": "종목의 현재가, 거래량, 호가를 실시간으로 받습니다. 체결이 발생할 때마다 자동으로 업데이트됩니다.",
-  
+
+  "nodes.OverseasStockRealMarketDataNode.name": "해외주식 실시간 시세",
+  "nodes.OverseasStockRealMarketDataNode.description": "해외주식 종목의 현재가, 거래량, 호가를 실시간으로 받습니다. (NYSE, NASDAQ, AMEX)",
+
+  "nodes.OverseasFuturesRealMarketDataNode.name": "해외선물 실시간 시세",
+  "nodes.OverseasFuturesRealMarketDataNode.description": "해외선물 종목의 현재가, 거래량, 호가를 실시간으로 받습니다. (CME, EUREX, SGX, HKEX)",
+
   "nodes.RealAccountNode.name": "실시간 계좌",
   "nodes.RealAccountNode.description": "보유종목, 예수금, 미체결 주문, 실시간 수익률을 받습니다. 시세가 변할 때마다 손익이 자동으로 업데이트됩니다.",
-  
+
+  "nodes.OverseasStockRealAccountNode.name": "해외주식 실시간 계좌",
+  "nodes.OverseasStockRealAccountNode.description": "해외주식 보유종목, 잔고, 미체결, 실시간 손익을 제공합니다. 수수료율/세금율 설정으로 정확한 손익 계산을 지원합니다.",
+
+  "nodes.OverseasFuturesRealAccountNode.name": "해외선물 실시간 계좌",
+  "nodes.OverseasFuturesRealAccountNode.description": "해외선물 보유종목, 잔고, 미체결, 실시간 손익을 제공합니다. 계약당 수수료 설정으로 정확한 손익 계산을 지원합니다.",
+
   "nodes.RealOrderEventNode.name": "실시간 주문 이벤트",
   "nodes.RealOrderEventNode.description": "주문이 접수/체결/정정/취소/거부될 때마다 알림을 받습니다. 텔레그램 알림이나 추가 주문 로직에 연결하세요.",
+
+  "nodes.OverseasStockRealOrderEventNode.name": "해외주식 주문 이벤트",
+  "nodes.OverseasStockRealOrderEventNode.description": "해외주식 주문 체결/거부/취소 이벤트를 실시간으로 수신합니다. (AS0~AS4)",
+
+  "nodes.OverseasFuturesRealOrderEventNode.name": "해외선물 주문 이벤트",
+  "nodes.OverseasFuturesRealOrderEventNode.description": "해외선물 주문 체결/거부/취소 이벤트를 실시간으로 수신합니다. (TC1~TC3)",
   
   "nodes.ScheduleNode.name": "스케줄",
   "nodes.ScheduleNode.description": "크론 기반 스케줄 트리거.",
@@ -161,32 +191,32 @@
   "nodes.CancelOrderNode.name": "주문 취소",
   "nodes.CancelOrderNode.description": "기존 미체결 주문을 취소합니다.",
 
-  "nodes.StockNewOrderNode.name": "해외주식 신규주문",
-  "nodes.StockNewOrderNode.description": "미국 주식(NYSE, NASDAQ, AMEX) 신규주문을 실행합니다. orders 필드에 MarketDataNode 출력을 바인딩하면 종목별 시세를 자동으로 사용합니다.",
+  "nodes.OverseasStockNewOrderNode.name": "해외주식 신규주문",
+  "nodes.OverseasStockNewOrderNode.description": "미국 주식(NYSE, NASDAQ, AMEX) 신규주문을 실행합니다. orders 필드에 MarketDataNode 출력을 바인딩하면 종목별 시세를 자동으로 사용합니다.",
 
-  "nodes.StockModifyOrderNode.name": "해외주식 정정주문",
-  "nodes.StockModifyOrderNode.description": "미국 주식 미체결 주문의 가격이나 수량을 정정합니다.",
+  "nodes.OverseasStockModifyOrderNode.name": "해외주식 정정주문",
+  "nodes.OverseasStockModifyOrderNode.description": "미국 주식 미체결 주문의 가격이나 수량을 정정합니다.",
 
-  "nodes.StockCancelOrderNode.name": "해외주식 취소주문",
-  "nodes.StockCancelOrderNode.description": "미국 주식 미체결 주문을 취소합니다.",
+  "nodes.OverseasStockCancelOrderNode.name": "해외주식 취소주문",
+  "nodes.OverseasStockCancelOrderNode.description": "미국 주식 미체결 주문을 취소합니다.",
 
-  "nodes.FuturesNewOrderNode.name": "해외선물 신규주문",
-  "nodes.FuturesNewOrderNode.description": "해외선물(CME, EUREX, SGX, HKEX 등) 신규주문을 실행합니다. orders 필드에 MarketDataNode 출력을 바인딩하면 종목별 시세를 자동으로 사용합니다.",
+  "nodes.OverseasFuturesNewOrderNode.name": "해외선물 신규주문",
+  "nodes.OverseasFuturesNewOrderNode.description": "해외선물(CME, EUREX, SGX, HKEX 등) 신규주문을 실행합니다. orders 필드에 MarketDataNode 출력을 바인딩하면 종목별 시세를 자동으로 사용합니다.",
 
-  "nodes.FuturesModifyOrderNode.name": "해외선물 정정주문",
-  "nodes.FuturesModifyOrderNode.description": "해외선물 미체결 주문의 가격이나 수량을 정정합니다.",
+  "nodes.OverseasFuturesModifyOrderNode.name": "해외선물 정정주문",
+  "nodes.OverseasFuturesModifyOrderNode.description": "해외선물 미체결 주문의 가격이나 수량을 정정합니다.",
 
-  "nodes.FuturesCancelOrderNode.name": "해외선물 취소주문",
-  "nodes.FuturesCancelOrderNode.description": "해외선물 미체결 주문을 취소합니다.",
+  "nodes.OverseasFuturesCancelOrderNode.name": "해외선물 취소주문",
+  "nodes.OverseasFuturesCancelOrderNode.description": "해외선물 미체결 주문을 취소합니다.",
   
   "nodes.HistoricalDataNode.name": "과거차트조회",
   "nodes.HistoricalDataNode.description": "과거 차트 데이터를 가져옵니다. 기간과 봉 종류(일봉/주봉/월봉)를 선택하면 시가, 고가, 저가, 종가, 거래량 데이터를 받을 수 있습니다.",
 
-  "nodes.StockHistoricalDataNode.name": "해외주식 과거데이터",
-  "nodes.StockHistoricalDataNode.description": "해외주식 종목의 과거 OHLCV 데이터를 조회합니다. (NYSE, NASDAQ, AMEX)",
+  "nodes.OverseasStockHistoricalDataNode.name": "해외주식 과거데이터",
+  "nodes.OverseasStockHistoricalDataNode.description": "해외주식 종목의 과거 OHLCV 데이터를 조회합니다. (NYSE, NASDAQ, AMEX)",
 
-  "nodes.FuturesHistoricalDataNode.name": "해외선물 과거데이터",
-  "nodes.FuturesHistoricalDataNode.description": "해외선물 종목의 과거 OHLCV 데이터를 조회합니다. (CME, EUREX, SGX, HKEX 등)",
+  "nodes.OverseasFuturesHistoricalDataNode.name": "해외선물 과거데이터",
+  "nodes.OverseasFuturesHistoricalDataNode.description": "해외선물 종목의 과거 OHLCV 데이터를 조회합니다. (CME, EUREX, SGX, HKEX 등)",
 
 "nodes.BacktestEngineNode.name": "백테스트 엔진",
   "nodes.BacktestEngineNode.description": "시그널과 과거 데이터로 백테스트 실행 및 성과 지표 계산.",
@@ -332,6 +362,22 @@
   "fields.RealMarketDataNode.stay_connected": "✅ 켜면: 실시간 시세를 계속 받습니다. 수동으로 중지할 때까지 유지됩니다.\n❌ 끄면: 시세를 한 번만 받고 자동으로 끊깁니다.",
   "fieldNames.RealMarketDataNode.product_type": "상품유형",
 
+  "fields.OverseasStockRealMarketDataNode.symbols": "구독할 해외주식 종목 코드 (AAPL, TSLA 등). 비어있으면 입력 포트 값 사용.",
+  "fields.OverseasStockRealMarketDataNode.symbols.exchange": "거래소",
+  "fields.OverseasStockRealMarketDataNode.symbols.symbol": "종목코드",
+  "fields.OverseasStockRealMarketDataNode.symbols.help_text": "직접 입력 또는 바인딩 가능 (fx 토글)",
+  "fields.OverseasStockRealMarketDataNode.stay_connected": "✅ 켜면: 실시간 시세를 계속 받습니다. 수동으로 중지할 때까지 유지됩니다.\n❌ 끄면: 시세를 한 번만 받고 자동으로 끊깁니다.",
+  "fieldNames.OverseasStockRealMarketDataNode.symbols": "종목",
+  "fieldNames.OverseasStockRealMarketDataNode.stay_connected": "연결유지",
+
+  "fields.OverseasFuturesRealMarketDataNode.symbols": "구독할 해외선물 종목 코드 (ESH26 등). 비어있으면 입력 포트 값 사용.",
+  "fields.OverseasFuturesRealMarketDataNode.symbols.exchange": "거래소",
+  "fields.OverseasFuturesRealMarketDataNode.symbols.symbol": "종목코드",
+  "fields.OverseasFuturesRealMarketDataNode.symbols.help_text": "직접 입력 또는 바인딩 가능 (fx 토글)",
+  "fields.OverseasFuturesRealMarketDataNode.stay_connected": "✅ 켜면: 실시간 시세를 계속 받습니다. 수동으로 중지할 때까지 유지됩니다.\n❌ 끄면: 시세를 한 번만 받고 자동으로 끊깁니다.",
+  "fieldNames.OverseasFuturesRealMarketDataNode.symbols": "종목",
+  "fieldNames.OverseasFuturesRealMarketDataNode.stay_connected": "연결유지",
+
   "fields.RealAccountNode.stay_connected": "✅ 켜면: 실시간 계좌 정보를 계속 받습니다. 스케줄 대기 중에도 수익률이 실시간으로 업데이트됩니다.\n❌ 끄면: 계좌 정보를 한 번만 조회하고 끊깁니다.",
   "fields.RealAccountNode.sync_interval_sec": "계좌 정보를 다시 불러오는 주기 (초). 예: 60 입력하면 1분마다 잔고/포지션을 새로고침합니다.",
   "fields.RealAccountNode.product_type": "상품 유형을 선택하세요. 선택에 따라 수수료 설정 필드가 변경됩니다.",
@@ -339,11 +385,37 @@
   "fields.RealAccountNode.tax_rate": "해외주식 거래세율 (%). 미국 0%, 홍콩 0.1%, 일본 0%",
   "fields.RealAccountNode.futures_fee_per_contract": "해외선물 계약당 수수료 (USD, 편도). LS증권 기본 $7.5",
 
+  "fields.OverseasStockRealAccountNode.commission_rate": "해외주식 매매 수수료율 (%). LS증권 기본 0.25%",
+  "fields.OverseasStockRealAccountNode.tax_rate": "해외주식 거래세율 (%). 미국 0%, 홍콩 0.1%, 일본 0%",
+  "fields.OverseasStockRealAccountNode.stay_connected": "✅ 켜면: 실시간 계좌 정보를 계속 받습니다.\n❌ 끄면: 계좌 정보를 한 번만 조회하고 끊깁니다.",
+  "fields.OverseasStockRealAccountNode.sync_interval_sec": "계좌 정보를 다시 불러오는 주기 (초). 예: 60 입력하면 1분마다 잔고/포지션을 새로고침합니다.",
+  "fieldNames.OverseasStockRealAccountNode.commission_rate": "수수료율",
+  "fieldNames.OverseasStockRealAccountNode.tax_rate": "세율",
+  "fieldNames.OverseasStockRealAccountNode.stay_connected": "연결유지",
+  "fieldNames.OverseasStockRealAccountNode.sync_interval_sec": "동기화주기(초)",
+
+  "fields.OverseasFuturesRealAccountNode.futures_fee_per_contract": "해외선물 계약당 수수료 (USD, 편도). LS증권 기본 $7.5",
+  "fields.OverseasFuturesRealAccountNode.stay_connected": "✅ 켜면: 실시간 계좌 정보를 계속 받습니다.\n❌ 끄면: 계좌 정보를 한 번만 조회하고 끊깁니다.",
+  "fields.OverseasFuturesRealAccountNode.sync_interval_sec": "계좌 정보를 다시 불러오는 주기 (초). 예: 60 입력하면 1분마다 잔고/포지션을 새로고침합니다.",
+  "fieldNames.OverseasFuturesRealAccountNode.futures_fee_per_contract": "선물계약당수수료",
+  "fieldNames.OverseasFuturesRealAccountNode.stay_connected": "연결유지",
+  "fieldNames.OverseasFuturesRealAccountNode.sync_interval_sec": "동기화주기(초)",
+
   "fields.RealOrderEventNode.connection": "증권사 연결 정보입니다. BrokerNode(브로커 노드)를 먼저 추가하고, 그 노드의 connection 출력을 여기에 연결하세요.",
   "fields.RealOrderEventNode.product_type": "상품 유형을 선택하세요. BrokerNode에서 연결한 상품과 일치해야 합니다.",
   "fields.RealOrderEventNode.event_filter": "받고 싶은 주문 알림을 선택하세요. '전체'를 선택하면 모든 주문 이벤트를 받습니다.",
   "fields.RealOrderEventNode.event_filter_futures": "받고 싶은 주문 알림을 선택하세요. '전체'를 선택하면 모든 주문 이벤트를 받습니다.",
   "fields.RealOrderEventNode.stay_connected": "✅ 켜면: 주문 체결/거부/취소 알림을 계속 받습니다.\n❌ 끄면: 이벤트를 한 번만 받고 끊깁니다.",
+
+  "fields.OverseasStockRealOrderEventNode.event_filter": "받고 싶은 해외주식 주문 알림을 선택하세요. '전체'를 선택하면 모든 주문 이벤트를 받습니다.",
+  "fields.OverseasStockRealOrderEventNode.stay_connected": "✅ 켜면: 주문 체결/거부/취소 알림을 계속 받습니다.\n❌ 끄면: 이벤트를 한 번만 받고 끊깁니다.",
+  "fieldNames.OverseasStockRealOrderEventNode.event_filter": "이벤트필터",
+  "fieldNames.OverseasStockRealOrderEventNode.stay_connected": "연결유지",
+
+  "fields.OverseasFuturesRealOrderEventNode.event_filter": "받고 싶은 해외선물 주문 알림을 선택하세요. '전체'를 선택하면 모든 주문 이벤트를 받습니다.",
+  "fields.OverseasFuturesRealOrderEventNode.stay_connected": "✅ 켜면: 주문 체결/거부/취소 알림을 계속 받습니다.\n❌ 끄면: 이벤트를 한 번만 받고 끊깁니다.",
+  "fieldNames.OverseasFuturesRealOrderEventNode.event_filter": "이벤트필터",
+  "fieldNames.OverseasFuturesRealOrderEventNode.stay_connected": "연결유지",
 
   "fields.ScheduleNode.cron": "크론 표현식 (예: */5 * * * * = 5분마다)",
   "fields.ScheduleNode.timezone": "타임존",
@@ -428,44 +500,44 @@
   "fields.CancelOrderNode.original_order_id": "취소할 원주문번호입니다. 미체결 주문 목록에서 선택합니다.",
   "fields.CancelOrderNode.symbol": "종목 코드입니다.",
 
-  "fields.StockNewOrderNode.connection": "증권사 연결 정보입니다. BrokerNode의 connection 출력을 바인딩하세요.",
-  "fields.StockNewOrderNode.side": "매수(buy) 또는 매도(sell)를 선택합니다.",
-  "fields.StockNewOrderNode.order_type": "주문 유형입니다. 시장가는 즉시 체결, 지정가는 원하는 가격에 주문합니다.",
-  "fields.StockNewOrderNode.price_type": "호가 유형입니다. LOO/LOC/MOO/MOC는 미국 시장 특수 주문입니다.",
-  "fields.StockNewOrderNode.orders": "주문할 종목 목록입니다. MarketDataNode.values를 바인딩하면 종목별 시세를 자동으로 사용합니다.",
-  "fieldNames.StockNewOrderNode.orders": "주문목록",
+  "fields.OverseasStockNewOrderNode.connection": "증권사 연결 정보입니다. BrokerNode의 connection 출력을 바인딩하세요.",
+  "fields.OverseasStockNewOrderNode.side": "매수(buy) 또는 매도(sell)를 선택합니다.",
+  "fields.OverseasStockNewOrderNode.order_type": "주문 유형입니다. 시장가는 즉시 체결, 지정가는 원하는 가격에 주문합니다.",
+  "fields.OverseasStockNewOrderNode.price_type": "호가 유형입니다. LOO/LOC/MOO/MOC는 미국 시장 특수 주문입니다.",
+  "fields.OverseasStockNewOrderNode.orders": "주문할 종목 목록입니다. MarketDataNode.values를 바인딩하면 종목별 시세를 자동으로 사용합니다.",
+  "fieldNames.OverseasStockNewOrderNode.orders": "주문목록",
 
-  "fields.StockModifyOrderNode.connection": "증권사 연결 정보입니다.",
-  "fields.StockModifyOrderNode.price_type": "호가 유형을 선택합니다.",
-  "fields.StockModifyOrderNode.original_order_id": "정정할 원주문번호입니다.",
-  "fields.StockModifyOrderNode.symbol": "종목 코드입니다.",
-  "fields.StockModifyOrderNode.exchange": "거래소를 선택합니다.",
-  "fields.StockModifyOrderNode.new_quantity": "정정할 수량입니다. 입력하지 않으면 기존 수량이 유지됩니다.",
-  "fields.StockModifyOrderNode.new_price": "정정할 가격입니다. 입력하지 않으면 기존 가격이 유지됩니다.",
+  "fields.OverseasStockModifyOrderNode.connection": "증권사 연결 정보입니다.",
+  "fields.OverseasStockModifyOrderNode.price_type": "호가 유형을 선택합니다.",
+  "fields.OverseasStockModifyOrderNode.original_order_id": "정정할 원주문번호입니다.",
+  "fields.OverseasStockModifyOrderNode.symbol": "종목 코드입니다.",
+  "fields.OverseasStockModifyOrderNode.exchange": "거래소를 선택합니다.",
+  "fields.OverseasStockModifyOrderNode.new_quantity": "정정할 수량입니다. 입력하지 않으면 기존 수량이 유지됩니다.",
+  "fields.OverseasStockModifyOrderNode.new_price": "정정할 가격입니다. 입력하지 않으면 기존 가격이 유지됩니다.",
 
-  "fields.StockCancelOrderNode.connection": "증권사 연결 정보입니다.",
-  "fields.StockCancelOrderNode.original_order_id": "취소할 원주문번호입니다.",
-  "fields.StockCancelOrderNode.symbol": "종목 코드입니다.",
-  "fields.StockCancelOrderNode.exchange": "거래소를 선택합니다.",
+  "fields.OverseasStockCancelOrderNode.connection": "증권사 연결 정보입니다.",
+  "fields.OverseasStockCancelOrderNode.original_order_id": "취소할 원주문번호입니다.",
+  "fields.OverseasStockCancelOrderNode.symbol": "종목 코드입니다.",
+  "fields.OverseasStockCancelOrderNode.exchange": "거래소를 선택합니다.",
 
-  "fields.FuturesNewOrderNode.connection": "증권사 연결 정보입니다. BrokerNode의 connection 출력을 바인딩하세요.",
-  "fields.FuturesNewOrderNode.side": "매수(buy) 또는 매도(sell)를 선택합니다.",
-  "fields.FuturesNewOrderNode.order_type": "주문 유형입니다. 시장가는 즉시 체결, 지정가는 원하는 가격에 주문합니다.",
-  "fields.FuturesNewOrderNode.expiry_month": "만기년월입니다. YYYYMM 형식으로 입력합니다.",
-  "fields.FuturesNewOrderNode.orders": "주문할 종목 목록입니다. MarketDataNode.values를 바인딩하면 종목별 시세를 자동으로 사용합니다.",
-  "fieldNames.FuturesNewOrderNode.orders": "주문목록",
+  "fields.OverseasFuturesNewOrderNode.connection": "증권사 연결 정보입니다. BrokerNode의 connection 출력을 바인딩하세요.",
+  "fields.OverseasFuturesNewOrderNode.side": "매수(buy) 또는 매도(sell)를 선택합니다.",
+  "fields.OverseasFuturesNewOrderNode.order_type": "주문 유형입니다. 시장가는 즉시 체결, 지정가는 원하는 가격에 주문합니다.",
+  "fields.OverseasFuturesNewOrderNode.expiry_month": "만기년월입니다. YYYYMM 형식으로 입력합니다.",
+  "fields.OverseasFuturesNewOrderNode.orders": "주문할 종목 목록입니다. MarketDataNode.values를 바인딩하면 종목별 시세를 자동으로 사용합니다.",
+  "fieldNames.OverseasFuturesNewOrderNode.orders": "주문목록",
 
-  "fields.FuturesModifyOrderNode.connection": "증권사 연결 정보입니다.",
-  "fields.FuturesModifyOrderNode.original_order_id": "정정할 원주문번호입니다.",
-  "fields.FuturesModifyOrderNode.symbol": "종목 코드입니다.",
-  "fields.FuturesModifyOrderNode.exchange": "거래소를 선택합니다.",
-  "fields.FuturesModifyOrderNode.new_quantity": "정정할 수량입니다.",
-  "fields.FuturesModifyOrderNode.new_price": "정정할 가격입니다.",
+  "fields.OverseasFuturesModifyOrderNode.connection": "증권사 연결 정보입니다.",
+  "fields.OverseasFuturesModifyOrderNode.original_order_id": "정정할 원주문번호입니다.",
+  "fields.OverseasFuturesModifyOrderNode.symbol": "종목 코드입니다.",
+  "fields.OverseasFuturesModifyOrderNode.exchange": "거래소를 선택합니다.",
+  "fields.OverseasFuturesModifyOrderNode.new_quantity": "정정할 수량입니다.",
+  "fields.OverseasFuturesModifyOrderNode.new_price": "정정할 가격입니다.",
 
-  "fields.FuturesCancelOrderNode.connection": "증권사 연결 정보입니다.",
-  "fields.FuturesCancelOrderNode.original_order_id": "취소할 원주문번호입니다.",
-  "fields.FuturesCancelOrderNode.symbol": "종목 코드입니다.",
-  "fields.FuturesCancelOrderNode.exchange": "거래소를 선택합니다.",
+  "fields.OverseasFuturesCancelOrderNode.connection": "증권사 연결 정보입니다.",
+  "fields.OverseasFuturesCancelOrderNode.original_order_id": "취소할 원주문번호입니다.",
+  "fields.OverseasFuturesCancelOrderNode.symbol": "종목 코드입니다.",
+  "fields.OverseasFuturesCancelOrderNode.exchange": "거래소를 선택합니다.",
 
   "fields.orders.symbol": "종목코드",
   "fields.orders.exchange": "거래소",
@@ -721,6 +793,14 @@
   "fieldNames.SymbolQueryNode.futures_exchange": "선물거래소",
   "fieldNames.SymbolQueryNode.futures_contract_month": "선물결제월",
   "fieldNames.SymbolQueryNode.max_results": "최대결과수",
+
+  "fieldNames.OverseasStockSymbolQueryNode.country": "국가",
+  "fieldNames.OverseasStockSymbolQueryNode.stock_exchange": "해외주식거래소",
+  "fieldNames.OverseasStockSymbolQueryNode.max_results": "최대결과수",
+
+  "fieldNames.OverseasFuturesSymbolQueryNode.futures_exchange": "해외선물거래소",
+  "fieldNames.OverseasFuturesSymbolQueryNode.futures_contract_month": "해외선물결제월",
+  "fieldNames.OverseasFuturesSymbolQueryNode.max_results": "최대결과수",
 
   "fieldNames.WatchlistNode.symbols": "종목",
 

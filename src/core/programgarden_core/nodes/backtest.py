@@ -6,8 +6,8 @@ Backtest execution and result analysis nodes:
 - BenchmarkCompareNode: Benchmark comparison
 
 HistoricalDataNode는 상품별 분리됨:
-- backtest_stock.py → StockHistoricalDataNode
-- backtest_futures.py → FuturesHistoricalDataNode
+- backtest_stock.py → OverseasStockHistoricalDataNode
+- backtest_futures.py → OverseasFuturesHistoricalDataNode
 """
 
 from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING

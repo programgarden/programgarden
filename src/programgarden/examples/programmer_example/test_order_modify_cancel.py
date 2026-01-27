@@ -2,9 +2,9 @@
 주문 노드 통합 테스트: 신규 → 정정 → 취소
 
 테스트 시나리오:
-1. StockNewOrderNode로 GOSS 1주 지정가 매수 (현재가보다 낮게 → 미체결 유도)
-2. StockModifyOrderNode로 가격 정정
-3. StockCancelOrderNode로 취소
+1. OverseasStockNewOrderNode로 GOSS 1주 지정가 매수 (현재가보다 낮게 → 미체결 유도)
+2. OverseasStockModifyOrderNode로 가격 정정
+3. OverseasStockCancelOrderNode로 취소
 
 실행:
   cd src/programgarden && poetry run python examples/programmer_example/test_order_modify_cancel.py
@@ -57,7 +57,7 @@ class TestListener(BaseExecutionListener):
 async def test_new_order():
     """1단계: 신규 주문"""
     print("\n" + "="*70)
-    print("📥 1단계: 신규 주문 (StockNewOrderNode)")
+    print("📥 1단계: 신규 주문 (OverseasStockNewOrderNode)")
     print("="*70)
 
     workflow = {
@@ -74,7 +74,7 @@ async def test_new_order():
             },
             {
                 "id": "new_order",
-                "type": "StockNewOrderNode",
+                "type": "OverseasStockNewOrderNode",
                 "connection": "{{ nodes.broker.connection }}",
                 "side": "buy",
                 "order_type": "limit",
@@ -120,7 +120,7 @@ async def test_new_order():
 async def test_modify_order(order_id: str):
     """2단계: 정정 주문"""
     print("\n" + "="*70)
-    print(f"📝 2단계: 정정 주문 (StockModifyOrderNode)")
+    print(f"📝 2단계: 정정 주문 (OverseasStockModifyOrderNode)")
     print(f"   원주문번호: {order_id}")
     print(f"   정정 가격: ${TEST_PRICE} → ${MODIFIED_PRICE}")
     print("="*70)
@@ -139,7 +139,7 @@ async def test_modify_order(order_id: str):
             },
             {
                 "id": "modify_order",
-                "type": "StockModifyOrderNode",
+                "type": "OverseasStockModifyOrderNode",
                 "connection": "{{ nodes.broker.connection }}",
                 "original_order_id": order_id,
                 "symbol": TEST_SYMBOL,
@@ -186,7 +186,7 @@ async def test_modify_order(order_id: str):
 async def test_cancel_order(order_id: str):
     """3단계: 취소 주문"""
     print("\n" + "="*70)
-    print(f"❌ 3단계: 취소 주문 (StockCancelOrderNode)")
+    print(f"❌ 3단계: 취소 주문 (OverseasStockCancelOrderNode)")
     print(f"   취소할 주문번호: {order_id}")
     print("="*70)
 
@@ -204,7 +204,7 @@ async def test_cancel_order(order_id: str):
             },
             {
                 "id": "cancel_order",
-                "type": "StockCancelOrderNode",
+                "type": "OverseasStockCancelOrderNode",
                 "connection": "{{ nodes.broker.connection }}",
                 "original_order_id": order_id,
                 "symbol": TEST_SYMBOL,

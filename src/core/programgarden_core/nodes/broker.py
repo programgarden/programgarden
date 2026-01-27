@@ -2,8 +2,8 @@
 ProgramGarden Core - Broker Nodes
 
 상품별 브로커 연결 노드:
-- StockBrokerNode: 해외주식 전용 브로커
-- FuturesBrokerNode: 해외선물 전용 브로커
+- OverseasStockBrokerNode: 해외주식 전용 브로커
+- OverseasFuturesBrokerNode: 해외선물 전용 브로커
 """
 
 from typing import Optional, List, Literal, Dict, TYPE_CHECKING, ClassVar
@@ -51,7 +51,7 @@ class BaseBrokerNode(BaseNode):
     ]
 
 
-class StockBrokerNode(BaseBrokerNode):
+class OverseasStockBrokerNode(BaseBrokerNode):
     """
     해외주식 전용 브로커 연결 노드
 
@@ -62,8 +62,8 @@ class StockBrokerNode(BaseBrokerNode):
     - credential_types: broker_ls_stock
     """
 
-    type: Literal["StockBrokerNode"] = "StockBrokerNode"
-    description: str = "i18n:nodes.StockBrokerNode.description"
+    type: Literal["OverseasStockBrokerNode"] = "OverseasStockBrokerNode"
+    description: str = "i18n:nodes.OverseasStockBrokerNode.description"
 
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker_stock.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
@@ -78,7 +78,7 @@ class StockBrokerNode(BaseBrokerNode):
             "provider": FieldSchema(
                 name="provider",
                 type=FieldType.ENUM,
-                description="i18n:fields.StockBrokerNode.provider",
+                description="i18n:fields.OverseasStockBrokerNode.provider",
                 default="ls-sec.co.kr",
                 enum_values=["ls-sec.co.kr"],
                 enum_labels={"ls-sec.co.kr": "LS증권"},
@@ -89,7 +89,7 @@ class StockBrokerNode(BaseBrokerNode):
             "credential_id": FieldSchema(
                 name="credential_id",
                 type=FieldType.CREDENTIAL,
-                description="i18n:fields.StockBrokerNode.credential_id",
+                description="i18n:fields.OverseasStockBrokerNode.credential_id",
                 default=None,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -99,7 +99,7 @@ class StockBrokerNode(BaseBrokerNode):
         }
 
 
-class FuturesBrokerNode(BaseBrokerNode):
+class OverseasFuturesBrokerNode(BaseBrokerNode):
     """
     해외선물 전용 브로커 연결 노드
 
@@ -110,8 +110,8 @@ class FuturesBrokerNode(BaseBrokerNode):
     - credential_types: broker_ls_futures
     """
 
-    type: Literal["FuturesBrokerNode"] = "FuturesBrokerNode"
-    description: str = "i18n:nodes.FuturesBrokerNode.description"
+    type: Literal["OverseasFuturesBrokerNode"] = "OverseasFuturesBrokerNode"
+    description: str = "i18n:nodes.OverseasFuturesBrokerNode.description"
 
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
@@ -126,7 +126,7 @@ class FuturesBrokerNode(BaseBrokerNode):
             "provider": FieldSchema(
                 name="provider",
                 type=FieldType.ENUM,
-                description="i18n:fields.FuturesBrokerNode.provider",
+                description="i18n:fields.OverseasFuturesBrokerNode.provider",
                 default="ls-sec.co.kr",
                 enum_values=["ls-sec.co.kr"],
                 enum_labels={"ls-sec.co.kr": "LS증권"},
@@ -137,7 +137,7 @@ class FuturesBrokerNode(BaseBrokerNode):
             "credential_id": FieldSchema(
                 name="credential_id",
                 type=FieldType.CREDENTIAL,
-                description="i18n:fields.FuturesBrokerNode.credential_id",
+                description="i18n:fields.OverseasFuturesBrokerNode.credential_id",
                 default=None,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,

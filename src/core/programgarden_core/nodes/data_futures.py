@@ -2,7 +2,7 @@
 ProgramGarden Core - Futures Market Data Node
 
 해외선물 시세 조회:
-- FuturesMarketDataNode: 해외선물 REST API 시세 조회 (CME, EUREX, SGX, HKEX)
+- OverseasFuturesMarketDataNode: 해외선물 REST API 시세 조회 (CME, EUREX, SGX, HKEX)
 """
 
 from typing import List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -21,7 +21,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class FuturesMarketDataNode(BaseNode):
+class OverseasFuturesMarketDataNode(BaseNode):
     """
     해외선물 REST API 시세 조회 노드
 
@@ -29,9 +29,9 @@ class FuturesMarketDataNode(BaseNode):
     거래소: CME, EUREX, SGX, HKEX
     """
 
-    type: Literal["FuturesMarketDataNode"] = "FuturesMarketDataNode"
+    type: Literal["OverseasFuturesMarketDataNode"] = "OverseasFuturesMarketDataNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.FuturesMarketDataNode.description"
+    description: str = "i18n:nodes.OverseasFuturesMarketDataNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/marketdata_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
@@ -56,8 +56,8 @@ class FuturesMarketDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.FuturesMarketDataNode.symbols",
-                description="i18n:fields.FuturesMarketDataNode.symbols",
+                display_name="i18n:fieldNames.OverseasFuturesMarketDataNode.symbols",
+                description="i18n:fields.OverseasFuturesMarketDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
@@ -69,10 +69,10 @@ class FuturesMarketDataNode(BaseNode):
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
                 ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.FuturesMarketDataNode.symbols.help_text",
+                help_text="i18n:fields.OverseasFuturesMarketDataNode.symbols.help_text",
                 object_schema=[
-                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.FuturesMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
-                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.FuturesMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "ESH26"},
+                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.OverseasFuturesMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasFuturesMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "ESH26"},
                 ],
                 ui_options={
                     "exchanges": [

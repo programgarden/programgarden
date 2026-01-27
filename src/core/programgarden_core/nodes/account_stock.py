@@ -2,7 +2,7 @@
 ProgramGarden Core - Stock Account Node
 
 해외주식 계좌 조회:
-- StockAccountNode: 해외주식 계좌 잔고, 보유종목, 미체결 조회 (REST API 1회성)
+- OverseasStockAccountNode: 해외주식 계좌 잔고, 보유종목, 미체결 조회 (REST API 1회성)
 """
 
 from typing import List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -21,7 +21,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class StockAccountNode(BaseNode):
+class OverseasStockAccountNode(BaseNode):
     """
     해외주식 REST API 1회성 계좌 조회 노드
 
@@ -31,12 +31,12 @@ class StockAccountNode(BaseNode):
     - 예수금/총자산
     - 미체결 주문
 
-    실시간 업데이트가 필요하면 StockRealAccountNode를 사용하세요.
+    실시간 업데이트가 필요하면 OverseasStockRealAccountNode를 사용하세요.
     """
 
-    type: Literal["StockAccountNode"] = "StockAccountNode"
+    type: Literal["OverseasStockAccountNode"] = "OverseasStockAccountNode"
     category: NodeCategory = NodeCategory.ACCOUNT
-    description: str = "i18n:nodes.StockAccountNode.description"
+    description: str = "i18n:nodes.OverseasStockAccountNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/account_stock.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS

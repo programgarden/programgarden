@@ -2,7 +2,7 @@
 ProgramGarden Core - Stock Market Data Node
 
 해외주식 시세 조회:
-- StockMarketDataNode: 해외주식 REST API 시세 조회 (NYSE, NASDAQ, AMEX)
+- OverseasStockMarketDataNode: 해외주식 REST API 시세 조회 (NYSE, NASDAQ, AMEX)
 """
 
 from typing import List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -21,7 +21,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class StockMarketDataNode(BaseNode):
+class OverseasStockMarketDataNode(BaseNode):
     """
     해외주식 REST API 시세 조회 노드
 
@@ -29,9 +29,9 @@ class StockMarketDataNode(BaseNode):
     거래소: NYSE, NASDAQ, AMEX
     """
 
-    type: Literal["StockMarketDataNode"] = "StockMarketDataNode"
+    type: Literal["OverseasStockMarketDataNode"] = "OverseasStockMarketDataNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.StockMarketDataNode.description"
+    description: str = "i18n:nodes.OverseasStockMarketDataNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/marketdata_stock.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
@@ -56,8 +56,8 @@ class StockMarketDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.StockMarketDataNode.symbols",
-                description="i18n:fields.StockMarketDataNode.symbols",
+                display_name="i18n:fieldNames.OverseasStockMarketDataNode.symbols",
+                description="i18n:fields.OverseasStockMarketDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
@@ -71,10 +71,10 @@ class StockMarketDataNode(BaseNode):
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
                 ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.StockMarketDataNode.symbols.help_text",
+                help_text="i18n:fields.OverseasStockMarketDataNode.symbols.help_text",
                 object_schema=[
-                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.StockMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
-                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.StockMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "AAPL"},
+                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.OverseasStockMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "AAPL"},
                 ],
                 ui_options={
                     "exchanges": [

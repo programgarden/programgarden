@@ -2,7 +2,7 @@
 ProgramGarden Core - Stock Historical Data Node
 
 해외주식 과거 데이터 조회:
-- StockHistoricalDataNode: 해외주식 과거 OHLCV 데이터 조회 (NYSE, NASDAQ, AMEX)
+- OverseasStockHistoricalDataNode: 해외주식 과거 OHLCV 데이터 조회 (NYSE, NASDAQ, AMEX)
 """
 
 from typing import Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -21,7 +21,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class StockHistoricalDataNode(BaseNode):
+class OverseasStockHistoricalDataNode(BaseNode):
     """
     해외주식 과거 데이터 조회 노드
 
@@ -29,9 +29,9 @@ class StockHistoricalDataNode(BaseNode):
     거래소: NYSE, NASDAQ, AMEX
     """
 
-    type: Literal["StockHistoricalDataNode"] = "StockHistoricalDataNode"
+    type: Literal["OverseasStockHistoricalDataNode"] = "OverseasStockHistoricalDataNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.StockHistoricalDataNode.description"
+    description: str = "i18n:nodes.OverseasStockHistoricalDataNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/historicaldata_stock.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
@@ -76,8 +76,8 @@ class StockHistoricalDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.StockHistoricalDataNode.symbols",
-                description="i18n:fields.StockHistoricalDataNode.symbols",
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.symbols",
+                description="i18n:fields.OverseasStockHistoricalDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
@@ -91,10 +91,10 @@ class StockHistoricalDataNode(BaseNode):
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
                 ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.StockHistoricalDataNode.symbols.help_text",
+                help_text="i18n:fields.OverseasStockHistoricalDataNode.symbols.help_text",
                 object_schema=[
-                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.StockHistoricalDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
-                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.StockHistoricalDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "AAPL"},
+                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.OverseasStockHistoricalDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockHistoricalDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "AAPL"},
                 ],
                 ui_options={
                     "exchanges": [
@@ -107,8 +107,8 @@ class StockHistoricalDataNode(BaseNode):
             "start_date": FieldSchema(
                 name="start_date",
                 type=FieldType.STRING,
-                display_name="i18n:fieldNames.StockHistoricalDataNode.start_date",
-                description="i18n:fields.StockHistoricalDataNode.start_date",
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.start_date",
+                description="i18n:fields.OverseasStockHistoricalDataNode.start_date",
                 default="{{ months_ago_yyyymmdd(3) }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
@@ -116,13 +116,13 @@ class StockHistoricalDataNode(BaseNode):
                 example="2024-01-01",
                 expected_type="str",
                 ui_component=UIComponent.DATE_PICKER,
-                help_text="i18n:fields.StockHistoricalDataNode.start_date.help_text",
+                help_text="i18n:fields.OverseasStockHistoricalDataNode.start_date.help_text",
             ),
             "end_date": FieldSchema(
                 name="end_date",
                 type=FieldType.STRING,
-                display_name="i18n:fieldNames.StockHistoricalDataNode.end_date",
-                description="i18n:fields.StockHistoricalDataNode.end_date",
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.end_date",
+                description="i18n:fields.OverseasStockHistoricalDataNode.end_date",
                 default="{{ today_yyyymmdd() }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
@@ -130,13 +130,13 @@ class StockHistoricalDataNode(BaseNode):
                 example="2024-12-31",
                 expected_type="str",
                 ui_component=UIComponent.DATE_PICKER,
-                help_text="i18n:fields.StockHistoricalDataNode.end_date.help_text",
+                help_text="i18n:fields.OverseasStockHistoricalDataNode.end_date.help_text",
             ),
             "interval": FieldSchema(
                 name="interval",
                 type=FieldType.ENUM,
-                display_name="i18n:fieldNames.StockHistoricalDataNode.interval",
-                description="i18n:fields.StockHistoricalDataNode.interval",
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.interval",
+                description="i18n:fields.OverseasStockHistoricalDataNode.interval",
                 default="1d",
                 required=True,
                 enum_values=["1m", "5m", "15m", "1h", "1d", "1w", "1M"],
@@ -158,9 +158,9 @@ class StockHistoricalDataNode(BaseNode):
             "adjust": FieldSchema(
                 name="adjust",
                 type=FieldType.BOOLEAN,
-                display_name="i18n:fieldNames.StockHistoricalDataNode.adjust",
-                description="i18n:fields.StockHistoricalDataNode.adjust.short",
-                help_text="i18n:fields.StockHistoricalDataNode.adjust.detail",
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.adjust",
+                description="i18n:fields.OverseasStockHistoricalDataNode.adjust.short",
+                help_text="i18n:fields.OverseasStockHistoricalDataNode.adjust.detail",
                 default=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,

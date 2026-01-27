@@ -281,7 +281,7 @@ def create_workflow() -> dict:
 
         nodes.append({
             "id": "order",
-            "type": "StockNewOrderNode",
+            "type": "OverseasStockNewOrderNode",
             "plugin": plugin,
             "connection": "{{ nodes.broker.connection }}",
             "side": TEST_SIDE,

@@ -2,9 +2,9 @@
 ProgramGarden Core - Futures Realtime Nodes
 
 해외선물 실시간 노드:
-- FuturesRealMarketDataNode: 해외선물 실시간 시세 (WebSocket)
-- FuturesRealAccountNode: 해외선물 실시간 계좌 정보
-- FuturesRealOrderEventNode: 해외선물 실시간 주문 이벤트
+- OverseasFuturesRealMarketDataNode: 해외선물 실시간 시세 (WebSocket)
+- OverseasFuturesRealAccountNode: 해외선물 실시간 계좌 정보
+- OverseasFuturesRealOrderEventNode: 해외선물 실시간 주문 이벤트
 """
 
 from typing import Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -23,7 +23,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class FuturesRealMarketDataNode(BaseNode):
+class OverseasFuturesRealMarketDataNode(BaseNode):
     """
     해외선물 실시간 시세 노드
 
@@ -31,9 +31,9 @@ class FuturesRealMarketDataNode(BaseNode):
     거래소: CME, EUREX, SGX, HKEX
     """
 
-    type: Literal["FuturesRealMarketDataNode"] = "FuturesRealMarketDataNode"
+    type: Literal["OverseasFuturesRealMarketDataNode"] = "OverseasFuturesRealMarketDataNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.FuturesRealMarketDataNode.description"
+    description: str = "i18n:nodes.OverseasFuturesRealMarketDataNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realmarketdata_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
@@ -63,8 +63,8 @@ class FuturesRealMarketDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.FuturesRealMarketDataNode.symbols",
-                description="i18n:fields.FuturesRealMarketDataNode.symbols",
+                display_name="i18n:fieldNames.OverseasFuturesRealMarketDataNode.symbols",
+                description="i18n:fields.OverseasFuturesRealMarketDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
@@ -76,10 +76,10 @@ class FuturesRealMarketDataNode(BaseNode):
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
                 ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.FuturesRealMarketDataNode.symbols.help_text",
+                help_text="i18n:fields.OverseasFuturesRealMarketDataNode.symbols.help_text",
                 object_schema=[
-                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.FuturesRealMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
-                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.FuturesRealMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "ESH26"},
+                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.OverseasFuturesRealMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasFuturesRealMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "ESH26"},
                 ],
                 ui_options={
                     "exchanges": [
@@ -93,8 +93,8 @@ class FuturesRealMarketDataNode(BaseNode):
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
-                display_name="i18n:fieldNames.FuturesRealMarketDataNode.stay_connected",
-                description="i18n:fields.FuturesRealMarketDataNode.stay_connected",
+                display_name="i18n:fieldNames.OverseasFuturesRealMarketDataNode.stay_connected",
+                description="i18n:fields.OverseasFuturesRealMarketDataNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -102,7 +102,7 @@ class FuturesRealMarketDataNode(BaseNode):
         }
 
 
-class FuturesRealAccountNode(BaseNode):
+class OverseasFuturesRealAccountNode(BaseNode):
     """
     해외선물 실시간 계좌 정보 노드
 
@@ -110,9 +110,9 @@ class FuturesRealAccountNode(BaseNode):
     계약당 수수료 설정으로 정확한 손익 계산을 지원합니다.
     """
 
-    type: Literal["FuturesRealAccountNode"] = "FuturesRealAccountNode"
+    type: Literal["OverseasFuturesRealAccountNode"] = "OverseasFuturesRealAccountNode"
     category: NodeCategory = NodeCategory.ACCOUNT
-    description: str = "i18n:nodes.FuturesRealAccountNode.description"
+    description: str = "i18n:nodes.OverseasFuturesRealAccountNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realaccount_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
@@ -144,7 +144,7 @@ class FuturesRealAccountNode(BaseNode):
             "futures_fee_per_contract": FieldSchema(
                 name="futures_fee_per_contract",
                 type=FieldType.NUMBER,
-                description="i18n:fields.FuturesRealAccountNode.futures_fee_per_contract",
+                description="i18n:fields.OverseasFuturesRealAccountNode.futures_fee_per_contract",
                 default=7.5,
                 min_value=0,
                 max_value=100,
@@ -158,7 +158,7 @@ class FuturesRealAccountNode(BaseNode):
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
-                description="i18n:fields.FuturesRealAccountNode.stay_connected",
+                description="i18n:fields.OverseasFuturesRealAccountNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -167,7 +167,7 @@ class FuturesRealAccountNode(BaseNode):
             "sync_interval_sec": FieldSchema(
                 name="sync_interval_sec",
                 type=FieldType.INTEGER,
-                description="i18n:fields.FuturesRealAccountNode.sync_interval_sec",
+                description="i18n:fields.OverseasFuturesRealAccountNode.sync_interval_sec",
                 default=60,
                 min_value=10,
                 max_value=3600,
@@ -180,7 +180,7 @@ class FuturesRealAccountNode(BaseNode):
         }
 
 
-class FuturesRealOrderEventNode(BaseNode):
+class OverseasFuturesRealOrderEventNode(BaseNode):
     """
     해외선물 실시간 주문 이벤트 노드
 
@@ -188,20 +188,20 @@ class FuturesRealOrderEventNode(BaseNode):
     이벤트 필터: all, TC1(주문접수), TC2(정정/취소), TC3(체결)
     """
 
-    type: Literal["FuturesRealOrderEventNode"] = "FuturesRealOrderEventNode"
+    type: Literal["OverseasFuturesRealOrderEventNode"] = "OverseasFuturesRealOrderEventNode"
     category: NodeCategory = NodeCategory.ACCOUNT
-    description: str = "i18n:nodes.FuturesRealOrderEventNode.description"
+    description: str = "i18n:nodes.OverseasFuturesRealOrderEventNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realorderevent_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
     event_filter: str = Field(
         default="all",
-        description="i18n:fields.FuturesRealOrderEventNode.event_filter"
+        description="i18n:fields.OverseasFuturesRealOrderEventNode.event_filter"
     )
     stay_connected: bool = Field(
         default=True,
-        description="i18n:fields.FuturesRealOrderEventNode.stay_connected"
+        description="i18n:fields.OverseasFuturesRealOrderEventNode.stay_connected"
     )
 
     _inputs: List[InputPort] = []
@@ -220,7 +220,7 @@ class FuturesRealOrderEventNode(BaseNode):
             "event_filter": FieldSchema(
                 name="event_filter",
                 type=FieldType.ENUM,
-                description="i18n:fields.FuturesRealOrderEventNode.event_filter",
+                description="i18n:fields.OverseasFuturesRealOrderEventNode.event_filter",
                 default="all",
                 enum_values=["all", "TC1", "TC2", "TC3"],
                 enum_labels={
@@ -236,7 +236,7 @@ class FuturesRealOrderEventNode(BaseNode):
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
-                description="i18n:fields.FuturesRealOrderEventNode.stay_connected",
+                description="i18n:fields.OverseasFuturesRealOrderEventNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,

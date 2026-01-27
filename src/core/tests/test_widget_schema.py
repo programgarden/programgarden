@@ -344,9 +344,9 @@ class TestNodeTypeRegistryWidgetSchema:
         assert interval_widget["args"]["fixedWidget"]["type"] == "dropdown_button_form_field"
 
     def test_stock_modify_order_node_widget_schema_with_visible_when(self):
-        """StockModifyOrderNode의 visible_when 조건부 필드 확인 (json_dynamic_widget conditional 형식)"""
+        """OverseasStockModifyOrderNode의 visible_when 조건부 필드 확인 (json_dynamic_widget conditional 형식)"""
         registry = NodeTypeRegistry()
-        schema = registry.get_schema("StockModifyOrderNode")
+        schema = registry.get_schema("OverseasStockModifyOrderNode")
 
         assert schema is not None
         assert schema.widget_schema is not None

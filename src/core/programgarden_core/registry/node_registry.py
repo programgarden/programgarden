@@ -69,19 +69,19 @@ class NodeTypeRegistry:
         # 지연 임포트로 순환 참조 방지
         from programgarden_core.nodes import (
             StartNode, ThrottleNode,
-            StockBrokerNode, FuturesBrokerNode,
+            OverseasStockBrokerNode, OverseasFuturesBrokerNode,
             # Market - Stock (해외주식)
-            StockMarketDataNode, StockHistoricalDataNode,
-            StockRealMarketDataNode,
-            StockSymbolQueryNode,
+            OverseasStockMarketDataNode, OverseasStockHistoricalDataNode,
+            OverseasStockRealMarketDataNode,
+            OverseasStockSymbolQueryNode,
             # Market - Futures (해외선물)
-            FuturesMarketDataNode, FuturesHistoricalDataNode,
-            FuturesRealMarketDataNode,
-            FuturesSymbolQueryNode,
+            OverseasFuturesMarketDataNode, OverseasFuturesHistoricalDataNode,
+            OverseasFuturesRealMarketDataNode,
+            OverseasFuturesSymbolQueryNode,
             # Account - Stock (해외주식)
-            StockAccountNode, StockRealAccountNode, StockRealOrderEventNode,
+            OverseasStockAccountNode, OverseasStockRealAccountNode, OverseasStockRealOrderEventNode,
             # Account - Futures (해외선물)
-            FuturesAccountNode, FuturesRealAccountNode, FuturesRealOrderEventNode,
+            OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Data (상품 무관)
             SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
             # Symbol (상품 무관)
@@ -89,8 +89,8 @@ class NodeTypeRegistry:
             ScheduleNode, TradingHoursFilterNode,
             ConditionNode, LogicNode,
             PositionSizingNode, PortfolioNode,
-            StockNewOrderNode, StockModifyOrderNode, StockCancelOrderNode,
-            FuturesNewOrderNode, FuturesModifyOrderNode, FuturesCancelOrderNode,
+            OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode,
+            OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode,
             DisplayNode,
             BacktestEngineNode, BenchmarkCompareNode,
         )
@@ -99,19 +99,19 @@ class NodeTypeRegistry:
             # Infra
             StartNode, ThrottleNode,
             # Broker (상품별 분리)
-            StockBrokerNode, FuturesBrokerNode,
+            OverseasStockBrokerNode, OverseasFuturesBrokerNode,
             # Market - Stock (해외주식)
-            StockMarketDataNode, StockHistoricalDataNode,
-            StockRealMarketDataNode,
-            StockSymbolQueryNode,
+            OverseasStockMarketDataNode, OverseasStockHistoricalDataNode,
+            OverseasStockRealMarketDataNode,
+            OverseasStockSymbolQueryNode,
             # Market - Futures (해외선물)
-            FuturesMarketDataNode, FuturesHistoricalDataNode,
-            FuturesRealMarketDataNode,
-            FuturesSymbolQueryNode,
+            OverseasFuturesMarketDataNode, OverseasFuturesHistoricalDataNode,
+            OverseasFuturesRealMarketDataNode,
+            OverseasFuturesSymbolQueryNode,
             # Account - Stock (해외주식)
-            StockAccountNode, StockRealAccountNode, StockRealOrderEventNode,
+            OverseasStockAccountNode, OverseasStockRealAccountNode, OverseasStockRealOrderEventNode,
             # Account - Futures (해외선물)
-            FuturesAccountNode, FuturesRealAccountNode, FuturesRealOrderEventNode,
+            OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Data (상품 무관)
             SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
             # Symbol (상품 무관)
@@ -123,9 +123,9 @@ class NodeTypeRegistry:
             # Risk
             PositionSizingNode, PortfolioNode,
             # Order (해외주식)
-            StockNewOrderNode, StockModifyOrderNode, StockCancelOrderNode,
+            OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode,
             # Order (해외선물)
-            FuturesNewOrderNode, FuturesModifyOrderNode, FuturesCancelOrderNode,
+            OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode,
             # messaging - 커뮤니티 노드(TelegramNode 등)에서 등록
             # Display
             DisplayNode,

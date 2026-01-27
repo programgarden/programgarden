@@ -112,7 +112,7 @@ TEST_WORKFLOW = {
         },
         {
             "id": "entry_order",
-            "type": "FuturesNewOrderNode",
+            "type": "OverseasFuturesNewOrderNode",
             "plugin": "LimitOrder",
             "connection": "{{ nodes.broker.connection }}",
             "side": "buy",  # 롱 진입
@@ -122,7 +122,7 @@ TEST_WORKFLOW = {
         },
         {
             "id": "exit_order",
-            "type": "FuturesNewOrderNode",
+            "type": "OverseasFuturesNewOrderNode",
             "plugin": "LimitOrder",
             "connection": "{{ nodes.broker.connection }}",
             "side": "sell",  # 롱 청산

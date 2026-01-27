@@ -2,7 +2,7 @@
 ProgramGarden Core - Futures Account Node
 
 해외선물 계좌 조회:
-- FuturesAccountNode: 해외선물 계좌 잔고, 보유종목, 미체결 조회 (REST API 1회성)
+- OverseasFuturesAccountNode: 해외선물 계좌 잔고, 보유종목, 미체결 조회 (REST API 1회성)
 """
 
 from typing import List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -21,7 +21,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class FuturesAccountNode(BaseNode):
+class OverseasFuturesAccountNode(BaseNode):
     """
     해외선물 REST API 1회성 계좌 조회 노드
 
@@ -31,12 +31,12 @@ class FuturesAccountNode(BaseNode):
     - 예수금/총자산
     - 미체결 주문
 
-    실시간 업데이트가 필요하면 FuturesRealAccountNode를 사용하세요.
+    실시간 업데이트가 필요하면 OverseasFuturesRealAccountNode를 사용하세요.
     """
 
-    type: Literal["FuturesAccountNode"] = "FuturesAccountNode"
+    type: Literal["OverseasFuturesAccountNode"] = "OverseasFuturesAccountNode"
     category: NodeCategory = NodeCategory.ACCOUNT
-    description: str = "i18n:nodes.FuturesAccountNode.description"
+    description: str = "i18n:nodes.OverseasFuturesAccountNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/account_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS

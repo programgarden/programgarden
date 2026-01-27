@@ -8143,8 +8143,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
     신규 주문 Executor
 
     지원 노드:
-    - StockNewOrderNode: 해외주식 신규주문 (COSAT00301)
-    - FuturesNewOrderNode: 해외선물 신규주문 (CIDBT00100)
+    - OverseasStockNewOrderNode: 해외주식 신규주문 (COSAT00301)
+    - OverseasFuturesNewOrderNode: 해외선물 신규주문 (CIDBT00100)
 
     입력 (orders 배열):
     - orders: [{symbol, exchange, quantity, price}, ...]
@@ -8475,7 +8475,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         context.log(
             "info",
-            f"StockNewOrderNode completed: {success_count} success, {fail_count} failed",
+            f"OverseasStockNewOrderNode completed: {success_count} success, {fail_count} failed",
             node_id
         )
 
@@ -8770,7 +8770,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         context.log(
             "info",
-            f"FuturesNewOrderNode completed: {success_count} success, {fail_count} failed",
+            f"OverseasFuturesNewOrderNode completed: {success_count} success, {fail_count} failed",
             node_id
         )
 
@@ -8821,8 +8821,8 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
     주문 정정 Executor
 
     지원 노드:
-    - StockModifyOrderNode: 해외주식 정정주문 (COSAT00311)
-    - FuturesModifyOrderNode: 해외선물 정정주문 (CIDBT00200)
+    - OverseasStockModifyOrderNode: 해외주식 정정주문 (COSAT00311)
+    - OverseasFuturesModifyOrderNode: 해외선물 정정주문 (CIDBT00200)
 
     입력:
     - original_order_id: 원주문번호 (필수)
@@ -9137,8 +9137,8 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     주문 취소 Executor
 
     지원 노드:
-    - StockCancelOrderNode: 해외주식 취소주문 (COSAT00303)
-    - FuturesCancelOrderNode: 해외선물 취소주문 (CIDBT00300)
+    - OverseasStockCancelOrderNode: 해외주식 취소주문 (COSAT00303)
+    - OverseasFuturesCancelOrderNode: 해외선물 취소주문 (CIDBT00300)
 
     입력:
     - original_order_id: 취소할 주문번호 (필수)
@@ -9678,13 +9678,13 @@ class WorkflowExecutor:
             # Position sizing node
             "PositionSizingNode": PositionSizingNodeExecutor(),
             # 해외주식 주문
-            "StockNewOrderNode": NewOrderNodeExecutor(),
-            "StockModifyOrderNode": ModifyOrderNodeExecutor(),
-            "StockCancelOrderNode": CancelOrderNodeExecutor(),
+            "OverseasStockNewOrderNode": NewOrderNodeExecutor(),
+            "OverseasStockModifyOrderNode": ModifyOrderNodeExecutor(),
+            "OverseasStockCancelOrderNode": CancelOrderNodeExecutor(),
             # 해외선물 주문
-            "FuturesNewOrderNode": NewOrderNodeExecutor(),
-            "FuturesModifyOrderNode": ModifyOrderNodeExecutor(),
-            "FuturesCancelOrderNode": CancelOrderNodeExecutor(),
+            "OverseasFuturesNewOrderNode": NewOrderNodeExecutor(),
+            "OverseasFuturesModifyOrderNode": ModifyOrderNodeExecutor(),
+            "OverseasFuturesCancelOrderNode": CancelOrderNodeExecutor(),
             # Data nodes
             "SQLiteNode": SQLiteNodeExecutor(),
         }

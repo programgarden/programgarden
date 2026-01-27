@@ -2,9 +2,9 @@
 ProgramGarden Core - Stock Realtime Nodes
 
 해외주식 실시간 노드:
-- StockRealMarketDataNode: 해외주식 실시간 시세 (WebSocket)
-- StockRealAccountNode: 해외주식 실시간 계좌 정보
-- StockRealOrderEventNode: 해외주식 실시간 주문 이벤트
+- OverseasStockRealMarketDataNode: 해외주식 실시간 시세 (WebSocket)
+- OverseasStockRealAccountNode: 해외주식 실시간 계좌 정보
+- OverseasStockRealOrderEventNode: 해외주식 실시간 주문 이벤트
 """
 
 from typing import Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -23,7 +23,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class StockRealMarketDataNode(BaseNode):
+class OverseasStockRealMarketDataNode(BaseNode):
     """
     해외주식 실시간 시세 노드
 
@@ -31,9 +31,9 @@ class StockRealMarketDataNode(BaseNode):
     거래소: NYSE, NASDAQ, AMEX
     """
 
-    type: Literal["StockRealMarketDataNode"] = "StockRealMarketDataNode"
+    type: Literal["OverseasStockRealMarketDataNode"] = "OverseasStockRealMarketDataNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.StockRealMarketDataNode.description"
+    description: str = "i18n:nodes.OverseasStockRealMarketDataNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realmarketdata_stock.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
@@ -63,8 +63,8 @@ class StockRealMarketDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.StockRealMarketDataNode.symbols",
-                description="i18n:fields.StockRealMarketDataNode.symbols",
+                display_name="i18n:fieldNames.OverseasStockRealMarketDataNode.symbols",
+                description="i18n:fields.OverseasStockRealMarketDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
@@ -78,10 +78,10 @@ class StockRealMarketDataNode(BaseNode):
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
                 ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.StockRealMarketDataNode.symbols.help_text",
+                help_text="i18n:fields.OverseasStockRealMarketDataNode.symbols.help_text",
                 object_schema=[
-                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.StockRealMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
-                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.StockRealMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "AAPL"},
+                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.OverseasStockRealMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockRealMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "AAPL"},
                 ],
                 ui_options={
                     "exchanges": [
@@ -94,8 +94,8 @@ class StockRealMarketDataNode(BaseNode):
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
-                display_name="i18n:fieldNames.StockRealMarketDataNode.stay_connected",
-                description="i18n:fields.StockRealMarketDataNode.stay_connected",
+                display_name="i18n:fieldNames.OverseasStockRealMarketDataNode.stay_connected",
+                description="i18n:fields.OverseasStockRealMarketDataNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -103,7 +103,7 @@ class StockRealMarketDataNode(BaseNode):
         }
 
 
-class StockRealAccountNode(BaseNode):
+class OverseasStockRealAccountNode(BaseNode):
     """
     해외주식 실시간 계좌 정보 노드
 
@@ -111,9 +111,9 @@ class StockRealAccountNode(BaseNode):
     수수료율/세금율 설정으로 정확한 손익 계산을 지원합니다.
     """
 
-    type: Literal["StockRealAccountNode"] = "StockRealAccountNode"
+    type: Literal["OverseasStockRealAccountNode"] = "OverseasStockRealAccountNode"
     category: NodeCategory = NodeCategory.ACCOUNT
-    description: str = "i18n:nodes.StockRealAccountNode.description"
+    description: str = "i18n:nodes.OverseasStockRealAccountNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realaccount_stock.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
@@ -149,7 +149,7 @@ class StockRealAccountNode(BaseNode):
             "commission_rate": FieldSchema(
                 name="commission_rate",
                 type=FieldType.NUMBER,
-                description="i18n:fields.StockRealAccountNode.commission_rate",
+                description="i18n:fields.OverseasStockRealAccountNode.commission_rate",
                 default=0.25,
                 min_value=0,
                 max_value=5,
@@ -163,7 +163,7 @@ class StockRealAccountNode(BaseNode):
             "tax_rate": FieldSchema(
                 name="tax_rate",
                 type=FieldType.NUMBER,
-                description="i18n:fields.StockRealAccountNode.tax_rate",
+                description="i18n:fields.OverseasStockRealAccountNode.tax_rate",
                 default=0.0,
                 min_value=0,
                 max_value=1,
@@ -177,7 +177,7 @@ class StockRealAccountNode(BaseNode):
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
-                description="i18n:fields.StockRealAccountNode.stay_connected",
+                description="i18n:fields.OverseasStockRealAccountNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -186,7 +186,7 @@ class StockRealAccountNode(BaseNode):
             "sync_interval_sec": FieldSchema(
                 name="sync_interval_sec",
                 type=FieldType.INTEGER,
-                description="i18n:fields.StockRealAccountNode.sync_interval_sec",
+                description="i18n:fields.OverseasStockRealAccountNode.sync_interval_sec",
                 default=60,
                 min_value=10,
                 max_value=3600,
@@ -199,7 +199,7 @@ class StockRealAccountNode(BaseNode):
         }
 
 
-class StockRealOrderEventNode(BaseNode):
+class OverseasStockRealOrderEventNode(BaseNode):
     """
     해외주식 실시간 주문 이벤트 노드
 
@@ -207,20 +207,20 @@ class StockRealOrderEventNode(BaseNode):
     이벤트 필터: all, AS0(접수), AS1(체결), AS2(정정), AS3(취소확인), AS4(거부)
     """
 
-    type: Literal["StockRealOrderEventNode"] = "StockRealOrderEventNode"
+    type: Literal["OverseasStockRealOrderEventNode"] = "OverseasStockRealOrderEventNode"
     category: NodeCategory = NodeCategory.ACCOUNT
-    description: str = "i18n:nodes.StockRealOrderEventNode.description"
+    description: str = "i18n:nodes.OverseasStockRealOrderEventNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realorderevent_stock.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
     event_filter: str = Field(
         default="all",
-        description="i18n:fields.StockRealOrderEventNode.event_filter"
+        description="i18n:fields.OverseasStockRealOrderEventNode.event_filter"
     )
     stay_connected: bool = Field(
         default=True,
-        description="i18n:fields.StockRealOrderEventNode.stay_connected"
+        description="i18n:fields.OverseasStockRealOrderEventNode.stay_connected"
     )
 
     _inputs: List[InputPort] = []
@@ -239,7 +239,7 @@ class StockRealOrderEventNode(BaseNode):
             "event_filter": FieldSchema(
                 name="event_filter",
                 type=FieldType.ENUM,
-                description="i18n:fields.StockRealOrderEventNode.event_filter",
+                description="i18n:fields.OverseasStockRealOrderEventNode.event_filter",
                 default="all",
                 enum_values=["all", "AS0", "AS1", "AS2", "AS3", "AS4"],
                 enum_labels={
@@ -257,7 +257,7 @@ class StockRealOrderEventNode(BaseNode):
             "stay_connected": FieldSchema(
                 name="stay_connected",
                 type=FieldType.BOOLEAN,
-                description="i18n:fields.StockRealOrderEventNode.stay_connected",
+                description="i18n:fields.OverseasStockRealOrderEventNode.stay_connected",
                 default=True,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,

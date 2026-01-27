@@ -2,7 +2,7 @@
 ProgramGarden Core - Futures Historical Data Node
 
 해외선물 과거 데이터 조회:
-- FuturesHistoricalDataNode: 해외선물 과거 OHLCV 데이터 조회 (CME, EUREX, SGX, HKEX)
+- OverseasFuturesHistoricalDataNode: 해외선물 과거 OHLCV 데이터 조회 (CME, EUREX, SGX, HKEX)
 """
 
 from typing import Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -21,7 +21,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class FuturesHistoricalDataNode(BaseNode):
+class OverseasFuturesHistoricalDataNode(BaseNode):
     """
     해외선물 과거 데이터 조회 노드
 
@@ -29,9 +29,9 @@ class FuturesHistoricalDataNode(BaseNode):
     거래소: CME, EUREX, SGX, HKEX
     """
 
-    type: Literal["FuturesHistoricalDataNode"] = "FuturesHistoricalDataNode"
+    type: Literal["OverseasFuturesHistoricalDataNode"] = "OverseasFuturesHistoricalDataNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.FuturesHistoricalDataNode.description"
+    description: str = "i18n:nodes.OverseasFuturesHistoricalDataNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/historicaldata_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
@@ -76,8 +76,8 @@ class FuturesHistoricalDataNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.FuturesHistoricalDataNode.symbols",
-                description="i18n:fields.FuturesHistoricalDataNode.symbols",
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.symbols",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.symbols",
                 default=[],
                 array_item_type=FieldType.OBJECT,
                 category=FieldCategory.PARAMETERS,
@@ -89,10 +89,10 @@ class FuturesHistoricalDataNode(BaseNode):
                 ],
                 expected_type="list[{exchange: str, symbol: str}]",
                 ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.FuturesHistoricalDataNode.symbols.help_text",
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.symbols.help_text",
                 object_schema=[
-                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.FuturesHistoricalDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
-                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.FuturesHistoricalDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "ESH26"},
+                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "ESH26"},
                 ],
                 ui_options={
                     "exchanges": [
@@ -106,8 +106,8 @@ class FuturesHistoricalDataNode(BaseNode):
             "start_date": FieldSchema(
                 name="start_date",
                 type=FieldType.STRING,
-                display_name="i18n:fieldNames.FuturesHistoricalDataNode.start_date",
-                description="i18n:fields.FuturesHistoricalDataNode.start_date",
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.start_date",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.start_date",
                 default="{{ months_ago_yyyymmdd(3) }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
@@ -115,13 +115,13 @@ class FuturesHistoricalDataNode(BaseNode):
                 example="2024-01-01",
                 expected_type="str",
                 ui_component=UIComponent.DATE_PICKER,
-                help_text="i18n:fields.FuturesHistoricalDataNode.start_date.help_text",
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.start_date.help_text",
             ),
             "end_date": FieldSchema(
                 name="end_date",
                 type=FieldType.STRING,
-                display_name="i18n:fieldNames.FuturesHistoricalDataNode.end_date",
-                description="i18n:fields.FuturesHistoricalDataNode.end_date",
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.end_date",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.end_date",
                 default="{{ today_yyyymmdd() }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
@@ -129,13 +129,13 @@ class FuturesHistoricalDataNode(BaseNode):
                 example="2024-12-31",
                 expected_type="str",
                 ui_component=UIComponent.DATE_PICKER,
-                help_text="i18n:fields.FuturesHistoricalDataNode.end_date.help_text",
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.end_date.help_text",
             ),
             "interval": FieldSchema(
                 name="interval",
                 type=FieldType.ENUM,
-                display_name="i18n:fieldNames.FuturesHistoricalDataNode.interval",
-                description="i18n:fields.FuturesHistoricalDataNode.interval",
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.interval",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.interval",
                 default="1d",
                 required=True,
                 enum_values=["1m", "5m", "15m", "1h", "1d", "1w", "1M"],
@@ -157,9 +157,9 @@ class FuturesHistoricalDataNode(BaseNode):
             "adjust": FieldSchema(
                 name="adjust",
                 type=FieldType.BOOLEAN,
-                display_name="i18n:fieldNames.FuturesHistoricalDataNode.adjust",
-                description="i18n:fields.FuturesHistoricalDataNode.adjust.short",
-                help_text="i18n:fields.FuturesHistoricalDataNode.adjust.detail",
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.adjust",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.adjust.short",
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.adjust.detail",
                 default=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,

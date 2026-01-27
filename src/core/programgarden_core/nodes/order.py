@@ -2,8 +2,8 @@
 ProgramGarden Core - Order Nodes
 
 상품별 주문 노드 (해외주식 3개 + 해외선물 3개 = 총 6개):
-- StockNewOrderNode, StockModifyOrderNode, StockCancelOrderNode (해외주식)
-- FuturesNewOrderNode, FuturesModifyOrderNode, FuturesCancelOrderNode (해외선물)
+- OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode (해외주식)
+- OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode (해외선물)
 
 입력 구조:
 - NewOrder: orders 배열 [{symbol, exchange, quantity, price}, ...]
@@ -118,7 +118,7 @@ class BaseModifyOrderNode(BaseNode):
 # 해외주식 주문 노드
 # =============================================================================
 
-class StockNewOrderNode(BaseOrderNode):
+class OverseasStockNewOrderNode(BaseOrderNode):
     """
     해외주식 신규주문 노드
 
@@ -128,8 +128,8 @@ class StockNewOrderNode(BaseOrderNode):
     API: COSAT00301 (해외주식 신규주문)
     """
 
-    type: Literal["StockNewOrderNode"] = "StockNewOrderNode"
-    description: str = "i18n:nodes.StockNewOrderNode.description"
+    type: Literal["OverseasStockNewOrderNode"] = "OverseasStockNewOrderNode"
+    description: str = "i18n:nodes.OverseasStockNewOrderNode.description"
 
     # 해외주식 전용 필드
     price_type: Literal["limit", "market", "LOO", "LOC", "MOO", "MOC"] = Field(
@@ -146,7 +146,7 @@ class StockNewOrderNode(BaseOrderNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="i18n:fields.StockNewOrderNode.connection",
+                description="i18n:fields.OverseasStockNewOrderNode.connection",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -158,7 +158,7 @@ class StockNewOrderNode(BaseOrderNode):
             "side": FieldSchema(
                 name="side",
                 type=FieldType.ENUM,
-                description="i18n:fields.StockNewOrderNode.side",
+                description="i18n:fields.OverseasStockNewOrderNode.side",
                 default="buy",
                 enum_values=["buy", "sell"],
                 enum_labels={
@@ -174,7 +174,7 @@ class StockNewOrderNode(BaseOrderNode):
             "order_type": FieldSchema(
                 name="order_type",
                 type=FieldType.ENUM,
-                description="i18n:fields.StockNewOrderNode.order_type",
+                description="i18n:fields.OverseasStockNewOrderNode.order_type",
                 default="limit",
                 enum_values=["market", "limit"],
                 enum_labels={
@@ -190,7 +190,7 @@ class StockNewOrderNode(BaseOrderNode):
             "price_type": FieldSchema(
                 name="price_type",
                 type=FieldType.ENUM,
-                description="i18n:fields.StockNewOrderNode.price_type",
+                description="i18n:fields.OverseasStockNewOrderNode.price_type",
                 default="limit",
                 enum_values=["limit", "market", "LOO", "LOC", "MOO", "MOC"],
                 enum_labels={
@@ -211,8 +211,8 @@ class StockNewOrderNode(BaseOrderNode):
                 name="orders",
                 type=FieldType.ARRAY,
                 array_item_type=FieldType.OBJECT,
-                display_name="i18n:fieldNames.StockNewOrderNode.orders",
-                description="i18n:fields.StockNewOrderNode.orders",
+                display_name="i18n:fieldNames.OverseasStockNewOrderNode.orders",
+                description="i18n:fields.OverseasStockNewOrderNode.orders",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -241,7 +241,7 @@ class StockNewOrderNode(BaseOrderNode):
         }
 
 
-class StockModifyOrderNode(BaseModifyOrderNode):
+class OverseasStockModifyOrderNode(BaseModifyOrderNode):
     """
     해외주식 정정주문 노드
 
@@ -250,8 +250,8 @@ class StockModifyOrderNode(BaseModifyOrderNode):
     API: COSAT00302 (해외주식 정정주문)
     """
 
-    type: Literal["StockModifyOrderNode"] = "StockModifyOrderNode"
-    description: str = "i18n:nodes.StockModifyOrderNode.description"
+    type: Literal["OverseasStockModifyOrderNode"] = "OverseasStockModifyOrderNode"
+    description: str = "i18n:nodes.OverseasStockModifyOrderNode.description"
 
     # 해외주식 전용 필드
     price_type: Literal["limit", "market"] = Field(
@@ -303,7 +303,7 @@ class StockModifyOrderNode(BaseModifyOrderNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="i18n:fields.StockModifyOrderNode.connection",
+                description="i18n:fields.OverseasStockModifyOrderNode.connection",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -315,7 +315,7 @@ class StockModifyOrderNode(BaseModifyOrderNode):
             "price_type": FieldSchema(
                 name="price_type",
                 type=FieldType.ENUM,
-                description="i18n:fields.StockModifyOrderNode.price_type",
+                description="i18n:fields.OverseasStockModifyOrderNode.price_type",
                 default="limit",
                 enum_values=["limit", "market"],
                 enum_labels={
@@ -331,7 +331,7 @@ class StockModifyOrderNode(BaseModifyOrderNode):
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
-                description="i18n:fields.StockModifyOrderNode.original_order_id",
+                description="i18n:fields.OverseasStockModifyOrderNode.original_order_id",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -340,14 +340,14 @@ class StockModifyOrderNode(BaseModifyOrderNode):
                 example_binding="{{ nodes.account.selected_order.order_id }}",
                 bindable_sources=[
                     "RealAccountNode.open_orders[].order_id",
-                    "StockNewOrderNode.order_result.order_id",
+                    "OverseasStockNewOrderNode.order_result.order_id",
                 ],
                 expected_type="str",
             ),
             "symbol": FieldSchema(
                 name="symbol",
                 type=FieldType.STRING,
-                description="i18n:fields.StockModifyOrderNode.symbol",
+                description="i18n:fields.OverseasStockModifyOrderNode.symbol",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -358,7 +358,7 @@ class StockModifyOrderNode(BaseModifyOrderNode):
             "exchange": FieldSchema(
                 name="exchange",
                 type=FieldType.ENUM,
-                description="i18n:fields.StockModifyOrderNode.exchange",
+                description="i18n:fields.OverseasStockModifyOrderNode.exchange",
                 enum_values=["NYSE", "NASDAQ", "AMEX"],
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
@@ -369,7 +369,7 @@ class StockModifyOrderNode(BaseModifyOrderNode):
             "new_quantity": FieldSchema(
                 name="new_quantity",
                 type=FieldType.INTEGER,
-                description="i18n:fields.StockModifyOrderNode.new_quantity",
+                description="i18n:fields.OverseasStockModifyOrderNode.new_quantity",
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -379,7 +379,7 @@ class StockModifyOrderNode(BaseModifyOrderNode):
             "new_price": FieldSchema(
                 name="new_price",
                 type=FieldType.NUMBER,
-                description="i18n:fields.StockModifyOrderNode.new_price",
+                description="i18n:fields.OverseasStockModifyOrderNode.new_price",
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -390,7 +390,7 @@ class StockModifyOrderNode(BaseModifyOrderNode):
         }
 
 
-class StockCancelOrderNode(BaseModifyOrderNode):
+class OverseasStockCancelOrderNode(BaseModifyOrderNode):
     """
     해외주식 취소주문 노드
 
@@ -399,8 +399,8 @@ class StockCancelOrderNode(BaseModifyOrderNode):
     API: COSAT00303 (해외주식 취소주문)
     """
 
-    type: Literal["StockCancelOrderNode"] = "StockCancelOrderNode"
-    description: str = "i18n:nodes.StockCancelOrderNode.description"
+    type: Literal["OverseasStockCancelOrderNode"] = "OverseasStockCancelOrderNode"
+    description: str = "i18n:nodes.OverseasStockCancelOrderNode.description"
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -436,7 +436,7 @@ class StockCancelOrderNode(BaseModifyOrderNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="i18n:fields.StockCancelOrderNode.connection",
+                description="i18n:fields.OverseasStockCancelOrderNode.connection",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -448,7 +448,7 @@ class StockCancelOrderNode(BaseModifyOrderNode):
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
-                description="i18n:fields.StockCancelOrderNode.original_order_id",
+                description="i18n:fields.OverseasStockCancelOrderNode.original_order_id",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -457,14 +457,14 @@ class StockCancelOrderNode(BaseModifyOrderNode):
                 example_binding="{{ nodes.account.selected_order.order_id }}",
                 bindable_sources=[
                     "RealAccountNode.open_orders[].order_id",
-                    "StockNewOrderNode.order_result.order_id",
+                    "OverseasStockNewOrderNode.order_result.order_id",
                 ],
                 expected_type="str",
             ),
             "symbol": FieldSchema(
                 name="symbol",
                 type=FieldType.STRING,
-                description="i18n:fields.StockCancelOrderNode.symbol",
+                description="i18n:fields.OverseasStockCancelOrderNode.symbol",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -475,7 +475,7 @@ class StockCancelOrderNode(BaseModifyOrderNode):
             "exchange": FieldSchema(
                 name="exchange",
                 type=FieldType.ENUM,
-                description="i18n:fields.StockCancelOrderNode.exchange",
+                description="i18n:fields.OverseasStockCancelOrderNode.exchange",
                 enum_values=["NYSE", "NASDAQ", "AMEX"],
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
@@ -490,7 +490,7 @@ class StockCancelOrderNode(BaseModifyOrderNode):
 # 해외선물 주문 노드
 # =============================================================================
 
-class FuturesNewOrderNode(BaseOrderNode):
+class OverseasFuturesNewOrderNode(BaseOrderNode):
     """
     해외선물 신규주문 노드
 
@@ -500,8 +500,8 @@ class FuturesNewOrderNode(BaseOrderNode):
     API: CIDBT00100 (해외선물 신규주문)
     """
 
-    type: Literal["FuturesNewOrderNode"] = "FuturesNewOrderNode"
-    description: str = "i18n:nodes.FuturesNewOrderNode.description"
+    type: Literal["OverseasFuturesNewOrderNode"] = "OverseasFuturesNewOrderNode"
+    description: str = "i18n:nodes.OverseasFuturesNewOrderNode.description"
 
     # 해외선물 전용 필드
     expiry_month: Optional[str] = Field(
@@ -518,7 +518,7 @@ class FuturesNewOrderNode(BaseOrderNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="i18n:fields.FuturesNewOrderNode.connection",
+                description="i18n:fields.OverseasFuturesNewOrderNode.connection",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -530,7 +530,7 @@ class FuturesNewOrderNode(BaseOrderNode):
             "side": FieldSchema(
                 name="side",
                 type=FieldType.ENUM,
-                description="i18n:fields.FuturesNewOrderNode.side",
+                description="i18n:fields.OverseasFuturesNewOrderNode.side",
                 default="buy",
                 enum_values=["buy", "sell"],
                 enum_labels={
@@ -546,7 +546,7 @@ class FuturesNewOrderNode(BaseOrderNode):
             "order_type": FieldSchema(
                 name="order_type",
                 type=FieldType.ENUM,
-                description="i18n:fields.FuturesNewOrderNode.order_type",
+                description="i18n:fields.OverseasFuturesNewOrderNode.order_type",
                 default="limit",
                 enum_values=["market", "limit"],
                 enum_labels={
@@ -562,7 +562,7 @@ class FuturesNewOrderNode(BaseOrderNode):
             "expiry_month": FieldSchema(
                 name="expiry_month",
                 type=FieldType.STRING,
-                description="i18n:fields.FuturesNewOrderNode.expiry_month",
+                description="i18n:fields.OverseasFuturesNewOrderNode.expiry_month",
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -574,8 +574,8 @@ class FuturesNewOrderNode(BaseOrderNode):
                 name="orders",
                 type=FieldType.ARRAY,
                 array_item_type=FieldType.OBJECT,
-                display_name="i18n:fieldNames.FuturesNewOrderNode.orders",
-                description="i18n:fields.FuturesNewOrderNode.orders",
+                display_name="i18n:fieldNames.OverseasFuturesNewOrderNode.orders",
+                description="i18n:fields.OverseasFuturesNewOrderNode.orders",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -604,7 +604,7 @@ class FuturesNewOrderNode(BaseOrderNode):
         }
 
 
-class FuturesModifyOrderNode(BaseModifyOrderNode):
+class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
     """
     해외선물 정정주문 노드
 
@@ -613,8 +613,8 @@ class FuturesModifyOrderNode(BaseModifyOrderNode):
     API: CIDBT00200 (해외선물 정정주문)
     """
 
-    type: Literal["FuturesModifyOrderNode"] = "FuturesModifyOrderNode"
-    description: str = "i18n:nodes.FuturesModifyOrderNode.description"
+    type: Literal["OverseasFuturesModifyOrderNode"] = "OverseasFuturesModifyOrderNode"
+    description: str = "i18n:nodes.OverseasFuturesModifyOrderNode.description"
 
     # 정정 대상
     new_quantity: Optional[int] = Field(
@@ -660,7 +660,7 @@ class FuturesModifyOrderNode(BaseModifyOrderNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="i18n:fields.FuturesModifyOrderNode.connection",
+                description="i18n:fields.OverseasFuturesModifyOrderNode.connection",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -672,7 +672,7 @@ class FuturesModifyOrderNode(BaseModifyOrderNode):
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
-                description="i18n:fields.FuturesModifyOrderNode.original_order_id",
+                description="i18n:fields.OverseasFuturesModifyOrderNode.original_order_id",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -681,14 +681,14 @@ class FuturesModifyOrderNode(BaseModifyOrderNode):
                 example_binding="{{ nodes.account.selected_order.order_id }}",
                 bindable_sources=[
                     "RealAccountNode.open_orders[].order_id",
-                    "FuturesNewOrderNode.order_result.order_id",
+                    "OverseasFuturesNewOrderNode.order_result.order_id",
                 ],
                 expected_type="str",
             ),
             "symbol": FieldSchema(
                 name="symbol",
                 type=FieldType.STRING,
-                description="i18n:fields.FuturesModifyOrderNode.symbol",
+                description="i18n:fields.OverseasFuturesModifyOrderNode.symbol",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -699,7 +699,7 @@ class FuturesModifyOrderNode(BaseModifyOrderNode):
             "exchange": FieldSchema(
                 name="exchange",
                 type=FieldType.ENUM,
-                description="i18n:fields.FuturesModifyOrderNode.exchange",
+                description="i18n:fields.OverseasFuturesModifyOrderNode.exchange",
                 enum_values=["CME", "EUREX", "SGX", "HKEX"],
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
@@ -710,7 +710,7 @@ class FuturesModifyOrderNode(BaseModifyOrderNode):
             "new_quantity": FieldSchema(
                 name="new_quantity",
                 type=FieldType.INTEGER,
-                description="i18n:fields.FuturesModifyOrderNode.new_quantity",
+                description="i18n:fields.OverseasFuturesModifyOrderNode.new_quantity",
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -720,7 +720,7 @@ class FuturesModifyOrderNode(BaseModifyOrderNode):
             "new_price": FieldSchema(
                 name="new_price",
                 type=FieldType.NUMBER,
-                description="i18n:fields.FuturesModifyOrderNode.new_price",
+                description="i18n:fields.OverseasFuturesModifyOrderNode.new_price",
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -730,7 +730,7 @@ class FuturesModifyOrderNode(BaseModifyOrderNode):
         }
 
 
-class FuturesCancelOrderNode(BaseModifyOrderNode):
+class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
     """
     해외선물 취소주문 노드
 
@@ -739,8 +739,8 @@ class FuturesCancelOrderNode(BaseModifyOrderNode):
     API: CIDBT00300 (해외선물 취소주문)
     """
 
-    type: Literal["FuturesCancelOrderNode"] = "FuturesCancelOrderNode"
-    description: str = "i18n:nodes.FuturesCancelOrderNode.description"
+    type: Literal["OverseasFuturesCancelOrderNode"] = "OverseasFuturesCancelOrderNode"
+    description: str = "i18n:nodes.OverseasFuturesCancelOrderNode.description"
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -776,7 +776,7 @@ class FuturesCancelOrderNode(BaseModifyOrderNode):
             "connection": FieldSchema(
                 name="connection",
                 type=FieldType.OBJECT,
-                description="i18n:fields.FuturesCancelOrderNode.connection",
+                description="i18n:fields.OverseasFuturesCancelOrderNode.connection",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -788,7 +788,7 @@ class FuturesCancelOrderNode(BaseModifyOrderNode):
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
-                description="i18n:fields.FuturesCancelOrderNode.original_order_id",
+                description="i18n:fields.OverseasFuturesCancelOrderNode.original_order_id",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -797,14 +797,14 @@ class FuturesCancelOrderNode(BaseModifyOrderNode):
                 example_binding="{{ nodes.account.selected_order.order_id }}",
                 bindable_sources=[
                     "RealAccountNode.open_orders[].order_id",
-                    "FuturesNewOrderNode.order_result.order_id",
+                    "OverseasFuturesNewOrderNode.order_result.order_id",
                 ],
                 expected_type="str",
             ),
             "symbol": FieldSchema(
                 name="symbol",
                 type=FieldType.STRING,
-                description="i18n:fields.FuturesCancelOrderNode.symbol",
+                description="i18n:fields.OverseasFuturesCancelOrderNode.symbol",
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
@@ -815,7 +815,7 @@ class FuturesCancelOrderNode(BaseModifyOrderNode):
             "exchange": FieldSchema(
                 name="exchange",
                 type=FieldType.ENUM,
-                description="i18n:fields.FuturesCancelOrderNode.exchange",
+                description="i18n:fields.OverseasFuturesCancelOrderNode.exchange",
                 enum_values=["CME", "EUREX", "SGX", "HKEX"],
                 required=True,
                 expression_mode=ExpressionMode.BOTH,

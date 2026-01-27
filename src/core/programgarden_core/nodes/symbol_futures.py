@@ -2,7 +2,7 @@
 ProgramGarden Core - Futures Symbol Query Node
 
 해외선물 전체종목조회:
-- FuturesSymbolQueryNode: 해외선물 전체 거래 가능 종목 조회 (o3101 API)
+- OverseasFuturesSymbolQueryNode: 해외선물 전체 거래 가능 종목 조회 (o3101 API)
 """
 
 from typing import Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -21,7 +21,7 @@ from programgarden_core.nodes.base import (
 )
 
 
-class FuturesSymbolQueryNode(BaseNode):
+class OverseasFuturesSymbolQueryNode(BaseNode):
     """
     해외선물 전체종목조회 노드
 
@@ -29,9 +29,9 @@ class FuturesSymbolQueryNode(BaseNode):
     o3101 API (해외선물마스터조회) 사용.
     """
 
-    type: Literal["FuturesSymbolQueryNode"] = "FuturesSymbolQueryNode"
+    type: Literal["OverseasFuturesSymbolQueryNode"] = "OverseasFuturesSymbolQueryNode"
     category: NodeCategory = NodeCategory.MARKET
-    description: str = "i18n:nodes.FuturesSymbolQueryNode.description"
+    description: str = "i18n:nodes.OverseasFuturesSymbolQueryNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/symbolquery_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS

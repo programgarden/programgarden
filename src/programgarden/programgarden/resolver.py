@@ -218,9 +218,9 @@ class WorkflowResolver:
             "AccountNode",
             "MarketDataNode",
             # 해외주식 주문
-            "StockNewOrderNode", "StockModifyOrderNode", "StockCancelOrderNode",
+            "OverseasStockNewOrderNode", "OverseasStockModifyOrderNode", "OverseasStockCancelOrderNode",
             # 해외선물 주문
-            "FuturesNewOrderNode", "FuturesModifyOrderNode", "FuturesCancelOrderNode",
+            "OverseasFuturesNewOrderNode", "OverseasFuturesModifyOrderNode", "OverseasFuturesCancelOrderNode",
         }
         
         # Build edge lookup: {to_node_id: [from_node_ids]}

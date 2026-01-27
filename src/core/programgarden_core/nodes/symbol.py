@@ -8,8 +8,8 @@ Symbol source/filter nodes:
 - SymbolFilterNode: Symbol list filter/intersection/difference
 
 SymbolQueryNode는 상품별 분리됨:
-- symbol_stock.py → StockSymbolQueryNode
-- symbol_futures.py → FuturesSymbolQueryNode
+- symbol_stock.py → OverseasStockSymbolQueryNode
+- symbol_futures.py → OverseasFuturesSymbolQueryNode
 """
 
 from typing import Optional, List, Literal, Dict, Any, Union, TYPE_CHECKING

@@ -249,8 +249,8 @@ class ResourceContext:
         
         # 주문 노드는 자동으로 최고 우선순위
         ORDER_NODE_TYPES = {
-            "StockNewOrderNode", "StockModifyOrderNode", "StockCancelOrderNode",
-            "FuturesNewOrderNode", "FuturesModifyOrderNode", "FuturesCancelOrderNode",
+            "OverseasStockNewOrderNode", "OverseasStockModifyOrderNode", "OverseasStockCancelOrderNode",
+            "OverseasFuturesNewOrderNode", "OverseasFuturesModifyOrderNode", "OverseasFuturesCancelOrderNode",
         }
         if task_type in ORDER_NODE_TYPES:
             is_order = True
