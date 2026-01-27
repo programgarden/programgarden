@@ -399,6 +399,14 @@ class FieldSchema(BaseModel):
         if self.placeholder:
             decoration["hintText"] = self.placeholder
 
+        # FIXED_ONLY: 토글 없이 직접 위젯만 렌더링 (expression 전환이 불가하므로 토글 불필요)
+        if self.expression_mode == ExpressionMode.FIXED_ONLY:
+            widget = self._map_ui_component_to_widget(ui_comp, decoration)
+            # description이 있으면 args.helperText로 전달 (Flutter에서 자유롭게 렌더링)
+            if self.description:
+                widget["args"]["helperText"] = self.description
+            return widget
+
         # 자체 토글을 포함하는 커스텀 위젯들은 직접 렌더링 (expression_toggle 래핑 생략)
         # 이 위젯들은 내부에서 자체적으로 Fixed/Expression 토글을 처리함
         self_toggle_widgets = {
@@ -414,11 +422,7 @@ class FieldSchema(BaseModel):
             return self._build_toggle_widget(ui_comp, decoration, locked_mode="expression")
 
         # BOTH 모드: Fixed/Expression 토글 위젯 (전환 가능)
-        if self.expression_mode == ExpressionMode.BOTH:
-            return self._build_toggle_widget(ui_comp, decoration, locked_mode=None)
-
-        # FIXED_ONLY: fixed만 고정 표시 (전환 불가)
-        return self._build_toggle_widget(ui_comp, decoration, locked_mode="fixed")
+        return self._build_toggle_widget(ui_comp, decoration, locked_mode=None)
     
     def _map_ui_component_to_widget(
         self, 
@@ -474,7 +478,6 @@ class FieldSchema(BaseModel):
                 "value": self.default if isinstance(self.default, bool) else False,
                 "labelText": label,
             }
-            # helperText는 custom_expression_toggle의 fixedHelperText로 관리됨
             return {"type": "checkbox", "args": args}
         
         # === SELECT / DROPDOWN ===
@@ -702,18 +705,18 @@ class FieldSchema(BaseModel):
         locked_mode: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        custom_expression_toggle 위젯 생성
-        
+        custom_expression_toggle 위젯 생성 (BOTH / EXPRESSION_ONLY 전용)
+
         Fixed/Expression 토글 버튼과 함께 선택에 따른 입력 위젯을 렌더링합니다.
-        
+        FIXED_ONLY는 to_json_dynamic_widget()에서 직접 위젯을 렌더링하므로 이 메서드를 호출하지 않습니다.
+
         Args:
             ui_comp: UI 컴포넌트 타입
             decoration: 라벨, 설명 등 장식 정보
-            locked_mode: 고정 모드 ("fixed", "expression", None)
-                - "fixed": fixed만 표시, 토글 비활성화
+            locked_mode: 고정 모드 ("expression", None)
                 - "expression": expression(fx)만 표시, 토글 비활성화
                 - None: BOTH 모드, 토글 전환 가능
-            
+
         Returns:
             dict: custom_expression_toggle 위젯 JSON
         """
