@@ -23,6 +23,8 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
     BrokerProvider,
+    ORDER_RESULT_FIELDS,
+    SYMBOL_LIST_FIELDS,
 )
 
 
@@ -79,6 +81,7 @@ class BaseOrderNode(BaseNode):
             name="order_result",
             type="order_result",
             description="i18n:ports.order_result",
+            fields=ORDER_RESULT_FIELDS,
         ),
         OutputPort(
             name="submitted_orders",
@@ -161,7 +164,6 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "order_type": FieldSchema(
@@ -177,7 +179,6 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "price_type": FieldSchema(
@@ -197,7 +198,6 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                 required=False,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "orders": FieldSchema(
@@ -282,6 +282,7 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
             name="modify_result",
             type="order_result",
             description="i18n:ports.modify_result",
+            fields=ORDER_RESULT_FIELDS,
         ),
         OutputPort(
             name="modified_order_id",
@@ -293,7 +294,7 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
-            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
             "price_type": FieldSchema(
@@ -309,7 +310,6 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
                 required=False,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "original_order_id": FieldSchema(
@@ -347,7 +347,6 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "new_quantity": FieldSchema(
@@ -406,6 +405,7 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
             name="cancel_result",
             type="order_result",
             description="i18n:ports.cancel_result",
+            fields=ORDER_RESULT_FIELDS,
         ),
         OutputPort(
             name="cancelled_order_id",
@@ -417,7 +417,7 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
-            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
             "original_order_id": FieldSchema(
@@ -455,7 +455,6 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
         }
@@ -506,7 +505,6 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "order_type": FieldSchema(
@@ -522,7 +520,6 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "expiry_month": FieldSchema(
@@ -612,6 +609,7 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
             name="modify_result",
             type="order_result",
             description="i18n:ports.modify_result",
+            fields=ORDER_RESULT_FIELDS,
         ),
         OutputPort(
             name="modified_order_id",
@@ -623,7 +621,7 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
-            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
             "original_order_id": FieldSchema(
@@ -661,7 +659,6 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
             "new_quantity": FieldSchema(
@@ -719,6 +716,7 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
             name="cancel_result",
             type="order_result",
             description="i18n:ports.cancel_result",
+            fields=ORDER_RESULT_FIELDS,
         ),
         OutputPort(
             name="cancelled_order_id",
@@ -730,7 +728,7 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
-            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
             "original_order_id": FieldSchema(
@@ -768,7 +766,6 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
                 expected_type="str",
             ),
         }

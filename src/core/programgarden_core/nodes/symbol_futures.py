@@ -18,6 +18,7 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
     BrokerProvider,
+    SYMBOL_LIST_FIELDS,
 )
 
 
@@ -51,13 +52,13 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="count", type="integer", description="Total symbol count"),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             "futures_exchange": FieldSchema(
                 name="futures_exchange",
@@ -71,7 +72,6 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="1",
                 expected_type="str",
-                ui_component=UIComponent.SELECT,
             ),
             "futures_contract_month": FieldSchema(
                 name="futures_contract_month",
@@ -83,7 +83,6 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
                 example="front",
                 expected_type="str",
                 placeholder="front, next, F, 2026F",
-                ui_component=UIComponent.TEXT_INPUT,
             ),
             "max_results": FieldSchema(
                 name="max_results",
@@ -96,6 +95,5 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=500,
                 expected_type="int",
-                ui_component=UIComponent.NUMBER_INPUT,
             ),
         }

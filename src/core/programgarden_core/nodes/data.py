@@ -161,7 +161,7 @@ class SQLiteNode(BaseNode):
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.CREATABLE_SELECT,
+                ui_component=UIComponent.CUSTOM_CREATABLE_SELECT,
                 ui_options={
                     "source": "programgarden_data",
                     "file_extension": ".db",
@@ -185,9 +185,8 @@ class SQLiteNode(BaseNode):
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.SELECT,
             ),
-            
+
             # === execute_query 모드 전용 ===
             "query": FieldSchema(
                 name="query",
@@ -196,7 +195,7 @@ class SQLiteNode(BaseNode):
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
-                ui_component=UIComponent.CODE_EDITOR,
+                ui_component=UIComponent.CUSTOM_CODE_EDITOR,
                 ui_options={"language": "sql"},
                 visible_when={"operation": "execute_query"},
                 example="SELECT * FROM peak_tracker WHERE symbol = :symbol",
@@ -209,7 +208,7 @@ class SQLiteNode(BaseNode):
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
-                ui_component=UIComponent.KEY_VALUE_EDITOR,
+                ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
                 visible_when={"operation": "execute_query"},
                 example={"symbol": "AAPL"},
                 expected_type="dict[str, any]",
@@ -223,7 +222,7 @@ class SQLiteNode(BaseNode):
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.CREATABLE_SELECT,
+                ui_component=UIComponent.CUSTOM_CREATABLE_SELECT,
                 ui_options={
                     "source_api": "/api/sqlite/{db_name}/tables",
                     "depends_on": "db_name",
@@ -250,7 +249,6 @@ class SQLiteNode(BaseNode):
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.SELECT,
                 visible_when={"operation": "simple"},
             ),
             "columns": FieldSchema(
@@ -261,8 +259,8 @@ class SQLiteNode(BaseNode):
                 array_item_type=FieldType.STRING,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.MULTI_SELECT,
                 ui_options={
+                    "multiple": True,
                     "source_api": "/api/sqlite/{db_name}/tables/{table}/columns",
                     "depends_on": ["db_name", "table"],
                     "empty_message": "i18n:ui.select_table_first",
@@ -279,7 +277,6 @@ class SQLiteNode(BaseNode):
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
-                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"operation": "simple", "action": ["select", "update", "delete"]},
                 example="symbol = :symbol",
                 expected_type="str",
@@ -291,7 +288,7 @@ class SQLiteNode(BaseNode):
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
-                ui_component=UIComponent.KEY_VALUE_EDITOR,
+                ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
                 visible_when={"operation": "simple", "action": ["insert", "update", "upsert"]},
                 example={"symbol": "AAPL", "peak_price": 195.50},
                 expected_type="dict[str, any]",
@@ -303,7 +300,6 @@ class SQLiteNode(BaseNode):
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 visible_when={"operation": "simple", "action": "upsert"},
                 example="symbol",
                 expected_type="str",
@@ -559,7 +555,6 @@ class HTTPRequestNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="POST",
                 expected_type="str",
-                ui_component=UIComponent.SELECT,
             ),
             "url": FieldSchema(
                 name="url", type=FieldType.STRING, required=True,
@@ -569,7 +564,6 @@ class HTTPRequestNode(BaseNode):
                 example="https://api.example.com/v1/data",
                 example_binding="{{ nodes.config.api_endpoint }}",
                 expected_type="str",
-                ui_component=UIComponent.TEXT_INPUT,
                 placeholder="https://api.example.com/v1/data",
             ),
             "query_params": FieldSchema(
@@ -579,7 +573,7 @@ class HTTPRequestNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 example={"symbol": "AAPL", "limit": "100"},
                 expected_type="dict[str, str]",
-                ui_component=UIComponent.KEY_VALUE_EDITOR,
+                ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
                 object_schema=[
                     {"name": "key", "type": "STRING", "description": "파라미터 이름"},
                     {"name": "value", "type": "STRING", "description": "파라미터 값"},
@@ -593,7 +587,7 @@ class HTTPRequestNode(BaseNode):
                 example={"action": "buy", "symbol": "AAPL", "quantity": 10},
                 example_binding="{{ nodes.order.request_body }}",
                 expected_type="dict[str, Any]",
-                ui_component=UIComponent.TEXTAREA,
+                ui_options={"maxLines": 5},
                 placeholder='{"action": "buy", "symbol": "AAPL", "quantity": 10}',
             ),
             "credential_id": FieldSchema(
@@ -602,7 +596,7 @@ class HTTPRequestNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 credential_types=["http_bearer", "http_header", "http_basic", "http_query"],
-                ui_component=UIComponent.CREDENTIAL_SELECT,
+                ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
             ),
             "headers": FieldSchema(
                 name="headers", type=FieldType.KEY_VALUE_PAIRS, required=False,
@@ -611,7 +605,7 @@ class HTTPRequestNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 example={"Content-Type": "application/json", "X-Custom-Header": "value"},
                 expected_type="dict[str, str]",
-                ui_component=UIComponent.KEY_VALUE_EDITOR,
+                ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
                 object_schema=[
                     {"name": "key", "type": "STRING", "description": "헤더 이름"},
                     {"name": "value", "type": "STRING", "description": "헤더 값"},
@@ -627,7 +621,6 @@ class HTTPRequestNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=30,
                 expected_type="int",
-                ui_component=UIComponent.NUMBER_INPUT,
                 min_value=1,
                 max_value=300,
                 group="advanced",
@@ -640,7 +633,6 @@ class HTTPRequestNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=3,
                 expected_type="int",
-                ui_component=UIComponent.NUMBER_INPUT,
                 min_value=0,
                 max_value=10,
                 group="advanced",
@@ -653,7 +645,6 @@ class HTTPRequestNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=1000,
                 expected_type="int",
-                ui_component=UIComponent.NUMBER_INPUT,
                 min_value=100,
                 max_value=60000,
                 group="advanced",
@@ -861,7 +852,6 @@ class FieldMappingNode(BaseNode):
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.BINDING_INPUT,
                 example=[{"lastPrice": 150, "vol": 1000000}],
                 example_binding="{{ nodes.api.response.data }}",
                 bindable_sources=["HTTPRequestNode.response"],
@@ -876,7 +866,7 @@ class FieldMappingNode(BaseNode):
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.FIELD_MAPPING_EDITOR,
+                ui_component=UIComponent.CUSTOM_FIELD_MAPPING_EDITOR,
                 child_of="data",  # data 필드 아래 들여쓰기되어 표시
                 default=[],
                 example=[

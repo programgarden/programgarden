@@ -23,6 +23,7 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    SYMBOL_LIST_FIELDS,
 )
 from programgarden_core.models.exchange import SymbolEntry, ProductType
 
@@ -50,7 +51,7 @@ class WatchlistNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols")
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS)
     ]
 
     @classmethod
@@ -66,7 +67,18 @@ class WatchlistNode(BaseNode):
                 array_item_type=FieldType.OBJECT,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SYMBOL_EDITOR,
+                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
+                ui_options={
+                    "exchanges": [
+                        {"value": "NASDAQ", "label": "NASDAQ"},
+                        {"value": "NYSE", "label": "NYSE"},
+                        {"value": "AMEX", "label": "AMEX"},
+                        {"value": "CME", "label": "CME (시카고상업거래소)"},
+                        {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
+                        {"value": "SGX", "label": "SGX (싱가포르거래소)"},
+                        {"value": "HKEX", "label": "HKEX (홍콩거래소)"},
+                    ],
+                },
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
                 example_binding="{{ nodes.universe.symbols }}",
                 bindable_sources=["MarketUniverseNode.symbols", "ScreenerNode.symbols"],
@@ -104,13 +116,13 @@ class MarketUniverseNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="count", type="integer", description="종목 수"),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             "universe": FieldSchema(
                 name="universe",
@@ -124,7 +136,6 @@ class MarketUniverseNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="NASDAQ100",
                 expected_type="str",
-                ui_component=UIComponent.SELECT,
             ),
         }
 
@@ -183,7 +194,7 @@ class ScreenerNode(BaseNode):
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="count", type="integer", description="결과 종목 수"),
     ]
 
@@ -200,7 +211,18 @@ class ScreenerNode(BaseNode):
                 array_item_type=FieldType.OBJECT,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SYMBOL_EDITOR,
+                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
+                ui_options={
+                    "exchanges": [
+                        {"value": "NASDAQ", "label": "NASDAQ"},
+                        {"value": "NYSE", "label": "NYSE"},
+                        {"value": "AMEX", "label": "AMEX"},
+                        {"value": "CME", "label": "CME (시카고상업거래소)"},
+                        {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
+                        {"value": "SGX", "label": "SGX (싱가포르거래소)"},
+                        {"value": "HKEX", "label": "HKEX (홍콩거래소)"},
+                    ],
+                },
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=["WatchlistNode.symbols", "MarketUniverseNode.symbols", "SymbolQueryNode.symbols"],
@@ -217,7 +239,6 @@ class ScreenerNode(BaseNode):
                 example=10000000000,
                 placeholder="예: 10000000000 (100억 달러)",
                 expected_type="float",
-                ui_component=UIComponent.NUMBER_INPUT,
             ),
             "market_cap_max": FieldSchema(
                 name="market_cap_max",
@@ -228,7 +249,6 @@ class ScreenerNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=50000000000,
                 expected_type="float",
-                ui_component=UIComponent.NUMBER_INPUT,
             ),
             # === PARAMETERS: 거래량 필터 ===
             "volume_min": FieldSchema(
@@ -241,7 +261,6 @@ class ScreenerNode(BaseNode):
                 example=1000000,
                 placeholder="예: 1000000 (100만주)",
                 expected_type="int",
-                ui_component=UIComponent.NUMBER_INPUT,
             ),
             # === PARAMETERS: 섹터/거래소 필터 ===
             "sector": FieldSchema(
@@ -255,7 +274,6 @@ class ScreenerNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="Technology",
                 expected_type="str",
-                ui_component=UIComponent.SELECT,
             ),
             "exchange": FieldSchema(
                 name="exchange",
@@ -268,7 +286,6 @@ class ScreenerNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="NASDAQ",
                 expected_type="str",
-                ui_component=UIComponent.SELECT,
             ),
             # === SETTINGS: 결과 제한 ===
             "max_results": FieldSchema(
@@ -282,7 +299,6 @@ class ScreenerNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=100,
                 expected_type="int",
-                ui_component=UIComponent.NUMBER_INPUT,
             ),
         }
 
@@ -333,13 +349,13 @@ class SymbolFilterNode(BaseNode):
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="count", type="integer", description="결과 종목 수"),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             "operation": FieldSchema(
                 name="operation",
@@ -353,7 +369,6 @@ class SymbolFilterNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="difference",
                 expected_type="str",
-                ui_component=UIComponent.SELECT,
             ),
             "input_a": FieldSchema(
                 name="input_a",
@@ -365,7 +380,6 @@ class SymbolFilterNode(BaseNode):
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=["WatchlistNode.symbols", "MarketUniverseNode.symbols", "ScreenerNode.symbols", "AccountNode.held_symbols"],
                 expected_type="list[dict]",
-                ui_component=UIComponent.BINDING_INPUT,
             ),
             "input_b": FieldSchema(
                 name="input_b",
@@ -377,6 +391,5 @@ class SymbolFilterNode(BaseNode):
                 example_binding="{{ nodes.account.held_symbols }}",
                 bindable_sources=["WatchlistNode.symbols", "AccountNode.held_symbols", "ConditionNode.passed_symbols"],
                 expected_type="list[dict]",
-                ui_component=UIComponent.BINDING_INPUT,
             ),
         }

@@ -18,6 +18,7 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    SYMBOL_LIST_FIELDS,
 )
 
 
@@ -112,6 +113,7 @@ class ConditionNode(PluginNode):
             name="symbols",
             type="symbol_list",
             description="i18n:ports.input_symbols",
+            fields=SYMBOL_LIST_FIELDS,
         ),
         OutputPort(
             name="result",
@@ -122,11 +124,13 @@ class ConditionNode(PluginNode):
             name="passed_symbols",
             type="symbol_list",
             description="i18n:ports.passed_symbols",
+            fields=SYMBOL_LIST_FIELDS,
         ),
         OutputPort(
             name="failed_symbols",
             type="symbol_list",
             description="i18n:ports.failed_symbols",
+            fields=SYMBOL_LIST_FIELDS,
         ),
         OutputPort(
             name="values",
@@ -147,7 +151,7 @@ class ConditionNode(PluginNode):
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.PLUGIN_SELECT,
+                ui_component=UIComponent.CUSTOM_PLUGIN_SELECT,
             ),
             # === DATA: 입력 데이터 ===
             "data": FieldSchema(
@@ -325,6 +329,7 @@ class LogicNode(BaseNode):
             name="passed_symbols",
             type="symbol_list",
             description="i18n:ports.passed_symbols",
+            fields=SYMBOL_LIST_FIELDS,
         ),
     ]
 
@@ -372,7 +377,7 @@ class LogicNode(BaseNode):
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.OBJECT_ARRAY_TABLE,
+                ui_component=UIComponent.CUSTOM_OBJECT_ARRAY_TABLE,
                 example=[
                     {
                         "is_condition_met": "{{ nodes.rsiCondition.result }}",

@@ -20,6 +20,10 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
     BrokerProvider,
+    BALANCE_FIELDS,
+    POSITION_FIELDS,
+    SYMBOL_LIST_FIELDS,
+    PRICE_DATA_FIELDS,
 )
 
 
@@ -51,7 +55,7 @@ class OverseasStockRealMarketDataNode(BaseNode):
         InputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.subscribed_symbols"),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.subscribed_symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="ohlcv_data", type="ohlcv_data", description="i18n:ports.ohlcv_data"),
         OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full"),
     ]
@@ -136,10 +140,10 @@ class OverseasStockRealAccountNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols"),
-        OutputPort(name="balance", type="balance_data", description="i18n:ports.balance"),
+        OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="balance", type="balance_data", description="i18n:ports.balance", fields=BALANCE_FIELDS),
         OutputPort(name="open_orders", type="order_list", description="i18n:ports.open_orders"),
-        OutputPort(name="positions", type="position_data", description="i18n:ports.positions"),
+        OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=POSITION_FIELDS),
     ]
 
     @classmethod
@@ -158,7 +162,6 @@ class OverseasStockRealAccountNode(BaseNode):
                 example=0.25,
                 example_binding="{{ nodes.config.commission_rate }}",
                 expected_type="float",
-                ui_component=UIComponent.NUMBER_INPUT,
             ),
             "tax_rate": FieldSchema(
                 name="tax_rate",
@@ -172,7 +175,6 @@ class OverseasStockRealAccountNode(BaseNode):
                 example=0.0,
                 example_binding="{{ nodes.config.tax_rate }}",
                 expected_type="float",
-                ui_component=UIComponent.NUMBER_INPUT,
             ),
             "stay_connected": FieldSchema(
                 name="stay_connected",
@@ -194,7 +196,6 @@ class OverseasStockRealAccountNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=60,
                 expected_type="int",
-                ui_component=UIComponent.NUMBER_INPUT,
             ),
         }
 
@@ -252,7 +253,6 @@ class OverseasStockRealOrderEventNode(BaseNode):
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.SELECT,
             ),
             "stay_connected": FieldSchema(
                 name="stay_connected",

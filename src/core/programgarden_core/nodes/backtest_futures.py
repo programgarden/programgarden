@@ -18,6 +18,7 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
     BrokerProvider,
+    HISTORICAL_DATA_FIELDS,
 )
 
 
@@ -65,7 +66,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="values", type="array", description="i18n:ports.values"),
+        OutputPort(name="values", type="array", description="i18n:ports.values", fields=HISTORICAL_DATA_FIELDS),
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
     ]
 
@@ -114,7 +115,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 example="2024-01-01",
                 expected_type="str",
-                ui_component=UIComponent.DATE_PICKER,
+                ui_component=UIComponent.CUSTOM_DATE_PICKER,
                 help_text="i18n:fields.OverseasFuturesHistoricalDataNode.start_date.help_text",
             ),
             "end_date": FieldSchema(
@@ -128,7 +129,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 example="2024-12-31",
                 expected_type="str",
-                ui_component=UIComponent.DATE_PICKER,
+                ui_component=UIComponent.CUSTOM_DATE_PICKER,
                 help_text="i18n:fields.OverseasFuturesHistoricalDataNode.end_date.help_text",
             ),
             "interval": FieldSchema(
@@ -152,7 +153,6 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="1d",
                 expected_type="str",
-                ui_component=UIComponent.SELECT,
             ),
             "adjust": FieldSchema(
                 name="adjust",

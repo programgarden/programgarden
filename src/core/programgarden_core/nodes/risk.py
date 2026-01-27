@@ -16,6 +16,7 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    SYMBOL_LIST_FIELDS,
 )
 
 
@@ -94,12 +95,13 @@ class PositionSizingNode(BaseNode):
             name="symbols",
             type="symbol_list",
             description="i18n:ports.symbols",
+            fields=SYMBOL_LIST_FIELDS,
         ),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
             # === INPUTS: 바인딩 또는 직접 입력 ===
             "symbols": FieldSchema(
@@ -109,7 +111,7 @@ class PositionSizingNode(BaseNode):
                 required=True,
                 expression_mode=ExpressionMode.BOTH,  # 바인딩 또는 직접 입력
                 category=FieldCategory.PARAMETERS,
-                ui_component="symbol_editor",  # 종목 에디터 UI
+                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
                 example_binding="{{ nodes.conditionNode.passed_symbols }}",
                 bindable_sources=["ConditionNode.passed_symbols", "WatchlistNode.symbols"],
                 expected_type="symbol_list",

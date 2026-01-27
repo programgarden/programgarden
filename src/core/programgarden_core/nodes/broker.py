@@ -84,7 +84,6 @@ class OverseasStockBrokerNode(BaseBrokerNode):
                 enum_labels={"ls-sec.co.kr": "LS증권"},
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
             ),
             "credential_id": FieldSchema(
                 name="credential_id",
@@ -93,7 +92,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
                 default=None,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.CREDENTIAL_SELECT,
+                ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
                 credential_types=["broker_ls_stock"],
             ),
         }
@@ -132,7 +131,6 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
                 enum_labels={"ls-sec.co.kr": "LS증권"},
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.SELECT,
             ),
             "credential_id": FieldSchema(
                 name="credential_id",
@@ -141,7 +139,7 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
                 default=None,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.CREDENTIAL_SELECT,
+                ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
                 credential_types=["broker_ls_futures"],
             ),
         }

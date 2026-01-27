@@ -18,6 +18,9 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
     BrokerProvider,
+    BALANCE_FIELDS,
+    POSITION_FIELDS,
+    SYMBOL_LIST_FIELDS,
 )
 
 
@@ -45,10 +48,10 @@ class OverseasStockAccountNode(BaseNode):
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols"),
-        OutputPort(name="balance", type="balance_data", description="i18n:ports.balance"),
+        OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="balance", type="balance_data", description="i18n:ports.balance", fields=BALANCE_FIELDS),
         OutputPort(name="open_orders", type="order_list", description="i18n:ports.open_orders"),
-        OutputPort(name="positions", type="position_data", description="i18n:ports.positions"),
+        OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=POSITION_FIELDS),
     ]
 
     @classmethod

@@ -28,7 +28,6 @@ class TestFieldSchemaToJsonDynamicWidget:
             name="test_field",
             type=FieldType.STRING,
             description="테스트 필드",
-            ui_component=UIComponent.TEXT_INPUT,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
         widget = fs.to_json_dynamic_widget()
@@ -46,7 +45,6 @@ class TestFieldSchemaToJsonDynamicWidget:
             type=FieldType.INTEGER,
             description="기간",
             default=14,
-            ui_component=UIComponent.NUMBER_INPUT,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
         widget = fs.to_json_dynamic_widget()
@@ -65,7 +63,6 @@ class TestFieldSchemaToJsonDynamicWidget:
             default="ls-sec.co.kr",
             enum_values=["ls-sec.co.kr"],
             enum_labels={"ls-sec.co.kr": "LS증권"},
-            ui_component=UIComponent.SELECT,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
         widget = fs.to_json_dynamic_widget()
@@ -120,7 +117,6 @@ class TestFieldSchemaToJsonDynamicWidget:
             name="data",
             type=FieldType.STRING,
             description="입력 데이터",
-            ui_component=UIComponent.BINDING_INPUT,
             expression_mode=ExpressionMode.EXPRESSION_ONLY,
             example_binding="{{ flatten(nodes.historical.values, 'time_series') }}",
         )
@@ -138,7 +134,7 @@ class TestFieldSchemaToJsonDynamicWidget:
             name="credential_id",
             type=FieldType.CREDENTIAL,
             description="Credential 선택",
-            ui_component=UIComponent.CREDENTIAL_SELECT,
+            ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
             credential_types=["broker_ls_stock", "broker_ls_futures"],
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
@@ -158,7 +154,7 @@ class TestFieldSchemaToJsonDynamicWidget:
             name="plugin",
             type=FieldType.STRING,
             description="플러그인 선택",
-            ui_component=UIComponent.PLUGIN_SELECT,
+            ui_component=UIComponent.CUSTOM_PLUGIN_SELECT,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
         widget = fs.to_json_dynamic_widget()
@@ -173,7 +169,7 @@ class TestFieldSchemaToJsonDynamicWidget:
             type=FieldType.ARRAY,
             description="종목 리스트",
             expression_mode=ExpressionMode.FIXED_ONLY,
-            ui_component=UIComponent.SYMBOL_EDITOR,
+            ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
         )
         widget = fs.to_json_dynamic_widget()
 
@@ -187,7 +183,7 @@ class TestFieldSchemaToJsonDynamicWidget:
             type=FieldType.ARRAY,
             description="종목 리스트",
             expression_mode=ExpressionMode.BOTH,
-            ui_component=UIComponent.SYMBOL_EDITOR,
+            ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
         )
         widget = fs.to_json_dynamic_widget()
 
@@ -201,7 +197,7 @@ class TestFieldSchemaToJsonDynamicWidget:
             name="query",
             type=FieldType.STRING,
             description="SQL 쿼리",
-            ui_component=UIComponent.CODE_EDITOR,
+            ui_component=UIComponent.CUSTOM_CODE_EDITOR,
             ui_options={"language": "sql"},
             expression_mode=ExpressionMode.FIXED_ONLY,
         )

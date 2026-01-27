@@ -89,6 +89,57 @@ class OutputPort(BaseModel):
     name: str
     type: str
     description: Optional[str] = None
+    fields: Optional[List[Dict[str, Any]]] = None  # 구조화된 서브필드 정의
+
+
+# === OutputPort.fields 공통 상수 ===
+SYMBOL_LIST_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드 (NASDAQ, NYSE, CME 등)"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+]
+
+BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "total", "type": "number", "description": "총 예수금"},
+    {"name": "available", "type": "number", "description": "매수 가능 금액"},
+    {"name": "currency", "type": "string", "description": "통화 코드 (USD 등)"},
+]
+
+POSITION_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "quantity", "type": "number", "description": "보유 수량"},
+    {"name": "avg_price", "type": "number", "description": "평균 매입가"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "pnl", "type": "number", "description": "평가 손익"},
+    {"name": "pnl_percent", "type": "number", "description": "수익률 (%)"},
+]
+
+ORDER_RESULT_FIELDS: List[Dict[str, str]] = [
+    {"name": "order_id", "type": "string", "description": "주문번호"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
+    {"name": "quantity", "type": "number", "description": "주문수량"},
+    {"name": "price", "type": "number", "description": "주문가격"},
+    {"name": "status", "type": "string", "description": "주문 상태"},
+]
+
+PRICE_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+]
+
+HISTORICAL_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "date", "type": "string", "description": "날짜 (YYYYMMDD)"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+]
 
 
 class BaseNode(BaseModel):

@@ -230,7 +230,7 @@ class DisplayNode(BaseNode):
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
-            FieldSchema, FieldType, FieldCategory, ExpressionMode, UIComponent
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
             "chart_type": FieldSchema(
@@ -241,7 +241,6 @@ class DisplayNode(BaseNode):
                 default="summary",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.SELECT,
             ),
             "title": FieldSchema(
                 name="title",
@@ -249,7 +248,6 @@ class DisplayNode(BaseNode):
                 description="차트 제목",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
             ),
             "data": FieldSchema(
                 name="data",
@@ -257,7 +255,6 @@ class DisplayNode(BaseNode):
                 description="데이터 바인딩",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
-                ui_component=UIComponent.BINDING_INPUT,
                 example_binding="{{ nodes.condition.values }}",
                 bindable_sources=[
                     "ConditionNode.values",
@@ -275,7 +272,6 @@ class DisplayNode(BaseNode):
                 placeholder="date",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["line", "multi_line", "bar"]},
                 group="field_mapping",
             ),
@@ -286,7 +282,6 @@ class DisplayNode(BaseNode):
                 placeholder="rsi",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["line", "multi_line", "bar"]},
                 group="field_mapping",
             ),
@@ -297,7 +292,6 @@ class DisplayNode(BaseNode):
                 placeholder="symbol",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["multi_line"]},
                 group="field_mapping",
             ),
@@ -310,7 +304,6 @@ class DisplayNode(BaseNode):
                 max_value=100,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.NUMBER_INPUT,
                 depends_on={"chart_type": ["multi_line", "table"]},
             ),
             "sort_by": FieldSchema(
@@ -319,7 +312,6 @@ class DisplayNode(BaseNode):
                 description="정렬 기준 필드",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["multi_line", "table"]},
             ),
             "sort_order": FieldSchema(
@@ -330,7 +322,6 @@ class DisplayNode(BaseNode):
                 default="desc",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.SELECT,
                 depends_on={"chart_type": ["multi_line", "table"]},
             ),
             "date_field": FieldSchema(
@@ -340,7 +331,6 @@ class DisplayNode(BaseNode):
                 placeholder="date",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["candlestick"]},
                 group="field_mapping",
             ),
@@ -351,7 +341,6 @@ class DisplayNode(BaseNode):
                 placeholder="open",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["candlestick"]},
                 group="field_mapping",
             ),
@@ -362,7 +351,6 @@ class DisplayNode(BaseNode):
                 placeholder="high",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["candlestick"]},
                 group="field_mapping",
             ),
@@ -373,7 +361,6 @@ class DisplayNode(BaseNode):
                 placeholder="low",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["candlestick"]},
                 group="field_mapping",
             ),
@@ -384,7 +371,6 @@ class DisplayNode(BaseNode):
                 placeholder="close",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["candlestick"]},
                 group="field_mapping",
             ),
@@ -395,7 +381,6 @@ class DisplayNode(BaseNode):
                 placeholder="volume",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["candlestick"]},
                 group="field_mapping",
             ),
@@ -405,7 +390,7 @@ class DisplayNode(BaseNode):
                 description="표시할 컬럼 목록",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.MULTI_SELECT,
+                ui_options={"multiple": True},
                 depends_on={"chart_type": ["table"]},
             ),
             "signal_field": FieldSchema(
@@ -415,7 +400,6 @@ class DisplayNode(BaseNode):
                 placeholder="signal",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["line", "multi_line", "candlestick"]},
                 group="field_mapping",
             ),
@@ -426,7 +410,6 @@ class DisplayNode(BaseNode):
                 placeholder="side",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.TEXT_INPUT,
                 depends_on={"chart_type": ["line", "multi_line", "candlestick"]},
                 group="field_mapping",
             ),

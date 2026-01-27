@@ -18,6 +18,7 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
     BrokerProvider,
+    PRICE_DATA_FIELDS,
 )
 
 
@@ -46,7 +47,7 @@ class OverseasStockMarketDataNode(BaseNode):
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="values", type="market_data_list", description="i18n:ports.market_data_values"),
+        OutputPort(name="values", type="market_data_list", description="i18n:ports.market_data_values", fields=PRICE_DATA_FIELDS),
     ]
 
     @classmethod
