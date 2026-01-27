@@ -248,7 +248,11 @@ class ResourceContext:
         effective_priority = priority if priority != 5 else hints.priority
         
         # 주문 노드는 자동으로 최고 우선순위
-        if task_type in ("NewOrderNode", "ModifyOrderNode", "CancelOrderNode"):
+        ORDER_NODE_TYPES = {
+            "StockNewOrderNode", "StockModifyOrderNode", "StockCancelOrderNode",
+            "FuturesNewOrderNode", "FuturesModifyOrderNode", "FuturesCancelOrderNode",
+        }
+        if task_type in ORDER_NODE_TYPES:
             is_order = True
             effective_priority = 10
         

@@ -144,8 +144,9 @@ class WorkflowResolver:
                 result.add_error(f"Unknown node type: {node_type}")
 
         # 4. Plugin validation (for plugin-using nodes)
+        # 주문 노드는 orders 배열에 price가 포함되어 있어 plugin 선택사항
         plugin_registry = PluginRegistry()
-        plugin_node_types = {"ConditionNode", "NewOrderNode", "ModifyOrderNode", "CancelOrderNode"}
+        plugin_node_types = {"ConditionNode"}
 
         for node in workflow.nodes:
             if node.get("type") in plugin_node_types:
@@ -214,11 +215,12 @@ class WorkflowResolver:
             "RealMarketDataNode",
             "RealAccountNode",
             "RealOrderEventNode",
-            "NewOrderNode",
-            "ModifyOrderNode",
-            "CancelOrderNode",
             "AccountNode",
             "MarketDataNode",
+            # 해외주식 주문
+            "StockNewOrderNode", "StockModifyOrderNode", "StockCancelOrderNode",
+            # 해외선물 주문
+            "FuturesNewOrderNode", "FuturesModifyOrderNode", "FuturesCancelOrderNode",
         }
         
         # Build edge lookup: {to_node_id: [from_node_ids]}
@@ -372,7 +374,8 @@ class WorkflowResolver:
             category = node_def.get("category", "")
 
             # Plugin node types where fields should be extracted separately
-            PLUGIN_NODE_TYPES = {"ConditionNode", "NewOrderNode", "ModifyOrderNode", "CancelOrderNode"}
+            # 주문 노드는 plugin 선택사항 (orders에 price 포함)
+            PLUGIN_NODE_TYPES = {"ConditionNode"}
 
             # Extract config (exclude base fields)
             # For plugin nodes, exclude "fields" from config (will be passed separately)
