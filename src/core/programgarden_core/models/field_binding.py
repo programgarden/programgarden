@@ -369,8 +369,12 @@ class FieldSchema(BaseModel):
         if self.placeholder:
             decoration["hintText"] = self.placeholder
         
-        return self._map_ui_component_to_widget(ui_comp, decoration)
-    
+        widget = self._map_ui_component_to_widget(ui_comp, decoration)
+        # description이 있으면 args.helperText로 전달 (to_json_dynamic_widget의 FIXED_ONLY와 동일)
+        if self.description:
+            widget["args"]["helperText"] = self.description
+        return widget
+
     def to_json_dynamic_widget(self) -> Dict[str, Any]:
         """
         FieldSchema를 json_dynamic_widget JSON 형태로 변환

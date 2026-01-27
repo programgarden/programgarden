@@ -16,7 +16,8 @@ part 'checkbox_builder.g.dart';
 /// }
 /// ```
 ///
-/// helperText는 custom_expression_toggle의 fixedHelperText로 관리됩니다.
+/// FIXED_ONLY 모드: args.helperText로 직접 렌더링
+/// BOTH/EXPRESSION_ONLY 모드: custom_expression_toggle의 fixedHelperText로 관리
 @jsonWidget
 abstract class _CheckboxBuilder extends JsonWidgetBuilder {
   const _CheckboxBuilder({required super.args});
@@ -36,12 +37,14 @@ class _CheckboxWidget extends StatefulWidget {
     this.value,
     this.fieldKey,
     this.labelText,
+    this.helperText,
     @JsonBuildArg() required this.data,
   });
 
   final bool? value;
   final String? fieldKey;
   final String? labelText;
+  final String? helperText;
   final JsonWidgetData data;
 
   @override
@@ -111,6 +114,16 @@ class _CheckboxWidgetState extends State<_CheckboxWidget> {
               ),
           ],
         ),
+        if (widget.helperText != null && widget.helperText!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 8, top: 4),
+            child: Text(
+              widget.helperText!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.hintColor,
+              ),
+            ),
+          ),
       ],
     );
   }

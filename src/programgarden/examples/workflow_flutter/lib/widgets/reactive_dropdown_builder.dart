@@ -29,6 +29,7 @@ class _DropdownButtonFormField extends StatefulWidget {
     this.validators,
     this.fieldKey,
     this.itemLabels,
+    this.helperText,
     @JsonBuildArg() required this.data,
   });
 
@@ -38,6 +39,7 @@ class _DropdownButtonFormField extends StatefulWidget {
   final dynamic validators;
   final String? fieldKey;
   final dynamic itemLabels;
+  final String? helperText;
   final JsonWidgetData data;
 
   @override
@@ -93,7 +95,6 @@ class _DropdownButtonFormFieldState extends State<_DropdownButtonFormField> {
   Widget build(BuildContext context) {
     final dec = widget.decoration;
     final labelText = dec is Map ? (dec['labelText']?.toString() ?? '') : '';
-    final helperText = dec is Map ? dec['helperText']?.toString() : null;
 
     final dropdownItems = widget.items.map((item) {
       final value = _getValue(item);
@@ -104,29 +105,44 @@ class _DropdownButtonFormFieldState extends State<_DropdownButtonFormField> {
     final isRequired =
         widget.validators?.toString().contains('required') ?? false;
 
-    return DropdownButtonFormField<dynamic>(
-      decoration: InputDecoration(
-        labelText: labelText,
-        helperText: helperText,
-        border: const OutlineInputBorder(),
-      ),
-      initialValue: _selectedValue,
-      items: dropdownItems,
-      onChanged: (newValue) {
-        setState(() {
-          _selectedValue = newValue;
-        });
-        // registry에 값 저장 → conditional 위젯이 이 변경을 감지
-        if (widget.fieldKey != null && newValue != null) {
-          debugPrint(
-            '🔥 [DropdownBuilder] onChanged: setValue(${widget.fieldKey}, $newValue)',
-          );
-          widget.data.jsonWidgetRegistry.setValue(widget.fieldKey!, newValue);
-        }
-      },
-      validator: isRequired
-          ? (value) => value == null ? '필수 항목입니다' : null
-          : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DropdownButtonFormField<dynamic>(
+          decoration: InputDecoration(
+            labelText: labelText,
+            border: const OutlineInputBorder(),
+          ),
+          initialValue: _selectedValue,
+          items: dropdownItems,
+          onChanged: (newValue) {
+            setState(() {
+              _selectedValue = newValue;
+            });
+            // registry에 값 저장 → conditional 위젯이 이 변경을 감지
+            if (widget.fieldKey != null && newValue != null) {
+              debugPrint(
+                '🔥 [DropdownBuilder] onChanged: setValue(${widget.fieldKey}, $newValue)',
+              );
+              widget.data.jsonWidgetRegistry.setValue(widget.fieldKey!, newValue);
+            }
+          },
+          validator: isRequired
+              ? (value) => value == null ? '필수 항목입니다' : null
+              : null,
+        ),
+        if (widget.helperText != null && widget.helperText!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 4),
+            child: Text(
+              widget.helperText!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

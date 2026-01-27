@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'reactive_dropdown_builder.dart';
+part of 'text_form_field_builder.dart';
 
 // **************************************************************************
 // Generator: JsonWidgetLibraryBuilder
@@ -16,10 +16,10 @@ part of 'reactive_dropdown_builder.dart';
 // ignore_for_file: prefer_single_quotes
 // ignore_for_file: unused_local_variable
 
-class DropdownButtonFormFieldBuilder extends _DropdownButtonFormFieldBuilder {
-  const DropdownButtonFormFieldBuilder({required super.args});
+class TextFormFieldOverrideBuilder extends _TextFormFieldOverrideBuilder {
+  const TextFormFieldOverrideBuilder({required super.args});
 
-  static const kType = 'dropdown_button_form_field';
+  static const kType = 'text_form_field_override';
 
   /// Constant that can be referenced for the builder's type.
   @override
@@ -27,17 +27,17 @@ class DropdownButtonFormFieldBuilder extends _DropdownButtonFormFieldBuilder {
 
   /// Static function that is capable of decoding the widget from a dynamic JSON
   /// or YAML set of values.
-  static DropdownButtonFormFieldBuilder fromDynamic(
+  static TextFormFieldOverrideBuilder fromDynamic(
     dynamic map, {
     JsonWidgetRegistry? registry,
-  }) => DropdownButtonFormFieldBuilder(args: map);
+  }) => TextFormFieldOverrideBuilder(args: map);
 
   @override
-  DropdownButtonFormFieldBuilderModel createModel({
+  TextFormFieldOverrideBuilderModel createModel({
     ChildWidgetBuilder? childBuilder,
     required JsonWidgetData data,
   }) {
-    final model = DropdownButtonFormFieldBuilderModel.fromDynamic(
+    final model = TextFormFieldOverrideBuilderModel.fromDynamic(
       args,
       registry: data.jsonWidgetRegistry,
     );
@@ -46,7 +46,7 @@ class DropdownButtonFormFieldBuilder extends _DropdownButtonFormFieldBuilder {
   }
 
   @override
-  _DropdownButtonFormField buildCustom({
+  _TextFormFieldOverride buildCustom({
     ChildWidgetBuilder? childBuilder,
     required BuildContext context,
     required JsonWidgetData data,
@@ -54,57 +54,57 @@ class DropdownButtonFormFieldBuilder extends _DropdownButtonFormFieldBuilder {
   }) {
     final model = createModel(childBuilder: childBuilder, data: data);
 
-    return _DropdownButtonFormField(
+    return _TextFormFieldOverride(
       data: data,
       decoration: model.decoration,
       fieldKey: model.fieldKey,
       helperText: model.helperText,
-      itemLabels: model.itemLabels,
-      items: model.items,
+      initialValue: model.initialValue,
       key: key,
+      keyboardType: model.keyboardType,
+      maxLines: model.maxLines,
       validators: model.validators,
-      value: model.value,
     );
   }
 }
 
-class JsonDropdownButtonFormField extends JsonWidgetData {
-  JsonDropdownButtonFormField({
+class JsonTextFormFieldOverride extends JsonWidgetData {
+  JsonTextFormFieldOverride({
     Map<String, dynamic> args = const {},
     JsonWidgetRegistry? registry,
     this.decoration,
     this.fieldKey,
     this.helperText,
-    this.itemLabels,
-    required this.items,
+    this.initialValue,
+    this.keyboardType,
+    this.maxLines,
     this.validators,
-    this.value,
   }) : super(
-         jsonWidgetArgs: DropdownButtonFormFieldBuilderModel.fromDynamic(
+         jsonWidgetArgs: TextFormFieldOverrideBuilderModel.fromDynamic(
            {
              'decoration': decoration,
              'fieldKey': fieldKey,
              'helperText': helperText,
-             'itemLabels': itemLabels,
-             'items': items,
+             'initialValue': initialValue,
+             'keyboardType': keyboardType,
+             'maxLines': maxLines,
              'validators': validators,
-             'value': value,
 
              ...args,
            },
            args: args,
            registry: registry,
          ),
-         jsonWidgetBuilder: () => DropdownButtonFormFieldBuilder(
-           args: DropdownButtonFormFieldBuilderModel.fromDynamic(
+         jsonWidgetBuilder: () => TextFormFieldOverrideBuilder(
+           args: TextFormFieldOverrideBuilderModel.fromDynamic(
              {
                'decoration': decoration,
                'fieldKey': fieldKey,
                'helperText': helperText,
-               'itemLabels': itemLabels,
-               'items': items,
+               'initialValue': initialValue,
+               'keyboardType': keyboardType,
+               'maxLines': maxLines,
                'validators': validators,
-               'value': value,
 
                ...args,
              },
@@ -112,7 +112,7 @@ class JsonDropdownButtonFormField extends JsonWidgetData {
              registry: registry,
            ),
          ),
-         jsonWidgetType: DropdownButtonFormFieldBuilder.kType,
+         jsonWidgetType: TextFormFieldOverrideBuilder.kType,
        );
 
   final dynamic decoration;
@@ -121,25 +121,25 @@ class JsonDropdownButtonFormField extends JsonWidgetData {
 
   final String? helperText;
 
-  final dynamic itemLabels;
+  final String? initialValue;
 
-  final List<dynamic> items;
+  final String? keyboardType;
+
+  final dynamic maxLines;
 
   final dynamic validators;
-
-  final dynamic value;
 }
 
-class DropdownButtonFormFieldBuilderModel extends JsonWidgetBuilderModel {
-  const DropdownButtonFormFieldBuilderModel(
+class TextFormFieldOverrideBuilderModel extends JsonWidgetBuilderModel {
+  const TextFormFieldOverrideBuilderModel(
     super.args, {
     this.decoration,
     this.fieldKey,
     this.helperText,
-    this.itemLabels,
-    required this.items,
+    this.initialValue,
+    this.keyboardType,
+    this.maxLines,
     this.validators,
-    this.value,
   });
 
   final dynamic decoration;
@@ -148,15 +148,15 @@ class DropdownButtonFormFieldBuilderModel extends JsonWidgetBuilderModel {
 
   final String? helperText;
 
-  final dynamic itemLabels;
+  final String? initialValue;
 
-  final List<dynamic> items;
+  final String? keyboardType;
+
+  final dynamic maxLines;
 
   final dynamic validators;
 
-  final dynamic value;
-
-  static DropdownButtonFormFieldBuilderModel fromDynamic(
+  static TextFormFieldOverrideBuilderModel fromDynamic(
     dynamic map, {
     Map<String, dynamic> args = const {},
     JsonWidgetRegistry? registry,
@@ -165,39 +165,39 @@ class DropdownButtonFormFieldBuilderModel extends JsonWidgetBuilderModel {
 
     if (result == null) {
       throw Exception(
-        '[DropdownButtonFormFieldBuilder]: requested to parse from dynamic, but the input is null.',
+        '[TextFormFieldOverrideBuilder]: requested to parse from dynamic, but the input is null.',
       );
     }
 
     return result;
   }
 
-  static DropdownButtonFormFieldBuilderModel? maybeFromDynamic(
+  static TextFormFieldOverrideBuilderModel? maybeFromDynamic(
     dynamic map, {
     Map<String, dynamic> args = const {},
     JsonWidgetRegistry? registry,
   }) {
-    DropdownButtonFormFieldBuilderModel? result;
+    TextFormFieldOverrideBuilderModel? result;
 
     if (map != null) {
       if (map is String) {
         map = yaon.parse(map, normalize: true);
       }
 
-      if (map is DropdownButtonFormFieldBuilderModel) {
+      if (map is TextFormFieldOverrideBuilderModel) {
         result = map;
       } else {
         registry ??= JsonWidgetRegistry.instance;
         map = registry.processArgs(map, <String>{}).value;
-        result = DropdownButtonFormFieldBuilderModel(
+        result = TextFormFieldOverrideBuilderModel(
           args,
           decoration: map['decoration'],
           fieldKey: map['fieldKey'],
           helperText: map['helperText'],
-          itemLabels: map['itemLabels'],
-          items: map['items'],
+          initialValue: map['initialValue'],
+          keyboardType: map['keyboardType'],
+          maxLines: map['maxLines'],
           validators: map['validators'],
-          value: map['value'],
         );
       }
     }
@@ -211,34 +211,34 @@ class DropdownButtonFormFieldBuilderModel extends JsonWidgetBuilderModel {
       'decoration': decoration,
       'fieldKey': fieldKey,
       'helperText': helperText,
-      'itemLabels': itemLabels,
-      'items': items,
+      'initialValue': initialValue,
+      'keyboardType': keyboardType,
+      'maxLines': maxLines,
       'validators': validators,
-      'value': value,
 
       ...args,
     });
   }
 }
 
-class DropdownButtonFormFieldSchema {
+class TextFormFieldOverrideSchema {
   static const id =
-      'https://peiffer-innovations.github.io/flutter_json_schemas/schemas/workflow_flutter/dropdown_button_form_field.json';
+      'https://peiffer-innovations.github.io/flutter_json_schemas/schemas/workflow_flutter/text_form_field_override.json';
 
   static final schema = <String, Object>{
     r'$schema': 'http://json-schema.org/draft-07/schema#',
     r'$id': id,
-    'title': '_DropdownButtonFormField',
+    'title': '_TextFormFieldOverride',
     'type': 'object',
     'additionalProperties': false,
     'properties': {
       'decoration': SchemaHelper.anySchema,
       'fieldKey': SchemaHelper.stringSchema,
       'helperText': SchemaHelper.stringSchema,
-      'itemLabels': SchemaHelper.anySchema,
-      'items': SchemaHelper.anySchema,
+      'initialValue': SchemaHelper.stringSchema,
+      'keyboardType': SchemaHelper.stringSchema,
+      'maxLines': SchemaHelper.anySchema,
       'validators': SchemaHelper.anySchema,
-      'value': SchemaHelper.anySchema,
     },
   };
 }

@@ -57,6 +57,7 @@ class CheckboxBuilder extends _CheckboxBuilder {
     return _CheckboxWidget(
       data: data,
       fieldKey: model.fieldKey,
+      helperText: model.helperText,
       key: key,
       labelText: model.labelText,
       value: model.value,
@@ -69,12 +70,14 @@ class JsonCheckboxWidget extends JsonWidgetData {
     Map<String, dynamic> args = const {},
     JsonWidgetRegistry? registry,
     this.fieldKey,
+    this.helperText,
     this.labelText,
     this.value,
   }) : super(
          jsonWidgetArgs: CheckboxBuilderModel.fromDynamic(
            {
              'fieldKey': fieldKey,
+             'helperText': helperText,
              'labelText': labelText,
              'value': value,
 
@@ -87,6 +90,7 @@ class JsonCheckboxWidget extends JsonWidgetData {
            args: CheckboxBuilderModel.fromDynamic(
              {
                'fieldKey': fieldKey,
+               'helperText': helperText,
                'labelText': labelText,
                'value': value,
 
@@ -101,6 +105,8 @@ class JsonCheckboxWidget extends JsonWidgetData {
 
   final String? fieldKey;
 
+  final String? helperText;
+
   final String? labelText;
 
   final bool? value;
@@ -110,11 +116,14 @@ class CheckboxBuilderModel extends JsonWidgetBuilderModel {
   const CheckboxBuilderModel(
     super.args, {
     this.fieldKey,
+    this.helperText,
     this.labelText,
     this.value,
   });
 
   final String? fieldKey;
+
+  final String? helperText;
 
   final String? labelText;
 
@@ -156,6 +165,7 @@ class CheckboxBuilderModel extends JsonWidgetBuilderModel {
         result = CheckboxBuilderModel(
           args,
           fieldKey: map['fieldKey'],
+          helperText: map['helperText'],
           labelText: map['labelText'],
           value: JsonClass.maybeParseBool(map['value']),
         );
@@ -169,6 +179,7 @@ class CheckboxBuilderModel extends JsonWidgetBuilderModel {
   Map<String, dynamic> toJson() {
     return JsonClass.removeNull({
       'fieldKey': fieldKey,
+      'helperText': helperText,
       'labelText': labelText,
       'value': value,
 
@@ -189,6 +200,7 @@ class CheckboxWidgetSchema {
     'additionalProperties': false,
     'properties': {
       'fieldKey': SchemaHelper.stringSchema,
+      'helperText': SchemaHelper.stringSchema,
       'labelText': SchemaHelper.stringSchema,
       'value': SchemaHelper.boolSchema,
     },

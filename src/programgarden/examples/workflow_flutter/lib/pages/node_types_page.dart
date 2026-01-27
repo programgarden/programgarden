@@ -15,6 +15,7 @@ import '../widgets/plugin_select_builder.dart';
 import '../widgets/symbol_editor_builder.dart';
 import '../widgets/reactive_dropdown_builder.dart';
 import '../widgets/expression_toggle_builder.dart';
+import '../widgets/text_form_field_builder.dart';
 
 /// ProgramGarden 커스텀 위젯 레지스트리
 /// json_dynamic_widget에서 지원하지 않는 커스텀 위젯들을 등록합니다.
@@ -76,6 +77,15 @@ class ProgramGardenWidgetRegistry {
     registry.registerCustomBuilder(
       'custom_${ExpressionToggleBuilder.kType}',
       JsonWidgetBuilderContainer(builder: ExpressionToggleBuilder.fromDynamic),
+    );
+
+    // text_form_field: helperText 지원 텍스트 입력 (기본 위젯 오버라이드)
+    // 서버에서 type: "text_form_field"로 보내므로 'text_form_field'로 등록
+    registry.registerCustomBuilder(
+      'text_form_field',
+      JsonWidgetBuilderContainer(
+        builder: TextFormFieldOverrideBuilder.fromDynamic,
+      ),
     );
 
     // checkbox: helperText 지원 체크박스 (기본 위젯 오버라이드)
