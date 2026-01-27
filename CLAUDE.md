@@ -19,7 +19,7 @@ src/
 │       └── workflow_flutter/  # Flutter frontend example
 ├── core/               # programgarden-core: node types, base classes, registry, i18n
 │   └── programgarden_core/
-│       ├── nodes/      # Node definitions (AccountNode, BrokerNode, etc.)
+│       ├── nodes/      # Node definitions (OverseasStockBrokerNode, ConditionNode, etc.)
 │       ├── bases/      # Base classes (BaseExecutionListener, etc.)
 │       ├── models/     # Pydantic models (FieldSchema, etc.)
 │       ├── registry/   # Node and plugin registries
@@ -58,7 +58,7 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 ```json
 {
   "nodes": [
-    {"id": "broker", "type": "BrokerNode", "credential_id": "broker-cred"},
+    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker-cred"},
     {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}"}
   ],
   "edges": [{"from": "broker", "to": "rsi"}],
@@ -70,23 +70,26 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 
 - **Edges**: Define execution order only (node IDs only)
 - **Data Binding**: Use `{{ nodes.nodeId.port }}` expressions in node config
-- **Connection Binding**: Nodes requiring broker connection must have `connection: "{{ nodes.broker.connection }}"`
+- **Broker Connection**: Automatically injected by Executor via DAG traversal. No explicit `connection` binding needed
+- **Product Scope**: Each broker/market/account node is split by product type (`overseas_stock` / `overseas_futures`)
 - **Plugins**: Referenced via `plugin` field in ConditionNode, NewOrderNode, etc.
 - **Credentials**: Referenced by `credential_id`, defined in `credentials` section as a list
 
-### Node Categories (9)
+### Node Categories (11, 42 nodes)
 
 | Category | Nodes |
 |----------|-------|
-| infra | StartNode, BrokerNode, ThrottleNode |
-| account | AccountNode, RealAccountNode, RealOrderEventNode |
-| market | WatchlistNode, MarketDataNode, HistoricalDataNode, RealMarketDataNode, SymbolQueryNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode |
+| infra | StartNode, ThrottleNode |
+| broker | OverseasStockBrokerNode, OverseasFuturesBrokerNode |
+| account | OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode, OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode |
+| market | OverseasStockMarketDataNode, OverseasFuturesMarketDataNode, OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode, WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode |
 | condition | ConditionNode, LogicNode |
-| order | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode |
+| order | OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode, OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode, PositionSizingNode |
 | risk | PortfolioNode |
 | schedule | ScheduleNode, TradingHoursFilterNode |
 | data | SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode |
-| analysis | BacktestEngineNode, DisplayNode, BenchmarkCompareNode |
+| display | DisplayNode |
+| analysis | BacktestEngineNode, BenchmarkCompareNode |
 
 ### ExecutionListener Callbacks
 

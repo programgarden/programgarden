@@ -328,33 +328,41 @@ DEFAULT_NODE_HINTS: Dict[str, ResourceHints] = {
     
     # 일반
     "StartNode": ResourceHints(weight=0.1, priority=5),
-    "BrokerNode": ResourceHints(weight=0.5, priority=8),
+    # Broker (상품별 분리)
+    "OverseasStockBrokerNode": ResourceHints(weight=0.5, priority=8),
+    "OverseasFuturesBrokerNode": ResourceHints(weight=0.5, priority=8),
     "WatchlistNode": ResourceHints(weight=0.2, priority=5),
     "ConditionNode": ResourceHints(weight=1.0, cpu_intensive=True, priority=5),
     "LogicNode": ResourceHints(weight=0.5, priority=5),
-    
-    # 데이터 집약적
-    "HistoricalDataNode": ResourceHints(weight=1.5, memory_intensive=True, priority=4),
-    "MarketDataNode": ResourceHints(weight=1.0, priority=5),
-    
-    # 실시간 (지속 연결)
-    "RealMarketDataNode": ResourceHints(weight=1.0, priority=7),
-    "RealAccountNode": ResourceHints(weight=1.0, priority=7),
-    "RealOrderEventNode": ResourceHints(weight=0.5, priority=8),
-    
+
+    # 데이터 집약적 (상품별 분리)
+    "OverseasStockHistoricalDataNode": ResourceHints(weight=1.5, memory_intensive=True, priority=4),
+    "OverseasFuturesHistoricalDataNode": ResourceHints(weight=1.5, memory_intensive=True, priority=4),
+    "OverseasStockMarketDataNode": ResourceHints(weight=1.0, priority=5),
+    "OverseasFuturesMarketDataNode": ResourceHints(weight=1.0, priority=5),
+
+    # 실시간 (지속 연결, 상품별 분리)
+    "OverseasStockRealMarketDataNode": ResourceHints(weight=1.0, priority=7),
+    "OverseasFuturesRealMarketDataNode": ResourceHints(weight=1.0, priority=7),
+    "OverseasStockRealAccountNode": ResourceHints(weight=1.0, priority=7),
+    "OverseasFuturesRealAccountNode": ResourceHints(weight=1.0, priority=7),
+    "OverseasStockRealOrderEventNode": ResourceHints(weight=0.5, priority=8),
+    "OverseasFuturesRealOrderEventNode": ResourceHints(weight=0.5, priority=8),
+
     # 무거운 작업
     "BacktestEngineNode": ResourceHints(
-        weight=3.0, 
-        memory_intensive=True, 
+        weight=3.0,
+        memory_intensive=True,
         cpu_intensive=True,
         max_parallel=2,
         priority=3
     ),
     "ScreenerNode": ResourceHints(weight=2.0, cpu_intensive=True, priority=4),
-    
-    # 계정
-    "AccountNode": ResourceHints(weight=0.5, priority=6),
-    
+
+    # 계정 (상품별 분리)
+    "OverseasStockAccountNode": ResourceHints(weight=0.5, priority=6),
+    "OverseasFuturesAccountNode": ResourceHints(weight=0.5, priority=6),
+
     # 기타
     "ScheduleNode": ResourceHints(weight=0.1, priority=5),
     "DisplayNode": ResourceHints(weight=0.2, priority=2),

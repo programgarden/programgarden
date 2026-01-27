@@ -4,7 +4,6 @@
     "name": "English",
     "version": "1.1.0"
   },
-
   "categories.infra.name": "Infrastructure",
   "categories.infra.description": "Workflow entry point and broker connection",
   "categories.account.name": "Account",
@@ -27,27 +26,22 @@
   "categories.analysis.description": "Backtest, charts, performance metrics",
   "categories.system.name": "System",
   "categories.system.description": "Job control, deployment, subflows",
-  
   "nodes.StartNode.name": "Start",
   "nodes.StartNode.description": "Workflow entry point. Required one per workflow.",
-  
   "nodes.BrokerNode.name": "Broker",
   "nodes.BrokerNode.description": "Broker connection for OpenAPI. References credentials via credential_id.",
-
   "nodes.OverseasStockBrokerNode.name": "Stock Broker",
   "nodes.OverseasStockBrokerNode.description": "LS Securities OpenAPI connection for overseas stock trading. Paper trading not supported.",
   "fields.OverseasStockBrokerNode.provider": "Broker provider",
   "fields.OverseasStockBrokerNode.credential_id": "Select overseas stock credentials",
   "fieldNames.OverseasStockBrokerNode.provider": "Broker",
   "fieldNames.OverseasStockBrokerNode.credential_id": "Credential",
-
   "nodes.OverseasFuturesBrokerNode.name": "Futures Broker",
   "nodes.OverseasFuturesBrokerNode.description": "LS Securities OpenAPI connection for overseas futures trading. Paper trading supported.",
   "fields.OverseasFuturesBrokerNode.provider": "Broker provider",
   "fields.OverseasFuturesBrokerNode.credential_id": "Select overseas futures credentials",
   "fieldNames.OverseasFuturesBrokerNode.provider": "Broker",
   "fieldNames.OverseasFuturesBrokerNode.credential_id": "Credential",
-  
   "nodes.ThrottleNode.name": "Throttle",
   "nodes.ThrottleNode.description": "Controls data flow to prevent excessive execution of downstream nodes. Place after realtime nodes to control API call frequency.",
   "fields.ThrottleNode.mode": "Select mode. skip: ignore data during cooldown, latest: keep only newest data and execute after cooldown",
@@ -56,125 +50,79 @@
   "enums.throttle_mode.skip": "Skip",
   "enums.throttle_mode.latest": "Keep Latest",
   "ports.throttle_stats": "Throttle stats (skip count, countdown, etc.)",
-  
   "enums.product.overseas_stock": "Overseas Stock (paper trading not supported)",
   "enums.product.overseas_futures": "Overseas Futures (paper trading supported)",
   "enums.paper_trading.true": "Paper Trading",
   "enums.paper_trading.false": "Live Account",
-  
   "nodes.WatchlistNode.name": "My Watchlist",
   "nodes.WatchlistNode.description": "Manage your personally selected stocks. Example: Add AAPL, TSLA, or any stocks you want to track.",
-  
   "nodes.SymbolQueryNode.name": "All Symbols",
   "nodes.SymbolQueryNode.description": "Fetch all tradable symbols from the exchange.",
-  
   "nodes.MarketUniverseNode.name": "Index Stocks",
   "nodes.MarketUniverseNode.description": "⚠️ Overseas stocks only. Get all stocks from US major indices (NASDAQ100, SP500, SP100, DOW30). Example: Selecting NASDAQ 100 adds Apple, Tesla, and 98 other top tech stocks.",
-  
   "fields.MarketUniverseNode.universe": "Enter the index to fetch. ⚠️ Overseas stocks only. Available values: NASDAQ100, SP500 (S&P 500), SP100 (S&P 100), DOW30 (Dow Jones 30)",
-  
   "nodes.ScreenerNode.name": "Find by Conditions",
   "nodes.ScreenerNode.description": "Search stocks by criteria like market cap over $10B, volume over 1M shares. Automatically filters out low-liquidity stocks. (Overseas stocks only, use 'Symbol Query' for futures)",
-  
   "nodes.SymbolFilterNode.name": "Compare & Filter",
   "nodes.SymbolFilterNode.description": "Compare two stock lists. Example: Find watchlist stocks you don't own yet, prevent duplicate purchases.",
-  
   "nodes.MarketDataNode.name": "Current Price",
   "nodes.MarketDataNode.description": "Get the current price and volume for symbols. Use when you don't need live updates, just a one-time snapshot.",
-
-  "fieldNames.MarketDataNode.symbols": "Symbols",
-  "fields.MarketDataNode.symbols": "List of symbols to query. You can enter directly or bind from another node.",
-  "fields.MarketDataNode.symbols.exchange": "Exchange",
-  "fields.MarketDataNode.symbols.symbol": "Symbol",
-  "fields.MarketDataNode.symbols.help_text": "Enter directly or bind (fx toggle)",
-  "fields.MarketDataNode.product_type": "Select product type. Must match the product from BrokerNode.",
-  "fieldNames.MarketDataNode.product_type": "Product Type",
-  
   "nodes.AccountNode.name": "Account",
   "nodes.AccountNode.description": "Get your holdings, cash balance, and open orders once. Use when you don't need live updates.",
-
-  "fields.AccountNode.product_type": "Product Type",
-  "fields.AccountNode.product_type.description": "Select product type. Must match the product connected from BrokerNode.",
-  
   "nodes.SQLiteNode.name": "Simple DB",
   "nodes.SQLiteNode.description": "Local SQLite database for storing and querying data. Supports direct SQL queries or simple GUI operations.",
-  
   "nodes.PostgresNode.name": "PostgreSQL",
   "nodes.PostgresNode.description": "PostgreSQL database query/storage.",
-  
   "nodes.HTTPRequestNode.name": "HTTP Request",
   "nodes.HTTPRequestNode.description": "External REST API call.",
-  
   "nodes.FieldMappingNode.name": "Field Mapping",
   "nodes.FieldMappingNode.description": "Transform field names to standard format. Normalize external API responses to OHLCV format.",
-  
   "nodes.TelegramNode.name": "Telegram Alert",
   "nodes.TelegramNode.description": "Send messages via Telegram. Use for order fills, condition triggers, and other alerts.",
   "fields.TelegramNode.bot_token": "Telegram bot token. Get it from @BotFather after creating your bot.",
   "fields.TelegramNode.chat_id": "Chat ID to receive messages. Works with private chats, groups, and channels.",
   "fields.TelegramNode.message": "Message content to send. Use {{ }} expressions for dynamic values.",
   "fields.TelegramNode.credential_id": "Telegram credential ID. Select credential containing bot_token and chat_id.",
-  
   "nodes.RealMarketDataNode.name": "Real Market Data",
   "nodes.RealMarketDataNode.description": "Get live prices, volume, and quotes for your symbols. Updates automatically every time a trade happens.",
-  
   "nodes.RealAccountNode.name": "Real Account",
   "nodes.RealAccountNode.description": "Get your holdings, cash balance, open orders, and live P&L. Your profit/loss updates automatically as prices change.",
-  
   "nodes.RealOrderEventNode.name": "Real Order Event",
   "nodes.RealOrderEventNode.description": "Get notified when orders are submitted, filled, modified, cancelled, or rejected. Connect to Telegram alerts or add extra order logic.",
-  
   "nodes.ScheduleNode.name": "Schedule",
   "nodes.ScheduleNode.description": "Cron-based schedule trigger.",
-  
   "nodes.TradingHoursFilterNode.name": "Trading Hours Filter",
   "nodes.TradingHoursFilterNode.description": "Pass signals within trading hours only.",
-  
   "nodes.ConditionNode.name": "Condition",
   "nodes.ConditionNode.description": "Execute condition plugin (RSI, MACD, etc.).",
-  
   "nodes.LogicNode.name": "Logic",
   "nodes.LogicNode.description": "Combine conditions with logical operators.",
-  
   "nodes.PositionSizingNode.name": "Position Sizing",
   "nodes.PositionSizingNode.description": "Calculate position size (Kelly, fixed, ATR-based).",
-  
   "nodes.PortfolioNode.name": "Portfolio",
   "nodes.PortfolioNode.description": "Multi-strategy capital allocation and rebalancing.",
-  
   "nodes.NewOrderNode.name": "New Order",
   "nodes.NewOrderNode.description": "Execute new orders via broker API. Select product type and side, then bind symbols/quantities from ConditionNode and PositionSizingNode.",
-  
   "nodes.ModifyOrderNode.name": "Modify Order",
   "nodes.ModifyOrderNode.description": "Modify price or quantity of existing open orders.",
-  
   "nodes.CancelOrderNode.name": "Cancel Order",
   "nodes.CancelOrderNode.description": "Cancel existing open orders.",
-  
   "nodes.HistoricalDataNode.name": "Historical Chart",
   "nodes.HistoricalDataNode.description": "Get past chart data. Choose a date range and bar type (daily/weekly/monthly) to get open, high, low, close, and volume data.",
-  
-"nodes.BacktestEngineNode.name": "Backtest Engine",
+  "nodes.BacktestEngineNode.name": "Backtest Engine",
   "nodes.BacktestEngineNode.description": "Run backtest with signals and historical data, calculate performance metrics.",
-  
   "nodes.BenchmarkCompareNode.name": "Benchmark Compare",
   "nodes.BenchmarkCompareNode.description": "Compare and analyze multiple backtest results. Supports strategy vs strategy, strategy vs Buy&Hold comparisons.",
-  
   "nodes.EventHandlerNode.name": "Event Handler",
   "nodes.EventHandlerNode.description": "Handle order events (filled, rejected, cancelled).",
-  
   "nodes.ErrorHandlerNode.name": "Error Handler",
   "nodes.ErrorHandlerNode.description": "Error handling and recovery logic.",
-  
   "nodes.AlertNode.name": "Alert",
   "nodes.AlertNode.description": "Send notifications (email, SMS, webhook).",
-  
   "nodes.DisplayNode.name": "Display",
   "nodes.DisplayNode.description": "Chart/table visualization.",
-  
   "nodes.PnLCalculatorNode.name": "P&L Calculator",
   "nodes.PnLCalculatorNode.description": "Calculate realtime P&L.",
-  
   "ports.symbols": "List of symbols",
   "ports.connection": "Broker connection",
   "ports.trigger": "Trigger signal",
@@ -239,7 +187,6 @@
   "ports.mapped_data": "Transformed data",
   "ports.original_fields": "Original field names list",
   "ports.mapped_fields": "Mapped field names list",
-  
   "ports.order_trigger": "Order execution trigger",
   "ports.order_symbols": "Target symbols list",
   "ports.order_quantities": "Quantities per symbol",
@@ -281,43 +228,14 @@
   "ports.comparison_metrics": "Comparison metrics",
   "ports.ranking": "Strategy ranking",
   "ports.strategies_meta": "Strategy metadata",
-
-  "fields.BrokerNode.provider": "Broker provider",
-  "fields.BrokerNode.product": "Product type (overseas_stock/overseas_futures)",
-  "fields.BrokerNode.credential_id": "Select stored credentials",
-
   "fields.WatchlistNode.symbols": "List of symbol codes",
-
-  "fields.RealMarketDataNode.symbols": "Symbols to subscribe (e.g., AAPL, TSLA). If empty, uses input port value.",
-  "fields.RealMarketDataNode.symbols.exchange": "Exchange",
-  "fields.RealMarketDataNode.symbols.symbol": "Symbol",
-  "fields.RealMarketDataNode.symbols.help_text": "Enter directly or use binding (fx toggle)",
-  "fields.RealMarketDataNode.product_type": "Select product type. Must match the product from BrokerNode.",
-  "fields.RealMarketDataNode.stay_connected": "✅ ON: Keep receiving live prices continuously. Stays connected until you manually stop.\n❌ OFF: Get prices once and disconnect automatically.",
-  "fields.RealMarketDataNode.fields": "Fields to receive (price, volume, bid, ask)",
-  "fieldNames.RealMarketDataNode.product_type": "Product Type",
-
-  "fields.RealAccountNode.stay_connected": "✅ ON: Keep receiving live account updates. Your P&L updates in real-time even while waiting for scheduled runs.\n❌ OFF: Get account info once and disconnect.",
-  "fields.RealAccountNode.sync_interval_sec": "How often to refresh account data (seconds). Example: 60 = refresh balance/positions every minute.",
-  "fields.RealAccountNode.product_type": "Select product type. Fee fields will change based on selection.",
-  "fields.RealAccountNode.commission_rate": "Overseas stocks trading commission rate (%). LS Securities default 0.25%",
-  "fields.RealAccountNode.tax_rate": "Overseas stocks transaction tax rate (%). US 0%, HK 0.1%, JP 0%",
-  "fields.RealAccountNode.futures_fee_per_contract": "Futures fee per contract (USD, one-way). LS Securities default $7.5",
-
-  "fields.RealOrderEventNode.product_type": "Select product type. Must match the product from BrokerNode.",
-  "fields.RealOrderEventNode.event_filter": "Overseas stock event filter. Output all (AS0~AS4) or specific TR only.",
-  "fields.RealOrderEventNode.event_filter_futures": "Overseas futures event filter. Output all (TC1~TC3) or specific TR only.",
-  "fields.RealOrderEventNode.stay_connected": "✅ ON: Keep receiving order fill/reject/cancel alerts continuously.\n❌ OFF: Get events once and disconnect.",
-
   "fields.ScheduleNode.cron": "Cron expression (e.g., */5 * * * * = every 5 minutes)",
   "fields.ScheduleNode.timezone": "Timezone",
   "fields.ScheduleNode.enabled": "Schedule enabled",
-
   "fields.TradingHoursFilterNode.start": "Start time (HH:MM)",
   "fields.TradingHoursFilterNode.end": "End time (HH:MM)",
   "fields.TradingHoursFilterNode.timezone": "Timezone",
   "fields.TradingHoursFilterNode.days": "Active days",
-
   "fields.LogicNode.operator": "Logical operator",
   "fields.LogicNode.operator.help_text": "Choose how to combine multiple conditions.\n• all: Pass only if ALL conditions pass\n• any: Pass if ANY condition passes\n• at_least: Pass if N or more conditions pass\n• weighted: Sum weighted scores",
   "fields.LogicNode.threshold": "Threshold value (for at_least, at_most, exactly, weighted operators)",
@@ -327,25 +245,12 @@
   "fields.LogicNode.conditions.is_condition_met": "Condition Met",
   "fields.LogicNode.conditions.passed_symbols": "Passed Symbols",
   "fields.LogicNode.conditions.weight": "Weight",
-
   "fields.ConditionNode.plugin": "Condition plugin (RSI, MACD, etc.)",
   "fields.ConditionNode.ohlcv_data": "OHLCV data binding (e.g., {{ nodes.realMarket.ohlcv_data }} or {{ nodes.historical.ohlcv_data }})",
   "fields.ConditionNode.volume_data": "Volume data binding (e.g., {{ nodes.marketData.volume }})",
   "fields.ConditionNode.symbols": "Symbol list binding (e.g., {{ nodes.watchlist.symbols }})",
   "fields.ConditionNode.held_symbols": "Held symbols binding (e.g., {{ nodes.account.held_symbols }})",
   "fields.ConditionNode.position_data": "Position data binding (e.g., {{ nodes.account.positions }})",
-
-  "fields.NewOrderNode.product": "Select product type. Must match the product selected in BrokerNode.",
-  "fields.NewOrderNode.side": "Select buy or sell.",
-  "fields.NewOrderNode.order_type": "Order type. Market order executes immediately, limit order places at specified price.",
-  "fields.NewOrderNode.market_code": "[Overseas Stock] Select US market. Must match the market where the symbol is listed.",
-  "fields.NewOrderNode.price_type": "[Overseas Stock] Quote type. LOO/LOC/MOO/MOC are special US market orders.",
-  "fields.NewOrderNode.exchange_code": "[Overseas Futures] Exchange code. e.g., CME, EUREX",
-  "fields.NewOrderNode.expiry_month": "[Overseas Futures] Expiry month in YYYYMM format.",
-  "fields.NewOrderNode.symbols": "List of symbols to order. Bind symbols from ConditionNode.",
-  "fields.NewOrderNode.quantities": "Quantities per symbol. Bind from PositionSizingNode.",
-  "fields.NewOrderNode.prices": "Prices per symbol. Required for limit orders, ignored for market orders.",
-
   "fields.PositionSizingNode.symbols": "📋 List of symbols to invest.\n\n✅ Direct input: Add symbols using the editor below\n✅ Binding: fx button → {{ nodes.rsiCondition.passed_symbols }}",
   "fields.PositionSizingNode.balance": "💰 Available balance for trading. Enter a number. (e.g., 10000)",
   "fields.PositionSizingNode.price_data": "📈 Current price data per symbol.\n\nExample: {\"AAPL\": 150.0, \"NVDA\": 450.0}\n\n💡 Leave empty to use market price at order time.",
@@ -354,27 +259,10 @@
   "fields.PositionSizingNode.fixed_amount": "💰 Fixed amount to invest per symbol. Example: 10000 → always invest $10,000 per symbol.\n\n💡 Binding tip: Connect AccountNode balance. Example: {{ nodes.account.balance }}",
   "fields.PositionSizingNode.kelly_fraction": "🎲 Kelly formula adjustment (0.0~1.0).\n\nFull Kelly (1.0) is highly volatile.\n\nRecommended: 0.25 (Quarter Kelly) / 0.5 (Half Kelly) / 1.0 (Full Kelly, high risk)",
   "fields.PositionSizingNode.atr_risk_percent": "📉 Account % to risk per ATR move.\n\nATR measures average price volatility. Position size is calculated to limit loss.\n\nExample: 1.0 → if price drops by 1 ATR, lose only 1% of account.\n\nRecommended: 0.5~2.0%",
-
   "enum.PositionSizingNode.method.fixed_percent": "📊 Fixed Percent - Invest X% of account",
   "enum.PositionSizingNode.method.fixed_amount": "💰 Fixed Amount - Always same $ amount",
   "enum.PositionSizingNode.method.kelly": "🎲 Kelly Formula - Optimal math-based sizing",
   "enum.PositionSizingNode.method.atr_based": "📉 ATR Based - Volatility-adjusted sizing",
-
-  "fields.ModifyOrderNode.product": "Select product type.",
-  "fields.ModifyOrderNode.market_code": "[Overseas Stock] Select market code.",
-  "fields.ModifyOrderNode.price_type": "[Overseas Stock] Select quote type.",
-  "fields.ModifyOrderNode.original_order_id": "Original order ID to modify. Select from open orders.",
-  "fields.ModifyOrderNode.symbol": "Symbol code.",
-  "fields.ModifyOrderNode.new_quantity": "New quantity. Leave empty to keep existing.",
-  "fields.ModifyOrderNode.new_price": "New price. Leave empty to keep existing.",
-
-  "fields.CancelOrderNode.product": "Select product type.",
-  "fields.CancelOrderNode.market_code": "[Overseas Stock] Select market code.",
-  "fields.CancelOrderNode.original_order_id": "Original order ID to cancel. Select from open orders.",
-  "fields.CancelOrderNode.symbol": "Symbol code.",
-
-  "fields.HistoricalDataNode.symbols": "Target symbols. Binding or direct input ([{exchange: NASDAQ, symbol: AAPL}])",
-
   "fields.PortfolioNode.total_capital": "Total portfolio capital",
   "fields.PortfolioNode.allocation_method": "Capital allocation method",
   "fields.PortfolioNode.custom_allocations": "Custom allocation ratios (strategy_id: ratio)",
@@ -383,17 +271,6 @@
   "fields.PortfolioNode.drift_threshold": "Drift tolerance percentage (%)",
   "fields.PortfolioNode.capital_sharing": "Share capital between strategies",
   "fields.PortfolioNode.reserve_percent": "Cash reserve percentage (%)",
-
-  "fields.HistoricalDataNode.start_date": "Backtest start date",
-  "fields.HistoricalDataNode.end_date": "Backtest end date",
-  "fields.HistoricalDataNode.interval": "Data interval/timeframe. Options: 1m (1 minute), 5m, 15m, 1h (hourly), 1d (daily).",
-  "fields.HistoricalDataNode.adjust.short": "Apply adjusted prices (split/dividend adjusted)",
-  "fields.HistoricalDataNode.adjust.detail": "Not recommended for backtesting as it may distort historical price levels.",
-
-  "fields.MarketDataNode.fields": "Fields to query: price (current price), volume, ohlcv (candle data)",
-  "fields.MarketDataNode.period": "Period for OHLCV data. Options: 1d (daily), 1h (hourly), 5m (5 minutes), 1m (1 minute)",
-  "fields.MarketDataNode.count": "Number of data points to fetch for OHLCV",
-
   "fields.SQLiteNode.db_name": "Database filename. Stored in programgarden_data/ folder.",
   "fields.SQLiteNode.operation": "Select operation mode. 'Execute Query' for direct SQL, 'Simple' for GUI-based operations.",
   "fields.SQLiteNode.query": "SQL query to execute. Bind parameters using :name format. Example: SELECT * FROM users WHERE id = :user_id",
@@ -408,7 +285,6 @@
   "fields.SQLiteNode.values": "Values to insert or update. Enter column names and values.",
   "fields.SQLiteNode.on_conflict": "Conflict column for UPSERT. Executes UPDATE when this column has duplicates.",
   "fields.SQLiteNode.on_conflict_help": "Specify a Primary Key or UNIQUE column.",
-
   "enums.sqlite_operation.execute_query": "Execute Query (SQL)",
   "enums.sqlite_operation.simple": "Simple (GUI)",
   "enums.sqlite_action.select": "Select",
@@ -416,19 +292,16 @@
   "enums.sqlite_action.update": "Update",
   "enums.sqlite_action.delete": "Delete",
   "enums.sqlite_action.upsert": "Upsert (Insert or Update)",
-
   "ui.create_new_database": "+ Create New Database",
   "ui.create_new_table": "+ Create New Table",
   "ui.confirm_delete_database": "Are you sure you want to delete '{name}' database? All data will be permanently deleted.",
   "ui.no_tables_found": "No tables found",
   "ui.no_tables_create_first": "Create a table first",
   "ui.select_table_first": "Select a table first",
-
   "ports.storage_rows": "Query result rows",
   "ports.storage_affected_count": "Number of affected rows",
   "ports.sql_last_insert_id": "Last INSERT ID",
   "ports.sql_input_data": "Dynamic data input (replaces values)",
-
   "fields.PostgresNode.credential_id": "PostgreSQL credential ID. Contains host, port, database, username, password.",
   "fields.PostgresNode.table": "Table name for storing data",
   "fields.PostgresNode.schema_name": "PostgreSQL schema name",
@@ -438,7 +311,6 @@
   "fields.PostgresNode.sync_interval_ms": "How often to save to database (milliseconds). 1000 = save every second.",
   "fields.PostgresNode.sync_on_change_count": "Save immediately when N changes occur. Example: 10 = save after every 10 changes.",
   "fields.PostgresNode.connection_timeout": "How long to wait for DB connection (seconds). Fails if can't connect in this time.",
-
   "fields.HTTPRequestNode.method": "HTTP method for the request",
   "fields.HTTPRequestNode.url": "Request URL. Supports {{ }} expressions for dynamic values.",
   "fields.HTTPRequestNode.query_params": "URL query parameters. Click + to add key-value pairs.",
@@ -448,14 +320,12 @@
   "fields.HTTPRequestNode.timeout_seconds": "How long to wait for a response (seconds). If no response in this time, it fails. Increase for slow APIs.",
   "fields.HTTPRequestNode.retry_count": "Number of retry attempts on failure. 0 = no retry.",
   "fields.HTTPRequestNode.retry_delay_ms": "Delay between retries in milliseconds",
-
   "fields.FieldMappingNode.data": "Input data to transform. Bind from HTTPRequestNode response or other node outputs.",
   "fields.FieldMappingNode.mappings": "Field name mapping table. Converts source field names (from) to standard field names (to).",
   "fields.FieldMappingNode.mappings.from": "Source field name (actual field name from API response)",
   "fields.FieldMappingNode.mappings.to": "Standard field name (e.g., close, volume, date)",
   "fields.FieldMappingNode.mappings.description": "Field description (for AI agent auto-mapping)",
   "fields.FieldMappingNode.preserve_unmapped": "Whether to keep unmapped fields. If checked, original fields are also included in output.",
-
   "fields.BacktestEngineNode.data": "OHLCV time series data (connect from HistoricalDataNode)",
   "fields.BacktestEngineNode.close_field": "Close price field name (default: close)",
   "fields.BacktestEngineNode.open_field": "Open price field name (default: open)",
@@ -486,21 +356,17 @@
   "fields.BacktestEngineNode.trailing_stop_percent": "Trailing stop percent (%)",
   "fields.BacktestEngineNode.max_holding_days": "Max holding period (days)",
   "fields.BacktestEngineNode.time_stop_days": "Time stop (days)",
-
   "enums.position_sizing.equal_weight": "Equal Weight",
   "enums.position_sizing.kelly": "Kelly Criterion",
   "enums.position_sizing.fixed_percent": "Fixed Percent",
   "enums.position_sizing.fixed_amount": "Fixed Amount",
   "enums.position_sizing.atr_based": "ATR Based",
-
   "fields.BenchmarkCompareNode.strategies": "List of strategy results to compare. Bind BacktestEngineNode output or equity_curve.",
   "fields.BenchmarkCompareNode.ranking_metric": "Metric for ranking strategies",
-  
   "enums.ranking_metric.sharpe": "Sharpe Ratio",
   "enums.ranking_metric.return": "Total Return",
   "enums.ranking_metric.mdd": "MDD (Max Drawdown)",
   "enums.ranking_metric.calmar": "Calmar Ratio",
-
   "enums.allocation_method.equal": "Equal Weight",
   "enums.allocation_method.custom": "Custom Allocation",
   "enums.allocation_method.risk_parity": "Risk Parity",
@@ -517,113 +383,23 @@
   "enums.operator.at_most": "At Most N - threshold or fewer must pass",
   "enums.operator.exactly": "Exactly N - exactly threshold must pass",
   "enums.operator.weighted": "Weighted Sum - score sum ≥ threshold",
-
   "outputs.common.status": "Current connection status (subscribed/unsubscribed)",
   "outputs.common.product": "Product type (overseas_stock/overseas_futures)",
   "outputs.common.error": "Error message if an error occurred",
-
-  "outputs.BrokerNode.connection": "Broker connection info. Connect to other nodes' connection input.",
-  "outputs.BrokerNode.provider": "Broker provider (e.g., ls-sec.co.kr)",
-  "outputs.BrokerNode.product": "Product type (overseas_stock/overseas_futures)",
-  "outputs.BrokerNode.paper_trading": "Paper trading mode (true: paper, false: live)",
-
-  "outputs.MarketDataNode.price": "Current price by symbol. Most recent trade price from API.",
-  "outputs.MarketDataNode.change": "Price change vs previous day. Positive = up, negative = down.",
-  "outputs.MarketDataNode.change_pct": "Percent change vs previous day (%). e.g., -1.5 means 1.5% decline.",
-  "outputs.MarketDataNode.timestamp": "Quote timestamp (HHmmss format). e.g., 143025 = 14:30:25.",
-  "outputs.MarketDataNode.exchange": "Exchange code. e.g., HKEX (Hong Kong), NYSE, NASD (Nasdaq).",
-  "outputs.MarketDataNode.symbol_name": "Full symbol name. e.g., Hang Seng(2026.02).",
-  "outputs.MarketDataNode.volume": "Volume by symbol. Total contracts/shares traded today.",
-  "outputs.MarketDataNode.ohlcv": "Candle data by symbol (open, high, low, close, volume).",
-
-  "outputs.HistoricalDataNode.ohlcv": "Historical candle data by symbol. Each candle includes open, high, low, close, volume.",
-  "outputs.HistoricalDataNode.dates": "List of dates queried. YYYY-MM-DD format.",
-  "outputs.HistoricalDataNode.symbols": "List of symbol codes queried.",
-  "outputs.HistoricalDataNode.interval": "Data interval (1d: daily, 1h: hourly, 5m: 5 minutes, 1m: 1 minute).",
-  "outputs.HistoricalDataNode.count": "Number of data points returned.",
-
-  "outputs.RealMarketDataNode.status": "WebSocket connection status",
-  "outputs.RealMarketDataNode.symbols": "Currently subscribed symbol list",
-  "outputs.RealMarketDataNode.price": "Current price by symbol (e.g., {\"AAPL\": 185.50})",
-  "outputs.RealMarketDataNode.volume": "Volume by symbol",
-  "outputs.RealMarketDataNode.bid": "Bid price by symbol",
-  "outputs.RealMarketDataNode.ask": "Ask price by symbol",
-  "outputs.RealMarketDataNode.data": "Full market data (includes price, volume, bid, ask)",
-
-  "outputs.RealAccountNode.status": "WebSocket connection status",
-  "outputs.RealAccountNode.held_symbols": "Currently held symbol list",
-  "outputs.RealAccountNode.balance": "Account balance info (cash, equity, etc.)",
-  "outputs.RealAccountNode.open_orders": "Open orders list",
-  "outputs.RealAccountNode.positions": "Position details (symbol, qty, avg price, P&L, etc.)",
-
-  "outputs.RealOrderEventNode.status": "WebSocket connection status (subscribed)",
-  "outputs.RealOrderEventNode.product": "Product type (overseas_stock/overseas_futures)",
-  "outputs.RealOrderEventNode.event_type": "Available event types (AS0~AS4 or TC1~TC3)",
-  "outputs.RealOrderEventNode.event_filter": "Currently filtering event (all or specific TR code)",
-  "outputs.RealOrderEventNode.accepted": "Order accepted event (new/modify/cancel accepted)",
-  "outputs.RealOrderEventNode.filled": "Order filled event (partial/full fill)",
-  "outputs.RealOrderEventNode.modified": "Order modification completed event",
-  "outputs.RealOrderEventNode.cancelled": "Order cancellation completed event",
-  "outputs.RealOrderEventNode.rejected": "Order rejected event (includes rejection reason)",
-
-  "outputs.AccountNode.held_symbols": "Currently held symbol list",
-  "outputs.AccountNode.balance": "Account balance info",
-  "outputs.AccountNode.open_orders": "Open orders list",
-  "outputs.AccountNode.positions": "Position details",
-
   "outputs.WatchlistNode.symbols": "Watchlist symbol codes",
-
   "outputs.ScheduleNode.trigger": "Schedule trigger signal",
   "outputs.ScheduleNode.next_run": "Next scheduled run time",
   "outputs.ScheduleNode.last_run": "Last run time",
-
   "outputs.ConditionNode.passed_symbols": "Symbols that passed the condition",
   "outputs.ConditionNode.failed_symbols": "Symbols that failed the condition",
   "outputs.ConditionNode.values": "Calculated values used for condition (e.g., RSI, MACD)",
-
-  "outputs.NewOrderNode.order_result": "Order execution result",
-  "outputs.NewOrderNode.order_ids": "Order ID list",
-  "outputs.NewOrderNode.submitted_orders": "Submitted order details",
-
   "outputs.PositionSizingNode.quantities": "Calculated order quantities by symbol",
   "outputs.PositionSizingNode.allocation": "Capital allocation ratio",
-
-  "fieldNames.BrokerNode.provider": "Broker",
-  "fieldNames.BrokerNode.product": "Product Type",
-  "fieldNames.BrokerNode.credential_id": "Credential",
-
   "fieldNames.ThrottleNode.mode": "Mode",
   "fieldNames.ThrottleNode.interval_sec": "Interval (sec)",
   "fieldNames.ThrottleNode.pass_first": "Pass First",
-
-  "fieldNames.RealMarketDataNode.symbols": "Symbols",
-  "fieldNames.RealMarketDataNode.stay_connected": "Stay Connected",
-
-  "fieldNames.RealAccountNode.product_type": "Product Type",
-  "fieldNames.RealAccountNode.commission_rate": "Commission Rate",
-  "fieldNames.RealAccountNode.tax_rate": "Tax Rate",
-  "fieldNames.RealAccountNode.futures_fee_per_contract": "Futures Fee/Contract",
-  "fieldNames.RealAccountNode.stay_connected": "Stay Connected",
-  "fieldNames.RealAccountNode.sync_interval_sec": "Sync Interval (sec)",
-
-  "fieldNames.RealOrderEventNode.product_type": "Product Type",
-  "fieldNames.RealOrderEventNode.event_filter": "Event Filter",
-  "fieldNames.RealOrderEventNode.event_filter_futures": "Futures Event Filter",
-  "fieldNames.RealOrderEventNode.stay_connected": "Stay Connected",
-
-  "fieldNames.AccountNode.product_type": "Product Type",
-
-  "fieldNames.SymbolQueryNode.product_type": "Product Type",
-  "fieldNames.SymbolQueryNode.country": "Country",
-  "fieldNames.SymbolQueryNode.stock_exchange": "Stock Exchange",
-  "fieldNames.SymbolQueryNode.futures_exchange": "Futures Exchange",
-  "fieldNames.SymbolQueryNode.futures_contract_month": "Contract Month",
-  "fieldNames.SymbolQueryNode.max_results": "Max Results",
-
   "fieldNames.WatchlistNode.symbols": "Symbols",
-
   "fieldNames.MarketUniverseNode.universe": "Index",
-
   "fieldNames.ScreenerNode.symbols": "Symbols",
   "fieldNames.ScreenerNode.market_cap_min": "Min Market Cap",
   "fieldNames.ScreenerNode.market_cap_max": "Max Market Cap",
@@ -631,29 +407,16 @@
   "fieldNames.ScreenerNode.sector": "Sector",
   "fieldNames.ScreenerNode.exchange": "Exchange",
   "fieldNames.ScreenerNode.max_results": "Max Results",
-
   "fieldNames.SymbolFilterNode.operation": "Operation",
   "fieldNames.SymbolFilterNode.input_a": "Input A",
   "fieldNames.SymbolFilterNode.input_b": "Input B",
-
-
-  "fieldNames.HistoricalDataNode.symbols": "Symbols",
-  "fieldNames.HistoricalDataNode.exchange_field": "Exchange Field",
-  "fieldNames.HistoricalDataNode.symbol_field": "Symbol Field",
-  "fieldNames.HistoricalDataNode.start_date": "Start Date",
-  "fieldNames.HistoricalDataNode.end_date": "End Date",
-  "fieldNames.HistoricalDataNode.interval": "Interval",
-  "fieldNames.HistoricalDataNode.adjust": "Adjusted Price",
-
   "fieldNames.ScheduleNode.cron": "Cron Expression",
   "fieldNames.ScheduleNode.timezone": "Timezone",
   "fieldNames.ScheduleNode.enabled": "Enabled",
-
   "fieldNames.TradingHoursFilterNode.start": "Start Time",
   "fieldNames.TradingHoursFilterNode.end": "End Time",
   "fieldNames.TradingHoursFilterNode.days": "Days",
   "fieldNames.TradingHoursFilterNode.timezone": "Timezone",
-
   "fieldNames.ConditionNode.plugin": "Plugin",
   "fieldNames.ConditionNode.data": "Data",
   "fieldNames.ConditionNode.close_field": "Close Field",
@@ -665,39 +428,9 @@
   "fieldNames.ConditionNode.symbol_field": "Symbol Field",
   "fieldNames.ConditionNode.exchange_field": "Exchange Field",
   "fieldNames.ConditionNode.positions": "Positions",
-
   "fieldNames.LogicNode.operator": "Operator",
   "fieldNames.LogicNode.threshold": "Threshold",
   "fieldNames.LogicNode.conditions": "Conditions",
-
-  "fieldNames.NewOrderNode.product": "Product Type",
-  "fieldNames.NewOrderNode.side": "Side",
-  "fieldNames.NewOrderNode.order_type": "Order Type",
-  "fieldNames.NewOrderNode.market_code": "Market Code",
-  "fieldNames.NewOrderNode.price_type": "Price Type",
-  "fieldNames.NewOrderNode.exchange_code": "Exchange Code",
-  "fieldNames.NewOrderNode.expiry_month": "Expiry Month",
-  "fieldNames.NewOrderNode.symbols": "Symbols",
-  "fieldNames.NewOrderNode.quantities": "Quantities",
-  "fieldNames.NewOrderNode.prices": "Prices",
-
-  "fieldNames.ModifyOrderNode.product": "Product Type",
-  "fieldNames.ModifyOrderNode.market_code": "Market Code",
-  "fieldNames.ModifyOrderNode.price_type": "Price Type",
-  "fieldNames.ModifyOrderNode.exchange_code": "Exchange Code",
-  "fieldNames.ModifyOrderNode.expiry_month": "Expiry Month",
-  "fieldNames.ModifyOrderNode.original_order_id": "Original Order ID",
-  "fieldNames.ModifyOrderNode.symbol": "Symbol",
-  "fieldNames.ModifyOrderNode.new_quantity": "New Quantity",
-  "fieldNames.ModifyOrderNode.new_price": "New Price",
-
-  "fieldNames.CancelOrderNode.product": "Product Type",
-  "fieldNames.CancelOrderNode.market_code": "Market Code",
-  "fieldNames.CancelOrderNode.exchange_code": "Exchange Code",
-  "fieldNames.CancelOrderNode.expiry_month": "Expiry Month",
-  "fieldNames.CancelOrderNode.original_order_id": "Original Order ID",
-  "fieldNames.CancelOrderNode.symbol": "Symbol",
-
   "fieldNames.PositionSizingNode.symbols": "Symbols",
   "fieldNames.PositionSizingNode.balance": "Balance",
   "fieldNames.PositionSizingNode.price_data": "Price Data",
@@ -706,7 +439,6 @@
   "fieldNames.PositionSizingNode.fixed_amount": "Fixed Amount",
   "fieldNames.PositionSizingNode.kelly_fraction": "Kelly Fraction",
   "fieldNames.PositionSizingNode.atr_risk_percent": "ATR Risk Percent",
-
   "fieldNames.PortfolioNode.total_capital": "Total Capital",
   "fieldNames.PortfolioNode.allocation_method": "Allocation Method",
   "fieldNames.PortfolioNode.custom_allocations": "Custom Allocations",
@@ -715,7 +447,6 @@
   "fieldNames.PortfolioNode.drift_threshold": "Drift Threshold",
   "fieldNames.PortfolioNode.capital_sharing": "Capital Sharing",
   "fieldNames.PortfolioNode.reserve_percent": "Reserve Percent",
-
   "fieldNames.DisplayNode.chart_type": "Chart Type",
   "fieldNames.DisplayNode.title": "Title",
   "fieldNames.DisplayNode.data": "Data",
@@ -734,7 +465,6 @@
   "fieldNames.DisplayNode.signal_field": "Signal Field",
   "fieldNames.DisplayNode.side_field": "Side Field",
   "fieldNames.DisplayNode.columns": "Columns",
-
   "fieldNames.BacktestEngineNode.data": "Data",
   "fieldNames.BacktestEngineNode.close_field": "Close Field",
   "fieldNames.BacktestEngineNode.open_field": "Open Field",
@@ -764,13 +494,11 @@
   "fieldNames.BacktestEngineNode.allow_short": "Allow Short",
   "fieldNames.BacktestEngineNode.allow_fractional": "Allow Fractional",
   "fieldNames.BacktestEngineNode.strategy_name": "Strategy Name",
-
   "fieldNames.BenchmarkCompareNode.strategies": "Strategies",
   "fieldNames.BenchmarkCompareNode.date_field": "Date Field",
   "fieldNames.BenchmarkCompareNode.equity_field": "Equity Field",
   "fieldNames.BenchmarkCompareNode.name_field": "Name Field",
   "fieldNames.BenchmarkCompareNode.ranking_metric": "Ranking Metric",
-
   "fieldNames.HTTPRequestNode.method": "HTTP Method",
   "fieldNames.HTTPRequestNode.url": "URL",
   "fieldNames.HTTPRequestNode.query_params": "Query Params",
@@ -780,14 +508,11 @@
   "fieldNames.HTTPRequestNode.timeout_seconds": "Timeout (sec)",
   "fieldNames.HTTPRequestNode.retry_count": "Retry Count",
   "fieldNames.HTTPRequestNode.retry_delay_ms": "Retry Delay (ms)",
-
   "fieldNames.FieldMappingNode.data": "Data",
   "fieldNames.FieldMappingNode.mappings": "Mappings",
   "fieldNames.FieldMappingNode.preserve_unmapped": "Preserve Unmapped",
-
   "fieldNames.TelegramNode.template": "Message Template",
   "fieldNames.TelegramNode.credential_id": "Credential",
-
   "errors.VALIDATION_ERROR": "Workflow validation error",
   "errors.EXECUTION_ERROR": "Workflow execution error",
   "errors.CREDENTIAL_ERROR": "Credential error",
@@ -811,7 +536,6 @@
   "errors.MARKET_DATA_FETCH_ERROR": "Market data fetch error: {error}",
   "errors.HISTORICAL_DATA_FETCH_ERROR": "Historical data fetch error: {error}",
   "errors.UNSUPPORTED_PRODUCT": "Unsupported product: {product}",
-
   "enums.product_type.overseas_stock": "Overseas Stock",
   "enums.product_type.overseas_futures": "Overseas Futures"
 }

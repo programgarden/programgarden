@@ -3672,13 +3672,17 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             return watchlist_output["symbols"]
         
         # 4. AccountNode/RealAccountNode에서 held_symbols 가져오기
-        account_output = context.find_parent_output(node_id, "RealAccountNode")
-        if account_output and account_output.get("held_symbols"):
-            return account_output["held_symbols"]
-        
-        account_output = context.find_parent_output(node_id, "AccountNode")
-        if account_output and account_output.get("held_symbols"):
-            return account_output["held_symbols"]
+        for account_type in (
+            "RealAccountNode",
+            "OverseasStockRealAccountNode",
+            "OverseasFuturesRealAccountNode",
+            "AccountNode",
+            "OverseasStockAccountNode",
+            "OverseasFuturesAccountNode",
+        ):
+            account_output = context.find_parent_output(node_id, account_type)
+            if account_output and account_output.get("held_symbols"):
+                return account_output["held_symbols"]
         
         return []
     
@@ -9947,7 +9951,12 @@ class WorkflowJob:
         result = []
         for node_id, node in self.workflow.nodes.items():
             # 실시간 노드 (stay_connected 설정)
-            if node.node_type in ("RealAccountNode", "RealMarketDataNode", "RealOrderEventNode"):
+            if node.node_type in (
+                "RealAccountNode", "RealMarketDataNode", "RealOrderEventNode",
+                "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
+                "OverseasStockRealMarketDataNode", "OverseasFuturesRealMarketDataNode",
+                "OverseasStockRealOrderEventNode", "OverseasFuturesRealOrderEventNode",
+            ):
                 if node.config.get("stay_connected", True):
                     result.append(node_id)
             # 영속 노드 (백그라운드 태스크를 등록하는 노드)
@@ -10189,7 +10198,12 @@ class WorkflowJob:
         source_node = self.workflow.nodes.get(source_node_id)
         
         # 실시간 노드는 하위 노드를 자동 트리거
-        auto_trigger_types = {"RealAccountNode", "RealMarketDataNode", "RealOrderEventNode"}
+        auto_trigger_types = {
+            "RealAccountNode", "RealMarketDataNode", "RealOrderEventNode",
+            "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
+            "OverseasStockRealMarketDataNode", "OverseasFuturesRealMarketDataNode",
+            "OverseasStockRealOrderEventNode", "OverseasFuturesRealOrderEventNode",
+        }
         is_realtime_source = source_node and source_node.node_type in auto_trigger_types
         
         for edge in self.workflow.edges:
@@ -10364,7 +10378,12 @@ class WorkflowJob:
                 continue
             
             # 실시간 노드는 이미 실행 중이므로 스킵 (무한 루프 방지)
-            if node.node_type in ("RealAccountNode", "RealMarketDataNode", "RealOrderEventNode"):
+            if node.node_type in (
+                "RealAccountNode", "RealMarketDataNode", "RealOrderEventNode",
+                "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
+                "OverseasStockRealMarketDataNode", "OverseasFuturesRealMarketDataNode",
+                "OverseasStockRealOrderEventNode", "OverseasFuturesRealOrderEventNode",
+            ):
                 continue
             
             # Re-execute the triggered node
