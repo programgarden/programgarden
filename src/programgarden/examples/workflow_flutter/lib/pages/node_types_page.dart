@@ -3,8 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:json_dynamic_widget/json_dynamic_widget.dart';
 import '../widgets/checkbox_builder.dart';
+import '../widgets/code_editor_builder.dart';
+import '../widgets/creatable_select_builder.dart';
 import '../widgets/credential_select_builder.dart';
 import '../widgets/date_picker_builder.dart';
+import '../widgets/field_mapping_editor_builder.dart';
+import '../widgets/key_value_editor_builder.dart';
+import '../widgets/object_array_table_builder.dart';
+import '../widgets/order_list_editor_builder.dart';
 import '../widgets/plugin_select_builder.dart';
 import '../widgets/symbol_editor_builder.dart';
 import '../widgets/reactive_dropdown_builder.dart';
@@ -83,6 +89,42 @@ class ProgramGardenWidgetRegistry {
     registry.registerCustomBuilder(
       'custom_${DatePickerBuilder.kType}',
       JsonWidgetBuilderContainer(builder: DatePickerBuilder.fromDynamic),
+    );
+
+    // custom_code_editor: 코드 에디터 (SQL 등)
+    registry.registerCustomBuilder(
+      'custom_${CodeEditorBuilder.kType}',
+      JsonWidgetBuilderContainer(builder: CodeEditorBuilder.fromDynamic),
+    );
+
+    // custom_creatable_select: 생성 가능한 선택 드롭다운
+    registry.registerCustomBuilder(
+      'custom_${CreatableSelectBuilder.kType}',
+      JsonWidgetBuilderContainer(builder: CreatableSelectBuilder.fromDynamic),
+    );
+
+    // custom_key_value_editor: 키-값 에디터
+    registry.registerCustomBuilder(
+      'custom_${KeyValueEditorBuilder.kType}',
+      JsonWidgetBuilderContainer(builder: KeyValueEditorBuilder.fromDynamic),
+    );
+
+    // custom_object_array_table: 객체 배열 테이블
+    registry.registerCustomBuilder(
+      'custom_${ObjectArrayTableBuilder.kType}',
+      JsonWidgetBuilderContainer(builder: ObjectArrayTableBuilder.fromDynamic),
+    );
+
+    // custom_order_list_editor: 주문 목록 에디터
+    registry.registerCustomBuilder(
+      'custom_${OrderListEditorBuilder.kType}',
+      JsonWidgetBuilderContainer(builder: OrderListEditorBuilder.fromDynamic),
+    );
+
+    // custom_field_mapping_editor: 필드 매핑 에디터
+    registry.registerCustomBuilder(
+      'custom_${FieldMappingEditorBuilder.kType}',
+      JsonWidgetBuilderContainer(builder: FieldMappingEditorBuilder.fromDynamic),
     );
   }
 }

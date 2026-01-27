@@ -564,6 +564,21 @@ class FieldSchema(BaseModel):
                     "objectSchema": self.object_schema,
                 },
             }
+
+        # === ORDER_LIST_EDITOR ===
+        if ui_comp in (UIComponent.CUSTOM_ORDER_LIST_EDITOR,):
+            args_dict: Dict[str, Any] = {
+                "decoration": decoration,
+                "objectSchema": self.object_schema,
+            }
+            if self.example_binding:
+                args_dict["exampleBinding"] = self.example_binding
+            if self.bindable_sources:
+                args_dict["bindableSources"] = self.bindable_sources
+            return {
+                "type": "custom_order_list_editor",
+                "args": args_dict,
+            }
         
         # === OBJECT_ARRAY_TABLE ===
         if ui_comp in (UIComponent.OBJECT_ARRAY_TABLE, UIComponent.CUSTOM_OBJECT_ARRAY_TABLE):
