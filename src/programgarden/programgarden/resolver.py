@@ -39,6 +39,8 @@ class ResolvedNode:
         config: Dict[str, Any],
         plugin: Optional[Any] = None,
         fields: Optional[Dict[str, Any]] = None,
+        product_scope: str = "all",
+        broker_provider: str = "all",
     ):
         self.node_id = node_id
         self.node_type = node_type
@@ -46,6 +48,8 @@ class ResolvedNode:
         self.config = config
         self.plugin = plugin
         self.fields = fields or {}
+        self.product_scope = product_scope
+        self.broker_provider = broker_provider
 
         # Runtime connections (set by executor)
         self.inputs: Dict[str, Any] = {}
@@ -161,182 +165,141 @@ class WorkflowResolver:
         # 5. Edge connection type compatibility validation
         # TODO: Input/output port type matching validation
 
-        # 6. Required input port connection validation
-        self._validate_required_connections(workflow, registry, result)
+        # 6. 노드-브로커 호환성 검증 (product_scope + broker_provider 자동 매칭)
+        self._validate_node_broker_compatibility(workflow, registry, result)
 
-        # 7. BrokerNode 중복 검증 (같은 product는 1개만 허용)
-        self._validate_broker_nodes(workflow, result)
+        # 7. BrokerNode 중복 검증 (같은 product_scope는 1개만 허용)
+        self._validate_broker_nodes(workflow, registry, result)
 
         return result
 
     def _validate_broker_nodes(
         self,
         workflow,
+        registry,
         result: ValidationResult,
     ) -> None:
         """
-        같은 product의 BrokerNode가 중복되지 않는지 검증.
-        
-        - overseas_stock BrokerNode는 1개만 허용
-        - overseas_futures BrokerNode는 1개만 허용
-        - 다른 product끼리는 공존 가능 (overseas_stock + overseas_futures)
-        """
-        broker_products: Dict[str, str] = {}  # {product: node_id}
-        
-        for node in workflow.nodes:
-            if node.get("type") == "BrokerNode":
-                node_id = node.get("id")
-                product = node.get("product", "overseas_stock")
-                
-                if product in broker_products:
-                    result.add_error(
-                        f"Duplicate BrokerNode for product '{product}'. "
-                        f"Nodes '{broker_products[product]}' and '{node_id}' both use '{product}'. "
-                        f"Only one BrokerNode per product is allowed."
-                    )
-                else:
-                    broker_products[product] = node_id
+        같은 product_scope의 BrokerNode가 중복되지 않는지 검증.
 
-    def _validate_required_connections(
+        - OverseasStockBrokerNode는 1개만 허용
+        - OverseasFuturesBrokerNode는 1개만 허용
+        - 다른 product_scope끼리는 공존 가능 (overseas_stock + overseas_futures)
+        """
+        from programgarden_core.nodes.base import ProductScope
+
+        broker_scopes: Dict[str, str] = {}  # {product_scope.value: node_id}
+
+        for node in workflow.nodes:
+            node_type = node.get("type")
+            node_class = registry.get(node_type)
+            if not node_class:
+                continue
+
+            # BrokerNode 계열인지 확인 (connection 출력 포트가 있는 노드)
+            outputs = getattr(node_class, '_outputs', [])
+            is_broker = any(
+                getattr(o, 'type', '') == 'broker_connection' for o in outputs
+            )
+            if not is_broker:
+                continue
+
+            node_id = node.get("id")
+            scope = getattr(node_class, '_product_scope', ProductScope.ALL)
+
+            if scope == ProductScope.ALL:
+                continue
+
+            scope_value = scope.value
+            if scope_value in broker_scopes:
+                product_label = "해외주식" if scope == ProductScope.STOCK else "해외선물"
+                result.add_error(
+                    f"{product_label} 브로커 노드가 중복됩니다. "
+                    f"'{broker_scopes[scope_value]}'과 '{node_id}' 중 하나만 사용하세요."
+                )
+            else:
+                broker_scopes[scope_value] = node_id
+
+    def _validate_node_broker_compatibility(
         self,
         workflow,
         registry,
         result: ValidationResult,
     ) -> None:
         """
-        Validate required input port connections.
-        
-        Checks if nodes with required=True input ports have explicit connection field binding.
-        NO automatic BrokerNode ancestor detection - explicit binding required.
+        노드의 (product_scope, broker_provider) 조합이
+        워크플로우에 존재하는 BrokerNode와 호환되는지 검증.
+
+        검증 규칙:
+        1. product_scope 매칭: OverseasStockMarketDataNode → OverseasStockBrokerNode 필요
+        2. broker_provider 매칭: LS증권 노드 → LS증권 브로커 필요
+        3. ProductScope.ALL / BrokerProvider.ALL은 모든 것과 매칭 (범용 노드)
         """
-        # Nodes that require explicit connection field binding
-        # e.g., connection: "{{ nodes.broker.connection }}"
-        CONNECTION_REQUIRED_NODES = {
-            "RealMarketDataNode",
-            "RealAccountNode",
-            "RealOrderEventNode",
-            "AccountNode",
-            "MarketDataNode",
-            # 해외주식 주문
-            "OverseasStockNewOrderNode", "OverseasStockModifyOrderNode", "OverseasStockCancelOrderNode",
-            # 해외선물 주문
-            "OverseasFuturesNewOrderNode", "OverseasFuturesModifyOrderNode", "OverseasFuturesCancelOrderNode",
-        }
-        
-        # Build edge lookup: {to_node_id: [from_node_ids]}
-        incoming_edges: Dict[str, List[str]] = {}
-        for edge in workflow.edges:
-            to_id = edge.to_node_id
-            from_id = edge.from_node_id
-            if to_id not in incoming_edges:
-                incoming_edges[to_id] = []
-            incoming_edges[to_id].append(from_id)
-        
-        # Build node lookup: {node_id: node_dict}
-        nodes_by_id = {n.get("id"): n for n in workflow.nodes}
-        
+        from programgarden_core.nodes.base import ProductScope, BrokerProvider
+
+        # 1. 워크플로우의 BrokerNode에서 (product_scope, broker_provider) 쌍 수집
+        available_brokers: Dict[str, str] = {}  # {product_scope.value: broker_provider.value}
         for node in workflow.nodes:
-            node_id = node.get("id")
             node_type = node.get("type")
-            
-            # Check explicit connection field binding for specific node types
-            if node_type in CONNECTION_REQUIRED_NODES:
-                connection_field = node.get("connection")
-                if not connection_field:
-                    result.add_error(
-                        f"Node '{node_id}' ({node_type}) requires explicit connection field. "
-                        f"Set connection: \"{{{{ nodes.broker.connection }}}}\" in node config."
-                    )
-            
-            # Check required input ports from node class definition
             node_class = registry.get(node_type)
-            if node_class:
-                self._check_required_ports(node_id, node_type, node_class, incoming_edges, nodes_by_id, result)
-
-    def _has_broker_ancestor(
-        self,
-        node_id: str,
-        incoming_edges: Dict[str, List[str]],
-        nodes_by_id: Dict[str, Dict],
-    ) -> bool:
-        """
-        Check if node has BrokerNode as an ancestor (backward traversal).
-        """
-        from collections import deque
-        
-        visited = set()
-        queue = deque([node_id])
-        
-        while queue:
-            current = queue.popleft()
-            if current in visited:
+            if not node_class:
                 continue
-            visited.add(current)
-            
-            for parent_id in incoming_edges.get(current, []):
-                parent_node = nodes_by_id.get(parent_id)
-                if parent_node and parent_node.get("type") == "BrokerNode":
-                    return True
-                if parent_id not in visited:
-                    queue.append(parent_id)
-        
-        return False
 
-    def _check_required_ports(
-        self,
-        node_id: str,
-        node_type: str,
-        node_class,
-        incoming_edges: Dict[str, List[str]],
-        nodes_by_id: Dict[str, Dict],
-        result: ValidationResult,
-    ) -> None:
-        """
-        Check if required input ports have valid connections.
-        
-        For 'symbols' type ports, checks if field is set or port is connected.
-        """
-        # Get _inputs from class definition (not instance)
-        # Pydantic treats _inputs as private attr, so access from __class_vars__ or directly
-        inputs = []
-        if hasattr(node_class, "__dict__") and "_inputs" in node_class.__dict__:
-            inputs = node_class.__dict__["_inputs"]
-        elif hasattr(node_class, "_inputs"):
-            raw_inputs = node_class._inputs
-            # Check if it's a list (not ModelPrivateAttr)
-            if isinstance(raw_inputs, list):
-                inputs = raw_inputs
-        
-        if not inputs:
-            return
-        
-        node_config = nodes_by_id.get(node_id, {})
-        
-        for port in inputs:
-            port_name = getattr(port, "name", "")
-            port_type = getattr(port, "type", "")
-            required = getattr(port, "required", True)
-            
-            if not required:
+            scope = getattr(node_class, '_product_scope', ProductScope.ALL)
+            if scope == ProductScope.ALL:
                 continue
-            
-            # Special handling: symbols can come from field or port
-            if port_type == "symbol_list":
-                # Check if symbols field is set in node config
-                symbols_in_config = node_config.get("symbols")
-                if symbols_in_config and len(symbols_in_config) > 0:
-                    continue  # symbols set in field, no port connection needed
-            
-            # Check if there's an incoming connection
-            has_connection = len(incoming_edges.get(node_id, [])) > 0
-            
-            # For broker_connection, we already check via _has_broker_ancestor
-            if port_type == "broker_connection":
-                continue  # Already handled above
-            
-            # For other required ports, warn if no connection (not error, might be expression binding)
-            # Full validation would require checking output types of source nodes
-            # For now, we just ensure there's at least some connection for required ports
+
+            # BrokerNode 계열인지 확인 (connection 출력 포트가 있는 노드)
+            outputs = getattr(node_class, '_outputs', [])
+            is_broker = any(
+                getattr(o, 'type', '') == 'broker_connection' for o in outputs
+            )
+            if is_broker:
+                provider = getattr(node_class, '_broker_provider', BrokerProvider.ALL)
+                available_brokers[scope.value] = provider.value
+
+        # 2. 각 노드의 (product_scope, broker_provider)가 매칭되는지 확인
+        for node in workflow.nodes:
+            node_type = node.get("type")
+            node_class = registry.get(node_type)
+            if not node_class:
+                continue
+
+            scope = getattr(node_class, '_product_scope', ProductScope.ALL)
+            provider = getattr(node_class, '_broker_provider', BrokerProvider.ALL)
+
+            # 범용 노드는 검증 불필요
+            if scope == ProductScope.ALL:
+                continue
+
+            # BrokerNode 자체는 검증 대상 아님
+            outputs = getattr(node_class, '_outputs', [])
+            is_broker = any(
+                getattr(o, 'type', '') == 'broker_connection' for o in outputs
+            )
+            if is_broker:
+                continue
+
+            # product_scope 매칭 확인
+            if scope.value not in available_brokers:
+                product_label = "해외주식" if scope == ProductScope.STOCK else "해외선물"
+                broker_node = "OverseasStockBrokerNode" if scope == ProductScope.STOCK else "OverseasFuturesBrokerNode"
+                result.add_error(
+                    f"노드 '{node.get('id')}' ({node_type})에 필요한 "
+                    f"{product_label} 브로커 노드가 없습니다. "
+                    f"{broker_node}를 추가하세요."
+                )
+                continue
+
+            # broker_provider 매칭 확인 (ALL은 모든 것과 매칭)
+            if provider != BrokerProvider.ALL:
+                broker_provider_value = available_brokers[scope.value]
+                if broker_provider_value != BrokerProvider.ALL.value and broker_provider_value != provider.value:
+                    result.add_error(
+                        f"노드 '{node.get('id')}' ({node_type})는 "
+                        f"'{provider.value}' 증권사 브로커가 필요하지만, "
+                        f"워크플로우에는 '{broker_provider_value}' 브로커가 설정되어 있습니다."
+                    )
 
     def resolve(
         self,
@@ -399,6 +362,16 @@ class WorkflowResolver:
                 plugin = plugin_registry.get(plugin_id)
                 fields = node_def.get("fields", {})
 
+            # product_scope, broker_provider 추출
+            node_class = node_registry.get(node_type)
+            p_scope = "all"
+            b_provider = "all"
+            if node_class:
+                p_scope = getattr(node_class, '_product_scope', None)
+                p_scope = p_scope.value if p_scope else "all"
+                b_provider = getattr(node_class, '_broker_provider', None)
+                b_provider = b_provider.value if b_provider else "all"
+
             resolved_node = ResolvedNode(
                 node_id=node_id,
                 node_type=node_type,
@@ -406,6 +379,8 @@ class WorkflowResolver:
                 config=config,
                 plugin=plugin,
                 fields=fields,
+                product_scope=p_scope,
+                broker_provider=b_provider,
             )
             resolved_nodes[node_id] = resolved_node
 

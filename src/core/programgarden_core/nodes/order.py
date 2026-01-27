@@ -10,7 +10,7 @@ ProgramGarden Core - Order Nodes
 - Modify/Cancel: original_order_id, symbol, exchange 단일 필드
 """
 
-from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -21,6 +21,8 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    ProductScope,
+    BrokerProvider,
 )
 
 
@@ -130,6 +132,9 @@ class OverseasStockNewOrderNode(BaseOrderNode):
 
     type: Literal["OverseasStockNewOrderNode"] = "OverseasStockNewOrderNode"
     description: str = "i18n:nodes.OverseasStockNewOrderNode.description"
+
+    _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
     # 해외주식 전용 필드
     price_type: Literal["limit", "market", "LOO", "LOC", "MOO", "MOC"] = Field(
@@ -252,6 +257,9 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
 
     type: Literal["OverseasStockModifyOrderNode"] = "OverseasStockModifyOrderNode"
     description: str = "i18n:nodes.OverseasStockModifyOrderNode.description"
+
+    _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
     # 해외주식 전용 필드
     price_type: Literal["limit", "market"] = Field(
@@ -402,6 +410,9 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
     type: Literal["OverseasStockCancelOrderNode"] = "OverseasStockCancelOrderNode"
     description: str = "i18n:nodes.OverseasStockCancelOrderNode.description"
 
+    _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
     _inputs: List[InputPort] = [
         InputPort(
             name="trigger",
@@ -502,6 +513,9 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
 
     type: Literal["OverseasFuturesNewOrderNode"] = "OverseasFuturesNewOrderNode"
     description: str = "i18n:nodes.OverseasFuturesNewOrderNode.description"
+
+    _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
     # 해외선물 전용 필드
     expiry_month: Optional[str] = Field(
@@ -615,6 +629,9 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
 
     type: Literal["OverseasFuturesModifyOrderNode"] = "OverseasFuturesModifyOrderNode"
     description: str = "i18n:nodes.OverseasFuturesModifyOrderNode.description"
+
+    _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
     # 정정 대상
     new_quantity: Optional[int] = Field(
@@ -741,6 +758,9 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
 
     type: Literal["OverseasFuturesCancelOrderNode"] = "OverseasFuturesCancelOrderNode"
     description: str = "i18n:nodes.OverseasFuturesCancelOrderNode.description"
+
+    _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
     _inputs: List[InputPort] = [
         InputPort(
