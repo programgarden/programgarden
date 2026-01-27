@@ -13,9 +13,7 @@ workflow = {
         {'id': 'start', 'type': 'StartNode'},
         {
             'id': 'broker',
-            'type': 'BrokerNode',
-            'provider': 'ls-sec.co.kr',
-            'product': 'overseas_stock',
+            'type': 'OverseasStockBrokerNode',
             'credential_id': 'broker-cred'
         }
     ],
@@ -25,7 +23,7 @@ workflow = {
     'credentials': [
         {
             'id': 'broker-cred',
-            'type': 'broker_ls',
+            'type': 'broker_ls_stock',
             'name': 'Test LS',
             'data': {
                 'appkey': 'test_appkey_12345',

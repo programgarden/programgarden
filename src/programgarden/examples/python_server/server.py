@@ -285,8 +285,8 @@ async def get_status():
 # ========================================
 
 @app.get("/api/node-types")
-async def get_node_types(locale: str = "ko"):
-    """모든 노드 타입 스키마 반환 (i18n 적용)"""
+async def get_node_types(locale: str = "ko", product_scope: str = None):
+    """모든 노드 타입 스키마 반환 (i18n 적용, product_scope 필터링 지원)"""
     import json
     from programgarden_core.i18n import translate_schema, set_locale
     
@@ -317,8 +317,8 @@ async def get_node_types(locale: str = "ko"):
         from programgarden_core.registry import NodeTypeRegistry
         
         registry = NodeTypeRegistry()
-        schemas = registry.list_schemas()
-        
+        schemas = registry.list_schemas(product_scope=product_scope)
+
         node_types = []
         for schema in schemas:
             try:
@@ -328,6 +328,8 @@ async def get_node_types(locale: str = "ko"):
                     "category": str(getattr(schema, "category", "group")),
                     "description": str(getattr(schema, "description", "") or ""),
                     "img_url": str(getattr(schema, "img_url", "") or ""),
+                    "product_scope": str(getattr(schema, "product_scope", "all")),
+                    "broker_provider": str(getattr(schema, "broker_provider", "all")),
                     "inputs": safe_serialize(getattr(schema, "inputs", []) or []),
                     "outputs": safe_serialize(getattr(schema, "outputs", []) or []),
                     "widget_schema": safe_serialize(getattr(schema, "widget_schema", None)),

@@ -263,9 +263,7 @@ def create_workflow() -> dict:
         },
         {
             "id": "broker",
-            "type": "BrokerNode",
-            "provider": "ls-sec.co.kr",
-            "product": "overseas_stock",
+            "type": "OverseasStockBrokerNode",
             "credential_id": "broker-cred"
         }
     ]
@@ -299,7 +297,7 @@ def create_workflow() -> dict:
         "credentials": [
             {
                 "id": "broker-cred",
-                "type": "broker_ls",
+                "type": "broker_ls_stock",
                 "name": "LS증권 (해외주식)",
                 "data": {
                     "appkey": "",
@@ -338,7 +336,7 @@ async def main():
     workflow["credentials"] = [
         {
             "id": "broker-cred",
-            "type": "broker_ls",
+            "type": "broker_ls_stock",
             "name": "LS증권 (해외주식)",
             "data": {
                 "appkey": cred_data["appkey"],

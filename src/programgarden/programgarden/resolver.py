@@ -173,6 +173,18 @@ class WorkflowResolver:
 
         return result
 
+    @staticmethod
+    def _is_broker_node(registry, node_type: str) -> bool:
+        """BrokerNode 계열인지 스키마를 통해 확인 (connection 출력 포트가 있는 노드)"""
+        schema = registry.get_schema(node_type)
+        if not schema:
+            return False
+        outputs = schema.outputs or []
+        return any(
+            (o.get("type") if isinstance(o, dict) else getattr(o, "type", "")) == "broker_connection"
+            for o in outputs
+        )
+
     def _validate_broker_nodes(
         self,
         workflow,
@@ -196,12 +208,8 @@ class WorkflowResolver:
             if not node_class:
                 continue
 
-            # BrokerNode 계열인지 확인 (connection 출력 포트가 있는 노드)
-            outputs = getattr(node_class, '_outputs', [])
-            is_broker = any(
-                getattr(o, 'type', '') == 'broker_connection' for o in outputs
-            )
-            if not is_broker:
+            # BrokerNode 계열인지 스키마로 확인
+            if not self._is_broker_node(registry, node_type):
                 continue
 
             node_id = node.get("id")
@@ -249,12 +257,8 @@ class WorkflowResolver:
             if scope == ProductScope.ALL:
                 continue
 
-            # BrokerNode 계열인지 확인 (connection 출력 포트가 있는 노드)
-            outputs = getattr(node_class, '_outputs', [])
-            is_broker = any(
-                getattr(o, 'type', '') == 'broker_connection' for o in outputs
-            )
-            if is_broker:
+            # BrokerNode 계열인지 스키마로 확인
+            if self._is_broker_node(registry, node_type):
                 provider = getattr(node_class, '_broker_provider', BrokerProvider.ALL)
                 available_brokers[scope.value] = provider.value
 
@@ -273,11 +277,7 @@ class WorkflowResolver:
                 continue
 
             # BrokerNode 자체는 검증 대상 아님
-            outputs = getattr(node_class, '_outputs', [])
-            is_broker = any(
-                getattr(o, 'type', '') == 'broker_connection' for o in outputs
-            )
-            if is_broker:
+            if self._is_broker_node(registry, node_type):
                 continue
 
             # product_scope 매칭 확인

@@ -67,9 +67,7 @@ async def test_new_order():
             {"id": "start", "type": "StartNode"},
             {
                 "id": "broker",
-                "type": "BrokerNode",
-                "provider": "ls-sec.co.kr",
-                "product": "overseas_stock",
+                "type": "OverseasStockBrokerNode",
                 "credential_id": "broker-cred"
             },
             {
@@ -89,7 +87,7 @@ async def test_new_order():
         "credentials": [
             {
                 "id": "broker-cred",
-                "type": "broker_ls",
+                "type": "broker_ls_stock",
                 "data": {
                     "appkey": os.getenv("APPKEY"),
                     "appsecret": os.getenv("APPSECRET"),
@@ -131,9 +129,7 @@ async def test_modify_order(order_id: str):
             {"id": "start", "type": "StartNode"},
             {
                 "id": "broker",
-                "type": "BrokerNode",
-                "provider": "ls-sec.co.kr",
-                "product": "overseas_stock",
+                "type": "OverseasStockBrokerNode",
                 "credential_id": "broker-cred"
             },
             {
@@ -152,7 +148,7 @@ async def test_modify_order(order_id: str):
         "credentials": [
             {
                 "id": "broker-cred",
-                "type": "broker_ls",
+                "type": "broker_ls_stock",
                 "data": {
                     "appkey": os.getenv("APPKEY"),
                     "appsecret": os.getenv("APPSECRET"),
@@ -195,9 +191,7 @@ async def test_cancel_order(order_id: str):
             {"id": "start", "type": "StartNode"},
             {
                 "id": "broker",
-                "type": "BrokerNode",
-                "provider": "ls-sec.co.kr",
-                "product": "overseas_stock",
+                "type": "OverseasStockBrokerNode",
                 "credential_id": "broker-cred"
             },
             {
@@ -215,7 +209,7 @@ async def test_cancel_order(order_id: str):
         "credentials": [
             {
                 "id": "broker-cred",
-                "type": "broker_ls",
+                "type": "broker_ls_stock",
                 "data": {
                     "appkey": os.getenv("APPKEY"),
                     "appsecret": os.getenv("APPSECRET"),

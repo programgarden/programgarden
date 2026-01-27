@@ -105,9 +105,7 @@ TEST_WORKFLOW = {
         },
         {
             "id": "broker",
-            "type": "BrokerNode",
-            "provider": "ls-sec.co.kr",
-            "product": "overseas_futures",
+            "type": "OverseasFuturesBrokerNode",
             "credential_id": "broker-cred"
         },
         {
@@ -137,7 +135,7 @@ TEST_WORKFLOW = {
     "credentials": [
         {
             "id": "broker-cred",
-            "type": "broker_ls",
+            "type": "broker_ls_futures",
             "name": "LS증권 (해외선물)",
             "data": {
                 "appkey": "",
@@ -170,7 +168,7 @@ async def main():
     workflow["credentials"] = [
         {
             "id": "broker-cred",
-            "type": "broker_ls",
+            "type": "broker_ls_futures",
             "name": "LS증권 (해외선물)",
             "data": {
                 "appkey": appkey,

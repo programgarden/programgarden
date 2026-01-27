@@ -79,10 +79,8 @@ async def test_condition_node_stock(credentials):
             {"id": "start", "type": "StartNode", "category": "infra"},
             {
                 "id": "broker",
-                "type": "BrokerNode",
+                "type": "OverseasStockBrokerNode",
                 "category": "infra",
-                "provider": "ls-sec.co.kr",
-                "product": "overseas_stock",
                 "credential_id": "broker-cred"
             },
             {
@@ -96,7 +94,7 @@ async def test_condition_node_stock(credentials):
             },
             {
                 "id": "realMarket",
-                "type": "RealMarketDataNode",
+                "type": "OverseasStockRealMarketDataNode",
                 "category": "realtime",
                 "symbols": "{{ nodes.watchlist.symbols }}",
                 "stay_connected": False
@@ -172,10 +170,8 @@ async def test_condition_node_futures(credentials):
             {"id": "start", "type": "StartNode", "category": "infra"},
             {
                 "id": "broker",
-                "type": "BrokerNode",
+                "type": "OverseasFuturesBrokerNode",
                 "category": "infra",
-                "provider": "ls-sec.co.kr",
-                "product": "overseas_futures",
                 "credential_id": "broker-cred"
             },
             {
@@ -188,7 +184,7 @@ async def test_condition_node_futures(credentials):
             },
             {
                 "id": "realMarket",
-                "type": "RealMarketDataNode",
+                "type": "OverseasFuturesRealMarketDataNode",
                 "category": "realtime",
                 "symbols": "{{ nodes.watchlist.symbols }}",
                 "stay_connected": False
@@ -262,10 +258,8 @@ async def test_logic_node_stock(credentials):
             {"id": "start", "type": "StartNode", "category": "infra"},
             {
                 "id": "broker",
-                "type": "BrokerNode",
+                "type": "OverseasStockBrokerNode",
                 "category": "infra",
-                "provider": "ls-sec.co.kr",
-                "product": "overseas_stock",
                 "credential_id": "broker-cred"
             },
             {
@@ -278,7 +272,7 @@ async def test_logic_node_stock(credentials):
             },
             {
                 "id": "realMarket",
-                "type": "RealMarketDataNode",
+                "type": "OverseasStockRealMarketDataNode",
                 "category": "realtime",
                 "symbols": "{{ nodes.watchlist.symbols }}",
                 "stay_connected": False

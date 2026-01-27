@@ -9649,20 +9649,36 @@ class WorkflowExecutor:
             "ScheduleNode": ScheduleNodeExecutor(),
             "WatchlistNode": WatchlistNodeExecutor(),
             "SymbolQueryNode": SymbolQueryNodeExecutor(),
+            "OverseasStockSymbolQueryNode": SymbolQueryNodeExecutor(),
+            "OverseasFuturesSymbolQueryNode": SymbolQueryNodeExecutor(),
             "SymbolFilterNode": SymbolFilterNodeExecutor(),
             "MarketUniverseNode": MarketUniverseNodeExecutor(),
             "ScreenerNode": ScreenerNodeExecutor(),
             "BrokerNode": BrokerNodeExecutor(),
+            "OverseasStockBrokerNode": BrokerNodeExecutor(),
+            "OverseasFuturesBrokerNode": BrokerNodeExecutor(),
             "AccountNode": AccountNodeExecutor(),  # 1회성 REST API 조회
+            "OverseasStockAccountNode": AccountNodeExecutor(),
+            "OverseasFuturesAccountNode": AccountNodeExecutor(),
             "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
+            "OverseasStockRealAccountNode": RealAccountNodeExecutor(),
+            "OverseasFuturesRealAccountNode": RealAccountNodeExecutor(),
             "MarketDataNode": MarketDataNodeExecutor(),  # REST API 현재가 조회
+            "OverseasStockMarketDataNode": MarketDataNodeExecutor(),
+            "OverseasFuturesMarketDataNode": MarketDataNodeExecutor(),
             "RealMarketDataNode": RealMarketDataNodeExecutor(),
+            "OverseasStockRealMarketDataNode": RealMarketDataNodeExecutor(),
+            "OverseasFuturesRealMarketDataNode": RealMarketDataNodeExecutor(),
             "RealOrderEventNode": RealOrderEventNodeExecutor(),  # 실시간 주문 이벤트
+            "OverseasStockRealOrderEventNode": RealOrderEventNodeExecutor(),
+            "OverseasFuturesRealOrderEventNode": RealOrderEventNodeExecutor(),
             "DisplayNode": DisplayNodeExecutor(),
             "ConditionNode": ConditionNodeExecutor(),
             "LogicNode": LogicNodeExecutor(),  # 조건 조합
             # Backtest nodes
             "HistoricalDataNode": HistoricalDataNodeExecutor(),
+            "OverseasStockHistoricalDataNode": HistoricalDataNodeExecutor(),
+            "OverseasFuturesHistoricalDataNode": HistoricalDataNodeExecutor(),
             "BacktestEngineNode": BacktestEngineNodeExecutor(),
             "BenchmarkCompareNode": BenchmarkCompareNodeExecutor(),
             # Portfolio node

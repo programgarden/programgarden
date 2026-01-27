@@ -40,7 +40,7 @@ class TestDFSExecutionOrder:
         """선형 워크플로우: A → B → C"""
         nodes = [
             {"id": "a", "type": "StartNode"},
-            {"id": "b", "type": "BrokerNode"},
+            {"id": "b", "type": "OverseasStockBrokerNode"},
             {"id": "c", "type": "WatchlistNode"},
         ]
         edges = [
@@ -105,7 +105,7 @@ class TestParentBeforeChild:
         """
         nodes = [
             {"id": "start", "type": "StartNode"},
-            {"id": "broker", "type": "BrokerNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode"},
             {"id": "watchlist", "type": "WatchlistNode"},
             {"id": "historical", "type": "HistoricalDataNode"},
             {"id": "condition", "type": "ConditionNode"},
@@ -186,7 +186,7 @@ class TestComplexWorkflows:
         """
         nodes = [
             {"id": "start", "type": "StartNode"},
-            {"id": "broker", "type": "BrokerNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode"},
             {"id": "watchlist", "type": "WatchlistNode"},
             {"id": "historical", "type": "HistoricalDataNode"},
             {"id": "condition", "type": "ConditionNode"},
@@ -239,7 +239,7 @@ class TestComplexWorkflows:
         """
         nodes = [
             {"id": "start", "type": "StartNode"},
-            {"id": "broker", "type": "BrokerNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode"},
             {"id": "watchlist", "type": "WatchlistNode"},
             {"id": "account", "type": "DisplayNode"},
             {"id": "historical", "type": "HistoricalDataNode"},
@@ -362,7 +362,7 @@ class TestComplexWorkflows:
         """
         nodes = [
             {"id": "start", "type": "StartNode"},
-            {"id": "broker", "type": "BrokerNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode"},
             {"id": "chain1", "type": "WatchlistNode"},
             {"id": "chain2", "type": "WatchlistNode"},
             {"id": "cond1", "type": "ConditionNode"},
@@ -437,7 +437,7 @@ class TestComplexWorkflows:
         """
         nodes = [
             {"id": "start", "type": "StartNode"},
-            {"id": "broker", "type": "BrokerNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode"},
             {"id": "watchlist", "type": "WatchlistNode"},
             {"id": "market", "type": "DisplayNode"},
             {"id": "schedule", "type": "ScheduleNode"},
@@ -587,7 +587,7 @@ class TestComplexWorkflows:
         """
         nodes = [
             {"id": "start", "type": "StartNode"},
-            {"id": "a", "type": "BrokerNode"},
+            {"id": "a", "type": "OverseasStockBrokerNode"},
             {"id": "b", "type": "WatchlistNode"},
             {"id": "c", "type": "WatchlistNode"},
             {"id": "d", "type": "DisplayNode"},
