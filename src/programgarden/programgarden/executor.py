@@ -1474,9 +1474,11 @@ class BrokerNodeExecutor(NodeExecutorBase):
         # credential_id가 있으면 appkey, appsecret이 config에 주입됨
         # ========================================
         credential_id = config.get("credential_id")
+        context.log("debug", f"BrokerNode credential_id={credential_id}", node_id)
         if credential_id:
             config = self._inject_credentials(credential_id, config, context, node_id)
-        
+            context.log("debug", f"After inject_credentials: appkey={bool(config.get('appkey'))}, appsecret={bool(config.get('appsecret'))}", node_id)
+
         appkey = config.get("appkey")
         appsecret = config.get("appsecret")
         
@@ -1577,7 +1579,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
     def _has_workflow_pnl_listener(self, context: ExecutionContext) -> bool:
         """리스너 중 on_workflow_pnl_update를 실제로 오버라이드한 게 있는지 확인"""
         from programgarden_core.bases import BaseExecutionListener
-        
+
+        logger.debug(f"[_has_workflow_pnl_listener] Checking {len(context._listeners)} listeners")
         for listener in context._listeners:
             listener_class = type(listener)
             if 'on_workflow_pnl_update' in listener_class.__dict__:
@@ -1779,52 +1782,54 @@ class BrokerNodeExecutor(NodeExecutorBase):
         node_id: str,
         context: ExecutionContext,
     ) -> None:
-        """해외선물 체결 이벤트 구독"""
+        """해외선물 체결 이벤트 구독
+
+        TC1: 주문접수 (HO01=ACK, HO04=Pending)
+        TC2: 주문응답 (HO02=확인, HO03=거부)
+        TC3: 주문체결 (CH01=체결) ← 실제 체결 이벤트
+        """
         from datetime import datetime
-        
+
         real = ls.overseas_futureoption().real()
         await real.connect()
-        
+
         # 이벤트 루프 캡처
         loop = asyncio.get_running_loop()
-        
-        def on_order_event(resp):
-            """체결/정정/취소 이벤트 처리 (TC2/TC3)"""
+
+        def on_tc2_event(resp):
+            """TC2 이벤트 처리 (주문 확인/정정/취소)
+
+            TC2 필드명:
+            - svc_id: HO02=주문확인, HO03=주문거부
+            - ordr_no: 주문번호
+            - ordr_dt: 주문일자
+            - is_cd: 종목코드
+            - s_b_ccd: 매매구분 (1=매수, 2=매도)
+            - ordr_ccd: 주문구분 (1=신규, 2=정정, 3=취소)
+            - ordr_q: 주문수량
+            - ordr_prc: 주문가격
+            """
             try:
                 body = getattr(resp, 'body', resp)
                 header = getattr(resp, 'header', None)
-                svc_id = getattr(header, 'svc_id', '') if header else ''
-                
+                # TC2에서는 svc_id가 body에 있음
+                svc_id = getattr(body, 'svc_id', '') or (getattr(header, 'svc_id', '') if header else '')
+
                 order_no = str(getattr(body, 'ordr_no', ''))
                 order_date = getattr(body, 'ordr_dt', datetime.now().strftime('%Y%m%d'))
                 symbol = getattr(body, 'is_cd', '')
-                side_code = getattr(body, 'slby_tp_cd', '')
-                quantity = int(getattr(body, 'ordr_qty', 0) or getattr(body, 'ccld_qty', 0))
-                price = float(getattr(body, 'ordr_prc', 0) or getattr(body, 'ccld_prc', 0))
-                fill_time = getattr(body, 'ccld_tm', datetime.now().strftime('%H%M%S000'))
+                side_code = getattr(body, 's_b_ccd', '')  # 매매구분
+                quantity = int(getattr(body, 'ordr_q', 0) or getattr(body, 'cnfr_q', 0) or 0)
+                price = float(getattr(body, 'ordr_prc', 0) or 0)
                 ordr_ccd = getattr(body, 'ordr_ccd', '')  # 1=신규, 2=정정, 3=취소
-                
+
                 # 매매구분
                 side = 'buy' if side_code == '1' else 'sell'
-                
-                if svc_id == 'HO02':  # 체결 통보
-                    if ordr_ccd == '1':  # 신규 체결
-                        if price > 0 and quantity > 0:
-                            asyncio.run_coroutine_threadsafe(
-                                context.record_workflow_fill(
-                                    order_no=order_no,
-                                    order_date=order_date,
-                                    symbol=symbol,
-                                    exchange='FUTURES',
-                                    side=side,
-                                    quantity=quantity,
-                                    price=price,
-                                    fill_time=fill_time,
-                                    commda_code='40',
-                                ),
-                                loop
-                            )
-                    elif ordr_ccd == '2':  # 정정 완료
+
+                logger.debug(f"[TC2] svc_id={svc_id}, ordr_ccd={ordr_ccd}, order_no={order_no}, symbol={symbol}")
+
+                if svc_id == 'HO02':  # 주문 확인
+                    if ordr_ccd == '2':  # 정정 완료
                         asyncio.run_coroutine_threadsafe(
                             context.modify_workflow_order(
                                 order_no=order_no,
@@ -1842,13 +1847,68 @@ class BrokerNodeExecutor(NodeExecutorBase):
                             ),
                             loop
                         )
-                        
+
             except Exception as e:
-                logger.warning(f"Error processing futures order event: {e}")
-        
-        # TC2 구독 등록
-        real.TC2().on_tc2_message(on_order_event)
-        
+                logger.warning(f"Error processing TC2 event: {e}")
+
+        def on_tc3_event(resp):
+            """TC3 이벤트 처리 (체결 통보) - 실제 체결 이벤트
+
+            TC3 필드명:
+            - svc_id: CH01=체결
+            - ordr_no: 주문번호
+            - ordr_dt: 주문일자
+            - is_cd: 종목코드
+            - s_b_ccd: 매매구분 (1=매수, 2=매도)
+            - ccls_q: 체결수량
+            - ccls_prc: 체결가격
+            - ccls_tm: 체결시간
+            """
+            try:
+                body = getattr(resp, 'body', resp)
+                header = getattr(resp, 'header', None)
+                # TC3에서는 svc_id가 body에 있음
+                svc_id = getattr(body, 'svc_id', '') or (getattr(header, 'svc_id', '') if header else '')
+
+                order_no = str(getattr(body, 'ordr_no', ''))
+                order_date = getattr(body, 'ordr_dt', datetime.now().strftime('%Y%m%d'))
+                symbol = getattr(body, 'is_cd', '')
+                side_code = getattr(body, 's_b_ccd', '')  # 매매구분
+                # TC3에서는 ccls_q, ccls_prc가 체결수량/체결가격
+                quantity = int(getattr(body, 'ccls_q', 0) or 0)
+                price_str = str(getattr(body, 'ccls_prc', '0') or '0')
+                price = float(price_str.strip()) if price_str.strip() else 0.0
+                fill_time = getattr(body, 'ccls_tm', datetime.now().strftime('%H%M%S000'))
+
+                # 매매구분
+                side = 'buy' if side_code == '1' else 'sell'
+
+                logger.info(f"[TC3] 체결: svc_id={svc_id}, order_no={order_no}, symbol={symbol}, side={side}, qty={quantity}, price={price}")
+
+                if svc_id == 'CH01':  # 체결 통보
+                    if price > 0 and quantity > 0:
+                        asyncio.run_coroutine_threadsafe(
+                            context.record_workflow_fill(
+                                order_no=order_no,
+                                order_date=order_date,
+                                symbol=symbol,
+                                exchange='FUTURES',
+                                side=side,
+                                quantity=quantity,
+                                price=price,
+                                fill_time=fill_time,
+                                commda_code='40',
+                            ),
+                            loop
+                        )
+
+            except Exception as e:
+                logger.warning(f"Error processing TC3 event: {e}")
+
+        # TC2 + TC3 구독 등록
+        real.TC2().on_tc2_message(on_tc2_event)
+        real.TC3().on_tc3_message(on_tc3_event)
+
         # 활성 구독 저장
         sub_key = f"{context.job_id}_{node_id}_fill_sub"
         self._active_trackers[sub_key] = {
@@ -1856,8 +1916,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
             "real": real,
             "type": "fill_subscription",
         }
-        
-        context.log("info", f"Workflow fill event subscription started (TC2)", node_id)
+
+        context.log("info", f"Workflow fill event subscription started (TC2+TC3)", node_id)
 
     async def _sync_fill_prices_from_history(
         self,

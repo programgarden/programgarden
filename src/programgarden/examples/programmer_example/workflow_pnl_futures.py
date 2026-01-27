@@ -2,12 +2,13 @@
 [해외선물] 워크플로우 실시간 수익률 추적 테스트 (모의투자)
 
 테스트 시나리오:
-1. MHIG26 (홍콩 미니항생 2026년 2월물) 1계약 롱 진입 (시장가)
+1. HMCEF26 (홍콩 미니항생 2026년 1월물) 1계약 롱 진입 (지정가)
 2. 체결 대기 (30초)
-3. MHIG26 1계약 롱 청산 (시장가)
+3. HMCEF26 1계약 롱 청산 (지정가)
 4. 워크플로우 수익률 추적 확인
 
 💡 이 예제는 모의투자입니다. 실제 자금이 소모되지 않습니다.
+💡 모의투자에서는 시장가 주문이 불가능하여 지정가(매도1호가)로 체결을 유도합니다.
 
 실행: cd src/programgarden && poetry run python examples/programmer_example/workflow_pnl_futures.py
 """
@@ -23,6 +24,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
+logging.getLogger('programgarden.executor').setLevel(logging.DEBUG)
 
 # 프로젝트 루트의 .env 파일 로드
 project_root = Path(__file__).parent.parent.parent.parent.parent.parent
@@ -91,7 +93,8 @@ class WorkflowPnLTestListener(BaseExecutionListener):
                 print(f"      - {pos.symbol}: {pos.quantity}계약 @ {pos.avg_price:.2f} → {pos.current_price:.2f} ({pos.pnl_rate:+.2f}%)")
 
 
-# 테스트용 워크플로우: MHIG26 1계약 롱 진입 → 청산
+# 테스트용 워크플로우: HMCEF26 1계약 롱 진입 → 청산
+# 모의투자에서는 시장가 불가, 지정가로 매도1호가에 체결 유도
 TEST_WORKFLOW = {
     "id": "workflow-pnl-futures-test",
     "name": "해외선물 워크플로우 PnL 테스트",
@@ -110,24 +113,26 @@ TEST_WORKFLOW = {
         {
             "id": "entry_order",
             "type": "NewOrderNode",
-            "plugin": "MarketOrder",
+            "plugin": "LimitOrder",
             "connection": "{{ nodes.broker.connection }}",
             "product": "overseas_futures",
             "side": "buy",  # 롱 진입
-            "order_type": "market",
-            "symbols": [{"exchange": "HKEX", "symbol": "MHIG26"}],
-            "quantities": {"MHIG26": 1}
+            "order_type": "limit",
+            "symbols": [{"exchange": "HKEX", "symbol": "HMCEF26"}],
+            "quantities": {"HMCEF26": 1},
+            "price_offset": 0  # 매도1호가에 매수 (즉시 체결 유도)
         },
         {
             "id": "exit_order",
             "type": "NewOrderNode",
-            "plugin": "MarketOrder",
+            "plugin": "LimitOrder",
             "connection": "{{ nodes.broker.connection }}",
             "product": "overseas_futures",
             "side": "sell",  # 롱 청산
-            "order_type": "market",
-            "symbols": [{"exchange": "HKEX", "symbol": "MHIG26"}],
-            "quantities": {"MHIG26": 1}
+            "order_type": "limit",
+            "symbols": [{"exchange": "HKEX", "symbol": "HMCEF26"}],
+            "quantities": {"HMCEF26": 1},
+            "price_offset": 0  # 매수1호가에 매도 (즉시 체결 유도)
         }
     ],
     "edges": [
@@ -192,9 +197,9 @@ async def main():
     print("💡 이 테스트는 모의투자입니다. 실제 자금이 소모되지 않습니다.")
     print()
     print("📌 테스트 시나리오:")
-    print("   1. MHIG26 (홍콩 미니항생 2026년 2월물) 1계약 롱 진입")
+    print("   1. HMCEF26 (홍콩 미니항생 2026년 1월물) 1계약 롱 진입 (지정가)")
     print("   2. 체결 대기 (30초)")
-    print("   3. MHIG26 1계약 롱 청산")
+    print("   3. HMCEF26 1계약 롱 청산 (지정가)")
     print()
     print(f"📌 DB 파일: {db_path}")
     print(f"   - 기존 DB {'있음 (재사용)' if db_exists else '없음 (새로 생성)'}")
