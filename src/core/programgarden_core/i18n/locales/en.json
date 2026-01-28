@@ -576,5 +576,17 @@
   "display_schema.table.columns": "Columns to display (determined by columns setting)",
   "display_schema.summary.description": "Summary data (free-form)",
   "display_schema.common.signal": "Trade signal (buy/sell)",
-  "display_schema.common.side": "Position side (long/short)"
+  "display_schema.common.side": "Position side (long/short)",
+  "groups.HTTPRequestNode.advanced": "Advanced Settings",
+  "groups.PortfolioNode.basic": "Basic Settings",
+  "groups.PortfolioNode.allocation": "Capital Allocation",
+  "groups.PortfolioNode.rebalancing": "Rebalancing",
+  "groups.PortfolioNode.capital": "Capital Management",
+  "groups.BacktestEngineNode.field_mapping": "Field Mapping",
+  "groups.BenchmarkCompareNode.field_mapping": "Field Mapping",
+  "groups.ConditionNode.field_mapping": "Field Mapping",
+  "groups.LineChartNode.field_mapping": "Field Mapping",
+  "groups.MultiLineChartNode.field_mapping": "Field Mapping",
+  "groups.CandlestickChartNode.field_mapping": "Field Mapping",
+  "groups.BarChartNode.field_mapping": "Field Mapping"
 }

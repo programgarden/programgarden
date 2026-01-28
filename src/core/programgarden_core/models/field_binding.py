@@ -362,12 +362,12 @@ class FieldSchema(BaseModel):
             return self._map_ui_component_to_widget(ui_comp, decoration)
 
         # expression_mode에 따른 처리
-        # EXPRESSION_ONLY: fx만 고정 표시 (전환 불가)
+        # EXPRESSION_ONLY: 토글 없이 expression 입력만 표시
         if self.expression_mode == ExpressionMode.EXPRESSION_ONLY:
-            return self._build_toggle_widget(ui_comp, decoration, locked_mode="expression")
+            return self._build_expression_only_widget(decoration)
 
         # BOTH 모드: Fixed/Expression 토글 위젯 (전환 가능)
-        return self._build_toggle_widget(ui_comp, decoration, locked_mode=None)
+        return self._build_toggle_widget(ui_comp, decoration)
     
     def _map_ui_component_to_widget(
         self, 
@@ -582,61 +582,73 @@ class FieldSchema(BaseModel):
             args["keyboardType"] = ui_opts["keyboardType"]
         return {"type": "text_form_field", "args": args}
     
+    def _build_expression_only_widget(
+        self,
+        decoration: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        EXPRESSION_ONLY 전용 위젯 생성 (토글 없는 단순 expression 입력)
+
+        {{ nodes.xxx.yyy }} 형태의 바인딩 표현식만 입력받는 텍스트 필드입니다.
+        custom_expression_toggle 없이 직접 text_form_field를 반환합니다.
+        """
+        expr_decoration = decoration.copy()
+        if self.example_binding:
+            expr_decoration["hintText"] = self.example_binding
+
+        args: Dict[str, Any] = {
+            "fieldKey": self.name,
+            "decoration": expr_decoration,
+        }
+
+        # helperText: help_text > description 순으로 적용
+        if self.help_text:
+            args["helperText"] = self.help_text
+        elif self.description:
+            args["helperText"] = self.description
+
+        return {"type": "text_form_field", "args": args}
+
     def _build_toggle_widget(
         self,
         ui_comp: "UIComponent",
         decoration: Dict[str, Any],
-        locked_mode: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        custom_expression_toggle 위젯 생성 (BOTH / EXPRESSION_ONLY 전용)
+        custom_expression_toggle 위젯 생성 (BOTH 모드 전용)
 
         Fixed/Expression 토글 버튼과 함께 선택에 따른 입력 위젯을 렌더링합니다.
-        FIXED_ONLY는 to_json_dynamic_widget()에서 직접 위젯을 렌더링하므로 이 메서드를 호출하지 않습니다.
 
         Args:
             ui_comp: UI 컴포넌트 타입
             decoration: 라벨, 설명 등 장식 정보
-            locked_mode: 고정 모드 ("expression", None)
-                - "expression": expression(fx)만 표시, 토글 비활성화
-                - None: BOTH 모드, 토글 전환 가능
 
         Returns:
             dict: custom_expression_toggle 위젯 JSON
         """
         # Fixed 위젯 (ui_component에 따른 입력)
         fixed_widget = self._build_fixed_widget(ui_comp, decoration.copy())
-        
+
         # Expression 위젯 (바인딩 입력)
         expression_widget = self._build_expression_field(decoration.copy())
-        
-        # 기본 모드 결정: locked_mode가 있으면 해당 모드, 없으면 fixed
-        default_mode = locked_mode if locked_mode else "fixed"
-        
+
         args: Dict[str, Any] = {
             "fieldKey": self.name,
             "label": decoration.get("labelText", self.name),
-            "defaultMode": default_mode,
+            "defaultMode": "fixed",
             "expressionHint": self.example_binding,
             "fixedWidget": fixed_widget,
             "expressionWidget": expression_widget,
         }
-        
+
         # helperText 분리: fixed/expression 모드별로 다른 설명 표시
-        # description: fixed 모드용 설명 (필드 기본 설명)
-        # help_text: expression 모드용 설명 (바인딩 가이드)
         if self.description:
             args["fixedHelperText"] = self.description
         if self.help_text:
             args["expressionHelperText"] = self.help_text
         elif self.example_binding:
-            # help_text가 없으면 example_binding을 힌트로 사용
             args["expressionHelperText"] = f"예: {self.example_binding}"
-        
-        # lockedMode가 있으면 토글 비활성화
-        if locked_mode:
-            args["lockedMode"] = locked_mode
-        
+
         return {
             "type": "custom_expression_toggle",
             "args": args

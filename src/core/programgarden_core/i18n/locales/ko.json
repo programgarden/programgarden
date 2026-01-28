@@ -717,5 +717,17 @@
   "display_schema.table.columns": "표시할 컬럼 목록 (columns 설정에 따라 결정)",
   "display_schema.summary.description": "요약 데이터 (자유 형식)",
   "display_schema.common.signal": "매매 신호 (buy/sell)",
-  "display_schema.common.side": "포지션 방향 (long/short)"
+  "display_schema.common.side": "포지션 방향 (long/short)",
+  "groups.HTTPRequestNode.advanced": "고급 설정",
+  "groups.PortfolioNode.basic": "기본 설정",
+  "groups.PortfolioNode.allocation": "자본 배분",
+  "groups.PortfolioNode.rebalancing": "리밸런싱",
+  "groups.PortfolioNode.capital": "자본 관리",
+  "groups.BacktestEngineNode.field_mapping": "필드 매핑",
+  "groups.BenchmarkCompareNode.field_mapping": "필드 매핑",
+  "groups.ConditionNode.field_mapping": "필드 매핑",
+  "groups.LineChartNode.field_mapping": "필드 매핑",
+  "groups.MultiLineChartNode.field_mapping": "필드 매핑",
+  "groups.CandlestickChartNode.field_mapping": "필드 매핑",
+  "groups.BarChartNode.field_mapping": "필드 매핑"
 }

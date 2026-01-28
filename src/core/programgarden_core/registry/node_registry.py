@@ -286,82 +286,147 @@ class NodeTypeRegistry:
     def _build_widget_schemas(self, node_class: Type[BaseNode]) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """
         노드의 설정 폼을 PARAMETERS/SETTINGS로 분리하여 json_dynamic_widget JSON으로 변환
-        
+
+        group 속성이 있는 필드는 그룹별로 card 위젯으로 래핑하여 중첩 배치합니다.
+
         Args:
             node_class: 노드 클래스
-            
+
         Returns:
             tuple: (widget_schema, settings_widget_schema)
             - widget_schema: PARAMETERS 카테고리 필드들 (메인 폼)
             - settings_widget_schema: SETTINGS 카테고리 필드들 (설정 탭)
         """
         from programgarden_core.models.field_binding import FieldCategory
-        
+
         if not hasattr(node_class, 'get_field_schema'):
             return None, None
-        
+
         field_schemas = node_class.get_field_schema()
         if not field_schemas:
             return None, None
-        
-        parameters_children = []
-        settings_children = []
-        
+
+        # 그룹 없는 필드 / 그룹별 필드 분리 수집
+        ungrouped_params = []
+        ungrouped_settings = []
+        grouped_params: Dict[str, list] = {}   # group_name -> [widget, ...]
+        grouped_settings: Dict[str, list] = {}
+        group_order_params: list = []  # 그룹 등장 순서 유지
+        group_order_settings: list = []
+
         # 노드 타입명 추출 (i18n 키 생성용)
         node_type = node_class.__name__
-        
+
         for name, fs in field_schemas.items():
             try:
                 # 카테고리에 따라 다른 위젯 생성
                 if fs.category == FieldCategory.SETTINGS:
-                    # SETTINGS: 토글 없이 직접 위젯 생성
                     widget = fs.to_simple_widget()
-                    # SETTINGS 위젯에 i18n labelText 추가
                     widget = self._add_i18n_label_to_settings_widget(widget, node_type, name)
                 else:
-                    # PARAMETERS: 기존 토글 위젯
                     widget = fs.to_json_dynamic_widget()
-                
-                widget["fieldKey"] = name  # Pydantic 모델 필드명 (Flutter 코드 생성기 호환)
-                widget["field_key_of_pydantic"] = name  # i18n 번역 및 테스트용
-                
-                # fieldKey를 args 안에도 추가 (json_dynamic_widget 빌더가 args에서 읽음)
+
+                widget["fieldKey"] = name
+                widget["field_key_of_pydantic"] = name
+
                 if "args" in widget:
                     widget["args"]["fieldKey"] = name
-                
-                # visible_when 조건부 표시: json_dynamic_widget의 conditional 위젯으로 감싸기
+
                 if fs.visible_when:
                     widget = self._wrap_conditional(widget, fs.visible_when, name)
-                
-                # 카테고리에 따라 분리
+
+                # 카테고리 + 그룹에 따라 분리
                 if fs.category == FieldCategory.SETTINGS:
-                    settings_children.append(widget)
+                    if fs.group:
+                        if fs.group not in grouped_settings:
+                            grouped_settings[fs.group] = []
+                            group_order_settings.append(fs.group)
+                        grouped_settings[fs.group].append(widget)
+                    else:
+                        ungrouped_settings.append(widget)
                 else:
-                    # PARAMETERS 또는 None (기본값)
-                    parameters_children.append(widget)
-                    
+                    if fs.group:
+                        if fs.group not in grouped_params:
+                            grouped_params[fs.group] = []
+                            group_order_params.append(fs.group)
+                        grouped_params[fs.group].append(widget)
+                    else:
+                        ungrouped_params.append(widget)
+
             except Exception as e:
-                # 변환 실패 시 기본 텍스트 필드로 폴백 (PARAMETERS에 추가)
-                parameters_children.append({
+                ungrouped_params.append({
                     "type": "text_form_field",
                     "fieldKey": name,
                     "args": {
                         "decoration": {"labelText": name, "helperText": f"(conversion error: {str(e)})"}
                     }
                 })
-        
+
+        # 최종 children: ungrouped 먼저, 그다음 group card (등장 순서 유지)
+        parameters_children = list(ungrouped_params)
+        for group_name in group_order_params:
+            parameters_children.append(
+                self._build_group_card(node_type, group_name, grouped_params[group_name])
+            )
+
+        settings_children = list(ungrouped_settings)
+        for group_name in group_order_settings:
+            settings_children.append(
+                self._build_group_card(node_type, group_name, grouped_settings[group_name])
+            )
+
         # 각 스키마 생성 (children이 없으면 None)
         widget_schema = {
             "type": "column",
             "args": {"children": parameters_children}
         } if parameters_children else None
-        
+
         settings_widget_schema = {
             "type": "column",
             "args": {"children": settings_children}
         } if settings_children else None
-        
+
         return widget_schema, settings_widget_schema
+
+    def _build_group_card(
+        self, node_type: str, group_name: str, children: list
+    ) -> Dict[str, Any]:
+        """
+        그룹 필드를 card > padding > column 구조로 래핑
+
+        Args:
+            node_type: 노드 타입명 (i18n 키 생성용)
+            group_name: 그룹 이름
+            children: 그룹에 속한 위젯 리스트
+        """
+        title_widget = {
+            "type": "text",
+            "args": {
+                "text": f"i18n:groups.{node_type}.{group_name}",
+                "style": {"fontWeight": "w600", "fontSize": 13}
+            }
+        }
+
+        return {
+            "type": "card",
+            "args": {
+                "elevation": 0,
+                "margin": {"top": 12, "bottom": 4},
+                "child": {
+                    "type": "padding",
+                    "args": {
+                        "padding": {"left": 12, "right": 12, "top": 8, "bottom": 8},
+                        "child": {
+                            "type": "column",
+                            "args": {
+                                "mainAxisSize": "min",
+                                "children": [title_widget] + children
+                            }
+                        }
+                    }
+                }
+            }
+        }
     
     def _add_i18n_label_to_settings_widget(
         self, widget: Dict[str, Any], node_type: str, field_name: str

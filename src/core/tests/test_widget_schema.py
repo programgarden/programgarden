@@ -18,8 +18,8 @@ class TestFieldSchemaToJsonDynamicWidget:
 
     expression_mode별 렌더링 규칙:
     - FIXED_ONLY: 토글 없이 직접 위젯 렌더링 (description -> args.helperText)
-    - EXPRESSION_ONLY: custom_expression_toggle (lockedMode="expression")
-    - BOTH: custom_expression_toggle (lockedMode 없음, 토글 전환 가능)
+    - EXPRESSION_ONLY: 토글 없이 text_form_field 직접 렌더링 (expression 입력 전용)
+    - BOTH: custom_expression_toggle (토글 전환 가능)
     """
 
     def test_text_input_fixed_only(self):
@@ -90,7 +90,7 @@ class TestFieldSchemaToJsonDynamicWidget:
         assert widget["args"]["helperText"] == "수정주가 적용"
 
     def test_expression_only_mode(self):
-        """EXPRESSION_ONLY 모드 (바인딩 전용 - lockedMode="expression")"""
+        """EXPRESSION_ONLY 모드 (토글 없이 text_form_field 직접 렌더링)"""
         fs = FieldSchema(
             name="data",
             type=FieldType.OBJECT,
@@ -100,19 +100,15 @@ class TestFieldSchemaToJsonDynamicWidget:
         )
         widget = fs.to_json_dynamic_widget()
 
-        assert widget["type"] == "custom_expression_toggle"
-        assert widget["args"]["lockedMode"] == "expression"  # expression 고정
-        assert widget["args"]["defaultMode"] == "expression"
-        # expressionWidget 내부 확인
-        expr_widget = widget["args"]["expressionWidget"]
-        assert expr_widget["type"] == "text_form_field"
-        # prefixText/suffixText 없음 - 사용자가 {{ }}를 자유롭게 입력
-        assert "prefixText" not in expr_widget["args"]["decoration"]
-        assert "suffixText" not in expr_widget["args"]["decoration"]
-        assert expr_widget["args"]["decoration"]["hintText"] == "{{ nodes.source.values }}"
+        # EXPRESSION_ONLY: 토글 없이 직접 text_form_field 렌더링
+        assert widget["type"] == "text_form_field"
+        assert widget["args"]["fieldKey"] == "data"
+        assert widget["args"]["decoration"]["hintText"] == "{{ nodes.source.values }}"
+        # description은 helperText로 전달
+        assert widget["args"]["helperText"] == "입력 데이터"
 
-    def test_binding_input_component(self):
-        """BINDING_INPUT 컴포넌트 (EXPRESSION_ONLY)"""
+    def test_expression_only_with_complex_binding(self):
+        """EXPRESSION_ONLY 모드 - 복잡한 바인딩 표현식"""
         fs = FieldSchema(
             name="data",
             type=FieldType.STRING,
@@ -122,11 +118,26 @@ class TestFieldSchemaToJsonDynamicWidget:
         )
         widget = fs.to_json_dynamic_widget()
 
-        assert widget["type"] == "custom_expression_toggle"
-        assert widget["args"]["lockedMode"] == "expression"
-        expr_widget = widget["args"]["expressionWidget"]
-        assert expr_widget["type"] == "text_form_field"
-        assert expr_widget["args"]["decoration"]["hintText"] == "{{ flatten(nodes.historical.values, 'time_series') }}"
+        assert widget["type"] == "text_form_field"
+        assert widget["args"]["fieldKey"] == "data"
+        assert widget["args"]["decoration"]["hintText"] == "{{ flatten(nodes.historical.values, 'time_series') }}"
+        assert widget["args"]["helperText"] == "입력 데이터"
+
+    def test_expression_only_help_text_priority(self):
+        """EXPRESSION_ONLY 모드 - help_text가 있으면 description보다 우선"""
+        fs = FieldSchema(
+            name="data",
+            type=FieldType.OBJECT,
+            description="입력 데이터",
+            help_text="다른 노드의 출력을 바인딩하세요",
+            expression_mode=ExpressionMode.EXPRESSION_ONLY,
+            example_binding="{{ nodes.source.values }}",
+        )
+        widget = fs.to_json_dynamic_widget()
+
+        assert widget["type"] == "text_form_field"
+        # help_text가 description보다 우선
+        assert widget["args"]["helperText"] == "다른 노드의 출력을 바인딩하세요"
 
     def test_credential_select_fixed_only(self):
         """Credential 선택 필드 (FIXED_ONLY - 토글 없이 직접 렌더링)"""
@@ -360,6 +371,81 @@ class TestNodeTypeRegistryWidgetSchema:
             assert "conditional" in new_price_widget["args"]
             assert new_price_widget["args"]["conditional"]["values"]["price_type"] == "limit"
             assert "onTrue" in new_price_widget["args"]
+
+    def test_line_chart_group_nesting(self):
+        """LineChartNode: group=field_mapping 필드가 card로 래핑되어 중첩 배치"""
+        registry = NodeTypeRegistry()
+        schema = registry.get_schema("LineChartNode")
+
+        assert schema is not None
+        assert schema.widget_schema is not None
+
+        children = schema.widget_schema["args"]["children"]
+
+        # data 필드: ungrouped → 최상위에 flat 배치
+        data_widget = next(
+            (w for w in children if w.get("field_key_of_pydantic") == "data"),
+            None
+        )
+        assert data_widget is not None
+        # Phase 1 결과: EXPRESSION_ONLY → text_form_field
+        assert data_widget["type"] == "text_form_field"
+
+        # field_mapping 그룹: card로 래핑
+        group_card = next(
+            (w for w in children if w.get("type") == "card"),
+            None
+        )
+        assert group_card is not None
+
+        # card > padding > column > children 구조
+        padding = group_card["args"]["child"]
+        assert padding["type"] == "padding"
+        column = padding["args"]["child"]
+        assert column["type"] == "column"
+        group_children = column["args"]["children"]
+
+        # 첫 번째: 그룹 제목 text 위젯
+        assert group_children[0]["type"] == "text"
+        assert "field_mapping" in group_children[0]["args"]["text"]
+
+        # 나머지: field_mapping 그룹 필드들 (x_field, y_field, signal_field, side_field)
+        field_keys = [
+            w.get("field_key_of_pydantic") for w in group_children[1:]
+        ]
+        assert "x_field" in field_keys
+        assert "y_field" in field_keys
+        assert "signal_field" in field_keys
+        assert "side_field" in field_keys
+
+    def test_condition_node_group_nesting(self):
+        """ConditionNode: field_mapping 그룹이 card로 래핑됨"""
+        registry = NodeTypeRegistry()
+        schema = registry.get_schema("ConditionNode")
+
+        assert schema is not None
+        children = schema.widget_schema["args"]["children"]
+
+        # plugin, data 등 ungrouped 필드가 최상위에 존재
+        plugin_widget = next(
+            (w for w in children if w.get("field_key_of_pydantic") == "plugin"),
+            None
+        )
+        assert plugin_widget is not None
+
+        # field_mapping 그룹 card 존재
+        group_card = next(
+            (w for w in children if w.get("type") == "card"),
+            None
+        )
+        assert group_card is not None
+
+        # card 내부에 필드들 존재
+        column = group_card["args"]["child"]["args"]["child"]
+        group_children = column["args"]["children"]
+        # 제목 + 필드들
+        assert group_children[0]["type"] == "text"
+        assert len(group_children) > 1  # 최소 제목 + 1개 필드
 
     def test_start_node_empty_widget_schema(self):
         """StartNode는 설정 필드가 없어 widget_schema가 비어있음"""
