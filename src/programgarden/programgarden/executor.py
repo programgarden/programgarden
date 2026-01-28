@@ -4669,6 +4669,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
             output_data["data"] = data
         
         # Notify listeners for frontend
+        # Display 노드 클래스에서 data_schema 가져오기
+        _data_schema = None
+        try:
+            from programgarden_core.registry.node_registry import NodeTypeRegistry
+            _node_class = NodeTypeRegistry().get(node_type)
+            if _node_class:
+                _data_schema = getattr(_node_class, '_display_data_schema', None)
+        except Exception:
+            pass
+
         await context.notify_display_data(
             node_id=node_id,
             chart_type=chart_type,
@@ -4693,6 +4703,7 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 "signal_field": config.get("signal_field"),
                 "side_field": config.get("side_field"),
             },
+            data_schema=_data_schema,
         )
         
         context.log("info", f"Display rendered: {chart_type}", node_id)

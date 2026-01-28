@@ -2,14 +2,13 @@
 ProgramGarden Core - SQL Base Classes
 
 SQL 데이터베이스 노드를 위한 베이스 클래스:
-- BaseSQLNode: SQL 데이터베이스 공통 기능 (SQLite, PostgreSQL 등)
+- BaseSQLNode: SQL 데이터베이스 공통 기능
 
 계층 구조:
     BaseStorageNode
         │
         └── BaseSQLNode (이 파일)
-                ├── SQLiteNode
-                └── PostgresNode
+                └── SQLiteNode
 """
 
 from typing import List, Optional, Literal, TYPE_CHECKING

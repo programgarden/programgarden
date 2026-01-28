@@ -60,7 +60,6 @@ __all__ = [
     "SymbolFilterNode",
     # Nodes - Data (상품 무관)
     "SQLiteNode",
-    "PostgresNode",
     "HTTPRequestNode",
     "FieldMappingNode",
     # Nodes - Trigger

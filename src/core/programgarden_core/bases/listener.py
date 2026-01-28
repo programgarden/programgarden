@@ -143,7 +143,7 @@ class JobStateEvent:
 class DisplayDataEvent:
     """
     Event emitted when a DisplayNode produces visualization data.
-    
+
     Attributes:
         job_id: Job identifier
         node_id: DisplayNode ID
@@ -153,6 +153,9 @@ class DisplayDataEvent:
         x_label: X-axis label (optional)
         y_label: Y-axis label (optional)
         options: Additional chart options (optional)
+        data_schema: Schema describing data array structure.
+            Properties with 'resolved_by' indicate dynamic field names
+            determined by node settings in options. (optional)
         timestamp: Event timestamp
     """
     job_id: str
@@ -163,6 +166,7 @@ class DisplayDataEvent:
     x_label: Optional[str] = None
     y_label: Optional[str] = None
     options: Optional[Dict[str, Any]] = None
+    data_schema: Optional[Dict[str, Any]] = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 

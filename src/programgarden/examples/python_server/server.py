@@ -334,6 +334,7 @@ async def get_node_types(locale: str = "ko", product_scope: str = None):
                     "outputs": safe_serialize(getattr(schema, "outputs", []) or []),
                     "widget_schema": safe_serialize(getattr(schema, "widget_schema", None)),
                     "settings_widget_schema": safe_serialize(getattr(schema, "settings_widget_schema", None)),
+                    "display_data_schema": safe_serialize(getattr(schema, "display_data_schema", None)),
                 }
                 # Apply i18n translation
                 translated_dict = translate_schema(raw_dict, locale)

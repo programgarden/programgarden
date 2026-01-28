@@ -87,7 +87,7 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 | order | OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode, OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode, PositionSizingNode |
 | risk | PortfolioNode |
 | schedule | ScheduleNode, TradingHoursFilterNode |
-| data | SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode |
+| data | SQLiteNode, HTTPRequestNode, FieldMappingNode |
 | display | TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
 | analysis | BacktestEngineNode, BenchmarkCompareNode |
 

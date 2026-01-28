@@ -124,8 +124,25 @@ def translate_schema(schema: Dict[str, Any], locale: Optional[str] = None) -> Di
     # Translate settings_widget_schema (SETTINGS 탭 위젯)
     if "settings_widget_schema" in result and isinstance(result["settings_widget_schema"], dict):
         result["settings_widget_schema"] = _translate_widget_schema(result["settings_widget_schema"], loc, node_type)
-    
+
+    # Translate display_data_schema (Display 노드 런타임 데이터 스키마)
+    if "display_data_schema" in result and isinstance(result["display_data_schema"], dict):
+        result["display_data_schema"] = _translate_i18n_strings(result["display_data_schema"], loc)
+
     return result
+
+
+def _translate_i18n_strings(obj: Any, locale: str) -> Any:
+    """Recursively translate all i18n: prefixed strings in a nested dict/list."""
+    if isinstance(obj, str):
+        if obj.startswith("i18n:"):
+            return t(obj[5:], locale)
+        return obj
+    if isinstance(obj, dict):
+        return {k: _translate_i18n_strings(v, locale) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_translate_i18n_strings(item, locale) for item in obj]
+    return obj
 
 
 def _translate_port(port: Dict[str, Any], locale: str) -> Dict[str, Any]:

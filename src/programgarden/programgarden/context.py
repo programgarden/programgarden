@@ -1229,13 +1229,14 @@ class ExecutionContext:
         x_label: Optional[str] = None,
         y_label: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
+        data_schema: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Notify all listeners about display data from DisplayNode."""
         logger.debug(f"📡 notify_display_data: {node_id} ({chart_type})")
-        
+
         if not self._listeners:
             return
-        
+
         event = DisplayDataEvent(
             job_id=self.job_id,
             node_id=node_id,
@@ -1245,6 +1246,7 @@ class ExecutionContext:
             x_label=x_label,
             y_label=y_label,
             options=options,
+            data_schema=data_schema,
         )
         
         for listener in self._listeners:

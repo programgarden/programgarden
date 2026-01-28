@@ -8,8 +8,7 @@ ProgramGarden Core - Storage Base Classes
     BaseStorageNode (최상위, 모든 스토리지)
         │
         ├── BaseSQLNode (SQL 공통) - sql.py
-        │       ├── SQLiteNode
-        │       └── PostgresNode (향후)
+        │       └── SQLiteNode
         │
         └── BaseNoSQLNode (향후)
                 ├── MongoNode

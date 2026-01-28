@@ -10,7 +10,7 @@ ProgramGarden Core - Display Nodes
 - SummaryDisplayNode: JSON/요약 데이터 표시
 """
 
-from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -24,10 +24,31 @@ from programgarden_core.nodes.base import (
 )
 
 
+# ── 공통 data_schema 필드 ──
+
+_SIGNAL_FIELD = {
+    "type": "string",
+    "resolved_by": "signal_field",
+    "nullable": True,
+    "enum": ["buy", "sell"],
+    "description": "i18n:display_schema.common.signal",
+}
+
+_SIDE_FIELD = {
+    "type": "string",
+    "resolved_by": "side_field",
+    "nullable": True,
+    "enum": ["long", "short"],
+    "description": "i18n:display_schema.common.side",
+}
+
+
 class BaseDisplayNode(BaseNode):
     """Display 노드 공통 베이스"""
 
     category: NodeCategory = NodeCategory.DISPLAY
+
+    _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = None
 
     title: Optional[str] = Field(
         default=None,
@@ -99,6 +120,23 @@ class TableDisplayNode(BaseDisplayNode):
 
     type: Literal["TableDisplayNode"] = "TableDisplayNode"
     description: str = "i18n:nodes.TableDisplayNode.description"
+
+    _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
+        "type": "array",
+        "description": "i18n:display_schema.table.description",
+        "items": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "dynamic",
+                    "resolved_by": "columns",
+                    "description": "i18n:display_schema.table.columns",
+                },
+            },
+            "required": [],
+        },
+        "options_fields": ["columns", "limit", "sort_by", "sort_order"],
+    }
 
     columns: Optional[List[str]] = Field(
         default=None,
@@ -172,6 +210,31 @@ class LineChartNode(BaseDisplayNode):
 
     type: Literal["LineChartNode"] = "LineChartNode"
     description: str = "i18n:nodes.LineChartNode.description"
+
+    _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
+        "type": "array",
+        "description": "i18n:display_schema.line.description",
+        "items": {
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "dynamic",
+                    "resolved_by": "x_field",
+                    "description": "i18n:display_schema.line.x",
+                    "example": "date",
+                },
+                "y": {
+                    "type": "dynamic",
+                    "resolved_by": "y_field",
+                    "description": "i18n:display_schema.line.y",
+                    "example": "rsi",
+                },
+                "signal": _SIGNAL_FIELD,
+                "side": _SIDE_FIELD,
+            },
+            "required": ["x", "y"],
+        },
+    }
 
     x_field: Optional[str] = Field(
         default=None,
@@ -247,6 +310,38 @@ class MultiLineChartNode(BaseDisplayNode):
 
     type: Literal["MultiLineChartNode"] = "MultiLineChartNode"
     description: str = "i18n:nodes.MultiLineChartNode.description"
+
+    _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
+        "type": "array",
+        "description": "i18n:display_schema.multi_line.description",
+        "items": {
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "dynamic",
+                    "resolved_by": "x_field",
+                    "description": "i18n:display_schema.line.x",
+                    "example": "date",
+                },
+                "y": {
+                    "type": "dynamic",
+                    "resolved_by": "y_field",
+                    "description": "i18n:display_schema.line.y",
+                    "example": "rsi",
+                },
+                "series_key": {
+                    "type": "dynamic",
+                    "resolved_by": "series_key",
+                    "description": "i18n:display_schema.multi_line.series_key",
+                    "example": "symbol",
+                },
+                "signal": _SIGNAL_FIELD,
+                "side": _SIDE_FIELD,
+            },
+            "required": ["x", "y", "series_key"],
+        },
+        "options_fields": ["limit", "sort_by", "sort_order"],
+    }
 
     x_field: Optional[str] = Field(
         default=None,
@@ -380,6 +475,56 @@ class CandlestickChartNode(BaseDisplayNode):
 
     type: Literal["CandlestickChartNode"] = "CandlestickChartNode"
     description: str = "i18n:nodes.CandlestickChartNode.description"
+
+    _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
+        "type": "array",
+        "description": "i18n:display_schema.candlestick.description",
+        "items": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "dynamic",
+                    "resolved_by": "date_field",
+                    "description": "i18n:display_schema.candlestick.date",
+                    "example": "date",
+                },
+                "open": {
+                    "type": "number",
+                    "resolved_by": "open_field",
+                    "description": "i18n:display_schema.candlestick.open",
+                    "example": "open",
+                },
+                "high": {
+                    "type": "number",
+                    "resolved_by": "high_field",
+                    "description": "i18n:display_schema.candlestick.high",
+                    "example": "high",
+                },
+                "low": {
+                    "type": "number",
+                    "resolved_by": "low_field",
+                    "description": "i18n:display_schema.candlestick.low",
+                    "example": "low",
+                },
+                "close": {
+                    "type": "number",
+                    "resolved_by": "close_field",
+                    "description": "i18n:display_schema.candlestick.close",
+                    "example": "close",
+                },
+                "volume": {
+                    "type": "number",
+                    "resolved_by": "volume_field",
+                    "nullable": True,
+                    "description": "i18n:display_schema.candlestick.volume",
+                    "example": "volume",
+                },
+                "signal": _SIGNAL_FIELD,
+                "side": _SIDE_FIELD,
+            },
+            "required": ["date", "open", "high", "low", "close"],
+        },
+    }
 
     date_field: Optional[str] = Field(
         default=None,
@@ -515,6 +660,29 @@ class BarChartNode(BaseDisplayNode):
     type: Literal["BarChartNode"] = "BarChartNode"
     description: str = "i18n:nodes.BarChartNode.description"
 
+    _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
+        "type": "array",
+        "description": "i18n:display_schema.bar.description",
+        "items": {
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "dynamic",
+                    "resolved_by": "x_field",
+                    "description": "i18n:display_schema.line.x",
+                    "example": "category",
+                },
+                "y": {
+                    "type": "dynamic",
+                    "resolved_by": "y_field",
+                    "description": "i18n:display_schema.line.y",
+                    "example": "value",
+                },
+            },
+            "required": ["x", "y"],
+        },
+    }
+
     x_field: Optional[str] = Field(
         default=None,
         description="X축 필드명",
@@ -561,6 +729,11 @@ class SummaryDisplayNode(BaseDisplayNode):
 
     type: Literal["SummaryDisplayNode"] = "SummaryDisplayNode"
     description: str = "i18n:nodes.SummaryDisplayNode.description"
+
+    _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
+        "type": "any",
+        "description": "i18n:display_schema.summary.description",
+    }
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

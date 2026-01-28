@@ -258,69 +258,6 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
         }
     ),
     # ============================================================
-    # PostgreSQL
-    # ============================================================
-    "postgres": CredentialTypeSchema(
-        type_id="postgres",
-        name="PostgreSQL",
-        description="PostgreSQL 데이터베이스 연결 정보",
-        widget_schema={
-            "fields": [
-                {
-                    "key": "name",
-                    "type": "text",
-                    "label": "Credential 이름",
-                    "hint": "my-postgres-db",
-                    "description": "이 인증 정보를 식별할 이름",
-                    "required": True
-                },
-                {
-                    "key": "host",
-                    "type": "text",
-                    "label": "Host",
-                    "description": "데이터베이스 호스트 주소",
-                    "required": True
-                },
-                {
-                    "key": "port",
-                    "type": "number",
-                    "label": "Port",
-                    "description": "포트 번호 (기본: 5432)",
-                    "default": 5432,
-                    "required": True
-                },
-                {
-                    "key": "database",
-                    "type": "text",
-                    "label": "Database",
-                    "description": "데이터베이스 이름",
-                    "required": True
-                },
-                {
-                    "key": "username",
-                    "type": "text",
-                    "label": "Username",
-                    "description": "사용자 이름",
-                    "required": True
-                },
-                {
-                    "key": "password",
-                    "type": "password",
-                    "label": "Password",
-                    "description": "비밀번호",
-                    "required": True
-                },
-                {
-                    "key": "ssl_enabled",
-                    "type": "boolean",
-                    "label": "SSL 연결",
-                    "description": "SSL/TLS 암호화 연결 사용",
-                    "default": False
-                }
-            ]
-        }
-    ),
-    # ============================================================
     # HTTP Authentication Types (HTTPRequestNode용)
     # ============================================================
     "http_bearer": CredentialTypeSchema(

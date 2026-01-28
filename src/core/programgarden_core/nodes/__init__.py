@@ -16,7 +16,7 @@ ProgramGarden Core - 노드 타입 정의
              OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode
 - display (6): TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode
 - analysis (2): BacktestEngineNode, BenchmarkCompareNode
-- data (4): SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode
+- data (3): SQLiteNode, HTTPRequestNode, FieldMappingNode
 - messaging: 커뮤니티 노드 (TelegramNode 등)
 """
 
@@ -43,7 +43,7 @@ from programgarden_core.nodes.account_futures import OverseasFuturesAccountNode
 from programgarden_core.nodes.symbol_stock import OverseasStockSymbolQueryNode
 from programgarden_core.nodes.symbol_futures import OverseasFuturesSymbolQueryNode
 # Data (상품 무관)
-from programgarden_core.nodes.data import SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode
+from programgarden_core.nodes.data import SQLiteNode, HTTPRequestNode, FieldMappingNode
 # Symbol (상품 무관)
 from programgarden_core.nodes.symbol import (
     WatchlistNode,
@@ -111,7 +111,6 @@ __all__ = [
     "OverseasFuturesRealOrderEventNode",
     # Data (상품 무관)
     "SQLiteNode",
-    "PostgresNode",
     "HTTPRequestNode",
     "FieldMappingNode",
     # Symbol (상품 무관)

@@ -37,6 +37,11 @@ class NodeTypeSchema(BaseModel):
         default=None,
         description="json_dynamic_widget schema for Settings tab (SETTINGS fields)",
     )
+    display_data_schema: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Schema describing the data structure produced by Display nodes at runtime. "
+                    "Properties with 'resolved_by' indicate dynamic field names determined by node settings.",
+    )
 
 
 class NodeTypeRegistry:
@@ -79,7 +84,7 @@ class NodeTypeRegistry:
             # Account - Futures (해외선물)
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Data (상품 무관)
-            SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
+            SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             ScheduleNode, TradingHoursFilterNode,
@@ -110,7 +115,7 @@ class NodeTypeRegistry:
             # Account - Futures (해외선물)
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Data (상품 무관)
-            SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode,
+            SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             # Trigger
@@ -259,6 +264,10 @@ class NodeTypeRegistry:
         broker_provider_value = broker_provider.value if hasattr(broker_provider, 'value') else str(broker_provider)
 
         widget_schema, settings_widget_schema = self._build_widget_schemas(node_class)
+
+        # Display 노드의 런타임 데이터 스키마
+        display_data_schema = getattr(node_class, '_display_data_schema', None)
+
         schema = NodeTypeSchema(
             node_type=type_name,
             category=instance.category.value if hasattr(instance.category, 'value') else instance.category,
@@ -270,6 +279,7 @@ class NodeTypeRegistry:
             outputs=[out.model_dump(exclude_none=True) for out in instance.get_outputs()],
             widget_schema=widget_schema,
             settings_widget_schema=settings_widget_schema,
+            display_data_schema=display_data_schema,
         )
         self._schemas[type_name] = schema
 

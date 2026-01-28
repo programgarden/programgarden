@@ -428,26 +428,6 @@ SQL 쿼리를 직접 작성하여 실행합니다.
 
 ---
 
-### PostgresNode
-
-외부 PostgreSQL 데이터베이스에 연결합니다.
-
-```json
-{
-  "id": "postgres",
-  "type": "PostgresNode",
-  "config": {
-    "credential_id": "my-postgres-cred",
-    "table": "trade_history",
-    "key_fields": ["trade_id"]
-  }
-}
-```
-
-> ⚠️ 연결 정보는 credentials 섹션에 정의하고 `credential_id`로 참조합니다.
-
----
-
 ## 4. account - 계좌 조회
 
 ### AccountNode
