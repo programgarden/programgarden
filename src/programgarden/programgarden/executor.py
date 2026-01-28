@@ -7317,8 +7317,9 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         
         # 예수금 추출 (해외주식/해외선물 공통)
         available_balance = self._extract_balance(balance_data)
-        
-        if available_balance <= 0:
+
+        # fixed_quantity 메서드는 balance 없이도 동작 (테스트용)
+        if available_balance <= 0 and method != "fixed_quantity":
             context.log("warning", f"No available balance: {available_balance}", node_id)
             return self._empty_result()
         
@@ -7404,7 +7405,7 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         
         if isinstance(balance_data, dict):
             # 예수금 필드 (해외주식/해외선물 공통)
-            for key in ["orderable_amount", "total_orderable", "fcurr_ord_able_amt", "ord_able_amt", "available", "balance"]:
+            for key in ["orderable_amount", "total_orderable", "fcurr_ord_able_amt", "ord_able_amt", "available", "balance", "cash_krw", "cash_usd"]:
                 if key in balance_data and balance_data[key]:
                     try:
                         return float(balance_data[key])
@@ -8832,6 +8833,10 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 )
 
                 response = await order_api.req_async()
+
+                # 디버그: 응답 전체 출력
+                context.log("debug", f"CIDBT00100 response for {symbol}: rsp_cd={response.rsp_cd}, rsp_msg={response.rsp_msg}, error_msg={response.error_msg}", node_id)
+                context.log("debug", f"CIDBT00100 block1={response.block1}, block2={response.block2}", node_id)
 
                 if response.error_msg:
                     context.log("warning", f"Order failed for {symbol}: {response.error_msg}", node_id)
