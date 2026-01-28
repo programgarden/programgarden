@@ -2486,8 +2486,9 @@ class AccountNodeExecutor(NodeExecutorBase):
             if response.rsp_cd and response.rsp_cd not in ["00000", "00136", "00707"]:
                 context.log("warning", f"CIDBQ01500 response: {response.rsp_cd} - {response.rsp_msg}", node_id)
 
-            # block2 = 종목별 잔고
-            positions = {}
+            # block2 = 종목별 잔고 (list 형태로 변환, NewOrderNode 호환)
+            positions = []
+            held_symbols = []
             for item in (response.block2 or []):
                 symbol = item.IsuCodeVal.strip() if item.IsuCodeVal else ""
                 if not symbol:
@@ -2495,19 +2496,22 @@ class AccountNodeExecutor(NodeExecutorBase):
 
                 # BnsTpCode: 1=매도, 2=매수
                 is_long = item.BnsTpCode == "2"
+                quantity = int(item.BalQty) if item.BalQty else 0
+                current_price = float(item.OvrsDrvtNowPrc) if item.OvrsDrvtNowPrc else 0.0
 
-                positions[symbol] = {
+                positions.append({
                     "symbol": symbol,
+                    "exchange": "HKEX",  # 해외선물 기본 거래소
                     "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else symbol,
                     "is_long": is_long,
-                    "qty": int(item.BalQty) if item.BalQty else 0,
+                    "quantity": quantity,  # NewOrderNode 호환
+                    "price": current_price,  # NewOrderNode 호환
                     "entry_price": float(item.PchsPrc) if item.PchsPrc else 0.0,
-                    "current_price": float(item.OvrsDrvtNowPrc) if item.OvrsDrvtNowPrc else 0.0,
+                    "current_price": current_price,
                     "pnl_amount": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
                     "currency": item.CrcyCodeVal.strip() if item.CrcyCodeVal else "USD",
-                }
-
-            held_symbols = list(positions.keys())
+                })
+                held_symbols.append(symbol)
 
             # 2. CIDBQ03000: 예수금 조회 (통화별)
             balance_response = await ls.overseas_futureoption().accno().CIDBQ03000(
@@ -2773,21 +2777,25 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 포지션 변경 콜백 등록 (이벤트 발생용)
             def on_position_change(positions: Dict):
-                # 포지션 데이터를 직렬화 가능한 형태로 변환
-                serialized_positions = {}
+                # 포지션 데이터를 list 형태로 변환 (NewOrderNode 호환)
+                serialized_positions = []
                 for sym, pos in positions.items():
-                    serialized_positions[sym] = {
+                    quantity = pos.quantity
+                    current_price = float(pos.current_price)
+                    serialized_positions.append({
                         "symbol": sym,
+                        "exchange": getattr(pos, 'market_code', 'NASDAQ'),
                         "name": getattr(pos, 'symbol_name', sym),
-                        "qty": pos.quantity,
+                        "quantity": quantity,  # NewOrderNode 호환
+                        "price": current_price,  # NewOrderNode 호환
                         "avg_price": float(pos.buy_price),
-                        "current_price": float(pos.current_price),
+                        "current_price": current_price,
                         "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
                         "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
                         "currency": getattr(pos, 'currency_code', 'USD'),
                         "product": "overseas_stock",  # 상품 유형
-                    }
-                
+                    })
+
                 # 컨텍스트에 최신 데이터 저장
                 context.set_output(node_id, "positions", serialized_positions)
                 
@@ -3168,8 +3176,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         }
 
     def _get_futures_tracker_data(self, tracker) -> Dict[str, Any]:
-        """해외선물 Tracker에서 현재 데이터 추출"""
-        positions = {}
+        """해외선물 Tracker에서 현재 데이터 추출
+
+        positions 출력 형식: list[dict]
+        - POSITION_FIELDS 스키마와 일치
+        - NewOrderNode orders 배열과 호환 (qty→quantity 매핑 필요)
+        """
+        positions = []
+        symbols = []
         for symbol, pos in tracker.get_positions().items():
             # realtime_pnl이 None이 아닌 dict인 경우만 .get() 호출
             realtime_pnl = getattr(pos, 'realtime_pnl', None)
@@ -3178,23 +3192,26 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 pnl_rate = float(getattr(realtime_pnl, 'pnl_rate', 0) or 0)
             elif hasattr(pos, 'pnl_rate') and pos.pnl_rate is not None:
                 pnl_rate = float(pos.pnl_rate)
-            
+
             is_long = getattr(pos, 'is_long', True)
-            positions[symbol] = {
+            quantity = int(getattr(pos, 'quantity', 0))
+            current_price = float(getattr(pos, 'current_price', 0))
+
+            positions.append({
                 "symbol": symbol,
                 "exchange": getattr(pos, 'exchange_code', ''),
                 "name": getattr(pos, 'symbol_name', symbol),
                 "is_long": is_long,
                 "direction": "LONG" if is_long else "SHORT",
-                "qty": int(getattr(pos, 'quantity', 0)),
+                "quantity": quantity,  # qty → quantity (NewOrderNode 호환)
+                "price": current_price,  # current_price → price (NewOrderNode 호환)
                 "entry_price": float(getattr(pos, 'entry_price', 0)),
-                "current_price": float(getattr(pos, 'current_price', 0)),
+                "current_price": current_price,
                 "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
                 "pnl_rate": pnl_rate,
                 "currency": getattr(pos, 'currency', 'USD'),
-            }
-        
-        symbols = list(positions.keys())
+            })
+            symbols.append(symbol)
         
         # balance 추출
         raw_balance = tracker.get_balance()
@@ -4932,10 +4949,10 @@ class ConditionNodeExecutor(NodeExecutorBase):
             
             # === positions 기반 플러그인 처리 (ProfitTarget, StopLoss) ===
             if is_positions_based:
-                positions = config.get("positions", {})
-                print(f"   - positions 평가 후: {type(positions).__name__}, {len(positions) if isinstance(positions, dict) else 0} items")
-                
-                if not positions:
+                positions = config.get("positions", [])
+                print(f"   - positions 평가 후: {type(positions).__name__}, {len(positions)} items")
+
+                if not positions or not isinstance(positions, list):
                     context.log("error", 
                         f"ConditionNode '{node_id}': positions가 설정되지 않았습니다. "
                         f"config에 positions: {{{{ nodes.realAccount.positions }}}} 형태로 추가하세요.",
@@ -4976,9 +4993,9 @@ class ConditionNodeExecutor(NodeExecutorBase):
                             f"Condition evaluated: {len(result.get('passed_symbols', []))}/{len(positions)} passed",
                             node_id,
                         )
-                        
+
                         return {
-                            "symbols": list(positions.keys()),
+                            "symbols": [p.get("symbol") for p in positions if isinstance(p, dict)],
                             "result": result.get("result", False),
                             "passed_symbols": result.get("passed_symbols", []),
                             "failed_symbols": result.get("failed_symbols", []),
