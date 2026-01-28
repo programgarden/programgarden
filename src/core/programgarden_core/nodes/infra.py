@@ -4,9 +4,11 @@ ProgramGarden Core - Infra Nodes
 Infrastructure nodes:
 - StartNode: Workflow entry point
 - ThrottleNode: Data flow control
+- SplitNode: Split list into individual items (n8n-style item-based execution)
+- AggregateNode: Aggregate individual items into a list
 """
 
-from typing import Optional, List, Literal, Dict, TYPE_CHECKING, ClassVar
+from typing import Optional, List, Literal, Dict, TYPE_CHECKING, ClassVar, Any
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -129,5 +131,181 @@ class ThrottleNode(BaseNode):
                 ui_component=UIComponent.CHECKBOX,
                 example=True,
                 expected_type="bool",
+            ),
+        }
+
+
+class SplitNode(BaseNode):
+    """
+    Split list into individual items (n8n-style item-based execution)
+
+    Converts a list input into individual items, triggering downstream nodes
+    once for each item. Works with AggregateNode to collect results.
+
+    Execution modes:
+    - Sequential (default): Execute items one by one with optional delay
+    - Parallel: Execute all items concurrently (relies on internal throttling)
+    """
+
+    type: Literal["SplitNode"] = "SplitNode"
+    category: NodeCategory = NodeCategory.INFRA
+    description: str = "i18n:nodes.SplitNode.description"
+
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/split.svg"
+
+    # SplitNode specific config
+    parallel: bool = Field(
+        default=False,
+        description="Execute all items in parallel (default: sequential)"
+    )
+    delay_ms: int = Field(
+        default=0,
+        ge=0,
+        le=60000,
+        description="Delay between items in milliseconds (sequential mode only)"
+    )
+    continue_on_error: bool = Field(
+        default=True,
+        description="Continue execution even if one item fails"
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(name="array", type="array", description="i18n:ports.split_array")
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="item", type="any", description="i18n:ports.split_item"),
+        OutputPort(name="index", type="integer", description="i18n:ports.split_index"),
+        OutputPort(name="total", type="integer", description="i18n:ports.split_total"),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            "parallel": FieldSchema(
+                name="parallel",
+                type=FieldType.BOOLEAN,
+                description="i18n:fields.SplitNode.parallel",
+                default=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.CHECKBOX,
+                example=False,
+                expected_type="bool",
+            ),
+            "delay_ms": FieldSchema(
+                name="delay_ms",
+                type=FieldType.INTEGER,
+                description="i18n:fields.SplitNode.delay_ms",
+                default=0,
+                min_value=0,
+                max_value=60000,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                placeholder="0",
+                example=500,
+                expected_type="int",
+                helper_text="i18n:fields.SplitNode.delay_ms_helper",
+            ),
+            "continue_on_error": FieldSchema(
+                name="continue_on_error",
+                type=FieldType.BOOLEAN,
+                description="i18n:fields.SplitNode.continue_on_error",
+                default=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.CHECKBOX,
+                example=True,
+                expected_type="bool",
+            ),
+        }
+
+
+class AggregateNode(BaseNode):
+    """
+    Aggregate individual items into a list
+
+    Collects results from SplitNode branches and outputs as a list.
+    Supports various aggregation modes: collect, filter, sum, avg, min, max, count, first, last.
+    """
+
+    type: Literal["AggregateNode"] = "AggregateNode"
+    category: NodeCategory = NodeCategory.INFRA
+    description: str = "i18n:nodes.AggregateNode.description"
+
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/aggregate.svg"
+
+    # AggregateNode specific config
+    mode: Literal["collect", "filter", "sum", "avg", "min", "max", "count", "first", "last"] = Field(
+        default="collect",
+        description="Aggregation mode"
+    )
+    filter_field: Optional[str] = Field(
+        default="passed",
+        description="Field to filter by (for filter mode)"
+    )
+    value_field: Optional[str] = Field(
+        default="value",
+        description="Field to aggregate (for sum/avg/min/max modes)"
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(name="item", type="any", description="i18n:ports.aggregate_item")
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="array", type="array", description="i18n:ports.aggregate_array"),
+        OutputPort(name="value", type="number", description="i18n:ports.aggregate_value"),
+        OutputPort(name="count", type="integer", description="i18n:ports.aggregate_count"),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            "mode": FieldSchema(
+                name="mode",
+                type=FieldType.ENUM,
+                description="i18n:fields.AggregateNode.mode",
+                default="collect",
+                enum_values=["collect", "filter", "sum", "avg", "min", "max", "count", "first", "last"],
+                enum_labels={
+                    "collect": "i18n:enums.aggregate_mode.collect",
+                    "filter": "i18n:enums.aggregate_mode.filter",
+                    "sum": "i18n:enums.aggregate_mode.sum",
+                    "avg": "i18n:enums.aggregate_mode.avg",
+                    "min": "i18n:enums.aggregate_mode.min",
+                    "max": "i18n:enums.aggregate_mode.max",
+                    "count": "i18n:enums.aggregate_mode.count",
+                    "first": "i18n:enums.aggregate_mode.first",
+                    "last": "i18n:enums.aggregate_mode.last",
+                },
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example="collect",
+                expected_type="str",
+            ),
+            "filter_field": FieldSchema(
+                name="filter_field",
+                type=FieldType.STRING,
+                description="i18n:fields.AggregateNode.filter_field",
+                default="passed",
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                placeholder="passed",
+                example="passed",
+                expected_type="str",
+                helper_text="i18n:fields.AggregateNode.filter_field_helper",
+            ),
+            "value_field": FieldSchema(
+                name="value_field",
+                type=FieldType.STRING,
+                description="i18n:fields.AggregateNode.value_field",
+                default="value",
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                placeholder="value",
+                example="value",
+                expected_type="str",
+                helper_text="i18n:fields.AggregateNode.value_field_helper",
             ),
         }

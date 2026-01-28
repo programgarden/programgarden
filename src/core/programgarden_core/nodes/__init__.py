@@ -2,7 +2,7 @@
 ProgramGarden Core - 노드 타입 정의
 
 46개 노드 타입을 카테고리로 분류:
-- infra (2): StartNode, ThrottleNode
+- infra (4): StartNode, ThrottleNode, SplitNode, AggregateNode
 - broker (2): OverseasStockBrokerNode, OverseasFuturesBrokerNode
 - market (12): OverseasStockMarketDataNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
               OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode,
@@ -21,7 +21,7 @@ ProgramGarden Core - 노드 타입 정의
 """
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, Position
-from programgarden_core.nodes.infra import StartNode, ThrottleNode
+from programgarden_core.nodes.infra import StartNode, ThrottleNode, SplitNode, AggregateNode
 from programgarden_core.nodes.broker import OverseasStockBrokerNode, OverseasFuturesBrokerNode
 # Market - 상품별 분리 노드
 from programgarden_core.nodes.data_stock import OverseasStockMarketDataNode
@@ -88,6 +88,8 @@ __all__ = [
     # Infra
     "StartNode",
     "ThrottleNode",
+    "SplitNode",
+    "AggregateNode",
     # Broker (상품별 분리)
     "OverseasStockBrokerNode",
     "OverseasFuturesBrokerNode",

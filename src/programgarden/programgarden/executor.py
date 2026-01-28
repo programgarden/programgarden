@@ -8,7 +8,7 @@ Workflow execution engine
 - Event-based realtime updates
 """
 
-from typing import Optional, Dict, Any, List, Callable, Awaitable
+from typing import Optional, Dict, Any, List, Callable, Awaitable, Set
 from datetime import datetime
 import asyncio
 import uuid
@@ -584,6 +584,191 @@ class ThrottleNodeExecutor(NodeExecutorBase):
                                     input_data[key] = value
         
         return input_data
+
+
+class SplitNodeExecutor(NodeExecutorBase):
+    """
+    SplitNode executor
+
+    Splits an input array into individual items for item-based execution.
+    The actual iteration logic is handled in WorkflowJob._execute_main_flow.
+
+    This executor provides:
+    - item: Current item from the array
+    - index: Current index (0-based)
+    - total: Total number of items
+
+    Note: The execution engine calls this executor once per item in the array.
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        # Get array from config or input port
+        input_array = config.get("array", [])
+
+        # If array binding expression, resolve from context
+        if isinstance(input_array, str) and "{{" in input_array:
+            expr_context = context.get_expression_context()
+            evaluator = ExpressionEvaluator(expr_context)
+            try:
+                input_array = evaluator.evaluate(input_array) or []
+            except Exception as e:
+                context.log("warning", f"Array expression evaluation failed: {e}", node_id)
+                input_array = []
+
+        # Also check input port (upstream node output)
+        if not input_array:
+            input_data = context.get_output(f"_input_{node_id}", "input")
+            if isinstance(input_data, list):
+                input_array = input_data
+            elif isinstance(input_data, dict):
+                # Check for array fields in input
+                for key in ["array", "symbols", "values", "data", "items"]:
+                    if key in input_data and isinstance(input_data[key], list):
+                        input_array = input_data[key]
+                        break
+
+        if not isinstance(input_array, list):
+            input_array = [input_array] if input_array else []
+
+        # Get current item context (set by _execute_main_flow during iteration)
+        split_context = context.get_node_state(node_id, "_split_context") or {
+            "item": input_array[0] if input_array else None,
+            "index": 0,
+            "total": len(input_array),
+        }
+
+        context.log(
+            "debug",
+            f"SplitNode: item {split_context['index']+1}/{split_context['total']}",
+            node_id,
+        )
+
+        return {
+            "item": split_context["item"],
+            "index": split_context["index"],
+            "total": split_context["total"],
+            # Also expose array for inspection
+            "_array": input_array,
+        }
+
+
+class AggregateNodeExecutor(NodeExecutorBase):
+    """
+    AggregateNode executor
+
+    Collects individual results from SplitNode branches and aggregates them.
+
+    Modes:
+    - collect: Collect all items into an array
+    - filter: Filter items where filter_field is truthy
+    - sum/avg/min/max: Aggregate numeric value_field
+    - count: Count items (or items where filter_field is truthy)
+    - first/last: Return first/last item
+
+    Note: The collected items are stored in context by _execute_main_flow.
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        mode = config.get("mode", "collect")
+        filter_field = config.get("filter_field", "passed")
+        value_field = config.get("value_field", "value")
+
+        # Get collected items (set by _execute_main_flow)
+        collected_items = context.get_node_state(node_id, "_collected_items") or []
+
+        context.log(
+            "debug",
+            f"AggregateNode: {len(collected_items)} items, mode={mode}",
+            node_id,
+        )
+
+        result_array = []
+        result_value = None
+        result_count = 0
+
+        if mode == "collect":
+            # Collect all items
+            result_array = collected_items
+            result_count = len(collected_items)
+
+        elif mode == "filter":
+            # Filter by field value
+            for item in collected_items:
+                if isinstance(item, dict) and item.get(filter_field):
+                    result_array.append(item)
+            result_count = len(result_array)
+
+        elif mode in ("sum", "avg", "min", "max"):
+            # Aggregate numeric values
+            values = []
+            for item in collected_items:
+                if isinstance(item, dict):
+                    val = item.get(value_field)
+                elif isinstance(item, (int, float)):
+                    val = item
+                else:
+                    val = None
+
+                if val is not None and isinstance(val, (int, float)):
+                    values.append(val)
+
+            if values:
+                if mode == "sum":
+                    result_value = sum(values)
+                elif mode == "avg":
+                    result_value = sum(values) / len(values)
+                elif mode == "min":
+                    result_value = min(values)
+                elif mode == "max":
+                    result_value = max(values)
+
+            result_count = len(values)
+            result_array = collected_items
+
+        elif mode == "count":
+            # Count items (optionally filtered)
+            if filter_field:
+                result_count = sum(
+                    1 for item in collected_items
+                    if isinstance(item, dict) and item.get(filter_field)
+                )
+            else:
+                result_count = len(collected_items)
+            result_array = collected_items
+
+        elif mode == "first":
+            # Return first item
+            if collected_items:
+                result_array = [collected_items[0]]
+                result_value = collected_items[0]
+            result_count = 1 if collected_items else 0
+
+        elif mode == "last":
+            # Return last item
+            if collected_items:
+                result_array = [collected_items[-1]]
+                result_value = collected_items[-1]
+            result_count = 1 if collected_items else 0
+
+        return {
+            "array": result_array,
+            "value": result_value,
+            "count": result_count,
+        }
 
 
 class ScheduleNodeExecutor(NodeExecutorBase):
@@ -9799,6 +9984,8 @@ class WorkflowExecutor:
         return {
             "StartNode": StartNodeExecutor(),
             "ThrottleNode": ThrottleNodeExecutor(),
+            "SplitNode": SplitNodeExecutor(),
+            "AggregateNode": AggregateNodeExecutor(),
             "ScheduleNode": ScheduleNodeExecutor(),
             "WatchlistNode": WatchlistNodeExecutor(),
             "SymbolQueryNode": SymbolQueryNodeExecutor(),
@@ -10192,9 +10379,25 @@ class WorkflowJob:
             await self.context.cleanup_persistent_nodes()
 
     async def _execute_main_flow(self) -> None:
-        """Execute all nodes in topological order with state notifications"""
+        """Execute all nodes in topological order with state notifications
+
+        Supports item-based execution with SplitNode/AggregateNode:
+        - SplitNode: Triggers repeated execution of downstream nodes for each item
+        - AggregateNode: Collects results from SplitNode branches
+        """
         print(f"🔄 Executing main flow: {self.workflow.execution_order}")
-        
+
+        # === Item-based execution setup ===
+        # Find Split/Aggregate pairs and their branch nodes
+        split_aggregate_pairs = self._find_split_aggregate_pairs()
+        branch_nodes = set()  # Nodes that are part of a Split→Aggregate branch
+        for split_id, agg_id in split_aggregate_pairs.items():
+            branch = self._get_branch_nodes(split_id, agg_id)
+            branch_nodes.update(branch)
+
+        # Track which SplitNodes have been processed
+        processed_splits: Dict[str, bool] = {}
+
         # 🆕 실행 시작 전 모든 노드 상태를 pending으로 리셋 (UI 깜빡임 효과)
         for node_id in self.workflow.execution_order:
             node = self.workflow.nodes.get(node_id)
@@ -10215,6 +10418,22 @@ class WorkflowJob:
 
             node = self.workflow.nodes.get(node_id)
             if not node:
+                continue
+
+            # === Item-based execution: Skip branch nodes (handled by SplitNode) ===
+            if node_id in branch_nodes and node.node_type not in ("SplitNode", "AggregateNode"):
+                print(f"  ⏭ Skipping branch node: {node_id} (handled by SplitNode)")
+                continue
+
+            # === Item-based execution: Handle SplitNode specially ===
+            if node.node_type == "SplitNode" and node_id not in processed_splits:
+                await self._execute_split_branch(node_id, node, split_aggregate_pairs, branch_nodes)
+                processed_splits[node_id] = True
+                continue
+
+            # === Item-based execution: Skip AggregateNode (already executed by SplitNode) ===
+            if node.node_type == "AggregateNode" and node_id in split_aggregate_pairs.values():
+                print(f"  ⏭ Skipping AggregateNode: {node_id} (already executed by SplitNode)")
                 continue
 
             print(f"  ▶ Executing node: {node_id} ({node.node_type})")
@@ -10336,6 +10555,359 @@ class WorkflowJob:
                 self.stats["errors_count"] += 1
                 self.context.log("error", f"Node {node_id} failed: {e}", node_id)
                 raise
+
+    # === Item-based Execution Helpers (SplitNode/AggregateNode) ===
+
+    def _find_split_aggregate_pairs(self) -> Dict[str, str]:
+        """Find pairs of SplitNode → AggregateNode in the workflow
+
+        Returns:
+            Dict mapping SplitNode ID to its paired AggregateNode ID
+        """
+        pairs: Dict[str, str] = {}
+        split_nodes = []
+        aggregate_nodes = []
+
+        # Find all Split and Aggregate nodes
+        for node_id, node in self.workflow.nodes.items():
+            if node.node_type == "SplitNode":
+                split_nodes.append(node_id)
+            elif node.node_type == "AggregateNode":
+                aggregate_nodes.append(node_id)
+
+        # Match pairs based on graph reachability
+        for split_id in split_nodes:
+            # Find the nearest AggregateNode reachable from this SplitNode
+            for agg_id in aggregate_nodes:
+                if self._is_reachable(split_id, agg_id):
+                    pairs[split_id] = agg_id
+                    break
+
+        return pairs
+
+    def _is_reachable(self, from_id: str, to_id: str) -> bool:
+        """Check if to_id is reachable from from_id via edges"""
+        visited = set()
+        queue = [from_id]
+
+        while queue:
+            current = queue.pop(0)
+            if current == to_id:
+                return True
+            if current in visited:
+                continue
+            visited.add(current)
+
+            for edge in self.workflow.edges:
+                if edge.from_node_id == current:
+                    queue.append(edge.to_node_id)
+
+        return False
+
+    def _get_branch_nodes(self, split_id: str, aggregate_id: str) -> Set[str]:
+        """Get all nodes between SplitNode and AggregateNode (exclusive)
+
+        Args:
+            split_id: SplitNode ID
+            aggregate_id: AggregateNode ID
+
+        Returns:
+            Set of node IDs in the branch (excluding Split and Aggregate themselves)
+        """
+        branch = set()
+        visited = set()
+        queue = []
+
+        # Start from nodes directly connected to SplitNode
+        for edge in self.workflow.edges:
+            if edge.from_node_id == split_id:
+                queue.append(edge.to_node_id)
+
+        while queue:
+            current = queue.pop(0)
+            if current == aggregate_id or current in visited:
+                continue
+            visited.add(current)
+            branch.add(current)
+
+            for edge in self.workflow.edges:
+                if edge.from_node_id == current:
+                    queue.append(edge.to_node_id)
+
+        return branch
+
+    async def _execute_split_branch(
+        self,
+        split_id: str,
+        split_node: "ResolvedNode",
+        split_aggregate_pairs: Dict[str, str],
+        branch_nodes: Set[str],
+    ) -> None:
+        """Execute a SplitNode and its branch for each item in the input array
+
+        Args:
+            split_id: SplitNode ID
+            split_node: SplitNode instance
+            split_aggregate_pairs: Dict of Split→Aggregate pairs
+            branch_nodes: Set of all branch node IDs
+        """
+        from programgarden_core.bases.listener import NodeState
+
+        print(f"  🔀 Executing SplitNode branch: {split_id}")
+
+        # Get paired AggregateNode
+        aggregate_id = split_aggregate_pairs.get(split_id)
+        if not aggregate_id:
+            self.context.log("warning", f"SplitNode {split_id} has no paired AggregateNode", split_id)
+            return
+
+        # Get branch nodes for this Split→Aggregate pair
+        branch = self._get_branch_nodes(split_id, aggregate_id)
+
+        # Sort branch nodes by execution order
+        branch_order = [n for n in self.workflow.execution_order if n in branch]
+
+        # === Execute SplitNode to get input array ===
+        start_time = datetime.utcnow()
+        await self.context.notify_node_state(
+            node_id=split_id,
+            node_type="SplitNode",
+            state=NodeState.RUNNING,
+        )
+
+        # Get input array from upstream node
+        input_array = []
+        for edge in self.workflow.edges:
+            if edge.to_node_id == split_id:
+                upstream_outputs = self.context.get_all_outputs(edge.from_node_id)
+                # Look for array in outputs
+                for key in ["symbols", "values", "array", "data", "items"]:
+                    if key in upstream_outputs and isinstance(upstream_outputs[key], list):
+                        input_array = upstream_outputs[key]
+                        break
+                if not input_array and upstream_outputs:
+                    # Check if single output is a list
+                    first_val = next(iter(upstream_outputs.values()), None)
+                    if isinstance(first_val, list):
+                        input_array = first_val
+                break
+
+        if not input_array:
+            self.context.log("info", f"SplitNode {split_id}: empty array, skipping branch", split_id)
+            await self.context.notify_node_state(
+                node_id=split_id,
+                node_type="SplitNode",
+                state=NodeState.COMPLETED,
+                outputs={"item": None, "index": 0, "total": 0},
+            )
+            return
+
+        # Get SplitNode config
+        config = dict(split_node.config)
+        parallel = config.get("parallel", False)
+        delay_ms = config.get("delay_ms", 0)
+        continue_on_error = config.get("continue_on_error", True)
+
+        total = len(input_array)
+        collected_results: List[Any] = []
+        errors: List[str] = []
+
+        print(f"    📦 SplitNode: {total} items, parallel={parallel}, delay_ms={delay_ms}")
+
+        # === Execute branch for each item ===
+        if parallel:
+            # Parallel execution
+            async def execute_item(idx: int, item: Any) -> Any:
+                return await self._execute_branch_for_item(
+                    split_id=split_id,
+                    branch_order=branch_order,
+                    item=item,
+                    index=idx,
+                    total=total,
+                )
+
+            tasks = [execute_item(i, item) for i, item in enumerate(input_array)]
+            for coro in asyncio.as_completed(tasks):
+                try:
+                    result = await coro
+                    collected_results.append(result)
+                except Exception as e:
+                    if continue_on_error:
+                        errors.append(str(e))
+                        collected_results.append(None)
+                    else:
+                        raise
+        else:
+            # Sequential execution
+            for idx, item in enumerate(input_array):
+                try:
+                    result = await self._execute_branch_for_item(
+                        split_id=split_id,
+                        branch_order=branch_order,
+                        item=item,
+                        index=idx,
+                        total=total,
+                    )
+                    collected_results.append(result)
+                except Exception as e:
+                    if continue_on_error:
+                        errors.append(str(e))
+                        collected_results.append(None)
+                    else:
+                        raise
+
+                # Apply delay between items (except last)
+                if delay_ms > 0 and idx < total - 1:
+                    await asyncio.sleep(delay_ms / 1000)
+
+        # === Store results for AggregateNode ===
+        self.context.set_node_state(aggregate_id, "_collected_items", collected_results)
+
+        # Mark SplitNode as completed
+        duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+        await self.context.notify_node_state(
+            node_id=split_id,
+            node_type="SplitNode",
+            state=NodeState.COMPLETED,
+            outputs={"item": input_array[-1] if input_array else None, "index": total - 1, "total": total},
+            duration_ms=duration_ms,
+        )
+
+        if errors:
+            self.context.log("warning", f"SplitNode {split_id}: {len(errors)} errors occurred", split_id)
+
+        # === Execute AggregateNode ===
+        await self._execute_aggregate_node(aggregate_id)
+
+    async def _execute_branch_for_item(
+        self,
+        split_id: str,
+        branch_order: List[str],
+        item: Any,
+        index: int,
+        total: int,
+    ) -> Any:
+        """Execute branch nodes for a single item
+
+        Args:
+            split_id: SplitNode ID
+            branch_order: Ordered list of branch node IDs
+            item: Current item from the array
+            index: Current index (0-based)
+            total: Total number of items
+
+        Returns:
+            Result from the last node in the branch (or the item if no branch)
+        """
+        # Set split context for SplitNodeExecutor
+        self.context.set_node_state(split_id, "_split_context", {
+            "item": item,
+            "index": index,
+            "total": total,
+        })
+
+        # Store SplitNode outputs
+        self.context.set_output(split_id, "item", item)
+        self.context.set_output(split_id, "index", index)
+        self.context.set_output(split_id, "total", total)
+
+        result = item
+
+        # Execute each branch node
+        for node_id in branch_order:
+            node = self.workflow.nodes.get(node_id)
+            if not node:
+                continue
+
+            # Prepare config
+            config = dict(node.config)
+            config = self._resolve_config_expressions(config)
+            config = self._auto_inject_connection(node_id, node, config)
+
+            # Connect inputs from upstream
+            for edge in self.workflow.edges:
+                if edge.to_node_id == node_id:
+                    all_outputs = self.context.get_all_outputs(edge.from_node_id)
+                    for port_name, port_value in all_outputs.items():
+                        self.context.set_output(f"_input_{node_id}", port_name, port_value)
+
+            # Execute node
+            outputs = await self.executor.execute_node(
+                node_id=node_id,
+                node_type=node.node_type,
+                config=config,
+                context=self.context,
+                plugin=node.plugin,
+                fields=node.fields,
+            )
+
+            # Store outputs
+            for port_name, value in outputs.items():
+                self.context.set_output(node_id, port_name, value)
+
+            # Track last result
+            if outputs:
+                result = outputs.get("result") or outputs.get("value") or next(iter(outputs.values()), item)
+
+        return result
+
+    async def _execute_aggregate_node(self, aggregate_id: str) -> None:
+        """Execute an AggregateNode with collected results
+
+        Args:
+            aggregate_id: AggregateNode ID
+        """
+        from programgarden_core.bases.listener import NodeState
+
+        node = self.workflow.nodes.get(aggregate_id)
+        if not node:
+            return
+
+        print(f"  🔗 Executing AggregateNode: {aggregate_id}")
+
+        start_time = datetime.utcnow()
+        await self.context.notify_node_state(
+            node_id=aggregate_id,
+            node_type="AggregateNode",
+            state=NodeState.RUNNING,
+        )
+
+        config = dict(node.config)
+        config = self._resolve_config_expressions(config)
+
+        try:
+            outputs = await self.executor.execute_node(
+                node_id=aggregate_id,
+                node_type="AggregateNode",
+                config=config,
+                context=self.context,
+                plugin=node.plugin,
+                fields=node.fields,
+            )
+
+            # Store outputs
+            for port_name, value in outputs.items():
+                self.context.set_output(aggregate_id, port_name, value)
+
+            duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            await self.context.notify_node_state(
+                node_id=aggregate_id,
+                node_type="AggregateNode",
+                state=NodeState.COMPLETED,
+                outputs=outputs,
+                duration_ms=duration_ms,
+            )
+
+        except Exception as e:
+            duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            await self.context.notify_node_state(
+                node_id=aggregate_id,
+                node_type="AggregateNode",
+                state=NodeState.FAILED,
+                error=str(e),
+                duration_ms=duration_ms,
+            )
+            raise
 
     def _find_trigger_nodes(self, source_node_id: str) -> List[str]:
         """Find nodes that should be triggered on realtime update

@@ -50,16 +50,16 @@ class OverseasStockRealMarketDataNode(BaseNode):
         default=True,
         description="Keep WebSocket connection alive between flow executions.",
     )
-    symbols: List[Dict[str, str]] = Field(
-        default=[],
-        description="Symbols to subscribe with exchange info. Format: [{exchange, symbol}, ...].",
+    # 단일 종목 (Item-based execution)
+    symbol: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Single symbol entry with exchange and symbol code",
     )
 
     _inputs: List[InputPort] = [
-        InputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.subscribed_symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="ohlcv_data", type="ohlcv_data", description="i18n:ports.ohlcv_data", fields=OHLCV_DATA_FIELDS),
         OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full", fields=MARKET_DATA_FULL_FIELDS),
     ]
@@ -68,36 +68,25 @@ class OverseasStockRealMarketDataNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
-            "symbols": FieldSchema(
-                name="symbols",
-                type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.OverseasStockRealMarketDataNode.symbols",
-                description="i18n:fields.OverseasStockRealMarketDataNode.symbols",
-                default=[],
-                array_item_type=FieldType.OBJECT,
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasStockRealMarketDataNode.symbol",
+                description="i18n:fields.OverseasStockRealMarketDataNode.symbol",
+                default=None,
                 category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.BOTH,
-                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
-                example_binding="{{ nodes.watchlist.symbols }}",
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                example={"exchange": "NASDAQ", "symbol": "AAPL"},
+                example_binding="{{ nodes.split.item }}",
                 bindable_sources=[
-                    "WatchlistNode.symbols",
-                    "ScreenerNode.symbols",
-                    "MarketUniverseNode.symbols",
+                    "SplitNode.item",
                 ],
-                expected_type="list[{exchange: str, symbol: str}]",
-                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.OverseasStockRealMarketDataNode.symbols.help_text",
+                expected_type="{exchange: str, symbol: str}",
+                help_text="i18n:fields.OverseasStockRealMarketDataNode.symbol.help_text",
                 object_schema=[
-                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.OverseasStockRealMarketDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
-                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockRealMarketDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "AAPL"},
+                    {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasStockRealMarketDataNode.symbol.exchange", "required": True},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockRealMarketDataNode.symbol.symbol", "required": True},
                 ],
-                ui_options={
-                    "exchanges": [
-                        {"value": "NASDAQ", "label": "NASDAQ"},
-                        {"value": "NYSE", "label": "NYSE"},
-                        {"value": "AMEX", "label": "AMEX"},
-                    ],
-                },
             ),
             "stay_connected": FieldSchema(
                 name="stay_connected",

@@ -23,7 +23,11 @@ from programgarden_core.nodes.base import (
 
 class PositionSizingNode(BaseNode):
     """
-    Position size calculation node
+    Position size calculation node (단일 종목)
+
+    Item-based execution:
+    - Input: symbol (단일 종목), balance, market_data (해당 종목 시세)
+    - Output: order (해당 종목의 주문 정보 {symbol, exchange, quantity, price})
 
     Supports various position sizing methods: Kelly, fixed ratio, ATR-based
     """
@@ -32,18 +36,18 @@ class PositionSizingNode(BaseNode):
     category: NodeCategory = NodeCategory.ORDER
     description: str = "i18n:nodes.PositionSizingNode.description"
 
-    # === 바인딩 필드 (다른 노드에서 값 수신) ===
-    symbols: Any = Field(
+    # === 바인딩 필드 (Item-based execution) ===
+    symbol: Any = Field(
         default=None,
-        description="투자할 종목 목록 (ConditionNode.passed_symbols 또는 WatchlistNode.symbols 바인딩)",
+        description="단일 종목 {exchange, symbol} (SplitNode.item 또는 ConditionNode.result 바인딩)",
     )
     balance: Any = Field(
         default=None,
         description="예수금/매수가능금액 (AccountNode.balance 또는 RealAccountNode.balance 바인딩)",
     )
-    price_data: Any = Field(
+    market_data: Any = Field(
         default=None,
-        description="종목별 현재가 데이터 (MarketDataNode.price 또는 RealMarketDataNode.price 바인딩)",
+        description="해당 종목 시세 데이터 (MarketDataNode.value 바인딩)",
     )
 
     # PositionSizingNode specific config
@@ -74,9 +78,9 @@ class PositionSizingNode(BaseNode):
 
     _inputs: List[InputPort] = [
         InputPort(
-            name="symbols",
-            type="symbol_list",
-            description="i18n:ports.symbols",
+            name="symbol",
+            type="symbol",
+            description="i18n:ports.symbol",
         ),
         InputPort(
             name="balance",
@@ -84,35 +88,23 @@ class PositionSizingNode(BaseNode):
             description="i18n:ports.balance",
         ),
         InputPort(
-            name="price_data",
+            name="market_data",
             type="market_data",
-            description="i18n:ports.price_data",
+            description="i18n:ports.market_data",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="orders",
-            type="array",
-            description="i18n:ports.orders",
+            name="order",
+            type="order",
+            description="i18n:ports.order",
             fields=[
                 {"name": "symbol", "type": "string", "description": "종목코드"},
                 {"name": "exchange", "type": "string", "description": "거래소 코드"},
                 {"name": "quantity", "type": "number", "description": "주문 수량"},
                 {"name": "price", "type": "number", "description": "주문 가격"},
-                {"name": "allocation", "type": "number", "description": "배분 비율 (%)"},
             ],
-        ),
-        OutputPort(
-            name="symbols",
-            type="symbol_list",
-            description="i18n:ports.symbols",
-            fields=SYMBOL_LIST_FIELDS,
-        ),
-        OutputPort(
-            name="total_amount",
-            type="number",
-            description="i18n:ports.total_amount",
         ),
     ]
 
@@ -120,42 +112,54 @@ class PositionSizingNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
-            # === INPUTS: 바인딩 또는 직접 입력 ===
-            "symbols": FieldSchema(
-                name="symbols",
-                type=FieldType.ARRAY,
-                description="i18n:fields.PositionSizingNode.symbols",
+            # === INPUTS: Item-based 바인딩 ===
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                description="i18n:fields.PositionSizingNode.symbol",
                 required=True,
-                expression_mode=ExpressionMode.BOTH,  # 바인딩 또는 직접 입력
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                example_binding="{{ nodes.conditionNode.passed_symbols }}",
-                bindable_sources=["ConditionNode.passed_symbols", "WatchlistNode.symbols"],
-                expected_type="symbol_list",
+                example={"exchange": "NASDAQ", "symbol": "AAPL"},
+                example_binding="{{ nodes.condition.result }}",
+                bindable_sources=[
+                    "ConditionNode.result",
+                    "SplitNode.item",
+                ],
+                expected_type="{exchange: str, symbol: str}",
+                object_schema=[
+                    {"name": "exchange", "type": "STRING", "label": "i18n:fields.PositionSizingNode.symbol.exchange", "required": True},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.PositionSizingNode.symbol.symbol", "required": True},
+                ],
+                help_text="i18n:fields.PositionSizingNode.symbol.help_text",
             ),
             "balance": FieldSchema(
                 name="balance",
-                type=FieldType.NUMBER,  # 숫자 입력
+                type=FieldType.NUMBER,
                 description="i18n:fields.PositionSizingNode.balance",
                 required=True,
-                expression_mode=ExpressionMode.BOTH,  # 바인딩 또는 직접 숫자 입력
+                expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 placeholder="10000000",
                 example_binding="{{ nodes.account.balance }}",
                 bindable_sources=["AccountNode.balance", "RealAccountNode.balance"],
                 expected_type="number",
             ),
-            "price_data": FieldSchema(
-                name="price_data",
+            "market_data": FieldSchema(
+                name="market_data",
                 type=FieldType.OBJECT,
-                description="i18n:fields.PositionSizingNode.price_data",
+                description="i18n:fields.PositionSizingNode.market_data",
                 required=False,
-                expression_mode=ExpressionMode.BOTH,  # 바인딩 또는 직접 JSON 입력
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                example={"AAPL": 150.0, "NVDA": 450.0},  # 직접 입력 예시
-                example_binding="{{ nodes.marketData.price }}",
-                bindable_sources=["MarketDataNode.price", "RealMarketDataNode.price"],
-                expected_type="market_data",
+                example={"symbol": "AAPL", "exchange": "NASDAQ", "price": 150.0},
+                example_binding="{{ nodes.marketdata.value }}",
+                bindable_sources=[
+                    "OverseasStockMarketDataNode.value",
+                    "OverseasFuturesMarketDataNode.value",
+                ],
+                expected_type="{symbol: str, exchange: str, price: float, ...}",
+                help_text="i18n:fields.PositionSizingNode.market_data.help_text",
             ),
             # === PARAMETERS: 핵심 포지션 사이징 설정 ===
             "method": FieldSchema(

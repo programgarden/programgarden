@@ -25,21 +25,21 @@ from programgarden_core.nodes.base import (
 
 class ConditionNode(PluginNode):
     """
-    Condition plugin execution node
+    Condition plugin execution node (단일 종목)
 
     Executes community plugins such as RSI, MACD, BollingerBands
-    
-    기본 입력 (필수):
-    - data: OHLCV 배열 데이터 (플랫 형식)
-    
+
+    Item-based execution:
+    - Input: data (단일 종목의 OHLCV 시계열 데이터)
+    - Output: result (해당 종목의 조건 판정 결과 {passed, value})
+
     고급 옵션 (선택, 기본값 사용 가능):
     - close_field 등: 필드명 매핑 (커스텀 데이터 소스 사용 시)
-    - symbols: 종목 리스트 (data에서 자동 추출됨)
-    - held_symbols, position_data: 익절/손절 조건에서 사용
-    
+    - positions: 익절/손절 조건에서 사용
+
     예시:
     {
-      "data": "{{ flatten(nodes.historicaldata_1.values, 'time_series') }}",
+      "data": "{{ nodes.marketdata.value }}",
       "plugin": "RSI",
       "fields": {"period": 14, "threshold": 30}
     }
@@ -49,10 +49,10 @@ class ConditionNode(PluginNode):
     category: NodeCategory = NodeCategory.CONDITION
     description: str = "i18n:nodes.ConditionNode.description"
 
-    # === 필수 입력 ===
+    # === 필수 입력 (Item-based execution) ===
     data: Any = Field(
         default=None,
-        description="Input data array (e.g., {{ flatten(nodes.historicaldata_1.values, 'time_series') }})",
+        description="Single symbol data (e.g., {{ nodes.marketdata.value }})",
     )
     
     # === 고급: 필드 매핑 (기본값으로 충분, 커스텀 데이터 소스 사용 시만 변경) ===
@@ -99,7 +99,7 @@ class ConditionNode(PluginNode):
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
         InputPort(
             name="data",
-            type="array",
+            type="ohlcv_data",
             description="i18n:ports.data",
         ),
         InputPort(
@@ -111,33 +111,10 @@ class ConditionNode(PluginNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="symbols",
-            type="symbol_list",
-            description="i18n:ports.input_symbols",
-            fields=SYMBOL_LIST_FIELDS,
-        ),
-        OutputPort(
             name="result",
             type="condition_result",
-            description="i18n:ports.result",
+            description="i18n:ports.condition_result",
             fields=CONDITION_RESULT_FIELDS,
-        ),
-        OutputPort(
-            name="passed_symbols",
-            type="symbol_list",
-            description="i18n:ports.passed_symbols",
-            fields=SYMBOL_LIST_FIELDS,
-        ),
-        OutputPort(
-            name="failed_symbols",
-            type="symbol_list",
-            description="i18n:ports.failed_symbols",
-            fields=SYMBOL_LIST_FIELDS,
-        ),
-        OutputPort(
-            name="values",
-            type="dict",
-            description="i18n:ports.values",
         ),
     ]
 
@@ -155,25 +132,32 @@ class ConditionNode(PluginNode):
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_PLUGIN_SELECT,
             ),
-            # === DATA: 입력 데이터 ===
+            # === DATA: 입력 데이터 (Item-based) ===
             "data": FieldSchema(
                 name="data",
-                type=FieldType.STRING,
+                type=FieldType.OBJECT,
                 description="i18n:fields.ConditionNode.data",
                 required=True,
-                expression_mode=ExpressionMode.BOTH,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                placeholder="{{ flatten(nodes.historicaldata_1.values, 'time_series') }}",
-                example=[
-                    {"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260116", "close": 150.0, "open": 148.5, "high": 151.0, "low": 147.8, "volume": 1000000},
-                ],
-                example_binding="{{ flatten(nodes.historicaldata_1.values, 'time_series') }}",
+                placeholder="{{ nodes.marketdata.value }}",
+                example={
+                    "symbol": "AAPL",
+                    "exchange": "NASDAQ",
+                    "time_series": [
+                        {"date": "20260115", "close": 149.0, "open": 148.0, "high": 150.0, "low": 147.5, "volume": 900000},
+                        {"date": "20260116", "close": 150.0, "open": 148.5, "high": 151.0, "low": 147.8, "volume": 1000000},
+                    ],
+                },
+                example_binding="{{ nodes.marketdata.value }}",
                 bindable_sources=[
-                    "HistoricalDataNode.values (with flatten)",
-                    "RealMarketDataNode.data",
-                    "HTTPRequestNode.response",
+                    "OverseasStockHistoricalDataNode.value",
+                    "OverseasFuturesHistoricalDataNode.value",
+                    "OverseasStockMarketDataNode.value",
+                    "OverseasFuturesMarketDataNode.value",
                 ],
-                expected_type="list[dict]",
+                expected_type="{symbol: str, exchange: str, time_series: list[dict]}",
+                help_text="i18n:fields.ConditionNode.data.help_text",
             ),
             # === FIELD MAPPING: 필드명 매핑 (data 바로 하단에 표시) ===
             "close_field": FieldSchema(

@@ -3,6 +3,10 @@ ProgramGarden Core - Futures Historical Data Node
 
 해외선물 과거 데이터 조회:
 - OverseasFuturesHistoricalDataNode: 해외선물 과거 OHLCV 데이터 조회 (CME, EUREX, SGX, HKEX)
+
+Item-based execution:
+- Input: 단일 symbol (SplitNode에서 분리된 아이템)
+- Output: 단일 value (해당 종목의 과거 OHLCV 데이터)
 """
 
 from typing import Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -19,16 +23,19 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     HISTORICAL_DATA_FIELDS,
-    SYMBOL_LIST_FIELDS,
 )
 
 
 class OverseasFuturesHistoricalDataNode(BaseNode):
     """
-    해외선물 과거 데이터 조회 노드
+    해외선물 과거 데이터 조회 노드 (단일 종목)
 
-    해외선물 종목의 과거 OHLCV 데이터를 조회합니다.
+    SplitNode와 함께 사용하여 개별 종목의 과거 OHLCV 데이터를 조회합니다.
     거래소: CME, EUREX, SGX, HKEX
+
+    Item-based execution:
+    - Input: symbol (단일 종목 {exchange, symbol})
+    - Output: value (해당 종목의 과거 OHLCV 데이터)
     """
 
     type: Literal["OverseasFuturesHistoricalDataNode"] = "OverseasFuturesHistoricalDataNode"
@@ -38,9 +45,10 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
-    symbols: Optional[List[Dict[str, str]]] = Field(
+    # 단일 종목 (Item-based execution)
+    symbol: Optional[Dict[str, str]] = Field(
         default=None,
-        description="Target symbols with exchange [{exchange, symbol}]",
+        description="Single symbol entry with exchange and symbol code",
     )
     start_date: str = Field(
         default="{{ months_ago_yyyymmdd(3) }}",
@@ -60,50 +68,35 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
     )
 
     _inputs: List[InputPort] = [
-        InputPort(
-            name="symbols",
-            type="symbol_list",
-            description="i18n:ports.symbols",
-        ),
+        InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="values", type="array", description="i18n:ports.values", fields=HISTORICAL_DATA_FIELDS),
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="value", type="ohlcv_data", description="i18n:ports.ohlcv_value", fields=HISTORICAL_DATA_FIELDS),
     ]
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
-            "symbols": FieldSchema(
-                name="symbols",
-                type=FieldType.ARRAY,
-                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.symbols",
-                description="i18n:fields.OverseasFuturesHistoricalDataNode.symbols",
-                default=[],
-                array_item_type=FieldType.OBJECT,
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.symbol",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.symbol",
+                default=None,
                 category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.BOTH,
-                example=[{"exchange": "CME", "symbol": "ESH26"}, {"exchange": "EUREX", "symbol": "FDXH26"}],
-                example_binding="{{ nodes.watchlist.symbols }}",
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                example={"exchange": "CME", "symbol": "ESH26"},
+                example_binding="{{ nodes.split.item }}",
                 bindable_sources=[
-                    "WatchlistNode.symbols",
+                    "SplitNode.item",
                 ],
-                expected_type="list[{exchange: str, symbol: str}]",
-                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.symbols.help_text",
+                expected_type="{exchange: str, symbol: str}",
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.symbol.help_text",
                 object_schema=[
-                    {"name": "exchange", "type": "ENUM", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbols.exchange", "required": True, "expression_mode": "fixed_only"},
-                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbols.symbol", "required": True, "expression_mode": "fixed_only", "placeholder": "ESH26"},
+                    {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbol.exchange", "required": True},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbol.symbol", "required": True},
                 ],
-                ui_options={
-                    "exchanges": [
-                        {"value": "CME", "label": "CME (시카고상업거래소)"},
-                        {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
-                        {"value": "SGX", "label": "SGX (싱가포르거래소)"},
-                        {"value": "HKEX", "label": "HKEX (홍콩선물거래소)"},
-                    ],
-                },
             ),
             "start_date": FieldSchema(
                 name="start_date",

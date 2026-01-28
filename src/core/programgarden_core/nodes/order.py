@@ -35,9 +35,11 @@ from programgarden_core.nodes.base import (
 
 class BaseOrderNode(BaseNode):
     """
-    주문 노드 공통 베이스 클래스
+    주문 노드 공통 베이스 클래스 (단일 주문)
 
-    모든 주문 노드가 공유하는 공통 필드와 포트를 정의합니다.
+    Item-based execution:
+    - Input: order (단일 주문 {symbol, exchange, quantity, price})
+    - Output: result (해당 주문의 결과)
     """
 
     category: NodeCategory = NodeCategory.ORDER
@@ -58,10 +60,10 @@ class BaseOrderNode(BaseNode):
         description="주문 유형 (market: 시장가, limit: 지정가)",
     )
 
-    # 주문 입력
-    orders: Any = Field(
-        default_factory=list,
-        description="주문 목록 [{symbol, exchange, quantity, price}, ...]",
+    # 단일 주문 입력 (Item-based execution)
+    order: Any = Field(
+        default=None,
+        description="단일 주문 {symbol, exchange, quantity, price}",
     )
 
     _inputs: List[InputPort] = [
@@ -71,24 +73,18 @@ class BaseOrderNode(BaseNode):
             description="i18n:ports.order_trigger",
         ),
         InputPort(
-            name="orders",
-            type="order_list",
-            description="i18n:ports.orders_input",
+            name="order",
+            type="order",
+            description="i18n:ports.order_input",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="order_result",
+            name="result",
             type="order_result",
             description="i18n:ports.order_result",
             fields=ORDER_RESULT_FIELDS,
-        ),
-        OutputPort(
-            name="submitted_orders",
-            type="order_list",
-            description="i18n:ports.submitted_orders",
-            fields=ORDER_LIST_FIELDS,
         ),
     ]
 
@@ -202,36 +198,31 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                 category=FieldCategory.PARAMETERS,
                 expected_type="str",
             ),
-            "orders": FieldSchema(
-                name="orders",
-                type=FieldType.ARRAY,
-                array_item_type=FieldType.OBJECT,
-                display_name="i18n:fieldNames.OverseasStockNewOrderNode.orders",
-                description="i18n:fields.OverseasStockNewOrderNode.orders",
+            "order": FieldSchema(
+                name="order",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasStockNewOrderNode.order",
+                description="i18n:fields.OverseasStockNewOrderNode.order",
                 required=True,
-                expression_mode=ExpressionMode.BOTH,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.CUSTOM_ORDER_LIST_EDITOR,
-                example=[
-                    {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 10, "price": 150.0}
-                ],
-                example_binding="{{ nodes.marketdata.values }}",
+                example={"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 10, "price": 150.0},
+                example_binding="{{ nodes.positionSizing.order }}",
                 bindable_sources=[
-                    "MarketDataNode.values",
-                    "ConditionNode.passed_symbols",
+                    "PositionSizingNode.order",
                 ],
                 object_schema=[
                     {"name": "symbol", "type": "STRING", "required": True,
-                     "label": "i18n:fields.orders.symbol"},
-                    {"name": "exchange", "type": "ENUM", "required": True,
-                     "enum_values": ["NYSE", "NASDAQ", "AMEX"],
-                     "label": "i18n:fields.orders.exchange"},
+                     "label": "i18n:fields.order.symbol"},
+                    {"name": "exchange", "type": "STRING", "required": True,
+                     "label": "i18n:fields.order.exchange"},
                     {"name": "quantity", "type": "INTEGER", "required": True,
-                     "label": "i18n:fields.orders.quantity"},
+                     "label": "i18n:fields.order.quantity"},
                     {"name": "price", "type": "NUMBER", "required": False,
-                     "label": "i18n:fields.orders.price"},
+                     "label": "i18n:fields.order.price"},
                 ],
-                expected_type="list[dict]",
+                expected_type="{symbol: str, exchange: str, quantity: int, price?: float}",
+                help_text="i18n:fields.OverseasStockNewOrderNode.order.help_text",
             ),
         }
 
@@ -535,36 +526,31 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
                 example="202503",
                 expected_type="str",
             ),
-            "orders": FieldSchema(
-                name="orders",
-                type=FieldType.ARRAY,
-                array_item_type=FieldType.OBJECT,
-                display_name="i18n:fieldNames.OverseasFuturesNewOrderNode.orders",
-                description="i18n:fields.OverseasFuturesNewOrderNode.orders",
+            "order": FieldSchema(
+                name="order",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasFuturesNewOrderNode.order",
+                description="i18n:fields.OverseasFuturesNewOrderNode.order",
                 required=True,
-                expression_mode=ExpressionMode.BOTH,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
-                ui_component=UIComponent.CUSTOM_ORDER_LIST_EDITOR,
-                example=[
-                    {"symbol": "NQH25", "exchange": "CME", "quantity": 1, "price": 21000.0}
-                ],
-                example_binding="{{ nodes.marketdata.values }}",
+                example={"symbol": "NQH25", "exchange": "CME", "quantity": 1, "price": 21000.0},
+                example_binding="{{ nodes.positionSizing.order }}",
                 bindable_sources=[
-                    "MarketDataNode.values",
-                    "ConditionNode.passed_symbols",
+                    "PositionSizingNode.order",
                 ],
                 object_schema=[
                     {"name": "symbol", "type": "STRING", "required": True,
-                     "label": "i18n:fields.orders.symbol"},
-                    {"name": "exchange", "type": "ENUM", "required": True,
-                     "enum_values": ["CME", "EUREX", "SGX", "HKEX"],
-                     "label": "i18n:fields.orders.exchange"},
+                     "label": "i18n:fields.order.symbol"},
+                    {"name": "exchange", "type": "STRING", "required": True,
+                     "label": "i18n:fields.order.exchange"},
                     {"name": "quantity", "type": "INTEGER", "required": True,
-                     "label": "i18n:fields.orders.quantity"},
+                     "label": "i18n:fields.order.quantity"},
                     {"name": "price", "type": "NUMBER", "required": False,
-                     "label": "i18n:fields.orders.price"},
+                     "label": "i18n:fields.order.price"},
                 ],
-                expected_type="list[dict]",
+                expected_type="{symbol: str, exchange: str, quantity: int, price?: float}",
+                help_text="i18n:fields.OverseasFuturesNewOrderNode.order.help_text",
             ),
         }
 
