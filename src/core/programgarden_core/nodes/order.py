@@ -23,6 +23,7 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
     BrokerProvider,
+    ORDER_LIST_FIELDS,
     ORDER_RESULT_FIELDS,
     SYMBOL_LIST_FIELDS,
 )
@@ -87,6 +88,7 @@ class BaseOrderNode(BaseNode):
             name="submitted_orders",
             type="order_list",
             description="i18n:ports.submitted_orders",
+            fields=ORDER_LIST_FIELDS,
         ),
     ]
 

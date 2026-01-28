@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:json_dynamic_widget/json_dynamic_widget.dart';
+import '../api_config.dart';
 
 part 'credential_select_builder.g.dart';
 
@@ -80,9 +81,7 @@ class _CredentialSelectState extends State<_CredentialSelect> {
     setState(() => _isLoading = true);
     try {
       final response = await http.get(
-        Uri.parse(
-          'http://localhost:8766/api/credentials?credential_type=$_selectedType',
-        ),
+        ApiConfig.uri('/api/credentials', queryParams: {'credential_type': _selectedType!}),
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -274,9 +273,7 @@ class _CredentialFormDialogState extends State<_CredentialFormDialog> {
   Future<void> _loadTypeSchema() async {
     try {
       final response = await http.get(
-        Uri.parse(
-          'http://localhost:8766/api/credential-types/${widget.credentialType}',
-        ),
+        ApiConfig.uri('/api/credential-types/${widget.credentialType}'),
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -335,7 +332,7 @@ class _CredentialFormDialogState extends State<_CredentialFormDialog> {
     setState(() => _isSaving = true);
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:8766/api/credentials'),
+        ApiConfig.uri('/api/credentials'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'name': credentialName,

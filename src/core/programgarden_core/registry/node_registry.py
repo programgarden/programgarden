@@ -29,10 +29,6 @@ class NodeTypeSchema(BaseModel):
         default_factory=list,
         description="Output port definitions",
     )
-    config_schema: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Configuration schema",
-    )
     widget_schema: Optional[Dict[str, Any]] = Field(
         default=None,
         description="json_dynamic_widget schema for Flutter form rendering (PARAMETERS fields)",
@@ -91,7 +87,8 @@ class NodeTypeRegistry:
             PositionSizingNode, PortfolioNode,
             OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode,
             OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode,
-            DisplayNode,
+            TableDisplayNode, LineChartNode, MultiLineChartNode,
+            CandlestickChartNode, BarChartNode, SummaryDisplayNode,
             BacktestEngineNode, BenchmarkCompareNode,
         )
 
@@ -127,8 +124,9 @@ class NodeTypeRegistry:
             # Order (해외선물)
             OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode,
             # messaging - 커뮤니티 노드(TelegramNode 등)에서 등록
-            # Display
-            DisplayNode,
+            # Display (6개)
+            TableDisplayNode, LineChartNode, MultiLineChartNode,
+            CandlestickChartNode, BarChartNode, SummaryDisplayNode,
             # Backtest/Analysis
             BacktestEngineNode, BenchmarkCompareNode,
         ]
@@ -270,7 +268,6 @@ class NodeTypeRegistry:
             broker_provider=broker_provider_value,
             inputs=[inp.model_dump(exclude_none=True) for inp in instance.get_inputs()],
             outputs=[out.model_dump(exclude_none=True) for out in instance.get_outputs()],
-            config_schema=self._extract_config_schema(node_class),
             widget_schema=widget_schema,
             settings_widget_schema=settings_widget_schema,
         )
@@ -433,119 +430,6 @@ class NodeTypeRegistry:
                 "onTrue": widget
             }
         }
-
-    def _extract_config_schema(self, node_class: Type[BaseNode]) -> Dict[str, Any]:
-        """Extract config schema from node class
-        
-        Prioritizes _field_schema if available, falls back to Pydantic model_fields.
-        Excludes fields with exclude=True (credential-injected fields).
-        Includes category (PARAMETERS/SETTINGS) if available in _field_schema.
-        """
-        schema = {}
-        model_fields = node_class.model_fields
-
-        # BaseNode 필드 제외
-        base_fields = {"id", "type", "category", "position", "config", "description"}
-        # UI에서 숨길 필드 (내부용)
-        hidden_fields = {"plugin_version"}  # community 플러그인은 버전 관리 불필요
-
-        # _field_schema가 있으면 우선 사용 (get_field_schema에 정의된 필드만 UI에 표시)
-        field_schema_dict = node_class.get_field_schema() if hasattr(node_class, 'get_field_schema') else {}
-        
-        # get_field_schema가 있으면 그 필드만 사용, 없으면 model_fields 전체 사용
-        has_field_schema = bool(field_schema_dict)
-
-        for field_name, field_info in model_fields.items():
-            if field_name in base_fields:
-                continue
-            
-            # UI에서 숨길 필드 제외
-            if field_name in hidden_fields:
-                continue
-            
-            # exclude=True인 필드는 스키마에서 제외 (credential에서 주입되는 필드)
-            if field_info.exclude:
-                continue
-            
-            # get_field_schema가 정의되어 있고, 해당 필드가 없으면 스키마에서 제외
-            # (내부용 필드로 취급 - UI에 노출하지 않음)
-            if has_field_schema and field_name not in field_schema_dict:
-                continue
-
-            # _field_schema에 정의가 있으면 사용
-            if field_name in field_schema_dict:
-                fs = field_schema_dict[field_name]
-                field_schema = {
-                    "type": fs.type.value if hasattr(fs.type, 'value') else str(fs.type),
-                    "required": fs.required,
-                }
-                if fs.default is not None:
-                    field_schema["default"] = fs.default
-                if fs.description:
-                    field_schema["description"] = fs.description
-                # === display_name (UI 라벨) ===
-                if hasattr(fs, 'display_name') and fs.display_name:
-                    field_schema["display_name"] = fs.display_name
-                if fs.enum_values:
-                    field_schema["enum_values"] = fs.enum_values
-                if fs.enum_labels:
-                    field_schema["enum_labels"] = fs.enum_labels
-                # === expression_mode ===
-                if hasattr(fs, 'expression_mode') and fs.expression_mode:
-                    field_schema["expression_mode"] = fs.expression_mode.value if hasattr(fs.expression_mode, 'value') else str(fs.expression_mode)
-                # category 추가 (PARAMETERS/SETTINGS)
-                if fs.category is not None:
-                    field_schema["category"] = fs.category.value if hasattr(fs.category, 'value') else str(fs.category)
-                # ui_component 추가 (symbol_editor 등)
-                if hasattr(fs, 'ui_component') and fs.ui_component:
-                    field_schema["ui_component"] = fs.ui_component.value if hasattr(fs.ui_component, 'value') else str(fs.ui_component)
-                # ui_options 추가 (ui_component 세부 설정)
-                if hasattr(fs, 'ui_options') and fs.ui_options:
-                    field_schema["ui_options"] = fs.ui_options
-                # ui_hint 추가
-                if hasattr(fs, 'ui_hint') and fs.ui_hint:
-                    field_schema["ui_hint"] = fs.ui_hint
-                # === 바인딩 가이드 필드 추가 ===
-                if hasattr(fs, 'example') and fs.example is not None:
-                    field_schema["example"] = fs.example
-                if hasattr(fs, 'example_binding') and fs.example_binding:
-                    field_schema["example_binding"] = fs.example_binding
-                if hasattr(fs, 'bindable_sources') and fs.bindable_sources:
-                    field_schema["bindable_sources"] = fs.bindable_sources
-                if hasattr(fs, 'expected_type') and fs.expected_type:
-                    field_schema["expected_type"] = fs.expected_type
-                # === 조건부 표시 필드 추가 ===
-                if hasattr(fs, 'visible_when') and fs.visible_when:
-                    field_schema["visible_when"] = fs.visible_when
-                if hasattr(fs, 'depends_on') and fs.depends_on:
-                    field_schema["depends_on"] = fs.depends_on
-                # === 필드 그룹 (UI에서 그룹핑용) ===
-                if hasattr(fs, 'group') and fs.group:
-                    field_schema["group"] = fs.group
-                # === 배열 항목 스키마 (condition_list 등) ===
-                if hasattr(fs, 'object_schema') and fs.object_schema:
-                    field_schema["object_schema"] = fs.object_schema
-                # === 부모-자식 관계 (계층적 UI 표시용) ===
-                if hasattr(fs, 'child_of') and fs.child_of:
-                    field_schema["child_of"] = fs.child_of
-                # === placeholder 추가 ===
-                if hasattr(fs, 'placeholder') and fs.placeholder:
-                    field_schema["placeholder"] = fs.placeholder
-            else:
-                # Pydantic 필드에서 추출
-                field_type = str(field_info.annotation) if field_info.annotation else "any"
-                field_schema = {
-                    "type": field_type,
-                    "required": field_info.is_required(),
-                }
-                if field_info.default is not None:
-                    field_schema["default"] = field_info.default
-                if field_info.description:
-                    field_schema["description"] = field_info.description
-
-            schema[field_name] = field_schema
-
-        return schema
 
     def get(self, node_type: str) -> Optional[Type[BaseNode]]:
         """Query node class"""

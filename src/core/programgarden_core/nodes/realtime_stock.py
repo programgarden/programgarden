@@ -21,6 +21,10 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     BALANCE_FIELDS,
+    MARKET_DATA_FULL_FIELDS,
+    OHLCV_DATA_FIELDS,
+    ORDER_EVENT_FIELDS,
+    ORDER_LIST_FIELDS,
     POSITION_FIELDS,
     SYMBOL_LIST_FIELDS,
     PRICE_DATA_FIELDS,
@@ -56,8 +60,8 @@ class OverseasStockRealMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.subscribed_symbols", fields=SYMBOL_LIST_FIELDS),
-        OutputPort(name="ohlcv_data", type="ohlcv_data", description="i18n:ports.ohlcv_data"),
-        OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full"),
+        OutputPort(name="ohlcv_data", type="ohlcv_data", description="i18n:ports.ohlcv_data", fields=OHLCV_DATA_FIELDS),
+        OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full", fields=MARKET_DATA_FULL_FIELDS),
     ]
 
     @classmethod
@@ -142,7 +146,7 @@ class OverseasStockRealAccountNode(BaseNode):
     _outputs: List[OutputPort] = [
         OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="balance", type="balance_data", description="i18n:ports.balance", fields=BALANCE_FIELDS),
-        OutputPort(name="open_orders", type="order_list", description="i18n:ports.open_orders"),
+        OutputPort(name="open_orders", type="order_list", description="i18n:ports.open_orders", fields=ORDER_LIST_FIELDS),
         OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=POSITION_FIELDS),
     ]
 
@@ -226,11 +230,11 @@ class OverseasStockRealOrderEventNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="accepted", type="order_event", description="i18n:ports.accepted"),
-        OutputPort(name="filled", type="order_event", description="i18n:ports.filled"),
-        OutputPort(name="modified", type="order_event", description="i18n:ports.modified"),
-        OutputPort(name="cancelled", type="order_event", description="i18n:ports.cancelled"),
-        OutputPort(name="rejected", type="order_event", description="i18n:ports.rejected"),
+        OutputPort(name="accepted", type="order_event", description="i18n:ports.accepted", fields=ORDER_EVENT_FIELDS),
+        OutputPort(name="filled", type="order_event", description="i18n:ports.filled", fields=ORDER_EVENT_FIELDS),
+        OutputPort(name="modified", type="order_event", description="i18n:ports.modified", fields=ORDER_EVENT_FIELDS),
+        OutputPort(name="cancelled", type="order_event", description="i18n:ports.cancelled", fields=ORDER_EVENT_FIELDS),
+        OutputPort(name="rejected", type="order_event", description="i18n:ports.rejected", fields=ORDER_EVENT_FIELDS),
     ]
 
     @classmethod

@@ -19,6 +19,7 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     HISTORICAL_DATA_FIELDS,
+    SYMBOL_LIST_FIELDS,
 )
 
 
@@ -67,7 +68,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="values", type="array", description="i18n:ports.values", fields=HISTORICAL_DATA_FIELDS),
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols"),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
     ]
 
     @classmethod

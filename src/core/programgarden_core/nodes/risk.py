@@ -16,6 +16,7 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    QUANTITY_FIELDS,
     SYMBOL_LIST_FIELDS,
 )
 
@@ -90,6 +91,7 @@ class PositionSizingNode(BaseNode):
             name="quantity",
             type="dict",
             description="i18n:ports.quantity",
+            fields=QUANTITY_FIELDS,
         ),
         OutputPort(
             name="symbols",

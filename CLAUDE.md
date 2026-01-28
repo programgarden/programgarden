@@ -75,7 +75,7 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 - **Plugins**: Referenced via `plugin` field in ConditionNode, NewOrderNode, etc.
 - **Credentials**: Referenced by `credential_id`, defined in `credentials` section as a list
 
-### Node Categories (11, 42 nodes)
+### Node Categories (12, 46 nodes)
 
 | Category | Nodes |
 |----------|-------|
@@ -88,7 +88,7 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 | risk | PortfolioNode |
 | schedule | ScheduleNode, TradingHoursFilterNode |
 | data | SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode |
-| display | DisplayNode |
+| display | TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
 | analysis | BacktestEngineNode, BenchmarkCompareNode |
 
 ### ExecutionListener Callbacks

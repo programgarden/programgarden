@@ -1,7 +1,7 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-40개 노드 타입을 카테고리로 분류:
+46개 노드 타입을 카테고리로 분류:
 - infra (2): StartNode, ThrottleNode
 - broker (2): OverseasStockBrokerNode, OverseasFuturesBrokerNode
 - market (12): OverseasStockMarketDataNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
@@ -14,8 +14,8 @@ ProgramGarden Core - 노드 타입 정의
 - risk (2): PositionSizingNode, PortfolioNode
 - order (6): OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode,
              OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode
-- display (1): DisplayNode
-- backtest (2): BacktestEngineNode, BenchmarkCompareNode
+- display (6): TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode
+- analysis (2): BacktestEngineNode, BenchmarkCompareNode
 - data (4): SQLiteNode, PostgresNode, HTTPRequestNode, FieldMappingNode
 - messaging: 커뮤니티 노드 (TelegramNode 등)
 """
@@ -66,7 +66,14 @@ from programgarden_core.nodes.order import (
     OverseasFuturesCancelOrderNode,
 )
 # messaging 노드는 커뮤니티 패키지(TelegramNode 등)에서 제공
-from programgarden_core.nodes.display import DisplayNode
+from programgarden_core.nodes.display import (
+    TableDisplayNode,
+    LineChartNode,
+    MultiLineChartNode,
+    CandlestickChartNode,
+    BarChartNode,
+    SummaryDisplayNode,
+)
 from programgarden_core.nodes.backtest import (
     BacktestEngineNode,
     BenchmarkCompareNode,
@@ -130,8 +137,13 @@ __all__ = [
     "OverseasFuturesModifyOrderNode",
     "OverseasFuturesCancelOrderNode",
     # messaging - 커뮤니티 노드(TelegramNode 등)에서 제공
-    # Display
-    "DisplayNode",
+    # Display (6개)
+    "TableDisplayNode",
+    "LineChartNode",
+    "MultiLineChartNode",
+    "CandlestickChartNode",
+    "BarChartNode",
+    "SummaryDisplayNode",
     # Backtest/Analysis
     "BacktestEngineNode",
     "BenchmarkCompareNode",

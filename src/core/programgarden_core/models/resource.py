@@ -365,7 +365,12 @@ DEFAULT_NODE_HINTS: Dict[str, ResourceHints] = {
 
     # 기타
     "ScheduleNode": ResourceHints(weight=0.1, priority=5),
-    "DisplayNode": ResourceHints(weight=0.2, priority=2),
+    "TableDisplayNode": ResourceHints(weight=0.2, priority=2),
+    "LineChartNode": ResourceHints(weight=0.2, priority=2),
+    "MultiLineChartNode": ResourceHints(weight=0.2, priority=2),
+    "CandlestickChartNode": ResourceHints(weight=0.2, priority=2),
+    "BarChartNode": ResourceHints(weight=0.2, priority=2),
+    "SummaryDisplayNode": ResourceHints(weight=0.2, priority=2),
     "AlertNode": ResourceHints(weight=0.3, priority=6),
 }
 

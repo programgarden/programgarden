@@ -16,6 +16,10 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    ALLOCATED_CAPITAL_FIELDS,
+    EQUITY_CURVE_FIELDS,
+    ORDER_LIST_FIELDS,
+    PERFORMANCE_METRICS_FIELDS,
 )
 
 
@@ -119,22 +123,26 @@ class PortfolioNode(BaseNode):
             name="combined_equity",
             type="portfolio_result",
             description="i18n:ports.combined_equity",
+            fields=EQUITY_CURVE_FIELDS,
         ),
         OutputPort(
             name="combined_metrics",
             type="performance_summary",
             description="i18n:ports.combined_metrics",
+            fields=PERFORMANCE_METRICS_FIELDS,
         ),
         OutputPort(
             name="allocation_weights",
             type="dict",
             description="i18n:ports.allocation_weights",
+            fields=ALLOCATED_CAPITAL_FIELDS,
         ),
         # 실거래용 출력
         OutputPort(
             name="rebalance_orders",
             type="order_list",
             description="i18n:ports.rebalance_orders",
+            fields=ORDER_LIST_FIELDS,
         ),
         OutputPort(
             name="rebalance_signal",
@@ -146,6 +154,7 @@ class PortfolioNode(BaseNode):
             name="allocated_capital",
             type="dict",
             description="i18n:ports.allocated_capital",
+            fields=ALLOCATED_CAPITAL_FIELDS,
         ),
     ]
 

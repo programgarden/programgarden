@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:json_dynamic_widget/json_dynamic_widget.dart';
+import '../api_config.dart';
 import '../widgets/checkbox_builder.dart';
 import '../widgets/code_editor_builder.dart';
 import '../widgets/creatable_select_builder.dart';
@@ -377,8 +378,9 @@ class _NodeTypesPageState extends State<NodeTypesPage> {
     });
 
     try {
+      await ApiConfig.resolve();
       final response = await http.get(
-        Uri.parse('http://localhost:8766/api/node-types?locale=ko'),
+        ApiConfig.uri('/api/node-types', queryParams: {'locale': 'ko'}),
       );
 
       if (response.statusCode == 200) {
@@ -1176,6 +1178,9 @@ class _NodeDetailDialogState extends State<NodeDetailDialog>
     final name = port['name'] as String? ?? '';
     final type = port['type'] as String? ?? '';
     final description = port['description'] as String? ?? '';
+    final fields = port['fields'] as List?;
+    final isRequired = port['required'] as bool? ?? false;
+    final isMultiple = port['multiple'] as bool? ?? false;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1185,45 +1190,150 @@ class _NodeDetailDialogState extends State<NodeDetailDialog>
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: color.withOpacity(0.2)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              name,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-                color: color.withOpacity(0.9),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  type,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  name,
                   style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[600],
-                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: color.withOpacity(0.9),
                   ),
                 ),
-                if (description.isNotEmpty)
-                  Text(
-                    description,
-                    style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+              ),
+              if (isRequired)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(
+                    '*',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red[600],
+                    ),
                   ),
-              ],
-            ),
+                ),
+              if (isMultiple)
+                Container(
+                  margin: const EdgeInsets.only(left: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[100],
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    'N',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange[800],
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      type,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[600],
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    if (description.isNotEmpty)
+                      Text(
+                        description,
+                        style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          // OutputPort.fields 서브필드 표시
+          if (fields != null && fields.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              margin: const EdgeInsets.only(left: 12),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.03),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: color.withOpacity(0.1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'fields',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ...fields.map((field) {
+                    final f = field as Map<String, dynamic>;
+                    final fName = f['name'] as String? ?? '';
+                    final fType = f['type'] as String? ?? '';
+                    final fDesc = f['description'] as String? ?? '';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Row(
+                        children: [
+                          Text(
+                            fName,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: color.withOpacity(0.8),
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            fType,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[500],
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          if (fDesc.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                fDesc,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[600],
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

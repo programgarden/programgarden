@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:json_dynamic_widget/json_dynamic_widget.dart';
+import '../api_config.dart';
 
 part 'creatable_select_builder.g.dart';
 
@@ -81,7 +82,7 @@ class _CreatableSelectState extends State<_CreatableSelect> {
     setState(() => _isLoading = true);
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:8766/api/files/${widget.source}'),
+        ApiConfig.uri('/api/files/${widget.source}'),
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -102,9 +103,7 @@ class _CreatableSelectState extends State<_CreatableSelect> {
 
     try {
       final response = await http.delete(
-        Uri.parse(
-          'http://localhost:8766/api/files/${widget.source}/$name',
-        ),
+        ApiConfig.uri('/api/files/${widget.source}/$name'),
       );
       if (response.statusCode == 200) {
         if (_selectedValue == name) {

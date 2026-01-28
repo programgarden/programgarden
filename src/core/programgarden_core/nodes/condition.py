@@ -18,6 +18,7 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    CONDITION_RESULT_FIELDS,
     SYMBOL_LIST_FIELDS,
 )
 
@@ -119,6 +120,7 @@ class ConditionNode(PluginNode):
             name="result",
             type="condition_result",
             description="i18n:ports.result",
+            fields=CONDITION_RESULT_FIELDS,
         ),
         OutputPort(
             name="passed_symbols",
@@ -324,6 +326,7 @@ class LogicNode(BaseNode):
             name="result",
             type="condition_result",
             description="i18n:ports.result",
+            fields=CONDITION_RESULT_FIELDS,
         ),
         OutputPort(
             name="passed_symbols",

@@ -21,6 +21,9 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    EQUITY_CURVE_FIELDS,
+    PERFORMANCE_METRICS_FIELDS,
+    TRADE_FIELDS,
 )
 
 
@@ -210,21 +213,25 @@ class BacktestEngineNode(BaseNode):
             name="equity_curve",
             type="portfolio_result",
             description="i18n:ports.equity_curve",
+            fields=EQUITY_CURVE_FIELDS,
         ),
         OutputPort(
             name="trades",
             type="trade_list",
             description="i18n:ports.trades",
+            fields=TRADE_FIELDS,
         ),
         OutputPort(
             name="metrics",
             type="performance_summary",
             description="i18n:ports.metrics",
+            fields=PERFORMANCE_METRICS_FIELDS,
         ),
         OutputPort(
             name="summary",
             type="performance_summary",
             description="i18n:ports.summary",
+            fields=PERFORMANCE_METRICS_FIELDS,
         ),
     ]
 
@@ -640,16 +647,19 @@ class BenchmarkCompareNode(BaseNode):
             name="combined_curve",
             type="array",
             description="i18n:ports.combined_curve",
+            fields=EQUITY_CURVE_FIELDS,
         ),
         OutputPort(
             name="comparison_metrics",
             type="array",
             description="i18n:ports.comparison_metrics",
+            fields=PERFORMANCE_METRICS_FIELDS,
         ),
         OutputPort(
             name="ranking",
             type="array",
             description="i18n:ports.ranking",
+            fields=PERFORMANCE_METRICS_FIELDS,
         ),
         OutputPort(
             name="strategies_meta",

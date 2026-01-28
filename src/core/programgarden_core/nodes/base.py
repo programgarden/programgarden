@@ -26,41 +26,44 @@ class BrokerProvider(str, Enum):
 
 class NodeCategory(str, Enum):
     """
-    노드 카테고리 (10개 - 금융 도메인 기준)
+    노드 카테고리 (11개 - 금융 도메인 기준)
 
     투자자가 직관적으로 이해할 수 있는 금융 용어 기반 분류
     """
 
     # 인프라: 워크플로우 시작점, 브로커 연결
     INFRA = "infra"
-    
+
     # 계좌: 잔고, 포지션, 체결 내역 (실시간/REST)
     ACCOUNT = "account"
-    
+
     # 시장: 시세, 종목 목록, 과거 데이터
     MARKET = "market"
-    
+
     # 조건: 매매 조건 판단 (기술적 분석, 로직 조합)
     CONDITION = "condition"
-    
+
     # 주문: 신규/정정/취소 주문, 포지션 사이징
     ORDER = "order"
-    
+
     # 리스크: 리스크 관리, 포트폴리오 배분
     RISK = "risk"
-    
+
     # 스케줄: 시간 기반 트리거, 거래시간 필터
     SCHEDULE = "schedule"
-    
+
     # 데이터: 외부 DB/API 연동 (SQLite, Postgres, HTTP)
     DATA = "data"
-    
-    # 분석: 백테스트, 차트, 성과 계산
+
+    # 분석: 백테스트, 성과 계산
     ANALYSIS = "analysis"
-    
+
+    # 디스플레이: 차트, 테이블, 요약 시각화
+    DISPLAY = "display"
+
     # 시스템: Job 제어, 서브플로우
     SYSTEM = "system"
-    
+
     # 메시징: 텔레그램, 슬랙, 디스코드 등 알림
     MESSAGING = "messaging"
 
@@ -139,6 +142,98 @@ HISTORICAL_DATA_FIELDS: List[Dict[str, str]] = [
     {"name": "low", "type": "number", "description": "저가"},
     {"name": "close", "type": "number", "description": "종가"},
     {"name": "volume", "type": "number", "description": "거래량"},
+]
+
+ORDER_LIST_FIELDS: List[Dict[str, str]] = [
+    {"name": "order_id", "type": "string", "description": "주문번호"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
+    {"name": "order_type", "type": "string", "description": "주문유형 (market/limit)"},
+    {"name": "quantity", "type": "number", "description": "주문수량"},
+    {"name": "price", "type": "number", "description": "주문가격"},
+    {"name": "status", "type": "string", "description": "주문 상태"},
+]
+
+ORDER_EVENT_FIELDS: List[Dict[str, str]] = [
+    {"name": "order_id", "type": "string", "description": "주문번호"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "side", "type": "string", "description": "매매구분"},
+    {"name": "quantity", "type": "number", "description": "주문수량"},
+    {"name": "filled_quantity", "type": "number", "description": "체결수량"},
+    {"name": "price", "type": "number", "description": "주문가격"},
+    {"name": "filled_price", "type": "number", "description": "체결가격"},
+    {"name": "event_type", "type": "string", "description": "이벤트 유형"},
+    {"name": "timestamp", "type": "string", "description": "이벤트 시각"},
+]
+
+OHLCV_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "timestamp", "type": "string", "description": "캔들 시각"},
+]
+
+MARKET_DATA_FULL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "bid_price", "type": "number", "description": "매수호가"},
+    {"name": "ask_price", "type": "number", "description": "매도호가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "timestamp", "type": "string", "description": "시세 시각"},
+]
+
+CONDITION_RESULT_FIELDS: List[Dict[str, str]] = [
+    {"name": "passed", "type": "boolean", "description": "조건 충족 여부"},
+    {"name": "value", "type": "number", "description": "계산된 지표 값"},
+    {"name": "threshold", "type": "number", "description": "비교 기준값"},
+    {"name": "direction", "type": "string", "description": "비교 방향 (above/below/cross)"},
+]
+
+EQUITY_CURVE_FIELDS: List[Dict[str, str]] = [
+    {"name": "date", "type": "string", "description": "날짜"},
+    {"name": "equity", "type": "number", "description": "자산 가치"},
+    {"name": "drawdown", "type": "number", "description": "낙폭 (%)"},
+    {"name": "returns", "type": "number", "description": "수익률"},
+]
+
+TRADE_FIELDS: List[Dict[str, str]] = [
+    {"name": "date", "type": "string", "description": "거래일"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "side", "type": "string", "description": "매매구분"},
+    {"name": "quantity", "type": "number", "description": "수량"},
+    {"name": "price", "type": "number", "description": "가격"},
+    {"name": "pnl", "type": "number", "description": "손익"},
+]
+
+PERFORMANCE_METRICS_FIELDS: List[Dict[str, str]] = [
+    {"name": "total_return", "type": "number", "description": "총 수익률 (%)"},
+    {"name": "annualized_return", "type": "number", "description": "연환산 수익률 (%)"},
+    {"name": "max_drawdown", "type": "number", "description": "최대 낙폭 (%)"},
+    {"name": "sharpe_ratio", "type": "number", "description": "샤프 비율"},
+    {"name": "win_rate", "type": "number", "description": "승률 (%)"},
+    {"name": "trade_count", "type": "integer", "description": "거래 횟수"},
+]
+
+QUANTITY_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "quantity", "type": "number", "description": "산출 수량"},
+    {"name": "weight", "type": "number", "description": "비중 (%)"},
+]
+
+ALLOCATED_CAPITAL_FIELDS: List[Dict[str, str]] = [
+    {"name": "strategy_id", "type": "string", "description": "전략 ID"},
+    {"name": "allocated", "type": "number", "description": "배분 금액"},
+    {"name": "weight", "type": "number", "description": "배분 비중 (%)"},
 ]
 
 

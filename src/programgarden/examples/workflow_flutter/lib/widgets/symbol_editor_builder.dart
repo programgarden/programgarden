@@ -21,8 +21,10 @@ part 'symbol_editor_builder.g.dart';
 ///     "expressionMode": "both",
 ///     "objectSchema": [...],
 ///     "uiOptions": {
-///       "exchanges_by_product": {...},
-///       "default_product_type": "overseas_stock"
+///       "exchanges": [
+///         {"value": "NASDAQ", "label": "NASDAQ"},
+///         {"value": "NYSE", "label": "NYSE"}
+///       ]
 ///     }
 ///   }
 /// }
@@ -139,16 +141,6 @@ class _SymbolEditorState extends State<_SymbolEditor> {
     }
   }
 
-  /// 현재 선택된 상품유형 가져오기
-  String get _selectedProductType => _currentProductType;
-
-  /// 상품유형 변경 시 종목 테이블 초기화
-  void _validateExchangesForProductType() {
-    // 상품유형 변경 시 종목 목록 초기화 (거래소가 완전히 달라지므로)
-    _symbols.clear();
-    _notifyValueChanged();
-  }
-
   /// uiOptions를 안전하게 Map으로 변환
   Map<String, dynamic>? get _safeUiOptions {
     if (widget.uiOptions == null) return null;
@@ -181,16 +173,12 @@ class _SymbolEditorState extends State<_SymbolEditor> {
     }).toList();
   }
 
-  /// 상품유형별 거래소 목록 가져오기
+  /// 거래소 목록 가져오기
   List<Map<String, String>> _getExchangesForProductType() {
     final uiOptions = _safeUiOptions;
     if (uiOptions == null) return [];
 
-    final exchangesByProduct = uiOptions['exchanges_by_product'];
-    if (exchangesByProduct == null || exchangesByProduct is! Map) return [];
-
-    final exchangesMap = Map<String, dynamic>.from(exchangesByProduct as Map);
-    final exchanges = exchangesMap[_selectedProductType];
+    final exchanges = uiOptions['exchanges'];
     if (exchanges == null || exchanges is! List) return [];
 
     return exchanges.map((e) {

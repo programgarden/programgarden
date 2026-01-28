@@ -117,13 +117,6 @@ def translate_schema(schema: Dict[str, Any], locale: Optional[str] = None) -> Di
             _translate_port(port, loc) for port in result["outputs"]
         ]
     
-    # Translate config_schema (pass node_type for auto-key generation)
-    if "config_schema" in result:
-        result["config_schema"] = {
-            k: _translate_field(k, v, loc, node_type)
-            for k, v in result["config_schema"].items()
-        }
-    
     # Translate widget_schema (Flutter dynamic widget JSON)
     if "widget_schema" in result and isinstance(result["widget_schema"], dict):
         result["widget_schema"] = _translate_widget_schema(result["widget_schema"], loc, node_type)
@@ -276,83 +269,6 @@ def _translate_widget_schema(widget: Dict[str, Any], locale: str, node_type: str
                 args["expressionHelperText"] = t(helper[5:], locale)
         
         result["args"] = args
-    
-    return result
-
-
-def _translate_field(field_name: str, field: Dict[str, Any], locale: str, node_type: str = "") -> Dict[str, Any]:
-    """Translate a field definition.
-    
-    If description starts with 'i18n:', use that key.
-    Otherwise, try auto-generated key: fields.{NodeType}.{field_name}
-    If no translation found, keep original description.
-    
-    Also translates enum_labels if they contain i18n keys.
-    Also recursively translates object_schema if present.
-    Also generates display_name with Title Case fallback.
-    """
-    result = field.copy()
-    
-    # === display_name 번역 또는 생성 ===
-    if "display_name" in result and isinstance(result["display_name"], str):
-        dn = result["display_name"]
-        if dn.startswith("i18n:"):
-            result["display_name"] = t(dn[5:], locale)
-    else:
-        # Auto-generate: fieldNames.{NodeType}.{field_name} 또는 Title Case fallback
-        if node_type:
-            auto_key = f"fieldNames.{node_type}.{field_name}"
-            translated = t(auto_key, locale)
-            if translated != auto_key:
-                result["display_name"] = translated
-            else:
-                # Title Case fallback: product_type → "Product Type"
-                result["display_name"] = field_name.replace("_", " ").title()
-        else:
-            # No node_type context, use Title Case
-            result["display_name"] = field_name.replace("_", " ").title()
-    
-    # Translate description
-    if "description" in result and isinstance(result["description"], str):
-        desc = result["description"]
-        if desc.startswith("i18n:"):
-            # Explicit i18n key
-            result["description"] = t(desc[5:], locale)
-        elif node_type:
-            # Try auto-generated key
-            auto_key = f"fields.{node_type}.{field_name}"
-            translated = t(auto_key, locale)
-            # Only use translation if it's different from the key (i.e., translation exists)
-            if translated != auto_key:
-                result["description"] = translated
-            # Otherwise keep original description
-    
-    # Translate enum_labels
-    if "enum_labels" in result and isinstance(result["enum_labels"], dict):
-        translated_labels = {}
-        for enum_value, label in result["enum_labels"].items():
-            if isinstance(label, str) and label.startswith("i18n:"):
-                # Translate i18n key
-                translated_labels[enum_value] = t(label[5:], locale)
-            else:
-                # Keep original label
-                translated_labels[enum_value] = label
-        result["enum_labels"] = translated_labels
-    
-    # Recursively translate object_schema (for condition_list, key_value_editor, etc.)
-    if "object_schema" in result and isinstance(result["object_schema"], dict):
-        translated_object_schema = {}
-        for sub_field_name, sub_field in result["object_schema"].items():
-            if isinstance(sub_field, dict):
-                # Translate nested field with parent context
-                # Use key like: fields.{NodeType}.{parent_field}.{sub_field}
-                nested_node_type = f"{node_type}.{field_name}" if node_type else field_name
-                translated_object_schema[sub_field_name] = _translate_field(
-                    sub_field_name, sub_field, locale, nested_node_type
-                )
-            else:
-                translated_object_schema[sub_field_name] = sub_field
-        result["object_schema"] = translated_object_schema
     
     return result
 

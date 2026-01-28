@@ -1,13 +1,17 @@
 """
-ProgramGarden Core - Display Node
+ProgramGarden Core - Display Nodes
 
-명시적 chart_type 기반 시각화 노드
-- chart_type별 필수/선택 필드 정의
-- 자동 감지 없음, 모든 필드 명시적 지정
+차트/테이블/요약 시각화 노드 (6개)
+- TableDisplayNode: 테이블/그리드 표시
+- LineChartNode: 단일 라인 차트
+- MultiLineChartNode: 다중 시리즈 라인 차트
+- CandlestickChartNode: OHLCV 캔들스틱 차트
+- BarChartNode: 막대 차트
+- SummaryDisplayNode: JSON/요약 데이터 표시
 """
 
-from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING, Union
-from pydantic import Field, model_validator
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
+from pydantic import Field
 
 if TYPE_CHECKING:
     from programgarden_core.models.field_binding import FieldSchema
@@ -20,147 +24,27 @@ from programgarden_core.nodes.base import (
 )
 
 
-class DisplayNode(BaseNode):
-    """
-    명시적 chart_type 기반 시각화 노드
-    
-    차트 타입별 필수 필드:
-    - table: data
-    - line: data, x_field, y_field
-    - multi_line: data, x_field, y_field, series_key
-    - candlestick: data, date_field, open_field, high_field, low_field, close_field
-    - bar: data, x_field, y_field
-    - summary: data (raw JSON 표시)
-    
-    중첩 데이터 평탄화는 pluck() 함수 사용:
-    {{ pluck(nodes.rsiCondition.values, 'time_series') }}
-    """
+class BaseDisplayNode(BaseNode):
+    """Display 노드 공통 베이스"""
 
-    type: Literal["DisplayNode"] = "DisplayNode"
-    category: NodeCategory = NodeCategory.ANALYSIS
-    description: str = "i18n:nodes.DisplayNode.description"
+    category: NodeCategory = NodeCategory.DISPLAY
 
-    # ========================================
-    # 공통 필드
-    # ========================================
-    chart_type: Literal[
-        "table", "line", "multi_line", "candlestick", "bar", "summary"
-    ] = Field(
-        default="summary",
-        description="차트 타입",
-    )
-    
     title: Optional[str] = Field(
         default=None,
         description="차트 제목",
     )
-    
+
     data: Optional[str] = Field(
         default=None,
-        description="데이터 바인딩 (예: {{ nodes.rsiCondition.time_series }})",
-    )
-    
-    # ========================================
-    # line / multi_line / bar 공통
-    # ========================================
-    x_field: Optional[str] = Field(
-        default=None,
-        description="X축 필드명 (예: date)",
-    )
-    
-    y_field: Optional[str] = Field(
-        default=None,
-        description="Y축 필드명 (예: rsi)",
-    )
-    
-    # ========================================
-    # multi_line 전용
-    # ========================================
-    series_key: Optional[str] = Field(
-        default=None,
-        description="시리즈 구분 키 (multi_line용, 예: symbol)",
-    )
-    
-    limit: Optional[int] = Field(
-        default=10,
-        description="최대 표시 개수",
-        ge=1,
-        le=100,
-    )
-    
-    sort_by: Optional[str] = Field(
-        default=None,
-        description="정렬 기준 필드",
-    )
-    
-    sort_order: Optional[Literal["asc", "desc"]] = Field(
-        default="desc",
-        description="정렬 순서",
-    )
-    
-    # ========================================
-    # candlestick 전용
-    # ========================================
-    date_field: Optional[str] = Field(
-        default=None,
-        description="날짜 필드명 (candlestick용)",
-    )
-    
-    open_field: Optional[str] = Field(
-        default=None,
-        description="시가 필드명 (candlestick용)",
-    )
-    
-    high_field: Optional[str] = Field(
-        default=None,
-        description="고가 필드명 (candlestick용)",
-    )
-    
-    low_field: Optional[str] = Field(
-        default=None,
-        description="저가 필드명 (candlestick용)",
-    )
-    
-    close_field: Optional[str] = Field(
-        default=None,
-        description="종가 필드명 (candlestick용)",
-    )
-    
-    volume_field: Optional[str] = Field(
-        default=None,
-        description="거래량 필드명 (candlestick용, 선택)",
-    )
-    
-    # ========================================
-    # 시그널 마커 (line, multi_line, candlestick)
-    # ========================================
-    signal_field: Optional[str] = Field(
-        default=None,
-        description="시그널 필드명 (예: signal). buy/sell 값이 있으면 마커 표시",
-    )
-    
-    side_field: Optional[str] = Field(
-        default=None,
-        description="포지션 방향 필드명 (예: side). long/short 구분. 미지정시 long으로 간주",
-    )
-    
-    # ========================================
-    # table 전용
-    # ========================================
-    columns: Optional[List[str]] = Field(
-        default=None,
-        description="표시할 컬럼 목록 (미지정시 전체)",
+        description="데이터 바인딩 (예: {{ nodes.condition.values }})",
     )
 
-    # ========================================
-    # 포트 정의
-    # ========================================
     _inputs: List[InputPort] = [
         InputPort(
             name="data",
             type="any",
             description="i18n:ports.data",
-            required=False,  # data 필드로 바인딩할 수도 있음
+            required=False,
         ),
         InputPort(
             name="trigger",
@@ -177,71 +61,13 @@ class DisplayNode(BaseNode):
         ),
     ]
 
-    @model_validator(mode="after")
-    def validate_chart_type_fields(self):
-        """chart_type에 따른 필수 필드 검증"""
-        chart_type = self.chart_type
-        errors = []
-        
-        # data는 모든 타입에서 필수 (바인딩 또는 엣지로)
-        # data 필드가 없어도 엣지로 연결될 수 있으므로 여기선 검증하지 않음
-        
-        if chart_type == "line":
-            if not self.x_field:
-                errors.append("x_field")
-            if not self.y_field:
-                errors.append("y_field")
-                
-        elif chart_type == "multi_line":
-            if not self.x_field:
-                errors.append("x_field")
-            if not self.y_field:
-                errors.append("y_field")
-            if not self.series_key:
-                errors.append("series_key")
-                
-        elif chart_type == "candlestick":
-            if not self.date_field:
-                errors.append("date_field")
-            if not self.open_field:
-                errors.append("open_field")
-            if not self.high_field:
-                errors.append("high_field")
-            if not self.low_field:
-                errors.append("low_field")
-            if not self.close_field:
-                errors.append("close_field")
-                
-        elif chart_type == "bar":
-            if not self.x_field:
-                errors.append("x_field")
-            if not self.y_field:
-                errors.append("y_field")
-        
-        # table과 summary는 data만 있으면 됨
-        
-        if errors:
-            raise ValueError(
-                f"chart_type '{chart_type}'에 필수 필드 누락: {', '.join(errors)}"
-            )
-        
-        return self
-
     @classmethod
-    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+    def _common_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        """공통 필드 스키마 (title, data)"""
         from programgarden_core.models.field_binding import (
             FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
-            "chart_type": FieldSchema(
-                name="chart_type",
-                type=FieldType.ENUM,
-                description="차트 타입",
-                enum_values=["table", "line", "multi_line", "candlestick", "bar", "summary"],
-                default="summary",
-                category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-            ),
             "title": FieldSchema(
                 name="title",
                 type=FieldType.STRING,
@@ -265,6 +91,115 @@ class DisplayNode(BaseNode):
                     "RealMarketDataNode.data",
                 ],
             ),
+        }
+
+
+class TableDisplayNode(BaseDisplayNode):
+    """테이블/그리드 형태로 데이터를 표시"""
+
+    type: Literal["TableDisplayNode"] = "TableDisplayNode"
+    description: str = "i18n:nodes.TableDisplayNode.description"
+
+    columns: Optional[List[str]] = Field(
+        default=None,
+        description="표시할 컬럼 목록 (미지정시 전체)",
+    )
+
+    limit: Optional[int] = Field(
+        default=10,
+        description="최대 표시 개수",
+        ge=1,
+        le=100,
+    )
+
+    sort_by: Optional[str] = Field(
+        default=None,
+        description="정렬 기준 필드",
+    )
+
+    sort_order: Optional[Literal["asc", "desc"]] = Field(
+        default="desc",
+        description="정렬 순서",
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        schema = cls._common_field_schema()
+        schema.update({
+            "columns": FieldSchema(
+                name="columns",
+                type=FieldType.ARRAY,
+                description="표시할 컬럼 목록",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_options={"multiple": True},
+            ),
+            "limit": FieldSchema(
+                name="limit",
+                type=FieldType.INTEGER,
+                description="최대 표시 개수",
+                default=10,
+                min_value=1,
+                max_value=100,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+            "sort_by": FieldSchema(
+                name="sort_by",
+                type=FieldType.STRING,
+                description="정렬 기준 필드",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+            "sort_order": FieldSchema(
+                name="sort_order",
+                type=FieldType.ENUM,
+                description="정렬 순서",
+                enum_values=["asc", "desc"],
+                default="desc",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+        })
+        return schema
+
+
+class LineChartNode(BaseDisplayNode):
+    """시계열 라인 차트"""
+
+    type: Literal["LineChartNode"] = "LineChartNode"
+    description: str = "i18n:nodes.LineChartNode.description"
+
+    x_field: Optional[str] = Field(
+        default=None,
+        description="X축 필드명 (예: date)",
+    )
+
+    y_field: Optional[str] = Field(
+        default=None,
+        description="Y축 필드명 (예: rsi)",
+    )
+
+    signal_field: Optional[str] = Field(
+        default=None,
+        description="시그널 필드명 (buy/sell 마커 표시)",
+    )
+
+    side_field: Optional[str] = Field(
+        default=None,
+        description="포지션 방향 필드명 (long/short 구분)",
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        schema = cls._common_field_schema()
+        schema.update({
             "x_field": FieldSchema(
                 name="x_field",
                 type=FieldType.STRING,
@@ -272,7 +207,7 @@ class DisplayNode(BaseNode):
                 placeholder="date",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["line", "multi_line", "bar"]},
+                required=True,
                 group="field_mapping",
             ),
             "y_field": FieldSchema(
@@ -282,7 +217,104 @@ class DisplayNode(BaseNode):
                 placeholder="rsi",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["line", "multi_line", "bar"]},
+                required=True,
+                group="field_mapping",
+            ),
+            "signal_field": FieldSchema(
+                name="signal_field",
+                type=FieldType.STRING,
+                description="시그널 필드명 (buy/sell 마커 표시)",
+                placeholder="signal",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                group="field_mapping",
+            ),
+            "side_field": FieldSchema(
+                name="side_field",
+                type=FieldType.STRING,
+                description="포지션 방향 필드명 (long/short 구분)",
+                placeholder="side",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                group="field_mapping",
+            ),
+        })
+        return schema
+
+
+class MultiLineChartNode(BaseDisplayNode):
+    """다중 시리즈 라인 차트"""
+
+    type: Literal["MultiLineChartNode"] = "MultiLineChartNode"
+    description: str = "i18n:nodes.MultiLineChartNode.description"
+
+    x_field: Optional[str] = Field(
+        default=None,
+        description="X축 필드명 (예: date)",
+    )
+
+    y_field: Optional[str] = Field(
+        default=None,
+        description="Y축 필드명 (예: rsi)",
+    )
+
+    series_key: Optional[str] = Field(
+        default=None,
+        description="시리즈 구분 키 (예: symbol)",
+    )
+
+    signal_field: Optional[str] = Field(
+        default=None,
+        description="시그널 필드명 (buy/sell 마커 표시)",
+    )
+
+    side_field: Optional[str] = Field(
+        default=None,
+        description="포지션 방향 필드명 (long/short 구분)",
+    )
+
+    limit: Optional[int] = Field(
+        default=10,
+        description="최대 표시 개수",
+        ge=1,
+        le=100,
+    )
+
+    sort_by: Optional[str] = Field(
+        default=None,
+        description="정렬 기준 필드",
+    )
+
+    sort_order: Optional[Literal["asc", "desc"]] = Field(
+        default="desc",
+        description="정렬 순서",
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        schema = cls._common_field_schema()
+        schema.update({
+            "x_field": FieldSchema(
+                name="x_field",
+                type=FieldType.STRING,
+                description="X축 필드명",
+                placeholder="date",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                required=True,
+                group="field_mapping",
+            ),
+            "y_field": FieldSchema(
+                name="y_field",
+                type=FieldType.STRING,
+                description="Y축 필드명",
+                placeholder="rsi",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                required=True,
                 group="field_mapping",
             ),
             "series_key": FieldSchema(
@@ -292,7 +324,25 @@ class DisplayNode(BaseNode):
                 placeholder="symbol",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["multi_line"]},
+                required=True,
+                group="field_mapping",
+            ),
+            "signal_field": FieldSchema(
+                name="signal_field",
+                type=FieldType.STRING,
+                description="시그널 필드명 (buy/sell 마커 표시)",
+                placeholder="signal",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                group="field_mapping",
+            ),
+            "side_field": FieldSchema(
+                name="side_field",
+                type=FieldType.STRING,
+                description="포지션 방향 필드명 (long/short 구분)",
+                placeholder="side",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 group="field_mapping",
             ),
             "limit": FieldSchema(
@@ -304,7 +354,6 @@ class DisplayNode(BaseNode):
                 max_value=100,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["multi_line", "table"]},
             ),
             "sort_by": FieldSchema(
                 name="sort_by",
@@ -312,7 +361,6 @@ class DisplayNode(BaseNode):
                 description="정렬 기준 필드",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["multi_line", "table"]},
             ),
             "sort_order": FieldSchema(
                 name="sort_order",
@@ -322,8 +370,64 @@ class DisplayNode(BaseNode):
                 default="desc",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["multi_line", "table"]},
             ),
+        })
+        return schema
+
+
+class CandlestickChartNode(BaseDisplayNode):
+    """OHLCV 캔들스틱 차트"""
+
+    type: Literal["CandlestickChartNode"] = "CandlestickChartNode"
+    description: str = "i18n:nodes.CandlestickChartNode.description"
+
+    date_field: Optional[str] = Field(
+        default=None,
+        description="날짜 필드명",
+    )
+
+    open_field: Optional[str] = Field(
+        default=None,
+        description="시가 필드명",
+    )
+
+    high_field: Optional[str] = Field(
+        default=None,
+        description="고가 필드명",
+    )
+
+    low_field: Optional[str] = Field(
+        default=None,
+        description="저가 필드명",
+    )
+
+    close_field: Optional[str] = Field(
+        default=None,
+        description="종가 필드명",
+    )
+
+    volume_field: Optional[str] = Field(
+        default=None,
+        description="거래량 필드명 (선택)",
+    )
+
+    signal_field: Optional[str] = Field(
+        default=None,
+        description="시그널 필드명 (buy/sell 마커 표시)",
+    )
+
+    side_field: Optional[str] = Field(
+        default=None,
+        description="포지션 방향 필드명 (long/short 구분)",
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        schema = cls._common_field_schema()
+        schema.update({
             "date_field": FieldSchema(
                 name="date_field",
                 type=FieldType.STRING,
@@ -331,7 +435,7 @@ class DisplayNode(BaseNode):
                 placeholder="date",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["candlestick"]},
+                required=True,
                 group="field_mapping",
             ),
             "open_field": FieldSchema(
@@ -341,7 +445,7 @@ class DisplayNode(BaseNode):
                 placeholder="open",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["candlestick"]},
+                required=True,
                 group="field_mapping",
             ),
             "high_field": FieldSchema(
@@ -351,7 +455,7 @@ class DisplayNode(BaseNode):
                 placeholder="high",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["candlestick"]},
+                required=True,
                 group="field_mapping",
             ),
             "low_field": FieldSchema(
@@ -361,7 +465,7 @@ class DisplayNode(BaseNode):
                 placeholder="low",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["candlestick"]},
+                required=True,
                 group="field_mapping",
             ),
             "close_field": FieldSchema(
@@ -371,7 +475,7 @@ class DisplayNode(BaseNode):
                 placeholder="close",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["candlestick"]},
+                required=True,
                 group="field_mapping",
             ),
             "volume_field": FieldSchema(
@@ -381,17 +485,7 @@ class DisplayNode(BaseNode):
                 placeholder="volume",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["candlestick"]},
                 group="field_mapping",
-            ),
-            "columns": FieldSchema(
-                name="columns",
-                type=FieldType.ARRAY,
-                description="표시할 컬럼 목록",
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_options={"multiple": True},
-                depends_on={"chart_type": ["table"]},
             ),
             "signal_field": FieldSchema(
                 name="signal_field",
@@ -400,7 +494,6 @@ class DisplayNode(BaseNode):
                 placeholder="signal",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["line", "multi_line", "candlestick"]},
                 group="field_mapping",
             ),
             "side_field": FieldSchema(
@@ -410,7 +503,65 @@ class DisplayNode(BaseNode):
                 placeholder="side",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                depends_on={"chart_type": ["line", "multi_line", "candlestick"]},
                 group="field_mapping",
             ),
-        }
+        })
+        return schema
+
+
+class BarChartNode(BaseDisplayNode):
+    """막대 차트"""
+
+    type: Literal["BarChartNode"] = "BarChartNode"
+    description: str = "i18n:nodes.BarChartNode.description"
+
+    x_field: Optional[str] = Field(
+        default=None,
+        description="X축 필드명",
+    )
+
+    y_field: Optional[str] = Field(
+        default=None,
+        description="Y축 필드명",
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        schema = cls._common_field_schema()
+        schema.update({
+            "x_field": FieldSchema(
+                name="x_field",
+                type=FieldType.STRING,
+                description="X축 필드명",
+                placeholder="category",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                required=True,
+                group="field_mapping",
+            ),
+            "y_field": FieldSchema(
+                name="y_field",
+                type=FieldType.STRING,
+                description="Y축 필드명",
+                placeholder="value",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                required=True,
+                group="field_mapping",
+            ),
+        })
+        return schema
+
+
+class SummaryDisplayNode(BaseDisplayNode):
+    """JSON/요약 데이터 표시"""
+
+    type: Literal["SummaryDisplayNode"] = "SummaryDisplayNode"
+    description: str = "i18n:nodes.SummaryDisplayNode.description"
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        return cls._common_field_schema()
