@@ -258,6 +258,7 @@
   "ports.failed": "실패",
   "ports.error_data": "에러 데이터",
   "ports.data": "데이터",
+  "ports.rendered": "렌더링 완료 신호",
   "ports.halted": "중단 신호",
   "ports.resume_at": "재개 시간",
   "ports.job_id": "Job ID",

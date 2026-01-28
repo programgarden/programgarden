@@ -217,6 +217,7 @@
   "ports.failed": "Failed",
   "ports.error_data": "Error data",
   "ports.data": "Data",
+  "ports.rendered": "Render completed signal",
   "ports.halted": "Halted signal",
   "ports.resume_at": "Resume time",
   "ports.job_id": "Job ID",

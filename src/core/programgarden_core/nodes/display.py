@@ -24,6 +24,48 @@ from programgarden_core.nodes.base import (
 )
 
 
+# ── OutputPort.fields 상수 (Display 노드용) ──
+
+TABLE_DISPLAY_FIELDS: List[Dict[str, Any]] = [
+    {"name": "columns", "type": "dynamic", "description": "표시할 컬럼 (설정에 따라 결정)"},
+]
+
+LINE_CHART_FIELDS: List[Dict[str, Any]] = [
+    {"name": "x", "type": "dynamic", "description": "X축 값 (x_field로 지정)"},
+    {"name": "y", "type": "dynamic", "description": "Y축 값 (y_field로 지정)"},
+    {"name": "signal", "type": "string", "description": "매매 시그널 (buy/sell)", "nullable": True},
+    {"name": "side", "type": "string", "description": "포지션 방향 (long/short)", "nullable": True},
+]
+
+MULTI_LINE_CHART_FIELDS: List[Dict[str, Any]] = [
+    {"name": "x", "type": "dynamic", "description": "X축 값 (x_field로 지정)"},
+    {"name": "y", "type": "dynamic", "description": "Y축 값 (y_field로 지정)"},
+    {"name": "series_key", "type": "dynamic", "description": "시리즈 구분 키 (series_key로 지정)"},
+    {"name": "signal", "type": "string", "description": "매매 시그널 (buy/sell)", "nullable": True},
+    {"name": "side", "type": "string", "description": "포지션 방향 (long/short)", "nullable": True},
+]
+
+CANDLESTICK_CHART_FIELDS: List[Dict[str, Any]] = [
+    {"name": "date", "type": "dynamic", "description": "날짜 (date_field로 지정)"},
+    {"name": "open", "type": "number", "description": "시가 (open_field로 지정)"},
+    {"name": "high", "type": "number", "description": "고가 (high_field로 지정)"},
+    {"name": "low", "type": "number", "description": "저가 (low_field로 지정)"},
+    {"name": "close", "type": "number", "description": "종가 (close_field로 지정)"},
+    {"name": "volume", "type": "number", "description": "거래량 (volume_field로 지정)", "nullable": True},
+    {"name": "signal", "type": "string", "description": "매매 시그널 (buy/sell)", "nullable": True},
+    {"name": "side", "type": "string", "description": "포지션 방향 (long/short)", "nullable": True},
+]
+
+BAR_CHART_FIELDS: List[Dict[str, Any]] = [
+    {"name": "x", "type": "dynamic", "description": "X축 값 (x_field로 지정)"},
+    {"name": "y", "type": "dynamic", "description": "Y축 값 (y_field로 지정)"},
+]
+
+SUMMARY_DISPLAY_FIELDS: List[Dict[str, Any]] = [
+    {"name": "data", "type": "any", "description": "요약 데이터 (JSON 객체 또는 원시값)"},
+]
+
+
 # ── 공통 data_schema 필드 ──
 
 _SIGNAL_FIELD = {
@@ -121,6 +163,10 @@ class TableDisplayNode(BaseDisplayNode):
     type: Literal["TableDisplayNode"] = "TableDisplayNode"
     description: str = "i18n:nodes.TableDisplayNode.description"
 
+    _outputs: List[OutputPort] = [
+        OutputPort(name="rendered", type="signal", description="i18n:ports.rendered", fields=TABLE_DISPLAY_FIELDS),
+    ]
+
     _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
         "type": "array",
         "description": "i18n:display_schema.table.description",
@@ -210,6 +256,10 @@ class LineChartNode(BaseDisplayNode):
 
     type: Literal["LineChartNode"] = "LineChartNode"
     description: str = "i18n:nodes.LineChartNode.description"
+
+    _outputs: List[OutputPort] = [
+        OutputPort(name="rendered", type="signal", description="i18n:ports.rendered", fields=LINE_CHART_FIELDS),
+    ]
 
     _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
         "type": "array",
@@ -310,6 +360,10 @@ class MultiLineChartNode(BaseDisplayNode):
 
     type: Literal["MultiLineChartNode"] = "MultiLineChartNode"
     description: str = "i18n:nodes.MultiLineChartNode.description"
+
+    _outputs: List[OutputPort] = [
+        OutputPort(name="rendered", type="signal", description="i18n:ports.rendered", fields=MULTI_LINE_CHART_FIELDS),
+    ]
 
     _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
         "type": "array",
@@ -475,6 +529,10 @@ class CandlestickChartNode(BaseDisplayNode):
 
     type: Literal["CandlestickChartNode"] = "CandlestickChartNode"
     description: str = "i18n:nodes.CandlestickChartNode.description"
+
+    _outputs: List[OutputPort] = [
+        OutputPort(name="rendered", type="signal", description="i18n:ports.rendered", fields=CANDLESTICK_CHART_FIELDS),
+    ]
 
     _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
         "type": "array",
@@ -660,6 +718,10 @@ class BarChartNode(BaseDisplayNode):
     type: Literal["BarChartNode"] = "BarChartNode"
     description: str = "i18n:nodes.BarChartNode.description"
 
+    _outputs: List[OutputPort] = [
+        OutputPort(name="rendered", type="signal", description="i18n:ports.rendered", fields=BAR_CHART_FIELDS),
+    ]
+
     _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
         "type": "array",
         "description": "i18n:display_schema.bar.description",
@@ -729,6 +791,10 @@ class SummaryDisplayNode(BaseDisplayNode):
 
     type: Literal["SummaryDisplayNode"] = "SummaryDisplayNode"
     description: str = "i18n:nodes.SummaryDisplayNode.description"
+
+    _outputs: List[OutputPort] = [
+        OutputPort(name="rendered", type="signal", description="i18n:ports.rendered", fields=SUMMARY_DISPLAY_FIELDS),
+    ]
 
     _display_data_schema: ClassVar[Optional[Dict[str, Any]]] = {
         "type": "any",

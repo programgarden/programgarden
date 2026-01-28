@@ -208,6 +208,10 @@ def _translate_widget_schema(widget: Dict[str, Any], locale: str, node_type: str
             
             args["decoration"] = decoration
         
+        # Translate text widget's text (e.g., group card title "i18n:groups.*.field_mapping")
+        if "text" in args and isinstance(args["text"], str) and args["text"].startswith("i18n:"):
+            args["text"] = t(args["text"][5:], locale)
+
         # Translate itemLabels (dropdown option labels)
         if "itemLabels" in args and isinstance(args["itemLabels"], dict):
             item_labels = args["itemLabels"].copy()
