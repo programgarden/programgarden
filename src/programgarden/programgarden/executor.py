@@ -1457,7 +1457,9 @@ class BrokerNodeExecutor(NodeExecutorBase):
         
         provider = config.get("provider", "ls-sec.co.kr")
         company = config.get("company", "ls")
-        product = config.get("product", "overseas_stock")
+        # node_type에 따라 product 기본값 결정
+        default_product = "overseas_futures" if "Futures" in node_type else "overseas_stock"
+        product = config.get("product", default_product)
         paper_trading = config.get("paper_trading", True)
         
         # ========================================
@@ -2456,17 +2458,20 @@ class AccountNodeExecutor(NodeExecutorBase):
 
     async def _ls_overseas_futureoption(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
         """
-        LS증권 해외선물옵션 잔고 조회 (CIDBQ01500)
-        
-        미결제(보유) 잔고를 조회합니다.
+        LS증권 해외선물옵션 잔고 조회
+
+        - CIDBQ01500: 미결제(보유) 포지션 조회
+        - CIDBQ03000: 예수금/예탁금 조회 (통화별)
         """
         from datetime import datetime
-        
+
         try:
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
-            
+            from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ03000.blocks import CIDBQ03000InBlock1
+
             today = datetime.now().strftime("%Y%m%d")
-            
+
+            # 1. CIDBQ01500: 보유 포지션 조회
             response = await ls.overseas_futureoption().accno().CIDBQ01500(
                 body=CIDBQ01500InBlock1(
                     RecCnt=1,
@@ -2476,21 +2481,21 @@ class AccountNodeExecutor(NodeExecutorBase):
                     FcmAcntNo=""
                 )
             ).req_async()
-            
-            # 응답 코드 확인
-            if response.rsp_cd and response.rsp_cd not in ["00000", "00136"]:
+
+            # 응답 코드 확인 (00707: 조회할 내역 없음 - 정상)
+            if response.rsp_cd and response.rsp_cd not in ["00000", "00136", "00707"]:
                 context.log("warning", f"CIDBQ01500 response: {response.rsp_cd} - {response.rsp_msg}", node_id)
-            
+
             # block2 = 종목별 잔고
             positions = {}
             for item in (response.block2 or []):
                 symbol = item.IsuCodeVal.strip() if item.IsuCodeVal else ""
                 if not symbol:
                     continue
-                
+
                 # BnsTpCode: 1=매도, 2=매수
                 is_long = item.BnsTpCode == "2"
-                
+
                 positions[symbol] = {
                     "symbol": symbol,
                     "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else symbol,
@@ -2501,22 +2506,44 @@ class AccountNodeExecutor(NodeExecutorBase):
                     "pnl_amount": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
                     "currency": item.CrcyCodeVal.strip() if item.CrcyCodeVal else "USD",
                 }
-            
+
             held_symbols = list(positions.keys())
-            
-            # block2의 첫 번째 항목에서 계좌 요약 정보 가져오기 (CIDBQ01500 구조상 block2에 있음)
-            balance_info = {"cash": 0.0, "total_value": 0.0}
-            if response.block2 and len(response.block2) > 0:
-                b2 = response.block2[0]
-                balance_info = {
-                    "deposit": float(b2.Dps) if b2.Dps else 0.0,
-                    "orderable_amount": float(b2.OrdAbleAmt) if b2.OrdAbleAmt else 0.0,
-                    "withdrawable_amount": float(b2.WthdwAbleAmt) if b2.WthdwAbleAmt else 0.0,
-                    "margin": float(b2.CsgnMgn) if b2.CsgnMgn else 0.0,
-                    "maintenance_margin": float(b2.MaintMgn) if b2.MaintMgn else 0.0,
+
+            # 2. CIDBQ03000: 예수금 조회 (통화별)
+            balance_response = await ls.overseas_futureoption().accno().CIDBQ03000(
+                body=CIDBQ03000InBlock1(
+                    RecCnt=1,
+                    AcntTpCode="1",
+                    TrdDt=""
+                )
+            ).req_async()
+
+            # 통화별 예수금 정보 (block2)
+            balance_by_currency = {}
+            total_orderable = 0.0
+            for item in (balance_response.block2 or []):
+                currency = item.CrcyObjCode.strip() if item.CrcyObjCode else "USD"
+                orderable = float(item.AbrdFutsOrdAbleAmt) if item.AbrdFutsOrdAbleAmt else 0.0
+                deposit = float(item.OvrsFutsDps) if item.OvrsFutsDps else 0.0
+
+                balance_by_currency[currency] = {
+                    "deposit": deposit,
+                    "orderable_amount": orderable,
+                    "withdrawable_amount": float(item.AbrdFutsWthdwAbleAmt) if item.AbrdFutsWthdwAbleAmt else 0.0,
+                    "eval_pnl": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
                 }
-            
-            context.log("info", f"AccountNode (futures): {len(held_symbols)} positions fetched", node_id)
+                total_orderable += orderable
+
+            # balance 정보 구성 (PositionSizingNode 호환)
+            balance_info = {
+                "by_currency": balance_by_currency,
+                "total_orderable": total_orderable,
+                # 하위 호환성: 첫 번째 통화 또는 USD 기준
+                "orderable_amount": balance_by_currency.get("USD", {}).get("orderable_amount", 0.0) or total_orderable,
+                "deposit": sum(b.get("deposit", 0) for b in balance_by_currency.values()),
+            }
+
+            context.log("info", f"AccountNode (futures): {len(held_symbols)} positions, {len(balance_by_currency)} currencies", node_id)
             return {
                 "held_symbols": held_symbols,
                 "symbols": held_symbols,
@@ -7234,23 +7261,25 @@ class PortfolioNodeExecutor(NodeExecutorBase):
 class PositionSizingNodeExecutor(NodeExecutorBase):
     """
     PositionSizingNode executor - 포지션 크기 계산
-    
+
     지원하는 포지션 사이징 방법:
     1. fixed_percent: 계좌의 일정 비율을 종목 수로 균등 분할
     2. fixed_amount: 종목당 고정 금액 투자
-    3. kelly: 켈리 공식 기반 최적 투자 비율 (조정 가능)
-    4. atr_based: ATR 기반 리스크 관리형 사이징
-    
+    3. fixed_quantity: 종목당 고정 수량 지정
+    4. kelly: 켈리 공식 기반 최적 투자 비율 (조정 가능)
+    5. atr_based: ATR 기반 리스크 관리형 사이징
+
     입력:
     - symbols: 투자할 종목 리스트 [{symbol, exchange, price?, ...}, ...]
     - balance: 예수금/매수가능금액 정보
-    - price_data: 시세 데이터 (kelly, atr_based 방식에서 필요)
-    
+    - price_data: 시세 데이터 (가격 조회용)
+
     출력:
-    - quantity: 종목별 주문 수량 {symbol: qty, ...}
+    - orders: 주문 배열 [{symbol, exchange, quantity, price, ...}, ...]
     - symbols: 입력 종목 리스트 그대로 전달
-    - allocation: 종목별 배분 비율 {symbol: percent, ...}
     - total_amount: 총 투자 예정 금액
+    - method: 사용된 사이징 방법
+    - config: 사이징 설정 정보
     """
 
     async def execute(
@@ -7275,6 +7304,7 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         method = evaluated.get("method", "fixed_percent")
         max_percent = float(evaluated.get("max_percent", 10.0))
         fixed_amount = evaluated.get("fixed_amount")
+        fixed_quantity = int(evaluated.get("fixed_quantity", 1))
         kelly_fraction = float(evaluated.get("kelly_fraction", 0.25))
         atr_risk_percent = float(evaluated.get("atr_risk_percent", 1.0))
         
@@ -7306,6 +7336,10 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         elif method == "fixed_amount":
             result = self._calc_fixed_amount(
                 symbols, fixed_amount, price_data, context, node_id
+            )
+        elif method == "fixed_quantity":
+            result = self._calc_fixed_quantity(
+                symbols, fixed_quantity, price_data, context, node_id
             )
         elif method == "kelly":
             result = self._calc_kelly(
@@ -7369,9 +7403,9 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
             return float(balance_data)
         
         if isinstance(balance_data, dict):
-            # 해외주식 예수금 필드
-            for key in ["fcurr_ord_able_amt", "ord_able_amt", "available", "balance"]:
-                if key in balance_data:
+            # 예수금 필드 (해외주식/해외선물 공통)
+            for key in ["orderable_amount", "total_orderable", "fcurr_ord_able_amt", "ord_able_amt", "available", "balance"]:
+                if key in balance_data and balance_data[key]:
                     try:
                         return float(balance_data[key])
                     except (ValueError, TypeError):
@@ -7445,7 +7479,7 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """
         고정 비율 방식
-        
+
         계좌의 max_percent%를 종목 수로 균등 분할
         예: balance=10000, max_percent=10, symbols=2개
             → 종목당 500 (10000 * 10% / 2)
@@ -7453,41 +7487,45 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         num_symbols = len(symbols)
         total_invest = balance * (max_percent / 100.0)
         per_symbol_amount = total_invest / num_symbols
-        
-        quantity = {}
-        allocation = {}
+
+        orders = []
         total_amount = 0.0
-        
+
         for sym_data in symbols:
             symbol = sym_data.get("symbol", "")
+            exchange = sym_data.get("exchange", "")
             if not symbol:
                 continue
-            
+
             price = self._get_price(symbol, sym_data, price_data, context, node_id)
-            
+
             if price and price > 0:
                 qty = int(per_symbol_amount / price)
                 if qty > 0:
-                    quantity[symbol] = qty
-                    allocation[symbol] = round(max_percent / num_symbols, 2)
+                    orders.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "quantity": qty,
+                        "price": price,
+                        "allocation": round(max_percent / num_symbols, 2),
+                    })
                     total_amount += qty * price
             else:
                 context.log(
-                    "warning", 
-                    f"No price for {symbol}, skipping position sizing", 
+                    "warning",
+                    f"No price for {symbol}, skipping position sizing",
                     node_id
                 )
-        
+
         context.log(
             "info",
-            f"[fixed_percent] Allocated {len(quantity)} symbols, "
+            f"[fixed_percent] Allocated {len(orders)} symbols, "
             f"total_amount={total_amount:,.0f}, per_symbol={per_symbol_amount:,.0f}",
             node_id
         )
-        
+
         return {
-            "quantity": quantity,
-            "allocation": allocation,
+            "orders": orders,
             "total_amount": round(total_amount, 2),
             "method": "fixed_percent",
             "config": {
@@ -7506,7 +7544,7 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """
         고정 금액 방식
-        
+
         각 종목에 fixed_amount 만큼 투자
         예: fixed_amount=1000, AAPL 가격=150
             → AAPL 수량 = 6주 (1000 / 150)
@@ -7514,24 +7552,29 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         if not fixed_amount or fixed_amount <= 0:
             context.log("error", "fixed_amount is required for fixed_amount method", node_id)
             return self._empty_result()
-        
-        quantity = {}
-        allocation = {}
+
+        orders = []
         total_amount = 0.0
-        
+
         for sym_data in symbols:
             symbol = sym_data.get("symbol", "")
+            exchange = sym_data.get("exchange", "")
             if not symbol:
                 continue
-            
+
             price = self._get_price(symbol, sym_data, price_data, context, node_id)
-            
+
             if price and price > 0:
                 qty = int(fixed_amount / price)
                 if qty > 0:
-                    quantity[symbol] = qty
                     actual_invest = qty * price
-                    allocation[symbol] = round(actual_invest / fixed_amount * 100, 2)
+                    orders.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "quantity": qty,
+                        "price": price,
+                        "allocation": round(actual_invest / fixed_amount * 100, 2),
+                    })
                     total_amount += actual_invest
             else:
                 context.log(
@@ -7539,21 +7582,85 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                     f"No price for {symbol}, skipping position sizing",
                     node_id
                 )
-        
+
         context.log(
             "info",
-            f"[fixed_amount] Allocated {len(quantity)} symbols, "
+            f"[fixed_amount] Allocated {len(orders)} symbols, "
             f"total_amount={total_amount:,.0f}, per_symbol={fixed_amount:,.0f}",
             node_id
         )
-        
+
         return {
-            "quantity": quantity,
-            "allocation": allocation,
+            "orders": orders,
             "total_amount": round(total_amount, 2),
             "method": "fixed_amount",
             "config": {
                 "fixed_amount": fixed_amount,
+            }
+        }
+
+    def _calc_fixed_quantity(
+        self,
+        symbols: List[Dict[str, Any]],
+        fixed_quantity: int,
+        price_data: Any,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """
+        고정 수량 방식
+
+        각 종목에 지정된 수량을 할당
+        예: fixed_quantity=1 → 모든 종목에 1계약씩
+        """
+        orders = []
+        total_amount = 0.0
+
+        for sym_data in symbols:
+            symbol = sym_data.get("symbol", "")
+            exchange = sym_data.get("exchange", "")
+            if not symbol:
+                continue
+
+            price = self._get_price(symbol, sym_data, price_data, context, node_id)
+            if not price or price <= 0:
+                context.log(
+                    "warning",
+                    f"No price for {symbol}, skipping position sizing",
+                    node_id
+                )
+                continue
+
+            qty = fixed_quantity
+            invest = qty * price
+
+            orders.append({
+                "symbol": symbol,
+                "exchange": exchange,
+                "quantity": qty,
+                "price": price,
+            })
+            total_amount += invest
+
+            context.log(
+                "debug",
+                f"[fixed_quantity] {symbol}: price={price:.2f}, qty={qty}, invest={invest:.0f}",
+                node_id
+            )
+
+        context.log(
+            "info",
+            f"[fixed_quantity] Allocated {len(orders)} symbols, "
+            f"total_amount={total_amount:,.0f}, fixed_quantity={fixed_quantity}",
+            node_id
+        )
+
+        return {
+            "orders": orders,
+            "total_amount": round(total_amount, 2),
+            "method": "fixed_quantity",
+            "config": {
+                "fixed_quantity": fixed_quantity,
             }
         }
 
@@ -7569,34 +7676,34 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """
         켈리 공식 방식
-        
+
         켈리 비율: f* = (p * b - q) / b
         - p: 승률, q: 패률 (1-p), b: 손익비
-        
+
         symbol_data에 win_rate, profit_ratio 포함 필요
         없으면 기본값 사용 (win_rate=0.5, profit_ratio=1.5)
-        
+
         kelly_fraction으로 보수적 조정 (0.25 = 1/4 켈리)
         max_percent로 상한선 제한
         """
-        quantity = {}
-        allocation = {}
+        orders = []
         total_amount = 0.0
-        
+
         for sym_data in symbols:
             symbol = sym_data.get("symbol", "")
+            exchange = sym_data.get("exchange", "")
             if not symbol:
                 continue
-            
+
             # 승률/손익비 추출 (없으면 기본값)
             win_rate = float(sym_data.get("win_rate", 0.5))
             profit_ratio = float(sym_data.get("profit_ratio", 1.5))  # 이익/손실 비율
-            
+
             # 켈리 비율 계산
             # f* = (p * b - q) / b = (win_rate * profit_ratio - (1 - win_rate)) / profit_ratio
             q = 1 - win_rate
             kelly_full = (win_rate * profit_ratio - q) / profit_ratio if profit_ratio > 0 else 0
-            
+
             # 음수면 베팅하지 않음
             if kelly_full <= 0:
                 context.log(
@@ -7605,21 +7712,26 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                     node_id
                 )
                 continue
-            
+
             # kelly_fraction 적용 및 max_percent 상한 제한
             kelly_adjusted = kelly_full * kelly_fraction
             final_percent = min(kelly_adjusted * 100, max_percent)
-            
+
             invest_amount = balance * (final_percent / 100.0)
             price = self._get_price(symbol, sym_data, price_data, context, node_id)
-            
+
             if price and price > 0:
                 qty = int(invest_amount / price)
                 if qty > 0:
-                    quantity[symbol] = qty
-                    allocation[symbol] = round(final_percent, 2)
+                    orders.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "quantity": qty,
+                        "price": price,
+                        "allocation": round(final_percent, 2),
+                    })
                     total_amount += qty * price
-                    
+
                     context.log(
                         "debug",
                         f"[kelly] {symbol}: win_rate={win_rate:.0%}, "
@@ -7633,17 +7745,16 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                     f"No price for {symbol}, skipping position sizing",
                     node_id
                 )
-        
+
         context.log(
             "info",
-            f"[kelly] Allocated {len(quantity)} symbols, "
+            f"[kelly] Allocated {len(orders)} symbols, "
             f"total_amount={total_amount:,.0f}, kelly_fraction={kelly_fraction}",
             node_id
         )
-        
+
         return {
-            "quantity": quantity,
-            "allocation": allocation,
+            "orders": orders,
             "total_amount": round(total_amount, 2),
             "method": "kelly",
             "config": {
@@ -7676,17 +7787,17 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         
         max_percent로 상한선 제한
         """
-        quantity = {}
-        allocation = {}
+        orders = []
         total_amount = 0.0
-        
+
         risk_amount = balance * (atr_risk_percent / 100.0)
-        
+
         for sym_data in symbols:
             symbol = sym_data.get("symbol", "")
+            exchange = sym_data.get("exchange", "")
             if not symbol:
                 continue
-            
+
             price = self._get_price(symbol, sym_data, price_data, context, node_id)
             if not price or price <= 0:
                 context.log(
@@ -7695,7 +7806,7 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                     node_id
                 )
                 continue
-            
+
             # ATR 추출 (없으면 가격의 2%로 추정)
             atr = self._get_atr(symbol, sym_data, price_data)
             if atr is None or atr <= 0:
@@ -7705,22 +7816,29 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                     f"[atr_based] {symbol}: No ATR, using estimated {atr:.2f} (2% of price)",
                     node_id
                 )
-            
+
             # ATR 기반 수량 계산
             qty_by_atr = int(risk_amount / atr) if atr > 0 else 0
             invest_by_atr = qty_by_atr * price
-            
+
             # max_percent 상한 적용
             max_invest = balance * (max_percent / 100.0)
             if invest_by_atr > max_invest:
                 qty_by_atr = int(max_invest / price)
                 invest_by_atr = qty_by_atr * price
-            
+
             if qty_by_atr > 0:
-                quantity[symbol] = qty_by_atr
-                allocation[symbol] = round(invest_by_atr / balance * 100, 2)
+                alloc_pct = round(invest_by_atr / balance * 100, 2)
+                orders.append({
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "quantity": qty_by_atr,
+                    "price": price,
+                    "allocation": alloc_pct,
+                    "atr": round(atr, 4),
+                })
                 total_amount += invest_by_atr
-                
+
                 context.log(
                     "debug",
                     f"[atr_based] {symbol}: price={price:.2f}, atr={atr:.2f}, "
@@ -7728,17 +7846,16 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                     f"invest={invest_by_atr:.0f}",
                     node_id
                 )
-        
+
         context.log(
             "info",
-            f"[atr_based] Allocated {len(quantity)} symbols, "
+            f"[atr_based] Allocated {len(orders)} symbols, "
             f"total_amount={total_amount:,.0f}, risk_per_trade={risk_amount:,.0f}",
             node_id
         )
-        
+
         return {
-            "quantity": quantity,
-            "allocation": allocation,
+            "orders": orders,
             "total_amount": round(total_amount, 2),
             "method": "atr_based",
             "config": {
@@ -7784,8 +7901,7 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
     def _empty_result(self) -> Dict[str, Any]:
         """빈 결과 반환"""
         return {
-            "quantity": {},
-            "allocation": {},
+            "orders": [],
             "total_amount": 0.0,
             "symbols": [],
             "method": None,

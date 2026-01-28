@@ -47,7 +47,7 @@ class PositionSizingNode(BaseNode):
     )
 
     # PositionSizingNode specific config
-    method: Literal["fixed_percent", "fixed_amount", "kelly", "atr_based"] = Field(
+    method: Literal["fixed_percent", "fixed_amount", "fixed_quantity", "kelly", "atr_based"] = Field(
         default="fixed_percent",
         description="Position sizing method",
     )
@@ -58,6 +58,10 @@ class PositionSizingNode(BaseNode):
     fixed_amount: Optional[float] = Field(
         default=None,
         description="Fixed amount (for fixed_amount method)",
+    )
+    fixed_quantity: Optional[int] = Field(
+        default=1,
+        description="Fixed quantity per symbol (for fixed_quantity method)",
     )
     kelly_fraction: float = Field(
         default=0.25,
@@ -88,16 +92,27 @@ class PositionSizingNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="quantity",
-            type="dict",
-            description="i18n:ports.quantity",
-            fields=QUANTITY_FIELDS,
+            name="orders",
+            type="array",
+            description="i18n:ports.orders",
+            fields=[
+                {"name": "symbol", "type": "string", "description": "종목코드"},
+                {"name": "exchange", "type": "string", "description": "거래소 코드"},
+                {"name": "quantity", "type": "number", "description": "주문 수량"},
+                {"name": "price", "type": "number", "description": "주문 가격"},
+                {"name": "allocation", "type": "number", "description": "배분 비율 (%)"},
+            ],
         ),
         OutputPort(
             name="symbols",
             type="symbol_list",
             description="i18n:ports.symbols",
             fields=SYMBOL_LIST_FIELDS,
+        ),
+        OutputPort(
+            name="total_amount",
+            type="number",
+            description="i18n:ports.total_amount",
         ),
     ]
 
@@ -148,10 +163,11 @@ class PositionSizingNode(BaseNode):
                 type=FieldType.ENUM,
                 description="i18n:fields.PositionSizingNode.method",
                 default="fixed_percent",
-                enum_values=["fixed_percent", "fixed_amount", "kelly", "atr_based"],
+                enum_values=["fixed_percent", "fixed_amount", "fixed_quantity", "kelly", "atr_based"],
                 enum_labels={
                     "fixed_percent": "i18n:enum.PositionSizingNode.method.fixed_percent",
                     "fixed_amount": "i18n:enum.PositionSizingNode.method.fixed_amount",
+                    "fixed_quantity": "i18n:enum.PositionSizingNode.method.fixed_quantity",
                     "kelly": "i18n:enum.PositionSizingNode.method.kelly",
                     "atr_based": "i18n:enum.PositionSizingNode.method.atr_based",
                 },
@@ -181,6 +197,18 @@ class PositionSizingNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 visible_when={"method": "fixed_amount"},
+            ),
+            # fixed_quantity 방식에서만 사용
+            "fixed_quantity": FieldSchema(
+                name="fixed_quantity",
+                type=FieldType.INTEGER,
+                description="i18n:fields.PositionSizingNode.fixed_quantity",
+                default=1,
+                min_value=1,
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                visible_when={"method": "fixed_quantity"},
             ),
             # === SETTINGS: 부가 설정 ===
             # kelly 방식에서만 사용
