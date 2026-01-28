@@ -10474,8 +10474,6 @@ class WorkflowJob:
                     # 단일 값 (하위 호환): 첫 번째 출력
                     single_value = self.context.get_output(edge.from_node_id, None)
                     
-                    print(f"    📦 Edge: {edge.from_node_id} → {node_id} = {len(all_outputs)} outputs", flush=True)
-                    
                     if all_outputs:
                         from_port = "output"
                         input_port = "input"
@@ -10516,19 +10514,44 @@ class WorkflowJob:
 
             # Execute node
             try:
-                outputs = await self.executor.execute_node(
-                    node_id=node_id,
-                    node_type=node.node_type,
-                    config=config,
-                    context=self.context,
-                    plugin=node.plugin,
-                    fields=node.fields,
-                )
+                # === n8n 스타일 자동 iterate 체크 ===
+                # 입력 데이터가 배열이고, 노드가 단일 아이템을 기대하면 자동으로 각 아이템마다 실행
+                input_data = None
+                for edge in self.workflow.edges:
+                    if edge.to_node_id == node_id:
+                        # symbols 포트 우선 확인 (WatchlistNode 출력)
+                        input_data = self.context.get_output(edge.from_node_id, "symbols")
+                        if input_data is None:
+                            # 기본 출력 확인
+                            input_data = self.context.get_output(edge.from_node_id, None)
+                        break
+
+                should_iterate, port_name, items = self._should_auto_iterate(node.node_type, input_data)
+
+                if should_iterate and node_id not in branch_nodes:
+                    # 자동 iterate 실행 (SplitNode 브랜치가 아닌 경우에만)
+                    outputs = await self._execute_with_auto_iterate(
+                        node_id=node_id,
+                        node=node,
+                        config=config,
+                        items=items,
+                        port_name=port_name,
+                    )
+                else:
+                    # 일반 실행
+                    outputs = await self.executor.execute_node(
+                        node_id=node_id,
+                        node_type=node.node_type,
+                        config=config,
+                        context=self.context,
+                        plugin=node.plugin,
+                        fields=node.fields,
+                    )
 
                 # Store outputs
-                for port_name, value in outputs.items():
-                    self.context.set_output(node_id, port_name, value)
-                
+                for out_port_name, value in outputs.items():
+                    self.context.set_output(node_id, out_port_name, value)
+
                 # 🆕 노드 완료 알림
                 # stay_connected 노드는 RUNNING 상태 유지 (계속 실시간 업데이트)
                 duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -10557,6 +10580,146 @@ class WorkflowJob:
                 raise
 
     # === Item-based Execution Helpers (SplitNode/AggregateNode) ===
+
+    # 자동 iterate 대상 입력 포트 타입 (단일 아이템을 기대하는 타입들)
+    AUTO_ITERATE_INPUT_TYPES = {"symbol"}
+
+    def _should_auto_iterate(self, node_type: str, input_data: Any) -> tuple:
+        """
+        노드가 n8n 스타일 자동 iterate 대상인지 확인
+
+        조건:
+        1. 입력 데이터가 배열 (2개 이상)
+        2. 노드의 입력 포트 타입이 단일 아이템 타입 (symbol 등)
+        3. SplitNode 브랜치 내부가 아님 (SplitNode가 있으면 명시적 제어 사용)
+
+        Returns:
+            (should_iterate: bool, input_port_name: str, items: list)
+        """
+        # 입력이 배열이 아니거나 비어있으면 iterate 불필요
+        if not isinstance(input_data, list) or len(input_data) < 1:
+            return False, "", []
+
+        # 노드 클래스에서 입력 포트 정보 가져오기
+        try:
+            from programgarden_core.registry import NodeTypeRegistry
+            from pydantic.fields import ModelPrivateAttr
+
+            registry = NodeTypeRegistry()
+            node_class = registry.get(node_type)
+
+            if not node_class:
+                return False, "", []
+
+            # Pydantic ModelPrivateAttr에서 default 값 가져오기
+            inputs_attr = getattr(node_class, '_inputs', None)
+            if isinstance(inputs_attr, ModelPrivateAttr):
+                inputs = inputs_attr.default or []
+            else:
+                inputs = inputs_attr or []
+
+            for port in inputs:
+                if port.type in self.AUTO_ITERATE_INPUT_TYPES:
+                    return True, port.name, input_data
+        except Exception as e:
+            print(f"  ⚠️ Auto-iterate check failed for {node_type}: {e}", flush=True)
+
+        return False, "", []
+
+    async def _execute_with_auto_iterate(
+        self,
+        node_id: str,
+        node: "ResolvedNode",
+        config: Dict[str, Any],
+        items: list,
+        port_name: str,
+    ) -> Dict[str, Any]:
+        """
+        n8n 스타일: 배열 입력을 자동으로 iterate하며 노드 실행
+
+        각 아이템마다 노드를 실행하고 결과를 배열로 수집합니다.
+        SplitNode와 달리 delay나 parallel 옵션 없이 순차 실행합니다.
+
+        Args:
+            node_id: 노드 ID
+            node: ResolvedNode 인스턴스
+            config: 노드 설정
+            items: iterate할 아이템 배열
+            port_name: 아이템을 바인딩할 입력 포트 이름
+
+        Returns:
+            병합된 출력 (배열 필드는 배열로, 단일 필드는 마지막 값)
+        """
+        from programgarden_core.bases.listener import NodeState
+
+        all_results = []
+        total = len(items)
+
+        print(f"  🔄 Auto-iterate: {node_id} ({node.node_type}) - {total} items")
+
+        for idx, item in enumerate(items):
+            # 아이템별 config 생성
+            item_config = config.copy()
+            item_config[port_name] = item
+
+            # 진행 상황 로그
+            item_label = item.get("symbol", str(item)) if isinstance(item, dict) else str(item)
+            print(f"    [{idx+1}/{total}] Processing: {item_label}")
+            self.context.log("debug", f"Auto-iterate [{idx+1}/{total}]: {item_label}", node_id)
+
+            try:
+                outputs = await self.executor.execute_node(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    config=item_config,
+                    context=self.context,
+                    plugin=node.plugin,
+                    fields=node.fields,
+                )
+                all_results.append(outputs)
+            except Exception as e:
+                self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
+                # continue_on_error: 기본적으로 계속 진행
+                all_results.append({"error": str(e), "item": item})
+
+        # 결과 병합: 배열 필드는 병합, 단일 필드는 마지막 값
+        merged = self._merge_iterate_results(all_results)
+        print(f"  ✅ Auto-iterate complete: {len(all_results)} results merged")
+
+        return merged
+
+    def _merge_iterate_results(self, results: list) -> Dict[str, Any]:
+        """
+        자동 iterate 결과 병합
+
+        - 배열 필드 (value, values, items 등): 모든 결과를 하나의 배열로 병합
+        - 단일 필드: 마지막 값 사용
+        """
+        if not results:
+            return {}
+
+        merged = {}
+        array_fields = {"value", "values", "items", "data", "result", "results", "passed_symbols", "failed_symbols"}
+
+        for key in results[0].keys():
+            if key in array_fields:
+                # 배열 필드: 모든 결과 수집
+                merged[key] = []
+                for r in results:
+                    val = r.get(key)
+                    if val is not None:
+                        if isinstance(val, list):
+                            merged[key].extend(val)
+                        else:
+                            merged[key].append(val)
+            else:
+                # 단일 필드: 마지막 유효 값
+                for r in reversed(results):
+                    if key in r and r[key] is not None:
+                        merged[key] = r[key]
+                        break
+
+        return merged
 
     def _find_split_aggregate_pairs(self) -> Dict[str, str]:
         """Find pairs of SplitNode → AggregateNode in the workflow

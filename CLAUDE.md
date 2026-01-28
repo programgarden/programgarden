@@ -75,12 +75,11 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 - **Plugins**: Referenced via `plugin` field in ConditionNode, NewOrderNode, etc.
 - **Credentials**: Referenced by `credential_id`, defined in `credentials` section as a list
 
-### Node Categories (12, 46 nodes)
+### Node Categories (10, 47 nodes)
 
 | Category | Nodes |
 |----------|-------|
-| infra | StartNode, ThrottleNode |
-| broker | OverseasStockBrokerNode, OverseasFuturesBrokerNode |
+| infra | StartNode, ThrottleNode, SplitNode, AggregateNode, OverseasStockBrokerNode, OverseasFuturesBrokerNode |
 | account | OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode, OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode |
 | market | OverseasStockMarketDataNode, OverseasFuturesMarketDataNode, OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode, WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode |
 | condition | ConditionNode, LogicNode |
