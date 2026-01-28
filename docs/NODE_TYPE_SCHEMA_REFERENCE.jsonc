@@ -1,0 +1,652 @@
+// =============================================================================
+// ProgramGarden Node Type Schema Reference
+// =============================================================================
+// 서버 GET /api/node-types 응답에서 각 노드가 반환하는 JSON 구조입니다.
+// 클라이언트(Flutter) 개발자를 위한 필드별 설명 레퍼런스입니다.
+//
+// 참고: 실제 JSON에는 주석이 없습니다. 이 파일은 설명 목적입니다.
+// =============================================================================
+
+{
+  // ─────────────────────────────────────────────────────────────────────────
+  // 1. 최상위 필드 (Top-Level Fields)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  "node_type": "OverseasStockMarketDataNode",  // 노드 고유 타입명. 워크플로우 JSON에서 "type" 값으로 사용
+  "category": "market",                        // 노드 카테고리 (12종: infra, broker, account, market, condition, order, risk, schedule, data, display, analysis, messaging)
+  "description": "i18n:nodes.OverseasStockMarketDataNode.description",  // 노드 설명. "i18n:" 접두사면 번역 키, 아니면 직접 텍스트
+  "img_url": "https://cdn.programgarden.io/nodes/market_stock.svg",     // 노드 아이콘 이미지 URL (nullable)
+  "product_scope": "overseas_stock",           // 노드 지원 상품 ("overseas_stock" | "overseas_futures" | "all")
+  "broker_provider": "ls-sec.co.kr",           // 브로커 제공자 ("ls-sec.co.kr" | "all")
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2. 입력 포트 (Input Ports)
+  // ─────────────────────────────────────────────────────────────────────────
+  // 다른 노드에서 들어오는 연결(edge)을 받는 포트
+
+  "inputs": [
+    {
+      "name": "trigger",                       // 포트 이름 (edge 연결 시 사용)
+      "type": "signal",                        // 데이터 타입 ("signal" | "broker_connection" | "array" | "event_data" | "symbol_list" 등)
+      "description": "i18n:ports.trigger",     // 포트 설명 (i18n 키)
+      "required": true,                        // 연결 필수 여부
+      "multiple": false,                       // 여러 edge 연결 가능 여부 (LogicNode 등에서 true)
+      "min_connections": null                  // 최소 연결 수 (nullable, multiple=true일 때 사용)
+    }
+  ],
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 3. 출력 포트 (Output Ports)
+  // ─────────────────────────────────────────────────────────────────────────
+  // 다른 노드로 데이터를 내보내는 포트
+
+  "outputs": [
+    {
+      "name": "values",                        // 포트 이름 (바인딩: {{ nodes.nodeId.values }})
+      "type": "market_data_list",              // 데이터 타입
+      "description": "i18n:ports.market_data_values",  // 포트 설명
+
+      // fields: 이 포트가 내보내는 데이터의 세부 필드 정의 (nullable)
+      // 클라이언트에서 바인딩 자동완성, 데이터 미리보기에 사용
+      "fields": [
+        {
+          "name": "exchange",                  // 필드 이름
+          "type": "string",                    // 필드 타입 ("string" | "number" | "boolean" | "array" | "object")
+          "description": "거래소 코드 (NASDAQ, NYSE, CME 등)"  // 필드 설명
+        },
+        {
+          "name": "symbol",
+          "type": "string",
+          "description": "종목코드"
+        },
+        {
+          "name": "current_price",
+          "type": "number",
+          "description": "현재가"
+        },
+        {
+          "name": "volume",
+          "type": "number",
+          "description": "거래량"
+        },
+        {
+          "name": "change_percent",
+          "type": "number",
+          "description": "등락률 (%)"
+        }
+      ]
+    },
+    {
+      "name": "symbols",                       // 두 번째 출력 포트 예시
+      "type": "symbol_list",
+      "description": "i18n:ports.symbols",
+      "fields": [                              // 종목 리스트 기본 필드
+        {
+          "name": "exchange",
+          "type": "string",
+          "description": "거래소 코드"
+        },
+        {
+          "name": "symbol",
+          "type": "string",
+          "description": "종목코드"
+        }
+      ]
+    }
+  ],
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 4. 위젯 스키마 (Widget Schema) - PARAMETERS 카테고리
+  // ─────────────────────────────────────────────────────────────────────────
+  // Flutter UI에서 노드 설정 폼을 렌더링하는 json_dynamic_widget 스키마
+  // category=PARAMETERS인 필드들이 여기에 포함됨
+
+  "widget_schema": {
+    "type": "column",                          // 최상위는 항상 column 위젯
+    "args": {
+      "children": [
+
+        // ── 4-1. 드롭다운 선택 (dropdown_button_form_field) ──
+        {
+          "type": "dropdown_button_form_field", // 위젯 타입
+          "fieldKey": "product_type",           // 폼 데이터 수집용 키 (Pydantic 필드명과 일치)
+          "field_key_of_pydantic": "product_type",  // Pydantic 모델 필드명 (fieldKey와 동일)
+          "args": {
+            "decoration": {
+              "labelText": "i18n:fieldNames.OverseasStockMarketDataNode.product_type",  // 라벨 (i18n 키)
+              "hintText": "상품 유형을 선택하세요"     // 힌트 텍스트 (nullable)
+            },
+            "value": "overseas_stock",          // 기본 선택값
+            "items": ["overseas_stock", "overseas_futures"],  // 선택 가능 항목
+            "itemLabels": {                     // 항목별 표시 라벨
+              "overseas_stock": "해외주식",
+              "overseas_futures": "해외선물"
+            },
+            "helperText": "i18n:fields.OverseasStockMarketDataNode.product_type"  // 필드 설명
+          }
+        },
+
+        // ── 4-2. Expression 토글 + 커스텀 위젯 (custom_expression_toggle) ──
+        // expression_mode="both"인 필드 → Fixed/Expression 모드 토글
+        {
+          "type": "custom_expression_toggle",   // 토글 위젯
+          "fieldKey": "symbols",
+          "field_key_of_pydantic": "symbols",
+          "args": {
+            "fieldKey": "symbols",
+            "label": "i18n:fieldNames.OverseasStockMarketDataNode.symbols",  // 토글 라벨
+            "defaultMode": "fixed",             // 기본 모드 ("fixed" | "expression")
+            "lockedMode": null,                 // 토글 잠금 (null이면 토글 가능, "fixed"/"expression"이면 잠김)
+            "expressionHint": "{{ nodes.watchlist.symbols }}",  // Expression 모드 힌트
+
+            // fixedWidget: Fixed 모드에서 보여줄 위젯
+            "fixedWidget": {
+              "type": "custom_symbol_editor",   // 종목 편집기 커스텀 위젯
+              "args": {
+                "fieldKey": "symbols",
+                "decoration": {
+                  "labelText": "i18n:fieldNames.OverseasStockMarketDataNode.symbols",
+                  "hintText": "종목을 추가하세요"
+                },
+                "expressionMode": "both",
+                "objectSchema": [               // 종목 데이터 스키마
+                  {
+                    "name": "exchange",
+                    "type": "ENUM",
+                    "label": "거래소",
+                    "required": true
+                  },
+                  {
+                    "name": "symbol",
+                    "type": "STRING",
+                    "label": "종목코드",
+                    "required": true,
+                    "placeholder": "AAPL"
+                  }
+                ],
+                "uiOptions": {                  // 커스텀 옵션
+                  "exchanges": [
+                    {"value": "NASDAQ", "label": "NASDAQ"},
+                    {"value": "NYSE", "label": "NYSE"},
+                    {"value": "AMEX", "label": "AMEX"}
+                  ]
+                },
+                "expressionHint": "{{ nodes.watchlist.symbols }}"
+              }
+            },
+
+            // expressionWidget: Expression 모드에서 보여줄 위젯
+            "expressionWidget": {
+              "type": "text_form_field",        // {{ }} 바인딩 입력 텍스트 필드
+              "args": {
+                "fieldKey": "symbols",
+                "decoration": {
+                  "labelText": "i18n:fieldNames.OverseasStockMarketDataNode.symbols",
+                  "hintText": "{{ nodes.watchlist.symbols }}"
+                }
+              }
+            },
+
+            "fixedHelperText": "종목을 직접 입력합니다",        // Fixed 모드 설명
+            "expressionHelperText": "예: {{ nodes.watchlist.symbols }}"  // Expression 모드 설명
+          }
+        },
+
+        // ── 4-3. Expression 전용 필드 (expression_mode="expression_only") ──
+        // 토글 없이 {{ }} 바인딩만 가능한 필드
+        {
+          "type": "text_form_field",            // 일반 텍스트 필드
+          "fieldKey": "data",
+          "field_key_of_pydantic": "data",
+          "args": {
+            "fieldKey": "data",
+            "decoration": {
+              "labelText": "i18n:fieldNames.ConditionNode.data",
+              "hintText": "{{ nodes.historical.values }}"
+            },
+            "helperText": "바인딩 표현식을 입력하세요"
+          }
+        },
+
+        // ── 4-4. 텍스트 입력 (text_form_field) ──
+        {
+          "type": "text_form_field",
+          "fieldKey": "title",
+          "field_key_of_pydantic": "title",
+          "args": {
+            "fieldKey": "title",
+            "decoration": {
+              "labelText": "i18n:fieldNames.LineChartNode.title",
+              "hintText": "차트 제목을 입력하세요"
+            },
+            "initialValue": "My Chart",         // 기본값 (문자열)
+            "helperText": "차트 상단에 표시될 제목"
+          }
+        },
+
+        // ── 4-5. 숫자 입력 (keyboardType: number) ──
+        {
+          "type": "text_form_field",
+          "fieldKey": "interval_sec",
+          "field_key_of_pydantic": "interval_sec",
+          "args": {
+            "fieldKey": "interval_sec",
+            "decoration": {
+              "labelText": "i18n:fieldNames.ThrottleNode.interval_sec",
+              "hintText": "실행 간격"
+            },
+            "initialValue": "5.0",              // 숫자도 문자열로 전달
+            "keyboardType": "number",           // 숫자 키보드
+            "helperText": "실행 간격 (초)"
+          }
+        },
+
+        // ── 4-6. 체크박스 (checkbox) ──
+        {
+          "type": "checkbox",
+          "fieldKey": "stay_connected",
+          "field_key_of_pydantic": "stay_connected",
+          "args": {
+            "fieldKey": "stay_connected",
+            "value": true,                      // 기본 체크 상태
+            "helperText": "플로우 종료 후에도 연결 유지"
+          }
+        },
+
+        // ── 4-7. 플러그인 선택 (custom_plugin_select) ──
+        {
+          "type": "custom_plugin_select",
+          "fieldKey": "plugin",
+          "field_key_of_pydantic": "plugin",
+          "args": {
+            "fieldKey": "plugin",
+            "decoration": {
+              "labelText": "i18n:fieldNames.ConditionNode.plugin"
+            }
+          }
+        },
+
+        // ── 4-8. Credential 선택 (custom_credential_select) ──
+        {
+          "type": "custom_credential_select",
+          "fieldKey": "credential_id",
+          "field_key_of_pydantic": "credential_id",
+          "args": {
+            "fieldKey": "credential_id",
+            "decoration": {
+              "labelText": "i18n:fieldNames.OverseasStockBrokerNode.credential_id"
+            },
+            "credentialTypes": [                // 선택 가능한 credential 타입
+              {
+                "type_id": "broker_ls_stock",   // credential 타입 ID
+                "name": "LS증권 해외주식"        // 표시 이름
+              }
+            ]
+          }
+        },
+
+        // ── 4-9. 코드 에디터 (custom_code_editor) ──
+        {
+          "type": "custom_code_editor",
+          "fieldKey": "query",
+          "field_key_of_pydantic": "query",
+          "args": {
+            "fieldKey": "query",
+            "decoration": {
+              "labelText": "i18n:fieldNames.SQLiteNode.query"
+            },
+            "language": "sql"                   // 언어 ("sql" | "json" | "python")
+          }
+        },
+
+        // ── 4-10. 생성 가능한 선택기 (custom_creatable_select) ──
+        {
+          "type": "custom_creatable_select",
+          "fieldKey": "db_name",
+          "field_key_of_pydantic": "db_name",
+          "args": {
+            "fieldKey": "db_name",
+            "decoration": {
+              "labelText": "i18n:fieldNames.SQLiteNode.db_name"
+            },
+            "source": "programgarden_data",     // 데이터 소스 식별자
+            "fileExtension": ".db",             // 파일 확장자 필터
+            "createLabel": "i18n:ui.create_new_database",  // 생성 버튼 라벨
+            "deletable": true,                  // 삭제 가능 여부
+            "deleteConfirm": "i18n:ui.confirm_delete_database"  // 삭제 확인 메시지
+          }
+        },
+
+        // ── 4-11. 키-값 편집기 (custom_key_value_editor) ──
+        {
+          "type": "custom_key_value_editor",
+          "fieldKey": "headers",
+          "field_key_of_pydantic": "headers",
+          "args": {
+            "fieldKey": "headers",
+            "decoration": {
+              "labelText": "i18n:fieldNames.HTTPRequestNode.headers"
+            },
+            "objectSchema": [                   // 키-값 구조 정의
+              {"name": "key", "type": "STRING", "label": "Key"},
+              {"name": "value", "type": "STRING", "label": "Value"}
+            ]
+          }
+        },
+
+        // ── 4-12. 객체 배열 테이블 (custom_object_array_table) ──
+        {
+          "type": "custom_object_array_table",
+          "fieldKey": "conditions",
+          "field_key_of_pydantic": "conditions",
+          "args": {
+            "fieldKey": "conditions",
+            "decoration": {
+              "labelText": "조건 목록"
+            },
+            "objectSchema": [                   // 테이블 컬럼 정의
+              {"name": "field", "type": "STRING", "label": "필드"},
+              {"name": "operator", "type": "ENUM", "label": "연산자"},
+              {"name": "value", "type": "NUMBER", "label": "값"}
+            ]
+          }
+        },
+
+        // ── 4-13. 주문 목록 편집기 (custom_order_list_editor) ──
+        {
+          "type": "custom_order_list_editor",
+          "fieldKey": "orders",
+          "field_key_of_pydantic": "orders",
+          "args": {
+            "fieldKey": "orders",
+            "decoration": {
+              "labelText": "주문 목록"
+            },
+            "objectSchema": [
+              {"name": "symbol", "type": "STRING", "label": "종목"},
+              {"name": "exchange", "type": "STRING", "label": "거래소"},
+              {"name": "quantity", "type": "NUMBER", "label": "수량"},
+              {"name": "price", "type": "NUMBER", "label": "가격"}
+            ]
+          }
+        },
+
+        // ── 4-14. 필드 매핑 편집기 (custom_field_mapping_editor) ──
+        {
+          "type": "custom_field_mapping_editor",
+          "fieldKey": "field_mapping",
+          "field_key_of_pydantic": "field_mapping",
+          "args": {
+            "fieldKey": "field_mapping",
+            "decoration": {
+              "labelText": "필드 매핑"
+            }
+          }
+        },
+
+        // ── 4-15. 그룹 카드 (card) ──
+        // group 속성이 있는 필드들은 card로 묶임
+        {
+          "type": "card",                       // 그룹 래핑 카드
+          "args": {
+            "elevation": 0,                     // 카드 그림자 없음
+            "margin": {"top": 12, "bottom": 4}, // 카드 외부 여백
+            "child": {
+              "type": "padding",
+              "args": {
+                "padding": {"left": 12, "right": 12, "top": 8, "bottom": 8},
+                "child": {
+                  "type": "column",
+                  "args": {
+                    "mainAxisSize": "min",
+                    "children": [
+                      {
+                        "type": "text",         // 그룹 제목
+                        "args": {
+                          "text": "i18n:groups.ConditionNode.field_mapping",  // 그룹 제목 (i18n 키)
+                          "style": {"fontWeight": "w600", "fontSize": 13}
+                        }
+                      },
+                      // ... 그룹에 속한 위젯들이 여기에 나열됨
+                      {
+                        "type": "text_form_field",
+                        "fieldKey": "close_field",
+                        "field_key_of_pydantic": "close_field",
+                        "args": {
+                          "fieldKey": "close_field",
+                          "decoration": {"labelText": "i18n:fieldNames.ConditionNode.close_field"},
+                          "initialValue": "close"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+
+        // ── 4-16. 조건부 표시 (conditional) ──
+        // visible_when 조건이 있는 필드 → conditional로 래핑됨
+        {
+          "type": "conditional",                // 조건부 위젯
+          "listen": ["product_type"],           // 감시할 필드 목록
+          "fieldKey": "exchange_filter",        // 조건부 위젯의 fieldKey
+          "args": {
+            "conditional": {
+              "values": {                       // 표시 조건 (AND 조건)
+                "product_type": "overseas_stock" // product_type이 "overseas_stock"일 때만 표시
+              }
+            },
+            "onTrue": {                         // 조건 충족 시 표시할 위젯
+              "type": "dropdown_button_form_field",
+              "fieldKey": "exchange_filter",
+              "args": {
+                "fieldKey": "exchange_filter",
+                "decoration": {"labelText": "거래소 필터"},
+                "items": ["ALL", "NASDAQ", "NYSE", "AMEX"],
+                "value": "ALL"
+              }
+            }
+          }
+        },
+
+        // ── 4-17. 슬라이더 (slider) ──
+        {
+          "type": "slider",
+          "fieldKey": "threshold",
+          "field_key_of_pydantic": "threshold",
+          "args": {
+            "fieldKey": "threshold",
+            "min": 0,                           // 최솟값
+            "max": 100,                         // 최댓값
+            "value": 30,                        // 기본값
+            "divisions": 100,                   // 구간 수 (nullable)
+            "helperText": "임계값 설정"
+          }
+        }
+      ]
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 5. 설정 위젯 스키마 (Settings Widget Schema) - SETTINGS 카테고리
+  // ─────────────────────────────────────────────────────────────────────────
+  // Flutter UI에서 별도 탭/섹션으로 표시되는 부가 설정
+  // category=SETTINGS인 필드들이 여기에 포함됨
+
+  "settings_widget_schema": {
+    "type": "column",                          // 최상위는 항상 column
+    "args": {
+      "children": [
+        {
+          "type": "checkbox",
+          "fieldKey": "stay_connected",
+          "field_key_of_pydantic": "stay_connected",
+          "args": {
+            "fieldKey": "stay_connected",
+            "value": true,
+            "helperText": "플로우 종료 후에도 연결 유지"
+          }
+        },
+        {
+          "type": "text_form_field",
+          "fieldKey": "sync_interval_sec",
+          "field_key_of_pydantic": "sync_interval_sec",
+          "args": {
+            "fieldKey": "sync_interval_sec",
+            "decoration": {
+              "labelText": "i18n:fieldNames.OverseasStockRealAccountNode.sync_interval_sec"
+            },
+            "initialValue": "60",
+            "keyboardType": "number",
+            "helperText": "동기화 간격 (초)"
+          }
+        }
+      ]
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 6. 디스플레이 데이터 스키마 (Display Data Schema)
+  // ─────────────────────────────────────────────────────────────────────────
+  // Display 카테고리 노드에서만 존재 (nullable)
+  // 노드가 런타임에 on_display_data 콜백으로 보내는 데이터 구조를 정의
+  // Flutter에서 차트/테이블 렌더링에 사용
+
+  "display_data_schema": {
+
+    // ── 6-1. LineChartNode 예시 ──
+    "type": "array",                           // 데이터 형태 ("array" | "object")
+    "description": "i18n:display_schema.line.description",  // 스키마 설명
+    "items": {
+      "type": "object",                        // 배열 아이템 타입
+      "properties": {
+        "x": {
+          "type": "dynamic",                   // dynamic = 런타임에 필드명이 결정됨
+          "resolved_by": "x_field",            // 이 노드의 "x_field" 설정값으로 실제 필드명 결정
+          "description": "i18n:display_schema.line.x",
+          "example": "date"                    // 예시 필드명
+        },
+        "y": {
+          "type": "dynamic",
+          "resolved_by": "y_field",
+          "description": "i18n:display_schema.line.y",
+          "example": "rsi"
+        },
+        "signal": {
+          "type": "string",                    // 고정 타입 필드
+          "resolved_by": "signal_field",       // nullable 필드 (signal_field 설정이 비어있으면 없음)
+          "nullable": true,                    // null 허용
+          "enum": ["buy", "sell"],             // 가능한 값
+          "description": "i18n:display_schema.common.signal"
+        },
+        "side": {
+          "type": "string",
+          "resolved_by": "side_field",
+          "nullable": true,
+          "enum": ["long", "short"],
+          "description": "i18n:display_schema.common.side"
+        }
+      },
+      "required": ["x", "y"]                  // 필수 필드
+    }
+
+    // ── 6-2. TableDisplayNode 예시 (참고) ──
+    // {
+    //   "type": "array",
+    //   "description": "i18n:display_schema.table.description",
+    //   "items": {
+    //     "type": "object",
+    //     "properties": {
+    //       "columns": {
+    //         "type": "dynamic",
+    //         "resolved_by": "columns",        // columns 설정으로 표시할 컬럼 결정
+    //         "description": "i18n:display_schema.table.columns"
+    //       }
+    //     },
+    //     "required": []
+    //   },
+    //   "options_fields": ["columns", "limit", "sort_by", "sort_order"]  // 런타임 옵션 필드들
+    // }
+  }
+}
+
+// =============================================================================
+// 부록: 상수 값 목록
+// =============================================================================
+//
+// ── category (12종) ──
+// "infra"      : 워크플로우 시작, 쓰로틀
+// "broker"     : 브로커 연결
+// "account"    : 계좌 조회, 실시간 계좌
+// "market"     : 시세, 종목, 과거 데이터, 실시간
+// "condition"  : 조건 평가, 논리 조합
+// "order"      : 주문 실행 (신규/수정/취소), 포지션 사이징
+// "risk"       : 포트폴리오 관리
+// "schedule"   : 스케줄, 시간 필터
+// "data"       : DB, HTTP API, 필드 매핑
+// "display"    : 테이블, 차트, 요약 시각화
+// "analysis"   : 백테스트, 벤치마크 비교
+// "messaging"  : 알림 (community)
+//
+// ── product_scope ──
+// "overseas_stock"    : 해외주식 전용
+// "overseas_futures"  : 해외선물 전용
+// "all"               : 모든 상품
+//
+// ── broker_provider ──
+// "ls-sec.co.kr"  : LS증권
+// "all"            : 모든 브로커
+//
+// ── expression_mode (ExpressionMode) ──
+// "fixed_only"       : 고정값만 입력 (토글 없음)
+// "expression_only"  : {{ }} 바인딩만 가능 (토글 없음)
+// "both"             : Fixed/Expression 토글 전환 가능
+//
+// ── FieldType ──
+// "string"          : 문자열
+// "number"          : 실수
+// "integer"         : 정수
+// "boolean"         : 참/거짓
+// "enum"            : 열거형 (items/itemLabels 필요)
+// "array"           : 배열
+// "object"          : 객체
+// "key_value_pairs" : 키-값 쌍
+// "credential"      : 인증 정보
+//
+// ── widget type (json_dynamic_widget) ──
+// 빌트인:
+//   "text_form_field"               : 텍스트 입력
+//   "checkbox"                      : 체크박스
+//   "dropdown_button_form_field"    : 드롭다운 선택
+//   "slider"                        : 슬라이더
+//   "column"                        : 세로 레이아웃
+//   "card"                          : 카드 컨테이너
+//   "padding"                       : 패딩 래퍼
+//   "text"                          : 텍스트 표시
+//   "conditional"                   : 조건부 표시
+//
+// 커스텀 (ProgramGarden):
+//   "custom_expression_toggle"      : Fixed/Expression 모드 토글
+//   "custom_credential_select"      : Credential 선택기
+//   "custom_symbol_editor"          : 종목 편집기
+//   "custom_plugin_select"          : 플러그인 선택기
+//   "custom_key_value_editor"       : 키-값 편집기
+//   "custom_object_array_table"     : 객체 배열 테이블
+//   "custom_code_editor"            : 코드/SQL 편집기
+//   "custom_creatable_select"       : 생성 가능한 선택기
+//   "custom_date_picker"            : 날짜 선택기
+//   "custom_time_picker"            : 시간 선택기
+//   "custom_datetime_picker"        : 날짜+시간 선택기
+//   "custom_field_mapping_editor"   : 필드 매핑 편집기
+//   "custom_order_list_editor"      : 주문 목록 편집기
+//
+// ── OutputPort.fields 공통 상수 ──
+// SYMBOL_LIST_FIELDS:    exchange, symbol
+// POSITION_FIELDS:       exchange, symbol, quantity, avg_price, current_price, pnl, pnl_percent
+// MARKET_DATA_FIELDS:    exchange, symbol, current_price, volume, change_percent, ...
+// BALANCE_FIELDS:        total_balance, available_balance, currency, ...
+// ORDER_RESULT_FIELDS:   order_id, status, symbol, exchange, side, quantity, price, ...
+//
+// =============================================================================
