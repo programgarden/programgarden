@@ -118,18 +118,285 @@ class ExpressionError(Exception):
         super().__init__(f"{message}: {expression}" if expression else message)
 
 
+class NodeOutputProxy:
+    """
+    노드 출력 프록시 (n8n 스타일 메서드 체이닝 지원)
+
+    nodes.nodeId로 접근하면 이 프록시 객체가 반환됩니다.
+    체이닝 메서드를 통해 데이터를 조작할 수 있습니다.
+
+    Example:
+        {{ nodes.account.all() }}                      # 전체 배열
+        {{ nodes.account.first() }}                    # 첫 번째 아이템
+        {{ nodes.account.filter('pnl > 0') }}          # 조건 필터링
+        {{ nodes.account.map('symbol') }}              # 필드 추출
+        {{ nodes.account.filter('pnl > 0').sum('quantity') }}  # 체이닝
+    """
+
+    def __init__(self, data: Any):
+        """
+        Args:
+            data: 노드 출력 데이터 (dict 또는 list)
+        """
+        self._data = data
+
+    def _get_array(self) -> List[Any]:
+        """내부 데이터를 배열로 변환"""
+        if isinstance(self._data, list):
+            return self._data
+        elif isinstance(self._data, dict):
+            # dict인 경우 values 또는 기본 출력 포트 찾기
+            # positions, symbols, values, data, items 등 배열 출력 포트 확인
+            for key in ["positions", "symbols", "values", "data", "items", "array", "results"]:
+                if key in self._data and isinstance(self._data[key], list):
+                    return self._data[key]
+            # 단일 dict는 [dict]로 반환
+            return [self._data]
+        return []
+
+    # === 기본 메서드 ===
+
+    def all(self) -> List[Any]:
+        """전체 배열 반환"""
+        return self._get_array()
+
+    def first(self) -> Optional[Any]:
+        """첫 번째 아이템 반환"""
+        arr = self._get_array()
+        return arr[0] if arr else None
+
+    def last(self) -> Optional[Any]:
+        """마지막 아이템 반환"""
+        arr = self._get_array()
+        return arr[-1] if arr else None
+
+    def count(self) -> int:
+        """아이템 개수 반환"""
+        return len(self._get_array())
+
+    # === 데이터 조작 메서드 (체이닝 가능) ===
+
+    def filter(self, condition: str) -> "NodeOutputProxy":
+        """
+        조건에 맞는 아이템만 필터링
+
+        Args:
+            condition: 조건 문자열 (예: "pnl > 0", "quantity >= 10")
+
+        Returns:
+            NodeOutputProxy: 필터링된 결과 (체이닝 가능)
+        """
+        arr = self._get_array()
+        filtered = _filter_data(arr, condition)
+        return NodeOutputProxy(filtered)
+
+    def map(self, field: str) -> "NodeOutputProxy":
+        """
+        각 아이템에서 특정 필드 추출
+
+        Args:
+            field: 추출할 필드명 (점 표기법 지원: "nested.field")
+
+        Returns:
+            NodeOutputProxy: 추출된 값 배열 (체이닝 가능)
+        """
+        arr = self._get_array()
+        mapped = [_get_nested_value(item, field) for item in arr if isinstance(item, dict)]
+        return NodeOutputProxy(mapped)
+
+    def sum(self, field: str) -> float:
+        """
+        특정 필드의 합계
+
+        Args:
+            field: 합계를 구할 필드명
+
+        Returns:
+            float: 합계
+        """
+        arr = self._get_array()
+        return sum(
+            _get_nested_value(item, field) or 0
+            for item in arr
+            if isinstance(item, dict)
+        )
+
+    def avg(self, field: str) -> float:
+        """
+        특정 필드의 평균
+
+        Args:
+            field: 평균을 구할 필드명
+
+        Returns:
+            float: 평균
+        """
+        arr = self._get_array()
+        values = [
+            _get_nested_value(item, field)
+            for item in arr
+            if isinstance(item, dict) and _get_nested_value(item, field) is not None
+        ]
+        return sum(values) / len(values) if values else 0
+
+    def flatten(self, nested_key: str) -> "NodeOutputProxy":
+        """
+        중첩 배열 평탄화 (부모 필드 유지)
+
+        Args:
+            nested_key: 평탄화할 중첩 배열 필드명
+
+        Returns:
+            NodeOutputProxy: 평탄화된 결과 (체이닝 가능)
+        """
+        arr = self._get_array()
+        flattened = _flatten(arr, nested_key)
+        return NodeOutputProxy(flattened)
+
+    # === 속성 접근 ===
+
+    def __getattr__(self, name: str) -> Any:
+        """
+        속성 접근 (dict 키 또는 출력 포트)
+
+        nodes.account.positions → positions 포트 값
+        """
+        if isinstance(self._data, dict):
+            if name in self._data:
+                value = self._data[name]
+                # 배열이면 프록시로 감싸서 체이닝 지원
+                if isinstance(value, list):
+                    return NodeOutputProxy(value)
+                return value
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def __getitem__(self, key: Any) -> Any:
+        """인덱스 접근"""
+        arr = self._get_array()
+        if isinstance(key, int):
+            return arr[key] if 0 <= key < len(arr) else None
+        elif isinstance(self._data, dict):
+            return self._data.get(key)
+        return None
+
+    def __repr__(self) -> str:
+        return f"NodeOutputProxy({self._data!r})"
+
+
+class NodesProxy:
+    """
+    nodes 객체 프록시
+
+    {{ nodes.nodeId }} 형태로 접근하면 NodeOutputProxy를 반환합니다.
+    """
+
+    def __init__(self, node_outputs: Dict[str, Dict[str, Any]]):
+        self._outputs = node_outputs
+
+    def __getattr__(self, node_id: str) -> NodeOutputProxy:
+        """nodes.nodeId 접근"""
+        if node_id in self._outputs:
+            return NodeOutputProxy(self._outputs[node_id])
+        raise AttributeError(f"Node '{node_id}' not found in outputs")
+
+    def __getitem__(self, node_id: str) -> NodeOutputProxy:
+        """nodes["node-id"] 접근 (특수문자 노드 ID 지원)"""
+        if node_id in self._outputs:
+            return NodeOutputProxy(self._outputs[node_id])
+        raise KeyError(f"Node '{node_id}' not found in outputs")
+
+    def __repr__(self) -> str:
+        return f"NodesProxy({list(self._outputs.keys())})"
+
+
+def _filter_data(data: List[Any], condition: str) -> List[Any]:
+    """
+    조건에 맞는 아이템 필터링
+
+    지원 조건:
+    - "field > value"
+    - "field >= value"
+    - "field < value"
+    - "field <= value"
+    - "field == value"
+    - "field != value"
+    """
+    import re
+    match = re.match(r"(\w+(?:\.\w+)*)\s*(>|<|>=|<=|==|!=)\s*(.+)", condition.strip())
+    if not match:
+        return data
+
+    field_path, op, value_str = match.groups()
+    value = _parse_value(value_str.strip())
+
+    ops = {
+        '>': lambda a, b: a is not None and a > b,
+        '<': lambda a, b: a is not None and a < b,
+        '>=': lambda a, b: a is not None and a >= b,
+        '<=': lambda a, b: a is not None and a <= b,
+        '==': lambda a, b: a == b,
+        '!=': lambda a, b: a != b,
+    }
+
+    op_func = ops.get(op)
+    if not op_func:
+        return data
+
+    return [
+        item for item in data
+        if isinstance(item, dict) and op_func(_get_nested_value(item, field_path), value)
+    ]
+
+
+def _parse_value(value_str: str) -> Any:
+    """문자열 값을 적절한 타입으로 변환"""
+    # 문자열 리터럴
+    if (value_str.startswith("'") and value_str.endswith("'")) or \
+       (value_str.startswith('"') and value_str.endswith('"')):
+        return value_str[1:-1]
+    # 불리언
+    if value_str.lower() == 'true':
+        return True
+    if value_str.lower() == 'false':
+        return False
+    # None
+    if value_str.lower() == 'none':
+        return None
+    # 숫자
+    try:
+        return int(value_str)
+    except ValueError:
+        try:
+            return float(value_str)
+        except ValueError:
+            return value_str
+
+
 @dataclass
 class ExpressionContext:
     """
     표현식 평가 컨텍스트
 
     이전 노드 출력과 내장 함수를 포함하는 컨텍스트
+
+    n8n 스타일 자동 반복 실행 지원:
+    - item: 현재 반복 중인 아이템 (직전 노드 출력)
+    - index: 현재 반복 인덱스 (0부터 시작)
+    - total: 전체 아이템 개수
     """
 
     # 노드 출력값 (node_id -> {output_port: value})
     node_outputs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
-    # 현재 처리 중인 심볼 (반복 처리 시)
+    # === n8n 스타일 반복 컨텍스트 ===
+    # 현재 반복 중인 아이템 (직전 노드 출력의 단일 요소)
+    item: Optional[Any] = None
+    # 현재 반복 인덱스 (0부터 시작)
+    index: int = 0
+    # 전체 아이템 개수
+    total: int = 0
+
+    # 현재 처리 중인 심볼 (레거시, 호환성 유지)
     current_symbol: Optional[str] = None
     current_index: int = 0
 
@@ -140,14 +407,20 @@ class ExpressionContext:
         """표현식에서 사용할 변수 딕셔너리 생성"""
         result = {}
 
-        # 노드 출력 추가 (nodes.node_id.port로 접근)
-        # 항상 dict 형태 유지 → nodes.watchlist.symbols 같은 표현식 지원
-        nodes_dict = {}
-        for node_id, outputs in self.node_outputs.items():
-            nodes_dict[node_id] = outputs
-        result["nodes"] = nodes_dict
+        # 노드 출력 추가 (NodesProxy로 감싸서 메서드 체이닝 지원)
+        # nodes.account.all(), nodes.account.filter('pnl > 0') 등 지원
+        result["nodes"] = NodesProxy(self.node_outputs)
 
-        # 현재 컨텍스트
+        # === n8n 스타일 반복 컨텍스트 ===
+        # item: 현재 반복 중인 아이템
+        if self.item is not None:
+            result["item"] = self.item
+        # index: 현재 반복 인덱스
+        result["index"] = self.index
+        # total: 전체 아이템 개수
+        result["total"] = self.total
+
+        # 레거시 호환성
         if self.current_symbol:
             result["current_symbol"] = self.current_symbol
         result["current_index"] = self.current_index
@@ -156,6 +429,12 @@ class ExpressionContext:
         result.update(self.variables)
 
         return result
+
+    def set_iteration_context(self, item: Any, index: int, total: int) -> None:
+        """반복 컨텍스트 설정 (자동 반복 실행 시 Executor가 호출)"""
+        self.item = item
+        self.index = index
+        self.total = total
 
     def set_node_output(self, node_id: str, port: str, value: Any) -> None:
         """노드 출력값 설정"""

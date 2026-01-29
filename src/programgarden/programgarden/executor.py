@@ -10579,52 +10579,43 @@ class WorkflowJob:
                 self.context.log("error", f"Node {node_id} failed: {e}", node_id)
                 raise
 
-    # === Item-based Execution Helpers (SplitNode/AggregateNode) ===
+    # === Item-based Execution Helpers (n8n 스타일 자동 반복 실행) ===
 
-    # 자동 iterate 대상 입력 포트 타입 (단일 아이템을 기대하는 타입들)
-    AUTO_ITERATE_INPUT_TYPES = {"symbol"}
+    # 자동 반복 실행에서 제외할 노드 타입 (배열을 그대로 처리하는 노드)
+    NO_AUTO_ITERATE_NODE_TYPES = {
+        "SplitNode", "AggregateNode",  # 명시적 반복 제어 노드
+        "StartNode", "ThrottleNode",   # 인프라 노드
+        "TableDisplayNode", "LineChartNode", "MultiLineChartNode",  # 디스플레이 노드 (배열 표시)
+        "CandlestickChartNode", "BarChartNode", "SummaryDisplayNode",
+        "WatchlistNode", "MarketUniverseNode", "ScreenerNode",  # 배열 생성 노드
+        "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
+        "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
+        "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
+        "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
+    }
 
     def _should_auto_iterate(self, node_type: str, input_data: Any) -> tuple:
         """
-        노드가 n8n 스타일 자동 iterate 대상인지 확인
+        n8n 스타일: 이전 노드 출력이 배열이면 자동 반복 실행
 
         조건:
-        1. 입력 데이터가 배열 (2개 이상)
-        2. 노드의 입력 포트 타입이 단일 아이템 타입 (symbol 등)
-        3. SplitNode 브랜치 내부가 아님 (SplitNode가 있으면 명시적 제어 사용)
+        1. 입력 데이터가 배열 (1개 이상)
+        2. 노드가 NO_AUTO_ITERATE_NODE_TYPES에 포함되지 않음
+        3. SplitNode 브랜치 내부가 아님
 
         Returns:
             (should_iterate: bool, input_port_name: str, items: list)
         """
+        # 자동 반복 제외 노드 타입
+        if node_type in self.NO_AUTO_ITERATE_NODE_TYPES:
+            return False, "", []
+
         # 입력이 배열이 아니거나 비어있으면 iterate 불필요
         if not isinstance(input_data, list) or len(input_data) < 1:
             return False, "", []
 
-        # 노드 클래스에서 입력 포트 정보 가져오기
-        try:
-            from programgarden_core.registry import NodeTypeRegistry
-            from pydantic.fields import ModelPrivateAttr
-
-            registry = NodeTypeRegistry()
-            node_class = registry.get(node_type)
-
-            if not node_class:
-                return False, "", []
-
-            # Pydantic ModelPrivateAttr에서 default 값 가져오기
-            inputs_attr = getattr(node_class, '_inputs', None)
-            if isinstance(inputs_attr, ModelPrivateAttr):
-                inputs = inputs_attr.default or []
-            else:
-                inputs = inputs_attr or []
-
-            for port in inputs:
-                if port.type in self.AUTO_ITERATE_INPUT_TYPES:
-                    return True, port.name, input_data
-        except Exception as e:
-            print(f"  ⚠️ Auto-iterate check failed for {node_type}: {e}", flush=True)
-
-        return False, "", []
+        # 배열 입력이면 자동 반복 실행
+        return True, "item", input_data
 
     async def _execute_with_auto_iterate(
         self,
@@ -10638,14 +10629,14 @@ class WorkflowJob:
         n8n 스타일: 배열 입력을 자동으로 iterate하며 노드 실행
 
         각 아이템마다 노드를 실행하고 결과를 배열로 수집합니다.
-        SplitNode와 달리 delay나 parallel 옵션 없이 순차 실행합니다.
+        {{ item }}, {{ index }}, {{ total }} 표현식을 지원합니다.
 
         Args:
             node_id: 노드 ID
             node: ResolvedNode 인스턴스
-            config: 노드 설정
+            config: 노드 설정 ({{ item.xxx }} 표현식 포함 가능)
             items: iterate할 아이템 배열
-            port_name: 아이템을 바인딩할 입력 포트 이름
+            port_name: 사용되지 않음 (호환성 유지)
 
         Returns:
             병합된 출력 (배열 필드는 배열로, 단일 필드는 마지막 값)
@@ -10657,13 +10648,15 @@ class WorkflowJob:
 
         print(f"  🔄 Auto-iterate: {node_id} ({node.node_type}) - {total} items")
 
-        for idx, item in enumerate(items):
-            # 아이템별 config 생성
-            item_config = config.copy()
-            item_config[port_name] = item
+        for idx, current_item in enumerate(items):
+            # === n8n 스타일: item, index, total을 ExecutionContext에 설정 ===
+            self.context.set_iteration_context(current_item, idx, total)
+
+            # config 내 표현식 평가 ({{ item.xxx }}, {{ index }} 등)
+            item_config = self._resolve_config_expressions(config)
 
             # 진행 상황 로그
-            item_label = item.get("symbol", str(item)) if isinstance(item, dict) else str(item)
+            item_label = current_item.get("symbol", str(current_item)) if isinstance(current_item, dict) else str(current_item)
             print(f"    [{idx+1}/{total}] Processing: {item_label}")
             self.context.log("debug", f"Auto-iterate [{idx+1}/{total}]: {item_label}", node_id)
 
@@ -10680,7 +10673,10 @@ class WorkflowJob:
             except Exception as e:
                 self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
                 # continue_on_error: 기본적으로 계속 진행
-                all_results.append({"error": str(e), "item": item})
+                all_results.append({"error": str(e), "item": current_item})
+
+        # === 반복 종료 후 컨텍스트 정리 ===
+        self.context.clear_iteration_context()
 
         # 결과 병합: 배열 필드는 병합, 단일 필드는 마지막 값
         merged = self._merge_iterate_results(all_results)

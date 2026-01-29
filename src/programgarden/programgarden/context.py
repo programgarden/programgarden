@@ -216,6 +216,12 @@ class ExecutionContext:
         # === New: DAG index for ancestor propagation ===
         # Reverse adjacency list: {to_node: [from_nodes]}
         self._reverse_adj: Dict[str, List[str]] = {}
+
+        # === New: n8n 스타일 반복 컨텍스트 ===
+        # 자동 반복 실행 시 item, index, total 저장
+        self._iteration_item: Optional[Any] = None
+        self._iteration_index: int = 0
+        self._iteration_total: int = 0
         # Node type mapping: {node_id: node_type}
         self._node_types: Dict[str, str] = {}
         self._build_dag_index(workflow_edges, workflow_nodes)
@@ -1989,9 +1995,12 @@ class ExecutionContext:
 
         Converts all node outputs to be accessible in expressions.
         Also provides `input` variable for workflow inputs.
-        
+
         Available variables in expressions:
         - {{ nodeId.port }}: Node output values
+        - {{ nodes.nodeId.method() }}: Node output with method chaining (n8n style)
+        - {{ item }}, {{ item.field }}: Current iteration item (n8n style)
+        - {{ index }}, {{ total }}: Iteration context (n8n style)
         - {{ input.xxx }}: Workflow input parameters
         - {{ context.xxx }}: Runtime context parameters
         """
@@ -2001,6 +2010,14 @@ class ExecutionContext:
         for node_id, outputs in self._outputs.items():
             for port_name, output in outputs.items():
                 expr_context.set_node_output(node_id, port_name, output.value)
+
+        # === n8n 스타일 반복 컨텍스트 ===
+        if self._iteration_item is not None:
+            expr_context.set_iteration_context(
+                self._iteration_item,
+                self._iteration_index,
+                self._iteration_total,
+            )
 
         # Add realtime data
         expr_context.variables.update(self._realtime_data)
@@ -2013,6 +2030,23 @@ class ExecutionContext:
         expr_context.variables["context"] = self.context_params
 
         return expr_context
+
+    def set_iteration_context(self, item: Any, index: int, total: int) -> None:
+        """
+        n8n 스타일 반복 컨텍스트 설정
+
+        자동 반복 실행 시 Executor가 각 아이템마다 호출합니다.
+        {{ item }}, {{ index }}, {{ total }} 표현식에서 사용됩니다.
+        """
+        self._iteration_item = item
+        self._iteration_index = index
+        self._iteration_total = total
+
+    def clear_iteration_context(self) -> None:
+        """반복 컨텍스트 초기화"""
+        self._iteration_item = None
+        self._iteration_index = 0
+        self._iteration_total = 0
 
     def _merge_inputs_with_defaults(self) -> Dict[str, Any]:
         """

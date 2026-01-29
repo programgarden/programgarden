@@ -254,7 +254,7 @@ class TestNodeSchemaProductScope:
             "WatchlistNode",
             "ConditionNode",
             "LogicNode",
-            "DisplayNode",
+            "TableDisplayNode",
         ]
 
         for node_type in generic_types:
