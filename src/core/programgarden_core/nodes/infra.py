@@ -4,7 +4,7 @@ ProgramGarden Core - Infra Nodes
 Infrastructure nodes:
 - StartNode: Workflow entry point
 - ThrottleNode: Data flow control
-- SplitNode: Split list into individual items (n8n-style item-based execution)
+- SplitNode: Split list into individual items (item-based execution)
 - AggregateNode: Aggregate individual items into a list
 """
 
@@ -137,7 +137,7 @@ class ThrottleNode(BaseNode):
 
 class SplitNode(BaseNode):
     """
-    Split list into individual items (n8n-style item-based execution)
+    Split list into individual items (item-based execution)
 
     Converts a list input into individual items, triggering downstream nodes
     once for each item. Works with AggregateNode to collect results.

@@ -2,7 +2,7 @@
 ProgramGarden Core - Credential 모델
 
 인증 정보 (Credential Layer)
-n8n 스타일 credential 관리 시스템
+자동 반복 credential 관리 시스템
 """
 
 from typing import Optional, List, Dict, Any
@@ -12,7 +12,7 @@ from enum import Enum
 
 
 # ============================================================
-# Credential Type Schema (n8n 스타일)
+# Credential Type Schema (자동 반복)
 # ============================================================
 
 class CredentialTypeSchema(BaseModel):
@@ -36,7 +36,7 @@ class CredentialTypeSchema(BaseModel):
 
 class Credential(BaseModel):
     """
-    Stored credential instance (n8n 스타일).
+    Stored credential instance (자동 반복).
     Contains encrypted credential data.
     """
     id: str = Field(..., description="Unique credential ID")

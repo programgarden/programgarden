@@ -10514,7 +10514,7 @@ class WorkflowJob:
 
             # Execute node
             try:
-                # === n8n 스타일 자동 iterate 체크 ===
+                # === 자동 iterate 체크 ===
                 # 입력 데이터가 배열이고, 노드가 단일 아이템을 기대하면 자동으로 각 아이템마다 실행
                 input_data = None
                 for edge in self.workflow.edges:
@@ -10579,7 +10579,7 @@ class WorkflowJob:
                 self.context.log("error", f"Node {node_id} failed: {e}", node_id)
                 raise
 
-    # === Item-based Execution Helpers (n8n 스타일 자동 반복 실행) ===
+    # === Item-based Execution Helpers (자동 반복 실행) ===
 
     # 자동 반복 실행에서 제외할 노드 타입 (배열을 그대로 처리하는 노드)
     NO_AUTO_ITERATE_NODE_TYPES = {
@@ -10596,7 +10596,7 @@ class WorkflowJob:
 
     def _should_auto_iterate(self, node_type: str, input_data: Any) -> tuple:
         """
-        n8n 스타일: 이전 노드 출력이 배열이면 자동 반복 실행
+        이전 노드 출력이 배열이면 자동 반복 실행
 
         조건:
         1. 입력 데이터가 배열 (1개 이상)
@@ -10626,7 +10626,7 @@ class WorkflowJob:
         port_name: str,
     ) -> Dict[str, Any]:
         """
-        n8n 스타일: 배열 입력을 자동으로 iterate하며 노드 실행
+        배열 입력을 자동으로 iterate하며 노드 실행
 
         각 아이템마다 노드를 실행하고 결과를 배열로 수집합니다.
         {{ item }}, {{ index }}, {{ total }} 표현식을 지원합니다.
@@ -10649,7 +10649,7 @@ class WorkflowJob:
         print(f"  🔄 Auto-iterate: {node_id} ({node.node_type}) - {total} items")
 
         for idx, current_item in enumerate(items):
-            # === n8n 스타일: item, index, total을 ExecutionContext에 설정 ===
+            # === item, index, total을 ExecutionContext에 설정 ===
             self.context.set_iteration_context(current_item, idx, total)
 
             # config 내 표현식 평가 ({{ item.xxx }}, {{ index }} 등)

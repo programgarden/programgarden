@@ -7,7 +7,7 @@ ProgramGarden Core - 모델 정의
 - WorkflowJob: 실행 인스턴스 (Layer 4)
 - JobState: Job 상태 스냅샷
 - BrokerCredential: 인증 정보 (Layer 2)
-- Credential: n8n 스타일 credential 시스템
+- Credential: 자동 반복 credential 시스템
 - Event: 이벤트 히스토리 (Layer 5)
 """
 
@@ -20,7 +20,7 @@ from programgarden_core.models.credential import (
     AccountInfo, 
     DBCredential, 
     DBType,
-    # n8n style credential system
+    # Credential system
     Credential,
     CredentialTypeSchema,
     BUILTIN_CREDENTIAL_SCHEMAS,
@@ -81,7 +81,7 @@ __all__ = [
     "AccountInfo",
     "DBCredential",
     "DBType",
-    # Credential (n8n style)
+    # Credential 
     "Credential",
     "CredentialTypeSchema",
     "BUILTIN_CREDENTIAL_SCHEMAS",

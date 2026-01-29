@@ -120,7 +120,7 @@ class ExpressionError(Exception):
 
 class NodeOutputProxy:
     """
-    노드 출력 프록시 (n8n 스타일 메서드 체이닝 지원)
+    노드 출력 프록시 (메서드 체이닝 지원)
 
     nodes.nodeId로 접근하면 이 프록시 객체가 반환됩니다.
     체이닝 메서드를 통해 데이터를 조작할 수 있습니다.
@@ -379,7 +379,7 @@ class ExpressionContext:
 
     이전 노드 출력과 내장 함수를 포함하는 컨텍스트
 
-    n8n 스타일 자동 반복 실행 지원:
+    자동 반복 실행 지원:
     - item: 현재 반복 중인 아이템 (직전 노드 출력)
     - index: 현재 반복 인덱스 (0부터 시작)
     - total: 전체 아이템 개수
@@ -388,7 +388,7 @@ class ExpressionContext:
     # 노드 출력값 (node_id -> {output_port: value})
     node_outputs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
-    # === n8n 스타일 반복 컨텍스트 ===
+    # === 반복 컨텍스트 ===
     # 현재 반복 중인 아이템 (직전 노드 출력의 단일 요소)
     item: Optional[Any] = None
     # 현재 반복 인덱스 (0부터 시작)
@@ -411,7 +411,7 @@ class ExpressionContext:
         # nodes.account.all(), nodes.account.filter('pnl > 0') 등 지원
         result["nodes"] = NodesProxy(self.node_outputs)
 
-        # === n8n 스타일 반복 컨텍스트 ===
+        # === 반복 컨텍스트 ===
         # item: 현재 반복 중인 아이템
         if self.item is not None:
             result["item"] = self.item

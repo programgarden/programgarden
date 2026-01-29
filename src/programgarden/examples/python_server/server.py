@@ -744,7 +744,7 @@ async def get_exchanges(broker: str = "ls", product: str = "overseas_stock"):
 
 
 # ========================================
-# Credential API (n8n style)
+# Credential API
 # ========================================
 
 class CredentialCreateRequest(BaseModel):

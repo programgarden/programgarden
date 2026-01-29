@@ -217,7 +217,7 @@ class ExecutionContext:
         # Reverse adjacency list: {to_node: [from_nodes]}
         self._reverse_adj: Dict[str, List[str]] = {}
 
-        # === New: n8n 스타일 반복 컨텍스트 ===
+        # === New: 반복 컨텍스트 ===
         # 자동 반복 실행 시 item, index, total 저장
         self._iteration_item: Optional[Any] = None
         self._iteration_index: int = 0
@@ -1998,9 +1998,9 @@ class ExecutionContext:
 
         Available variables in expressions:
         - {{ nodeId.port }}: Node output values
-        - {{ nodes.nodeId.method() }}: Node output with method chaining (n8n style)
-        - {{ item }}, {{ item.field }}: Current iteration item (n8n style)
-        - {{ index }}, {{ total }}: Iteration context (n8n style)
+        - {{ nodes.nodeId.method() }}: Node output with method chaining 
+        - {{ item }}, {{ item.field }}: Current iteration item 
+        - {{ index }}, {{ total }}: Iteration context 
         - {{ input.xxx }}: Workflow input parameters
         - {{ context.xxx }}: Runtime context parameters
         """
@@ -2011,7 +2011,7 @@ class ExecutionContext:
             for port_name, output in outputs.items():
                 expr_context.set_node_output(node_id, port_name, output.value)
 
-        # === n8n 스타일 반복 컨텍스트 ===
+        # === 반복 컨텍스트 ===
         if self._iteration_item is not None:
             expr_context.set_iteration_context(
                 self._iteration_item,
@@ -2033,7 +2033,7 @@ class ExecutionContext:
 
     def set_iteration_context(self, item: Any, index: int, total: int) -> None:
         """
-        n8n 스타일 반복 컨텍스트 설정
+        반복 컨텍스트 설정
 
         자동 반복 실행 시 Executor가 각 아이템마다 호출합니다.
         {{ item }}, {{ index }}, {{ total }} 표현식에서 사용됩니다.

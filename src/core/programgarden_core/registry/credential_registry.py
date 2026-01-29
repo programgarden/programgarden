@@ -2,7 +2,7 @@
 ProgramGarden Core - Credential Registry
 
 Credential 타입 및 인스턴스 관리 레지스트리.
-n8n 스타일의 credential 시스템 구현.
+자동 반복의 credential 시스템 구현.
 
 주의: 이 라이브러리는 평문 데이터만 다룹니다.
 암호화/복호화는 외부(서버/KMS)에서 처리합니다.

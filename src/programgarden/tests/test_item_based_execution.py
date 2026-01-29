@@ -1,7 +1,7 @@
 """
 Item-based Execution Tests
 
-n8n-style item-based execution 테스트:
+item-based execution 테스트:
 - SplitNode: 배열을 개별 아이템으로 분리
 - AggregateNode: 아이템 결과를 배열로 수집
 - Branch execution: Split → [nodes] → Aggregate 패턴
