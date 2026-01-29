@@ -97,7 +97,7 @@ class BaseDisplayNode(BaseNode):
         description="차트 제목",
     )
 
-    data: Optional[str] = Field(
+    data: Any = Field(
         default=None,
         description="데이터 바인딩 (예: {{ nodes.condition.values }})",
     )
