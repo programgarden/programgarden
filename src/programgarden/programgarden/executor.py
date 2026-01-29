@@ -8467,19 +8467,18 @@ class BenchmarkCompareNodeExecutor(NodeExecutorBase):
 
 class NewOrderNodeExecutor(NodeExecutorBase):
     """
-    신규 주문 Executor
+    신규 주문 Executor (단일 종목)
 
     지원 노드:
     - OverseasStockNewOrderNode: 해외주식 신규주문 (COSAT00301)
     - OverseasFuturesNewOrderNode: 해외선물 신규주문 (CIDBT00100)
 
-    입력 (orders 배열):
-    - orders: [{symbol, exchange, quantity, price}, ...]
+    입력 (order 객체):
+    - order: {symbol, exchange, quantity, price}
 
     출력:
-    - order_result: 주문 결과 요약
-    - order_ids: 종목별 주문번호 Dict[str, str]
-    - submitted_orders: 제출된 주문 상세 리스트
+    - order_result: 주문 결과
+    - order_id: 주문번호
     """
 
     # 해외주식 시장 코드 매핑
@@ -8541,21 +8540,21 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         # === 2. 바인딩 표현식 평가 ===
         config = evaluate_all_bindings(config, context, node_id)
 
-        # === 3. 주문 정보 추출 (orders 배열) ===
-        orders = config.get("orders", [])
+        # === 3. 주문 정보 추출 (order 단일 객체) ===
+        order = config.get("order")
         side = config.get("side", "buy")
         order_type = config.get("order_type", "limit")
 
-        # orders 정규화
-        normalized_orders = self._normalize_orders(orders, config)
+        # order 정규화
+        normalized_order = self._normalize_order(order, config)
 
-        if not normalized_orders:
+        if not normalized_order:
             context.log("warning", f"{node_type}: 주문할 종목이 없습니다", node_id)
             return self._empty_result()
 
         context.log(
             "info",
-            f"{node_type}: {len(normalized_orders)} orders, side={side}, type={order_type}",
+            f"{node_type}: {normalized_order['symbol']}, side={side}, type={order_type}, qty={normalized_order['quantity']}",
             node_id
         )
 
@@ -8584,11 +8583,11 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             # === 5. 상품별 주문 실행 ===
             if product == "overseas_stock":
                 return await self._execute_overseas_stock(
-                    ls, normalized_orders, side, order_type, config, context, node_id
+                    ls, normalized_order, side, order_type, config, context, node_id
                 )
             elif product in ("overseas_futures", "overseas_futureoption"):
                 return await self._execute_overseas_futures(
-                    ls, normalized_orders, side, order_type, config, context, node_id
+                    ls, normalized_order, side, order_type, config, context, node_id
                 )
             else:
                 context.log("error", f"{node_type}: Unsupported product: {product}", node_id)
@@ -8598,70 +8597,63 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             context.log("error", f"{node_type}: Unexpected error: {e}", node_id)
             return self._error_result(str(e))
 
-    def _normalize_orders(
+    def _normalize_order(
         self,
-        orders_raw: Any,
+        order_raw: Any,
         config: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
+    ) -> Optional[Dict[str, Any]]:
         """
-        orders 배열을 정규화
+        order 객체를 정규화 (단일 종목)
 
-        입력: [{symbol, exchange, quantity, price}, ...]
-        출력: [{symbol, exchange, quantity, price}, ...] (검증된 리스트)
+        입력: {symbol, exchange, quantity, price}
+        출력: {symbol, exchange, quantity, price} (검증된 객체) 또는 None
         """
-        if not orders_raw:
-            return []
+        if not order_raw:
+            return None
 
-        if not isinstance(orders_raw, list):
-            orders_raw = [orders_raw]
+        if not isinstance(order_raw, dict):
+            return None
 
-        result = []
-        for order in orders_raw:
-            if not isinstance(order, dict):
-                continue
+        symbol = order_raw.get("symbol", "")
+        if not symbol:
+            return None
 
-            symbol = order.get("symbol", "")
-            if not symbol:
-                continue
+        exchange = order_raw.get("exchange", "NASDAQ")
+        quantity = order_raw.get("quantity", 0)
+        price = order_raw.get("price", 0.0)
 
-            exchange = order.get("exchange", "NASDAQ")
-            quantity = order.get("quantity", 0)
-            price = order.get("price", 0.0)
+        # quantity가 없으면 None
+        if quantity <= 0:
+            return None
 
-            # quantity가 없으면 스킵
-            if quantity <= 0:
-                continue
+        # price 필드 자동 탐색 (MarketDataNode 바인딩 시)
+        if price <= 0:
+            for field in ["last_price", "close", "current_price"]:
+                if field in order_raw and order_raw[field]:
+                    try:
+                        price = float(order_raw[field])
+                        break
+                    except (ValueError, TypeError):
+                        pass
 
-            # price 필드 자동 탐색 (MarketDataNode 바인딩 시)
-            if price <= 0:
-                for field in ["last_price", "close", "current_price"]:
-                    if field in order and order[field]:
-                        try:
-                            price = float(order[field])
-                            break
-                        except (ValueError, TypeError):
-                            pass
-
-            result.append({
-                "symbol": symbol,
-                "exchange": exchange,
-                "quantity": int(quantity),
-                "price": float(price) if price else 0.0,
-            })
-
-        return result
+        return {
+            "symbol": symbol,
+            "exchange": exchange,
+            "quantity": int(quantity),
+            "price": float(price) if price else 0.0,
+        }
 
     async def _execute_overseas_stock(
         self,
         ls,
-        orders: List[Dict[str, Any]],
+        order: Dict[str, Any],
         side: str,
         order_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """해외주식 신규주문 실행 (COSAT00301)
+        """해외주식 신규주문 실행 (COSAT00301) - 단일 종목
 
         해외주식 주문 규칙:
         - 매수: 지정가(00)만 가능 → 시장가 요청 시 현재가로 지정가 변환
@@ -8670,6 +8662,11 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
         from programgarden_finance.ls.models import SetupOptions
         from datetime import datetime as dt
+
+        symbol = order["symbol"]
+        exchange = order["exchange"]
+        qty = order["quantity"]
+        price = order["price"]
 
         # 주문유형코드: 01=매도, 02=매수
         ord_ptn_code = "01" if side == "sell" else "02"
@@ -8684,127 +8681,69 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             context.log("info", "해외주식 매수는 지정가만 가능 - 현재가로 지정가 주문 전환", node_id)
             ordprc_ptn_code = "00"
 
-        order_ids = {}
-        submitted_orders = []
-        success_count = 0
-        fail_count = 0
+        ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
 
-        for order in orders:
-            symbol = order["symbol"]
-            exchange = order["exchange"]
-            qty = order["quantity"]
-            price = order["price"]
-
-            ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
-
-            # 매수 지정가 주문인데 가격이 없으면 현재가 조회
-            if is_buy and ordprc_ptn_code == "00" and price <= 0:
-                try:
-                    current_price = await self._get_current_price(ls, symbol, ord_mkt_code, context, node_id)
-                    if current_price and current_price > 0:
-                        price = current_price
-                        context.log("info", f"현재가 조회: {symbol} = ${price}", node_id)
-                    else:
-                        context.log("warning", f"현재가 조회 실패: {symbol} - 주문 건너뜀", node_id)
-                        fail_count += 1
-                        submitted_orders.append({
-                            "symbol": symbol, "exchange": exchange, "side": side,
-                            "quantity": qty, "price": 0, "status": "failed",
-                            "error": "현재가 조회 실패",
-                        })
-                        continue
-                except Exception as e:
-                    context.log("warning", f"현재가 조회 예외: {symbol} - {e}", node_id)
-                    fail_count += 1
-                    submitted_orders.append({
-                        "symbol": symbol, "exchange": exchange, "side": side,
-                        "quantity": qty, "price": 0, "status": "failed",
-                        "error": str(e),
-                    })
-                    continue
-
-            # 매도 시장가 주문은 가격 0
-            if side == "sell" and ordprc_ptn_code == "03":
-                price = 0.0
-
+        # 매수 지정가 주문인데 가격이 없으면 현재가 조회
+        if is_buy and ordprc_ptn_code == "00" and price <= 0:
             try:
-                order_api = ls.overseas_stock().주문().cosat00301(
-                    COSAT00301InBlock1(
-                        RecCnt=1,
-                        OrdPtnCode=ord_ptn_code,
-                        OrdMktCode=ord_mkt_code,
-                        IsuNo=symbol,
-                        OrdQty=qty,
-                        OvrsOrdPrc=price,
-                        OrdprcPtnCode=ordprc_ptn_code,
-                    ),
-                    options=SetupOptions(on_rate_limit="wait"),
-                )
-
-                response = await order_api.req_async()
-
-                if response.error_msg:
-                    context.log("warning", f"Order failed for {symbol}: {response.error_msg}", node_id)
-                    fail_count += 1
-                    submitted_orders.append({
-                        "symbol": symbol,
-                        "exchange": exchange,
-                        "side": side,
-                        "quantity": qty,
-                        "price": price,
-                        "status": "failed",
-                        "error": response.error_msg,
-                    })
+                current_price = await self._get_current_price(ls, symbol, ord_mkt_code, context, node_id)
+                if current_price and current_price > 0:
+                    price = current_price
+                    context.log("info", f"현재가 조회: {symbol} = ${price}", node_id)
                 else:
-                    order_no = ""
-                    if response.block2:
-                        order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
-
-                    order_ids[symbol] = order_no
-                    success_count += 1
-                    submitted_orders.append({
-                        "symbol": symbol,
-                        "exchange": exchange,
-                        "side": side,
-                        "quantity": qty,
-                        "price": price,
-                        "status": "submitted",
-                        "order_id": order_no,
-                        "market_code": ord_mkt_code,
-                        "price_type": price_type,
-                    })
-                    context.log("info", f"Order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
-
-                    # Record workflow order for FIFO tracking
-                    context.record_workflow_order(
-                        order_no=order_no,
-                        order_date=dt.now().strftime("%Y%m%d"),
-                        symbol=symbol,
-                        exchange=exchange,
-                        side=side,
-                        quantity=qty,
-                        price=price,
-                        node_id=node_id,
-                    )
-
+                    context.log("warning", f"현재가 조회 실패: {symbol}", node_id)
+                    return self._order_result(False, symbol, exchange, side, qty, 0, "현재가 조회 실패")
             except Exception as e:
-                context.log("warning", f"Order exception for {symbol}: {e}", node_id)
-                fail_count += 1
-                submitted_orders.append({
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "side": side,
-                    "quantity": qty,
-                    "price": price,
-                    "status": "error",
-                    "error": str(e),
-                })
+                context.log("warning", f"현재가 조회 예외: {symbol} - {e}", node_id)
+                return self._order_result(False, symbol, exchange, side, qty, 0, str(e))
 
-        context.log(
-            "info",
-            f"OverseasStockNewOrderNode completed: {success_count} success, {fail_count} failed",
-            node_id
-        )
+        # 매도 시장가 주문은 가격 0
+        if side == "sell" and ordprc_ptn_code == "03":
+            price = 0.0
+
+        try:
+            order_api = ls.overseas_stock().주문().cosat00301(
+                COSAT00301InBlock1(
+                    RecCnt=1,
+                    OrdPtnCode=ord_ptn_code,
+                    OrdMktCode=ord_mkt_code,
+                    IsuNo=symbol,
+                    OrdQty=qty,
+                    OvrsOrdPrc=price,
+                    OrdprcPtnCode=ordprc_ptn_code,
+                ),
+                options=SetupOptions(on_rate_limit="wait"),
+            )
+
+            response = await order_api.req_async()
+
+            if response.error_msg:
+                context.log("warning", f"Order failed: {symbol} - {response.error_msg}", node_id)
+                return self._order_result(False, symbol, exchange, side, qty, price, response.error_msg)
+
+            order_no = ""
+            if response.block2:
+                order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
+
+            context.log("info", f"Order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
+
+            # Record workflow order for FIFO tracking
+            context.record_workflow_order(
+                order_no=order_no,
+                order_date=dt.now().strftime("%Y%m%d"),
+                symbol=symbol,
+                exchange=exchange,
+                side=side,
+                quantity=qty,
+                price=price,
+                node_id=node_id,
+            )
+
+            return self._order_result(True, symbol, exchange, side, qty, price, None, order_no)
+
+        except Exception as e:
+            context.log("warning", f"Order exception: {symbol} - {e}", node_id)
+            return self._order_result(False, symbol, exchange, side, qty, price, str(e))
 
         return {
             "order_result": {
@@ -8978,17 +8917,22 @@ class NewOrderNodeExecutor(NodeExecutorBase):
     async def _execute_overseas_futures(
         self,
         ls,
-        orders: List[Dict[str, Any]],
+        order: Dict[str, Any],
         side: str,
         order_type: str,
         config: Dict[str, Any],
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """해외선물 신규주문 실행 (CIDBT00100)"""
+        """해외선물 신규주문 실행 (CIDBT00100) - 단일 종목"""
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT00100.blocks import CIDBT00100InBlock1
         from programgarden_finance.ls.models import SetupOptions
         from datetime import datetime as dt
+
+        symbol = order["symbol"]
+        exchange = order["exchange"]
+        qty = order["quantity"]
+        price = order["price"]
 
         # 매매구분코드: 1=매도, 2=매수
         bns_tp_code = "1" if side == "sell" else "2"
@@ -9000,123 +8944,88 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         expiry_month = config.get("expiry_month", "")
         today = dt.now().strftime("%Y%m%d")
 
-        order_ids = {}
-        submitted_orders = []
-        success_count = 0
-        fail_count = 0
+        # 시장가 주문은 가격 0으로 전송
+        if abrd_futs_ord_ptn_code == "1":  # 시장가
+            price = 0.0
 
-        for order in orders:
-            symbol = order["symbol"]
-            exchange = order["exchange"]
-            qty = order["quantity"]
-            price = order["price"]
+        try:
+            order_api = ls.overseas_futureoption().order().CIDBT00100(
+                CIDBT00100InBlock1(
+                    RecCnt=1,
+                    OrdDt=today,
+                    IsuCodeVal=symbol,
+                    FutsOrdTpCode="1",  # 1=신규
+                    BnsTpCode=bns_tp_code,
+                    AbrdFutsOrdPtnCode=abrd_futs_ord_ptn_code,
+                    CrcyCode="",
+                    OvrsDrvtOrdPrc=price,
+                    CndiOrdPrc=0.0,
+                    OrdQty=qty,
+                    PrdtCode="000000",
+                    DueYymm=expiry_month,
+                    ExchCode=exchange,
+                ),
+                options=SetupOptions(on_rate_limit="wait"),
+            )
 
-            # 시장가 주문도 가격 0으로 전송
-            if abrd_futs_ord_ptn_code == "1":  # 시장가
-                price = 0.0
+            response = await order_api.req_async()
 
-            try:
-                order_api = ls.overseas_futureoption().order().CIDBT00100(
-                    CIDBT00100InBlock1(
-                        RecCnt=1,
-                        OrdDt=today,
-                        IsuCodeVal=symbol,
-                        FutsOrdTpCode="1",  # 1=신규
-                        BnsTpCode=bns_tp_code,
-                        AbrdFutsOrdPtnCode=abrd_futs_ord_ptn_code,
-                        CrcyCode="",
-                        OvrsDrvtOrdPrc=price,
-                        CndiOrdPrc=0.0,
-                        OrdQty=qty,
-                        PrdtCode="000000",
-                        DueYymm=expiry_month,
-                        ExchCode=exchange,
-                    ),
-                    options=SetupOptions(on_rate_limit="wait"),
-                )
+            # 디버그: 응답 전체 출력
+            context.log("debug", f"CIDBT00100 response: rsp_cd={response.rsp_cd}, rsp_msg={response.rsp_msg}", node_id)
 
-                response = await order_api.req_async()
+            if response.error_msg:
+                context.log("warning", f"Order failed: {symbol} - {response.error_msg}", node_id)
+                return self._order_result(False, symbol, exchange, side, qty, price, response.error_msg)
 
-                # 디버그: 응답 전체 출력
-                context.log("debug", f"CIDBT00100 response for {symbol}: rsp_cd={response.rsp_cd}, rsp_msg={response.rsp_msg}, error_msg={response.error_msg}", node_id)
-                context.log("debug", f"CIDBT00100 block1={response.block1}, block2={response.block2}", node_id)
+            order_no = ""
+            if response.block2:
+                # 해외선물 주문번호 필드: OvrsFutsOrdNo
+                order_no = str(response.block2.OvrsFutsOrdNo) if hasattr(response.block2, "OvrsFutsOrdNo") and response.block2.OvrsFutsOrdNo else ""
 
-                if response.error_msg:
-                    context.log("warning", f"Order failed for {symbol}: {response.error_msg}", node_id)
-                    fail_count += 1
-                    submitted_orders.append({
-                        "symbol": symbol,
-                        "exchange": exchange,
-                        "side": side,
-                        "quantity": qty,
-                        "price": price,
-                        "status": "failed",
-                        "error": response.error_msg,
-                    })
-                else:
-                    order_no = ""
-                    if response.block2:
-                        # 해외선물 주문번호 필드: OvrsFutsOrdNo
-                        order_no = str(response.block2.OvrsFutsOrdNo) if hasattr(response.block2, "OvrsFutsOrdNo") and response.block2.OvrsFutsOrdNo else ""
+            context.log("info", f"Futures order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
 
-                    order_ids[symbol] = order_no
-                    success_count += 1
-                    submitted_orders.append({
-                        "symbol": symbol,
-                        "exchange": exchange,
-                        "expiry_month": expiry_month,
-                        "side": side,
-                        "quantity": qty,
-                        "price": price,
-                        "status": "submitted",
-                        "order_id": order_no,
-                        "order_type": order_type,
-                    })
-                    context.log("info", f"Futures order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
+            # Record workflow order for FIFO tracking
+            context.record_workflow_order(
+                order_no=order_no,
+                order_date=dt.now().strftime("%Y%m%d"),
+                symbol=symbol,
+                exchange=exchange,
+                side=side,
+                quantity=qty,
+                price=price,
+                node_id=node_id,
+            )
 
-                    # Record workflow order for FIFO tracking
-                    context.record_workflow_order(
-                        order_no=order_no,
-                        order_date=dt.now().strftime("%Y%m%d"),
-                        symbol=symbol,
-                        exchange=exchange,
-                        side=side,
-                        quantity=qty,
-                        price=price,
-                        node_id=node_id,
-                    )
+            return self._order_result(True, symbol, exchange, side, qty, price, None, order_no)
 
-            except Exception as e:
-                context.log("warning", f"Futures order exception for {symbol}: {e}", node_id)
-                fail_count += 1
-                submitted_orders.append({
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "side": side,
-                    "quantity": qty,
-                    "price": price,
-                    "status": "error",
-                    "error": str(e),
-                })
+        except Exception as e:
+            context.log("warning", f"Futures order exception: {symbol} - {e}", node_id)
+            return self._order_result(False, symbol, exchange, side, qty, price, str(e))
 
-        context.log(
-            "info",
-            f"OverseasFuturesNewOrderNode completed: {success_count} success, {fail_count} failed",
-            node_id
-        )
-
+    def _order_result(
+        self,
+        success: bool,
+        symbol: str,
+        exchange: str,
+        side: str,
+        quantity: int,
+        price: float,
+        error: Optional[str] = None,
+        order_id: str = "",
+    ) -> Dict[str, Any]:
+        """단일 주문 결과 반환"""
         return {
             "order_result": {
-                "success": success_count > 0,
-                "total": len(orders),
-                "success_count": success_count,
-                "fail_count": fail_count,
+                "success": success,
+                "symbol": symbol,
+                "exchange": exchange,
                 "side": side,
-                "order_type": order_type,
-                "product": "overseas_futures",
+                "quantity": quantity,
+                "price": price,
+                "status": "submitted" if success else "failed",
+                "error": error,
             },
-            "order_ids": order_ids,
-            "submitted_orders": submitted_orders,
+            "order_id": order_id,
         }
 
     def _empty_result(self) -> Dict[str, Any]:
@@ -9124,12 +9033,9 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         return {
             "order_result": {
                 "success": False,
-                "total": 0,
-                "success_count": 0,
-                "fail_count": 0,
+                "error": "No order to submit",
             },
-            "order_ids": {},
-            "submitted_orders": [],
+            "order_id": "",
         }
 
     def _error_result(self, error_msg: str) -> Dict[str, Any]:
@@ -9138,12 +9044,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             "order_result": {
                 "success": False,
                 "error": error_msg,
-                "total": 0,
-                "success_count": 0,
-                "fail_count": 0,
             },
-            "order_ids": {},
-            "submitted_orders": [],
+            "order_id": "",
         }
 
 
