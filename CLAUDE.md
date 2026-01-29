@@ -109,6 +109,15 @@ When a node outputs an array, the next node automatically executes for each item
 "profit_count": "{{ nodes.account.filter('pnl > 0').count() }}"
 ```
 
+**Function Namespaces:**
+| Namespace | Functions | Example |
+|-----------|-----------|---------|
+| `date` | today(), ago(), later(), months_ago(), year_start(), year_end(), month_start() | `{{ date.ago(30, format='yyyymmdd') }}` |
+| `finance` | pct_change(), pct(), discount(), markup(), annualize(), compound() | `{{ finance.pct_change(100, 110) }}` |
+| `stats` | mean(), avg(), median(), stdev(), variance() | `{{ stats.mean([1,2,3]) }}` |
+| `format` | pct(), currency(), number() | `{{ format.pct(12.34) }}` → "12.34%" |
+| `lst` | first(), last(), count(), pluck(), flatten() | `{{ lst.pluck(items, 'name') }}` |
+
 ### Node Categories (10, 47 nodes)
 
 | Category | Nodes |

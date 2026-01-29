@@ -10,10 +10,13 @@ Jinja2 스타일 {{ }} 표현식 평가기
 - 조건 표현식: {{ "buy" if rsi < 30 else "sell" }}
 - 배열 인덱싱: {{ symbols[0] }}
 - 속성 접근: {{ position.quantity }}
-- 날짜 함수: {{ today() }}, {{ days_ago(30) }}
-- 통계 함수: {{ avg(prices) }}, {{ median(values) }}
-- 금융 함수: {{ pct_change(100, 110) }}, {{ discount(price, 5) }}
-- 배열 유틸: {{ pluck(items, 'name') }}, {{ pluck(data, 'a.b.c') }}
+
+네임스페이스 함수:
+- 날짜: {{ date.today() }}, {{ date.ago(30, format='yyyymmdd') }}
+- 통계: {{ stats.mean(prices) }}, {{ stats.median(values) }}
+- 금융: {{ finance.pct_change(100, 110) }}, {{ finance.discount(price, 5) }}
+- 포맷: {{ format.pct(0.12) }}, {{ format.currency(1234.56) }}
+- 리스트: {{ list.first(items) }}, {{ list.pluck(data, 'a.b.c') }}
 
 보안:
 - eval 대신 안전한 표현식 평가 사용
@@ -52,20 +55,23 @@ def _get_nested_value(obj: Any, path: str) -> Any:
 def _pluck(lst: List[Any], path: str) -> List[Any]:
     """
     배열의 각 요소에서 특정 경로의 값을 추출
-    
+
     지원 형식:
     - pluck(items, 'name') → 단일 키
     - pluck(items, 'details.price') → 다중 중첩 (점 표기법)
-    
+
     예:
     >>> data = [{'a': {'b': 1}}, {'a': {'b': 2}}]
     >>> pluck(data, 'a.b')
     [1, 2]
-    
+
     >>> values = [{'symbol': 'AAPL', 'time_series': [...]}, ...]
     >>> pluck(values, 'time_series')
     [[...], [...]]
     """
+    # NodeOutputProxy인 경우 내부 배열 추출
+    if hasattr(lst, '_get_array'):
+        lst = lst._get_array()
     if not isinstance(lst, (list, tuple)):
         return []
     return [_get_nested_value(item, path) for item in lst]
@@ -74,7 +80,7 @@ def _pluck(lst: List[Any], path: str) -> List[Any]:
 def _flatten(lst: List[Any], nested_key: str) -> List[Any]:
     """
     배열의 각 요소에서 중첩 배열을 평탄화하면서 부모 필드를 유지
-    
+
     예:
     >>> data = [
     ...     {'symbol': 'AAPL', 'time_series': [{'date': '20251224', 'rsi': 33.5}]},
@@ -86,6 +92,9 @@ def _flatten(lst: List[Any], nested_key: str) -> List[Any]:
         {'symbol': 'TSLA', 'date': '20251224', 'rsi': 62.1},
     ]
     """
+    # NodeOutputProxy인 경우 내부 배열 추출
+    if hasattr(lst, '_get_array'):
+        lst = lst._get_array()
     if not isinstance(lst, (list, tuple)):
         return []
     
@@ -107,6 +116,220 @@ def _flatten(lst: List[Any], nested_key: str) -> List[Any]:
                 result.append({**parent_fields, **row})
     
     return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 함수 네임스페이스 클래스들
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class DateNamespace:
+    """
+    날짜/시간 함수 네임스페이스
+
+    사용 예시:
+        {{ date.today() }}                    # "2026-01-29"
+        {{ date.today(format='yyyymmdd') }}   # "20260129"
+        {{ date.ago(30) }}                    # 30일 전 (ISO 형식)
+        {{ date.ago(30, format='yyyymmdd') }} # 30일 전 (YYYYMMDD)
+        {{ date.ago(30, format='%Y/%m/%d') }} # 30일 전 (사용자 정의)
+    """
+
+    FORMAT_PRESETS = {
+        'yyyymmdd': '%Y%m%d',
+        'iso': '%Y-%m-%d',
+    }
+
+    def _format_date(self, d: date, fmt: Optional[str] = None) -> str:
+        """날짜를 지정된 포맷으로 변환"""
+        if fmt is None:
+            return d.isoformat()
+        # 프리셋 또는 사용자 정의 strftime 형식
+        strftime_fmt = self.FORMAT_PRESETS.get(fmt, fmt)
+        return d.strftime(strftime_fmt)
+
+    def today(self, format: Optional[str] = None) -> str:
+        """오늘 날짜"""
+        return self._format_date(date.today(), format)
+
+    def now(self) -> str:
+        """현재 시간 (ISO 형식)"""
+        return datetime.now().isoformat()[:19]
+
+    def ago(self, days: int, format: Optional[str] = None) -> str:
+        """n일 전"""
+        d = date.today() - timedelta(days=int(days))
+        return self._format_date(d, format)
+
+    def later(self, days: int, format: Optional[str] = None) -> str:
+        """n일 후"""
+        d = date.today() + timedelta(days=int(days))
+        return self._format_date(d, format)
+
+    def months_ago(self, months: int, format: Optional[str] = None) -> str:
+        """n개월 전 (30일 기준)"""
+        d = date.today() - timedelta(days=int(months) * 30)
+        return self._format_date(d, format)
+
+    def year_start(self, format: Optional[str] = None) -> str:
+        """연초 (1월 1일)"""
+        d = date(date.today().year, 1, 1)
+        return self._format_date(d, format)
+
+    def year_end(self, format: Optional[str] = None) -> str:
+        """연말 (12월 31일)"""
+        d = date(date.today().year, 12, 31)
+        return self._format_date(d, format)
+
+    def month_start(self, format: Optional[str] = None) -> str:
+        """월초"""
+        d = date.today().replace(day=1)
+        return self._format_date(d, format)
+
+
+class FinanceNamespace:
+    """
+    금융 계산 함수 네임스페이스
+
+    사용 예시:
+        {{ finance.pct_change(100, 110) }}    # 10.0 (%)
+        {{ finance.discount(1000, 20) }}      # 800.0
+        {{ finance.annualize(5, 30) }}        # 연률화 수익률
+    """
+
+    def pct_change(self, old: float, new: float) -> float:
+        """변화율 (%) = ((new - old) / old) * 100"""
+        if old == 0:
+            return 0.0
+        return ((new - old) / old) * 100
+
+    def pct(self, part: float, total: float) -> float:
+        """비율 (%) = (part / total) * 100"""
+        if total == 0:
+            return 0.0
+        return (part / total) * 100
+
+    def discount(self, price: float, pct: float) -> float:
+        """할인가 = price * (1 - pct/100)"""
+        return price * (1 - pct / 100)
+
+    def markup(self, price: float, pct: float) -> float:
+        """인상가 = price * (1 + pct/100)"""
+        return price * (1 + pct / 100)
+
+    def annualize(self, ret: float, days: int) -> float:
+        """연률화 수익률 = ((1 + ret/100)^(252/days) - 1) * 100"""
+        if days <= 0:
+            return 0.0
+        return ((1 + ret / 100) ** (252 / days) - 1) * 100
+
+    def compound(self, principal: float, rate: float, periods: int) -> float:
+        """복리 = principal * ((1 + rate/100)^periods)"""
+        return principal * ((1 + rate / 100) ** periods)
+
+
+class StatsNamespace:
+    """
+    통계 함수 네임스페이스
+
+    사용 예시:
+        {{ stats.mean([1, 2, 3, 4, 5]) }}     # 3.0
+        {{ stats.median([1, 2, 3, 4, 5]) }}   # 3
+        {{ stats.stdev([1, 2, 3, 4, 5]) }}    # 표준편차
+    """
+
+    def mean(self, values: List[float]) -> float:
+        """평균"""
+        if not values:
+            return 0.0
+        return statistics.mean(values)
+
+    def avg(self, values: List[float]) -> float:
+        """평균 (mean의 별칭)"""
+        return self.mean(values)
+
+    def median(self, values: List[float]) -> float:
+        """중앙값"""
+        if not values:
+            return 0.0
+        return statistics.median(values)
+
+    def stdev(self, values: List[float]) -> float:
+        """표준편차"""
+        if len(values) < 2:
+            return 0.0
+        return statistics.stdev(values)
+
+    def variance(self, values: List[float]) -> float:
+        """분산"""
+        if len(values) < 2:
+            return 0.0
+        return statistics.variance(values)
+
+
+class FormatNamespace:
+    """
+    포맷팅 함수 네임스페이스
+
+    사용 예시:
+        {{ format.pct(0.1234) }}              # "12.34%"
+        {{ format.currency(1234.56) }}        # "$1,234.56"
+        {{ format.number(1234567.89, 1) }}    # "1,234,567.9"
+    """
+
+    def pct(self, value: float, decimals: int = 2) -> str:
+        """퍼센트 포맷 (값 * 100 하지 않음, 이미 % 값이라고 가정)"""
+        return f"{value:.{decimals}f}%"
+
+    def currency(self, value: float, symbol: str = "$", decimals: int = 2) -> str:
+        """통화 포맷"""
+        return f"{symbol}{value:,.{decimals}f}"
+
+    def number(self, value: float, decimals: int = 2) -> str:
+        """숫자 포맷 (천 단위 콤마)"""
+        return f"{value:,.{decimals}f}"
+
+
+class ListNamespace:
+    """
+    리스트 유틸리티 네임스페이스
+
+    사용 예시:
+        {{ list.first([1, 2, 3]) }}           # 1
+        {{ list.last([1, 2, 3]) }}            # 3
+        {{ list.pluck(items, 'name') }}       # 필드 추출
+    """
+
+    def first(self, items: List[Any]) -> Optional[Any]:
+        """첫 번째 요소"""
+        if hasattr(items, '_get_array'):
+            items = items._get_array()
+        return items[0] if items else None
+
+    def last(self, items: List[Any]) -> Optional[Any]:
+        """마지막 요소"""
+        if hasattr(items, '_get_array'):
+            items = items._get_array()
+        return items[-1] if items else None
+
+    def count(self, items: List[Any]) -> int:
+        """요소 개수"""
+        if hasattr(items, '_get_array'):
+            items = items._get_array()
+        return len(items) if items else 0
+
+    def pluck(self, items: List[Any], path: str) -> List[Any]:
+        """배열에서 특정 필드 값 추출 (점 표기법 지원)"""
+        return _pluck(items, path)
+
+    def flatten(self, items: List[Any], nested_key: str) -> List[Any]:
+        """중첩 배열 평탄화 (부모 필드 유지)"""
+        return _flatten(items, nested_key)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 예외 및 프록시 클래스들
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
 class ExpressionError(Exception):
@@ -514,7 +737,7 @@ class SafeEvaluator:
         "list": list,
         "dict": dict,
         "tuple": tuple,
-        
+
         # ═══════════════════════════════════════════════════════════════
         # 기본 수학 함수
         # ═══════════════════════════════════════════════════════════════
@@ -530,7 +753,7 @@ class SafeEvaluator:
         "zip": zip,
         "all": all,
         "any": any,
-        
+
         # ═══════════════════════════════════════════════════════════════
         # 수학 함수 (math 모듈)
         # ═══════════════════════════════════════════════════════════════
@@ -542,58 +765,17 @@ class SafeEvaluator:
         "floor": math.floor,
         "pi": math.pi,
         "e": math.e,
-        
+
         # ═══════════════════════════════════════════════════════════════
-        # 통계 함수 (statistics 모듈)
+        # 함수 네임스페이스
         # ═══════════════════════════════════════════════════════════════
-        "mean": statistics.mean,
-        "avg": statistics.mean,  # alias
-        "median": statistics.median,
-        "stdev": lambda lst: statistics.stdev(lst) if len(lst) > 1 else 0,
-        "variance": lambda lst: statistics.variance(lst) if len(lst) > 1 else 0,
-        
-        # ═══════════════════════════════════════════════════════════════
-        # 날짜/시간 함수
-        # ═══════════════════════════════════════════════════════════════
-        "today": lambda: date.today().isoformat(),
-        "now": lambda: datetime.now().isoformat()[:19],
-        "today": lambda: date.today().isoformat(),
-        "today_yyyymmdd": lambda: date.today().strftime("%Y%m%d"),
-        "days_ago": lambda n: (date.today() - timedelta(days=int(n))).isoformat(),
-        "days_ago_yyyymmdd": lambda n: (date.today() - timedelta(days=int(n))).strftime("%Y%m%d"),
-        "days_later": lambda n: (date.today() + timedelta(days=int(n))).isoformat(),
-        "months_ago": lambda n: (date.today() - timedelta(days=int(n) * 30)).isoformat(),
-        "months_ago_yyyymmdd": lambda n: (date.today() - timedelta(days=int(n) * 30)).strftime("%Y%m%d"),
-        "year_start": lambda: date(date.today().year, 1, 1).isoformat(),
-        "year_end": lambda: date(date.today().year, 12, 31).isoformat(),
-        "month_start": lambda: date.today().replace(day=1).isoformat(),
-        
-        # ═══════════════════════════════════════════════════════════════
-        # 금융 계산 함수
-        # ═══════════════════════════════════════════════════════════════
-        "pct_change": lambda old, new: ((new - old) / old) * 100 if old != 0 else 0,
-        "pct": lambda part, total: (part / total) * 100 if total != 0 else 0,
-        "discount": lambda price, pct: price * (1 - pct / 100),
-        "markup": lambda price, pct: price * (1 + pct / 100),
-        "annualize": lambda ret, days: ((1 + ret / 100) ** (252 / days) - 1) * 100 if days > 0 else 0,
-        "compound": lambda principal, rate, periods: principal * ((1 + rate / 100) ** periods),
-        
-        # ═══════════════════════════════════════════════════════════════
-        # 리스트 유틸리티
-        # ═══════════════════════════════════════════════════════════════
-        "first": lambda lst: lst[0] if lst else None,
-        "last": lambda lst: lst[-1] if lst else None,
-        "count": len,
-        "pluck": _pluck,  # 배열에서 특정 키 값 추출 (다중 중첩 지원)
-        "flatten": _flatten,  # 중첩 배열 평탄화 (부모 필드 유지)
-        
-        # ═══════════════════════════════════════════════════════════════
-        # 포맷팅 함수
-        # ═══════════════════════════════════════════════════════════════
-        "format_pct": lambda v, decimals=2: f"{v:.{decimals}f}%",
-        "format_currency": lambda v, symbol="$": f"{symbol}{v:,.2f}",
-        "format_number": lambda v, decimals=2: f"{v:,.{decimals}f}",
-        
+        "date": DateNamespace(),
+        "finance": FinanceNamespace(),
+        "stats": StatsNamespace(),
+        "format": FormatNamespace(),
+        # "list"는 기본 타입 변환 함수로 이미 사용 중이므로 "lst" 사용
+        "lst": ListNamespace(),
+
         # ═══════════════════════════════════════════════════════════════
         # 상수
         # ═══════════════════════════════════════════════════════════════
@@ -748,6 +930,7 @@ class ExpressionEvaluator:
         값 평가
 
         표현식이면 계산, 아니면 그대로 반환
+        NodeOutputProxy는 자동으로 unwrap하여 실제 데이터 반환
         """
         if not self.is_expression(value):
             return value
@@ -756,12 +939,19 @@ class ExpressionEvaluator:
         full_match = re.fullmatch(r'\{\{\s*(.+?)\s*\}\}', value.strip())
         if full_match:
             expr = full_match.group(1)
-            return self._eval_expression(expr)
+            result = self._eval_expression(expr)
+            # NodeOutputProxy는 자동으로 unwrap
+            if isinstance(result, NodeOutputProxy):
+                return result._get_array()
+            return result
 
         # 문자열 내 여러 표현식: "Price: {{ price }}, Qty: {{ qty }}"
         def replace_expr(match: re.Match) -> str:
             expr = match.group(1)
             result = self._eval_expression(expr)
+            # NodeOutputProxy는 자동으로 unwrap
+            if isinstance(result, NodeOutputProxy):
+                result = result._get_array()
             return str(result)
 
         return self.EXPRESSION_PATTERN.sub(replace_expr, value)
