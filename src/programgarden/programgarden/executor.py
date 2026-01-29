@@ -2929,7 +2929,8 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
 
         open_orders = []
         for item in response.block2 or []:
-            order_id = str(item.OrdNo) if hasattr(item, 'OrdNo') and item.OrdNo else ""
+            # 해외선물 주문번호는 OvrsFutsOrdNo
+            order_id = str(item.OvrsFutsOrdNo) if hasattr(item, 'OvrsFutsOrdNo') and item.OvrsFutsOrdNo else ""
             if not order_id:
                 continue
 
@@ -2942,7 +2943,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
 
             open_orders.append({
                 "order_id": order_id,
-                "exchange": item.EcCodeVal.strip() if hasattr(item, 'EcCodeVal') and item.EcCodeVal else "HKEX",
+                "exchange": "HKEX",  # 해외선물 기본
                 "symbol": item.IsuCodeVal.strip() if hasattr(item, 'IsuCodeVal') and item.IsuCodeVal else "",
                 "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else "",
                 "side": side,
@@ -2951,7 +2952,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
                 "filled_quantity": exec_qty,
                 "remaining_quantity": unerc_qty,
                 "price": float(item.OvrsDrvtOrdPrc) if hasattr(item, 'OvrsDrvtOrdPrc') and item.OvrsDrvtOrdPrc else 0.0,
-                "order_time": item.OrdTime if hasattr(item, 'OrdTime') else "",
+                "order_time": item.OrdSndDttm if hasattr(item, 'OrdSndDttm') else "",
             })
 
         context.log("info", f"OpenOrdersNode (futures): {len(open_orders)} open orders", node_id)
@@ -9778,9 +9779,10 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT01000.blocks import CIDBT01000InBlock1
         from programgarden_finance.ls.models import SetupOptions
         from datetime import datetime
-        
+
         today = datetime.now().strftime("%Y%m%d")
-        exchange_code = config.get("exchange_code", exchange)
+        # 해외선물 취소 시 ExchCode는 공백 사용
+        exchange_code = " "
         
         try:
             order_api = ls.overseas_futureoption().order().CIDBT01000(
