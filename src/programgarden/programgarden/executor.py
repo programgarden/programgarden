@@ -2595,14 +2595,14 @@ class AccountNodeExecutor(NodeExecutorBase):
             context.log("error", f"API error: {response.error_msg}", node_id)
             return self._empty_result(response.error_msg)
         
-        # block4 = 종목별 잔고 상세
-        positions = {}
+        # block4 = 종목별 잔고 상세 (리스트 형태로 반환)
+        positions = []
         for item in response.block4 or []:
             symbol = item.ShtnIsuNo.strip()
             if not symbol:
                 continue
-            
-            positions[symbol] = {
+
+            positions.append({
                 "symbol": symbol,
                 "name": item.JpnMktHanglIsuNm.strip() if item.JpnMktHanglIsuNm else symbol,
                 "qty": item.AstkBalQty,
@@ -2614,9 +2614,9 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "market": item.MktTpNm.strip() if item.MktTpNm else "",
                 "eval_amount": item.FcurrEvalAmt,
                 "purchase_amount": item.FcurrBuyAmt,
-            }
-        
-        held_symbols = list(positions.keys())
+            })
+
+        held_symbols = [p["symbol"] for p in positions]
         
         # block2 = 전체 평가 요약
         balance_info = {"cash": 0.0, "total_value": 0.0}
@@ -2745,10 +2745,10 @@ class AccountNodeExecutor(NodeExecutorBase):
             return self._empty_result(str(e))
 
     def _empty_result(self, error: str = "") -> Dict[str, Any]:
-        """빈 결과 반환"""
+        """빈 결과 반환 (positions는 리스트 형태)"""
         result = {
             "held_symbols": [],
-            "positions": {},
+            "positions": [],
             "balance": {"cash": 0.0, "total_value": 0.0},
         }
         if error:
@@ -3044,7 +3044,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             result = self._get_stock_tracker_data(tracker)
             
             # 데이터가 비어있는지 확인 (에러 없이 정상 케이스)
-            positions_count = len(result.get('positions', {}))
+            positions_count = len(result.get('positions', []))
             if positions_count == 0:
                 context.log("info", "ℹ️ 해외주식 보유종목이 없습니다. (잔고가 없거나 장 마감 시간일 수 있음)", node_id)
             
@@ -3280,10 +3280,10 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             raise
 
     def _get_stock_tracker_data(self, tracker) -> Dict[str, Any]:
-        """해외주식 Tracker에서 현재 데이터 추출"""
-        positions = {}
+        """해외주식 Tracker에서 현재 데이터 추출 (리스트 형태로 반환)"""
+        positions = []
         for symbol, pos in tracker.get_positions().items():
-            positions[symbol] = {
+            positions.append({
                 "symbol": symbol,
                 "name": getattr(pos, 'name', getattr(pos, 'symbol_name', symbol)),
                 "qty": pos.quantity,
@@ -3294,9 +3294,9 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 "currency": getattr(pos, 'currency_code', 'USD'),
                 "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
                 "market_code": getattr(pos, 'market_code', ''),
-            }
-        
-        symbols = list(positions.keys())
+            })
+
+        symbols = [p["symbol"] for p in positions]
         
         # balance를 JSON 직렬화 가능한 형태로 변환
         # get_balances()는 Dict[str, StockBalanceInfo]를 반환 (통화별)
@@ -7500,7 +7500,8 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         # 필수 입력 추출
         symbols_input = evaluated.get("symbols", [])
         balance_data = evaluated.get("balance", {})
-        price_data = evaluated.get("price_data", {})
+        # price_data, prices, market_data 순서로 확인 (하위 호환성)
+        price_data = evaluated.get("price_data") or evaluated.get("prices") or evaluated.get("market_data") or {}
         
         # 설정 추출
         method = evaluated.get("method", "fixed_percent")
