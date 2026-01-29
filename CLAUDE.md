@@ -118,12 +118,12 @@ When a node outputs an array, the next node automatically executes for each item
 | `format` | pct(), currency(), number() | `{{ format.pct(12.34) }}` → "12.34%" |
 | `lst` | first(), last(), count(), pluck(), flatten() | `{{ lst.pluck(items, 'name') }}` |
 
-### Node Categories (10, 47 nodes)
+### Node Categories (10, 49 nodes)
 
 | Category | Nodes |
 |----------|-------|
 | infra | StartNode, ThrottleNode, SplitNode, AggregateNode, OverseasStockBrokerNode, OverseasFuturesBrokerNode |
-| account | OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode, OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode |
+| account | OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode, OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode |
 | market | OverseasStockMarketDataNode, OverseasFuturesMarketDataNode, OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode, WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode |
 | condition | ConditionNode, LogicNode |
 | order | OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode, OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode, PositionSizingNode |
