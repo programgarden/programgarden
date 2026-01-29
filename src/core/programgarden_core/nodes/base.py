@@ -155,6 +155,20 @@ ORDER_LIST_FIELDS: List[Dict[str, str]] = [
     {"name": "status", "type": "string", "description": "주문 상태"},
 ]
 
+OPEN_ORDER_FIELDS: List[Dict[str, str]] = [
+    {"name": "order_id", "type": "string", "description": "주문번호"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
+    {"name": "order_type", "type": "string", "description": "주문유형 (market/limit)"},
+    {"name": "quantity", "type": "number", "description": "주문수량"},
+    {"name": "filled_quantity", "type": "number", "description": "체결수량"},
+    {"name": "remaining_quantity", "type": "number", "description": "미체결수량"},
+    {"name": "price", "type": "number", "description": "주문가격"},
+    {"name": "order_time", "type": "string", "description": "주문시각"},
+]
+
 ORDER_EVENT_FIELDS: List[Dict[str, str]] = [
     {"name": "order_id", "type": "string", "description": "주문번호"},
     {"name": "exchange", "type": "string", "description": "거래소 코드"},

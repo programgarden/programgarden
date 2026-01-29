@@ -2756,6 +2756,221 @@ class AccountNodeExecutor(NodeExecutorBase):
         return result
 
 
+class OpenOrdersNodeExecutor(NodeExecutorBase):
+    """
+    미체결 주문 조회 Executor (REST API 1회성)
+
+    지원 노드:
+    - OverseasStockOpenOrdersNode: 해외주식 미체결 조회 (COSAQ00102)
+    - OverseasFuturesOpenOrdersNode: 해외선물 미체결 조회 (CIDBQ02400)
+
+    출력:
+    - open_orders: 미체결 주문 리스트
+    - count: 미체결 주문 수
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        # config에서 connection 확인 (자동 주입)
+        broker_connection = config.get("connection")
+
+        if not broker_connection:
+            context.log("error", f"{node_type}: connection이 자동 주입되지 않았습니다.", node_id)
+            return self._empty_result("Missing connection")
+
+        if isinstance(broker_connection, dict):
+            provider = broker_connection.get("provider", "ls-sec.co.kr")
+            product = config.get("product_type") or broker_connection.get("product", "overseas_stock")
+        else:
+            context.log("error", f"{node_type}: connection 타입이 잘못되었습니다.", node_id)
+            return self._empty_result("Invalid connection type")
+
+        context.log("info", f"{node_type}: provider={provider}, product={product}", node_id)
+
+        if provider == "ls-sec.co.kr":
+            return await self._execute_ls(node_id, node_type, product, context)
+        else:
+            context.log("error", f"Unsupported provider: {provider}", node_id)
+            return self._empty_result(f"Unsupported provider: {provider}")
+
+    async def _execute_ls(
+        self,
+        node_id: str,
+        node_type: str,
+        product: str,
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """LS증권 미체결 조회"""
+        credential = context.get_credential()
+        if not credential:
+            context.log("error", "Credential not found", node_id)
+            return self._empty_result("Missing credentials")
+
+        appkey = credential.get("appkey")
+        appsecret = credential.get("appsecret")
+        paper_trading = credential.get("paper_trading", False)
+
+        if not appkey or not appsecret:
+            context.log("error", "appkey/appsecret not found", node_id)
+            return self._empty_result("Missing appkey/appsecret")
+
+        try:
+            ls, success, error = ensure_ls_login(
+                appkey, appsecret, paper_trading, context, node_id,
+                product=product,
+                caller_name=node_type
+            )
+            if not success:
+                return self._empty_result(error)
+
+            if product == "overseas_stock":
+                return await self._ls_overseas_stock(ls, node_id, context)
+            elif product in ("overseas_futures", "overseas_futureoption"):
+                return await self._ls_overseas_futures(ls, node_id, context)
+            else:
+                context.log("warning", f"Unsupported product: {product}", node_id)
+                return self._empty_result(f"Unsupported product: {product}")
+
+        except Exception as e:
+            context.log("error", f"Unexpected error: {e}", node_id)
+            return self._empty_result(str(e))
+
+    async def _ls_overseas_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
+        """해외주식 미체결 조회 (COSAQ00102)"""
+        from datetime import datetime
+        from programgarden_finance.ls.overseas_stock.accno.COSAQ00102.blocks import COSAQ00102InBlock1
+        from programgarden_finance.ls.models import SetupOptions
+
+        today = datetime.now().strftime("%Y%m%d")
+
+        response = await ls.overseas_stock().accno().cosaq00102(
+            COSAQ00102InBlock1(
+                RecCnt=1,
+                QryTpCode="1",      # 1: 역순
+                BkseqTpCode="1",    # 1: 역순
+                OrdMktCode="00",    # 00: 전체
+                BnsTpCode="0",      # 0: 전체
+                IsuNo="",           # 빈값: 전체 종목
+                SrtOrdNo=999999999,
+                OrdDt=today,
+                ExecYn="2",         # 2: 미체결
+                CrcyCode="000",     # 000: 전체 통화
+                ThdayBnsAppYn="0",
+                LoanBalHldYn="0"
+            ),
+            options=SetupOptions(on_rate_limit="wait")
+        ).req_async()
+
+        if response.error_msg:
+            context.log("error", f"COSAQ00102 error: {response.error_msg}", node_id)
+            return self._empty_result(response.error_msg)
+
+        open_orders = []
+        for item in response.block2 or []:
+            order_id = str(item.OrdNo) if item.OrdNo else ""
+            if not order_id:
+                continue
+
+            # BnsTpCode: 01=매도, 02=매수
+            side = "buy" if item.BnsTpCode == "02" else "sell"
+
+            open_orders.append({
+                "order_id": order_id,
+                "exchange": item.OrdMktCode or "",
+                "symbol": item.IsuNo.strip() if item.IsuNo else "",
+                "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else "",
+                "side": side,
+                "order_type": "limit",  # 해외주식은 대부분 지정가
+                "quantity": int(item.OrdQty) if item.OrdQty else 0,
+                "filled_quantity": int(item.ExecQty) if item.ExecQty else 0,
+                "remaining_quantity": int(item.UnercQty) if item.UnercQty else 0,
+                "price": float(item.OrdPrc) if item.OrdPrc else 0.0,
+                "order_time": item.OrdTime if hasattr(item, 'OrdTime') else "",
+            })
+
+        context.log("info", f"OpenOrdersNode (stock): {len(open_orders)} open orders", node_id)
+        return {
+            "open_orders": open_orders,
+            "count": len(open_orders),
+        }
+
+    async def _ls_overseas_futures(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
+        """해외선물 미체결 조회 (CIDBQ02400)"""
+        from datetime import datetime
+        from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import CIDBQ02400InBlock1
+        from programgarden_finance.ls.models import SetupOptions
+
+        today = datetime.now().strftime("%Y%m%d")
+
+        response = await ls.overseas_futureoption().accno().CIDBQ02400(
+            body=CIDBQ02400InBlock1(
+                RecCnt=1,
+                IsuCodeVal="",          # 빈값: 전체 종목
+                QrySrtDt=today,
+                QryEndDt=today,
+                ThdayTpCode="0",        # 0: 전체
+                OrdStatCode="2",        # 2: 미체결
+                BnsTpCode="0",          # 0: 전체
+                QryTpCode="2",          # 2: 역순
+                OrdPtnCode="00",        # 00: 전체
+                OvrsDrvtFnoTpCode="A"   # A: 전체
+            )
+        ).req_async()
+
+        # 응답 코드 확인
+        if response.rsp_cd and response.rsp_cd not in ["00000", "00136", "00707"]:
+            context.log("warning", f"CIDBQ02400 response: {response.rsp_cd} - {response.rsp_msg}", node_id)
+
+        open_orders = []
+        for item in response.block2 or []:
+            order_id = str(item.OrdNo) if hasattr(item, 'OrdNo') and item.OrdNo else ""
+            if not order_id:
+                continue
+
+            # BnsTpCode: 1=매도, 2=매수
+            side = "buy" if item.BnsTpCode == "2" else "sell"
+
+            order_qty = int(item.OrdQty) if hasattr(item, 'OrdQty') and item.OrdQty else 0
+            exec_qty = int(item.ExecQty) if hasattr(item, 'ExecQty') and item.ExecQty else 0
+            unerc_qty = int(item.UnercQty) if hasattr(item, 'UnercQty') and item.UnercQty else 0
+
+            open_orders.append({
+                "order_id": order_id,
+                "exchange": item.EcCodeVal.strip() if hasattr(item, 'EcCodeVal') and item.EcCodeVal else "HKEX",
+                "symbol": item.IsuCodeVal.strip() if hasattr(item, 'IsuCodeVal') and item.IsuCodeVal else "",
+                "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else "",
+                "side": side,
+                "order_type": "limit",
+                "quantity": order_qty,
+                "filled_quantity": exec_qty,
+                "remaining_quantity": unerc_qty,
+                "price": float(item.OvrsDrvtOrdPrc) if hasattr(item, 'OvrsDrvtOrdPrc') and item.OvrsDrvtOrdPrc else 0.0,
+                "order_time": item.OrdTime if hasattr(item, 'OrdTime') else "",
+            })
+
+        context.log("info", f"OpenOrdersNode (futures): {len(open_orders)} open orders", node_id)
+        return {
+            "open_orders": open_orders,
+            "count": len(open_orders),
+        }
+
+    def _empty_result(self, error: str = "") -> Dict[str, Any]:
+        """빈 결과 반환"""
+        result = {
+            "open_orders": [],
+            "count": 0,
+        }
+        if error:
+            result["error"] = error
+        return result
+
+
 class RealAccountNodeExecutor(NodeExecutorBase):
     """
     RealAccountNode executor - 실시간 계좌 정보 (브로커별 분기 처리)
@@ -9903,6 +10118,8 @@ class WorkflowExecutor:
             "AccountNode": AccountNodeExecutor(),  # 1회성 REST API 조회
             "OverseasStockAccountNode": AccountNodeExecutor(),
             "OverseasFuturesAccountNode": AccountNodeExecutor(),
+            "OverseasStockOpenOrdersNode": OpenOrdersNodeExecutor(),  # 미체결 조회
+            "OverseasFuturesOpenOrdersNode": OpenOrdersNodeExecutor(),
             "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
             "OverseasStockRealAccountNode": RealAccountNodeExecutor(),
             "OverseasFuturesRealAccountNode": RealAccountNodeExecutor(),

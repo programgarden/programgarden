@@ -83,6 +83,8 @@ class NodeTypeRegistry:
             OverseasStockAccountNode, OverseasStockRealAccountNode, OverseasStockRealOrderEventNode,
             # Account - Futures (해외선물)
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
+            # Open Orders (미체결 조회)
+            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Symbol (상품 무관)
@@ -114,6 +116,8 @@ class NodeTypeRegistry:
             OverseasStockAccountNode, OverseasStockRealAccountNode, OverseasStockRealOrderEventNode,
             # Account - Futures (해외선물)
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
+            # Open Orders (미체결 조회)
+            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Symbol (상품 무관)
