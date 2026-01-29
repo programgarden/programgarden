@@ -70,10 +70,44 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 
 - **Edges**: Define execution order only (node IDs only)
 - **Data Binding**: Use `{{ nodes.nodeId.port }}` expressions in node config
+- **Auto-Iterate**: When previous node outputs an array, next node auto-executes for each item (n8n style)
 - **Broker Connection**: Automatically injected by Executor via DAG traversal. No explicit `connection` binding needed
 - **Product Scope**: Each broker/market/account node is split by product type (`overseas_stock` / `overseas_futures`)
 - **Plugins**: Referenced via `plugin` field in ConditionNode, NewOrderNode, etc.
 - **Credentials**: Referenced by `credential_id`, defined in `credentials` section as a list
+
+### n8n Style Expressions (Auto-Iterate)
+
+When a node outputs an array, the next node automatically executes for each item:
+
+```
+[AccountNode] → [FieldMappingNode] → [NewOrderNode]
+     │               │                    │
+     │               └─ Executes 3 times   └─ Executes 3 times
+     └─ positions: [{...}, {...}, {...}]     using {{ item }}
+```
+
+**Item Keywords:**
+| Keyword | Description | Example |
+|---------|-------------|---------|
+| `item` | Current iteration item | `{{ item.symbol }}` |
+| `index` | Current index (0-based) | `{{ index }}` |
+| `total` | Total item count | `{{ total }}` |
+
+**Method Chaining:**
+```json
+"data": "{{ nodes.account.all() }}"
+"first": "{{ nodes.account.first() }}"
+"filtered": "{{ nodes.account.filter('pnl > 0') }}"
+"symbols": "{{ nodes.account.map('symbol') }}"
+"total": "{{ nodes.account.sum('quantity') }}"
+"avg": "{{ nodes.account.avg('pnl') }}"
+```
+
+**Chaining Example:**
+```json
+"profit_count": "{{ nodes.account.filter('pnl > 0').count() }}"
+```
 
 ### Node Categories (10, 47 nodes)
 
