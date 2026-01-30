@@ -1,3 +1,14 @@
+## [1.0.2] - 2026-01-30
+### Fixed
+- plugin 타입 수정
+
+## [1.0.1] - 2026-01-30
+
+### Changed
+- refactor(nodes): 노드 스키마 단순화 - `widget_schema`를 `config_schema`로 통합
+- refactor(models): Credential data 구조를 list 형태로 통일
+- refactor: 데이터 저장 경로 변경 및 Flutter 예제 제거
+
 ## [2.7.0] - 2026-01-22
 
 ### Changed

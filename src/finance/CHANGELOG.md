@@ -1,4 +1,21 @@
-## [0.1.13] - 2025-12-06
+## [1.0.3] - 2026-01-30
+## Changed
+- feat: programgarden-core 1.0.2 버전 업데이트에 따른 종속성 수정
+
+## [1.0.2] - 2026-01-30
+## Changed
+- feat: programgarden-core 1.0.1 버전 업데이트에 따른 종속성 수정
+
+## [1.0.1] - 2026-01-30
+
+### Changed
+- feat: programgarden-core 1.0.1 버전 업데이트에 따른 종속성 수정
+
+---
+
+## Legacy Changelog (programgarden-finance v0.x)
+
+## [0.1.13] - 2025-12-05
 ### Changed
 - feat: programgarden-core 버전 업데이트에 따른 종속성 수정
 

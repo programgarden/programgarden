@@ -72,11 +72,12 @@ class Credential(BaseModel):
     name: str = Field(..., description="User-friendly name (e.g., '내 LS증권 계정')")
     credential_type: str = Field(..., description="Type ID (e.g., 'broker_ls')")
 
-    # Credential data as list of key-value items
+    # Credential data as list of key-value items or encrypted string
     # In production, values would be encrypted with KMS
-    data: List[CredentialDataItem] = Field(
+    # 암호화된 경우 "ENC:..." 형태의 문자열로 저장됨
+    data: Any = Field(
         default_factory=list,
-        description="Credential 데이터 (key-value 항목 리스트)"
+        description="Credential 데이터 (key-value 항목 리스트 또는 암호화된 문자열)"
     )
 
     created_at: datetime = Field(default_factory=datetime.utcnow)

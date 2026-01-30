@@ -67,9 +67,9 @@ class CredentialReference(BaseModel):
     type: str = Field(..., description="Credential 타입 (broker_ls, telegram 등)")
     name: Optional[str] = Field(default=None, description="표시 이름")
     description: Optional[str] = Field(default=None, description="설명")
-    data: List[Dict[str, Any]] = Field(
+    data: Any = Field(
         default_factory=list,
-        description="Credential 데이터 리스트 [{key, value, type?, label?}, ...]"
+        description="Credential 데이터 (리스트 또는 dict 형태)"
     )
 
 

@@ -1,3 +1,16 @@
+## [1.0.3] - 2026-01-30
+### Changed
+- deps: programgarden-finance 1.0.3, programgarden-community 1.0.3 버전으로 업데이트
+
+## [1.0.2] - 2026-01-30
+### Changed
+- deps: programgarden-finance 1.0.2, programgarden-community 1.0.2 버전으로 업데이트
+
+## [1.0.1] - 2026-01-30
+
+### Changed
+- deps: programgarden-core 1.0.1, programgarden-finance 1.0.1, programgarden-community 1.0.1 버전으로 업데이트
+
 ## [2.6.0] - 2026-01-22
 
 ### Added
