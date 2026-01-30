@@ -80,6 +80,7 @@ class InputPort(BaseModel):
 
     name: str
     type: str
+    display_name: Optional[str] = None  # 사용자 표시용 이름 (i18n 키 또는 직접 값)
     description: Optional[str] = None
     required: bool = True
     multiple: bool = False  # 여러 엣지 연결 가능 여부
@@ -91,6 +92,7 @@ class OutputPort(BaseModel):
 
     name: str
     type: str
+    display_name: Optional[str] = None  # 사용자 표시용 이름 (i18n 키 또는 직접 값)
     description: Optional[str] = None
     fields: Optional[List[Dict[str, Any]]] = None  # 구조화된 서브필드 정의
 

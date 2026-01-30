@@ -13,7 +13,7 @@ from programgarden_core.i18n import translate_schema, translate_category
 
 
 class NodeTypeSchema(BaseModel):
-    """Node type schema (for AI agents)"""
+    """Node type schema (for AI agents and clients)"""
 
     node_type: str = Field(..., description="Node type name")
     category: str = Field(..., description="Node category")
@@ -23,19 +23,17 @@ class NodeTypeSchema(BaseModel):
     broker_provider: str = Field(default="all", description="Broker provider: ls-sec.co.kr | all")
     inputs: List[Dict[str, Any]] = Field(
         default_factory=list,
-        description="Input port definitions",
+        description="Input port definitions with display_name",
     )
     outputs: List[Dict[str, Any]] = Field(
         default_factory=list,
-        description="Output port definitions",
+        description="Output port definitions with display_name",
     )
-    widget_schema: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="json_dynamic_widget schema for Flutter form rendering (PARAMETERS fields)",
-    )
-    settings_widget_schema: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="json_dynamic_widget schema for Settings tab (SETTINGS fields)",
+    config_schema: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Simple field metadata for client form rendering. "
+                    "Each field contains: type, display_name, description, required, "
+                    "category (parameters/settings), expression_mode, etc.",
     )
     display_data_schema: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -267,10 +265,14 @@ class NodeTypeRegistry:
         product_scope_value = product_scope.value if hasattr(product_scope, 'value') else str(product_scope)
         broker_provider_value = broker_provider.value if hasattr(broker_provider, 'value') else str(broker_provider)
 
-        widget_schema, settings_widget_schema = self._build_widget_schemas(node_class)
+        config_schema = self._build_config_schema(node_class, type_name)
 
         # Display 노드의 런타임 데이터 스키마
         display_data_schema = getattr(node_class, '_display_data_schema', None)
+
+        # 입출력 포트 직렬화 시 display_name 자동 추가
+        inputs = self._serialize_ports(instance.get_inputs(), type_name)
+        outputs = self._serialize_ports(instance.get_outputs(), type_name)
 
         schema = NodeTypeSchema(
             node_type=type_name,
@@ -279,236 +281,78 @@ class NodeTypeRegistry:
             img_url=img_url,
             product_scope=product_scope_value,
             broker_provider=broker_provider_value,
-            inputs=[inp.model_dump(exclude_none=True) for inp in instance.get_inputs()],
-            outputs=[out.model_dump(exclude_none=True) for out in instance.get_outputs()],
-            widget_schema=widget_schema,
-            settings_widget_schema=settings_widget_schema,
+            inputs=inputs,
+            outputs=outputs,
+            config_schema=config_schema,
             display_data_schema=display_data_schema,
         )
         self._schemas[type_name] = schema
 
-    def _build_widget_schemas(self, node_class: Type[BaseNode]) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    def _serialize_ports(self, ports: List, node_type: str) -> List[Dict[str, Any]]:
         """
-        노드의 설정 폼을 PARAMETERS/SETTINGS로 분리하여 json_dynamic_widget JSON으로 변환
+        포트 목록을 직렬화하면서 display_name을 자동 추가합니다.
 
-        group 속성이 있는 필드는 그룹별로 card 위젯으로 래핑하여 중첩 배치합니다.
+        display_name 우선순위:
+        1. 포트에 직접 설정된 display_name
+        2. i18n 키 형식: portNames.{port_name} (공통 포트)
+
+        Args:
+            ports: InputPort 또는 OutputPort 목록
+            node_type: 노드 타입명
+
+        Returns:
+            직렬화된 포트 딕셔너리 목록
+        """
+        result = []
+        for port in ports:
+            port_dict = port.model_dump(exclude_none=True)
+
+            # display_name이 없으면 i18n 키 생성 (기존 ports.xxx 형식 사용)
+            if not port_dict.get("display_name"):
+                port_dict["display_name"] = f"i18n:ports.{port.name}"
+
+            result.append(port_dict)
+
+        return result
+
+    def _build_config_schema(self, node_class: Type[BaseNode], node_type: str) -> Dict[str, Any]:
+        """
+        노드의 필드 스키마를 단순한 config_schema 형식으로 변환합니다.
+
+        json_dynamic_widget 형식이 아닌, 필드별 메타데이터만 제공합니다.
+        클라이언트에서 UI 컴포넌트 결정 및 폼 렌더링에 활용합니다.
 
         Args:
             node_class: 노드 클래스
+            node_type: 노드 타입명 (예: "OverseasStockBrokerNode")
 
         Returns:
-            tuple: (widget_schema, settings_widget_schema)
-            - widget_schema: PARAMETERS 카테고리 필드들 (메인 폼)
-            - settings_widget_schema: SETTINGS 카테고리 필드들 (설정 탭)
+            dict: {field_name: field_config, ...} 형식의 config_schema
         """
-        from programgarden_core.models.field_binding import FieldCategory
-
         if not hasattr(node_class, 'get_field_schema'):
-            return None, None
+            return {}
 
         field_schemas = node_class.get_field_schema()
         if not field_schemas:
-            return None, None
+            return {}
 
-        # 그룹 없는 필드 / 그룹별 필드 분리 수집
-        ungrouped_params = []
-        ungrouped_settings = []
-        grouped_params: Dict[str, list] = {}   # group_name -> [widget, ...]
-        grouped_settings: Dict[str, list] = {}
-        group_order_params: list = []  # 그룹 등장 순서 유지
-        group_order_settings: list = []
-
-        # 노드 타입명 추출 (i18n 키 생성용)
-        node_type = node_class.__name__
+        config_schema: Dict[str, Any] = {}
 
         for name, fs in field_schemas.items():
             try:
-                # 카테고리에 따라 다른 위젯 생성
-                if fs.category == FieldCategory.SETTINGS:
-                    widget = fs.to_simple_widget()
-                    widget = self._add_i18n_label_to_settings_widget(widget, node_type, name)
-                else:
-                    widget = fs.to_json_dynamic_widget()
-
-                widget["fieldKey"] = name
-                widget["field_key_of_pydantic"] = name
-
-                if "args" in widget:
-                    widget["args"]["fieldKey"] = name
-
-                if fs.visible_when:
-                    widget = self._wrap_conditional(widget, fs.visible_when, name)
-
-                # 카테고리 + 그룹에 따라 분리
-                if fs.category == FieldCategory.SETTINGS:
-                    if fs.group:
-                        if fs.group not in grouped_settings:
-                            grouped_settings[fs.group] = []
-                            group_order_settings.append(fs.group)
-                        grouped_settings[fs.group].append(widget)
-                    else:
-                        ungrouped_settings.append(widget)
-                else:
-                    if fs.group:
-                        if fs.group not in grouped_params:
-                            grouped_params[fs.group] = []
-                            group_order_params.append(fs.group)
-                        grouped_params[fs.group].append(widget)
-                    else:
-                        ungrouped_params.append(widget)
-
+                config_schema[name] = fs.to_config_dict(node_type)
             except Exception as e:
-                ungrouped_params.append({
-                    "type": "text_form_field",
-                    "fieldKey": name,
-                    "args": {
-                        "decoration": {"labelText": name, "helperText": f"(conversion error: {str(e)})"}
-                    }
-                })
-
-        # 최종 children: ungrouped 먼저, 그다음 group card (등장 순서 유지)
-        parameters_children = list(ungrouped_params)
-        for group_name in group_order_params:
-            parameters_children.append(
-                self._build_group_card(node_type, group_name, grouped_params[group_name])
-            )
-
-        settings_children = list(ungrouped_settings)
-        for group_name in group_order_settings:
-            settings_children.append(
-                self._build_group_card(node_type, group_name, grouped_settings[group_name])
-            )
-
-        # 각 스키마 생성 (children이 없으면 None)
-        widget_schema = {
-            "type": "column",
-            "args": {"children": parameters_children}
-        } if parameters_children else None
-
-        settings_widget_schema = {
-            "type": "column",
-            "args": {"children": settings_children}
-        } if settings_children else None
-
-        return widget_schema, settings_widget_schema
-
-    def _build_group_card(
-        self, node_type: str, group_name: str, children: list
-    ) -> Dict[str, Any]:
-        """
-        그룹 필드를 card > padding > column 구조로 래핑
-
-        Args:
-            node_type: 노드 타입명 (i18n 키 생성용)
-            group_name: 그룹 이름
-            children: 그룹에 속한 위젯 리스트
-        """
-        title_widget = {
-            "type": "text",
-            "args": {
-                "text": f"i18n:groups.{node_type}.{group_name}",
-                "style": {"fontWeight": "w600", "fontSize": 13}
-            }
-        }
-
-        return {
-            "type": "card",
-            "args": {
-                "elevation": 0,
-                "margin": {"top": 12, "bottom": 4},
-                "child": {
-                    "type": "padding",
-                    "args": {
-                        "padding": {"left": 12, "right": 12, "top": 8, "bottom": 8},
-                        "child": {
-                            "type": "column",
-                            "args": {
-                                "mainAxisSize": "min",
-                                "children": [title_widget] + children
-                            }
-                        }
-                    }
+                # 변환 실패 시 최소 정보만 제공
+                config_schema[name] = {
+                    "type": "string",
+                    "display_name": name.replace("_", " ").title(),
+                    "required": False,
+                    "category": "parameters",
+                    "expression_mode": "both",
+                    "error": str(e),
                 }
-            }
-        }
-    
-    def _add_i18n_label_to_settings_widget(
-        self, widget: Dict[str, Any], node_type: str, field_name: str
-    ) -> Dict[str, Any]:
-        """
-        SETTINGS 위젯에 i18n labelText 추가
-        
-        checkbox는 decoration이 없으므로 labelText를 args에 직접 추가하고,
-        다른 위젯은 decoration.labelText에 i18n 키를 설정합니다.
-        
-        Args:
-            widget: 위젯 딕셔너리
-            node_type: 노드 타입명 (예: "RealAccountNode")
-            field_name: 필드명 (예: "stay_connected")
-            
-        Returns:
-            i18n labelText가 추가된 위젯
-        """
-        i18n_label_key = f"i18n:fieldNames.{node_type}.{field_name}"
-        
-        if "args" not in widget:
-            widget["args"] = {}
-        
-        if widget.get("type") == "checkbox":
-            # checkbox는 labelText를 args에 직접 추가
-            widget["args"]["labelText"] = i18n_label_key
-        else:
-            # 다른 위젯은 decoration.labelText에 추가
-            if "decoration" not in widget["args"]:
-                widget["args"]["decoration"] = {}
-            widget["args"]["decoration"]["labelText"] = i18n_label_key
-        
-        return widget
-    
-    def _wrap_conditional(self, widget: Dict[str, Any], visible_when: Dict[str, Any], field_key: str) -> Dict[str, Any]:
-        """
-        visible_when 조건을 json_dynamic_widget의 conditional 위젯으로 감싸기
-        
-        json_dynamic_widget 표준 conditional 형식:
-        {
-            "type": "conditional",
-            "listen": ["field_name"],  // 이 변수가 변경되면 위젯 리빌드
-            "args": {
-                "conditional": {"values": {"field_name": "expected_value"}},
-                "onTrue": { /* 조건 만족 시 표시할 위젯 */ }
-            }
-        }
-        
-        Args:
-            widget: 원본 위젯
-            visible_when: 조건 딕셔너리 (예: {"product_type": "overseas_stock"})
-            field_key: 필드 키 (Pydantic 모델 필드명)
-            
-        Returns:
-            conditional 위젯으로 감싼 구조
-        """
-        # listen 배열: visible_when의 모든 키를 감시
-        listen_fields = list(visible_when.keys())
-        
-        # conditional values 구성
-        # 배열 값은 첫 번째 값만 사용 (json_dynamic_widget 제한)
-        conditional_values = {}
-        for field, value in visible_when.items():
-            if isinstance(value, list):
-                # 배열인 경우 첫 번째 값 사용
-                conditional_values[field] = value[0] if value else None
-            else:
-                conditional_values[field] = value
-        
-        return {
-            "type": "conditional",
-            "listen": listen_fields,
-            "fieldKey": field_key,  # Flutter 코드 생성기 호환
-            "args": {
-                "conditional": {"values": conditional_values},
-                "onTrue": widget
-            }
-        }
+
+        return config_schema
 
     def get(self, node_type: str) -> Optional[Type[BaseNode]]:
         """Query node class"""

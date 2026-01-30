@@ -1,5 +1,5 @@
 """
-FieldSchema.to_json_dynamic_widget() 및 NodeTypeRegistry widget_schema 테스트
+FieldSchema.to_config_dict() 및 NodeTypeRegistry config_schema 테스트
 """
 
 import pytest
@@ -13,33 +13,35 @@ from programgarden_core.models.field_binding import (
 from programgarden_core.registry import NodeTypeRegistry
 
 
-class TestFieldSchemaToJsonDynamicWidget:
-    """FieldSchema.to_json_dynamic_widget() 메서드 테스트
+class TestFieldSchemaToConfigDict:
+    """FieldSchema.to_config_dict() 메서드 테스트
 
-    expression_mode별 렌더링 규칙:
-    - FIXED_ONLY: 토글 없이 직접 위젯 렌더링 (description -> args.helperText)
-    - EXPRESSION_ONLY: 토글 없이 text_form_field 직접 렌더링 (expression 입력 전용)
-    - BOTH: custom_expression_toggle (토글 전환 가능)
+    config_schema 형식:
+    - type: 필드 타입
+    - display_name: 표시 이름 (i18n 키 또는 직접 값)
+    - required: 필수 여부
+    - category: parameters | settings
+    - expression_mode: fixed_only | expression_only | both
     """
 
     def test_text_input_fixed_only(self):
-        """기본 텍스트 입력 필드 (FIXED_ONLY - 토글 없이 직접 렌더링)"""
+        """기본 텍스트 입력 필드 (FIXED_ONLY)"""
         fs = FieldSchema(
             name="test_field",
             type=FieldType.STRING,
             description="테스트 필드",
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("TestNode")
 
-        # FIXED_ONLY: 직접 위젯 렌더링 (custom_expression_toggle 없음)
-        assert widget["type"] == "text_form_field"
-        assert widget["args"]["decoration"]["labelText"] == "Test Field"
-        # description은 args.helperText로 전달
-        assert widget["args"]["helperText"] == "테스트 필드"
+        assert config["type"] == "string"
+        assert config["display_name"] == "i18n:fieldNames.TestNode.test_field"
+        assert config["expression_mode"] == "fixed_only"
+        assert config["description"] == "테스트 필드"
+        assert config["required"] is False
 
-    def test_number_input_fixed_only(self):
-        """숫자 입력 필드 (기본값 포함, FIXED_ONLY)"""
+    def test_number_input_with_default(self):
+        """숫자 입력 필드 (기본값 포함)"""
         fs = FieldSchema(
             name="period",
             type=FieldType.INTEGER,
@@ -47,15 +49,14 @@ class TestFieldSchemaToJsonDynamicWidget:
             default=14,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("TestNode")
 
-        assert widget["type"] == "text_form_field"
-        assert widget["args"]["keyboardType"] == "number"
-        assert widget["args"]["initialValue"] == "14"
-        assert widget["args"]["helperText"] == "기간"
+        assert config["type"] == "integer"
+        assert config["default"] == 14
+        assert config["description"] == "기간"
 
-    def test_select_fixed_only(self):
-        """드롭다운 선택 필드 (FIXED_ONLY)"""
+    def test_enum_select(self):
+        """드롭다운 선택 필드 (ENUM)"""
         fs = FieldSchema(
             name="provider",
             type=FieldType.ENUM,
@@ -65,32 +66,29 @@ class TestFieldSchemaToJsonDynamicWidget:
             enum_labels={"ls-sec.co.kr": "LS증권"},
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("BrokerNode")
 
-        assert widget["type"] == "dropdown_button_form_field"
-        assert widget["args"]["items"] == ["ls-sec.co.kr"]
-        assert widget["args"]["value"] == "ls-sec.co.kr"
-        assert widget["args"]["itemLabels"] == {"ls-sec.co.kr": "LS증권"}
-        assert widget["args"]["helperText"] == "증권사"
+        assert config["type"] == "enum"
+        assert config["enum_values"] == ["ls-sec.co.kr"]
+        assert config["enum_labels"] == {"ls-sec.co.kr": "LS증권"}
+        assert config["default"] == "ls-sec.co.kr"
 
-    def test_checkbox_fixed_only(self):
-        """체크박스 필드 (FIXED_ONLY)"""
+    def test_boolean_field(self):
+        """체크박스 필드 (BOOLEAN)"""
         fs = FieldSchema(
             name="adjust",
             type=FieldType.BOOLEAN,
             description="수정주가 적용",
             default=True,
-            ui_component=UIComponent.CHECKBOX,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("TestNode")
 
-        assert widget["type"] == "checkbox"
-        assert widget["args"]["value"] is True
-        assert widget["args"]["helperText"] == "수정주가 적용"
+        assert config["type"] == "boolean"
+        assert config["default"] is True
 
     def test_expression_only_mode(self):
-        """EXPRESSION_ONLY 모드 (토글 없이 text_form_field 직접 렌더링)"""
+        """EXPRESSION_ONLY 모드"""
         fs = FieldSchema(
             name="data",
             type=FieldType.OBJECT,
@@ -98,49 +96,13 @@ class TestFieldSchemaToJsonDynamicWidget:
             expression_mode=ExpressionMode.EXPRESSION_ONLY,
             example_binding="{{ nodes.source.values }}",
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("TestNode")
 
-        # EXPRESSION_ONLY: 토글 없이 직접 text_form_field 렌더링
-        assert widget["type"] == "text_form_field"
-        assert widget["args"]["fieldKey"] == "data"
-        assert widget["args"]["decoration"]["hintText"] == "{{ nodes.source.values }}"
-        # description은 helperText로 전달
-        assert widget["args"]["helperText"] == "입력 데이터"
+        assert config["expression_mode"] == "expression_only"
+        assert config["example_binding"] == "{{ nodes.source.values }}"
 
-    def test_expression_only_with_complex_binding(self):
-        """EXPRESSION_ONLY 모드 - 복잡한 바인딩 표현식"""
-        fs = FieldSchema(
-            name="data",
-            type=FieldType.STRING,
-            description="입력 데이터",
-            expression_mode=ExpressionMode.EXPRESSION_ONLY,
-            example_binding="{{ flatten(nodes.historical.values, 'time_series') }}",
-        )
-        widget = fs.to_json_dynamic_widget()
-
-        assert widget["type"] == "text_form_field"
-        assert widget["args"]["fieldKey"] == "data"
-        assert widget["args"]["decoration"]["hintText"] == "{{ flatten(nodes.historical.values, 'time_series') }}"
-        assert widget["args"]["helperText"] == "입력 데이터"
-
-    def test_expression_only_help_text_priority(self):
-        """EXPRESSION_ONLY 모드 - help_text가 있으면 description보다 우선"""
-        fs = FieldSchema(
-            name="data",
-            type=FieldType.OBJECT,
-            description="입력 데이터",
-            help_text="다른 노드의 출력을 바인딩하세요",
-            expression_mode=ExpressionMode.EXPRESSION_ONLY,
-            example_binding="{{ nodes.source.values }}",
-        )
-        widget = fs.to_json_dynamic_widget()
-
-        assert widget["type"] == "text_form_field"
-        # help_text가 description보다 우선
-        assert widget["args"]["helperText"] == "다른 노드의 출력을 바인딩하세요"
-
-    def test_credential_select_fixed_only(self):
-        """Credential 선택 필드 (FIXED_ONLY - 토글 없이 직접 렌더링)"""
+    def test_credential_field(self):
+        """Credential 선택 필드"""
         fs = FieldSchema(
             name="credential_id",
             type=FieldType.CREDENTIAL,
@@ -149,18 +111,14 @@ class TestFieldSchemaToJsonDynamicWidget:
             credential_types=["broker_ls_stock", "broker_ls_futures"],
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("BrokerNode")
 
-        assert widget["type"] == "custom_credential_select"
-        # credentialTypes는 type_id와 name을 포함한 객체 배열
-        assert len(widget["args"]["credentialTypes"]) == 2
-        assert widget["args"]["credentialTypes"][0]["type_id"] == "broker_ls_stock"
-        assert widget["args"]["credentialTypes"][1]["type_id"] == "broker_ls_futures"
-        assert widget["args"]["items"] == []  # 런타임에 채워짐
-        assert widget["args"]["helperText"] == "Credential 선택"
+        assert config["type"] == "credential"
+        assert config["ui_component"] == "custom_credential_select"
+        assert config["credential_types"] == ["broker_ls_stock", "broker_ls_futures"]
 
-    def test_plugin_select_fixed_only(self):
-        """플러그인 선택 (커스텀 위젯, FIXED_ONLY)"""
+    def test_plugin_select(self):
+        """플러그인 선택 필드"""
         fs = FieldSchema(
             name="plugin",
             type=FieldType.STRING,
@@ -168,27 +126,12 @@ class TestFieldSchemaToJsonDynamicWidget:
             ui_component=UIComponent.CUSTOM_PLUGIN_SELECT,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("ConditionNode")
 
-        assert widget["type"] == "custom_plugin_select"
-        assert widget["args"]["helperText"] == "플러그인 선택"
+        assert config["ui_component"] == "custom_plugin_select"
 
-    def test_symbol_editor_fixed_only(self):
-        """종목 편집기 (커스텀 위젯) - FIXED_ONLY: 토글 없이 직접 렌더링"""
-        fs = FieldSchema(
-            name="symbols",
-            type=FieldType.ARRAY,
-            description="종목 리스트",
-            expression_mode=ExpressionMode.FIXED_ONLY,
-            ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
-        )
-        widget = fs.to_json_dynamic_widget()
-
-        assert widget["type"] == "custom_symbol_editor"
-        assert widget["args"]["helperText"] == "종목 리스트"
-
-    def test_symbol_editor_both_mode(self):
-        """종목 편집기 (BOTH 모드) - 자체 토글 위젯이라 직접 렌더링"""
+    def test_symbol_editor(self):
+        """종목 편집기 (커스텀 위젯)"""
         fs = FieldSchema(
             name="symbols",
             type=FieldType.ARRAY,
@@ -196,30 +139,13 @@ class TestFieldSchemaToJsonDynamicWidget:
             expression_mode=ExpressionMode.BOTH,
             ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("WatchlistNode")
 
-        # SYMBOL_EDITOR는 자체 토글 포함 -> 직접 렌더링
-        assert widget["type"] == "custom_symbol_editor"
-        assert widget["args"]["expressionMode"] == "both"
+        assert config["ui_component"] == "custom_symbol_editor"
+        assert config["expression_mode"] == "both"
 
-    def test_code_editor_fixed_only(self):
-        """코드 에디터 (언어 옵션, FIXED_ONLY)"""
-        fs = FieldSchema(
-            name="query",
-            type=FieldType.STRING,
-            description="SQL 쿼리",
-            ui_component=UIComponent.CUSTOM_CODE_EDITOR,
-            ui_options={"language": "sql"},
-            expression_mode=ExpressionMode.FIXED_ONLY,
-        )
-        widget = fs.to_json_dynamic_widget()
-
-        assert widget["type"] == "custom_code_editor"
-        assert widget["args"]["language"] == "sql"
-        assert widget["args"]["helperText"] == "SQL 쿼리"
-
-    def test_display_name_override_fixed_only(self):
-        """display_name으로 라벨 오버라이드 (FIXED_ONLY)"""
+    def test_display_name_override(self):
+        """display_name 직접 지정"""
         fs = FieldSchema(
             name="api_key",
             type=FieldType.STRING,
@@ -227,230 +153,157 @@ class TestFieldSchemaToJsonDynamicWidget:
             description="인증용 API 키",
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("TestNode")
 
-        assert widget["type"] == "text_form_field"
-        assert widget["args"]["decoration"]["labelText"] == "API 키"
-        assert widget["args"]["helperText"] == "인증용 API 키"
+        # display_name이 직접 지정되면 그대로 사용
+        assert config["display_name"] == "API 키"
 
-    def test_both_mode_text_input(self):
-        """BOTH 모드 텍스트 입력 - custom_expression_toggle 반환"""
+    def test_visible_when(self):
+        """visible_when 조건부 표시"""
         fs = FieldSchema(
-            name="query",
-            type=FieldType.STRING,
-            description="검색어",
+            name="new_price",
+            type=FieldType.NUMBER,
+            description="정정 가격",
             expression_mode=ExpressionMode.BOTH,
-            example_binding="{{ nodes.input.query }}",
+            visible_when={"price_type": "limit"},
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("ModifyOrderNode")
 
-        assert widget["type"] == "custom_expression_toggle"
-        assert "lockedMode" not in widget["args"]  # BOTH는 토글 가능
-        assert widget["args"]["fixedWidget"]["type"] == "text_form_field"
-        assert widget["args"]["expressionWidget"]["type"] == "text_form_field"
+        assert config["visible_when"] == {"price_type": "limit"}
 
-    def test_fixed_only_no_description(self):
-        """FIXED_ONLY + description 없음 -> helperText 없음"""
+    def test_sub_fields(self):
+        """object_schema -> sub_fields 변환"""
         fs = FieldSchema(
-            name="mode",
-            type=FieldType.ENUM,
-            enum_values=["A", "B"],
+            name="symbol",
+            type=FieldType.OBJECT,
+            description="종목",
+            expression_mode=ExpressionMode.EXPRESSION_ONLY,
+            object_schema=[
+                {"name": "exchange", "type": "STRING"},
+                {"name": "symbol", "type": "STRING"},
+            ],
+        )
+        config = fs.to_config_dict("MarketDataNode")
+
+        assert "sub_fields" in config
+        assert len(config["sub_fields"]) == 2
+        assert config["sub_fields"][0]["name"] == "exchange"
+
+    def test_settings_category(self):
+        """SETTINGS 카테고리 필드"""
+        fs = FieldSchema(
+            name="timeout",
+            type=FieldType.INTEGER,
+            description="타임아웃 (초)",
+            category=FieldCategory.SETTINGS,
+            default=30,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
-        widget = fs.to_json_dynamic_widget()
+        config = fs.to_config_dict("HTTPRequestNode")
 
-        assert widget["type"] == "dropdown_button_form_field"
-        assert "helperText" not in widget["args"]
+        assert config["category"] == "settings"
 
 
-class TestNodeTypeRegistryWidgetSchema:
-    """NodeTypeRegistry widget_schema 생성 테스트"""
+class TestNodeTypeRegistryConfigSchema:
+    """NodeTypeRegistry config_schema 생성 테스트"""
 
-    def test_broker_node_widget_schema(self):
-        """BrokerNode의 widget_schema 생성 확인"""
+    def test_broker_node_config_schema(self):
+        """BrokerNode의 config_schema 생성 확인"""
         registry = NodeTypeRegistry()
         schema = registry.get_schema("OverseasStockBrokerNode")
 
         assert schema is not None
-        assert schema.widget_schema is not None
-        assert schema.widget_schema["type"] == "column"
-        assert "children" in schema.widget_schema["args"]
+        assert schema.config_schema is not None
+        assert "provider" in schema.config_schema
+        assert "credential_id" in schema.config_schema
 
-        # provider 필드 확인 (FIXED_ONLY → 직접 렌더링)
-        children = schema.widget_schema["args"]["children"]
-        provider_widget = next(
-            (w for w in children if w.get("field_key_of_pydantic") == "provider"),
-            None
-        )
-        assert provider_widget is not None
-        assert provider_widget["type"] == "dropdown_button_form_field"
+        # provider 필드 확인
+        provider = schema.config_schema["provider"]
+        assert provider["type"] == "enum"
+        assert provider["expression_mode"] == "fixed_only"
+        assert "enum_values" in provider
 
-    def test_watchlist_node_widget_schema(self):
-        """WatchlistNode의 widget_schema 생성 확인"""
+    def test_watchlist_node_config_schema(self):
+        """WatchlistNode의 config_schema 생성 확인"""
         registry = NodeTypeRegistry()
         schema = registry.get_schema("WatchlistNode")
 
         assert schema is not None
-        assert schema.widget_schema is not None
+        assert "symbols" in schema.config_schema
 
-        children = schema.widget_schema["args"]["children"]
-        symbols_widget = next(
-            (w for w in children if w.get("field_key_of_pydantic") == "symbols"),
-            None
-        )
-        assert symbols_widget is not None
-        # BOTH 모드 + SYMBOL_EDITOR -> 자체 토글, 직접 렌더링
-        assert symbols_widget["type"] == "custom_symbol_editor"
+        symbols = schema.config_schema["symbols"]
+        assert symbols["ui_component"] == "custom_symbol_editor"
 
-    def test_condition_node_widget_schema(self):
-        """ConditionNode의 widget_schema 생성 확인"""
+    def test_condition_node_config_schema(self):
+        """ConditionNode의 config_schema 생성 확인"""
         registry = NodeTypeRegistry()
         schema = registry.get_schema("ConditionNode")
 
         assert schema is not None
-        assert schema.widget_schema is not None
+        assert "plugin" in schema.config_schema
+        assert "items" in schema.config_schema
 
-        children = schema.widget_schema["args"]["children"]
-        plugin_widget = next(
-            (w for w in children if w.get("field_key_of_pydantic") == "plugin"),
-            None
-        )
-        assert plugin_widget is not None
-        # FIXED_ONLY → 직접 렌더링
-        assert plugin_widget["type"] == "custom_plugin_select"
+        plugin = schema.config_schema["plugin"]
+        assert plugin["ui_component"] == "custom_plugin_select"
 
-    def test_historical_data_node_widget_schema(self):
-        """OverseasStockHistoricalDataNode의 widget_schema 생성 확인"""
+    def test_throttle_node_config_schema(self):
+        """ThrottleNode의 config_schema (설정 필드 포함)"""
         registry = NodeTypeRegistry()
-        schema = registry.get_schema("OverseasStockHistoricalDataNode")
+        schema = registry.get_schema("ThrottleNode")
 
         assert schema is not None
-        assert schema.widget_schema is not None
+        assert "mode" in schema.config_schema
+        assert "interval_sec" in schema.config_schema
+        assert "pass_first" in schema.config_schema
 
-        children = schema.widget_schema["args"]["children"]
+        mode = schema.config_schema["mode"]
+        assert mode["type"] == "enum"
+        assert "skip" in mode["enum_values"]
+        assert "latest" in mode["enum_values"]
 
-        # start_date 필드 확인 (BOTH 모드 → custom_expression_toggle, lockedMode 없음)
-        start_date_widget = next(
-            (w for w in children if w.get("field_key_of_pydantic") == "start_date"),
-            None
-        )
-        assert start_date_widget is not None
-        assert start_date_widget["type"] == "custom_expression_toggle"
-        assert "lockedMode" not in start_date_widget["args"]  # BOTH 모드
-
-        # interval 필드 확인 (FIXED_ONLY → 직접 렌더링)
-        interval_widget = next(
-            (w for w in children if w.get("field_key_of_pydantic") == "interval"),
-            None
-        )
-        assert interval_widget is not None
-        assert interval_widget["type"] == "dropdown_button_form_field"
-
-    def test_stock_modify_order_node_widget_schema_with_visible_when(self):
-        """OverseasStockModifyOrderNode의 visible_when 조건부 필드 확인 (json_dynamic_widget conditional 형식)"""
+    def test_logic_node_visible_when(self):
+        """LogicNode의 visible_when 확인"""
         registry = NodeTypeRegistry()
-        schema = registry.get_schema("OverseasStockModifyOrderNode")
+        schema = registry.get_schema("LogicNode")
 
         assert schema is not None
-        assert schema.widget_schema is not None
+        assert "threshold" in schema.config_schema
 
-        children = schema.widget_schema["args"]["children"]
+        threshold = schema.config_schema["threshold"]
+        assert "visible_when" in threshold
+        assert "operator" in threshold["visible_when"]
 
-        # new_price는 visible_when: {"price_type": "limit"}
-        new_price_widget = next(
-            (w for w in children if w.get("args", {}).get("onTrue", {}).get("field_key_of_pydantic") == "new_price"
-             or w.get("field_key_of_pydantic") == "new_price"),
-            None
-        )
-        # conditional로 감싸져 있어야 함
-        assert new_price_widget is not None
-        if new_price_widget["type"] == "conditional":
-            # json_dynamic_widget 표준 형식: listen + conditional.values
-            assert "listen" in new_price_widget
-            assert "price_type" in new_price_widget["listen"]
-            assert "conditional" in new_price_widget["args"]
-            assert new_price_widget["args"]["conditional"]["values"]["price_type"] == "limit"
-            assert "onTrue" in new_price_widget["args"]
-
-    def test_line_chart_group_nesting(self):
-        """LineChartNode: group=field_mapping 필드가 card로 래핑되어 중첩 배치"""
+    def test_port_display_names(self):
+        """포트에 display_name이 i18n 키로 자동 생성되는지 확인"""
         registry = NodeTypeRegistry()
-        schema = registry.get_schema("LineChartNode")
+        schema = registry.get_schema("OverseasStockBrokerNode")
 
         assert schema is not None
-        assert schema.widget_schema is not None
+        assert len(schema.outputs) > 0
 
-        children = schema.widget_schema["args"]["children"]
+        connection_output = schema.outputs[0]
+        assert connection_output["name"] == "connection"
+        assert connection_output["display_name"] == "i18n:ports.connection"
 
-        # data 필드: ungrouped → 최상위에 flat 배치
-        data_widget = next(
-            (w for w in children if w.get("field_key_of_pydantic") == "data"),
-            None
-        )
-        assert data_widget is not None
-        # Phase 1 결과: EXPRESSION_ONLY → text_form_field
-        assert data_widget["type"] == "text_form_field"
-
-        # field_mapping 그룹: card로 래핑
-        group_card = next(
-            (w for w in children if w.get("type") == "card"),
-            None
-        )
-        assert group_card is not None
-
-        # card > padding > column > children 구조
-        padding = group_card["args"]["child"]
-        assert padding["type"] == "padding"
-        column = padding["args"]["child"]
-        assert column["type"] == "column"
-        group_children = column["args"]["children"]
-
-        # 첫 번째: 그룹 제목 text 위젯
-        assert group_children[0]["type"] == "text"
-        assert "field_mapping" in group_children[0]["args"]["text"]
-
-        # 나머지: field_mapping 그룹 필드들 (x_field, y_field, signal_field, side_field)
-        field_keys = [
-            w.get("field_key_of_pydantic") for w in group_children[1:]
-        ]
-        assert "x_field" in field_keys
-        assert "y_field" in field_keys
-        assert "signal_field" in field_keys
-        assert "side_field" in field_keys
-
-    def test_condition_node_items_schema(self):
-        """ConditionNode: items { from, extract } 스키마 존재"""
-        registry = NodeTypeRegistry()
-        schema = registry.get_schema("ConditionNode")
-
-        assert schema is not None
-        children = schema.widget_schema["args"]["children"]
-
-        # plugin 필드가 최상위에 존재
-        plugin_widget = next(
-            (w for w in children if w.get("field_key_of_pydantic") == "plugin"),
-            None
-        )
-        assert plugin_widget is not None
-
-        # items 필드가 최상위에 존재
-        items_widget = next(
-            (w for w in children if w.get("field_key_of_pydantic") == "items"),
-            None
-        )
-        assert items_widget is not None
-
-    def test_start_node_empty_widget_schema(self):
-        """StartNode는 설정 필드가 없어 widget_schema가 비어있음"""
+    def test_start_node_empty_config_schema(self):
+        """StartNode는 설정 필드가 없어 config_schema가 빈 dict"""
         registry = NodeTypeRegistry()
         schema = registry.get_schema("StartNode")
 
         assert schema is not None
-        # get_field_schema가 빈 dict를 반환하면 widget_schema는 None
-        # 또는 children이 빈 배열
-        if schema.widget_schema:
-            children = schema.widget_schema.get("args", {}).get("children", [])
-            assert len(children) == 0
+        assert schema.config_schema == {}
+
+    def test_real_market_data_node_sub_fields(self):
+        """RealMarketDataNode의 sub_fields 확인"""
+        registry = NodeTypeRegistry()
+        schema = registry.get_schema("OverseasStockRealMarketDataNode")
+
+        assert schema is not None
+        assert "symbol" in schema.config_schema
+
+        symbol = schema.config_schema["symbol"]
+        assert "sub_fields" in symbol
+        assert len(symbol["sub_fields"]) == 2
 
 
 if __name__ == "__main__":

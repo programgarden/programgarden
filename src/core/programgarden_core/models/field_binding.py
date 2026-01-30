@@ -291,400 +291,114 @@ class FieldSchema(BaseModel):
     )
 
     model_config = ConfigDict(use_enum_values=True)
-    
-    def to_simple_widget(self) -> Dict[str, Any]:
+
+    def get_display_name(self, node_type: str) -> str:
         """
-        SETTINGS 카테고리용 단순 위젯 생성 (토글 없음)
-        
-        expression_mode를 무시하고 ui_component에 따른 위젯만 생성합니다.
-        settings 필드는 고정값만 사용하므로 Fixed/Expression 토글이 불필요합니다.
-        
-        Returns:
-            dict: json_dynamic_widget 호환 JSON 구조 (토글 없음)
-        """
-        ui_comp = self.ui_component
-        if ui_comp is None:
-            ui_comp = UIComponent.get_default_for_field_type(self.type)
-        
-        label = self.display_name or self.name.replace("_", " ").title()
-        decoration: Dict[str, Any] = {"labelText": label}
-        if self.placeholder:
-            decoration["hintText"] = self.placeholder
-        
-        widget = self._map_ui_component_to_widget(ui_comp, decoration)
-        # description이 있으면 args.helperText로 전달 (to_json_dynamic_widget의 FIXED_ONLY와 동일)
-        if self.description:
-            widget["args"]["helperText"] = self.description
-        return widget
+        필드의 표시 이름을 반환합니다.
 
-    def to_json_dynamic_widget(self) -> Dict[str, Any]:
-        """
-        FieldSchema를 json_dynamic_widget JSON 형태로 변환
-        
-        Flutter 클라이언트에서 json_dynamic_widget 패키지로 동적 폼을 렌더링하기 위한
-        JSON 구조를 생성합니다.
-        
-        Returns:
-            dict: json_dynamic_widget 호환 JSON 구조
-            
-        Example:
-            >>> fs = FieldSchema(name="provider", type=FieldType.ENUM, ...)
-            >>> widget = fs.to_json_dynamic_widget()
-            >>> # {"type": "dropdown_button_form_field", "args": {...}}
-        """
-        # UI 컴포넌트 결정 (명시적 지정 > 타입 기반 기본값)
-        ui_comp = self.ui_component
-        if ui_comp is None:
-            ui_comp = UIComponent.get_default_for_field_type(self.type)
-        
-        # 표시 이름 결정 (display_name > name의 Title Case)
-        label = self.display_name or self.name.replace("_", " ").title()
-        
-        # 기본 decoration 구성 (helperText는 args에서 관리)
-        decoration: Dict[str, Any] = {"labelText": label}
-        if self.placeholder:
-            decoration["hintText"] = self.placeholder
-
-        # FIXED_ONLY: 토글 없이 직접 위젯만 렌더링 (expression 전환이 불가하므로 토글 불필요)
-        if self.expression_mode == ExpressionMode.FIXED_ONLY:
-            widget = self._map_ui_component_to_widget(ui_comp, decoration)
-            # description이 있으면 args.helperText로 전달 (Flutter에서 자유롭게 렌더링)
-            if self.description:
-                widget["args"]["helperText"] = self.description
-            return widget
-
-        # 자체 토글을 포함하는 커스텀 위젯들은 직접 렌더링 (expression_toggle 래핑 생략)
-        # 이 위젯들은 내부에서 자체적으로 Fixed/Expression 토글을 처리함
-        self_toggle_widgets = {
-            UIComponent.CUSTOM_SYMBOL_EDITOR,
-        }
-        if ui_comp in self_toggle_widgets:
-            return self._map_ui_component_to_widget(ui_comp, decoration)
-
-        # expression_mode에 따른 처리
-        # EXPRESSION_ONLY: 토글 없이 expression 입력만 표시
-        if self.expression_mode == ExpressionMode.EXPRESSION_ONLY:
-            return self._build_expression_only_widget(decoration)
-
-        # BOTH 모드: Fixed/Expression 토글 위젯 (전환 가능)
-        return self._build_toggle_widget(ui_comp, decoration)
-    
-    def _map_ui_component_to_widget(
-        self, 
-        ui_comp: "UIComponent", 
-        decoration: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """UIComponent를 json_dynamic_widget 타입으로 매핑
-        
-        ui_options가 있으면 해당 옵션을 적용합니다.
-        FieldType에 따른 기본 옵션도 자동 적용됩니다.
-        """
-        ui_opts = self.ui_options or {}
-
-        # === TEXT_FORM_FIELD ===
-        if ui_comp == UIComponent.TEXT_FORM_FIELD:
-            args: Dict[str, Any] = {"decoration": decoration}
-            if self.default is not None:
-                args["initialValue"] = str(self.default)
-            # NUMBER/INTEGER 타입은 keyboardType: number 자동 적용
-            if self.type in (FieldType.NUMBER, FieldType.INTEGER):
-                args["keyboardType"] = ui_opts.get("keyboardType", "number")
-            if ui_opts.get("maxLines"):
-                args["maxLines"] = ui_opts["maxLines"]
-            if ui_opts.get("keyboardType") and self.type not in (FieldType.NUMBER, FieldType.INTEGER):
-                args["keyboardType"] = ui_opts["keyboardType"]
-            return {"type": "text_form_field", "args": args}
-
-        # === CHECKBOX ===
-        if ui_comp == UIComponent.CHECKBOX:
-            label = self.display_name or self.name.replace("_", " ").title()
-            args: Dict[str, Any] = {
-                "value": self.default if isinstance(self.default, bool) else False,
-                "labelText": label,
-            }
-            return {"type": "checkbox", "args": args}
-
-        # === DROPDOWN ===
-        if ui_comp == UIComponent.DROPDOWN_BUTTON_FORM_FIELD:
-            items = self.enum_values or []
-            args: Dict[str, Any] = {
-                "decoration": decoration,
-                "items": items,
-            }
-            if self.default is not None:
-                args["value"] = self.default
-            if self.enum_labels:
-                args["itemLabels"] = self.enum_labels
-            if ui_opts.get("multiple"):
-                args["multiple"] = True
-            return {"type": "dropdown_button_form_field", "args": args}
-
-        # === CREDENTIAL_SELECT ===
-        if ui_comp == UIComponent.CUSTOM_CREDENTIAL_SELECT:
-            args: Dict[str, Any] = {
-                "decoration": decoration,
-                "items": [],
-            }
-            if self.credential_types:
-                from .credential import BUILTIN_CREDENTIAL_SCHEMAS
-                credential_type_infos = []
-                for type_id in self.credential_types:
-                    schema = BUILTIN_CREDENTIAL_SCHEMAS.get(type_id)
-                    credential_type_infos.append({
-                        "type_id": type_id,
-                        "name": schema.name if schema else type_id,
-                    })
-                args["credentialTypes"] = credential_type_infos
-            return {"type": "custom_credential_select", "args": args}
-
-        # === PLUGIN_SELECT ===
-        if ui_comp == UIComponent.CUSTOM_PLUGIN_SELECT:
-            return {
-                "type": "custom_plugin_select",
-                "args": {"decoration": decoration},
-            }
-
-        # === SYMBOL_EDITOR ===
-        if ui_comp == UIComponent.CUSTOM_SYMBOL_EDITOR:
-            args: Dict[str, Any] = {
-                "decoration": decoration,
-                "expressionMode": self.expression_mode.value if hasattr(self.expression_mode, 'value') else str(self.expression_mode),
-            }
-            if self.object_schema:
-                args["objectSchema"] = self.object_schema
-            if self.ui_options:
-                args["uiOptions"] = self.ui_options
-            if self.example_binding:
-                args["expressionHint"] = self.example_binding
-            return {"type": "custom_symbol_editor", "args": args}
-
-        # === KEY_VALUE_EDITOR ===
-        if ui_comp == UIComponent.CUSTOM_KEY_VALUE_EDITOR:
-            return {
-                "type": "custom_key_value_editor",
-                "args": {
-                    "decoration": decoration,
-                    "objectSchema": self.object_schema,
-                },
-            }
-
-        # === ORDER_LIST_EDITOR ===
-        if ui_comp == UIComponent.CUSTOM_ORDER_LIST_EDITOR:
-            args_dict: Dict[str, Any] = {
-                "decoration": decoration,
-                "objectSchema": self.object_schema,
-            }
-            if self.example_binding:
-                args_dict["exampleBinding"] = self.example_binding
-            if self.bindable_sources:
-                args_dict["bindableSources"] = self.bindable_sources
-            return {
-                "type": "custom_order_list_editor",
-                "args": args_dict,
-            }
-
-        # === OBJECT_ARRAY_TABLE ===
-        if ui_comp == UIComponent.CUSTOM_OBJECT_ARRAY_TABLE:
-            return {
-                "type": "custom_object_array_table",
-                "args": {
-                    "decoration": decoration,
-                    "objectSchema": self.object_schema,
-                },
-            }
-
-        # === CODE_EDITOR ===
-        if ui_comp == UIComponent.CUSTOM_CODE_EDITOR:
-            return {
-                "type": "custom_code_editor",
-                "args": {
-                    "decoration": decoration,
-                    "language": ui_opts.get("language", "sql"),
-                },
-            }
-
-        # === CREATABLE_SELECT ===
-        if ui_comp == UIComponent.CUSTOM_CREATABLE_SELECT:
-            return {
-                "type": "custom_creatable_select",
-                "args": {
-                    "decoration": decoration,
-                    "source": ui_opts.get("source"),
-                    "fileExtension": ui_opts.get("file_extension"),
-                    "createLabel": ui_opts.get("create_label"),
-                    "deletable": ui_opts.get("deletable", False),
-                },
-            }
-
-        # === DATE_PICKER ===
-        if ui_comp == UIComponent.CUSTOM_DATE_PICKER:
-            args: Dict[str, Any] = {
-                "fieldKey": self.name,
-                "decoration": decoration,
-            }
-            if self.default:
-                args["initialValue"] = self.default
-            if ui_opts.get("firstDate"):
-                args["firstDate"] = ui_opts["firstDate"]
-            if ui_opts.get("lastDate"):
-                args["lastDate"] = ui_opts["lastDate"]
-            if ui_opts.get("dateFormat"):
-                args["dateFormat"] = ui_opts["dateFormat"]
-            return {
-                "type": "custom_date_picker",
-                "args": args,
-            }
-
-        # === TIME_PICKER ===
-        if ui_comp == UIComponent.CUSTOM_TIME_PICKER:
-            return {
-                "type": "custom_time_picker",
-                "args": {"decoration": decoration},
-            }
-
-        # === DATETIME_PICKER ===
-        if ui_comp == UIComponent.CUSTOM_DATETIME_PICKER:
-            return {
-                "type": "custom_datetime_picker",
-                "args": {"decoration": decoration},
-            }
-
-        # === FIELD_MAPPING_EDITOR ===
-        if ui_comp == UIComponent.CUSTOM_FIELD_MAPPING_EDITOR:
-            return {
-                "type": "custom_field_mapping_editor",
-                "args": {
-                    "decoration": decoration,
-                    "objectSchema": self.object_schema,
-                },
-            }
-
-        # === SLIDER ===
-        if ui_comp == UIComponent.SLIDER:
-            args: Dict[str, Any] = {
-                "min": float(self.min_value or 0),
-                "max": float(self.max_value or 100),
-                "value": float(self.default or 0),
-            }
-            if ui_opts.get("range"):
-                args["range"] = True
-            return {"type": "slider", "args": args}
-
-        # === 기본값: TEXT_FORM_FIELD ===
-        args: Dict[str, Any] = {"decoration": decoration}
-        if self.default is not None:
-            args["initialValue"] = str(self.default)
-        if self.type in (FieldType.NUMBER, FieldType.INTEGER):
-            args["keyboardType"] = ui_opts.get("keyboardType", "number")
-        if ui_opts.get("maxLines"):
-            args["maxLines"] = ui_opts["maxLines"]
-        if ui_opts.get("keyboardType") and self.type not in (FieldType.NUMBER, FieldType.INTEGER):
-            args["keyboardType"] = ui_opts["keyboardType"]
-        return {"type": "text_form_field", "args": args}
-    
-    def _build_expression_only_widget(
-        self,
-        decoration: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """
-        EXPRESSION_ONLY 전용 위젯 생성 (토글 없는 단순 expression 입력)
-
-        {{ nodes.xxx.yyy }} 형태의 바인딩 표현식만 입력받는 텍스트 필드입니다.
-        custom_expression_toggle 없이 직접 text_form_field를 반환합니다.
-        """
-        expr_decoration = decoration.copy()
-        if self.example_binding:
-            expr_decoration["hintText"] = self.example_binding
-
-        args: Dict[str, Any] = {
-            "fieldKey": self.name,
-            "decoration": expr_decoration,
-        }
-
-        # helperText: help_text > description 순으로 적용
-        if self.help_text:
-            args["helperText"] = self.help_text
-        elif self.description:
-            args["helperText"] = self.description
-
-        return {"type": "text_form_field", "args": args}
-
-    def _build_toggle_widget(
-        self,
-        ui_comp: "UIComponent",
-        decoration: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """
-        custom_expression_toggle 위젯 생성 (BOTH 모드 전용)
-
-        Fixed/Expression 토글 버튼과 함께 선택에 따른 입력 위젯을 렌더링합니다.
+        우선순위:
+        1. display_name이 직접 지정되어 있으면 반환
+        2. i18n 키 형식으로 반환 (i18n:fieldNames.{NodeType}.{field_name})
+        3. 필드명을 Title Case로 변환하여 반환 (폴백)
 
         Args:
-            ui_comp: UI 컴포넌트 타입
-            decoration: 라벨, 설명 등 장식 정보
+            node_type: 노드 타입명 (예: "OverseasStockBrokerNode")
 
         Returns:
-            dict: custom_expression_toggle 위젯 JSON
+            str: 표시할 필드명 또는 i18n 키
         """
-        # Fixed 위젯 (ui_component에 따른 입력)
-        fixed_widget = self._build_fixed_widget(ui_comp, decoration.copy())
+        if self.display_name:
+            return self.display_name
 
-        # Expression 위젯 (바인딩 입력)
-        expression_widget = self._build_expression_field(decoration.copy())
+        # i18n 키 형식으로 반환 (클라이언트에서 해석)
+        return f"i18n:fieldNames.{node_type}.{self.name}"
 
-        args: Dict[str, Any] = {
-            "fieldKey": self.name,
-            "label": decoration.get("labelText", self.name),
-            "defaultMode": "fixed",
-            "expressionHint": self.example_binding,
-            "fixedWidget": fixed_widget,
-            "expressionWidget": expression_widget,
+    def to_config_dict(self, node_type: str) -> Dict[str, Any]:
+        """
+        FieldSchema를 config_schema 형식의 딕셔너리로 변환합니다.
+
+        클라이언트에서 동적 폼을 생성하기 위한 단순한 JSON 형식입니다.
+        json_dynamic_widget 형식이 아닌, 필드 메타데이터만 제공합니다.
+
+        Args:
+            node_type: 노드 타입명 (예: "OverseasStockBrokerNode")
+
+        Returns:
+            dict: config_schema 필드 형식
+
+        Example:
+            >>> fs = FieldSchema(name="provider", type=FieldType.ENUM, ...)
+            >>> config = fs.to_config_dict("OverseasStockBrokerNode")
+            >>> # {"type": "enum", "display_name": "i18n:...", ...}
+        """
+        config: Dict[str, Any] = {
+            "type": self.type.value if hasattr(self.type, 'value') else str(self.type),
+            "display_name": self.get_display_name(node_type),
+            "required": self.required,
+            "category": self.category.value if hasattr(self.category, 'value') else str(self.category),
+            "expression_mode": self.expression_mode.value if hasattr(self.expression_mode, 'value') else str(self.expression_mode),
         }
 
-        # helperText 분리: fixed/expression 모드별로 다른 설명 표시
+        # 선택적 필드들
         if self.description:
-            args["fixedHelperText"] = self.description
-        if self.help_text:
-            args["expressionHelperText"] = self.help_text
-        elif self.example_binding:
-            args["expressionHelperText"] = f"예: {self.example_binding}"
+            config["description"] = self.description
 
-        return {
-            "type": "custom_expression_toggle",
-            "args": args
-        }
-    
-    def _build_fixed_widget(
-        self,
-        ui_comp: "UIComponent",
-        decoration: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Fixed 모드용 위젯 생성 (BOTH 모드의 토글에서 사용)
-        
-        기존 _map_ui_component_to_widget과 동일하지만 토글 내부용으로 사용됩니다.
-        """
-        return self._map_ui_component_to_widget(ui_comp, decoration)
-    
-    def _build_expression_field(
-        self,
-        decoration: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Expression 모드용 바인딩 입력 필드 생성
-        
-        {{ nodes.xxx.yyy }} 형태의 바인딩 표현식을 입력받는 텍스트 필드입니다.
-        """
+        if self.default is not None:
+            config["default"] = self.default
+
+        # ENUM 타입 전용
+        if self.enum_values:
+            config["enum_values"] = self.enum_values
+        if self.enum_labels:
+            config["enum_labels"] = self.enum_labels
+
+        # 숫자 타입 전용
+        if self.min_value is not None:
+            config["min_value"] = self.min_value
+        if self.max_value is not None:
+            config["max_value"] = self.max_value
+
+        # 배열 타입 전용
+        if self.array_item_type:
+            config["array_item_type"] = self.array_item_type.value if hasattr(self.array_item_type, 'value') else str(self.array_item_type)
+
+        # 객체/배열의 중첩 필드 (object_schema -> sub_fields로 이름 변경)
+        if self.object_schema:
+            config["sub_fields"] = self.object_schema
+
+        # 바인딩 가이드
+        if self.example is not None:
+            config["example"] = self.example
         if self.example_binding:
-            decoration["hintText"] = self.example_binding
-        
-        return {
-            "type": "text_form_field",
-            "args": {
-                "fieldKey": self.name,
-                "decoration": decoration,
-            }
-        }
+            config["example_binding"] = self.example_binding
+        if self.bindable_sources:
+            config["bindable_sources"] = self.bindable_sources
+        if self.expected_type:
+            config["expected_type"] = self.expected_type
+
+        # UI 힌트
+        if self.ui_component:
+            config["ui_component"] = self.ui_component.value if hasattr(self.ui_component, 'value') else str(self.ui_component)
+        if self.ui_options:
+            config["ui_options"] = self.ui_options
+        if self.placeholder:
+            config["placeholder"] = self.placeholder
+        if self.help_text:
+            config["help_text"] = self.help_text
+
+        # 그룹핑
+        if self.group:
+            config["group"] = self.group
+
+        # 조건부 표시
+        if self.visible_when:
+            config["visible_when"] = self.visible_when
+
+        # CREDENTIAL 타입 전용
+        if self.credential_types:
+            config["credential_types"] = self.credential_types
+
+        return config
 
 
 class FieldValueType(str, Enum):
