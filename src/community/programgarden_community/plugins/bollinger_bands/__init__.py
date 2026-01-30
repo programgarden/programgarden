@@ -22,7 +22,7 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 BOLLINGER_SCHEMA = PluginSchema(
     id="BollingerBands",
     name="Bollinger Bands",
-    category=PluginCategory.STRATEGY_CONDITION,
+    category=PluginCategory.TECHNICAL,
     version="3.0.0",
     description="Measures how far the price has deviated from the average. Near the lower band indicates undervalued, near the upper band indicates overvalued.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],

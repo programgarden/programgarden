@@ -22,7 +22,7 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 MACD_SCHEMA = PluginSchema(
     id="MACD",
     name="MACD (Moving Average Convergence Divergence)",
-    category=PluginCategory.STRATEGY_CONDITION,
+    category=PluginCategory.TECHNICAL,
     version="3.0.0",
     description="Finds trend reversal points through crossovers of short and long moving averages. Bullish when MACD crosses above signal line, bearish when crossing below.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],

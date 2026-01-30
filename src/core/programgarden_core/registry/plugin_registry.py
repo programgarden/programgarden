@@ -16,10 +16,8 @@ if TYPE_CHECKING:
 class PluginCategory(str, Enum):
     """플러그인 카테고리"""
 
-    STRATEGY_CONDITION = "strategy_condition"  # 조건 전략 (RSI, MACD 등)
-    NEW_ORDER = "new_order"  # 신규 주문 (MarketOrder, LimitOrder 등)
-    MODIFY_ORDER = "modify_order"  # 정정 주문 (TrackingPrice 등)
-    CANCEL_ORDER = "cancel_order"  # 취소 주문 (TimeStop 등)
+    TECHNICAL = "technical"  # 기술적 분석 (가격/거래량 기반: RSI, MACD 등)
+    POSITION = "position"  # 포지션 분석 (손익/보유 기반: StopLoss, ProfitTarget 등)
 
 
 class ProductType(str, Enum):

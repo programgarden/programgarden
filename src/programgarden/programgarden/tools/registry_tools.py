@@ -60,15 +60,14 @@ def list_plugins(
     List available plugins
 
     Args:
-        category: Plugin category filter
-                  (strategy_condition, new_order, modify_order, cancel_order)
+        category: Plugin category filter (technical, position)
         product: Product type filter (overseas_stock, overseas_futures)
 
     Returns:
         List of plugin schemas
 
     Example:
-        >>> list_plugins("strategy_condition", "overseas_stock")
+        >>> list_plugins("technical", "overseas_stock")
         [{"id": "RSI", ...}, {"id": "MACD", ...}, ...]
     """
     from programgarden_core import PluginRegistry

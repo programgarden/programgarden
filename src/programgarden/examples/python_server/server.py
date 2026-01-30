@@ -596,7 +596,7 @@ async def get_plugins(category: Optional[str] = None, product: Optional[str] = N
     플러그인 목록 반환
     
     Args:
-        category: 필터링할 카테고리 (strategy_condition, new_order, modify_order, cancel_order)
+        category: 필터링할 카테고리 (technical, position)
         product: 필터링할 상품 (overseas_stock, overseas_futures)
         locale: 언어 코드 (en, ko) - 기본값 en
     

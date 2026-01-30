@@ -15,7 +15,7 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 VOLUME_SPIKE_SCHEMA = PluginSchema(
     id="VolumeSpike",
     name="Volume Spike",
-    category=PluginCategory.STRATEGY_CONDITION,
+    category=PluginCategory.TECHNICAL,
     version="3.0.0",
     description="Finds stocks with significantly higher trading volume than usual. Volume spikes can signal increased interest or trend changes.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],

@@ -18,7 +18,7 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 DUAL_MOMENTUM_SCHEMA = PluginSchema(
     id="DualMomentum",
     name="Dual Momentum",
-    category=PluginCategory.STRATEGY_CONDITION,
+    category=PluginCategory.TECHNICAL,
     version="3.0.0",
     description="Combines absolute momentum (recent returns) and relative momentum (vs benchmark). Invests in stocks with strong upward trends.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],

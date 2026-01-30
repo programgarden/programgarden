@@ -1,9 +1,9 @@
 """
-Profit Target (익절) 플러그인
+Stop Loss (손절) 플러그인
 
 입력 형식:
 - positions: RealAccountNode의 positions 출력 {symbol: {pnl_rate, current_price, ...}}
-- fields: {target_percent}
+- fields: {stop_percent}
 
 ※ 시계열 데이터(data) 불필요 - positions의 pnl_rate를 직접 사용
 """
@@ -13,47 +13,47 @@ from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
 
-PROFIT_TARGET_SCHEMA = PluginSchema(
-    id="ProfitTarget",
-    name="Profit Target",
-    category=PluginCategory.STRATEGY_CONDITION,
+STOP_LOSS_SCHEMA = PluginSchema(
+    id="StopLoss",
+    name="Stop Loss",
+    category=PluginCategory.POSITION,
     version="3.1.0",
-    description="Checks if holdings have reached the target profit rate. Example: Sell to realize profit when gain exceeds 5%.",
+    description="Sells when losses exceed the set threshold to prevent larger losses. Example: Auto-sell at -3% loss.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
-        "target_percent": {"type": "float", "default": 5.0, "title": "Target Profit (%)"},
+        "stop_percent": {"type": "float", "default": -3.0, "title": "Stop Loss (%)"},
     },
     required_data=["positions"],  # 시계열 데이터 불필요, positions만 필요
     # items { from, extract } 필수 필드 (v3.0.0+) - positions 사용 시 빈 배열
     required_fields=[],  # positions 플러그인은 items 불필요
     optional_fields=[],
-    tags=["exit", "profit", "realtime"],
+    tags=["exit", "risk", "realtime"],
     locales={
         "ko": {
-            "name": "목표 수익률 (Profit Target)",
-            "description": "보유 종목이 목표 수익률에 도달했는지 확인합니다. 예: 5% 이상 수익이 나면 매도하여 수익 실현.",
-            "fields.target_percent": "목표 수익률 (%)",
+            "name": "손절 라인 (Stop Loss)",
+            "description": "보유 종목의 손실이 설정한 기준을 넘으면 매도하여 더 큰 손실을 방지합니다. 예: -3% 손실 시 자동 매도.",
+            "fields.stop_percent": "손절 비율 (%)",
         },
     },
 )
 
 
-async def profit_target_condition(
+async def stop_loss_condition(
     positions: Optional[Dict[str, Any]] = None,
     fields: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> dict:
     """
-    익절 조건 플러그인
+    손절 조건 플러그인
     
     Args:
         positions: RealAccountNode의 positions 출력
                    {symbol: {pnl_rate, current_price, avg_price, qty, ...}}
-        fields: {target_percent: 목표 수익률 %}
+        fields: {stop_percent: 손절 기준 %} (음수 권장, 예: -3.0)
     
     Returns:
-        passed_symbols: 목표 수익률 달성 종목
-        failed_symbols: 미달성 종목
+        passed_symbols: 손절 기준 도달 종목 (매도 대상)
+        failed_symbols: 미도달 종목
         symbol_results: 종목별 상세 결과
     """
     if positions is None:
@@ -61,7 +61,7 @@ async def profit_target_condition(
     if fields is None:
         fields = {}
     
-    target_percent = fields.get("target_percent", fields.get("percent", 5.0))
+    stop_percent = fields.get("stop_percent", fields.get("percent", -3.0))
     
     if not positions:
         return {
@@ -92,11 +92,12 @@ async def profit_target_condition(
             "exchange": exchange_name, 
             "pnl_rate": round(pnl_rate, 2), 
             "current_price": current_price,
-            "target_percent": target_percent,
-            "reached": pnl_rate >= target_percent,
+            "stop_percent": stop_percent,
+            "triggered": pnl_rate <= stop_percent,
         })
         
-        if pnl_rate >= target_percent:
+        # 손절 조건: pnl_rate가 stop_percent 이하 (예: -21.95 <= -3.0)
+        if pnl_rate <= stop_percent:
             passed.append(sym_dict)
         else:
             failed.append(sym_dict)
@@ -108,12 +109,12 @@ async def profit_target_condition(
         "values": [],  # 시계열 데이터 없음
         "result": len(passed) > 0,
         "analysis": {
-            "indicator": "ProfitTarget", 
-            "target_percent": target_percent,
+            "indicator": "StopLoss", 
+            "stop_percent": stop_percent,
             "total_positions": len(positions),
-            "reached_count": len(passed),
+            "triggered_count": len(passed),
         },
     }
 
 
-__all__ = ["profit_target_condition", "PROFIT_TARGET_SCHEMA"]
+__all__ = ["stop_loss_condition", "STOP_LOSS_SCHEMA"]

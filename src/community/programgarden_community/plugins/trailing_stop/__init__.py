@@ -9,7 +9,7 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 TRAILING_STOP_SCHEMA = PluginSchema(
     id="TrailingStop",
     name="Trailing Stop",
-    category=PluginCategory.MODIFY_ORDER,
+    category=PluginCategory.POSITION,
     version="1.0.0",
     description="Automatically adjusts unfilled order prices to track current price. Increases execution probability even when price moves.",
     products=[ProductType.OVERSEAS_STOCK],
@@ -38,7 +38,7 @@ TRAILING_STOP_SCHEMA = PluginSchema(
 )
 
 
-async def tracking_price_modifier(target_orders: list, ohlcv_data: dict, fields: dict) -> dict:
+async def trailing_stop_condition(target_orders: list, ohlcv_data: dict, fields: dict) -> dict:
     """가격 추적 정정"""
     gap_percent = fields.get("price_gap_percent", 0.5)
     max_mods = fields.get("max_modifications", 5)
@@ -75,4 +75,4 @@ async def tracking_price_modifier(target_orders: list, ohlcv_data: dict, fields:
     }
 
 
-__all__ = ["tracking_price_modifier", "TRAILING_STOP_SCHEMA"]
+__all__ = ["trailing_stop_condition", "TRAILING_STOP_SCHEMA"]

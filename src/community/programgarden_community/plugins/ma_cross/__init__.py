@@ -16,7 +16,7 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 MA_CROSS_SCHEMA = PluginSchema(
     id="MovingAverageCross",
     name="Moving Average Cross",
-    category=PluginCategory.STRATEGY_CONDITION,
+    category=PluginCategory.TECHNICAL,
     version="3.0.0",
     description="Golden Cross (bullish) when short MA crosses above long MA, Dead Cross (bearish) when crossing below.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],

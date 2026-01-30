@@ -22,7 +22,7 @@ from programgarden_core.registry.plugin_registry import PluginCategory, ProductT
 RSI_SCHEMA = PluginSchema(
     id="RSI",
     name="RSI (Relative Strength Index)",
-    category=PluginCategory.STRATEGY_CONDITION,
+    category=PluginCategory.TECHNICAL,
     version="3.0.0",
     description="Identifies overbought or oversold conditions. RSI below 30 suggests a buying opportunity, above 70 suggests a selling opportunity.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
