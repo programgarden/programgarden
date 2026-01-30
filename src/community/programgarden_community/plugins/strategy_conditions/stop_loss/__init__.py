@@ -17,13 +17,16 @@ STOP_LOSS_SCHEMA = PluginSchema(
     id="StopLoss",
     name="Stop Loss",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="3.0.0",
+    version="3.1.0",
     description="Sells when losses exceed the set threshold to prevent larger losses. Example: Auto-sell at -3% loss.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
         "stop_percent": {"type": "float", "default": -3.0, "title": "Stop Loss (%)"},
     },
     required_data=["positions"],  # 시계열 데이터 불필요, positions만 필요
+    # items { from, extract } 필수 필드 (v3.0.0+) - positions 사용 시 빈 배열
+    required_fields=[],  # positions 플러그인은 items 불필요
+    optional_fields=[],
     tags=["exit", "risk", "realtime"],
     locales={
         "ko": {

@@ -5222,23 +5222,111 @@ class DisplayNodeExecutor(NodeExecutorBase):
 class ConditionNodeExecutor(NodeExecutorBase):
     """
     ConditionNode executor (plugin-based)
-    
-    DisplayNode-like 패턴:
-    - 입력: data (평탄화된 배열), field_mapping (필드 매핑)
-    - 출력: passed_symbols, failed_symbols, values
-    
-    data 필드는 flatten() 표현식으로 시계열 데이터를 평탄화하여 전달:
-    예: "data": "{{ flatten(nodes.historicaldata_1.values, 'time_series') }}"
-    
-    field_mapping으로 커스텀 필드명 매핑 가능:
-    예: close_field="adj_close", date_field="trading_date"
-    
+
+    items { from, extract } 방식:
+    - from: 반복할 배열 지정 (예: {{ nodes.historical.value.time_series }})
+    - extract: 각 행에서 추출할 필드 정의 (row 키워드로 현재 행 접근)
+
+    예시:
+    "items": {
+      "from": "{{ nodes.historical.value.time_series }}",
+      "extract": {
+        "symbol": "{{ nodes.split.item.symbol }}",
+        "exchange": "{{ nodes.split.item.exchange }}",
+        "date": "{{ row.date }}",
+        "close": "{{ row.close }}"
+      }
+    }
+
     출력 형식:
     - passed_symbols: [{exchange, symbol}, ...] (거래소 정보 포함)
     - failed_symbols: [{exchange, symbol}, ...]
     - symbol_results: [{symbol, exchange, rsi, price, ...}, ...]
     - values: [{symbol, exchange, time_series: [...], ...}, ...]
     """
+
+    def _process_items_with_extract(
+        self,
+        items_config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        items { from, extract }를 플랫 배열로 변환
+
+        Args:
+            items_config: {"from": "{{ expr }}", "extract": {"symbol": "{{ expr }}", ...}}
+            context: 실행 컨텍스트
+            node_id: 노드 ID
+
+        Returns:
+            평탄화된 데이터 배열 [{symbol, exchange, date, close, ...}, ...]
+        """
+        expr_context = context.get_expression_context()
+        evaluator = ExpressionEvaluator(expr_context)
+
+        # from 배열 평가
+        from_expr = items_config.get("from")
+        if not from_expr:
+            context.log("error", f"items.from is required", node_id)
+            return []
+
+        from_data = evaluator.evaluate(from_expr) if isinstance(from_expr, str) else from_expr
+
+        if not isinstance(from_data, list):
+            from_data = [from_data] if from_data else []
+
+        if not from_data:
+            context.log("warning", f"items.from evaluated to empty array: {from_expr}", node_id)
+            return []
+
+        extract = items_config.get("extract", {})
+        if not extract:
+            context.log("error", f"items.extract is required", node_id)
+            return []
+
+        result = []
+
+        # 외부 바인딩 값 미리 평가 (row 미포함 표현식)
+        external_values = {}
+        for target_field, source_expr in extract.items():
+            if isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr:
+                try:
+                    external_values[target_field] = evaluator.evaluate(source_expr)
+                except Exception as e:
+                    context.log("warning", f"External binding evaluation failed for {target_field}: {e}", node_id)
+                    external_values[target_field] = source_expr
+
+        # 각 row 처리
+        for row in from_data:
+            record = {}
+
+            # row 컨텍스트 추가
+            row_context = {
+                **expr_context,
+                "row": row,
+            }
+            row_evaluator = ExpressionEvaluator(row_context)
+
+            for target_field, source_expr in extract.items():
+                if target_field in external_values:
+                    # 외부 바인딩 (캐시된 값 사용)
+                    record[target_field] = external_values[target_field]
+                elif isinstance(source_expr, str) and "{{" in source_expr:
+                    # row 포함 표현식 평가
+                    try:
+                        record[target_field] = row_evaluator.evaluate(source_expr)
+                    except Exception as e:
+                        context.log("debug", f"Row expression failed for {target_field}: {e}", node_id)
+                        record[target_field] = None
+                else:
+                    # 리터럴 값
+                    record[target_field] = source_expr
+
+            result.append(record)
+
+        context.log("debug", f"items processed: {len(from_data)} rows -> {len(result)} records", node_id)
+        return result
 
     def _resolve_port_binding(
         self,
@@ -5338,20 +5426,19 @@ class ConditionNodeExecutor(NodeExecutorBase):
             # positions 기반 플러그인인지 확인 (ProfitTarget, StopLoss 등)
             is_positions_based = "positions" in required_data and "data" not in required_data
             
-            # === 명시적 바인딩으로 데이터 가져오기 ===
-            # 모든 config 값에서 {{ }} 표현식 평가
-            original_data_expr = config.get("data")
-            original_positions_expr = config.get("positions")
-            print(f"\n🔍 ConditionNode '{node_id}' 바인딩 평가:")
-            print(f"   - plugin: {plugin_id}, required_data: {required_data}")
-            print(f"   - is_positions_based: {is_positions_based}")
-            
+            # === 표현식 평가 (items 제외 - items는 _process_items_with_extract에서 처리) ===
+            context.log("debug", f"ConditionNode '{node_id}' 실행: plugin={plugin_id}, is_positions_based={is_positions_based}", node_id)
+
+            # items를 제외한 나머지 필드만 평가 (items.from, items.extract는 별도 처리)
+            items_backup = config.get("items")
             config = evaluate_all_bindings(config, context, node_id)
+            if items_backup:
+                config["items"] = items_backup  # items는 원본 유지
             
             # === positions 기반 플러그인 처리 (ProfitTarget, StopLoss) ===
             if is_positions_based:
                 positions = config.get("positions", [])
-                print(f"   - positions 평가 후: {type(positions).__name__}, {len(positions)} items")
+                context.log("debug", f"positions 평가 후: {type(positions).__name__}, {len(positions) if isinstance(positions, (list, dict)) else 0} items", node_id)
 
                 if not positions or not isinstance(positions, list):
                     context.log("error", 
@@ -5426,53 +5513,14 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         "values": [],
                     }
             
-            # === 기존 data 기반 플러그인 처리 (RSI, MACD 등) ===
-            print(f"   - data 원본: {original_data_expr}")
-            
-            # 필드 매핑 추출
-            field_mapping = {
-                "close_field": config.get("close_field", "close"),
-                "open_field": config.get("open_field", "open"),
-                "high_field": config.get("high_field", "high"),
-                "low_field": config.get("low_field", "low"),
-                "volume_field": config.get("volume_field", "volume"),
-                "date_field": config.get("date_field", "date"),
-                "symbol_field": config.get("symbol_field", "symbol"),
-                "exchange_field": config.get("exchange_field", "exchange"),
-            }
-            
-            # 필수 데이터 추출 (새 형식: data)
-            data = config.get("data", [])
-            position_data = config.get("position_data")
-            held_symbols = config.get("held_symbols", [])
-            symbols = config.get("symbols", [])
-            
-            # symbols가 비어있으면 data에서 자동 추출
-            symbol_field = field_mapping["symbol_field"]
-            exchange_field = field_mapping["exchange_field"]
-            if not symbols and data and isinstance(data, list):
-                # 플랫 배열에서 고유 종목 추출
-                seen = set()
-                for item in data:
-                    if isinstance(item, dict):
-                        sym = item.get(symbol_field, "")
-                        if sym and sym not in seen:
-                            seen.add(sym)
-                            symbols.append({
-                                "symbol": sym,
-                                "exchange": item.get(exchange_field, "NASDAQ")
-                            })
-                print(f"   - symbols 자동 추출: {symbols}")
-            
-            print(f"   - data 평가 후: {type(data).__name__}, {len(data) if isinstance(data, list) else 0} rows")
-            print(f"   - symbols: {symbols}")
-            print(f"   - field_mapping: {field_mapping}")
-            
-            # data가 없으면 에러
-            if not data:
-                context.log("error", 
-                    f"ConditionNode '{node_id}': data가 설정되지 않았습니다. "
-                    f"config에 data: {{{{ flatten(nodes.historicaldata_1.values, 'time_series') }}}} 형태로 추가하세요.",
+            # === items { from, extract } 기반 플러그인 처리 (RSI, MACD 등) ===
+            items_config = config.get("items")
+            context.log("debug", f"items config present: {items_config is not None}", node_id)
+
+            if not items_config:
+                context.log("error",
+                    f"ConditionNode '{node_id}': items가 설정되지 않았습니다. "
+                    f"items {{ from, extract }} 형태로 추가하세요.",
                     node_id
                 )
                 return {
@@ -5480,32 +5528,93 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     "passed_symbols": [],
                     "failed_symbols": [],
                     "values": [],
-                    "error": "missing_data",
-                    "error_message": "data가 설정되지 않았습니다. 예: flatten(nodes.historicaldata_1.values, 'time_series')",
+                    "error": "missing_items",
+                    "error_message": "items가 설정되지 않았습니다. items { from, extract } 형태로 추가하세요.",
                 }
-            
+
+            # === 플러그인 required_fields 검증 ===
+            if plugin_schema and hasattr(plugin_schema, 'required_fields'):
+                required_fields = plugin_schema.required_fields or []
+                extract = items_config.get("extract", {})
+                missing = [f for f in required_fields if f not in extract]
+                if missing:
+                    context.log("error",
+                        f"ConditionNode '{node_id}': extract에 필수 필드 누락: {missing}. "
+                        f"플러그인 {plugin_id}는 {required_fields} 필드가 필요합니다.",
+                        node_id
+                    )
+                    return {
+                        "result": False,
+                        "passed_symbols": [],
+                        "failed_symbols": [],
+                        "values": [],
+                        "error": "missing_required_fields",
+                        "error_message": f"extract에 필수 필드 누락: {missing}",
+                    }
+
+            # items 처리 (from 배열을 순회하며 extract 적용)
+            data = self._process_items_with_extract(items_config, context, node_id)
+
+            if not data:
+                context.log("error",
+                    f"ConditionNode '{node_id}': items 처리 결과가 비어있습니다.",
+                    node_id
+                )
+                return {
+                    "result": False,
+                    "passed_symbols": [],
+                    "failed_symbols": [],
+                    "values": [],
+                    "error": "empty_items_result",
+                    "error_message": "items 처리 결과가 비어있습니다. from 배열을 확인하세요.",
+                }
+
+            # symbols 자동 추출 (data에서)
+            symbols = []
+            seen = set()
+            for item in data:
+                if isinstance(item, dict):
+                    sym = item.get("symbol", "")
+                    if sym and sym not in seen:
+                        seen.add(sym)
+                        symbols.append({
+                            "symbol": sym,
+                            "exchange": item.get("exchange", "NASDAQ")
+                        })
+            context.log("debug", f"symbols 자동 추출: {len(symbols)}개, data: {len(data)} rows", node_id)
+
             # fields 표현식 평가
             evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
             if evaluated_fields:
                 expr_context = context.get_expression_context()
                 evaluator = ExpressionEvaluator(expr_context)
                 evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
-            
+
             # symbols 정규화 (거래소 정보 포함)
             from programgarden_core.models import symbols_to_dict_list, extract_symbol_codes
             normalized_symbols = symbols_to_dict_list(symbols)
             symbol_codes = extract_symbol_codes(symbols)  # 플러그인 호출용
-            
-            # 플러그인 실행 (새 형식)
+
+            # 플러그인 실행 (새 형식: 필드 매핑 불필요 - extract에서 이미 정규화됨)
             context.log("info", f"Condition running with {len(data)} data rows", node_id)
-            
+
+            # 필드 매핑은 기본값 사용 (items extract에서 이미 정규화된 필드명 사용)
+            field_mapping = {
+                "close_field": "close",
+                "open_field": "open",
+                "high_field": "high",
+                "low_field": "low",
+                "volume_field": "volume",
+                "date_field": "date",
+                "symbol_field": "symbol",
+                "exchange_field": "exchange",
+            }
+
             return await self._execute_condition_plugin(
-                node_id, normalized_symbols, data, evaluated_fields, 
+                node_id, normalized_symbols, data, evaluated_fields,
                 plugin, context, sandbox,
                 plugin_id=plugin_id,
                 field_mapping=field_mapping,
-                held_symbols=held_symbols,
-                position_data=position_data,
             )
         except PluginTimeoutError as e:
             context.log("error", f"Plugin timeout: {e}", node_id)
@@ -6192,19 +6301,19 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         """과거 데이터 조회"""
-        
-        # symbols 획득 (config 필드 우선, input port 폴백)
-        # config.symbols: 직접 입력 또는 바인딩 표현식 (평가 후 값)
-        config_symbols = config.get("symbols")
-        input_symbols = context.get_output(f"_input_{node_id}", "symbols")
-        
-        # config가 있으면 config 사용, 없으면 input port 사용
-        if config_symbols:
-            symbols_raw = config_symbols
-            context.log("debug", f"Using config.symbols: {len(symbols_raw) if symbols_raw else 0} items", node_id)
-        elif input_symbols:
-            symbols_raw = input_symbols
-            context.log("debug", f"Using input port symbols: {len(symbols_raw) if symbols_raw else 0} items", node_id)
+
+        # symbol 획득 (config 필드 우선, input port 폴백)
+        # Item-based execution: symbol (단수) - 노드 스키마와 일치
+        config_symbol = config.get("symbol")  # 단일 객체 {exchange, symbol}
+        input_symbol = context.get_output(f"_input_{node_id}", "symbol")
+
+        # 우선순위: config.symbol > input.symbol
+        if config_symbol:
+            symbols_raw = [config_symbol] if isinstance(config_symbol, dict) else []
+            context.log("debug", f"Using config.symbol: {config_symbol}", node_id)
+        elif input_symbol:
+            symbols_raw = [input_symbol] if isinstance(input_symbol, dict) else []
+            context.log("debug", f"Using input port symbol: {input_symbol}", node_id)
         else:
             symbols_raw = []
         
@@ -6277,9 +6386,19 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             context.log("error", f"Unsupported product for HistoricalDataNode: {product}", node_id)
             ohlcv_data = self._empty_historical_result(symbols_raw, f"i18n:errors.UNSUPPORTED_PRODUCT|product={product}")
         
-        # 출력: values (time_series 포함 배열 형식)
+        # 출력: value (단수, Item-based execution) + values (복수, 호환성)
+        # Item-based execution: 단일 symbol → 단일 value
+        single_value = ohlcv_data[0] if ohlcv_data and len(ohlcv_data) == 1 else None
+
+        # 디버그 로그
+        context.log("info", f"HistoricalData output: value={single_value is not None}, ohlcv_count={len(ohlcv_data) if ohlcv_data else 0}", node_id)
+        if single_value:
+            ts_count = len(single_value.get("time_series", [])) if isinstance(single_value, dict) else 0
+            context.log("debug", f"HistoricalData value: symbol={single_value.get('symbol')}, time_series_count={ts_count}", node_id)
+
         return {
-            "values": ohlcv_data,  # [{symbol, exchange, time_series: [...]}, ...]
+            "value": single_value,  # 단일 {symbol, exchange, time_series: [...]}  - 노드 스키마와 일치
+            "values": ohlcv_data,  # [{symbol, exchange, time_series: [...]}, ...] - 호환성
             "symbols": [item.get("symbol") for item in ohlcv_data if isinstance(item, dict)],
             "period": f"{start_date}~{end_date}",
             "interval": interval,
@@ -6569,7 +6688,13 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         )
         
         result = await api.chart().o3108(body=body).req_async()
-        
+
+        # API 응답 메시지 확인 (만기 종료 월물 등)
+        rsp_msg = getattr(result, 'rsp_msg', '')
+        if rsp_msg and '해당자료가 없습니다' in rsp_msg:
+            context.log("warning", f"선물 {symbol} 조회 실패: {rsp_msg} (만기 종료된 월물이거나 조회 기간에 데이터가 없습니다)", node_id)
+            return []
+
         bars = []
         if result.block1:
             for item in result.block1:
@@ -6608,12 +6733,22 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         )
         
         result = await api.chart().o3103(body=body).req_async()
-        
+
+        # API 응답 메시지 확인 (만기 종료 월물 등)
+        rsp_msg = getattr(result, 'rsp_msg', '')
+        if rsp_msg and '해당자료가 없습니다' in rsp_msg:
+            context.log("warning", f"선물 {symbol} 분봉 조회 실패: {rsp_msg} (만기 종료된 월물이거나 데이터가 없습니다)", node_id)
+            return []
+
         bars = []
         if result.block1:
             for item in result.block1:
+                # o3103은 date + time 별도 필드 (예: date=20260130, time=001500)
+                date_str = getattr(item, 'date', '') or ''
+                time_str = getattr(item, 'time', '') or ''
+                datetime_str = f"{date_str}{time_str}" if date_str and time_str else date_str
                 bars.append({
-                    "date": item.chetime if hasattr(item, 'chetime') else "",  # 분봉은 시간 포함
+                    "date": datetime_str,  # 분봉: YYYYMMDDHHMMSS 형식
                     "open": float(item.open) if hasattr(item, 'open') and item.open else 0,
                     "high": float(item.high) if hasattr(item, 'high') and item.high else 0,
                     "low": float(item.low) if hasattr(item, 'low') and item.low else 0,
@@ -6652,20 +6787,101 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
 class BacktestEngineNodeExecutor(NodeExecutorBase):
     """
     BacktestEngineNode executor - 백테스트 시뮬레이션 엔진
-    
-    입력:
-    - data: 종목별 OHLCV 데이터 (플랫 배열)
-    - signals: 종목별 매매 시그널 시계열
-    
+
+    items { from, extract } 방식:
+    - from: 반복할 배열 지정 (예: {{ nodes.historical.value.time_series }})
+    - extract: 각 행에서 추출할 필드 정의 (row 키워드로 현재 행 접근)
+
+    예시:
+    "items": {
+      "from": "{{ nodes.historical.value.time_series }}",
+      "extract": {
+        "symbol": "{{ nodes.split.item.symbol }}",
+        "exchange": "{{ nodes.split.item.exchange }}",
+        "date": "{{ row.date }}",
+        "open": "{{ row.open }}",
+        "high": "{{ row.high }}",
+        "low": "{{ row.low }}",
+        "close": "{{ row.close }}",
+        "volume": "{{ row.volume }}",
+        "signal": "{{ nodes.condition.result.signal }}"
+      }
+    }
+
     출력:
     - equity_curve: 일별 포트폴리오 가치
     - trades: 거래 내역
     - metrics: 성과 지표
-    
+
     리소스 관리:
     - 메모리/CPU 집약적 작업 (weight=3.0)
     - 리소스 부족 시 실행 대기 또는 거부
     """
+
+    def _process_items_with_extract(
+        self,
+        items_config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        items { from, extract }를 플랫 배열로 변환 (ConditionNodeExecutor와 동일 로직)
+        """
+        expr_context = context.get_expression_context()
+        evaluator = ExpressionEvaluator(expr_context)
+
+        from_expr = items_config.get("from")
+        if not from_expr:
+            context.log("error", f"items.from is required", node_id)
+            return []
+
+        from_data = evaluator.evaluate(from_expr) if isinstance(from_expr, str) else from_expr
+
+        if not isinstance(from_data, list):
+            from_data = [from_data] if from_data else []
+
+        if not from_data:
+            context.log("warning", f"items.from evaluated to empty array", node_id)
+            return []
+
+        extract = items_config.get("extract", {})
+        if not extract:
+            context.log("error", f"items.extract is required", node_id)
+            return []
+
+        result = []
+
+        # 외부 바인딩 값 미리 평가
+        external_values = {}
+        for target_field, source_expr in extract.items():
+            if isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr:
+                try:
+                    external_values[target_field] = evaluator.evaluate(source_expr)
+                except Exception as e:
+                    context.log("warning", f"External binding evaluation failed for {target_field}: {e}", node_id)
+                    external_values[target_field] = source_expr
+
+        # 각 row 처리
+        for row in from_data:
+            record = {}
+            row_context = {**expr_context, "row": row}
+            row_evaluator = ExpressionEvaluator(row_context)
+
+            for target_field, source_expr in extract.items():
+                if target_field in external_values:
+                    record[target_field] = external_values[target_field]
+                elif isinstance(source_expr, str) and "{{" in source_expr:
+                    try:
+                        record[target_field] = row_evaluator.evaluate(source_expr)
+                    except Exception:
+                        record[target_field] = None
+                else:
+                    record[target_field] = source_expr
+
+            result.append(record)
+
+        context.log("debug", f"items processed: {len(from_data)} rows -> {len(result)} records", node_id)
+        return result
 
     async def execute(
         self,
@@ -6694,43 +6910,63 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             }
         
         try:
-            # === 입력 데이터 가져오기 ===
-            # 1. 우선 config에서 직접 바인딩된 data 사용 (expression 평가 후)
-            flat_data = config.get("data")
-            
-            # 2. data가 없으면 _input_{node_id}에서 시도
-            if not flat_data:
-                flat_data = context.get_output(f"_input_{node_id}", "data")
-            
-            # 3. 레거시 호환: ohlcv_data 포트
-            if not flat_data:
-                flat_data = context.get_output(f"_input_{node_id}", "ohlcv_data")
-            if not flat_data:
-                flat_data = context.get_output("historicalData", "ohlcv_data") or []
-            
-            # 필드 매핑 설정
-            close_field = config.get("close_field", "close")
-            date_field = config.get("date_field", "date")
-            symbol_field = config.get("symbol_field", "symbol")
-            signal_field = config.get("signal_field", "signal")
-            side_field = config.get("side_field", "side")
-            
+            # === items { from, extract } 방식으로 입력 데이터 가져오기 ===
+            items_config = config.get("items")
+
+            if items_config:
+                # 새 방식: items { from, extract }
+                flat_data = self._process_items_with_extract(items_config, context, node_id)
+
+                if not flat_data:
+                    context.log("error",
+                        f"BacktestEngineNode '{node_id}': items 처리 결과가 비어있습니다.",
+                        node_id
+                    )
+                    return {
+                        "equity_curve": [],
+                        "trades": [],
+                        "metrics": {},
+                        "summary": {"error": "items 처리 결과가 비어있습니다."},
+                    }
+
+                # items extract에서 이미 정규화된 필드명 사용
+                close_field = "close"
+                date_field = "date"
+                symbol_field = "symbol"
+                signal_field = "signal"
+                side_field = "side"
+
+                # signals는 flat_data에 포함됨 (extract에서 signal 필드 추출)
+                signals = [row for row in flat_data if row.get(signal_field)]
+            else:
+                # 레거시 방식: 직접 data 바인딩 (하위 호환성)
+                flat_data = config.get("data")
+                if not flat_data:
+                    flat_data = context.get_output(f"_input_{node_id}", "data")
+                if not flat_data:
+                    flat_data = context.get_output(f"_input_{node_id}", "ohlcv_data")
+                if not flat_data:
+                    flat_data = context.get_output("historicalData", "ohlcv_data") or []
+
+                close_field = config.get("close_field", "close")
+                date_field = config.get("date_field", "date")
+                symbol_field = config.get("symbol_field", "symbol")
+                signal_field = config.get("signal_field", "signal")
+                side_field = config.get("side_field", "side")
+
+                signals = config.get("signals") or context.get_output(f"_input_{node_id}", "signals")
+                if not signals:
+                    signals = context.get_output(f"_input_{node_id}", "entry_signal") or []
+
+                # values 형식 지원
+                values = context.get_output(f"_input_{node_id}", "values")
+                if values and isinstance(values, list):
+                    extracted_signals = self._extract_signals_from_values(values, signal_field, side_field)
+                    if extracted_signals:
+                        signals = extracted_signals
+
             # 플랫 배열 → 종목별 딕셔너리로 변환
             ohlcv_data = self._convert_flat_to_symbol_dict(flat_data, symbol_field, date_field, close_field)
-            
-            # signals 가져오기 (플랫 배열 또는 values 형식 지원)
-            signals = config.get("signals") or context.get_output(f"_input_{node_id}", "signals")
-            if not signals:
-                # ConditionNode에서 온 시그널
-                signals = context.get_output(f"_input_{node_id}", "entry_signal") or []
-            
-            # values 형식 지원: [{symbol, exchange, time_series: [{date, ..., signal}, ...]}, ...] → 플랫 배열로 변환
-            values = context.get_output(f"_input_{node_id}", "values")
-            if values and isinstance(values, list):
-                # values에서 signal 필드가 있는 엔트리 추출
-                extracted_signals = self._extract_signals_from_values(values, signal_field, side_field)
-                if extracted_signals:
-                    signals = extracted_signals
             
             # 설정
             initial_capital = config.get("initial_capital", 10000)
@@ -11102,7 +11338,9 @@ class WorkflowJob:
 
             # Prepare config
             config = dict(node.config)
+            print(f"    [DEBUG] {node_id} config before resolve: symbol={config.get('symbol')}")
             config = self._resolve_config_expressions(config)
+            print(f"    [DEBUG] {node_id} config after resolve: symbol={config.get('symbol')}")
             config = self._auto_inject_connection(node_id, node, config)
 
             # Connect inputs from upstream

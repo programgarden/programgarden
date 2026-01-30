@@ -88,11 +88,11 @@ async def test_new_order():
             {
                 "id": "broker-cred",
                 "type": "broker_ls_stock",
-                "data": {
-                    "appkey": os.getenv("APPKEY"),
-                    "appsecret": os.getenv("APPSECRET"),
-                    "paper_trading": False
-                }
+                "data": [
+                    {"key": "appkey", "value": os.getenv("APPKEY"), "type": "password", "label": "App Key"},
+                    {"key": "appsecret", "value": os.getenv("APPSECRET"), "type": "password", "label": "App Secret"},
+                    {"key": "paper_trading", "value": False, "type": "boolean", "label": "모의투자"}
+                ]
             }
         ]
     }
@@ -149,11 +149,11 @@ async def test_modify_order(order_id: str):
             {
                 "id": "broker-cred",
                 "type": "broker_ls_stock",
-                "data": {
-                    "appkey": os.getenv("APPKEY"),
-                    "appsecret": os.getenv("APPSECRET"),
-                    "paper_trading": False
-                }
+                "data": [
+                    {"key": "appkey", "value": os.getenv("APPKEY"), "type": "password", "label": "App Key"},
+                    {"key": "appsecret", "value": os.getenv("APPSECRET"), "type": "password", "label": "App Secret"},
+                    {"key": "paper_trading", "value": False, "type": "boolean", "label": "모의투자"}
+                ]
             }
         ]
     }
@@ -210,11 +210,11 @@ async def test_cancel_order(order_id: str):
             {
                 "id": "broker-cred",
                 "type": "broker_ls_stock",
-                "data": {
-                    "appkey": os.getenv("APPKEY"),
-                    "appsecret": os.getenv("APPSECRET"),
-                    "paper_trading": False
-                }
+                "data": [
+                    {"key": "appkey", "value": os.getenv("APPKEY"), "type": "password", "label": "App Key"},
+                    {"key": "appsecret", "value": os.getenv("APPSECRET"), "type": "password", "label": "App Secret"},
+                    {"key": "paper_trading", "value": False, "type": "boolean", "label": "모의투자"}
+                ]
             }
         ]
     }

@@ -12,6 +12,23 @@ from enum import Enum
 
 
 # ============================================================
+# Credential Data Item
+# ============================================================
+
+class CredentialDataItem(BaseModel):
+    """
+    Credential 데이터 항목 (단일 필드)
+
+    Example:
+        {"key": "appkey", "value": "PSxxxxxxxx", "type": "password", "label": "App Key"}
+    """
+    key: str = Field(..., description="필드 키 (appkey, bot_token 등)")
+    value: Any = Field(default=None, description="실제 값")
+    type: Optional[str] = Field(default=None, description="credential 타입/용도 (password, text, boolean 등)")
+    label: Optional[str] = Field(default=None, description="UI 표시용 라벨 (선택)")
+
+
+# ============================================================
 # Credential Type Schema (자동 반복)
 # ============================================================
 
@@ -38,20 +55,33 @@ class Credential(BaseModel):
     """
     Stored credential instance (자동 반복).
     Contains encrypted credential data.
+
+    Example:
+        {
+            "id": "broker-cred",
+            "name": "LS증권 API",
+            "credential_type": "broker_ls_stock",
+            "data": [
+                {"key": "appkey", "value": "PSxxxxxxxx", "type": "password", "label": "App Key"},
+                {"key": "appsecret", "value": "xxxxxxxx", "type": "password", "label": "App Secret"}
+            ]
+        }
     """
     id: str = Field(..., description="Unique credential ID")
     user_id: str = Field(default="default", description="Owner user ID")
     name: str = Field(..., description="User-friendly name (e.g., '내 LS증권 계정')")
     credential_type: str = Field(..., description="Type ID (e.g., 'broker_ls')")
-    
-    # Encrypted data - in production, this would be encrypted with KMS
-    # For testing, we store as plain dict (or base64 encoded)
-    # For http_custom type, this can be a list of {type, key, value, label}
-    data: Any = Field(default_factory=dict, description="Credential data")
-    
+
+    # Credential data as list of key-value items
+    # In production, values would be encrypted with KMS
+    data: List[CredentialDataItem] = Field(
+        default_factory=list,
+        description="Credential 데이터 (key-value 항목 리스트)"
+    )
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     model_config = ConfigDict(
         json_encoders={datetime: lambda v: v.isoformat() if v else None}
     )

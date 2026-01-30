@@ -62,7 +62,16 @@ Workflows are defined as JSON with nodes, edges, and credentials:
     {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}"}
   ],
   "edges": [{"from": "broker", "to": "rsi"}],
-  "credentials": [{"id": "broker-cred", "type": "broker_ls_stock", "data": {"appkey": "", "appsecret": ""}}]
+  "credentials": [
+    {
+      "id": "broker-cred",
+      "type": "broker_ls_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
+  ]
 }
 ```
 

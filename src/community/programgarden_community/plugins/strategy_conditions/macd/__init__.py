@@ -23,7 +23,7 @@ MACD_SCHEMA = PluginSchema(
     id="MACD",
     name="MACD (Moving Average Convergence Divergence)",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="2.0.0",
+    version="3.0.0",
     description="Finds trend reversal points through crossovers of short and long moving averages. Bullish when MACD crosses above signal line, bearish when crossing below.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
@@ -53,6 +53,9 @@ MACD_SCHEMA = PluginSchema(
         },
     },
     required_data=["data"],
+    # items { from, extract } 필수 필드 (v3.0.0+)
+    required_fields=["symbol", "exchange", "date", "close"],
+    optional_fields=[],
     tags=["trend", "momentum"],
     locales={
         "ko": {

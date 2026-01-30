@@ -25,11 +25,11 @@ workflow = {
             'id': 'broker-cred',
             'type': 'broker_ls_stock',
             'name': 'Test LS',
-            'data': {
-                'appkey': 'test_appkey_12345',
-                'appsecret': 'test_appsecret_67890',
-                'paper_trading': False
-            }
+            'data': [
+                {'key': 'appkey', 'value': 'test_appkey_12345', 'type': 'password', 'label': 'App Key'},
+                {'key': 'appsecret', 'value': 'test_appsecret_67890', 'type': 'password', 'label': 'App Secret'},
+                {'key': 'paper_trading', 'value': False, 'type': 'boolean', 'label': '모의투자'}
+            ]
         }
     ]
 }

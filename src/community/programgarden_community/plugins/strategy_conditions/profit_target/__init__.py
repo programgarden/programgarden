@@ -17,13 +17,16 @@ PROFIT_TARGET_SCHEMA = PluginSchema(
     id="ProfitTarget",
     name="Profit Target",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="3.0.0",
+    version="3.1.0",
     description="Checks if holdings have reached the target profit rate. Example: Sell to realize profit when gain exceeds 5%.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
         "target_percent": {"type": "float", "default": 5.0, "title": "Target Profit (%)"},
     },
     required_data=["positions"],  # 시계열 데이터 불필요, positions만 필요
+    # items { from, extract } 필수 필드 (v3.0.0+) - positions 사용 시 빈 배열
+    required_fields=[],  # positions 플러그인은 items 불필요
+    optional_fields=[],
     tags=["exit", "profit", "realtime"],
     locales={
         "ko": {

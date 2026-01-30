@@ -17,7 +17,7 @@ MA_CROSS_SCHEMA = PluginSchema(
     id="MovingAverageCross",
     name="Moving Average Cross",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="2.0.0",
+    version="3.0.0",
     description="Golden Cross (bullish) when short MA crosses above long MA, Dead Cross (bearish) when crossing below.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
@@ -26,6 +26,9 @@ MA_CROSS_SCHEMA = PluginSchema(
         "cross_type": {"type": "string", "default": "golden", "enum": ["golden", "dead"], "title": "Cross Type"},
     },
     required_data=["data"],
+    # items { from, extract } 필수 필드 (v3.0.0+)
+    required_fields=["symbol", "exchange", "date", "close"],
+    optional_fields=[],
     tags=["trend", "moving_average", "crossover"],
     locales={
         "ko": {

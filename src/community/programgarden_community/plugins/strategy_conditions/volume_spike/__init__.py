@@ -16,7 +16,7 @@ VOLUME_SPIKE_SCHEMA = PluginSchema(
     id="VolumeSpike",
     name="Volume Spike",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="1.1.0",
+    version="3.0.0",
     description="Finds stocks with significantly higher trading volume than usual. Volume spikes can signal increased interest or trend changes.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
@@ -35,6 +35,9 @@ VOLUME_SPIKE_SCHEMA = PluginSchema(
         },
     },
     required_data=["data"],
+    # items { from, extract } 필수 필드 (v3.0.0+)
+    required_fields=["symbol", "exchange", "date", "volume"],
+    optional_fields=[],
     tags=["volume"],
     locales={
         "ko": {

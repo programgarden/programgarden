@@ -157,13 +157,17 @@ class TestItemBasedNodeSchemas:
         assert "symbol" in input_names
 
     def test_condition_node_single_data_input(self):
-        """ConditionNode가 단일 data 입력을 받는지 확인"""
+        """ConditionNode가 items { from, extract } 입력을 받는지 확인"""
         from programgarden_core.nodes.condition import ConditionNode
 
         schema = ConditionNode.get_field_schema()
-        data_schema = schema["data"]
-        from programgarden_core.models.field_binding import ExpressionMode
-        assert data_schema.expression_mode == ExpressionMode.EXPRESSION_ONLY
+        items_schema = schema["items"]
+        from programgarden_core.models.field_binding import ExpressionMode, FieldType
+        assert items_schema.type == FieldType.OBJECT
+        assert items_schema.object_schema is not None
+        # items.from, items.extract 스키마 확인
+        assert any(s.get("name") == "from" for s in items_schema.object_schema)
+        assert any(s.get("name") == "extract" for s in items_schema.object_schema)
 
     def test_condition_node_single_result_output(self):
         """ConditionNode가 단일 result 출력을 하는지 확인"""

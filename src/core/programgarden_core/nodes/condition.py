@@ -25,23 +25,27 @@ from programgarden_core.nodes.base import (
 
 class ConditionNode(PluginNode):
     """
-    Condition plugin execution node (단일 종목)
+    Condition plugin execution node
 
     Executes community plugins such as RSI, MACD, BollingerBands
 
-    Item-based execution:
-    - Input: data (단일 종목의 OHLCV 시계열 데이터)
-    - Output: result (해당 종목의 조건 판정 결과 {passed, value})
-
-    고급 옵션 (선택, 기본값 사용 가능):
-    - close_field 등: 필드명 매핑 (커스텀 데이터 소스 사용 시)
-    - positions: 익절/손절 조건에서 사용
+    items { from, extract } 방식:
+    - from: 반복할 배열 지정 (예: {{ nodes.historical.value.time_series }})
+    - extract: 각 행에서 추출할 필드 정의 (row 키워드로 현재 행 접근)
 
     예시:
     {
-      "data": "{{ nodes.marketdata.value }}",
       "plugin": "RSI",
-      "fields": {"period": 14, "threshold": 30}
+      "items": {
+        "from": "{{ nodes.historical.value.time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.split.item.symbol }}",
+          "exchange": "{{ nodes.split.item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {"period": 14, "threshold": 30, "direction": "below"}
     }
     """
 
@@ -49,46 +53,12 @@ class ConditionNode(PluginNode):
     category: NodeCategory = NodeCategory.CONDITION
     description: str = "i18n:nodes.ConditionNode.description"
 
-    # === 필수 입력 (Item-based execution) ===
-    data: Any = Field(
+    # === items { from, extract } 방식 ===
+    items: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Single symbol data (e.g., {{ nodes.marketdata.value }})",
+        description="Data input configuration with from (source array) and extract (field mapping)",
     )
-    
-    # === 고급: 필드 매핑 (기본값으로 충분, 커스텀 데이터 소스 사용 시만 변경) ===
-    close_field: str = Field(
-        default="close",
-        description="Field name for close price",
-    )
-    open_field: str = Field(
-        default="open",
-        description="Field name for open price",
-    )
-    high_field: str = Field(
-        default="high",
-        description="Field name for high price",
-    )
-    low_field: str = Field(
-        default="low",
-        description="Field name for low price",
-    )
-    volume_field: str = Field(
-        default="volume",
-        description="Field name for volume",
-    )
-    date_field: str = Field(
-        default="date",
-        description="Field name for date/time",
-    )
-    symbol_field: str = Field(
-        default="symbol",
-        description="Field name for symbol identifier",
-    )
-    exchange_field: str = Field(
-        default="exchange",
-        description="Field name for exchange",
-    )
-    
+
     # === 익절/손절 플러그인 전용 입력 ===
     positions: Any = Field(
         default=None,
@@ -98,9 +68,9 @@ class ConditionNode(PluginNode):
     _inputs: List[InputPort] = [
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
         InputPort(
-            name="data",
+            name="items",
             type="ohlcv_data",
-            description="i18n:ports.data",
+            description="i18n:ports.items",
         ),
         InputPort(
             name="positions",
@@ -132,102 +102,63 @@ class ConditionNode(PluginNode):
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_PLUGIN_SELECT,
             ),
-            # === DATA: 입력 데이터 (Item-based) ===
-            "data": FieldSchema(
-                name="data",
+            # === DATA: items { from, extract } 방식 ===
+            "items": FieldSchema(
+                name="items",
                 type=FieldType.OBJECT,
-                description="i18n:fields.ConditionNode.data",
+                description="i18n:fields.ConditionNode.items",
                 required=True,
-                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                placeholder="{{ nodes.marketdata.value }}",
-                example={
-                    "symbol": "AAPL",
-                    "exchange": "NASDAQ",
-                    "time_series": [
-                        {"date": "20260115", "close": 149.0, "open": 148.0, "high": 150.0, "low": 147.5, "volume": 900000},
-                        {"date": "20260116", "close": 150.0, "open": 148.5, "high": 151.0, "low": 147.8, "volume": 1000000},
-                    ],
-                },
-                example_binding="{{ nodes.marketdata.value }}",
-                bindable_sources=[
-                    "OverseasStockHistoricalDataNode.value",
-                    "OverseasFuturesHistoricalDataNode.value",
-                    "OverseasStockMarketDataNode.value",
-                    "OverseasFuturesMarketDataNode.value",
+                help_text="i18n:fields.ConditionNode.items.help_text",
+                object_schema=[
+                    {
+                        "name": "from",
+                        "type": "STRING",
+                        "expression_mode": "expression_only",
+                        "required": True,
+                        "description": "i18n:fields.ConditionNode.items.from",
+                        "placeholder": "{{ nodes.historical.value.time_series }}",
+                        "help_text": "반복할 배열을 지정합니다. 이 배열의 각 항목을 row로 접근할 수 있습니다.",
+                    },
+                    {
+                        "name": "extract",
+                        "type": "OBJECT",
+                        "expression_mode": "fixed_only",
+                        "required": True,
+                        "description": "i18n:fields.ConditionNode.items.extract",
+                        "help_text": "각 행에서 추출할 필드를 정의합니다. row.xxx로 현재 행의 필드에 접근합니다.",
+                        "object_schema": [
+                            {"name": "symbol", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "종목 코드", "placeholder": "{{ nodes.split.item.symbol }}"},
+                            {"name": "exchange", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "거래소 코드", "placeholder": "{{ nodes.split.item.exchange }}"},
+                            {"name": "date", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "날짜", "placeholder": "{{ row.date }}"},
+                            {"name": "close", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "종가", "placeholder": "{{ row.close }}"},
+                            {"name": "open", "type": "STRING", "expression_mode": "both", "required": False,
+                             "description": "시가", "placeholder": "{{ row.open }}"},
+                            {"name": "high", "type": "STRING", "expression_mode": "both", "required": False,
+                             "description": "고가", "placeholder": "{{ row.high }}"},
+                            {"name": "low", "type": "STRING", "expression_mode": "both", "required": False,
+                             "description": "저가", "placeholder": "{{ row.low }}"},
+                            {"name": "volume", "type": "STRING", "expression_mode": "both", "required": False,
+                             "description": "거래량", "placeholder": "{{ row.volume }}"},
+                        ],
+                    },
                 ],
-                expected_type="{symbol: str, exchange: str, time_series: list[dict]}",
-                help_text="i18n:fields.ConditionNode.data.help_text",
-            ),
-            # === FIELD MAPPING: 필드명 매핑 (data 바로 하단에 표시) ===
-            "close_field": FieldSchema(
-                name="close_field",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.close_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="close",
-                placeholder="close",
-                group="field_mapping",
-            ),
-            "open_field": FieldSchema(
-                name="open_field",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.open_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="open",
-                placeholder="open",
-                group="field_mapping",
-            ),
-            "high_field": FieldSchema(
-                name="high_field",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.high_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="high",
-                placeholder="high",
-                group="field_mapping",
-            ),
-            "low_field": FieldSchema(
-                name="low_field",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.low_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="low",
-                placeholder="low",
-                group="field_mapping",
-            ),
-            "volume_field": FieldSchema(
-                name="volume_field",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.volume_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="volume",
-                placeholder="volume",
-                group="field_mapping",
-            ),
-            "date_field": FieldSchema(
-                name="date_field",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.date_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="date",
-                placeholder="date",
-                group="field_mapping",
+                example={
+                    "from": "{{ nodes.historical.value.time_series }}",
+                    "extract": {
+                        "symbol": "{{ nodes.split.item.symbol }}",
+                        "exchange": "{{ nodes.split.item.exchange }}",
+                        "date": "{{ row.date }}",
+                        "close": "{{ row.close }}",
+                    },
+                },
             ),
             # === PLUGIN-SPECIFIC: 익절/손절 플러그인에서만 표시 ===
-            # positions: v3.0.0+ 플러그인용 (ProfitTarget, StopLoss)
             "positions": FieldSchema(
                 name="positions",
                 type=FieldType.STRING,
@@ -245,28 +176,6 @@ class ConditionNode(PluginNode):
                 expected_type="dict[str, any]",
                 visible_when={"plugin": ["ProfitTarget", "StopLoss", "TrailingStop"]},
                 help_text="보유 포지션 데이터 (수익률 포함)",
-            ),
-            "symbol_field": FieldSchema(
-                name="symbol_field",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.symbol_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="symbol",
-                placeholder="symbol",
-                group="field_mapping",
-            ),
-            "exchange_field": FieldSchema(
-                name="exchange_field",
-                type=FieldType.STRING,
-                description="i18n:fields.ConditionNode.exchange_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="exchange",
-                placeholder="exchange",
-                group="field_mapping",
             ),
         }
 

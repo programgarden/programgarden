@@ -418,34 +418,27 @@ class TestNodeTypeRegistryWidgetSchema:
         assert "signal_field" in field_keys
         assert "side_field" in field_keys
 
-    def test_condition_node_group_nesting(self):
-        """ConditionNode: field_mapping 그룹이 card로 래핑됨"""
+    def test_condition_node_items_schema(self):
+        """ConditionNode: items { from, extract } 스키마 존재"""
         registry = NodeTypeRegistry()
         schema = registry.get_schema("ConditionNode")
 
         assert schema is not None
         children = schema.widget_schema["args"]["children"]
 
-        # plugin, data 등 ungrouped 필드가 최상위에 존재
+        # plugin 필드가 최상위에 존재
         plugin_widget = next(
             (w for w in children if w.get("field_key_of_pydantic") == "plugin"),
             None
         )
         assert plugin_widget is not None
 
-        # field_mapping 그룹 card 존재
-        group_card = next(
-            (w for w in children if w.get("type") == "card"),
+        # items 필드가 최상위에 존재
+        items_widget = next(
+            (w for w in children if w.get("field_key_of_pydantic") == "items"),
             None
         )
-        assert group_card is not None
-
-        # card 내부에 필드들 존재
-        column = group_card["args"]["child"]["args"]["child"]
-        group_children = column["args"]["children"]
-        # 제목 + 필드들
-        assert group_children[0]["type"] == "text"
-        assert len(group_children) > 1  # 최소 제목 + 1개 필드
+        assert items_widget is not None
 
     def test_start_node_empty_widget_schema(self):
         """StartNode는 설정 필드가 없어 widget_schema가 비어있음"""

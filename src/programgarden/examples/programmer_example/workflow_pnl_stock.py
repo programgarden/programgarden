@@ -299,11 +299,11 @@ def create_workflow() -> dict:
                 "id": "broker-cred",
                 "type": "broker_ls_stock",
                 "name": "LS증권 (해외주식)",
-                "data": {
-                    "appkey": "",
-                    "appsecret": "",
-                    "paper_trading": False
-                }
+                "data": [
+                    {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                    {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                    {"key": "paper_trading", "value": False, "type": "boolean", "label": "모의투자"}
+                ]
             }
         ]
     }
@@ -338,11 +338,11 @@ async def main():
             "id": "broker-cred",
             "type": "broker_ls_stock",
             "name": "LS증권 (해외주식)",
-            "data": {
-                "appkey": cred_data["appkey"],
-                "appsecret": cred_data["appsecret"],
-                "paper_trading": False
-            }
+            "data": [
+                {"key": "appkey", "value": cred_data["appkey"], "type": "password", "label": "App Key"},
+                {"key": "appsecret", "value": cred_data["appsecret"], "type": "password", "label": "App Secret"},
+                {"key": "paper_trading", "value": False, "type": "boolean", "label": "모의투자"}
+            ]
         }
     ]
 

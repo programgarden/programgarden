@@ -19,7 +19,7 @@ DUAL_MOMENTUM_SCHEMA = PluginSchema(
     id="DualMomentum",
     name="Dual Momentum",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="2.0.0",
+    version="3.0.0",
     description="Combines absolute momentum (recent returns) and relative momentum (vs benchmark). Invests in stocks with strong upward trends.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
@@ -29,6 +29,9 @@ DUAL_MOMENTUM_SCHEMA = PluginSchema(
         "relative_benchmark": {"type": "string", "default": "SHY", "enum": ["SHY", "BIL", "CASH"], "title": "Benchmark"},
     },
     required_data=["data"],
+    # items { from, extract } 필수 필드 (v3.0.0+)
+    required_fields=["symbol", "exchange", "date", "close"],
+    optional_fields=[],
     tags=["momentum", "trend", "asset_allocation"],
     locales={
         "ko": {

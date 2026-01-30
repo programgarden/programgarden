@@ -410,16 +410,16 @@ class ExecutionContext:
     def get_workflow_credential(self, credential_id: str) -> Optional[Dict[str, Any]]:
         """
         워크플로우 JSON의 credentials 섹션에서 credential 데이터 조회
-        
+
+        data가 list 형태 [{key, value, ...}, ...] 인 경우 dict로 변환하여 반환합니다.
+        이를 통해 _inject_credentials() 로직과 호환성을 유지합니다.
+
         프로덕션 환경에서는 서버가 DB에서 암호화된 credentials를 복호화하여
         워크플로우 JSON의 credentials 배열에 값을 주입한 후 실행합니다.
-        
-        이 함수는 주입된 credentials 배열에서 해당 id를 찾아 data를 반환합니다.
-        (라이브러리는 DB를 직접 참조하지 않음)
-        
+
         Args:
             credential_id: credentials 배열에서 찾을 id (예: "broker-cred")
-            
+
         Returns:
             Credential data dict (예: {"appkey": "...", "appsecret": "..."}) or None
         """
@@ -428,12 +428,23 @@ class ExecutionContext:
             (c for c in self._workflow_credentials if c.get("id") == credential_id),
             None
         )
-        if cred_ref:
-            data = cred_ref.get("data", {})
-            # data가 있고, 최소 하나의 값이 비어있지 않으면 사용
-            if data and any(v for v in data.values() if v):
-                return data
-        
+        if not cred_ref:
+            return None
+
+        data = cred_ref.get("data", [])
+
+        # list 형태인 경우 dict로 변환
+        if isinstance(data, list):
+            result = {}
+            for item in data:
+                if isinstance(item, dict) and "key" in item:
+                    key = item["key"]
+                    value = item.get("value")
+                    if value is not None:
+                        result[key] = value
+            if result:
+                return result
+
         return None
 
     def has_secret(self, key: str) -> bool:

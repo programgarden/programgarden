@@ -23,7 +23,7 @@ BOLLINGER_SCHEMA = PluginSchema(
     id="BollingerBands",
     name="Bollinger Bands",
     category=PluginCategory.STRATEGY_CONDITION,
-    version="2.0.0",
+    version="3.0.0",
     description="Measures how far the price has deviated from the average. Near the lower band indicates undervalued, near the upper band indicates overvalued.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
@@ -49,6 +49,9 @@ BOLLINGER_SCHEMA = PluginSchema(
         },
     },
     required_data=["data"],
+    # items { from, extract } 필수 필드 (v3.0.0+)
+    required_fields=["symbol", "exchange", "date", "close"],
+    optional_fields=["high", "low"],
     tags=["volatility", "mean-reversion"],
     locales={
         "ko": {

@@ -56,6 +56,16 @@ class PluginSchema(BaseModel):
         description="필요한 데이터 (price_data, volume_data, position_data 등)",
     )
 
+    # items { from, extract }에서 필요한 필드 (v3.0.0+)
+    required_fields: List[str] = Field(
+        default_factory=lambda: ["symbol", "exchange", "date", "close"],
+        description="extract에 필수로 포함해야 하는 필드 (symbol, exchange, date, close 등)",
+    )
+    optional_fields: List[str] = Field(
+        default_factory=list,
+        description="extract에 선택적으로 포함할 수 있는 필드 (open, high, low, volume 등)",
+    )
+
     # 메타데이터
     author: Optional[str] = Field(default=None, description="작성자")
     tags: List[str] = Field(default_factory=list, description="태그")

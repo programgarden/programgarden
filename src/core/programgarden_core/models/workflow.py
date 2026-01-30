@@ -36,34 +36,40 @@ class WorkflowInput(BaseModel):
 class CredentialReference(BaseModel):
     """
     워크플로우 내 Credential 참조
-    
-    JSON 공유 시 data의 키만 포함하고 값은 비워둠.
-    Python 개발자가 직접 사용 시 data에 값을 채워 실행 가능.
-    
+
+    JSON 공유 시 data의 value를 비워둠.
+    Python 개발자가 직접 사용 시 data의 value에 값을 채워 실행 가능.
+
     Example (공유용):
         {
             "id": "broker-cred",
             "type": "broker_ls",
             "name": "LS증권 API",
-            "data": {"appkey": "", "appsecret": ""}
+            "data": [
+                {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+            ]
         }
-    
+
     Example (실행용):
         {
             "id": "broker-cred",
-            "type": "broker_ls", 
+            "type": "broker_ls",
             "name": "LS증권 API",
-            "data": {"appkey": "실제값", "appsecret": "실제값"}
+            "data": [
+                {"key": "appkey", "value": "실제값", "type": "password", "label": "App Key"},
+                {"key": "appsecret", "value": "실제값", "type": "password", "label": "App Secret"}
+            ]
         }
     """
-    
+
     id: str = Field(..., description="Credential 고유 ID")
     type: str = Field(..., description="Credential 타입 (broker_ls, telegram 등)")
     name: Optional[str] = Field(default=None, description="표시 이름")
     description: Optional[str] = Field(default=None, description="설명")
-    data: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Credential 데이터 (공유 시 값 비움, 실행 시 값 채움)"
+    data: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Credential 데이터 리스트 [{key, value, type?, label?}, ...]"
     )
 
 

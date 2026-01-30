@@ -137,11 +137,11 @@ TEST_WORKFLOW = {
             "id": "broker-cred",
             "type": "broker_ls_futures",
             "name": "LS증권 (해외선물)",
-            "data": {
-                "appkey": "",
-                "appsecret": "",
-                "paper_trading": True
-            }
+            "data": [
+                {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                {"key": "paper_trading", "value": True, "type": "boolean", "label": "모의투자"}
+            ]
         }
     ]
 }
@@ -170,11 +170,11 @@ async def main():
             "id": "broker-cred",
             "type": "broker_ls_futures",
             "name": "LS증권 (해외선물)",
-            "data": {
-                "appkey": appkey,
-                "appsecret": appsecret,
-                "paper_trading": True  # 모의투자
-            }
+            "data": [
+                {"key": "appkey", "value": appkey, "type": "password", "label": "App Key"},
+                {"key": "appsecret", "value": appsecret, "type": "password", "label": "App Secret"},
+                {"key": "paper_trading", "value": True, "type": "boolean", "label": "모의투자"}
+            ]
         }
     ]
     

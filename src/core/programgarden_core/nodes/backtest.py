@@ -40,51 +40,11 @@ class BacktestEngineNode(BaseNode):
     description: str = "i18n:nodes.BacktestEngineNode.description"
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # Input data binding (required for UI rendering)
+    # Input data binding: items { from, extract }
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    data: Any = Field(
+    items: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="OHLCV data for backtest (e.g., {{ flatten(nodes.historical.values, 'time_series') }})",
-    )
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # Field mapping (for custom data sources)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    close_field: str = Field(
-        default="close",
-        description="Field name for close price",
-    )
-    open_field: str = Field(
-        default="open",
-        description="Field name for open price",
-    )
-    high_field: str = Field(
-        default="high",
-        description="Field name for high price",
-    )
-    low_field: str = Field(
-        default="low",
-        description="Field name for low price",
-    )
-    volume_field: str = Field(
-        default="volume",
-        description="Field name for volume",
-    )
-    date_field: str = Field(
-        default="date",
-        description="Field name for date/time",
-    )
-    symbol_field: str = Field(
-        default="symbol",
-        description="Field name for symbol identifier",
-    )
-    signal_field: str = Field(
-        default="signal",
-        description="Field name for trading signal (buy/sell)",
-    )
-    side_field: str = Field(
-        default="side",
-        description="Field name for position side (long/short, for futures)",
+        description="Data input configuration with from (source array) and extract (field mapping)",
     )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -191,9 +151,9 @@ class BacktestEngineNode(BaseNode):
 
     _inputs: List[InputPort] = [
         InputPort(
-            name="data",
+            name="items",
             type="array",
-            description="i18n:ports.data",
+            description="i18n:ports.items",
         ),
         InputPort(
             name="signals",
@@ -241,119 +201,70 @@ class BacktestEngineNode(BaseNode):
             FieldSchema, FieldType, FieldCategory, ExpressionMode, UIComponent
         )
         return {
-            # === DATA: 입력 데이터 바인딩 ===
-            "data": FieldSchema(
-                name="data",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.data",
+            # === DATA: items { from, extract } 방식 ===
+            "items": FieldSchema(
+                name="items",
+                type=FieldType.OBJECT,
+                description="i18n:fields.BacktestEngineNode.items",
                 required=True,
-                expression_mode=ExpressionMode.BOTH,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
-                example=[
-                    {"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260116", "close": 150.0, "open": 148.5, "high": 151.0, "low": 147.8, "volume": 1000000},
+                help_text="i18n:fields.BacktestEngineNode.items.help_text",
+                object_schema=[
+                    {
+                        "name": "from",
+                        "type": "STRING",
+                        "expression_mode": "expression_only",
+                        "required": True,
+                        "description": "i18n:fields.BacktestEngineNode.items.from",
+                        "placeholder": "{{ nodes.historical.value.time_series }}",
+                        "help_text": "반복할 배열을 지정합니다. 이 배열의 각 항목을 row로 접근할 수 있습니다.",
+                    },
+                    {
+                        "name": "extract",
+                        "type": "OBJECT",
+                        "expression_mode": "fixed_only",
+                        "required": True,
+                        "description": "i18n:fields.BacktestEngineNode.items.extract",
+                        "help_text": "각 행에서 추출할 필드를 정의합니다. row.xxx로 현재 행의 필드에 접근합니다.",
+                        "object_schema": [
+                            {"name": "symbol", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "종목 코드", "placeholder": "{{ nodes.split.item.symbol }}"},
+                            {"name": "exchange", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "거래소 코드", "placeholder": "{{ nodes.split.item.exchange }}"},
+                            {"name": "date", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "날짜", "placeholder": "{{ row.date }}"},
+                            {"name": "open", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "시가", "placeholder": "{{ row.open }}"},
+                            {"name": "high", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "고가", "placeholder": "{{ row.high }}"},
+                            {"name": "low", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "저가", "placeholder": "{{ row.low }}"},
+                            {"name": "close", "type": "STRING", "expression_mode": "both", "required": True,
+                             "description": "종가", "placeholder": "{{ row.close }}"},
+                            {"name": "volume", "type": "STRING", "expression_mode": "both", "required": False,
+                             "description": "거래량", "placeholder": "{{ row.volume }}"},
+                            {"name": "signal", "type": "STRING", "expression_mode": "both", "required": False,
+                             "description": "매매 신호", "placeholder": "{{ nodes.condition.result.signal }}"},
+                            {"name": "side", "type": "STRING", "expression_mode": "both", "required": False,
+                             "description": "포지션 방향", "placeholder": "{{ nodes.condition.result.side }}"},
+                        ],
+                    },
                 ],
-                example_binding="{{ flatten(nodes.historical.values, 'time_series') }}",
-                bindable_sources=["HistoricalDataNode.values", "ConditionNode.values"],
-            ),
-            # === FIELD MAPPING: 필드명 매핑 (기본값 사용 가능) ===
-            "close_field": FieldSchema(
-                name="close_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.close_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="close",
-                placeholder="close",
-                group="field_mapping",
-            ),
-            "open_field": FieldSchema(
-                name="open_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.open_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="open",
-                placeholder="open",
-                group="field_mapping",
-            ),
-            "high_field": FieldSchema(
-                name="high_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.high_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="high",
-                placeholder="high",
-                group="field_mapping",
-            ),
-            "low_field": FieldSchema(
-                name="low_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.low_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="low",
-                placeholder="low",
-                group="field_mapping",
-            ),
-            "volume_field": FieldSchema(
-                name="volume_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.volume_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="volume",
-                placeholder="volume",
-                group="field_mapping",
-            ),
-            "date_field": FieldSchema(
-                name="date_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.date_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="date",
-                placeholder="date",
-                group="field_mapping",
-            ),
-            "symbol_field": FieldSchema(
-                name="symbol_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.symbol_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="symbol",
-                placeholder="symbol",
-                group="field_mapping",
-            ),
-            "signal_field": FieldSchema(
-                name="signal_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.signal_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="signal",
-                placeholder="signal",
-                group="field_mapping",
-            ),
-            "side_field": FieldSchema(
-                name="side_field",
-                type=FieldType.STRING,
-                description="i18n:fields.BacktestEngineNode.side_field",
-                required=False,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                category=FieldCategory.PARAMETERS,
-                default="side",
-                placeholder="side",
-                group="field_mapping",
+                example={
+                    "from": "{{ nodes.historical.value.time_series }}",
+                    "extract": {
+                        "symbol": "{{ nodes.split.item.symbol }}",
+                        "exchange": "{{ nodes.split.item.exchange }}",
+                        "date": "{{ row.date }}",
+                        "open": "{{ row.open }}",
+                        "high": "{{ row.high }}",
+                        "low": "{{ row.low }}",
+                        "close": "{{ row.close }}",
+                        "volume": "{{ row.volume }}",
+                        "signal": "{{ nodes.condition.result.signal }}",
+                    },
+                },
             ),
             # === PARAMETERS: 핵심 백테스트 설정 ===
             "initial_capital": FieldSchema(
