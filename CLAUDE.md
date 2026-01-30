@@ -15,8 +15,7 @@ src/
 ├── programgarden/      # Main package (workflow execution engine) - for external users
 │   ├── programgarden/  # Core module: executor.py, context.py, resolver.py
 │   └── examples/       # Test/demo code for the package
-│       ├── python_server/  # FastAPI backend server example
-│       └── workflow_flutter/  # Flutter frontend example
+│       └── python_server/  # FastAPI backend server example
 ├── core/               # programgarden-core: node types, base classes, registry, i18n
 │   └── programgarden_core/
 │       ├── nodes/      # Node definitions (OverseasStockBrokerNode, ConditionNode, etc.)
@@ -160,7 +159,7 @@ When a node outputs an array, the next node automatically executes for each item
 Node definitions are in `src/core/programgarden_core/nodes/`. Each node uses:
 - Pydantic model for configuration
 - `FieldSchema` for field metadata (type, expression_mode, category)
-- `widget_schema` and `settings_widget_schema` for Flutter UI
+- `config_schema` for UI configuration
 
 Key files:
 - `src/core/programgarden_core/models/field_binding.py` - FieldSchema, UIComponent, ExpressionMode
@@ -197,7 +196,7 @@ Available through `.claude/commands/`:
 - `/pg-node` - Add/modify nodes
 - `/pg-node-validate` - Validate node schema
 - `/pg-node-list` - List registered nodes
-- `/pg-integration-test` - Test server-client integration (python_server + workflow_flutter)
+- `/pg-integration-test` - Test server integration (python_server)
 
 ### Context Recovery (컨텍스트 복구)
 
@@ -214,14 +213,9 @@ Available through `.claude/commands/`:
 
 The `examples/` folder contains integration test code:
 - `python_server/` - FastAPI server for workflow execution
-- `workflow_flutter/` - Flutter app for workflow visualization
 
-### Running Server + Flutter
+### Running Server
 
 ```bash
-# Terminal 1: Start Python server
 cd src/programgarden && poetry run python examples/python_server/server.py
-
-# Terminal 2: Run Flutter app
-cd src/programgarden/examples/workflow_flutter && flutter run -d chrome
 ```

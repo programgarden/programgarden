@@ -433,36 +433,24 @@ async def get_translations(prefix: str = "outputs", locale: str = "ko"):
 # File Browser API (creatable_select 지원)
 # ========================================
 
-@app.get("/api/files/{source}")
-async def list_files(source: str, extension: Optional[str] = None):
+@app.get("/api/files")
+async def list_files(extension: Optional[str] = None):
     """
-    지정된 소스 폴더의 파일 목록 반환 (creatable_select UI 지원)
-    
+    /app/data/ 폴더의 파일 목록 반환 (creatable_select UI 지원)
+
     Args:
-        source: 폴더명 (예: "programgarden_data")
         extension: 파일 확장자 필터 (예: ".db")
-    
+
     Returns:
         파일명 목록
     """
     try:
-        # 보안: 허용된 소스만 접근 가능
-        allowed_sources = {
-            "programgarden_data": Path.home() / "programgarden_data",
-        }
-        
-        if source not in allowed_sources:
-            return JSONResponse({"error": f"Unknown source: {source}", "files": []}, status_code=400)
-        
-        source_path = allowed_sources[source]
-        
-        # 폴더가 없으면 빈 목록 반환
-        if not source_path.exists():
-            return JSONResponse({"files": [], "source": source})
-        
+        data_path = Path("/app/data")
+        data_path.mkdir(parents=True, exist_ok=True)
+
         # 파일 목록 가져오기
         files = []
-        for item in source_path.iterdir():
+        for item in data_path.iterdir():
             if item.is_file():
                 # 확장자 필터 적용
                 if extension:
@@ -470,38 +458,31 @@ async def list_files(source: str, extension: Optional[str] = None):
                         files.append(item.name)
                 else:
                     files.append(item.name)
-        
+
         # 정렬
         files.sort()
-        
-        return JSONResponse({"files": files, "source": source})
+
+        return JSONResponse({"files": files})
     except Exception as e:
         import traceback
         traceback.print_exc()
         return JSONResponse({"error": str(e), "files": []}, status_code=500)
 
 
-@app.delete("/api/files/{source}/{filename}")
-async def delete_file(source: str, filename: str):
+@app.delete("/api/files/{filename}")
+async def delete_file(filename: str):
     """
-    지정된 소스 폴더의 파일 삭제 (creatable_select deletable 지원)
-    
+    /app/data/ 폴더의 파일 삭제 (creatable_select deletable 지원)
+
     Args:
-        source: 폴더명 (예: "programgarden_data")
         filename: 삭제할 파일명
-    
+
     Returns:
         삭제 결과
     """
     try:
         from programgarden.tools.sqlite_tools import delete_database_file
-        
-        # 보안: 허용된 소스만 접근 가능
-        allowed_sources = {"programgarden_data"}
-        
-        if source not in allowed_sources:
-            return JSONResponse({"error": f"Unknown source: {source}", "deleted": False}, status_code=400)
-        
+
         result = delete_database_file(filename)
         return JSONResponse(result)
     except ValueError as e:

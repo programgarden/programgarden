@@ -19,16 +19,15 @@ from typing import List, Dict, Any, Optional
 
 def get_programgarden_data_path(workspace_path: Optional[str] = None) -> Path:
     """
-    programgarden_data/ 폴더 경로를 반환합니다.
-    
+    /app/data/ 폴더 경로를 반환합니다.
+
     Args:
-        workspace_path: 워크스페이스 경로 (None이면 현재 작업 디렉토리)
-    
+        workspace_path: 워크스페이스 경로 (None이면 /app/data 사용)
+
     Returns:
-        programgarden_data/ 폴더의 Path 객체
+        /app/data/ 폴더의 Path 객체
     """
-    base_path = workspace_path or os.getcwd()
-    data_dir = Path(base_path) / "programgarden_data"
+    data_dir = Path(workspace_path) if workspace_path else Path("/app/data")
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 

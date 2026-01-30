@@ -294,7 +294,7 @@
   "fields.PortfolioNode.drift_threshold": "Drift tolerance percentage (%)",
   "fields.PortfolioNode.capital_sharing": "Share capital between strategies",
   "fields.PortfolioNode.reserve_percent": "Cash reserve percentage (%)",
-  "fields.SQLiteNode.db_name": "Database filename. Stored in programgarden_data/ folder.",
+  "fields.SQLiteNode.db_name": "Database filename. Stored in /app/data/ folder.",
   "fields.SQLiteNode.operation": "Select operation mode. 'Execute Query' for direct SQL, 'Simple' for GUI-based operations.",
   "fields.SQLiteNode.query": "SQL query to execute. Bind parameters using :name format. Example: SELECT * FROM users WHERE id = :user_id",
   "fields.SQLiteNode.parameters": "Parameter values for SQL query. Matches :name in the query.",

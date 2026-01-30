@@ -412,7 +412,7 @@
   "fields.orders.quantity": "수량",
   "fields.orders.price": "가격",
   "ports.orders_input": "주문 목록 입력",
-  "fields.SQLiteNode.db_name": "데이터베이스 파일명. programgarden_data/ 폴더에 저장됩니다.",
+  "fields.SQLiteNode.db_name": "데이터베이스 파일명. /app/data/ 폴더에 저장됩니다.",
   "fields.SQLiteNode.operation": "운영 모드를 선택하세요. '직접 SQL'은 쿼리를 직접 작성하고, '간단 조작'은 GUI로 쉽게 조작합니다.",
   "fields.SQLiteNode.query": "실행할 SQL 쿼리. 파라미터는 :name 형식으로 바인딩하세요. 예: SELECT * FROM users WHERE id = :user_id",
   "fields.SQLiteNode.parameters": "SQL 쿼리의 파라미터 값. 쿼리의 :name과 매칭됩니다.",

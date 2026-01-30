@@ -31,7 +31,7 @@ class SQLiteNode(BaseNode):
     """
     로컬 SQLite 데이터베이스 노드 (단순 DB)
 
-    워크스페이스의 programgarden_data/ 폴더에 SQLite DB를 생성하고,
+    /app/data/ 폴더에 SQLite DB를 생성하고,
     두 가지 모드로 데이터를 조회/저장합니다.
     
     운영 모드:
@@ -70,7 +70,7 @@ class SQLiteNode(BaseNode):
     # === 기본 설정 ===
     db_name: str = Field(
         default="default.db",
-        description="데이터베이스 파일명 (programgarden_data/ 폴더 내)",
+        description="데이터베이스 파일명 (/app/data/ 폴더 내)",
     )
     
     # 운영 모드

@@ -433,6 +433,10 @@ class ExecutionContext:
 
         data = cred_ref.get("data", [])
 
+        # dict 형태인 경우 그대로 반환
+        if isinstance(data, dict):
+            return data if data else None
+
         # list 형태인 경우 dict로 변환
         if isinstance(data, list):
             result = {}
@@ -1632,9 +1636,9 @@ class ExecutionContext:
             from programgarden.database import WorkflowPositionTracker
             from pathlib import Path
             
-            # DB 경로: programgarden_data/{workflow_id}_workflow.db
+            # DB 경로: /app/data/{workflow_id}_workflow.db
             # 워크플로우 ID 사용 (워크플로우당 1개 DB 유지)
-            db_dir = Path("programgarden_data")
+            db_dir = Path("/app/data")
             db_dir.mkdir(parents=True, exist_ok=True)
             db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
             db_path = str(db_dir / db_filename)

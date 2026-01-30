@@ -2606,12 +2606,16 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "symbol": symbol,
                 "name": item.JpnMktHanglIsuNm.strip() if item.JpnMktHanglIsuNm else symbol,
                 "qty": item.AstkBalQty,
+                "quantity": item.AstkBalQty,  # NewOrderNode 호환
+                "direction": "long",  # 주식은 보유=매수(long)
+                "close_side": "sell",  # 청산=매도
                 "avg_price": item.FcstckUprc,
                 "current_price": item.OvrsScrtsCurpri,
                 "pnl_rate": item.PnlRat,
                 "pnl_amount": item.FcurrEvalPnlAmt,
                 "currency": item.CrcyCode,
                 "market": item.MktTpNm.strip() if item.MktTpNm else "",
+                "exchange": item.MktTpNm.strip() if item.MktTpNm else "NASDAQ",  # NewOrderNode 호환
                 "eval_amount": item.FcurrEvalAmt,
                 "purchase_amount": item.FcurrBuyAmt,
             })
@@ -2629,9 +2633,8 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "total_pnl_krw": response.block2.ConvEvalPnlAmt,
             }
         
-        context.log("info", f"AccountNode: {len(held_symbols)} positions fetched", node_id)
+        context.log("info", f"AccountNode: {len(positions)} positions fetched", node_id)
         return {
-            "held_symbols": held_symbols,
             "positions": positions,
             "balance": balance_info,
         }
@@ -2679,8 +2682,10 @@ class AccountNodeExecutor(NodeExecutorBase):
                 if not symbol:
                     continue
 
-                # BnsTpCode: 1=매도, 2=매수
+                # BnsTpCode: 1=매도(short), 2=매수(long)
                 is_long = item.BnsTpCode == "2"
+                position_side = "long" if is_long else "short"
+                close_side = "sell" if is_long else "buy"
                 quantity = int(item.BalQty) if item.BalQty else 0
                 current_price = float(item.OvrsDrvtNowPrc) if item.OvrsDrvtNowPrc else 0.0
 
@@ -2688,7 +2693,8 @@ class AccountNodeExecutor(NodeExecutorBase):
                     "symbol": symbol,
                     "exchange": "HKEX",  # 해외선물 기본 거래소
                     "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else symbol,
-                    "is_long": is_long,
+                    "direction": position_side,  # long/short
+                    "close_side": close_side,  # 청산 시 주문 방향: sell/buy
                     "quantity": quantity,  # NewOrderNode 호환
                     "price": current_price,  # NewOrderNode 호환
                     "entry_price": float(item.PchsPrc) if item.PchsPrc else 0.0,
@@ -2732,10 +2738,8 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "deposit": sum(b.get("deposit", 0) for b in balance_by_currency.values()),
             }
 
-            context.log("info", f"AccountNode (futures): {len(held_symbols)} positions, {len(balance_by_currency)} currencies", node_id)
+            context.log("info", f"AccountNode (futures): {len(positions)} positions, {len(balance_by_currency)} currencies", node_id)
             return {
-                "held_symbols": held_symbols,
-                "symbols": held_symbols,
                 "positions": positions,
                 "balance": balance_info,
             }
@@ -2747,7 +2751,6 @@ class AccountNodeExecutor(NodeExecutorBase):
     def _empty_result(self, error: str = "") -> Dict[str, Any]:
         """빈 결과 반환 (positions는 리스트 형태)"""
         result = {
-            "held_symbols": [],
             "positions": [],
             "balance": {"cash": 0.0, "total_value": 0.0},
         }
@@ -3376,9 +3379,10 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                         "symbol": sym,
                         "exchange": getattr(pos, 'exchange_code', ''),
                         "name": getattr(pos, 'symbol_name', sym),
-                        "is_long": is_long,
-                        "direction": "LONG" if is_long else "SHORT",
+                        "direction": "long" if is_long else "short",
+                        "close_side": "sell" if is_long else "buy",
                         "qty": int(getattr(pos, 'quantity', 0)),
+                        "quantity": int(getattr(pos, 'quantity', 0)),  # NewOrderNode 호환
                         "entry_price": float(getattr(pos, 'entry_price', 0)),
                         "current_price": float(getattr(pos, 'current_price', 0)),
                         "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
@@ -3569,8 +3573,6 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 }
         
         return {
-            "symbols": symbols,
-            "held_symbols": symbols,
             "positions": positions,
             "balance": balance,
             "open_orders": open_orders,
@@ -3602,8 +3604,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 "symbol": symbol,
                 "exchange": getattr(pos, 'exchange_code', ''),
                 "name": getattr(pos, 'symbol_name', symbol),
-                "is_long": is_long,
-                "direction": "LONG" if is_long else "SHORT",
+                "direction": "long" if is_long else "short",
+                "close_side": "sell" if is_long else "buy",
                 "quantity": quantity,  # qty → quantity (NewOrderNode 호환)
                 "price": current_price,  # current_price → price (NewOrderNode 호환)
                 "entry_price": float(getattr(pos, 'entry_price', 0)),
@@ -3640,16 +3642,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     "order_no": order_no,
                     "symbol": getattr(order, 'symbol', ''),
                     "exchange": getattr(order, 'exchange_code', ''),
-                    "is_long": is_long,
-                    "direction": "LONG" if is_long else "SHORT",
+                    "direction": "long" if is_long else "short",
+                    "close_side": "sell" if is_long else "buy",
                     "order_price": float(getattr(order, 'order_price', 0)),
                     "order_qty": int(getattr(order, 'order_qty', 0)),
                     "remaining_qty": int(getattr(order, 'remaining_qty', 0)),
                 }
         
         return {
-            "symbols": symbols,
-            "held_symbols": symbols,
             "positions": positions,
             "balance": balance,
             "open_orders": open_orders,
@@ -3667,10 +3667,9 @@ class RealAccountNodeExecutor(NodeExecutorBase):
     def _empty_result(self, error: str = "") -> Dict[str, Any]:
         """빈 결과 반환"""
         result = {
-            "symbols": [],
-            "held_symbols": [],  # 별칭
-            "positions": {},
+            "positions": [],
             "balance": {"cash": 0.0, "total_value": 0.0},
+            "open_orders": {},
         }
         if error:
             result["error"] = error
@@ -9169,6 +9168,9 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
             response = await order_api.req_async()
 
+            # 디버그: 응답 전체 출력
+            context.log("debug", f"COSAT00301 response: rsp_cd={response.rsp_cd}, rsp_msg={response.rsp_msg}", node_id)
+
             if response.error_msg:
                 context.log("warning", f"Order failed: {symbol} - {response.error_msg}", node_id)
                 return self._order_result(False, symbol, exchange, side, qty, price, response.error_msg)
@@ -9176,6 +9178,10 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             order_no = ""
             if response.block2:
                 order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
+
+            # 주문번호가 없으면 경고 (장 마감 등)
+            if not order_no and response.rsp_msg:
+                context.log("warning", f"Order warning: {symbol} - {response.rsp_msg}", node_id)
 
             context.log("info", f"Order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
 
@@ -10120,10 +10126,10 @@ class SQLiteNodeExecutor(NodeExecutorBase):
         db_name = config.get("db_name", "default.db")
         operation = config.get("operation", "simple")
         
-        # programgarden_data/ 폴더 경로 구성
-        # context.workspace_path 또는 현재 작업 디렉토리 사용
-        workspace_path = getattr(context, 'workspace_path', None) or os.getcwd()
-        data_dir = os.path.join(workspace_path, "programgarden_data")
+        # /app/data/ 폴더 경로 구성
+        # context.workspace_path 또는 기본 경로 /app/data 사용
+        workspace_path = getattr(context, 'workspace_path', None)
+        data_dir = workspace_path if workspace_path else "/app/data"
         
         # 폴더 생성 (없으면)
         os.makedirs(data_dir, exist_ok=True)
