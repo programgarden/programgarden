@@ -7,6 +7,7 @@ HistoricalDataNode → flatten → ConditionNode(MACD) 흐름 검증
 import asyncio
 from datetime import datetime, timedelta
 import random
+import pytest
 
 # flatten 함수 테스트
 def _flatten(lst: list, nested_key: str) -> list:
@@ -94,9 +95,10 @@ def generate_historical_data_output(symbols: list, days: int = 100) -> list:
     return result
 
 
+@pytest.mark.asyncio
 async def test_data_flow():
     """데이터 흐름 테스트"""
-    from programgarden_community.plugins.strategy_conditions.macd import macd_condition
+    from programgarden_community.plugins.macd import macd_condition
     
     print("=" * 60)
     print("데이터 흐름 테스트: HistoricalDataNode → flatten → MACD")
@@ -170,9 +172,10 @@ async def test_data_flow():
     return result
 
 
+@pytest.mark.asyncio
 async def test_empty_time_series():
     """빈 time_series 테스트 (데이터 부족 시나리오)"""
-    from programgarden_community.plugins.strategy_conditions.macd import macd_condition
+    from programgarden_community.plugins.macd import macd_condition
     
     print("\n" + "=" * 60)
     print("테스트: 빈 time_series (API 응답 없음 시뮬레이션)")
@@ -204,9 +207,10 @@ async def test_empty_time_series():
     print(f"- 이것이 사용자가 받은 에러와 동일한지 확인!")
 
 
+@pytest.mark.asyncio
 async def test_short_time_series():
     """짧은 time_series 테스트 (데이터 부족)"""
-    from programgarden_community.plugins.strategy_conditions.macd import macd_condition
+    from programgarden_community.plugins.macd import macd_condition
     
     print("\n" + "=" * 60)
     print("테스트: 짧은 time_series (30일 < 35일 필요)")

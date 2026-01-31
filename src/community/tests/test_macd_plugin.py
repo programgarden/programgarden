@@ -5,7 +5,8 @@ MACD 플러그인 가상 데이터 테스트
 import asyncio
 import random
 from datetime import datetime, timedelta
-from programgarden_community.plugins.strategy_conditions.macd import (
+import pytest
+from programgarden_community.plugins.macd import (
     macd_condition,
     calculate_macd,
     calculate_macd_series,
@@ -121,6 +122,7 @@ def generate_bearish_trend_data(symbol: str, exchange: str, days: int = 100, sta
     return data
 
 
+@pytest.mark.asyncio
 async def test_macd_calculation():
     """MACD 계산 로직 테스트"""
     print("\n" + "="*60)
@@ -151,6 +153,7 @@ async def test_macd_calculation():
     print("✅ 하락 추세 MACD 계산 정상")
 
 
+@pytest.mark.asyncio
 async def test_macd_series():
     """MACD 시계열 계산 테스트"""
     print("\n" + "="*60)
@@ -174,6 +177,7 @@ async def test_macd_series():
     print("✅ MACD 시계열 계산 정상")
 
 
+@pytest.mark.asyncio
 async def test_macd_condition_bullish():
     """Bullish Cross 조건 테스트"""
     print("\n" + "="*60)
@@ -215,6 +219,7 @@ async def test_macd_condition_bullish():
     print("✅ Bullish Cross 조건 테스트 완료")
 
 
+@pytest.mark.asyncio
 async def test_macd_condition_bearish():
     """Bearish Cross 조건 테스트"""
     print("\n" + "="*60)
@@ -249,6 +254,7 @@ async def test_macd_condition_bearish():
     print("✅ Bearish Cross 조건 테스트 완료")
 
 
+@pytest.mark.asyncio
 async def test_macd_multiple_symbols():
     """다중 종목 테스트"""
     print("\n" + "="*60)
@@ -288,6 +294,7 @@ async def test_macd_multiple_symbols():
     print("✅ 다중 종목 테스트 완료")
 
 
+@pytest.mark.asyncio
 async def test_macd_insufficient_data():
     """데이터 부족 케이스 테스트"""
     print("\n" + "="*60)
@@ -321,6 +328,7 @@ async def test_macd_insufficient_data():
     print("✅ 데이터 부족 케이스 처리 정상")
 
 
+@pytest.mark.asyncio
 async def test_macd_empty_data():
     """빈 데이터 테스트"""
     print("\n" + "="*60)
@@ -346,6 +354,7 @@ async def test_macd_empty_data():
     print("✅ 빈 데이터 케이스 처리 정상")
 
 
+@pytest.mark.asyncio
 async def test_field_mapping():
     """커스텀 필드 매핑 테스트"""
     print("\n" + "="*60)

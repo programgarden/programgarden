@@ -7,7 +7,7 @@ VolumeSpike 플러그인 테스트
 import asyncio
 import pytest
 
-from programgarden_community.plugins.strategy_conditions.volume_spike import (
+from programgarden_community.plugins.volume_spike import (
     volume_spike_condition,
     VOLUME_SPIKE_SCHEMA,
 )
@@ -193,7 +193,7 @@ class TestVolumeSpikePlugin:
     def test_schema(self):
         """스키마 검증"""
         assert VOLUME_SPIKE_SCHEMA.id == "VolumeSpike"
-        assert VOLUME_SPIKE_SCHEMA.version == "1.1.0"
+        assert VOLUME_SPIKE_SCHEMA.version == "3.0.0"
         assert "period" in VOLUME_SPIKE_SCHEMA.fields_schema
         assert "multiplier" in VOLUME_SPIKE_SCHEMA.fields_schema
 
