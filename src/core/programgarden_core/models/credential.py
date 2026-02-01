@@ -155,13 +155,6 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                     "label": "App Secret",
                     "description": "LS증권에서 발급받은 App Secret",
                     "required": True
-                },
-                {
-                    "key": "paper_trading",
-                    "type": "boolean",
-                    "label": "모의투자",
-                    "description": "실제 주문 없이 테스트 모드로 실행",
-                    "default": False
                 }
             ]
         }

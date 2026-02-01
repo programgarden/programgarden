@@ -111,6 +111,7 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
 
     type: Literal["OverseasFuturesBrokerNode"] = "OverseasFuturesBrokerNode"
     description: str = "i18n:nodes.OverseasFuturesBrokerNode.description"
+    paper_trading: bool = Field(default=False, description="모의투자 모드")
 
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker_futures.svg"
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
@@ -141,5 +142,13 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
                 credential_types=["broker_ls_futures"],
+            ),
+            "paper_trading": FieldSchema(
+                name="paper_trading",
+                type=FieldType.BOOLEAN,
+                description="i18n:fields.OverseasFuturesBrokerNode.paper_trading",
+                default=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
             ),
         }
