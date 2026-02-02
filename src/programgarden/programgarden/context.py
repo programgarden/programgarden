@@ -28,9 +28,9 @@ from programgarden_core.bases.listener import (
     JobStateEvent,
     DisplayDataEvent,
     WorkflowPnLEvent,
-    RetryEvent,
     PositionDetail,
 )
+from programgarden_core.models.resilience import RetryEvent
 
 logger = logging.getLogger("programgarden.context")
 

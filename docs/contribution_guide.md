@@ -419,12 +419,25 @@ class MyNode(BaseNotificationNode):
 def register_all_nodes():
     """커뮤니티 노드를 NodeTypeRegistry에 등록"""
     from programgarden_core.registry import NodeTypeRegistry
-    from programgarden_community.nodes.messaging.telegram import TelegramNode
-    from programgarden_community.nodes.messaging.slack import SlackNode
-    
+    from programgarden_community.nodes.messaging import TelegramNode
+
     registry = NodeTypeRegistry()
-    registry.register_external(TelegramNode)
-    registry.register_external(SlackNode)
+
+    messaging_nodes = [
+        TelegramNode,
+        # 향후 추가: SlackNode, DiscordNode, etc.
+    ]
+
+    for node_class in messaging_nodes:
+        try:
+            registry.register_external(
+                node_class,
+                source="community",
+                trust_level="community",
+            )
+        except ValueError:
+            # 이미 등록된 경우 무시 (중복 호출 방지)
+            pass
 ```
 
 ### 4.6. 워크플로우에서 사용하기
