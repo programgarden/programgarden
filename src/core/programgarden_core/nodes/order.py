@@ -26,6 +26,13 @@ from programgarden_core.nodes.base import (
     ORDER_LIST_FIELDS,
     ORDER_RESULT_FIELDS,
     SYMBOL_LIST_FIELDS,
+    RetryableError,
+)
+from programgarden_core.models.resilience import (
+    ResilienceConfig,
+    RetryConfig,
+    FallbackConfig,
+    FallbackMode,
 )
 
 
@@ -40,6 +47,9 @@ class BaseOrderNode(BaseNode):
     Item-based execution:
     - Input: order (단일 주문 {symbol, exchange, quantity, price})
     - Output: result (해당 주문의 결과)
+
+    주문 노드는 중복 주문 위험으로 인해 기본적으로 재시도가 비활성화됩니다.
+    네트워크 에러(주문이 서버에 도달하기 전 실패)만 재시도 허용.
     """
 
     category: NodeCategory = NodeCategory.ORDER
@@ -65,6 +75,40 @@ class BaseOrderNode(BaseNode):
         default=None,
         description="단일 주문 {symbol, exchange, quantity, price}",
     )
+
+    # Resilience: 주문 노드는 기본적으로 재시도 비활성화 (중복 주문 위험)
+    resilience: ResilienceConfig = Field(
+        default_factory=lambda: ResilienceConfig(
+            retry=RetryConfig(
+                enabled=False,
+                retry_on=[RetryableError.NETWORK_ERROR],  # 네트워크 에러만 허용
+            ),
+            fallback=FallbackConfig(mode=FallbackMode.ERROR),
+        ),
+        description="재시도 및 실패 처리 설정 (주문 노드는 기본 비활성화)",
+    )
+
+    def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
+        """
+        주문 에러가 재시도 가능한지 판단.
+
+        주문 노드는 네트워크 에러(연결 실패)만 재시도 허용.
+        주문이 서버에 도달했는지 확인 불가한 경우 재시도 금지.
+
+        Args:
+            error: 발생한 예외
+
+        Returns:
+            RetryableError 유형, 또는 None (재시도 불가)
+        """
+        error_str = str(error).lower()
+
+        # 네트워크 연결 실패 (주문이 서버에 도달하기 전 실패)만 재시도 허용
+        if "connection refused" in error_str or "connection reset" in error_str:
+            return RetryableError.NETWORK_ERROR
+
+        # 그 외 모든 에러는 재시도 불가 (중복 주문 방지)
+        return None
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -92,6 +136,8 @@ class BaseOrderNode(BaseNode):
 class BaseModifyOrderNode(BaseNode):
     """
     정정/취소 주문 노드 공통 베이스 클래스
+
+    주문 노드는 중복 처리 위험으로 인해 기본적으로 재시도가 비활성화됩니다.
     """
 
     category: NodeCategory = NodeCategory.ORDER
@@ -115,6 +161,27 @@ class BaseModifyOrderNode(BaseNode):
         default=None,
         description="거래소 코드",
     )
+
+    # Resilience: 정정/취소 노드도 기본적으로 재시도 비활성화
+    resilience: ResilienceConfig = Field(
+        default_factory=lambda: ResilienceConfig(
+            retry=RetryConfig(
+                enabled=False,
+                retry_on=[RetryableError.NETWORK_ERROR],
+            ),
+            fallback=FallbackConfig(mode=FallbackMode.ERROR),
+        ),
+        description="재시도 및 실패 처리 설정 (정정/취소 노드는 기본 비활성화)",
+    )
+
+    def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
+        """정정/취소 에러가 재시도 가능한지 판단."""
+        error_str = str(error).lower()
+
+        if "connection refused" in error_str or "connection reset" in error_str:
+            return RetryableError.NETWORK_ERROR
+
+        return None
 
 
 # =============================================================================

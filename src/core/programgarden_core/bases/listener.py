@@ -27,11 +27,14 @@ Usage:
     job.add_listener(MyListener())
 """
 
-from typing import Protocol, Optional, Dict, Any, Union, runtime_checkable
+from typing import Protocol, Optional, Dict, Any, Union, runtime_checkable, TYPE_CHECKING
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+
+if TYPE_CHECKING:
+    from programgarden_core.models.resilience import RetryEvent
 
 
 class NodeState(str, Enum):
@@ -375,10 +378,10 @@ class WorkflowPnLEvent:
 class ExecutionListener(Protocol):
     """
     Protocol for receiving workflow execution state callbacks.
-    
+
     Implement this protocol to receive real-time updates about
     node execution, edge data transmission, and job state changes.
-    
+
     Methods:
         on_node_state_change: Called when node state changes
         on_edge_state_change: Called when edge state changes
@@ -386,6 +389,7 @@ class ExecutionListener(Protocol):
         on_job_state_change: Called when job state changes
         on_display_data: Called when DisplayNode produces visualization data
         on_workflow_pnl_update: Called when workflow P&L is updated (realtime)
+        on_retry: Called when a node retry is attempted
     """
     
     async def on_node_state_change(self, event: NodeStateEvent) -> None:
@@ -446,6 +450,17 @@ class ExecutionListener(Protocol):
         """
         ...
 
+    async def on_retry(self, event: 'RetryEvent') -> None:
+        """
+        Called when a node retry is attempted.
+
+        UI에서 "재시도 중 (2/3)..." 표시용.
+
+        Args:
+            event: RetryEvent with attempt count, error type, next retry delay, etc.
+        """
+        ...
+
 
 class BaseExecutionListener:
     """
@@ -498,6 +513,10 @@ class BaseExecutionListener:
         pass
 
     async def on_workflow_pnl_update(self, event: WorkflowPnLEvent) -> None:
+        """Default implementation: do nothing"""
+        pass
+
+    async def on_retry(self, event: 'RetryEvent') -> None:
         """Default implementation: do nothing"""
         pass
 
@@ -592,3 +611,14 @@ class ConsoleExecutionListener(BaseExecutionListener):
         print(f"{wf_emoji} [{event.broker_node_id}] Workflow: {wf_color}{wf_pnl:+.2f}%{reset} "
               f"| Total: {total_pnl:+.2f}% | Positions: {event.total_position_count} "
               f"| Trust: {trust_badge} {event.trust_score}")
+
+    async def on_retry(self, event: 'RetryEvent') -> None:
+        """Print retry event for debugging"""
+        from programgarden_core.models.resilience import RetryEvent as _RetryEvent
+
+        yellow = "\033[93m"
+        reset = "\033[0m"
+
+        print(f"{yellow}⚠️  [{event.node_id}] {event.error_type.value} 발생, "
+              f"재시도 중 ({event.attempt}/{event.max_retries})... "
+              f"{event.next_retry_in:.1f}초 후{reset}")

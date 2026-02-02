@@ -24,6 +24,13 @@ from programgarden_core.nodes.base import (
     NodeCategory,
     InputPort,
     OutputPort,
+    RetryableError,
+)
+from programgarden_core.models.resilience import (
+    ResilienceConfig,
+    RetryConfig,
+    FallbackConfig,
+    FallbackMode,
 )
 
 
@@ -352,8 +359,14 @@ class HTTPRequestNode(BaseNode):
 
     # === SETTINGS: 부가 설정 ===
     timeout_seconds: int = Field(default=30, description="Request timeout (seconds)")
-    retry_count: int = Field(default=0, description="Number of retries on failure")
-    retry_delay_ms: int = Field(default=1000, description="Delay between retries (ms)")
+    retry_count: int = Field(default=0, description="Number of retries on failure (legacy)")
+    retry_delay_ms: int = Field(default=1000, description="Delay between retries (ms) (legacy)")
+
+    # === Resilience: 재시도/실패 처리 ===
+    resilience: ResilienceConfig = Field(
+        default_factory=ResilienceConfig,
+        description="재시도 및 실패 처리 설정",
+    )
 
     _inputs: List[InputPort] = [
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
@@ -578,6 +591,36 @@ class HTTPRequestNode(BaseNode):
             "success": False,
             "error": last_error,
         }
+
+    def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
+        """
+        HTTP 에러가 재시도 가능한지 판단.
+
+        Args:
+            error: 발생한 예외
+
+        Returns:
+            RetryableError 유형, 또는 None (재시도 불가)
+        """
+        error_str = str(error).lower()
+
+        # 타임아웃
+        if "timeout" in error_str or "timed out" in error_str:
+            return RetryableError.TIMEOUT
+
+        # Rate limit (429)
+        if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
+            return RetryableError.RATE_LIMIT
+
+        # 네트워크 에러
+        if "connection" in error_str or "network" in error_str or "unreachable" in error_str:
+            return RetryableError.NETWORK_ERROR
+
+        # 서버 에러 (5xx)
+        if any(code in error_str for code in ["500", "502", "503", "504"]):
+            return RetryableError.SERVER_ERROR
+
+        return None
 
 
 class FieldMappingNode(BaseNode):

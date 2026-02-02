@@ -8,7 +8,12 @@ from enum import Enum
 from typing import Optional, Dict, Any, List, Literal, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
-from programgarden_core.models.field_binding import FieldSchema, FieldType
+from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+from programgarden_core.models.resilience import (
+    ResilienceConfig,
+    RetryableError,
+    FallbackMode,
+)
 
 
 class ProductScope(str, Enum):
@@ -352,36 +357,54 @@ class PluginNode(BaseNode):
 class BaseMessagingNode(BaseNode):
     """
     메시징 노드의 베이스 클래스 (커뮤니티 확장용)
-    
+
     TelegramNode, SlackNode, DiscordNode 등이 상속.
     각 노드는 execute() 메서드를 구현해야 함.
-    
+
     Credential 자동 주입:
         credential_id를 설정하면 GenericNodeExecutor가 실행 전에
         credential 값을 노드 필드에 자동 주입합니다.
-        
+
         Example:
             class TelegramNode(BaseMessagingNode):
                 bot_token: Optional[str] = None  # credential에서 자동 주입됨
                 chat_id: Optional[str] = None
-                
+
                 async def execute(self, context):
                     # self.bot_token에 이미 값이 있음!
                     url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+
+    Resilience (Retry/Fallback):
+        외부 API 호출 실패 시 자동 재시도 및 실패 처리 설정.
+
+        Example:
+            class MyAPINode(BaseMessagingNode):
+                resilience: ResilienceConfig = Field(
+                    default_factory=lambda: ResilienceConfig(
+                        retry=RetryConfig(enabled=True, max_retries=3),
+                        fallback=FallbackConfig(mode=FallbackMode.SKIP),
+                    )
+                )
     """
-    
+
     category: NodeCategory = NodeCategory.MESSAGING
-    
+
     # 메시지 템플릿
     template: Optional[str] = Field(
         default=None,
         description="Message template with {{ }} placeholders (e.g., '체결: {{symbol}} {{quantity}}주 @ {{price}}')",
     )
-    
+
     # Credential 연동 (GenericNodeExecutor가 자동 주입)
     credential_id: Optional[str] = Field(
         default=None,
         description="Credential ID from CredentialRegistry. 해당 credential의 필드들이 노드 필드에 자동 주입됨",
+    )
+
+    # Resilience 설정 (Retry/Fallback)
+    resilience: ResilienceConfig = Field(
+        default_factory=ResilienceConfig,
+        description="외부 API 호출 실패 시 재시도 및 실패 처리 설정",
     )
     
     _inputs: List[InputPort] = [
@@ -410,16 +433,117 @@ class BaseMessagingNode(BaseNode):
     async def execute(self, context: Any) -> Dict[str, Any]:
         """
         알림 전송 실행 (서브클래스에서 구현 필수)
-        
+
         Args:
             context: ExecutionContext with render_template() etc.
-        
+
         Returns:
             dict with 'sent': bool, and optional 'message_id', 'error' etc.
-            
+
         Note:
             credential_id가 설정되어 있으면 GenericNodeExecutor가 실행 전에
             credential 값을 노드 필드에 자동 주입합니다.
             따라서 self.bot_token, self.api_key 등을 바로 사용할 수 있습니다.
         """
         raise NotImplementedError("Subclass must implement execute()")
+
+    def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
+        """
+        에러가 재시도 가능한지 판단하고, 에러 유형 반환.
+
+        서브클래스에서 오버라이드하여 노드별 에러 판단 로직 구현 가능.
+
+        Args:
+            error: 발생한 예외
+
+        Returns:
+            RetryableError 유형, 또는 None (재시도 불가)
+
+        Example:
+            class MyAPINode(BaseMessagingNode):
+                def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
+                    # 기본 판단 먼저 수행
+                    base_result = super().is_retryable_error(error)
+                    if base_result:
+                        return base_result
+
+                    # 노드별 추가 판단
+                    if "quota exceeded" in str(error).lower():
+                        return RetryableError.RATE_LIMIT
+
+                    return None
+        """
+        error_str = str(error).lower()
+
+        if "timeout" in error_str or "timed out" in error_str:
+            return RetryableError.TIMEOUT
+        if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
+            return RetryableError.RATE_LIMIT
+        if "connection" in error_str or "network" in error_str or "unreachable" in error_str:
+            return RetryableError.NETWORK_ERROR
+        if any(code in error_str for code in ["500", "502", "503", "504"]):
+            return RetryableError.SERVER_ERROR
+
+        return None
+
+    @classmethod
+    def get_resilience_field_schema(cls) -> Dict[str, FieldSchema]:
+        """
+        Resilience 설정의 UI 필드 스키마.
+
+        Returns:
+            Dict[str, FieldSchema]: 필드명 → 스키마 매핑
+        """
+        return {
+            "resilience.retry.enabled": FieldSchema(
+                name="resilience.retry.enabled",
+                type=FieldType.BOOLEAN,
+                label="재시도 활성화",
+                description="실패 시 자동으로 재시도합니다",
+                default=False,
+                category=FieldCategory.SETTINGS,
+            ),
+            "resilience.retry.max_retries": FieldSchema(
+                name="resilience.retry.max_retries",
+                type=FieldType.INTEGER,
+                label="최대 재시도 횟수",
+                description="1~10회 사이로 설정",
+                default=3,
+                min=1,
+                max=10,
+                category=FieldCategory.SETTINGS,
+                depends_on={"resilience.retry.enabled": True},
+            ),
+            "resilience.retry.base_delay": FieldSchema(
+                name="resilience.retry.base_delay",
+                type=FieldType.NUMBER,
+                label="재시도 대기 시간 (초)",
+                description="첫 재시도까지 대기 시간",
+                default=1.0,
+                min=0.1,
+                max=30.0,
+                category=FieldCategory.SETTINGS,
+                depends_on={"resilience.retry.enabled": True},
+            ),
+            "resilience.fallback.mode": FieldSchema(
+                name="resilience.fallback.mode",
+                type=FieldType.STRING,
+                label="실패 시 동작",
+                description="모든 재시도 실패 후 동작",
+                default="error",
+                options=[
+                    {"value": "error", "label": "워크플로우 중단"},
+                    {"value": "skip", "label": "이 노드 건너뛰기"},
+                    {"value": "default_value", "label": "기본값 사용"},
+                ],
+                category=FieldCategory.SETTINGS,
+            ),
+            "resilience.fallback.default_value": FieldSchema(
+                name="resilience.fallback.default_value",
+                type=FieldType.JSON,
+                label="기본값",
+                description="실패 시 반환할 기본값 (JSON)",
+                category=FieldCategory.SETTINGS,
+                depends_on={"resilience.fallback.mode": "default_value"},
+            ),
+        }

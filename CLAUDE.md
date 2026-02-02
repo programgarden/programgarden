@@ -151,6 +151,32 @@ When a node outputs an array, the next node automatically executes for each item
 | `on_job_state_change` | Job state change |
 | `on_display_data` | Display data |
 | `on_workflow_pnl_update` | Real-time workflow/account P&L (FIFO-based, auto-detected) |
+| `on_retry` | Node retry event (attempt count, error type, next retry delay) |
+
+### Resilience (Retry/Fallback)
+
+외부 API 호출 노드에서 `resilience` 필드로 재시도 및 실패 처리 설정:
+
+```python
+class MyAPINode(BaseMessagingNode):
+    resilience: ResilienceConfig = Field(
+        default_factory=lambda: ResilienceConfig(
+            retry=RetryConfig(enabled=True, max_retries=3),
+            fallback=FallbackConfig(mode=FallbackMode.SKIP),
+        )
+    )
+```
+
+| 설정 | 설명 | 기본값 |
+|------|------|--------|
+| `retry.enabled` | 재시도 활성화 | False |
+| `retry.max_retries` | 최대 재시도 횟수 (1-10) | 3 |
+| `retry.base_delay` | 재시도 대기 시간 (초) | 1.0 |
+| `retry.exponential_backoff` | 지수 백오프 | True |
+| `fallback.mode` | 실패 시 동작 (error/skip/default_value) | error |
+| `fallback.default_value` | 기본값 (mode=default_value일 때) | None |
+
+**주문 노드 주의:** 주문 노드는 중복 주문 위험으로 기본적으로 재시도 비활성화됨.
 
 ## Node Development
 

@@ -21,6 +21,7 @@ class FieldType(str, Enum):
     ENUM = "enum"
     ARRAY = "array"
     OBJECT = "object"
+    JSON = "json"  # JSON 문자열 직접 입력 (fallback.default_value 등)
     KEY_VALUE_PAIRS = "key_value_pairs"  # 동적 키-값 쌍 (headers 등)
     CREDENTIAL = "credential"  # Credential 참조 (credentials 섹션에서 선택)
 

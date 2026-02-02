@@ -629,5 +629,27 @@
   "enums.aggregate_mode.max": "Maximum",
   "enums.aggregate_mode.count": "Count",
   "enums.aggregate_mode.first": "First",
-  "enums.aggregate_mode.last": "Last"
+  "enums.aggregate_mode.last": "Last",
+
+  "resilience.retry.enabled": "Enable Retry",
+  "resilience.retry.enabled.description": "Automatically retry on failure",
+  "resilience.retry.max_retries": "Max Retries",
+  "resilience.retry.max_retries.description": "Set between 1-10",
+  "resilience.retry.base_delay": "Retry Delay (sec)",
+  "resilience.retry.base_delay.description": "Wait time before first retry",
+  "resilience.fallback.mode": "On Failure",
+  "resilience.fallback.mode.description": "Action after all retries fail",
+  "resilience.fallback.default_value": "Default Value",
+  "resilience.fallback.default_value.description": "Default value to return on failure (JSON)",
+
+  "enums.fallback_mode.error": "Stop Workflow",
+  "enums.fallback_mode.skip": "Skip This Node",
+  "enums.fallback_mode.default_value": "Use Default Value",
+
+  "events.retry.attempting": "Retrying ({attempt}/{max_retries})...",
+  "events.retry.timeout": "Timeout occurred",
+  "events.retry.rate_limit": "Rate limit exceeded",
+  "events.retry.network_error": "Network error",
+  "events.retry.server_error": "Server error",
+  "events.retry.all_failed": "All retries failed"
 }

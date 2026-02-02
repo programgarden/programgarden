@@ -23,6 +23,8 @@ from programgarden_core.bases.listener import (
     NodeState,
     EdgeState,
 )
+from programgarden_core.retry_executor import RetryExecutor
+from programgarden_core.nodes.base import BaseMessagingNode
 
 logger = logging.getLogger("programgarden.executor")
 
@@ -314,7 +316,21 @@ class GenericNodeExecutor(NodeExecutorBase):
         # execute() 메서드 호출
         if hasattr(node_instance, "execute"):
             try:
-                result = await node_instance.execute(context)
+                # resilience 설정이 있고 retry가 활성화된 노드는 RetryExecutor로 래핑
+                has_resilience = (
+                    hasattr(node_instance, 'resilience')
+                    and hasattr(node_instance, 'is_retryable_error')
+                    and node_instance.resilience.retry.enabled
+                )
+                if has_resilience:
+                    retry_executor = RetryExecutor()
+                    result = await retry_executor.execute_with_retry(
+                        node=node_instance,
+                        execute_fn=lambda: node_instance.execute(context),
+                        context=context,
+                    )
+                else:
+                    result = await node_instance.execute(context)
                 return result if isinstance(result, dict) else {"result": result}
             except Exception as e:
                 context.log("error", f"Node execution failed: {e}", node_id)

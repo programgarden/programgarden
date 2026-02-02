@@ -64,6 +64,14 @@ from programgarden_core.models.exchange import (
     symbols_to_dict_list,
     extract_symbol_codes,
 )
+from programgarden_core.models.resilience import (
+    RetryableError,
+    FallbackMode,
+    RetryConfig,
+    FallbackConfig,
+    ResilienceConfig,
+    RetryEvent,
+)
 
 __all__ = [
     # Edge
@@ -121,4 +129,11 @@ __all__ = [
     "normalize_symbols",
     "symbols_to_dict_list",
     "extract_symbol_codes",
+    # Resilience
+    "RetryableError",
+    "FallbackMode",
+    "RetryConfig",
+    "FallbackConfig",
+    "ResilienceConfig",
+    "RetryEvent",
 ]

@@ -28,6 +28,7 @@ from programgarden_core.bases.listener import (
     JobStateEvent,
     DisplayDataEvent,
     WorkflowPnLEvent,
+    RetryEvent,
     PositionDetail,
 )
 
@@ -1276,6 +1277,25 @@ class ExecutionContext:
                     await listener.on_display_data(event)
             except Exception as e:
                 logger.warning(f"Listener error on_display_data: {e}")
+
+    async def notify_retry(self, event: RetryEvent) -> None:
+        """
+        Notify all listeners about retry event.
+
+        UI에서 "재시도 중 (2/3)..." 표시용.
+
+        Args:
+            event: RetryEvent with attempt count, error type, next retry delay, etc.
+        """
+        if not self._listeners:
+            return
+
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_retry'):
+                    await listener.on_retry(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_retry: {e}")
 
     async def notify_workflow_pnl(
         self,

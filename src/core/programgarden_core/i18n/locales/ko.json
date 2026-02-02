@@ -770,5 +770,27 @@
   "enums.aggregate_mode.max": "최댓값",
   "enums.aggregate_mode.count": "개수",
   "enums.aggregate_mode.first": "첫 번째",
-  "enums.aggregate_mode.last": "마지막"
+  "enums.aggregate_mode.last": "마지막",
+
+  "resilience.retry.enabled": "재시도 활성화",
+  "resilience.retry.enabled.description": "실패 시 자동으로 재시도합니다",
+  "resilience.retry.max_retries": "최대 재시도 횟수",
+  "resilience.retry.max_retries.description": "1~10회 사이로 설정",
+  "resilience.retry.base_delay": "재시도 대기 시간 (초)",
+  "resilience.retry.base_delay.description": "첫 재시도까지 대기 시간",
+  "resilience.fallback.mode": "실패 시 동작",
+  "resilience.fallback.mode.description": "모든 재시도 실패 후 동작",
+  "resilience.fallback.default_value": "기본값",
+  "resilience.fallback.default_value.description": "실패 시 반환할 기본값 (JSON)",
+
+  "enums.fallback_mode.error": "워크플로우 중단",
+  "enums.fallback_mode.skip": "이 노드 건너뛰기",
+  "enums.fallback_mode.default_value": "기본값 사용",
+
+  "events.retry.attempting": "재시도 중 ({attempt}/{max_retries})...",
+  "events.retry.timeout": "타임아웃 발생",
+  "events.retry.rate_limit": "Rate limit 초과",
+  "events.retry.network_error": "네트워크 오류",
+  "events.retry.server_error": "서버 오류",
+  "events.retry.all_failed": "모든 재시도 실패"
 }
