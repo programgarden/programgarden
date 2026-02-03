@@ -3,8 +3,8 @@
 ## 개요
 - **목적**: 해외선물 30일 과거 OHLCV 데이터 조회
 - **사용 계좌**: 모의투자
-- **조회 종목**: HMHG26 (Mini Hang Seng)
-- **바인딩 함수**: `days_ago_yyyymmdd()`, `today_yyyymmdd()`
+- **조회 종목**: HMCEG26 (Mini H-Shares)
+- **바인딩 함수**: `date.ago()`, `date.today()`
 
 ## 워크플로우 도면
 
@@ -30,9 +30,9 @@ flowchart LR
 {
   "id": "historical",
   "type": "OverseasFuturesHistoricalDataNode",
-  "symbols": [{"symbol": "HMHG26", "exchange": "HKEX"}],
-  "start_date": "{{ days_ago_yyyymmdd(30) }}",
-  "end_date": "{{ today_yyyymmdd() }}",
+  "symbol": {"symbol": "HMCEG26", "exchange": "HKEX"},
+  "start_date": "{{ date.ago(30, format='yyyymmdd') }}",
+  "end_date": "{{ date.today(format='yyyymmdd') }}",
   "timeframe": "1d"
 }
 ```
@@ -43,7 +43,7 @@ flowchart LR
 ```json
 [
   {
-    "symbol": "HMHG26",
+    "symbol": "HMCEG26",
     "exchange": "HKEX",
     "time_series": [
       {
@@ -61,5 +61,6 @@ flowchart LR
 ```
 
 ## 테스트 결과
-- [x] 성공 (2026-01-29)
-- 17일치 OHLCV 데이터 조회 완료
+- [x] 성공 (2026-02-03)
+- 20일치 OHLCV 데이터 조회 완료
+- `date.ago(30, format='yyyymmdd')`, `date.today(format='yyyymmdd')` 바인딩 함수 정상 동작

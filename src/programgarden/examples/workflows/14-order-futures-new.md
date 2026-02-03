@@ -31,10 +31,10 @@ flowchart LR
 - **side**: `buy` (매수)
 - **order_type**: `limit` (지정가)
 - **order**: 주문 정보 객체
-  - `symbol`: `NQH25` (나스닥 미니 선물 2025년 3월물)
-  - `exchange`: `CME` (시카고상업거래소)
+  - `symbol`: `HMCEG26` (Mini H-Shares 2026년 2월물)
+  - `exchange`: `HKEX` (홍콩거래소)
   - `quantity`: `1` (1계약)
-  - `price`: `20000.0` (지정가)
+  - `price`: `9500.0` (지정가)
 
 ## 주문 파라미터
 
@@ -63,7 +63,7 @@ flowchart LR
 | 표현식 | 예상 값 | 설명 |
 |--------|---------|------|
 | `{{ nodes.account.balance.available }}` | `10000.0` | 주문가능금액 |
-| `{{ nodes.new_order.order_result.order_id }}` | `"ORD20260129001"` | 주문번호 |
+| `{{ nodes.new_order.order_result.order_id }}` | `"531"` | 주문번호 |
 | `{{ nodes.new_order.order_result.status }}` | `"submitted"` | 주문 상태 |
 
 ## 실행 결과 예시

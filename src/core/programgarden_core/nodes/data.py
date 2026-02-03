@@ -34,6 +34,27 @@ from programgarden_core.models.resilience import (
 )
 
 
+# HTTP 요청 재시도용 커스텀 예외 클래스
+class HTTPServerError(Exception):
+    """HTTP 5xx 서버 에러 - 재시도 가능"""
+    pass
+
+
+class HTTPRateLimitError(Exception):
+    """HTTP 429 Rate Limit 에러 - 재시도 가능"""
+    pass
+
+
+class HTTPNetworkError(Exception):
+    """네트워크 연결 에러 - 재시도 가능"""
+    pass
+
+
+class HTTPTimeoutError(Exception):
+    """요청 타임아웃 에러 - 재시도 가능"""
+    pass
+
+
 class SQLiteNode(BaseNode):
     """
     로컬 SQLite 데이터베이스 노드 (단순 DB)
@@ -495,14 +516,19 @@ class HTTPRequestNode(BaseNode):
     async def execute(self, context: Any) -> Dict[str, Any]:
         """
         HTTP 요청 실행
-        
-        credential_id가 있으면 GenericNodeExecutor에서 credential data가 
+
+        credential_id가 있으면 GenericNodeExecutor에서 credential data가
         노드 필드로 주입됩니다. credential type에 따라 헤더/쿼리에 적용:
-        
+
         - http_bearer: Authorization: Bearer <token>
         - http_header: <header_name>: <header_value>
         - http_basic: Authorization: Basic <base64(username:password)>
         - http_query: ?<param_name>=<param_value>
+
+        재시도 동작:
+        - resilience.retry.enabled=True 설정 시 RetryExecutor가 자동 재시도
+        - 5xx 서버 에러, 네트워크 에러, 타임아웃 → Exception raise → 재시도
+        - 4xx 클라이언트 에러 → 재시도 불가, 결과 반환
         """
         import aiohttp
         import asyncio
@@ -512,85 +538,92 @@ class HTTPRequestNode(BaseNode):
         # Credential 데이터 → 헤더/쿼리 적용
         headers = dict(self.headers) if self.headers else {}
         query_params = dict(self.query_params) if self.query_params else {}
-        
+
         # credential에서 주입된 필드들 처리 (GenericNodeExecutor가 주입)
         # http_bearer: token 필드
         if hasattr(self, 'token') and self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-        
+
         # http_header: header_name, header_value 필드
         if hasattr(self, 'header_name') and hasattr(self, 'header_value'):
             if self.header_name and self.header_value:
                 headers[self.header_name] = self.header_value
-        
+
         # http_basic: username, password 필드
         if hasattr(self, 'username') and hasattr(self, 'password'):
             if self.username and self.password:
                 credentials = f"{self.username}:{self.password}"
                 encoded = base64.b64encode(credentials.encode()).decode()
                 headers["Authorization"] = f"Basic {encoded}"
-        
+
         # http_query: param_name, param_value 필드
         if hasattr(self, 'param_name') and hasattr(self, 'param_value'):
             if self.param_name and self.param_value:
                 query_params[self.param_name] = self.param_value
 
-        last_error = None
-        
-        for attempt in range(self.retry_count + 1):
-            try:
-                timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
 
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    request_kwargs: Dict[str, Any] = {
-                        "method": self.method,
-                        "url": self.url,
-                        "headers": headers if headers else None,
-                        "params": query_params if query_params else None,
-                    }
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                request_kwargs: Dict[str, Any] = {
+                    "method": self.method,
+                    "url": self.url,
+                    "headers": headers if headers else None,
+                    "params": query_params if query_params else None,
+                }
 
-                    # Body 처리 (dict면 JSON 직렬화, 아니면 그대로)
-                    if self.body and self.method in ["POST", "PUT", "PATCH"]:
-                        if isinstance(self.body, dict):
-                            request_kwargs["data"] = json.dumps(self.body)
-                            # Content-Type 자동 설정
-                            if "Content-Type" not in headers:
-                                request_kwargs["headers"] = request_kwargs.get("headers") or {}
-                                request_kwargs["headers"]["Content-Type"] = "application/json"
-                        else:
-                            request_kwargs["data"] = self.body
+                # Body 처리 (dict면 JSON 직렬화, 아니면 그대로)
+                if self.body and self.method in ["POST", "PUT", "PATCH"]:
+                    if isinstance(self.body, dict):
+                        request_kwargs["data"] = json.dumps(self.body)
+                        # Content-Type 자동 설정
+                        if "Content-Type" not in headers:
+                            request_kwargs["headers"] = request_kwargs.get("headers") or {}
+                            request_kwargs["headers"]["Content-Type"] = "application/json"
+                    else:
+                        request_kwargs["data"] = self.body
 
-                    async with session.request(**request_kwargs) as resp:
-                        status_code = resp.status
+                async with session.request(**request_kwargs) as resp:
+                    status_code = resp.status
 
-                        # 응답 파싱 (JSON 시도 → 실패하면 text)
-                        try:
-                            data = await resp.json()
-                        except Exception:
-                            data = await resp.text()
+                    # 응답 파싱 (JSON 시도 → 실패하면 text)
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        data = await resp.text()
 
+                    # 5xx 서버 에러 → Exception raise (RetryExecutor가 재시도)
+                    if status_code >= 500:
+                        error_msg = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)[:200]
+                        raise HTTPServerError(f"HTTP {status_code}: {error_msg}")
+
+                    # 429 Rate Limit → Exception raise (RetryExecutor가 재시도)
+                    if status_code == 429:
+                        raise HTTPRateLimitError(f"HTTP 429: Rate limit exceeded")
+
+                    # 4xx 클라이언트 에러 → 재시도 불가, 결과 반환
+                    if status_code >= 400:
                         return {
                             "response": data,
                             "status_code": status_code,
-                            "success": 200 <= status_code < 300,
-                            "error": None,
+                            "success": False,
+                            "error": f"HTTP {status_code}",
                         }
 
-            except aiohttp.ClientError as e:
-                last_error = f"Network error: {str(e)}"
-            except Exception as e:
-                last_error = f"Unexpected error: {str(e)}"
-            
-            # 재시도 대기
-            if attempt < self.retry_count:
-                await asyncio.sleep(self.retry_delay_ms / 1000)
+                    # 성공 (2xx, 3xx)
+                    return {
+                        "response": data,
+                        "status_code": status_code,
+                        "success": True,
+                        "error": None,
+                    }
 
-        return {
-            "response": None,
-            "status_code": 0,
-            "success": False,
-            "error": last_error,
-        }
+        except aiohttp.ClientError as e:
+            # 네트워크 에러 → RetryExecutor가 재시도
+            raise HTTPNetworkError(f"Network error: {e}")
+        except asyncio.TimeoutError as e:
+            # 타임아웃 → RetryExecutor가 재시도
+            raise HTTPTimeoutError(f"Request timeout after {self.timeout_seconds}s")
 
     def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
         """

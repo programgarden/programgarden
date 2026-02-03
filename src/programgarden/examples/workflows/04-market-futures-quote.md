@@ -3,7 +3,7 @@
 ## 개요
 - **목적**: 해외선물 현재 시세 조회
 - **사용 계좌**: 모의투자
-- **조회 종목**: HMHG26 (Mini Hang Seng), HMCEG26 (Mini H-Shares)
+- **조회 종목**: HMCEG26 (Mini H-Shares)
 
 ## 워크플로우 도면
 
@@ -37,26 +37,17 @@ flowchart LR
 ```json
 [
   {
-    "symbol": "HMHG26",
-    "exchange": "HKEX",
-    "symbol_name": "Mini Hang Seng(2026.02)",
-    "price": 27966.0,
-    "change": 62.0,
-    "change_pct": 0.22,
-    "volume": 90205,
-    "open": 27880.0,
-    "high": 28139.0,
-    "low": 27578.0,
-    "close": 27966.0
-  },
-  {
     "symbol": "HMCEG26",
     "exchange": "HKEX",
     "symbol_name": "Mini H-Shares(2026.02)",
-    "price": 9541.0,
-    "change": 2.0,
-    "change_pct": 0.02,
-    ...
+    "price": 9046.0,
+    "change": -39.0,
+    "change_pct": -0.43,
+    "volume": 7976,
+    "open": 9089.0,
+    "high": 9190.0,
+    "low": 8929.0,
+    "close": 9046.0
   }
 ]
 ```
@@ -70,6 +61,5 @@ flowchart LR
 ```
 
 ## 테스트 결과
-- [x] 성공 (2026-01-29)
-- HMHG26 (Mini Hang Seng): 27,966 (+0.22%)
-- HMCEG26 (Mini H-Shares): 9,541 (+0.02%)
+- [x] 성공 (2026-02-03)
+- HMCEG26 (Mini H-Shares): 9,046 (-0.43%)

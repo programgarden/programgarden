@@ -10,6 +10,7 @@ Example:
     poetry run python examples/test_workflow.py examples/workflows/20-data-http.json
 """
 
+import os
 import sys
 import json
 import asyncio
@@ -20,6 +21,14 @@ current_dir = Path(__file__).parent
 project_root = current_dir.parents[2]
 sys.path.insert(0, str(project_root / "src" / "core"))
 sys.path.insert(0, str(project_root / "src" / "community"))
+
+# .env 파일 로드 (프로젝트 루트)
+from dotenv import load_dotenv
+load_dotenv(project_root / ".env")
+
+# Credential store 설정 (python_server와 동일한 credentials.json 사용)
+credential_store_path = current_dir / "python_server" / "credentials.json"
+os.environ["PROGRAMGARDEN_CREDENTIAL_STORE"] = str(credential_store_path)
 
 
 class TestListener:
@@ -106,6 +115,41 @@ class TestListener:
               f"{event.next_retry_in:.1f}초 후{reset}")
 
 
+def load_credentials_from_store(workflow: dict) -> list:
+    """워크플로우의 credential ID 참조를 credential_store에서 조회하여 완전한 credential 리스트로 변환"""
+    from programgarden_core.registry import get_credential_store
+
+    # encryption 모듈 경로 추가 (python_server 디렉토리)
+    encryption_path = current_dir / "python_server"
+    if str(encryption_path) not in sys.path:
+        sys.path.insert(0, str(encryption_path))
+    from encryption import decrypt_data
+
+    store = get_credential_store()
+    credentials_list = []
+
+    for cred_ref in workflow.get("credentials", []):
+        cred_id = cred_ref.get("id")
+        if not cred_id:
+            continue
+
+        stored = store.get(cred_id)
+        if stored:
+            # 암호화된 data를 복호화
+            decrypted_data = decrypt_data(stored.data)
+            credentials_list.append({
+                "id": stored.id,
+                "type": stored.credential_type,
+                "name": stored.name,
+                "data": decrypted_data,
+            })
+            print(f"🔑 Loaded credential: {cred_id} ({stored.name})")
+        else:
+            print(f"⚠️  Credential not found: {cred_id}")
+
+    return credentials_list
+
+
 async def test_workflow(workflow_path: str):
     """워크플로우 파일을 로드하고 실행"""
     from programgarden import ProgramGarden
@@ -113,6 +157,10 @@ async def test_workflow(workflow_path: str):
     # Load workflow
     with open(workflow_path) as f:
         workflow = json.load(f)
+
+    # Load credentials from store
+    credentials_list = load_credentials_from_store(workflow)
+    workflow["credentials"] = credentials_list
 
     print(f"\n{'='*60}")
     print(f"🧪 Testing Workflow: {workflow.get('name', 'Unknown')}")

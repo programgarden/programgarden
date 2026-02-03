@@ -996,6 +996,68 @@ async def delete_credential(credential_id: str):
 
 
 # ========================================
+# Test Endpoints (Retry 테스트용)
+# ========================================
+
+import random
+from time import sleep
+
+@app.get("/api/test/flaky")
+async def test_flaky_endpoint(fail_rate: float = 0.5):
+    """
+    Retry 테스트용 불안정한 엔드포인트
+
+    Args:
+        fail_rate: 실패 확률 (0.0~1.0, 기본 0.5)
+
+    Returns:
+        성공 시 200, 실패 시 500
+    """
+    if random.random() < fail_rate:
+        return JSONResponse({"error": "Random failure for retry test"}, status_code=500)
+    return {"success": True, "message": "Request succeeded!"}
+
+
+@app.get("/api/test/slow")
+async def test_slow_endpoint(delay: float = 2.0):
+    """
+    Retry 테스트용 느린 엔드포인트
+
+    Args:
+        delay: 응답 지연 시간 (초, 기본 2.0)
+    """
+    import asyncio
+    await asyncio.sleep(delay)
+    return {"success": True, "delay": delay}
+
+
+@app.get("/api/test/fail-then-succeed")
+async def test_fail_then_succeed(fail_count: int = 2):
+    """
+    처음 N번 실패 후 성공하는 엔드포인트 (Retry 테스트용)
+
+    Args:
+        fail_count: 처음 실패할 횟수 (기본 2)
+    """
+    # 간단한 인메모리 카운터 (실제로는 세션/요청별로 관리해야 함)
+    if not hasattr(test_fail_then_succeed, "counter"):
+        test_fail_then_succeed.counter = 0
+
+    test_fail_then_succeed.counter += 1
+
+    if test_fail_then_succeed.counter <= fail_count:
+        return JSONResponse({
+            "error": f"Simulated failure ({test_fail_then_succeed.counter}/{fail_count})",
+            "attempt": test_fail_then_succeed.counter
+        }, status_code=500)
+
+    # 성공 후 카운터 리셋
+    result = {"success": True, "attempts": test_fail_then_succeed.counter}
+    test_fail_then_succeed.counter = 0
+    return result
+
+
+# ========================================
 # Workflow Execution API
 # ========================================
 @app.post("/api/workflow/run-inline")

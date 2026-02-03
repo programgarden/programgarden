@@ -4,7 +4,7 @@
 - **목적**: 해외주식 30일 과거 OHLCV 데이터 조회
 - **사용 계좌**: 실계좌
 - **조회 종목**: AAPL (NASDAQ)
-- **바인딩 함수 테스트**: `days_ago_yyyymmdd()`, `today_yyyymmdd()`
+- **바인딩 함수 테스트**: `date.ago()`, `date.today()`
 
 ## 워크플로우 도면
 
@@ -31,15 +31,15 @@ flowchart LR
   "id": "historical",
   "type": "OverseasStockHistoricalDataNode",
   "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
-  "start_date": "{{ days_ago_yyyymmdd(30) }}",
-  "end_date": "{{ today_yyyymmdd() }}",
+  "start_date": "{{ date.ago(30, format='yyyymmdd') }}",
+  "end_date": "{{ date.today(format='yyyymmdd') }}",
   "timeframe": "1d"
 }
 ```
 
 ### 바인딩 함수 평가 결과
-- `{{ days_ago_yyyymmdd(30) }}` → `20251230`
-- `{{ today_yyyymmdd() }}` → `20260129`
+- `{{ date.ago(30, format='yyyymmdd') }}` → `20260104`
+- `{{ date.today(format='yyyymmdd') }}` → `20260203`
 
 ## 출력 데이터 구조
 
@@ -89,6 +89,6 @@ flowchart LR
 ```
 
 ## 테스트 결과
-- [x] 성공 (2026-01-29)
+- [x] 성공 (2026-02-03)
 - 21일치 OHLCV 데이터 조회 완료
-- `days_ago_yyyymmdd(30)`, `today_yyyymmdd()` 바인딩 함수 정상 동작
+- `date.ago(30, format='yyyymmdd')`, `date.today(format='yyyymmdd')` 바인딩 함수 정상 동작
