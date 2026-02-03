@@ -87,7 +87,8 @@ class UIComponent(str, Enum):
     CUSTOM_PLUGIN_SELECT = "custom_plugin_select"
     CUSTOM_FIELD_MAPPING_EDITOR = "custom_field_mapping_editor"
     CUSTOM_ORDER_LIST_EDITOR = "custom_order_list_editor"
-    
+    CUSTOM_RESILIENCE_EDITOR = "custom_resilience_editor"
+
     @classmethod
     def get_default_widget_type(cls, field_type: "FieldType") -> str:
         """FieldType에 대한 기본 json_dynamic_widget 타입 반환"""

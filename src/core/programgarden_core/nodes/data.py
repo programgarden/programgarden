@@ -380,8 +380,6 @@ class HTTPRequestNode(BaseNode):
 
     # === SETTINGS: 부가 설정 ===
     timeout_seconds: int = Field(default=30, description="Request timeout (seconds)")
-    retry_count: int = Field(default=0, description="Number of retries on failure (legacy)")
-    retry_delay_ms: int = Field(default=1000, description="Delay between retries (ms) (legacy)")
 
     # === Resilience: 재시도/실패 처리 ===
     resilience: ResilienceConfig = Field(
@@ -487,29 +485,50 @@ class HTTPRequestNode(BaseNode):
                 max_value=300,
                 group="advanced",
             ),
-            "retry_count": FieldSchema(
-                name="retry_count", type=FieldType.INTEGER, required=False,
-                default=0,
-                description="i18n:fields.HTTPRequestNode.retry_count",
+            # === RESILIENCE: 재시도/실패 처리 (단순화된 UI) ===
+            "resilience": FieldSchema(
+                name="resilience", type=FieldType.OBJECT, required=False,
+                description="i18n:fields.HTTPRequestNode.resilience",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                example=3,
-                expected_type="int",
-                min_value=0,
-                max_value=10,
-                group="advanced",
-            ),
-            "retry_delay_ms": FieldSchema(
-                name="retry_delay_ms", type=FieldType.INTEGER, required=False,
-                default=1000,
-                description="i18n:fields.HTTPRequestNode.retry_delay_ms",
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                example=1000,
-                expected_type="int",
-                min_value=100,
-                max_value=60000,
-                group="advanced",
+                ui_component=UIComponent.CUSTOM_RESILIENCE_EDITOR,
+                object_schema=[
+                    {
+                        "name": "retry.enabled",
+                        "type": "BOOLEAN",
+                        "default": False,
+                        "description": "자동 재시도 활성화 (서버 오류, 네트워크 문제 시 자동 재시도)",
+                    },
+                    {
+                        "name": "retry.max_retries",
+                        "type": "INTEGER",
+                        "default": 3,
+                        "min_value": 1,
+                        "max_value": 10,
+                        "description": "최대 재시도 횟수",
+                    },
+                    {
+                        "name": "retry.base_delay",
+                        "type": "FLOAT",
+                        "default": 1.0,
+                        "min_value": 0.1,
+                        "max_value": 60.0,
+                        "description": "재시도 대기 시간 (초)",
+                    },
+                    {
+                        "name": "fallback.mode",
+                        "type": "ENUM",
+                        "default": "error",
+                        "enum_values": ["error", "skip", "default_value"],
+                        "description": "모든 재시도 실패 시 동작",
+                        "enum_labels": {
+                            "error": "에러 발생 (워크플로우 중단)",
+                            "skip": "건너뛰기 (다음 노드 실행)",
+                            "default_value": "기본값 반환",
+                        },
+                    },
+                ],
+                group="resilience",
             ),
         }
 
