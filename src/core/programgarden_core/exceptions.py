@@ -100,6 +100,22 @@ class OrderError(ProgramGardenError):
         self.symbol = symbol
 
 
+class DuplicateJobIdError(ProgramGardenError):
+    """중복된 Job ID 오류
+
+    동일한 job_id로 워크플로우 실행 시도 시 발생합니다.
+    """
+
+    def __init__(
+        self,
+        message: str = "이미 사용 중인 job_id입니다.",
+        job_id: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        super().__init__(message, details)
+        self.job_id = job_id
+
+
 # =============================================================================
 # Finance 패키지 전용 예외 (LS증권 OpenAPI)
 # =============================================================================
