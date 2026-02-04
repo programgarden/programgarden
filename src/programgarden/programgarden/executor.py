@@ -10531,6 +10531,17 @@ class WorkflowExecutor:
 
         # Create Job
         job_id = job_id or f"job-{uuid.uuid4().hex[:8]}"
+
+        # Job ID 중복 체크
+        if job_id in self._jobs:
+            from programgarden_core.exceptions import DuplicateJobIdError
+
+            raise DuplicateJobIdError(
+                message=f"job_id '{job_id}'가 이미 사용 중입니다.",
+                job_id=job_id,
+                details={"existing_job_status": self._jobs[job_id].status},
+            )
+
         context = ExecutionContext(
             job_id=job_id,
             workflow_id=resolved.workflow_id,

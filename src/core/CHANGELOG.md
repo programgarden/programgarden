@@ -1,3 +1,23 @@
+## [1.1.1] - 2026-02-04
+### Added
+- `DuplicateJobIdError` 예외 클래스 추가 - 중복 job_id 사용 시 발생
+
+## [1.1.0] - 2026-02-04
+### Added
+- feat: Dynamic Node Injection 시스템 구현
+  - `dynamic_node_registry.py`: 동적 노드 스키마/클래스 관리
+  - 외부 사용자가 런타임에 커스텀 노드 주입 가능
+  - `Custom_` prefix 네이밍 규칙 적용
+- feat: Retry/Fallback 공통 시스템 구현
+  - `ResilienceConfig`, `RetryConfig`, `FallbackConfig` 모델 추가
+  - 외부 API 호출 노드에서 재시도 및 실패 처리 설정 지원
+
+### Changed
+- refactor: HTTPRequestNode resilience UI 단순화
+
+### Fixed
+- fix: RetryEvent import 오류 수정
+
 ## [1.0.2] - 2026-01-30
 ### Fixed
 - plugin 타입 수정

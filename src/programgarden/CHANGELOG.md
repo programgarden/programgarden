@@ -1,3 +1,24 @@
+## [1.1.1] - 2026-02-04
+### Added
+- `execute()` 메서드에 job_id 중복 체크 로직 추가
+  - 이미 사용 중인 job_id로 실행 시 `DuplicateJobIdError` 발생
+  - 실행 중인 job 덮어쓰기 방지로 안전성 향상
+
+### Changed
+- deps: programgarden-core 1.1.1 버전으로 업데이트
+
+## [1.1.0] - 2026-02-04
+### Added
+- feat: Dynamic Node Injection API 지원
+  - `register_dynamic_schemas()`: 스키마 등록
+  - `get_required_custom_types()`: 필요한 커스텀 타입 조회
+  - `inject_node_classes()`: 노드 클래스 주입
+  - `is_dynamic_node_ready()`: 실행 준비 완료 확인
+  - `clear_injected_classes()`: 주입된 클래스 초기화
+
+### Changed
+- deps: programgarden-core 1.1.0 버전으로 업데이트
+
 ## [1.0.3] - 2026-01-30
 ### Changed
 - deps: programgarden-finance 1.0.3, programgarden-community 1.0.3 버전으로 업데이트
