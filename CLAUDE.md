@@ -178,6 +178,68 @@ class MyAPINode(BaseMessagingNode):
 
 **주문 노드 주의:** 주문 노드는 중복 주문 위험으로 기본적으로 재시도 비활성화됨.
 
+### Dynamic Node Injection (동적 노드 주입)
+
+외부 사용자가 community 패키지 기여 없이 런타임에 커스텀 노드를 주입하여 워크플로우에서 사용할 수 있습니다.
+
+**네이밍 규칙**: 동적 노드는 반드시 `Custom_` prefix 사용 (예: `Custom_MyRSI`)
+
+**사용 흐름**:
+```python
+from programgarden import WorkflowExecutor
+from programgarden_core.nodes.base import BaseNode, NodeCategory, OutputPort
+
+# 1. 커스텀 노드 클래스 정의
+class CustomRSINode(BaseNode):
+    type: str = "Custom_RSI"
+    category: NodeCategory = NodeCategory.CONDITION
+    period: int = 14
+
+    _outputs = [
+        OutputPort(name="rsi", type="number"),
+        OutputPort(name="signal", type="string"),
+    ]
+
+    async def execute(self, context):
+        return {"rsi": 35.5, "signal": "oversold"}
+
+# 2. Executor 생성 및 스키마 등록
+executor = WorkflowExecutor()
+executor.register_dynamic_schemas([{
+    "node_type": "Custom_RSI",
+    "category": "condition",
+    "outputs": [
+        {"name": "rsi", "type": "number"},
+        {"name": "signal", "type": "string"},
+    ],
+}])
+
+# 3. 필요한 타입 확인 및 클래스 주입
+required = executor.get_required_custom_types(workflow)  # ["Custom_RSI"]
+executor.inject_node_classes({"Custom_RSI": CustomRSINode})
+
+# 4. 워크플로우 실행
+job = await executor.execute(workflow)
+
+# 5. 메모리 정리 (선택)
+executor.clear_injected_classes()
+```
+
+**제약 사항**:
+- 동적 노드에서 `credential_id` 사용 불가 (보안상 credential 접근 차단)
+- 클래스는 `BaseNode` 상속 필수
+- `execute()` 메서드 구현 필수
+- 스키마의 output 포트가 클래스에도 정의되어야 함
+
+**API**:
+| 메서드 | 설명 |
+|--------|------|
+| `register_dynamic_schemas(schemas)` | 스키마 등록 (UI 표시용) |
+| `get_required_custom_types(workflow)` | 워크플로우에 필요한 커스텀 타입 목록 |
+| `inject_node_classes(classes)` | 노드 클래스 주입 |
+| `is_dynamic_node_ready(type)` | 실행 준비 완료 여부 확인 |
+| `clear_injected_classes()` | 주입된 클래스 초기화 |
+
 ## Node Development
 
 ### Adding/Modifying Nodes

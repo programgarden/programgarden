@@ -140,12 +140,38 @@ class WorkflowResolver:
                     f"Cannot use: {', '.join(sorted(RESERVED_NODE_IDS))}"
                 )
 
-        # 4. Node type validation
+        # 4. Node type validation (including dynamic nodes)
+        from programgarden_core.registry import DynamicNodeRegistry, is_dynamic_node_type
         registry = NodeTypeRegistry()
+        dynamic_registry = DynamicNodeRegistry()
+
         for node in workflow.nodes:
             node_type = node.get("type")
-            if not registry.get(node_type):
-                result.add_error(f"Unknown node type: {node_type}")
+            node_id = node.get("id")
+
+            # 일반 노드 체크
+            if registry.get(node_type):
+                continue
+
+            # 동적 노드 체크 (Custom_ prefix)
+            if is_dynamic_node_type(node_type):
+                if not dynamic_registry.get_schema(node_type):
+                    result.add_error(
+                        f"동적 노드 스키마가 등록되지 않음: {node_type}. "
+                        "register_dynamic_schemas()를 먼저 호출하세요."
+                    )
+                    continue
+
+                # 동적 노드의 credential_id 사용 차단
+                if node.get("credential_id"):
+                    result.add_error(
+                        f"동적 노드 '{node_id}'에서는 credential_id를 사용할 수 없습니다. "
+                        "보안상 동적 노드에서는 credential 접근이 차단됩니다."
+                    )
+                continue
+
+            # 둘 다 없으면 에러
+            result.add_error(f"Unknown node type: {node_type}")
 
         # 4. Plugin validation (for plugin-using nodes)
         # 주문 노드는 orders 배열에 price가 포함되어 있어 plugin 선택사항
@@ -331,10 +357,19 @@ class WorkflowResolver:
         node_registry = NodeTypeRegistry()
         plugin_registry = PluginRegistry()
 
+        from programgarden_core.registry import DynamicNodeRegistry, is_dynamic_node_type
+        dynamic_registry = DynamicNodeRegistry()
+
         for node_def in workflow.nodes:
             node_id = node_def.get("id")
             node_type = node_def.get("type")
             category = node_def.get("category", "")
+
+            # 동적 노드면 스키마에서 category 가져오기
+            if is_dynamic_node_type(node_type):
+                dynamic_schema = dynamic_registry.get_schema(node_type)
+                if dynamic_schema and not category:
+                    category = dynamic_schema.category
 
             # Plugin node types where fields should be extracted separately
             # 주문 노드는 plugin 선택사항 (orders에 price 포함)
@@ -363,6 +398,7 @@ class WorkflowResolver:
                 fields = node_def.get("fields", {})
 
             # product_scope, broker_provider 추출
+            # 동적 노드는 범용 (all)으로 처리
             node_class = node_registry.get(node_type)
             p_scope = "all"
             b_provider = "all"

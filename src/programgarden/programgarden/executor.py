@@ -274,14 +274,32 @@ class GenericNodeExecutor(NodeExecutorBase):
         plugin: Optional[Any] = None,
         fields: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        from programgarden_core.registry import NodeTypeRegistry
-        
+        from programgarden_core.registry import NodeTypeRegistry, DynamicNodeRegistry
+
         registry = NodeTypeRegistry()
         node_class = registry.get(node_type)
-        
+
+        # 동적 노드 레지스트리에서 fallback 조회
         if not node_class:
-            context.log("error", f"Node class not found in registry: {node_type}", node_id)
-            return {"error": f"Unknown node type: {node_type}"}
+            dynamic_registry = DynamicNodeRegistry()
+            node_class = dynamic_registry.get_node_class(node_type)
+
+            if not node_class:
+                # 스키마는 있지만 클래스가 주입되지 않은 경우
+                if dynamic_registry.get_schema(node_type):
+                    context.log(
+                        "error",
+                        f"커스텀 노드 클래스가 주입되지 않음: {node_type}. "
+                        "inject_node_classes()를 먼저 호출하세요.",
+                        node_id
+                    )
+                    return {
+                        "error": f"커스텀 노드 클래스가 주입되지 않음: {node_type}. "
+                                 "inject_node_classes()를 먼저 호출하세요."
+                    }
+                # 스키마도 없는 경우
+                context.log("error", f"Node class not found in registry: {node_type}", node_id)
+                return {"error": f"Unknown node type: {node_type}"}
         
         # plugin과 fields가 별도로 전달되면 config에 추가 (PluginNode용)
         # 빈 딕셔너리 {}는 무시 - config에 이미 있는 fields를 덮어쓰지 않음
@@ -10350,12 +10368,22 @@ class WorkflowExecutor:
     - 24-hour continuous execution support
     - Position/balance state persistence
     - Graceful Restart support
+    - Dynamic node injection support (Custom_ prefix nodes)
     """
 
     def __init__(self):
         self.resolver = WorkflowResolver()
         self._jobs: Dict[str, "WorkflowJob"] = {}
         self._executors: Dict[str, NodeExecutorBase] = self._init_executors()
+        # 동적 노드 레지스트리 (지연 임포트로 순환 참조 방지)
+        self._dynamic_registry = None
+
+    def _get_dynamic_registry(self):
+        """DynamicNodeRegistry 싱글톤 반환 (지연 로딩)"""
+        if self._dynamic_registry is None:
+            from programgarden_core.registry import DynamicNodeRegistry
+            self._dynamic_registry = DynamicNodeRegistry()
+        return self._dynamic_registry
 
     def _init_executors(self) -> Dict[str, NodeExecutorBase]:
         """Initialize per-node-type executors"""
@@ -10571,6 +10599,134 @@ class WorkflowExecutor:
     def list_jobs(self) -> List["WorkflowJob"]:
         """List all Jobs"""
         return list(self._jobs.values())
+
+    # ─────────────────────────────────────────────────
+    # Dynamic Node API (Lazy Loading 지원)
+    # ─────────────────────────────────────────────────
+
+    def register_dynamic_schemas(self, schemas: List[Dict[str, Any]]) -> None:
+        """
+        커스텀 노드 스키마 등록 (UI 표시용)
+
+        사용자가 DB에서 로드한 스키마를 등록합니다.
+        이 시점에는 클래스 없이 스키마만 저장됩니다.
+
+        Args:
+            schemas: 스키마 딕셔너리 목록
+                [{"node_type": "Custom_MyRSI", "category": "condition", ...}, ...]
+
+        Raises:
+            ValueError: Custom_ prefix가 없는 경우
+
+        Example:
+            executor = WorkflowExecutor()
+            schemas = db.get_all_custom_node_schemas()
+            executor.register_dynamic_schemas(schemas)
+        """
+        from programgarden_core.registry import DynamicNodeSchema
+        registry = self._get_dynamic_registry()
+        for schema_dict in schemas:
+            schema = DynamicNodeSchema(**schema_dict)
+            registry.register_schema(schema)
+
+    def get_required_custom_types(self, workflow: Dict[str, Any]) -> List[str]:
+        """
+        워크플로우에서 사용되는 커스텀 노드 타입 목록 반환
+
+        사용자는 이 목록을 받아서 해당 타입들의 .py 파일만
+        Cloud Storage에서 다운로드하면 됩니다.
+
+        Args:
+            workflow: 워크플로우 정의 (JSON dict)
+
+        Returns:
+            커스텀 노드 타입명 목록 (예: ["Custom_MyRSI", "Custom_MyMACD"])
+
+        Example:
+            required = executor.get_required_custom_types(workflow)
+            for node_type in required:
+                code = await cloud.download(f"nodes/{node_type}.py")
+                # ... 동적 import 후 inject_node_classes() 호출
+        """
+        from programgarden_core.registry import DYNAMIC_NODE_PREFIX
+        custom_types = []
+        for node in workflow.get("nodes", []):
+            node_type = node.get("type", "")
+            if node_type.startswith(DYNAMIC_NODE_PREFIX):
+                if node_type not in custom_types:
+                    custom_types.append(node_type)
+        return custom_types
+
+    def inject_node_classes(self, node_classes: Dict[str, type]) -> None:
+        """
+        커스텀 노드 클래스 주입
+
+        사용자가 Cloud Storage에서 다운로드 → 동적 import한 클래스들을 주입합니다.
+
+        검증 항목:
+        1. 스키마 등록 여부
+        2. BaseNode 상속 여부
+        3. execute() 메서드 존재 여부
+        4. 스키마와 클래스의 출력 포트 일치 여부
+
+        Args:
+            node_classes: {node_type: node_class} 딕셔너리
+                {"Custom_MyRSI": MyRSINode, "Custom_MyMACD": MyMACDNode}
+
+        Raises:
+            ValueError: 스키마 미등록, 포트 불일치
+            TypeError: BaseNode 미상속, execute() 미구현
+
+        Example:
+            executor.inject_node_classes({
+                "Custom_MyRSI": MyRSINode,
+                "Custom_MyMACD": MyMACDNode,
+            })
+        """
+        registry = self._get_dynamic_registry()
+        registry.inject_node_classes(node_classes)
+
+    def clear_injected_classes(self) -> None:
+        """
+        주입된 클래스 초기화 (실행 후 메모리 정리)
+
+        스키마는 유지되고 클래스만 제거됩니다.
+        워크플로우 실행 후 메모리 정리 용도로 사용합니다.
+
+        Example:
+            result = await executor.execute(workflow)
+            executor.clear_injected_classes()  # 메모리 정리
+        """
+        registry = self._get_dynamic_registry()
+        registry.clear_injected_classes()
+
+    def list_dynamic_node_types(self) -> List[str]:
+        """
+        등록된 동적 노드 타입 목록 반환
+
+        Returns:
+            노드 타입명 목록 (예: ["Custom_MyRSI", "Custom_MyMACD"])
+        """
+        registry = self._get_dynamic_registry()
+        return registry.list_schema_types()
+
+    def is_dynamic_node_ready(self, node_type: str) -> bool:
+        """
+        동적 노드가 실행 준비 완료되었는지 확인
+
+        스키마 등록 + 클래스 주입 여부 확인.
+
+        Args:
+            node_type: 노드 타입명 (예: Custom_MyRSI)
+
+        Returns:
+            실행 준비 완료 여부
+        """
+        registry = self._get_dynamic_registry()
+        return (
+            registry.is_schema_registered(node_type)
+            and registry.is_class_injected(node_type)
+        )
 
 
 class WorkflowJob:
