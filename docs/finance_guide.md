@@ -390,16 +390,16 @@ options = SetupOptions(
 ## TR 코드 참조
 
 ### 해외 주식
-- 시장 정보: `g3101`(현재가), `g3102`(해외지수), `g3104`(거래소마스터), `g3106`(환율), `g3190`(뉴스)
-- 차트: `g3103`(일별), `g3202`(분봉), `g3203`(틱봉), `g3204`(시간외)
-- 계좌: `COSAQ00102`(예수금), `COSAQ01400`(해외잔고), `COSOQ00201`(체결내역), `COSOQ02701`(미체결)
+- 시장 정보: `g3101`(현재가), `g3102`(시간대별), `g3104`(종목정보), `g3106`(현재가호가), `g3190`(마스터상장종목)
+- 차트: `g3103`(일주월), `g3202`(N틱), `g3203`(N분), `g3204`(일주월년별)
+- 계좌: `COSAQ00102`(주문체결내역), `COSAQ01400`(예약주문처리결과), `COSOQ00201`(종합잔고평가), `COSOQ02701`(외화예수금/주문가능금액)
 - 주문: `COSAT00301`(정정), `COSAT00311`(신규), `COSMT00300`(취소), `COSAT00400`(예약)
 - 실시간: `GSC`(체결), `GSH`(호가), `AS0`~`AS4`(각종 실시간 시세)
 
 ### 해외 선물·옵션
-- 시장 정보: `o3101`(선물마스터), `o3104`~`o3107`(거래소/통화/가격단위/정산환율), `o3116`(옵션마스터), `o3121`~`o3128`, `o3136`, `o3137`
-- 차트: `o3103`(일별), `o3108`(분봉), `o3117`(틱봉), `o3139`(시간외)
-- 계좌: `CIDBQ01400`(예수금), `CIDBQ01500`(잔고), `CIDBQ01800`(체결), `CIDBQ02400`(미체결), `CIDBQ03000`(일별손익), `CIDBQ05300`(청산가능수량), `CIDEQ00800`(예탁증거금)
+- 시장 정보: `o3101`(선물마스터), `o3104`(일별체결), `o3105`(현재가), `o3106`(현재가호가), `o3107`(관심종목), `o3116`(시간대별Tick체결), `o3121`(옵션마스터), `o3123`~`o3128`, `o3136`, `o3137`
+- 차트: `o3103`(분봉), `o3108`(일주월), `o3117`(NTick), `o3139`(옵션NTick)
+- 계좌: `CIDBQ01400`(체결내역/주문가능수량), `CIDBQ01500`(미결제잔고), `CIDBQ01800`(주문내역), `CIDBQ02400`(주문체결상세), `CIDBQ03000`(예수금/잔고현황), `CIDBQ05300`(예탁자산), `CIDEQ00800`(일자별미결제잔고)
 - 주문: `CIDBT00100`(신규), `CIDBT00900`(정정), `CIDBT01000`(취소)
 - 실시간: `OVC`(체결), `OVH`(호가), `TC1`~`TC3`, `WOC`, `WOH`
 
@@ -428,37 +428,6 @@ from programgarden_finance import (
     exceptions,
 )
 ```
-
----
-
-## 예제 실행 안내
-
-```text
-src/finance/example/
-├── token/                      # OAuth 토큰 발급 예제
-│   └── run_token.py
-├── overseas_stock/             # 해외 주식 예제
-│   ├── run_g3101.py            # 현재가 조회
-│   ├── run_g3102.py            # 해외지수 조회
-│   ├── run_COSAT00311.py       # 신규주문
-│   ├── real_GSC.py             # 실시간 체결
-│   └── real_GSH.py             # 실시간 호가
-└── overseas_futureoption/      # 해외 선물·옵션 예제
-    ├── run_o3101.py            # 선물마스터
-    ├── run_CIDBT00100.py       # 신규주문
-    ├── real_OVC.py             # 실시간 체결
-    └── real_OVH.py             # 실시간 호가
-```
-
-```bash
-# .env 구성 후 예제 실행
-python src/finance/example/token/run_token.py
-python src/finance/example/overseas_stock/run_g3101.py
-python src/finance/example/overseas_futureoption/run_o3101.py
-python src/finance/example/overseas_stock/real_GSC.py
-```
-
-실행 전 `logging.basicConfig(level=logging.DEBUG)`로 로그 레벨을 조정하면 요청과 응답을 쉽게 추적할 수 있습니다.
 
 ---
 
