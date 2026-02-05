@@ -1,3 +1,14 @@
+## [1.1.2] - 2026-02-05
+### Added
+- feat: `registry_tools`에 `locale` 파라미터 추가
+  - `list_node_types(category, locale)`: 노드 목록 조회 시 i18n 지원
+  - `get_node_schema(node_type, locale)`: 노드 스키마 조회 시 i18n 지원
+  - `list_categories(locale)`: 카테고리 목록 조회 시 i18n 지원
+  - locale 미전달 시 i18n 키 반환, 전달 시 번역된 값 반환
+
+### Changed
+- deps: programgarden-core 1.1.2 버전으로 업데이트
+
 ## [1.1.1] - 2026-02-04
 ### Added
 - `execute()` 메서드에 job_id 중복 체크 로직 추가

@@ -1,3 +1,10 @@
+## [1.1.2] - 2026-02-05
+### Added
+- feat: `NodeTypeSchema`에 `display_name` 필드 추가
+  - 기본값: `i18n:nodes.{NodeType}.name` (i18n 키)
+  - locale 파라미터 전달 시 번역된 값 반환
+  - 외부 앱에서 자체 i18n 시스템 사용 가능
+
 ## [1.1.1] - 2026-02-04
 ### Added
 - `DuplicateJobIdError` 예외 클래스 추가 - 중복 job_id 사용 시 발생

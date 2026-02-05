@@ -16,6 +16,7 @@ class NodeTypeSchema(BaseModel):
     """Node type schema (for AI agents and clients)"""
 
     node_type: str = Field(..., description="Node type name")
+    display_name: str = Field(..., description="Node display name (i18n key or translated)")
     category: str = Field(..., description="Node category")
     description: Optional[str] = Field(default=None, description="Node description")
     img_url: Optional[str] = Field(default=None, description="Node icon image URL")
@@ -274,8 +275,12 @@ class NodeTypeRegistry:
         inputs = self._serialize_ports(instance.get_inputs(), type_name)
         outputs = self._serialize_ports(instance.get_outputs(), type_name)
 
+        # display_name: i18n 키 (기본값), locale 전달 시 번역됨
+        display_name = f"i18n:nodes.{type_name}.name"
+
         schema = NodeTypeSchema(
             node_type=type_name,
+            display_name=display_name,
             category=instance.category.value if hasattr(instance.category, 'value') else instance.category,
             description=description,
             img_url=img_url,
