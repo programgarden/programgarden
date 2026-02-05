@@ -792,5 +792,66 @@
   "events.retry.rate_limit": "Rate limit 초과",
   "events.retry.network_error": "네트워크 오류",
   "events.retry.server_error": "서버 오류",
-  "events.retry.all_failed": "모든 재시도 실패"
+  "events.retry.all_failed": "모든 재시도 실패",
+
+  "enums.broker_provider.ls-sec.co.kr": "LS증권",
+
+  "enums.universe.NASDAQ100": "나스닥 100",
+  "enums.universe.SP500": "S&P 500",
+  "enums.universe.SP100": "S&P 100",
+  "enums.universe.DOW30": "다우존스 30",
+
+  "enums.sector.all": "전체",
+  "enums.sector.Technology": "기술",
+  "enums.sector.Healthcare": "헬스케어",
+  "enums.sector.Financial_Services": "금융",
+  "enums.sector.Consumer_Cyclical": "경기소비재",
+  "enums.sector.Communication_Services": "커뮤니케이션",
+  "enums.sector.Industrials": "산업재",
+  "enums.sector.Consumer_Defensive": "필수소비재",
+  "enums.sector.Energy": "에너지",
+  "enums.sector.Utilities": "유틸리티",
+  "enums.sector.Real_Estate": "부동산",
+  "enums.sector.Basic_Materials": "소재",
+
+  "enums.stock_exchange.all": "전체",
+  "enums.stock_exchange.NASDAQ": "나스닥",
+  "enums.stock_exchange.NYSE": "뉴욕증권거래소",
+  "enums.stock_exchange.AMEX": "아멕스",
+
+  "enums.stock_exchange_code.all": "전체",
+  "enums.stock_exchange_code.81": "NYSE/AMEX",
+  "enums.stock_exchange_code.82": "NASDAQ",
+
+  "enums.symbol_operation.difference": "차집합 (A-B, 중복 매수 방지)",
+  "enums.symbol_operation.intersection": "교집합 (A∩B)",
+  "enums.symbol_operation.union": "합집합 (A∪B)",
+
+  "enums.country.US": "미국",
+  "enums.country.HK": "홍콩",
+  "enums.country.JP": "일본",
+  "enums.country.CN": "중국",
+  "enums.country.VN": "베트남",
+  "enums.country.ID": "인도네시아",
+
+  "enums.futures_exchange.1": "전체",
+  "enums.futures_exchange.2": "CME",
+  "enums.futures_exchange.3": "SGX",
+  "enums.futures_exchange.4": "EUREX",
+  "enums.futures_exchange.5": "ICE",
+  "enums.futures_exchange.6": "HKEX",
+  "enums.futures_exchange.7": "OSE",
+
+  "enums.side.buy": "매수 (Buy)",
+  "enums.side.sell": "매도 (Sell)",
+
+  "enums.order_type.market": "시장가 (Market)",
+  "enums.order_type.limit": "지정가 (Limit)",
+
+  "enums.price_type.limit": "지정가 (Limit)",
+  "enums.price_type.market": "시장가 (Market)",
+  "enums.price_type.LOO": "시초가 지정가 (Limit On Open)",
+  "enums.price_type.LOC": "종가 지정가 (Limit On Close)",
+  "enums.price_type.MOO": "시초가 시장가 (Market On Open)",
+  "enums.price_type.MOC": "종가 시장가 (Market On Close)"
 }

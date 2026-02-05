@@ -1,3 +1,12 @@
+## [1.1.3] - 2026-02-05
+### Added
+- `config_schema` i18n 번역 지원 추가
+  - `translate_schema()`에서 config_schema 내부 필드 자동 번역
+  - `_translate_config_schema()` 함수 구현 (enum_labels, description, placeholder, help_text)
+  - 노드 파일의 하드코딩된 enum_labels를 i18n 키 형식으로 변경
+  - ko.json, en.json에 62개의 새로운 enum 번역 키 추가
+  - 대상 노드: BrokerNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, SymbolQueryNode, OrderNode
+
 ## [1.1.2] - 2026-02-05
 ### Added
 - feat: `NodeTypeSchema`에 `display_name` 필드 추가

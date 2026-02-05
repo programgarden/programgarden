@@ -1,3 +1,7 @@
+## [1.1.4] - 2026-02-05
+### Changed
+- deps: programgarden-core 1.1.3 버전으로 업데이트 (config_schema i18n 번역 지원)
+
 ## [1.1.3] - 2026-02-05
 ### Changed
 - deps: programgarden-core 1.1.2, programgarden-finance 1.1.1, programgarden-community 1.1.1 버전으로 업데이트

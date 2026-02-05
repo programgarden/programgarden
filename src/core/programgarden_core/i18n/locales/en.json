@@ -651,5 +651,66 @@
   "events.retry.rate_limit": "Rate limit exceeded",
   "events.retry.network_error": "Network error",
   "events.retry.server_error": "Server error",
-  "events.retry.all_failed": "All retries failed"
+  "events.retry.all_failed": "All retries failed",
+
+  "enums.broker_provider.ls-sec.co.kr": "LS Securities",
+
+  "enums.universe.NASDAQ100": "NASDAQ 100",
+  "enums.universe.SP500": "S&P 500",
+  "enums.universe.SP100": "S&P 100",
+  "enums.universe.DOW30": "Dow Jones 30",
+
+  "enums.sector.all": "All",
+  "enums.sector.Technology": "Technology",
+  "enums.sector.Healthcare": "Healthcare",
+  "enums.sector.Financial_Services": "Financial Services",
+  "enums.sector.Consumer_Cyclical": "Consumer Cyclical",
+  "enums.sector.Communication_Services": "Communication Services",
+  "enums.sector.Industrials": "Industrials",
+  "enums.sector.Consumer_Defensive": "Consumer Defensive",
+  "enums.sector.Energy": "Energy",
+  "enums.sector.Utilities": "Utilities",
+  "enums.sector.Real_Estate": "Real Estate",
+  "enums.sector.Basic_Materials": "Basic Materials",
+
+  "enums.stock_exchange.all": "All",
+  "enums.stock_exchange.NASDAQ": "NASDAQ",
+  "enums.stock_exchange.NYSE": "NYSE",
+  "enums.stock_exchange.AMEX": "AMEX",
+
+  "enums.stock_exchange_code.all": "All",
+  "enums.stock_exchange_code.81": "NYSE/AMEX",
+  "enums.stock_exchange_code.82": "NASDAQ",
+
+  "enums.symbol_operation.difference": "Difference (A-B, prevent duplicate buying)",
+  "enums.symbol_operation.intersection": "Intersection (A∩B)",
+  "enums.symbol_operation.union": "Union (A∪B)",
+
+  "enums.country.US": "United States",
+  "enums.country.HK": "Hong Kong",
+  "enums.country.JP": "Japan",
+  "enums.country.CN": "China",
+  "enums.country.VN": "Vietnam",
+  "enums.country.ID": "Indonesia",
+
+  "enums.futures_exchange.1": "All",
+  "enums.futures_exchange.2": "CME",
+  "enums.futures_exchange.3": "SGX",
+  "enums.futures_exchange.4": "EUREX",
+  "enums.futures_exchange.5": "ICE",
+  "enums.futures_exchange.6": "HKEX",
+  "enums.futures_exchange.7": "OSE",
+
+  "enums.side.buy": "Buy",
+  "enums.side.sell": "Sell",
+
+  "enums.order_type.market": "Market",
+  "enums.order_type.limit": "Limit",
+
+  "enums.price_type.limit": "Limit",
+  "enums.price_type.market": "Market",
+  "enums.price_type.LOO": "Limit On Open (LOO)",
+  "enums.price_type.LOC": "Limit On Close (LOC)",
+  "enums.price_type.MOO": "Market On Open (MOO)",
+  "enums.price_type.MOC": "Market On Close (MOC)"
 }

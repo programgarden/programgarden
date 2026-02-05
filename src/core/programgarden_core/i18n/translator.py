@@ -129,6 +129,10 @@ def translate_schema(schema: Dict[str, Any], locale: Optional[str] = None) -> Di
     if "display_data_schema" in result and isinstance(result["display_data_schema"], dict):
         result["display_data_schema"] = _translate_i18n_strings(result["display_data_schema"], loc)
 
+    # Translate config_schema (노드 설정 스키마)
+    if "config_schema" in result and isinstance(result["config_schema"], dict):
+        result["config_schema"] = _translate_config_schema(result["config_schema"], loc)
+
     return result
 
 
@@ -152,6 +156,91 @@ def _translate_port(port: Dict[str, Any], locale: str) -> Dict[str, Any]:
         key = result["description"]
         if key.startswith("i18n:"):
             result["description"] = t(key[5:], locale)
+    return result
+
+
+def _translate_config_schema(config_schema: Dict[str, Any], locale: str) -> Dict[str, Any]:
+    """
+    Translate config_schema fields.
+
+    Translates fields with i18n: prefix:
+    - display_name
+    - description
+    - placeholder
+    - help_text
+    - enum_labels (dict values)
+
+    Recursively handles nested structures like object_schema.
+    """
+    result = {}
+
+    for field_name, field_def in config_schema.items():
+        if not isinstance(field_def, dict):
+            result[field_name] = field_def
+            continue
+
+        translated_field = field_def.copy()
+
+        # Translate display_name
+        if "display_name" in translated_field and isinstance(translated_field["display_name"], str):
+            if translated_field["display_name"].startswith("i18n:"):
+                translated_field["display_name"] = t(translated_field["display_name"][5:], locale)
+
+        # Translate description
+        if "description" in translated_field and isinstance(translated_field["description"], str):
+            if translated_field["description"].startswith("i18n:"):
+                translated_field["description"] = t(translated_field["description"][5:], locale)
+
+        # Translate placeholder
+        if "placeholder" in translated_field and isinstance(translated_field["placeholder"], str):
+            if translated_field["placeholder"].startswith("i18n:"):
+                translated_field["placeholder"] = t(translated_field["placeholder"][5:], locale)
+
+        # Translate help_text
+        if "help_text" in translated_field and isinstance(translated_field["help_text"], str):
+            if translated_field["help_text"].startswith("i18n:"):
+                translated_field["help_text"] = t(translated_field["help_text"][5:], locale)
+
+        # Translate enum_labels (dict with i18n: prefix values)
+        if "enum_labels" in translated_field and isinstance(translated_field["enum_labels"], dict):
+            translated_labels = {}
+            for enum_key, enum_label in translated_field["enum_labels"].items():
+                if isinstance(enum_label, str) and enum_label.startswith("i18n:"):
+                    translated_labels[enum_key] = t(enum_label[5:], locale)
+                else:
+                    translated_labels[enum_key] = enum_label
+            translated_field["enum_labels"] = translated_labels
+
+        # Translate object_schema (array of field definitions)
+        if "object_schema" in translated_field and isinstance(translated_field["object_schema"], list):
+            translated_object_schema = []
+            for item in translated_field["object_schema"]:
+                if isinstance(item, dict):
+                    translated_item = item.copy()
+                    # Translate label
+                    if "label" in translated_item and isinstance(translated_item["label"], str):
+                        if translated_item["label"].startswith("i18n:"):
+                            translated_item["label"] = t(translated_item["label"][5:], locale)
+                    # Translate description
+                    if "description" in translated_item and isinstance(translated_item["description"], str):
+                        if translated_item["description"].startswith("i18n:"):
+                            translated_item["description"] = t(translated_item["description"][5:], locale)
+                    # Translate enum_labels in nested object_schema
+                    if "enum_labels" in translated_item and isinstance(translated_item["enum_labels"], dict):
+                        nested_labels = {}
+                        for k, v in translated_item["enum_labels"].items():
+                            if isinstance(v, str) and v.startswith("i18n:"):
+                                nested_labels[k] = t(v[5:], locale)
+                            else:
+                                nested_labels[k] = v
+                        translated_item["enum_labels"] = nested_labels
+                    translated_object_schema.append(translated_item)
+                else:
+                    translated_object_schema.append(item)
+            translated_field["object_schema"] = translated_object_schema
+
+        result[field_name] = translated_field
+
     return result
 
 

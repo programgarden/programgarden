@@ -522,9 +522,9 @@ class HTTPRequestNode(BaseNode):
                         "enum_values": ["error", "skip", "default_value"],
                         "description": "모든 재시도 실패 시 동작",
                         "enum_labels": {
-                            "error": "에러 발생 (워크플로우 중단)",
-                            "skip": "건너뛰기 (다음 노드 실행)",
-                            "default_value": "기본값 반환",
+                            "error": "i18n:enums.fallback_mode.error",
+                            "skip": "i18n:enums.fallback_mode.skip",
+                            "default_value": "i18n:enums.fallback_mode.default_value",
                         },
                     },
                 ],
