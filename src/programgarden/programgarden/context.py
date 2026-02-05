@@ -1364,6 +1364,7 @@ class ExecutionContext:
                     "job_id": self.job_id,
                     "broker_node_id": broker_node_id,
                     "product": product,
+                    "paper_trading": getattr(self, '_workflow_paper_trading', False),
                     "timestamp": now,
                     
                     # 워크플로우 기본 (전체)
@@ -1627,15 +1628,21 @@ class ExecutionContext:
         self,
         broker_node_id: str,
         product: str = "overseas_stock",
+        provider: str = "ls",
+        paper_trading: bool = False,
     ) -> None:
         """Initialize workflow position tracker for FIFO-based position tracking.
-        
+
         on_workflow_pnl_update 리스너가 등록된 경우에만 트래커를 초기화합니다.
         주문 발생 시 자동으로 포지션을 기록하고, 틱마다 워크플로우 수익률을 계산합니다.
-        
+
+        paper_trading 모드가 변경되면 기존 수익률 데이터를 초기화합니다 (대회 재참가).
+
         Args:
-            broker_node_id: BrokerNode ID
+            broker_node_id: BrokerNode ID (로그용)
             product: 상품 유형 (overseas_stock, overseas_futures)
+            provider: 증권사 (ls, kiwoom, ...)
+            paper_trading: 모의투자 모드 (True: 모의, False: 실전)
         """
         # 리스너 중 on_workflow_pnl_update를 구현한 것이 있는지 확인
         has_workflow_listener = any(
@@ -1668,13 +1675,22 @@ class ExecutionContext:
                 job_id=self.job_id,
                 broker_node_id=broker_node_id,
                 product=product,
+                provider=provider,
             )
+
+            # paper_trading 모드 변경 체크 및 초기화 (대회 재참가)
+            identifier = f"{product}/{provider}"
+            if self._workflow_position_tracker.check_and_reset_if_mode_changed(paper_trading):
+                mode = "모의투자" if paper_trading else "실전투자"
+                self.log("warning", f"[{identifier}] {mode}로 전환 - 수익률 기록 초기화됨 (대회 재참가)", broker_node_id)
 
             # PnL refresh용 정보 저장
             self._workflow_broker_node_id = broker_node_id
             self._workflow_product = product
+            self._workflow_provider = provider
+            self._workflow_paper_trading = paper_trading
 
-            logger.info(f"Workflow position tracker initialized: {db_path}")
+            logger.info(f"Workflow position tracker initialized: {db_path} ({identifier}, paper_trading={paper_trading})")
             
         except Exception as e:
             logger.warning(f"Failed to init workflow position tracker: {e}")

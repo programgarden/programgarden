@@ -122,6 +122,63 @@ class TestWorkflowPositionTracker:
             # 평단가는 두번째 로트의 가격
             assert positions['AAPL'].avg_price == Decimal('120.0')
 
+    def test_check_and_reset_initial(self):
+        """최초 실행 시 paper_trading 저장 테스트"""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+
+            # 최초 실행: False 반환 (초기화 안됨)
+            result = tracker.check_and_reset_if_mode_changed(paper_trading=True)
+            assert result is False
+
+            # 동일 모드: False 반환
+            result = tracker.check_and_reset_if_mode_changed(paper_trading=True)
+            assert result is False
+
+    def test_check_and_reset_mode_change(self):
+        """paper_trading 모드 변경 시 데이터 초기화 테스트"""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+
+            # 최초 실행: 모의투자 모드
+            tracker.check_and_reset_if_mode_changed(paper_trading=True)
+
+            # 주문 기록
+            tracker.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
+            assert tracker._check_workflow_order('O1', '20260123')
+
+            # 모드 변경: 모의 → 실전
+            result = tracker.check_and_reset_if_mode_changed(paper_trading=False)
+            assert result is True
+
+            # 데이터 초기화 확인
+            assert not tracker._check_workflow_order('O1', '20260123')
+
+    @pytest.mark.asyncio
+    async def test_check_and_reset_preserves_data_on_same_mode(self):
+        """동일 모드에서 데이터 유지 테스트"""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+
+            # 최초 실행: 실전투자 모드
+            tracker.check_and_reset_if_mode_changed(paper_trading=False)
+
+            # 주문 및 체결 기록
+            tracker.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
+            await tracker.record_fill('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, '103000000', '40')
+
+            positions = tracker.get_workflow_positions()
+            assert 'AAPL' in positions
+
+            # 동일 모드로 재실행
+            result = tracker.check_and_reset_if_mode_changed(paper_trading=False)
+            assert result is False
+
+            # 데이터 유지 확인
+            positions = tracker.get_workflow_positions()
+            assert 'AAPL' in positions
+            assert positions['AAPL'].quantity == 10
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

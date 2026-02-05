@@ -1730,6 +1730,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
         context.init_workflow_position_tracker(
             broker_node_id=node_id,
             product=product,
+            provider=provider,
+            paper_trading=paper_trading,
         )
         
         # ========================================

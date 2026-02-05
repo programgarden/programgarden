@@ -296,7 +296,7 @@ class WorkflowPnLEvent:
     job_id: str
     broker_node_id: str
     product: str  # "overseas_stock" | "overseas_futures"
-    
+
     # Workflow position P&L
     workflow_pnl_rate: Union[Decimal, float]
     workflow_eval_amount: Union[Decimal, float]
@@ -322,7 +322,10 @@ class WorkflowPnLEvent:
     # Trust metrics
     trust_score: int = 100  # 0-100, starts at 100
     anomaly_count: int = 0
-    
+
+    # Trading mode
+    paper_trading: bool = False  # True: 모의투자, False: 실전투자
+
     # Metadata
     currency: str = "USD"
     timestamp: datetime = field(default_factory=datetime.utcnow)
