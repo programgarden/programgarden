@@ -8,6 +8,10 @@ ProgramGarden is a no-code system trading DSL (Domain Specific Language) platfor
 
 **Language**: Primary development language is Python. Documentation and comments are in Korean. Use Korean when communicating with users unless they prefer English.
 
+## CRITICAL Rules (반드시 준수)
+
+1. **커밋 메시지에 `Co-Authored-By` 절대 금지**: Git 커밋 시 `Co-Authored-By: Claude ...` 또는 어떤 형태의 Co-Authored-By 라인도 포함하지 마세요. 이 규칙은 예외 없이 모든 커밋에 적용됩니다.
+
 ## Package Structure
 
 ```
