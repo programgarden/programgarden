@@ -167,13 +167,100 @@ class WorkflowPositionTracker:
                 )
             """)
             
+            # 브로커 메타데이터 (paper_trading 변경 감지용)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS broker_metadata (
+                    broker_node_id TEXT PRIMARY KEY,
+                    paper_trading INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
             # 인덱스 생성
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_lots_fifo ON workflow_position_lots(symbol, fill_datetime)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_lookup ON workflow_orders(order_no, order_date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_lots_remaining ON workflow_position_lots(symbol, remaining_qty)")
-            
+
             conn.commit()
-    
+
+    def check_and_reset_if_mode_changed(self, paper_trading: bool) -> bool:
+        """
+        paper_trading 모드 변경 시 데이터 초기화
+
+        모의투자 ↔ 실전투자 전환 시 해당 broker_node_id의 모든 데이터를 삭제합니다.
+
+        Args:
+            paper_trading: 현재 paper_trading 설정 (True: 모의, False: 실전)
+
+        Returns:
+            True: 모드 변경으로 데이터 초기화됨
+            False: 모드 동일하여 변경 없음
+        """
+        paper_trading_int = 1 if paper_trading else 0
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            # 이전 paper_trading 값 조회
+            cursor.execute("""
+                SELECT paper_trading FROM broker_metadata
+                WHERE broker_node_id = ?
+            """, (self.broker_node_id,))
+
+            row = cursor.fetchone()
+
+            if row is None:
+                # 최초 실행: 메타데이터 저장
+                cursor.execute("""
+                    INSERT INTO broker_metadata (broker_node_id, paper_trading, updated_at)
+                    VALUES (?, ?, ?)
+                """, (self.broker_node_id, paper_trading_int, datetime.now().isoformat()))
+                conn.commit()
+                logger.info(f"[{self.broker_node_id}] Initial paper_trading mode: {'모의투자' if paper_trading else '실전투자'}")
+                return False
+
+            prev_paper_trading = row[0]
+
+            if prev_paper_trading == paper_trading_int:
+                # 모드 동일: 변경 없음
+                return False
+
+            # 모드 변경: 데이터 초기화
+            prev_mode = "모의투자" if prev_paper_trading == 1 else "실전투자"
+            new_mode = "모의투자" if paper_trading else "실전투자"
+
+            logger.warning(f"[{self.broker_node_id}] paper_trading 모드 변경 감지: {prev_mode} → {new_mode}")
+            logger.warning(f"[{self.broker_node_id}] 수익률 기록 초기화 시작...")
+
+            # 데이터 삭제 (해당 broker_node_id 관련만 삭제하기 위해 job_id 사용)
+            # workflow_orders: job_id로 필터
+            cursor.execute("""
+                DELETE FROM workflow_orders WHERE job_id = ?
+            """, (self.job_id,))
+            deleted_orders = cursor.rowcount
+
+            # workflow_position_lots: 전체 삭제 (broker_node_id 기준)
+            cursor.execute("DELETE FROM workflow_position_lots")
+            deleted_lots = cursor.rowcount
+
+            # trade_history: 전체 삭제
+            cursor.execute("DELETE FROM trade_history")
+            deleted_trades = cursor.rowcount
+
+            # 메타데이터 업데이트
+            cursor.execute("""
+                UPDATE broker_metadata
+                SET paper_trading = ?, updated_at = ?
+                WHERE broker_node_id = ?
+            """, (paper_trading_int, datetime.now().isoformat(), self.broker_node_id))
+
+            conn.commit()
+
+            logger.warning(f"[{self.broker_node_id}] 수익률 기록 초기화 완료: "
+                          f"orders={deleted_orders}, lots={deleted_lots}, trades={deleted_trades}")
+
+            return True
+
     def record_order(
         self,
         order_no: str,
