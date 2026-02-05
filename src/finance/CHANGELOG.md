@@ -1,3 +1,11 @@
+## [1.1.1] - 2026-02-05
+### Changed
+- feat: programgarden-core 1.1.2 버전 업데이트 (TestPyPI)
+
+## [1.1.0] - 2026-02-04
+### Changed
+- feat: programgarden-core 1.1.0 버전 업데이트에 따른 종속성 수정
+
 ## [1.0.3] - 2026-01-30
 ## Changed
 - feat: programgarden-core 1.0.2 버전 업데이트에 따른 종속성 수정

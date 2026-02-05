@@ -284,6 +284,7 @@ Available through `.claude/commands/`:
 - `/pg-node` - Add/modify nodes
 - `/pg-node-validate` - Validate node schema
 - `/pg-node-list` - List registered nodes
+- `/pg-release` - Update package versions and CHANGELOG
 - `/pg-integration-test` - Test server integration (python_server)
 
 ### Context Recovery (컨텍스트 복구)
