@@ -1,3 +1,14 @@
+## [1.1.5] - 2026-02-06
+### Added
+- feat: paper_trading 모드 전환 시 수익률 기록 자동 초기화
+  - 모의투자 ↔ 실전투자 전환 시 워크플로우 수익률 데이터 리셋
+  - "대회 재참가" 개념으로 모드 변경 시 처음부터 다시 시작
+
+### Changed
+- refactor: `broker_metadata` 테이블을 `product+provider` 복합키로 관리
+  - 사용자가 변경할 수 없는 시스템 식별자 사용으로 신뢰성 향상
+- deps: programgarden-core 1.1.4 버전으로 업데이트
+
 ## [1.1.4] - 2026-02-05
 ### Changed
 - deps: programgarden-core 1.1.3 버전으로 업데이트 (config_schema i18n 번역 지원)

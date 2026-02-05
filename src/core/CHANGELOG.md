@@ -1,3 +1,7 @@
+## [1.1.4] - 2026-02-06
+### Added
+- `WorkflowPnLEvent`에 `paper_trading` 필드 추가 (모의/실전 투자 구분)
+
 ## [1.1.3] - 2026-02-05
 ### Added
 - `config_schema` i18n 번역 지원 추가
