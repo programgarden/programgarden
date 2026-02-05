@@ -43,8 +43,8 @@ def print_db_status(tracker: WorkflowPositionTracker, db_path: str):
         cursor.execute("SELECT COUNT(*) FROM trade_history")
         trade_count = cursor.fetchone()[0]
 
-        # broker_metadata
-        cursor.execute("SELECT broker_node_id, paper_trading, updated_at FROM broker_metadata")
+        # broker_metadata (product + provider 복합키)
+        cursor.execute("SELECT product, provider, paper_trading, updated_at FROM broker_metadata")
         metadata = cursor.fetchall()
 
         print(f"   📊 DB 상태:")

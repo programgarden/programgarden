@@ -86,18 +86,21 @@ class WorkflowPositionTracker:
         job_id: str,
         broker_node_id: str,
         product: str = "overseas_stock",
+        provider: str = "ls",
     ):
         """
         Args:
             db_path: SQLite DB 경로
             job_id: Job ID
-            broker_node_id: BrokerNode ID
+            broker_node_id: BrokerNode ID (로그용)
             product: 상품 유형 ("overseas_stock" | "overseas_futures")
+            provider: 증권사 ("ls" | "kiwoom" | ...)
         """
         self.db_path = db_path
         self.job_id = job_id
-        self.broker_node_id = broker_node_id
+        self.broker_node_id = broker_node_id  # 로그용으로 유지
         self.product = product
+        self.provider = provider
         
         # 체결 버퍼 (Race Condition 방어)
         self._pending_fills: Dict[str, PendingFill] = {}  # key: order_no_order_date
@@ -117,6 +120,8 @@ class WorkflowPositionTracker:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS workflow_orders (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product TEXT NOT NULL,
+                    provider TEXT NOT NULL,
                     order_no TEXT NOT NULL,
                     order_date TEXT NOT NULL,
                     symbol TEXT,
@@ -130,11 +135,13 @@ class WorkflowPositionTracker:
                     UNIQUE(order_no, order_date)
                 )
             """)
-            
+
             # 워크플로우 포지션 로트 (FIFO용)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS workflow_position_lots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product TEXT NOT NULL,
+                    provider TEXT NOT NULL,
                     symbol TEXT NOT NULL,
                     exchange TEXT,
                     fill_datetime TEXT,
@@ -147,11 +154,13 @@ class WorkflowPositionTracker:
                     created_at TEXT
                 )
             """)
-            
+
             # 체결 내역
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trade_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product TEXT NOT NULL,
+                    provider TEXT NOT NULL,
                     order_no TEXT,
                     order_date TEXT,
                     symbol TEXT,
@@ -166,13 +175,16 @@ class WorkflowPositionTracker:
                     created_at TEXT
                 )
             """)
-            
-            # 브로커 메타데이터 (paper_trading 변경 감지용)
+
+            # 상품+증권사 메타데이터 (paper_trading 변경 감지용)
+            # product + provider 복합키 (사용자가 변경 불가능한 값)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS broker_metadata (
-                    broker_node_id TEXT PRIMARY KEY,
+                    product TEXT NOT NULL,
+                    provider TEXT NOT NULL,
                     paper_trading INTEGER NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (product, provider)
                 )
             """)
 
@@ -185,9 +197,12 @@ class WorkflowPositionTracker:
 
     def check_and_reset_if_mode_changed(self, paper_trading: bool) -> bool:
         """
-        paper_trading 모드 변경 시 데이터 초기화
+        paper_trading 모드 변경 시 워크플로우 전체 데이터 초기화
 
-        모의투자 ↔ 실전투자 전환 시 해당 broker_node_id의 모든 데이터를 삭제합니다.
+        모의투자 ↔ 실전투자 전환 시 워크플로우의 모든 수익률 데이터를 삭제합니다.
+        이는 "대회 재참가" 개념으로, 처음부터 다시 시작합니다.
+
+        식별자: product + provider (사용자가 변경 불가능한 값)
 
         Args:
             paper_trading: 현재 paper_trading 설정 (True: 모의, False: 실전)
@@ -197,26 +212,27 @@ class WorkflowPositionTracker:
             False: 모드 동일하여 변경 없음
         """
         paper_trading_int = 1 if paper_trading else 0
+        identifier = f"{self.product}/{self.provider}"
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # 이전 paper_trading 값 조회
+            # 이전 paper_trading 값 조회 (product + provider 복합키)
             cursor.execute("""
                 SELECT paper_trading FROM broker_metadata
-                WHERE broker_node_id = ?
-            """, (self.broker_node_id,))
+                WHERE product = ? AND provider = ?
+            """, (self.product, self.provider))
 
             row = cursor.fetchone()
 
             if row is None:
                 # 최초 실행: 메타데이터 저장
                 cursor.execute("""
-                    INSERT INTO broker_metadata (broker_node_id, paper_trading, updated_at)
-                    VALUES (?, ?, ?)
-                """, (self.broker_node_id, paper_trading_int, datetime.now().isoformat()))
+                    INSERT INTO broker_metadata (product, provider, paper_trading, updated_at)
+                    VALUES (?, ?, ?, ?)
+                """, (self.product, self.provider, paper_trading_int, datetime.now().isoformat()))
                 conn.commit()
-                logger.info(f"[{self.broker_node_id}] Initial paper_trading mode: {'모의투자' if paper_trading else '실전투자'}")
+                logger.info(f"[{identifier}] Initial paper_trading mode: {'모의투자' if paper_trading else '실전투자'}")
                 return False
 
             prev_paper_trading = row[0]
@@ -225,25 +241,20 @@ class WorkflowPositionTracker:
                 # 모드 동일: 변경 없음
                 return False
 
-            # 모드 변경: 데이터 초기화
+            # 모드 변경: 워크플로우 전체 데이터 초기화 (대회 재참가)
             prev_mode = "모의투자" if prev_paper_trading == 1 else "실전투자"
             new_mode = "모의투자" if paper_trading else "실전투자"
 
-            logger.warning(f"[{self.broker_node_id}] paper_trading 모드 변경 감지: {prev_mode} → {new_mode}")
-            logger.warning(f"[{self.broker_node_id}] 수익률 기록 초기화 시작...")
+            logger.warning(f"[{identifier}] paper_trading 모드 변경 감지: {prev_mode} → {new_mode}")
+            logger.warning(f"[{identifier}] 수익률 기록 초기화 시작 (대회 재참가)...")
 
-            # 데이터 삭제 (해당 broker_node_id 관련만 삭제하기 위해 job_id 사용)
-            # workflow_orders: job_id로 필터
-            cursor.execute("""
-                DELETE FROM workflow_orders WHERE job_id = ?
-            """, (self.job_id,))
+            # 워크플로우 전체 데이터 삭제 (대회 재참가 = 처음부터 다시)
+            cursor.execute("DELETE FROM workflow_orders")
             deleted_orders = cursor.rowcount
 
-            # workflow_position_lots: 전체 삭제 (broker_node_id 기준)
             cursor.execute("DELETE FROM workflow_position_lots")
             deleted_lots = cursor.rowcount
 
-            # trade_history: 전체 삭제
             cursor.execute("DELETE FROM trade_history")
             deleted_trades = cursor.rowcount
 
@@ -251,12 +262,12 @@ class WorkflowPositionTracker:
             cursor.execute("""
                 UPDATE broker_metadata
                 SET paper_trading = ?, updated_at = ?
-                WHERE broker_node_id = ?
-            """, (paper_trading_int, datetime.now().isoformat(), self.broker_node_id))
+                WHERE product = ? AND provider = ?
+            """, (paper_trading_int, datetime.now().isoformat(), self.product, self.provider))
 
             conn.commit()
 
-            logger.warning(f"[{self.broker_node_id}] 수익률 기록 초기화 완료: "
+            logger.warning(f"[{identifier}] 수익률 기록 초기화 완료: "
                           f"orders={deleted_orders}, lots={deleted_lots}, trades={deleted_trades}")
 
             return True
@@ -293,10 +304,11 @@ class WorkflowPositionTracker:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR IGNORE INTO workflow_orders 
-                (order_no, order_date, symbol, exchange, side, quantity, price, job_id, node_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO workflow_orders
+                (product, provider, order_no, order_date, symbol, exchange, side, quantity, price, job_id, node_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                self.product, self.provider,
                 order_no, order_date, symbol, exchange, side, quantity, price,
                 job_id, node_id, datetime.now().isoformat()
             ))
@@ -405,19 +417,20 @@ class WorkflowPositionTracker:
     async def _process_fill_internal(self, fill: PendingFill, classification: str) -> None:
         """체결 내부 처리 (FIFO 로직)"""
         fill_datetime = f"{fill.order_date}_{fill.fill_time}"
-        
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             realized_pnl = 0.0
-            
+
             if fill.side == "buy":
                 # 매수: 새 로트 생성
                 cursor.execute("""
                     INSERT INTO workflow_position_lots
-                    (symbol, exchange, fill_datetime, buy_price, original_qty, remaining_qty,
+                    (product, provider, symbol, exchange, fill_datetime, buy_price, original_qty, remaining_qty,
                      classification, order_no, order_date, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
+                    self.product, self.provider,
                     fill.symbol, fill.exchange, fill_datetime, fill.price,
                     fill.quantity, fill.quantity, classification,
                     fill.order_no, fill.order_date, datetime.now().isoformat()
@@ -427,21 +440,22 @@ class WorkflowPositionTracker:
                 realized_pnl = self._process_sell_fifo(
                     cursor, fill.symbol, fill.quantity, fill.price, classification
                 )
-            
+
             # 체결 내역 저장
             cursor.execute("""
                 INSERT INTO trade_history
-                (order_no, order_date, symbol, exchange, side, quantity, price,
+                (product, provider, order_no, order_date, symbol, exchange, side, quantity, price,
                  fill_datetime, classification, commda_code, realized_pnl, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                self.product, self.provider,
                 fill.order_no, fill.order_date, fill.symbol, fill.exchange,
                 fill.side, fill.quantity, fill.price, fill_datetime,
                 classification, fill.commda_code, realized_pnl, datetime.now().isoformat()
             ))
-            
+
             conn.commit()
-        
+
         logger.debug(f"Processed fill: {fill.symbol} {fill.side} {fill.quantity}@{fill.price} [{classification}]")
     
     def _process_sell_fifo(
