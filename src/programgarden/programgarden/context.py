@@ -1364,6 +1364,7 @@ class ExecutionContext:
                     "job_id": self.job_id,
                     "broker_node_id": broker_node_id,
                     "product": product,
+                    "paper_trading": getattr(self, '_workflow_paper_trading', False),
                     "timestamp": now,
                     
                     # 워크플로우 기본 (전체)
@@ -1682,6 +1683,7 @@ class ExecutionContext:
             # PnL refresh용 정보 저장
             self._workflow_broker_node_id = broker_node_id
             self._workflow_product = product
+            self._workflow_paper_trading = paper_trading
 
             logger.info(f"Workflow position tracker initialized: {db_path} (paper_trading={paper_trading})")
             
