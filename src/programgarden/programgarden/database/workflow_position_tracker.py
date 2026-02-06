@@ -87,6 +87,7 @@ class WorkflowPositionTracker:
         broker_node_id: str,
         product: str = "overseas_stock",
         provider: str = "ls",
+        trading_mode: str = "live",
     ):
         """
         Args:
@@ -95,27 +96,29 @@ class WorkflowPositionTracker:
             broker_node_id: BrokerNode ID (로그용)
             product: 상품 유형 ("overseas_stock" | "overseas_futures")
             provider: 증권사 ("ls" | "kiwoom" | ...)
+            trading_mode: 거래 모드 ("paper" | "live")
         """
         self.db_path = db_path
         self.job_id = job_id
         self.broker_node_id = broker_node_id  # 로그용으로 유지
         self.product = product
         self.provider = provider
-        
+        self.trading_mode = trading_mode
+
         # 체결 버퍼 (Race Condition 방어)
         self._pending_fills: Dict[str, PendingFill] = {}  # key: order_no_order_date
         self._buffer_lock = asyncio.Lock()
-        
+
         # DB 초기화
         self._init_db()
     
     def _init_db(self) -> None:
         """데이터베이스 테이블 초기화"""
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # 워크플로우 주문 기록
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS workflow_orders (
@@ -131,6 +134,7 @@ class WorkflowPositionTracker:
                     price REAL,
                     job_id TEXT,
                     node_id TEXT,
+                    trading_mode TEXT NOT NULL DEFAULT 'live',
                     created_at TEXT,
                     UNIQUE(order_no, order_date)
                 )
@@ -151,6 +155,7 @@ class WorkflowPositionTracker:
                     classification TEXT,
                     order_no TEXT,
                     order_date TEXT,
+                    trading_mode TEXT NOT NULL DEFAULT 'live',
                     created_at TEXT
                 )
             """)
@@ -172,12 +177,12 @@ class WorkflowPositionTracker:
                     classification TEXT,
                     commda_code TEXT,
                     realized_pnl REAL,
+                    trading_mode TEXT NOT NULL DEFAULT 'live',
                     created_at TEXT
                 )
             """)
 
-            # 상품+증권사 메타데이터 (paper_trading 변경 감지용)
-            # product + provider 복합키 (사용자가 변경 불가능한 값)
+            # 상품+증권사 메타데이터 (현재 거래 모드 추적용)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS broker_metadata (
                     product TEXT NOT NULL,
@@ -188,36 +193,29 @@ class WorkflowPositionTracker:
                 )
             """)
 
-            # 인덱스 생성
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_lots_fifo ON workflow_position_lots(symbol, fill_datetime)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_lookup ON workflow_orders(order_no, order_date)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_lots_remaining ON workflow_position_lots(symbol, remaining_qty)")
+            # 인덱스 생성 (trading_mode 포함)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_lots_fifo_v2 ON workflow_position_lots(trading_mode, symbol, fill_datetime)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_lookup_v2 ON workflow_orders(trading_mode, order_no, order_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_lots_remaining_v2 ON workflow_position_lots(trading_mode, symbol, remaining_qty)")
 
             conn.commit()
 
-    def check_and_reset_if_mode_changed(self, paper_trading: bool) -> bool:
+    def update_trading_mode(self, trading_mode: str) -> None:
         """
-        paper_trading 모드 변경 시 워크플로우 전체 데이터 초기화
+        현재 거래 모드를 broker_metadata에 기록합니다.
 
-        모의투자 ↔ 실전투자 전환 시 워크플로우의 모든 수익률 데이터를 삭제합니다.
-        이는 "대회 재참가" 개념으로, 처음부터 다시 시작합니다.
-
-        식별자: product + provider (사용자가 변경 불가능한 값)
+        모의투자 ↔ 실전투자 전환 시 데이터를 초기화하지 않고,
+        trading_mode 컬럼으로 분리 저장하여 각 모드의 수익률을 독립적으로 유지합니다.
 
         Args:
-            paper_trading: 현재 paper_trading 설정 (True: 모의, False: 실전)
-
-        Returns:
-            True: 모드 변경으로 데이터 초기화됨
-            False: 모드 동일하여 변경 없음
+            trading_mode: 거래 모드 ("paper" | "live")
         """
-        paper_trading_int = 1 if paper_trading else 0
+        paper_trading_int = 1 if trading_mode == "paper" else 0
         identifier = f"{self.product}/{self.provider}"
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # 이전 paper_trading 값 조회 (product + provider 복합키)
             cursor.execute("""
                 SELECT paper_trading FROM broker_metadata
                 WHERE product = ? AND provider = ?
@@ -226,51 +224,29 @@ class WorkflowPositionTracker:
             row = cursor.fetchone()
 
             if row is None:
-                # 최초 실행: 메타데이터 저장
                 cursor.execute("""
                     INSERT INTO broker_metadata (product, provider, paper_trading, updated_at)
                     VALUES (?, ?, ?, ?)
                 """, (self.product, self.provider, paper_trading_int, datetime.now().isoformat()))
                 conn.commit()
-                logger.info(f"[{identifier}] Initial paper_trading mode: {'모의투자' if paper_trading else '실전투자'}")
-                return False
+                mode_label = "모의투자" if trading_mode == "paper" else "실전투자"
+                logger.info(f"[{identifier}] Initial trading mode: {mode_label}")
+                return
 
             prev_paper_trading = row[0]
 
-            if prev_paper_trading == paper_trading_int:
-                # 모드 동일: 변경 없음
-                return False
+            if prev_paper_trading != paper_trading_int:
+                prev_mode = "모의투자" if prev_paper_trading == 1 else "실전투자"
+                new_mode = "모의투자" if trading_mode == "paper" else "실전투자"
 
-            # 모드 변경: 워크플로우 전체 데이터 초기화 (대회 재참가)
-            prev_mode = "모의투자" if prev_paper_trading == 1 else "실전투자"
-            new_mode = "모의투자" if paper_trading else "실전투자"
+                cursor.execute("""
+                    UPDATE broker_metadata
+                    SET paper_trading = ?, updated_at = ?
+                    WHERE product = ? AND provider = ?
+                """, (paper_trading_int, datetime.now().isoformat(), self.product, self.provider))
+                conn.commit()
 
-            logger.warning(f"[{identifier}] paper_trading 모드 변경 감지: {prev_mode} → {new_mode}")
-            logger.warning(f"[{identifier}] 수익률 기록 초기화 시작 (대회 재참가)...")
-
-            # 워크플로우 전체 데이터 삭제 (대회 재참가 = 처음부터 다시)
-            cursor.execute("DELETE FROM workflow_orders")
-            deleted_orders = cursor.rowcount
-
-            cursor.execute("DELETE FROM workflow_position_lots")
-            deleted_lots = cursor.rowcount
-
-            cursor.execute("DELETE FROM trade_history")
-            deleted_trades = cursor.rowcount
-
-            # 메타데이터 업데이트
-            cursor.execute("""
-                UPDATE broker_metadata
-                SET paper_trading = ?, updated_at = ?
-                WHERE product = ? AND provider = ?
-            """, (paper_trading_int, datetime.now().isoformat(), self.product, self.provider))
-
-            conn.commit()
-
-            logger.warning(f"[{identifier}] 수익률 기록 초기화 완료: "
-                          f"orders={deleted_orders}, lots={deleted_lots}, trades={deleted_trades}")
-
-            return True
+                logger.info(f"[{identifier}] 거래 모드 전환: {prev_mode} → {new_mode} (데이터 보존)")
 
     def record_order(
         self,
@@ -305,12 +281,12 @@ class WorkflowPositionTracker:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR IGNORE INTO workflow_orders
-                (product, provider, order_no, order_date, symbol, exchange, side, quantity, price, job_id, node_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (product, provider, order_no, order_date, symbol, exchange, side, quantity, price, job_id, node_id, trading_mode, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.product, self.provider,
                 order_no, order_date, symbol, exchange, side, quantity, price,
-                job_id, node_id, datetime.now().isoformat()
+                job_id, node_id, self.trading_mode, datetime.now().isoformat()
             ))
             conn.commit()
         
@@ -427,16 +403,16 @@ class WorkflowPositionTracker:
                 cursor.execute("""
                     INSERT INTO workflow_position_lots
                     (product, provider, symbol, exchange, fill_datetime, buy_price, original_qty, remaining_qty,
-                     classification, order_no, order_date, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     classification, order_no, order_date, trading_mode, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     self.product, self.provider,
                     fill.symbol, fill.exchange, fill_datetime, fill.price,
                     fill.quantity, fill.quantity, classification,
-                    fill.order_no, fill.order_date, datetime.now().isoformat()
+                    fill.order_no, fill.order_date, self.trading_mode, datetime.now().isoformat()
                 ))
             else:
-                # 매도: FIFO 청산
+                # 매도: FIFO 청산 (현재 trading_mode 내에서만)
                 realized_pnl = self._process_sell_fifo(
                     cursor, fill.symbol, fill.quantity, fill.price, classification
                 )
@@ -445,18 +421,18 @@ class WorkflowPositionTracker:
             cursor.execute("""
                 INSERT INTO trade_history
                 (product, provider, order_no, order_date, symbol, exchange, side, quantity, price,
-                 fill_datetime, classification, commda_code, realized_pnl, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 fill_datetime, classification, commda_code, realized_pnl, trading_mode, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.product, self.provider,
                 fill.order_no, fill.order_date, fill.symbol, fill.exchange,
                 fill.side, fill.quantity, fill.price, fill_datetime,
-                classification, fill.commda_code, realized_pnl, datetime.now().isoformat()
+                classification, fill.commda_code, realized_pnl, self.trading_mode, datetime.now().isoformat()
             ))
 
             conn.commit()
 
-        logger.debug(f"Processed fill: {fill.symbol} {fill.side} {fill.quantity}@{fill.price} [{classification}]")
+        logger.debug(f"Processed fill: {fill.symbol} {fill.side} {fill.quantity}@{fill.price} [{classification}] ({self.trading_mode})")
     
     def _process_sell_fifo(
         self,
@@ -484,13 +460,13 @@ class WorkflowPositionTracker:
         remaining_to_sell = quantity
         total_realized_pnl = 0.0
         
-        # fill_datetime 순으로 정렬 (FIFO)
+        # fill_datetime 순으로 정렬 (FIFO, 현재 trading_mode 내에서만)
         cursor.execute("""
             SELECT id, buy_price, remaining_qty, classification
             FROM workflow_position_lots
-            WHERE symbol = ? AND remaining_qty > 0
+            WHERE symbol = ? AND remaining_qty > 0 AND trading_mode = ?
             ORDER BY fill_datetime ASC
-        """, (symbol,))
+        """, (symbol, self.trading_mode))
         
         lots = cursor.fetchall()
         
@@ -523,13 +499,13 @@ class WorkflowPositionTracker:
         return total_realized_pnl
     
     def _check_workflow_order(self, order_no: str, order_date: str) -> bool:
-        """워크플로우 주문 여부 확인"""
+        """워크플로우 주문 여부 확인 (현재 trading_mode 기준)"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT 1 FROM workflow_orders
-                WHERE order_no = ? AND order_date = ?
-            """, (order_no, order_date))
+                WHERE order_no = ? AND order_date = ? AND trading_mode = ?
+            """, (order_no, order_date, self.trading_mode))
             return cursor.fetchone() is not None
     
     def get_workflow_positions(
@@ -547,19 +523,19 @@ class WorkflowPositionTracker:
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # 날짜 필터 조건
             date_filter = ""
-            params: List[str] = []
+            params: list = [self.trading_mode]
             if start_date:
                 # fill_datetime 형식: YYYYMMDD_HHMMSSsss
                 date_filter = " AND fill_datetime >= ?"
                 params.append(f"{start_date}_000000000")
-            
+
             cursor.execute(f"""
                 SELECT symbol, exchange, buy_price, remaining_qty, classification
                 FROM workflow_position_lots
-                WHERE remaining_qty > 0 AND classification = 'workflow'
+                WHERE remaining_qty > 0 AND classification = 'workflow' AND trading_mode = ?
                 {date_filter}
             """, params)
             
@@ -762,10 +738,10 @@ class WorkflowPositionTracker:
                 SELECT symbol, SUM(CASE WHEN side = 'buy' THEN quantity ELSE 0 END) as buy_qty,
                        SUM(CASE WHEN side = 'sell' THEN quantity ELSE 0 END) as sell_qty
                 FROM trade_history
-                WHERE classification = 'workflow'
+                WHERE classification = 'workflow' AND trading_mode = ?
                 GROUP BY symbol
                 HAVING sell_qty > buy_qty
-            """)
+            """, (self.trading_mode,))
             
             for symbol, buy_qty, sell_qty in cursor.fetchall():
                 anomalies.append(AnomalyResult(
@@ -777,12 +753,12 @@ class WorkflowPositionTracker:
             
             # 2. unknown_api_ratio: 알 수 없는 API 주문 비율
             cursor.execute("""
-                SELECT 
+                SELECT
                     SUM(CASE WHEN classification = 'unknown_api' THEN 1 ELSE 0 END) as unknown_count,
                     COUNT(*) as total_count
                 FROM trade_history
-                WHERE commda_code = '40'
-            """)
+                WHERE commda_code = '40' AND trading_mode = ?
+            """, (self.trading_mode,))
             
             row = cursor.fetchone()
             if row and row[1] > 0:
@@ -826,44 +802,46 @@ class WorkflowPositionTracker:
         return max(0, score)
 
     def _has_workflow_orders(self) -> bool:
-        """워크플로우 주문이 존재하는지 확인"""
+        """워크플로우 주문이 존재하는지 확인 (현재 trading_mode 기준)"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM workflow_orders LIMIT 1")
+            cursor.execute("SELECT COUNT(*) FROM workflow_orders WHERE trading_mode = ? LIMIT 1", (self.trading_mode,))
             return cursor.fetchone()[0] > 0
     
     def get_statistics(self) -> Dict[str, Any]:
         """
-        통계 정보 조회
-        
+        통계 정보 조회 (현재 trading_mode 기준)
+
         Returns:
             주문/체결 통계
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # 워크플로우 주문 수
-            cursor.execute("SELECT COUNT(*) FROM workflow_orders")
+            cursor.execute("SELECT COUNT(*) FROM workflow_orders WHERE trading_mode = ?", (self.trading_mode,))
             order_count = cursor.fetchone()[0]
-            
+
             # 분류별 체결 수
             cursor.execute("""
                 SELECT classification, COUNT(*), SUM(quantity)
                 FROM trade_history
+                WHERE trading_mode = ?
                 GROUP BY classification
-            """)
+            """, (self.trading_mode,))
             fill_stats = {row[0]: {"count": row[1], "quantity": row[2]} for row in cursor.fetchall()}
-            
+
             # 활성 로트 수
             cursor.execute("""
                 SELECT classification, COUNT(*), SUM(remaining_qty)
                 FROM workflow_position_lots
-                WHERE remaining_qty > 0
+                WHERE remaining_qty > 0 AND trading_mode = ?
                 GROUP BY classification
-            """)
+            """, (self.trading_mode,))
             lot_stats = {row[0]: {"count": row[1], "quantity": row[2]} for row in cursor.fetchall()}
-            
+
             return {
+                "trading_mode": self.trading_mode,
                 "workflow_orders": order_count,
                 "fills_by_classification": fill_stats,
                 "active_lots_by_classification": lot_stats,
@@ -895,10 +873,10 @@ class WorkflowPositionTracker:
             
             # 가격이 0인 주문만 업데이트 (시장가 주문)
             cursor.execute("""
-                UPDATE workflow_orders 
+                UPDATE workflow_orders
                 SET price = ?
-                WHERE order_no = ? AND order_date = ? AND (price = 0 OR price IS NULL)
-            """, (fill_price, order_no, order_date))
+                WHERE order_no = ? AND order_date = ? AND trading_mode = ? AND (price = 0 OR price IS NULL)
+            """, (fill_price, order_no, order_date, self.trading_mode))
             
             updated = cursor.rowcount > 0
             conn.commit()
@@ -923,9 +901,9 @@ class WorkflowPositionTracker:
             cursor.execute("""
                 SELECT order_no, order_date, symbol, exchange, side, quantity
                 FROM workflow_orders
-                WHERE price = 0 OR price IS NULL
+                WHERE trading_mode = ? AND (price = 0 OR price IS NULL)
                 ORDER BY created_at DESC
-            """)
+            """, (self.trading_mode,))
             
             return [
                 {
@@ -970,10 +948,10 @@ class WorkflowPositionTracker:
                     continue
                 
                 cursor.execute("""
-                    UPDATE workflow_orders 
+                    UPDATE workflow_orders
                     SET price = ?
-                    WHERE order_no = ? AND order_date = ? AND (price = 0 OR price IS NULL)
-                """, (fill_price, order_no, order_date))
+                    WHERE order_no = ? AND order_date = ? AND trading_mode = ? AND (price = 0 OR price IS NULL)
+                """, (fill_price, order_no, order_date, self.trading_mode))
                 
                 if cursor.rowcount > 0:
                     updated_count += 1
@@ -1010,8 +988,8 @@ class WorkflowPositionTracker:
             # workflow_orders에서 삭제
             cursor.execute("""
                 DELETE FROM workflow_orders
-                WHERE order_no = ? AND order_date = ?
-            """, (order_no, order_date))
+                WHERE order_no = ? AND order_date = ? AND trading_mode = ?
+            """, (order_no, order_date, self.trading_mode))
             
             deleted = cursor.rowcount > 0
             conn.commit()
@@ -1062,12 +1040,12 @@ class WorkflowPositionTracker:
                 updates.append("price = ?")
                 params.append(new_price)
             
-            params.extend([order_no, order_date])
-            
+            params.extend([order_no, order_date, self.trading_mode])
+
             cursor.execute(f"""
                 UPDATE workflow_orders
                 SET {", ".join(updates)}
-                WHERE order_no = ? AND order_date = ?
+                WHERE order_no = ? AND order_date = ? AND trading_mode = ?
             """, params)
             
             updated = cursor.rowcount > 0
@@ -1130,8 +1108,8 @@ class WorkflowPositionTracker:
                 # 이미 처리된 체결인지 확인 (trade_history에 있는지)
                 cursor.execute("""
                     SELECT COUNT(*) FROM trade_history
-                    WHERE order_no = ? AND order_date = ?
-                """, (order_no, order_date))
+                    WHERE order_no = ? AND order_date = ? AND trading_mode = ?
+                """, (order_no, order_date, self.trading_mode))
                 
                 if cursor.fetchone()[0] > 0:
                     # 이미 처리됨

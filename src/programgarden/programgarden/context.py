@@ -1636,7 +1636,8 @@ class ExecutionContext:
         on_workflow_pnl_update 리스너가 등록된 경우에만 트래커를 초기화합니다.
         주문 발생 시 자동으로 포지션을 기록하고, 틱마다 워크플로우 수익률을 계산합니다.
 
-        paper_trading 모드가 변경되면 기존 수익률 데이터를 초기화합니다 (대회 재참가).
+        모의투자/실전투자 모드별로 데이터를 분리 저장하여, 모드 전환 시에도
+        기존 수익률 데이터가 보존됩니다.
 
         Args:
             broker_node_id: BrokerNode ID (로그용)
@@ -1646,23 +1647,25 @@ class ExecutionContext:
         """
         # 리스너 중 on_workflow_pnl_update를 구현한 것이 있는지 확인
         has_workflow_listener = any(
-            hasattr(listener, 'on_workflow_pnl_update') 
+            hasattr(listener, 'on_workflow_pnl_update')
             and callable(getattr(listener, 'on_workflow_pnl_update', None))
             for listener in self._listeners
         )
-        
+
         if not has_workflow_listener:
             logger.debug("No workflow_pnl listener registered, skipping tracker init")
             return
-        
+
         if self._workflow_position_tracker is not None:
             logger.debug("Workflow position tracker already initialized")
             return
-        
+
         try:
             from programgarden.database import WorkflowPositionTracker
             from pathlib import Path
-            
+
+            trading_mode = "paper" if paper_trading else "live"
+
             # DB 경로: /app/data/{workflow_id}_workflow.db (Docker)
             # 로컬: ./app/data/ (CWD 기준)
             # 워크플로우 ID 사용 (워크플로우당 1개 DB 유지)
@@ -1675,20 +1678,18 @@ class ExecutionContext:
                     db_dir.mkdir(parents=True, exist_ok=True)
             db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
             db_path = str(db_dir / db_filename)
-            
+
             self._workflow_position_tracker = WorkflowPositionTracker(
                 db_path=db_path,
                 job_id=self.job_id,
                 broker_node_id=broker_node_id,
                 product=product,
                 provider=provider,
+                trading_mode=trading_mode,
             )
 
-            # paper_trading 모드 변경 체크 및 초기화 (대회 재참가)
-            identifier = f"{product}/{provider}"
-            if self._workflow_position_tracker.check_and_reset_if_mode_changed(paper_trading):
-                mode = "모의투자" if paper_trading else "실전투자"
-                self.log("warning", f"[{identifier}] {mode}로 전환 - 수익률 기록 초기화됨 (대회 재참가)", broker_node_id)
+            # 거래 모드 메타데이터 기록 (데이터 초기화 없이 모드만 업데이트)
+            self._workflow_position_tracker.update_trading_mode(trading_mode)
 
             # PnL refresh용 정보 저장
             self._workflow_broker_node_id = broker_node_id
@@ -1696,8 +1697,9 @@ class ExecutionContext:
             self._workflow_provider = provider
             self._workflow_paper_trading = paper_trading
 
-            logger.info(f"Workflow position tracker initialized: {db_path} ({identifier}, paper_trading={paper_trading})")
-            
+            identifier = f"{product}/{provider}"
+            logger.info(f"Workflow position tracker initialized: {db_path} ({identifier}, trading_mode={trading_mode})")
+
         except Exception as e:
             logger.warning(f"Failed to init workflow position tracker: {e}")
             self._workflow_position_tracker = None
