@@ -212,7 +212,7 @@ class TestPluginSchemaDefaults:
 
         schema = PluginSchema(
             id="test",
-            category=PluginCategory.STRATEGY_CONDITION,
+            category=PluginCategory.TECHNICAL,
         )
 
         assert hasattr(schema, 'required_fields')
@@ -224,7 +224,7 @@ class TestPluginSchemaDefaults:
 
         schema = PluginSchema(
             id="test",
-            category=PluginCategory.STRATEGY_CONDITION,
+            category=PluginCategory.TECHNICAL,
         )
 
         # 기본값 확인
