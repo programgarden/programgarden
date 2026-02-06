@@ -56,7 +56,7 @@ lsof -ti:8766 | xargs kill -9
 
 ### Node-Based DSL
 
-Workflows are defined as JSON with nodes, edges, and credentials:
+Workflows are defined as JSON with nodes, edges, credentials, and notes:
 
 ```json
 {
@@ -74,6 +74,9 @@ Workflows are defined as JSON with nodes, edges, and credentials:
         {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
       ]
     }
+  ],
+  "notes": [
+    {"id": "note-1", "content": "## RSI 전략 메모", "color": 1, "width": 300, "height": 200, "position": {"x": 100, "y": 50}}
   ]
 }
 ```
@@ -87,6 +90,7 @@ Workflows are defined as JSON with nodes, edges, and credentials:
 - **Product Scope**: Each broker/market/account node is split by product type (`overseas_stock` / `overseas_futures`)
 - **Plugins**: Referenced via `plugin` field in ConditionNode, NewOrderNode, etc.
 - **Credentials**: Referenced by `credential_id`, defined in `credentials` section as a list
+- **Notes (Sticky Notes)**: Canvas annotations for documentation. Not executed. `content` supports Markdown, `color` (0-7), `width/height` (px), `position` (x, y)
 
 ### Auto-Iterate Expressions
 

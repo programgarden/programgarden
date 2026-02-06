@@ -12,7 +12,7 @@ ProgramGarden Core - 모델 정의
 """
 
 from programgarden_core.models.edge import Edge
-from programgarden_core.models.workflow import WorkflowDefinition, WorkflowInput, CredentialReference
+from programgarden_core.models.workflow import WorkflowDefinition, WorkflowInput, CredentialReference, StickyNote, NotePosition
 from programgarden_core.models.job import WorkflowJob, JobState, JobStatus
 from programgarden_core.models.credential import (
     # Legacy
@@ -80,6 +80,8 @@ __all__ = [
     "WorkflowDefinition",
     "WorkflowInput",
     "CredentialReference",
+    "StickyNote",
+    "NotePosition",
     # Job
     "WorkflowJob",
     "JobState",
