@@ -73,6 +73,37 @@ class CredentialReference(BaseModel):
     )
 
 
+class NotePosition(BaseModel):
+    """메모 캔버스 위치"""
+
+    x: float = 0.0
+    y: float = 0.0
+
+
+class StickyNote(BaseModel):
+    """
+    워크플로우 메모 (비실행 주석)
+
+    캔버스에 표시되는 Markdown 메모.
+    노드 시스템과 완전 분리 — Executor가 인식하지 않음.
+    """
+
+    id: str = Field(..., description="메모 고유 ID")
+    content: str = Field(default="", description="Markdown 콘텐츠")
+    color: int = Field(
+        default=0,
+        ge=0,
+        le=7,
+        description="배경색 코드 (0=노랑, 1=파랑, 2=초록, 3=빨강, 4=보라, 5=회색, 6=주황, 7=분홍)",
+    )
+    width: int = Field(default=300, ge=100, description="너비 (px)")
+    height: int = Field(default=200, ge=80, description="높이 (px)")
+    position: NotePosition = Field(
+        default_factory=NotePosition,
+        description="캔버스 위치 (x, y)",
+    )
+
+
 class WorkflowDefinition(BaseModel):
     """
     워크플로우 정의 (Definition Layer)
@@ -121,6 +152,12 @@ class WorkflowDefinition(BaseModel):
     credentials: List[CredentialReference] = Field(
         default_factory=list,
         description="워크플로우에서 사용하는 Credential 목록",
+    )
+
+    # 메모 (Sticky Notes)
+    notes: List[StickyNote] = Field(
+        default_factory=list,
+        description="워크플로우 메모 목록 (캔버스 주석, 실행에 영향 없음)",
     )
 
     # 메타데이터
