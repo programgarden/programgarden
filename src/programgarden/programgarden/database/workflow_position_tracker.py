@@ -802,21 +802,35 @@ class WorkflowPositionTracker:
     def calculate_trust_score(self, anomalies: Optional[List[AnomalyResult]] = None) -> int:
         """
         신뢰도 점수 계산
-        
+
+        워크플로우 거래가 없으면 0 (신뢰도 산정 불가),
+        거래가 있으면 100에서 이상 거래 감지 시 감점.
+
         Args:
             anomalies: 이상 거래 목록 (없으면 자동 감지)
-            
+
         Returns:
             신뢰도 점수 (0-100)
         """
+        # 워크플로우 거래가 없으면 신뢰도 0
+        if not self._has_workflow_orders():
+            return 0
+
         if anomalies is None:
             anomalies = self.detect_anomalies()
-        
+
         score = 100
         for anomaly in anomalies:
             score -= anomaly.severity
-        
+
         return max(0, score)
+
+    def _has_workflow_orders(self) -> bool:
+        """워크플로우 주문이 존재하는지 확인"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM workflow_orders LIMIT 1")
+            return cursor.fetchone()[0] > 0
     
     def get_statistics(self) -> Dict[str, Any]:
         """

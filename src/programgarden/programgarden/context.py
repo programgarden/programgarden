@@ -1385,7 +1385,7 @@ class ExecutionContext:
                     
                     "workflow_positions": base_workflow_result.get("workflow_positions", []),
                     "other_positions": base_workflow_result.get("other_positions", []),
-                    "trust_score": base_workflow_result.get("trust_score", 100),
+                    "trust_score": base_workflow_result.get("trust_score", 0),
                     "anomaly_count": base_workflow_result.get("anomaly_count", 0),
                     "currency": currency,
                     
@@ -1520,7 +1520,7 @@ class ExecutionContext:
                 "total_pnl_amount": total_pnl,
                 "workflow_positions": [],
                 "other_positions": other_positions_list,
-                "trust_score": 100,
+                "trust_score": 0,
                 "anomaly_count": 0,
                 # 상품별 필드는 tracker에서 채움 (여기서는 None)
                 "workflow_stock_pnl_rate": None,
@@ -1553,7 +1553,7 @@ class ExecutionContext:
                 "total_pnl_amount": 0.0,
                 "workflow_positions": [],
                 "other_positions": [],
-                "trust_score": 100,
+                "trust_score": 0,
                 "anomaly_count": 0,
             }
 
