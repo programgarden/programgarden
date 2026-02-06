@@ -10,6 +10,7 @@
     "job_id": "workflow-pnl-stock-test",       # 워크플로우 실행 ID
     "broker_node_id": "broker",                 # BrokerNode ID
     "product": "overseas_stock",                # "overseas_stock" | "overseas_futures"
+    "paper_trading": false,                     # true: 모의투자, false: 실전투자
     "timestamp": "2026-01-27T10:30:45.123456",  # 이벤트 발생 시간 (ISO 8601)
     "currency": "USD",                          # 통화 단위
 
@@ -110,6 +111,7 @@
 | **기본** | `job_id` | string | 워크플로우 실행 ID |
 | | `broker_node_id` | string | BrokerNode ID |
 | | `product` | string | `overseas_stock` 또는 `overseas_futures` |
+| | `paper_trading` | bool | `true`: 모의투자, `false`: 실전투자 |
 | | `timestamp` | datetime | 이벤트 발생 시간 |
 | | `currency` | string | 통화 단위 (기본: USD) |
 | **워크플로우** | `workflow_pnl_rate` | Decimal | **핵심** - 이 워크플로우가 실행한 주문의 수익률 (%) |
@@ -214,13 +216,101 @@ class CompetitionListener(BaseExecutionListener):
 
 ---
 
+## 모의투자 vs 실전투자 (trading_mode 분리)
+
+`paper_trading` 필드로 모의/실전 모드를 구분하며, 각 모드별로 **독립적으로** 수익률을 추적합니다.
+
+| 항목 | 모의투자 (`paper_trading: true`) | 실전투자 (`paper_trading: false`) |
+|------|------|------|
+| DB 저장 | `trading_mode = 'paper'`로 분리 저장 | `trading_mode = 'live'`로 분리 저장 |
+| 수익률 추적 | 모의 전용 데이터로 독립 계산 | 실전 전용 데이터로 독립 계산 |
+| `trust_score` | 모의 거래 기준으로 독립 산정 | 실전 거래 기준으로 독립 산정 |
+| 모드 전환 시 | 기존 데이터 유지 (삭제 안 함) | 기존 데이터 유지 (삭제 안 함) |
+| 해외주식 | LS증권 모의투자 **미지원** | 지원 |
+| 해외선물 | 지원 | 지원 |
+
+### 모의투자 응답 예시 (해외선물)
+
+```python
+{
+    "job_id": "workflow-pnl-futures-paper",
+    "broker_node_id": "broker",
+    "product": "overseas_futures",
+    "paper_trading": true,                     # 모의투자
+    "timestamp": "2026-01-27T10:30:45.123456",
+    "currency": "USD",
+
+    "workflow_pnl_rate": -0.85,
+    "workflow_eval_amount": 9915.00,
+    "workflow_buy_amount": 10000.00,
+    "workflow_pnl_amount": -85.00,
+
+    "other_pnl_rate": 0.00,
+    "other_eval_amount": 0.00,
+    "other_buy_amount": 0.00,
+    "other_pnl_amount": 0.00,
+
+    "total_pnl_rate": -0.85,
+    "total_eval_amount": 9915.00,
+    "total_buy_amount": 10000.00,
+    "total_pnl_amount": -85.00,
+
+    "trust_score": 100,
+    "anomaly_count": 0,
+    "total_position_count": 2,
+
+    "workflow_positions": [
+        {
+            "symbol": "HMCEG26",
+            "exchange": "CME",
+            "quantity": 2,
+            "avg_price": 5000.00,
+            "current_price": 4957.50,
+            "pnl_amount": -85.00,
+            "pnl_rate": -0.85
+        }
+    ],
+    "other_positions": []
+}
+```
+
+### 모드 설정 방법
+
+```python
+# credential에 paper_trading 설정
+"credentials": [
+    {
+        "credential_id": "broker-cred",
+        "type": "broker_ls_futures",
+        "data": [
+            {"key": "appkey", "value": "...", "type": "password"},
+            {"key": "appsecret", "value": "...", "type": "password"},
+            {"key": "paper_trading", "value": true, "type": "boolean", "label": "모의투자"}
+        ]
+    }
+]
+
+# 노드에도 paper_trading 설정 (credential + 노드 양쪽 모두 필요)
+{
+    "id": "broker",
+    "type": "OverseasFuturesBrokerNode",
+    "credential_id": "broker-cred",
+    "paper_trading": true
+}
+```
+
+> **주의**: `paper_trading`은 credential 뿐만 아니라 **노드 설정에도 반드시 포함**해야 합니다.
+
+---
+
 ## 핵심 포인트
 
 1. **워크플로우 vs 그 외 분리**: FIFO 방식으로 워크플로우가 실행한 주문만 추적하여 `workflow_*` 필드에 별도 계산
-2. **실시간 업데이트**: 틱 데이터가 변할 때마다 콜백 호출
-3. **대회 모드**: `BaseExecutionListener(start_date="20260115")`로 생성 시 `competition_*` 필드 활성화
-4. **Decimal 타입**: 금액/수익률은 `Decimal` 또는 `float`로 전달됨 (정밀도 유지 위해 Decimal 권장)
-5. **신뢰도 점수**: `trust_score`가 낮으면 FIFO 매칭이 불완전할 수 있음 (80 이상 권장)
+2. **모의/실전 독립 추적**: `paper_trading` 값에 따라 별도 DB 레코드로 수익률 독립 계산 (모드 전환해도 기존 데이터 유지)
+3. **실시간 업데이트**: 틱 데이터가 변할 때마다 콜백 호출
+4. **대회 모드**: `BaseExecutionListener(start_date="20260115")`로 생성 시 `competition_*` 필드 활성화
+5. **Decimal 타입**: 금액/수익률은 `Decimal` 또는 `float`로 전달됨 (정밀도 유지 위해 Decimal 권장)
+6. **신뢰도 점수**: `trust_score`가 낮으면 FIFO 매칭이 불완전할 수 있음 (80 이상 권장)
 
 ---
 

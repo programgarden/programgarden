@@ -131,7 +131,7 @@ TEST_WORKFLOW = {
     ],
     "credentials": [
         {
-            "id": "broker-cred",
+            "credential_id": "broker-cred",
             "type": "broker_ls_futures",
             "name": "LS증권 (해외선물)",
             "data": [
@@ -164,7 +164,7 @@ async def main():
     workflow["edges"] = TEST_WORKFLOW["edges"].copy()
     workflow["credentials"] = [
         {
-            "id": "broker-cred",
+            "credential_id": "broker-cred",
             "type": "broker_ls_futures",
             "name": "LS증권 (해외선물)",
             "data": [

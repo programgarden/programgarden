@@ -47,7 +47,7 @@ def load_credentials():
     
     credentials = {}
     for cred in data.get("credentials", []):
-        cred_id = cred["id"]
+        cred_id = cred["credential_id"]
         encrypted_data = cred.get("data", "{}")
         decrypted = decrypt_data(encrypted_data)
         credentials[cred["name"]] = {
@@ -117,7 +117,7 @@ async def test_condition_node_stock(credentials):
         ],
         "credentials": [
             {
-                "id": "broker-cred",
+                "credential_id": "broker-cred",
                 "type": "broker_ls_stock",
                 "name": "LS증권 API",
                 "data": {
@@ -207,7 +207,7 @@ async def test_condition_node_futures(credentials):
         ],
         "credentials": [
             {
-                "id": "broker-cred",
+                "credential_id": "broker-cred",
                 "type": "broker_ls_futures",
                 "name": "LS증권 선물 API",
                 "data": {
@@ -314,7 +314,7 @@ async def test_logic_node_stock(credentials):
         ],
         "credentials": [
             {
-                "id": "broker-cred",
+                "credential_id": "broker-cred",
                 "type": "broker_ls_stock",
                 "name": "LS증권 API",
                 "data": {

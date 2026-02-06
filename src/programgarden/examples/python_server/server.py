@@ -824,7 +824,7 @@ async def list_credentials(user_id: str = "default", credential_type: Optional[s
                 masked_data = decrypted_data
             
             result.append({
-                "id": cred.id,
+                "credential_id": cred.credential_id,
                 "name": cred.name,
                 "credential_type": cred.credential_type,
                 "user_id": cred.user_id,
@@ -884,7 +884,7 @@ async def get_credential(credential_id: str):
             masked_data = decrypted_data
         
         return JSONResponse({
-            "id": cred.id,
+            "credential_id": cred.credential_id,
             "name": cred.name,
             "credential_type": cred.credential_type,
             "user_id": cred.user_id,
@@ -928,10 +928,10 @@ async def create_credential(request: CredentialCreateRequest):
         created = store.create(cred)
         
         encryption_status = "encrypted" if is_encryption_enabled() else "plaintext (no encryption key)"
-        print(f"🔐 Credential created: {created.id} ({encryption_status})")
-        
+        print(f"🔐 Credential created: {created.credential_id} ({encryption_status})")
+
         return JSONResponse({
-            "id": created.id,
+            "credential_id": created.credential_id,
             "name": created.name,
             "credential_type": created.credential_type,
             "message": "Credential created successfully",
@@ -970,7 +970,7 @@ async def update_credential(credential_id: str, request: CredentialUpdateRequest
             return JSONResponse({"error": f"Credential not found: {credential_id}"}, status_code=404)
         
         return JSONResponse({
-            "id": updated.id,
+            "credential_id": updated.credential_id,
             "name": updated.name,
             "message": "Credential updated successfully",
         })
@@ -1088,7 +1088,7 @@ async def run_workflow_inline(request: WorkflowRunRequest):
         if request.credentials:
             store = get_credential_store()
             for cred_ref in request.credentials:
-                cred_id = cred_ref.get("id")
+                cred_id = cred_ref.get("credential_id")
                 if cred_id:
                     # credential store에서 암호화된 데이터 조회
                     stored_cred = store.get(cred_id)
@@ -1096,7 +1096,7 @@ async def run_workflow_inline(request: WorkflowRunRequest):
                         # 암호화된 data를 복호화 (외부 KMS 호출 시뮬레이션)
                         decrypted_data = decrypt_data(stored_cred.data)
                         credentials_list.append({
-                            "id": cred_id,
+                            "credential_id": cred_id,
                             "type": stored_cred.credential_type,
                             "name": stored_cred.name,
                             "data": decrypted_data,  # 복호화된 평문 데이터
@@ -1105,7 +1105,7 @@ async def run_workflow_inline(request: WorkflowRunRequest):
                     else:
                         # 저장소에 없으면 전달된 데이터 사용 (빈 값일 수 있음)
                         credentials_list.append({
-                            "id": cred_id,
+                            "credential_id": cred_id,
                             "type": cred_ref.get("type"),
                             "name": cred_ref.get("name"),
                             "data": cred_ref.get("data", {}),

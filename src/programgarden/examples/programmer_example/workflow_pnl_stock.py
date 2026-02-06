@@ -296,7 +296,7 @@ def create_workflow() -> dict:
         "edges": edges,
         "credentials": [
             {
-                "id": "broker-cred",
+                "credential_id": "broker-cred",
                 "type": "broker_ls_stock",
                 "name": "LS증권 (해외주식)",
                 "data": [
@@ -335,7 +335,7 @@ async def main():
     # credentials에 실제 값 주입
     workflow["credentials"] = [
         {
-            "id": "broker-cred",
+            "credential_id": "broker-cred",
             "type": "broker_ls_stock",
             "name": "LS증권 (해외주식)",
             "data": [

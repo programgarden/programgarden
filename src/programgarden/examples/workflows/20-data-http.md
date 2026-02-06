@@ -60,7 +60,7 @@ flowchart LR
 credentials 섹션:
 ```json
 {
-  "id": "api-token-cred",
+  "credential_id": "api-token-cred",
   "type": "http_bearer",
   "data": {"token": "your-api-token"}
 }
@@ -75,7 +75,7 @@ credentials 섹션:
 credentials 섹션:
 ```json
 {
-  "id": "api-key-cred",
+  "credential_id": "api-key-cred",
   "type": "http_header",
   "data": {"header_name": "X-API-Key", "header_value": "your-key"}
 }
@@ -90,7 +90,7 @@ credentials 섹션:
 credentials 섹션:
 ```json
 {
-  "id": "basic-auth-cred",
+  "credential_id": "basic-auth-cred",
   "type": "http_basic",
   "data": {"username": "user", "password": "pass"}
 }

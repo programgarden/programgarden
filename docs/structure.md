@@ -92,7 +92,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
     {"from": "rsi", "to": "order"}
   ],
   "credentials": [
-    {"id": "my-broker-cred", "type": "broker_ls_stock", "name": "LS증권 해외주식", "data": {"appkey": "", "appsecret": ""}}
+    {"credential_id": "my-broker-cred", "type": "broker_ls_stock", "name": "LS증권 해외주식", "data": {"appkey": "", "appsecret": ""}}
   ]
 }
 ```
@@ -110,7 +110,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 {
   "credentials": [
     {
-      "id": "broker-cred",
+      "credential_id": "broker-cred",
       "type": "broker_ls_stock",
       "name": "LS증권 해외주식",
       "data": {
@@ -119,7 +119,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
       }
     },
     {
-      "id": "broker-futures-cred",
+      "credential_id": "broker-futures-cred",
       "type": "broker_ls_futures",
       "name": "LS증권 해외선물",
       "data": {
@@ -129,7 +129,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
       }
     },
     {
-      "id": "custom-api-cred",
+      "credential_id": "custom-api-cred",
       "type": "http_custom",
       "name": "외부 API 인증",
       "data": [
