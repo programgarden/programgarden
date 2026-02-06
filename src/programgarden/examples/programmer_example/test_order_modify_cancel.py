@@ -86,7 +86,7 @@ async def test_new_order():
         ],
         "credentials": [
             {
-                "id": "broker-cred",
+                "credential_id": "broker-cred",
                 "type": "broker_ls_stock",
                 "data": [
                     {"key": "appkey", "value": os.getenv("APPKEY"), "type": "password", "label": "App Key"},
@@ -147,7 +147,7 @@ async def test_modify_order(order_id: str):
         ],
         "credentials": [
             {
-                "id": "broker-cred",
+                "credential_id": "broker-cred",
                 "type": "broker_ls_stock",
                 "data": [
                     {"key": "appkey", "value": os.getenv("APPKEY"), "type": "password", "label": "App Key"},
@@ -208,7 +208,7 @@ async def test_cancel_order(order_id: str):
         ],
         "credentials": [
             {
-                "id": "broker-cred",
+                "credential_id": "broker-cred",
                 "type": "broker_ls_stock",
                 "data": [
                     {"key": "appkey", "value": os.getenv("APPKEY"), "type": "password", "label": "App Key"},

@@ -153,7 +153,7 @@ class ExecutionContext:
         self._workflow_inputs: Dict[str, Any] = workflow_inputs or {}
         
         # Workflow credentials (for credential_id resolution)
-        # Format: [{"id": "cred-id", "type": "http_bearer", "data": {"token": "..."}}]
+        # Format: [{"credential_id": "cred-id", "type": "http_bearer", "data": {"token": "..."}}]
         self._workflow_credentials: List[Dict[str, Any]] = workflow_credentials or []
 
         # Node output storage
@@ -426,7 +426,7 @@ class ExecutionContext:
         """
         # List에서 해당 id를 가진 credential 찾기
         cred_ref = next(
-            (c for c in self._workflow_credentials if c.get("id") == credential_id),
+            (c for c in self._workflow_credentials if c.get("credential_id") == credential_id),
             None
         )
         if not cred_ref:

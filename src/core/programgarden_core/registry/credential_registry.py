@@ -93,16 +93,16 @@ class MemoryCredentialStore(CredentialStore):
         self._credentials: Dict[str, Credential] = {}
     
     def create(self, credential: Credential) -> Credential:
-        if not credential.id:
-            credential.id = str(uuid.uuid4())
+        if not credential.credential_id:
+            credential.credential_id = str(uuid.uuid4())
         credential.created_at = datetime.utcnow()
         credential.updated_at = datetime.utcnow()
-        self._credentials[credential.id] = credential
+        self._credentials[credential.credential_id] = credential
         return credential
-    
+
     def get(self, credential_id: str) -> Optional[Credential]:
         return self._credentials.get(credential_id)
-    
+
     def list(self, user_id: str = "default", credential_type: Optional[str] = None) -> List[Credential]:
         results = []
         for cred in self._credentials.values():
@@ -112,18 +112,18 @@ class MemoryCredentialStore(CredentialStore):
                 continue
             results.append(cred)
         return results
-    
+
     def update(self, credential_id: str, updates: Dict[str, Any]) -> Optional[Credential]:
         cred = self._credentials.get(credential_id)
         if not cred:
             return None
-        
+
         for key, value in updates.items():
             if hasattr(cred, key):
                 setattr(cred, key, value)
         cred.updated_at = datetime.utcnow()
         return cred
-    
+
     def delete(self, credential_id: str) -> bool:
         if credential_id in self._credentials:
             del self._credentials[credential_id]
@@ -134,16 +134,16 @@ class MemoryCredentialStore(CredentialStore):
 class JsonFileCredentialStore(CredentialStore):
     """
     JSON 파일 기반 credential 저장소 (개발/테스트용).
-    
+
     주의: 이 구현은 평문 저장입니다.
     암호화가 필요한 경우, 서버에서 암호화 후 저장하세요.
     """
-    
+
     def __init__(self, file_path: str = "credentials.json"):
         self._file_path = Path(file_path)
         self._credentials: Dict[str, Credential] = {}
         self._load()
-    
+
     def _load(self):
         """파일에서 credentials 로드"""
         if self._file_path.exists():
@@ -152,11 +152,11 @@ class JsonFileCredentialStore(CredentialStore):
                     data = json.load(f)
                     for cred_dict in data.get("credentials", []):
                         cred = Credential(**cred_dict)
-                        self._credentials[cred.id] = cred
+                        self._credentials[cred.credential_id] = cred
                 print(f"📂 Loaded {len(self._credentials)} credentials from {self._file_path}")
             except Exception as e:
                 print(f"Warning: Failed to load credentials from {self._file_path}: {e}")
-    
+
     def _save(self):
         """credentials를 파일에 저장"""
         data = {
@@ -167,13 +167,13 @@ class JsonFileCredentialStore(CredentialStore):
         }
         with open(self._file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    
+
     def create(self, credential: Credential) -> Credential:
-        if not credential.id:
-            credential.id = str(uuid.uuid4())
+        if not credential.credential_id:
+            credential.credential_id = str(uuid.uuid4())
         credential.created_at = datetime.utcnow()
         credential.updated_at = datetime.utcnow()
-        self._credentials[credential.id] = credential
+        self._credentials[credential.credential_id] = credential
         self._save()
         return credential
     

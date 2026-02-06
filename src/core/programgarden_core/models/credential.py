@@ -58,7 +58,7 @@ class Credential(BaseModel):
 
     Example:
         {
-            "id": "broker-cred",
+            "credential_id": "broker-cred",
             "name": "LS증권 API",
             "credential_type": "broker_ls_stock",
             "data": [
@@ -67,7 +67,7 @@ class Credential(BaseModel):
             ]
         }
     """
-    id: str = Field(..., description="Unique credential ID")
+    credential_id: str = Field(..., description="Unique credential ID")
     user_id: str = Field(default="default", description="Owner user ID")
     name: str = Field(..., description="User-friendly name (e.g., '내 LS증권 계정')")
     credential_type: str = Field(..., description="Type ID (e.g., 'broker_ls')")

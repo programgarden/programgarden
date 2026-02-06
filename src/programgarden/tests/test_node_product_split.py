@@ -33,7 +33,7 @@ class TestResolverBrokerMatching:
                 {"from": "start", "to": "broker"},
                 {"from": "broker", "to": "market"},
             ],
-            "credentials": [{"id": "cred", "type": "broker_ls_stock", "data": []}],
+            "credentials": [{"credential_id": "cred", "type": "broker_ls_stock", "data": []}],
         }
         result = resolver.validate(workflow)
         assert result.is_valid, f"검증 실패: {result.errors}"
@@ -54,7 +54,7 @@ class TestResolverBrokerMatching:
                 {"from": "start", "to": "broker"},
                 {"from": "broker", "to": "market"},
             ],
-            "credentials": [{"id": "cred", "type": "broker_ls_futures", "data": []}],
+            "credentials": [{"credential_id": "cred", "type": "broker_ls_futures", "data": []}],
         }
         result = resolver.validate(workflow)
         assert result.is_valid, f"검증 실패: {result.errors}"
@@ -95,7 +95,7 @@ class TestResolverBrokerMatching:
                 {"from": "start", "to": "broker"},
                 {"from": "broker", "to": "market"},
             ],
-            "credentials": [{"id": "cred", "type": "broker_ls_futures", "data": []}],
+            "credentials": [{"credential_id": "cred", "type": "broker_ls_futures", "data": []}],
         }
         result = resolver.validate(workflow)
         assert not result.is_valid
@@ -116,7 +116,7 @@ class TestResolverBrokerMatching:
                 {"from": "start", "to": "broker1"},
                 {"from": "start", "to": "broker2"},
             ],
-            "credentials": [{"id": "cred", "type": "broker_ls_stock", "data": []}],
+            "credentials": [{"credential_id": "cred", "type": "broker_ls_stock", "data": []}],
         }
         result = resolver.validate(workflow)
         assert not result.is_valid
@@ -144,8 +144,8 @@ class TestResolverBrokerMatching:
                 {"from": "futures_broker", "to": "futures_market"},
             ],
             "credentials": [
-                {"id": "cred1", "type": "broker_ls_stock", "data": []},
-                {"id": "cred2", "type": "broker_ls_futures", "data": []},
+                {"credential_id": "cred1", "type": "broker_ls_stock", "data": []},
+                {"credential_id": "cred2", "type": "broker_ls_futures", "data": []},
             ],
         }
         result = resolver.validate(workflow)

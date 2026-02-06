@@ -42,7 +42,7 @@ class CredentialReference(BaseModel):
 
     Example (공유용):
         {
-            "id": "broker-cred",
+            "credential_id": "broker-cred",
             "type": "broker_ls",
             "name": "LS증권 API",
             "data": [
@@ -53,7 +53,7 @@ class CredentialReference(BaseModel):
 
     Example (실행용):
         {
-            "id": "broker-cred",
+            "credential_id": "broker-cred",
             "type": "broker_ls",
             "name": "LS증권 API",
             "data": [
@@ -63,7 +63,7 @@ class CredentialReference(BaseModel):
         }
     """
 
-    id: str = Field(..., description="Credential 고유 ID")
+    credential_id: str = Field(..., description="Credential 고유 ID")
     type: str = Field(..., description="Credential 타입 (broker_ls, telegram 등)")
     name: Optional[str] = Field(default=None, description="표시 이름")
     description: Optional[str] = Field(default=None, description="설명")

@@ -43,7 +43,7 @@ def load_credentials():
     
     credentials = {}
     for cred in data.get("credentials", []):
-        cred_id = cred["id"]
+        cred_id = cred["credential_id"]
         encrypted_data = cred.get("data", "{}")
         decrypted = decrypt_data(encrypted_data)
         credentials[cred_id] = {
@@ -67,7 +67,7 @@ async def main():
     
     # credentials 섹션에 실제 값 주입
     for cred in workflow.get("credentials", []):
-        cred_id = cred["id"]
+        cred_id = cred["credential_id"]
         if cred_id in creds:
             cred["data"]["appkey"] = creds[cred_id].get("appkey", "")
             cred["data"]["appsecret"] = creds[cred_id].get("appsecret", "")
