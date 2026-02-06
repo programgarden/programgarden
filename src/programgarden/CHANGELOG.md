@@ -1,3 +1,11 @@
+## [1.1.7] - 2026-02-06
+### Changed
+- refactor: credentials 배열의 `id` → `credential_id` 필드명 통일
+  - context.py credential 매칭 로직 수정
+  - server.py API 응답 필드명 수정
+  - 테스트/예제 코드 일괄 업데이트
+- deps: programgarden-core 1.1.6, finance 1.1.4, community 1.1.4
+
 ## [1.1.6] - 2026-02-06
 ### Changed
 - deps: programgarden-core 1.1.5 버전으로 업데이트 (StickyNote 모델 추가)

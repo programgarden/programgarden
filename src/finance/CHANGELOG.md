@@ -1,3 +1,7 @@
+## [1.1.4] - 2026-02-06
+### Changed
+- deps: programgarden-core 1.1.6 버전으로 업데이트 (credential_id 리네이밍)
+
 ## [1.1.3] - 2026-02-06
 ### Changed
 - deps: programgarden-core 1.1.5 버전으로 업데이트

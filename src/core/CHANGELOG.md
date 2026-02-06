@@ -1,3 +1,9 @@
+## [1.1.6] - 2026-02-06
+### Changed
+- `CredentialReference.id` → `credential_id` 필드명 변경 (워크플로우 JSON 일관성)
+- `Credential.id` → `credential_id` 필드명 변경
+- `CredentialStore` 구현체들의 `.id` → `.credential_id` 참조 수정
+
 ## [1.1.5] - 2026-02-06
 ### Added
 - `StickyNote`, `NotePosition` 모델 추가 — 워크플로우 캔버스 메모 기능
