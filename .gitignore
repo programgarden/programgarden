@@ -364,6 +364,7 @@ src/programgarden/examples/**/*.json
 # SQLite DB storage (runtime data)
 programgarden_data/
 **/programgarden_data/
+**/app/data/
 .claude/
 
 json_dynamic_widget_built_in_widgets/

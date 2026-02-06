@@ -33,10 +33,18 @@ class TestWorkflowPositionTracker:
             stats = tracker.get_statistics()
             assert stats['workflow_orders'] == 1
 
-    def test_trust_score(self):
-        """신뢰도 점수 테스트"""
+    def test_trust_score_no_orders(self):
+        """워크플로우 거래 없으면 신뢰도 0"""
         with tempfile.TemporaryDirectory() as d:
             tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            score = tracker.calculate_trust_score()
+            assert score == 0
+
+    def test_trust_score_with_orders(self):
+        """워크플로우 거래 있으면 신뢰도 100"""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            tracker.record_order('O1', '20260206', 'AAPL', 'NASDAQ', 'buy', 1, 150.0, 'job1', 'node1')
             score = tracker.calculate_trust_score()
             assert score == 100
 

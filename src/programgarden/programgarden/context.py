@@ -1385,7 +1385,7 @@ class ExecutionContext:
                     
                     "workflow_positions": base_workflow_result.get("workflow_positions", []),
                     "other_positions": base_workflow_result.get("other_positions", []),
-                    "trust_score": base_workflow_result.get("trust_score", 100),
+                    "trust_score": base_workflow_result.get("trust_score", 0),
                     "anomaly_count": base_workflow_result.get("anomaly_count", 0),
                     "currency": currency,
                     
@@ -1520,7 +1520,7 @@ class ExecutionContext:
                 "total_pnl_amount": total_pnl,
                 "workflow_positions": [],
                 "other_positions": other_positions_list,
-                "trust_score": 100,
+                "trust_score": 0,
                 "anomaly_count": 0,
                 # 상품별 필드는 tracker에서 채움 (여기서는 None)
                 "workflow_stock_pnl_rate": None,
@@ -1553,7 +1553,7 @@ class ExecutionContext:
                 "total_pnl_amount": 0.0,
                 "workflow_positions": [],
                 "other_positions": [],
-                "trust_score": 100,
+                "trust_score": 0,
                 "anomaly_count": 0,
             }
 
@@ -1663,10 +1663,16 @@ class ExecutionContext:
             from programgarden.database import WorkflowPositionTracker
             from pathlib import Path
             
-            # DB 경로: /app/data/{workflow_id}_workflow.db
+            # DB 경로: /app/data/{workflow_id}_workflow.db (Docker)
+            # 로컬: ./app/data/ (CWD 기준)
             # 워크플로우 ID 사용 (워크플로우당 1개 DB 유지)
             db_dir = Path("/app/data")
-            db_dir.mkdir(parents=True, exist_ok=True)
+            if not db_dir.exists():
+                try:
+                    db_dir.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    db_dir = Path("./app/data")
+                    db_dir.mkdir(parents=True, exist_ok=True)
             db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
             db_path = str(db_dir / db_filename)
             
