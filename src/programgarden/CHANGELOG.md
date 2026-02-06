@@ -1,3 +1,7 @@
+## [1.1.6] - 2026-02-06
+### Changed
+- deps: programgarden-core 1.1.5 버전으로 업데이트 (StickyNote 모델 추가)
+
 ## [1.1.5] - 2026-02-06
 ### Added
 - feat: paper_trading 모드 전환 시 수익률 기록 자동 초기화

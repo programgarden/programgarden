@@ -1,3 +1,11 @@
+## [1.1.5] - 2026-02-06
+### Added
+- `StickyNote`, `NotePosition` 모델 추가 — 워크플로우 캔버스 메모 기능
+- `WorkflowDefinition.notes` 필드 추가 (노드 시스템과 분리된 비실행 주석)
+
+### Fixed
+- `PluginCategory.STRATEGY_CONDITION` → `TECHNICAL` 테스트 수정
+
 ## [1.1.4] - 2026-02-06
 ### Added
 - `WorkflowPnLEvent`에 `paper_trading` 필드 추가 (모의/실전 투자 구분)

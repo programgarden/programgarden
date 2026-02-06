@@ -1,3 +1,7 @@
+## [1.1.3] - 2026-02-06
+### Changed
+- deps: programgarden-core 1.1.5 버전으로 업데이트
+
 ## [1.1.2] - 2026-02-05
 ### Changed
 - deps: programgarden-core 1.1.3 버전으로 업데이트
