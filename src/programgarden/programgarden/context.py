@@ -1663,10 +1663,16 @@ class ExecutionContext:
             from programgarden.database import WorkflowPositionTracker
             from pathlib import Path
             
-            # DB 경로: /app/data/{workflow_id}_workflow.db
+            # DB 경로: /app/data/{workflow_id}_workflow.db (Docker)
+            # 로컬: ./app/data/ (CWD 기준)
             # 워크플로우 ID 사용 (워크플로우당 1개 DB 유지)
             db_dir = Path("/app/data")
-            db_dir.mkdir(parents=True, exist_ok=True)
+            if not db_dir.exists():
+                try:
+                    db_dir.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    db_dir = Path("./app/data")
+                    db_dir.mkdir(parents=True, exist_ok=True)
             db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
             db_path = str(db_dir / db_filename)
             
