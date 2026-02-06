@@ -130,62 +130,100 @@ class TestWorkflowPositionTracker:
             # 평단가는 두번째 로트의 가격
             assert positions['AAPL'].avg_price == Decimal('120.0')
 
-    def test_check_and_reset_initial(self):
-        """최초 실행 시 paper_trading 저장 테스트"""
+    def test_trading_mode_separation(self):
+        """paper/live 모드별 데이터 분리 테스트"""
         with tempfile.TemporaryDirectory() as d:
-            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            db_path = f'{d}/t.db'
 
-            # 최초 실행: False 반환 (초기화 안됨)
-            result = tracker.check_and_reset_if_mode_changed(paper_trading=True)
-            assert result is False
+            # paper 모드로 주문
+            tracker_paper = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='paper')
+            tracker_paper.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
 
-            # 동일 모드: False 반환
-            result = tracker.check_and_reset_if_mode_changed(paper_trading=True)
-            assert result is False
+            # live 모드로 주문
+            tracker_live = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='live')
+            tracker_live.record_order('O2', '20260123', 'NVDA', 'NASDAQ', 'buy', 5, 500.0, 'job1', 'node1')
 
-    def test_check_and_reset_mode_change(self):
-        """paper_trading 모드 변경 시 데이터 초기화 테스트"""
-        with tempfile.TemporaryDirectory() as d:
-            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            # paper에서는 paper 주문만 보임
+            assert tracker_paper._check_workflow_order('O1', '20260123')
+            assert not tracker_paper._check_workflow_order('O2', '20260123')
 
-            # 최초 실행: 모의투자 모드
-            tracker.check_and_reset_if_mode_changed(paper_trading=True)
-
-            # 주문 기록
-            tracker.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
-            assert tracker._check_workflow_order('O1', '20260123')
-
-            # 모드 변경: 모의 → 실전
-            result = tracker.check_and_reset_if_mode_changed(paper_trading=False)
-            assert result is True
-
-            # 데이터 초기화 확인
-            assert not tracker._check_workflow_order('O1', '20260123')
+            # live에서는 live 주문만 보임
+            assert tracker_live._check_workflow_order('O2', '20260123')
+            assert not tracker_live._check_workflow_order('O1', '20260123')
 
     @pytest.mark.asyncio
-    async def test_check_and_reset_preserves_data_on_same_mode(self):
-        """동일 모드에서 데이터 유지 테스트"""
+    async def test_mode_switch_preserves_data(self):
+        """모드 전환 시 기존 데이터 보존 테스트"""
         with tempfile.TemporaryDirectory() as d:
-            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            db_path = f'{d}/t.db'
 
-            # 최초 실행: 실전투자 모드
-            tracker.check_and_reset_if_mode_changed(paper_trading=False)
+            # paper 모드로 주문 및 체결
+            tracker_paper = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='paper')
+            tracker_paper.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
+            await tracker_paper.record_fill('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, '103000000', '40')
 
-            # 주문 및 체결 기록
-            tracker.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
-            await tracker.record_fill('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, '103000000', '40')
-
-            positions = tracker.get_workflow_positions()
-            assert 'AAPL' in positions
-
-            # 동일 모드로 재실행
-            result = tracker.check_and_reset_if_mode_changed(paper_trading=False)
-            assert result is False
-
-            # 데이터 유지 확인
-            positions = tracker.get_workflow_positions()
+            positions = tracker_paper.get_workflow_positions()
             assert 'AAPL' in positions
             assert positions['AAPL'].quantity == 10
+
+            # live 모드로 전환
+            tracker_live = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='live')
+
+            # live에서는 포지션 없음
+            positions = tracker_live.get_workflow_positions()
+            assert len(positions) == 0
+
+            # 다시 paper로 돌아오면 데이터 살아있음
+            tracker_paper2 = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='paper')
+            positions = tracker_paper2.get_workflow_positions()
+            assert 'AAPL' in positions
+            assert positions['AAPL'].quantity == 10
+
+    def test_trust_score_per_mode(self):
+        """모드별 독립적인 trust_score 테스트"""
+        with tempfile.TemporaryDirectory() as d:
+            db_path = f'{d}/t.db'
+
+            # paper 모드: 주문 있음 → trust_score 100
+            tracker_paper = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='paper')
+            tracker_paper.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 150.0, 'job1', 'node1')
+            assert tracker_paper.calculate_trust_score() == 100
+
+            # live 모드: 주문 없음 → trust_score 0
+            tracker_live = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='live')
+            assert tracker_live.calculate_trust_score() == 0
+
+    def test_statistics_per_mode(self):
+        """모드별 통계 분리 테스트"""
+        with tempfile.TemporaryDirectory() as d:
+            db_path = f'{d}/t.db'
+
+            tracker_paper = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='paper')
+            tracker_paper.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
+
+            tracker_live = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='live')
+            tracker_live.record_order('O2', '20260123', 'NVDA', 'NASDAQ', 'buy', 5, 500.0, 'job1', 'node1')
+            tracker_live.record_order('O3', '20260123', 'TSLA', 'NASDAQ', 'buy', 3, 200.0, 'job1', 'node1')
+
+            assert tracker_paper.get_statistics()['workflow_orders'] == 1
+            assert tracker_paper.get_statistics()['trading_mode'] == 'paper'
+            assert tracker_live.get_statistics()['workflow_orders'] == 2
+            assert tracker_live.get_statistics()['trading_mode'] == 'live'
+
+    def test_update_trading_mode(self):
+        """update_trading_mode 메타데이터 기록 테스트"""
+        with tempfile.TemporaryDirectory() as d:
+            db_path = f'{d}/t.db'
+
+            tracker = WorkflowPositionTracker(db_path, 'job1', 'broker1', trading_mode='paper')
+            tracker.update_trading_mode('paper')  # 최초 기록
+
+            # 모드 전환해도 데이터 삭제 안됨
+            tracker.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
+            tracker.update_trading_mode('live')  # live로 전환
+
+            # paper 데이터 여전히 존재
+            assert tracker._check_workflow_order('O1', '20260123')  # trading_mode='paper'인 tracker이므로
 
 
 if __name__ == '__main__':
