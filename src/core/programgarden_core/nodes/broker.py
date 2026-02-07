@@ -59,7 +59,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
 
     Note:
     - 해외주식은 모의투자 미지원 (LS증권 제한)
-    - credential_types: broker_ls_stock
+    - credential_types: broker_ls_overseas_stock
     """
 
     type: Literal["OverseasStockBrokerNode"] = "OverseasStockBrokerNode"
@@ -93,7 +93,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
-                credential_types=["broker_ls_stock"],
+                credential_types=["broker_ls_overseas_stock"],
             ),
         }
 
@@ -106,7 +106,7 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
 
     Note:
     - 해외선물은 모의투자 지원
-    - credential_types: broker_ls_futures
+    - credential_types: broker_ls_overseas_futures
     """
 
     type: Literal["OverseasFuturesBrokerNode"] = "OverseasFuturesBrokerNode"
@@ -141,7 +141,7 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
-                credential_types=["broker_ls_futures"],
+                credential_types=["broker_ls_overseas_futures"],
             ),
             "paper_trading": FieldSchema(
                 name="paper_trading",

@@ -68,7 +68,7 @@ Workflows are defined as JSON with nodes, edges, credentials, and notes:
   "credentials": [
     {
       "credential_id": "broker-cred",
-      "type": "broker_ls_stock",
+      "type": "broker_ls_overseas_stock",
       "data": [
         {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
         {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}

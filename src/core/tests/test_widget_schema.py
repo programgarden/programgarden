@@ -108,14 +108,14 @@ class TestFieldSchemaToConfigDict:
             type=FieldType.CREDENTIAL,
             description="Credential 선택",
             ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
-            credential_types=["broker_ls_stock", "broker_ls_futures"],
+            credential_types=["broker_ls_overseas_stock", "broker_ls_overseas_futures"],
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
         config = fs.to_config_dict("BrokerNode")
 
         assert config["type"] == "credential"
         assert config["ui_component"] == "custom_credential_select"
-        assert config["credential_types"] == ["broker_ls_stock", "broker_ls_futures"]
+        assert config["credential_types"] == ["broker_ls_overseas_stock", "broker_ls_overseas_futures"]
 
     def test_plugin_select(self):
         """플러그인 선택 필드"""

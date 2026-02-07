@@ -62,7 +62,7 @@ async def test_overseas_stock_account():
         "credentials": [
             {
                 "credential_id": "stock-cred",
-                "type": "broker_ls_stock",
+                "type": "broker_ls_overseas_stock",
                 "data": [
                     {"key": "appkey", "value": os.environ.get("APPKEY", "")},
                     {"key": "appsecret", "value": os.environ.get("APPSECRET", "")}
@@ -149,7 +149,7 @@ async def test_overseas_stock_sell(position):
         "credentials": [
             {
                 "credential_id": "stock-cred",
-                "type": "broker_ls_stock",
+                "type": "broker_ls_overseas_stock",
                 "data": [
                     {"key": "appkey", "value": os.environ.get("APPKEY", "")},
                     {"key": "appsecret", "value": os.environ.get("APPSECRET", "")}
@@ -202,7 +202,7 @@ async def test_overseas_futures_account():
         "credentials": [
             {
                 "credential_id": "futures-cred",
-                "type": "broker_ls_futures",
+                "type": "broker_ls_overseas_futures",
                 "data": [
                     {"key": "appkey", "value": os.environ.get("APPKEY_FUTURE_FAKE", "")},
                     {"key": "appsecret", "value": os.environ.get("APPSECRET_FUTURE_FAKE", "")},
@@ -293,7 +293,7 @@ async def test_overseas_futures_close(position):
         "credentials": [
             {
                 "credential_id": "futures-cred",
-                "type": "broker_ls_futures",
+                "type": "broker_ls_overseas_futures",
                 "data": [
                     {"key": "appkey", "value": os.environ.get("APPKEY_FUTURE_FAKE", "")},
                     {"key": "appsecret", "value": os.environ.get("APPSECRET_FUTURE_FAKE", "")},

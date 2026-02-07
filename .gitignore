@@ -358,7 +358,7 @@ $RECYCLE.BIN/
 .vscode/
 */.vscode/
 .github/
-src/programgarden/examples/**/*.json
+src/programgarden/examples/
 .env*
 
 # SQLite DB storage (runtime data)
