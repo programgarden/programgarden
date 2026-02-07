@@ -37,7 +37,7 @@ class CredentialTypeSchema(BaseModel):
     Schema definition for a credential type.
     Defines what fields are needed for a specific service.
     """
-    type_id: str = Field(..., description="Unique identifier (e.g., 'broker_ls_stock')")
+    type_id: str = Field(..., description="Unique identifier (e.g., 'broker_ls_overseas_stock')")
     name: str = Field(..., description="Display name (e.g., 'LS Securities')")
     description: Optional[str] = Field(default=None)
     
@@ -60,7 +60,7 @@ class Credential(BaseModel):
         {
             "credential_id": "broker-cred",
             "name": "LS증권 API",
-            "credential_type": "broker_ls_stock",
+            "credential_type": "broker_ls_overseas_stock",
             "data": [
                 {"key": "appkey", "value": "PSxxxxxxxx", "type": "password", "label": "App Key"},
                 {"key": "appsecret", "value": "xxxxxxxx", "type": "password", "label": "App Secret"}
@@ -94,8 +94,8 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
     # ============================================================
     # LS증권 해외주식 (overseas_stock) - 모의투자 미지원
     # ============================================================
-    "broker_ls_stock": CredentialTypeSchema(
-        type_id="broker_ls_stock",
+    "broker_ls_overseas_stock": CredentialTypeSchema(
+        type_id="broker_ls_overseas_stock",
         name="LS증권 해외주식",
         description="해외주식 OpenAPI 인증 정보",
         widget_schema={
@@ -128,8 +128,8 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
     # ============================================================
     # LS증권 해외선물 (overseas_futures) - 모의투자 지원
     # ============================================================
-    "broker_ls_futures": CredentialTypeSchema(
-        type_id="broker_ls_futures",
+    "broker_ls_overseas_futures": CredentialTypeSchema(
+        type_id="broker_ls_overseas_futures",
         name="LS증권 해외선물",
         description="해외선물 OpenAPI 인증 정보",
         widget_schema={

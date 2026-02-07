@@ -92,7 +92,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
     {"from": "rsi", "to": "order"}
   ],
   "credentials": [
-    {"credential_id": "my-broker-cred", "type": "broker_ls_stock", "name": "LS증권 해외주식", "data": {"appkey": "", "appsecret": ""}}
+    {"credential_id": "my-broker-cred", "type": "broker_ls_overseas_stock", "name": "LS증권 해외주식", "data": {"appkey": "", "appsecret": ""}}
   ]
 }
 ```
@@ -111,7 +111,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
   "credentials": [
     {
       "credential_id": "broker-cred",
-      "type": "broker_ls_stock",
+      "type": "broker_ls_overseas_stock",
       "name": "LS증권 해외주식",
       "data": {
         "appkey": "",
@@ -120,7 +120,7 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
     },
     {
       "credential_id": "broker-futures-cred",
-      "type": "broker_ls_futures",
+      "type": "broker_ls_overseas_futures",
       "name": "LS증권 해외선물",
       "data": {
         "appkey": "",
@@ -145,8 +145,8 @@ ProgramGarden은 **JSON 직렬화 가능한 노드 그래프** 기반의 DSL을 
 
 | 타입 | 설명 | data 필드 |
 |------|------|----------|
-| `broker_ls_stock` | LS증권 해외주식 | `appkey`, `appsecret` |
-| `broker_ls_futures` | LS증권 해외선물 | `appkey`, `appsecret`, `paper_trading` |
+| `broker_ls_overseas_stock` | LS증권 해외주식 | `appkey`, `appsecret` |
+| `broker_ls_overseas_futures` | LS증권 해외선물 | `appkey`, `appsecret`, `paper_trading` |
 | `telegram` | 텔레그램 봇 | `bot_token`, `chat_id` |
 | `postgres` | PostgreSQL DB | `host`, `port`, `database`, `username`, `password` |
 | `http_custom` | 커스텀 HTTP 인증 | 배열: `[{type, key, value, label}, ...]` |
