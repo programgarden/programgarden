@@ -1,3 +1,7 @@
+## [1.1.8] - 2026-02-07
+### Changed
+- deps: programgarden-core 1.1.7, finance 1.1.5, community 1.1.5 버전으로 업데이트 (credential type overseas 명칭 변경)
+
 ## [1.1.7] - 2026-02-06
 ### Changed
 - refactor: credentials 배열의 `id` → `credential_id` 필드명 통일

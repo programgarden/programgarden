@@ -1,3 +1,10 @@
+## [1.1.7] - 2026-02-07
+### Changed
+- refactor: credential type 명칭 변경 (`broker_ls_stock` → `broker_ls_overseas_stock`, `broker_ls_futures` → `broker_ls_overseas_futures`)
+  - 해외 상품임을 명확히 하기 위해 `overseas` 접두사 추가
+  - `BUILTIN_CREDENTIAL_SCHEMAS` dict key 및 `type_id` 변경
+  - `OverseasStockBrokerNode`, `OverseasFuturesBrokerNode`의 `credential_types` 필터 업데이트
+
 ## [1.1.6] - 2026-02-06
 ### Changed
 - `CredentialReference.id` → `credential_id` 필드명 변경 (워크플로우 JSON 일관성)
