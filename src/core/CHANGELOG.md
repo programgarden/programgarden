@@ -1,3 +1,11 @@
+## [1.1.8] - 2026-02-09
+### Changed
+- refactor: `NodeTypeRegistry` 명칭 변경 (`register_external` → `register_community`, `is_external` → `is_community` 등)
+  - community 노드와 dynamic 노드의 개념 분리를 위해 "external" → "community"로 명칭 통일
+- refactor: `DYNAMIC_NODE_PREFIX` 변경 (`Custom_` → `Dynamic_`)
+  - DynamicNodeRegistry API 전체와 prefix 네이밍 일관성 통일
+- refactor: `DynamicNodeRegistry` docstring "커스텀" → "동적"으로 통일
+
 ## [1.1.7] - 2026-02-07
 ### Changed
 - refactor: credential type 명칭 변경 (`broker_ls_stock` → `broker_ls_overseas_stock`, `broker_ls_futures` → `broker_ls_overseas_futures`)
@@ -47,8 +55,8 @@
 ### Added
 - feat: Dynamic Node Injection 시스템 구현
   - `dynamic_node_registry.py`: 동적 노드 스키마/클래스 관리
-  - 외부 사용자가 런타임에 커스텀 노드 주입 가능
-  - `Custom_` prefix 네이밍 규칙 적용
+  - 외부 사용자가 런타임에 동적 노드 주입 가능
+  - `Dynamic_` prefix 네이밍 규칙 적용
 - feat: Retry/Fallback 공통 시스템 구현
   - `ResilienceConfig`, `RetryConfig`, `FallbackConfig` 모델 추가
   - 외부 API 호출 노드에서 재시도 및 실패 처리 설정 지원

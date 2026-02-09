@@ -49,13 +49,13 @@ class NodeTypeRegistry:
 
     Registry for registering and querying node types.
     Used by AI agents to query available node list.
-    Supports both built-in nodes and external (community) nodes.
+    Supports both built-in nodes and community nodes.
     """
 
     _instance: Optional["NodeTypeRegistry"] = None
     _registry: Dict[str, Type[BaseNode]] = {}
     _schemas: Dict[str, NodeTypeSchema] = {}
-    _external_nodes: Dict[str, Dict[str, Any]] = {}  # 외부 노드 메타데이터
+    _community_nodes: Dict[str, Dict[str, Any]] = {}  # 커뮤니티 노드 메타데이터
 
     def __new__(cls) -> "NodeTypeRegistry":
         """Singleton pattern"""
@@ -142,54 +142,54 @@ class NodeTypeRegistry:
         for node_class in node_classes:
             self.register(node_class)
 
-    def register_external(
+    def register_community(
         self,
         node_class: Type[BaseNode],
         source: str = "community",
         trust_level: str = "community",
     ) -> None:
         """
-        외부 노드 타입 등록 (커뮤니티/사용자용)
-        
+        커뮤니티 노드 타입 등록
+
         Args:
             node_class: 노드 클래스 (BaseNode 또는 BaseNotificationNode 상속)
             source: 노드 출처 ("community", "user")
             trust_level: 신뢰 레벨 ("core", "verified", "community")
-        
+
         Raises:
             ValueError: 노드 타입 이름이 이미 존재하는 경우
         """
         type_name = node_class.__name__
-        
+
         # 중복 체크 (내장 노드와 충돌 방지)
         if type_name in self._registry:
             raise ValueError(f"Node type '{type_name}' already exists in registry")
-        
+
         # 일반 등록 수행
         self.register(node_class)
-        
-        # 외부 노드 메타데이터 저장
-        self._external_nodes[type_name] = {
+
+        # 커뮤니티 노드 메타데이터 저장
+        self._community_nodes[type_name] = {
             "source": source,
             "trust_level": trust_level,
         }
 
-    def is_external(self, node_type: str) -> bool:
-        """노드가 외부(커뮤니티) 노드인지 확인"""
-        return node_type in self._external_nodes
+    def is_community(self, node_type: str) -> bool:
+        """노드가 커뮤니티 노드인지 확인"""
+        return node_type in self._community_nodes
 
-    def get_external_info(self, node_type: str) -> Optional[Dict[str, Any]]:
-        """외부 노드의 메타데이터 조회"""
-        return self._external_nodes.get(node_type)
+    def get_community_info(self, node_type: str) -> Optional[Dict[str, Any]]:
+        """커뮤니티 노드의 메타데이터 조회"""
+        return self._community_nodes.get(node_type)
 
-    def list_external_nodes(self, source: Optional[str] = None) -> List[str]:
-        """외부 노드 목록 조회"""
+    def list_community_nodes(self, source: Optional[str] = None) -> List[str]:
+        """커뮤니티 노드 목록 조회"""
         if source:
             return [
-                name for name, info in self._external_nodes.items()
+                name for name, info in self._community_nodes.items()
                 if info["source"] == source
             ]
-        return list(self._external_nodes.keys())
+        return list(self._community_nodes.keys())
 
     def register(self, node_class: Type[BaseNode]) -> None:
         """Register node type"""

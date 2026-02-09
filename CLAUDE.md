@@ -188,18 +188,18 @@ class MyAPINode(BaseMessagingNode):
 
 ### Dynamic Node Injection (동적 노드 주입)
 
-외부 사용자가 community 패키지 기여 없이 런타임에 커스텀 노드를 주입하여 워크플로우에서 사용할 수 있습니다.
+외부 사용자가 community 패키지 기여 없이 런타임에 동적 노드를 주입하여 워크플로우에서 사용할 수 있습니다.
 
-**네이밍 규칙**: 동적 노드는 반드시 `Custom_` prefix 사용 (예: `Custom_MyRSI`)
+**네이밍 규칙**: 동적 노드는 반드시 `Dynamic_` prefix 사용 (예: `Dynamic_MyRSI`)
 
 **사용 흐름**:
 ```python
 from programgarden import WorkflowExecutor
 from programgarden_core.nodes.base import BaseNode, NodeCategory, OutputPort
 
-# 1. 커스텀 노드 클래스 정의
-class CustomRSINode(BaseNode):
-    type: str = "Custom_RSI"
+# 1. 동적 노드 클래스 정의
+class DynamicRSINode(BaseNode):
+    type: str = "Dynamic_RSI"
     category: NodeCategory = NodeCategory.CONDITION
     period: int = 14
 
@@ -214,7 +214,7 @@ class CustomRSINode(BaseNode):
 # 2. Executor 생성 및 스키마 등록
 executor = WorkflowExecutor()
 executor.register_dynamic_schemas([{
-    "node_type": "Custom_RSI",
+    "node_type": "Dynamic_RSI",
     "category": "condition",
     "outputs": [
         {"name": "rsi", "type": "number"},
@@ -223,8 +223,8 @@ executor.register_dynamic_schemas([{
 }])
 
 # 3. 필요한 타입 확인 및 클래스 주입
-required = executor.get_required_custom_types(workflow)  # ["Custom_RSI"]
-executor.inject_node_classes({"Custom_RSI": CustomRSINode})
+required = executor.get_required_dynamic_types(workflow)  # ["Dynamic_RSI"]
+executor.inject_node_classes({"Dynamic_RSI": DynamicRSINode})
 
 # 4. 워크플로우 실행
 job = await executor.execute(workflow)
@@ -243,7 +243,7 @@ executor.clear_injected_classes()
 | 메서드 | 설명 |
 |--------|------|
 | `register_dynamic_schemas(schemas)` | 스키마 등록 (UI 표시용) |
-| `get_required_custom_types(workflow)` | 워크플로우에 필요한 커스텀 타입 목록 |
+| `get_required_dynamic_types(workflow)` | 워크플로우에 필요한 동적 노드 타입 목록 |
 | `inject_node_classes(classes)` | 노드 클래스 주입 |
 | `is_dynamic_node_ready(type)` | 실행 준비 완료 여부 확인 |
 | `clear_injected_classes()` | 주입된 클래스 초기화 |

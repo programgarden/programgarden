@@ -1,3 +1,12 @@
+## [1.1.9] - 2026-02-09
+### Changed
+- feat: `list_node_types()`에 동적 노드 통합 쿼리 지원 (`is_dynamic` 플래그, `include_dynamic` 파라미터)
+- feat: `get_node_schema()`에 동적 노드 fallback 추가
+- feat: `list_categories()`에 동적 노드 카운트 포함
+- refactor: `get_required_custom_types()` → `get_required_dynamic_types()` 메서드명 변경
+- refactor: python_server에 동적 노드 통합 API 적용
+- deps: programgarden-core 1.1.8, finance 1.1.6, community 1.1.6 버전으로 업데이트
+
 ## [1.1.8] - 2026-02-07
 ### Changed
 - deps: programgarden-core 1.1.7, finance 1.1.5, community 1.1.5 버전으로 업데이트 (credential type overseas 명칭 변경)
@@ -57,7 +66,7 @@
 ### Added
 - feat: Dynamic Node Injection API 지원
   - `register_dynamic_schemas()`: 스키마 등록
-  - `get_required_custom_types()`: 필요한 커스텀 타입 조회
+  - `get_required_dynamic_types()`: 필요한 동적 노드 타입 조회
   - `inject_node_classes()`: 노드 클래스 주입
   - `is_dynamic_node_ready()`: 실행 준비 완료 확인
   - `clear_injected_classes()`: 주입된 클래스 초기화

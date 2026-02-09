@@ -3,7 +3,7 @@ ProgramGarden Core - DynamicNodeRegistry
 
 동적 노드 관리 레지스트리 (Lazy Loading 지원)
 
-외부 사용자가 community 패키지 기여 없이 런타임에 커스텀 노드를 주입하여
+외부 사용자가 community 패키지 기여 없이 런타임에 동적 노드를 주입하여
 워크플로우에서 사용할 수 있도록 지원합니다.
 
 사용 시나리오:
@@ -13,7 +13,7 @@ ProgramGarden Core - DynamicNodeRegistry
 4. 정리: clear_injected_classes()로 메모리 정리
 
 네이밍 규칙:
-- 동적 노드는 반드시 'Custom_' prefix 사용 (예: Custom_MyRSI)
+- 동적 노드는 반드시 'Dynamic_' prefix 사용 (예: Dynamic_MyRSI)
 - 기존 노드와의 충돌 방지 및 동적 노드 식별 용이
 
 보안:
@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 
 # 동적 노드 타입 prefix
-DYNAMIC_NODE_PREFIX = "Custom_"
+DYNAMIC_NODE_PREFIX = "Dynamic_"
 
 
 class DynamicNodeSchema(BaseModel):
@@ -37,7 +37,7 @@ class DynamicNodeSchema(BaseModel):
     실제 노드 클래스 없이 스키마만으로 UI에 노드 목록을 표시할 수 있음.
 
     Attributes:
-        node_type: 고유 노드 타입명 (Custom_ prefix 필수)
+        node_type: 고유 노드 타입명 (Dynamic_ prefix 필수)
         category: 노드 카테고리 (infra, data, condition 등)
         description: 노드 설명 (사용자 표시용)
         inputs: 입력 포트 정의 [{name, type, required, description}]
@@ -48,9 +48,9 @@ class DynamicNodeSchema(BaseModel):
 
     Example:
         schema = DynamicNodeSchema(
-            node_type="Custom_MyRSI",
+            node_type="Dynamic_MyRSI",
             category="condition",
-            description="커스텀 RSI 지표 노드",
+            description="동적 RSI 지표 노드",
             inputs=[{"name": "data", "type": "array", "required": True}],
             outputs=[
                 {"name": "rsi", "type": "number"},
@@ -65,7 +65,7 @@ class DynamicNodeSchema(BaseModel):
     # 기본 정보
     node_type: str = Field(
         ...,
-        description="고유 노드 타입명 (Custom_ prefix 필수)"
+        description="고유 노드 타입명 (Dynamic_ prefix 필수)"
     )
     category: str = Field(
         default="data",
@@ -101,7 +101,7 @@ class DynamicNodeRegistry:
     """
     런타임 동적 노드 관리 (Lazy Loading 지원)
 
-    외부 사용자가 커스텀 노드를 런타임에 주입하여 사용할 수 있도록 지원.
+    외부 사용자가 동적 노드를 런타임에 주입하여 사용할 수 있도록 지원.
     스키마와 클래스를 분리하여 관리하며, Lazy Loading 패턴을 지원합니다.
 
     Singleton Pattern:
@@ -116,16 +116,16 @@ class DynamicNodeRegistry:
 
         # 1. 스키마만 등록 (앱 시작 시)
         schema = DynamicNodeSchema(
-            node_type="Custom_MyRSI",
+            node_type="Dynamic_MyRSI",
             outputs=[{"name": "rsi", "type": "number"}]
         )
         registry.register_schema(schema)
 
         # 2. 클래스 주입 (실행 전)
-        registry.inject_node_class("Custom_MyRSI", MyRSINode)
+        registry.inject_node_class("Dynamic_MyRSI", MyRSINode)
 
         # 3. 클래스 조회 (실행 시)
-        node_class = registry.get_node_class("Custom_MyRSI")
+        node_class = registry.get_node_class("Dynamic_MyRSI")
     """
 
     _instance: Optional["DynamicNodeRegistry"] = None
@@ -155,7 +155,7 @@ class DynamicNodeRegistry:
             schema: DynamicNodeSchema 인스턴스
 
         Raises:
-            ValueError: Custom_ prefix가 없는 경우
+            ValueError: Dynamic_ prefix가 없는 경우
         """
         if not schema.node_type.startswith(DYNAMIC_NODE_PREFIX):
             raise ValueError(
@@ -178,7 +178,7 @@ class DynamicNodeRegistry:
         스키마 조회
 
         Args:
-            node_type: 노드 타입명 (예: Custom_MyRSI)
+            node_type: 노드 타입명 (예: Dynamic_MyRSI)
 
         Returns:
             DynamicNodeSchema 또는 None
@@ -190,7 +190,7 @@ class DynamicNodeRegistry:
         등록된 스키마 타입 목록
 
         Returns:
-            노드 타입명 목록 (예: ["Custom_MyRSI", "Custom_MyMACD"])
+            노드 타입명 목록 (예: ["Dynamic_MyRSI", "Dynamic_MyMACD"])
         """
         return list(self._schemas.keys())
 
@@ -220,7 +220,7 @@ class DynamicNodeRegistry:
         4. 스키마와 클래스의 출력 포트 일치 여부
 
         Args:
-            node_type: 노드 타입명 (예: Custom_MyRSI)
+            node_type: 노드 타입명 (예: Dynamic_MyRSI)
             node_class: 노드 클래스 (BaseNode 상속)
 
         Raises:
@@ -393,6 +393,6 @@ def is_dynamic_node_type(node_type: str) -> bool:
         node_type: 노드 타입명
 
     Returns:
-        Custom_ prefix 여부
+        Dynamic_ prefix 여부
     """
     return node_type.startswith(DYNAMIC_NODE_PREFIX)

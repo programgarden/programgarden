@@ -75,7 +75,7 @@ def register_community_nodes():
         
         # TelegramNode 등록 (아직 등록되지 않은 경우만)
         if "TelegramNode" not in registry._registry:
-            registry.register_external(TelegramNode, source="community", trust_level="verified")
+            registry.register_community(TelegramNode, source="community", trust_level="verified")
             print("✅ Registered community node: TelegramNode")
     except ImportError as e:
         print(f"⚠️ Could not register community nodes: {e}")
@@ -314,8 +314,8 @@ async def get_node_types(locale: str = "ko", product_scope: str = None):
         return None
     
     try:
-        from programgarden_core.registry import NodeTypeRegistry
-        
+        from programgarden_core.registry import NodeTypeRegistry, DynamicNodeRegistry
+
         registry = NodeTypeRegistry()
         schemas = registry.list_schemas(product_scope=product_scope)
 
@@ -347,7 +347,14 @@ async def get_node_types(locale: str = "ko", product_scope: str = None):
                     "inputs": [],
                     "outputs": [],
                 })
-        
+
+        # 동적(Dynamic_) 노드 스키마 병합
+        dynamic_registry = DynamicNodeRegistry()
+        for schema in dynamic_registry.list_schemas():
+            schema_dict = schema.model_dump()
+            schema_dict["is_dynamic"] = True
+            node_types.append(schema_dict)
+
         return JSONResponse({"node_types": node_types, "locale": locale})
     except Exception as e:
         import traceback
@@ -362,15 +369,23 @@ async def get_node_types(locale: str = "ko", product_scope: str = None):
 async def get_node_type_schema(node_type: str):
     """특정 노드 타입 스키마 반환"""
     try:
-        from programgarden_core.registry import NodeTypeRegistry
-        
+        from programgarden_core.registry import NodeTypeRegistry, DynamicNodeRegistry
+
         registry = NodeTypeRegistry()
         schema = registry.get_schema(node_type)
-        
-        if not schema:
-            return JSONResponse({"error": f"Unknown node type: {node_type}"}, status_code=404)
-        
-        return JSONResponse(schema.model_dump())
+
+        if schema:
+            return JSONResponse(schema.model_dump())
+
+        # 커스텀 노드에서 조회
+        dynamic_registry = DynamicNodeRegistry()
+        dynamic_schema = dynamic_registry.get_schema(node_type)
+        if dynamic_schema:
+            result = dynamic_schema.model_dump()
+            result["is_dynamic"] = True
+            return JSONResponse(result)
+
+        return JSONResponse({"error": f"Unknown node type: {node_type}"}, status_code=404)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

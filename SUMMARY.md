@@ -13,6 +13,7 @@
 
 * [자동화매매 오픈소스 구조](docs/structure.md)
 * [파이썬으로 DSL 커스텀하기](docs/custom_dsl.md)
+* [커스텀 노드 주입하기 (Dynamic Node)](docs/dynamic_node_guide.md)
 * [자동화매매 오픈소스 성장에 기여하기](docs/contribution_guide.md)
 * [LS증권 코드 사용하기](docs/finance_guide.md)
 

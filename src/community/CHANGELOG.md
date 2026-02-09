@@ -1,3 +1,8 @@
+## [1.1.6] - 2026-02-09
+### Changed
+- refactor: `register_external()` → `register_community()` 명칭 변경
+- deps: programgarden-core 1.1.8 버전으로 업데이트 (unified node registry, Dynamic_ prefix 통일)
+
 ## [1.1.5] - 2026-02-07
 ### Changed
 - deps: programgarden-core 1.1.7 버전으로 업데이트 (credential type overseas 명칭 변경)
