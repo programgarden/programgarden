@@ -1,10 +1,16 @@
-## [1.1.8] - 2026-02-09
+## [1.1.9] - 2026-02-10
 ### Changed
 - refactor: `NodeTypeRegistry` 명칭 변경 (`register_external` → `register_community`, `is_external` → `is_community` 등)
   - community 노드와 dynamic 노드의 개념 분리를 위해 "external" → "community"로 명칭 통일
 - refactor: `DYNAMIC_NODE_PREFIX` 변경 (`Custom_` → `Dynamic_`)
   - DynamicNodeRegistry API 전체와 prefix 네이밍 일관성 통일
 - refactor: `DynamicNodeRegistry` docstring "커스텀" → "동적"으로 통일
+
+### Fixed
+- fix: i18n fieldNames 번역 키 누락 보완 (ko/en 212키 동기화)
+- fix: i18n 번역 키 누락 전면 보완 (ko/en 957키 완전 동기화)
+  - 코드 참조 459키 100% 커버리지 달성
+  - fields, ports, enums, nodes 등 전 영역 누락 해소
 
 ## [1.1.7] - 2026-02-07
 ### Changed

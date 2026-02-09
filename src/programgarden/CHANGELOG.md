@@ -1,11 +1,11 @@
-## [1.1.9] - 2026-02-09
+## [1.1.10] - 2026-02-10
 ### Changed
 - feat: `list_node_types()`에 동적 노드 통합 쿼리 지원 (`is_dynamic` 플래그, `include_dynamic` 파라미터)
 - feat: `get_node_schema()`에 동적 노드 fallback 추가
 - feat: `list_categories()`에 동적 노드 카운트 포함
 - refactor: `get_required_custom_types()` → `get_required_dynamic_types()` 메서드명 변경
 - refactor: python_server에 동적 노드 통합 API 적용
-- deps: programgarden-core 1.1.8, finance 1.1.6, community 1.1.6 버전으로 업데이트
+- deps: programgarden-core 1.1.9, finance 1.1.7, community 1.1.7 버전으로 업데이트
 
 ## [1.1.8] - 2026-02-07
 ### Changed

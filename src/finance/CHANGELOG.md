@@ -1,3 +1,7 @@
+## [1.1.7] - 2026-02-10
+### Changed
+- deps: programgarden-core 1.1.9 버전으로 업데이트 (i18n 957키 완전 동기화, unified node registry)
+
 ## [1.1.6] - 2026-02-09
 ### Changed
 - deps: programgarden-core 1.1.8 버전으로 업데이트 (unified node registry, Dynamic_ prefix 통일)
