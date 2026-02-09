@@ -1,3 +1,7 @@
+## [1.1.8] - 2026-02-10
+### Changed
+- deps: programgarden-core 1.1.10 버전으로 업데이트 (translate_schema 번역 범위 수정)
+
 ## [1.1.7] - 2026-02-10
 ### Changed
 - deps: programgarden-core 1.1.9 버전으로 업데이트 (i18n 957키 완전 동기화, unified node registry)

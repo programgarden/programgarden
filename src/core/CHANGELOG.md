@@ -1,3 +1,9 @@
+## [1.1.10] - 2026-02-10
+### Fixed
+- fix: `translate_schema()` 포트 display_name, config_schema sub_fields/ui_options 번역 누락 수정
+  - `_translate_port()`: description + display_name 모두 번역 (326개 미번역 해소)
+  - `_translate_config_schema()`: sub_fields, ui_options 재귀 번역 추가
+
 ## [1.1.9] - 2026-02-10
 ### Changed
 - refactor: `NodeTypeRegistry` 명칭 변경 (`register_external` → `register_community`, `is_external` → `is_community` 등)

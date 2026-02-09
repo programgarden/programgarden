@@ -1,3 +1,7 @@
+## [1.1.11] - 2026-02-10
+### Changed
+- deps: programgarden-core 1.1.10, finance 1.1.8, community 1.1.8 버전으로 업데이트
+
 ## [1.1.10] - 2026-02-10
 ### Changed
 - feat: `list_node_types()`에 동적 노드 통합 쿼리 지원 (`is_dynamic` 플래그, `include_dynamic` 파라미터)
