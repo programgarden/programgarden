@@ -180,10 +180,10 @@ class ProgramGarden:
         return [job.get_state() for job in self.executor.list_jobs()]
 
     @staticmethod
-    def list_node_types(category: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_node_types(category: Optional[str] = None, include_dynamic: bool = True) -> List[Dict[str, Any]]:
         """List available node types"""
         from programgarden.tools import list_node_types
-        return list_node_types(category)
+        return list_node_types(category, include_dynamic=include_dynamic)
 
     @staticmethod
     def list_plugins(

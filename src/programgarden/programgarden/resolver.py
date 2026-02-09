@@ -153,7 +153,7 @@ class WorkflowResolver:
             if registry.get(node_type):
                 continue
 
-            # 동적 노드 체크 (Custom_ prefix)
+            # 동적 노드 체크 (Dynamic_ prefix)
             if is_dynamic_node_type(node_type):
                 if not dynamic_registry.get_schema(node_type):
                     result.add_error(

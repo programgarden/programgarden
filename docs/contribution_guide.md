@@ -430,7 +430,7 @@ def register_all_nodes():
 
     for node_class in messaging_nodes:
         try:
-            registry.register_external(
+            registry.register_community(
                 node_class,
                 source="community",
                 trust_level="community",

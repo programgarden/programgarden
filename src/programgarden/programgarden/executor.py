@@ -289,12 +289,12 @@ class GenericNodeExecutor(NodeExecutorBase):
                 if dynamic_registry.get_schema(node_type):
                     context.log(
                         "error",
-                        f"커스텀 노드 클래스가 주입되지 않음: {node_type}. "
+                        f"동적 노드 클래스가 주입되지 않음: {node_type}. "
                         "inject_node_classes()를 먼저 호출하세요.",
                         node_id
                     )
                     return {
-                        "error": f"커스텀 노드 클래스가 주입되지 않음: {node_type}. "
+                        "error": f"동적 노드 클래스가 주입되지 않음: {node_type}. "
                                  "inject_node_classes()를 먼저 호출하세요."
                     }
                 # 스키마도 없는 경우
@@ -10370,7 +10370,7 @@ class WorkflowExecutor:
     - 24-hour continuous execution support
     - Position/balance state persistence
     - Graceful Restart support
-    - Dynamic node injection support (Custom_ prefix nodes)
+    - Dynamic node injection support (Dynamic_ prefix nodes)
     """
 
     def __init__(self):
@@ -10619,21 +10619,21 @@ class WorkflowExecutor:
 
     def register_dynamic_schemas(self, schemas: List[Dict[str, Any]]) -> None:
         """
-        커스텀 노드 스키마 등록 (UI 표시용)
+        동적 노드 스키마 등록 (UI 표시용)
 
         사용자가 DB에서 로드한 스키마를 등록합니다.
         이 시점에는 클래스 없이 스키마만 저장됩니다.
 
         Args:
             schemas: 스키마 딕셔너리 목록
-                [{"node_type": "Custom_MyRSI", "category": "condition", ...}, ...]
+                [{"node_type": "Dynamic_MyRSI", "category": "condition", ...}, ...]
 
         Raises:
-            ValueError: Custom_ prefix가 없는 경우
+            ValueError: Dynamic_ prefix가 없는 경우
 
         Example:
             executor = WorkflowExecutor()
-            schemas = db.get_all_custom_node_schemas()
+            schemas = db.get_all_dynamic_node_schemas()
             executor.register_dynamic_schemas(schemas)
         """
         from programgarden_core.registry import DynamicNodeSchema
@@ -10642,9 +10642,9 @@ class WorkflowExecutor:
             schema = DynamicNodeSchema(**schema_dict)
             registry.register_schema(schema)
 
-    def get_required_custom_types(self, workflow: Dict[str, Any]) -> List[str]:
+    def get_required_dynamic_types(self, workflow: Dict[str, Any]) -> List[str]:
         """
-        워크플로우에서 사용되는 커스텀 노드 타입 목록 반환
+        워크플로우에서 사용되는 동적 노드 타입 목록 반환
 
         사용자는 이 목록을 받아서 해당 타입들의 .py 파일만
         Cloud Storage에서 다운로드하면 됩니다.
@@ -10653,26 +10653,26 @@ class WorkflowExecutor:
             workflow: 워크플로우 정의 (JSON dict)
 
         Returns:
-            커스텀 노드 타입명 목록 (예: ["Custom_MyRSI", "Custom_MyMACD"])
+            동적 노드 타입명 목록 (예: ["Dynamic_MyRSI", "Dynamic_MyMACD"])
 
         Example:
-            required = executor.get_required_custom_types(workflow)
+            required = executor.get_required_dynamic_types(workflow)
             for node_type in required:
                 code = await cloud.download(f"nodes/{node_type}.py")
                 # ... 동적 import 후 inject_node_classes() 호출
         """
         from programgarden_core.registry import DYNAMIC_NODE_PREFIX
-        custom_types = []
+        dynamic_types = []
         for node in workflow.get("nodes", []):
             node_type = node.get("type", "")
             if node_type.startswith(DYNAMIC_NODE_PREFIX):
-                if node_type not in custom_types:
-                    custom_types.append(node_type)
-        return custom_types
+                if node_type not in dynamic_types:
+                    dynamic_types.append(node_type)
+        return dynamic_types
 
     def inject_node_classes(self, node_classes: Dict[str, type]) -> None:
         """
-        커스텀 노드 클래스 주입
+        동적 노드 클래스 주입
 
         사용자가 Cloud Storage에서 다운로드 → 동적 import한 클래스들을 주입합니다.
 
@@ -10684,7 +10684,7 @@ class WorkflowExecutor:
 
         Args:
             node_classes: {node_type: node_class} 딕셔너리
-                {"Custom_MyRSI": MyRSINode, "Custom_MyMACD": MyMACDNode}
+                {"Dynamic_MyRSI": MyRSINode, "Dynamic_MyMACD": MyMACDNode}
 
         Raises:
             ValueError: 스키마 미등록, 포트 불일치
@@ -10692,8 +10692,8 @@ class WorkflowExecutor:
 
         Example:
             executor.inject_node_classes({
-                "Custom_MyRSI": MyRSINode,
-                "Custom_MyMACD": MyMACDNode,
+                "Dynamic_MyRSI": MyRSINode,
+                "Dynamic_MyMACD": MyMACDNode,
             })
         """
         registry = self._get_dynamic_registry()
@@ -10718,7 +10718,7 @@ class WorkflowExecutor:
         등록된 동적 노드 타입 목록 반환
 
         Returns:
-            노드 타입명 목록 (예: ["Custom_MyRSI", "Custom_MyMACD"])
+            노드 타입명 목록 (예: ["Dynamic_MyRSI", "Dynamic_MyMACD"])
         """
         registry = self._get_dynamic_registry()
         return registry.list_schema_types()
@@ -10730,7 +10730,7 @@ class WorkflowExecutor:
         스키마 등록 + 클래스 주입 여부 확인.
 
         Args:
-            node_type: 노드 타입명 (예: Custom_MyRSI)
+            node_type: 노드 타입명 (예: Dynamic_MyRSI)
 
         Returns:
             실행 준비 완료 여부
