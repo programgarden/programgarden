@@ -10133,6 +10133,62 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         }
 
 
+class LLMModelNodeExecutor(NodeExecutorBase):
+    """LLMModelNode executor - BrokerNode 패턴 동일.
+
+    credential에서 API 키와 provider 정보를 주입하고,
+    litellm 형식의 connection dict를 출력한다.
+    """
+
+    # provider별 litellm 모델 prefix 매핑
+    _MODEL_PREFIX = {
+        "azure": "azure/",
+        "ollama": "ollama/",
+    }
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        # Credential 주입
+        credential_id = config.get("credential_id")
+        if credential_id:
+            config = self._inject_credentials(credential_id, config, context, node_id)
+
+        provider = config.get("provider", "openai")
+        model = config.get("model", "gpt-4o")
+
+        # litellm 형식 모델명 변환 (azure/deploy, ollama/llama3 등)
+        prefix = self._MODEL_PREFIX.get(provider, "")
+        if prefix and not model.startswith(prefix):
+            model = f"{prefix}{model}"
+
+        context.log(
+            "info",
+            f"LLM model connected: {provider}/{model}",
+            node_id,
+        )
+
+        return {
+            "connection": {
+                "provider": provider,
+                "model": model,
+                "api_key": config.get("api_key"),
+                "base_url": config.get("base_url"),
+                "organization": config.get("organization"),
+                "api_version": config.get("api_version"),
+                "temperature": config.get("temperature", 0.7),
+                "max_tokens": config.get("max_tokens", 1000),
+                "seed": config.get("seed"),
+                "streaming": config.get("streaming", False),
+            }
+        }
+
+
 class SQLiteNodeExecutor(NodeExecutorBase):
     """
     SQLiteNode executor
@@ -10445,6 +10501,8 @@ class WorkflowExecutor:
             "OverseasFuturesCancelOrderNode": CancelOrderNodeExecutor(),
             # Data nodes
             "SQLiteNode": SQLiteNodeExecutor(),
+            # AI nodes
+            "LLMModelNode": LLMModelNodeExecutor(),
         }
 
     def validate(self, definition: Dict[str, Any]) -> ValidationResult:

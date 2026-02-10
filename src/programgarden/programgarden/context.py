@@ -29,6 +29,9 @@ from programgarden_core.bases.listener import (
     DisplayDataEvent,
     WorkflowPnLEvent,
     PositionDetail,
+    LLMStreamEvent,
+    TokenUsageEvent,
+    AIToolCallEvent,
 )
 from programgarden_core.models.resilience import RetryEvent
 
@@ -1296,6 +1299,39 @@ class ExecutionContext:
                     await listener.on_retry(event)
             except Exception as e:
                 logger.warning(f"Listener error on_retry: {e}")
+
+    async def notify_llm_stream(self, event: LLMStreamEvent) -> None:
+        """LLM 토큰 스트리밍 이벤트 전파. UI 실시간 타이핑 효과용."""
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_llm_stream'):
+                    await listener.on_llm_stream(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_llm_stream: {e}")
+
+    async def notify_token_usage(self, event: TokenUsageEvent) -> None:
+        """토큰 사용량 이벤트 전파. 비용 추적 및 모니터링용."""
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_token_usage'):
+                    await listener.on_token_usage(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_token_usage: {e}")
+
+    async def notify_ai_tool_call(self, event: AIToolCallEvent) -> None:
+        """AI Tool 호출 이벤트 전파. UI에서 Tool 호출 상태 표시용."""
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_ai_tool_call'):
+                    await listener.on_ai_tool_call(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_ai_tool_call: {e}")
 
     async def notify_workflow_pnl(
         self,
