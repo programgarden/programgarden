@@ -1,32 +1,51 @@
 """
 ProgramGarden Core - Edge 모델
 
-노드 간 연결(엣지) 정의 - 실행 순서만 표현
+노드 간 연결(엣지) 정의
+- main: 실행 순서 (DAG topological sort에 포함)
+- tool: AI Agent의 Tool로 등록 (DAG 순서에서 제외, 필요 시 호출)
+- ai_model: LLM 연결 제공 (DAG 순서에서 제외)
+
 데이터 바인딩은 노드 config에서 {{ nodeId.field }} 표현식으로 처리
 """
 
+from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class EdgeType(str, Enum):
+    """엣지 타입"""
+    MAIN = "main"          # 기존: 실행 순서 (DAG 포함)
+    TOOL = "tool"          # AI Agent의 Tool로 등록 (DAG 제외)
+    AI_MODEL = "ai_model"  # LLM 연결 제공 (DAG 제외)
+
+
 class Edge(BaseModel):
     """
-    노드 간 연결 정의 (실행 순서)
+    노드 간 연결 정의
 
-    엣지는 노드 간 실행 순서만 표현합니다.
-    데이터 바인딩은 노드 config에서 {{ }} 표현식으로 처리합니다.
+    엣지 타입별 역할:
+    - main (기본): 실행 순서 정의, DAG topological sort에 포함
+    - tool: AI Agent의 Tool로 등록, DAG 순서에서 제외 (Agent가 필요 시 호출)
+    - ai_model: LLM 연결 제공, DAG 순서에서 제외
 
     Examples:
-        엣지 (실행 순서):
-        - {"from": "start", "to": "broker"}
-        - {"from": "broker", "to": "watchlist"}
-        - {"from": "watchlist", "to": "marketData"}
+        main 엣지 (실행 순서):
+        - {"from": "schedule", "to": "broker"}
+        - {"from": "broker", "to": "ai-trader"}
+
+        tool 엣지 (AI Tool 등록):
+        - {"from": "market", "to": "ai-trader", "type": "tool"}
+
+        ai_model 엣지 (LLM 연결):
+        - {"from": "llm", "to": "ai-trader", "type": "ai_model"}
 
         데이터 바인딩 (노드 config):
         - "symbols": "{{ watchlist.symbols }}"
         - "price": "{{ marketData.price }}"
     """
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
     from_node: str = Field(
@@ -39,11 +58,21 @@ class Edge(BaseModel):
         alias="to",
         description="도착 노드 ID",
     )
-    
+    edge_type: EdgeType = Field(
+        default=EdgeType.MAIN,
+        alias="type",
+        description="엣지 타입 (main: 실행 순서, tool: AI Tool, ai_model: LLM 연결)",
+    )
+
     description: Optional[str] = Field(
         default=None,
         description="연결 설명",
     )
+
+    @property
+    def is_dag_edge(self) -> bool:
+        """DAG topological sort에 포함되는 엣지인지 여부"""
+        return self.edge_type == EdgeType.MAIN
 
     @model_validator(mode='before')
     @classmethod

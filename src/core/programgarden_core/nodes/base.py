@@ -72,6 +72,9 @@ class NodeCategory(str, Enum):
     # 메시징: 텔레그램, 슬랙, 디스코드 등 알림
     MESSAGING = "messaging"
 
+    # AI: AI 에이전트, LLM 모델 연결
+    AI = "ai"
+
 
 class Position(BaseModel):
     """클라이언트 UI용 노드 위치"""
@@ -306,24 +309,110 @@ class BaseNode(BaseModel):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """
         노드의 설정 가능한 필드 스키마 반환 (UI 렌더링용)
-        
+
         서브클래스에서 오버라이드하여 PARAMETERS/SETTINGS 카테고리 구분.
-        
+
         Returns:
             Dict[str, FieldSchema]: 필드명 → 스키마 매핑
-            
+
         Example:
             @classmethod
             def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
                 from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
                 return {
-                    "url": FieldSchema(name="url", type=FieldType.STRING, 
+                    "url": FieldSchema(name="url", type=FieldType.STRING,
                         category=FieldCategory.PARAMETERS),
                     "timeout": FieldSchema(name="timeout", type=FieldType.INTEGER,
                         category=FieldCategory.SETTINGS),
                 }
         """
         return {}
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        """
+        이 노드가 AI Agent의 Tool로 사용 가능한지 여부.
+
+        tool 엣지로 AIAgentNode에 연결 가능한 노드는 True를 반환합니다.
+        서브클래스에서 오버라이드하여 변경 가능.
+
+        Returns:
+            bool: Tool로 사용 가능 여부 (기본 False)
+        """
+        return False
+
+    @classmethod
+    def _to_snake_case(cls, name: str) -> str:
+        """CamelCase를 snake_case로 변환 (LLM function calling용)
+
+        약어(AI, HTTP, LLM 등)도 올바르게 처리:
+        - OverseasStockMarketDataNode → overseas_stock_market_data
+        - AIAgentNode → ai_agent
+        - HTTPRequestNode → http_request
+        - LLMModelNode → llm_model
+        """
+        import re
+        name = name.replace("Node", "")
+        # 1단계: 약어 뒤에 소문자 단어가 오는 경계 (HTTPRequest → HTTP_Request)
+        s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
+        # 2단계: 소문자/숫자 뒤에 대문자가 오는 경계 (stockMarket → stock_Market)
+        return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    @classmethod
+    def as_tool_schema(cls) -> Dict[str, Any]:
+        """
+        이 노드를 AI Tool로 사용할 때의 스키마.
+
+        AI Agent가 LLM에 Tool 목록을 전달할 때 사용합니다.
+        노드의 설정 가능한 필드(FieldSchema)를 Tool 파라미터로 변환합니다.
+
+        Returns:
+            dict: {
+                "tool_name": "overseas_stock_market_data",  (LLM function calling용 snake_case)
+                "node_type": "OverseasStockMarketDataNode", (원본 클래스명)
+                "display_name": "i18n:nodes.OverseasStockMarketDataNode.name", (UI 표시용 i18n 키)
+                "description": "...",
+                "parameters": {...},
+                "returns": {...},
+            }
+        """
+        field_schemas = cls.get_field_schema()
+        parameters = {}
+        for field_name, fs in field_schemas.items():
+            param = {
+                "type": fs.type.value if hasattr(fs.type, 'value') else str(fs.type),
+                "required": fs.required,
+            }
+            if fs.description:
+                param["description"] = fs.description
+            if fs.enum_values:
+                param["enum"] = fs.enum_values
+            if fs.default is not None:
+                param["default"] = fs.default
+            parameters[field_name] = param
+
+        # 출력 포트 → returns
+        # _outputs는 Pydantic에서 ModelPrivateAttr가 될 수 있으므로 인스턴스를 생성하여 접근
+        returns = {}
+        try:
+            temp_instance = cls(id="__tool_schema__", type=cls.__name__)
+            instance_outputs = temp_instance.get_outputs()
+        except Exception:
+            instance_outputs = []
+        for out in instance_outputs:
+            out_dict = {"type": out.type}
+            if out.description:
+                out_dict["description"] = out.description
+            returns[out.name] = out_dict
+
+        return {
+            "tool_name": cls._to_snake_case(cls.__name__),
+            "node_type": cls.__name__,
+            "display_name": f"i18n:nodes.{cls.__name__}.name",
+            "description": cls.__doc__.strip() if cls.__doc__ else "",
+            "parameters": parameters,
+            "returns": returns,
+        }
 
 
 class PluginNode(BaseNode):

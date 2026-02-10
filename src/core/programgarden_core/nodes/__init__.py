@@ -1,7 +1,7 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-46개 노드 타입을 카테고리로 분류:
+48개 노드 타입을 카테고리로 분류:
 - infra (4): StartNode, ThrottleNode, SplitNode, AggregateNode
 - broker (2): OverseasStockBrokerNode, OverseasFuturesBrokerNode
 - market (12): OverseasStockMarketDataNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
@@ -17,6 +17,7 @@ ProgramGarden Core - 노드 타입 정의
 - display (6): TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode
 - analysis (2): BacktestEngineNode, BenchmarkCompareNode
 - data (3): SQLiteNode, HTTPRequestNode, FieldMappingNode
+- ai (2): LLMModelNode, AIAgentNode
 - messaging: 커뮤니티 노드 (TelegramNode 등)
 """
 
@@ -81,6 +82,8 @@ from programgarden_core.nodes.backtest import (
     BenchmarkCompareNode,
 )
 from programgarden_core.nodes.portfolio import PortfolioNode
+# AI (에이전트, LLM 연결)
+from programgarden_core.nodes.ai import LLMModelNode, AIAgentNode
 
 __all__ = [
     # Base
@@ -153,4 +156,7 @@ __all__ = [
     # Backtest/Analysis
     "BacktestEngineNode",
     "BenchmarkCompareNode",
+    # AI (에이전트, LLM 연결)
+    "LLMModelNode",
+    "AIAgentNode",
 ]

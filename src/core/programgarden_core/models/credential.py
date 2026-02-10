@@ -422,6 +422,162 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
             "dynamic_description": "커스텀 HTTP Credential은 동적으로 key-value 쌍을 정의할 수 있습니다. 서버 API를 통해 관리하세요."
         }
     ),
+    # ============================================================
+    # LLM API (AI Agent 노드용)
+    # ============================================================
+    "llm_openai": CredentialTypeSchema(
+        type_id="llm_openai",
+        name="OpenAI (LLM)",
+        description="OpenAI API - GPT-4o, GPT-4, GPT-3.5 등",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-openai-llm",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "provider",
+                    "type": "hidden",
+                    "default": "openai",
+                },
+                {
+                    "key": "api_key",
+                    "type": "password",
+                    "label": "API Key",
+                    "description": "OpenAI API Key (sk-...)",
+                    "required": True
+                },
+                {
+                    "key": "organization",
+                    "type": "text",
+                    "label": "Organization ID",
+                    "description": "조직 ID (선택)",
+                    "required": False
+                },
+                {
+                    "key": "base_url",
+                    "type": "text",
+                    "label": "Base URL",
+                    "description": "커스텀 엔드포인트 (선택, OpenAI 호환 API용)",
+                    "required": False
+                }
+            ]
+        }
+    ),
+    "llm_anthropic": CredentialTypeSchema(
+        type_id="llm_anthropic",
+        name="Anthropic (LLM)",
+        description="Anthropic API - Claude 4.5, Claude 4 등",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-anthropic-llm",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "provider",
+                    "type": "hidden",
+                    "default": "anthropic",
+                },
+                {
+                    "key": "api_key",
+                    "type": "password",
+                    "label": "API Key",
+                    "description": "Anthropic API Key",
+                    "required": True
+                },
+                {
+                    "key": "base_url",
+                    "type": "text",
+                    "label": "Base URL",
+                    "description": "커스텀 엔드포인트 (선택)",
+                    "required": False
+                }
+            ]
+        }
+    ),
+    "llm_azure_openai": CredentialTypeSchema(
+        type_id="llm_azure_openai",
+        name="Azure OpenAI (LLM)",
+        description="Azure OpenAI Service",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-azure-openai",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "provider",
+                    "type": "hidden",
+                    "default": "azure",
+                },
+                {
+                    "key": "api_key",
+                    "type": "password",
+                    "label": "API Key",
+                    "description": "Azure OpenAI API Key",
+                    "required": True
+                },
+                {
+                    "key": "base_url",
+                    "type": "text",
+                    "label": "Azure Endpoint",
+                    "description": "Azure OpenAI 엔드포인트 URL (https://xxx.openai.azure.com/)",
+                    "required": True
+                },
+                {
+                    "key": "api_version",
+                    "type": "text",
+                    "label": "API Version",
+                    "description": "API 버전 (예: 2024-02-01)",
+                    "default": "2024-02-01",
+                    "required": False
+                }
+            ]
+        }
+    ),
+    "llm_ollama": CredentialTypeSchema(
+        type_id="llm_ollama",
+        name="Ollama (로컬 LLM)",
+        description="Ollama 로컬 LLM - API 키 불필요",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-ollama",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "provider",
+                    "type": "hidden",
+                    "default": "ollama",
+                },
+                {
+                    "key": "base_url",
+                    "type": "text",
+                    "label": "Ollama URL",
+                    "description": "Ollama 서버 URL",
+                    "default": "http://localhost:11434",
+                    "required": True
+                }
+            ]
+        }
+    ),
 }
 
 

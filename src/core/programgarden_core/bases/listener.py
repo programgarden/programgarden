@@ -377,6 +377,88 @@ class WorkflowPnLEvent:
     competition_account_futures_pnl_amount: Optional[Union[Decimal, float]] = None
 
 
+# ============================================================
+# AI Agent 이벤트
+# ============================================================
+
+@dataclass
+class LLMStreamEvent:
+    """
+    LLM 토큰 스트리밍 이벤트.
+
+    AI Agent 노드가 LLM 응답을 스트리밍할 때 발생.
+    UI에서 실시간 타이핑 효과 표시에 사용.
+
+    Attributes:
+        job_id: Job 식별자
+        node_id: AIAgentNode ID
+        token: 수신된 토큰 텍스트
+        is_final: 마지막 토큰 여부
+        timestamp: 이벤트 시각
+    """
+    job_id: str
+    node_id: str
+    token: str
+    is_final: bool = False
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class TokenUsageEvent:
+    """
+    토큰 사용량 이벤트.
+
+    AI Agent 노드의 LLM 호출 완료 후 발생.
+    비용 추적 및 사용량 모니터링에 사용.
+
+    Attributes:
+        job_id: Job 식별자
+        node_id: AIAgentNode ID
+        model: 사용된 LLM 모델명
+        input_tokens: 입력 토큰 수
+        output_tokens: 출력 토큰 수
+        total_tokens: 총 토큰 수
+        cost_usd: 예상 비용 (USD)
+        timestamp: 이벤트 시각
+    """
+    job_id: str
+    node_id: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    cost_usd: float = 0.0
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class AIToolCallEvent:
+    """
+    AI Tool 호출 이벤트.
+
+    AI Agent가 tool 엣지로 연결된 노드를 호출할 때 발생.
+    UI에서 "🛠️ get_price(AAPL) 호출 중" 표시에 사용.
+
+    Attributes:
+        job_id: Job 식별자
+        node_id: AIAgentNode ID
+        tool_name: 호출된 Tool 이름
+        tool_node_id: Tool로 사용된 노드의 ID
+        tool_input: Tool에 전달된 인자
+        tool_output: Tool 실행 결과 (완료 시)
+        duration_ms: 실행 시간 (ms, 완료 시)
+        timestamp: 이벤트 시각
+    """
+    job_id: str
+    node_id: str
+    tool_name: str
+    tool_node_id: str
+    tool_input: Dict[str, Any] = field(default_factory=dict)
+    tool_output: Any = None
+    duration_ms: Optional[float] = None
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
 @runtime_checkable
 class ExecutionListener(Protocol):
     """
@@ -464,6 +546,39 @@ class ExecutionListener(Protocol):
         """
         ...
 
+    async def on_llm_stream(self, event: LLMStreamEvent) -> None:
+        """
+        Called when LLM produces a streaming token.
+
+        UI에서 실시간 타이핑 효과 표시용.
+
+        Args:
+            event: LLMStreamEvent with token text and is_final flag.
+        """
+        ...
+
+    async def on_token_usage(self, event: TokenUsageEvent) -> None:
+        """
+        Called when LLM call completes with token usage info.
+
+        비용 추적 및 사용량 모니터링용.
+
+        Args:
+            event: TokenUsageEvent with model, token counts, cost.
+        """
+        ...
+
+    async def on_ai_tool_call(self, event: AIToolCallEvent) -> None:
+        """
+        Called when AI Agent calls a tool (node connected via tool edge).
+
+        UI에서 Tool 호출 상태 표시용.
+
+        Args:
+            event: AIToolCallEvent with tool name, input, output.
+        """
+        ...
+
 
 class BaseExecutionListener:
     """
@@ -520,6 +635,18 @@ class BaseExecutionListener:
         pass
 
     async def on_retry(self, event: 'RetryEvent') -> None:
+        """Default implementation: do nothing"""
+        pass
+
+    async def on_llm_stream(self, event: LLMStreamEvent) -> None:
+        """Default implementation: do nothing"""
+        pass
+
+    async def on_token_usage(self, event: TokenUsageEvent) -> None:
+        """Default implementation: do nothing"""
+        pass
+
+    async def on_ai_tool_call(self, event: AIToolCallEvent) -> None:
         """Default implementation: do nothing"""
         pass
 
