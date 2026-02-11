@@ -41,6 +41,10 @@ class OverseasFuturesOpenOrdersNode(BaseNode):
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
     _inputs: List[InputPort] = [
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
     ]

@@ -232,22 +232,18 @@ class SentimentResult(BaseModel):
 class TestChatStructured:
     @pytest.mark.asyncio
     async def test_structured_output(self):
-        """Instructor로 구조화 출력 파싱."""
+        """JSON mode + Pydantic 검증으로 구조화 출력 파싱."""
         config = _make_config()
         provider = LLMProvider(config)
 
-        expected_model = SentimentResult(sentiment="positive", confidence=0.95)
-
-        raw_completion = SimpleNamespace(
-            usage=SimpleNamespace(prompt_tokens=20, completion_tokens=10),
-            model="gpt-4o",
+        # LLM이 올바른 JSON을 반환하는 경우
+        mock_resp = _make_litellm_response(
+            content='{"sentiment": "positive", "confidence": 0.95}',
+            prompt_tokens=20,
+            completion_tokens=10,
         )
 
-        mock_client = MagicMock()
-        mock_create = AsyncMock(return_value=(expected_model, raw_completion))
-        mock_client.chat.completions.create_with_completion = mock_create
-
-        with patch("instructor.from_litellm", return_value=mock_client):
+        with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp):
             with patch("litellm.completion_cost", return_value=0.0005):
                 result_model, llm_resp = await provider.chat_structured(
                     [{"role": "user", "content": "analyze sentiment"}],
@@ -260,6 +256,55 @@ class TestChatStructured:
         assert llm_resp.input_tokens == 20
         assert llm_resp.output_tokens == 10
         assert llm_resp.model == "gpt-4o"
+
+    @pytest.mark.asyncio
+    async def test_structured_with_json_block(self):
+        """```json ... ``` 블록 포함 응답 파싱."""
+        config = _make_config()
+        provider = LLMProvider(config)
+
+        mock_resp = _make_litellm_response(
+            content='Sure:\n```json\n{"sentiment": "negative", "confidence": 0.8}\n```',
+        )
+
+        with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp):
+            with patch("litellm.completion_cost", return_value=0.0):
+                result_model, _ = await provider.chat_structured(
+                    [{"role": "user", "content": "analyze"}],
+                    response_model=SentimentResult,
+                )
+
+        assert result_model.sentiment == "negative"
+        assert result_model.confidence == 0.8
+
+    @pytest.mark.asyncio
+    async def test_structured_retry_on_invalid(self):
+        """잘못된 JSON → 에러 피드백 후 재시도."""
+        config = _make_config()
+        provider = LLMProvider(config)
+
+        bad_resp = _make_litellm_response(content='not json at all')
+        good_resp = _make_litellm_response(
+            content='{"sentiment": "neutral", "confidence": 0.5}',
+        )
+
+        call_count = 0
+
+        async def mock_completion(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            return bad_resp if call_count == 1 else good_resp
+
+        with patch("litellm.acompletion", side_effect=mock_completion):
+            with patch("litellm.completion_cost", return_value=0.0):
+                result_model, _ = await provider.chat_structured(
+                    [{"role": "user", "content": "analyze"}],
+                    response_model=SentimentResult,
+                    max_retries=2,
+                )
+
+        assert result_model.sentiment == "neutral"
+        assert call_count == 2  # 1번 실패 + 1번 성공
 
 
 # ============================================================

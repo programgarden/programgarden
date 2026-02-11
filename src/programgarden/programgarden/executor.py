@@ -48,6 +48,36 @@ class NodeExecutorBase:
         """
         raise NotImplementedError
 
+    def _inject_credentials(
+        self,
+        credential_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """Credential 값을 config에 주입 (공용 메서드)."""
+        cred_data = context.get_workflow_credential(credential_id)
+
+        if cred_data:
+            config = config.copy()
+            injected_keys = []
+
+            for key, value in cred_data.items():
+                if config.get(key) is None and value:
+                    config[key] = value
+                    injected_keys.append(key)
+
+            if injected_keys:
+                context.log(
+                    "debug",
+                    f"Credentials injected from '{credential_id}': {', '.join(injected_keys)}",
+                    node_id
+                )
+        else:
+            context.log("warning", f"Credential '{credential_id}' not found", node_id)
+
+        return config
+
 
 def resolve_port_bindings(
     config: Dict[str, Any],
@@ -10144,6 +10174,7 @@ class LLMModelNodeExecutor(NodeExecutorBase):
     _MODEL_PREFIX = {
         "azure": "azure/",
         "ollama": "ollama/",
+        "gemini": "gemini/",
     }
 
     async def execute(
@@ -10189,10 +10220,896 @@ class LLMModelNodeExecutor(NodeExecutorBase):
         }
 
 
+class AIAgentToolExecutor:
+    """AI Agent의 Tool 호출 엔진.
+
+    tool 엣지로 연결된 기존 노드를 GenericNodeExecutor를 통해 실행합니다.
+    동일한 ExecutionContext를 공유하여 credential/connection 자동 주입이 작동합니다.
+    """
+
+    def __init__(
+        self,
+        context: ExecutionContext,
+        workflow: "ResolvedWorkflow",
+        generic_executor: GenericNodeExecutor,
+    ) -> None:
+        self.context = context
+        self.workflow = workflow
+        self.generic_executor = generic_executor
+        # tool 노드별 기본 config 캐시 (as_tool_schema에서 사용)
+        self._tool_configs: Dict[str, Dict[str, Any]] = {}
+        self._tool_schemas: Dict[str, Dict[str, Any]] = {}
+
+    def register_tools(self, agent_node_id: str) -> List[Dict[str, Any]]:
+        """tool 엣지로 연결된 노드들을 Tool로 등록하고 OpenAI function calling 형식 반환.
+
+        Returns:
+            List of tool definitions in OpenAI function calling format:
+            [{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}]
+        """
+        from programgarden_core.registry import NodeTypeRegistry
+
+        registry = NodeTypeRegistry()
+        tool_node_ids = self.workflow.get_tool_node_ids(agent_node_id)
+        tools = []
+
+        for tool_node_id in tool_node_ids:
+            node = self.workflow.nodes.get(tool_node_id)
+            if not node:
+                continue
+
+            node_class = registry.get(node.node_type)
+            if not node_class:
+                continue
+
+            if not node_class.is_tool_enabled():
+                self.context.log(
+                    "warning",
+                    f"Node {node.node_type} is not tool-enabled, skipping",
+                    agent_node_id,
+                )
+                continue
+
+            # as_tool_schema()로 Tool 정보 추출
+            tool_schema = node_class.as_tool_schema()
+            tool_name = tool_schema["tool_name"]
+
+            # 기본 config 캐시 (LLM args와 병합 시 사용)
+            self._tool_configs[tool_name] = {
+                "node_id": tool_node_id,
+                "node_type": node.node_type,
+                "config": node.config.copy(),
+            }
+            self._tool_schemas[tool_name] = tool_schema
+
+            # LLM이 넘길 수 있는 파라미터만 추출 (credential_id 등 제외)
+            llm_params = {}
+            excluded_keys = {"credential_id", "connection", "_source_node_id"}
+            for param_name, param_info in tool_schema.get("parameters", {}).items():
+                if param_name in excluded_keys:
+                    continue
+                p = {"type": self._to_json_type(param_info.get("type", "string"))}
+                if "description" in param_info:
+                    p["description"] = param_info["description"]
+                if "enum" in param_info:
+                    p["enum"] = param_info["enum"]
+                llm_params[param_name] = p
+
+            # OpenAI function calling 형식
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": tool_schema.get("description", ""),
+                    "parameters": {
+                        "type": "object",
+                        "properties": llm_params,
+                    },
+                },
+            })
+
+        self.context.log(
+            "info",
+            f"Registered {len(tools)} tools for AIAgentNode '{agent_node_id}': "
+            f"{[t['function']['name'] for t in tools]}",
+            agent_node_id,
+        )
+        return tools
+
+    async def call_tool(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        agent_node_id: str,
+    ) -> Dict[str, Any]:
+        """tool 엣지로 연결된 노드를 Tool로 호출.
+
+        Args:
+            tool_name: Tool 이름 (as_tool_schema의 tool_name)
+            args: LLM이 넘긴 인자
+            agent_node_id: 호출하는 AIAgentNode ID
+
+        Returns:
+            노드 실행 결과 dict
+        """
+        tool_info = self._tool_configs.get(tool_name)
+        if not tool_info:
+            return {"error": f"Unknown tool: {tool_name}"}
+
+        tool_node_id = tool_info["node_id"]
+        tool_node_type = tool_info["node_type"]
+        tool_config = tool_info["config"].copy()
+
+        # 노드의 고정 config + LLM이 넘긴 args 병합
+        tool_config.update(args)
+
+        # Broker connection 자동 주입 (product_scope 매칭)
+        node = self.workflow.nodes.get(tool_node_id)
+        if node:
+            tool_config = self._auto_inject_connection(tool_node_id, node, tool_config)
+
+        # GenericNodeExecutor로 실행 (credential 주입 + expression 평가 포함)
+        result = await self.generic_executor.execute(
+            node_id=tool_node_id,
+            node_type=tool_node_type,
+            config=tool_config,
+            context=self.context,
+        )
+
+        return result
+
+    def _auto_inject_connection(
+        self,
+        node_id: str,
+        node: "ResolvedNode",
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Tool 노드에 Broker connection 자동 주입."""
+        if node.product_scope == "all":
+            return config
+
+        for other_id, other_node in self.workflow.nodes.items():
+            if other_node.product_scope == "all":
+                continue
+            if other_node.product_scope != node.product_scope:
+                continue
+            if (node.broker_provider != "all"
+                    and other_node.broker_provider != "all"
+                    and other_node.broker_provider != node.broker_provider):
+                continue
+
+            other_outputs = self.context.get_all_outputs(other_id)
+            if "connection" in other_outputs:
+                config = config.copy()
+                config["connection"] = other_outputs["connection"]
+                self.context.log(
+                    "debug",
+                    f"Tool auto-injected connection from {other_id} "
+                    f"(scope={node.product_scope})",
+                    node_id,
+                )
+                break
+
+        return config
+
+    @staticmethod
+    def _to_json_type(field_type: str) -> str:
+        """FieldType을 JSON Schema 타입으로 변환."""
+        mapping = {
+            "string": "string",
+            "number": "number",
+            "integer": "integer",
+            "boolean": "boolean",
+            "enum": "string",
+            "json": "object",
+            "array": "array",
+            "credential": "string",
+        }
+        return mapping.get(field_type, "string")
+
+
+class AIAgentNodeExecutor(NodeExecutorBase):
+    """AIAgentNode executor - ReAct/Function Calling 루프 + Output Parser.
+
+    실행 흐름:
+    1. ai_model 엣지에서 LLM connection 주입
+    2. tool 엣지에서 Tool 목록 수집 (as_tool_schema)
+    3. 프롬프트 조립 (system + user + output 지시)
+    4. LLM 호출 → Tool 호출 필요? → Tool 실행 → 결과로 LLM 재호출 (루프)
+    5. 최종 응답 Output Parser (text/json/structured)
+    6. response 포트 출력
+    """
+
+    # Tool 결과 compact 설정
+    _MAX_TOOL_RESULT_CHARS = 4000  # LLM에 전달할 최대 문자수 (~1000 tokens)
+    _ARRAY_SUMMARY_THRESHOLD = 10  # 배열 아이템이 이 수 이상이면 다운샘플링
+    _M4_BUCKET_COUNT = 8  # M4 다운샘플링 버킷 수
+    _TOPN_COUNT = 5  # 순위형 데이터 상위/하위 N개
+
+    # OHLCV 시계열 감지용 키 세트
+    _OHLCV_KEYS = {"open", "high", "low", "close"}
+    # 순위형(포지션/종목) 감지용 키 세트
+    _RANKING_KEYS = {"symbol", "pnl", "pnl_rate", "quantity", "qty"}
+
+    @staticmethod
+    def _detect_array_type(arr: list) -> str:
+        """배열의 데이터 타입을 감지하여 최적 전략을 선택.
+
+        Returns:
+            "timeseries" - OHLCV 캔들 등 시계열 → M4
+            "ranking"    - 포지션/종목 등 순위형 → Top-N
+            "primitive"  - 단순 값 배열 → 균등 샘플링
+        """
+        if not arr or not isinstance(arr[0], dict):
+            return "primitive"
+
+        keys = set(arr[0].keys())
+        keys_lower = {k.lower() for k in keys}
+
+        # OHLCV 시계열: open/high/low/close 중 3개 이상 존재
+        if len(keys_lower & AIAgentNodeExecutor._OHLCV_KEYS) >= 3:
+            return "timeseries"
+
+        # 순위형: symbol + 숫자 필드(pnl, quantity 등) 존재
+        if "symbol" in keys_lower and len(keys_lower & AIAgentNodeExecutor._RANKING_KEYS) >= 2:
+            return "ranking"
+
+        # 기본: dict 배열이지만 특정 패턴 없음 → M4로 처리 (범용)
+        return "timeseries"
+
+    @staticmethod
+    def _compact_tool_result(result: Dict[str, Any]) -> Dict[str, Any]:
+        """Tool 결과를 LLM 컨텍스트용으로 적응형 다운샘플링.
+
+        데이터 타입을 자동 감지하여 최적 전략을 선택:
+        - 시계열(OHLCV 캔들) → M4 (버킷별 first/min/max/last 보존)
+        - 순위형(포지션/종목) → Top-N (정렬 기준으로 상위+하위)
+        - 단순 배열 → 균등 샘플링
+
+        원본은 response 출력 포트 + AIToolCallEvent로 별도 전달 (손실 없음).
+        """
+        import json as _json
+
+        threshold = AIAgentNodeExecutor._ARRAY_SUMMARY_THRESHOLD
+        max_chars = AIAgentNodeExecutor._MAX_TOOL_RESULT_CHARS
+        bucket_count = AIAgentNodeExecutor._M4_BUCKET_COUNT
+        topn = AIAgentNodeExecutor._TOPN_COUNT
+
+        def _stats_for_dict_array(arr: list) -> dict:
+            """dict 배열에서 숫자 필드 통계 추출."""
+            if not arr or not isinstance(arr[0], dict):
+                return {}
+            numeric_keys = [
+                k for k, v in arr[0].items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            ]
+            stats = {}
+            for nk in numeric_keys[:5]:
+                values = [item.get(nk) for item in arr if isinstance(item.get(nk), (int, float))]
+                if values:
+                    stats[nk] = {
+                        "min": round(min(values), 4),
+                        "max": round(max(values), 4),
+                        "avg": round(sum(values) / len(values), 4),
+                    }
+            return stats
+
+        def _downsample_timeseries(arr: list, key: str) -> dict:
+            """M4 알고리즘: 시계열 데이터 다운샘플링 (OHLCV에 최적).
+
+            버킷별 first/min/max/last 인덱스를 선택하여
+            캔들의 high/low가 손실 없이 보존됨. O(n).
+            """
+            count = len(arr)
+            summary: dict = {"_compacted": True, "method": "m4", "field": key, "count": count}
+
+            numeric_keys = [
+                k for k, v in arr[0].items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            ]
+
+            if count <= bucket_count * 4:
+                summary["samples"] = arr
+            else:
+                bucket_size = count / bucket_count
+                selected: set = {0, count - 1}
+
+                for b in range(bucket_count):
+                    start = int(b * bucket_size)
+                    end = min(int((b + 1) * bucket_size), count)
+                    if start >= end:
+                        continue
+                    selected.add(start)
+                    selected.add(end - 1)
+                    if numeric_keys:
+                        ref = numeric_keys[0]
+                        selected.add(min(range(start, end), key=lambda i: arr[i].get(ref, 0)))
+                        selected.add(max(range(start, end), key=lambda i: arr[i].get(ref, 0)))
+
+                summary["samples"] = [arr[i] for i in sorted(selected)]
+
+            stats = _stats_for_dict_array(arr)
+            if stats:
+                summary["stats"] = stats
+            return summary
+
+        def _downsample_ranking(arr: list, key: str) -> dict:
+            """Top-N: 순위형 데이터 다운샘플링 (포지션/종목 목록).
+
+            정렬 가능한 숫자 필드(pnl, pnl_rate 등) 기준으로
+            상위 N개 + 하위 N개를 선택. 중간은 통계로 요약.
+            """
+            count = len(arr)
+            summary: dict = {"_compacted": True, "method": "topn", "field": key, "count": count}
+
+            # 정렬 기준: pnl_rate > pnl > 첫 번째 숫자 필드
+            sort_key = None
+            for candidate in ("pnl_rate", "pnl", "quantity", "qty"):
+                if candidate in arr[0] and isinstance(arr[0][candidate], (int, float)):
+                    sort_key = candidate
+                    break
+            if sort_key is None:
+                numeric_keys = [
+                    k for k, v in arr[0].items()
+                    if isinstance(v, (int, float)) and not isinstance(v, bool)
+                ]
+                sort_key = numeric_keys[0] if numeric_keys else None
+
+            if sort_key and count > topn * 2:
+                sorted_arr = sorted(arr, key=lambda x: x.get(sort_key, 0), reverse=True)
+                summary["sort_key"] = sort_key
+                summary["top"] = sorted_arr[:topn]
+                summary["bottom"] = sorted_arr[-topn:]
+            else:
+                summary["samples"] = arr
+
+            stats = _stats_for_dict_array(arr)
+            if stats:
+                summary["stats"] = stats
+            return summary
+
+        def _downsample_primitive(arr: list, key: str) -> dict:
+            """균등 샘플링: 단순 값 배열."""
+            count = len(arr)
+            summary: dict = {"_compacted": True, "method": "uniform", "field": key, "count": count}
+            sample_count = min(bucket_count * 2, count)
+            step = count / sample_count
+            summary["samples"] = [arr[int(i * step)] for i in range(sample_count)]
+            return summary
+
+        def _downsample_array(arr: list, key: str) -> dict:
+            """데이터 타입 감지 후 최적 전략 선택."""
+            dtype = AIAgentNodeExecutor._detect_array_type(arr)
+            if dtype == "timeseries":
+                return _downsample_timeseries(arr, key)
+            elif dtype == "ranking":
+                return _downsample_ranking(arr, key)
+            else:
+                return _downsample_primitive(arr, key)
+
+        def _compact_value(val, key=""):
+            if isinstance(val, list) and len(val) >= threshold:
+                return _downsample_array(val, key)
+            if isinstance(val, dict):
+                return {k: _compact_value(v, k) for k, v in val.items()}
+            return val
+
+        compacted = _compact_value(result)
+
+        # 최종 문자수 가드레일 (3단계 폴백)
+        serialized = _json.dumps(compacted, ensure_ascii=False, default=str)
+        if len(serialized) > max_chars:
+            # 2단계: samples/top/bottom을 절반으로 축소
+            def _shrink_samples(obj):
+                if isinstance(obj, dict):
+                    if obj.get("_compacted"):
+                        for field in ("samples", "top", "bottom"):
+                            if field in obj and isinstance(obj[field], list) and len(obj[field]) > 3:
+                                s = obj[field]
+                                keep = max(2, len(s) // 2)
+                                step = max(1, (len(s) - 1) / (keep - 1))
+                                obj[field] = [s[int(i * step)] for i in range(keep)]
+                        return obj
+                    return {k: _shrink_samples(v) for k, v in obj.items()}
+                return obj
+
+            compacted = _shrink_samples(compacted)
+            serialized = _json.dumps(compacted, ensure_ascii=False, default=str)
+
+            # 3단계: stats + first/last만 남김
+            if len(serialized) > max_chars:
+                def _stats_only(obj):
+                    if isinstance(obj, dict):
+                        if obj.get("_compacted"):
+                            minimal = {"_compacted": True, "count": obj.get("count", 0)}
+                            if "stats" in obj:
+                                minimal["stats"] = obj["stats"]
+                            for field in ("samples", "top"):
+                                if field in obj and obj[field]:
+                                    minimal["first"] = obj[field][0]
+                                    break
+                            for field in ("samples", "bottom"):
+                                if field in obj and obj[field]:
+                                    minimal["last"] = obj[field][-1]
+                                    break
+                            return minimal
+                        return {k: _stats_only(v) for k, v in obj.items()}
+                    return obj
+
+                compacted = _stats_only(compacted)
+                serialized = _json.dumps(compacted, ensure_ascii=False, default=str)
+
+            # 최종 안전장치: 위 3단계로도 줄지 않으면 직접 truncation
+            if len(serialized) > max_chars:
+                compacted = {"_truncated": True, "preview": serialized[:max_chars]}
+
+        return compacted
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        import json as json_module
+        from programgarden.providers import LLMProvider
+
+        # === 0. 실행 중 보호 (중복 실행 방지) ===
+        from programgarden_core.bases.listener import NodeState
+
+        state_key = "_ai_agent_state"
+        agent_state = context.get_node_state(node_id, state_key) or {}
+
+        if agent_state.get("executing"):
+            context.log("info", "AIAgent already executing, skipping this trigger", node_id)
+            await context.notify_node_state(
+                node_id=node_id,
+                node_type=node_type,
+                state=NodeState.SKIPPED,
+                outputs={"reason": "이전 분석이 아직 진행 중입니다. 완료 후 다시 실행됩니다."},
+            )
+            return {"_skipped": True, "reason": "already_executing"}
+
+        # cooldown_sec 체크
+        cooldown_sec = config.get("cooldown_sec", 0)
+        if cooldown_sec > 0 and agent_state.get("last_completed_at"):
+            from datetime import datetime as _dt
+            last = agent_state["last_completed_at"]
+            if isinstance(last, str):
+                last = _dt.fromisoformat(last)
+            elapsed = (datetime.now() - last).total_seconds()
+            if elapsed < cooldown_sec:
+                remaining = round(cooldown_sec - elapsed)
+                context.log(
+                    "info",
+                    f"AIAgent in cooldown ({remaining}s remaining), skipping",
+                    node_id,
+                )
+                await context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node_type,
+                    state=NodeState.THROTTLING,
+                    outputs={"reason": f"대기 중 ({remaining}초 후 실행 가능)", "remaining_sec": remaining},
+                )
+                return {"_skipped": True, "reason": "cooldown", "remaining_sec": remaining}
+
+        # 실행 시작 마킹
+        agent_state["executing"] = True
+        context.set_node_state(node_id, state_key, agent_state)
+
+        try:
+            result = await self._execute_inner(node_id, node_type, config, context, **kwargs)
+        finally:
+            # 실행 완료 마킹 (에러 발생해도 반드시 해제)
+            agent_state["executing"] = False
+            agent_state["last_completed_at"] = datetime.now().isoformat()
+            context.set_node_state(node_id, state_key, agent_state)
+
+        return result
+
+    async def _execute_inner(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        import json as json_module
+        from programgarden.providers import LLMProvider
+
+        # === 1. ai_model 엣지에서 LLM connection 주입 ===
+        workflow = kwargs.get("workflow")
+        if not workflow:
+            context.log("error", "AIAgentNode requires workflow context", node_id)
+            return {"error": "Workflow context not provided"}
+
+        ai_model_node_id = workflow.get_ai_model_node_id(node_id)
+        if not ai_model_node_id:
+            context.log("error", "No LLMModelNode connected via ai_model edge", node_id)
+            return {"error": "No LLM model connected. Connect a LLMModelNode via ai_model edge."}
+
+        # LLMModelNode의 출력에서 connection 가져오기
+        llm_connection = context.get_output(ai_model_node_id, "connection")
+        if not llm_connection:
+            # LLMModelNode가 아직 실행되지 않았으면 직접 실행
+            llm_node = workflow.nodes.get(ai_model_node_id)
+            if llm_node:
+                llm_executor = LLMModelNodeExecutor()
+                llm_result = await llm_executor.execute(
+                    node_id=ai_model_node_id,
+                    node_type=llm_node.node_type,
+                    config=llm_node.config.copy(),
+                    context=context,
+                )
+                context.set_output(ai_model_node_id, "connection", llm_result.get("connection"))
+                llm_connection = llm_result.get("connection")
+
+        if not llm_connection:
+            context.log("error", "Failed to get LLM connection", node_id)
+            return {"error": "Failed to get LLM connection from LLMModelNode."}
+
+        # LLMProvider 생성
+        provider = LLMProvider.from_connection(llm_connection)
+
+        # === 2. Tool 등록 ===
+        generic_executor = GenericNodeExecutor()
+        tool_executor = AIAgentToolExecutor(
+            context=context,
+            workflow=workflow,
+            generic_executor=generic_executor,
+        )
+        tools = tool_executor.register_tools(node_id)
+
+        # === 3. 프롬프트 조립 ===
+        system_prompt = config.get("system_prompt", "")
+        user_prompt = config.get("user_prompt", "")
+        output_format = config.get("output_format", "text")
+        output_schema = config.get("output_schema")
+
+        # 표현식 평가 (user_prompt에 {{ }} 바인딩)
+        if "{{" in user_prompt:
+            expr_context = context.get_expression_context()
+            evaluator = ExpressionEvaluator(expr_context)
+            try:
+                user_prompt = evaluator.evaluate(user_prompt)
+                if not isinstance(user_prompt, str):
+                    user_prompt = json_module.dumps(user_prompt, ensure_ascii=False, default=str)
+            except Exception as e:
+                context.log("warning", f"User prompt expression evaluation failed: {e}", node_id)
+
+        # Output 형식 지시 추가
+        output_instruction = self._build_output_instruction(output_format, output_schema)
+
+        messages = []
+        if system_prompt or output_instruction:
+            full_system = system_prompt
+            if output_instruction:
+                full_system = f"{full_system}\n{output_instruction}" if full_system else output_instruction
+            messages.append({"role": "system", "content": full_system})
+        messages.append({"role": "user", "content": user_prompt})
+
+        # === 4. ReAct/Function Calling 루프 ===
+        max_tool_calls = config.get("max_tool_calls", 10)
+        tool_error_strategy = config.get("tool_error_strategy", "retry_with_context")
+        tool_call_count = 0
+        streaming = llm_connection.get("streaming", False)
+
+        context.log("info", f"AIAgent starting (model={llm_connection.get('model')}, tools={len(tools)})", node_id)
+
+        while True:
+            # LLM 호출
+            try:
+                if streaming:
+                    async def on_token(token: str):
+                        from programgarden_core.bases.listener import LLMStreamEvent
+                        from datetime import datetime
+                        await context.notify_llm_stream(LLMStreamEvent(
+                            job_id=context.job_id or "",
+                            node_id=node_id,
+                            token=token,
+                            is_final=False,
+                            timestamp=datetime.utcnow(),
+                        ))
+
+                    llm_response = await provider.chat_stream(
+                        messages=messages,
+                        on_token=on_token,
+                        tools=tools if tools else None,
+                    )
+
+                    # 스트리밍 완료 이벤트
+                    from programgarden_core.bases.listener import LLMStreamEvent
+                    from datetime import datetime
+                    await context.notify_llm_stream(LLMStreamEvent(
+                        job_id=context.job_id or "",
+                        node_id=node_id,
+                        token="",
+                        is_final=True,
+                        timestamp=datetime.utcnow(),
+                    ))
+                else:
+                    llm_response = await provider.chat(
+                        messages=messages,
+                        tools=tools if tools else None,
+                    )
+            except Exception as e:
+                context.log("error", f"LLM call failed: {e}", node_id)
+                return {"error": f"LLM call failed: {e}"}
+
+            # 토큰 사용량 이벤트
+            from programgarden_core.bases.listener import TokenUsageEvent
+            from datetime import datetime
+            await context.notify_token_usage(TokenUsageEvent(
+                job_id=context.job_id or "",
+                node_id=node_id,
+                model=llm_response.model,
+                input_tokens=llm_response.input_tokens,
+                output_tokens=llm_response.output_tokens,
+                total_tokens=llm_response.total_tokens,
+                cost_usd=llm_response.cost_usd,
+                timestamp=datetime.utcnow(),
+            ))
+
+            # Tool 호출 체크
+            if not llm_response.tool_calls:
+                # Tool 호출 없음 → 최종 응답
+                break
+
+            # Tool 호출 처리
+            # assistant 메시지 (tool_calls 포함) 추가
+            assistant_msg = {"role": "assistant", "content": llm_response.content or ""}
+            assistant_msg["tool_calls"] = llm_response.tool_calls
+            messages.append(assistant_msg)
+
+            for tc in llm_response.tool_calls:
+                if tool_call_count >= max_tool_calls:
+                    context.log(
+                        "warning",
+                        f"Max tool calls ({max_tool_calls}) reached, stopping",
+                        node_id,
+                    )
+                    # 강제 중단: LLM에 알림
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": f"[시스템] 최대 Tool 호출 횟수({max_tool_calls})에 도달했습니다. 현재까지의 정보로 최종 답변을 작성하세요.",
+                    })
+                    continue
+
+                func = tc.get("function", {})
+                tool_name = func.get("name", "")
+                tool_args_str = func.get("arguments", "{}")
+
+                try:
+                    tool_args = json_module.loads(tool_args_str) if isinstance(tool_args_str, str) else tool_args_str
+                except json_module.JSONDecodeError:
+                    tool_args = {}
+
+                context.log("info", f"Tool call: {tool_name}({tool_args})", node_id)
+
+                # Tool 노드 ID 조회
+                tool_info = tool_executor._tool_configs.get(tool_name, {})
+                tool_node_id = tool_info.get("node_id", "")
+
+                # Tool 실행
+                import time as _time
+                tool_start = _time.monotonic()
+
+                try:
+                    tool_result = await tool_executor.call_tool(
+                        tool_name=tool_name,
+                        args=tool_args,
+                        agent_node_id=node_id,
+                    )
+                    tool_call_count += 1
+                    tool_duration = (_time.monotonic() - tool_start) * 1000
+
+                    # AIToolCallEvent 발행 (완료)
+                    from programgarden_core.bases.listener import AIToolCallEvent
+                    await context.notify_ai_tool_call(AIToolCallEvent(
+                        job_id=context.job_id or "",
+                        node_id=node_id,
+                        tool_name=tool_name,
+                        tool_node_id=tool_node_id,
+                        tool_input=tool_args,
+                        tool_output=tool_result,
+                        duration_ms=tool_duration,
+                        timestamp=datetime.utcnow(),
+                    ))
+
+                    # Tool 결과를 메시지에 추가 (LLM에는 compact 버전 전달)
+                    compacted = self._compact_tool_result(tool_result) if isinstance(tool_result, dict) else tool_result
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": json_module.dumps(compacted, ensure_ascii=False, default=str),
+                    })
+
+                except Exception as e:
+                    context.log("warning", f"Tool '{tool_name}' failed: {e}", node_id)
+                    tool_duration = (_time.monotonic() - tool_start) * 1000
+
+                    # AIToolCallEvent 발행 (실패)
+                    from programgarden_core.bases.listener import AIToolCallEvent
+                    await context.notify_ai_tool_call(AIToolCallEvent(
+                        job_id=context.job_id or "",
+                        node_id=node_id,
+                        tool_name=tool_name,
+                        tool_node_id=tool_node_id,
+                        tool_input=tool_args,
+                        tool_output={"error": str(e)},
+                        duration_ms=tool_duration,
+                        timestamp=datetime.utcnow(),
+                    ))
+
+                    if tool_error_strategy == "abort":
+                        return {"error": f"Tool '{tool_name}' failed: {e}"}
+                    elif tool_error_strategy == "skip":
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": json_module.dumps({"error": str(e), "status": "skipped"}, ensure_ascii=False),
+                        })
+                    else:  # retry_with_context
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": json_module.dumps(
+                                {"error": str(e), "hint": "이 도구 호출이 실패했습니다. 다른 방법을 시도하거나, 현재 정보로 답변하세요."},
+                                ensure_ascii=False,
+                            ),
+                        })
+
+        # === 5. Output Parser ===
+        raw_response = llm_response.content or ""
+        parsed = self._parse_output(raw_response, output_format, output_schema, context, node_id)
+
+        context.log(
+            "info",
+            f"AIAgent completed (tool_calls={tool_call_count}, "
+            f"tokens={llm_response.total_tokens}, cost=${llm_response.cost_usd:.4f})",
+            node_id,
+        )
+
+        return {"response": parsed}
+
+    def _build_output_instruction(
+        self,
+        output_format: str,
+        output_schema: Optional[Dict[str, Any]],
+    ) -> str:
+        """output_format에 따라 시스템 프롬프트에 추가할 출력 형식 지시."""
+        import json as json_module
+
+        if output_format == "text":
+            return ""
+
+        if output_format == "json":
+            return (
+                "\n\n[출력 규칙] 반드시 유효한 JSON 객체로만 응답하세요. "
+                "설명 텍스트 없이 JSON만 출력합니다."
+            )
+
+        if output_format == "structured" and output_schema:
+            schema_desc_lines = []
+            for key, schema in output_schema.items():
+                if isinstance(schema, str):
+                    schema_desc_lines.append(f"- {key}: {schema}")
+                elif isinstance(schema, dict):
+                    desc = schema.get("description", "")
+                    stype = schema.get("type", "string")
+                    enum_vals = schema.get("enum")
+                    line = f"- {key} ({stype}): {desc}"
+                    if enum_vals:
+                        line += f" [가능한 값: {', '.join(str(v) for v in enum_vals)}]"
+                    schema_desc_lines.append(line)
+
+            return (
+                f"\n\n[출력 규칙] 반드시 다음 JSON 스키마에 맞춰 응답하세요:\n"
+                f"{json_module.dumps(output_schema, ensure_ascii=False, indent=2)}\n\n"
+                f"각 필드 설명:\n"
+                f"{chr(10).join(schema_desc_lines)}\n\n"
+                f"JSON 외의 텍스트는 출력하지 마세요."
+            )
+
+        return ""
+
+    def _parse_output(
+        self,
+        raw_response: str,
+        output_format: str,
+        output_schema: Optional[Dict[str, Any]],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Any:
+        """LLM 응답을 output_format에 따라 파싱."""
+        import json as json_module
+
+        if output_format == "text":
+            return raw_response
+
+        if output_format in ("json", "structured"):
+            # JSON 추출 (```json ... ``` 블록 또는 raw JSON)
+            text = raw_response.strip()
+            if "```json" in text:
+                start = text.index("```json") + len("```json")
+                end = text.index("```", start)
+                text = text[start:end].strip()
+            elif "```" in text:
+                start = text.index("```") + 3
+                end = text.index("```", start)
+                text = text[start:end].strip()
+
+            try:
+                parsed = json_module.loads(text)
+
+                # structured 모드: output_schema 검증
+                if output_format == "structured" and output_schema:
+                    validated = self._validate_structured(parsed, output_schema, context, node_id)
+                    return validated
+
+                return parsed
+            except json_module.JSONDecodeError:
+                context.log(
+                    "warning",
+                    f"JSON parse failed for output_format='{output_format}', "
+                    "returning raw text",
+                    node_id,
+                )
+                return raw_response
+
+        return raw_response
+
+    def _validate_structured(
+        self,
+        parsed: Any,
+        output_schema: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Any:
+        """structured 모드에서 output_schema로 Pydantic 검증."""
+        from pydantic import create_model
+
+        if not isinstance(parsed, dict):
+            return parsed
+
+        try:
+            # output_schema → 동적 Pydantic 모델 생성
+            fields = {}
+            for key, schema in output_schema.items():
+                if isinstance(schema, str):
+                    type_map = {
+                        "string": str, "number": float, "integer": int,
+                        "boolean": bool, "array": list, "object": dict,
+                    }
+                    fields[key] = (type_map.get(schema, str), ...)
+                elif isinstance(schema, dict):
+                    base_type = schema.get("type", "string")
+                    if "enum" in schema:
+                        from typing import Literal as PyLiteral
+                        fields[key] = (PyLiteral[tuple(schema["enum"])], ...)
+                    else:
+                        type_map = {
+                            "string": str, "number": float, "integer": int,
+                            "boolean": bool, "array": list, "object": dict,
+                        }
+                        fields[key] = (type_map.get(base_type, str), ...)
+
+            DynamicModel = create_model("AIAgentOutput", **fields)
+            validated = DynamicModel(**parsed)
+            return validated.model_dump()
+        except Exception as e:
+            context.log("warning", f"Structured validation failed: {e}", node_id)
+            return parsed
+
+
 class SQLiteNodeExecutor(NodeExecutorBase):
     """
     SQLiteNode executor
-    
+
     로컬 SQLite 데이터베이스 조작:
     - execute_query 모드: 직접 SQL 쿼리 실행
     - simple 모드: GUI 기반 CRUD 조작 (select, insert, update, delete, upsert)
@@ -10503,6 +11420,7 @@ class WorkflowExecutor:
             "SQLiteNode": SQLiteNodeExecutor(),
             # AI nodes
             "LLMModelNode": LLMModelNodeExecutor(),
+            "AIAgentNode": AIAgentNodeExecutor(),
         }
 
     def validate(self, definition: Dict[str, Any]) -> ValidationResult:
@@ -10644,6 +11562,7 @@ class WorkflowExecutor:
         context: ExecutionContext,
         plugin: Optional[Callable] = None,
         fields: Optional[Dict[str, Any]] = None,
+        workflow: Optional["ResolvedWorkflow"] = None,
     ) -> Dict[str, Any]:
         """Execute single node"""
         executor = self._executors.get(node_type)
@@ -10661,6 +11580,7 @@ class WorkflowExecutor:
             context=context,
             plugin=plugin,
             fields=fields,
+            workflow=workflow,
         )
 
     def get_job(self, job_id: str) -> Optional["WorkflowJob"]:
@@ -11153,6 +12073,7 @@ class WorkflowJob:
                         context=self.context,
                         plugin=node.plugin,
                         fields=node.fields,
+                        workflow=self.workflow,
                     )
 
                 # Store outputs
@@ -11275,6 +12196,7 @@ class WorkflowJob:
                     context=self.context,
                     plugin=node.plugin,
                     fields=node.fields,
+                    workflow=self.workflow,
                 )
                 all_results.append(outputs)
             except Exception as e:
@@ -11607,6 +12529,7 @@ class WorkflowJob:
                 context=self.context,
                 plugin=node.plugin,
                 fields=node.fields,
+                workflow=self.workflow,
             )
 
             # Store outputs
@@ -11651,6 +12574,7 @@ class WorkflowJob:
                 context=self.context,
                 plugin=node.plugin,
                 fields=node.fields,
+                workflow=self.workflow,
             )
 
             # Store outputs
@@ -11913,8 +12837,9 @@ class WorkflowJob:
                     context=self.context,
                     plugin=node.plugin,
                     fields=node.fields,
+                    workflow=self.workflow,
                 )
-                
+
                 # 🆕 ThrottleNode에서 _throttled=True 반환 시 하위 노드 실행 중단
                 if outputs.get("_throttled"):
                     print(f"    ⏸️ Throttled: {node_id} - stopping downstream execution")

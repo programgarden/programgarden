@@ -94,7 +94,7 @@ class LLMModelNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
-                credential_types=["llm_openai", "llm_anthropic", "llm_azure_openai", "llm_ollama"],
+                credential_types=["llm_openai", "llm_anthropic", "llm_google", "llm_azure_openai", "llm_ollama"],
             ),
             "model": FieldSchema(
                 name="model",
@@ -159,6 +159,9 @@ class AIAgentNode(BaseNode):
     워크플로우에서 LLM을 호출하여 데이터 분석, 의사결정을 수행하고,
     필요 시 tool 엣지로 연결된 노드들을 도구로 호출합니다.
 
+    매 실행마다 stateless로 동작 (트레이딩 자동화에서 대화 기억은 불필요,
+    현재 데이터를 Tool로 직접 조회하여 판단).
+
     포트:
     - trigger (main 엣지): 실행 트리거
     - ai_model (ai_model 엣지): LLMModelNode에서 LLM 연결 주입
@@ -183,20 +186,6 @@ class AIAgentNode(BaseNode):
         description="사용자 지시 ({{ }} 표현식 지원)",
     )
 
-    # === 메모리 (내장, 자동 관리) ===
-    memory_enabled: bool = Field(
-        default=True,
-        description="대화 기억 활성화",
-    )
-    memory_scope: Literal["workflow", "node"] = Field(
-        default="workflow",
-        description="기억 범위 (workflow: 전체 공유, node: 이 노드만)",
-    )
-    max_history: int = Field(
-        default=20,
-        description="최근 N개 대화 유지",
-    )
-
     # === 출력 (내장 Output Parser) ===
     output_format: Literal["text", "json", "structured"] = Field(
         default="text",
@@ -207,48 +196,26 @@ class AIAgentNode(BaseNode):
         description="structured 모드용 출력 스키마",
     )
 
-    # === 타임아웃 ===
-    timeout_seconds: int = Field(
-        default=60,
-        description="LLM 호출 타임아웃 (초)",
-    )
-
-    # === 실시간 연동 보호 ===
-    cooldown_sec: int = Field(
-        default=60,
-        description="최소 실행 간격 (초)",
-    )
-    skip_if_running: bool = Field(
-        default=True,
-        description="이미 LLM 호출 중이면 스킵",
-    )
-
-    # === 자동화 레벨 ===
+    # === 고급 설정 ===
     autonomy_level: Literal["supervised", "semi_auto", "full_auto"] = Field(
         default="supervised",
         description="자동화 레벨",
     )
-
-    # === 에이전트 제한 ===
     max_tool_calls: int = Field(
         default=10,
         description="실행당 최대 Tool 호출 수",
     )
-
-    # === 에러 처리 ===
+    timeout_seconds: int = Field(
+        default=60,
+        description="LLM 호출 타임아웃 (초)",
+    )
+    cooldown_sec: int = Field(
+        default=60,
+        description="최소 실행 간격 (초)",
+    )
     tool_error_strategy: Literal["retry_with_context", "skip", "abort"] = Field(
         default="retry_with_context",
         description="Tool 호출 실패 시 전략",
-    )
-
-    # === 감사 & 재현성 ===
-    log_full_prompt: bool = Field(
-        default=True,
-        description="전체 프롬프트 로깅 (감사용)",
-    )
-    decision_log: bool = Field(
-        default=True,
-        description="매매 결정 근거 기록",
     )
 
     # === 포트 정의 ===
@@ -290,7 +257,7 @@ class AIAgentNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, FieldSchema]:
         return {
             # ═══════════════════════════════════════════════════════════
-            # PARAMETERS 탭 (핵심: 프롬프트와 에이전트 동작)
+            # PARAMETERS 탭 (핵심: 프리셋 + 프롬프트 + 출력)
             # ═══════════════════════════════════════════════════════════
             "preset": FieldSchema(
                 name="preset",
@@ -334,12 +301,47 @@ class AIAgentNode(BaseNode):
                 example_binding="{{ nodes.account.positions }}",
                 help_text="i18n:fields.AIAgentNode.user_prompt_help",
             ),
+            "output_format": FieldSchema(
+                name="output_format",
+                type=FieldType.ENUM,
+                description="i18n:fields.AIAgentNode.output_format",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                enum_values=["text", "json", "structured"],
+                enum_labels={
+                    "text": "텍스트",
+                    "json": "JSON",
+                    "structured": "구조화 (스키마)",
+                },
+                default="text",
+            ),
+            "output_schema": FieldSchema(
+                name="output_schema",
+                type=FieldType.JSON,
+                description="i18n:fields.AIAgentNode.output_schema",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.CUSTOM_CODE_EDITOR,
+                ui_options={"language": "json", "min_lines": 3},
+                visible_when={"output_format": "structured"},
+                example={
+                    "signal": {"type": "string", "enum": ["buy", "hold", "sell"], "description": "매매 신호"},
+                    "confidence": {"type": "number", "description": "확신도 (0~1)"},
+                    "reasoning": {"type": "string", "description": "판단 근거"},
+                },
+            ),
+
+            # ═══════════════════════════════════════════════════════════
+            # SETTINGS 탭 (고급: 기본값으로 충분, 필요 시 조정)
+            # ═══════════════════════════════════════════════════════════
             "autonomy_level": FieldSchema(
                 name="autonomy_level",
                 type=FieldType.ENUM,
                 description="i18n:fields.AIAgentNode.autonomy_level",
                 required=False,
-                category=FieldCategory.PARAMETERS,
+                category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 enum_values=["supervised", "semi_auto", "full_auto"],
                 enum_labels={
@@ -349,137 +351,46 @@ class AIAgentNode(BaseNode):
                 },
                 default="supervised",
             ),
-
-            # ═══════════════════════════════════════════════════════════
-            # SETTINGS 탭
-            # ═══════════════════════════════════════════════════════════
-            "memory_enabled": FieldSchema(
-                name="memory_enabled",
-                type=FieldType.BOOLEAN,
-                description="i18n:fields.AIAgentNode.memory_enabled",
-                required=False,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                default=True,
-                group="memory",
-            ),
-            "memory_scope": FieldSchema(
-                name="memory_scope",
-                type=FieldType.ENUM,
-                description="i18n:fields.AIAgentNode.memory_scope",
-                required=False,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                enum_values=["workflow", "node"],
-                enum_labels={
-                    "workflow": "워크플로우 전체",
-                    "node": "이 노드만",
-                },
-                default="workflow",
-                group="memory",
-                visible_when={"memory_enabled": True},
-            ),
-            "max_history": FieldSchema(
-                name="max_history",
-                type=FieldType.INTEGER,
-                description="i18n:fields.AIAgentNode.max_history",
-                required=False,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                default=20,
-                min_value=1,
-                max_value=100,
-                group="memory",
-                visible_when={"memory_enabled": True},
-            ),
-            "output_format": FieldSchema(
-                name="output_format",
-                type=FieldType.ENUM,
-                description="i18n:fields.AIAgentNode.output_format",
-                required=False,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                enum_values=["text", "json", "structured"],
-                enum_labels={
-                    "text": "텍스트",
-                    "json": "JSON",
-                    "structured": "구조화 (스키마)",
-                },
-                default="text",
-                group="output",
-            ),
-            "output_schema": FieldSchema(
-                name="output_schema",
-                type=FieldType.JSON,
-                description="i18n:fields.AIAgentNode.output_schema",
-                required=False,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                ui_component=UIComponent.CUSTOM_CODE_EDITOR,
-                ui_options={"language": "json", "min_lines": 3},
-                visible_when={"output_format": "structured"},
-                group="output",
-                example={
-                    "signal": {"type": "string", "enum": ["buy", "hold", "sell"], "description": "매매 신호"},
-                    "confidence": {"type": "number", "description": "확신도 (0~1)"},
-                    "reasoning": {"type": "string", "description": "판단 근거"},
-                },
-            ),
-
-            # ═══════════════════════════════════════════════════════════
-            # ADVANCED 탭
-            # ═══════════════════════════════════════════════════════════
-            "timeout_seconds": FieldSchema(
-                name="timeout_seconds",
-                type=FieldType.INTEGER,
-                description="i18n:fields.AIAgentNode.timeout_seconds",
-                required=False,
-                category=FieldCategory.ADVANCED,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                default=60,
-                min_value=10,
-                max_value=300,
-            ),
             "max_tool_calls": FieldSchema(
                 name="max_tool_calls",
                 type=FieldType.INTEGER,
                 description="i18n:fields.AIAgentNode.max_tool_calls",
                 required=False,
-                category=FieldCategory.ADVANCED,
+                category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 default=10,
                 min_value=1,
                 max_value=50,
                 help_text="i18n:fields.AIAgentNode.max_tool_calls_help",
             ),
+            "timeout_seconds": FieldSchema(
+                name="timeout_seconds",
+                type=FieldType.INTEGER,
+                description="i18n:fields.AIAgentNode.timeout_seconds",
+                required=False,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                default=60,
+                min_value=10,
+                max_value=300,
+            ),
             "cooldown_sec": FieldSchema(
                 name="cooldown_sec",
                 type=FieldType.INTEGER,
                 description="i18n:fields.AIAgentNode.cooldown_sec",
                 required=False,
-                category=FieldCategory.ADVANCED,
+                category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 default=60,
                 min_value=1,
                 max_value=3600,
-                group="realtime",
-            ),
-            "skip_if_running": FieldSchema(
-                name="skip_if_running",
-                type=FieldType.BOOLEAN,
-                description="i18n:fields.AIAgentNode.skip_if_running",
-                required=False,
-                category=FieldCategory.ADVANCED,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                default=True,
-                group="realtime",
             ),
             "tool_error_strategy": FieldSchema(
                 name="tool_error_strategy",
                 type=FieldType.ENUM,
                 description="i18n:fields.AIAgentNode.tool_error_strategy",
                 required=False,
-                category=FieldCategory.ADVANCED,
+                category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 enum_values=["retry_with_context", "skip", "abort"],
                 enum_labels={

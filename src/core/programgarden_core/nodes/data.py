@@ -143,6 +143,10 @@ class SQLiteNode(BaseNode):
         description="충돌 시 기준 컬럼 (upsert용). 예: 'symbol'",
     )
 
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
     _inputs: List[InputPort] = [
         InputPort(
             name="trigger",
@@ -386,6 +390,10 @@ class HTTPRequestNode(BaseNode):
         default_factory=ResilienceConfig,
         description="재시도 및 실패 처리 설정",
     )
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
 
     _inputs: List[InputPort] = [
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),

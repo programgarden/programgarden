@@ -177,44 +177,72 @@ class LLMProvider:
         self,
         messages: list[dict[str, Any]],
         response_model: type[BaseModel],
+        max_retries: int = 2,
         **kwargs: Any,
     ) -> tuple[BaseModel, LLMResponse]:
-        """Instructor 기반 구조화 출력."""
-        import litellm
-        import instructor
+        """구조화 출력 (JSON mode + Pydantic 검증).
 
-        client = instructor.from_litellm(litellm.acompletion)
+        instructor 없이 직접 구현:
+        1. response_model의 JSON schema를 시스템 프롬프트에 주입
+        2. LLM에 JSON 출력 요청
+        3. Pydantic으로 검증 (실패 시 에러 피드백 후 재시도)
+        """
+        import json
 
-        params = self._build_params(messages, **kwargs)
-        params.pop("stream", None)
-
-        try:
-            result, raw = await client.chat.completions.create_with_completion(
-                response_model=response_model,
-                max_retries=2,
-                **params,
-            )
-        except Exception as exc:
-            raise self._convert_error(exc) from exc
-
-        usage = raw.usage
-        input_tokens = usage.prompt_tokens if usage else 0
-        output_tokens = usage.completion_tokens if usage else 0
-        model_name = raw.model or self.config.model
-        cost = self._calc_cost(model_name, input_tokens, output_tokens)
-
-        llm_response = LLMResponse(
-            content=result.model_dump_json(),
-            model=model_name,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=input_tokens + output_tokens,
-            cost_usd=cost,
-            finish_reason="stop",
-            raw_response=raw,
+        schema = response_model.model_json_schema()
+        schema_instruction = (
+            "\n\n[출력 규칙] 반드시 다음 JSON 스키마에 맞춰 응답하세요:\n"
+            f"{json.dumps(schema, ensure_ascii=False, indent=2)}\n"
+            "JSON 외의 텍스트는 출력하지 마세요."
         )
 
-        return result, llm_response
+        # 메시지 복사 후 시스템 프롬프트에 스키마 지시 추가
+        augmented = list(messages)
+        if augmented and augmented[0].get("role") == "system":
+            augmented[0] = {**augmented[0], "content": augmented[0]["content"] + schema_instruction}
+        else:
+            augmented.insert(0, {"role": "system", "content": schema_instruction})
+
+        last_error = None
+        for attempt in range(max_retries + 1):
+            response = await self.chat(augmented, **kwargs)
+
+            text = response.content.strip()
+            # ```json ... ``` 블록 추출
+            if "```json" in text:
+                start = text.index("```json") + len("```json")
+                end = text.index("```", start)
+                text = text[start:end].strip()
+            elif "```" in text:
+                start = text.index("```") + 3
+                end = text.index("```", start)
+                text = text[start:end].strip()
+
+            try:
+                data = json.loads(text)
+                result = response_model.model_validate(data)
+                llm_response = LLMResponse(
+                    content=result.model_dump_json(),
+                    model=response.model,
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                    total_tokens=response.total_tokens,
+                    cost_usd=response.cost_usd,
+                    finish_reason="stop",
+                    raw_response=response.raw_response,
+                )
+                return result, llm_response
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    # 에러 피드백을 메시지에 추가하여 재시도
+                    augmented.append({"role": "assistant", "content": response.content})
+                    augmented.append({
+                        "role": "user",
+                        "content": f"JSON 파싱/검증 실패: {e}\n올바른 JSON으로 다시 응답해주세요.",
+                    })
+
+        raise ValueError(f"Structured output 파싱 실패 ({max_retries + 1}회 시도): {last_error}")
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -65,6 +65,10 @@ class ConditionNode(PluginNode):
         description="Positions data binding - 익절/손절 플러그인용 (pnl_rate 포함)",
     )
 
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
     _inputs: List[InputPort] = [
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
         InputPort(
