@@ -342,6 +342,21 @@ class BaseNode(BaseModel):
         return False
 
     @classmethod
+    def tool_access_type(cls) -> str:
+        """이 노드가 AI Tool로 사용될 때의 접근 타입 (R/W 분류).
+
+        autonomy_level=semi_auto일 때:
+        - "read": 자동 실행 (조회 노드)
+        - "write": 사용자 승인 필요 (주문 등 상태 변경 노드)
+
+        서브클래스에서 오버라이드하여 변경 가능.
+
+        Returns:
+            "read" 또는 "write"
+        """
+        return "read"
+
+    @classmethod
     def _to_snake_case(cls, name: str) -> str:
         """CamelCase를 snake_case로 변환 (LLM function calling용)
 

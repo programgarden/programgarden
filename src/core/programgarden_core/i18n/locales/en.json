@@ -170,6 +170,8 @@
   "fields.AIAgentNode.user_prompt": "Task Instructions (User Prompt)",
   "fields.AIAgentNode.user_prompt_help": "Instructions for the AI agent. Reference previous node data using {{ nodes.xxx.yyy }} format.",
   "fields.AIAgentNode.autonomy_level": "Autonomy Level",
+  "fields.AIAgentNode.autonomy_level_help": "supervised: All tool calls require user approval. semi_auto: Read tools auto-execute, order tools require approval. full_auto: All tools auto-execute (use with caution).",
+  "fields.AIAgentNode.preset_help": "Selecting a role preset automatically fills the system prompt and output format.",
   "fields.AIAgentNode.output_format": "Output Format",
   "fields.AIAgentNode.output_schema": "Output Schema (JSON)",
   "fields.AIAgentNode.timeout_seconds": "Timeout (seconds)",

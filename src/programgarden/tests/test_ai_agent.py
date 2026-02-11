@@ -691,3 +691,216 @@ class TestCompactToolResult:
         stats = compacted["data"]["stats"]
         assert "value" in stats
         assert "name" not in stats
+
+
+# ============================================================
+# Phase 4: 프리셋 시스템 테스트
+# ============================================================
+
+
+class TestPresetLoader:
+    """PresetLoader 단위 테스트."""
+
+    def setup_method(self):
+        from programgarden_core.presets import PresetLoader
+        PresetLoader.clear_cache()
+
+    def test_load_preset_risk_manager(self):
+        """risk_manager 프리셋 로드."""
+        from programgarden_core.presets import PresetLoader
+
+        preset = PresetLoader.load_preset("risk_manager")
+        assert preset is not None
+        assert preset["id"] == "risk_manager"
+        assert "system_prompt" in preset
+        assert "output_schema" in preset
+
+    def test_load_preset_custom_returns_none(self):
+        """custom 프리셋은 None 반환."""
+        from programgarden_core.presets import PresetLoader
+
+        assert PresetLoader.load_preset("custom") is None
+        assert PresetLoader.load_preset("") is None
+        assert PresetLoader.load_preset(None) is None
+
+    def test_load_preset_unknown_returns_none(self):
+        """존재하지 않는 프리셋은 None 반환."""
+        from programgarden_core.presets import PresetLoader
+
+        assert PresetLoader.load_preset("unknown_preset_xyz") is None
+
+    def test_list_presets(self):
+        """프리셋 목록 조회."""
+        from programgarden_core.presets import PresetLoader
+
+        presets = PresetLoader.list_presets()
+        assert len(presets) >= 4
+        ids = [p["id"] for p in presets]
+        assert "risk_manager" in ids
+        assert "news_analyst" in ids
+        assert "technical_analyst" in ids
+        assert "strategist" in ids
+
+    def test_apply_preset_fills_system_prompt(self):
+        """프리셋 적용 시 system_prompt 채움."""
+        from programgarden_core.presets import PresetLoader
+
+        config = {"user_prompt": "포지션 분석해줘"}
+        result = PresetLoader.apply_preset("risk_manager", config)
+        assert "위험관리" in result["system_prompt"]
+        assert result.get("output_format") == "structured"
+
+    def test_apply_preset_preserves_user_prompt(self):
+        """사용자가 설정한 system_prompt은 프리셋 뒤에 병합."""
+        from programgarden_core.presets import PresetLoader
+
+        config = {"system_prompt": "나만의 추가 규칙"}
+        result = PresetLoader.apply_preset("risk_manager", config)
+        assert "위험관리" in result["system_prompt"]
+        assert "나만의 추가 규칙" in result["system_prompt"]
+
+    def test_apply_preset_user_config_overrides(self):
+        """사용자 설정이 프리셋 default_config보다 우선."""
+        from programgarden_core.presets import PresetLoader
+
+        config = {"output_format": "text", "max_tool_calls": 20}
+        result = PresetLoader.apply_preset("risk_manager", config)
+        assert result["output_format"] == "text"  # 사용자 설정 유지
+        assert result["max_tool_calls"] == 20     # 사용자 설정 유지
+
+    def test_get_preset_ids(self):
+        """프리셋 ID 목록."""
+        from programgarden_core.presets import PresetLoader
+
+        ids = PresetLoader.get_preset_ids()
+        assert "risk_manager" in ids
+        assert "strategist" in ids
+
+
+# ============================================================
+# Phase 4: autonomy_level R/W 분류 테스트
+# ============================================================
+
+
+class TestToolAccessType:
+    """tool_access_type R/W 분류 테스트."""
+
+    def test_base_node_default_read(self):
+        """BaseNode 기본 tool_access_type은 read."""
+        from programgarden_core.nodes.base import BaseNode
+        assert BaseNode.tool_access_type() == "read"
+
+    def test_order_node_is_write(self):
+        """주문 노드는 write."""
+        from programgarden_core.nodes.order import (
+            OverseasStockNewOrderNode,
+            OverseasFuturesNewOrderNode,
+        )
+        assert OverseasStockNewOrderNode.tool_access_type() == "write"
+        assert OverseasFuturesNewOrderNode.tool_access_type() == "write"
+
+    def test_market_data_node_is_read(self):
+        """시세 조회 노드는 read (기본값)."""
+        from programgarden_core.nodes.data_stock import OverseasStockMarketDataNode
+        assert OverseasStockMarketDataNode.tool_access_type() == "read"
+
+    def test_account_node_is_read(self):
+        """잔고 조회 노드는 read (기본값)."""
+        from programgarden_core.nodes.account_stock import OverseasStockAccountNode
+        assert OverseasStockAccountNode.tool_access_type() == "read"
+
+    def test_sqlite_node_is_write(self):
+        """SQLiteNode는 write."""
+        from programgarden_core.nodes.data import SQLiteNode
+        assert SQLiteNode.tool_access_type() == "write"
+
+    def test_http_request_node_is_write(self):
+        """HTTPRequestNode는 write."""
+        from programgarden_core.nodes.data import HTTPRequestNode
+        assert HTTPRequestNode.tool_access_type() == "write"
+
+
+class TestAutonomyLevel:
+    """autonomy_level에 따른 Tool 차단 로직 테스트."""
+
+    def _make_tool_executor(self):
+        """테스트용 AIAgentToolExecutor mock."""
+        from programgarden.executor import AIAgentToolExecutor
+
+        ctx = _make_context()
+        wf = _make_resolved_workflow(nodes={}, dag_edges=[])
+        generic = MagicMock()
+        executor = AIAgentToolExecutor(ctx, wf, generic)
+
+        # Tool 등록 시뮬레이션
+        executor._tool_configs = {
+            "overseas_stock_market_data": {
+                "node_id": "market",
+                "node_type": "OverseasStockMarketDataNode",
+                "config": {},
+            },
+            "overseas_stock_new_order": {
+                "node_id": "order",
+                "node_type": "OverseasStockNewOrderNode",
+                "config": {},
+            },
+        }
+        executor._tool_access_types = {
+            "overseas_stock_market_data": "read",
+            "overseas_stock_new_order": "write",
+        }
+        return executor
+
+    def test_full_auto_allows_all(self):
+        """full_auto: 모든 Tool 허용."""
+        executor = self._make_tool_executor()
+        assert executor.is_tool_blocked("overseas_stock_market_data", "full_auto") is False
+        assert executor.is_tool_blocked("overseas_stock_new_order", "full_auto") is False
+
+    def test_semi_auto_allows_read_blocks_write(self):
+        """semi_auto: Read 허용, Write 차단."""
+        executor = self._make_tool_executor()
+        assert executor.is_tool_blocked("overseas_stock_market_data", "semi_auto") is False
+        assert executor.is_tool_blocked("overseas_stock_new_order", "semi_auto") is True
+
+    def test_supervised_blocks_all(self):
+        """supervised: 모든 Tool 차단."""
+        executor = self._make_tool_executor()
+        assert executor.is_tool_blocked("overseas_stock_market_data", "supervised") is True
+        assert executor.is_tool_blocked("overseas_stock_new_order", "supervised") is True
+
+    @pytest.mark.asyncio
+    async def test_call_tool_blocked_returns_blocked_result(self):
+        """차단된 Tool 호출 시 _blocked 결과 반환."""
+        executor = self._make_tool_executor()
+        result = await executor.call_tool(
+            tool_name="overseas_stock_new_order",
+            args={"symbol": "AAPL"},
+            agent_node_id="agent-1",
+            autonomy_level="semi_auto",
+        )
+        assert result["_blocked"] is True
+        assert result["access_type"] == "write"
+        assert "승인" in result["reason"]
+
+    @pytest.mark.asyncio
+    async def test_call_tool_allowed_executes(self):
+        """허용된 Tool은 정상 실행."""
+        executor = self._make_tool_executor()
+        executor.generic_executor.execute = AsyncMock(return_value={"price": 150.0})
+
+        # workflow에서 노드 찾기 mock
+        executor.workflow.nodes = {
+            "market": ResolvedNode("market", "OverseasStockMarketDataNode", "market", {}),
+        }
+        # product_scope 설정
+        executor.workflow.nodes["market"].product_scope = "all"
+
+        result = await executor.call_tool(
+            tool_name="overseas_stock_market_data",
+            args={"symbol": "AAPL"},
+            agent_node_id="agent-1",
+            autonomy_level="semi_auto",
+        )
+        assert "_blocked" not in result
+        assert result["price"] == 150.0

@@ -10239,6 +10239,8 @@ class AIAgentToolExecutor:
         # tool 노드별 기본 config 캐시 (as_tool_schema에서 사용)
         self._tool_configs: Dict[str, Dict[str, Any]] = {}
         self._tool_schemas: Dict[str, Dict[str, Any]] = {}
+        # Tool별 access_type 캐시 ("read" or "write")
+        self._tool_access_types: Dict[str, str] = {}
 
     def register_tools(self, agent_node_id: str) -> List[Dict[str, Any]]:
         """tool 엣지로 연결된 노드들을 Tool로 등록하고 OpenAI function calling 형식 반환.
@@ -10281,6 +10283,7 @@ class AIAgentToolExecutor:
                 "config": node.config.copy(),
             }
             self._tool_schemas[tool_name] = tool_schema
+            self._tool_access_types[tool_name] = node_class.tool_access_type()
 
             # LLM이 넘길 수 있는 파라미터만 추출 (credential_id 등 제외)
             llm_params = {}
@@ -10316,11 +10319,28 @@ class AIAgentToolExecutor:
         )
         return tools
 
+    def is_tool_blocked(self, tool_name: str, autonomy_level: str) -> bool:
+        """autonomy_level에 따라 Tool 호출이 차단되는지 확인.
+
+        - supervised: 모든 Tool 차단 (read + write)
+        - semi_auto: write Tool만 차단
+        - full_auto: 차단 없음
+        """
+        if autonomy_level == "full_auto":
+            return False
+        access_type = self._tool_access_types.get(tool_name, "read")
+        if autonomy_level == "supervised":
+            return True
+        if autonomy_level == "semi_auto" and access_type == "write":
+            return True
+        return False
+
     async def call_tool(
         self,
         tool_name: str,
         args: Dict[str, Any],
         agent_node_id: str,
+        autonomy_level: str = "full_auto",
     ) -> Dict[str, Any]:
         """tool 엣지로 연결된 노드를 Tool로 호출.
 
@@ -10328,6 +10348,7 @@ class AIAgentToolExecutor:
             tool_name: Tool 이름 (as_tool_schema의 tool_name)
             args: LLM이 넘긴 인자
             agent_node_id: 호출하는 AIAgentNode ID
+            autonomy_level: 자동화 레벨 (supervised/semi_auto/full_auto)
 
         Returns:
             노드 실행 결과 dict
@@ -10335,6 +10356,24 @@ class AIAgentToolExecutor:
         tool_info = self._tool_configs.get(tool_name)
         if not tool_info:
             return {"error": f"Unknown tool: {tool_name}"}
+
+        # autonomy_level 체크: 차단된 Tool은 실행하지 않고 안내 반환
+        if self.is_tool_blocked(tool_name, autonomy_level):
+            access_type = self._tool_access_types.get(tool_name, "read")
+            self.context.log(
+                "info",
+                f"Tool '{tool_name}' blocked by autonomy_level='{autonomy_level}' "
+                f"(access_type={access_type})",
+                agent_node_id,
+            )
+            return {
+                "_blocked": True,
+                "tool_name": tool_name,
+                "access_type": access_type,
+                "reason": f"이 도구는 현재 자동화 레벨({autonomy_level})에서 "
+                          f"자동 실행이 허용되지 않습니다. "
+                          f"사용자 승인이 필요합니다.",
+            }
 
         tool_node_id = tool_info["node_id"]
         tool_node_type = tool_info["node_type"]
@@ -10763,7 +10802,13 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         )
         tools = tool_executor.register_tools(node_id)
 
-        # === 3. 프롬프트 조립 ===
+        # === 3. 프리셋 적용 + 프롬프트 조립 ===
+        preset_id = config.get("preset")
+        if preset_id and preset_id != "custom":
+            from programgarden_core.presets import PresetLoader
+            config = PresetLoader.apply_preset(preset_id, config)
+            context.log("info", f"Applied preset '{preset_id}'", node_id)
+
         system_prompt = config.get("system_prompt", "")
         user_prompt = config.get("user_prompt", "")
         output_format = config.get("output_format", "text")
@@ -10794,6 +10839,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         # === 4. ReAct/Function Calling 루프 ===
         max_tool_calls = config.get("max_tool_calls", 10)
         tool_error_strategy = config.get("tool_error_strategy", "retry_with_context")
+        autonomy_level = config.get("autonomy_level", "supervised")
         tool_call_count = 0
         streaming = llm_connection.get("streaming", False)
 
@@ -10903,9 +10949,30 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                         tool_name=tool_name,
                         args=tool_args,
                         agent_node_id=node_id,
+                        autonomy_level=autonomy_level,
                     )
                     tool_call_count += 1
                     tool_duration = (_time.monotonic() - tool_start) * 1000
+
+                    # autonomy_level에 의해 차단된 경우 SSE 알림
+                    if isinstance(tool_result, dict) and tool_result.get("_blocked"):
+                        from programgarden_core.bases.listener import AIToolCallEvent
+                        await context.notify_ai_tool_call(AIToolCallEvent(
+                            job_id=context.job_id or "",
+                            node_id=node_id,
+                            tool_name=tool_name,
+                            tool_node_id=tool_node_id,
+                            tool_input=tool_args,
+                            tool_output=tool_result,
+                            duration_ms=tool_duration,
+                            timestamp=datetime.utcnow(),
+                        ))
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": json_module.dumps(tool_result, ensure_ascii=False),
+                        })
+                        continue
 
                     # AIToolCallEvent 발행 (완료)
                     from programgarden_core.bases.listener import AIToolCallEvent
