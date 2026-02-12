@@ -169,8 +169,6 @@
   "fields.AIAgentNode.system_prompt_help": "AI 에이전트의 역할과 성격을 정의합니다. 프리셋 선택 시 자동으로 채워집니다.",
   "fields.AIAgentNode.user_prompt": "작업 지시 (User Prompt)",
   "fields.AIAgentNode.user_prompt_help": "AI 에이전트에게 내릴 지시입니다. {{ nodes.xxx.yyy }} 형식으로 이전 노드 데이터를 참조할 수 있습니다.",
-  "fields.AIAgentNode.autonomy_level": "자동화 레벨",
-  "fields.AIAgentNode.autonomy_level_help": "supervised: 모든 도구 호출을 사용자가 확인합니다. semi_auto: 조회 도구는 자동 실행, 주문 도구만 확인합니다. full_auto: 모든 도구를 자동 실행합니다 (주의).",
   "fields.AIAgentNode.preset_help": "역할 프리셋을 선택하면 시스템 프롬프트와 출력 형식이 자동으로 채워집니다.",
   "fields.AIAgentNode.output_format": "출력 형식",
   "fields.AIAgentNode.output_schema": "출력 스키마 (JSON)",

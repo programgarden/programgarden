@@ -132,7 +132,7 @@ TEST_WORKFLOW = {
     "credentials": [
         {
             "credential_id": "broker-cred",
-            "type": "broker_ls_futures",
+            "type": "broker_ls_overseas_futures",
             "name": "LS증권 (해외선물)",
             "data": [
                 {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
@@ -165,7 +165,7 @@ async def main():
     workflow["credentials"] = [
         {
             "credential_id": "broker-cred",
-            "type": "broker_ls_futures",
+            "type": "broker_ls_overseas_futures",
             "name": "LS증권 (해외선물)",
             "data": [
                 {"key": "appkey", "value": appkey, "type": "password", "label": "App Key"},

@@ -9,7 +9,6 @@
   "suggested_tool_nodes": ["OverseasStockHistoricalDataNode", "OverseasFuturesHistoricalDataNode", "ConditionNode", "OverseasStockMarketDataNode"],
   "default_config": {
     "output_format": "structured",
-    "autonomy_level": "supervised",
     "max_tool_calls": 8
   },
   "output_schema": {

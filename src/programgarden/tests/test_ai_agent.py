@@ -778,129 +778,583 @@ class TestPresetLoader:
 
 
 # ============================================================
-# Phase 4: autonomy_level R/W 분류 테스트
+# Phase 5: 에러/엣지케이스 테스트
 # ============================================================
 
 
-class TestToolAccessType:
-    """tool_access_type R/W 분류 테스트."""
+class TestToolErrorStrategy:
+    """tool_error_strategy 3가지 모드 테스트."""
 
-    def test_base_node_default_read(self):
-        """BaseNode 기본 tool_access_type은 read."""
-        from programgarden_core.nodes.base import BaseNode
-        assert BaseNode.tool_access_type() == "read"
+    def _setup_executor_and_context(self):
+        """공통 설정: AIAgentNodeExecutor + context + workflow."""
+        from programgarden.executor import AIAgentNodeExecutor
 
-    def test_order_node_is_write(self):
-        """주문 노드는 write."""
-        from programgarden_core.nodes.order import (
-            OverseasStockNewOrderNode,
-            OverseasFuturesNewOrderNode,
+        executor = AIAgentNodeExecutor()
+        ctx = _make_context(outputs={
+            "llm": {"connection": {
+                "provider": "openai", "model": "gpt-4o",
+                "api_key": "sk-test", "temperature": 0.7,
+                "max_tokens": 1000, "streaming": False,
+            }},
+        })
+
+        nodes = {
+            "agent": ResolvedNode("agent", "AIAgentNode", "ai", {}),
+            "llm": ResolvedNode("llm", "LLMModelNode", "ai", {}),
+            "market": ResolvedNode("market", "OverseasStockMarketDataNode", "market", {
+                "symbol": "AAPL",
+            }, product_scope="overseas_stock"),
+        }
+        tool_edges = [ResolvedEdge("market", "agent", "tool")]
+        ai_model_edges = [ResolvedEdge("llm", "agent", "ai_model")]
+        wf = _make_resolved_workflow(
+            nodes=nodes, dag_edges=[],
+            tool_edges=tool_edges, ai_model_edges=ai_model_edges,
         )
-        assert OverseasStockNewOrderNode.tool_access_type() == "write"
-        assert OverseasFuturesNewOrderNode.tool_access_type() == "write"
+        return executor, ctx, wf
 
-    def test_market_data_node_is_read(self):
-        """시세 조회 노드는 read (기본값)."""
-        from programgarden_core.nodes.data_stock import OverseasStockMarketDataNode
-        assert OverseasStockMarketDataNode.tool_access_type() == "read"
+    @pytest.mark.asyncio
+    async def test_abort_returns_error(self):
+        """tool_error_strategy='abort' → Tool 실패 시 즉시 에러 반환."""
+        executor, ctx, wf = self._setup_executor_and_context()
 
-    def test_account_node_is_read(self):
-        """잔고 조회 노드는 read (기본값)."""
-        from programgarden_core.nodes.account_stock import OverseasStockAccountNode
-        assert OverseasStockAccountNode.tool_access_type() == "read"
+        config = {
+            "user_prompt": "시세 알려줘",
+            "output_format": "text",
+            "tool_error_strategy": "abort",
+        }
 
-    def test_sqlite_node_is_write(self):
-        """SQLiteNode는 write."""
-        from programgarden_core.nodes.data import SQLiteNode
-        assert SQLiteNode.tool_access_type() == "write"
+        tool_call_response = _make_litellm_response(
+            content="",
+            tool_calls=[{
+                "id": "call_1", "type": "function",
+                "function": {"name": "overseas_stock_market_data_node", "arguments": '{"symbol": "AAPL"}'},
+            }],
+        )
+        # abort이 작동하면 2차 LLM 호출 전에 반환되지만, 안전장치로 final 응답도 준비
+        final_response = _make_litellm_response(content="fallback")
+        call_count = 0
 
-    def test_http_request_node_is_write(self):
-        """HTTPRequestNode는 write."""
-        from programgarden_core.nodes.data import HTTPRequestNode
-        assert HTTPRequestNode.tool_access_type() == "write"
+        async def mock_chat(messages, tools=None):
+            nonlocal call_count
+            call_count += 1
+            return tool_call_response if call_count == 1 else final_response
+
+        with patch("programgarden.providers.LLMProvider.chat", side_effect=mock_chat):
+            with patch(
+                "programgarden.executor.AIAgentToolExecutor.call_tool",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("API connection failed"),
+            ):
+                result = await executor.execute(
+                    node_id="agent", node_type="AIAgentNode",
+                    config=config, context=ctx, workflow=wf,
+                )
+
+        assert "error" in result
+        assert "API connection failed" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_skip_continues_with_error_message(self):
+        """tool_error_strategy='skip' → Tool 실패 시 에러 메시지로 계속 진행."""
+        executor, ctx, wf = self._setup_executor_and_context()
+
+        config = {
+            "user_prompt": "시세 알려줘",
+            "output_format": "text",
+            "tool_error_strategy": "skip",
+        }
+
+        tool_call_response = _make_litellm_response(
+            content="",
+            tool_calls=[{
+                "id": "call_1", "type": "function",
+                "function": {"name": "overseas_stock_market_data_node", "arguments": '{"symbol": "AAPL"}'},
+            }],
+        )
+        final_response = _make_litellm_response(content="시세 조회에 실패했습니다.")
+
+        call_count = 0
+
+        async def mock_chat(messages, tools=None):
+            nonlocal call_count
+            call_count += 1
+            return tool_call_response if call_count == 1 else final_response
+
+        with patch("programgarden.providers.LLMProvider.chat", side_effect=mock_chat):
+            with patch(
+                "programgarden.executor.AIAgentToolExecutor.call_tool",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("API timeout"),
+            ):
+                result = await executor.execute(
+                    node_id="agent", node_type="AIAgentNode",
+                    config=config, context=ctx, workflow=wf,
+                )
+
+        assert result["response"] == "시세 조회에 실패했습니다."
+        assert call_count == 2  # tool 실패 후 LLM 재호출
+
+    @pytest.mark.asyncio
+    async def test_retry_with_context_provides_hint(self):
+        """tool_error_strategy='retry_with_context' → 에러 + 힌트로 LLM 재호출."""
+        executor, ctx, wf = self._setup_executor_and_context()
+
+        config = {
+            "user_prompt": "시세 알려줘",
+            "output_format": "text",
+            "tool_error_strategy": "retry_with_context",
+        }
+
+        tool_call_response = _make_litellm_response(
+            content="",
+            tool_calls=[{
+                "id": "call_1", "type": "function",
+                "function": {"name": "overseas_stock_market_data_node", "arguments": '{"symbol": "AAPL"}'},
+            }],
+        )
+        final_response = _make_litellm_response(content="도구 실패로 다른 방법을 시도합니다.")
+
+        captured_messages = []
+        call_count = 0
+
+        async def mock_chat(messages, tools=None):
+            nonlocal call_count
+            call_count += 1
+            captured_messages.append(messages.copy())
+            return tool_call_response if call_count == 1 else final_response
+
+        with patch("programgarden.providers.LLMProvider.chat", side_effect=mock_chat):
+            with patch(
+                "programgarden.executor.AIAgentToolExecutor.call_tool",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Network error"),
+            ):
+                result = await executor.execute(
+                    node_id="agent", node_type="AIAgentNode",
+                    config=config, context=ctx, workflow=wf,
+                )
+
+        assert result["response"] == "도구 실패로 다른 방법을 시도합니다."
+        # 2차 호출 메시지에 hint가 포함됐는지 확인
+        second_call_messages = captured_messages[1]
+        tool_msg = [m for m in second_call_messages if m.get("role") == "tool"]
+        assert len(tool_msg) == 1
+        import json
+        tool_content = json.loads(tool_msg[0]["content"])
+        assert "hint" in tool_content
 
 
-class TestAutonomyLevel:
-    """autonomy_level에 따른 Tool 차단 로직 테스트."""
+class TestCooldownSec:
+    """cooldown_sec 타이밍 검증."""
 
-    def _make_tool_executor(self):
-        """테스트용 AIAgentToolExecutor mock."""
-        from programgarden.executor import AIAgentToolExecutor
+    @pytest.mark.asyncio
+    async def test_cooldown_skips_when_too_soon(self):
+        """cooldown_sec 이내 재실행 시 스킵."""
+        from programgarden.executor import AIAgentNodeExecutor
+        from datetime import datetime, timedelta
 
+        executor = AIAgentNodeExecutor()
+
+        ctx = _make_context(outputs={
+            "llm": {"connection": {
+                "provider": "openai", "model": "gpt-4o",
+                "api_key": "sk-test", "temperature": 0.7,
+                "max_tokens": 1000, "streaming": False,
+            }},
+        })
+
+        # 10초 전에 실행 완료된 것으로 설정
+        last_time = (datetime.now() - timedelta(seconds=10)).isoformat()
+        ctx.get_node_state = MagicMock(return_value={
+            "last_completed_at": last_time,
+            "executing": False,
+        })
+
+        nodes = {
+            "agent": ResolvedNode("agent", "AIAgentNode", "ai", {}),
+            "llm": ResolvedNode("llm", "LLMModelNode", "ai", {}),
+        }
+        ai_model_edges = [ResolvedEdge("llm", "agent", "ai_model")]
+        wf = _make_resolved_workflow(nodes=nodes, dag_edges=[], ai_model_edges=ai_model_edges)
+
+        config = {
+            "user_prompt": "분석해줘",
+            "cooldown_sec": 60,  # 60초 쿨다운 (10초 전 실행 → 아직 50초 남음)
+        }
+
+        result = await executor.execute(
+            node_id="agent", node_type="AIAgentNode",
+            config=config, context=ctx, workflow=wf,
+        )
+
+        assert result.get("_skipped") is True
+        assert result["reason"] == "cooldown"
+        assert result["remaining_sec"] > 0
+
+    @pytest.mark.asyncio
+    async def test_cooldown_allows_after_elapsed(self):
+        """cooldown_sec 경과 후에는 정상 실행."""
+        from programgarden.executor import AIAgentNodeExecutor
+        from datetime import datetime, timedelta
+
+        executor = AIAgentNodeExecutor()
+
+        ctx = _make_context(outputs={
+            "llm": {"connection": {
+                "provider": "openai", "model": "gpt-4o",
+                "api_key": "sk-test", "temperature": 0.7,
+                "max_tokens": 1000, "streaming": False,
+            }},
+        })
+
+        # 120초 전에 실행 완료 (cooldown 60초 → 이미 경과)
+        last_time = (datetime.now() - timedelta(seconds=120)).isoformat()
+        ctx.get_node_state = MagicMock(return_value={
+            "last_completed_at": last_time,
+            "executing": False,
+        })
+
+        nodes = {
+            "agent": ResolvedNode("agent", "AIAgentNode", "ai", {}),
+            "llm": ResolvedNode("llm", "LLMModelNode", "ai", {}),
+        }
+        ai_model_edges = [ResolvedEdge("llm", "agent", "ai_model")]
+        wf = _make_resolved_workflow(nodes=nodes, dag_edges=[], ai_model_edges=ai_model_edges)
+
+        config = {
+            "user_prompt": "분석해줘",
+            "output_format": "text",
+            "cooldown_sec": 60,
+        }
+
+        llm_response = _make_litellm_response(content="분석 결과입니다.")
+
+        with patch("programgarden.providers.LLMProvider.chat", new_callable=AsyncMock, return_value=llm_response):
+            result = await executor.execute(
+                node_id="agent", node_type="AIAgentNode",
+                config=config, context=ctx, workflow=wf,
+            )
+
+        assert result["response"] == "분석 결과입니다."
+
+    @pytest.mark.asyncio
+    async def test_duplicate_execution_protection(self):
+        """이미 실행 중이면 스킵."""
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
         ctx = _make_context()
-        wf = _make_resolved_workflow(nodes={}, dag_edges=[])
-        generic = MagicMock()
-        executor = AIAgentToolExecutor(ctx, wf, generic)
 
-        # Tool 등록 시뮬레이션
-        executor._tool_configs = {
-            "overseas_stock_market_data": {
-                "node_id": "market",
-                "node_type": "OverseasStockMarketDataNode",
-                "config": {},
-            },
-            "overseas_stock_new_order": {
-                "node_id": "order",
-                "node_type": "OverseasStockNewOrderNode",
-                "config": {},
-            },
+        # 이미 실행 중인 상태
+        ctx.get_node_state = MagicMock(return_value={"executing": True})
+
+        nodes = {"agent": ResolvedNode("agent", "AIAgentNode", "ai", {})}
+        wf = _make_resolved_workflow(nodes=nodes, dag_edges=[])
+
+        result = await executor.execute(
+            node_id="agent", node_type="AIAgentNode",
+            config={"user_prompt": "Hello"},
+            context=ctx, workflow=wf,
+        )
+
+        assert result.get("_skipped") is True
+        assert result["reason"] == "already_executing"
+
+
+class TestLLMErrorHandling:
+    """LLM Provider 에러 핸들링 테스트."""
+
+    def _setup(self):
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
+        ctx = _make_context(outputs={
+            "llm": {"connection": {
+                "provider": "openai", "model": "gpt-4o",
+                "api_key": "sk-test", "temperature": 0.7,
+                "max_tokens": 1000, "streaming": False,
+            }},
+        })
+        nodes = {
+            "agent": ResolvedNode("agent", "AIAgentNode", "ai", {}),
+            "llm": ResolvedNode("llm", "LLMModelNode", "ai", {}),
         }
-        executor._tool_access_types = {
-            "overseas_stock_market_data": "read",
-            "overseas_stock_new_order": "write",
-        }
-        return executor
-
-    def test_full_auto_allows_all(self):
-        """full_auto: 모든 Tool 허용."""
-        executor = self._make_tool_executor()
-        assert executor.is_tool_blocked("overseas_stock_market_data", "full_auto") is False
-        assert executor.is_tool_blocked("overseas_stock_new_order", "full_auto") is False
-
-    def test_semi_auto_allows_read_blocks_write(self):
-        """semi_auto: Read 허용, Write 차단."""
-        executor = self._make_tool_executor()
-        assert executor.is_tool_blocked("overseas_stock_market_data", "semi_auto") is False
-        assert executor.is_tool_blocked("overseas_stock_new_order", "semi_auto") is True
-
-    def test_supervised_blocks_all(self):
-        """supervised: 모든 Tool 차단."""
-        executor = self._make_tool_executor()
-        assert executor.is_tool_blocked("overseas_stock_market_data", "supervised") is True
-        assert executor.is_tool_blocked("overseas_stock_new_order", "supervised") is True
+        ai_model_edges = [ResolvedEdge("llm", "agent", "ai_model")]
+        wf = _make_resolved_workflow(nodes=nodes, dag_edges=[], ai_model_edges=ai_model_edges)
+        return executor, ctx, wf
 
     @pytest.mark.asyncio
-    async def test_call_tool_blocked_returns_blocked_result(self):
-        """차단된 Tool 호출 시 _blocked 결과 반환."""
-        executor = self._make_tool_executor()
-        result = await executor.call_tool(
-            tool_name="overseas_stock_new_order",
-            args={"symbol": "AAPL"},
-            agent_node_id="agent-1",
-            autonomy_level="semi_auto",
-        )
-        assert result["_blocked"] is True
-        assert result["access_type"] == "write"
-        assert "승인" in result["reason"]
+    async def test_auth_error(self):
+        """LLM 인증 에러 → 에러 반환."""
+        from programgarden.providers.llm_errors import LLMAuthError
+
+        executor, ctx, wf = self._setup()
+        config = {"user_prompt": "Hello", "output_format": "text"}
+
+        with patch(
+            "programgarden.providers.LLMProvider.chat",
+            new_callable=AsyncMock,
+            side_effect=LLMAuthError("Invalid API key", provider="openai", model="gpt-4o"),
+        ):
+            result = await executor.execute(
+                node_id="agent", node_type="AIAgentNode",
+                config=config, context=ctx, workflow=wf,
+            )
+
+        assert "error" in result
+        assert "Invalid API key" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_call_tool_allowed_executes(self):
-        """허용된 Tool은 정상 실행."""
-        executor = self._make_tool_executor()
-        executor.generic_executor.execute = AsyncMock(return_value={"price": 150.0})
+    async def test_rate_limit_error(self):
+        """LLM Rate Limit 에러 → 에러 반환."""
+        from programgarden.providers.llm_errors import LLMRateLimitError
 
-        # workflow에서 노드 찾기 mock
-        executor.workflow.nodes = {
-            "market": ResolvedNode("market", "OverseasStockMarketDataNode", "market", {}),
+        executor, ctx, wf = self._setup()
+        config = {"user_prompt": "Hello", "output_format": "text"}
+
+        with patch(
+            "programgarden.providers.LLMProvider.chat",
+            new_callable=AsyncMock,
+            side_effect=LLMRateLimitError(
+                "Rate limit exceeded", provider="openai", model="gpt-4o", retry_after=30.0,
+            ),
+        ):
+            result = await executor.execute(
+                node_id="agent", node_type="AIAgentNode",
+                config=config, context=ctx, workflow=wf,
+            )
+
+        assert "error" in result
+        assert "Rate limit" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_timeout_error(self):
+        """LLM 타임아웃 에러 → 에러 반환."""
+        from programgarden.providers.llm_errors import LLMTimeoutError
+
+        executor, ctx, wf = self._setup()
+        config = {"user_prompt": "Hello", "output_format": "text"}
+
+        with patch(
+            "programgarden.providers.LLMProvider.chat",
+            new_callable=AsyncMock,
+            side_effect=LLMTimeoutError("Request timed out", provider="openai", model="gpt-4o"),
+        ):
+            result = await executor.execute(
+                node_id="agent", node_type="AIAgentNode",
+                config=config, context=ctx, workflow=wf,
+            )
+
+        assert "error" in result
+        assert "timed out" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_token_limit_error(self):
+        """LLM 토큰 초과 에러 → 에러 반환."""
+        from programgarden.providers.llm_errors import LLMTokenLimitError
+
+        executor, ctx, wf = self._setup()
+        config = {"user_prompt": "Hello", "output_format": "text"}
+
+        with patch(
+            "programgarden.providers.LLMProvider.chat",
+            new_callable=AsyncMock,
+            side_effect=LLMTokenLimitError("Context window exceeded", provider="openai", model="gpt-4o"),
+        ):
+            result = await executor.execute(
+                node_id="agent", node_type="AIAgentNode",
+                config=config, context=ctx, workflow=wf,
+            )
+
+        assert "error" in result
+        assert "Context window" in result["error"]
+
+
+class TestStreamingResponse:
+    """스트리밍 응답 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_streaming_emits_events(self):
+        """streaming=True 시 LLMStreamEvent 발행."""
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
+
+        ctx = _make_context(outputs={
+            "llm": {"connection": {
+                "provider": "openai", "model": "gpt-4o",
+                "api_key": "sk-test", "temperature": 0.7,
+                "max_tokens": 1000, "streaming": True,  # 스트리밍 활성화
+            }},
+        })
+
+        nodes = {
+            "agent": ResolvedNode("agent", "AIAgentNode", "ai", {}),
+            "llm": ResolvedNode("llm", "LLMModelNode", "ai", {}),
         }
-        # product_scope 설정
-        executor.workflow.nodes["market"].product_scope = "all"
+        ai_model_edges = [ResolvedEdge("llm", "agent", "ai_model")]
+        wf = _make_resolved_workflow(nodes=nodes, dag_edges=[], ai_model_edges=ai_model_edges)
 
-        result = await executor.call_tool(
-            tool_name="overseas_stock_market_data",
-            args={"symbol": "AAPL"},
-            agent_node_id="agent-1",
-            autonomy_level="semi_auto",
+        config = {"user_prompt": "Hello", "output_format": "text"}
+
+        llm_response = _make_litellm_response(content="Streamed response")
+
+        # chat_stream mock: on_token 콜백을 호출하여 토큰 전달
+        async def mock_chat_stream(messages, on_token=None, tools=None):
+            if on_token:
+                await on_token("Streamed ")
+                await on_token("response")
+            return llm_response
+
+        with patch("programgarden.providers.LLMProvider.chat_stream", side_effect=mock_chat_stream):
+            result = await executor.execute(
+                node_id="agent", node_type="AIAgentNode",
+                config=config, context=ctx, workflow=wf,
+            )
+
+        assert result["response"] == "Streamed response"
+        # LLMStreamEvent 발행 확인 (토큰 2개 + final 1개 = 3번)
+        assert ctx.notify_llm_stream.call_count == 3
+        # 마지막 이벤트는 is_final=True
+        last_event = ctx.notify_llm_stream.call_args_list[-1][0][0]
+        assert last_event.is_final is True
+
+
+class TestMaxToolCalls:
+    """max_tool_calls 제한 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_max_tool_calls_limit(self):
+        """max_tool_calls 도달 시 강제 중단 메시지 전달."""
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
+
+        ctx = _make_context(outputs={
+            "llm": {"connection": {
+                "provider": "openai", "model": "gpt-4o",
+                "api_key": "sk-test", "temperature": 0.7,
+                "max_tokens": 1000, "streaming": False,
+            }},
+        })
+
+        nodes = {
+            "agent": ResolvedNode("agent", "AIAgentNode", "ai", {}),
+            "llm": ResolvedNode("llm", "LLMModelNode", "ai", {}),
+            "market": ResolvedNode("market", "OverseasStockMarketDataNode", "market", {
+                "symbol": "AAPL",
+            }, product_scope="overseas_stock"),
+        }
+        tool_edges = [ResolvedEdge("market", "agent", "tool")]
+        ai_model_edges = [ResolvedEdge("llm", "agent", "ai_model")]
+        wf = _make_resolved_workflow(
+            nodes=nodes, dag_edges=[],
+            tool_edges=tool_edges, ai_model_edges=ai_model_edges,
         )
-        assert "_blocked" not in result
-        assert result["price"] == 150.0
+
+        config = {
+            "user_prompt": "계속 시세 확인해",
+            "output_format": "text",
+            "max_tool_calls": 2,  # 최대 2번만 허용
+        }
+
+        # 3번 연속 Tool 호출 요청 (마지막은 제한에 걸림)
+        tool_call_resp = _make_litellm_response(
+            content="",
+            tool_calls=[{
+                "id": "call_X", "type": "function",
+                "function": {"name": "overseas_stock_market_data_node", "arguments": '{"symbol": "AAPL"}'},
+            }],
+        )
+        final_resp = _make_litellm_response(content="2번 조회 결과 기반 분석입니다.")
+
+        call_count = 0
+
+        async def mock_chat(messages, tools=None):
+            nonlocal call_count
+            call_count += 1
+            # 1,2차: tool 호출 / 3차: tool 호출 (max 도달) / 4차: 최종 응답
+            return tool_call_resp if call_count <= 3 else final_resp
+
+        with patch("programgarden.providers.LLMProvider.chat", side_effect=mock_chat):
+            with patch(
+                "programgarden.executor.GenericNodeExecutor.execute",
+                new_callable=AsyncMock,
+                return_value={"price": 150.0},
+            ):
+                result = await executor.execute(
+                    node_id="agent", node_type="AIAgentNode",
+                    config=config, context=ctx, workflow=wf,
+                )
+
+        assert result["response"] == "2번 조회 결과 기반 분석입니다."
+        # notify_ai_tool_call은 성공한 횟수만큼 호출 (max=2)
+        assert ctx.notify_ai_tool_call.call_count == 2
+
+
+class TestOutputParserEdgeCases:
+    """Output Parser 추가 엣지케이스 테스트."""
+
+    def test_structured_with_extra_fields(self):
+        """structured 모드: 스키마에 없는 추가 필드는 무시."""
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
+        ctx = _make_context()
+
+        schema = {
+            "signal": {"type": "string", "enum": ["buy", "sell"]},
+        }
+        raw = '{"signal": "buy", "extra_field": "ignored"}'
+        result = executor._parse_output(raw, "structured", schema, ctx, "node-1")
+        assert result["signal"] == "buy"
+
+    def test_json_with_single_backtick_block(self):
+        """json 모드: ``` 블록 (json 키워드 없이)."""
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
+        ctx = _make_context()
+
+        raw = 'Here:\n```\n{"key": "value"}\n```'
+        result = executor._parse_output(raw, "json", None, ctx, "node-1")
+        assert result == {"key": "value"}
+
+    def test_structured_missing_required_field(self):
+        """structured 모드: 필수 필드 누락 시 원본 반환."""
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
+        ctx = _make_context()
+
+        schema = {
+            "signal": {"type": "string"},
+            "confidence": {"type": "number"},
+        }
+        raw = '{"signal": "buy"}'  # confidence 누락
+        result = executor._parse_output(raw, "structured", schema, ctx, "node-1")
+        # Pydantic은 필수 필드 누락 시 ValidationError → 원본 dict 반환
+        assert result == {"signal": "buy"}
+
+    def test_empty_response_text(self):
+        """빈 응답 텍스트 처리."""
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
+        ctx = _make_context()
+
+        result = executor._parse_output("", "text", None, ctx, "node-1")
+        assert result == ""
+
+    def test_empty_response_json(self):
+        """빈 응답의 json 모드 → 원문 반환."""
+        from programgarden.executor import AIAgentNodeExecutor
+
+        executor = AIAgentNodeExecutor()
+        ctx = _make_context()
+
+        result = executor._parse_output("", "json", None, ctx, "node-1")
+        assert result == ""
+
+

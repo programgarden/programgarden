@@ -197,10 +197,6 @@ class AIAgentNode(BaseNode):
     )
 
     # === 고급 설정 ===
-    autonomy_level: Literal["supervised", "semi_auto", "full_auto"] = Field(
-        default="supervised",
-        description="자동화 레벨",
-    )
     max_tool_calls: int = Field(
         default=10,
         description="실행당 최대 Tool 호출 수",
@@ -336,21 +332,6 @@ class AIAgentNode(BaseNode):
             # ═══════════════════════════════════════════════════════════
             # SETTINGS 탭 (고급: 기본값으로 충분, 필요 시 조정)
             # ═══════════════════════════════════════════════════════════
-            "autonomy_level": FieldSchema(
-                name="autonomy_level",
-                type=FieldType.ENUM,
-                description="i18n:fields.AIAgentNode.autonomy_level",
-                required=False,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                enum_values=["supervised", "semi_auto", "full_auto"],
-                enum_labels={
-                    "supervised": "모든 도구 승인 필요",
-                    "semi_auto": "조회 자동, 주문만 승인",
-                    "full_auto": "전체 자동 (주의)",
-                },
-                default="supervised",
-            ),
             "max_tool_calls": FieldSchema(
                 name="max_tool_calls",
                 type=FieldType.INTEGER,

@@ -149,10 +149,6 @@ class SQLiteNode(BaseNode):
     def is_tool_enabled(cls) -> bool:
         return True
 
-    @classmethod
-    def tool_access_type(cls) -> str:
-        return "write"
-
     _inputs: List[InputPort] = [
         InputPort(
             name="trigger",
@@ -400,10 +396,6 @@ class HTTPRequestNode(BaseNode):
     @classmethod
     def is_tool_enabled(cls) -> bool:
         return True
-
-    @classmethod
-    def tool_access_type(cls) -> str:
-        return "write"
 
     _inputs: List[InputPort] = [
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),

@@ -342,21 +342,6 @@ class BaseNode(BaseModel):
         return False
 
     @classmethod
-    def tool_access_type(cls) -> str:
-        """이 노드가 AI Tool로 사용될 때의 접근 타입 (R/W 분류).
-
-        autonomy_level=semi_auto일 때:
-        - "read": 자동 실행 (조회 노드)
-        - "write": 사용자 승인 필요 (주문 등 상태 변경 노드)
-
-        서브클래스에서 오버라이드하여 변경 가능.
-
-        Returns:
-            "read" 또는 "write"
-        """
-        return "read"
-
-    @classmethod
     def _to_snake_case(cls, name: str) -> str:
         """CamelCase를 snake_case로 변환 (LLM function calling용)
 
@@ -404,6 +389,13 @@ class BaseNode(BaseModel):
                 param["enum"] = fs.enum_values
             if fs.default is not None:
                 param["default"] = fs.default
+            # object 타입: 내부 스키마 정보 전달 (AI Tool에서 LLM이 올바른 구조를 생성할 수 있도록)
+            if hasattr(fs, 'object_schema') and fs.object_schema:
+                param["object_schema"] = fs.object_schema
+            if hasattr(fs, 'example') and fs.example is not None:
+                param["example"] = fs.example
+            if hasattr(fs, 'expected_type') and fs.expected_type:
+                param["expected_type"] = fs.expected_type
             parameters[field_name] = param
 
         # 출력 포트 → returns

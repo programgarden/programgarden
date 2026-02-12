@@ -9,7 +9,6 @@
   "suggested_tool_nodes": ["OverseasStockAccountNode", "OverseasStockMarketDataNode", "OverseasStockNewOrderNode", "ConditionNode"],
   "default_config": {
     "output_format": "structured",
-    "autonomy_level": "semi_auto",
     "max_tool_calls": 10
   },
   "output_schema": {

@@ -303,6 +303,7 @@ class GenericNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         plugin: Optional[Any] = None,
         fields: Optional[Dict[str, Any]] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         from programgarden_core.registry import NodeTypeRegistry, DynamicNodeRegistry
 
@@ -10172,9 +10173,19 @@ class LLMModelNodeExecutor(NodeExecutorBase):
 
     # provider별 litellm 모델 prefix 매핑
     _MODEL_PREFIX = {
+        "anthropic": "anthropic/",
         "azure": "azure/",
         "ollama": "ollama/",
         "gemini": "gemini/",
+    }
+
+    # credential_type → provider 매핑
+    _CREDENTIAL_TYPE_TO_PROVIDER = {
+        "llm_openai": "openai",
+        "llm_anthropic": "anthropic",
+        "llm_azure_openai": "azure",
+        "llm_google": "gemini",
+        "llm_ollama": "ollama",
     }
 
     async def execute(
@@ -10189,6 +10200,18 @@ class LLMModelNodeExecutor(NodeExecutorBase):
         credential_id = config.get("credential_id")
         if credential_id:
             config = self._inject_credentials(credential_id, config, context, node_id)
+
+            # credential_type에서 provider 자동 결정
+            cred_ref = next(
+                (c for c in context._workflow_credentials
+                 if c.get("credential_id") == credential_id),
+                None,
+            )
+            if cred_ref:
+                cred_type = cred_ref.get("type") or cred_ref.get("credential_type", "")
+                auto_provider = self._CREDENTIAL_TYPE_TO_PROVIDER.get(cred_type)
+                if auto_provider:
+                    config["provider"] = auto_provider
 
         provider = config.get("provider", "openai")
         model = config.get("model", "gpt-4o")
@@ -10232,15 +10255,15 @@ class AIAgentToolExecutor:
         context: ExecutionContext,
         workflow: "ResolvedWorkflow",
         generic_executor: GenericNodeExecutor,
+        executors: Optional[Dict[str, "NodeExecutorBase"]] = None,
     ) -> None:
         self.context = context
         self.workflow = workflow
         self.generic_executor = generic_executor
+        self._executors = executors or {}
         # tool 노드별 기본 config 캐시 (as_tool_schema에서 사용)
         self._tool_configs: Dict[str, Dict[str, Any]] = {}
         self._tool_schemas: Dict[str, Dict[str, Any]] = {}
-        # Tool별 access_type 캐시 ("read" or "write")
-        self._tool_access_types: Dict[str, str] = {}
 
     def register_tools(self, agent_node_id: str) -> List[Dict[str, Any]]:
         """tool 엣지로 연결된 노드들을 Tool로 등록하고 OpenAI function calling 형식 반환.
@@ -10283,7 +10306,6 @@ class AIAgentToolExecutor:
                 "config": node.config.copy(),
             }
             self._tool_schemas[tool_name] = tool_schema
-            self._tool_access_types[tool_name] = node_class.tool_access_type()
 
             # LLM이 넘길 수 있는 파라미터만 추출 (credential_id 등 제외)
             llm_params = {}
@@ -10291,11 +10313,37 @@ class AIAgentToolExecutor:
             for param_name, param_info in tool_schema.get("parameters", {}).items():
                 if param_name in excluded_keys:
                     continue
-                p = {"type": self._to_json_type(param_info.get("type", "string"))}
+                json_type = self._to_json_type(param_info.get("type", "string"))
+                p = {"type": json_type}
                 if "description" in param_info:
                     p["description"] = param_info["description"]
                 if "enum" in param_info:
                     p["enum"] = param_info["enum"]
+
+                # object 타입: 내부 properties 스키마 생성 (LLM이 올바른 구조를 전달할 수 있도록)
+                if json_type == "object" and "object_schema" in param_info:
+                    props = {}
+                    required_fields = []
+                    for field_def in param_info["object_schema"]:
+                        fname = field_def.get("name", "")
+                        ftype = field_def.get("type", "STRING").lower()
+                        fp = {"type": "string" if ftype == "string" else ftype}
+                        if "label" in field_def:
+                            fp["description"] = field_def["label"]
+                        props[fname] = fp
+                        if field_def.get("required", False):
+                            required_fields.append(fname)
+                    if props:
+                        p["properties"] = props
+                        if required_fields:
+                            p["required"] = required_fields
+                # example 포함 (LLM에게 형식 힌트 제공)
+                if "example" in param_info:
+                    p["description"] = (
+                        p.get("description", "") +
+                        f" (예: {param_info['example']})"
+                    ).strip()
+
                 llm_params[param_name] = p
 
             # OpenAI function calling 형식
@@ -10319,28 +10367,11 @@ class AIAgentToolExecutor:
         )
         return tools
 
-    def is_tool_blocked(self, tool_name: str, autonomy_level: str) -> bool:
-        """autonomy_level에 따라 Tool 호출이 차단되는지 확인.
-
-        - supervised: 모든 Tool 차단 (read + write)
-        - semi_auto: write Tool만 차단
-        - full_auto: 차단 없음
-        """
-        if autonomy_level == "full_auto":
-            return False
-        access_type = self._tool_access_types.get(tool_name, "read")
-        if autonomy_level == "supervised":
-            return True
-        if autonomy_level == "semi_auto" and access_type == "write":
-            return True
-        return False
-
     async def call_tool(
         self,
         tool_name: str,
         args: Dict[str, Any],
         agent_node_id: str,
-        autonomy_level: str = "full_auto",
     ) -> Dict[str, Any]:
         """tool 엣지로 연결된 노드를 Tool로 호출.
 
@@ -10348,7 +10379,6 @@ class AIAgentToolExecutor:
             tool_name: Tool 이름 (as_tool_schema의 tool_name)
             args: LLM이 넘긴 인자
             agent_node_id: 호출하는 AIAgentNode ID
-            autonomy_level: 자동화 레벨 (supervised/semi_auto/full_auto)
 
         Returns:
             노드 실행 결과 dict
@@ -10357,38 +10387,34 @@ class AIAgentToolExecutor:
         if not tool_info:
             return {"error": f"Unknown tool: {tool_name}"}
 
-        # autonomy_level 체크: 차단된 Tool은 실행하지 않고 안내 반환
-        if self.is_tool_blocked(tool_name, autonomy_level):
-            access_type = self._tool_access_types.get(tool_name, "read")
-            self.context.log(
-                "info",
-                f"Tool '{tool_name}' blocked by autonomy_level='{autonomy_level}' "
-                f"(access_type={access_type})",
-                agent_node_id,
-            )
-            return {
-                "_blocked": True,
-                "tool_name": tool_name,
-                "access_type": access_type,
-                "reason": f"이 도구는 현재 자동화 레벨({autonomy_level})에서 "
-                          f"자동 실행이 허용되지 않습니다. "
-                          f"사용자 승인이 필요합니다.",
-            }
-
         tool_node_id = tool_info["node_id"]
         tool_node_type = tool_info["node_type"]
         tool_config = tool_info["config"].copy()
 
+        # LLM args 전처리: JSON 문자열 → dict 자동 변환
+        # (LLM이 object 타입 파라미터를 JSON 문자열로 보내는 경우 처리)
+        import json as _json
+        processed_args = {}
+        for k, v in args.items():
+            if isinstance(v, str) and v.startswith("{"):
+                try:
+                    processed_args[k] = _json.loads(v)
+                except (ValueError, _json.JSONDecodeError):
+                    processed_args[k] = v
+            else:
+                processed_args[k] = v
+
         # 노드의 고정 config + LLM이 넘긴 args 병합
-        tool_config.update(args)
+        tool_config.update(processed_args)
 
         # Broker connection 자동 주입 (product_scope 매칭)
         node = self.workflow.nodes.get(tool_node_id)
         if node:
             tool_config = self._auto_inject_connection(tool_node_id, node, tool_config)
 
-        # GenericNodeExecutor로 실행 (credential 주입 + expression 평가 포함)
-        result = await self.generic_executor.execute(
+        # 전용 executor가 있으면 우선 사용, 없으면 GenericNodeExecutor 사용
+        executor = self._executors.get(tool_node_type, self.generic_executor)
+        result = await executor.execute(
             node_id=tool_node_id,
             node_type=tool_node_type,
             config=tool_config,
@@ -10795,10 +10821,13 @@ class AIAgentNodeExecutor(NodeExecutorBase):
 
         # === 2. Tool 등록 ===
         generic_executor = GenericNodeExecutor()
+        # kwargs에서 전용 executor 맵 가져오기 (WorkflowExecutor.execute_node에서 전달)
+        all_executors = kwargs.get("_executors", {})
         tool_executor = AIAgentToolExecutor(
             context=context,
             workflow=workflow,
             generic_executor=generic_executor,
+            executors=all_executors,
         )
         tools = tool_executor.register_tools(node_id)
 
@@ -10839,7 +10868,6 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         # === 4. ReAct/Function Calling 루프 ===
         max_tool_calls = config.get("max_tool_calls", 10)
         tool_error_strategy = config.get("tool_error_strategy", "retry_with_context")
-        autonomy_level = config.get("autonomy_level", "supervised")
         tool_call_count = 0
         streaming = llm_connection.get("streaming", False)
 
@@ -10949,30 +10977,9 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                         tool_name=tool_name,
                         args=tool_args,
                         agent_node_id=node_id,
-                        autonomy_level=autonomy_level,
                     )
                     tool_call_count += 1
                     tool_duration = (_time.monotonic() - tool_start) * 1000
-
-                    # autonomy_level에 의해 차단된 경우 SSE 알림
-                    if isinstance(tool_result, dict) and tool_result.get("_blocked"):
-                        from programgarden_core.bases.listener import AIToolCallEvent
-                        await context.notify_ai_tool_call(AIToolCallEvent(
-                            job_id=context.job_id or "",
-                            node_id=node_id,
-                            tool_name=tool_name,
-                            tool_node_id=tool_node_id,
-                            tool_input=tool_args,
-                            tool_output=tool_result,
-                            duration_ms=tool_duration,
-                            timestamp=datetime.utcnow(),
-                        ))
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.get("id", ""),
-                            "content": json_module.dumps(tool_result, ensure_ascii=False),
-                        })
-                        continue
 
                     # AIToolCallEvent 발행 (완료)
                     from programgarden_core.bases.listener import AIToolCallEvent
@@ -11648,6 +11655,7 @@ class WorkflowExecutor:
             plugin=plugin,
             fields=fields,
             workflow=workflow,
+            _executors=self._executors,
         )
 
     def get_job(self, job_id: str) -> Optional["WorkflowJob"]:

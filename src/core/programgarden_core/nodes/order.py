@@ -205,10 +205,6 @@ class OverseasStockNewOrderNode(BaseOrderNode):
     def is_tool_enabled(cls) -> bool:
         return True
 
-    @classmethod
-    def tool_access_type(cls) -> str:
-        return "write"
-
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
@@ -548,10 +544,6 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
     @classmethod
     def is_tool_enabled(cls) -> bool:
         return True
-
-    @classmethod
-    def tool_access_type(cls) -> str:
-        return "write"
 
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
