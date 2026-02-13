@@ -35,6 +35,7 @@ from programgarden_core.models.resilience import (
 from programgarden_core.models.connection_rule import (
     ConnectionRule,
     ConnectionSeverity,
+    RateLimitConfig,
     REALTIME_SOURCE_NODE_TYPES,
 )
 
@@ -381,6 +382,13 @@ class HTTPRequestNode(BaseNode):
             suggestion="i18n:connection_rules.realtime_to_http.suggestion",
         ),
     ]
+
+    # 런타임 rate limit: 최소 1초 간격, 동시 3개까지 (과다 외부 요청 방지)
+    _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
+        min_interval_sec=1,
+        max_concurrent=3,
+        on_throttle="queue",
+    )
 
     # === PARAMETERS: 핵심 HTTP 요청 설정 ===
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = Field(

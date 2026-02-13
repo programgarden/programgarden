@@ -26,6 +26,7 @@ from programgarden_core.models.field_binding import (
 from programgarden_core.models.connection_rule import (
     ConnectionRule,
     ConnectionSeverity,
+    RateLimitConfig,
     REALTIME_SOURCE_NODE_TYPES,
 )
 
@@ -187,6 +188,13 @@ class AIAgentNode(BaseNode):
             suggestion="i18n:connection_rules.realtime_to_ai_agent.suggestion",
         ),
     ]
+
+    # 런타임 rate limit: 기본 60초 간격 (사용자 cooldown_sec이 우선), 동시 실행 1개
+    _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
+        min_interval_sec=60,
+        max_concurrent=1,
+        on_throttle="skip",
+    )
 
     # === 프롬프트 ===
     preset: Optional[str] = Field(
