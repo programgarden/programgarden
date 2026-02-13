@@ -281,7 +281,7 @@ class CompetitionListener(BaseExecutionListener):
 "credentials": [
     {
         "credential_id": "broker-cred",
-        "type": "broker_ls_futures",
+        "type": "broker_ls_overseas_futures",
         "data": [
             {"key": "appkey", "value": "...", "type": "password"},
             {"key": "appsecret", "value": "...", "type": "password"},

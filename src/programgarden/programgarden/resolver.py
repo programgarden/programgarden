@@ -57,15 +57,22 @@ class ResolvedNode:
 
 
 class ResolvedEdge:
-    """Resolved edge (execution order only)"""
+    """Resolved edge"""
 
     def __init__(
         self,
         from_node_id: str,
         to_node_id: str,
+        edge_type: str = "main",
     ):
         self.from_node_id = from_node_id
         self.to_node_id = to_node_id
+        self.edge_type = edge_type
+
+    @property
+    def is_dag_edge(self) -> bool:
+        """DAG topological sort에 포함되는 엣지인지 여부"""
+        return self.edge_type == "main"
 
 
 class ResolvedWorkflow:
@@ -78,12 +85,27 @@ class ResolvedWorkflow:
         nodes: Dict[str, ResolvedNode],
         edges: List[ResolvedEdge],
         execution_order: List[str],
+        tool_edges: Optional[List[ResolvedEdge]] = None,
+        ai_model_edges: Optional[List[ResolvedEdge]] = None,
     ):
         self.workflow_id = workflow_id
         self.version = version
         self.nodes = nodes
         self.edges = edges
         self.execution_order = execution_order
+        self.tool_edges = tool_edges or []
+        self.ai_model_edges = ai_model_edges or []
+
+    def get_tool_node_ids(self, agent_node_id: str) -> List[str]:
+        """특정 AIAgentNode에 tool 엣지로 연결된 노드 ID 목록"""
+        return [e.from_node_id for e in self.tool_edges if e.to_node_id == agent_node_id]
+
+    def get_ai_model_node_id(self, agent_node_id: str) -> Optional[str]:
+        """특정 AIAgentNode에 ai_model 엣지로 연결된 LLMModelNode ID"""
+        for e in self.ai_model_edges:
+            if e.to_node_id == agent_node_id:
+                return e.from_node_id
+        return None
 
 
 class WorkflowResolver:
@@ -420,24 +442,36 @@ class WorkflowResolver:
             )
             resolved_nodes[node_id] = resolved_node
 
-        # Resolve edges (execution order only)
-        resolved_edges: List[ResolvedEdge] = []
+        # Resolve edges - DAG/tool/ai_model 분리
+        dag_edges: List[ResolvedEdge] = []
+        tool_edges: List[ResolvedEdge] = []
+        ai_model_edges: List[ResolvedEdge] = []
+
         for edge in workflow.edges:
+            edge_type_str = edge.edge_type.value if hasattr(edge.edge_type, 'value') else str(edge.edge_type)
             resolved_edge = ResolvedEdge(
                 from_node_id=edge.from_node_id,
                 to_node_id=edge.to_node_id,
+                edge_type=edge_type_str,
             )
-            resolved_edges.append(resolved_edge)
+            if edge.is_dag_edge:
+                dag_edges.append(resolved_edge)
+            elif edge_type_str == "tool":
+                tool_edges.append(resolved_edge)
+            elif edge_type_str == "ai_model":
+                ai_model_edges.append(resolved_edge)
 
-        # Calculate execution order (topological sort)
-        execution_order = self._topological_sort(resolved_nodes, resolved_edges)
+        # Calculate execution order (topological sort) - DAG 엣지만 사용
+        execution_order = self._topological_sort(resolved_nodes, dag_edges)
 
         resolved_workflow = ResolvedWorkflow(
             workflow_id=workflow.id,
             version=workflow.version,
             nodes=resolved_nodes,
-            edges=resolved_edges,
+            edges=dag_edges,
             execution_order=execution_order,
+            tool_edges=tool_edges,
+            ai_model_edges=ai_model_edges,
         )
 
         return resolved_workflow, validation

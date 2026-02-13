@@ -67,6 +67,10 @@ class OverseasStockHistoricalDataNode(BaseNode):
         description="Apply adjusted prices",
     )
 
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
     _inputs: List[InputPort] = [
         InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
     ]

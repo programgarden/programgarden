@@ -51,6 +51,10 @@ class OverseasStockMarketDataNode(BaseNode):
         description="Single symbol entry with exchange and symbol code",
     )
 
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
     _inputs: List[InputPort] = [
         InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),

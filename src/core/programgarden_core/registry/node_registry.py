@@ -96,6 +96,8 @@ class NodeTypeRegistry:
             TableDisplayNode, LineChartNode, MultiLineChartNode,
             CandlestickChartNode, BarChartNode, SummaryDisplayNode,
             BacktestEngineNode, BenchmarkCompareNode,
+            # AI (에이전트, LLM 연결)
+            LLMModelNode, AIAgentNode,
         )
 
         node_classes = [
@@ -137,6 +139,8 @@ class NodeTypeRegistry:
             CandlestickChartNode, BarChartNode, SummaryDisplayNode,
             # Backtest/Analysis
             BacktestEngineNode, BenchmarkCompareNode,
+            # AI (에이전트, LLM 연결)
+            LLMModelNode, AIAgentNode,
         ]
 
         for node_class in node_classes:
@@ -256,6 +260,7 @@ class NodeTypeRegistry:
                 "display": "https://cdn-icons-png.flaticon.com/512/2920/2920349.png",
                 "backtest": "https://cdn-icons-png.flaticon.com/512/2920/2920244.png",
                 "job": "https://cdn-icons-png.flaticon.com/512/1087/1087815.png",
+                "ai": "https://cdn-icons-png.flaticon.com/512/4712/4712139.png",
             }
             cat_value = instance.category.value if hasattr(instance.category, 'value') else instance.category
             img_url = category_icons.get(cat_value, "https://cdn-icons-png.flaticon.com/512/2099/2099058.png")

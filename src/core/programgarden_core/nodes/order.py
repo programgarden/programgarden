@@ -201,6 +201,10 @@ class OverseasStockNewOrderNode(BaseOrderNode):
     type: Literal["OverseasStockNewOrderNode"] = "OverseasStockNewOrderNode"
     description: str = "i18n:nodes.OverseasStockNewOrderNode.description"
 
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
@@ -536,6 +540,10 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
 
     type: Literal["OverseasFuturesNewOrderNode"] = "OverseasFuturesNewOrderNode"
     description: str = "i18n:nodes.OverseasFuturesNewOrderNode.description"
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
 
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS

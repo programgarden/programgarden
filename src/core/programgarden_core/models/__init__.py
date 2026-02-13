@@ -11,7 +11,7 @@ ProgramGarden Core - 모델 정의
 - Event: 이벤트 히스토리 (Layer 5)
 """
 
-from programgarden_core.models.edge import Edge
+from programgarden_core.models.edge import Edge, EdgeType
 from programgarden_core.models.workflow import WorkflowDefinition, WorkflowInput, CredentialReference, StickyNote, NotePosition
 from programgarden_core.models.job import WorkflowJob, JobState, JobStatus
 from programgarden_core.models.credential import (
@@ -76,6 +76,7 @@ from programgarden_core.models.resilience import (
 __all__ = [
     # Edge
     "Edge",
+    "EdgeType",
     # Workflow
     "WorkflowDefinition",
     "WorkflowInput",

@@ -932,7 +932,7 @@ async def create_credential(request: CredentialCreateRequest):
         
         # Create credential
         cred = Credential(
-            id=str(uuid.uuid4()),
+            credential_id=str(uuid.uuid4()),
             name=request.name,
             credential_type=request.credential_type,
             user_id=request.user_id,
@@ -1073,6 +1073,75 @@ async def test_fail_then_succeed(fail_count: int = 2):
 
 
 # ========================================
+# AI Agent API
+# ========================================
+
+@app.get("/api/ai/presets")
+async def get_ai_presets(locale: str = "ko"):
+    """AI Agent 프리셋 목록 조회"""
+    try:
+        from programgarden_core.presets import PresetLoader
+
+        presets = PresetLoader.list_presets()
+        return JSONResponse({"presets": presets})
+    except Exception as e:
+        import traceback
+        return JSONResponse(
+            {"error": str(e), "traceback": traceback.format_exc()},
+            status_code=500,
+        )
+
+
+@app.get("/api/ai/presets/{preset_id}")
+async def get_ai_preset(preset_id: str):
+    """특정 AI Agent 프리셋 상세 조회"""
+    try:
+        from programgarden_core.presets import PresetLoader
+
+        preset = PresetLoader.load_preset(preset_id)
+        if not preset:
+            return JSONResponse(
+                {"error": f"Preset '{preset_id}' not found"},
+                status_code=404,
+            )
+        return JSONResponse({"preset": preset})
+    except Exception as e:
+        import traceback
+        return JSONResponse(
+            {"error": str(e), "traceback": traceback.format_exc()},
+            status_code=500,
+        )
+
+
+@app.get("/api/ai/tool-nodes")
+async def get_ai_tool_nodes(locale: str = "ko"):
+    """AI Agent Tool로 사용 가능한 노드 목록 (is_tool_enabled=True)"""
+    try:
+        from programgarden_core.registry import NodeTypeRegistry
+
+        registry = NodeTypeRegistry()
+        tool_nodes = []
+
+        for node_type, node_class in registry._registry.items():
+            if hasattr(node_class, "is_tool_enabled") and node_class.is_tool_enabled():
+                schema = node_class.as_tool_schema()
+                tool_nodes.append({
+                    "node_type": node_type,
+                    "tool_name": schema.get("tool_name", ""),
+                    "description": schema.get("description", ""),
+                    "parameters": list(schema.get("parameters", {}).keys()),
+                })
+
+        return JSONResponse({"tool_nodes": tool_nodes})
+    except Exception as e:
+        import traceback
+        return JSONResponse(
+            {"error": str(e), "traceback": traceback.format_exc()},
+            status_code=500,
+        )
+
+
+# ========================================
 # Workflow Execution API
 # ========================================
 @app.post("/api/workflow/run-inline")
@@ -1143,6 +1212,7 @@ async def run_workflow_inline(request: WorkflowRunRequest):
                 {
                     "from": edge.get("from") or edge.get("source"),
                     "to": edge.get("to") or edge.get("target"),
+                    **({"type": edge["type"]} if "type" in edge else {}),
                     **({"from_port": edge["from_port"]} if "from_port" in edge else {}),
                     **({"to_port": edge["to_port"]} if "to_port" in edge else {}),
                 }

@@ -59,6 +59,8 @@ class SQLiteNode(BaseNode):
     """
     로컬 SQLite 데이터베이스 노드 (단순 DB)
 
+    AI Tool로 사용 시 R/W 양용이므로 write로 분류 (안전 우선).
+
     /app/data/ 폴더에 SQLite DB를 생성하고,
     두 가지 모드로 데이터를 조회/저장합니다.
     
@@ -142,6 +144,10 @@ class SQLiteNode(BaseNode):
         default=None,
         description="충돌 시 기준 컬럼 (upsert용). 예: 'symbol'",
     )
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
 
     _inputs: List[InputPort] = [
         InputPort(
@@ -386,6 +392,10 @@ class HTTPRequestNode(BaseNode):
         default_factory=ResilienceConfig,
         description="재시도 및 실패 처리 설정",
     )
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
 
     _inputs: List[InputPort] = [
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),

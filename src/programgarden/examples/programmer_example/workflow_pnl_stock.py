@@ -297,7 +297,7 @@ def create_workflow() -> dict:
         "credentials": [
             {
                 "credential_id": "broker-cred",
-                "type": "broker_ls_stock",
+                "type": "broker_ls_overseas_stock",
                 "name": "LS증권 (해외주식)",
                 "data": [
                     {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
@@ -336,7 +336,7 @@ async def main():
     workflow["credentials"] = [
         {
             "credential_id": "broker-cred",
-            "type": "broker_ls_stock",
+            "type": "broker_ls_overseas_stock",
             "name": "LS증권 (해외주식)",
             "data": [
                 {"key": "appkey", "value": cred_data["appkey"], "type": "password", "label": "App Key"},
