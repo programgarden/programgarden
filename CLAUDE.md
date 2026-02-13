@@ -83,7 +83,7 @@ Workflows are defined as JSON with nodes, edges, credentials, and notes:
 
 ### Key Concepts
 
-- **Edges**: Define execution order only (node IDs only)
+- **Edges**: Define execution order and connection type. Types: `main` (DAG execution, default), `ai_model` (LLM connection), `tool` (AI Agent tool registration)
 - **Data Binding**: Use `{{ nodes.nodeId.port }}` expressions in node config
 - **Auto-Iterate**: When previous node outputs an array, next node auto-executes for each item
 - **Broker Connection**: Automatically injected by Executor via DAG traversal. No explicit `connection` binding needed
@@ -134,7 +134,7 @@ When a node outputs an array, the next node automatically executes for each item
 | `format` | pct(), currency(), number() | `{{ format.pct(12.34) }}` → "12.34%" |
 | `lst` | first(), last(), count(), pluck(), flatten() | `{{ lst.pluck(items, 'name') }}` |
 
-### Node Categories (10, 49 nodes)
+### Node Categories (11, 51 nodes)
 
 | Category | Nodes |
 |----------|-------|
@@ -148,6 +148,7 @@ When a node outputs an array, the next node automatically executes for each item
 | data | SQLiteNode, HTTPRequestNode, FieldMappingNode |
 | display | TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
 | analysis | BacktestEngineNode, BenchmarkCompareNode |
+| ai | LLMModelNode, AIAgentNode |
 
 ### ExecutionListener Callbacks
 
@@ -160,6 +161,21 @@ When a node outputs an array, the next node automatically executes for each item
 | `on_display_data` | Display data |
 | `on_workflow_pnl_update` | Real-time workflow/account P&L (FIFO-based, auto-detected) |
 | `on_retry` | Node retry event (attempt count, error type, next retry delay) |
+| `on_token_usage` | AI Agent token usage (total_tokens, cost_usd) |
+| `on_ai_tool_call` | AI Agent tool call (tool_name, duration_ms) |
+| `on_llm_stream` | AI Agent streaming chunk (is_final) |
+
+### AI Agent Node
+
+LLMModelNode + AIAgentNode로 워크플로우에 LLM 기반 분석/의사결정 통합:
+
+- **LLMModelNode**: BrokerNode 패턴과 동일. credential로 LLM API 연결, `ai_model` 엣지로 AIAgentNode에 전파
+- **AIAgentNode**: `tool` 엣지로 기존 노드를 Tool로 활용하는 범용 에이전트
+- **엣지 타입**: `main` (DAG 실행), `ai_model` (LLM 연결), `tool` (도구 등록)
+- **출력 형식**: text, json, structured (output_schema 기반 Pydantic 검증)
+- **프리셋**: risk_manager, technical_analyst, news_analyst, strategist
+- **실시간 보호**: cooldown_sec (기본 60초), ThrottleNode 없이 직접 실시간 노드 연결 차단
+- **Stateless**: 매 실행마다 독립 (대화 기억 없음, 현재 데이터를 Tool로 직접 조회)
 
 ### Resilience (Retry/Fallback)
 
