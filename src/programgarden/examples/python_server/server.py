@@ -335,6 +335,8 @@ async def get_node_types(locale: str = "ko", product_scope: str = None):
                     "widget_schema": safe_serialize(getattr(schema, "widget_schema", None)),
                     "settings_widget_schema": safe_serialize(getattr(schema, "settings_widget_schema", None)),
                     "display_data_schema": safe_serialize(getattr(schema, "display_data_schema", None)),
+                    "connection_rules": safe_serialize(getattr(schema, "connection_rules", None)),
+                    "rate_limit": safe_serialize(getattr(schema, "rate_limit", None)),
                 }
                 # Apply i18n translation
                 translated_dict = translate_schema(raw_dict, locale)
@@ -1245,37 +1247,38 @@ async def run_workflow_inline(request: WorkflowRunRequest):
 
 @app.post("/api/workflow/validate")
 async def validate_workflow(request: WorkflowRunRequest):
-    """워크플로우 유효성 검증"""
-    errors = []
-    warnings = []
-    
-    # Basic validation
-    if not request.nodes:
-        errors.append("Workflow must have at least one node")
-    
-    # Check for StartNode
-    start_nodes = [n for n in request.nodes if n.get("type") == "StartNode"]
-    if not start_nodes:
-        warnings.append("Workflow has no StartNode")
-    elif len(start_nodes) > 1:
-        warnings.append("Workflow has multiple StartNodes")
-    
-    # Check for orphan nodes
-    connected_nodes = set()
-    for edge in request.edges:
-        connected_nodes.add(edge.get("from") or edge.get("source"))
-        connected_nodes.add(edge.get("to") or edge.get("target"))
-    
-    node_ids = {n.get("id") for n in request.nodes}
-    orphans = node_ids - connected_nodes - {"start"}  # StartNode is OK to be unconnected
-    if orphans:
-        warnings.append(f"Unconnected nodes: {', '.join(orphans)}")
-    
-    return JSONResponse({
-        "valid": len(errors) == 0,
-        "errors": errors,
-        "warnings": warnings,
-    })
+    """워크플로우 유효성 검증 (WorkflowResolver 사용)"""
+    try:
+        from programgarden.resolver import WorkflowResolver
+
+        workflow = {
+            "id": request.id or "validate-temp",
+            "name": request.name or "Validation",
+            "nodes": request.nodes,
+            "edges": [
+                {
+                    "from": edge.get("from") or edge.get("source"),
+                    "to": edge.get("to") or edge.get("target"),
+                    **({"type": edge["type"]} if "type" in edge else {}),
+                }
+                for edge in request.edges
+            ],
+        }
+
+        resolver = WorkflowResolver()
+        result = resolver.validate(workflow)
+
+        return JSONResponse({
+            "valid": result.is_valid,
+            "errors": result.errors,
+            "warnings": result.warnings,
+        })
+    except Exception as e:
+        import traceback
+        return JSONResponse(
+            {"error": str(e), "traceback": traceback.format_exc()},
+            status_code=500,
+        )
 
 def main(host: str = "0.0.0.0", port: int = 8766):
     """Run the server."""
