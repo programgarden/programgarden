@@ -32,6 +32,11 @@ from programgarden_core.models.resilience import (
     FallbackConfig,
     FallbackMode,
 )
+from programgarden_core.models.connection_rule import (
+    ConnectionRule,
+    ConnectionSeverity,
+    REALTIME_SOURCE_NODE_TYPES,
+)
 
 
 # HTTP 요청 재시도용 커스텀 예외 클래스
@@ -365,6 +370,17 @@ class HTTPRequestNode(BaseNode):
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.HTTPRequestNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/httprequest.svg"
+
+    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수)
+    _connection_rules: ClassVar[List[ConnectionRule]] = [
+        ConnectionRule(
+            deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
+            required_intermediate="ThrottleNode",
+            severity=ConnectionSeverity.WARNING,
+            reason="i18n:connection_rules.realtime_to_http.reason",
+            suggestion="i18n:connection_rules.realtime_to_http.suggestion",
+        ),
+    ]
 
     # === PARAMETERS: 핵심 HTTP 요청 설정 ===
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = Field(

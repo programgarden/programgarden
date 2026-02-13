@@ -41,6 +41,14 @@ class NodeTypeSchema(BaseModel):
         description="Schema describing the data structure produced by Display nodes at runtime. "
                     "Properties with 'resolved_by' indicate dynamic field names determined by node settings.",
     )
+    connection_rules: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Connection rules for this node (deny_direct_from, required_intermediate, etc.)",
+    )
+    rate_limit: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Node-level rate limit config (min_interval_sec, max_concurrent, etc.)",
+    )
 
 
 class NodeTypeRegistry:
@@ -276,6 +284,16 @@ class NodeTypeRegistry:
         # Display 노드의 런타임 데이터 스키마
         display_data_schema = getattr(node_class, '_display_data_schema', None)
 
+        # 연결 규칙 직렬화 (_connection_rules ClassVar → dict 리스트)
+        connection_rules_raw = getattr(node_class, '_connection_rules', [])
+        serialized_connection_rules = [
+            rule.model_dump() for rule in connection_rules_raw
+        ]
+
+        # Rate limit 직렬화 (_rate_limit ClassVar → dict)
+        rate_limit_config = getattr(node_class, '_rate_limit', None)
+        serialized_rate_limit = rate_limit_config.model_dump() if rate_limit_config else None
+
         # 입출력 포트 직렬화 시 display_name 자동 추가
         inputs = self._serialize_ports(instance.get_inputs(), type_name)
         outputs = self._serialize_ports(instance.get_outputs(), type_name)
@@ -295,6 +313,8 @@ class NodeTypeRegistry:
             outputs=outputs,
             config_schema=config_schema,
             display_data_schema=display_data_schema,
+            connection_rules=serialized_connection_rules,
+            rate_limit=serialized_rate_limit,
         )
         self._schemas[type_name] = schema
 

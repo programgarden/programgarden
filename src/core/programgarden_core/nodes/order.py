@@ -34,6 +34,11 @@ from programgarden_core.models.resilience import (
     FallbackConfig,
     FallbackMode,
 )
+from programgarden_core.models.connection_rule import (
+    ConnectionRule,
+    ConnectionSeverity,
+    REALTIME_SOURCE_NODE_TYPES,
+)
 
 
 # =============================================================================
@@ -53,6 +58,17 @@ class BaseOrderNode(BaseNode):
     """
 
     category: NodeCategory = NodeCategory.ORDER
+
+    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수)
+    _connection_rules: ClassVar[List[ConnectionRule]] = [
+        ConnectionRule(
+            deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
+            required_intermediate="ThrottleNode",
+            severity=ConnectionSeverity.ERROR,
+            reason="i18n:connection_rules.realtime_to_order.reason",
+            suggestion="i18n:connection_rules.realtime_to_order.suggestion",
+        ),
+    ]
 
     # 브로커 연결 (필수)
     connection: Optional[Dict] = Field(
@@ -141,6 +157,17 @@ class BaseModifyOrderNode(BaseNode):
     """
 
     category: NodeCategory = NodeCategory.ORDER
+
+    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수)
+    _connection_rules: ClassVar[List[ConnectionRule]] = [
+        ConnectionRule(
+            deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
+            required_intermediate="ThrottleNode",
+            severity=ConnectionSeverity.ERROR,
+            reason="i18n:connection_rules.realtime_to_order.reason",
+            suggestion="i18n:connection_rules.realtime_to_order.suggestion",
+        ),
+    ]
 
     # 브로커 연결 (필수)
     connection: Optional[Dict] = Field(

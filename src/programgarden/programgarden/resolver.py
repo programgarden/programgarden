@@ -210,8 +210,8 @@ class WorkflowResolver:
                         f"Plugin '{plugin_id}' not found in registry (community load required)"
                     )
 
-        # 5. Edge connection type compatibility validation
-        # TODO: Input/output port type matching validation
+        # 5. 노드 연결 규칙 검증 (실시간 → 위험 노드 직결 차단)
+        self._validate_connection_rules(workflow, registry, result)
 
         # 6. 노드-브로커 호환성 검증 (product_scope + broker_provider 자동 매칭)
         self._validate_node_broker_compatibility(workflow, registry, result)
@@ -220,6 +220,65 @@ class WorkflowResolver:
         self._validate_broker_nodes(workflow, registry, result)
 
         return result
+
+    def _validate_connection_rules(
+        self,
+        workflow,
+        registry,
+        result: ValidationResult,
+    ) -> None:
+        """
+        노드 연결 규칙 검증.
+
+        각 main 엣지에 대해 타겟 노드의 _connection_rules를 확인하고,
+        실시간 노드에서 위험 노드로의 직접 연결이 있으면 에러/경고를 추가.
+
+        검증 대상: main 엣지만 (tool, ai_model 엣지는 데이터 흐름이 아님)
+        """
+        from programgarden_core.models.edge import EdgeType
+        from programgarden_core.models.connection_rule import ConnectionSeverity
+
+        # 노드 ID → 노드 타입 매핑
+        node_id_to_type_map = {
+            node.get("id"): node.get("type")
+            for node in workflow.nodes
+        }
+
+        for edge in workflow.edges:
+            # main 엣지만 검증 (tool/ai_model은 실행 순서 아님)
+            if edge.edge_type != EdgeType.MAIN:
+                continue
+
+            target_node_type = node_id_to_type_map.get(edge.to_node_id)
+            source_node_type = node_id_to_type_map.get(edge.from_node_id)
+
+            if not target_node_type or not source_node_type:
+                continue
+
+            # 타겟 노드 클래스에서 connection_rules 확인
+            target_node_class = registry.get(target_node_type)
+            if not target_node_class:
+                continue
+
+            connection_rules = getattr(target_node_class, '_connection_rules', [])
+            for rule in connection_rules:
+                if source_node_type in rule.deny_direct_from:
+                    violation_message = (
+                        f"'{edge.from_node_id}' ({source_node_type}) → "
+                        f"'{edge.to_node_id}' ({target_node_type}) "
+                        f"직접 연결이 차단됩니다."
+                    )
+                    if rule.required_intermediate:
+                        violation_message += (
+                            f" '{rule.required_intermediate}'를 사이에 배치하세요."
+                        )
+                    if rule.reason:
+                        violation_message += f" 이유: {rule.reason}"
+
+                    if rule.severity == ConnectionSeverity.ERROR:
+                        result.add_error(violation_message)
+                    else:
+                        result.add_warning(violation_message)
 
     @staticmethod
     def _is_broker_node(registry, node_type: str) -> bool:

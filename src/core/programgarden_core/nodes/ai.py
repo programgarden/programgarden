@@ -23,6 +23,11 @@ from programgarden_core.models.field_binding import (
     ExpressionMode,
     UIComponent,
 )
+from programgarden_core.models.connection_rule import (
+    ConnectionRule,
+    ConnectionSeverity,
+    REALTIME_SOURCE_NODE_TYPES,
+)
 
 
 class LLMModelNode(BaseNode):
@@ -171,6 +176,17 @@ class AIAgentNode(BaseNode):
 
     type: Literal["AIAgentNode"] = "AIAgentNode"
     category: NodeCategory = NodeCategory.AI
+
+    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수)
+    _connection_rules: ClassVar[List[ConnectionRule]] = [
+        ConnectionRule(
+            deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
+            required_intermediate="ThrottleNode",
+            severity=ConnectionSeverity.ERROR,
+            reason="i18n:connection_rules.realtime_to_ai_agent.reason",
+            suggestion="i18n:connection_rules.realtime_to_ai_agent.suggestion",
+        ),
+    ]
 
     # === 프롬프트 ===
     preset: Optional[str] = Field(

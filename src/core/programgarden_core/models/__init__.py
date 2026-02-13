@@ -72,6 +72,12 @@ from programgarden_core.models.resilience import (
     ResilienceConfig,
     RetryEvent,
 )
+from programgarden_core.models.connection_rule import (
+    REALTIME_SOURCE_NODE_TYPES,
+    ConnectionSeverity,
+    ConnectionRule,
+    RateLimitConfig,
+)
 
 __all__ = [
     # Edge
@@ -139,4 +145,9 @@ __all__ = [
     "FallbackConfig",
     "ResilienceConfig",
     "RetryEvent",
+    # Connection Rule
+    "REALTIME_SOURCE_NODE_TYPES",
+    "ConnectionSeverity",
+    "ConnectionRule",
+    "RateLimitConfig",
 ]
