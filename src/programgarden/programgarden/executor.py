@@ -10232,7 +10232,7 @@ class LLMModelNodeExecutor(NodeExecutorBase):
 
         context.log(
             "info",
-            f"LLM model connected: {provider}/{model}",
+            f"LLM model connected: {model} (provider={provider})",
             node_id,
         )
 
