@@ -10730,12 +10730,14 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         import json as json_module
         from programgarden.providers import LLMProvider
 
-        # === 0. 실행 중 보호 (중복 실행 방지) ===
+        # === 0. 실행 중 보호 + rate limit (중복 실행/과다 호출 방지) ===
         from programgarden_core.bases.listener import NodeState
+        from programgarden_core.models.connection_rule import RateLimitConfig
 
         state_key = "_ai_agent_state"
         agent_state = context.get_node_state(node_id, state_key) or {}
 
+        # 동시 실행 제한 (max_concurrent=1)
         if agent_state.get("executing"):
             context.log("info", "AIAgent already executing, skipping this trigger", node_id)
             await context.notify_node_state(
@@ -10746,28 +10748,37 @@ class AIAgentNodeExecutor(NodeExecutorBase):
             )
             return {"_skipped": True, "reason": "already_executing"}
 
-        # cooldown_sec 체크
-        cooldown_sec = config.get("cooldown_sec", 0)
-        if cooldown_sec > 0 and agent_state.get("last_completed_at"):
-            from datetime import datetime as _dt
-            last = agent_state["last_completed_at"]
-            if isinstance(last, str):
-                last = _dt.fromisoformat(last)
-            elapsed = (datetime.now() - last).total_seconds()
-            if elapsed < cooldown_sec:
-                remaining = round(cooldown_sec - elapsed)
+        # 최소 실행 간격: cooldown_sec(사용자 설정)과 _rate_limit.min_interval_sec(기본값) 중 큰 값
+        user_cooldown_sec = config.get("cooldown_sec", 0)
+        class_rate_limit = getattr(self.__class__, '_node_rate_limit', None)
+        if class_rate_limit is None:
+            from programgarden_core.registry import NodeTypeRegistry
+            node_class = NodeTypeRegistry().get(node_type)
+            class_min_interval = getattr(node_class, '_rate_limit', RateLimitConfig()).min_interval_sec if node_class else 0
+        else:
+            class_min_interval = class_rate_limit.min_interval_sec
+
+        effective_min_interval_sec = max(user_cooldown_sec, class_min_interval)
+
+        if effective_min_interval_sec > 0 and agent_state.get("last_completed_at"):
+            last_completed_at = agent_state["last_completed_at"]
+            if isinstance(last_completed_at, str):
+                last_completed_at = datetime.fromisoformat(last_completed_at)
+            elapsed_seconds = (datetime.now() - last_completed_at).total_seconds()
+            if elapsed_seconds < effective_min_interval_sec:
+                remaining_seconds = round(effective_min_interval_sec - elapsed_seconds)
                 context.log(
                     "info",
-                    f"AIAgent in cooldown ({remaining}s remaining), skipping",
+                    f"AIAgent in cooldown ({remaining_seconds}s remaining), skipping",
                     node_id,
                 )
                 await context.notify_node_state(
                     node_id=node_id,
                     node_type=node_type,
                     state=NodeState.THROTTLING,
-                    outputs={"reason": f"대기 중 ({remaining}초 후 실행 가능)", "remaining_sec": remaining},
+                    outputs={"reason": f"대기 중 ({remaining_seconds}초 후 실행 가능)", "remaining_sec": remaining_seconds},
                 )
-                return {"_skipped": True, "reason": "cooldown", "remaining_sec": remaining}
+                return {"_skipped": True, "reason": "cooldown", "remaining_sec": remaining_seconds}
 
         # 실행 시작 마킹
         agent_state["executing"] = True
@@ -12837,10 +12848,108 @@ class WorkflowJob:
         
         logger.info("Event loop ended")
 
+    async def _apply_rate_limit_guard(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        노드의 rate limit을 체크하고, 제한에 걸리면 스킵/에러 결과를 반환.
+
+        우선순위:
+        1. 사용자 config의 rate_limit_interval (명시 설정이면 우선)
+        2. 노드 클래스의 _rate_limit ClassVar (기본 보호)
+        3. 둘 다 없으면 None (제한 없음)
+
+        Returns:
+            None: rate limit 통과 (실행 진행)
+            Dict: rate limit 적용됨 (_skipped=True 또는 에러)
+        """
+        from programgarden_core.registry import NodeTypeRegistry
+
+        registry = NodeTypeRegistry()
+        node_class = registry.get(node_type)
+        if not node_class:
+            return None
+
+        # _rate_limit ClassVar에서 기본값 읽기
+        class_rate_limit = getattr(node_class, '_rate_limit', None)
+        if not class_rate_limit:
+            return None
+
+        # 사용자 config 오버라이드 (rate_limit_interval이 명시되어 있으면 우선)
+        user_interval = config.get("rate_limit_interval")
+        user_action = config.get("rate_limit_action")
+
+        min_interval_sec = float(user_interval) if user_interval is not None else class_rate_limit.min_interval_sec
+        max_concurrent = class_rate_limit.max_concurrent
+        on_throttle = user_action if user_action else class_rate_limit.on_throttle
+
+        if min_interval_sec <= 0 and max_concurrent <= 0:
+            return None
+
+        # node_state에서 실행 상태 관리
+        rate_limit_state_key = "_rate_limit_state"
+        rate_limit_state = self.context.get_node_state(node_id, rate_limit_state_key) or {}
+
+        # 1. 동시 실행 제한 체크
+        if max_concurrent > 0:
+            current_executing_count = rate_limit_state.get("executing_count", 0)
+            if current_executing_count >= max_concurrent:
+                if on_throttle == "error":
+                    raise RuntimeError(
+                        f"Node '{node_id}' ({node_type}) rate limit exceeded: "
+                        f"max_concurrent={max_concurrent}"
+                    )
+                self.context.log(
+                    "info",
+                    f"Rate limit: {node_id} already executing ({current_executing_count}/{max_concurrent}), skipping",
+                    node_id,
+                )
+                return {"_skipped": True, "reason": "rate_limit_concurrent"}
+
+        # 2. 최소 실행 간격 체크
+        if min_interval_sec > 0 and rate_limit_state.get("last_executed_at"):
+            last_executed_at = rate_limit_state["last_executed_at"]
+            if isinstance(last_executed_at, str):
+                last_executed_at = datetime.fromisoformat(last_executed_at)
+            elapsed_seconds = (datetime.now() - last_executed_at).total_seconds()
+            if elapsed_seconds < min_interval_sec:
+                remaining_seconds = round(min_interval_sec - elapsed_seconds)
+                if on_throttle == "error":
+                    raise RuntimeError(
+                        f"Node '{node_id}' ({node_type}) rate limit: "
+                        f"{remaining_seconds}s remaining (min_interval={min_interval_sec}s)"
+                    )
+                self.context.log(
+                    "info",
+                    f"Rate limit: {node_id} in cooldown ({remaining_seconds}s remaining), skipping",
+                    node_id,
+                )
+                return {"_skipped": True, "reason": "rate_limit_interval", "remaining_sec": remaining_seconds}
+
+        # 통과: 실행 시작 마킹
+        rate_limit_state["executing_count"] = rate_limit_state.get("executing_count", 0) + 1
+        rate_limit_state["last_executed_at"] = datetime.now().isoformat()
+        self.context.set_node_state(node_id, rate_limit_state_key, rate_limit_state)
+
+        return None
+
+    def _release_rate_limit_guard(self, node_id: str) -> None:
+        """
+        노드 실행 완료 후 rate limit 상태에서 executing_count를 감소.
+        """
+        rate_limit_state_key = "_rate_limit_state"
+        rate_limit_state = self.context.get_node_state(node_id, rate_limit_state_key) or {}
+        current_count = rate_limit_state.get("executing_count", 0)
+        rate_limit_state["executing_count"] = max(0, current_count - 1)
+        self.context.set_node_state(node_id, rate_limit_state_key, rate_limit_state)
+
     async def _handle_realtime_update(self, event: WorkflowEvent) -> None:
         """
         Handle realtime update event
-        
+
         Re-executes nodes specified in trigger_nodes and their downstream nodes.
         Follows topological order to ensure proper data flow.
         """
@@ -12912,36 +13021,56 @@ class WorkflowJob:
                 # Auto-inject connection from matching BrokerNode (Phase 5)
                 config_with_source = self._auto_inject_connection(node_id, node, config_with_source)
 
-                outputs = await self.executor.execute_node(
+                # Rate limit guard: 실행 간격/동시 실행 제한 체크
+                rate_limit_result = await self._apply_rate_limit_guard(
                     node_id=node_id,
                     node_type=node.node_type,
                     config=config_with_source,
-                    context=self.context,
-                    plugin=node.plugin,
-                    fields=node.fields,
-                    workflow=self.workflow,
                 )
+                if rate_limit_result:
+                    # rate limit에 걸린 경우: 출력 저장 후 하위 노드 실행 중단
+                    for port_name, value in rate_limit_result.items():
+                        self.context.set_output(node_id, port_name, value)
+                    await self.context.notify_node_state(
+                        node_id=node_id,
+                        node_type=node.node_type,
+                        state=NodeState.SKIPPED,
+                        outputs=rate_limit_result,
+                    )
+                    break
 
-                # 🆕 ThrottleNode에서 _throttled=True 반환 시 하위 노드 실행 중단
+                try:
+                    outputs = await self.executor.execute_node(
+                        node_id=node_id,
+                        node_type=node.node_type,
+                        config=config_with_source,
+                        context=self.context,
+                        plugin=node.plugin,
+                        fields=node.fields,
+                        workflow=self.workflow,
+                    )
+                finally:
+                    self._release_rate_limit_guard(node_id)
+
+                # ThrottleNode에서 _throttled=True 반환 시 하위 노드 실행 중단
                 if outputs.get("_throttled"):
-                    print(f"    ⏸️ Throttled: {node_id} - stopping downstream execution")
-                    # 출력은 저장하되 하위 노드 실행은 중단
                     for port_name, value in outputs.items():
                         self.context.set_output(node_id, port_name, value)
                     break  # 체인 실행 중단
-                
+
                 for port_name, value in outputs.items():
                     self.context.set_output(node_id, port_name, value)
-                
-                # 🆕 노드 실행 완료 알림 (UI 업데이트용)
+
+                # 노드 실행 완료 알림 (UI 업데이트용)
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
                     state=NodeState.COMPLETED,
                     outputs=outputs,
                 )
-                    
+
             except Exception as e:
+                self._release_rate_limit_guard(node_id)
                 self.context.log("error", f"Error in triggered node {node_id}: {e}", node_id)
                 self.stats["errors_count"] += 1
     
