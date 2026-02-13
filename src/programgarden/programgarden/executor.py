@@ -2942,7 +2942,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
             return self._empty_result(response.error_msg)
 
         open_orders = []
-        for item in response.block2 or []:
+        for item in response.block3 or []:
             order_id = str(item.OrdNo) if item.OrdNo else ""
             if not order_id:
                 continue
@@ -2953,15 +2953,15 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
             open_orders.append({
                 "order_id": order_id,
                 "exchange": item.OrdMktCode or "",
-                "symbol": item.IsuNo.strip() if item.IsuNo else "",
-                "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else "",
+                "symbol": item.ShtnIsuNo.strip() if item.ShtnIsuNo else (item.IsuNo.strip() if item.IsuNo else ""),
+                "name": item.JpnMktHanglIsuNm.strip() if item.JpnMktHanglIsuNm else "",
                 "side": side,
                 "order_type": "limit",  # 해외주식은 대부분 지정가
                 "quantity": int(item.OrdQty) if item.OrdQty else 0,
                 "filled_quantity": int(item.ExecQty) if item.ExecQty else 0,
                 "remaining_quantity": int(item.UnercQty) if item.UnercQty else 0,
-                "price": float(item.OrdPrc) if item.OrdPrc else 0.0,
-                "order_time": item.OrdTime if hasattr(item, 'OrdTime') else "",
+                "price": float(item.OvrsOrdPrc) if item.OvrsOrdPrc else 0.0,
+                "order_time": item.OrdTime if item.OrdTime else "",
             })
 
         context.log("info", f"OpenOrdersNode (stock): {len(open_orders)} open orders", node_id)
@@ -6115,27 +6115,19 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         """현재가 조회"""
-        
-        # 🔍 디버그 로그
-        print(f"🔍 MarketDataNode config keys: {list(config.keys())}", flush=True)
-        print(f"🔍 MarketDataNode config.symbols: {config.get('symbols')}", flush=True)
-        
+
         # 입력 symbols 가져오기 (포트 또는 config에서 명시적 입력 필수)
         input_symbols = context.get_output(f"_input_{node_id}", "symbols")
         config_symbols = config.get("symbols")
         symbols = input_symbols or config_symbols
-        
-        print(f"🔍 MarketDataNode input_symbols: {input_symbols}", flush=True)
-        print(f"🔍 MarketDataNode final symbols: {symbols}", flush=True)
-        
+
         if not symbols:
             error_msg = "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요."
             context.log("error", error_msg, node_id)
             return {"error": error_msg, "values": []}
-        
+
         # config에서 명시적 connection 확인
         broker_connection = config.get("connection")
-        print(f"🔍 MarketDataNode connection: {broker_connection}", flush=True)
         
         if not broker_connection:
             context.log("error", "connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
@@ -6372,6 +6364,23 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         # Item-based execution: symbol (단수) - 노드 스키마와 일치
         config_symbol = config.get("symbol")  # 단일 객체 {exchange, symbol}
         input_symbol = context.get_output(f"_input_{node_id}", "symbol")
+
+        # 방어: LLM Tool 호출 시 JSON 문자열로 전달되는 경우 dict 변환
+        import json as _json
+        if isinstance(config_symbol, str):
+            try:
+                _parsed = _json.loads(config_symbol)
+                if isinstance(_parsed, dict):
+                    config_symbol = _parsed
+            except (ValueError, _json.JSONDecodeError):
+                pass
+        if isinstance(input_symbol, str):
+            try:
+                _parsed = _json.loads(input_symbol)
+                if isinstance(_parsed, dict):
+                    input_symbol = _parsed
+            except (ValueError, _json.JSONDecodeError):
+                pass
 
         # 우선순위: config.symbol > input.symbol
         if config_symbol:
@@ -11110,12 +11119,12 @@ class AIAgentNodeExecutor(NodeExecutorBase):
             text = raw_response.strip()
             if "```json" in text:
                 start = text.index("```json") + len("```json")
-                end = text.index("```", start)
-                text = text[start:end].strip()
+                closing = text.find("```", start)
+                text = text[start:closing].strip() if closing != -1 else text[start:].strip()
             elif "```" in text:
                 start = text.index("```") + 3
-                end = text.index("```", start)
-                text = text[start:end].strip()
+                closing = text.find("```", start)
+                text = text[start:closing].strip() if closing != -1 else text[start:].strip()
 
             try:
                 parsed = json_module.loads(text)
@@ -12584,9 +12593,7 @@ class WorkflowJob:
 
             # Prepare config
             config = dict(node.config)
-            print(f"    [DEBUG] {node_id} config before resolve: symbol={config.get('symbol')}")
             config = self._resolve_config_expressions(config)
-            print(f"    [DEBUG] {node_id} config after resolve: symbol={config.get('symbol')}")
             config = self._auto_inject_connection(node_id, node, config)
 
             # Connect inputs from upstream
