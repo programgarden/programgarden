@@ -34,6 +34,12 @@ from programgarden_core.models.resilience import (
     FallbackConfig,
     FallbackMode,
 )
+from programgarden_core.models.connection_rule import (
+    ConnectionRule,
+    ConnectionSeverity,
+    RateLimitConfig,
+    REALTIME_SOURCE_NODE_TYPES,
+)
 
 
 # =============================================================================
@@ -53,6 +59,24 @@ class BaseOrderNode(BaseNode):
     """
 
     category: NodeCategory = NodeCategory.ORDER
+
+    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수)
+    _connection_rules: ClassVar[List[ConnectionRule]] = [
+        ConnectionRule(
+            deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
+            required_intermediate="ThrottleNode",
+            severity=ConnectionSeverity.ERROR,
+            reason="i18n:connection_rules.realtime_to_order.reason",
+            suggestion="i18n:connection_rules.realtime_to_order.suggestion",
+        ),
+    ]
+
+    # 런타임 rate limit: 최소 5초 간격, 동시 실행 1개 (중복 주문 방지)
+    _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
+        min_interval_sec=5,
+        max_concurrent=1,
+        on_throttle="skip",
+    )
 
     # 브로커 연결 (필수)
     connection: Optional[Dict] = Field(
@@ -132,6 +156,37 @@ class BaseOrderNode(BaseNode):
         ),
     ]
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        return {
+            "rate_limit_interval": FieldSchema(
+                name="rate_limit_interval",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BaseOrderNode.rate_limit_interval",
+                default=5,
+                min=1,
+                max=300,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+            "rate_limit_action": FieldSchema(
+                name="rate_limit_action",
+                type=FieldType.ENUM,
+                description="i18n:fields.BaseOrderNode.rate_limit_action",
+                default="skip",
+                enum_values=["skip", "error"],
+                enum_labels={
+                    "skip": "i18n:enums.rate_limit_action.skip",
+                    "error": "i18n:enums.rate_limit_action.error",
+                },
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+        }
+
 
 class BaseModifyOrderNode(BaseNode):
     """
@@ -141,6 +196,24 @@ class BaseModifyOrderNode(BaseNode):
     """
 
     category: NodeCategory = NodeCategory.ORDER
+
+    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수)
+    _connection_rules: ClassVar[List[ConnectionRule]] = [
+        ConnectionRule(
+            deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
+            required_intermediate="ThrottleNode",
+            severity=ConnectionSeverity.ERROR,
+            reason="i18n:connection_rules.realtime_to_order.reason",
+            suggestion="i18n:connection_rules.realtime_to_order.suggestion",
+        ),
+    ]
+
+    # 런타임 rate limit: 최소 5초 간격, 동시 실행 1개 (중복 정정/취소 방지)
+    _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
+        min_interval_sec=5,
+        max_concurrent=1,
+        on_throttle="skip",
+    )
 
     # 브로커 연결 (필수)
     connection: Optional[Dict] = Field(
@@ -183,6 +256,37 @@ class BaseModifyOrderNode(BaseNode):
 
         return None
 
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        return {
+            "rate_limit_interval": FieldSchema(
+                name="rate_limit_interval",
+                type=FieldType.NUMBER,
+                description="i18n:fields.BaseOrderNode.rate_limit_interval",
+                default=5,
+                min=1,
+                max=300,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+            "rate_limit_action": FieldSchema(
+                name="rate_limit_action",
+                type=FieldType.ENUM,
+                description="i18n:fields.BaseOrderNode.rate_limit_action",
+                default="skip",
+                enum_values=["skip", "error"],
+                enum_labels={
+                    "skip": "i18n:enums.rate_limit_action.skip",
+                    "error": "i18n:enums.rate_limit_action.error",
+                },
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+        }
+
 
 # =============================================================================
 # 해외주식 주문 노드
@@ -220,6 +324,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
             FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         )
         return {
+            **super().get_field_schema(),
             "side": FieldSchema(
                 name="side",
                 type=FieldType.ENUM,
@@ -361,6 +466,7 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
             FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
+            **super().get_field_schema(),
             "price_type": FieldSchema(
                 name="price_type",
                 type=FieldType.ENUM,
@@ -484,6 +590,7 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
             FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
+            **super().get_field_schema(),
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
@@ -560,6 +667,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
             FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         )
         return {
+            **super().get_field_schema(),
             "side": FieldSchema(
                 name="side",
                 type=FieldType.ENUM,
@@ -687,6 +795,7 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
             FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
+            **super().get_field_schema(),
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,
@@ -794,6 +903,7 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
             FieldSchema, FieldType, FieldCategory, ExpressionMode
         )
         return {
+            **super().get_field_schema(),
             "original_order_id": FieldSchema(
                 name="original_order_id",
                 type=FieldType.STRING,

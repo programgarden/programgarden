@@ -1,3 +1,17 @@
+## [1.2.0] - 2026-02-13
+### Added
+- **Connection Rules 시스템**: 실시간 노드 → 위험 노드 직접 연결 차단
+  - `ConnectionRule`, `ConnectionSeverity`, `RateLimitConfig` 모델 (`connection_rule.py`)
+  - `REALTIME_SOURCE_NODE_TYPES`: 6개 실시간 WebSocket 노드 상수
+  - `BaseNode._connection_rules` / `_rate_limit` ClassVar 추가
+  - `WorkflowResolver._validate_connection_rules()`: 프론트/백엔드 공통 검증
+  - 실시간 → 주문 노드: ERROR (차단), 실시간 → AI Agent: ERROR (차단), 실시간 → HTTP: WARNING (경고)
+- **BaseNode Rate Limit Guard**: 런타임 최후 방어선
+  - `WorkflowJob._apply_rate_limit_guard()` / `_release_rate_limit_guard()`
+  - 주문 노드: 5초 간격 / 동시 1개, AI Agent: 60초 간격 / 동시 1개, HTTP: 1초 간격 / 동시 3개
+  - 사용자 `rate_limit_interval`, `rate_limit_action` 오버라이드 지원
+- i18n: `connection_rules.*`, `fields.BaseOrderNode.rate_limit_*`, `enums.rate_limit_action.*` 키 추가 (ko/en)
+
 ## [1.1.10] - 2026-02-10
 ### Fixed
 - fix: `translate_schema()` 포트 display_name, config_schema sub_fields/ui_options 번역 누락 수정

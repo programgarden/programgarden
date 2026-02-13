@@ -1,3 +1,12 @@
+## [1.2.0] - 2026-02-13
+### Added
+- feat: `WorkflowResolver._validate_connection_rules()` 연결 규칙 검증 추가
+  - 실시간 노드 → 주문/AI Agent 직접 연결 차단 (ERROR)
+  - 실시간 노드 → HTTP 직접 연결 경고 (WARNING)
+- feat: `WorkflowJob._apply_rate_limit_guard()` / `_release_rate_limit_guard()` 런타임 Rate Limit
+  - 노드별 `_rate_limit` ClassVar 기반 실행 간격/동시 실행 제한
+  - 사용자 `rate_limit_interval`, `rate_limit_action` config 오버라이드 지원
+
 ## [1.1.11] - 2026-02-10
 ### Changed
 - deps: programgarden-core 1.1.10, finance 1.1.8, community 1.1.8 버전으로 업데이트

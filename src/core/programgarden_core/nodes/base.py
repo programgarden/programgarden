@@ -14,6 +14,7 @@ from programgarden_core.models.resilience import (
     RetryableError,
     FallbackMode,
 )
+from programgarden_core.models.connection_rule import ConnectionRule, RateLimitConfig
 
 
 class ProductScope(str, Enum):
@@ -290,6 +291,8 @@ class BaseNode(BaseModel):
     _img_url: ClassVar[Optional[str]] = None  # 노드 아이콘 이미지 URL
     _product_scope: ClassVar[ProductScope] = ProductScope.ALL
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.ALL
+    _connection_rules: ClassVar[List["ConnectionRule"]] = []
+    _rate_limit: ClassVar[Optional["RateLimitConfig"]] = None
 
     model_config = ConfigDict(use_enum_values=True, extra="allow")
 
