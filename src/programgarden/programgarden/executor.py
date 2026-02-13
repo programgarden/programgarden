@@ -10730,81 +10730,6 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         import json as json_module
         from programgarden.providers import LLMProvider
 
-        # === 0. 실행 중 보호 + rate limit (중복 실행/과다 호출 방지) ===
-        from programgarden_core.bases.listener import NodeState
-        from programgarden_core.models.connection_rule import RateLimitConfig
-
-        state_key = "_ai_agent_state"
-        agent_state = context.get_node_state(node_id, state_key) or {}
-
-        # 동시 실행 제한 (max_concurrent=1)
-        if agent_state.get("executing"):
-            context.log("info", "AIAgent already executing, skipping this trigger", node_id)
-            await context.notify_node_state(
-                node_id=node_id,
-                node_type=node_type,
-                state=NodeState.SKIPPED,
-                outputs={"reason": "이전 분석이 아직 진행 중입니다. 완료 후 다시 실행됩니다."},
-            )
-            return {"_skipped": True, "reason": "already_executing"}
-
-        # 최소 실행 간격: cooldown_sec(사용자 설정)과 _rate_limit.min_interval_sec(기본값) 중 큰 값
-        user_cooldown_sec = config.get("cooldown_sec", 0)
-        class_rate_limit = getattr(self.__class__, '_node_rate_limit', None)
-        if class_rate_limit is None:
-            from programgarden_core.registry import NodeTypeRegistry
-            node_class = NodeTypeRegistry().get(node_type)
-            class_min_interval = getattr(node_class, '_rate_limit', RateLimitConfig()).min_interval_sec if node_class else 0
-        else:
-            class_min_interval = class_rate_limit.min_interval_sec
-
-        effective_min_interval_sec = max(user_cooldown_sec, class_min_interval)
-
-        if effective_min_interval_sec > 0 and agent_state.get("last_completed_at"):
-            last_completed_at = agent_state["last_completed_at"]
-            if isinstance(last_completed_at, str):
-                last_completed_at = datetime.fromisoformat(last_completed_at)
-            elapsed_seconds = (datetime.now() - last_completed_at).total_seconds()
-            if elapsed_seconds < effective_min_interval_sec:
-                remaining_seconds = round(effective_min_interval_sec - elapsed_seconds)
-                context.log(
-                    "info",
-                    f"AIAgent in cooldown ({remaining_seconds}s remaining), skipping",
-                    node_id,
-                )
-                await context.notify_node_state(
-                    node_id=node_id,
-                    node_type=node_type,
-                    state=NodeState.THROTTLING,
-                    outputs={"reason": f"대기 중 ({remaining_seconds}초 후 실행 가능)", "remaining_sec": remaining_seconds},
-                )
-                return {"_skipped": True, "reason": "cooldown", "remaining_sec": remaining_seconds}
-
-        # 실행 시작 마킹
-        agent_state["executing"] = True
-        context.set_node_state(node_id, state_key, agent_state)
-
-        try:
-            result = await self._execute_inner(node_id, node_type, config, context, **kwargs)
-        finally:
-            # 실행 완료 마킹 (에러 발생해도 반드시 해제)
-            agent_state["executing"] = False
-            agent_state["last_completed_at"] = datetime.now().isoformat()
-            context.set_node_state(node_id, state_key, agent_state)
-
-        return result
-
-    async def _execute_inner(
-        self,
-        node_id: str,
-        node_type: str,
-        config: Dict[str, Any],
-        context: ExecutionContext,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        import json as json_module
-        from programgarden.providers import LLMProvider
-
         # === 1. ai_model 엣지에서 LLM connection 주입 ===
         workflow = kwargs.get("workflow")
         if not workflow:
@@ -12879,7 +12804,10 @@ class WorkflowJob:
             return None
 
         # 사용자 config 오버라이드 (rate_limit_interval이 명시되어 있으면 우선)
+        # AIAgentNode는 cooldown_sec 필드를 사용하므로 fallback으로 읽음
         user_interval = config.get("rate_limit_interval")
+        if user_interval is None:
+            user_interval = config.get("cooldown_sec")
         user_action = config.get("rate_limit_action")
 
         min_interval_sec = float(user_interval) if user_interval is not None else class_rate_limit.min_interval_sec

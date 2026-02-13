@@ -989,5 +989,17 @@
   "ui.create_new_table": "+ Create New Table",
   "ui.no_tables_create_first": "Create a table first",
   "ui.no_tables_found": "No tables found",
-  "ui.select_table_first": "Select a table first"
+  "ui.select_table_first": "Select a table first",
+
+  "connection_rules.realtime_to_order.reason": "Direct connection from realtime node to order node is blocked. Each tick would trigger an order, potentially causing unintended mass orders.",
+  "connection_rules.realtime_to_order.suggestion": "Place a ThrottleNode between the realtime node and order node to control execution frequency.",
+  "connection_rules.realtime_to_ai_agent.reason": "Direct connection from realtime node to AIAgentNode is blocked. Each tick would trigger an LLM call, potentially causing excessive costs.",
+  "connection_rules.realtime_to_ai_agent.suggestion": "Place a ThrottleNode between the realtime node and AI Agent to control call frequency.",
+  "connection_rules.realtime_to_http.reason": "Direct connection from realtime node to HTTPRequestNode is not recommended. Each tick would trigger an HTTP request, potentially hitting external API rate limits.",
+  "connection_rules.realtime_to_http.suggestion": "Place a ThrottleNode between the realtime node and HTTP request node to control request frequency.",
+
+  "fields.BaseOrderNode.rate_limit_interval": "Minimum order interval (seconds). Default 5 seconds. The next order will only execute after this time has elapsed since the last order.",
+  "fields.BaseOrderNode.rate_limit_action": "Action when order interval is not met. skip: silently skip, error: raise error",
+  "enums.rate_limit_action.skip": "Skip (default)",
+  "enums.rate_limit_action.error": "Raise error"
 }

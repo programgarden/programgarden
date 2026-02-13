@@ -989,5 +989,17 @@
   "ui.create_new_table": "+ 새 테이블 생성",
   "ui.no_tables_create_first": "먼저 테이블을 생성하세요",
   "ui.no_tables_found": "테이블이 없습니다",
-  "ui.select_table_first": "먼저 테이블을 선택하세요"
+  "ui.select_table_first": "먼저 테이블을 선택하세요",
+
+  "connection_rules.realtime_to_order.reason": "실시간 노드에서 주문 노드로의 직접 연결이 차단되었습니다. 틱 데이터마다 주문이 발생하여 의도치 않은 대량 주문이 실행될 수 있습니다.",
+  "connection_rules.realtime_to_order.suggestion": "실시간 노드와 주문 노드 사이에 ThrottleNode를 배치하여 실행 빈도를 제어하세요.",
+  "connection_rules.realtime_to_ai_agent.reason": "실시간 노드에서 AIAgentNode로의 직접 연결이 차단되었습니다. 틱 데이터마다 LLM 호출이 발생하여 과다 비용이 청구될 수 있습니다.",
+  "connection_rules.realtime_to_ai_agent.suggestion": "실시간 노드와 AI Agent 사이에 ThrottleNode를 배치하여 호출 빈도를 제어하세요.",
+  "connection_rules.realtime_to_http.reason": "실시간 노드에서 HTTPRequestNode로의 직접 연결은 권장하지 않습니다. 틱 데이터마다 HTTP 요청이 발생하여 외부 API 제한에 걸릴 수 있습니다.",
+  "connection_rules.realtime_to_http.suggestion": "실시간 노드와 HTTP 요청 노드 사이에 ThrottleNode를 배치하여 요청 빈도를 제어하세요.",
+
+  "fields.BaseOrderNode.rate_limit_interval": "최소 주문 간격 (초). 기본값 5초. 직전 주문 후 이 시간이 지나야 다음 주문이 실행됩니다.",
+  "fields.BaseOrderNode.rate_limit_action": "주문 간격 미달 시 동작. skip: 조용히 건너뜀, error: 에러 발생",
+  "enums.rate_limit_action.skip": "건너뜀 (기본)",
+  "enums.rate_limit_action.error": "에러 발생"
 }

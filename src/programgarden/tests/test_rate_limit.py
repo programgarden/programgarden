@@ -320,3 +320,67 @@ class TestRateLimitHTTPRequestNode:
         )
         assert result is not None
         assert result["_skipped"] is True
+
+
+class TestRateLimitCooldownSecFallback:
+    """AIAgentNode의 cooldown_sec config가 rate_limit_interval 대신 사용되는지 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_cooldown_sec_used_as_interval_override(self):
+        """cooldown_sec config가 rate_limit_interval 대신 적용"""
+        job = MockWorkflowJob()
+
+        # 30초 전 실행 기록 (기본 60초 이내이므로 원래 차단)
+        job.context.set_node_state("agent1", "_rate_limit_state", {
+            "executing_count": 0,
+            "last_executed_at": (datetime.now() - timedelta(seconds=30)).isoformat(),
+        })
+
+        # cooldown_sec=20 설정 → 30초 > 20초이므로 통과해야 함
+        result = await job._apply_rate_limit_guard(
+            node_id="agent1",
+            node_type="AIAgentNode",
+            config={"cooldown_sec": 20},
+        )
+        assert result is None  # 통과
+
+    @pytest.mark.asyncio
+    async def test_cooldown_sec_stricter_blocks_execution(self):
+        """cooldown_sec이 기본값보다 길면 해당 값으로 차단"""
+        job = MockWorkflowJob()
+
+        # 70초 전 실행 기록 (기본 60초 경과 → 원래 통과)
+        job.context.set_node_state("agent1", "_rate_limit_state", {
+            "executing_count": 0,
+            "last_executed_at": (datetime.now() - timedelta(seconds=70)).isoformat(),
+        })
+
+        # cooldown_sec=120 설정 → 70초 < 120초이므로 차단
+        result = await job._apply_rate_limit_guard(
+            node_id="agent1",
+            node_type="AIAgentNode",
+            config={"cooldown_sec": 120},
+        )
+        assert result is not None
+        assert result["_skipped"] is True
+        assert result["reason"] == "rate_limit_interval"
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_interval_takes_priority_over_cooldown_sec(self):
+        """rate_limit_interval이 있으면 cooldown_sec보다 우선"""
+        job = MockWorkflowJob()
+
+        # 3초 전 실행 기록
+        job.context.set_node_state("order1", "_rate_limit_state", {
+            "executing_count": 0,
+            "last_executed_at": (datetime.now() - timedelta(seconds=3)).isoformat(),
+        })
+
+        # rate_limit_interval=2 (통과) + cooldown_sec=10 (차단)
+        # → rate_limit_interval이 우선이므로 통과
+        result = await job._apply_rate_limit_guard(
+            node_id="order1",
+            node_type="OverseasStockNewOrderNode",
+            config={"rate_limit_interval": 2, "cooldown_sec": 10},
+        )
+        assert result is None  # rate_limit_interval=2가 우선, 3초 > 2초 → 통과

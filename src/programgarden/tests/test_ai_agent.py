@@ -946,51 +946,12 @@ class TestToolErrorStrategy:
 
 
 class TestCooldownSec:
-    """cooldown_sec 타이밍 검증."""
+    """cooldown_sec 타이밍 검증.
 
-    @pytest.mark.asyncio
-    async def test_cooldown_skips_when_too_soon(self):
-        """cooldown_sec 이내 재실행 시 스킵."""
-        from programgarden.executor import AIAgentNodeExecutor
-        from datetime import datetime, timedelta
-
-        executor = AIAgentNodeExecutor()
-
-        ctx = _make_context(outputs={
-            "llm": {"connection": {
-                "provider": "openai", "model": "gpt-4o",
-                "api_key": "sk-test", "temperature": 0.7,
-                "max_tokens": 1000, "streaming": False,
-            }},
-        })
-
-        # 10초 전에 실행 완료된 것으로 설정
-        last_time = (datetime.now() - timedelta(seconds=10)).isoformat()
-        ctx.get_node_state = MagicMock(return_value={
-            "last_completed_at": last_time,
-            "executing": False,
-        })
-
-        nodes = {
-            "agent": ResolvedNode("agent", "AIAgentNode", "ai", {}),
-            "llm": ResolvedNode("llm", "LLMModelNode", "ai", {}),
-        }
-        ai_model_edges = [ResolvedEdge("llm", "agent", "ai_model")]
-        wf = _make_resolved_workflow(nodes=nodes, dag_edges=[], ai_model_edges=ai_model_edges)
-
-        config = {
-            "user_prompt": "분석해줘",
-            "cooldown_sec": 60,  # 60초 쿨다운 (10초 전 실행 → 아직 50초 남음)
-        }
-
-        result = await executor.execute(
-            node_id="agent", node_type="AIAgentNode",
-            config=config, context=ctx, workflow=wf,
-        )
-
-        assert result.get("_skipped") is True
-        assert result["reason"] == "cooldown"
-        assert result["remaining_sec"] > 0
+    Note: cooldown_sec 기반 실행 간격 제한 및 동시 실행 차단은
+    WorkflowJob._apply_rate_limit_guard()로 통합되었으며,
+    test_rate_limit.py에서 테스트됩니다.
+    """
 
     @pytest.mark.asyncio
     async def test_cooldown_allows_after_elapsed(self):
@@ -1037,30 +998,6 @@ class TestCooldownSec:
             )
 
         assert result["response"] == "분석 결과입니다."
-
-    @pytest.mark.asyncio
-    async def test_duplicate_execution_protection(self):
-        """이미 실행 중이면 스킵."""
-        from programgarden.executor import AIAgentNodeExecutor
-
-        executor = AIAgentNodeExecutor()
-        ctx = _make_context()
-
-        # 이미 실행 중인 상태
-        ctx.get_node_state = MagicMock(return_value={"executing": True})
-
-        nodes = {"agent": ResolvedNode("agent", "AIAgentNode", "ai", {})}
-        wf = _make_resolved_workflow(nodes=nodes, dag_edges=[])
-
-        result = await executor.execute(
-            node_id="agent", node_type="AIAgentNode",
-            config={"user_prompt": "Hello"},
-            context=ctx, workflow=wf,
-        )
-
-        assert result.get("_skipped") is True
-        assert result["reason"] == "already_executing"
-
 
 class TestLLMErrorHandling:
     """LLM Provider 에러 핸들링 테스트."""
