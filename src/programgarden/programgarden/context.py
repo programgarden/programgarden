@@ -29,6 +29,7 @@ from programgarden_core.bases.listener import (
     DisplayDataEvent,
     WorkflowPnLEvent,
     PositionDetail,
+    RiskEvent,
     LLMStreamEvent,
     TokenUsageEvent,
     AIToolCallEvent,
@@ -144,9 +145,11 @@ class ExecutionContext:
         # DAG 탐색용 워크플로우 구조 정보
         workflow_edges: Optional[List[Any]] = None,  # List[ResolvedEdge]
         workflow_nodes: Optional[Dict[str, Any]] = None,  # Dict[str, ResolvedNode]
+        storage_dir: Optional[str] = None,
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id
+        self._storage_dir = storage_dir
         self.context_params = context_params or {}
 
         # Secrets storage (never logged, separate from context_params)
@@ -208,6 +211,7 @@ class ExecutionContext:
         # === New: Workflow Position Tracker ===
         # Tracks workflow positions separately using FIFO for competition ranking
         self._workflow_position_tracker: Optional[Any] = None  # WorkflowPositionTracker (lazy init)
+        self._workflow_risk_tracker: Optional[Any] = None  # WorkflowRiskTracker (lazy init)
         self._workflow_broker_node_id: Optional[str] = None  # BrokerNode ID for PnL refresh
         self._workflow_product: str = "overseas_stock"  # Product type for PnL refresh
 
@@ -229,6 +233,32 @@ class ExecutionContext:
         # Node type mapping: {node_id: node_type}
         self._node_types: Dict[str, str] = {}
         self._build_dag_index(workflow_edges, workflow_nodes)
+
+    # === Storage Directory ===
+
+    def _resolve_db_path(self, db_filename: str) -> str:
+        """DB 파일 경로를 결정한다.
+
+        우선순위:
+        1. storage_dir (외부 사용자 지정)
+        2. /app/data (Docker 환경)
+        3. ./app/data (로컬 fallback)
+        """
+        from pathlib import Path
+
+        if self._storage_dir:
+            db_dir = Path(self._storage_dir)
+            db_dir.mkdir(parents=True, exist_ok=True)
+            return str(db_dir / db_filename)
+
+        db_dir = Path("/app/data")
+        if not db_dir.exists():
+            try:
+                db_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                db_dir = Path("./app/data")
+                db_dir.mkdir(parents=True, exist_ok=True)
+        return str(db_dir / db_filename)
 
     # === DAG Index Building ===
 
@@ -1333,6 +1363,17 @@ class ExecutionContext:
             except Exception as e:
                 logger.warning(f"Listener error on_ai_tool_call: {e}")
 
+    async def notify_risk_event(self, event: RiskEvent) -> None:
+        """위험 이벤트 전파. UI에서 위험 알림 표시용."""
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_risk_event'):
+                    await listener.on_risk_event(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_risk_event: {e}")
+
     async def notify_workflow_pnl(
         self,
         broker_node_id: str,
@@ -1360,7 +1401,16 @@ class ExecutionContext:
         """
         if not self._listeners:
             return
-        
+
+        # ━━━ Risk Tracker 실시간 가격 연동 ━━━
+        if self._workflow_risk_tracker and current_prices:
+            for symbol, price in current_prices.items():
+                self._workflow_risk_tracker.update_price(
+                    symbol=symbol,
+                    exchange="",  # 거래소 정보는 이미 등록 시 저장됨
+                    price=price,
+                )
+
         # 메타 정보 준비
         from datetime import timezone
         now = datetime.now(timezone.utc)
@@ -1698,22 +1748,11 @@ class ExecutionContext:
 
         try:
             from programgarden.database import WorkflowPositionTracker
-            from pathlib import Path
 
             trading_mode = "paper" if paper_trading else "live"
 
-            # DB 경로: /app/data/{workflow_id}_workflow.db (Docker)
-            # 로컬: ./app/data/ (CWD 기준)
-            # 워크플로우 ID 사용 (워크플로우당 1개 DB 유지)
-            db_dir = Path("/app/data")
-            if not db_dir.exists():
-                try:
-                    db_dir.mkdir(parents=True, exist_ok=True)
-                except OSError:
-                    db_dir = Path("./app/data")
-                    db_dir.mkdir(parents=True, exist_ok=True)
             db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
-            db_path = str(db_dir / db_filename)
+            db_path = self._resolve_db_path(db_filename)
 
             self._workflow_position_tracker = WorkflowPositionTracker(
                 db_path=db_path,
@@ -1739,6 +1778,82 @@ class ExecutionContext:
         except Exception as e:
             logger.warning(f"Failed to init workflow position tracker: {e}")
             self._workflow_position_tracker = None
+
+    # ============================================================
+    # Risk Tracker
+    # ============================================================
+
+    @property
+    def risk_tracker(self) -> Optional[Any]:
+        """위험관리 추적기. 관련 노드/플러그인이 없으면 None."""
+        return self._workflow_risk_tracker
+
+    def init_risk_tracker(
+        self,
+        features: set,
+        product: str,
+        provider: str,
+        paper_trading: bool,
+    ) -> None:
+        """선언된 feature 기반으로 RiskTracker 초기화.
+
+        Args:
+            features: 노드/플러그인이 선언한 risk feature 집합
+            product: 상품 유형 (overseas_stock, overseas_futures)
+            provider: 증권사 (ls, kiwoom, ...)
+            paper_trading: 모의투자 모드
+        """
+        if not features:
+            return
+        if self._workflow_risk_tracker is not None:
+            return
+
+        try:
+            from programgarden.database import WorkflowRiskTracker
+
+            trading_mode = "paper" if paper_trading else "live"
+
+            db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
+            db_path = self._resolve_db_path(db_filename)
+
+            self._workflow_risk_tracker = WorkflowRiskTracker(
+                db_path=db_path,
+                job_id=self.job_id,
+                product=product,
+                provider=provider,
+                trading_mode=trading_mode,
+                features=features,
+            )
+
+            # 재시작 검증 (hwm feature + 기존 HWM 데이터가 있으면)
+            if "hwm" in features and self._workflow_risk_tracker.has_hwm_data():
+                if self._workflow_position_tracker:
+                    results = self._workflow_risk_tracker.validate_hwm_on_restart(
+                        self._workflow_position_tracker
+                    )
+                    for r in results:
+                        if r.action != "kept" and "events" in features:
+                            self._workflow_risk_tracker.record_risk_event(
+                                event_type=f"hwm_{r.action}",
+                                severity="info",
+                                symbol=r.symbol,
+                                details={
+                                    "reason": r.reason,
+                                    "old_hwm": str(r.old_hwm) if r.old_hwm else None,
+                                    "new_hwm": str(r.new_hwm) if r.new_hwm else None,
+                                },
+                            )
+
+            self._workflow_risk_tracker.start_flush_loop()
+
+            logger.info(
+                f"Risk tracker initialized: features={features}, "
+                f"product={product}, trading_mode={trading_mode}"
+            )
+
+        except Exception as e:
+            logger.warning(f"Failed to init risk tracker: {e}")
+            self._workflow_risk_tracker = None
 
     def record_workflow_order(
         self,
@@ -1782,6 +1897,23 @@ class ExecutionContext:
                 node_id=node_id,
             )
             logger.debug(f"Recorded workflow order: {order_no} ({symbol} {side} {quantity})")
+
+            # ━━━ Risk Tracker 체결 연동 ━━━
+            if self._workflow_risk_tracker:
+                if side == "buy":
+                    self._workflow_risk_tracker.register_symbol(
+                        symbol=symbol,
+                        exchange=exchange,
+                        entry_price=price,
+                        qty=quantity,
+                    )
+                elif side == "sell":
+                    # 전량 매도 시 HWM 해제
+                    positions = self._workflow_position_tracker.get_workflow_positions()
+                    pos = positions.get(symbol) if isinstance(positions, dict) else None
+                    remaining = getattr(pos, 'quantity', 0) if pos else 0
+                    if remaining <= 0:
+                        self._workflow_risk_tracker.unregister_symbol(symbol)
         except Exception as e:
             logger.warning(f"Failed to record workflow order: {e}")
 

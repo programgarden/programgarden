@@ -56,6 +56,7 @@ class ProgramGarden:
         context: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
         resource_limits: Optional[Dict[str, Any]] = None,
+        storage_dir: Optional[str] = None,
         wait: bool = True,
         timeout: float = 60.0,
     ) -> Dict[str, Any]:
@@ -68,6 +69,7 @@ class ProgramGarden:
             secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
             resource_limits: Resource limits (max_cpu_percent, max_memory_percent, etc.)
                            If None, auto-detects from system or uses workflow's resource_limits
+            storage_dir: DB/파일 저장 디렉토리 (default: /app/data or ./app/data)
             wait: Whether to wait for completion (default True)
             timeout: Maximum wait time (seconds)
 
@@ -79,20 +81,21 @@ class ProgramGarden:
             ...     workflow,
             ...     context={"symbols": ["AAPL", "NVDA"]},
             ...     secrets={"credential_id": {"appkey": "...", "appsecret": "..."}},
-            ...     resource_limits={"max_cpu_percent": 70},
+            ...     storage_dir="./my_data",
             ... )
         """
         # Parse resource_limits if provided
         limits = None
         if resource_limits:
             limits = ResourceLimits(**resource_limits)
-        
+
         async def _run():
             job = await self.executor.execute(
                 definition,
                 context_params=context,
                 secrets=secrets,
                 resource_limits=limits,
+                storage_dir=storage_dir,
             )
             
             if wait:
@@ -114,6 +117,7 @@ class ProgramGarden:
         context: Optional[Dict[str, Any]] = None,
         secrets: Optional[Dict[str, Any]] = None,
         resource_limits: Optional[Dict[str, Any]] = None,
+        storage_dir: Optional[str] = None,
         listeners: Optional[List[ExecutionListener]] = None,
     ):
         """
@@ -125,35 +129,37 @@ class ProgramGarden:
             secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
             resource_limits: Resource limits (max_cpu_percent, max_memory_percent, etc.)
                            If None, auto-detects from system or uses workflow's resource_limits
+            storage_dir: DB/파일 저장 디렉토리 (default: /app/data or ./app/data)
             listeners: List of ExecutionListener instances for state callbacks (Option A)
 
         Returns:
             WorkflowJob instance (can add more listeners via job.add_listener() - Option B)
-        
+
         Example:
             # Option A: Inject at creation
             job = await pg.run_async(workflow, listeners=[MyListener()])
-            
+
             # Option B: Add after creation
             job = await pg.run_async(workflow)
             job.add_listener(MyListener())
-            
-            # With resource limits
+
+            # With custom storage directory
             job = await pg.run_async(
                 workflow,
-                resource_limits={"max_cpu_percent": 70, "throttle_strategy": "conservative"}
+                storage_dir="./my_data",
             )
         """
         # Parse resource_limits if provided
         limits = None
         if resource_limits:
             limits = ResourceLimits(**resource_limits)
-        
+
         return await self.executor.execute(
             definition,
             context_params=context,
             secrets=secrets,
             resource_limits=limits,
+            storage_dir=storage_dir,
             listeners=listeners,
         )
 

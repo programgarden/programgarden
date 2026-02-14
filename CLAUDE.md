@@ -164,6 +164,37 @@ When a node outputs an array, the next node automatically executes for each item
 | `on_token_usage` | AI Agent token usage (total_tokens, cost_usd) |
 | `on_ai_tool_call` | AI Agent tool call (tool_name, duration_ms) |
 | `on_llm_stream` | AI Agent streaming chunk (is_final) |
+| `on_risk_event` | Risk threshold breach (drawdown alert, trailing stop trigger) |
+
+### Risk Tracker (WorkflowRiskTracker)
+
+노드/플러그인이 `_risk_features`를 선언하면 자동으로 활성화되는 위험관리 데이터 인프라:
+
+- **Opt-in**: 워크플로우에 관련 노드/플러그인이 없으면 `context.risk_tracker = None`
+- **Feature-gated**: 선언된 feature만 활성화 (`hwm`, `window`, `events`, `state`)
+- **2-Layer**: 인메모리 Hot Layer (틱 처리) + SQLite Cold Layer (30초 flush)
+- **기존 DB 공유**: `{workflow_id}_workflow.db`에 테이블만 추가
+
+```python
+# 노드에서 선언
+class PortfolioNode(BaseNode):
+    _risk_features: ClassVar[Set[str]] = {"hwm", "window"}
+
+# 플러그인에서 선언 (모듈 레벨)
+risk_features: Set[str] = {"hwm"}
+
+# 플러그인에서 사용
+async def my_condition(data, fields, context=None, **kwargs):
+    if context and context.risk_tracker:
+        hwm = context.risk_tracker.get_hwm("AAPL")
+```
+
+| Feature | 테이블 | Hot Layer | 용도 |
+|---------|--------|-----------|------|
+| `hwm` | `risk_high_water_mark` | `Dict[str, HWMState]` | HWM/drawdown 추적 |
+| `window` | (없음) | `deque(maxlen=300)` | 변동성/MDD 계산 |
+| `events` | `risk_events` | (없음) | 위험 이벤트 감사 이력 |
+| `state` | `strategy_state` | (없음) | 전략 상태 KV 저장소 |
 
 ### AI Agent Node
 

@@ -1764,7 +1764,20 @@ class BrokerNodeExecutor(NodeExecutorBase):
             provider=provider,
             paper_trading=paper_trading,
         )
-        
+
+        # ========================================
+        # 위험관리 추적기 초기화 (노드/플러그인 risk feature 수집)
+        # risk_features를 선언한 노드/플러그인이 있으면 RiskTracker 자동 시작
+        # ========================================
+        risk_features = self._collect_risk_features(context)
+        if risk_features:
+            context.init_risk_tracker(
+                features=risk_features,
+                product=product,
+                provider=provider,
+                paper_trading=paper_trading,
+            )
+
         # ========================================
         # Fallback: 체결내역 조회로 시장가 주문 가격 복구
         # 연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우 대비
@@ -1829,6 +1842,75 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "appsecret": appsecret,
             }
         }
+
+    def _collect_risk_features(self, context: ExecutionContext) -> set:
+        """워크플로우 내 노드/플러그인의 risk feature 요구사항 수집"""
+        features = set()
+        valid = {"hwm", "window", "events", "state"}
+
+        # workflow_nodes에서 노드 클래스의 _risk_features 수집
+        if hasattr(context, '_reverse_adj') and hasattr(context, '_outputs'):
+            # DAG 내 모든 노드의 resolved 정보 접근
+            workflow_nodes = getattr(context, '_workflow_nodes_map', None)
+            if workflow_nodes:
+                for node_id, resolved_node in workflow_nodes.items():
+                    node_cls = getattr(resolved_node, 'node_class', None) or getattr(resolved_node, '_node_class', None)
+                    if node_cls:
+                        features.update(getattr(node_cls, '_risk_features', set()))
+
+                    # 플러그인의 risk_features
+                    plugin_name = getattr(resolved_node, 'plugin', None)
+                    if not plugin_name and hasattr(resolved_node, 'config'):
+                        plugin_name = resolved_node.config.get('plugin') if isinstance(resolved_node.config, dict) else None
+                    if plugin_name:
+                        features.update(self._get_plugin_risk_features(plugin_name))
+
+        # context에 workflow_nodes_map이 없으면 workflow_nodes dict에서 시도
+        if not features:
+            wf_nodes = getattr(context, '_workflow_nodes_dict', None)
+            if wf_nodes and isinstance(wf_nodes, dict):
+                for node_def in wf_nodes.values():
+                    node_type = node_def.get("type", "") if isinstance(node_def, dict) else getattr(node_def, "type", "")
+                    node_cls = self._resolve_node_class_for_risk(node_type)
+                    if node_cls:
+                        features.update(getattr(node_cls, '_risk_features', set()))
+
+                    plugin_name = node_def.get("plugin") if isinstance(node_def, dict) else getattr(node_def, "plugin", None)
+                    if plugin_name:
+                        features.update(self._get_plugin_risk_features(plugin_name))
+
+        return features & valid
+
+    def _get_plugin_risk_features(self, plugin_name: str) -> set:
+        """플러그인 모듈에서 risk_features 속성 조회"""
+        try:
+            from programgarden_core.registry import PluginRegistry
+            registry = PluginRegistry()
+            plugin_module = registry.get_plugin_module(plugin_name) if hasattr(registry, 'get_plugin_module') else None
+            if plugin_module:
+                return set(getattr(plugin_module, 'risk_features', set()))
+
+            # 직접 import 시도
+            import importlib
+            module_map = {
+                "TrailingStop": "programgarden_community.plugins.trailing_stop",
+            }
+            mod_path = module_map.get(plugin_name)
+            if mod_path:
+                mod = importlib.import_module(mod_path)
+                return set(getattr(mod, 'risk_features', set()))
+        except Exception:
+            pass
+        return set()
+
+    def _resolve_node_class_for_risk(self, node_type: str):
+        """노드 타입에서 클래스 resolve (risk feature 수집용)"""
+        try:
+            from programgarden_core.registry import NodeRegistry
+            registry = NodeRegistry()
+            return registry.get(node_type) if hasattr(registry, 'get') else None
+        except Exception:
+            return None
 
     def _has_workflow_pnl_listener(self, context: ExecutionContext) -> bool:
         """리스너 중 on_workflow_pnl_update를 실제로 오버라이드한 게 있는지 확인"""
@@ -5744,8 +5826,9 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 "fields": fields,  # 플러그인 파라미터
                 "field_mapping": field_mapping,  # 필드 매핑
                 "symbols": normalized_symbols,  # [{exchange, symbol}, ...]
+                "context": context,  # ExecutionContext (risk_tracker 등)
             }
-            
+
             # 추가 포트 데이터
             if held_symbols:
                 plugin_kwargs["held_symbols"] = held_symbols
@@ -11473,6 +11556,7 @@ class WorkflowExecutor:
         job_id: Optional[str] = None,
         listeners: Optional[List[ExecutionListener]] = None,
         resource_limits: Optional["ResourceLimits"] = None,
+        storage_dir: Optional[str] = None,
     ) -> "WorkflowJob":
         """
         Execute workflow
@@ -11484,6 +11568,7 @@ class WorkflowExecutor:
             job_id: Job ID (auto-generated if not provided)
             listeners: List of ExecutionListener instances for state callbacks
             resource_limits: Resource limits (CPU, RAM, workers). None = auto-detect
+            storage_dir: DB/파일 저장 디렉토리. None = /app/data 또는 ./app/data
         """
         # Compile
         resolved, validation = self.compile(definition, context_params)
@@ -11550,6 +11635,7 @@ class WorkflowExecutor:
             # DAG 탐색용 워크플로우 구조 정보
             workflow_edges=resolved.edges,
             workflow_nodes=resolved.nodes,
+            storage_dir=storage_dir,
         )
         
         # Set listeners (Option A: inject at creation)
@@ -13052,6 +13138,13 @@ class WorkflowJob:
                 except asyncio.CancelledError:
                     pass
         
+        # Cleanup RiskTracker flush
+        if self.context.risk_tracker:
+            try:
+                await self.context.risk_tracker.stop_flush_loop()
+            except Exception as e:
+                logger.warning(f"Failed to stop risk tracker: {e}")
+
         # Cleanup ResourceContext
         if self.context.resource:
             try:
@@ -13059,7 +13152,7 @@ class WorkflowJob:
                 logger.debug(f"ResourceContext stopped for job {self.job_id}")
             except Exception as e:
                 logger.warning(f"Failed to stop ResourceContext: {e}")
-        
+
         self.status = "stopped"
         self.completed_at = datetime.now()
         logger.info(f"Job {self.job_id} stopped")
@@ -13074,10 +13167,17 @@ class WorkflowJob:
                 await self._task
             except asyncio.CancelledError:
                 pass
-        
+
         # Cleanup
         await self.context.cleanup_persistent_nodes()
-        
+
+        # Cleanup RiskTracker flush
+        if self.context.risk_tracker:
+            try:
+                await self.context.risk_tracker.stop_flush_loop()
+            except Exception as e:
+                logger.warning(f"Failed to stop risk tracker: {e}")
+
         # Cleanup ResourceContext
         if self.context.resource:
             try:
