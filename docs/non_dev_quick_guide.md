@@ -1,116 +1,160 @@
-# 자동화매매 빠르게 사용하기
+# 빠른 시작 가이드
 
-## 1. 개요
-
-아래는 비전공 투자자도 이해하기 쉽게 정리한 구성 가이드입니다. 각 항목이 어떤 의미인지, 투자자가 직접 설정할 때 필요한 부분들을 설명합니다.
-
-문서를 읽다가 헷갈리는 부분은 Issue 페이지 또는 커뮤니티를 통해 언제든지 피드백 주세요.
-
-* 사용자 커뮤니티: https://cafe.naver.com/programgarden
-* 카카오톡 오픈톡방: https://open.kakao.com/o/gKVObqUh
+코딩 경험이 없는 투자자도 따라할 수 있는 ProgramGarden 시작 가이드입니다. 5분이면 첫 자동매매 전략을 만들 수 있습니다.
 
 ---
 
-## 2. 노드 기반 DSL이란?
+## 1. 준비하기
 
-### 2.1 쉽게 말하면
+### 1.1 LS증권 계좌 개설
 
-자동매매를 설정할 때 **레고 블록처럼 기능 조각(노드)을 연결**하는 방식입니다.
+거래에 필요한 계좌를 개설해 주세요.
 
-| 개념 | 비유 |
-|------|------|
-| **노드(Node)** | 레고 블록 하나 - 특정 기능을 담당 |
-| **엣지(Edge)** | 레고 블록을 연결하는 핀 - 데이터 흐름 |
-| **워크플로우** | 완성된 레고 작품 - 전체 자동매매 전략 |
+> 현재 **LS증권**을 메인 증권사로 지원하고 있습니다.
 
-### 2.2 기본 구조
+투혼앱에서 글로벌 상품 거래가 가능한 계좌를 비대면으로 개설해 주세요. 방법을 모르시면 LS증권 고객센터(1588-2428)에 문의해 주세요.
+
+### 1.2 API 키 발급
+
+투혼앱에서 API를 신청하고 매매에 필요한 **App Key**와 **App Secret**를 발급 받으세요.
+
+**투혼앱 열기 → 전체 메뉴 → 투자정보 → 투자 파트너 → API 메뉴**
+
+> **주의**: App Key와 App Secret은 비밀번호와 같습니다. 다른 사람에게 절대 공유하지 마세요.
+
+---
+
+## 2. 워크플로우란?
+
+워크플로우는 **레고 블록처럼 기능 조각(노드)을 연결**한 자동매매 전략입니다.
+
+| 개념 | 비유 | 설명 |
+|------|------|------|
+| **노드(Node)** | 레고 블록 | 하나의 기능 (시세 조회, 조건 판단, 주문 등) |
+| **엣지(Edge)** | 블록 연결 핀 | 실행 순서 (A 다음에 B 실행) |
+| **워크플로우** | 완성된 레고 작품 | 전체 자동매매 전략 |
+
+```
+[증권사 연결] → [종목 선택] → [과거 데이터 조회] → [RSI 조건] → [시장가 주문]
+```
+
+모든 설정은 **JSON**(텍스트)으로 작성됩니다.
+
+---
+
+## 3. 첫 번째 워크플로우 만들기
+
+### 3.1 가장 간단한 예시: RSI 매수 전략
+
+"AAPL의 RSI가 30 이하면 매수" 하는 전략입니다.
 
 ```json
 {
   "nodes": [
-    {"id": "broker", "type": "BrokerNode", ...},
-    {"id": "watchlist", "type": "WatchlistNode", ...},
-    {"id": "condition", "type": "ConditionNode", ...},
-    {"id": "order", "type": "NewOrderNode", ...}
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "my-broker"
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"}
+      ]
+    },
+    {
+      "id": "history",
+      "type": "OverseasStockHistoricalDataNode",
+      "interval": "1d"
+    },
+    {
+      "id": "rsi",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "data": "{{ nodes.history.values }}",
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      }
+    },
+    {
+      "id": "order",
+      "type": "OverseasStockNewOrderNode",
+      "plugin": "MarketOrder",
+      "fields": {
+        "side": "buy",
+        "amount_type": "percent_balance",
+        "amount": 10
+      }
+    }
   ],
   "edges": [
-    {"from": "watchlist.symbols", "to": "condition.symbols"},
-    {"from": "condition.passed_symbols", "to": "order.symbols"}
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "history"},
+    {"from": "history", "to": "rsi"},
+    {"from": "rsi", "to": "order"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "my-broker",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
   ]
 }
 ```
 
-- **nodes**: 사용할 기능 블록들
-- **edges**: 블록 간 연결 (데이터가 어디서 어디로 흐르는지)
+**무슨 일이 일어나나요?**
+
+1. **OverseasStockBrokerNode**: LS증권에 로그인합니다
+2. **WatchlistNode**: AAPL을 매매 대상으로 지정합니다
+3. **OverseasStockHistoricalDataNode**: AAPL의 최근 주가 데이터를 가져옵니다
+4. **ConditionNode (RSI)**: RSI가 30 이하인지 확인합니다
+5. **OverseasStockNewOrderNode (MarketOrder)**: 조건이 맞으면 예수금의 10%로 시장가 매수합니다
+
+> **주의**: 실제 돈이 사용됩니다! 처음에는 반드시 소액(1~2만원)으로 테스트하세요.
 
 ---
 
-## 3. 준비 단계
+## 4. 노드 카테고리 한눈에 보기
 
-### 3.1 계좌 개설
-
-거래에 필요한 계좌를 개설해 주세요.
-
-> 현재 LS증권을 메인 증권사로 지원하고 있습니다.
-
-투혼앱에서 글로벌 상품 거래가 가능한 계좌를 비대면으로 개설해 주세요. 방법을 모르시면 LS증권 고객센터(1588-2428)에 문의해 주세요.
-
-### 3.2 자동화매매 키 발급
-
-투혼앱에서 API를 신청하고 매매에 필요한 Appkey와 Appsecretkey를 발급 받으세요.
-
-**투혼앱 열기 → 전체 메뉴 → 투자정보 → 투자 파트너 → API 메뉴**
-
-발급 받은 후 프로젝트 루트에 `.env` 파일을 만들어 관리할 수 있습니다.
-
-```bash
-APPKEY=your_stock_appkey
-APPSECRET=your_stock_appsecret
-APPKEY_FUTURE=your_futures_appkey
-APPSECRET_FUTURE=your_futures_appsecret
-```
-
----
-
-## 4. 주요 노드 소개
-
-### 4.1 노드 카테고리 한눈에 보기
-
-| 카테고리 | 뭘 하는 건가요? | 예시 |
-|----------|----------------|------|
-| **infra** | 증권사에 연결합니다 | BrokerNode |
-| **symbol** | 매매할 종목을 정합니다 | WatchlistNode |
-| **trigger** | 언제 실행할지 정합니다 | ScheduleNode |
+| 카테고리 | 뭘 하는 건가요? | 예시 노드 |
+|----------|----------------|----------|
+| **infra** | 증권사에 연결합니다 | OverseasStockBrokerNode |
+| **market** | 종목을 정하고 시세를 조회합니다 | WatchlistNode, HistoricalDataNode |
+| **account** | 내 계좌 정보를 확인합니다 | AccountNode, RealAccountNode |
 | **condition** | 매매 조건을 확인합니다 | ConditionNode, LogicNode |
 | **order** | 실제 주문을 냅니다 | NewOrderNode |
-| **realtime** | 실시간 데이터를 받습니다 | RealMarketDataNode |
-| **risk** | 위험을 관리합니다 | RiskGuardNode |
+| **schedule** | 언제 실행할지 정합니다 | ScheduleNode |
+| **display** | 차트나 표로 보여줍니다 | LineChartNode, TableDisplayNode |
+| **ai** | AI에게 분석을 맡깁니다 | AIAgentNode |
 
-### 4.2 자주 쓰는 노드 상세 설명
+> 전체 51개 노드의 상세 설명은 [노드 레퍼런스](node_reference.md)를 참고하세요.
 
-#### BrokerNode (증권사 연결)
+---
 
-증권사에 로그인하고 연결합니다.
+## 5. 자주 쓰는 노드 설명
+
+### OverseasStockBrokerNode (증권사 연결)
+
+증권사에 로그인하고 연결합니다. **모든 워크플로우의 시작점**입니다.
 
 ```json
 {
   "id": "broker",
-  "type": "BrokerNode",
-  "config": {
-    "provider": "ls-sec.co.kr",
-    "product": "overseas_stock",
-    "credential_id": "cred-001"
-  }
+  "type": "OverseasStockBrokerNode",
+  "credential_id": "my-broker"
 }
 ```
 
-| 설정 | 설명 |
-|------|------|
-| `provider` | 증권사 (현재 `ls-sec.co.kr` 지원) |
-| `product` | 상품 종류: `overseas_stock`(해외주식), `overseas_futures`(해외선물) |
-| `credential_id` | 미리 등록한 인증 정보 ID |
+> **주의**: 해외선물을 거래하려면 `OverseasFuturesBrokerNode`를 사용하세요.
 
-#### WatchlistNode (관심 종목)
+### WatchlistNode (관심 종목)
 
 매매할 종목 목록을 지정합니다.
 
@@ -118,13 +162,17 @@ APPSECRET_FUTURE=your_futures_appsecret
 {
   "id": "watchlist",
   "type": "WatchlistNode",
-  "config": {
-    "symbols": ["AAPL", "TSLA", "NVDA"]
-  }
+  "symbols": [
+    {"exchange": "NASDAQ", "symbol": "AAPL"},
+    {"exchange": "NASDAQ", "symbol": "NVDA"},
+    {"exchange": "NYSE", "symbol": "TSM"}
+  ]
 }
 ```
 
-#### ScheduleNode (실행 스케줄)
+> **주의 - 종목 형식**: 반드시 `exchange`(거래소)와 `symbol`(종목코드)을 함께 적어야 합니다.
+
+### ScheduleNode (실행 스케줄)
 
 언제 전략을 실행할지 정합니다.
 
@@ -132,34 +180,46 @@ APPSECRET_FUTURE=your_futures_appsecret
 {
   "id": "schedule",
   "type": "ScheduleNode",
-  "config": {
-    "cron": "0 */15 * * * *",
-    "timezone": "Asia/Seoul"
-  }
+  "cron": "0 30 9 * * mon-fri",
+  "timezone": "America/New_York"
 }
 ```
 
-- `cron`: 실행 주기 ([스케줄 가이드](schedule_guide.md) 참고)
-- `timezone`: 기준 시간대
+| cron 예시 | 의미 |
+|-----------|------|
+| `0 30 9 * * mon-fri` | 평일 뉴욕시간 9:30 (정규장 시작) |
+| `0 */15 9-16 * * mon-fri` | 평일 9~16시, 15분마다 |
+| `0 0 10 * * mon-fri` | 평일 뉴욕시간 10:00 |
 
-#### TradingHoursFilterNode (거래 시간 필터)
+> **주의 - timezone**: 미국 주식은 뉴욕 시간(`America/New_York`)으로 설정하세요. 한국시간(`Asia/Seoul`)을 쓰면 거래시간이 안 맞습니다.
 
-특정 시간대에만 매매합니다.
+> **팁 - LS증권 미국 주식 거래 시간 (한국시간 기준)**:
+>
+> | 구간 | 겨울 (서머타임 미적용) | 여름 (서머타임 적용, 3~11월) |
+> |------|----------------------|---------------------------|
+> | 주간거래 | 10:00 ~ 17:30 | 09:00 ~ 16:30 |
+> | 프리마켓 | 18:00 ~ 23:30 | 17:00 ~ 22:30 |
+> | 정규장 | 23:30 ~ 06:00 (익일) | 22:30 ~ 05:00 (익일) |
+> | 애프터마켓 | 06:00 ~ 09:30 | 05:00 ~ 08:30 |
+
+자세한 스케줄 설정은 [스케줄 가이드](schedule_guide.md)를 참고하세요.
+
+### TradingHoursFilterNode (거래 시간 필터)
+
+거래시간이 아니면 대기하다가, 거래시간이 시작되면 통과시킵니다.
 
 ```json
 {
   "id": "tradingHours",
   "type": "TradingHoursFilterNode",
-  "config": {
-    "start": "09:30",
-    "end": "16:00",
-    "timezone": "America/New_York",
-    "days": ["mon", "tue", "wed", "thu", "fri"]
-  }
+  "start": "09:30",
+  "end": "16:00",
+  "timezone": "America/New_York",
+  "days": ["mon", "tue", "wed", "thu", "fri"]
 }
 ```
 
-#### ConditionNode (조건 분석)
+### ConditionNode (조건 분석)
 
 기술적 지표로 매수/매도 신호를 확인합니다.
 
@@ -168,17 +228,20 @@ APPSECRET_FUTURE=your_futures_appsecret
   "id": "rsi",
   "type": "ConditionNode",
   "plugin": "RSI",
+  "data": "{{ nodes.history.values }}",
   "fields": {
     "period": 14,
-    "oversold": 30
+    "threshold": 30,
+    "direction": "below"
   }
 }
 ```
 
-- `plugin`: 사용할 분석 전략 ([종목추출 전략 목록](strategies/stock_condition.md) 참고)
+- `plugin`: 사용할 분석 전략 ([종목조건 플러그인 목록](strategies/stock_condition.md))
 - `fields`: 전략에 필요한 설정값
+- `data`: 분석할 시세 데이터
 
-#### LogicNode (조건 조합)
+### LogicNode (조건 조합)
 
 여러 조건을 어떻게 조합할지 정합니다.
 
@@ -186,9 +249,7 @@ APPSECRET_FUTURE=your_futures_appsecret
 {
   "id": "logic",
   "type": "LogicNode",
-  "config": {
-    "operator": "all"
-  }
+  "operator": "all"
 }
 ```
 
@@ -199,281 +260,185 @@ APPSECRET_FUTURE=your_futures_appsecret
 | `at_least` | N개 이상 만족 |
 | `weighted` | 가중치 합산 |
 
-자세한 내용은 [Logic 가이드](logic_guide.md)를 참고하세요.
+자세한 내용은 [조건 조합 가이드](logic_guide.md)를 참고하세요.
 
-#### NewOrderNode (신규 주문)
+### NewOrderNode (신규 주문)
 
 조건이 맞으면 주문을 냅니다.
 
 ```json
 {
   "id": "order",
-  "type": "NewOrderNode",
-  "plugin": "StockSplitFunds",
+  "type": "OverseasStockNewOrderNode",
+  "plugin": "MarketOrder",
   "fields": {
-    "percent_balance": 10.0,
-    "max_symbols": 5
+    "side": "buy",
+    "amount_type": "percent_balance",
+    "amount": 10
   }
 }
 ```
 
-- `plugin`: 사용할 주문 전략 ([신규매매전략 목록](strategies/order_condition.md) 참고)
+- `plugin`: 주문 방식 ([주문 플러그인 목록](strategies/order_condition.md))
+- `side`: `buy`(매수) 또는 `sell`(매도)
+- `amount_type`: `percent_balance`(예수금 비율), `fixed`(고정 수량), `all`(전량)
 
 ---
 
-## 5. 엣지(Edge) 연결하기
+## 6. 엣지(Edge) 연결하기
 
-노드끼리 데이터를 주고받으려면 **엣지**로 연결해야 합니다.
-
-### 5.1 기본 형식
+노드끼리 연결하려면 **엣지**를 사용합니다. `from` 노드가 먼저 실행되고, 완료되면 `to` 노드가 실행됩니다.
 
 ```json
 {
-  "from": "노드ID.출력포트",
-  "to": "노드ID.입력포트"
+  "edges": [
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "history"},
+    {"from": "history", "to": "rsi"},
+    {"from": "rsi", "to": "order"}
+  ]
 }
 ```
 
-### 5.2 자주 쓰는 연결 패턴
-
-```json
-"edges": [
-  // 증권사 연결 → 실시간 데이터
-  {"from": "broker.connection", "to": "realMarket"},
-  {"from": "broker.connection", "to": "realAccount"},
-  
-  // 종목 → 시세 데이터
-  {"from": "watchlist.symbols", "to": "realMarket.symbols"},
-  
-  // 스케줄 → 거래시간 필터 → 조건
-  {"from": "schedule.trigger", "to": "tradingHours"},
-  {"from": "tradingHours.passed", "to": "rsi"},
-  
-  // 시세 → 조건
-  {"from": "realMarket.price", "to": "rsi.price_data"},
-  
-  // 조건 통과 → 주문
-  {"from": "rsi.passed_symbols", "to": "order.symbols"},
-  
-  // 보유종목 정보 → 주문 (중복 매수 방지용)
-  {"from": "realAccount.held_symbols", "to": "order.held_symbols"}
-]
-```
+> **팁**: 증권사(broker) 노드를 시세/계좌/주문 노드에 연결하면 자동으로 로그인 정보가 전달됩니다.
 
 ---
 
-## 6. 완성된 예시
+## 7. 완성된 예시
 
-### 6.1 RSI 과매도 매수 전략
+### 7.1 RSI + MACD 복합 조건 매수
 
-RSI가 30 이하면 매수하는 간단한 전략입니다.
+두 가지 조건을 **모두 만족**할 때만 매수합니다.
 
 ```json
 {
   "nodes": [
-    {
-      "id": "broker",
-      "type": "BrokerNode",
-      "config": {
-        "provider": "ls-sec.co.kr",
-        "product": "overseas_stock",
-        "credential_id": "cred-001"
-      }
-    },
-    {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "config": {
-        "symbols": ["AAPL", "TSLA", "NVDA"]
-      }
-    },
-    {
-      "id": "realAccount",
-      "type": "RealAccountNode"
-    },
-    {
-      "id": "realMarket",
-      "type": "RealMarketDataNode",
-      "config": {
-        "fields": ["price", "volume"]
-      }
-    },
-    {
-      "id": "schedule",
-      "type": "ScheduleNode",
-      "config": {
-        "cron": "0 */15 * * * *",
-        "timezone": "America/New_York"
-      }
-    },
-    {
-      "id": "tradingHours",
-      "type": "TradingHoursFilterNode",
-      "config": {
-        "start": "09:30",
-        "end": "16:00",
-        "timezone": "America/New_York"
-      }
-    },
+    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-broker"},
+    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "NVDA"}]},
+    {"id": "history", "type": "OverseasStockHistoricalDataNode", "interval": "1d"},
     {
       "id": "rsi",
       "type": "ConditionNode",
       "plugin": "RSI",
-      "fields": {
-        "period": 14,
-        "oversold": 30
-      }
+      "data": "{{ nodes.history.values }}",
+      "fields": {"period": 14, "threshold": 30, "direction": "below"}
     },
     {
+      "id": "macd",
+      "type": "ConditionNode",
+      "plugin": "MACD",
+      "data": "{{ nodes.history.values }}",
+      "fields": {"signal_type": "bullish_cross"}
+    },
+    {"id": "logic", "type": "LogicNode", "operator": "all"},
+    {
       "id": "order",
-      "type": "NewOrderNode",
-      "plugin": "StockSplitFunds",
-      "fields": {
-        "percent_balance": 10.0,
-        "max_symbols": 3
-      }
+      "type": "OverseasStockNewOrderNode",
+      "plugin": "MarketOrder",
+      "fields": {"side": "buy", "amount_type": "percent_balance", "amount": 10}
     }
   ],
   "edges": [
-    {"from": "broker.connection", "to": "realAccount"},
-    {"from": "broker.connection", "to": "realMarket"},
-    {"from": "watchlist.symbols", "to": "realMarket.symbols"},
-    {"from": "schedule.trigger", "to": "tradingHours"},
-    {"from": "tradingHours.passed", "to": "rsi"},
-    {"from": "realMarket.price", "to": "rsi.price_data"},
-    {"from": "rsi.passed_symbols", "to": "order.symbols"},
-    {"from": "realAccount.held_symbols", "to": "order.held_symbols"}
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "history"},
+    {"from": "history", "to": "rsi"},
+    {"from": "history", "to": "macd"},
+    {"from": "rsi", "to": "logic"},
+    {"from": "macd", "to": "logic"},
+    {"from": "logic", "to": "order"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "my-broker",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
   ]
 }
 ```
 
-### 6.2 복합 조건 (RSI + MACD)
+### 7.2 스케줄 기반 정기 실행
 
-두 가지 조건을 모두 만족할 때만 매수합니다.
+평일 뉴욕시간 10시에 자동 실행되는 전략입니다.
 
 ```json
 {
   "nodes": [
-    {"id": "broker", "type": "BrokerNode", "config": {"provider": "ls-sec.co.kr", "product": "overseas_stock"}},
-    {"id": "watchlist", "type": "WatchlistNode", "config": {"symbols": ["AAPL", "TSLA"]}},
-    {"id": "realMarket", "type": "RealMarketDataNode"},
-    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "fields": {"period": 14, "oversold": 30}},
-    {"id": "macd", "type": "ConditionNode", "plugin": "MACD", "fields": {"fast": 12, "slow": 26, "signal": 9}},
-    {
-      "id": "logic",
-      "type": "LogicNode",
-      "config": {
-        "operator": "all"
-      }
-    },
-    {"id": "order", "type": "NewOrderNode", "plugin": "StockSplitFunds"}
+    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-broker"},
+    {"id": "schedule", "type": "ScheduleNode", "cron": "0 0 10 * * mon-fri", "timezone": "America/New_York"},
+    {"id": "tradingHours", "type": "TradingHoursFilterNode", "start": "09:30", "end": "16:00", "timezone": "America/New_York", "days": ["mon", "tue", "wed", "thu", "fri"]},
+    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}]},
+    {"id": "history", "type": "OverseasStockHistoricalDataNode", "interval": "1d"},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.history.values }}", "fields": {"period": 14, "threshold": 30, "direction": "below"}},
+    {"id": "order", "type": "OverseasStockNewOrderNode", "plugin": "MarketOrder", "fields": {"side": "buy", "amount_type": "percent_balance", "amount": 10}}
   ],
   "edges": [
-    {"from": "broker.connection", "to": "realMarket"},
-    {"from": "watchlist.symbols", "to": "realMarket.symbols"},
-    {"from": "realMarket.price", "to": "rsi.price_data"},
-    {"from": "realMarket.price", "to": "macd.price_data"},
-    {"from": "rsi.result", "to": "logic.input"},
-    {"from": "macd.result", "to": "logic.input"},
-    {"from": "logic.passed_symbols", "to": "order.symbols"}
+    {"from": "schedule", "to": "tradingHours"},
+    {"from": "tradingHours", "to": "watchlist"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "history"},
+    {"from": "history", "to": "rsi"},
+    {"from": "rsi", "to": "order"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "my-broker",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
   ]
 }
-```
-
----
-
-## 7. 실행하기
-
-### 7.1 패키지 설치
-
-```bash
-pip install -U programgarden
-
-# poetry 사용 시
-poetry add programgarden
-```
-
-### 7.2 Python 코드로 실행
-
-```python
-from programgarden import Programgarden
-
-pg = Programgarden()
-
-# 콜백 설정
-pg.on_condition_evaluated(
-    callback=lambda msg: print(f"조건 평가: {msg}")
-)
-pg.on_order_filled(
-    callback=lambda msg: print(f"주문 체결: {msg}")
-)
-pg.on_error(
-    callback=lambda msg: print(f"에러: {msg}")
-)
-
-# 워크플로우 실행
-pg.run(workflow={
-    "nodes": [...],
-    "edges": [...]
-})
 ```
 
 ---
 
 ## 8. 유용한 팁
 
-### 8.1 드라이런 모드
+### 8.1 모의투자로 먼저 테스트
 
-실제 주문 없이 테스트하고 싶을 때:
+> **해외선물은 모의투자를 지원**합니다. 해외주식은 현재 모의투자를 지원하지 않으므로, 소액으로 테스트하세요.
+
+### 8.2 여러 종목을 한번에
+
+WatchlistNode에 여러 종목을 넣으면 각 종목에 대해 **자동으로 반복 실행**됩니다.
 
 ```json
 {
-  "id": "broker",
-  "type": "BrokerNode",
-  "config": {
-    "provider": "ls-sec.co.kr",
-    "product": "overseas_stock",
-    "paper_trading": true
-  }
+  "id": "watchlist",
+  "type": "WatchlistNode",
+  "symbols": [
+    {"exchange": "NASDAQ", "symbol": "AAPL"},
+    {"exchange": "NASDAQ", "symbol": "NVDA"},
+    {"exchange": "NYSE", "symbol": "TSM"}
+  ]
 }
 ```
 
-### 8.2 리스크 관리
+이후 노드에서 `{{ item }}`으로 현재 종목을 참조할 수 있습니다. 자세한 내용은 [자동 반복 처리](auto_iterate_guide.md)를 참고하세요.
 
-일일 손실 한도나 최대 포지션 수를 제한하고 싶을 때:
+### 8.3 익절/손절 자동화
 
-```json
-{
-  "id": "riskGuard",
-  "type": "RiskGuardNode",
-  "config": {
-    "max_daily_loss": -500,
-    "max_positions": 5
-  }
-}
-```
-
-### 8.3 알림 설정
-
-주문 체결 시 슬랙으로 알림 받기:
+보유 종목의 수익률에 따라 자동으로 매도하려면 `ProfitTarget`(익절)과 `StopLoss`(손절) 플러그인을 사용하세요.
 
 ```json
-{
-  "id": "alert",
-  "type": "AlertNode",
-  "config": {
-    "channel": "slack",
-    "on": ["order_filled", "risk_triggered"]
-  }
-}
+{"id": "profit", "type": "ConditionNode", "plugin": "ProfitTarget", "fields": {"target_percent": 5.0}},
+{"id": "stop", "type": "ConditionNode", "plugin": "StopLoss", "fields": {"stop_percent": -3.0}}
 ```
 
 ---
 
 ## 9. 다음 단계
 
-- [Logic 가이드](logic_guide.md) - 조건 조합 방법 상세
+- [워크플로우 구조 이해](structure.md) - 노드, 엣지, 인증의 개념을 더 자세히
+- [전체 노드 레퍼런스](node_reference.md) - 51개 노드 상세 설명
+- [조건 조합 가이드](logic_guide.md) - 여러 조건을 조합하는 방법
 - [스케줄 가이드](schedule_guide.md) - cron 표현식 작성법
-- [종목추출 전략 목록](strategies/stock_condition.md) - 사용 가능한 분석 전략
-- [신규매매전략 목록](strategies/order_condition.md) - 사용 가능한 주문 전략
-- [DSL 커스터마이징](custom_dsl.md) - 직접 플러그인 만들기 (개발자용)
+- [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 17개 분석 전략
+- [주문 플러그인](strategies/order_condition.md) - 시장가, 지정가 등 주문 전략
+- [AI 에이전트](ai_agent_guide.md) - GPT/Claude로 시장 분석 자동화
