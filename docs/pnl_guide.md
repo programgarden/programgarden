@@ -179,35 +179,41 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
 
 ---
 
-## 5. 대회 모드
+## 5. 특정 날짜 기준 수익률 계산
 
-특정 날짜 이후의 수익률만 따로 계산하는 **대회 모드**를 지원합니다. 투자 대회나 백테스트 기간 비교에 유용합니다.
+특정 날짜 이후의 수익률만 따로 계산하는 기능을 지원합니다. 리스너 생성 시 `start_date`를 설정하면 해당 날짜 이후 체결된 거래만으로 수익률을 별도 계산합니다.
 
-대회 모드가 활성화되면 아래 항목들이 추가로 제공됩니다:
-
-| 항목 | 설명 |
-|------|------|
-| `competition_start_date` | 대회 시작일 (YYYYMMDD 형식) |
-| `competition_workflow_pnl_rate` | 대회 시작일 이후 워크플로우 수익률 |
-| `competition_workflow_pnl_amount` | 대회 시작일 이후 워크플로우 손익금액 |
-| `competition_account_pnl_rate` | 대회 시작일 이후 계좌 전체 수익률 |
-| `competition_account_pnl_amount` | 대회 시작일 이후 계좌 전체 손익금액 |
-
-상품별 대회 수익률도 제공됩니다:
+`start_date`가 설정되면 아래 항목들이 추가로 제공됩니다:
 
 | 항목 | 설명 |
 |------|------|
-| `competition_workflow_stock_pnl_rate` | 대회 기간 워크플로우 주식 수익률 |
-| `competition_workflow_futures_pnl_rate` | 대회 기간 워크플로우 선물 수익률 |
-| `competition_account_stock_pnl_rate` | 대회 기간 계좌 주식 수익률 |
-| `competition_account_futures_pnl_rate` | 대회 기간 계좌 선물 수익률 |
+| `competition_start_date` | 기준 시작일 (YYYYMMDD 형식) |
+| `competition_workflow_pnl_rate` | 시작일 이후 워크플로우 수익률 |
+| `competition_workflow_pnl_amount` | 시작일 이후 워크플로우 손익금액 |
+| `competition_account_pnl_rate` | 시작일 이후 계좌 전체 수익률 |
+| `competition_account_pnl_amount` | 시작일 이후 계좌 전체 손익금액 |
+
+상품별 수익률도 제공됩니다:
+
+| 항목 | 설명 |
+|------|------|
+| `competition_workflow_stock_pnl_rate` | 기준일 이후 워크플로우 주식 수익률 |
+| `competition_workflow_futures_pnl_rate` | 기준일 이후 워크플로우 선물 수익률 |
+| `competition_account_stock_pnl_rate` | 기준일 이후 계좌 주식 수익률 |
+| `competition_account_futures_pnl_rate` | 기준일 이후 계좌 선물 수익률 |
 
 ### 예시: 1월 15일부터의 수익률 추적
 
-대회 시작일을 `20260115`로 설정하면, 1월 15일 이전 매매 내역은 대회 수익률 계산에서 제외됩니다.
+`start_date`를 `20260115`로 설정하면, 1월 15일 이전 매매 내역은 해당 기간 수익률 계산에서 제외됩니다.
 
-- 1월 10일에 매수한 AAPL (+10%) → **대회 수익률에 미포함**
-- 1월 20일에 매수한 NVDA (+3%) → **대회 수익률에 포함**
+- 1월 10일에 매수한 AAPL (+10%) → **기간 수익률에 미포함**
+- 1월 20일에 매수한 NVDA (+3%) → **기간 수익률에 포함**
+
+### 주요 동작
+
+- **워크플로우 중지 후 재실행**: 같은 `start_date`로 리스너를 생성하면 이전 거래 기록을 포함하여 이어서 계산됩니다. (DB에 체결 내역이 영구 저장되므로 메모리 상태에 의존하지 않음)
+- **기준 날짜 변경**: 새로운 `start_date`로 리스너를 생성하면 변경된 날짜 기준으로 재계산됩니다.
+- **기간 수익률 해제**: `start_date` 없이 리스너를 생성하면 `competition_*` 필드가 모두 `None`으로 내려갑니다. 기존 거래 기록은 삭제되지 않으므로 나중에 다시 같은 날짜로 설정하면 이어서 계산됩니다.
 
 ---
 
