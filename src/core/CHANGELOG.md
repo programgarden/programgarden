@@ -1,5 +1,12 @@
-## [1.2.0] - 2026-02-13
+## [1.2.0] - 2026-02-15
 ### Added
+- **AI Agent 노드**: LLMModelNode + AIAgentNode 2종 (`ai` 카테고리)
+  - `ai_model` / `tool` 엣지 타입, 프리셋 4종 (risk_manager, technical_analyst, news_analyst, strategist)
+  - text / json / structured 출력 형식, output_schema 기반 Pydantic 검증
+  - cooldown_sec 실시간 보호, ThrottleNode 없이 직접 실시간 노드 연결 차단
+- **WorkflowRiskTracker**: Feature-gated 위험관리 데이터 인프라
+  - 노드/플러그인 `_risk_features` 선언으로 자동 활성화 (hwm, window, events, state)
+  - 인메모리 Hot Layer + SQLite Cold Layer (30초 flush) 2-Layer 아키텍처
 - **Connection Rules 시스템**: 실시간 노드 → 위험 노드 직접 연결 차단
   - `ConnectionRule`, `ConnectionSeverity`, `RateLimitConfig` 모델 (`connection_rule.py`)
   - `REALTIME_SOURCE_NODE_TYPES`: 6개 실시간 WebSocket 노드 상수
@@ -7,10 +14,12 @@
   - `WorkflowResolver._validate_connection_rules()`: 프론트/백엔드 공통 검증
   - 실시간 → 주문 노드: ERROR (차단), 실시간 → AI Agent: ERROR (차단), 실시간 → HTTP: WARNING (경고)
 - **BaseNode Rate Limit Guard**: 런타임 최후 방어선
-  - `WorkflowJob._apply_rate_limit_guard()` / `_release_rate_limit_guard()`
   - 주문 노드: 5초 간격 / 동시 1개, AI Agent: 60초 간격 / 동시 1개, HTTP: 1초 간격 / 동시 3개
   - 사용자 `rate_limit_interval`, `rate_limit_action` 오버라이드 지원
 - i18n: `connection_rules.*`, `fields.BaseOrderNode.rate_limit_*`, `enums.rate_limit_action.*` 키 추가 (ko/en)
+
+### Fixed
+- AI Agent 프로덕션 버그 3건 수정 및 디버그 코드 정리
 
 ## [1.1.10] - 2026-02-10
 ### Fixed

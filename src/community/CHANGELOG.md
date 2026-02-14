@@ -1,3 +1,10 @@
+## [1.2.0] - 2026-02-15
+### Added
+- trailing_stop 플러그인: `risk_features` 선언 추가 (`{"hwm"}`)
+
+### Changed
+- deps: programgarden-core ^1.2.0 (AI Agent, RiskTracker, Rate Limit 등)
+
 ## [1.1.8] - 2026-02-10
 ### Changed
 - deps: programgarden-core 1.1.10 버전으로 업데이트 (translate_schema 번역 범위 수정)

@@ -1,11 +1,23 @@
-## [1.2.0] - 2026-02-13
+## [1.2.0] - 2026-02-15
 ### Added
-- feat: `WorkflowResolver._validate_connection_rules()` 연결 규칙 검증 추가
-  - 실시간 노드 → 주문/AI Agent 직접 연결 차단 (ERROR)
-  - 실시간 노드 → HTTP 직접 연결 경고 (WARNING)
-- feat: `WorkflowJob._apply_rate_limit_guard()` / `_release_rate_limit_guard()` 런타임 Rate Limit
-  - 노드별 `_rate_limit` ClassVar 기반 실행 간격/동시 실행 제한
-  - 사용자 `rate_limit_interval`, `rate_limit_action` config 오버라이드 지원
+- **AI Agent 실행 엔진**: LLM Provider, AIAgentNodeExecutor, Tool 실행, 적응형 다운샘플링
+  - LLMModelNodeExecutor: 멀티 프로바이더 (OpenAI, Anthropic, Google 등) litellm 기반
+  - AIAgentNodeExecutor: ReAct 루프, 도구 호출, output_schema 검증
+  - 프리셋 시스템 4종 (risk_manager, technical_analyst, news_analyst, strategist)
+  - on_token_usage, on_ai_tool_call, on_llm_stream 리스너 콜백
+- **WorkflowRiskTracker**: Feature-gated 위험관리 데이터 인프라
+  - 인메모리 Hot Layer + SQLite Cold Layer (30초 flush) 2-Layer 아키텍처
+  - on_risk_event 리스너 콜백
+- **Connection Rules 검증**: 실시간 노드 → 주문/AI Agent 직접 연결 차단 (ERROR)
+- **Rate Limit Guard**: 런타임 노드 실행 간격/동시 실행 제한
+- **서버 API 확장**: connection_rules, rate_limit 노출 + validate 통합
+
+### Fixed
+- 워크플로우 stop/cancel 시 리스너 미정리 문제 수정
+- LLMModelNode 로그 메시지 개선 (provider/model 중복 표시 수정)
+
+### Changed
+- deps: programgarden-core ^1.2.0, community ^1.2.0
 
 ## [1.1.11] - 2026-02-10
 ### Changed
