@@ -11697,6 +11697,14 @@ class WorkflowExecutor:
         """List all Jobs"""
         return list(self._jobs.values())
 
+    def remove_job(self, job_id: str) -> bool:
+        """Remove a completed/stopped/cancelled/failed job from the executor."""
+        job = self._jobs.get(job_id)
+        if job and job.status in ("completed", "stopped", "cancelled", "failed"):
+            del self._jobs[job_id]
+            return True
+        return False
+
     # ─────────────────────────────────────────────────
     # Dynamic Node API (Lazy Loading 지원)
     # ─────────────────────────────────────────────────
@@ -12010,6 +12018,8 @@ class WorkflowJob:
         finally:
             # Cleanup persistent nodes
             await self.context.cleanup_persistent_nodes()
+            # Cleanup listeners
+            await self.context.cleanup_listeners()
 
     async def _execute_main_flow(self) -> None:
         """Execute all nodes in topological order with state notifications
@@ -13153,6 +13163,9 @@ class WorkflowJob:
             except Exception as e:
                 logger.warning(f"Failed to stop ResourceContext: {e}")
 
+        # Cleanup listeners
+        await self.context.cleanup_listeners()
+
         self.status = "stopped"
         self.completed_at = datetime.now()
         logger.info(f"Job {self.job_id} stopped")
@@ -13170,6 +13183,7 @@ class WorkflowJob:
 
         # Cleanup
         await self.context.cleanup_persistent_nodes()
+        await self.context.cleanup_flow_end_nodes()
 
         # Cleanup RiskTracker flush
         if self.context.risk_tracker:
@@ -13184,6 +13198,9 @@ class WorkflowJob:
                 await self.context.resource.stop()
             except Exception as e:
                 logger.warning(f"Failed to stop ResourceContext: {e}")
+
+        # Cleanup listeners
+        await self.context.cleanup_listeners()
 
     def get_state(self) -> Dict[str, Any]:
         """Get state snapshot"""

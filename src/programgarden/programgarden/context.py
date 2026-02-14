@@ -1100,11 +1100,39 @@ class ExecutionContext:
     def set_listeners(self, listeners: Optional[List[ExecutionListener]]) -> None:
         """
         Set listener list (replaces existing).
-        
+
         Args:
             listeners: New listener list
         """
         self._listeners = list(listeners) if listeners else []
+
+    async def cleanup_listeners(self) -> None:
+        """
+        Cleanup all registered listeners on job stop/cancel.
+
+        Calls close()/dispose() if available, then clears the list.
+        Safe to call multiple times (idempotent).
+        """
+        if not self._listeners:
+            return
+
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'close'):
+                    if asyncio.iscoroutinefunction(listener.close):
+                        await listener.close()
+                    else:
+                        listener.close()
+                elif hasattr(listener, 'dispose'):
+                    if asyncio.iscoroutinefunction(listener.dispose):
+                        await listener.dispose()
+                    else:
+                        listener.dispose()
+            except Exception as e:
+                logger.warning(f"Error cleaning up listener {type(listener).__name__}: {e}")
+
+        self._listeners.clear()
+        logger.debug("All listeners cleaned up")
 
     def set_workflow_job(self, job: Any) -> None:
         """
