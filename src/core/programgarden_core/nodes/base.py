@@ -5,7 +5,7 @@ ProgramGarden Core - 노드 베이스 클래스
 """
 
 from enum import Enum
-from typing import Optional, Dict, Any, List, Literal, ClassVar
+from typing import Optional, Dict, Any, List, Literal, ClassVar, Set
 from pydantic import BaseModel, ConfigDict, Field
 
 from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
@@ -293,6 +293,7 @@ class BaseNode(BaseModel):
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.ALL
     _connection_rules: ClassVar[List["ConnectionRule"]] = []
     _rate_limit: ClassVar[Optional["RateLimitConfig"]] = None
+    _risk_features: ClassVar[Set[str]] = set()  # {"hwm","window","events","state"}
 
     model_config = ConfigDict(use_enum_values=True, extra="allow")
 

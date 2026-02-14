@@ -378,6 +378,22 @@ class WorkflowPnLEvent:
 
 
 # ============================================================
+# Risk 이벤트
+# ============================================================
+
+@dataclass
+class RiskEvent:
+    """위험 임계값 초과 시 발생하는 이벤트."""
+    job_id: str
+    event_type: str     # "trailing_stop_triggered" | "drawdown_alert" | ...
+    severity: str       # "info" | "warning" | "critical"
+    symbol: Optional[str] = None
+    exchange: Optional[str] = None
+    details: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
+# ============================================================
 # AI Agent 이벤트
 # ============================================================
 
@@ -579,6 +595,17 @@ class ExecutionListener(Protocol):
         """
         ...
 
+    async def on_risk_event(self, event: 'RiskEvent') -> None:
+        """
+        Called when a risk threshold is breached.
+
+        위험 임계값 초과, 트레일링 스탑 트리거 등 위험관리 이벤트 발생 시.
+
+        Args:
+            event: RiskEvent with event_type, severity, symbol, details.
+        """
+        ...
+
 
 class BaseExecutionListener:
     """
@@ -647,6 +674,10 @@ class BaseExecutionListener:
         pass
 
     async def on_ai_tool_call(self, event: AIToolCallEvent) -> None:
+        """Default implementation: do nothing"""
+        pass
+
+    async def on_risk_event(self, event: 'RiskEvent') -> None:
         """Default implementation: do nothing"""
         pass
 
@@ -752,3 +783,17 @@ class ConsoleExecutionListener(BaseExecutionListener):
         print(f"{yellow}⚠️  [{event.node_id}] {event.error_type.value} 발생, "
               f"재시도 중 ({event.attempt}/{event.max_retries})... "
               f"{event.next_retry_in:.1f}초 후{reset}")
+
+    async def on_risk_event(self, event: 'RiskEvent') -> None:
+        """Print risk event with severity-based coloring"""
+        severity_style = {
+            "info": ("\033[94m", "ℹ️"),       # Blue
+            "warning": ("\033[93m", "⚠️"),    # Yellow
+            "critical": ("\033[91m", "🚨"),   # Red
+        }
+        reset = "\033[0m"
+        color, emoji = severity_style.get(event.severity, ("\033[0m", "❓"))
+
+        symbol_tag = f" [{event.symbol}]" if event.symbol else ""
+        print(f"{color}{emoji} RISK {event.severity.upper()}{symbol_tag} "
+              f"{event.event_type}: {event.details}{reset}")

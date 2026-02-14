@@ -5,7 +5,7 @@ ProgramGarden Core - Portfolio Node
 - PortfolioNode: 멀티 전략 자본 관리, 리밸런싱 (백테스트 + 실거래 공용)
 """
 
-from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, Set, ClassVar, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -47,6 +47,7 @@ class PortfolioNode(BaseNode):
 
     type: Literal["PortfolioNode"] = "PortfolioNode"
     category: NodeCategory = NodeCategory.RISK
+    _risk_features: ClassVar[Set[str]] = {"hwm", "window"}
     description: str = "i18n:nodes.PortfolioNode.description"
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
