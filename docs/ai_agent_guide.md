@@ -221,6 +221,35 @@ RealMarketDataNode ──▶ ThrottleNode ──▶ AIAgentNode  (OK)
 
 ---
 
+## 실행 모니터링
+
+`ExecutionListener`를 사용하면 AI 에이전트의 실행 상태를 실시간으로 모니터링할 수 있습니다.
+
+| 콜백 | 설명 | 주요 데이터 |
+|------|------|------------|
+| `on_token_usage` | 토큰 사용량 및 비용 | `total_tokens`, `cost_usd` |
+| `on_ai_tool_call` | AI가 도구를 호출할 때 | `tool_name`, `duration_ms` |
+| `on_llm_stream` | LLM 스트리밍 청크 | `chunk`, `is_final` |
+
+```python
+from programgarden_core.bases import BaseExecutionListener
+
+class MyListener(BaseExecutionListener):
+    async def on_token_usage(self, node_id, data):
+        print(f"[{node_id}] 토큰: {data['total_tokens']}개, 비용: ${data['cost_usd']:.4f}")
+
+    async def on_ai_tool_call(self, node_id, data):
+        print(f"[{node_id}] 도구 호출: {data['tool_name']} ({data['duration_ms']}ms)")
+
+    async def on_llm_stream(self, node_id, data):
+        if data.get('is_final'):
+            print(f"[{node_id}] 응답 완료")
+        else:
+            print(data['chunk'], end='')
+```
+
+---
+
 ## 주의사항
 
 - AI 에이전트는 **Stateless**입니다. 매 실행마다 이전 대화를 기억하지 않습니다.

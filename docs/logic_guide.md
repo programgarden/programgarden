@@ -322,28 +322,28 @@
       "type": "ConditionNode",
       "plugin": "RSI",
       "fields": {"period": 14, "oversold": 30},
-      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
+      "data": "{{ lst.flatten(nodes.historical.values, 'time_series') }}"
     },
     {
       "id": "macd",
       "type": "ConditionNode",
       "plugin": "MACD",
       "fields": {},
-      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
+      "data": "{{ lst.flatten(nodes.historical.values, 'time_series') }}"
     },
     {
       "id": "volume",
       "type": "ConditionNode",
       "plugin": "VolumeSpike",
       "fields": {},
-      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
+      "data": "{{ lst.flatten(nodes.historical.values, 'time_series') }}"
     },
     {
       "id": "trend",
       "type": "ConditionNode",
       "plugin": "ADX",
       "fields": {},
-      "data": "{{ flatten(nodes.historical.values, 'time_series') }}"
+      "data": "{{ lst.flatten(nodes.historical.values, 'time_series') }}"
     },
     {
       "id": "logic",
@@ -591,14 +591,14 @@
   "nodes": [
     {"id": "adxFilter", "type": "ConditionNode", "plugin": "ADX", "fields": {"min_value": 25}, "data": "..."},
     {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "data": "..."},
-    {"id": "stochasticRSI", "type": "ConditionNode", "plugin": "StochasticRSI", "data": "..."},
+    {"id": "stochastic", "type": "ConditionNode", "plugin": "Stochastic", "data": "..."},
     {
       "id": "signalGroup",
       "type": "LogicNode",
       "operator": "any",
       "conditions": [
         {"is_condition_met": "{{ nodes.rsi.result }}", "passed_symbols": "{{ nodes.rsi.passed_symbols }}"},
-        {"is_condition_met": "{{ nodes.stochasticRSI.result }}", "passed_symbols": "{{ nodes.stochasticRSI.passed_symbols }}"}
+        {"is_condition_met": "{{ nodes.stochastic.result }}", "passed_symbols": "{{ nodes.stochastic.passed_symbols }}"}
       ]
     },
     {
@@ -613,7 +613,7 @@
   ],
   "edges": [
     {"from": "rsi", "to": "signalGroup"},
-    {"from": "stochasticRSI", "to": "signalGroup"},
+    {"from": "stochastic", "to": "signalGroup"},
     {"from": "adxFilter", "to": "finalLogic"},
     {"from": "signalGroup", "to": "finalLogic"}
   ]

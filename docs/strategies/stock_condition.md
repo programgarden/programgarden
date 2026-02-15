@@ -484,7 +484,11 @@
       "id": "logic",
       "type": "LogicNode",
       "operator": "all",
-      "inputs": ["{{ nodes.rsi }}", "{{ nodes.macd }}", "{{ nodes.adx }}"]
+      "conditions": [
+        {"is_condition_met": "{{ nodes.rsi.result }}", "passed_symbols": "{{ nodes.rsi.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.macd.result }}", "passed_symbols": "{{ nodes.macd.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.adx.result }}", "passed_symbols": "{{ nodes.adx.passed_symbols }}"}
+      ]
     }
   ],
   "edges": [

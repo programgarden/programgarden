@@ -809,11 +809,11 @@ BrokerNode → WatchlistNode → SplitNode → HistoricalDataNode → ConditionN
   "conditions": [
     {
       "is_condition_met": "{{ nodes.rsi.result }}",
-      "passed_symbols": "{{ nodes.rsi.result.passed_symbols }}"
+      "passed_symbols": "{{ nodes.rsi.passed_symbols }}"
     },
     {
       "is_condition_met": "{{ nodes.macd.result }}",
-      "passed_symbols": "{{ nodes.macd.result.passed_symbols }}"
+      "passed_symbols": "{{ nodes.macd.passed_symbols }}"
     }
   ]
 }
@@ -857,12 +857,12 @@ BrokerNode → WatchlistNode → SplitNode → HistoricalDataNode → ConditionN
   "conditions": [
     {
       "is_condition_met": "{{ nodes.rsi.result }}",
-      "passed_symbols": "{{ nodes.rsi.result.passed_symbols }}",
+      "passed_symbols": "{{ nodes.rsi.passed_symbols }}",
       "weight": 0.4
     },
     {
       "is_condition_met": "{{ nodes.macd.result }}",
-      "passed_symbols": "{{ nodes.macd.result.passed_symbols }}",
+      "passed_symbols": "{{ nodes.macd.passed_symbols }}",
       "weight": 0.35
     },
     {
