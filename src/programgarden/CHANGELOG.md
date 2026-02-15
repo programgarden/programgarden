@@ -1,3 +1,10 @@
+## [1.2.1] - 2026-02-15
+### Fixed
+- ConditionNodeExecutor.execute()에 `**kwargs` 누락으로 workflow 인자 전달 시 TypeError 발생하는 버그 수정
+
+### Added
+- executor **kwargs 호환성 테스트 추가 (모든 등록 executor가 `**kwargs`를 수용하는지 검증)
+
 ## [1.2.0] - 2026-02-15
 ### Added
 - **AI Agent 실행 엔진**: LLM Provider, AIAgentNodeExecutor, Tool 실행, 적응형 다운샘플링

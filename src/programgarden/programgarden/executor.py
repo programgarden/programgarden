@@ -5521,10 +5521,11 @@ class ConditionNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         plugin: Optional[Callable] = None,
         fields: Optional[Dict[str, Any]] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         from programgarden.plugin import PluginSandbox, PluginTimeoutError
         from programgarden_core.models import get_plugin_hints
-        
+
         # 플러그인 ID 추출
         plugin_id = config.get("plugin", "Unknown")
         
