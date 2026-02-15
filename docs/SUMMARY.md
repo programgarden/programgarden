@@ -32,4 +32,3 @@
 
 * [플러그인 개발](custom_dsl.md)
 * [동적 노드 주입](dynamic_node_guide.md)
-* [오픈소스 기여](contribution_guide.md)

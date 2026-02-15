@@ -708,10 +708,3 @@ TypedDict 스펙을 지키지 않으면 런타임 에러가 발생합니다.
 | `threshold` | line (threshold overlay) |
 | `comparison` | table |
 
----
-
-## 8. 커뮤니티 기여
-
-재사용 가능한 플러그인을 https://github.com/programgarden/programgarden_community 에 PR하면 다른 투자자들과 공유할 수 있습니다.
-
-자세한 기여 방법은 [오픈소스 기여 가이드](contribution_guide.md)를 참고하세요.

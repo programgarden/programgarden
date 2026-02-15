@@ -15,7 +15,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-programgarden-core = {path = "../core", develop = true}
+programgarden-core = "^1.2.0"
 
 
 [tool.poetry.group.dev.dependencies]
