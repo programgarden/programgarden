@@ -3,7 +3,6 @@
 매수/매도 주문 실행 및 주문 관리 플러그인들입니다. `NewOrderNode`, `ModifyOrderNode`, `CancelOrderNode`에서 `plugin` 필드로 지정하여 사용합니다.
 
 원하는 플러그인이 없다면:
-- 카페에 요청: [요청하기](https://cafe.naver.com/f-e/cafes/30041992/menus/204?viewType=L)
 - 직접 개발: [플러그인 개발 가이드](../custom_dsl.md)
 
 ---
