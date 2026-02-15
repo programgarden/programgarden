@@ -11,11 +11,6 @@ flowchart LR
     A["AccountNode<br/>positions:<br/>[{AAPL}, {NVDA}, {TSM}]"] -->|각 item마다 실행| B["ConditionNode<br/>(3번 실행)"] --> C["NewOrderNode<br/>(3번 실행)"]
 ```
 
-```mermaid
-flowchart LR
-    A["AccountNode<br/>positions:<br/>[{AAPL}, {NVDA}, {TSM}]"] -->|각 item마다 실행| B["ConditionNode<br/>(3번 실행)"] --> C["NewOrderNode<br/>(3번 실행)"]
-```
-
 이전 노드의 출력이 **배열**이면, 다음 노드는 배열의 각 항목에 대해 자동으로 실행됩니다.
 
 ***
