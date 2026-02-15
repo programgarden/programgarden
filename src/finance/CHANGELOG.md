@@ -1,3 +1,7 @@
+## [1.2.0] - 2026-02-15
+### Changed
+- release: core ^1.2.0 의존성 동기화, PyPI 첫 프로덕션 배포
+
 ## [1.1.8] - 2026-02-10
 ### Changed
 - deps: programgarden-core 1.1.10 버전으로 업데이트 (translate_schema 번역 범위 수정)

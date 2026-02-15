@@ -30,7 +30,7 @@ pip install programgarden-finance
 poetry add programgarden-finance
 ```
 
-요구 사항: Python 3.9+
+요구 사항: Python 3.12+
 
 ## 빠른 시작
 
