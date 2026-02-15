@@ -12,11 +12,24 @@
 
 ## 소개
 
-**ProgramGarden**은 코딩 없이 자동매매를 구현할 수 있는 노드 기반 DSL(Domain Specific Language) 오픈소스 플랫폼입니다.
+**ProgramGarden**은 오픈소스 기반 AI 퀀트 플랫폼입니다. 코딩 없이 노드를 조합하여 자동매매 전략을 구성하고 실행할 수 있습니다.
 
 [**프로그램 동산**](https://programgarden.com)과 [**LS증권**](https://ls-sec.co.kr) 협업으로 개발되었으며, 개인 투자자부터 자동매매 서비스를 원하는 기업까지 활용할 수 있습니다.
 
 자세한 사용법은 [**가이드 문서**](https://programgarden.gitbook.io/docs)를 참고하세요.
+
+## AI 퀀트 앱
+
+오픈소스 기반으로 구축된 웹사이트와 앱에서 이용하세요.
+
+- https://programgarden.com (오픈 예정)
+
+## 커뮤니티
+
+- 카카오톡 단톡방: https://open.kakao.com/o/gKVObqUh
+- 프로그램 동산 유튜브: https://youtube.com/@programgarden
+- 네이버 카페 커뮤니티: https://cafe.naver.com/programgarden
+- 비즈니스 문의: coding@programgarden.com
 
 ## 주요 기능
 
@@ -48,10 +61,3 @@ pip install programgarden
 ```bash
 poetry add programgarden
 ```
-
-## 커뮤니티
-
-- 카카오톡 단톡방: https://open.kakao.com/o/gKVObqUh
-- 프로그램 동산 유튜브: https://youtube.com/@programgarden
-- 네이버 카페 커뮤니티: https://cafe.naver.com/programgarden
-- 비즈니스 문의: coding@programgarden.com
