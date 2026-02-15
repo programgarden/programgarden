@@ -8,11 +8,11 @@ AI 에이전트를 사용하면 GPT, Claude 같은 LLM이 워크플로우의 노
 
 AI 에이전트는 두 개의 노드로 구성됩니다:
 
-```
-LLMModelNode ──(ai_model 엣지)──▶ AIAgentNode
-                                      ▲
-HistoricalDataNode ──(tool 엣지)──────┘
-MarketDataNode ──(tool 엣지)──────────┘
+```mermaid
+flowchart LR
+    A[LLMModelNode] -->|ai_model 엣지| B[AIAgentNode]
+    C[HistoricalDataNode] -->|tool 엣지| B
+    D[MarketDataNode] -->|tool 엣지| B
 ```
 
 | 노드 | 역할 |
@@ -180,13 +180,15 @@ AI 에이전트는 일반 엣지 외에 두 가지 특수 엣지를 사용합니
 AI 에이전트는 실시간 노드와 **직접 연결할 수 없습니다**. 반드시 ThrottleNode를 거쳐야 합니다.
 
 **차단되는 패턴:**
-```
-RealMarketDataNode ──▶ AIAgentNode  (차단!)
+```mermaid
+flowchart LR
+    A[RealMarketDataNode] --x B[AIAgentNode]
 ```
 
 **올바른 패턴:**
-```
-RealMarketDataNode ──▶ ThrottleNode ──▶ AIAgentNode  (OK)
+```mermaid
+flowchart LR
+    A[RealMarketDataNode] --> B[ThrottleNode] --> C[AIAgentNode]
 ```
 
 | 설정 | 기본값 | 설명 |
