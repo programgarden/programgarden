@@ -15,11 +15,6 @@ flowchart LR
     D[MarketDataNode] -->|tool 엣지| B
 ```
 
-```mermaid
-flowchart LR
-    X[테스트] --> Y[mermaid 렌더링 확인]
-```
-
 | 노드 | 역할 |
 |------|------|
 | `LLMModelNode` | LLM API 연결 (OpenAI, Anthropic 등) |
