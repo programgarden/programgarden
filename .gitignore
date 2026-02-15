@@ -366,6 +366,7 @@ programgarden_data/
 **/programgarden_data/
 **/app/data/
 .claude/
+CLAUDE.md
 
 json_dynamic_widget_built_in_widgets/
 vector_db_docs/
