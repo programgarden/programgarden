@@ -2325,7 +2325,7 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "1.3.0"
+version = "1.4.0"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
