@@ -33,7 +33,7 @@
 
 ## 전체 플러그인 목록
 
-### 전체 플러그인 (19개)
+### 전체 플러그인 (34개)
 
 | 분류 | 플러그인 | 설명 |
 |------|---------|------|
@@ -41,21 +41,36 @@
 | | MACD | MACD 골든/데드크로스 |
 | | Stochastic | 스토캐스틱 %K/%D 크로스 |
 | | OBV | 거래량 기반 매매 압력 |
+| | WilliamsR | 윌리엄스 %R 오실레이터 |
+| | CCI | 상품채널지수 (과매수/과매도) |
+| | TRIX | 삼중지수이동평균 노이즈 제거 |
 | **추세** | ADX | 추세 강도 측정 |
 | | MovingAverageCross | 이동평균 골든/데드크로스 |
 | | DualMomentum | 듀얼모멘텀 (절대+상대) |
 | | BreakoutRetest | 돌파 후 되돌림 매매 |
+| | IchimokuCloud | 일목균형표 (구름대) |
+| | ParabolicSAR | 파라볼릭 SAR 추세 반전 |
+| | Supertrend | ATR 기반 슈퍼트렌드 |
 | **변동성** | BollingerBands | 볼린저밴드 이탈 |
 | | ATR | ATR 변동성 돌파 |
 | | PriceChannel | 돈치안 채널 돌파 |
 | | GoldenRatio | 피보나치 되돌림 |
+| | KeltnerChannel | 켈트너 채널 (스퀴즈) |
 | **가격 레벨** | PivotPoint | 피봇 포인트 (S/R 레벨) |
-| **패턴** | ThreeLineStrike | 삼선 타격 캔들 패턴 |
+| | VWAP | 거래량가중평균가격 |
+| **패턴** | ThreeLineStrike | 삼선 타격 (4봉 반전) |
+| | Engulfing | 장악형 (불리시/베어리시) |
+| | HammerShootingStar | 망치/유성형 (반전) |
+| | Doji | 도지 (추세 전환 경고) |
+| | MorningEveningStar | 샛별/석별형 (3봉 반전) |
 | **거래량** | VolumeSpike | 거래량 급증 감지 |
+| | CMF | 차이킨 자금흐름 (매집/분산) |
 | **평균회귀** | MeanReversion | 이평선 이탈 회귀 |
 | **포지션 관리** | ProfitTarget | 목표 수익률 익절 |
 | | StopLoss | 손절 조건 |
 | | TrailingStop | 추적 손절 (비율 기반) |
+| | PartialTakeProfit | 분할 익절 (다단계 매도) |
+| | TimeBasedExit | 시간 기반 청산 (보유일 관리) |
 
 ---
 
@@ -569,3 +584,540 @@
 이 예시는 **RSI 과매도 + MACD 골든크로스 + ADX 상승추세** 세 조건이 모두 만족할 때만 매수합니다.
 
 > 자세한 조합 방법은 [조건 조합 가이드](../logic_guide.md)를 참고하세요.
+
+---
+
+## 추세 지표 (확장)
+
+### IchimokuCloud (일목균형표)
+
+**텐칸센, 기준선, 구름대**를 종합적으로 분석합니다. 가격이 구름대 위에 있으면 상승 추세, 아래에 있으면 하락 추세입니다. 텐칸센/기준선 크로스도 매매 신호로 활용합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `tenkan_period` | int | 9 | 전환선 기간 (1~50) |
+| `kijun_period` | int | 26 | 기준선 기간 (1~100) |
+| `senkou_b_period` | int | 52 | 선행스팬B 기간 (1~200) |
+| `signal_type` | string | "price_above_cloud" | 시그널 타입 |
+
+**signal_type 옵션:**
+- `price_above_cloud`: 가격이 구름대 위 (상승 추세 확인)
+- `price_below_cloud`: 가격이 구름대 아래 (하락 추세 확인)
+- `tk_cross_bullish`: 텐칸센이 기준선 상향 돌파 (매수)
+- `tk_cross_bearish`: 텐칸센이 기준선 하향 돌파 (매도)
+- `cloud_bullish`: 선행스팬A > B (구름 상승 전환)
+- `cloud_bearish`: 선행스팬A < B (구름 하락 전환)
+
+```json
+{
+  "id": "ichimoku",
+  "type": "ConditionNode",
+  "plugin": "IchimokuCloud",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"tenkan_period": 9, "kijun_period": 26, "senkou_b_period": 52, "signal_type": "price_above_cloud"}
+}
+```
+
+> **팁**: 일목균형표는 단독으로 사용해도 충분한 종합 지표입니다. 구름대 위 + 텐칸/기준 골든크로스가 동시에 발생하면 강력한 매수 신호입니다.
+
+> **필요 데이터**: 최소 52일(senkou_b_period)의 고가, 저가, 종가
+
+---
+
+### ParabolicSAR (파라볼릭 SAR)
+
+가격 위/아래에 점(SAR)을 찍어 **추세 방향과 반전점**을 표시합니다. SAR이 가격 아래에 있으면 상승 추세, 위에 있으면 하락 추세입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `af_start` | float | 0.02 | 가속인자 초기값 (0.01~0.05) |
+| `af_step` | float | 0.02 | 가속인자 증가분 (0.01~0.05) |
+| `af_max` | float | 0.20 | 가속인자 최대값 (0.1~0.5) |
+| `signal_type` | string | "bullish_reversal" | 시그널 타입 |
+
+**signal_type 옵션:**
+- `bullish_reversal`: SAR이 가격 아래로 전환 (하락→상승 반전, 매수)
+- `bearish_reversal`: SAR이 가격 위로 전환 (상승→하락 반전, 매도)
+- `uptrend`: 현재 상승 추세 (SAR < 가격)
+- `downtrend`: 현재 하락 추세 (SAR > 가격)
+
+```json
+{
+  "id": "sar",
+  "type": "ConditionNode",
+  "plugin": "ParabolicSAR",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"af_start": 0.02, "af_step": 0.02, "af_max": 0.20, "signal_type": "bullish_reversal"}
+}
+```
+
+> **필요 데이터**: 고가, 저가, 종가. 최소 10일 데이터
+
+---
+
+### Supertrend (슈퍼트렌드)
+
+**ATR(평균진폭) 기반**의 추세 추종 지표입니다. 가격이 Supertrend 위에 있으면 상승, 아래에 있으면 하락 추세입니다. 시그널이 명확하여 초보자도 쉽게 활용 가능합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `atr_period` | int | 10 | ATR 계산 기간 (1~50) |
+| `multiplier` | float | 3.0 | ATR 배수 (1.0~5.0) |
+| `signal_type` | string | "bullish" | 시그널 타입 |
+
+**signal_type 옵션:**
+- `bullish`: 하락→상승 전환 (매수)
+- `bearish`: 상승→하락 전환 (매도)
+- `uptrend`: 현재 상승 추세
+- `downtrend`: 현재 하락 추세
+
+```json
+{
+  "id": "supertrend",
+  "type": "ConditionNode",
+  "plugin": "Supertrend",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"atr_period": 10, "multiplier": 3.0, "signal_type": "uptrend"}
+}
+```
+
+> **팁**: `multiplier`가 클수록 노이즈가 줄어 신호가 적지만 정확도가 높습니다. 단타는 2.0, 중장기는 3.0~4.0을 추천합니다.
+
+---
+
+## 모멘텀 지표 (확장)
+
+### WilliamsR (윌리엄스 %R)
+
+Stochastic과 유사하나 **역전된 스케일(-100~0)**을 사용합니다. -80 이하이면 과매도(매수 기회), -20 이상이면 과매수(매도 기회)입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `period` | int | 14 | 계산 기간 (2~100) |
+| `threshold` | float | -80 | 과매도/과매수 기준값 (-100~0) |
+| `direction` | string | "below" | `below`: 과매도(매수), `above`: 과매수(매도) |
+
+```json
+{
+  "id": "williams",
+  "type": "ConditionNode",
+  "plugin": "WilliamsR",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"period": 14, "threshold": -80, "direction": "below"}
+}
+```
+
+> **팁**: RSI와 함께 사용하면 과매도 신호의 정확도가 높아집니다. `LogicNode(all)`로 두 조건을 동시에 확인하세요.
+
+> **필요 데이터**: 고가, 저가, 종가. 최소 `period`일 데이터
+
+---
+
+### CCI (Commodity Channel Index)
+
+**전형적인 가격(TP)**의 이동평균으로부터의 편차를 측정합니다. +100 이상이면 과매수, -100 이하이면 과매도입니다. 해외선물 트레이더에게 핵심 지표입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `period` | int | 20 | CCI 계산 기간 (5~100) |
+| `threshold` | float | 100 | 과매수/과매도 기준값 (50~300) |
+| `direction` | string | "below" | `below`: 과매도(-100 이하, 매수), `above`: 과매수(+100 이상, 매도) |
+
+```json
+{
+  "id": "cci",
+  "type": "ConditionNode",
+  "plugin": "CCI",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"period": 20, "threshold": -100, "direction": "below"}
+}
+```
+
+> **필요 데이터**: 고가, 저가, 종가. 최소 `period`일 데이터
+
+---
+
+### TRIX (삼중지수이동평균)
+
+EMA를 3번 적용하여 **노이즈를 제거**하고 중장기 추세를 파악합니다. TRIX 값과 시그널선 교차로 매매 신호를 발생시킵니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `period` | int | 15 | EMA 기간 (5~50) |
+| `signal_period` | int | 9 | 시그널선 기간 (3~20) |
+| `signal_type` | string | "bullish_cross" | 시그널 타입 |
+
+**signal_type 옵션:**
+- `bullish_cross`: TRIX가 시그널선 상향 돌파 (매수)
+- `bearish_cross`: TRIX가 시그널선 하향 돌파 (매도)
+- `above_zero`: TRIX > 0 (상승 추세)
+- `below_zero`: TRIX < 0 (하락 추세)
+
+```json
+{
+  "id": "trix",
+  "type": "ConditionNode",
+  "plugin": "TRIX",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"period": 15, "signal_period": 9, "signal_type": "bullish_cross"}
+}
+```
+
+> **팁**: TRIX는 MACD보다 노이즈에 강합니다. 중장기 추세를 확인할 때 유용합니다.
+
+---
+
+## 변동성 지표 (확장)
+
+### KeltnerChannel (켈트너 채널)
+
+**EMA + ATR 기반** 채널입니다. 볼린저밴드와 함께 사용하면 "스퀴즈" 전략이 가능합니다. 볼린저밴드가 켈트너 채널 안으로 들어오면 변동성 축소 → 큰 움직임 예고입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `ema_period` | int | 20 | EMA 기간 (5~50) |
+| `atr_period` | int | 10 | ATR 기간 (5~50) |
+| `atr_multiplier` | float | 2.0 | ATR 배수 (1.0~4.0) |
+| `direction` | string | "above_upper" | 시그널 방향 |
+
+**direction 옵션:**
+- `above_upper`: 가격이 상단 밴드 위 (강한 상승 돌파)
+- `below_lower`: 가격이 하단 밴드 아래 (강한 하락 돌파)
+- `squeeze`: 변동성 축소 (볼린저밴드와 조합 시 폭발적 움직임 예고)
+
+```json
+{
+  "id": "keltner",
+  "type": "ConditionNode",
+  "plugin": "KeltnerChannel",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"ema_period": 20, "atr_period": 10, "atr_multiplier": 2.0, "direction": "squeeze"}
+}
+```
+
+> **팁**: BollingerBands + KeltnerChannel `squeeze` 조합은 TTM Squeeze 전략의 핵심입니다.
+
+---
+
+## 가격 레벨 지표 (확장)
+
+### VWAP (거래량가중평균가격)
+
+**거래량 가중 평균가격**입니다. 기관투자자가 가장 많이 참고하는 지표로, 가격이 VWAP 위에 있으면 매수 우위, 아래에 있으면 매도 우위입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `direction` | string | "above" | `above`: VWAP 위(매수 우위), `below`: VWAP 아래(매도 우위) |
+| `band_multiplier` | float | 0.0 | VWAP 밴드 표준편차 배수 (0=밴드 없음, 1.0~3.0) |
+
+```json
+{
+  "id": "vwap",
+  "type": "ConditionNode",
+  "plugin": "VWAP",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}", "volume": "{{ row.volume }}"
+    }
+  },
+  "fields": {"direction": "above", "band_multiplier": 0}
+}
+```
+
+> **팁**: `band_multiplier: 2.0`으로 설정하면 VWAP ± 2표준편차 밴드가 생성됩니다. 밴드 하단 터치 시 매수, 상단 터치 시 매도 전략에 활용합니다.
+
+> **필요 데이터**: 종가, 거래량 (고가/저가는 선택)
+
+---
+
+## 거래량 지표 (확장)
+
+### CMF (Chaikin Money Flow)
+
+**매집(accumulation)과 분산(distribution)**을 거래량으로 측정합니다. CMF가 양수이면 매수세 유입(매집), 음수이면 매도세 유입(분산)입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `period` | int | 20 | CMF 계산 기간 (5~50) |
+| `direction` | string | "accumulation" | `accumulation`: 매집(CMF > 0), `distribution`: 분산(CMF < 0) |
+
+```json
+{
+  "id": "cmf",
+  "type": "ConditionNode",
+  "plugin": "CMF",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}", "volume": "{{ row.volume }}"
+    }
+  },
+  "fields": {"period": 20, "direction": "accumulation"}
+}
+```
+
+> **팁**: OBV와 함께 사용하면 거래량 분석의 정확도가 높아집니다. CMF(매집) + OBV(상승) 동시 충족 시 강한 매수 신호입니다.
+
+> **필요 데이터**: 고가, 저가, 종가, 거래량
+
+---
+
+## 캔들스틱 패턴
+
+### Engulfing (장악형)
+
+이전 캔들을 완전히 감싸는 **반전 패턴**입니다. 캔들스틱 패턴 중 가장 신뢰도가 높습니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `direction` | string | "bullish" | `bullish`: 불리시 장악(매수), `bearish`: 베어리시 장악(매도) |
+| `min_body_ratio` | float | 0.3 | 캔들 몸통 최소 비율 (0.1~1.0) |
+
+```json
+{
+  "id": "engulfing",
+  "type": "ConditionNode",
+  "plugin": "Engulfing",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "open": "{{ row.open }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"direction": "bullish", "min_body_ratio": 0.3}
+}
+```
+
+**패턴 설명:**
+- **Bullish Engulfing**: 음봉 → 큰 양봉이 전체를 감싸는 패턴 → 매수
+- **Bearish Engulfing**: 양봉 → 큰 음봉이 전체를 감싸는 패턴 → 매도
+
+> **필요 데이터**: 시가, 고가, 저가, 종가. 최소 2일 데이터
+
+---
+
+### HammerShootingStar (망치/유성형)
+
+**긴 꼬리**를 가진 반전 캔들 패턴입니다. 망치형은 하락 후 반등, 유성형은 상승 후 하락 전환을 예고합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `direction` | string | "hammer" | `hammer`: 망치형(매수), `shooting_star`: 유성형(매도) |
+| `shadow_ratio` | float | 2.0 | 꼬리/몸통 최소 비율 (1.5~5.0) |
+| `body_position` | float | 0.33 | 몸통이 전체 범위 상단/하단 N% 이내 |
+
+```json
+{
+  "id": "hammer",
+  "type": "ConditionNode",
+  "plugin": "HammerShootingStar",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "open": "{{ row.open }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"direction": "hammer", "shadow_ratio": 2.0, "body_position": 0.33}
+}
+```
+
+**패턴 설명:**
+- **Hammer**: 긴 아래꼬리 + 작은 몸통이 상단에 위치. 하락 후 반등 신호
+- **Shooting Star**: 긴 위꼬리 + 작은 몸통이 하단에 위치. 상승 후 하락 신호
+
+---
+
+### Doji (도지)
+
+시가와 종가가 거의 같은 **십자형 캔들**입니다. 매수와 매도 세력이 균형을 이루며, 추세 전환의 경고 신호입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `body_pct` | float | 10.0 | 몸통/전체범위 최대 비율 (%, 5~20) |
+| `doji_type` | string | "any" | 도지 유형 |
+
+**doji_type 옵션:**
+- `any`: 모든 도지
+- `standard`: 일반 도지 (십자형)
+- `long_legged`: 장다리 도지 (긴 위아래 꼬리)
+- `dragonfly`: 잠자리 도지 (긴 아래꼬리, 위꼬리 거의 없음)
+- `gravestone`: 비석 도지 (긴 위꼬리, 아래꼬리 거의 없음)
+
+```json
+{
+  "id": "doji",
+  "type": "ConditionNode",
+  "plugin": "Doji",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "open": "{{ row.open }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"body_pct": 10.0, "doji_type": "any"}
+}
+```
+
+> **팁**: 도지 단독으로는 방향 판단이 어렵습니다. RSI 과매도 + 도지 출현 시 반등 가능성이 높습니다.
+
+---
+
+### MorningEveningStar (샛별/석별형)
+
+**3봉 반전 패턴**입니다. 큰 음봉 → 작은 봉 → 큰 양봉이 나오면 샛별형(매수), 반대이면 석별형(매도)입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `direction` | string | "morning_star" | `morning_star`: 샛별형(매수), `evening_star`: 석별형(매도) |
+| `star_body_max` | float | 30.0 | 가운데 봉 몸통 최대 비율 (%, 10~50) |
+| `confirmation_ratio` | float | 0.5 | 3번째 봉이 1번째 봉 몸통의 N% 이상 회복 |
+
+```json
+{
+  "id": "morningStar",
+  "type": "ConditionNode",
+  "plugin": "MorningEveningStar",
+  "items": {
+    "from": "{{ item.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}", "open": "{{ row.open }}", "high": "{{ row.high }}",
+      "low": "{{ row.low }}", "close": "{{ row.close }}"
+    }
+  },
+  "fields": {"direction": "morning_star", "star_body_max": 30.0, "confirmation_ratio": 0.5}
+}
+```
+
+> **필요 데이터**: 시가, 고가, 저가, 종가. 최소 3일 데이터
+
+---
+
+## 포지션 관리 지표 (확장)
+
+### PartialTakeProfit (분할 익절)
+
+**여러 단계에서 분할 매도**하여 리스크를 줄이면서 수익을 확보합니다. 수익률 5%에서 50% 매도, 10%에서 30% 매도처럼 단계별 매도를 자동 실행합니다. `strategy_state`로 완료된 단계를 추적합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `levels` | string/array | `[{"pnl_pct":5,"sell_pct":50},{"pnl_pct":10,"sell_pct":30},{"pnl_pct":20,"sell_pct":20}]` | 익절 단계 배열 (JSON) |
+
+**levels 배열 항목:**
+- `pnl_pct`: 트리거 수익률 (%)
+- `sell_pct`: 해당 단계에서 매도할 비율 (%, 최초 수량 기준)
+
+```json
+{
+  "id": "partialTP",
+  "type": "ConditionNode",
+  "plugin": "PartialTakeProfit",
+  "positions": "{{ nodes.account.positions }}",
+  "fields": {
+    "levels": [
+      {"pnl_pct": 5, "sell_pct": 50},
+      {"pnl_pct": 10, "sell_pct": 30},
+      {"pnl_pct": 20, "sell_pct": 20}
+    ]
+  }
+}
+```
+
+**동작 방식:**
+1. 수익률 5% 도달 → 보유량의 50% 매도 (1단계 완료 저장)
+2. 수익률 10% 도달 → 최초 수량의 30% 매도 (2단계 완료 저장)
+3. 수익률 20% 도달 → 최초 수량의 20% 매도 (3단계 완료 저장)
+4. 포지션 전량 청산 시 → 상태 자동 삭제
+
+> **주의**: `positions` 기반 플러그인입니다. `RealAccountNode`의 출력을 연결하세요.
+
+---
+
+### TimeBasedExit (시간 기반 청산)
+
+보유 기간이 설정된 일수를 초과하면 **자동 청산 시그널**을 발생시킵니다. 진입일을 자동 추적하며, `strategy_state`에 저장합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `max_hold_days` | int | 5 | 최대 보유 일수 (1~365) |
+| `warn_days` | int | 0 | 경고 시작 일수 (0=비활성, 1~365) |
+
+```json
+{
+  "id": "timeExit",
+  "type": "ConditionNode",
+  "plugin": "TimeBasedExit",
+  "positions": "{{ nodes.account.positions }}",
+  "fields": {"max_hold_days": 10, "warn_days": 3}
+}
+```
+
+**동작 방식:**
+1. 포지션 최초 감지 시 → 오늘 날짜를 진입일로 저장
+2. 매 실행마다 보유 일수 계산 (오늘 - 진입일)
+3. `max_hold_days` 초과 → `passed_symbols`에 포함 (청산 시그널)
+4. `warn_days` 설정 시 → 만기 N일 전부터 경고 (action: "warn")
+5. 포지션 청산 시 → 상태 자동 삭제
+
+> **팁**: 스윙 트레이딩에서 5~10일, 단기 트레이딩에서 2~3일로 설정합니다. `warn_days`로 미리 경고를 받으면 수동 판단도 가능합니다.
+
+> **주의**: `positions` 기반 플러그인입니다. `RealAccountNode`의 출력을 연결하세요.
