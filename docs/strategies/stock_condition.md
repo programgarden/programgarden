@@ -33,7 +33,7 @@
 
 ## 전체 플러그인 목록
 
-### 기술적 지표 (17개)
+### 전체 플러그인 (19개)
 
 | 분류 | 플러그인 | 설명 |
 |------|---------|------|
@@ -49,6 +49,8 @@
 | | ATR | ATR 변동성 돌파 |
 | | PriceChannel | 돈치안 채널 돌파 |
 | | GoldenRatio | 피보나치 되돌림 |
+| **가격 레벨** | PivotPoint | 피봇 포인트 (S/R 레벨) |
+| **패턴** | ThreeLineStrike | 삼선 타격 캔들 패턴 |
 | **거래량** | VolumeSpike | 거래량 급증 감지 |
 | **평균회귀** | MeanReversion | 이평선 이탈 회귀 |
 | **포지션 관리** | ProfitTarget | 목표 수익률 익절 |
@@ -350,6 +352,69 @@
 ```
 
 > **팁**: 61.8% 되돌림은 "황금비율"로 가장 많이 사용됩니다. 50%와 함께 확인하면 더 정확합니다.
+
+---
+
+## 가격 레벨 지표
+
+### PivotPoint (피봇 포인트)
+
+전일 고가/저가/종가를 이용해 **오늘의 지지선(S1~S3)과 저항선(R1~R3)**을 계산합니다. 데이 트레이더와 스윙 트레이더가 가장 많이 사용하는 가격 레벨 도구입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `pivot_type` | string | "standard" | 계산 방식 (`standard`, `fibonacci`, `camarilla`) |
+| `direction` | string | "support" | `support`: 지지선 근접(매수), `resistance`: 저항선 근접(매도) |
+| `tolerance` | float | 0.01 | 레벨 근접 허용 범위 (0.005~0.05) |
+
+```json
+{
+  "id": "pivot",
+  "type": "ConditionNode",
+  "plugin": "PivotPoint",
+  "data": "{{ nodes.history.values }}",
+  "fields": {"pivot_type": "standard", "direction": "support", "tolerance": 0.01}
+}
+```
+
+**계산 방식:**
+- **Standard**: PP=(H+L+C)/3, S1=2×PP-H, R1=2×PP-L
+- **Fibonacci**: PP 기준 피보나치 비율(38.2%, 61.8%) 적용
+- **Camarilla**: 레인지(H-L) 기반으로 더 촘촘한 레벨 생성
+
+> **팁**: Standard가 가장 보편적입니다. Camarilla는 단기 트레이딩에 적합합니다.
+
+> **필요 데이터**: 최소 2일의 고가(high), 저가(low), 종가(close)
+
+---
+
+## 패턴 지표
+
+### ThreeLineStrike (삼선 타격)
+
+**3연속 동일 방향 캔들 후 반전 캔들**을 감지합니다. 예를 들어 3일 연속 하락 후 이를 전부 되돌리는 대형 양봉이 나오면 강한 반등 신호입니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `pattern` | string | "bullish" | `bullish`: 하락 후 반전(매수), `bearish`: 상승 후 반전(매도) |
+| `min_body_pct` | float | 0.3 | 캔들 몸통 최소 비율 (0.1~1.0) |
+
+```json
+{
+  "id": "threeLineStrike",
+  "type": "ConditionNode",
+  "plugin": "ThreeLineStrike",
+  "data": "{{ nodes.history.values }}",
+  "fields": {"pattern": "bullish", "min_body_pct": 0.3}
+}
+```
+
+**패턴 설명:**
+- **Bullish**: 3연속 음봉 + 4번째 양봉이 3개 음봉 전체를 감싸는 패턴 → 매수
+- **Bearish**: 3연속 양봉 + 4번째 음봉이 전체를 감싸는 패턴 → 매도
+- `min_body_pct`: 캔들 몸통이 전체 범위(고가-저가) 대비 최소 비율. 작은 값은 도지/스피닝탑 허용
+
+> **필요 데이터**: 최소 4일의 시가(open), 고가(high), 저가(low), 종가(close)
 
 ---
 
