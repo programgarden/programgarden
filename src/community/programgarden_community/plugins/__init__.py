@@ -14,6 +14,11 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── stochastic/       # TECHNICAL - 스토캐스틱
     ├── atr/              # TECHNICAL - ATR
     ├── price_channel/    # TECHNICAL - 가격 채널 (돈치안)
+    ├── golden_ratio/     # TECHNICAL - 피보나치 되돌림
+    ├── pivot_point/      # TECHNICAL - 피봇 포인트
+    ├── mean_reversion/   # TECHNICAL - 평균 회귀
+    ├── breakout_retest/  # TECHNICAL - 돌파 후 되돌림
+    ├── three_line_strike/ # TECHNICAL - 삼선 타격
     ├── stop_loss/        # POSITION - 손절
     ├── profit_target/    # POSITION - 익절
     └── trailing_stop/    # POSITION - 트레일링 스탑
@@ -48,6 +53,11 @@ def register_all_plugins() -> None:
     from .price_channel import PRICE_CHANNEL_SCHEMA, price_channel_condition
     from .adx import ADX_SCHEMA, adx_condition
     from .obv import OBV_SCHEMA, obv_condition
+    from .golden_ratio import GOLDEN_RATIO_SCHEMA, golden_ratio_condition
+    from .pivot_point import PIVOT_POINT_SCHEMA, pivot_point_condition
+    from .mean_reversion import MEAN_REVERSION_SCHEMA, mean_reversion_condition
+    from .breakout_retest import BREAKOUT_RETEST_SCHEMA, breakout_retest_condition
+    from .three_line_strike import THREE_LINE_STRIKE_SCHEMA, three_line_strike_condition
 
     # === POSITION 플러그인 ===
     from .stop_loss import STOP_LOSS_SCHEMA, stop_loss_condition
@@ -67,6 +77,11 @@ def register_all_plugins() -> None:
         ("PriceChannel", price_channel_condition, PRICE_CHANNEL_SCHEMA),
         ("ADX", adx_condition, ADX_SCHEMA),
         ("OBV", obv_condition, OBV_SCHEMA),
+        ("GoldenRatio", golden_ratio_condition, GOLDEN_RATIO_SCHEMA),
+        ("PivotPoint", pivot_point_condition, PIVOT_POINT_SCHEMA),
+        ("MeanReversion", mean_reversion_condition, MEAN_REVERSION_SCHEMA),
+        ("BreakoutRetest", breakout_retest_condition, BREAKOUT_RETEST_SCHEMA),
+        ("ThreeLineStrike", three_line_strike_condition, THREE_LINE_STRIKE_SCHEMA),
     ]
 
     # POSITION 등록
