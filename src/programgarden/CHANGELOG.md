@@ -1,3 +1,15 @@
+## [1.4.0] - 2026-02-16
+### Added
+- **퀀트 전략 플러그인 Phase 4 - 15개 추가** (community 1.4.0, 총 34개)
+  - 추세/모멘텀 확장: IchimokuCloud(일목균형표), VWAP(거래량가중평균), ParabolicSAR, WilliamsR, CCI(상품채널지수)
+  - 변동성/추세 확장: Supertrend(슈퍼트렌드), KeltnerChannel(켈트너채널), TRIX(삼중지수이동평균), CMF(차이킨자금흐름)
+  - 캔들스틱 패턴: Engulfing(장악형), HammerShootingStar(망치/유성형), Doji(도지), MorningEveningStar(샛별/석별형)
+  - 포지션 관리 확장: PartialTakeProfit(분할익절), TimeBasedExit(시간기반청산)
+- **통합 테스트**: test_phase4_plugins.py (71개 테스트 케이스)
+
+### Changed
+- deps: programgarden-community ^1.4.0
+
 ## [1.3.0] - 2026-02-16
 ### Added
 - **퀀트 전략 플러그인 5개 추가** (community 1.3.0)
