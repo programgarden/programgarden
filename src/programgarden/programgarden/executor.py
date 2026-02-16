@@ -5445,16 +5445,17 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     context.log("warning", f"External binding evaluation failed for {target_field}: {e}", node_id)
                     external_values[target_field] = source_expr
 
+        # 기본 컨텍스트 dict (row 제외)
+        base_dict = expr_context.to_dict()
+
         # 각 row 처리
         for row in from_data:
             record = {}
 
-            # row 컨텍스트 추가
-            row_context = {
-                **expr_context,
-                "row": row,
-            }
-            row_evaluator = ExpressionEvaluator(row_context)
+            # row 컨텍스트 추가: 기본 dict에 row 추가
+            row_ctx = ExpressionContext()
+            row_ctx.variables = {**base_dict, "row": row}
+            row_evaluator = ExpressionEvaluator(row_ctx)
 
             for target_field, source_expr in extract.items():
                 if target_field in external_values:
@@ -5578,11 +5579,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
             # === 표현식 평가 (items 제외 - items는 _process_items_with_extract에서 처리) ===
             context.log("debug", f"ConditionNode '{node_id}' 실행: plugin={plugin_id}, is_positions_based={is_positions_based}", node_id)
 
-            # items를 제외한 나머지 필드만 평가 (items.from, items.extract는 별도 처리)
-            items_backup = config.get("items")
-            config = evaluate_all_bindings(config, context, node_id)
-            if items_backup:
-                config["items"] = items_backup  # items는 원본 유지
+            # items를 제외한 나머지 필드만 평가 (items는 _process_items_with_extract에서 별도 처리)
+            items_orig = config.get("items")
+            config_without_items = {k: v for k, v in config.items() if k != "items"}
+            config = evaluate_all_bindings(config_without_items, context, node_id)
+            if items_orig is not None:
+                config["items"] = items_orig
             
             # === positions 기반 플러그인 처리 (ProfitTarget, StopLoss) ===
             if is_positions_based:
@@ -5827,8 +5829,16 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 "fields": fields,  # 플러그인 파라미터
                 "field_mapping": field_mapping,  # 필드 매핑
                 "symbols": normalized_symbols,  # [{exchange, symbol}, ...]
-                "context": context,  # ExecutionContext (risk_tracker 등)
             }
+
+            # context는 시그니처에 있는 플러그인에만 전달 (trailing_stop 등)
+            import inspect
+            try:
+                sig = inspect.signature(plugin)
+                if "context" in sig.parameters:
+                    plugin_kwargs["context"] = context
+            except (ValueError, TypeError):
+                pass
 
             # 추가 포트 데이터
             if held_symbols:
@@ -12165,6 +12175,19 @@ class WorkflowJob:
                     if edge.to_node_id == node_id:
                         # symbols 포트 우선 확인 (WatchlistNode 출력)
                         input_data = self.context.get_output(edge.from_node_id, "symbols")
+
+                        # symbols가 문자열 배열이면 (merge 후) value 포트로 폴백
+                        # - WatchlistNode symbols: [{exchange, symbol}, ...] → dict 배열 → 그대로 사용
+                        # - HistoricalDataNode merged symbols: ["TSLA"] → string 배열 → value 포트로 전환
+                        if (isinstance(input_data, list) and input_data
+                                and not isinstance(input_data[0], dict)):
+                            value_data = self.context.get_output(edge.from_node_id, "value")
+                            if value_data is not None:
+                                if isinstance(value_data, list):
+                                    input_data = value_data
+                                elif isinstance(value_data, dict):
+                                    input_data = [value_data]
+
                         if input_data is None:
                             # 기본 출력 확인
                             input_data = self.context.get_output(edge.from_node_id, None)
@@ -12814,17 +12837,38 @@ class WorkflowJob:
         - {{ input.xxx }}: 워크플로우 inputs 파라미터
         - {{ nodeId.port }}: 이전 노드 출력값
         - {{ context.xxx }}: 실행 컨텍스트 값
+
+        Note: items 키는 제외 (ConditionNode의 _process_items_with_extract에서 별도 처리).
+              items 내부에 {{ row.xxx }} 같은 지연 평가 표현식이 있어 여기서 평가하면 실패함.
         """
         from programgarden_core.expression import ExpressionEvaluator
-        
+
+        # items는 별도 처리 대상이므로 항상 제외
+        items_orig = config.get("items")
+        config_copy = {k: v for k, v in config.items() if k != "items"}
+
+        # iteration context 없으면 {{ item }} 표현식도 지연 (auto-iterate 전)
+        deferred = {}
+        if self.context._iteration_item is None:
+            for k in list(config_copy.keys()):
+                v = config_copy[k]
+                if isinstance(v, str) and "{{ item" in v:
+                    deferred[k] = config_copy.pop(k)
+
         try:
             expr_context = self.context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
-            return evaluator.evaluate_fields(config)
+            resolved = evaluator.evaluate_fields(config_copy)
         except Exception as e:
-            # 표현식 평가 실패 시 원본 반환 (graceful degradation)
             self.context.log("warning", f"Expression resolve failed: {e}")
-            return config
+            resolved = config_copy
+
+        # 지연 평가 필드 복원
+        resolved.update(deferred)
+        if items_orig is not None:
+            resolved["items"] = items_orig
+
+        return resolved
 
     async def _event_loop(self) -> None:
         """
