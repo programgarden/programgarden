@@ -1,3 +1,23 @@
+## [1.3.0] - 2026-02-16
+### Added
+- **퀀트 전략 플러그인 5개 추가** (community 1.3.0)
+  - GoldenRatio: 피보나치 되돌림 레벨 (23.6%~78.6%) 기반 지지/저항 시그널
+  - PivotPoint: 피봇 포인트 (Standard/Fibonacci/Camarilla) S1~S3, R1~R3 레벨
+  - MeanReversion: 이평선 대비 z-score 이격도 기반 과매수/과매도
+  - BreakoutRetest: 지지/저항선 돌파 후 리테스트 매매
+  - ThreeLineStrike: 3연속 동일 방향 캔들 후 반전 패턴 인식
+- **auto-iterate 체이닝 테스트** 18개 추가 (test_auto_iterate_chain.py)
+
+### Fixed
+- executor auto-iterate input 해석 개선: symbols가 string 배열(merged)이면 value 포트로 폴백
+- ExpressionContext row 바인딩: `to_dict()` + 별도 ExpressionContext 생성으로 수정
+- plugin context 선택적 전달: `inspect.signature()`로 context 파라미터 유무 확인 후 전달
+- items 표현식 deferred 평가: iteration context 없을 때 `{{ item }}` 지연
+- items 키 config 평가에서 제외: `{{ row.xxx }}` 조기 평가 방지
+
+### Changed
+- deps: programgarden-community ^1.3.0
+
 ## [1.2.1] - 2026-02-15
 ### Fixed
 - ConditionNodeExecutor.execute()에 `**kwargs` 누락으로 workflow 인자 전달 시 TypeError 발생하는 버그 수정
