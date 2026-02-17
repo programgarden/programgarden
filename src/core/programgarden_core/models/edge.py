@@ -58,6 +58,10 @@ class Edge(BaseModel):
         alias="to",
         description="도착 노드 ID",
     )
+    from_port: Optional[str] = Field(
+        default=None,
+        description="출발 포트 (예: IfNode의 true/false)",
+    )
     edge_type: EdgeType = Field(
         default=EdgeType.MAIN,
         alias="type",
@@ -78,20 +82,27 @@ class Edge(BaseModel):
     @classmethod
     def extract_node_ids(cls, values: dict) -> dict:
         """
-        from/to 값에서 노드 ID만 추출 (하위호환성)
-        
-        "nodeA.portX" → "nodeA"
-        "nodeA" → "nodeA"
+        from/to 값에서 노드 ID만 추출하고 포트 정보를 보존
+
+        "nodeA.portX" → from="nodeA", from_port="portX"
+        "nodeA" → from="nodeA"
         """
         if isinstance(values, dict):
             from_val = values.get('from') or values.get('from_node')
             to_val = values.get('to') or values.get('to_node')
-            
+
             if from_val:
-                values['from'] = from_val.split('.')[0]
+                from_str = str(from_val)
+                if '.' in from_str:
+                    parts = from_str.split('.', 1)
+                    values['from'] = parts[0]
+                    if not values.get('from_port'):
+                        values['from_port'] = parts[1]
+                else:
+                    values['from'] = from_str
             if to_val:
-                values['to'] = to_val.split('.')[0]
-        
+                values['to'] = str(to_val).split('.')[0]
+
         return values
 
     # 하위호환성을 위한 property (기존 코드가 참조하는 경우)

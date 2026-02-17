@@ -64,10 +64,12 @@ class ResolvedEdge:
         from_node_id: str,
         to_node_id: str,
         edge_type: str = "main",
+        from_port: str = None,
     ):
         self.from_node_id = from_node_id
         self.to_node_id = to_node_id
         self.edge_type = edge_type
+        self.from_port = from_port
 
     @property
     def is_dag_edge(self) -> bool:
@@ -512,6 +514,7 @@ class WorkflowResolver:
                 from_node_id=edge.from_node_id,
                 to_node_id=edge.to_node_id,
                 edge_type=edge_type_str,
+                from_port=getattr(edge, 'from_port', None),
             )
             if edge.is_dag_edge:
                 dag_edges.append(resolved_edge)
