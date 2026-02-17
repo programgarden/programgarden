@@ -76,7 +76,7 @@ class NodeTypeRegistry:
         """Register built-in node types"""
         # 지연 임포트로 순환 참조 방지
         from programgarden_core.nodes import (
-            StartNode, ThrottleNode, SplitNode, AggregateNode,
+            StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode,
             OverseasStockBrokerNode, OverseasFuturesBrokerNode,
             # Market - Stock (해외주식)
             OverseasStockMarketDataNode, OverseasStockHistoricalDataNode,
@@ -110,7 +110,7 @@ class NodeTypeRegistry:
 
         node_classes = [
             # Infra
-            StartNode, ThrottleNode, SplitNode, AggregateNode,
+            StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode,
             # Broker (상품별 분리)
             OverseasStockBrokerNode, OverseasFuturesBrokerNode,
             # Market - Stock (해외주식)
