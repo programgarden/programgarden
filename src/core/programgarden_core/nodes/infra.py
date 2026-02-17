@@ -6,6 +6,7 @@ Infrastructure nodes:
 - ThrottleNode: Data flow control
 - SplitNode: Split list into individual items (item-based execution)
 - AggregateNode: Aggregate individual items into a list
+- IfNode: Conditional branching (if/else)
 """
 
 from typing import Optional, List, Literal, Dict, TYPE_CHECKING, ClassVar, Any
@@ -307,5 +308,108 @@ class AggregateNode(BaseNode):
                 example="value",
                 expected_type="str",
                 helper_text="i18n:fields.AggregateNode.value_field_helper",
+            ),
+        }
+
+
+class IfNode(BaseNode):
+    """
+    조건 분기 노드
+
+    left와 right 값을 operator로 비교하여 true/false 브랜치로 실행 흐름을 분기합니다.
+    조건이 참이면 true 포트로, 거짓이면 false 포트로 데이터가 전달됩니다.
+
+    Edge에 from_port를 지정하여 분기 경로를 설정합니다:
+    - {"from": "if1", "to": "order", "from_port": "true"}
+    - {"from": "if1", "to": "notify", "from_port": "false"}
+    """
+
+    type: Literal["IfNode"] = "IfNode"
+    category: NodeCategory = NodeCategory.INFRA
+    description: str = "i18n:nodes.IfNode.description"
+
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/if.svg"
+
+    # 비교 연산 필드
+    left: Any = Field(default=None, description="왼쪽 피연산자 (표현식 바인딩 가능)")
+    operator: Literal[
+        "==", "!=", ">", ">=", "<", "<=",
+        "in", "not_in",
+        "contains", "not_contains",
+        "is_empty", "is_not_empty",
+    ] = Field(default="==", description="비교 연산자")
+    right: Any = Field(default=None, description="오른쪽 피연산자 (표현식 바인딩 가능)")
+
+    _inputs: List[InputPort] = [
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="true", type="any", description="i18n:ports.if_true"),
+        OutputPort(name="false", type="any", description="i18n:ports.if_false"),
+        OutputPort(name="result", type="boolean", description="i18n:ports.if_result"),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode,
+        )
+        return {
+            "left": FieldSchema(
+                name="left",
+                type=FieldType.STRING,
+                description="i18n:fields.IfNode.left",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ nodes.account.balance }}",
+                example="{{ nodes.account.balance }}",
+                expected_type="any",
+            ),
+            "operator": FieldSchema(
+                name="operator",
+                type=FieldType.ENUM,
+                description="i18n:fields.IfNode.operator",
+                default="==",
+                enum_values=[
+                    "==", "!=", ">", ">=", "<", "<=",
+                    "in", "not_in",
+                    "contains", "not_contains",
+                    "is_empty", "is_not_empty",
+                ],
+                enum_labels={
+                    "==": "i18n:enums.if_operator.eq",
+                    "!=": "i18n:enums.if_operator.ne",
+                    ">": "i18n:enums.if_operator.gt",
+                    ">=": "i18n:enums.if_operator.gte",
+                    "<": "i18n:enums.if_operator.lt",
+                    "<=": "i18n:enums.if_operator.lte",
+                    "in": "i18n:enums.if_operator.in",
+                    "not_in": "i18n:enums.if_operator.not_in",
+                    "contains": "i18n:enums.if_operator.contains",
+                    "not_contains": "i18n:enums.if_operator.not_contains",
+                    "is_empty": "i18n:enums.if_operator.is_empty",
+                    "is_not_empty": "i18n:enums.if_operator.is_not_empty",
+                },
+                required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "right": FieldSchema(
+                name="right",
+                type=FieldType.STRING,
+                description="i18n:fields.IfNode.right",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="1000000",
+                example="1000000",
+                expected_type="any",
+                visible_when={
+                    "operator": [
+                        "==", "!=", ">", ">=", "<", "<=",
+                        "in", "not_in", "contains", "not_contains",
+                    ],
+                },
             ),
         }
