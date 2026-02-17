@@ -1,3 +1,7 @@
+## [1.3.0] - 2026-02-17
+### Changed
+- deps: programgarden-core ^1.3.0 의존성 동기화 (IfNode, Edge from_port 추가)
+
 ## [1.2.0] - 2026-02-15
 ### Changed
 - release: core ^1.2.0 의존성 동기화, PyPI 첫 프로덕션 배포

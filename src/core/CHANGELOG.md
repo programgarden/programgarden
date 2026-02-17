@@ -1,3 +1,13 @@
+## [1.3.0] - 2026-02-17
+### Added
+- **IfNode**: 범용 조건 분기 노드 (`infra` 카테고리)
+  - 12종 비교 연산자: `==`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `not_in`, `contains`, `not_contains`, `is_empty`, `is_not_empty`
+  - `true`/`false`/`result` 3개 출력 포트, upstream 데이터 pass-through
+  - 문자열↔숫자 타입 자동 변환
+- **Edge `from_port`**: 분기 경로 지정을 위한 `Optional[str]` 필드 추가
+  - dot notation 지원: `"if1.true"` → `from_port="true"` 자동 파싱
+- i18n: IfNode 관련 번역 키 추가 (ko/en)
+
 ## [1.2.0] - 2026-02-15
 ### Added
 - **AI Agent 노드**: LLMModelNode + AIAgentNode 2종 (`ai` 카테고리)
