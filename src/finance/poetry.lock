@@ -647,13 +647,15 @@ description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
-files = [
-    {file = "programgarden_core-1.3.0-py3-none-any.whl", hash = "sha256:536a98d60ce8bec48771341619f500828d3f70d7dfbf9cf6221b3879693a67d1"},
-    {file = "programgarden_core-1.3.0.tar.gz", hash = "sha256:c3524e95405787978c33dcd062b3d3279f51bdb00a1dd2152a3662ec65a33cb5"},
-]
+files = []
+develop = true
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
+
+[package.source]
+type = "directory"
+url = "../core"
 
 [[package]]
 name = "propcache"
@@ -1269,4 +1271,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "e1308cd37a3d1b1b8018394fc04005b4c8f2183a8400d4b6970f489fbad59a9c"
+content-hash = "2b44e0faf0b618983dbca169f1e52eac3b69949f4746155568a98fb0e5e5d430"
