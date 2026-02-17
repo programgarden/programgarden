@@ -6181,6 +6181,68 @@ class LogicNodeExecutor(NodeExecutorBase):
         return final_result, final_passed
 
 
+class IfNodeExecutor(NodeExecutorBase):
+    """
+    IfNode executor - 조건 분기
+
+    left op right를 평가하여 true/false 포트로 흐름 분기.
+    - true 포트: 조건 충족 시 upstream 데이터 pass-through
+    - false 포트: 조건 미충족 시 upstream 데이터 pass-through
+    - result 포트: 조건 평가 결과 (boolean)
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        config = evaluate_all_bindings(config, context, node_id)
+
+        left = config.get("left")
+        operator = config.get("operator", "==")
+        right = config.get("right")
+
+        result = self._evaluate(left, operator, right)
+        context.log(
+            "info",
+            f"IfNode: {left!r} {operator} {right!r} → {result}",
+            node_id,
+        )
+
+        # upstream에서 전달된 데이터 (pass-through)
+        passthrough = kwargs.get("input_data") or {}
+
+        return {
+            "true": passthrough if result else None,
+            "false": passthrough if not result else None,
+            "result": result,
+            "_if_branch": "true" if result else "false",
+        }
+
+    @staticmethod
+    def _evaluate(left: Any, operator: str, right: Any) -> bool:
+        """비교 연산 수행"""
+        try:
+            if operator == "==":           return left == right
+            if operator == "!=":           return left != right
+            if operator == ">":            return float(left) > float(right)
+            if operator == ">=":           return float(left) >= float(right)
+            if operator == "<":            return float(left) < float(right)
+            if operator == "<=":           return float(left) <= float(right)
+            if operator == "in":           return left in right
+            if operator == "not_in":       return left not in right
+            if operator == "contains":     return right in left
+            if operator == "not_contains": return right not in left
+            if operator == "is_empty":     return not left
+            if operator == "is_not_empty": return bool(left)
+        except (TypeError, ValueError):
+            return False
+        return False
+
+
 class MarketDataNodeExecutor(NodeExecutorBase):
     """
     MarketDataNode executor - REST API 현재가 조회 (당일 데이터만)
@@ -11511,6 +11573,7 @@ class WorkflowExecutor:
             "DisplayNode": DisplayNodeExecutor(),
             "ConditionNode": ConditionNodeExecutor(),
             "LogicNode": LogicNodeExecutor(),  # 조건 조합
+            "IfNode": IfNodeExecutor(),  # 조건 분기
             # Backtest nodes
             "HistoricalDataNode": HistoricalDataNodeExecutor(),
             "OverseasStockHistoricalDataNode": HistoricalDataNodeExecutor(),
@@ -12052,6 +12115,9 @@ class WorkflowJob:
         # Track which SplitNodes have been processed
         processed_splits: Dict[str, bool] = {}
 
+        # IfNode: 비활성 브랜치 스킵 집합 (IfNode 실행 후 동적 갱신)
+        if_skipped_nodes: Set[str] = set()
+
         # 🆕 실행 시작 전 모든 노드 상태를 pending으로 리셋 (UI 깜빡임 효과)
         for node_id in self.workflow.execution_order:
             node = self.workflow.nodes.get(node_id)
@@ -12088,6 +12154,16 @@ class WorkflowJob:
             # === Item-based execution: Skip AggregateNode (already executed by SplitNode) ===
             if node.node_type == "AggregateNode" and node_id in split_aggregate_pairs.values():
                 print(f"  ⏭ Skipping AggregateNode: {node_id} (already executed by SplitNode)")
+                continue
+
+            # === IfNode: 비활성 브랜치 스킵 ===
+            if node_id in if_skipped_nodes:
+                print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.COMPLETED,
+                )
                 continue
 
             print(f"  ▶ Executing node: {node_id} ({node.node_type})")
@@ -12216,6 +12292,14 @@ class WorkflowJob:
                         workflow=self.workflow,
                     )
 
+                # IfNode: 스킵 노드 계산 후 내부 키 제거
+                if node.node_type == "IfNode" and outputs:
+                    taken = outputs.pop("_if_branch", "true")
+                    new_skips = self._compute_if_skip_nodes(node_id, taken)
+                    if_skipped_nodes.update(new_skips)
+                    if new_skips:
+                        print(f"  🔀 IfNode {node_id}: branch={taken}, skipping {new_skips}")
+
                 # Store outputs
                 for out_port_name, value in outputs.items():
                     self.context.set_output(node_id, out_port_name, value)
@@ -12252,7 +12336,7 @@ class WorkflowJob:
     # 자동 반복 실행에서 제외할 노드 타입 (배열을 그대로 처리하는 노드)
     NO_AUTO_ITERATE_NODE_TYPES = {
         "SplitNode", "AggregateNode",  # 명시적 반복 제어 노드
-        "StartNode", "ThrottleNode",   # 인프라 노드
+        "StartNode", "ThrottleNode", "IfNode",  # 인프라 노드
         "TableDisplayNode", "LineChartNode", "MultiLineChartNode",  # 디스플레이 노드 (배열 표시)
         "CandlestickChartNode", "BarChartNode", "SummaryDisplayNode",
         "WatchlistNode", "MarketUniverseNode", "ScreenerNode",  # 배열 생성 노드
@@ -12385,6 +12469,63 @@ class WorkflowJob:
                         break
 
         return merged
+
+    def _compute_if_skip_nodes(self, if_node_id: str, taken_branch: str) -> Set[str]:
+        """IfNode 실행 결과에 따라 스킵할 노드 집합 계산 (캐스케이딩)
+
+        비활성 브랜치(from_port)의 하위 노드를 BFS로 탐색하고,
+        다른 활성 경로가 없는 노드만 스킵합니다.
+
+        Args:
+            if_node_id: IfNode ID
+            taken_branch: 선택된 브랜치 ("true" or "false")
+
+        Returns:
+            스킵할 노드 ID 집합
+        """
+        skipped_port = "false" if taken_branch == "true" else "true"
+
+        # 1. 비활성 브랜치의 직접 하위 노드 찾기
+        initial_skip = set()
+        for edge in self.workflow.edges:
+            if (edge.from_node_id == if_node_id
+                    and edge.is_dag_edge
+                    and edge.from_port == skipped_port):
+                initial_skip.add(edge.to_node_id)
+
+        # 2. BFS로 캐스케이딩 스킵 전파
+        skip_nodes: Set[str] = set()
+        queue = list(initial_skip)
+
+        while queue:
+            current = queue.pop(0)
+            if current in skip_nodes:
+                continue
+
+            # 이 노드의 모든 incoming main edge 확인
+            incoming = [e for e in self.workflow.edges
+                        if e.to_node_id == current and e.is_dag_edge]
+
+            all_inactive = True
+            for edge in incoming:
+                if edge.from_node_id == if_node_id:
+                    # IfNode에서 오는 edge: 활성 브랜치면 스킵 안 함
+                    if edge.from_port == taken_branch or edge.from_port is None:
+                        all_inactive = False
+                        break
+                elif edge.from_node_id not in skip_nodes:
+                    # 다른 활성 노드에서 오는 edge가 있으면 스킵 안 함
+                    all_inactive = False
+                    break
+
+            if all_inactive:
+                skip_nodes.add(current)
+                # 하위 노드도 확인 대상에 추가
+                for edge in self.workflow.edges:
+                    if edge.from_node_id == current and edge.is_dag_edge:
+                        queue.append(edge.to_node_id)
+
+        return skip_nodes
 
     def _find_split_aggregate_pairs(self) -> Dict[str, str]:
         """Find pairs of SplitNode → AggregateNode in the workflow
