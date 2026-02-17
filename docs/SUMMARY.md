@@ -15,6 +15,7 @@
 ## 노드 가이드
 
 * [전체 노드 레퍼런스](node_reference.md)
+* [조건 분기 (IfNode)](node_reference.md#ifnode-조건-분기)
 * [조건 조합 (LogicNode)](logic_guide.md)
 * [스케줄 설정](schedule_guide.md)
 * [AI 에이전트](ai_agent_guide.md)
