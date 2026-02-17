@@ -1,3 +1,13 @@
+## [1.5.0] - 2026-02-17
+### Added
+- **IfNode**: 범용 조건 분기 노드 (12종 연산자, true/false/result 출력)
+  - IfNodeExecutor: 조건 평가, upstream 데이터 pass-through
+  - BFS 기반 캐스케이딩 스킵: 비활성 브랜치 하위 노드 자동 스킵
+  - Edge `from_port` 전파: ResolvedEdge에 from_port 필드 추가
+
+### Changed
+- deps: programgarden-core ^1.3.0, programgarden-finance ^1.3.0, programgarden-community ^1.5.0
+
 ## [1.4.0] - 2026-02-16
 ### Added
 - **퀀트 전략 플러그인 Phase 4 - 15개 추가** (community 1.4.0, 총 34개)

@@ -1,3 +1,13 @@
+## [1.5.0] - 2026-02-17
+### Changed
+- deps: programgarden-core ^1.3.0 의존성 동기화 (IfNode, Edge from_port 추가)
+
+## [1.4.0] - 2026-02-15
+### Added
+- Phase 4 퀀트 플러그인 15개 추가 (19→34 플러그인)
+  - TECHNICAL: IchimokuCloud, VWAP, ParabolicSAR, WilliamsR, CCI, Supertrend, KeltnerChannel, TRIX, CMF, Engulfing, HammerShootingStar, Doji, MorningEveningStar
+  - POSITION: PartialTakeProfit, TimeBasedExit
+
 ## [1.2.0] - 2026-02-15
 ### Added
 - trailing_stop 플러그인: `risk_features` 선언 추가 (`{"hwm"}`)
