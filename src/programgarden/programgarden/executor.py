@@ -2782,6 +2782,34 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "total_pnl_krw": response.block2.ConvEvalPnlAmt,
             }
         
+        # 2. COSOQ02701: 외화예수금/주문가능금액 조회 (graceful degradation)
+        try:
+            from programgarden_finance import COSOQ02701
+
+            cosoq02701 = ls.overseas_stock().accno().cosoq02701(
+                COSOQ02701.COSOQ02701InBlock1(RecCnt=1, CrcyCode="USD"),
+                options=SetupOptions(on_rate_limit="wait"),
+            )
+            cash_response = await cosoq02701.req_async()
+
+            if not cash_response.error_msg:
+                # block3: 국가별 외화 정보 (USD 기준)
+                for item in cash_response.block3 or []:
+                    if item.CrcyCode.strip() == "USD":
+                        balance_info["orderable_amount"] = float(item.FcurrOrdAbleAmt) if item.FcurrOrdAbleAmt else 0.0
+                        balance_info["foreign_cash"] = float(item.FcurrDps) if item.FcurrDps else 0.0
+                        balance_info["exchange_rate"] = float(item.BaseXchrat) if item.BaseXchrat else 0.0
+                        break
+
+                # block4: 원화 출금/증거금
+                if cash_response.block4:
+                    balance_info["withdrawable_krw"] = float(cash_response.block4.MnyoutAbleAmt) if cash_response.block4.MnyoutAbleAmt else 0.0
+                    balance_info["overseas_margin"] = float(cash_response.block4.OvrsMgn) if cash_response.block4.OvrsMgn else 0.0
+            else:
+                context.log("warning", f"COSOQ02701 조회 실패 (무시): {cash_response.error_msg}", node_id)
+        except Exception as e:
+            context.log("warning", f"COSOQ02701 조회 실패 (무시): {e}", node_id)
+
         context.log("info", f"AccountNode: {len(positions)} positions fetched", node_id)
         return {
             "positions": positions,
@@ -2798,13 +2826,13 @@ class AccountNodeExecutor(NodeExecutorBase):
         LS증권 해외선물옵션 잔고 조회
 
         - CIDBQ01500: 미결제(보유) 포지션 조회
-        - CIDBQ03000: 예수금/예탁금 조회 (통화별)
+        - CIDBQ05300: 예탁자산 조회 (통화별, CIDBQ03000 상위호환)
         """
         from datetime import datetime
 
         try:
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
-            from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ03000.blocks import CIDBQ03000InBlock1
+            from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ05300.blocks import CIDBQ05300InBlock1
 
             today = datetime.now().strftime("%Y%m%d")
 
@@ -2853,20 +2881,20 @@ class AccountNodeExecutor(NodeExecutorBase):
                 })
                 held_symbols.append(symbol)
 
-            # 2. CIDBQ03000: 예수금 조회 (통화별)
-            balance_response = await ls.overseas_futureoption().accno().CIDBQ03000(
-                body=CIDBQ03000InBlock1(
+            # 2. CIDBQ05300: 예탁자산 조회 (CIDBQ03000 상위호환)
+            balance_response = await ls.overseas_futureoption().accno().CIDBQ05300(
+                body=CIDBQ05300InBlock1(
                     RecCnt=1,
-                    AcntTpCode="1",
-                    TrdDt=""
+                    OvrsAcntTpCode="1",
+                    CrcyCode="ALL"
                 )
             ).req_async()
 
-            # 통화별 예수금 정보 (block2)
+            # block2: 통화별 예수금 정보
             balance_by_currency = {}
             total_orderable = 0.0
             for item in (balance_response.block2 or []):
-                currency = item.CrcyObjCode.strip() if item.CrcyObjCode else "USD"
+                currency = item.CrcyCode.strip() if item.CrcyCode else "USD"
                 orderable = float(item.AbrdFutsOrdAbleAmt) if item.AbrdFutsOrdAbleAmt else 0.0
                 deposit = float(item.OvrsFutsDps) if item.OvrsFutsDps else 0.0
 
@@ -2886,6 +2914,15 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "orderable_amount": balance_by_currency.get("USD", {}).get("orderable_amount", 0.0) or total_orderable,
                 "deposit": sum(b.get("deposit", 0) for b in balance_by_currency.values()),
             }
+
+            # block3: 전체 요약 (증거금/마진콜율 등)
+            if balance_response.block3:
+                b3 = balance_response.block3
+                balance_info["margin"] = float(b3.AbrdFutsCsgnMgn) if b3.AbrdFutsCsgnMgn else 0.0
+                balance_info["maintenance_margin"] = float(b3.OvrsFutsMaintMgn) if b3.OvrsFutsMaintMgn else 0.0
+                balance_info["margin_call_rate"] = float(b3.MgnclRat) if b3.MgnclRat else 0.0
+                balance_info["total_eval"] = float(b3.AbrdFutsEvalDpstgTotAmt) if b3.AbrdFutsEvalDpstgTotAmt else 0.0
+                balance_info["settlement_pnl"] = float(b3.AbrdFutsLqdtPnlAmt) if b3.AbrdFutsLqdtPnlAmt else 0.0
 
             context.log("info", f"AccountNode (futures): {len(positions)} positions, {len(balance_by_currency)} currencies", node_id)
             return {

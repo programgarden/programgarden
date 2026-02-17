@@ -112,7 +112,39 @@ SYMBOL_LIST_FIELDS: List[Dict[str, str]] = [
     {"name": "symbol", "type": "string", "description": "종목코드"},
 ]
 
-BALANCE_FIELDS: List[Dict[str, str]] = [
+# ── 해외주식 REST AccountNode 전용 ──
+OVERSEAS_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "total_pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "cash_krw", "type": "number", "description": "원화예수금"},
+    {"name": "stock_eval_krw", "type": "number", "description": "주식환산평가금액"},
+    {"name": "total_eval_krw", "type": "number", "description": "원화평가합계"},
+    {"name": "total_pnl_krw", "type": "number", "description": "환산평가손익"},
+    {"name": "orderable_amount", "type": "number", "description": "외화주문가능금액 (USD)"},
+    {"name": "foreign_cash", "type": "number", "description": "외화예수금 (USD)"},
+    {"name": "exchange_rate", "type": "number", "description": "기준환율"},
+]
+
+# ── 해외선물 REST AccountNode 전용 ──
+OVERSEAS_FUTURES_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "deposit", "type": "number", "description": "예수금"},
+    {"name": "orderable_amount", "type": "number", "description": "주문가능금액"},
+    {"name": "total_orderable", "type": "number", "description": "전체 주문가능금액 합산"},
+    {"name": "margin", "type": "number", "description": "위탁증거금"},
+    {"name": "maintenance_margin", "type": "number", "description": "유지증거금"},
+    {"name": "margin_call_rate", "type": "number", "description": "마진콜율 (%)"},
+    {"name": "total_eval", "type": "number", "description": "평가예탁총금액"},
+    {"name": "settlement_pnl", "type": "number", "description": "청산손익"},
+]
+
+# ── 해외주식 RealAccountNode 전용 ──
+OVERSEAS_STOCK_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "total", "type": "number", "description": "총 예수금"},
+    {"name": "available", "type": "number", "description": "매수 가능 금액"},
+    {"name": "currency", "type": "string", "description": "통화 코드 (USD 등)"},
+]
+
+# ── 해외선물 RealAccountNode 전용 ──
+OVERSEAS_FUTURES_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
     {"name": "total", "type": "number", "description": "총 예수금"},
     {"name": "available", "type": "number", "description": "매수 가능 금액"},
     {"name": "currency", "type": "string", "description": "통화 코드 (USD 등)"},
