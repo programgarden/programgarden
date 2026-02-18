@@ -2306,7 +2306,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         """
         try:
             from programgarden_finance import COSAQ00102
-            from programgarden_finance.ls.models import SetupOptions
+
             
             # 오늘 날짜 기준 체결내역 조회 (COSAQ00102 = 주문체결내역조회)
             today = datetime.now().strftime("%Y%m%d")
@@ -2724,7 +2724,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         """LS증권 해외주식 잔고 조회"""
         from datetime import datetime
         from programgarden_finance import COSOQ00201
-        from programgarden_finance.ls.models import SetupOptions
+
         
         today = datetime.now().strftime("%Y%m%d")
         cosoq00201 = ls.overseas_stock().accno().cosoq00201(
@@ -3031,7 +3031,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         """해외주식 미체결 조회 (COSAQ00102)"""
         from datetime import datetime
         from programgarden_finance.ls.overseas_stock.accno.COSAQ00102.blocks import COSAQ00102InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
 
         today = datetime.now().strftime("%Y%m%d")
 
@@ -3050,7 +3050,6 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
                 ThdayBnsAppYn="0",
                 LoanBalHldYn="0"
             ),
-            options=SetupOptions(on_rate_limit="wait")
         ).req_async()
 
         if response.error_msg:
@@ -3090,7 +3089,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         """해외선물 미체결 조회 (CIDBQ02400)"""
         from datetime import datetime
         from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import CIDBQ02400InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
 
         today = datetime.now().strftime("%Y%m%d")
 
@@ -9377,7 +9376,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         - 매도: 시장가(03), 지정가(00) 둘 다 가능
         """
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         from datetime import datetime as dt
 
         symbol = order["symbol"]
@@ -9504,7 +9503,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         """
         try:
             from programgarden_finance import g3101
-            from programgarden_finance.ls.models import SetupOptions
+
             
             keysymbol = f"{market_code}{symbol}"
             
@@ -9549,7 +9548,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             await asyncio.sleep(5)
             
             from programgarden_finance import COSAQ00102
-            from programgarden_finance.ls.models import SetupOptions
+
             from datetime import datetime
             
             today = datetime.now().strftime("%Y%m%d")
@@ -9647,7 +9646,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외선물 신규주문 실행 (CIDBT00100) - 단일 종목"""
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT00100.blocks import CIDBT00100InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         from datetime import datetime as dt
 
         symbol = order["symbol"]
@@ -9895,7 +9894,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외주식 정정주문 실행 (COSAT00311)"""
         from programgarden_finance.ls.overseas_stock.order.COSAT00311.blocks import COSAT00311InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         
         # 시장 코드 결정
         ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
@@ -9986,7 +9985,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외선물 정정주문 실행 (CIDBT00900)"""
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT00900.blocks import CIDBT00900InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         from datetime import datetime
         
         # 매매구분코드: 1=매도, 2=매수
@@ -10201,7 +10200,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외주식 취소주문 실행 (COSAT00301)"""
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
 
         # 시장 코드 결정
         ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
@@ -10278,7 +10277,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외선물 취소주문 실행 (CIDBT01000)"""
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT01000.blocks import CIDBT01000InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         from datetime import datetime
 
         today = datetime.now().strftime("%Y%m%d")
