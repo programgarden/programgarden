@@ -191,7 +191,7 @@ class FuturesAccountTracker:
                     QryDt=query_date,
                     BalTpCode="1",   # 합산
                     FcmAcntNo=""
-                )
+                ),
             )
             resp = await tr.req_async()
             
@@ -311,7 +311,7 @@ class FuturesAccountTracker:
                     RecCnt=1,
                     AcntTpCode="1",
                     TrdDt=""
-                )
+                ),
             )
             resp = await tr.req_async()
             
@@ -409,7 +409,7 @@ class FuturesAccountTracker:
                     QryTpCode="1",    # 1: 역순
                     OrdPtnCode="00",  # 00: 전체
                     OvrsDrvtFnoTpCode="A"  # A: 전체
-                )
+                ),
             )
             resp = await tr.req_async()
             

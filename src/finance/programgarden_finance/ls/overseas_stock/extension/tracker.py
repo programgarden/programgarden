@@ -176,7 +176,7 @@ class StockAccountTracker:
                     BaseDt=dt.now().strftime("%Y%m%d"),
                     CrcyCode="ALL",
                     AstkBalTpCode="00"
-                )
+                ),
             )
             resp = await tr.req_async()
             
@@ -288,7 +288,7 @@ class StockAccountTracker:
                     CrcyCode="000",   # 전체
                     ThdayBnsAppYn="0",
                     LoanBalHldYn="0"
-                )
+                ),
             )
             resp = await tr.req_async()
             
