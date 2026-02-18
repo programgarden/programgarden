@@ -2326,7 +2326,6 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     ThdayBnsAppYn="0",
                     LoanBalHldYn="0",
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             result = await response.req_async()
             
@@ -2735,7 +2734,6 @@ class AccountNodeExecutor(NodeExecutorBase):
                 CrcyCode="ALL",
                 AstkBalTpCode="00",
             ),
-            options=SetupOptions(on_rate_limit="wait"),
         )
         
         response = await cosoq00201.req_async()
@@ -2788,7 +2786,6 @@ class AccountNodeExecutor(NodeExecutorBase):
 
             cosoq02701 = ls.overseas_stock().accno().cosoq02701(
                 COSOQ02701.COSOQ02701InBlock1(RecCnt=1, CrcyCode="USD"),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             cash_response = await cosoq02701.req_async()
 
@@ -9432,7 +9429,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     OvrsOrdPrc=price,
                     OrdprcPtnCode=ordprc_ptn_code,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
 
             response = await order_api.req_async()
@@ -9519,7 +9515,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     exchcd=market_code,
                     symbol=symbol,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await result.req_async()
@@ -9578,7 +9573,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     ThdayBnsAppYn="0",
                     LoanBalHldYn="0",
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             result = await response.req_async()
             
@@ -9692,7 +9686,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     DueYymm=expiry_month,
                     ExchCode=exchange,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
 
             response = await order_api.req_async()
@@ -9922,7 +9915,6 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     OvrsOrdPrc=new_price or 0.0,
                     OrdprcPtnCode=ordprc_ptn_code,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await order_api.req_async()
@@ -10022,7 +10014,6 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     DueYymm=expiry_month,
                     ExchCode=exchange_code,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await order_api.req_async()
@@ -10227,7 +10218,6 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     OvrsOrdPrc=0.0,  # 취소 시 가격 0
                     OrdprcPtnCode="00",
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await order_api.req_async()
@@ -10306,7 +10296,6 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     PrdtTpCode=" ",
                     ExchCode=exchange_code or " ",
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await order_api.req_async()
