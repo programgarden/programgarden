@@ -1,3 +1,7 @@
+## [1.3.1] - 2026-02-19
+### Changed
+- deps: programgarden-core ^1.4.0 의존성 동기화 (OverseasStockFundamentalNode, PER/EPS 추가)
+
 ## [1.3.0] - 2026-02-17
 ### Changed
 - deps: programgarden-core ^1.3.0 의존성 동기화 (IfNode, Edge from_port 추가)

@@ -1,3 +1,15 @@
+## [1.6.0] - 2026-02-19
+### Added
+- **OverseasStockFundamentalNode**: 해외주식 종목 펀더멘털 조회 노드
+  - g3104 API: PER, EPS, 시가총액, 발행주식수, 52주 고/저가, 업종, 환율 등 16개 필드
+  - FundamentalNodeExecutor: g3104 API 호출 및 필드 매핑
+  - `is_tool_enabled=True`: AIAgentNode 도구(tool)로 사용 가능
+- **MarketDataNode PER/EPS**: g3101 응답의 `perv`/`epsv` → `per`/`eps` 매핑 추가
+- **AccountNode 잔고 확장**: 외화예수금, 증거금, 마진콜율 필드 추가
+
+### Changed
+- deps: programgarden-core ^1.4.0, programgarden-finance ^1.3.1, programgarden-community ^1.5.1
+
 ## [1.5.0] - 2026-02-17
 ### Added
 - **IfNode**: 범용 조건 분기 노드 (12종 연산자, true/false/result 출력)

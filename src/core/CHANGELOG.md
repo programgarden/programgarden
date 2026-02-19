@@ -1,3 +1,16 @@
+## [1.4.0] - 2026-02-19
+### Added
+- **OverseasStockFundamentalNode**: 해외주식 종목 펀더멘털 조회 (`market` 카테고리)
+  - g3104 API: PER, EPS, 시가총액, 발행주식수, 52주 고/저가, 업종, 환율 등 16개 필드
+  - `is_tool_enabled=True`: AIAgentNode 도구(tool)로 사용 가능
+- **FUNDAMENTAL_DATA_FIELDS**: 16개 펀더멘털 출력 필드 상수
+- **PRICE_DATA_FIELDS 확장**: `per`, `eps` 필드 추가 (MarketDataNode 출력에 포함)
+- **AccountNode 잔고 확장**: 외화예수금, 증거금, 마진콜율 필드 추가
+- i18n: FundamentalNode, AccountNode 확장 필드 번역 (ko/en)
+
+### Fixed
+- LLM provider 정리 및 기존 테스트 실패/에러 수정
+
 ## [1.3.0] - 2026-02-17
 ### Added
 - **IfNode**: 범용 조건 분기 노드 (`infra` 카테고리)
