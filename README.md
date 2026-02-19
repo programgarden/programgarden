@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue?logo=python\&logoColor=white)](https://www.python.org/) [![Release](https://img.shields.io/github/v/tag/programgarden/programgarden?label=release\&sort=semver\&logo=github)](https://github.com/programgarden/programgarden/releases) [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE/) [![Company: LS](https://img.shields.io/badge/%EC%A7%80%EC%9B%90%EB%90%98%EB%8A%94_%EC%A6%9D%EA%B6%8C%EC%82%AC-LS%EC%A6%9D%EA%B6%8C-008FC7.svg)](https://ls-sec.co.kr) [![Product: OverseasStock](https://img.shields.io/badge/%EC%A7%80%EC%9B%90%EB%90%98%EB%8A%94_%EC%9E%90%EB%8F%99%EB%A7%A4%EB%A7%A4-%ED%95%B4%EC%99%B8%EC%A3%BC%EC%8B%9D,%ED%95%B4%EC%99%B8%EC%84%A0%EB%AC%BC-purple.svg)](https://programgarden.gitbook.io/docs)
 
-![programgarden 그리고 ls](.gitbook/assets/programgarden_ls.png)
+![programgarden 그리고 ls](docs/images/programgarden_ls.png)
 
 > **⚠️ 주의**: 오픈소스 사용 시 발생하는 문제에 대한 책임은 사용자에게 있으며, 라이선스를 반드시 확인해 주세요. [라이선스 보기](https://github.com/programgarden/programgarden?tab=AGPL-3.0-1-ov-file#readme)
 
