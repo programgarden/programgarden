@@ -6412,6 +6412,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                             "high": float(out_block.high or 0),
                             "low": float(out_block.low or 0),
                             "close": float(out_block.price or 0),
+                            "per": float(out_block.perv or 0) if hasattr(out_block, 'perv') else 0.0,
+                            "eps": float(out_block.epsv or 0) if hasattr(out_block, 'epsv') else 0.0,
                         })
                         
                         context.log("debug", f"Fetched {exchange}:{symbol}: price={out_block.price}", node_id)
@@ -6513,6 +6515,153 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("error", f"Market data fetch error: {e}", node_id)
             return self._empty_result(f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}")
+
+    def _empty_result(self, error_msg: str = "") -> Dict[str, Any]:
+        """빈 결과 반환 (에러 시)"""
+        result = {"values": []}
+        if error_msg:
+            result["error"] = error_msg
+        return result
+
+
+class FundamentalNodeExecutor(NodeExecutorBase):
+    """
+    FundamentalNode executor - 해외주식 종목정보(펀더멘털) 조회
+
+    LS Finance Market API g3104를 사용하여 종목정보를 조회합니다.
+    PER, EPS, 시가총액, 발행주식수, 52주 고/저가, 업종 등
+    """
+
+    # 거래소 코드 매핑 (g3104용)
+    EXCHANGE_CODES = {
+        "NASDAQ": "82",
+        "NYSE": "81",
+        "AMEX": "81",
+    }
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """종목정보(펀더멘털) 조회"""
+
+        # symbols 획득: input port → config.symbols → config.symbol (단일→배열 변환)
+        input_symbols = context.get_output(f"_input_{node_id}", "symbols")
+        config_symbols = config.get("symbols")
+        symbols = input_symbols or config_symbols
+
+        # Item-based execution: symbol (단수) → symbols (복수) 변환
+        if not symbols:
+            config_symbol = config.get("symbol")
+            if isinstance(config_symbol, dict) and "symbol" in config_symbol:
+                symbols = [config_symbol]
+
+        if not symbols:
+            error_msg = "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요."
+            context.log("error", error_msg, node_id)
+            return {"error": error_msg, "values": []}
+
+        broker_connection = config.get("connection")
+
+        if not broker_connection:
+            context.log("error", "connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
+            return {"error": "Missing connection - no matching BrokerNode found in workflow", "values": []}
+
+        context.log(
+            "info",
+            f"Fetching fundamental data: {len(symbols)} symbols",
+            node_id
+        )
+
+        credential = context.get_credential()
+        if not credential:
+            context.log("error", "Credential not set. Check BrokerNode credential_id.", node_id)
+            return self._empty_result("i18n:errors.CREDENTIAL_NOT_SET")
+
+        try:
+            from programgarden_finance.ls.overseas_stock.market.g3104.blocks import G3104InBlock
+
+            ls, success, error = ensure_ls_login(
+                credential.get("appkey"),
+                credential.get("appsecret"),
+                credential.get("paper_trading", False),
+                context, node_id,
+                product="overseas_stock",
+                caller_name="FundamentalNode(overseas_stock)"
+            )
+            if not success:
+                context.log("error", f"LS login failed: {error}", node_id)
+                return self._empty_result(f"i18n:errors.LS_LOGIN_FAILED|error={error}")
+
+            api = ls.overseas_stock()
+
+            values = []
+
+            for symbol_entry in symbols:
+                try:
+                    exchange = symbol_entry.get("exchange", "NASDAQ")
+                    symbol = symbol_entry.get("symbol", "")
+                    if not symbol:
+                        continue
+
+                    exchange_code = self.EXCHANGE_CODES.get(exchange.upper(), "82")
+                    keysymbol = f"{exchange_code}{symbol}"
+
+                    body = G3104InBlock(
+                        keysymbol=keysymbol,
+                        exchcd=exchange_code,
+                        symbol=symbol,
+                    )
+
+                    response = api.market().g3104(body=body).req()
+
+                    if response and response.block:
+                        blk = response.block
+
+                        # 등락률 계산 (전일종가 대비)
+                        pcls = float(blk.pcls or 0)
+                        clos = float(blk.clos or 0)
+                        change_percent = ((clos - pcls) / pcls * 100) if pcls else 0.0
+
+                        values.append({
+                            "exchange": exchange,
+                            "symbol": symbol,
+                            "name": str(blk.engname or ""),
+                            "industry": str(blk.induname or ""),
+                            "nation": str(blk.nation_name or ""),
+                            "exchange_name": str(blk.exchange_name or ""),
+                            "current_price": clos,
+                            "volume": int(blk.volume or 0),
+                            "change_percent": round(change_percent, 2),
+                            "per": float(blk.perv or 0),
+                            "eps": float(blk.epsv or 0),
+                            "market_cap": int(blk.shareprc or 0),
+                            "shares_outstanding": int(blk.share or 0),
+                            "high_52w": float(blk.high52p or 0),
+                            "low_52w": float(blk.low52p or 0),
+                            "exchange_rate": float(blk.exrate or 0),
+                        })
+
+                        context.log("debug", f"Fetched fundamental {exchange}:{symbol}: PER={blk.perv}, EPS={blk.epsv}", node_id)
+                    else:
+                        context.log("warning", f"No data for {exchange}:{symbol}", node_id)
+
+                except Exception as e:
+                    context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
+                    continue
+
+            return {"values": values}
+
+        except ImportError as e:
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._empty_result(f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}")
+        except Exception as e:
+            context.log("error", f"Fundamental data fetch error: {e}", node_id)
+            return self._empty_result(f"i18n:errors.FUNDAMENTAL_DATA_FETCH_ERROR|error={e}")
 
     def _empty_result(self, error_msg: str = "") -> Dict[str, Any]:
         """빈 결과 반환 (에러 시)"""
@@ -11577,6 +11726,7 @@ class WorkflowExecutor:
             "MarketDataNode": MarketDataNodeExecutor(),  # REST API 현재가 조회
             "OverseasStockMarketDataNode": MarketDataNodeExecutor(),
             "OverseasFuturesMarketDataNode": MarketDataNodeExecutor(),
+            "OverseasStockFundamentalNode": FundamentalNodeExecutor(),  # 종목정보(펀더멘털) 조회
             "RealMarketDataNode": RealMarketDataNodeExecutor(),
             "OverseasStockRealMarketDataNode": RealMarketDataNodeExecutor(),
             "OverseasFuturesRealMarketDataNode": RealMarketDataNodeExecutor(),
