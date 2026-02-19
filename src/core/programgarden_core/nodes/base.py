@@ -176,6 +176,27 @@ PRICE_DATA_FIELDS: List[Dict[str, str]] = [
     {"name": "current_price", "type": "number", "description": "현재가"},
     {"name": "volume", "type": "number", "description": "거래량"},
     {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "per", "type": "number", "description": "PER (주가수익비율)"},
+    {"name": "eps", "type": "number", "description": "EPS (주당순이익)"},
+]
+
+FUNDAMENTAL_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "영문 종목명"},
+    {"name": "industry", "type": "string", "description": "업종명"},
+    {"name": "nation", "type": "string", "description": "국가명"},
+    {"name": "exchange_name", "type": "string", "description": "거래소명"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "per", "type": "number", "description": "PER (주가수익비율)"},
+    {"name": "eps", "type": "number", "description": "EPS (주당순이익)"},
+    {"name": "market_cap", "type": "number", "description": "시가총액"},
+    {"name": "shares_outstanding", "type": "number", "description": "발행주식수"},
+    {"name": "high_52w", "type": "number", "description": "52주 최고가"},
+    {"name": "low_52w", "type": "number", "description": "52주 최저가"},
+    {"name": "exchange_rate", "type": "number", "description": "환율"},
 ]
 
 HISTORICAL_DATA_FIELDS: List[Dict[str, str]] = [
