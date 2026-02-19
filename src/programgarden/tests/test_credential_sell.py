@@ -102,7 +102,7 @@ async def test_overseas_stock_account():
         return []
 
 
-async def test_overseas_stock_sell(position):
+async def _overseas_stock_sell(position):
     """해외주식 실거래 - 1주 매도"""
     if not position:
         logger.info("매도할 종목 없음")
@@ -243,7 +243,7 @@ async def test_overseas_futures_account():
         return []
 
 
-async def test_overseas_futures_close(position):
+async def _overseas_futures_close(position):
     """해외선물 모의투자 - 1계약 청산"""
     if not position:
         logger.info("청산할 종목 없음")
@@ -327,7 +327,7 @@ async def main():
     # 2. 해외주식 보유종목이 있으면 1주 매도
     if stock_positions:
         # 첫 번째 보유종목 매도
-        await test_overseas_stock_sell(stock_positions[0])
+        await _overseas_stock_sell(stock_positions[0])
 
     logger.info("\n")
 
@@ -336,7 +336,7 @@ async def main():
 
     # 4. 해외선물 보유종목이 있으면 1계약 청산
     if futures_positions:
-        await test_overseas_futures_close(futures_positions[0])
+        await _overseas_futures_close(futures_positions[0])
 
     logger.info("=" * 60)
     logger.info("테스트 완료")

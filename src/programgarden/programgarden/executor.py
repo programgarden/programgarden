@@ -2306,7 +2306,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         """
         try:
             from programgarden_finance import COSAQ00102
-            from programgarden_finance.ls.models import SetupOptions
+
             
             # 오늘 날짜 기준 체결내역 조회 (COSAQ00102 = 주문체결내역조회)
             today = datetime.now().strftime("%Y%m%d")
@@ -2326,7 +2326,6 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     ThdayBnsAppYn="0",
                     LoanBalHldYn="0",
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             result = await response.req_async()
             
@@ -2725,7 +2724,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         """LS증권 해외주식 잔고 조회"""
         from datetime import datetime
         from programgarden_finance import COSOQ00201
-        from programgarden_finance.ls.models import SetupOptions
+
         
         today = datetime.now().strftime("%Y%m%d")
         cosoq00201 = ls.overseas_stock().accno().cosoq00201(
@@ -2735,7 +2734,6 @@ class AccountNodeExecutor(NodeExecutorBase):
                 CrcyCode="ALL",
                 AstkBalTpCode="00",
             ),
-            options=SetupOptions(on_rate_limit="wait"),
         )
         
         response = await cosoq00201.req_async()
@@ -2782,6 +2780,33 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "total_pnl_krw": response.block2.ConvEvalPnlAmt,
             }
         
+        # 2. COSOQ02701: 외화예수금/주문가능금액 조회 (graceful degradation)
+        try:
+            from programgarden_finance import COSOQ02701
+
+            cosoq02701 = ls.overseas_stock().accno().cosoq02701(
+                COSOQ02701.COSOQ02701InBlock1(RecCnt=1, CrcyCode="USD"),
+            )
+            cash_response = await cosoq02701.req_async()
+
+            if not cash_response.error_msg:
+                # block3: 국가별 외화 정보 (USD 기준)
+                for item in cash_response.block3 or []:
+                    if item.CrcyCode.strip() == "USD":
+                        balance_info["orderable_amount"] = float(item.FcurrOrdAbleAmt) if item.FcurrOrdAbleAmt else 0.0
+                        balance_info["foreign_cash"] = float(item.FcurrDps) if item.FcurrDps else 0.0
+                        balance_info["exchange_rate"] = float(item.BaseXchrat) if item.BaseXchrat else 0.0
+                        break
+
+                # block4: 원화 출금/증거금
+                if cash_response.block4:
+                    balance_info["withdrawable_krw"] = float(cash_response.block4.MnyoutAbleAmt) if cash_response.block4.MnyoutAbleAmt else 0.0
+                    balance_info["overseas_margin"] = float(cash_response.block4.OvrsMgn) if cash_response.block4.OvrsMgn else 0.0
+            else:
+                context.log("warning", f"COSOQ02701 조회 실패 (무시): {cash_response.error_msg}", node_id)
+        except Exception as e:
+            context.log("warning", f"COSOQ02701 조회 실패 (무시): {e}", node_id)
+
         context.log("info", f"AccountNode: {len(positions)} positions fetched", node_id)
         return {
             "positions": positions,
@@ -2798,13 +2823,13 @@ class AccountNodeExecutor(NodeExecutorBase):
         LS증권 해외선물옵션 잔고 조회
 
         - CIDBQ01500: 미결제(보유) 포지션 조회
-        - CIDBQ03000: 예수금/예탁금 조회 (통화별)
+        - CIDBQ05300: 예탁자산 조회 (통화별, CIDBQ03000 상위호환)
         """
         from datetime import datetime
 
         try:
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
-            from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ03000.blocks import CIDBQ03000InBlock1
+            from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ05300.blocks import CIDBQ05300InBlock1
 
             today = datetime.now().strftime("%Y%m%d")
 
@@ -2853,20 +2878,20 @@ class AccountNodeExecutor(NodeExecutorBase):
                 })
                 held_symbols.append(symbol)
 
-            # 2. CIDBQ03000: 예수금 조회 (통화별)
-            balance_response = await ls.overseas_futureoption().accno().CIDBQ03000(
-                body=CIDBQ03000InBlock1(
+            # 2. CIDBQ05300: 예탁자산 조회 (CIDBQ03000 상위호환)
+            balance_response = await ls.overseas_futureoption().accno().CIDBQ05300(
+                body=CIDBQ05300InBlock1(
                     RecCnt=1,
-                    AcntTpCode="1",
-                    TrdDt=""
+                    OvrsAcntTpCode="1",
+                    CrcyCode="ALL"
                 )
             ).req_async()
 
-            # 통화별 예수금 정보 (block2)
+            # block2: 통화별 예수금 정보
             balance_by_currency = {}
             total_orderable = 0.0
             for item in (balance_response.block2 or []):
-                currency = item.CrcyObjCode.strip() if item.CrcyObjCode else "USD"
+                currency = item.CrcyCode.strip() if item.CrcyCode else "USD"
                 orderable = float(item.AbrdFutsOrdAbleAmt) if item.AbrdFutsOrdAbleAmt else 0.0
                 deposit = float(item.OvrsFutsDps) if item.OvrsFutsDps else 0.0
 
@@ -2886,6 +2911,15 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "orderable_amount": balance_by_currency.get("USD", {}).get("orderable_amount", 0.0) or total_orderable,
                 "deposit": sum(b.get("deposit", 0) for b in balance_by_currency.values()),
             }
+
+            # block3: 전체 요약 (증거금/마진콜율 등)
+            if balance_response.block3:
+                b3 = balance_response.block3
+                balance_info["margin"] = float(b3.AbrdFutsCsgnMgn) if b3.AbrdFutsCsgnMgn else 0.0
+                balance_info["maintenance_margin"] = float(b3.OvrsFutsMaintMgn) if b3.OvrsFutsMaintMgn else 0.0
+                balance_info["margin_call_rate"] = float(b3.MgnclRat) if b3.MgnclRat else 0.0
+                balance_info["total_eval"] = float(b3.AbrdFutsEvalDpstgTotAmt) if b3.AbrdFutsEvalDpstgTotAmt else 0.0
+                balance_info["settlement_pnl"] = float(b3.AbrdFutsLqdtPnlAmt) if b3.AbrdFutsLqdtPnlAmt else 0.0
 
             context.log("info", f"AccountNode (futures): {len(positions)} positions, {len(balance_by_currency)} currencies", node_id)
             return {
@@ -2997,7 +3031,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         """해외주식 미체결 조회 (COSAQ00102)"""
         from datetime import datetime
         from programgarden_finance.ls.overseas_stock.accno.COSAQ00102.blocks import COSAQ00102InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
 
         today = datetime.now().strftime("%Y%m%d")
 
@@ -3016,7 +3050,6 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
                 ThdayBnsAppYn="0",
                 LoanBalHldYn="0"
             ),
-            options=SetupOptions(on_rate_limit="wait")
         ).req_async()
 
         if response.error_msg:
@@ -3056,7 +3089,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         """해외선물 미체결 조회 (CIDBQ02400)"""
         from datetime import datetime
         from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import CIDBQ02400InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
 
         today = datetime.now().strftime("%Y%m%d")
 
@@ -9343,7 +9376,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         - 매도: 시장가(03), 지정가(00) 둘 다 가능
         """
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         from datetime import datetime as dt
 
         symbol = order["symbol"]
@@ -9395,7 +9428,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     OvrsOrdPrc=price,
                     OrdprcPtnCode=ordprc_ptn_code,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
 
             response = await order_api.req_async()
@@ -9471,7 +9503,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         """
         try:
             from programgarden_finance import g3101
-            from programgarden_finance.ls.models import SetupOptions
+
             
             keysymbol = f"{market_code}{symbol}"
             
@@ -9482,7 +9514,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     exchcd=market_code,
                     symbol=symbol,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await result.req_async()
@@ -9517,7 +9548,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             await asyncio.sleep(5)
             
             from programgarden_finance import COSAQ00102
-            from programgarden_finance.ls.models import SetupOptions
+
             from datetime import datetime
             
             today = datetime.now().strftime("%Y%m%d")
@@ -9541,7 +9572,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     ThdayBnsAppYn="0",
                     LoanBalHldYn="0",
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             result = await response.req_async()
             
@@ -9616,7 +9646,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외선물 신규주문 실행 (CIDBT00100) - 단일 종목"""
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT00100.blocks import CIDBT00100InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         from datetime import datetime as dt
 
         symbol = order["symbol"]
@@ -9655,7 +9685,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     DueYymm=expiry_month,
                     ExchCode=exchange,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
 
             response = await order_api.req_async()
@@ -9865,7 +9894,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외주식 정정주문 실행 (COSAT00311)"""
         from programgarden_finance.ls.overseas_stock.order.COSAT00311.blocks import COSAT00311InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         
         # 시장 코드 결정
         ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
@@ -9885,7 +9914,6 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     OvrsOrdPrc=new_price or 0.0,
                     OrdprcPtnCode=ordprc_ptn_code,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await order_api.req_async()
@@ -9957,7 +9985,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외선물 정정주문 실행 (CIDBT00900)"""
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT00900.blocks import CIDBT00900InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         from datetime import datetime
         
         # 매매구분코드: 1=매도, 2=매수
@@ -9985,7 +10013,6 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     DueYymm=expiry_month,
                     ExchCode=exchange_code,
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await order_api.req_async()
@@ -10173,7 +10200,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외주식 취소주문 실행 (COSAT00301)"""
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
 
         # 시장 코드 결정
         ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
@@ -10190,7 +10217,6 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     OvrsOrdPrc=0.0,  # 취소 시 가격 0
                     OrdprcPtnCode="00",
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await order_api.req_async()
@@ -10251,7 +10277,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외선물 취소주문 실행 (CIDBT01000)"""
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT01000.blocks import CIDBT01000InBlock1
-        from programgarden_finance.ls.models import SetupOptions
+
         from datetime import datetime
 
         today = datetime.now().strftime("%Y%m%d")
@@ -10269,7 +10295,6 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     PrdtTpCode=" ",
                     ExchCode=exchange_code or " ",
                 ),
-                options=SetupOptions(on_rate_limit="wait"),
             )
             
             response = await order_api.req_async()
@@ -10336,21 +10361,11 @@ class LLMModelNodeExecutor(NodeExecutorBase):
     litellm 형식의 connection dict를 출력한다.
     """
 
-    # provider별 litellm 모델 prefix 매핑
-    _MODEL_PREFIX = {
-        "anthropic": "anthropic/",
-        "azure": "azure/",
-        "ollama": "ollama/",
-        "gemini": "gemini/",
-    }
-
     # credential_type → provider 매핑
     _CREDENTIAL_TYPE_TO_PROVIDER = {
         "llm_openai": "openai",
         "llm_anthropic": "anthropic",
-        "llm_azure_openai": "azure",
         "llm_google": "gemini",
-        "llm_ollama": "ollama",
     }
 
     async def execute(
@@ -10380,11 +10395,6 @@ class LLMModelNodeExecutor(NodeExecutorBase):
 
         provider = config.get("provider", "openai")
         model = config.get("model", "gpt-4o")
-
-        # litellm 형식 모델명 변환 (azure/deploy, ollama/llama3 등)
-        prefix = self._MODEL_PREFIX.get(provider, "")
-        if prefix and not model.startswith(prefix):
-            model = f"{prefix}{model}"
 
         context.log(
             "info",
@@ -11313,7 +11323,10 @@ class SQLiteNodeExecutor(NodeExecutorBase):
         # /app/data/ 폴더 경로 구성
         # context.workspace_path 또는 기본 경로 /app/data 사용
         workspace_path = getattr(context, 'workspace_path', None)
-        data_dir = workspace_path if workspace_path else "/app/data"
+        if workspace_path:
+            data_dir = os.path.join(workspace_path, "programgarden_data")
+        else:
+            data_dir = "/app/data"
         
         # 폴더 생성 (없으면)
         os.makedirs(data_dir, exist_ok=True)

@@ -100,7 +100,7 @@ class LLMModelNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
-                credential_types=["llm_openai", "llm_anthropic", "llm_google", "llm_azure_openai", "llm_ollama"],
+                credential_types=["llm_openai", "llm_anthropic", "llm_google"],
             ),
             "model": FieldSchema(
                 name="model",
