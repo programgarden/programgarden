@@ -131,19 +131,15 @@ class TestChat:
     async def test_chat_params_build(self):
         """_build_params가 올바른 litellm 파라미터를 생성하는지 확인."""
         config = _make_config(
-            provider="azure",
-            model="azure/my-deploy",
-            base_url="https://test.openai.azure.com/",
-            api_version="2024-02-01",
+            provider="anthropic",
+            model="claude-haiku-4-5-20251001",
             seed=42,
         )
         provider = LLMProvider(config)
         params = provider._build_params([{"role": "user", "content": "hi"}])
 
-        assert params["model"] == "azure/my-deploy"
+        assert params["model"] == "claude-haiku-4-5-20251001"
         assert params["api_key"] == "sk-test-key"
-        assert params["api_base"] == "https://test.openai.azure.com/"
-        assert params["api_version"] == "2024-02-01"
         assert params["seed"] == 42
         assert params["temperature"] == 0.7
         assert params["max_tokens"] == 1000
@@ -428,19 +424,18 @@ class TestFromConnection:
         assert provider.config.max_tokens == 1000
         assert provider.config.streaming is False
 
-    def test_azure_fields(self):
-        """Azure 필드 포함 변환."""
+    def test_anthropic_fields(self):
+        """Anthropic 필드 포함 변환."""
         conn = {
-            "provider": "azure",
-            "model": "azure/my-deploy",
-            "api_key": "key",
-            "base_url": "https://test.openai.azure.com/",
-            "api_version": "2024-02-01",
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5-20251001",
+            "api_key": "sk-ant-xxx",
         }
         provider = LLMProvider.from_connection(conn)
 
-        assert provider.config.base_url == "https://test.openai.azure.com/"
-        assert provider.config.api_version == "2024-02-01"
+        assert provider.config.provider == "anthropic"
+        assert provider.config.model == "claude-haiku-4-5-20251001"
+        assert provider.config.api_key == "sk-ant-xxx"
 
 
 # ============================================================
@@ -489,80 +484,14 @@ class TestLLMModelNodeExecutor:
         assert conn["streaming"] is True
 
     @pytest.mark.asyncio
-    async def test_azure_model_prefix(self):
-        """Azure credential → model에 'azure/' prefix 추가."""
-        from programgarden.executor import LLMModelNodeExecutor
-
-        executor = LLMModelNodeExecutor()
-        config = {
-            "credential_id": "my-azure",
-            "model": "my-gpt4-deploy",
-        }
-        ctx = self._make_context({
-            "provider": "azure",
-            "api_key": "key",
-            "base_url": "https://test.openai.azure.com/",
-            "api_version": "2024-02-01",
-        })
-
-        result = await executor.execute("llm-1", "LLMModelNode", config, ctx)
-        conn = result["connection"]
-
-        assert conn["provider"] == "azure"
-        assert conn["model"] == "azure/my-gpt4-deploy"
-        assert conn["base_url"] == "https://test.openai.azure.com/"
-        assert conn["api_version"] == "2024-02-01"
-
-    @pytest.mark.asyncio
-    async def test_ollama_model_prefix(self):
-        """Ollama credential → model에 'ollama/' prefix 추가."""
-        from programgarden.executor import LLMModelNodeExecutor
-
-        executor = LLMModelNodeExecutor()
-        config = {
-            "credential_id": "my-ollama",
-            "model": "llama3.1",
-        }
-        ctx = self._make_context({
-            "provider": "ollama",
-            "base_url": "http://localhost:11434",
-        })
-
-        result = await executor.execute("llm-1", "LLMModelNode", config, ctx)
-        conn = result["connection"]
-
-        assert conn["provider"] == "ollama"
-        assert conn["model"] == "ollama/llama3.1"
-        assert conn["base_url"] == "http://localhost:11434"
-        assert conn["api_key"] is None
-
-    @pytest.mark.asyncio
-    async def test_already_prefixed_model(self):
-        """이미 prefix가 있는 모델명은 중복 추가하지 않음."""
-        from programgarden.executor import LLMModelNodeExecutor
-
-        executor = LLMModelNodeExecutor()
-        config = {
-            "credential_id": "my-azure",
-            "model": "azure/my-deploy",
-        }
-        ctx = self._make_context({
-            "provider": "azure",
-            "api_key": "key",
-        })
-
-        result = await executor.execute("llm-1", "LLMModelNode", config, ctx)
-        assert result["connection"]["model"] == "azure/my-deploy"
-
-    @pytest.mark.asyncio
-    async def test_anthropic_no_prefix(self):
-        """Anthropic은 prefix 없이 모델명 그대로."""
+    async def test_anthropic_connection(self):
+        """Anthropic credential → connection dict 변환."""
         from programgarden.executor import LLMModelNodeExecutor
 
         executor = LLMModelNodeExecutor()
         config = {
             "credential_id": "my-anthropic",
-            "model": "claude-sonnet-4-5-20250929",
+            "model": "claude-haiku-4-5-20251001",
         }
         ctx = self._make_context({
             "provider": "anthropic",
@@ -570,5 +499,37 @@ class TestLLMModelNodeExecutor:
         })
 
         result = await executor.execute("llm-1", "LLMModelNode", config, ctx)
-        assert result["connection"]["model"] == "claude-sonnet-4-5-20250929"
-        assert result["connection"]["provider"] == "anthropic"
+        conn = result["connection"]
+        assert conn["provider"] == "anthropic"
+        assert conn["model"] == "claude-haiku-4-5-20251001"
+        assert conn["api_key"] == "sk-ant-xxx"
+
+
+# ============================================================
+# 실제 API 호출 테스트 (ANTHROPIC_API_KEY 필요)
+# ============================================================
+
+
+class TestRealAPI:
+    @pytest.mark.asyncio
+    async def test_haiku_chat(self):
+        """Claude Haiku 실제 API 호출."""
+        import os
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            pytest.skip("ANTHROPIC_API_KEY not set")
+
+        config = _make_config(
+            provider="anthropic",
+            model="claude-haiku-4-5-20251001",
+            api_key=api_key,
+            max_tokens=30,
+        )
+        provider = LLMProvider(config)
+        result = await provider.chat([{"role": "user", "content": "Say hello in one word."}])
+
+        assert isinstance(result, LLMResponse)
+        assert result.content
+        assert result.input_tokens > 0
+        assert result.output_tokens > 0
