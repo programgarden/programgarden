@@ -13,6 +13,7 @@ from programgarden.resolver import WorkflowResolver, ValidationResult
 from programgarden.executor import WorkflowExecutor
 from programgarden.context import ExecutionContext
 from programgarden.client import ProgramGarden
+from programgarden.node_runner import NodeRunner
 from programgarden.tools import (
     # Registry Tools
     list_node_types,
@@ -55,7 +56,7 @@ except ImportError:
     # Community package not installed
     pass
 
-__version__ = "2.0.0"
+__version__ = "1.7.0"
 __all__ = [
     # Core
     "ProgramGarden",
@@ -63,6 +64,7 @@ __all__ = [
     "WorkflowExecutor",
     "ExecutionContext",
     "ValidationResult",
+    "NodeRunner",
     # Registry Tools
     "list_node_types",
     "get_node_schema",
