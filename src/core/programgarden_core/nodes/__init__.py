@@ -1,10 +1,10 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-48개 노드 타입을 카테고리로 분류:
+49개 노드 타입을 카테고리로 분류:
 - infra (5): StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode
 - broker (2): OverseasStockBrokerNode, OverseasFuturesBrokerNode
-- market (12): OverseasStockMarketDataNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
+- market (13): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
               OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode,
               WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode
 - account (6): OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode,
@@ -26,6 +26,7 @@ from programgarden_core.nodes.infra import StartNode, ThrottleNode, SplitNode, A
 from programgarden_core.nodes.broker import OverseasStockBrokerNode, OverseasFuturesBrokerNode
 # Market - 상품별 분리 노드
 from programgarden_core.nodes.data_stock import OverseasStockMarketDataNode
+from programgarden_core.nodes.fundamental_stock import OverseasStockFundamentalNode
 from programgarden_core.nodes.data_futures import OverseasFuturesMarketDataNode
 from programgarden_core.nodes.backtest_stock import OverseasStockHistoricalDataNode
 from programgarden_core.nodes.backtest_futures import OverseasFuturesHistoricalDataNode
@@ -101,6 +102,7 @@ __all__ = [
     "OverseasFuturesBrokerNode",
     # Market - Stock (해외주식)
     "OverseasStockMarketDataNode",
+    "OverseasStockFundamentalNode",
     "OverseasStockHistoricalDataNode",
     "OverseasStockRealMarketDataNode",
     "OverseasStockSymbolQueryNode",
