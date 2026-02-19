@@ -10361,21 +10361,11 @@ class LLMModelNodeExecutor(NodeExecutorBase):
     litellm 형식의 connection dict를 출력한다.
     """
 
-    # provider별 litellm 모델 prefix 매핑
-    _MODEL_PREFIX = {
-        "anthropic": "anthropic/",
-        "azure": "azure/",
-        "ollama": "ollama/",
-        "gemini": "gemini/",
-    }
-
     # credential_type → provider 매핑
     _CREDENTIAL_TYPE_TO_PROVIDER = {
         "llm_openai": "openai",
         "llm_anthropic": "anthropic",
-        "llm_azure_openai": "azure",
         "llm_google": "gemini",
-        "llm_ollama": "ollama",
     }
 
     async def execute(
@@ -10405,11 +10395,6 @@ class LLMModelNodeExecutor(NodeExecutorBase):
 
         provider = config.get("provider", "openai")
         model = config.get("model", "gpt-4o")
-
-        # litellm 형식 모델명 변환 (azure/deploy, ollama/llama3 등)
-        prefix = self._MODEL_PREFIX.get(provider, "")
-        if prefix and not model.startswith(prefix):
-            model = f"{prefix}{model}"
 
         context.log(
             "info",
@@ -11338,7 +11323,10 @@ class SQLiteNodeExecutor(NodeExecutorBase):
         # /app/data/ 폴더 경로 구성
         # context.workspace_path 또는 기본 경로 /app/data 사용
         workspace_path = getattr(context, 'workspace_path', None)
-        data_dir = workspace_path if workspace_path else "/app/data"
+        if workspace_path:
+            data_dir = os.path.join(workspace_path, "programgarden_data")
+        else:
+            data_dir = "/app/data"
         
         # 폴더 생성 (없으면)
         os.makedirs(data_dir, exist_ok=True)
