@@ -79,7 +79,8 @@ class NodeTypeRegistry:
             StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode,
             OverseasStockBrokerNode, OverseasFuturesBrokerNode,
             # Market - Stock (해외주식)
-            OverseasStockMarketDataNode, OverseasStockHistoricalDataNode,
+            OverseasStockMarketDataNode, OverseasStockFundamentalNode,
+            OverseasStockHistoricalDataNode,
             OverseasStockRealMarketDataNode,
             OverseasStockSymbolQueryNode,
             # Market - Futures (해외선물)
@@ -114,7 +115,8 @@ class NodeTypeRegistry:
             # Broker (상품별 분리)
             OverseasStockBrokerNode, OverseasFuturesBrokerNode,
             # Market - Stock (해외주식)
-            OverseasStockMarketDataNode, OverseasStockHistoricalDataNode,
+            OverseasStockMarketDataNode, OverseasStockFundamentalNode,
+            OverseasStockHistoricalDataNode,
             OverseasStockRealMarketDataNode,
             OverseasStockSymbolQueryNode,
             # Market - Futures (해외선물)
