@@ -1,3 +1,13 @@
+## [1.7.0] - 2026-02-19
+### Added
+- **NodeRunner API**: 워크플로우 없이 개별 노드를 단독 실행하는 경량 API
+  - `run()`: 노드 타입과 설정만 전달하면 자동으로 credential 주입, LS 로그인, connection 생성
+  - `list_node_types()`: 사용 가능한 노드 타입 목록 반환 (실시간/BrokerNode 제외)
+  - `get_node_schema()`: 노드 설정 스키마 반환
+  - `async with` 패턴 지원, 브로커 세션 재사용
+  - `raise_on_error` 옵션 (기본 True)
+  - 실시간 WebSocket 노드 실행 차단 (ValueError)
+
 ## [1.6.0] - 2026-02-19
 ### Added
 - **OverseasStockFundamentalNode**: 해외주식 종목 펀더멘털 조회 노드
