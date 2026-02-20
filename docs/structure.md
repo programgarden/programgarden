@@ -341,6 +341,6 @@ flowchart LR
 - [전체 노드 레퍼런스](node_reference.md) - 53개 노드 상세 설명
 - [표현식 문법](expression_guide.md) - `{{ }}` 표현식 작성법
 - [자동 반복 처리](auto_iterate_guide.md) - 여러 종목 자동 순회
-- [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 34개 분석 전략
+- [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 43개 분석 전략
 - [주문 플러그인](strategies/order_condition.md) - 시장가, 지정가 등 주문 전략
 - [AI 에이전트](ai_agent_guide.md) - GPT/Claude로 시장 분석
