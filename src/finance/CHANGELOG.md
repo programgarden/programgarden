@@ -1,3 +1,14 @@
+## [1.3.2] - 2026-02-20
+### Fixed
+- fix: WebSocket 싱글톤 패턴 적용 - real() 호출마다 새 WebSocket 생성하던 문제 해결
+- real()이 동일 token_manager에 대해 싱글톤 Real 인스턴스 반환
+- connect() 가드: 이미 연결된 상태에서 중복 WebSocket 생성 방지
+- close() 참조 카운트: 다른 구독자가 있으면 WebSocket 유지
+- 하나의 WebSocket에서 GSC/AS0/AS1/OVC/TC1~TC3 등 여러 TR 동시 구독 가능
+
+### Added
+- tests/test_real_singleton.py: 단위 테스트 19개 추가
+
 ## [1.3.1] - 2026-02-19
 ### Changed
 - deps: programgarden-core ^1.4.0 의존성 동기화 (OverseasStockFundamentalNode, PER/EPS 추가)
