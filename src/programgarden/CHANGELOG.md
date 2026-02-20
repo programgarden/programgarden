@@ -1,3 +1,7 @@
+## [1.7.1] - 2026-02-20
+### Fixed
+- deps: programgarden-finance ^1.3.2 (WebSocket 싱글톤 패턴 적용 - 실시간 세션 충돌 해결)
+
 ## [1.7.0] - 2026-02-19
 ### Added
 - **NodeRunner API**: 워크플로우 없이 개별 노드를 단독 실행하는 경량 API
