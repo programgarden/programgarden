@@ -1,3 +1,10 @@
+## [1.6.0] - 2026-02-20
+### Added
+- Phase 5 커뮤니티 플러그인 9개 추가 (34→43 플러그인)
+  - TECHNICAL 6개: RegimeDetection(시장국면탐지), RelativeStrength(상대강도), MultiTimeframeConfirmation(멀티타임프레임), CorrelationAnalysis(상관관계분석), ContangoBackwardation(콘탱고/백워데이션), CalendarSpread(캘린더스프레드)
+  - POSITION 3개: DrawdownProtection(드로다운보호), VolatilityPositionSizing(변동성포지션사이징), RollManagement(롤오버관리)
+- 테스트 116개 추가 (총 406개)
+
 ## [1.5.1] - 2026-02-19
 ### Changed
 - deps: programgarden-core ^1.4.0 의존성 동기화 (OverseasStockFundamentalNode, PER/EPS 추가)

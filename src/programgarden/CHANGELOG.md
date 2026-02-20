@@ -1,3 +1,14 @@
+## [1.8.0] - 2026-02-20
+### Added
+- **커뮤니티 플러그인 Phase 5 - 9개 추가** (community 1.6.0, 총 43개)
+  - 시장분석: RegimeDetection(시장국면탐지), RelativeStrength(상대강도), CorrelationAnalysis(상관관계분석)
+  - 멀티타임프레임: MultiTimeframeConfirmation(멀티타임프레임 확인)
+  - 선물전용: ContangoBackwardation(콘탱고/백워데이션), CalendarSpread(캘린더스프레드), RollManagement(롤오버관리)
+  - 포지션관리: DrawdownProtection(드로다운보호), VolatilityPositionSizing(변동성포지션사이징)
+
+### Changed
+- deps: programgarden-community ^1.6.0
+
 ## [1.7.1] - 2026-02-20
 ### Fixed
 - deps: programgarden-finance ^1.3.2 (WebSocket 싱글톤 패턴 적용 - 실시간 세션 충돌 해결)
