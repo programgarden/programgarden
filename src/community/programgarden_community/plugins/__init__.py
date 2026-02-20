@@ -32,11 +32,20 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── hammer_shooting_star/ # TECHNICAL - 망치/유성형
     ├── doji/             # TECHNICAL - 도지
     ├── morning_evening_star/ # TECHNICAL - 샛별/석별형
+    ├── regime_detection/  # TECHNICAL - 시장 상태 분류
+    ├── relative_strength/ # TECHNICAL - 상대 강도
+    ├── multi_timeframe_confirmation/ # TECHNICAL - 다중 타임프레임 확인
+    ├── correlation_analysis/ # TECHNICAL - 상관관계 분석
+    ├── contango_backwardation/ # TECHNICAL - 콘탱고/백워데이션 (선물)
+    ├── calendar_spread/  # TECHNICAL - 캘린더 스프레드 (선물)
     ├── stop_loss/        # POSITION - 손절
     ├── profit_target/    # POSITION - 익절
     ├── trailing_stop/    # POSITION - 트레일링 스탑
     ├── partial_take_profit/ # POSITION - 분할 익절
-    └── time_based_exit/  # POSITION - 시간 기반 청산
+    ├── time_based_exit/  # POSITION - 시간 기반 청산
+    ├── drawdown_protection/ # POSITION - 낙폭 보호
+    ├── volatility_position_sizing/ # POSITION - 변동성 포지션 사이징
+    └── roll_management/  # POSITION - 롤오버 관리 (선물)
 
 사용법:
     from programgarden_community.plugins import register_all_plugins, get_plugin
@@ -86,6 +95,12 @@ def register_all_plugins() -> None:
     from .hammer_shooting_star import HAMMER_SHOOTING_STAR_SCHEMA, hammer_shooting_star_condition
     from .doji import DOJI_SCHEMA, doji_condition
     from .morning_evening_star import MORNING_EVENING_STAR_SCHEMA, morning_evening_star_condition
+    from .regime_detection import REGIME_DETECTION_SCHEMA, regime_detection_condition
+    from .relative_strength import RELATIVE_STRENGTH_SCHEMA, relative_strength_condition
+    from .multi_timeframe_confirmation import MTF_CONFIRMATION_SCHEMA, multi_timeframe_confirmation_condition
+    from .correlation_analysis import CORRELATION_ANALYSIS_SCHEMA, correlation_analysis_condition
+    from .contango_backwardation import CONTANGO_BACKWARDATION_SCHEMA, contango_backwardation_condition
+    from .calendar_spread import CALENDAR_SPREAD_SCHEMA, calendar_spread_condition
 
     # === POSITION 플러그인 ===
     from .stop_loss import STOP_LOSS_SCHEMA, stop_loss_condition
@@ -93,6 +108,9 @@ def register_all_plugins() -> None:
     from .trailing_stop import TRAILING_STOP_SCHEMA, trailing_stop_condition
     from .partial_take_profit import PARTIAL_TAKE_PROFIT_SCHEMA, partial_take_profit_condition
     from .time_based_exit import TIME_BASED_EXIT_SCHEMA, time_based_exit_condition
+    from .drawdown_protection import DRAWDOWN_PROTECTION_SCHEMA, drawdown_protection_condition
+    from .volatility_position_sizing import VOLATILITY_POSITION_SIZING_SCHEMA, volatility_position_sizing_condition
+    from .roll_management import ROLL_MANAGEMENT_SCHEMA, roll_management_condition
 
     # TECHNICAL 등록
     technical_plugins = [
@@ -125,6 +143,12 @@ def register_all_plugins() -> None:
         ("HammerShootingStar", hammer_shooting_star_condition, HAMMER_SHOOTING_STAR_SCHEMA),
         ("Doji", doji_condition, DOJI_SCHEMA),
         ("MorningEveningStar", morning_evening_star_condition, MORNING_EVENING_STAR_SCHEMA),
+        ("RegimeDetection", regime_detection_condition, REGIME_DETECTION_SCHEMA),
+        ("RelativeStrength", relative_strength_condition, RELATIVE_STRENGTH_SCHEMA),
+        ("MultiTimeframeConfirmation", multi_timeframe_confirmation_condition, MTF_CONFIRMATION_SCHEMA),
+        ("CorrelationAnalysis", correlation_analysis_condition, CORRELATION_ANALYSIS_SCHEMA),
+        ("ContangoBackwardation", contango_backwardation_condition, CONTANGO_BACKWARDATION_SCHEMA),
+        ("CalendarSpread", calendar_spread_condition, CALENDAR_SPREAD_SCHEMA),
     ]
 
     # POSITION 등록
@@ -134,6 +158,9 @@ def register_all_plugins() -> None:
         ("TrailingStop", trailing_stop_condition, TRAILING_STOP_SCHEMA),
         ("PartialTakeProfit", partial_take_profit_condition, PARTIAL_TAKE_PROFIT_SCHEMA),
         ("TimeBasedExit", time_based_exit_condition, TIME_BASED_EXIT_SCHEMA),
+        ("DrawdownProtection", drawdown_protection_condition, DRAWDOWN_PROTECTION_SCHEMA),
+        ("VolatilityPositionSizing", volatility_position_sizing_condition, VOLATILITY_POSITION_SIZING_SCHEMA),
+        ("RollManagement", roll_management_condition, ROLL_MANAGEMENT_SCHEMA),
     ]
 
     for plugin_id, plugin_callable, schema in technical_plugins + position_plugins:
