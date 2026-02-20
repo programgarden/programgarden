@@ -1,3 +1,5 @@
+from typing import Dict
+
 from programgarden_finance.ls.overseas_futureoption.real import Real
 from programgarden_finance.ls.token_manager import TokenManager
 from .market import Market
@@ -9,6 +11,8 @@ from programgarden_core.bases import BaseOverseasFutureoption
 
 
 class OverseasFutureoption(BaseOverseasFutureoption):
+
+    _real_instances: Dict[int, "Real"] = {}
 
     def __init__(self, token_manager: TokenManager):
         if not token_manager:
@@ -52,7 +56,11 @@ class OverseasFutureoption(BaseOverseasFutureoption):
         ping_timeout=5.0,
         max_backoff=60.0
     ):
-        return Real(
+        key = id(self.token_manager)
+        cached = OverseasFutureoption._real_instances.get(key)
+        if cached is not None:
+            return cached
+        instance = Real(
             token_manager=self.token_manager,
             reconnect=reconnect,
             recv_timeout=recv_timeout,
@@ -60,9 +68,19 @@ class OverseasFutureoption(BaseOverseasFutureoption):
             ping_timeout=ping_timeout,
             max_backoff=max_backoff
         )
+        OverseasFutureoption._real_instances[key] = instance
+        return instance
 
     실시간 = real
     실시간.__doc__ = "실시간 데이터를 조회합니다."
+
+    @classmethod
+    def _clear_real_instance(cls, token_manager_id: int):
+        cls._real_instances.pop(token_manager_id, None)
+
+    @classmethod
+    def _clear_all_real_instances(cls):
+        cls._real_instances.clear()
 
 
 __all__ = [
