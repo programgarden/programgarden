@@ -75,6 +75,7 @@ class RealRequestAbstract(ABC):
         self._listen_task = None
         self._as01234_connect = False
         self._on_message_listeners: Dict[str, Callable[[Any], Any]] = {}
+        self._ref_count = 0
 
     async def is_connected(self) -> bool:
         """Check whether the websocket handshake completed.
@@ -99,16 +100,34 @@ class RealRequestAbstract(ABC):
         EN:
             Optionally waits until the first successful connection. Handles
             reconnection with exponential backoff when ``reconnect`` is enabled.
+            When a connection is already active, increments the reference count
+            and returns immediately (singleton-safe).
 
         KO:
             최초 연결이 성사될 때까지 대기할 수 있으며 ``reconnect`` 설정 시
-            지수 백오프 기반으로 재연결을 처리합니다.
+            지수 백오프 기반으로 재연결을 처리합니다. 이미 연결이 활성화된 경우
+            참조 카운트만 증가시키고 즉시 반환합니다 (싱글톤 안전).
 
         Parameters:
             wait (bool): EN: Wait for connection event. KO: 연결 완료까지 대기 여부.
             timeout (float): EN: Max seconds to wait when ``wait`` is True. KO:
                 ``wait`` 가 True일 때 대기 시간.
         """
+
+        self._ref_count += 1
+
+        # 이미 연결됨 → 즉시 반환
+        if self._connected_event.is_set():
+            return
+
+        # 연결 시도 중 → wait만 수행
+        if self._listen_task is not None and not self._listen_task.done():
+            if wait:
+                try:
+                    await asyncio.wait_for(self._connected_event.wait(), timeout=timeout)
+                except asyncio.TimeoutError:
+                    raise RuntimeError("Timeout waiting for websocket connection")
+            return
 
         self._stop = False
 
@@ -290,17 +309,30 @@ class RealRequestAbstract(ABC):
         else:
             await asyncio.sleep(0)
 
-    async def close(self):
+    async def close(self, force: bool = False):
         """Stop listening and close the websocket connection.
 
         EN:
-            Cancels the background task and closes the socket gracefully,
-            tolerating cancellation or close errors.
+            Decrements the reference count and only performs the actual
+            shutdown when the count reaches zero.  Use ``force=True`` to
+            bypass reference counting and close immediately (also removes
+            the instance from the singleton cache).
 
         KO:
-            백그라운드 태스크를 취소하고 소켓을 부드럽게 종료하며, 취소나 종료
-            오류가 발생해도 무시하고 진행합니다.
+            참조 카운트를 감소시키고 0이 되었을 때만 실제 종료를 수행합니다.
+            ``force=True`` 를 사용하면 참조 카운트를 무시하고 즉시 종료하며,
+            싱글톤 캐시에서 인스턴스를 제거합니다.
+
+        Parameters:
+            force (bool): EN: Close immediately regardless of ref count.
+                KO: 참조 카운트를 무시하고 즉시 종료.
         """
+        if not force:
+            self._ref_count = max(0, self._ref_count - 1)
+            if self._ref_count > 0:
+                return
+
+        self._ref_count = 0
         self._stop = True
         # cancel listener task if running
         if self._listen_task is not None:
@@ -315,6 +347,36 @@ class RealRequestAbstract(ABC):
                 await self._ws.close()
             except Exception:
                 pass
+
+        self._connected_event.clear()
+        self._cleanup_singleton_cache()
+
+    def _cleanup_singleton_cache(self):
+        """Remove this instance from the singleton caches.
+
+        EN:
+            Cleans up references in OverseasStock and OverseasFutureoption
+            class-level caches so the next ``real()`` call creates a fresh
+            instance.
+
+        KO:
+            OverseasStock 및 OverseasFutureoption 클래스 레벨 캐시에서
+            자기 자신을 제거하여 다음 ``real()`` 호출 시 새 인스턴스가
+            생성되도록 합니다.
+        """
+        tm_id = id(self._token_manager)
+        try:
+            from programgarden_finance.ls.overseas_stock import OverseasStock
+            if OverseasStock._real_instances.get(tm_id) is self:
+                del OverseasStock._real_instances[tm_id]
+        except ImportError:
+            pass
+        try:
+            from programgarden_finance.ls.overseas_futureoption import OverseasFutureoption
+            if OverseasFutureoption._real_instances.get(tm_id) is self:
+                del OverseasFutureoption._real_instances[tm_id]
+        except ImportError:
+            pass
 
     def _on_message(self, message_key: str,  listener: Callable[[Any], None]):
         """Register a callback to handle messages for a specific TR code.
