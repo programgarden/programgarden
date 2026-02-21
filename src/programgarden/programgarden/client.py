@@ -58,7 +58,7 @@ class ProgramGarden:
         resource_limits: Optional[Dict[str, Any]] = None,
         storage_dir: Optional[str] = None,
         wait: bool = True,
-        timeout: float = 60.0,
+        timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Execute workflow
@@ -71,7 +71,7 @@ class ProgramGarden:
                            If None, auto-detects from system or uses workflow's resource_limits
             storage_dir: DB/파일 저장 디렉토리 (default: /app/data or ./app/data)
             wait: Whether to wait for completion (default True)
-            timeout: Maximum wait time (seconds)
+            timeout: Maximum wait time (seconds), None for no limit
 
         Returns:
             Job state
@@ -101,10 +101,10 @@ class ProgramGarden:
             if wait:
                 # Wait for completion
                 import asyncio
-                start_time = asyncio.get_event_loop().time()
+                start_time = asyncio.get_event_loop().time() if timeout else None
                 while job.status in ("pending", "running"):
                     await asyncio.sleep(0.1)
-                    if asyncio.get_event_loop().time() - start_time > timeout:
+                    if timeout and asyncio.get_event_loop().time() - start_time > timeout:
                         break
             
             return job.get_state()
