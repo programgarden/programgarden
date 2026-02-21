@@ -1,3 +1,12 @@
+## [1.9.0] - 2026-02-21
+### Added
+- **커뮤니티 플러그인 Phase 6 - 퀀트 위험관리 5개 추가** (community 1.7.0, 총 48개)
+  - KellyCriterion(켈리기준), RiskParity(리스크패리티), VarCvarMonitor(VaR/CVaR모니터링)
+  - CorrelationGuard(상관관계가드), BetaHedge(베타헷지)
+
+### Changed
+- deps: programgarden-community ^1.7.0
+
 ## [1.8.0] - 2026-02-20
 ### Added
 - **커뮤니티 플러그인 Phase 5 - 9개 추가** (community 1.6.0, 총 43개)
