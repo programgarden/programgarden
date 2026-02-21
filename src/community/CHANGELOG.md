@@ -1,3 +1,9 @@
+## [1.7.0] - 2026-02-21
+### Added
+- Phase 6 퀀트 위험관리 플러그인 5개 추가 (43→48 플러그인)
+  - POSITION 5개: KellyCriterion(켈리기준), RiskParity(리스크패리티), VarCvarMonitor(VaR/CVaR모니터링), CorrelationGuard(상관관계가드), BetaHedge(베타헷지)
+- 테스트 추가 (총 489개)
+
 ## [1.6.0] - 2026-02-20
 ### Added
 - Phase 5 커뮤니티 플러그인 9개 추가 (34→43 플러그인)
