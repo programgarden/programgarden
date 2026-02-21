@@ -33,7 +33,7 @@
 
 ## 전체 플러그인 목록
 
-### 전체 플러그인 (43개)
+### 전체 플러그인 (48개)
 
 | 분류 | 플러그인 | 설명 |
 |------|---------|------|
@@ -80,6 +80,11 @@
 | **포지션 보호** | DrawdownProtection | 낙폭 보호 (HWM 연동) |
 | | VolatilityPositionSizing | 변동성 기반 포지션 사이징 |
 | | RollManagement | 선물 롤오버 관리 |
+| **퀀트 위험관리** | KellyCriterion | 켈리 기준 포지션 사이징 |
+| | RiskParity | 리스크 패리티 배분 (역변동성) |
+| | VarCvarMonitor | VaR/CVaR 모니터링 |
+| | CorrelationGuard | 상관관계 가드 (레짐 감시) |
+| | BetaHedge | 베타 헷지 (포트폴리오 베타 관리) |
 
 ---
 

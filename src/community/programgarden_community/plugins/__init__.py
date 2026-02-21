@@ -45,7 +45,12 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── time_based_exit/  # POSITION - 시간 기반 청산
     ├── drawdown_protection/ # POSITION - 낙폭 보호
     ├── volatility_position_sizing/ # POSITION - 변동성 포지션 사이징
-    └── roll_management/  # POSITION - 롤오버 관리 (선물)
+    ├── roll_management/  # POSITION - 롤오버 관리 (선물)
+    ├── kelly_criterion/  # POSITION - 켈리 기준
+    ├── risk_parity/      # POSITION - 리스크 패리티
+    ├── var_cvar_monitor/  # POSITION - VaR/CVaR 모니터
+    ├── correlation_guard/ # POSITION - 상관관계 가드
+    └── beta_hedge/       # POSITION - 베타 헷지
 
 사용법:
     from programgarden_community.plugins import register_all_plugins, get_plugin
@@ -111,6 +116,11 @@ def register_all_plugins() -> None:
     from .drawdown_protection import DRAWDOWN_PROTECTION_SCHEMA, drawdown_protection_condition
     from .volatility_position_sizing import VOLATILITY_POSITION_SIZING_SCHEMA, volatility_position_sizing_condition
     from .roll_management import ROLL_MANAGEMENT_SCHEMA, roll_management_condition
+    from .kelly_criterion import KELLY_CRITERION_SCHEMA, kelly_criterion_condition
+    from .risk_parity import RISK_PARITY_SCHEMA, risk_parity_condition
+    from .var_cvar_monitor import VAR_CVAR_MONITOR_SCHEMA, var_cvar_monitor_condition
+    from .correlation_guard import CORRELATION_GUARD_SCHEMA, correlation_guard_condition
+    from .beta_hedge import BETA_HEDGE_SCHEMA, beta_hedge_condition
 
     # TECHNICAL 등록
     technical_plugins = [
@@ -161,6 +171,11 @@ def register_all_plugins() -> None:
         ("DrawdownProtection", drawdown_protection_condition, DRAWDOWN_PROTECTION_SCHEMA),
         ("VolatilityPositionSizing", volatility_position_sizing_condition, VOLATILITY_POSITION_SIZING_SCHEMA),
         ("RollManagement", roll_management_condition, ROLL_MANAGEMENT_SCHEMA),
+        ("KellyCriterion", kelly_criterion_condition, KELLY_CRITERION_SCHEMA),
+        ("RiskParity", risk_parity_condition, RISK_PARITY_SCHEMA),
+        ("VarCvarMonitor", var_cvar_monitor_condition, VAR_CVAR_MONITOR_SCHEMA),
+        ("CorrelationGuard", correlation_guard_condition, CORRELATION_GUARD_SCHEMA),
+        ("BetaHedge", beta_hedge_condition, BETA_HEDGE_SCHEMA),
     ]
 
     for plugin_id, plugin_callable, schema in technical_plugins + position_plugins:
