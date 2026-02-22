@@ -1,3 +1,10 @@
+## [1.8.0] - 2026-02-22
+### Added
+- Tier 1 퀀트 전략 플러그인 7개 추가 (48→55 플러그인)
+  - TECHNICAL 5개: ZScore(Z-Score정규화), SqueezeMomentum(BB+KC스퀴즈), MomentumRank(모멘텀순위선별), MarketInternals(시장내부지표), PairTrading(페어트레이딩)
+  - POSITION 2개: DynamicStopLoss(ATR동적손절), MaxPositionLimit(포지션한도관리)
+- 테스트 81개 추가 (총 570개)
+
 ## [1.7.0] - 2026-02-21
 ### Added
 - Phase 6 퀀트 위험관리 플러그인 5개 추가 (43→48 플러그인)
