@@ -33,7 +33,7 @@
 
 ## 전체 플러그인 목록
 
-### 전체 플러그인 (48개)
+### 전체 플러그인 (55개)
 
 | 분류 | 플러그인 | 설명 |
 |------|---------|------|
@@ -56,6 +56,7 @@
 | | PriceChannel | 돈치안 채널 돌파 |
 | | GoldenRatio | 피보나치 되돌림 |
 | | KeltnerChannel | 켈트너 채널 (스퀴즈) |
+| | SqueezeMomentum | BB+KC 스퀴즈 발화 + 선형회귀 모멘텀 |
 | **가격 레벨** | PivotPoint | 피봇 포인트 (S/R 레벨) |
 | | VWAP | 거래량가중평균가격 |
 | **패턴** | ThreeLineStrike | 삼선 타격 (4봉 반전) |
@@ -66,9 +67,13 @@
 | **거래량** | VolumeSpike | 거래량 급증 감지 |
 | | CMF | 차이킨 자금흐름 (매집/분산) |
 | **평균회귀** | MeanReversion | 이평선 이탈 회귀 |
+| | ZScore | 표준편차 정규화 과매수/과매도 (종목 간 비교 가능) |
+| | PairTrading | 페어 스프레드 Z-Score 기반 평균회귀 매매신호 |
 | **시장 분석** | RegimeDetection | 시장 레짐 감지 (bull/bear/sideways) |
 | | RelativeStrength | 벤치마크 대비 상대 강도 |
 | | CorrelationAnalysis | 자산 간 상관관계 분석 |
+| | MomentumRank | 유니버스 전체 모멘텀 순위 기반 상위/하위 선별 |
+| | MarketInternals | 시장 내부 건강도 (AD비율, MA위 비율, 복합점수) |
 | **멀티타임프레임** | MultiTimeframeConfirmation | 다중 시간프레임 MA 정렬 확인 |
 | **선물 전용** | ContangoBackwardation | 콘탱고/백워데이션 감지 |
 | | CalendarSpread | 캘린더 스프레드 Z-score |
@@ -80,6 +85,8 @@
 | **포지션 보호** | DrawdownProtection | 낙폭 보호 (HWM 연동) |
 | | VolatilityPositionSizing | 변동성 기반 포지션 사이징 |
 | | RollManagement | 선물 롤오버 관리 |
+| | DynamicStopLoss | ATR 기반 동적 손절 (변동성 적응형) |
+| | MaxPositionLimit | 종목 수/비중/총가치 한도 관리 |
 | **퀀트 위험관리** | KellyCriterion | 켈리 기준 포지션 사이징 |
 | | RiskParity | 리스크 패리티 배분 (역변동성) |
 | | VarCvarMonitor | VaR/CVaR 모니터링 |
@@ -1370,3 +1377,189 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
 ```
 
 > **주의**: `positions` 기반. `risk_features: state` 사용. 다음 월물 자동 계산 (예: HMCEG26 → HMCEH26).
+
+---
+
+## Tier 1 퀀트 전략
+
+### ZScore (Z-Score 정규화)
+
+가격이 평균에서 **몇 표준편차만큼 벗어났는지** 측정합니다. MeanReversion과 달리 표준편차 기반이라 종목 간 비교가 가능합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `lookback` | int | 20 | 계산 기간 |
+| `entry_threshold` | float | 2.0 | 진입 시그마 |
+| `exit_threshold` | float | 0.5 | 청산 시그마 |
+| `direction` | string | "below" | `below`: 과매도(매수), `above`: 과매수(매도) |
+
+```json
+{
+  "id": "zscore",
+  "type": "ConditionNode",
+  "plugin": "ZScore",
+  "data": "{{ nodes.history.values }}",
+  "fields": {"lookback": 20, "entry_threshold": 2.0, "direction": "below"}
+}
+```
+
+> **필요 데이터**: 최소 `lookback`일의 종가(close) 데이터
+
+---
+
+### SqueezeMomentum (스퀴즈 모멘텀)
+
+볼린저밴드(BB)가 켈트너 채널(KC) 안쪽으로 들어가면 **변동성 수축(squeeze)**, 밖으로 나오면 **폭발적 움직임(fire)** 신호입니다. 선형회귀 모멘텀으로 방향을 판단합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `bb_period` | int | 20 | 볼린저밴드 기간 |
+| `bb_std` | float | 2.0 | 볼린저밴드 표준편차 |
+| `kc_period` | int | 20 | 켈트너 채널 기간 |
+| `kc_atr_period` | int | 10 | KC ATR 기간 |
+| `kc_multiplier` | float | 1.5 | KC 배수 |
+| `momentum_period` | int | 12 | 선형회귀 모멘텀 기간 |
+| `direction` | string | "squeeze_fire_long" | `squeeze_on`/`squeeze_off`/`squeeze_fire_long`/`squeeze_fire_short` |
+
+```json
+{
+  "id": "squeeze",
+  "type": "ConditionNode",
+  "plugin": "SqueezeMomentum",
+  "data": "{{ nodes.history.values }}",
+  "fields": {"direction": "squeeze_fire_long"}
+}
+```
+
+> **필요 데이터**: 종가(close), 고가(high), 저가(low). 최소 `max(bb_period, kc_period) + kc_atr_period`일 데이터
+
+---
+
+### MomentumRank (모멘텀 순위)
+
+유니버스 전체 종목의 **모멘텀(수익률)을 계산하고 순위를 매겨** 상위/하위 N개를 선별합니다. DualMomentum과 달리 유니버스 전체를 비교합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `lookback` | int | 63 | 모멘텀 계산 기간 (거래일) |
+| `top_n` | int | 5 | 선별 종목 수 (0이면 top_pct 사용) |
+| `top_pct` | float | 0 | 선별 비율 (%) |
+| `selection` | string | "top" | `top`: 상위, `bottom`: 하위 |
+| `momentum_type` | string | "simple" | `simple`/`log`/`risk_adjusted` |
+
+```json
+{
+  "id": "rank",
+  "type": "ConditionNode",
+  "plugin": "MomentumRank",
+  "data": "{{ nodes.history.values }}",
+  "fields": {"lookback": 63, "top_n": 3, "selection": "top"}
+}
+```
+
+> **다중 종목 플러그인**: 모든 종목 데이터를 한번에 전달해야 합니다.
+
+---
+
+### MarketInternals (시장 내부 지표)
+
+유니버스 전체의 **시장 건강도를 측정**합니다. 상승/하락 비율, MA 위 종목 비율, 신고/신저가 비율을 복합적으로 분석합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `lookback` | int | 1 | 상승/하락 판단 기간 |
+| `ma_period` | int | 50 | 이동평균 기간 |
+| `high_low_period` | int | 52 | 신고/신저가 기간 |
+| `metric` | string | "advance_decline_ratio" | `advance_decline_ratio`/`above_ma_pct`/`new_high_low_ratio`/`composite` |
+| `threshold` | float | 60 | 임계값 (%) |
+| `direction` | string | "above" | `above`/`below` |
+
+```json
+{
+  "id": "market",
+  "type": "ConditionNode",
+  "plugin": "MarketInternals",
+  "data": "{{ nodes.history.values }}",
+  "fields": {"metric": "composite", "threshold": 50, "direction": "above"}
+}
+```
+
+> **다중 종목 플러그인**: 유니버스 전체 데이터 필요. `market_health` 추가 필드로 시장 집계 반환.
+
+---
+
+### PairTrading (페어 트레이딩)
+
+2종목의 **스프레드 Z-Score**로 평균회귀 매매신호를 생성합니다. CorrelationAnalysis와 달리 진입/청산 신호를 직접 제공합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `symbol_a` | string | "" | 종목 A (미지정 시 자동 감지) |
+| `symbol_b` | string | "" | 종목 B |
+| `lookback` | int | 60 | 스프레드 계산 기간 |
+| `entry_z` | float | 2.0 | 진입 Z-Score |
+| `exit_z` | float | 0.5 | 청산 Z-Score |
+| `spread_method` | string | "ratio" | `ratio`/`log_ratio`/`difference` |
+| `correlation_min` | float | 0.5 | 최소 상관계수 |
+
+```json
+{
+  "id": "pair",
+  "type": "ConditionNode",
+  "plugin": "PairTrading",
+  "data": "{{ nodes.history.values }}",
+  "fields": {"symbol_a": "AAPL", "symbol_b": "MSFT", "entry_z": 2.0}
+}
+```
+
+> **risk_features**: `state` (페어 상태 추적). 2종목 데이터 필요.
+
+---
+
+### DynamicStopLoss (동적 손절)
+
+**ATR(평균진폭)**을 기반으로 변동성에 적응하는 손절가를 산출합니다. StopLoss의 고정% 대신 변동성이 높으면 손절폭을 확대하고, 낮으면 축소합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `atr_period` | int | 14 | ATR 계산 기간 |
+| `atr_multiplier` | float | 2.0 | ATR 배수 (손절폭) |
+| `trailing` | bool | false | 트레일링 모드 |
+
+```json
+{
+  "id": "dynStop",
+  "type": "ConditionNode",
+  "plugin": "DynamicStopLoss",
+  "data": "{{ nodes.history.values }}",
+  "positions": "{{ nodes.account.positions }}",
+  "fields": {"atr_period": 14, "atr_multiplier": 2.0}
+}
+```
+
+> **필요 데이터**: 시계열(close, high, low) + 포지션 정보. 데이터 없으면 현재가 * 2% fallback.
+
+---
+
+### MaxPositionLimit (최대 포지션 한도)
+
+보유 **종목 수, 총금액, 개별 비중**이 한도를 초과하는지 점검합니다. 초과 시 경고/신규매수 차단/초과분 청산 중 선택 가능합니다.
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `max_positions` | int | 10 | 최대 보유 종목 수 (0=무제한) |
+| `max_total_value` | float | 0 | 최대 총 포지션 가치 (0=무제한) |
+| `max_single_weight_pct` | float | 20 | 개별 종목 최대 비중 (%) |
+| `action` | string | "warn" | `warn`/`block_new`/`exit_excess` |
+
+```json
+{
+  "id": "posLimit",
+  "type": "ConditionNode",
+  "plugin": "MaxPositionLimit",
+  "positions": "{{ nodes.account.positions }}",
+  "fields": {"max_positions": 5, "max_single_weight_pct": 30, "action": "warn"}
+}
+```
+
+> **포지션 기반**: `data` 없이 `positions`만 필요.
