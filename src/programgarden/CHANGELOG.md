@@ -1,3 +1,12 @@
+## [1.10.0] - 2026-02-22
+### Added
+- **커뮤니티 플러그인 Tier 1 - 퀀트 전략 7개 추가** (community 1.8.0, 총 55개)
+  - TECHNICAL 5개: ZScore, SqueezeMomentum, MomentumRank, MarketInternals, PairTrading
+  - POSITION 2개: DynamicStopLoss, MaxPositionLimit
+
+### Changed
+- deps: programgarden-community ^1.8.0
+
 ## [1.9.1] - 2026-02-21
 ### Fixed
 - **ProgramGarden.run() timeout 제거**: 기본값 60초 → None (무제한)
