@@ -38,6 +38,11 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── correlation_analysis/ # TECHNICAL - 상관관계 분석
     ├── contango_backwardation/ # TECHNICAL - 콘탱고/백워데이션 (선물)
     ├── calendar_spread/  # TECHNICAL - 캘린더 스프레드 (선물)
+    ├── z_score/          # TECHNICAL - Z-Score
+    ├── squeeze_momentum/ # TECHNICAL - 스퀴즈 모멘텀
+    ├── momentum_rank/    # TECHNICAL - 모멘텀 순위
+    ├── market_internals/ # TECHNICAL - 시장 내부 지표
+    ├── pair_trading/     # TECHNICAL - 페어 트레이딩
     ├── stop_loss/        # POSITION - 손절
     ├── profit_target/    # POSITION - 익절
     ├── trailing_stop/    # POSITION - 트레일링 스탑
@@ -50,7 +55,9 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── risk_parity/      # POSITION - 리스크 패리티
     ├── var_cvar_monitor/  # POSITION - VaR/CVaR 모니터
     ├── correlation_guard/ # POSITION - 상관관계 가드
-    └── beta_hedge/       # POSITION - 베타 헷지
+    ├── beta_hedge/       # POSITION - 베타 헷지
+    ├── dynamic_stop_loss/ # POSITION - 동적 손절
+    └── max_position_limit/ # POSITION - 최대 포지션 한도
 
 사용법:
     from programgarden_community.plugins import register_all_plugins, get_plugin
@@ -106,6 +113,11 @@ def register_all_plugins() -> None:
     from .correlation_analysis import CORRELATION_ANALYSIS_SCHEMA, correlation_analysis_condition
     from .contango_backwardation import CONTANGO_BACKWARDATION_SCHEMA, contango_backwardation_condition
     from .calendar_spread import CALENDAR_SPREAD_SCHEMA, calendar_spread_condition
+    from .z_score import Z_SCORE_SCHEMA, z_score_condition
+    from .squeeze_momentum import SQUEEZE_MOMENTUM_SCHEMA, squeeze_momentum_condition
+    from .momentum_rank import MOMENTUM_RANK_SCHEMA, momentum_rank_condition
+    from .market_internals import MARKET_INTERNALS_SCHEMA, market_internals_condition
+    from .pair_trading import PAIR_TRADING_SCHEMA, pair_trading_condition
 
     # === POSITION 플러그인 ===
     from .stop_loss import STOP_LOSS_SCHEMA, stop_loss_condition
@@ -121,6 +133,8 @@ def register_all_plugins() -> None:
     from .var_cvar_monitor import VAR_CVAR_MONITOR_SCHEMA, var_cvar_monitor_condition
     from .correlation_guard import CORRELATION_GUARD_SCHEMA, correlation_guard_condition
     from .beta_hedge import BETA_HEDGE_SCHEMA, beta_hedge_condition
+    from .dynamic_stop_loss import DYNAMIC_STOP_LOSS_SCHEMA, dynamic_stop_loss_condition
+    from .max_position_limit import MAX_POSITION_LIMIT_SCHEMA, max_position_limit_condition
 
     # TECHNICAL 등록
     technical_plugins = [
@@ -159,6 +173,11 @@ def register_all_plugins() -> None:
         ("CorrelationAnalysis", correlation_analysis_condition, CORRELATION_ANALYSIS_SCHEMA),
         ("ContangoBackwardation", contango_backwardation_condition, CONTANGO_BACKWARDATION_SCHEMA),
         ("CalendarSpread", calendar_spread_condition, CALENDAR_SPREAD_SCHEMA),
+        ("ZScore", z_score_condition, Z_SCORE_SCHEMA),
+        ("SqueezeMomentum", squeeze_momentum_condition, SQUEEZE_MOMENTUM_SCHEMA),
+        ("MomentumRank", momentum_rank_condition, MOMENTUM_RANK_SCHEMA),
+        ("MarketInternals", market_internals_condition, MARKET_INTERNALS_SCHEMA),
+        ("PairTrading", pair_trading_condition, PAIR_TRADING_SCHEMA),
     ]
 
     # POSITION 등록
@@ -176,6 +195,8 @@ def register_all_plugins() -> None:
         ("VarCvarMonitor", var_cvar_monitor_condition, VAR_CVAR_MONITOR_SCHEMA),
         ("CorrelationGuard", correlation_guard_condition, CORRELATION_GUARD_SCHEMA),
         ("BetaHedge", beta_hedge_condition, BETA_HEDGE_SCHEMA),
+        ("DynamicStopLoss", dynamic_stop_loss_condition, DYNAMIC_STOP_LOSS_SCHEMA),
+        ("MaxPositionLimit", max_position_limit_condition, MAX_POSITION_LIMIT_SCHEMA),
     ]
 
     for plugin_id, plugin_callable, schema in technical_plugins + position_plugins:
