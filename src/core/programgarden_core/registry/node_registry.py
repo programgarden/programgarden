@@ -95,6 +95,8 @@ class NodeTypeRegistry:
             OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
+            # Market External (credential 불필요)
+            CurrencyRateNode, FearGreedIndexNode, VIXDataNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             ScheduleNode, TradingHoursFilterNode,
@@ -131,6 +133,8 @@ class NodeTypeRegistry:
             OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
+            # Market External (credential 불필요)
+            CurrencyRateNode, FearGreedIndexNode, VIXDataNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
             # Trigger

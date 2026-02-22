@@ -1,12 +1,12 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-49개 노드 타입을 카테고리로 분류:
+52개 노드 타입을 카테고리로 분류:
 - infra (5): StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode
 - broker (2): OverseasStockBrokerNode, OverseasFuturesBrokerNode
-- market (13): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
+- market (16): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
               OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode,
-              WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode
+              WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, CurrencyRateNode, FearGreedIndexNode, VIXDataNode
 - account (6): OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode,
               OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode
 - trigger (2): ScheduleNode, TradingHoursFilterNode
@@ -48,6 +48,8 @@ from programgarden_core.nodes.symbol_stock import OverseasStockSymbolQueryNode
 from programgarden_core.nodes.symbol_futures import OverseasFuturesSymbolQueryNode
 # Data (상품 무관)
 from programgarden_core.nodes.data import SQLiteNode, HTTPRequestNode, FieldMappingNode
+# Market External (credential 불필요, 무료 외부 API)
+from programgarden_core.nodes.market_external import CurrencyRateNode, FearGreedIndexNode, VIXDataNode
 # Symbol (상품 무관)
 from programgarden_core.nodes.symbol import (
     WatchlistNode,
@@ -126,6 +128,10 @@ __all__ = [
     "SQLiteNode",
     "HTTPRequestNode",
     "FieldMappingNode",
+    # Market External (credential 불필요)
+    "CurrencyRateNode",
+    "FearGreedIndexNode",
+    "VIXDataNode",
     # Symbol (상품 무관)
     "WatchlistNode",
     "MarketUniverseNode",
