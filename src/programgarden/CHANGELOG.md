@@ -1,3 +1,11 @@
+## [1.11.0] - 2026-02-23
+### Added
+- **외부 시장 데이터 노드 executor 매핑**: CurrencyRateNode, FearGreedIndexNode, VIXDataNode → GenericNodeExecutor
+- **통합 테스트 12개**: executor 디스패치 3개 + 워크플로우 통합 9개 (IfNode 분기 포함)
+
+### Changed
+- deps: programgarden-core ^1.5.0
+
 ## [1.10.0] - 2026-02-22
 ### Added
 - **커뮤니티 플러그인 Tier 1 - 퀀트 전략 7개 추가** (community 1.8.0, 총 55개)

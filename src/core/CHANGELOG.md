@@ -1,3 +1,16 @@
+## [1.5.0] - 2026-02-23
+### Added
+- **CurrencyRateNode**: 환율 조회 노드 (`market` 카테고리, credential 불필요)
+  - frankfurter.app API 기반, 기본 통화 + 대상 통화 목록 지정
+  - KRW 환율 자동 포함, `rates`(배열) + `krw_rate`(숫자) 출력
+- **FearGreedIndexNode**: CNN 공포/탐욕 지수 조회 (`market` 카테고리, credential 불필요)
+  - CNN dataviz API 기반, 0~100 점수 + 라벨(Extreme Fear~Extreme Greed)
+- **VIXDataNode**: VIX 변동성 지수 조회 (`market` 카테고리, credential 불필요)
+  - Yahoo Finance API 기반, 현재 VIX + 수준 분류(low/moderate/high/extreme)
+  - `include_history` 옵션으로 과거 데이터 조회 가능
+- **ExternalAPIError 예외 계층**: RateLimitError, NetworkError, TimeoutError 등 외부 API 전용 예외
+- i18n: CurrencyRateNode, FearGreedIndexNode, VIXDataNode 번역 키 추가 (ko/en)
+
 ## [1.4.0] - 2026-02-19
 ### Added
 - **OverseasStockFundamentalNode**: 해외주식 종목 펀더멘털 조회 (`market` 카테고리)
