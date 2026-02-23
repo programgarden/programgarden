@@ -24,6 +24,7 @@ from .ls.overseas_stock.real import (
 
 from .ls.korea_stock.market import t9945
 from .ls.korea_stock.market import t8450
+from .ls.korea_stock.chart import t8451
 
 from .ls.overseas_futureoption.market import (
     o3101, o3104, o3105, o3106, o3107, o3116,
@@ -59,6 +60,7 @@ __all__ = [
 
     t9945,
     t8450,
+    t8451,
 
     COSAQ00102,
     COSAQ01400,
