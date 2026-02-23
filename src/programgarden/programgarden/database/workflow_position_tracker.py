@@ -886,6 +886,38 @@ class WorkflowPositionTracker:
             
             return updated
 
+    def get_pending_orders(self) -> List[Dict[str, Any]]:
+        """최근 미체결 가능성이 있는 주문 목록 (긴급 정지 시 사용).
+
+        최근 60초 이내 기록된 주문을 반환합니다.
+        체결 여부를 정확히 알 수 없으므로, HTS/MTS에서 직접 확인이 필요합니다.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT order_no, order_date, symbol, exchange, side, quantity, price, node_id
+                    FROM workflow_orders
+                    WHERE trading_mode = ?
+                      AND created_at >= datetime('now', '-60 seconds')
+                    ORDER BY created_at DESC
+                """, (self.trading_mode,))
+                return [
+                    {
+                        "order_no": row[0],
+                        "order_date": row[1],
+                        "symbol": row[2],
+                        "exchange": row[3],
+                        "side": row[4],
+                        "quantity": row[5],
+                        "price": row[6],
+                        "node_id": row[7],
+                    }
+                    for row in cursor.fetchall()
+                ]
+        except Exception:
+            return []
+
     def get_orders_without_fill_price(self) -> List[Dict[str, Any]]:
         """
         체결 가격이 없는 주문 목록 조회
