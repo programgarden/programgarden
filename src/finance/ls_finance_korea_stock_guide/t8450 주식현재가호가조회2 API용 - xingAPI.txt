@@ -1,0 +1,154 @@
+BEGIN_FUNCTION_MAP
+.Func,         주식현재가호가조회(t8450), t8450, attr, block, headtype=A;
+	BEGIN_DATA_MAP
+	t8450InBlock,기본입력,input;
+	begin
+		단축코드                                       , shcode                         , shcode                              , char                         , 6;
+		거래소구분코드                                 , exchgubun                      , exchgubun                           , char                         , 1;
+	end
+	t8450OutBlock,출력,output;
+	begin
+		한글명                                         , hname                          , hname                                , char                         , 20;
+		현재가                                         , price                          , price                                , long                         , 8;
+		전일대비구분                                   , sign                           , sign                                 , char                         , 1;
+		전일대비                                       , change                         , change                               , long                         , 8;
+		등락율                                         , diff                           , diff                                 , double                       , 6.2;
+		누적거래량                                     , volume                         , volume                               , long                         , 12;
+		전일종가(기준가)                               , jnilclose                      , jnilclose                            , long                         , 8;
+		매도호가1                                      , offerho1                       , offerho1                             , long                         , 8;
+		매수호가1                                      , bidho1                         , bidho1                               , long                         , 8;
+		매도호가수량1                                  , offerrem1                      , offerrem1                            , long                         , 12;
+		매수호가수량1                                  , bidrem1                        , bidrem1                              , long                         , 12;
+		매도호가2                                      , offerho2                       , offerho2                             , long                         , 8;
+		매수호가2                                      , bidho2                         , bidho2                               , long                         , 8;
+		매도호가수량2                                  , offerrem2                      , offerrem2                            , long                         , 12;
+		매수호가수량2                                  , bidrem2                        , bidrem2                              , long                         , 12;
+		매도호가3                                      , offerho3                       , offerho3                             , long                         , 8;
+		매수호가3                                      , bidho3                         , bidho3                               , long                         , 8;
+		매도호가수량3                                  , offerrem3                      , offerrem3                            , long                         , 12;
+		매수호가수량3                                  , bidrem3                        , bidrem3                              , long                         , 12;
+		매도호가4                                      , offerho4                       , offerho4                             , long                         , 8;
+		매수호가4                                      , bidho4                         , bidho4                               , long                         , 8;
+		매도호가수량4                                  , offerrem4                      , offerrem4                            , long                         , 12;
+		매수호가수량4                                  , bidrem4                        , bidrem4                              , long                         , 12;
+		매도호가5                                      , offerho5                       , offerho5                             , long                         , 8;
+		매수호가5                                      , bidho5                         , bidho5                               , long                         , 8;
+		매도호가수량5                                  , offerrem5                      , offerrem5                            , long                         , 12;
+		매수호가수량5                                  , bidrem5                        , bidrem5                              , long                         , 12;
+		매도호가6                                      , offerho6                       , offerho6                             , long                         , 8;
+		매수호가6                                      , bidho6                         , bidho6                               , long                         , 8;
+		매도호가수량6                                  , offerrem6                      , offerrem6                            , long                         , 12;
+		매수호가수량6                                  , bidrem6                        , bidrem6                              , long                         , 12;
+		매도호가7                                      , offerho7                       , offerho7                             , long                         , 8;
+		매수호가7                                      , bidho7                         , bidho7                               , long                         , 8;
+		매도호가수량7                                  , offerrem7                      , offerrem7                            , long                         , 12;
+		매수호가수량7                                  , bidrem7                        , bidrem7                              , long                         , 12;
+		매도호가8                                      , offerho8                       , offerho8                             , long                         , 8;
+		매수호가8                                      , bidho8                         , bidho8                               , long                         , 8;
+		매도호가수량8                                  , offerrem8                      , offerrem8                            , long                         , 12;
+		매수호가수량8                                  , bidrem8                        , bidrem8                              , long                         , 12;
+		매도호가9                                      , offerho9                       , offerho9                             , long                         , 8;
+		매수호가9                                      , bidho9                         , bidho9                               , long                         , 8;
+		매도호가수량9                                  , offerrem9                      , offerrem9                            , long                         , 12;
+		매수호가수량9                                  , bidrem9                        , bidrem9                              , long                         , 12;
+		매도호가10                                     , offerho10                      , offerho10                            , long                         , 8;
+		매수호가10                                     , bidho10                        , bidho10                              , long                         , 8;
+		매도호가수량10                                 , offerrem10                     , offerrem10                           , long                         , 12;
+		매수호가수량10                                 , bidrem10                       , bidrem10                             , long                         , 12;
+		매도호가수량합                                 , offer                          , offer                                , long                         , 12;
+		매수호가수량합                                 , bid                            , bid                                  , long                         , 12;
+		수신시간                                       , hotime                         , hotime                               , char                         , 8;
+		예상체결가격                                   , yeprice                        , yeprice                              , long                         , 8;
+		예상체결수량                                   , yevolume                       , yevolume                             , long                         , 12;
+		예상체결전일구분                               , yesign                         , yesign                               , char                         , 1;
+		예상체결전일대비                               , yechange                       , yechange                             , long                         , 8;
+		예상체결등락율                                 , yediff                         , yediff                               , double                       , 6.2;
+		시간외매도잔량                                 , tmoffer                        , tmoffer                              , long                         , 12;
+		시간외매수잔량                                 , tmbid                          , tmbid                                , long                         , 12;
+		동시구분                                       , ho_status                      , ho_status                            , char                         , 1;
+		단축코드                                       , shcode                         , shcode                               , char                         , 6;
+		상한가                                         , uplmtprice                     , uplmtprice                           , long                         , 8;
+		하한가                                         , dnlmtprice                     , dnlmtprice                           , long                         , 8;
+		시가                                           , open                           , open                                 , long                         , 8;
+		고가                                           , high                           , high                                 , long                         , 8;
+		저가                                           , low                            , low                                  , long                         , 8;
+		NXT매도호가수량1                               , nxt_offerrem1                  , nxt_offerrem1                        , long                         , 12;
+		NXT매수호가수량1                               , nxt_bidrem1                    , nxt_bidrem1                          , long                         , 12;
+		NXT매도호가수량2                               , nxt_offerrem2                  , nxt_offerrem2                        , long                         , 12;
+		NXT매수호가수량2                               , nxt_bidrem2                    , nxt_bidrem2                          , long                         , 12;
+		NXT매도호가수량3                               , nxt_offerrem3                  , nxt_offerrem3                        , long                         , 12;
+		NXT매수호가수량3                               , nxt_bidrem3                    , nxt_bidrem3                          , long                         , 12;
+		NXT매도호가수량4                               , nxt_offerrem4                  , nxt_offerrem4                        , long                         , 12;
+		NXT매수호가수량4                               , nxt_bidrem4                    , nxt_bidrem4                          , long                         , 12;
+		NXT매도호가수량5                               , nxt_offerrem5                  , nxt_offerrem5                        , long                         , 12;
+		NXT매수호가수량5                               , nxt_bidrem5                    , nxt_bidrem5                          , long                         , 12;
+		NXT매도호가수량6                               , nxt_offerrem6                  , nxt_offerrem6                        , long                         , 12;
+		NXT매수호가수량6                               , nxt_bidrem6                    , nxt_bidrem6                          , long                         , 12;
+		NXT매도호가수량7                               , nxt_offerrem7                  , nxt_offerrem7                        , long                         , 12;
+		NXT매수호가수량7                               , nxt_bidrem7                    , nxt_bidrem7                          , long                         , 12;
+		NXT매도호가수량8                               , nxt_offerrem8                  , nxt_offerrem8                        , long                         , 12;
+		NXT매수호가수량8                               , nxt_bidrem8                    , nxt_bidrem8                          , long                         , 12;
+		NXT매도호가수량9                               , nxt_offerrem9                  , nxt_offerrem9                        , long                         , 12;
+		NXT매수호가수량9                               , nxt_bidrem9                    , nxt_bidrem9                          , long                         , 12;
+		NXT매도호가수량10                              , nxt_offerrem10                 , nxt_offerrem10                       , long                         , 12;
+		NXT매수호가수량10                              , nxt_bidrem10                   , nxt_bidrem10                         , long                         , 12;
+		NXT매도호가수량합                              , nxt_offer                      , nxt_offer                            , long                         , 12;
+		NXT매수호가수량합                              , nxt_bid                        , nxt_bid                              , long                         , 12;
+		NXT예상체결가격                                , nxt_yeprice                    , nxt_yeprice                          , long                         , 8;
+		NXT예상체결수량                                , nxt_yevolume                   , nxt_yevolume                         , long                         , 12;
+		NXT예상체결전일구분                            , nxt_yesign                     , nxt_yesign                           , char                         , 1;
+		NXT예상체결전일대비                            , nxt_yechange                   , nxt_yechange                         , long                         , 8;
+		NXT예상체결등락율                              , nxt_yediff                     , nxt_yediff                           , double                       , 6.2;
+		NXT동시구분                                    , nxt_ho_status                  , nxt_ho_status                        , char                         , 1;
+		통합매도호가수량1                              , unx_offerrem1                  , unx_offerrem1                        , long                         , 12;
+		통합매수호가수량1                              , unx_bidrem1                    , unx_bidrem1                          , long                         , 12;
+		통합매도호가수량2                              , unx_offerrem2                  , unx_offerrem2                        , long                         , 12;
+		통합매수호가수량2                              , unx_bidrem2                    , unx_bidrem2                          , long                         , 12;
+		통합매도호가수량3                              , unx_offerrem3                  , unx_offerrem3                        , long                         , 12;
+		통합매수호가수량3                              , unx_bidrem3                    , unx_bidrem3                          , long                         , 12;
+		통합매도호가수량4                              , unx_offerrem4                  , unx_offerrem4                        , long                         , 12;
+		통합매수호가수량4                              , unx_bidrem4                    , unx_bidrem4                          , long                         , 12;
+		통합매도호가수량5                              , unx_offerrem5                  , unx_offerrem5                        , long                         , 12;
+		통합매수호가수량5                              , unx_bidrem5                    , unx_bidrem5                          , long                         , 12;
+		통합매도호가수량6                              , unx_offerrem6                  , unx_offerrem6                        , long                         , 12;
+		통합매수호가수량6                              , unx_bidrem6                    , unx_bidrem6                          , long                         , 12;
+		통합매도호가수량7                              , unx_offerrem7                  , unx_offerrem7                        , long                         , 12;
+		통합매수호가수량7                              , unx_bidrem7                    , unx_bidrem7                          , long                         , 12;
+		통합매도호가수량8                              , unx_offerrem8                  , unx_offerrem8                        , long                         , 12;
+		통합매수호가수량8                              , unx_bidrem8                    , unx_bidrem8                          , long                         , 12;
+		통합매도호가수량9                              , unx_offerrem9                  , unx_offerrem9                        , long                         , 12;
+		통합매수호가수량9                              , unx_bidrem9                    , unx_bidrem9                          , long                         , 12;
+		통합매도호가수량10                             , unx_offerrem10                 , unx_offerrem10                       , long                         , 12;
+		통합매수호가수량10                             , unx_bidrem10                   , unx_bidrem10                         , long                         , 12;
+		통합매도호가수량합                             , unx_offer                      , unx_offer                            , long                         , 12;
+		통합매수호가수량합                             , unx_bid                        , unx_bid                              , long                         , 12;
+		KRX중간가격                                    , krx_midprice                   , krx_midprice                         , long                         , 8;
+		KRX매도중간가잔량합계수량                      , krx_offermidsumrem             , krx_offermidsumrem                   , long                         , 9;
+		KRX매수중간가잔량합계수량                      , krx_bidmidsumrem               , krx_bidmidsumrem                     , long                         , 9;
+		NXT중간가격                                    , nxt_midprice                   , nxt_midprice                         , long                         , 8;
+		NXT매도중간가잔량합계수량                      , nxt_offermidsumrem             , nxt_offermidsumrem                   , long                         , 9;
+		NXT매수중간가잔량합계수량                      , nxt_bidmidsumrem               , nxt_bidmidsumrem                     , long                         , 9;
+		거래소별단축코드                               , ex_shcode                      , ex_shcode                            , char                         , 10;
+		KRX중간가잔량합계수량                          , krx_midsumrem                  , krx_midsumrem                        , long                         , 9;
+		KRX중간가잔량구분(' '없음'1'매도'2'매수)       , krx_midsumremgubun             , krx_midsumremgubun                   , char                         , 1;
+		NXT중간가잔량합계수량                          , nxt_midsumrem                  , nxt_midsumrem                        , long                         , 9;
+		NXT중간가잔량구분(' '없음'1'매도'2'매수)       , nxt_midsumremgubun             , nxt_midsumremgubun                   , char                         , 1;
+	end
+	END_DATA_MAP
+END_FUNCTION_MAP
+
+------
+필드상세설명
+exchgubun
+'''
+K: KRX
+
+N: NXT
+
+U:통합
+
+그외 입력값은 KRX로 처리
+'''
+
+
+

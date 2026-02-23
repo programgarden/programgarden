@@ -2704,8 +2704,8 @@ class AccountNodeExecutor(NodeExecutorBase):
             # 상품별 REST API 호출
             if product == "overseas_stock":
                 return await self._ls_overseas_stock(ls, node_id, context)
-            elif product == "domestic_stock":
-                return await self._ls_domestic_stock(ls, node_id, context)
+            elif product == "korea_stock":
+                return await self._ls_korea_stock(ls, node_id, context)
             elif product in ("overseas_futures", "overseas_futureoption"):
                 # overseas_futures와 overseas_futureoption은 같은 API 사용
                 return await self._ls_overseas_futureoption(ls, node_id, context)
@@ -2813,10 +2813,10 @@ class AccountNodeExecutor(NodeExecutorBase):
             "balance": balance_info,
         }
 
-    async def _ls_domestic_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
+    async def _ls_korea_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
         """LS증권 국내주식 잔고 조회 (TODO: 구현 필요)"""
-        context.log("warning", "LS domestic_stock not yet implemented, returning empty", node_id)
-        return self._empty_result("domestic_stock not implemented")
+        context.log("warning", "LS korea_stock not yet implemented, returning empty", node_id)
+        return self._empty_result("korea_stock not implemented")
 
     async def _ls_overseas_futureoption(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
         """

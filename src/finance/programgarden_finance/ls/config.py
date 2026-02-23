@@ -35,6 +35,8 @@ class URLS:
     MARKET_URL = f"{LS_URL}/overseas-stock/market-data"
     ORDER_URL = f"{LS_URL}/overseas-stock/order"
 
+    KOREA_STOCK_MARKET_URL = f"{LS_URL}/stock/market-data"
+
     FO_MARKET_URL = f"{LS_URL}/overseas-futureoption/market-data"
     FO_ACCNO_URL = f"{LS_URL}/overseas-futureoption/accno"
     FO_CHART_URL = f"{LS_URL}/overseas-futureoption/chart"
