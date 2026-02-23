@@ -11757,6 +11757,10 @@ class WorkflowExecutor:
             "OverseasFuturesCancelOrderNode": CancelOrderNodeExecutor(),
             # Data nodes
             "SQLiteNode": SQLiteNodeExecutor(),
+            # External market data nodes (credential 불필요, 외부 API)
+            "CurrencyRateNode": GenericNodeExecutor(),
+            "FearGreedIndexNode": GenericNodeExecutor(),
+            "VIXDataNode": GenericNodeExecutor(),
             # AI nodes
             "LLMModelNode": LLMModelNodeExecutor(),
             "AIAgentNode": AIAgentNodeExecutor(),
