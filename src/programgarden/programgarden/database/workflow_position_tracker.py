@@ -117,6 +117,9 @@ class WorkflowPositionTracker:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
         with sqlite3.connect(self.db_path) as conn:
+            # WAL 모드: 멀티 워크플로우 동시 접근 시 SQLITE_BUSY 방지
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             cursor = conn.cursor()
 
             # 워크플로우 주문 기록
@@ -383,11 +386,15 @@ class WorkflowPositionTracker:
     async def _process_timeout_fill(self, key: str) -> None:
         """버퍼 타임아웃 후 처리"""
         await asyncio.sleep(self.FILL_BUFFER_TIMEOUT)
-        
+
         async with self._buffer_lock:
             if key in self._pending_fills:
                 fill = self._pending_fills.pop(key)
-                logger.warning(f"Fill timeout - classifying as unknown_api: {key}")
+                logger.warning(
+                    f"Fill timeout ({self.FILL_BUFFER_TIMEOUT}s) - classifying as unknown_api: {key} "
+                    f"({fill.symbol} {fill.side} {fill.quantity}@{fill.price}). "
+                    f"워크플로우 주문이었다면 FIFO 수익률이 부정확할 수 있습니다."
+                )
                 await self._process_fill_internal(fill, "unknown_api")
     
     async def _process_fill_internal(self, fill: PendingFill, classification: str) -> None:

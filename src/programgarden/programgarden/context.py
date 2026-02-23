@@ -973,7 +973,12 @@ class ExecutionContext:
                     logger.debug(f"Removed GSC subscription for {node_id}: {subscribe_symbols}")
                 except Exception as e:
                     logger.warning(f"Error removing GSC symbols for {node_id}: {e}")
-            
+                # 메시지 리스너 콜백도 제거 (메모리 릭 방지)
+                try:
+                    gsc.on_remove_gsc_message()
+                except Exception:
+                    pass
+
             # OVC 구독 해제 (해외선물)
             ovc = metadata.get("ovc")
             if ovc and subscribe_symbols:
@@ -982,6 +987,11 @@ class ExecutionContext:
                     logger.debug(f"Removed OVC subscription for {node_id}: {subscribe_symbols}")
                 except Exception as e:
                     logger.warning(f"Error removing OVC symbols for {node_id}: {e}")
+                # 메시지 리스너 콜백도 제거 (메모리 릭 방지)
+                try:
+                    ovc.on_remove_ovc_message()
+                except Exception:
+                    pass
         
         # Stop/Close all trackers (WebSocket clients 등)
         for node_id, tracker in self._persistent_nodes.items():
@@ -1014,6 +1024,9 @@ class ExecutionContext:
                     pass
                 logger.debug(f"Cancelled persistent task: {node_id}")
         
+        # Order event handlers 전체 정리 (H-17: master callback 미정리 방지)
+        self._order_event_handlers.clear()
+
         self._persistent_nodes.clear()
         self._persistent_tasks.clear()
         self._persistent_metadata.clear()

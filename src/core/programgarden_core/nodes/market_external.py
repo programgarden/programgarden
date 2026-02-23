@@ -209,7 +209,13 @@ class CurrencyRateNode(BaseNode):
                         text = await resp.text()
                         raise ExternalAPIError(f"HTTP {resp.status}: {text[:200]}")
 
-                    data = await resp.json()
+                    try:
+                        data = await resp.json()
+                    except (ValueError, Exception) as je:
+                        text = await resp.text()
+                        raise ExternalAPIError(
+                            f"JSON parse failed: {je} (response: {text[:200]})"
+                        )
 
         except (ExternalAPIError, ExternalAPIRateLimitError, ExternalAPINetworkError, ExternalAPITimeoutError):
             raise
@@ -352,7 +358,13 @@ class FearGreedIndexNode(BaseNode):
                         text = await resp.text()
                         raise ExternalAPIError(f"HTTP {resp.status}: {text[:200]}")
 
-                    data = await resp.json()
+                    try:
+                        data = await resp.json()
+                    except (ValueError, Exception) as je:
+                        text = await resp.text()
+                        raise ExternalAPIError(
+                            f"JSON parse failed: {je} (response: {text[:200]})"
+                        )
 
         except (ExternalAPIError, ExternalAPIRateLimitError, ExternalAPINetworkError, ExternalAPITimeoutError):
             raise
@@ -532,7 +544,13 @@ class VIXDataNode(BaseNode):
                         text = await resp.text()
                         raise ExternalAPIError(f"HTTP {resp.status}: {text[:200]}")
 
-                    data = await resp.json()
+                    try:
+                        data = await resp.json()
+                    except (ValueError, Exception) as je:
+                        text = await resp.text()
+                        raise ExternalAPIError(
+                            f"JSON parse failed: {je} (response: {text[:200]})"
+                        )
 
         except (ExternalAPIError, ExternalAPIRateLimitError, ExternalAPINetworkError, ExternalAPITimeoutError):
             raise

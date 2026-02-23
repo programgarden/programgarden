@@ -411,9 +411,11 @@ class HTTPRequestNode(BaseNode):
     # === SETTINGS: 부가 설정 ===
     timeout_seconds: int = Field(default=30, description="Request timeout (seconds)")
 
-    # === Resilience: 재시도/실패 처리 ===
+    # === Resilience: 재시도/실패 처리 (H-21: HTTP 요청은 기본 재시도 활성화) ===
     resilience: ResilienceConfig = Field(
-        default_factory=ResilienceConfig,
+        default_factory=lambda: ResilienceConfig(
+            retry=RetryConfig(enabled=True, max_retries=3),
+        ),
         description="재시도 및 실패 처리 설정",
     )
 
