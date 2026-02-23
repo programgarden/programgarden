@@ -5,6 +5,7 @@ from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korea
 from programgarden_finance.ls.token_manager import TokenManager
 
 from .market import Market
+from .chart import Chart
 
 
 class KoreaStock:
@@ -21,8 +22,16 @@ class KoreaStock:
     시세 = market
     시세.__doc__ = "시세 데이터를 조회합니다."
 
+    @require_korean_alias
+    def chart(self) -> Chart:
+        return Chart(token_manager=self.token_manager)
+
+    차트 = chart
+    차트.__doc__ = "차트 데이터를 조회합니다."
+
 
 __all__ = [
     KoreaStock,
     Market,
+    Chart,
 ]
