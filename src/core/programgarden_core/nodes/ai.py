@@ -238,6 +238,12 @@ class AIAgentNode(BaseNode):
         description="Tool 호출 실패 시 전략",
     )
 
+    # === 토큰 제한 ===
+    max_total_tokens: int = Field(
+        default=100000,
+        description="실행당 최대 총 토큰 수 (입력+출력 합계, 0=무제한)",
+    )
+
     # === 포트 정의 ===
     _inputs: List[InputPort] = [
         InputPort(
@@ -404,5 +410,17 @@ class AIAgentNode(BaseNode):
                     "abort": "노드 실행 실패",
                 },
                 default="retry_with_context",
+            ),
+            "max_total_tokens": FieldSchema(
+                name="max_total_tokens",
+                type=FieldType.INTEGER,
+                description="i18n:fields.AIAgentNode.max_total_tokens",
+                required=False,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                default=100000,
+                min_value=0,
+                max_value=10000000,
+                help_text="실행당 최대 토큰 수. 0=무제한. 초과 시 현재까지의 결과로 응답 생성.",
             ),
         }

@@ -76,6 +76,7 @@ class RealRequestAbstract(ABC):
         self._as01234_connect = False
         self._on_message_listeners: Dict[str, Callable[[Any], Any]] = {}
         self._ref_count = 0
+        self._ref_lock = asyncio.Lock()  # ref_count 보호용 Lock
 
     async def is_connected(self) -> bool:
         """Check whether the websocket handshake completed.
@@ -114,22 +115,29 @@ class RealRequestAbstract(ABC):
                 ``wait`` 가 True일 때 대기 시간.
         """
 
-        self._ref_count += 1
+        need_connect = False
+        async with self._ref_lock:
+            self._ref_count += 1
 
-        # 이미 연결됨 → 즉시 반환
-        if self._connected_event.is_set():
-            return
+            # 이미 연결됨 → 즉시 반환
+            if self._connected_event.is_set():
+                return
 
-        # 연결 시도 중 → wait만 수행
-        if self._listen_task is not None and not self._listen_task.done():
+            # 연결 시도 중 → wait만 수행
+            if self._listen_task is not None and not self._listen_task.done():
+                need_connect = False
+            else:
+                self._stop = False
+                need_connect = True
+
+        # Lock 밖에서 wait (Lock 중 대기 시 deadlock 방지)
+        if not need_connect:
             if wait:
                 try:
                     await asyncio.wait_for(self._connected_event.wait(), timeout=timeout)
                 except asyncio.TimeoutError:
                     raise RuntimeError("Timeout waiting for websocket connection")
             return
-
-        self._stop = False
 
         async def _connection_loop():
             """Runs the connection lifecycle: connect, receive messages, handle errors and reconnect.
@@ -327,12 +335,13 @@ class RealRequestAbstract(ABC):
             force (bool): EN: Close immediately regardless of ref count.
                 KO: 참조 카운트를 무시하고 즉시 종료.
         """
-        if not force:
-            self._ref_count = max(0, self._ref_count - 1)
-            if self._ref_count > 0:
-                return
+        async with self._ref_lock:
+            if not force:
+                self._ref_count = max(0, self._ref_count - 1)
+                if self._ref_count > 0:
+                    return
 
-        self._ref_count = 0
+            self._ref_count = 0
         self._stop = True
         # cancel listener task if running
         if self._listen_task is not None:

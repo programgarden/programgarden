@@ -1714,12 +1714,20 @@ class BrokerNodeExecutor(NodeExecutorBase):
         
         # ========================================
         # 모의투자 지원 여부 검증
-        # - overseas_stock: 모의투자 미지원 (LS증권)
+        # - overseas_stock: 모의투자 미지원 (LS증권) → 에러 반환 (자동 실전 전환 금지)
         # - overseas_futures: 모의투자 지원
         # ========================================
         if product == "overseas_stock" and paper_trading:
-            context.log("warning", "overseas_stock does not support paper_trading (LS Securities), forcing real mode", node_id)
-            paper_trading = False
+            context.log(
+                "error",
+                "overseas_stock은 모의투자를 지원하지 않습니다 (LS증권 제한). "
+                "paper_trading=False로 설정하거나, 해외선물(overseas_futures)을 사용하세요.",
+                node_id,
+            )
+            return {
+                "connection": None,
+                "error": "overseas_stock does not support paper_trading. Set paper_trading=False to use real mode.",
+            }
         
         # ========================================
         # Credential 자동 주입 (GenericNodeExecutor와 동일 패턴)
@@ -9423,6 +9431,24 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             node_id
         )
 
+        # === 3.5. Drawdown 보호: risk_tracker가 활성화되어 있으면 체크 ===
+        risk_tracker = context.risk_tracker
+        if risk_tracker and side == "buy":
+            # drawdown_threshold_pct: 사용자 설정 가능, 기본 10%
+            drawdown_threshold = config.get("drawdown_threshold_pct", 10.0)
+            symbol = normalized_order["symbol"]
+            if risk_tracker.check_drawdown_threshold(symbol, drawdown_threshold):
+                context.log(
+                    "warning",
+                    f"{node_type}: {symbol} drawdown이 {drawdown_threshold}%를 초과하여 매수 주문을 차단합니다.",
+                    node_id,
+                )
+                return self._order_result(
+                    False, symbol, normalized_order["exchange"], side,
+                    normalized_order["quantity"], normalized_order["price"],
+                    f"Drawdown exceeds {drawdown_threshold}% threshold"
+                )
+
         # === 4. LS 로그인 ===
         credential = context.get_credential()
         if not credential:
@@ -9592,13 +9618,15 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if response.block2:
                 order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
 
-            # 주문번호가 없으면 경고 (장 마감 등)
-            if not order_no and response.rsp_msg:
-                context.log("warning", f"Order warning: {symbol} - {response.rsp_msg}", node_id)
+            # 주문번호가 없으면 경고 (장 마감, 서버 오류 등)
+            if not order_no:
+                msg = response.rsp_msg or "주문번호 없음"
+                context.log("warning", f"Order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
+                return self._order_result(False, symbol, exchange, side, qty, price, f"Empty OrderNo: {msg}")
 
             context.log("info", f"Order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
 
-            # Record workflow order for FIFO tracking
+            # Record workflow order for FIFO tracking (OrderNo가 있는 경우만)
             context.record_workflow_order(
                 order_no=order_no,
                 order_date=dt.now().strftime("%Y%m%d"),
@@ -9850,9 +9878,15 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 # 해외선물 주문번호 필드: OvrsFutsOrdNo
                 order_no = str(response.block2.OvrsFutsOrdNo) if hasattr(response.block2, "OvrsFutsOrdNo") and response.block2.OvrsFutsOrdNo else ""
 
+            # 주문번호가 없으면 경고 + 기록 거부
+            if not order_no:
+                msg = response.rsp_msg or "주문번호 없음"
+                context.log("warning", f"Futures order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
+                return self._order_result(False, symbol, exchange, side, qty, price, f"Empty OrderNo: {msg}")
+
             context.log("info", f"Futures order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
 
-            # Record workflow order for FIFO tracking
+            # Record workflow order for FIFO tracking (OrderNo가 있는 경우만)
             context.record_workflow_order(
                 order_no=order_no,
                 order_date=dt.now().strftime("%Y%m%d"),
@@ -11128,7 +11162,9 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         # === 4. ReAct/Function Calling 루프 ===
         max_tool_calls = config.get("max_tool_calls", 10)
         tool_error_strategy = config.get("tool_error_strategy", "retry_with_context")
+        max_total_tokens = config.get("max_total_tokens", 100000)
         tool_call_count = 0
+        accumulated_tokens = 0  # 누적 토큰 카운터
         streaming = llm_connection.get("streaming", False)
 
         context.log("info", f"AIAgent starting (model={llm_connection.get('model')}, tools={len(tools)})", node_id)
@@ -11176,6 +11212,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
             # 토큰 사용량 이벤트
             from programgarden_core.bases.listener import TokenUsageEvent
             from datetime import datetime
+            accumulated_tokens += llm_response.total_tokens
             await context.notify_token_usage(TokenUsageEvent(
                 job_id=context.job_id or "",
                 node_id=node_id,
@@ -11186,6 +11223,16 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                 cost_usd=llm_response.cost_usd,
                 timestamp=datetime.utcnow(),
             ))
+
+            # 토큰 상한선 체크 (0=무제한)
+            if max_total_tokens > 0 and accumulated_tokens >= max_total_tokens:
+                context.log(
+                    "warning",
+                    f"Token limit reached: {accumulated_tokens:,}/{max_total_tokens:,} tokens. "
+                    f"Stopping tool loop and returning current response.",
+                    node_id,
+                )
+                break
 
             # Tool 호출 체크
             if not llm_response.tool_calls:
@@ -11304,7 +11351,8 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         context.log(
             "info",
             f"AIAgent completed (tool_calls={tool_call_count}, "
-            f"tokens={llm_response.total_tokens}, cost=${llm_response.cost_usd:.4f})",
+            f"accumulated_tokens={accumulated_tokens:,}, "
+            f"last_call_tokens={llm_response.total_tokens}, cost=${llm_response.cost_usd:.4f})",
             node_id,
         )
 
