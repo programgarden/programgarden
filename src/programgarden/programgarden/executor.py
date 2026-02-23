@@ -10585,11 +10585,17 @@ class LLMModelNodeExecutor(NodeExecutorBase):
             node_id,
         )
 
+        # API 키를 secrets에 저장 (connection 출력에 평문 노출 방지)
+        api_key = config.get("api_key")
+        if api_key:
+            context.set_secret(f"llm_api_key_{node_id}", api_key)
+
         return {
             "connection": {
                 "provider": provider,
                 "model": model,
-                "api_key": config.get("api_key"),
+                "api_key": None,  # secrets에 별도 저장됨
+                "_llm_node_id": node_id,  # secrets 조회용
                 "base_url": config.get("base_url"),
                 "organization": config.get("organization"),
                 "api_version": config.get("api_version"),
@@ -11109,6 +11115,12 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         if not llm_connection:
             context.log("error", "Failed to get LLM connection", node_id)
             return {"error": "Failed to get LLM connection from LLMModelNode."}
+
+        # secrets에서 API 키 복원 (H-8: 평문 노출 방지)
+        llm_node_ref = llm_connection.get("_llm_node_id", ai_model_node_id)
+        api_key_from_secret = context.get_secret(f"llm_api_key_{llm_node_ref}")
+        if api_key_from_secret and not llm_connection.get("api_key"):
+            llm_connection = {**llm_connection, "api_key": api_key_from_secret}
 
         # LLMProvider 생성
         provider = LLMProvider.from_connection(llm_connection)
@@ -11989,10 +12001,40 @@ class WorkflowExecutor:
     def remove_job(self, job_id: str) -> bool:
         """Remove a completed/stopped/cancelled/failed job from the executor."""
         job = self._jobs.get(job_id)
-        if job and job.status in ("completed", "stopped", "cancelled", "failed"):
+        if job and job.status in ("completed", "stopped", "cancelled", "failed", "force_stopped"):
             del self._jobs[job_id]
             return True
         return False
+
+    async def emergency_stop_all(self) -> Dict[str, Any]:
+        """긴급 전체 정지 (Kill Switch).
+
+        실행 중인 모든 Job을 즉시 중단합니다.
+
+        Returns:
+            {"stopped_jobs": [...], "total_pending_orders": N}
+        """
+        logger.warning("EMERGENCY STOP ALL triggered")
+        results = []
+        active_jobs = [
+            j for j in self._jobs.values()
+            if j.status in ("running", "pending", "stopping")
+        ]
+        for job in active_jobs:
+            try:
+                result = await job.force_stop()
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Failed to force_stop job {job.job_id}: {e}")
+                results.append({"job_id": job.job_id, "error": str(e)})
+
+        total_pending = sum(
+            len(r.get("pending_orders", [])) for r in results
+        )
+        return {
+            "stopped_jobs": results,
+            "total_pending_orders": total_pending,
+        }
 
     # ─────────────────────────────────────────────────
     # Dynamic Node API (Lazy Loading 지원)
@@ -13603,6 +13645,71 @@ class WorkflowJob:
         # Cleanup listeners
         await self.context.cleanup_listeners()
 
+    async def force_stop(self) -> Dict[str, Any]:
+        """긴급 정지 (Kill Switch).
+
+        모든 실행을 즉시 중단하고 미체결 주문 정보를 반환합니다.
+        cancel()과 달리 미체결 주문 목록을 수집하여 반환합니다.
+
+        Returns:
+            {"stopped": True, "pending_orders": [...], "warning": "..."}
+        """
+        logger.warning(f"FORCE STOP (Kill Switch) triggered for job {self.job_id}")
+        self.status = "force_stopped"
+        self.context.stop()
+
+        # Task 즉시 취소
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+        # 미체결 주문 정보 수집
+        pending_orders = []
+        try:
+            tracker = self.context._workflow_position_tracker
+            if tracker:
+                pending_orders = tracker.get_pending_orders()
+        except Exception as e:
+            logger.warning(f"Failed to get pending orders: {e}")
+
+        # 모든 리소스 정리
+        await self.context.cleanup_persistent_nodes()
+        await self.context.cleanup_flow_end_nodes()
+
+        if self.context.risk_tracker:
+            try:
+                await self.context.risk_tracker.flush_to_db()
+                await self.context.risk_tracker.stop_flush_loop()
+            except Exception:
+                pass
+
+        if self.context.resource:
+            try:
+                await self.context.resource.stop()
+            except Exception:
+                pass
+
+        await self.context.cleanup_listeners()
+        self.completed_at = datetime.now()
+
+        warning_msg = ""
+        if pending_orders:
+            warning_msg = (
+                f"미체결 주문 {len(pending_orders)}건이 LS증권 서버에 남아있을 수 있습니다. "
+                f"HTS/MTS에서 직접 확인하세요."
+            )
+            logger.warning(warning_msg)
+
+        return {
+            "stopped": True,
+            "job_id": self.job_id,
+            "pending_orders": pending_orders,
+            "warning": warning_msg,
+        }
+
     def get_state(self) -> Dict[str, Any]:
         """Get state snapshot"""
         # 노드별 상태 및 outputs 수집
@@ -13613,7 +13720,7 @@ class WorkflowJob:
                 "state": "completed",
                 "outputs": outputs,
             }
-        
+
         return {
             "job_id": self.job_id,
             "workflow_id": self.workflow.workflow_id,
