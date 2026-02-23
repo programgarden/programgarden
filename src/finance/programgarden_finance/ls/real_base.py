@@ -80,6 +80,7 @@ class RealRequestAbstract(ABC):
         # 구독 심볼 추적 (재연결 시 자동 재구독용)
         self._subscribed_symbols: Dict[str, List[str]] = {}  # tr_cd -> [symbols]
         self._stop = False
+        self._last_message_time: float = 0.0  # M-13: 마지막 메시지 수신 시각
 
     async def is_connected(self) -> bool:
         """Check whether the websocket handshake completed.
@@ -97,6 +98,13 @@ class RealRequestAbstract(ABC):
     def get_subscribed_symbols(self) -> Dict[str, List[str]]:
         """현재 구독 중인 심볼 목록 (tr_cd -> symbols)."""
         return dict(self._subscribed_symbols)
+
+    def get_staleness_sec(self) -> float:
+        """M-13: 마지막 메시지 수신 이후 경과 시간 (초). 0이면 아직 메시지 없음."""
+        import time
+        if self._last_message_time <= 0:
+            return 0.0
+        return time.time() - self._last_message_time
 
     async def connect(
         self,
@@ -195,6 +203,10 @@ class RealRequestAbstract(ABC):
                         backoff = 1.0  # reset backoff after successful connect
 
                         # Inner loop: active connection receive loop
+                        import time as _time
+                        self._last_message_time = _time.time()
+                        _staleness_warned = False
+
                         while not self._stop:
                             try:
                                 # blocking recv - no timeout for real-time streaming
@@ -207,7 +219,20 @@ class RealRequestAbstract(ABC):
                                 break
                             except Exception:
                                 # unexpected error on recv; try to continue listening
+                                # M-13: 무 데이터 감지 (120초)
+                                staleness = self.get_staleness_sec()
+                                if staleness > 120 and not _staleness_warned:
+                                    _staleness_warned = True
+                                    import logging
+                                    logging.getLogger("programgarden_finance.real").warning(
+                                        f"WebSocket 무 데이터 경고: {staleness:.0f}초 동안 "
+                                        f"메시지 수신 없음. 연결 상태를 확인하세요."
+                                    )
                                 continue
+
+                            # M-13: 메시지 수신 시 시각 갱신
+                            self._last_message_time = _time.time()
+                            _staleness_warned = False
 
                             # parse message quickly and hand off
                             try:

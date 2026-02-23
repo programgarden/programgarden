@@ -232,6 +232,10 @@ class ExecutionContext:
         self._iteration_total: int = 0
         # Node type mapping: {node_id: node_type}
         self._node_types: Dict[str, str] = {}
+
+        # M-10: Risk halt flag - critical risk event 시 주문 중단
+        self._risk_halt: bool = False
+
         self._build_dag_index(workflow_edges, workflow_nodes)
 
     # === Storage Directory ===
@@ -1404,8 +1408,20 @@ class ExecutionContext:
             except Exception as e:
                 logger.warning(f"Listener error on_ai_tool_call: {e}")
 
+    @property
+    def is_risk_halted(self) -> bool:
+        """M-10: critical risk event에 의해 주문이 중단되었는지 여부."""
+        return self._risk_halt
+
     async def notify_risk_event(self, event: RiskEvent) -> None:
         """위험 이벤트 전파. UI에서 위험 알림 표시용."""
+        # M-10: severity=critical + action_hint=halt_orders → 주문 중단
+        if event.severity == "critical" and getattr(event, "action_hint", "advisory") == "halt_orders":
+            self._risk_halt = True
+            logger.warning(
+                f"RISK HALT activated: {event.event_type} - 모든 주문 실행이 중단됩니다."
+            )
+
         if not self._listeners:
             return
         for listener in self._listeners:

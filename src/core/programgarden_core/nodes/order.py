@@ -11,7 +11,8 @@ ProgramGarden Core - Order Nodes
 """
 
 from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
-from pydantic import Field
+import logging
+from pydantic import Field, model_validator
 
 if TYPE_CHECKING:
     from programgarden_core.models.field_binding import FieldSchema
@@ -111,6 +112,18 @@ class BaseOrderNode(BaseNode):
         ),
         description="재시도 및 실패 처리 설정 (주문 노드는 기본 비활성화)",
     )
+
+    @model_validator(mode="after")
+    def _clamp_order_retry(self) -> "BaseOrderNode":
+        """주문 노드의 retry 횟수를 3 이하로 강제 (M-1: 중복 주문 위험 방지)."""
+        _MAX_ORDER_RETRIES = 3
+        if self.resilience.retry.enabled and self.resilience.retry.max_retries > _MAX_ORDER_RETRIES:
+            logging.getLogger("programgarden_core.order").warning(
+                f"주문 노드 max_retries={self.resilience.retry.max_retries} → "
+                f"{_MAX_ORDER_RETRIES}으로 제한 (중복 주문 위험 방지)"
+            )
+            self.resilience.retry.max_retries = _MAX_ORDER_RETRIES
+        return self
 
     def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
         """
@@ -246,6 +259,18 @@ class BaseModifyOrderNode(BaseNode):
         ),
         description="재시도 및 실패 처리 설정 (정정/취소 노드는 기본 비활성화)",
     )
+
+    @model_validator(mode="after")
+    def _clamp_order_retry(self) -> "BaseModifyOrderNode":
+        """정정/취소 노드의 retry 횟수를 3 이하로 강제 (M-1)."""
+        _MAX_ORDER_RETRIES = 3
+        if self.resilience.retry.enabled and self.resilience.retry.max_retries > _MAX_ORDER_RETRIES:
+            logging.getLogger("programgarden_core.order").warning(
+                f"정정/취소 노드 max_retries={self.resilience.retry.max_retries} → "
+                f"{_MAX_ORDER_RETRIES}으로 제한 (중복 처리 위험 방지)"
+            )
+            self.resilience.retry.max_retries = _MAX_ORDER_RETRIES
+        return self
 
     def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
         """정정/취소 에러가 재시도 가능한지 판단."""

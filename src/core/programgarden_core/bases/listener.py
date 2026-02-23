@@ -390,6 +390,7 @@ class RiskEvent:
     symbol: Optional[str] = None
     exchange: Optional[str] = None
     details: Dict[str, Any] = field(default_factory=dict)
+    action_hint: str = "advisory"  # "advisory" | "halt_orders" (M-10)
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -444,6 +445,7 @@ class TokenUsageEvent:
     output_tokens: int
     total_tokens: int
     cost_usd: float = 0.0
+    accumulated_tokens: int = 0  # 워크플로우 내 누적 총 토큰 수 (M-3)
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
