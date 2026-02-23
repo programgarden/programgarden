@@ -1,5 +1,7 @@
 from programgarden_core.exceptions import TokenNotFoundException
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import asyncio
+import threading
 import time
 from typing import Awaitable, Callable, Optional, ClassVar
 
@@ -23,6 +25,11 @@ class TokenManager:
     acquired_at: ClassVar[float] = None  # epoch seconds
     paper_trading: bool = False
     wss_url: Optional[str] = None
+
+    def __post_init__(self):
+        # 동시 갱신 방지 Lock
+        self._refresh_lock = threading.Lock()
+        self._async_refresh_lock: Optional[asyncio.Lock] = None
 
     @property
     def expires_at(self) -> Optional[float]:
@@ -79,49 +86,83 @@ class TokenManager:
         self.acquired_at = time.time()
 
     def _refresh_token(self) -> bool:
-        """내부적으로 토큰을 동기 갱신합니다."""
+        """내부적으로 토큰을 동기 갱신합니다 (중복 갱신 방지 Lock 적용)."""
         if not self.appkey or not self.appsecretkey:
             return False
 
+        if not self._refresh_lock.acquire(timeout=10):
+            logger.warning("Token refresh lock timeout - another refresh in progress")
+            return self.is_token_available()
+
         try:
-            # Avoid circular import
+            # Lock 획득 후 다시 체크 (다른 스레드가 이미 갱신했을 수 있음)
+            if not self.is_expired():
+                return True
+
             from .oauth.generate_token import GenerateToken
             from .oauth.generate_token.token.blocks import TokenInBlock
 
-            response = GenerateToken().token(
-                TokenInBlock(
-                    appkey=self.appkey,
-                    appsecretkey=self.appsecretkey,
-                )
-            ).req()
+            # 최대 2회 시도
+            last_error = None
+            for attempt in range(2):
+                try:
+                    response = GenerateToken().token(
+                        TokenInBlock(
+                            appkey=self.appkey,
+                            appsecretkey=self.appsecretkey,
+                        )
+                    ).req()
 
-            if response.block and response.block.access_token:
-                self.update_from_block(response.block)
-                return True
+                    if response.block and response.block.access_token:
+                        self.update_from_block(response.block)
+                        logger.info("Token refreshed successfully (sync)")
+                        return True
+                except Exception as e:
+                    last_error = e
+                    if attempt < 1:
+                        time.sleep(1)
+
+            logger.error(f"Token refresh failed after 2 attempts: {last_error}")
             return False
-        except Exception:
-            return False
+        finally:
+            self._refresh_lock.release()
 
     async def _async_refresh_token(self) -> bool:
-        """내부적으로 토큰을 비동기 갱신합니다."""
+        """내부적으로 토큰을 비동기 갱신합니다 (중복 갱신 방지 Lock 적용)."""
         if not self.appkey or not self.appsecretkey:
             return False
 
-        try:
-            # Avoid circular import
+        # 비동기 Lock 초기화 (이벤트 루프에서만 생성 가능)
+        if self._async_refresh_lock is None:
+            self._async_refresh_lock = asyncio.Lock()
+
+        async with self._async_refresh_lock:
+            # Lock 획득 후 다시 체크
+            if not self.is_expired():
+                return True
+
             from .oauth.generate_token import GenerateToken
             from .oauth.generate_token.token.blocks import TokenInBlock
 
-            response = await GenerateToken().token(
-                TokenInBlock(
-                    appkey=self.appkey,
-                    appsecretkey=self.appsecretkey,
-                )
-            ).req_async()
+            # 최대 2회 시도
+            last_error = None
+            for attempt in range(2):
+                try:
+                    response = await GenerateToken().token(
+                        TokenInBlock(
+                            appkey=self.appkey,
+                            appsecretkey=self.appsecretkey,
+                        )
+                    ).req_async()
 
-            if response.block and response.block.access_token:
-                self.update_from_block(response.block)
-                return True
-            return False
-        except Exception:
+                    if response.block and response.block.access_token:
+                        self.update_from_block(response.block)
+                        logger.info("Token refreshed successfully (async)")
+                        return True
+                except Exception as e:
+                    last_error = e
+                    if attempt < 1:
+                        await asyncio.sleep(1)
+
+            logger.error(f"Async token refresh failed after 2 attempts: {last_error}")
             return False

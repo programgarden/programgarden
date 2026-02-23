@@ -3354,7 +3354,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                         # 토큰 갱신은 ReconnectHandler가 처리했으므로 재연결만
                         if not await real_client.is_connected():
                             await real_client.connect()
-                        reconnect_handler.reset()
+                        await reconnect_handler.on_reconnect_success()
                         context.log("info", "Reconnected successfully", node_id)
                     except Exception as e:
                         context.log("error", f"Reconnect failed: {e}", node_id)
@@ -3536,7 +3536,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     try:
                         if not await real.is_connected():
                             await real.connect()
-                        reconnect_handler.reset()
+                        await reconnect_handler.on_reconnect_success()
                         context.log("info", "Futures WebSocket reconnected successfully", node_id)
                     except Exception as e:
                         context.log("error", f"Futures reconnect failed: {e}", node_id)

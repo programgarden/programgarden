@@ -127,6 +127,7 @@ class WorkflowRiskTracker:
         # Hot → Cold flush
         self._flush_lock = asyncio.Lock()
         self._flush_task: Optional[asyncio.Task] = None
+        self._consecutive_flush_failures: int = 0
 
         # DB → 메모리 복원
         if "hwm" in self._features:
@@ -155,9 +156,20 @@ class WorkflowRiskTracker:
     def _ensure_db_dir(self) -> None:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
+    def _enable_wal_mode(self) -> None:
+        """SQLite WAL 모드 활성화 (멀티 워크플로우 동시 접근 지원)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA busy_timeout=5000")
+        except Exception as e:
+            logger.warning(f"RiskTracker: WAL 모드 설정 실패: {e}")
+
     def _init_hwm_table(self) -> None:
         self._ensure_db_dir()
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS risk_high_water_mark (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,6 +192,8 @@ class WorkflowRiskTracker:
     def _init_events_table(self) -> None:
         self._ensure_db_dir()
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS risk_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -200,6 +214,8 @@ class WorkflowRiskTracker:
     def _init_state_table(self) -> None:
         self._ensure_db_dir()
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS strategy_state (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -908,11 +924,73 @@ class WorkflowRiskTracker:
             while True:
                 await asyncio.sleep(self.FLUSH_INTERVAL)
                 try:
-                    await self.flush_to_db()
+                    count = await self.flush_to_db()
+                    if count > 0:
+                        self._consecutive_flush_failures = 0
                 except Exception as e:
-                    logger.error(f"RiskTracker flush 오류: {e}")
+                    self._consecutive_flush_failures += 1
+                    if self._consecutive_flush_failures >= 3:
+                        logger.critical(
+                            f"RiskTracker flush 연속 {self._consecutive_flush_failures}회 실패 "
+                            f"- HWM 데이터 손실 위험: {e}"
+                        )
+                        # sync fallback 시도
+                        try:
+                            self._flush_to_db_sync()
+                            self._consecutive_flush_failures = 0
+                            logger.info("RiskTracker: sync fallback flush 성공")
+                        except Exception as fe:
+                            logger.critical(f"RiskTracker: sync fallback flush도 실패: {fe}")
+                    else:
+                        logger.error(f"RiskTracker flush 오류 ({self._consecutive_flush_failures}회): {e}")
         except asyncio.CancelledError:
             pass
+
+    def _flush_to_db_sync(self) -> int:
+        """동기 flush (async 실패 시 fallback)."""
+        if self._hwm is None:
+            return 0
+
+        dirty_items = [s for s in self._hwm.values() if s.dirty]
+        if not dirty_items:
+            return 0
+
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            for s in dirty_items:
+                conn.execute(
+                    """
+                    INSERT INTO risk_high_water_mark
+                        (product, provider, symbol, exchange,
+                         high_water_mark, hwm_datetime,
+                         current_price, current_drawdown_pct,
+                         position_qty, position_avg_price,
+                         trading_mode, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(product, provider, symbol, trading_mode)
+                    DO UPDATE SET
+                        exchange=excluded.exchange,
+                        high_water_mark=excluded.high_water_mark,
+                        hwm_datetime=excluded.hwm_datetime,
+                        current_price=excluded.current_price,
+                        current_drawdown_pct=excluded.current_drawdown_pct,
+                        position_qty=excluded.position_qty,
+                        position_avg_price=excluded.position_avg_price,
+                        updated_at=excluded.updated_at
+                    """,
+                    (
+                        self.product, self.provider,
+                        s.symbol, s.exchange,
+                        float(s.hwm_price), s.hwm_datetime.isoformat(),
+                        float(s.current_price), float(s.drawdown_pct),
+                        s.position_qty, float(s.position_avg_price),
+                        self.trading_mode, now,
+                    ),
+                )
+
+        for s in dirty_items:
+            s.dirty = False
+        return len(dirty_items)
 
     async def stop_flush_loop(self) -> None:
         """최종 flush + loop 중단."""
