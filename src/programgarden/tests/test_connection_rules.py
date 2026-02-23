@@ -177,8 +177,8 @@ class TestRealtimeToHTTPConnectionWarning:
     def setup_method(self):
         self.resolver = WorkflowResolver()
 
-    def test_realtime_to_http_direct_is_warning_only(self):
-        """실시간 → HTTP 직결은 WARNING만 (is_valid=True)"""
+    def test_realtime_to_http_direct_is_error(self):
+        """실시간 → HTTP 직결은 ERROR (M-12: WARNING에서 ERROR로 강화)"""
         workflow = make_workflow(
             nodes=[
                 {"id": "start", "type": "StartNode"},
@@ -193,9 +193,8 @@ class TestRealtimeToHTTPConnectionWarning:
             ],
         )
         result = self.resolver.validate(workflow)
-        assert result.is_valid, f"Expected valid but got errors: {result.errors}"
-        assert len(result.warnings) > 0
-        assert any("직접 연결이 차단" in w for w in result.warnings)
+        assert not result.is_valid, f"Expected invalid but got valid"
+        assert any("직접 연결이 차단" in e for e in result.errors)
 
 
 class TestNonRealtimeConnectionsAllowed:

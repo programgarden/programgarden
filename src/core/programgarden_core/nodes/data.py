@@ -372,22 +372,22 @@ class HTTPRequestNode(BaseNode):
     description: str = "i18n:nodes.HTTPRequestNode.description"
     _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/httprequest.svg"
 
-    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수)
+    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수, M-12: ERROR로 강화)
     _connection_rules: ClassVar[List[ConnectionRule]] = [
         ConnectionRule(
             deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
             required_intermediate="ThrottleNode",
-            severity=ConnectionSeverity.WARNING,
+            severity=ConnectionSeverity.ERROR,
             reason="i18n:connection_rules.realtime_to_http.reason",
             suggestion="i18n:connection_rules.realtime_to_http.suggestion",
         ),
     ]
 
-    # 런타임 rate limit: 최소 1초 간격, 동시 3개까지 (과다 외부 요청 방지)
+    # 런타임 rate limit: 최소 1초 간격, 동시 3개까지 (M-12: skip으로 강화)
     _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
         min_interval_sec=1,
         max_concurrent=3,
-        on_throttle="queue",
+        on_throttle="skip",
     )
 
     # === PARAMETERS: 핵심 HTTP 요청 설정 ===
