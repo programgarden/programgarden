@@ -76,6 +76,11 @@ class RealRequestAbstract(ABC):
         self._as01234_connect = False
         self._on_message_listeners: Dict[str, Callable[[Any], Any]] = {}
         self._ref_count = 0
+        self._ref_lock = asyncio.Lock()  # ref_count 보호용 Lock
+        # 구독 심볼 추적 (재연결 시 자동 재구독용)
+        self._subscribed_symbols: Dict[str, List[str]] = {}  # tr_cd -> [symbols]
+        self._stop = False
+        self._last_message_time: float = 0.0  # M-13: 마지막 메시지 수신 시각
 
     async def is_connected(self) -> bool:
         """Check whether the websocket handshake completed.
@@ -89,6 +94,17 @@ class RealRequestAbstract(ABC):
             반환합니다.
         """
         return self._connected_event.is_set()
+
+    def get_subscribed_symbols(self) -> Dict[str, List[str]]:
+        """현재 구독 중인 심볼 목록 (tr_cd -> symbols)."""
+        return dict(self._subscribed_symbols)
+
+    def get_staleness_sec(self) -> float:
+        """M-13: 마지막 메시지 수신 이후 경과 시간 (초). 0이면 아직 메시지 없음."""
+        import time
+        if self._last_message_time <= 0:
+            return 0.0
+        return time.time() - self._last_message_time
 
     async def connect(
         self,
@@ -114,22 +130,29 @@ class RealRequestAbstract(ABC):
                 ``wait`` 가 True일 때 대기 시간.
         """
 
-        self._ref_count += 1
+        need_connect = False
+        async with self._ref_lock:
+            self._ref_count += 1
 
-        # 이미 연결됨 → 즉시 반환
-        if self._connected_event.is_set():
-            return
+            # 이미 연결됨 → 즉시 반환
+            if self._connected_event.is_set():
+                return
 
-        # 연결 시도 중 → wait만 수행
-        if self._listen_task is not None and not self._listen_task.done():
+            # 연결 시도 중 → wait만 수행
+            if self._listen_task is not None and not self._listen_task.done():
+                need_connect = False
+            else:
+                self._stop = False
+                need_connect = True
+
+        # Lock 밖에서 wait (Lock 중 대기 시 deadlock 방지)
+        if not need_connect:
             if wait:
                 try:
                     await asyncio.wait_for(self._connected_event.wait(), timeout=timeout)
                 except asyncio.TimeoutError:
                     raise RuntimeError("Timeout waiting for websocket connection")
             return
-
-        self._stop = False
 
         async def _connection_loop():
             """Runs the connection lifecycle: connect, receive messages, handle errors and reconnect.
@@ -159,9 +182,31 @@ class RealRequestAbstract(ABC):
                             self._connected_event.set()
                         except Exception:
                             pass
+
+                        # 재연결 시 이전 구독 자동 복원
+                        if backoff > 1.0 and self._subscribed_symbols:
+                            import logging
+                            _logger = logging.getLogger("programgarden_finance.real")
+                            for _tr_cd, _syms in self._subscribed_symbols.items():
+                                if _syms:
+                                    try:
+                                        self._add_message_symbols(list(_syms), _tr_cd)
+                                        _logger.info(
+                                            f"WebSocket 재연결 후 자동 재구독: "
+                                            f"{_tr_cd} {len(_syms)}개 심볼"
+                                        )
+                                    except Exception as _e:
+                                        _logger.error(
+                                            f"WebSocket 재구독 실패 ({_tr_cd}): {_e}"
+                                        )
+
                         backoff = 1.0  # reset backoff after successful connect
 
                         # Inner loop: active connection receive loop
+                        import time as _time
+                        self._last_message_time = _time.time()
+                        _staleness_warned = False
+
                         while not self._stop:
                             try:
                                 # blocking recv - no timeout for real-time streaming
@@ -174,7 +219,20 @@ class RealRequestAbstract(ABC):
                                 break
                             except Exception:
                                 # unexpected error on recv; try to continue listening
+                                # M-13: 무 데이터 감지 (120초)
+                                staleness = self.get_staleness_sec()
+                                if staleness > 120 and not _staleness_warned:
+                                    _staleness_warned = True
+                                    import logging
+                                    logging.getLogger("programgarden_finance.real").warning(
+                                        f"WebSocket 무 데이터 경고: {staleness:.0f}초 동안 "
+                                        f"메시지 수신 없음. 연결 상태를 확인하세요."
+                                    )
                                 continue
+
+                            # M-13: 메시지 수신 시 시각 갱신
+                            self._last_message_time = _time.time()
+                            _staleness_warned = False
 
                             # parse message quickly and hand off
                             try:
@@ -289,6 +347,14 @@ class RealRequestAbstract(ABC):
                 if not self._reconnect or self._stop:
                     break
 
+                # H-15: 재연결 중 메시지 누락 경고
+                import logging
+                _logger = logging.getLogger("programgarden_finance.real")
+                _logger.warning(
+                    f"WebSocket 연결 끊김 - 재연결 시도 중 "
+                    f"(backoff={backoff:.1f}s). 이 기간 동안 시세/체결 데이터가 누락될 수 있습니다."
+                )
+
                 # exponential backoff with small jitter
                 jitter = random.uniform(0, backoff * 0.1)
                 await asyncio.sleep(backoff + jitter)
@@ -327,12 +393,20 @@ class RealRequestAbstract(ABC):
             force (bool): EN: Close immediately regardless of ref count.
                 KO: 참조 카운트를 무시하고 즉시 종료.
         """
-        if not force:
-            self._ref_count = max(0, self._ref_count - 1)
-            if self._ref_count > 0:
-                return
+        async with self._ref_lock:
+            if not force:
+                self._ref_count = max(0, self._ref_count - 1)
+                if self._ref_count > 0:
+                    return
+            elif self._ref_count > 1:
+                import logging
+                _logger = logging.getLogger("programgarden_finance.real")
+                _logger.warning(
+                    f"WebSocket force close while ref_count={self._ref_count}. "
+                    f"다른 {self._ref_count - 1}개 노드의 실시간 연결이 끊어집니다."
+                )
 
-        self._ref_count = 0
+            self._ref_count = 0
         self._stop = True
         # cancel listener task if running
         if self._listen_task is not None:
@@ -417,11 +491,12 @@ class RealRequestAbstract(ABC):
 
         EN:
             Builds the correct request model per TR code and sends a subscribe
-            message with transaction type ``3``.
+            message with transaction type ``3``. Also tracks subscribed symbols
+            for automatic resubscription after reconnection.
 
         KO:
             TR 코드별로 올바른 요청 모델을 생성하고 트랜잭션 타입 ``3`` 으로 구독
-            메시지를 전송합니다.
+            메시지를 전송합니다. 재연결 시 자동 재구독을 위해 구독 심볼을 추적합니다.
 
         Parameters:
             symbols (List[str]): EN: Symbols to subscribe. KO: 구독할 종목 코드들.
@@ -432,6 +507,13 @@ class RealRequestAbstract(ABC):
 
         if self._ws is None:
             raise RuntimeError("WebSocket is not connected")
+
+        # 구독 심볼 추적 (재연결 시 자동 재구독용)
+        if tr_cd not in self._subscribed_symbols:
+            self._subscribed_symbols[tr_cd] = []
+        for sym in symbols:
+            if sym not in self._subscribed_symbols[tr_cd]:
+                self._subscribed_symbols[tr_cd].append(sym)
 
         for symbol in symbols:
 
@@ -501,17 +583,27 @@ class RealRequestAbstract(ABC):
 
         EN:
             Reuses the same TR-specific models with transaction type ``4`` to
-            cancel registrations.
+            cancel registrations. Also removes symbols from the tracked list.
 
         KO:
             동일한 TR 모델을 사용하되 트랜잭션 타입 ``4`` 로 전송하여 실시간 등록을
-            해제합니다.
+            해제합니다. 구독 추적 목록에서도 제거합니다.
         """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")
 
         if self._ws is None:
             raise RuntimeError("WebSocket is not connected")
+
+        # 구독 추적에서 제거
+        if tr_cd in self._subscribed_symbols:
+            for sym in symbols:
+                try:
+                    self._subscribed_symbols[tr_cd].remove(sym)
+                except ValueError:
+                    pass
+            if not self._subscribed_symbols[tr_cd]:
+                del self._subscribed_symbols[tr_cd]
 
         for symbol in symbols:
 

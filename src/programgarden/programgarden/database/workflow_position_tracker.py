@@ -117,6 +117,9 @@ class WorkflowPositionTracker:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
         with sqlite3.connect(self.db_path) as conn:
+            # WAL 모드: 멀티 워크플로우 동시 접근 시 SQLITE_BUSY 방지
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             cursor = conn.cursor()
 
             # 워크플로우 주문 기록
@@ -383,11 +386,15 @@ class WorkflowPositionTracker:
     async def _process_timeout_fill(self, key: str) -> None:
         """버퍼 타임아웃 후 처리"""
         await asyncio.sleep(self.FILL_BUFFER_TIMEOUT)
-        
+
         async with self._buffer_lock:
             if key in self._pending_fills:
                 fill = self._pending_fills.pop(key)
-                logger.warning(f"Fill timeout - classifying as unknown_api: {key}")
+                logger.warning(
+                    f"Fill timeout ({self.FILL_BUFFER_TIMEOUT}s) - classifying as unknown_api: {key} "
+                    f"({fill.symbol} {fill.side} {fill.quantity}@{fill.price}). "
+                    f"워크플로우 주문이었다면 FIFO 수익률이 부정확할 수 있습니다."
+                )
                 await self._process_fill_internal(fill, "unknown_api")
     
     async def _process_fill_internal(self, fill: PendingFill, classification: str) -> None:
@@ -885,6 +892,38 @@ class WorkflowPositionTracker:
                 logger.debug(f"Updated order fill price: {order_no} @ {fill_price}")
             
             return updated
+
+    def get_pending_orders(self) -> List[Dict[str, Any]]:
+        """최근 미체결 가능성이 있는 주문 목록 (긴급 정지 시 사용).
+
+        최근 60초 이내 기록된 주문을 반환합니다.
+        체결 여부를 정확히 알 수 없으므로, HTS/MTS에서 직접 확인이 필요합니다.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT order_no, order_date, symbol, exchange, side, quantity, price, node_id
+                    FROM workflow_orders
+                    WHERE trading_mode = ?
+                      AND created_at >= datetime('now', '-60 seconds')
+                    ORDER BY created_at DESC
+                """, (self.trading_mode,))
+                return [
+                    {
+                        "order_no": row[0],
+                        "order_date": row[1],
+                        "symbol": row[2],
+                        "exchange": row[3],
+                        "side": row[4],
+                        "quantity": row[5],
+                        "price": row[6],
+                        "node_id": row[7],
+                    }
+                    for row in cursor.fetchall()
+                ]
+        except Exception:
+            return []
 
     def get_orders_without_fill_price(self) -> List[Dict[str, Any]]:
         """

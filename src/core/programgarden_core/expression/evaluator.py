@@ -687,6 +687,11 @@ class SafeEvaluator:
     Python AST를 사용하여 제한된 표현식만 평가
     """
 
+    # M-9: DoS 방어 상수
+    MAX_AST_DEPTH = 20
+    MAX_POWER = 1000
+    MAX_RANGE_SIZE = 100_000
+
     # 허용된 이항 연산자
     BINARY_OPS = {
         ast.Add: operator.add,
@@ -786,19 +791,48 @@ class SafeEvaluator:
 
     def __init__(self, context: Dict[str, Any]):
         self.context = {**self.ALLOWED_BUILTINS, **context}
+        # M-9: range를 safe_range로 교체
+        self.context["range"] = self._safe_range
+        self._depth = 0
+
+    @staticmethod
+    def _safe_range(*args) -> range:
+        """range() 크기 제한 (M-9: DoS 방어)."""
+        r = range(*args)
+        if len(r) > SafeEvaluator.MAX_RANGE_SIZE:
+            raise ExpressionError(
+                f"range 크기 {len(r):,}이 최대 허용값 {SafeEvaluator.MAX_RANGE_SIZE:,}을 초과합니다"
+            )
+        return r
 
     def evaluate(self, expression: str) -> Any:
         """표현식 평가"""
         try:
             tree = ast.parse(expression, mode="eval")
+            self._depth = 0
             return self._eval_node(tree.body)
         except SyntaxError as e:
             raise ExpressionError(f"구문 오류: {e.msg}", expression, e.offset or -1)
+        except ExpressionError:
+            raise
         except Exception as e:
             raise ExpressionError(str(e), expression)
 
     def _eval_node(self, node: ast.AST) -> Any:
         """AST 노드 평가"""
+        # M-9: AST 깊이 제한
+        self._depth += 1
+        if self._depth > self.MAX_AST_DEPTH:
+            raise ExpressionError(
+                f"표현식 깊이가 최대 허용값 {self.MAX_AST_DEPTH}을 초과합니다"
+            )
+        try:
+            return self._eval_node_inner(node)
+        finally:
+            self._depth -= 1
+
+    def _eval_node_inner(self, node: ast.AST) -> Any:
+        """AST 노드 평가 (내부)"""
         # 리터럴 (숫자, 문자열 등)
         if isinstance(node, ast.Constant):
             return node.value
@@ -816,6 +850,12 @@ class SafeEvaluator:
                 raise ExpressionError(f"지원하지 않는 연산자: {type(node.op).__name__}")
             left = self._eval_node(node.left)
             right = self._eval_node(node.right)
+            # M-9: 거듭제곱 지수 상한 (DoS 방어)
+            if isinstance(node.op, ast.Pow):
+                if isinstance(right, (int, float)) and abs(right) > self.MAX_POWER:
+                    raise ExpressionError(
+                        f"지수 {right}이 최대 허용값 {self.MAX_POWER}을 초과합니다"
+                    )
             return op(left, right)
 
         # 단항 연산

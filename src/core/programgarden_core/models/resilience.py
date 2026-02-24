@@ -18,7 +18,8 @@ from enum import Enum
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field
+import logging
+from pydantic import BaseModel, Field, model_validator
 
 
 class RetryableError(str, Enum):
@@ -75,6 +76,21 @@ class FallbackConfig(BaseModel):
     mode: FallbackMode = FallbackMode.ERROR
     default_value: Optional[Dict[str, Any]] = None
 
+    @model_validator(mode="after")
+    def _validate_default_value(self) -> "FallbackConfig":
+        """mode=DEFAULT_VALUE일 때 default_value 필수 검증 (L-3)."""
+        if self.mode == FallbackMode.DEFAULT_VALUE and self.default_value is None:
+            raise ValueError(
+                "fallback.mode='default_value'일 때 default_value는 필수입니다. "
+                "예: default_value={'action': 'hold', 'reason': 'API 실패'}"
+            )
+        if self.mode != FallbackMode.DEFAULT_VALUE and self.default_value is not None:
+            logging.getLogger("programgarden_core.resilience").warning(
+                "fallback.mode='%s'에서 default_value가 설정되어 있지만 무시됩니다.",
+                self.mode.value,
+            )
+        return self
+
 
 class ResilienceConfig(BaseModel):
     """
@@ -105,6 +121,16 @@ class ResilienceConfig(BaseModel):
     """
     retry: RetryConfig = Field(default_factory=RetryConfig)
     fallback: FallbackConfig = Field(default_factory=FallbackConfig)
+
+    @model_validator(mode="after")
+    def _validate_cross_config(self) -> "ResilienceConfig":
+        """Retry/Fallback 교차 검증 (L-4b)."""
+        logger = logging.getLogger("programgarden_core.resilience")
+        if self.retry.enabled and self.retry.max_retries == 0:
+            logger.warning(
+                "retry.enabled=True이지만 max_retries=0이므로 재시도가 실행되지 않습니다."
+            )
+        return self
 
 
 @dataclass

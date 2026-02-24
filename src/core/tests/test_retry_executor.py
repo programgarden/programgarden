@@ -307,29 +307,12 @@ class TestFallbackModes:
         assert result["_fallback"] is True
         assert "test error" in result["_error"]
 
-    @pytest.mark.asyncio
-    async def test_fallback_default_value_missing(self):
-        """DEFAULT_VALUE 모드: default_value 없으면 에러"""
-        executor = RetryExecutor()
-        node = MockNode(
-            resilience=ResilienceConfig(
-                retry=RetryConfig(enabled=False),
-                fallback=FallbackConfig(
-                    mode=FallbackMode.DEFAULT_VALUE,
-                    default_value=None,  # 없음
-                ),
-            )
-        )
-        context = MockContext()
-
-        async def fail_fn():
-            raise ValueError("test error")
-
-        with pytest.raises(ValueError, match="default_value가 없습니다"):
-            await executor.execute_with_retry(
-                node=node,
-                execute_fn=fail_fn,
-                context=context,
+    def test_fallback_default_value_missing_rejected_at_model_level(self):
+        """L-3: DEFAULT_VALUE 모드에서 default_value=None이면 Pydantic 검증 단계에서 거부"""
+        with pytest.raises(Exception, match="default_value는 필수"):
+            FallbackConfig(
+                mode=FallbackMode.DEFAULT_VALUE,
+                default_value=None,
             )
 
 
