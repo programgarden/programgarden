@@ -1,3 +1,15 @@
+## [1.3.3] - 2026-02-24
+### Fixed
+- **TokenManager race condition 방어 (H-19)**: threading.Lock + asyncio.Lock 이중 잠금, 갱신 실패 시 최대 2회 재시도
+- **WebSocket 재구독 (H-15)**: 구독 심볼 추적(_subscribed_symbols) + 재연결 시 자동 재구독
+- **WebSocket 메시지 누락 경고 (H-16)**: 재연결 중 수신 불가 경고 로그
+- **WebSocket force close 경고 (H-17)**: 다른 노드 영향 경고 로그
+- **WebSocket ref_count Lock (C-7/C-8)**: asyncio.Lock으로 race condition 해결
+- **WebSocket staleness 감지 (M-13)**: get_staleness_sec(), 120초 무 데이터 경고
+
+### Changed
+- deps: programgarden-core ^1.5.1
+
 ## [1.3.2] - 2026-02-20
 ### Fixed
 - fix: WebSocket 싱글톤 패턴 적용 - real() 호출마다 새 WebSocket 생성하던 문제 해결

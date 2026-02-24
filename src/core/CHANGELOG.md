@@ -1,3 +1,21 @@
+## [1.5.1] - 2026-02-24
+### Fixed
+- **금융 안전성 감사 (47건 중 core 해당분)**
+  - ResilienceConfig: retry.enabled=True + max_retries=0 교차 검증 경고
+  - FallbackConfig: mode=DEFAULT_VALUE 시 default_value 필수 검증 (model_validator)
+  - 주문 노드: retry max_retries 3 이하 강제, 시장가 전환 warning 로그 상향
+  - AIAgentNode: max_total_tokens 한도, BM25 도구 선택, output 검증 error 상향, cooldown 스킵 추적
+  - 표현식 DoS 방어: AST 깊이 20, 지수 1000, range 100K 제한
+  - ScheduleNode: max_duration_hours + count 1000 제한
+  - TradingHoursFilterNode: max_wait_hours 타임아웃
+  - HTTPRequestNode: 기본 retry.enabled=True, 실시간 연결 ERROR 강화
+
+### Added
+- **외부 API fallback provider**: CurrencyRateNode → open.er-api.com, VIXDataNode → query2 Yahoo CDN
+- **Rate limit API별 최적화**: CurrencyRate 30초, FearGreed 300초, VIX 120초
+- **timeout_seconds 필드**: 3개 외부 API 노드 (기본 30초, 5~120초)
+- i18n: timeout_seconds 필드 번역 (ko/en)
+
 ## [1.5.0] - 2026-02-23
 ### Added
 - **CurrencyRateNode**: 환율 조회 노드 (`market` 카테고리, credential 불필요)

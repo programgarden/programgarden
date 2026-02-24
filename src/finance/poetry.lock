@@ -695,20 +695,18 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-core"
-version = "1.4.0"
+version = "1.5.1"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
-files = []
-develop = true
+files = [
+    {file = "programgarden_core-1.5.1-py3-none-any.whl", hash = "sha256:c526b3b4df14f45be631610cb173d32320c28062142caa53c58301164a25b353"},
+    {file = "programgarden_core-1.5.1.tar.gz", hash = "sha256:b1fc52d4103aafbb59968f3095da3102ecc874bf389fcdfc57671a018cfbbe30"},
+]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
-
-[package.source]
-type = "directory"
-url = "../core"
 
 [[package]]
 name = "propcache"
@@ -1382,4 +1380,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "60354bf18aab263caad2c00498912db29a6533dd6a1106ed5c60b68438ecac81"
+content-hash = "dfa0bdf9f543beeabef4ffca1be72ce8f03f74b397ae2c85b9ee141823b173c8"
