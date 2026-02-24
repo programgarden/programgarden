@@ -7,8 +7,11 @@ credential 불필요, 무료 외부 API 기반 시장 데이터 노드:
 - VIXDataNode: CBOE VIX 변동성 지수 (Yahoo Finance)
 """
 
-from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
+import logging
+from typing import Optional, List, Literal, Dict, Any, ClassVar, Tuple, TYPE_CHECKING
 from pydantic import Field
+
+logger = logging.getLogger("programgarden_core.market_external")
 
 if TYPE_CHECKING:
     from programgarden_core.models.field_binding import FieldSchema
@@ -71,6 +74,96 @@ def _classify_retryable_error(error: Exception) -> Optional[RetryableError]:
     return None
 
 
+async def _fetch_json_with_fallback(
+    urls: List[Tuple[str, str, Optional[Dict[str, str]]]],
+    timeout_seconds: int = 30,
+) -> Dict[str, Any]:
+    """
+    URL 목록을 순차 시도하여 JSON 응답을 반환 (L-1: fallback provider).
+
+    Args:
+        urls: [(url, provider_name, headers), ...] 순서대로 시도
+        timeout_seconds: 요청 타임아웃 (초)
+
+    Returns:
+        JSON 응답 dict
+
+    Raises:
+        ExternalAPIError 등: 모든 provider 실패 시 마지막 에러 raise
+    """
+    import aiohttp
+    import asyncio
+
+    last_error: Optional[Exception] = None
+
+    for i, (url, provider, headers) in enumerate(urls):
+        try:
+            timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status == 429:
+                        raise ExternalAPIRateLimitError(
+                            f"[{provider}] HTTP 429: Rate limit exceeded"
+                        )
+                    if resp.status >= 500:
+                        raise ExternalAPIError(
+                            f"[{provider}] HTTP {resp.status}: Server error"
+                        )
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        raise ExternalAPIError(
+                            f"[{provider}] HTTP {resp.status}: {text[:200]}"
+                        )
+
+                    try:
+                        data = await resp.json()
+                    except (ValueError, Exception) as je:
+                        text = await resp.text()
+                        raise ExternalAPIError(
+                            f"[{provider}] JSON parse failed: {je} (response: {text[:200]})"
+                        )
+
+            return data
+
+        except (ExternalAPIRateLimitError, ExternalAPIError, ExternalAPINetworkError, ExternalAPITimeoutError) as e:
+            last_error = e
+            if i < len(urls) - 1:
+                next_provider = urls[i + 1][1]
+                logger.warning(
+                    "%s 실패 (%s), fallback으로 %s 시도",
+                    provider, e, next_provider,
+                )
+                continue
+            raise
+
+        except aiohttp.ClientError as e:
+            last_error = ExternalAPINetworkError(f"[{provider}] Network error: {e}")
+            if i < len(urls) - 1:
+                next_provider = urls[i + 1][1]
+                logger.warning(
+                    "%s 네트워크 에러 (%s), fallback으로 %s 시도",
+                    provider, e, next_provider,
+                )
+                continue
+            raise last_error
+
+        except asyncio.TimeoutError:
+            last_error = ExternalAPITimeoutError(
+                f"[{provider}] Request timeout after {timeout_seconds}s"
+            )
+            if i < len(urls) - 1:
+                next_provider = urls[i + 1][1]
+                logger.warning(
+                    "%s 타임아웃 (%ds), fallback으로 %s 시도",
+                    provider, timeout_seconds, next_provider,
+                )
+                continue
+            raise last_error
+
+    # unreachable, but for type safety
+    raise last_error or ExternalAPIError("No providers available")
+
+
 class CurrencyRateNode(BaseNode):
     """
     환율 조회 노드 (frankfurter.app, ECB 기반)
@@ -103,9 +196,9 @@ class CurrencyRateNode(BaseNode):
         ),
     ]
 
-    # Rate limit: 1분 간격
+    # L-2: ECB 환율은 하루 1회 업데이트 → 30초 간격이면 충분
     _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
-        min_interval_sec=60,
+        min_interval_sec=30,
         max_concurrent=1,
         on_throttle="queue",
     )
@@ -118,6 +211,14 @@ class CurrencyRateNode(BaseNode):
     target_currencies: List[str] = Field(
         default_factory=lambda: ["KRW"],
         description="대상 통화 목록",
+    )
+
+    # === SETTINGS ===
+    timeout_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="i18n:fields.CurrencyRateNode.timeout_seconds",
     )
 
     # === Resilience ===
@@ -172,6 +273,17 @@ class CurrencyRateNode(BaseNode):
                 },
                 expected_type="list[str]",
             ),
+            "timeout_seconds": FieldSchema(
+                name="timeout_seconds",
+                type=FieldType.NUMBER,
+                description="i18n:fields.CurrencyRateNode.timeout_seconds",
+                default=30,
+                min=5,
+                max=120,
+                required=False,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
             "resilience": FieldSchema(
                 name="resilience",
                 type=FieldType.OBJECT,
@@ -190,43 +302,39 @@ class CurrencyRateNode(BaseNode):
         }
 
     async def execute(self, context: Any) -> Dict[str, Any]:
-        """환율 데이터 조회"""
-        import aiohttp
-        import asyncio
-
+        """환율 데이터 조회 (L-1: fallback provider 지원)"""
         targets = ",".join(self.target_currencies)
-        url = f"https://api.frankfurter.app/latest?from={self.base_currency}&to={targets}"
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as resp:
-                    if resp.status == 429:
-                        raise ExternalAPIRateLimitError("HTTP 429: Rate limit exceeded")
-                    if resp.status >= 500:
-                        raise ExternalAPIError(f"HTTP {resp.status}: Server error")
-                    if resp.status >= 400:
-                        text = await resp.text()
-                        raise ExternalAPIError(f"HTTP {resp.status}: {text[:200]}")
+        # L-1: Primary (frankfurter.app) → Fallback (open.er-api.com)
+        urls: List[Tuple[str, str, Optional[Dict[str, str]]]] = [
+            (
+                f"https://api.frankfurter.app/latest?from={self.base_currency}&to={targets}",
+                "frankfurter.app",
+                None,
+            ),
+            (
+                f"https://open.er-api.com/v6/latest/{self.base_currency}",
+                "open.er-api.com",
+                None,
+            ),
+        ]
 
-                    try:
-                        data = await resp.json()
-                    except (ValueError, Exception) as je:
-                        text = await resp.text()
-                        raise ExternalAPIError(
-                            f"JSON parse failed: {je} (response: {text[:200]})"
-                        )
+        data = await _fetch_json_with_fallback(urls, self.timeout_seconds)
 
-        except (ExternalAPIError, ExternalAPIRateLimitError, ExternalAPINetworkError, ExternalAPITimeoutError):
-            raise
-        except aiohttp.ClientError as e:
-            raise ExternalAPINetworkError(f"Network error: {e}")
-        except asyncio.TimeoutError:
-            raise ExternalAPITimeoutError("Request timeout after 30s")
-
-        # 응답 파싱: {"amount":1.0, "base":"USD", "date":"2026-02-20", "rates":{"KRW":1449.66}}
-        api_rates = data.get("rates", {})
-        date_str = data.get("date", "")
+        # 응답 파싱 (provider별 형식 차이 처리)
+        if "rates" in data and "date" in data:
+            # frankfurter.app 형식: {"amount":1.0, "base":"USD", "date":"...", "rates":{"KRW":1449}}
+            api_rates = data.get("rates", {})
+            date_str = data.get("date", "")
+        elif "rates" in data and "time_last_update_utc" in data:
+            # open.er-api.com 형식: {"base":"USD", "rates":{"KRW":1449}, "time_last_update_utc":"..."}
+            all_rates = data.get("rates", {})
+            # open.er-api.com은 모든 통화를 반환 → target만 필터링
+            api_rates = {k: v for k, v in all_rates.items() if k in self.target_currencies}
+            date_str = data.get("time_last_update_utc", "")
+        else:
+            api_rates = data.get("rates", {})
+            date_str = ""
 
         rates = []
         krw_rate = None
@@ -283,11 +391,19 @@ class FearGreedIndexNode(BaseNode):
         ),
     ]
 
-    # Rate limit: 1분 간격
+    # L-2: CNN 비공식 API → 보수적 5분 간격
     _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
-        min_interval_sec=60,
+        min_interval_sec=300,
         max_concurrent=1,
         on_throttle="queue",
+    )
+
+    # === SETTINGS ===
+    timeout_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="i18n:fields.FearGreedIndexNode.timeout_seconds",
     )
 
     # === Resilience ===
@@ -318,6 +434,17 @@ class FearGreedIndexNode(BaseNode):
             FieldSchema, FieldType, FieldCategory, ExpressionMode, UIComponent,
         )
         return {
+            "timeout_seconds": FieldSchema(
+                name="timeout_seconds",
+                type=FieldType.NUMBER,
+                description="i18n:fields.FearGreedIndexNode.timeout_seconds",
+                default=30,
+                min=5,
+                max=120,
+                required=False,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
             "resilience": FieldSchema(
                 name="resilience",
                 type=FieldType.OBJECT,
@@ -336,42 +463,21 @@ class FearGreedIndexNode(BaseNode):
         }
 
     async def execute(self, context: Any) -> Dict[str, Any]:
-        """CNN 공포/탐욕 지수 조회"""
-        import aiohttp
-        import asyncio
-
-        url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-        headers = {
+        """CNN 공포/탐욕 지수 조회 (L-1: 단일 provider, 대안 API 없음)"""
+        _CNN_HEADERS = {
             "User-Agent": "Mozilla/5.0 (compatible; ProgramGarden/1.0)",
             "Accept": "application/json",
         }
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, headers=headers) as resp:
-                    if resp.status == 429:
-                        raise ExternalAPIRateLimitError("HTTP 429: Rate limit exceeded")
-                    if resp.status >= 500:
-                        raise ExternalAPIError(f"HTTP {resp.status}: Server error")
-                    if resp.status >= 400:
-                        text = await resp.text()
-                        raise ExternalAPIError(f"HTTP {resp.status}: {text[:200]}")
+        urls: List[Tuple[str, str, Optional[Dict[str, str]]]] = [
+            (
+                "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+                "CNN",
+                _CNN_HEADERS,
+            ),
+        ]
 
-                    try:
-                        data = await resp.json()
-                    except (ValueError, Exception) as je:
-                        text = await resp.text()
-                        raise ExternalAPIError(
-                            f"JSON parse failed: {je} (response: {text[:200]})"
-                        )
-
-        except (ExternalAPIError, ExternalAPIRateLimitError, ExternalAPINetworkError, ExternalAPITimeoutError):
-            raise
-        except aiohttp.ClientError as e:
-            raise ExternalAPINetworkError(f"Network error: {e}")
-        except asyncio.TimeoutError:
-            raise ExternalAPITimeoutError("Request timeout after 30s")
+        data = await _fetch_json_with_fallback(urls, self.timeout_seconds)
 
         # 응답 파싱
         fng = data.get("fear_and_greed", {})
@@ -450,9 +556,9 @@ class VIXDataNode(BaseNode):
         ),
     ]
 
-    # Rate limit: 1분 간격
+    # L-2: Yahoo Finance 비공식 API → 2분 간격
     _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
-        min_interval_sec=60,
+        min_interval_sec=120,
         max_concurrent=1,
         on_throttle="queue",
     )
@@ -461,6 +567,12 @@ class VIXDataNode(BaseNode):
     include_history: bool = Field(
         default=False,
         description="최근 이력 포함 여부",
+    )
+    timeout_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="i18n:fields.VIXDataNode.timeout_seconds",
     )
 
     # === Resilience ===
@@ -502,6 +614,17 @@ class VIXDataNode(BaseNode):
                 ui_component=UIComponent.CHECKBOX,
                 expected_type="bool",
             ),
+            "timeout_seconds": FieldSchema(
+                name="timeout_seconds",
+                type=FieldType.NUMBER,
+                description="i18n:fields.VIXDataNode.timeout_seconds",
+                default=30,
+                min=5,
+                max=120,
+                required=False,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
             "resilience": FieldSchema(
                 name="resilience",
                 type=FieldType.OBJECT,
@@ -520,44 +643,29 @@ class VIXDataNode(BaseNode):
         }
 
     async def execute(self, context: Any) -> Dict[str, Any]:
-        """VIX 지수 조회"""
-        import aiohttp
-        import asyncio
+        """VIX 지수 조회 (L-1: fallback provider 지원)"""
         from datetime import datetime, timezone
 
-        # Yahoo Finance 비공식 API
         range_param = "1mo" if self.include_history else "5d"
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range={range_param}&interval=1d"
-        headers = {
+        _YAHOO_HEADERS = {
             "User-Agent": "Mozilla/5.0 (compatible; ProgramGarden/1.0)",
         }
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, headers=headers) as resp:
-                    if resp.status == 429:
-                        raise ExternalAPIRateLimitError("HTTP 429: Rate limit exceeded")
-                    if resp.status >= 500:
-                        raise ExternalAPIError(f"HTTP {resp.status}: Server error")
-                    if resp.status >= 400:
-                        text = await resp.text()
-                        raise ExternalAPIError(f"HTTP {resp.status}: {text[:200]}")
+        # L-1: Primary (query1) → Fallback (query2) Yahoo Finance CDN
+        urls: List[Tuple[str, str, Optional[Dict[str, str]]]] = [
+            (
+                f"https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range={range_param}&interval=1d",
+                "Yahoo Finance (query1)",
+                _YAHOO_HEADERS,
+            ),
+            (
+                f"https://query2.finance.yahoo.com/v8/finance/chart/%5EVIX?range={range_param}&interval=1d",
+                "Yahoo Finance (query2)",
+                _YAHOO_HEADERS,
+            ),
+        ]
 
-                    try:
-                        data = await resp.json()
-                    except (ValueError, Exception) as je:
-                        text = await resp.text()
-                        raise ExternalAPIError(
-                            f"JSON parse failed: {je} (response: {text[:200]})"
-                        )
-
-        except (ExternalAPIError, ExternalAPIRateLimitError, ExternalAPINetworkError, ExternalAPITimeoutError):
-            raise
-        except aiohttp.ClientError as e:
-            raise ExternalAPINetworkError(f"Network error: {e}")
-        except asyncio.TimeoutError:
-            raise ExternalAPITimeoutError("Request timeout after 30s")
+        data = await _fetch_json_with_fallback(urls, self.timeout_seconds)
 
         # 응답 파싱
         result = data.get("chart", {}).get("result", [])

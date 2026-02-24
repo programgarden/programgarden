@@ -301,10 +301,11 @@ class TestFearGreedIndexNodePorts:
 class TestFearGreedIndexNodeFieldSchema:
     """FearGreedIndexNode FieldSchema 검증"""
 
-    def test_field_schema_has_resilience_only(self):
+    def test_field_schema_has_resilience_and_timeout(self):
         schema = FearGreedIndexNode.get_field_schema()
         assert "resilience" in schema
-        assert len(schema) == 1  # 설정 필드 없이 resilience만
+        assert "timeout_seconds" in schema
+        assert len(schema) == 2  # resilience + timeout_seconds
 
 
 class TestFearGreedIndexNodeLabel:
@@ -678,16 +679,19 @@ class TestRateLimitAndConnectionRules:
     """Rate limit 및 연결 규칙 검증"""
 
     def test_currency_rate_node_rate_limit(self):
+        """L-2: ECB 환율 → 30초 간격"""
         assert CurrencyRateNode._rate_limit is not None
-        assert CurrencyRateNode._rate_limit.min_interval_sec == 60
+        assert CurrencyRateNode._rate_limit.min_interval_sec == 30
 
     def test_fear_greed_node_rate_limit(self):
+        """L-2: CNN 비공식 API → 5분 간격"""
         assert FearGreedIndexNode._rate_limit is not None
-        assert FearGreedIndexNode._rate_limit.min_interval_sec == 60
+        assert FearGreedIndexNode._rate_limit.min_interval_sec == 300
 
     def test_vix_node_rate_limit(self):
+        """L-2: Yahoo Finance 비공식 API → 2분 간격"""
         assert VIXDataNode._rate_limit is not None
-        assert VIXDataNode._rate_limit.min_interval_sec == 60
+        assert VIXDataNode._rate_limit.min_interval_sec == 120
 
     def test_currency_rate_node_connection_rules(self):
         rules = CurrencyRateNode._connection_rules
@@ -762,7 +766,7 @@ class TestMarketExternalNodeRegistry:
         registry = NodeTypeRegistry()
         schema = registry.get_schema("CurrencyRateNode")
         assert schema.rate_limit is not None
-        assert schema.rate_limit["min_interval_sec"] == 60
+        assert schema.rate_limit["min_interval_sec"] == 30  # L-2: ECB 30초
 
     def test_connection_rules_in_schema(self):
         from programgarden_core.registry.node_registry import NodeTypeRegistry
