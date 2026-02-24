@@ -1,3 +1,21 @@
+## [1.11.1] - 2026-02-24
+### Fixed
+- **금융 안전성 감사 47건 완료** (CRITICAL 8 + HIGH 21 + MEDIUM 14 + LOW 7)
+  - Kill Switch: WorkflowJob.force_stop + WorkflowExecutor.emergency_stop_all
+  - 중복주문 방지: C-2 모의투자 자동 전환 제거, C-3 빈 OrderNo 차단
+  - AI 비용 보호: C-4 max_total_tokens 한도, H-7 스트리밍 토큰 추정, H-9 비용 계산 경고
+  - drawdown 연동: C-6 매수 전 drawdown 임계치 체크
+  - API 키 보호: H-8 context._secrets 이동 (connection 출력에서 제거)
+  - HWM flush 복구: H-10 연속 실패 시 sync fallback
+  - SQLite WAL: H-11 멀티 워크플로우 SQLITE_BUSY 방지
+  - 네트워크 복구: H-13 ReconnectHandler 콜백 + 끊김 시간 추적
+  - risk_halt 연동: M-10 RiskEvent action_hint + 주문 실행 차단
+  - OHLCV 메모리: M-11 콜백 클로저 → node_state 메모리 관리
+  - 표현식 DoS 방어: M-9 AST 깊이/지수/range 제한
+
+### Changed
+- deps: programgarden-core ^1.5.1, programgarden-finance ^1.3.3
+
 ## [1.11.0] - 2026-02-23
 ### Added
 - **외부 시장 데이터 노드 executor 매핑**: CurrencyRateNode, FearGreedIndexNode, VIXDataNode → GenericNodeExecutor
