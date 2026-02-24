@@ -238,6 +238,22 @@ class AIAgentNode(BaseNode):
         description="Tool 호출 실패 시 전략",
     )
 
+    # === 도구 선택 ===
+    tool_selection: Literal["all", "bm25"] = Field(
+        default="all",
+        description="도구 선택 방식 (all: 전체 전달, bm25: 관련 도구만 선별)",
+    )
+    tool_top_k: int = Field(
+        default=5,
+        description="BM25 모드에서 LLM에 전달할 최대 도구 수",
+    )
+
+    # === 토큰 제한 ===
+    max_total_tokens: int = Field(
+        default=100000,
+        description="실행당 최대 총 토큰 수 (입력+출력 합계, 0=무제한)",
+    )
+
     # === 포트 정의 ===
     _inputs: List[InputPort] = [
         InputPort(
@@ -404,5 +420,43 @@ class AIAgentNode(BaseNode):
                     "abort": "노드 실행 실패",
                 },
                 default="retry_with_context",
+            ),
+            "tool_selection": FieldSchema(
+                name="tool_selection",
+                type=FieldType.ENUM,
+                description="i18n:fields.AIAgentNode.tool_selection",
+                required=False,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                enum_values=["all", "bm25"],
+                enum_labels={
+                    "all": "전체 도구 전달",
+                    "bm25": "관련 도구만 선별 (BM25)",
+                },
+                default="all",
+            ),
+            "tool_top_k": FieldSchema(
+                name="tool_top_k",
+                type=FieldType.INTEGER,
+                description="i18n:fields.AIAgentNode.tool_top_k",
+                required=False,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                default=5,
+                min_value=1,
+                max_value=20,
+                visible_when={"tool_selection": "bm25"},
+            ),
+            "max_total_tokens": FieldSchema(
+                name="max_total_tokens",
+                type=FieldType.INTEGER,
+                description="i18n:fields.AIAgentNode.max_total_tokens",
+                required=False,
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                default=100000,
+                min_value=0,
+                max_value=10000000,
+                help_text="실행당 최대 토큰 수. 0=무제한. 초과 시 현재까지의 결과로 응답 생성.",
             ),
         }

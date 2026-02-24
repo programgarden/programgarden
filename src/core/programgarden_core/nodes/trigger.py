@@ -44,6 +44,10 @@ class ScheduleNode(BaseNode):
         default="America/New_York", description="Timezone (e.g., America/New_York, Asia/Seoul)"
     )
     enabled: bool = Field(default=True, description="Schedule enabled")
+    max_duration_hours: float = Field(
+        default=24.0,
+        description="최대 실행 시간 (시간). 초과 시 스케줄 자동 종료.",
+    )
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
@@ -85,6 +89,17 @@ class ScheduleNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
             ),
+            "max_duration_hours": FieldSchema(
+                name="max_duration_hours",
+                type=FieldType.NUMBER,
+                description="i18n:fields.ScheduleNode.max_duration_hours",
+                default=24.0,
+                min_value=0.1,
+                max_value=720.0,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                expected_type="float",
+            ),
         }
 
 
@@ -108,6 +123,10 @@ class TradingHoursFilterNode(BaseNode):
     days: List[str] = Field(
         default=["mon", "tue", "wed", "thu", "fri"],
         description="Active days (mon, tue, wed, thu, fri, sat, sun)",
+    )
+    max_wait_hours: float = Field(
+        default=24.0,
+        description="최대 대기 시간 (시간). 초과 시 timeout으로 처리.",
     )
 
     _inputs: List[InputPort] = [
@@ -171,6 +190,17 @@ class TradingHoursFilterNode(BaseNode):
                 example="America/New_York",
                 expected_type="str",
             ),
+            "max_wait_hours": FieldSchema(
+                name="max_wait_hours",
+                type=FieldType.NUMBER,
+                description="i18n:fields.TradingHoursFilterNode.max_wait_hours",
+                default=24.0,
+                min_value=0.1,
+                max_value=168.0,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                expected_type="float",
+            ),
         }
 
     def _is_trading_hours(self) -> bool:
@@ -208,21 +238,34 @@ class TradingHoursFilterNode(BaseNode):
     async def execute(self, context: "BaseExecutionContext") -> Dict[str, Any]:
         """
         Wait until trading hours, then pass through.
-        
+
         - 거래시간 내: 즉시 통과
         - 거래시간 외: 거래시간이 될 때까지 대기
+        - max_wait_hours 초과 시: timeout 반환
         - 워크플로우 종료 시: graceful shutdown
         """
+        import time as _time
         check_interval = 60  # 1분마다 체크
-        
+        wait_start = _time.monotonic()
+        max_wait_sec = self.max_wait_hours * 3600
+
         while not self._is_trading_hours():
             # graceful shutdown 체크
             if hasattr(context, 'is_running') and not context.is_running:
                 context.log("info", "Shutdown requested, exiting trading hours wait", self.id)
                 return {"passed": False, "reason": "shutdown"}
-            
+
+            # M-7: max_wait_hours 초과 체크
+            if (_time.monotonic() - wait_start) >= max_wait_sec:
+                context.log(
+                    "warning",
+                    f"거래시간 대기 timeout: max_wait_hours={self.max_wait_hours}h 초과",
+                    self.id,
+                )
+                return {"passed": False, "reason": "timeout"}
+
             context.log("debug", f"Outside trading hours, waiting... (next check in {check_interval}s)", self.id)
             await asyncio.sleep(check_interval)
-        
+
         context.log("info", "Trading hours active, passing through", self.id)
         return {"passed": True}

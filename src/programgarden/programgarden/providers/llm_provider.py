@@ -159,6 +159,16 @@ class LLMProvider:
         input_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
         output_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
 
+        # usage 정보가 없는 경우 (스트리밍 중단 등) 출력 토큰 추정
+        if output_tokens == 0 and collected_content:
+            # 대략 4자 = 1토큰으로 추정 (정확하지 않지만 0보다 나음)
+            estimated_tokens = max(1, len(content) // 4)
+            output_tokens = estimated_tokens
+            logger.warning(
+                f"Streaming usage unavailable, estimating output_tokens={estimated_tokens} "
+                f"from {len(content)} chars"
+            )
+
         cost = self._calc_cost(model_name, input_tokens, output_tokens)
 
         return LLMResponse(
@@ -330,7 +340,12 @@ class LLMProvider:
                 prompt_tokens=input_tokens,
                 completion_tokens=output_tokens,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                f"Cost calculation failed for model={model} "
+                f"(in={input_tokens}, out={output_tokens}): {e}. "
+                f"Reporting cost as 0.0 (actual billing may differ)"
+            )
             return 0.0
 
     def _convert_error(self, exc: Exception) -> Exception:

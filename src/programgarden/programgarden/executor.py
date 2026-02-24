@@ -868,7 +868,8 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         cron_expr = config.get("cron", "*/5 * * * *")
         tz_name = config.get("timezone", "America/New_York")
         enabled = config.get("enabled", True)
-        count = config.get("count", 9999999)  # 최대 반복 횟수
+        count = config.get("count", 1000)  # 최대 반복 횟수 (M-6: 기본값 축소)
+        max_duration_hours = config.get("max_duration_hours", 24.0)
         
         if not enabled:
             context.log("info", f"Schedule disabled: {cron_expr}", node_id)
@@ -900,15 +901,27 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         
         # 백그라운드 스케줄러 태스크
         async def scheduler_task():
+            import time as _time
             cnt = 0
+            start_mono = _time.monotonic()
+            max_duration_sec = max_duration_hours * 3600
             try:
                 # second_at_beginning=True로 초 단위 cron도 지원
                 try:
                     itr = croniter(cron_expr, datetime.now(tz), second_at_beginning=True)
                 except TypeError:
                     itr = croniter(cron_expr, datetime.now(tz))
-                
+
                 while cnt < count and context.is_running:
+                    # M-6: max_duration_hours 초과 시 스케줄 종료
+                    if (_time.monotonic() - start_mono) >= max_duration_sec:
+                        context.log(
+                            "warning",
+                            f"Schedule max_duration_hours={max_duration_hours}h 초과 - "
+                            f"스케줄 자동 종료 (총 {cnt}회 실행)",
+                            node_id,
+                        )
+                        break
                     # 다음 실행 시간 계산
                     next_dt = itr.get_next(datetime)
                     now = datetime.now(tz)
@@ -1714,12 +1727,20 @@ class BrokerNodeExecutor(NodeExecutorBase):
         
         # ========================================
         # 모의투자 지원 여부 검증
-        # - overseas_stock: 모의투자 미지원 (LS증권)
+        # - overseas_stock: 모의투자 미지원 (LS증권) → 에러 반환 (자동 실전 전환 금지)
         # - overseas_futures: 모의투자 지원
         # ========================================
         if product == "overseas_stock" and paper_trading:
-            context.log("warning", "overseas_stock does not support paper_trading (LS Securities), forcing real mode", node_id)
-            paper_trading = False
+            context.log(
+                "error",
+                "overseas_stock은 모의투자를 지원하지 않습니다 (LS증권 제한). "
+                "paper_trading=False로 설정하거나, 해외선물(overseas_futures)을 사용하세요.",
+                node_id,
+            )
+            return {
+                "connection": None,
+                "error": "overseas_stock does not support paper_trading. Set paper_trading=False to use real mode.",
+            }
         
         # ========================================
         # Credential 자동 주입 (GenericNodeExecutor와 동일 패턴)
@@ -3346,7 +3367,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                         # 토큰 갱신은 ReconnectHandler가 처리했으므로 재연결만
                         if not await real_client.is_connected():
                             await real_client.connect()
-                        reconnect_handler.reset()
+                        await reconnect_handler.on_reconnect_success()
                         context.log("info", "Reconnected successfully", node_id)
                     except Exception as e:
                         context.log("error", f"Reconnect failed: {e}", node_id)
@@ -3528,7 +3549,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     try:
                         if not await real.is_connected():
                             await real.connect()
-                        reconnect_handler.reset()
+                        await reconnect_handler.on_reconnect_success()
                         context.log("info", "Futures WebSocket reconnected successfully", node_id)
                     except Exception as e:
                         context.log("error", f"Futures reconnect failed: {e}", node_id)
@@ -3980,22 +4001,22 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             exchange_code = self._get_stock_exchange_code(exchange)
             subscribe_symbols.append(f"{exchange_code}{symbol}")
         
-        # 실시간 OHLCV 데이터 저장소 (콜백에서 틱마다 누적)
-        # 형식: {symbol: {date, open, high, low, close, volume}}
-        ohlcv_bars = {}
-        
+        # M-11: OHLCV 데이터를 context.node_state에 저장 (클로저 메모리 관리)
+        # cleanup_persistent_nodes에서 자동 정리됨
+        context.set_node_state(node_id, "ohlcv_bars", {})
+
         # 트리거할 하위 노드 목록 (RealOrderEventNode 패턴)
         trigger_nodes = []
-        
+
         def on_tick(resp):
             """GSC 틱 데이터 수신 콜백 - OHLCV 형식으로 누적"""
             try:
                 body = resp.body if hasattr(resp, 'body') else None
-                
+
                 if body is None:
                     context.log("debug", f"GSC subscription confirmed: {resp.rsp_msg if hasattr(resp, 'rsp_msg') else ''}", node_id)
                     return
-                
+
                 # GSCRealResponseBody 필드 추출
                 symbol = getattr(body, 'symbol', '')
                 price = float(getattr(body, 'price', 0) or 0)
@@ -4004,8 +4025,11 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                 tick_low = float(getattr(body, 'low', 0) or 0)
                 volume = int(getattr(body, 'totq', 0) or 0)
                 date = getattr(body, 'kordate', '') or datetime.now().strftime('%Y%m%d')
-                
+
                 if symbol and price > 0:
+                    # M-11: context state에서 ohlcv_bars 조회/갱신
+                    ohlcv_bars = context.get_node_state(node_id, "ohlcv_bars") or {}
+
                     # OHLCV 바 업데이트 (당일 누적)
                     if symbol not in ohlcv_bars or ohlcv_bars[symbol].get('date') != date:
                         # 첫 틱 또는 새 날짜: 초기화
@@ -4026,14 +4050,16 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                             bar["low"] = tick_low
                         bar["close"] = price
                         bar["volume"] = volume
-                    
+
+                    context.set_node_state(node_id, "ohlcv_bars", ohlcv_bars)
+
                     # 콘솔 출력
                     logger.debug(f"\n{'='*60}")
-                    logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 [{node_id}] GSC 체결")
-                    logger.debug(f"  종목: {symbol}  가격: ${price:,.2f}  거래량: {volume:,}")
+                    logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] [{node_id}] GSC tick")
+                    logger.debug(f"  symbol: {symbol}  price: ${price:,.2f}  volume: {volume:,}")
                     logger.debug(f"  OHLCV: O={ohlcv_bars[symbol]['open']:.2f} H={ohlcv_bars[symbol]['high']:.2f} L={ohlcv_bars[symbol]['low']:.2f} C={price:.2f}")
                     logger.debug(f"{'='*60}\n")
-                    
+
                     # OHLCV 데이터 형식으로 변환: {symbol: [bar]}
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
                     
@@ -9382,6 +9408,15 @@ class NewOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """신규 주문 실행"""
 
+        # M-10: Risk halt 체크 - critical risk event로 주문 중단
+        if context.is_risk_halted:
+            context.log(
+                "warning",
+                f"{node_type}: 위험 이벤트로 인해 주문이 중단되었습니다 (risk_halt=True)",
+                node_id,
+            )
+            return self._error_result("Order halted by risk event")
+
         # === 1. Connection 확인 ===
         broker_connection = config.get("connection")
         if not broker_connection:
@@ -9422,6 +9457,24 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             f"{node_type}: {normalized_order['symbol']}, side={side}, type={order_type}, qty={normalized_order['quantity']}",
             node_id
         )
+
+        # === 3.5. Drawdown 보호: risk_tracker가 활성화되어 있으면 체크 ===
+        risk_tracker = context.risk_tracker
+        if risk_tracker and side == "buy":
+            # drawdown_threshold_pct: 사용자 설정 가능, 기본 10%
+            drawdown_threshold = config.get("drawdown_threshold_pct", 10.0)
+            symbol = normalized_order["symbol"]
+            if risk_tracker.check_drawdown_threshold(symbol, drawdown_threshold):
+                context.log(
+                    "warning",
+                    f"{node_type}: {symbol} drawdown이 {drawdown_threshold}%를 초과하여 매수 주문을 차단합니다.",
+                    node_id,
+                )
+                return self._order_result(
+                    False, symbol, normalized_order["exchange"], side,
+                    normalized_order["quantity"], normalized_order["price"],
+                    f"Drawdown exceeds {drawdown_threshold}% threshold"
+                )
 
         # === 4. LS 로그인 ===
         credential = context.get_credential()
@@ -9543,7 +9596,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         # 해외주식 매수는 지정가만 가능 - 시장가 요청 시 지정가로 변환
         is_buy = (side == "buy")
         if is_buy and ordprc_ptn_code == "03":
-            context.log("info", "해외주식 매수는 지정가만 가능 - 현재가로 지정가 주문 전환", node_id)
+            context.log("warning", "주문 타입 자동 변환: 해외주식 매수는 시장가 불가 → 현재가 기준 지정가 주문으로 전환", node_id)
             ordprc_ptn_code = "00"
 
         ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
@@ -9592,13 +9645,15 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if response.block2:
                 order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
 
-            # 주문번호가 없으면 경고 (장 마감 등)
-            if not order_no and response.rsp_msg:
-                context.log("warning", f"Order warning: {symbol} - {response.rsp_msg}", node_id)
+            # 주문번호가 없으면 경고 (장 마감, 서버 오류 등)
+            if not order_no:
+                msg = response.rsp_msg or "주문번호 없음"
+                context.log("warning", f"Order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
+                return self._order_result(False, symbol, exchange, side, qty, price, f"Empty OrderNo: {msg}")
 
             context.log("info", f"Order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
 
-            # Record workflow order for FIFO tracking
+            # Record workflow order for FIFO tracking (OrderNo가 있는 경우만)
             context.record_workflow_order(
                 order_no=order_no,
                 order_date=dt.now().strftime("%Y%m%d"),
@@ -9850,9 +9905,15 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 # 해외선물 주문번호 필드: OvrsFutsOrdNo
                 order_no = str(response.block2.OvrsFutsOrdNo) if hasattr(response.block2, "OvrsFutsOrdNo") and response.block2.OvrsFutsOrdNo else ""
 
+            # 주문번호가 없으면 경고 + 기록 거부
+            if not order_no:
+                msg = response.rsp_msg or "주문번호 없음"
+                context.log("warning", f"Futures order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
+                return self._order_result(False, symbol, exchange, side, qty, price, f"Empty OrderNo: {msg}")
+
             context.log("info", f"Futures order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
 
-            # Record workflow order for FIFO tracking
+            # Record workflow order for FIFO tracking (OrderNo가 있는 경우만)
             context.record_workflow_order(
                 order_no=order_no,
                 order_date=dt.now().strftime("%Y%m%d"),
@@ -9949,6 +10010,11 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         """주문 정정 실행"""
+
+        # M-10: Risk halt 체크
+        if context.is_risk_halted:
+            context.log("warning", f"{node_type}: 위험 이벤트로 인해 주문 정정이 중단되었습니다", node_id)
+            return self._error_result("Order modify halted by risk event")
 
         # === 1. Connection 확인 ===
         broker_connection = config.get("connection")
@@ -10551,11 +10617,17 @@ class LLMModelNodeExecutor(NodeExecutorBase):
             node_id,
         )
 
+        # API 키를 secrets에 저장 (connection 출력에 평문 노출 방지)
+        api_key = config.get("api_key")
+        if api_key:
+            context.set_secret(f"llm_api_key_{node_id}", api_key)
+
         return {
             "connection": {
                 "provider": provider,
                 "model": model,
-                "api_key": config.get("api_key"),
+                "api_key": None,  # secrets에 별도 저장됨
+                "_llm_node_id": node_id,  # secrets 조회용
                 "base_url": config.get("base_url"),
                 "organization": config.get("organization"),
                 "api_version": config.get("api_version"),
@@ -10689,7 +10761,63 @@ class AIAgentToolExecutor:
             f"{[t['function']['name'] for t in tools]}",
             agent_node_id,
         )
+
+        # BM25 인덱스 빌드 (M-5: 도구 6개 이상일 때 사용)
+        self._all_tools = tools
+        self._build_bm25_index(tools)
+
         return tools
+
+    def _build_bm25_index(self, tools: List[Dict[str, Any]]) -> None:
+        """BM25 인덱스 빌드 (도구 description + parameter 기반)."""
+        import re as _re
+
+        docs = []
+        for tool in tools:
+            func = tool.get("function", {})
+            desc = func.get("description", "")
+            params = func.get("parameters", {}).get("properties", {})
+            param_text = " ".join(
+                f"{k} {v.get('description', '')}" for k, v in params.items()
+            )
+            doc_text = f"{func.get('name', '')} {desc} {param_text}"
+            tokens = _re.findall(r'\w+', doc_text.lower())
+            docs.append(tokens)
+
+        self._bm25_docs = docs
+        self._bm25 = None  # lazy init
+
+    def select_tools(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """BM25 기반 관련 도구 선별 (M-5).
+
+        도구가 5개 이하이면 전체 반환 (BM25 불필요).
+        """
+        import re as _re
+
+        tools = self._all_tools
+        if len(tools) <= 5:
+            return tools
+
+        if self._bm25 is None:
+            try:
+                from rank_bm25 import BM25Okapi
+                self._bm25 = BM25Okapi(self._bm25_docs)
+            except ImportError:
+                self.context.log(
+                    "warning",
+                    "rank-bm25 패키지 미설치 - 전체 도구 전달",
+                    "",
+                )
+                return tools
+
+        query_tokens = _re.findall(r'\w+', query.lower())
+        if not query_tokens:
+            return tools
+
+        scores = self._bm25.get_scores(query_tokens)
+        indexed = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+        selected_indices = [i for i, _ in indexed[:top_k]]
+        return [tools[i] for i in selected_indices]
 
     async def call_tool(
         self,
@@ -11076,6 +11204,12 @@ class AIAgentNodeExecutor(NodeExecutorBase):
             context.log("error", "Failed to get LLM connection", node_id)
             return {"error": "Failed to get LLM connection from LLMModelNode."}
 
+        # secrets에서 API 키 복원 (H-8: 평문 노출 방지)
+        llm_node_ref = llm_connection.get("_llm_node_id", ai_model_node_id)
+        api_key_from_secret = context.get_secret(f"llm_api_key_{llm_node_ref}")
+        if api_key_from_secret and not llm_connection.get("api_key"):
+            llm_connection = {**llm_connection, "api_key": api_key_from_secret}
+
         # LLMProvider 생성
         provider = LLMProvider.from_connection(llm_connection)
 
@@ -11128,10 +11262,25 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         # === 4. ReAct/Function Calling 루프 ===
         max_tool_calls = config.get("max_tool_calls", 10)
         tool_error_strategy = config.get("tool_error_strategy", "retry_with_context")
+        max_total_tokens = config.get("max_total_tokens", 100000)
         tool_call_count = 0
+        accumulated_tokens = 0  # 누적 토큰 카운터
         streaming = llm_connection.get("streaming", False)
 
-        context.log("info", f"AIAgent starting (model={llm_connection.get('model')}, tools={len(tools)})", node_id)
+        # M-5: BM25 도구 선택
+        tool_selection = config.get("tool_selection", "all")
+        tool_top_k = config.get("tool_top_k", 5)
+        if tool_selection == "bm25" and tools and len(tools) > 5:
+            selected_tools = tool_executor.select_tools(user_prompt, top_k=tool_top_k)
+            context.log(
+                "info",
+                f"BM25 tool selection: {len(selected_tools)}/{len(tools)} tools selected",
+                node_id,
+            )
+        else:
+            selected_tools = tools
+
+        context.log("info", f"AIAgent starting (model={llm_connection.get('model')}, tools={len(selected_tools)})", node_id)
 
         while True:
             # LLM 호출
@@ -11151,7 +11300,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                     llm_response = await provider.chat_stream(
                         messages=messages,
                         on_token=on_token,
-                        tools=tools if tools else None,
+                        tools=selected_tools if selected_tools else None,
                     )
 
                     # 스트리밍 완료 이벤트
@@ -11167,7 +11316,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                 else:
                     llm_response = await provider.chat(
                         messages=messages,
-                        tools=tools if tools else None,
+                        tools=selected_tools if selected_tools else None,
                     )
             except Exception as e:
                 context.log("error", f"LLM call failed: {e}", node_id)
@@ -11176,6 +11325,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
             # 토큰 사용량 이벤트
             from programgarden_core.bases.listener import TokenUsageEvent
             from datetime import datetime
+            accumulated_tokens += llm_response.total_tokens
             await context.notify_token_usage(TokenUsageEvent(
                 job_id=context.job_id or "",
                 node_id=node_id,
@@ -11184,8 +11334,19 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                 output_tokens=llm_response.output_tokens,
                 total_tokens=llm_response.total_tokens,
                 cost_usd=llm_response.cost_usd,
+                accumulated_tokens=accumulated_tokens,
                 timestamp=datetime.utcnow(),
             ))
+
+            # 토큰 상한선 체크 (0=무제한)
+            if max_total_tokens > 0 and accumulated_tokens >= max_total_tokens:
+                context.log(
+                    "warning",
+                    f"Token limit reached: {accumulated_tokens:,}/{max_total_tokens:,} tokens. "
+                    f"Stopping tool loop and returning current response.",
+                    node_id,
+                )
+                break
 
             # Tool 호출 체크
             if not llm_response.tool_calls:
@@ -11304,7 +11465,8 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         context.log(
             "info",
             f"AIAgent completed (tool_calls={tool_call_count}, "
-            f"tokens={llm_response.total_tokens}, cost=${llm_response.cost_usd:.4f})",
+            f"accumulated_tokens={accumulated_tokens:,}, "
+            f"last_call_tokens={llm_response.total_tokens}, cost=${llm_response.cost_usd:.4f})",
             node_id,
         )
 
@@ -11436,7 +11598,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
             validated = DynamicModel(**parsed)
             return validated.model_dump()
         except Exception as e:
-            context.log("warning", f"Structured validation failed: {e}", node_id)
+            context.log("error", f"Structured validation failed: {e}. output_schema와 LLM 응답이 일치하지 않습니다.", node_id)
             return parsed
 
 
@@ -11941,10 +12103,40 @@ class WorkflowExecutor:
     def remove_job(self, job_id: str) -> bool:
         """Remove a completed/stopped/cancelled/failed job from the executor."""
         job = self._jobs.get(job_id)
-        if job and job.status in ("completed", "stopped", "cancelled", "failed"):
+        if job and job.status in ("completed", "stopped", "cancelled", "failed", "force_stopped"):
             del self._jobs[job_id]
             return True
         return False
+
+    async def emergency_stop_all(self) -> Dict[str, Any]:
+        """긴급 전체 정지 (Kill Switch).
+
+        실행 중인 모든 Job을 즉시 중단합니다.
+
+        Returns:
+            {"stopped_jobs": [...], "total_pending_orders": N}
+        """
+        logger.warning("EMERGENCY STOP ALL triggered")
+        results = []
+        active_jobs = [
+            j for j in self._jobs.values()
+            if j.status in ("running", "pending", "stopping")
+        ]
+        for job in active_jobs:
+            try:
+                result = await job.force_stop()
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Failed to force_stop job {job.job_id}: {e}")
+                results.append({"job_id": job.job_id, "error": str(e)})
+
+        total_pending = sum(
+            len(r.get("pending_orders", [])) for r in results
+        )
+        return {
+            "stopped_jobs": results,
+            "total_pending_orders": total_pending,
+        }
 
     # ─────────────────────────────────────────────────
     # Dynamic Node API (Lazy Loading 지원)
@@ -13299,12 +13491,24 @@ class WorkflowJob:
                         f"Node '{node_id}' ({node_type}) rate limit: "
                         f"{remaining_seconds}s remaining (min_interval={min_interval_sec}s)"
                     )
+                # M-14: 누적 스킵 카운트 추적
+                skip_count_key = "_rate_limit_skip_count"
+                current_skip_count = rate_limit_state.get(skip_count_key, 0) + 1
+                rate_limit_state[skip_count_key] = current_skip_count
+                self.context.set_node_state(node_id, rate_limit_state_key, rate_limit_state)
+
                 self.context.log(
-                    "info",
-                    f"Rate limit: {node_id} in cooldown ({remaining_seconds}s remaining), skipping",
+                    "warning",
+                    f"Rate limit: {node_id} cooldown 스킵 ({remaining_seconds}s 남음, "
+                    f"누적 스킵: {current_skip_count}회)",
                     node_id,
                 )
-                return {"_skipped": True, "reason": "rate_limit_interval", "remaining_sec": remaining_seconds}
+                return {
+                    "_skipped": True,
+                    "reason": "rate_limit_interval",
+                    "remaining_sec": remaining_seconds,
+                    "skipped_count": current_skip_count,
+                }
 
         # 통과: 실행 시작 마킹
         rate_limit_state["executing_count"] = rate_limit_state.get("executing_count", 0) + 1
@@ -13429,10 +13633,22 @@ class WorkflowJob:
                 finally:
                     self._release_rate_limit_guard(node_id)
 
-                # ThrottleNode에서 _throttled=True 반환 시 하위 노드 실행 중단
+                # ThrottleNode에서 _throttled=True 반환 시 하위 노드 실행 중단 (M-8)
                 if outputs.get("_throttled"):
+                    self.context.log(
+                        "warning",
+                        f"ThrottleNode 제한: 노드 '{node_id}' 스로틀링으로 인해 "
+                        f"다운스트림 노드 체인 실행이 중단됩니다.",
+                        node_id,
+                    )
                     for port_name, value in outputs.items():
                         self.context.set_output(node_id, port_name, value)
+                    await self.context.notify_node_state(
+                        node_id=node_id,
+                        node_type=node.node_type,
+                        state=NodeState.SKIPPED,
+                        outputs=outputs,
+                    )
                     break  # 체인 실행 중단
 
                 for port_name, value in outputs.items():
@@ -13555,6 +13771,71 @@ class WorkflowJob:
         # Cleanup listeners
         await self.context.cleanup_listeners()
 
+    async def force_stop(self) -> Dict[str, Any]:
+        """긴급 정지 (Kill Switch).
+
+        모든 실행을 즉시 중단하고 미체결 주문 정보를 반환합니다.
+        cancel()과 달리 미체결 주문 목록을 수집하여 반환합니다.
+
+        Returns:
+            {"stopped": True, "pending_orders": [...], "warning": "..."}
+        """
+        logger.warning(f"FORCE STOP (Kill Switch) triggered for job {self.job_id}")
+        self.status = "force_stopped"
+        self.context.stop()
+
+        # Task 즉시 취소
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+        # 미체결 주문 정보 수집
+        pending_orders = []
+        try:
+            tracker = self.context._workflow_position_tracker
+            if tracker:
+                pending_orders = tracker.get_pending_orders()
+        except Exception as e:
+            logger.warning(f"Failed to get pending orders: {e}")
+
+        # 모든 리소스 정리
+        await self.context.cleanup_persistent_nodes()
+        await self.context.cleanup_flow_end_nodes()
+
+        if self.context.risk_tracker:
+            try:
+                await self.context.risk_tracker.flush_to_db()
+                await self.context.risk_tracker.stop_flush_loop()
+            except Exception:
+                pass
+
+        if self.context.resource:
+            try:
+                await self.context.resource.stop()
+            except Exception:
+                pass
+
+        await self.context.cleanup_listeners()
+        self.completed_at = datetime.now()
+
+        warning_msg = ""
+        if pending_orders:
+            warning_msg = (
+                f"미체결 주문 {len(pending_orders)}건이 LS증권 서버에 남아있을 수 있습니다. "
+                f"HTS/MTS에서 직접 확인하세요."
+            )
+            logger.warning(warning_msg)
+
+        return {
+            "stopped": True,
+            "job_id": self.job_id,
+            "pending_orders": pending_orders,
+            "warning": warning_msg,
+        }
+
     def get_state(self) -> Dict[str, Any]:
         """Get state snapshot"""
         # 노드별 상태 및 outputs 수집
@@ -13565,7 +13846,7 @@ class WorkflowJob:
                 "state": "completed",
                 "outputs": outputs,
             }
-        
+
         return {
             "job_id": self.job_id,
             "workflow_id": self.workflow.workflow_id,
