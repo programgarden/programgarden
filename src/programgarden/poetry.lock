@@ -2373,31 +2373,31 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "1.8.0"
+version = "1.9.0"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_community-1.8.0-py3-none-any.whl", hash = "sha256:437a0ed780d66a11e21375ddc47513e58d6754a14cbcf5ca4cb12cfd212b76c6"},
-    {file = "programgarden_community-1.8.0.tar.gz", hash = "sha256:8d78535543fa5ac31d707ddd6fdd604c013a427811038a60dc20e5697649b372"},
+    {file = "programgarden_community-1.9.0-py3-none-any.whl", hash = "sha256:9ec73d78b63aa42a3e6c025c2c9f8053b6b5032c857c46a807383bc1d16b62b4"},
+    {file = "programgarden_community-1.9.0.tar.gz", hash = "sha256:cf7c386dea8e35995810b58590dfead78152611368c8dcd62a42c041911ab5f6"},
 ]
 
 [package.dependencies]
-programgarden-core = ">=1.4.0,<2.0.0"
+programgarden-core = ">=1.6.0,<2.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "1.5.1"
+version = "1.6.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_core-1.5.1-py3-none-any.whl", hash = "sha256:c526b3b4df14f45be631610cb173d32320c28062142caa53c58301164a25b353"},
-    {file = "programgarden_core-1.5.1.tar.gz", hash = "sha256:b1fc52d4103aafbb59968f3095da3102ecc874bf389fcdfc57671a018cfbbe30"},
+    {file = "programgarden_core-1.6.0-py3-none-any.whl", hash = "sha256:0bcb5d2f6874006aa2b4c5b99868079ea77047e978311c0f627f66c218ff38c6"},
+    {file = "programgarden_core-1.6.0.tar.gz", hash = "sha256:3bc983d8962e860366de8d1f0cd6f141927395af57df1b845e8855a93a39e657"},
 ]
 
 [package.dependencies]
@@ -2405,20 +2405,20 @@ pydantic = ">=2.0.0,<3.0.0"
 
 [[package]]
 name = "programgarden-finance"
-version = "1.3.3"
+version = "1.3.4"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_finance-1.3.3-py3-none-any.whl", hash = "sha256:55996c21be128f278c76b82a4298d5b39743070bf3508124a232bd57f2a2c667"},
-    {file = "programgarden_finance-1.3.3.tar.gz", hash = "sha256:36d347d7c8cbdca44246528339b3fd14bc97ebd03cac61b9a19375db62f6483f"},
+    {file = "programgarden_finance-1.3.4-py3-none-any.whl", hash = "sha256:3a5a75229e1a7757bb673d965c7c31a51c2340c93c6e2d466f4c3f9be68c49e4"},
+    {file = "programgarden_finance-1.3.4.tar.gz", hash = "sha256:609fea2fe720acf782638a4cdfe0a82963d44e2e3acfc09c7101311cfecf691c"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.10.0,<4.0.0"
-programgarden-core = ">=1.5.1,<2.0.0"
+programgarden-core = ">=1.6.0,<2.0.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 redis = ">=6.4.0,<7.0.0"
@@ -4052,4 +4052,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "72764a8053fcaca77c5e681229f85991c852c8aaa60fbfba1b29a007318f4ef4"
+content-hash = "a96b27d36f3b33d97da1e5d0db7be62df51e901c0d409c0d85522765d7e8439f"
