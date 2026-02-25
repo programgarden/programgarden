@@ -1,3 +1,16 @@
+## [1.9.0] - 2026-02-25
+### Added
+- 퀀트 전략 플러그인 10종 추가 (55→65 플러그인)
+  - TECHNICAL 10개: TimeSeriesMomentum, ConnorsRSI, MFI, CoppockCurve, ElderRay, TurtleBreakout, VolatilityBreakout, SeasonalFilter, TacticalAssetAllocation, MagicFormula
+- **FundamentalDataNode**: FMP API 기반 해외주식 재무 데이터 조회 노드 (community/nodes/market/)
+  - 4가지 data_type: profile, income_statement, balance_sheet, key_metrics
+  - credential 기반 API 키 관리, L-2 rate limit (60초)
+- **FearGreedIndexNode**: core에서 community 패키지로 이동
+- 테스트 239개 추가 (총 809개)
+
+### Changed
+- deps: programgarden-core ^1.6.0
+
 ## [1.8.0] - 2026-02-22
 ### Added
 - Tier 1 퀀트 전략 플러그인 7개 추가 (48→55 플러그인)

@@ -10,6 +10,15 @@
   - `ignore_exclusion: true` 설정으로 우회 가능
   - 적용 대상: OverseasStockNewOrderNode, OverseasFuturesNewOrderNode
 
+### Fixed
+- **SymbolFilterNode**: auto-iterate 버그 수정
+
+### Removed
+- executor: VIXDataNode, FearGreedIndexNode 전용 executor 제거 (GenericNodeExecutor fallback 사용)
+
+### Changed
+- deps: programgarden-core ^1.6.0, programgarden-finance ^1.3.4, programgarden-community ^1.9.0
+
 ## [1.11.1] - 2026-02-24
 ### Fixed
 - **금융 안전성 감사 47건 완료** (CRITICAL 8 + HIGH 21 + MEDIUM 14 + LOW 7)
