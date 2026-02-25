@@ -56,6 +56,7 @@ from programgarden_core.nodes.symbol import (
     MarketUniverseNode,
     ScreenerNode,
     SymbolFilterNode,
+    ExclusionListNode,
 )
 from programgarden_core.nodes.trigger import (
     ScheduleNode,
@@ -137,6 +138,7 @@ __all__ = [
     "MarketUniverseNode",
     "ScreenerNode",
     "SymbolFilterNode",
+    "ExclusionListNode",
     # Trigger
     "ScheduleNode",
     "TradingHoursFilterNode",

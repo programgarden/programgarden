@@ -1112,10 +1112,120 @@ class SymbolFilterNodeExecutor(NodeExecutorBase):
         }
 
 
+class ExclusionListNodeExecutor(NodeExecutorBase):
+    """
+    ExclusionListNode executor - 거래 제외 종목 관리
+
+    수동 입력(symbols) + 동적 입력(dynamic_symbols)을 합산하여 제외 목록을 생성합니다.
+    input_symbols가 연결되면 차집합(필터링) 결과도 출력합니다.
+
+    출력:
+    - excluded: 최종 제외 종목 목록 [{exchange, symbol, reason}, ...]
+    - filtered: input_symbols에서 제외 종목을 뺀 결과
+    - count: 제외 종목 수
+    - reasons: 종목별 제외 사유 맵 {"AAPL": "과열 우려", ...}
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        default_reason = config.get("default_reason", "")
+
+        # 1. 수동 입력 종목 (각 항목에 reason 포함 가능)
+        manual_symbols = config.get("symbols") or []
+
+        # 2. 동적 입력 종목
+        dynamic_symbols = config.get("dynamic_symbols") or []
+
+        # 3. 합산 (중복 제거: exchange+symbol 키 기준) + reason 매핑
+        from programgarden_core.models import normalize_symbol
+
+        excluded_map: Dict[str, Dict[str, str]] = {}  # key: symbol -> {exchange, symbol, reason}
+        reasons: Dict[str, str] = {}
+
+        # 수동 입력 처리 (reason 우선)
+        for entry in manual_symbols:
+            if isinstance(entry, dict):
+                symbol = entry.get("symbol", "")
+                if not symbol:
+                    continue
+                exchange = entry.get("exchange", "")
+                reason = entry.get("reason", "") or default_reason
+                if not exchange:
+                    norm = normalize_symbol(symbol)
+                    exchange = norm.get("exchange", "") if isinstance(norm, dict) else ""
+                excluded_map[symbol] = {"exchange": exchange, "symbol": symbol}
+                if reason:
+                    reasons[symbol] = reason
+            elif isinstance(entry, str) and entry:
+                norm = normalize_symbol(entry)
+                exchange = norm.get("exchange", "") if isinstance(norm, dict) else ""
+                excluded_map[entry] = {"exchange": exchange, "symbol": entry}
+                if default_reason:
+                    reasons[entry] = default_reason
+
+        # 동적 입력 처리 (수동 입력에서 이미 있는 종목은 덮어쓰지 않음)
+        for entry in dynamic_symbols:
+            if isinstance(entry, dict):
+                symbol = entry.get("symbol", "")
+                if not symbol:
+                    continue
+                if symbol not in excluded_map:
+                    exchange = entry.get("exchange", "")
+                    if not exchange:
+                        norm = normalize_symbol(symbol)
+                        exchange = norm.get("exchange", "") if isinstance(norm, dict) else ""
+                    excluded_map[symbol] = {"exchange": exchange, "symbol": symbol}
+                    reason = entry.get("reason", "") or default_reason
+                    if reason:
+                        reasons[symbol] = reason
+            elif isinstance(entry, str) and entry:
+                if entry not in excluded_map:
+                    norm = normalize_symbol(entry)
+                    exchange = norm.get("exchange", "") if isinstance(norm, dict) else ""
+                    excluded_map[entry] = {"exchange": exchange, "symbol": entry}
+                    if default_reason:
+                        reasons[entry] = default_reason
+
+        all_excluded = list(excluded_map.values())
+
+        # 4. input_symbols가 있으면 차집합 계산
+        input_symbols = config.get("input_symbols")
+        filtered = []
+        if input_symbols:
+            excluded_set = set(excluded_map.keys())
+            for item in input_symbols:
+                if isinstance(item, dict):
+                    symbol = item.get("symbol", "")
+                    if symbol and symbol not in excluded_set:
+                        filtered.append(item)
+                elif isinstance(item, str) and item not in excluded_set:
+                    filtered.append({"exchange": "", "symbol": item})
+
+        context.log(
+            "info",
+            f"ExclusionList: {len(all_excluded)} excluded"
+            + (f", {len(filtered)} filtered" if input_symbols else ""),
+            node_id,
+        )
+
+        return {
+            "excluded": all_excluded,
+            "filtered": filtered,
+            "count": len(all_excluded),
+            "reasons": reasons,
+        }
+
+
 class MarketUniverseNodeExecutor(NodeExecutorBase):
     """
     MarketUniverseNode executor - 대표지수 종목
-    
+
     ⚠️ 해외주식(overseas_stock) 전용 노드입니다. 해외선물은 지원하지 않습니다.
     
     pytickersymbols 라이브러리를 활용하여 미국 대표지수 구성종목을 조회합니다.
@@ -9458,6 +9568,22 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             node_id
         )
 
+        # === 3.3. 제외 종목 안전장치: ExclusionListNode 출력 확인 ===
+        if not config.get("ignore_exclusion", False):
+            symbol = normalized_order["symbol"]
+            is_excluded, reason = self._check_exclusion_list(symbol, context)
+            if is_excluded:
+                context.log(
+                    "warning",
+                    f"제외 종목 주문 차단: {symbol}" + (f" (사유: {reason})" if reason else ""),
+                    node_id,
+                )
+                return self._order_result(
+                    False, symbol, normalized_order["exchange"], side,
+                    normalized_order["quantity"], normalized_order["price"],
+                    f"Blocked by exclusion list" + (f": {reason}" if reason else ""),
+                )
+
         # === 3.5. Drawdown 보호: risk_tracker가 활성화되어 있으면 체크 ===
         risk_tracker = context.risk_tracker
         if risk_tracker and side == "buy":
@@ -9930,6 +10056,28 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("warning", f"Futures order exception: {symbol} - {e}", node_id)
             return self._order_result(False, symbol, exchange, side, qty, price, str(e))
+
+    def _check_exclusion_list(
+        self,
+        symbol: str,
+        context: ExecutionContext,
+    ) -> tuple:
+        """같은 워크플로우 내 ExclusionListNode의 excluded 출력 확인
+
+        Returns:
+            (is_excluded: bool, reason: str)
+        """
+        for nid, ntype in context._node_types.items():
+            if ntype == "ExclusionListNode":
+                outputs = context.get_all_outputs(nid)
+                if not outputs:
+                    continue
+                excluded = outputs.get("excluded", [])
+                excluded_symbols = {s["symbol"] for s in excluded if isinstance(s, dict) and s.get("symbol")}
+                if symbol in excluded_symbols:
+                    reason = outputs.get("reasons", {}).get(symbol, "")
+                    return True, reason
+        return False, ""
 
     def _order_result(
         self,
@@ -11872,6 +12020,7 @@ class WorkflowExecutor:
             "OverseasStockSymbolQueryNode": SymbolQueryNodeExecutor(),
             "OverseasFuturesSymbolQueryNode": SymbolQueryNodeExecutor(),
             "SymbolFilterNode": SymbolFilterNodeExecutor(),
+            "ExclusionListNode": ExclusionListNodeExecutor(),
             "MarketUniverseNode": MarketUniverseNodeExecutor(),
             "ScreenerNode": ScreenerNodeExecutor(),
             "BrokerNode": BrokerNodeExecutor(),
@@ -12699,6 +12848,7 @@ class WorkflowJob:
         "TableDisplayNode", "LineChartNode", "MultiLineChartNode",  # 디스플레이 노드 (배열 표시)
         "CandlestickChartNode", "BarChartNode", "SummaryDisplayNode",
         "WatchlistNode", "MarketUniverseNode", "ScreenerNode",  # 배열 생성 노드
+        "ExclusionListNode",  # 제외 종목 관리 노드 (배열 생성)
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
         "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
