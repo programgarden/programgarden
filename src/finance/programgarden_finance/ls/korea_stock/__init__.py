@@ -7,6 +7,7 @@ from programgarden_finance.ls.token_manager import TokenManager
 from .market import Market
 from .chart import Chart
 from .ranking import Ranking
+from .etc import Etc
 
 
 class KoreaStock:
@@ -37,10 +38,18 @@ class KoreaStock:
     순위 = ranking
     순위.__doc__ = "순위(상위종목) 데이터를 조회합니다."
 
+    @require_korean_alias
+    def etc(self) -> Etc:
+        return Etc(token_manager=self.token_manager)
+
+    기타 = etc
+    기타.__doc__ = "기타 종목 정보(신규상장, 관리종목 등)를 조회합니다."
+
 
 __all__ = [
     KoreaStock,
     Market,
     Chart,
     Ranking,
+    Etc,
 ]
