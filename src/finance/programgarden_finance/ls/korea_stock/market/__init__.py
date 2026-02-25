@@ -16,12 +16,14 @@ from . import t1102
 from .t1102 import TrT1102
 from .t1102.blocks import T1102InBlock, T1102Request, T1102RequestHeader
 
-from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
+from programgarden_core.korea_alias import require_korean_alias
 
 
 class Market:
     """
     국내 주식 시세를 조회하는 Market 클래스입니다.
+
+    API 엔드포인트: /stock/market-data
     """
 
     def __init__(self, token_manager: TokenManager):
