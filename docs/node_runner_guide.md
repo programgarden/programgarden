@@ -582,5 +582,5 @@ print(schema)
 NodeRunner로 데이터 조회에 익숙해졌다면, 다음으로 넘어가세요:
 
 - [워크플로우 구조 이해](structure.md) — 여러 노드를 연결해서 자동매매 전략 만들기
-- [전체 노드 레퍼런스](node_reference.md) — 56개 노드의 상세 설명
+- [전체 노드 레퍼런스](node_reference.md) — 57개 노드의 상세 설명
 - [종목조건 플러그인](strategies/stock_condition.md) — RSI, MACD, 볼린저밴드 등 55개 전략

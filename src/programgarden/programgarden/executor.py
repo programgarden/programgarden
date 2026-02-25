@@ -12849,6 +12849,7 @@ class WorkflowJob:
         "CandlestickChartNode", "BarChartNode", "SummaryDisplayNode",
         "WatchlistNode", "MarketUniverseNode", "ScreenerNode",  # 배열 생성 노드
         "ExclusionListNode",  # 제외 종목 관리 노드 (배열 생성)
+        "SymbolFilterNode",  # 집합 연산 노드 (배열 입력/출력)
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
         "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
