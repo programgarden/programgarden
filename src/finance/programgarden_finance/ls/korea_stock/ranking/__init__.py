@@ -9,6 +9,9 @@ from .t1444.blocks import T1444InBlock, T1444Request, T1444RequestHeader
 from . import t1452
 from .t1452 import TrT1452
 from .t1452.blocks import T1452InBlock, T1452Request, T1452RequestHeader
+from . import t1463
+from .t1463 import TrT1463
+from .t1463.blocks import T1463InBlock, T1463Request, T1463RequestHeader
 
 from programgarden_core.korea_alias import require_korean_alias
 
@@ -105,9 +108,50 @@ class Ranking:
     거래량상위 = t1452
     거래량상위.__doc__ = "거래량 상위 종목(현재가, 등락률, 누적거래량, 회전율, 전일비)을 조회합니다."
 
+    @require_korean_alias
+    def t1463(
+        self,
+        body: T1463InBlock,
+        header: Optional[T1463RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1463:
+        """
+        거래대금 상위 종목을 조회합니다.
+
+        시장구분, 가격/거래량 필터를 설정하여
+        현재가, 등락률, 거래대금, 전일거래대금, 전일비, 시가총액을 반환합니다.
+        idx 기반 연속조회를 지원합니다 (한 번에 약 20건).
+
+        Args:
+            body (T1463InBlock): gubun(시장구분), jnilgubun(전일구분), 필터 조건, idx(연속조회키) 입력
+            header (Optional[T1463RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1463: 거래대금상위 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1463Request(
+            body={
+                "t1463InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1463(request_data)
+
+    거래대금상위 = t1463
+    거래대금상위.__doc__ = "거래대금 상위 종목(현재가, 등락률, 거래대금, 전일거래대금, 전일비, 시가총액)을 조회합니다."
+
 
 __all__ = [
     Ranking,
     t1444,
     t1452,
+    t1463,
 ]
