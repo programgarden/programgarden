@@ -29,7 +29,7 @@ src/
 │       └── i18n/locales/  # Translation files (ko.json, en.json)
 ├── finance/            # programgarden-finance: LS Securities API wrapper
 │   └── programgarden_finance/
-└── community/          # programgarden-community: 55 strategy plugins (RSI, MACD, Ichimoku, ZScore, PairTrading, etc.)
+└── community/          # programgarden-community: 65 strategy plugins (RSI, MACD, Ichimoku, ZScore, PairTrading, TurtleBreakout, MagicFormula, etc.)
     └── programgarden_community/plugins/
 ```
 

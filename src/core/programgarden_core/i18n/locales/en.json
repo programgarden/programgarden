@@ -1098,5 +1098,26 @@
   "fields.BaseOrderNode.rate_limit_interval": "Minimum order interval (seconds). Default 5 seconds. The next order will only execute after this time has elapsed since the last order.",
   "fields.BaseOrderNode.rate_limit_action": "Action when order interval is not met. skip: silently skip, error: raise error",
   "enums.rate_limit_action.skip": "Skip (default)",
-  "enums.rate_limit_action.error": "Raise error"
+  "enums.rate_limit_action.error": "Raise error",
+
+  "plugins.TimeSeriesMomentum.name": "Time Series Momentum",
+  "plugins.TimeSeriesMomentum.description": "Determines trading direction based on past returns of individual assets (Moskowitz et al. 2012)",
+  "plugins.ConnorsRSI.name": "Connors RSI",
+  "plugins.ConnorsRSI.description": "Combines RSI + Streak RSI + Percentile Rank for short-term overbought/oversold detection (Connors 2008)",
+  "plugins.MFI.name": "Money Flow Index",
+  "plugins.MFI.description": "Volume-weighted RSI analyzing money flow in/out",
+  "plugins.CoppockCurve.name": "Coppock Curve",
+  "plugins.CoppockCurve.description": "WMA of long-term ROC for market bottom buy signals (Coppock 1962)",
+  "plugins.ElderRay.name": "Elder Ray",
+  "plugins.ElderRay.description": "Analyzes buying/selling pressure via Bull/Bear Power (Elder 1993)",
+  "plugins.TurtleBreakout.name": "Turtle Breakout",
+  "plugins.TurtleBreakout.description": "Donchian channel breakout with ATR-based risk management (Dennis 1983)",
+  "plugins.VolatilityBreakout.name": "Volatility Breakout",
+  "plugins.VolatilityBreakout.description": "Buy when price exceeds previous day range × K factor (Larry Williams)",
+  "plugins.SeasonalFilter.name": "Seasonal Filter",
+  "plugins.SeasonalFilter.description": "Sell in May / Halloween effect based timing filter (Bouman & Jacobsen 2002)",
+  "plugins.TacticalAssetAllocation.name": "Tactical Asset Allocation",
+  "plugins.TacticalAssetAllocation.description": "Hold/cash decision based on N-day SMA crossover (Faber 2007)",
+  "plugins.MagicFormula.name": "Magic Formula",
+  "plugins.MagicFormula.description": "Selects value stocks by combined ROC + earnings yield ranking (Greenblatt 2005)"
 }
