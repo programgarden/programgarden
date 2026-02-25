@@ -326,6 +326,129 @@ class ScreenerNode(BaseNode):
         }
 
 
+class ExclusionListNode(BaseNode):
+    """
+    거래 제외 종목 노드 (Exclusion List Node)
+
+    거래하지 않을 종목을 관리합니다.
+    직접 입력하거나 다른 노드 출력을 연결하여 자동으로 제외할 수 있습니다.
+
+    사용 예시:
+    - 특정 종목을 수동으로 블랙리스트 지정
+    - 보유 종목을 동적으로 연결하여 중복 매수 방지
+    - input_symbols 연결 시 제외 적용된 결과를 직접 출력
+    """
+
+    type: Literal["ExclusionListNode"] = "ExclusionListNode"
+    category: NodeCategory = NodeCategory.MARKET
+    description: str = "i18n:nodes.ExclusionListNode.description"
+
+    # 1. 수동 입력: 사용자가 직접 종목을 지정
+    symbols: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="제외할 종목 목록 [{exchange, symbol, reason?}, ...]",
+    )
+
+    # 2. 동적 입력: 다른 노드 출력을 바인딩하여 동적으로 제외 종목 추가
+    dynamic_symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="동적으로 추가할 제외 종목 (다른 노드 출력 바인딩)",
+    )
+
+    # 3. 필터 대상: 제외를 적용할 원본 종목 리스트 (선택)
+    input_symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="필터링할 원본 종목 리스트 (연결 시 제외 적용된 결과 출력)",
+    )
+
+    # 4. 기본 제외 사유 (수동 입력 종목에 개별 reason이 없을 때 사용)
+    default_reason: str = Field(
+        default="",
+        description="기본 제외 사유 (개별 종목에 reason이 없을 때 적용)",
+    )
+
+    _inputs: List[InputPort] = []
+    _outputs: List[OutputPort] = [
+        OutputPort(name="excluded", type="symbol_list", description="i18n:outputs.ExclusionListNode.excluded", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="filtered", type="symbol_list", description="i18n:outputs.ExclusionListNode.filtered", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="count", type="integer", description="i18n:outputs.ExclusionListNode.count"),
+        OutputPort(name="reasons", type="object", description="i18n:outputs.ExclusionListNode.reasons"),
+    ]
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="i18n:fields.ExclusionListNode.symbols",
+                required=True,
+                array_item_type=FieldType.OBJECT,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.CUSTOM_SYMBOL_EDITOR,
+                ui_options={
+                    "exchanges": [
+                        {"value": "NASDAQ", "label": "NASDAQ"},
+                        {"value": "NYSE", "label": "NYSE"},
+                        {"value": "AMEX", "label": "AMEX"},
+                        {"value": "CME", "label": "CME (시카고상업거래소)"},
+                        {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
+                        {"value": "SGX", "label": "SGX (싱가포르거래소)"},
+                        {"value": "HKEX", "label": "HKEX (홍콩거래소)"},
+                    ],
+                    "extra_fields": [
+                        {"key": "reason", "label": "제외 사유", "type": "string", "required": False},
+                    ],
+                },
+                example=[{"exchange": "NASDAQ", "symbol": "NVDA", "reason": "과열 우려"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols", "MarketUniverseNode.symbols", "ScreenerNode.symbols"],
+                expected_type="list[dict]",
+            ),
+            "dynamic_symbols": FieldSchema(
+                name="dynamic_symbols",
+                type=FieldType.ARRAY,
+                description="i18n:fields.ExclusionListNode.dynamic_symbols",
+                required=False,
+                array_item_type=FieldType.OBJECT,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example_binding="{{ nodes.account.held_symbols }}",
+                bindable_sources=["AccountNode.held_symbols", "WatchlistNode.symbols", "ConditionNode.passed_symbols"],
+                expected_type="list[dict]",
+            ),
+            "input_symbols": FieldSchema(
+                name="input_symbols",
+                type=FieldType.ARRAY,
+                description="i18n:fields.ExclusionListNode.input_symbols",
+                required=False,
+                array_item_type=FieldType.OBJECT,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example_binding="{{ nodes.universe.symbols }}",
+                bindable_sources=["MarketUniverseNode.symbols", "WatchlistNode.symbols", "ScreenerNode.symbols"],
+                expected_type="list[dict]",
+            ),
+            "default_reason": FieldSchema(
+                name="default_reason",
+                type=FieldType.STRING,
+                description="i18n:fields.ExclusionListNode.default_reason",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                example="보유 종목 중복 매수 방지",
+                placeholder="예: 실적 부진, 리스크 과다",
+                expected_type="str",
+            ),
+        }
+
+
 class SymbolFilterNode(BaseNode):
     """
     종목 비교/필터 노드 (Symbol Filter Node)

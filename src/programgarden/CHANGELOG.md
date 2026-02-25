@@ -1,3 +1,15 @@
+## [1.12.0] - 2026-02-25
+### Added
+- **ExclusionListNodeExecutor**: 거래 제외 종목 노드 실행 로직
+  - 수동/동적 종목 합산, symbol 기준 중복 제거, reason 매핑
+  - `input_symbols` 필터링 (차집합) 지원
+  - `NO_AUTO_ITERATE_NODE_TYPES` 등록 (배열 생성 노드)
+- **주문 노드 안전장치**: ExclusionListNode 출력 기반 제외 종목 주문 차단
+  - `_check_exclusion_list()`: context에서 ExclusionListNode 출력 자동 조회
+  - 제외 종목 주문 시 경고 로그 + 주문 스킵 (에러 아닌 정상 종료)
+  - `ignore_exclusion: true` 설정으로 우회 가능
+  - 적용 대상: OverseasStockNewOrderNode, OverseasFuturesNewOrderNode
+
 ## [1.11.1] - 2026-02-24
 ### Fixed
 - **금융 안전성 감사 47건 완료** (CRITICAL 8 + HIGH 21 + MEDIUM 14 + LOW 7)

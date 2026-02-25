@@ -1,3 +1,12 @@
+## [1.6.0] - 2026-02-25
+### Added
+- **ExclusionListNode**: 거래 제외 종목 관리 노드 (`market` 카테고리, 57번째 노드)
+  - 수동 입력(`symbols`) + 동적 입력(`dynamic_symbols`) 합산, 중복 제거
+  - `input_symbols` 연결 시 차집합 필터링 결과 출력
+  - 종목별 제외 사유(`reason`) 관리 + `default_reason` 지원
+  - `is_tool_enabled() = True` (AI Agent 도구 사용 가능)
+  - i18n: 한국어/영어 번역 키 추가
+
 ## [1.5.1] - 2026-02-24
 ### Fixed
 - **금융 안전성 감사 (47건 중 core 해당분)**
