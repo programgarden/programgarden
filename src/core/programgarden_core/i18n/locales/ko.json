@@ -1098,5 +1098,26 @@
   "fields.BaseOrderNode.rate_limit_interval": "최소 주문 간격 (초). 기본값 5초. 직전 주문 후 이 시간이 지나야 다음 주문이 실행됩니다.",
   "fields.BaseOrderNode.rate_limit_action": "주문 간격 미달 시 동작. skip: 조용히 건너뜀, error: 에러 발생",
   "enums.rate_limit_action.skip": "건너뜀 (기본)",
-  "enums.rate_limit_action.error": "에러 발생"
+  "enums.rate_limit_action.error": "에러 발생",
+
+  "plugins.TimeSeriesMomentum.name": "시계열 모멘텀",
+  "plugins.TimeSeriesMomentum.description": "개별 자산의 과거 수익률 부호로 매매 방향 결정 (Moskowitz et al. 2012)",
+  "plugins.ConnorsRSI.name": "코너스 RSI",
+  "plugins.ConnorsRSI.description": "RSI + 연속일수 RSI + 백분위 순위 결합 단기 과매수/과매도 (Connors 2008)",
+  "plugins.MFI.name": "자금흐름지수",
+  "plugins.MFI.description": "거래량 가중 RSI로 자금 유입/유출 분석",
+  "plugins.CoppockCurve.name": "코폭 커브",
+  "plugins.CoppockCurve.description": "장기 ROC의 WMA로 시장 바닥 매수 신호 감지 (Coppock 1962)",
+  "plugins.ElderRay.name": "엘더 레이",
+  "plugins.ElderRay.description": "Bull/Bear Power로 매수/매도 세력 분석 (Elder 1993)",
+  "plugins.TurtleBreakout.name": "터틀 브레이크아웃",
+  "plugins.TurtleBreakout.description": "돈치안 채널 돌파 + ATR 기반 리스크 관리 (Dennis 1983)",
+  "plugins.VolatilityBreakout.name": "변동성 돌파",
+  "plugins.VolatilityBreakout.description": "전일 변동폭 × K 돌파 시 매수 (Larry Williams)",
+  "plugins.SeasonalFilter.name": "계절성 필터",
+  "plugins.SeasonalFilter.description": "Sell in May / Halloween 효과 기반 매매 시기 필터 (Bouman & Jacobsen 2002)",
+  "plugins.TacticalAssetAllocation.name": "전술적 자산배분",
+  "plugins.TacticalAssetAllocation.description": "N일 SMA 위/아래로 보유/현금 결정 (Faber 2007)",
+  "plugins.MagicFormula.name": "마법공식",
+  "plugins.MagicFormula.description": "자본수익률 + 이익수익률 순위 합산으로 가치주 선별 (Greenblatt 2005)"
 }
