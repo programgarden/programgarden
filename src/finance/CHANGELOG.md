@@ -1,3 +1,7 @@
+## [1.3.4] - 2026-02-25
+### Changed
+- deps: programgarden-core ^1.6.0
+
 ## [1.3.3] - 2026-02-24
 ### Fixed
 - **TokenManager race condition 방어 (H-19)**: threading.Lock + asyncio.Lock 이중 잠금, 갱신 실패 시 최대 2회 재시도
