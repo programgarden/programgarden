@@ -43,6 +43,16 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── momentum_rank/    # TECHNICAL - 모멘텀 순위
     ├── market_internals/ # TECHNICAL - 시장 내부 지표
     ├── pair_trading/     # TECHNICAL - 페어 트레이딩
+    ├── time_series_momentum/ # TECHNICAL - 시계열 모멘텀
+    ├── connors_rsi/      # TECHNICAL - 코너스 RSI
+    ├── mfi/              # TECHNICAL - 자금흐름지수
+    ├── coppock_curve/    # TECHNICAL - 코폭 커브
+    ├── elder_ray/        # TECHNICAL - 엘더 레이
+    ├── turtle_breakout/  # TECHNICAL - 터틀 브레이크아웃
+    ├── volatility_breakout/ # TECHNICAL - 변동성 돌파
+    ├── seasonal_filter/  # TECHNICAL - 계절성 필터
+    ├── tactical_asset_allocation/ # TECHNICAL - 전술적 자산배분
+    ├── magic_formula/    # TECHNICAL - 마법공식
     ├── stop_loss/        # POSITION - 손절
     ├── profit_target/    # POSITION - 익절
     ├── trailing_stop/    # POSITION - 트레일링 스탑
@@ -118,6 +128,16 @@ def register_all_plugins() -> None:
     from .momentum_rank import MOMENTUM_RANK_SCHEMA, momentum_rank_condition
     from .market_internals import MARKET_INTERNALS_SCHEMA, market_internals_condition
     from .pair_trading import PAIR_TRADING_SCHEMA, pair_trading_condition
+    from .time_series_momentum import TSMOM_SCHEMA, time_series_momentum_condition
+    from .connors_rsi import CONNORS_RSI_SCHEMA, connors_rsi_condition
+    from .mfi import MFI_SCHEMA, mfi_condition
+    from .coppock_curve import COPPOCK_CURVE_SCHEMA, coppock_curve_condition
+    from .elder_ray import ELDER_RAY_SCHEMA, elder_ray_condition
+    from .turtle_breakout import TURTLE_BREAKOUT_SCHEMA, turtle_breakout_condition
+    from .volatility_breakout import VOLATILITY_BREAKOUT_SCHEMA, volatility_breakout_condition
+    from .seasonal_filter import SEASONAL_FILTER_SCHEMA, seasonal_filter_condition
+    from .tactical_asset_allocation import TAA_SCHEMA, taa_condition
+    from .magic_formula import MAGIC_FORMULA_SCHEMA, magic_formula_condition
 
     # === POSITION 플러그인 ===
     from .stop_loss import STOP_LOSS_SCHEMA, stop_loss_condition
@@ -178,6 +198,16 @@ def register_all_plugins() -> None:
         ("MomentumRank", momentum_rank_condition, MOMENTUM_RANK_SCHEMA),
         ("MarketInternals", market_internals_condition, MARKET_INTERNALS_SCHEMA),
         ("PairTrading", pair_trading_condition, PAIR_TRADING_SCHEMA),
+        ("TimeSeriesMomentum", time_series_momentum_condition, TSMOM_SCHEMA),
+        ("ConnorsRSI", connors_rsi_condition, CONNORS_RSI_SCHEMA),
+        ("MFI", mfi_condition, MFI_SCHEMA),
+        ("CoppockCurve", coppock_curve_condition, COPPOCK_CURVE_SCHEMA),
+        ("ElderRay", elder_ray_condition, ELDER_RAY_SCHEMA),
+        ("TurtleBreakout", turtle_breakout_condition, TURTLE_BREAKOUT_SCHEMA),
+        ("VolatilityBreakout", volatility_breakout_condition, VOLATILITY_BREAKOUT_SCHEMA),
+        ("SeasonalFilter", seasonal_filter_condition, SEASONAL_FILTER_SCHEMA),
+        ("TacticalAssetAllocation", taa_condition, TAA_SCHEMA),
+        ("MagicFormula", magic_formula_condition, MAGIC_FORMULA_SCHEMA),
     ]
 
     # POSITION 등록
