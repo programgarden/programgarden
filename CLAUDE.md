@@ -29,8 +29,10 @@ src/
 │       └── i18n/locales/  # Translation files (ko.json, en.json)
 ├── finance/            # programgarden-finance: LS Securities API wrapper
 │   └── programgarden_finance/
-└── community/          # programgarden-community: 65 strategy plugins (RSI, MACD, Ichimoku, ZScore, PairTrading, TurtleBreakout, MagicFormula, etc.)
-    └── programgarden_community/plugins/
+└── community/          # programgarden-community: 65 strategy plugins + 3 community nodes
+    └── programgarden_community/
+        ├── plugins/    # 65 strategy plugins (RSI, MACD, Ichimoku, ZScore, PairTrading, TurtleBreakout, MagicFormula, etc.)
+        └── nodes/      # Community nodes (TelegramNode, FearGreedIndexNode, FundamentalDataNode)
 ```
 
 ## Development Commands
@@ -134,7 +136,7 @@ When a node outputs an array, the next node automatically executes for each item
 | `format` | pct(), currency(), number() | `{{ format.pct(12.34) }}` → "12.34%" |
 | `lst` | first(), last(), count(), pluck(), flatten() | `{{ lst.pluck(items, 'name') }}` |
 
-### Node Categories (11, 57 nodes)
+### Node Categories (12, 58 nodes)
 
 | Category | Nodes |
 |----------|-------|
@@ -149,6 +151,7 @@ When a node outputs an array, the next node automatically executes for each item
 | display | TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
 | analysis | BacktestEngineNode, BenchmarkCompareNode |
 | ai | LLMModelNode, AIAgentNode |
+| messaging | TelegramNode |
 
 ### ExecutionListener Callbacks
 
