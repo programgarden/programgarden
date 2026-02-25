@@ -135,7 +135,7 @@ flowchart LR
 | **display** | 차트나 표로 보여줍니다 | LineChartNode, TableDisplayNode |
 | **ai** | AI에게 분석을 맡깁니다 | AIAgentNode |
 
-> 전체 56개 노드의 상세 설명은 [노드 레퍼런스](node_reference.md)를 참고하세요.
+> 전체 57개 노드의 상세 설명은 [노드 레퍼런스](node_reference.md)를 참고하세요.
 
 ---
 
@@ -437,7 +437,7 @@ WatchlistNode에 여러 종목을 넣으면 각 종목에 대해 **자동으로 
 ## 9. 다음 단계
 
 - [워크플로우 구조 이해](structure.md) - 노드, 엣지, 인증의 개념을 더 자세히
-- [전체 노드 레퍼런스](node_reference.md) - 56개 노드 상세 설명
+- [전체 노드 레퍼런스](node_reference.md) - 57개 노드 상세 설명
 - [조건 조합 가이드](logic_guide.md) - 여러 조건을 조합하는 방법
 - [스케줄 가이드](schedule_guide.md) - cron 표현식 작성법
 - [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 55개 분석 전략
