@@ -26,6 +26,7 @@ from .ls.korea_stock.market import t9945
 from .ls.korea_stock.market import t8450
 from .ls.korea_stock.market import t1101
 from .ls.korea_stock.market import t1102
+from .ls.korea_stock.etc import t1403
 from .ls.korea_stock.chart import t8451
 from .ls.korea_stock.ranking import t1444
 from .ls.korea_stock.ranking import t1452
@@ -66,6 +67,7 @@ __all__ = [
     t8450,
     t1101,
     t1102,
+    t1403,
     t8451,
     t1444,
     t1452,
