@@ -29,12 +29,12 @@ def register_all_nodes() -> None:
     
     # === Messaging Nodes ===
     from programgarden_community.nodes.messaging import TelegramNode
-    
+
     messaging_nodes = [
         TelegramNode,
         # 향후 추가: SlackNode, DiscordNode, etc.
     ]
-    
+
     for node_class in messaging_nodes:
         try:
             registry.register_community(
@@ -44,6 +44,24 @@ def register_all_nodes() -> None:
             )
         except ValueError as e:
             # 이미 등록된 경우 무시 (중복 호출 방지)
+            pass
+
+    # === Market Nodes ===
+    from programgarden_community.nodes.market import FearGreedIndexNode, FundamentalDataNode
+
+    market_nodes = [
+        FearGreedIndexNode,
+        FundamentalDataNode,
+    ]
+
+    for node_class in market_nodes:
+        try:
+            registry.register_community(
+                node_class,
+                source="community",
+                trust_level="community",
+            )
+        except ValueError as e:
             pass
 
 
@@ -56,6 +74,18 @@ def get_community_node_list() -> list:
             "type": "TelegramNode",
             "category": "messaging",
             "description": "Send messages via Telegram Bot API",
+            "requires_credential": True,
+        },
+        {
+            "type": "FearGreedIndexNode",
+            "category": "market",
+            "description": "CNN Fear & Greed Index (0=Extreme Fear, 100=Extreme Greed)",
+            "requires_credential": False,
+        },
+        {
+            "type": "FundamentalDataNode",
+            "category": "market",
+            "description": "Financial data via FMP API (profile, income statement, balance sheet, key metrics)",
             "requires_credential": True,
         },
         # 향후 추가될 노드들: SlackNode, DiscordNode, etc.

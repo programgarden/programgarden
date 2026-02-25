@@ -1,12 +1,12 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-57개 노드 타입을 카테고리로 분류:
+55개 노드 타입을 카테고리로 분류:
 - infra (5): StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode
 - broker (2): OverseasStockBrokerNode, OverseasFuturesBrokerNode
-- market (17): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
+- market (15): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
               OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode,
-              WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, VIXDataNode
+              WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode
 - account (6): OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode,
               OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode
 - trigger (2): ScheduleNode, TradingHoursFilterNode
@@ -18,7 +18,7 @@ ProgramGarden Core - 노드 타입 정의
 - analysis (2): BacktestEngineNode, BenchmarkCompareNode
 - data (3): SQLiteNode, HTTPRequestNode, FieldMappingNode
 - ai (2): LLMModelNode, AIAgentNode
-- messaging: 커뮤니티 노드 (TelegramNode 등)
+- messaging: 커뮤니티 노드 (TelegramNode, FearGreedIndexNode 등)
 """
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, Position
@@ -49,7 +49,7 @@ from programgarden_core.nodes.symbol_futures import OverseasFuturesSymbolQueryNo
 # Data (상품 무관)
 from programgarden_core.nodes.data import SQLiteNode, HTTPRequestNode, FieldMappingNode
 # Market External (credential 불필요, 무료 외부 API)
-from programgarden_core.nodes.market_external import CurrencyRateNode, FearGreedIndexNode, VIXDataNode
+from programgarden_core.nodes.market_external import CurrencyRateNode
 # Symbol (상품 무관)
 from programgarden_core.nodes.symbol import (
     WatchlistNode,
@@ -131,8 +131,6 @@ __all__ = [
     "FieldMappingNode",
     # Market External (credential 불필요)
     "CurrencyRateNode",
-    "FearGreedIndexNode",
-    "VIXDataNode",
     # Symbol (상품 무관)
     "WatchlistNode",
     "MarketUniverseNode",
