@@ -1,5 +1,5 @@
 """
-CurrencyRateNode, FearGreedIndexNode, VIXDataNode 단위 테스트
+CurrencyRateNode 단위 테스트
 
 테스트 대상:
 1. 노드 모델 생성 및 타입/카테고리 검증
@@ -10,6 +10,9 @@ CurrencyRateNode, FearGreedIndexNode, VIXDataNode 단위 테스트
 6. execute() (mock API 응답)
 7. resilience (is_retryable_error)
 8. rate_limit / connection_rules
+
+Note: FearGreedIndexNode → community 패키지로 이동
+      VIXDataNode → 삭제 (Yahoo Finance CDN 차단 위험)
 """
 
 import sys
@@ -26,8 +29,6 @@ if "aiohttp" not in sys.modules:
 
 from programgarden_core.nodes.market_external import (
     CurrencyRateNode,
-    FearGreedIndexNode,
-    VIXDataNode,
     ExternalAPIError,
     ExternalAPIRateLimitError,
     ExternalAPINetworkError,
@@ -246,394 +247,6 @@ class TestCurrencyRateNodeExecute:
 
 
 # ============================================================
-# FearGreedIndexNode 테스트
-# ============================================================
-
-class TestFearGreedIndexNodeModel:
-    """FearGreedIndexNode 모델 테스트"""
-
-    def test_node_has_correct_type(self):
-        node = FearGreedIndexNode(id="fgi1")
-        assert node.type == "FearGreedIndexNode"
-
-    def test_node_category_is_market(self):
-        node = FearGreedIndexNode(id="fgi1")
-        assert node.category == NodeCategory.MARKET
-
-    def test_node_description_is_i18n_key(self):
-        node = FearGreedIndexNode(id="fgi1")
-        assert node.description.startswith("i18n:")
-
-    def test_node_is_tool_enabled(self):
-        assert FearGreedIndexNode.is_tool_enabled() is True
-
-    def test_resilience_retry_enabled_by_default(self):
-        node = FearGreedIndexNode(id="fgi1")
-        assert node.resilience.retry.enabled is True
-
-
-class TestFearGreedIndexNodePorts:
-    """FearGreedIndexNode 입출력 포트 검증"""
-
-    def test_input_ports(self):
-        node = FearGreedIndexNode(id="fgi1")
-        input_names = [p.name for p in node._inputs]
-        assert "trigger" in input_names
-
-    def test_output_ports(self):
-        node = FearGreedIndexNode(id="fgi1")
-        output_names = [p.name for p in node._outputs]
-        assert "value" in output_names
-        assert "label" in output_names
-        assert "previous_close" in output_names
-
-    def test_value_port_type(self):
-        node = FearGreedIndexNode(id="fgi1")
-        port = next(p for p in node._outputs if p.name == "value")
-        assert port.type == "number"
-
-    def test_label_port_type(self):
-        node = FearGreedIndexNode(id="fgi1")
-        port = next(p for p in node._outputs if p.name == "label")
-        assert port.type == "string"
-
-
-class TestFearGreedIndexNodeFieldSchema:
-    """FearGreedIndexNode FieldSchema 검증"""
-
-    def test_field_schema_has_resilience_and_timeout(self):
-        schema = FearGreedIndexNode.get_field_schema()
-        assert "resilience" in schema
-        assert "timeout_seconds" in schema
-        assert len(schema) == 2  # resilience + timeout_seconds
-
-
-class TestFearGreedIndexNodeLabel:
-    """FearGreedIndexNode 라벨 정규화 테스트"""
-
-    def test_normalize_extreme_fear(self):
-        assert FearGreedIndexNode._normalize_label("Extreme Fear", 10) == "Extreme Fear"
-
-    def test_normalize_fear(self):
-        assert FearGreedIndexNode._normalize_label("Fear", 30) == "Fear"
-
-    def test_normalize_neutral(self):
-        assert FearGreedIndexNode._normalize_label("Neutral", 50) == "Neutral"
-
-    def test_normalize_greed(self):
-        assert FearGreedIndexNode._normalize_label("Greed", 65) == "Greed"
-
-    def test_normalize_extreme_greed(self):
-        assert FearGreedIndexNode._normalize_label("Extreme Greed", 90) == "Extreme Greed"
-
-    def test_fallback_to_score_extreme_fear(self):
-        assert FearGreedIndexNode._normalize_label("", 15) == "Extreme Fear"
-
-    def test_fallback_to_score_fear(self):
-        assert FearGreedIndexNode._normalize_label("", 35) == "Fear"
-
-    def test_fallback_to_score_neutral(self):
-        assert FearGreedIndexNode._normalize_label("", 50) == "Neutral"
-
-    def test_fallback_to_score_greed(self):
-        assert FearGreedIndexNode._normalize_label("", 65) == "Greed"
-
-    def test_fallback_to_score_extreme_greed(self):
-        assert FearGreedIndexNode._normalize_label("", 85) == "Extreme Greed"
-
-
-class TestFearGreedIndexNodeExecute:
-    """FearGreedIndexNode execute() 테스트 (mock)"""
-
-    @pytest.fixture
-    def mock_api_response(self):
-        return {
-            "fear_and_greed": {
-                "score": 32.5,
-                "rating": "Fear",
-                "previous_close": 35.0,
-            }
-        }
-
-    @pytest.mark.asyncio
-    async def test_execute_returns_value(self, mock_api_response):
-        node = FearGreedIndexNode(id="fgi1")
-
-        mock_resp = AsyncMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value=mock_api_response)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = await node.execute(None)
-
-        assert result["value"] == 32.5
-        assert result["label"] == "Fear"
-        assert result["previous_close"] == 35.0
-
-    @pytest.mark.asyncio
-    async def test_execute_with_missing_rating(self):
-        node = FearGreedIndexNode(id="fgi1")
-        api_resp = {"fear_and_greed": {"score": 80, "previous_close": 75}}
-
-        mock_resp = AsyncMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value=api_resp)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = await node.execute(None)
-
-        assert result["value"] == 80
-        assert result["label"] == "Extreme Greed"
-
-    @pytest.mark.asyncio
-    async def test_execute_raises_on_server_error(self):
-        node = FearGreedIndexNode(id="fgi1")
-
-        mock_resp = AsyncMock()
-        mock_resp.status = 503
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            with pytest.raises(ExternalAPIError, match="HTTP 503"):
-                await node.execute(None)
-
-
-# ============================================================
-# VIXDataNode 테스트
-# ============================================================
-
-class TestVIXDataNodeModel:
-    """VIXDataNode 모델 테스트"""
-
-    def test_node_has_correct_type(self):
-        node = VIXDataNode(id="vix1")
-        assert node.type == "VIXDataNode"
-
-    def test_node_category_is_market(self):
-        node = VIXDataNode(id="vix1")
-        assert node.category == NodeCategory.MARKET
-
-    def test_node_description_is_i18n_key(self):
-        node = VIXDataNode(id="vix1")
-        assert node.description.startswith("i18n:")
-
-    def test_node_default_include_history(self):
-        node = VIXDataNode(id="vix1")
-        assert node.include_history is False
-
-    def test_node_custom_include_history(self):
-        node = VIXDataNode(id="vix1", include_history=True)
-        assert node.include_history is True
-
-    def test_node_is_tool_enabled(self):
-        assert VIXDataNode.is_tool_enabled() is True
-
-    def test_resilience_retry_enabled_by_default(self):
-        node = VIXDataNode(id="vix1")
-        assert node.resilience.retry.enabled is True
-
-
-class TestVIXDataNodePorts:
-    """VIXDataNode 입출력 포트 검증"""
-
-    def test_input_ports(self):
-        node = VIXDataNode(id="vix1")
-        input_names = [p.name for p in node._inputs]
-        assert "trigger" in input_names
-
-    def test_output_ports(self):
-        node = VIXDataNode(id="vix1")
-        output_names = [p.name for p in node._outputs]
-        assert "vix" in output_names
-        assert "level" in output_names
-        assert "history" in output_names
-
-    def test_vix_port_type(self):
-        node = VIXDataNode(id="vix1")
-        port = next(p for p in node._outputs if p.name == "vix")
-        assert port.type == "number"
-
-    def test_level_port_type(self):
-        node = VIXDataNode(id="vix1")
-        port = next(p for p in node._outputs if p.name == "level")
-        assert port.type == "string"
-
-    def test_history_port_type(self):
-        node = VIXDataNode(id="vix1")
-        port = next(p for p in node._outputs if p.name == "history")
-        assert port.type == "array"
-
-
-class TestVIXDataNodeFieldSchema:
-    """VIXDataNode FieldSchema 검증"""
-
-    def test_field_schema_keys(self):
-        schema = VIXDataNode.get_field_schema()
-        assert "include_history" in schema
-        assert "resilience" in schema
-
-    def test_include_history_is_boolean(self):
-        schema = VIXDataNode.get_field_schema()
-        type_val = schema["include_history"].type
-        val = type_val.value if hasattr(type_val, 'value') else str(type_val)
-        assert val == "boolean"
-
-
-class TestVIXDataNodeLevel:
-    """VIXDataNode 레벨 분류 테스트"""
-
-    def test_low(self):
-        assert VIXDataNode._classify_vix_level(12) == "low"
-
-    def test_moderate(self):
-        assert VIXDataNode._classify_vix_level(20) == "moderate"
-
-    def test_high(self):
-        assert VIXDataNode._classify_vix_level(30) == "high"
-
-    def test_extreme(self):
-        assert VIXDataNode._classify_vix_level(40) == "extreme"
-
-    def test_boundary_low(self):
-        assert VIXDataNode._classify_vix_level(14.99) == "low"
-
-    def test_boundary_moderate(self):
-        assert VIXDataNode._classify_vix_level(15) == "moderate"
-
-    def test_boundary_high(self):
-        assert VIXDataNode._classify_vix_level(25) == "high"
-
-    def test_boundary_extreme(self):
-        assert VIXDataNode._classify_vix_level(35) == "extreme"
-
-
-class TestVIXDataNodeExecute:
-    """VIXDataNode execute() 테스트 (mock)"""
-
-    @pytest.fixture
-    def mock_api_response(self):
-        return {
-            "chart": {
-                "result": [{
-                    "meta": {
-                        "regularMarketPrice": 19.09,
-                    },
-                    "timestamp": [1708300800, 1708387200, 1708473600],
-                    "indicators": {
-                        "quote": [{
-                            "close": [18.5, 19.2, 19.09],
-                        }],
-                    },
-                }],
-                "error": None,
-            }
-        }
-
-    @pytest.mark.asyncio
-    async def test_execute_returns_vix(self, mock_api_response):
-        node = VIXDataNode(id="vix1")
-
-        mock_resp = AsyncMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value=mock_api_response)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = await node.execute(None)
-
-        assert result["vix"] == 19.09
-        assert result["level"] == "moderate"
-        assert result["history"] == []  # include_history=False
-
-    @pytest.mark.asyncio
-    async def test_execute_with_history(self, mock_api_response):
-        node = VIXDataNode(id="vix1", include_history=True)
-
-        mock_resp = AsyncMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value=mock_api_response)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = await node.execute(None)
-
-        assert result["vix"] == 19.09
-        assert len(result["history"]) == 3
-        assert "date" in result["history"][0]
-        assert "close" in result["history"][0]
-
-    @pytest.mark.asyncio
-    async def test_execute_empty_result_raises(self):
-        node = VIXDataNode(id="vix1")
-        api_resp = {"chart": {"result": [], "error": None}}
-
-        mock_resp = AsyncMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value=api_resp)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            with pytest.raises(ExternalAPIError, match="Empty response"):
-                await node.execute(None)
-
-    @pytest.mark.asyncio
-    async def test_execute_raises_on_rate_limit(self):
-        node = VIXDataNode(id="vix1")
-
-        mock_resp = AsyncMock()
-        mock_resp.status = 429
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            with pytest.raises(ExternalAPIRateLimitError):
-                await node.execute(None)
-
-
-# ============================================================
 # 공통: retryable error 분류 테스트
 # ============================================================
 
@@ -683,28 +296,8 @@ class TestRateLimitAndConnectionRules:
         assert CurrencyRateNode._rate_limit is not None
         assert CurrencyRateNode._rate_limit.min_interval_sec == 30
 
-    def test_fear_greed_node_rate_limit(self):
-        """L-2: CNN 비공식 API → 5분 간격"""
-        assert FearGreedIndexNode._rate_limit is not None
-        assert FearGreedIndexNode._rate_limit.min_interval_sec == 300
-
-    def test_vix_node_rate_limit(self):
-        """L-2: Yahoo Finance 비공식 API → 2분 간격"""
-        assert VIXDataNode._rate_limit is not None
-        assert VIXDataNode._rate_limit.min_interval_sec == 120
-
     def test_currency_rate_node_connection_rules(self):
         rules = CurrencyRateNode._connection_rules
-        assert len(rules) == 1
-        assert "ThrottleNode" in rules[0].required_intermediate
-
-    def test_fear_greed_node_connection_rules(self):
-        rules = FearGreedIndexNode._connection_rules
-        assert len(rules) == 1
-        assert "ThrottleNode" in rules[0].required_intermediate
-
-    def test_vix_node_connection_rules(self):
-        rules = VIXDataNode._connection_rules
         assert len(rules) == 1
         assert "ThrottleNode" in rules[0].required_intermediate
 
@@ -721,16 +314,6 @@ class TestMarketExternalNodeRegistry:
         registry = NodeTypeRegistry()
         assert registry.get("CurrencyRateNode") is not None
 
-    def test_fear_greed_node_registered(self):
-        from programgarden_core.registry.node_registry import NodeTypeRegistry
-        registry = NodeTypeRegistry()
-        assert registry.get("FearGreedIndexNode") is not None
-
-    def test_vix_node_registered(self):
-        from programgarden_core.registry.node_registry import NodeTypeRegistry
-        registry = NodeTypeRegistry()
-        assert registry.get("VIXDataNode") is not None
-
     def test_currency_rate_node_schema(self):
         from programgarden_core.registry.node_registry import NodeTypeRegistry
         registry = NodeTypeRegistry()
@@ -739,27 +322,17 @@ class TestMarketExternalNodeRegistry:
         assert schema.category == "market"
         assert schema.product_scope == "all"
 
-    def test_fear_greed_node_schema(self):
-        from programgarden_core.registry.node_registry import NodeTypeRegistry
-        registry = NodeTypeRegistry()
-        schema = registry.get_schema("FearGreedIndexNode")
-        assert schema is not None
-        assert schema.category == "market"
-
-    def test_vix_node_schema(self):
-        from programgarden_core.registry.node_registry import NodeTypeRegistry
-        registry = NodeTypeRegistry()
-        schema = registry.get_schema("VIXDataNode")
-        assert schema is not None
-        assert schema.category == "market"
-
-    def test_all_three_in_market_category(self):
+    def test_currency_rate_in_market_category(self):
         from programgarden_core.registry.node_registry import NodeTypeRegistry
         registry = NodeTypeRegistry()
         market_types = registry.list_types(category="market")
         assert "CurrencyRateNode" in market_types
-        assert "FearGreedIndexNode" in market_types
-        assert "VIXDataNode" in market_types
+
+    def test_vix_node_not_registered(self):
+        """VIXDataNode 삭제 확인"""
+        from programgarden_core.registry.node_registry import NodeTypeRegistry
+        registry = NodeTypeRegistry()
+        assert registry.get("VIXDataNode") is None
 
     def test_currency_rate_node_rate_limit_in_schema(self):
         from programgarden_core.registry.node_registry import NodeTypeRegistry
@@ -789,19 +362,7 @@ class TestMarketExternalToolSchema:
         assert "base_currency" in schema["parameters"]
         assert "target_currencies" in schema["parameters"]
 
-    def test_fear_greed_tool_schema(self):
-        schema = FearGreedIndexNode.as_tool_schema()
-        assert schema["tool_name"] == "fear_greed_index"
-        assert schema["node_type"] == "FearGreedIndexNode"
-
-    def test_vix_tool_schema(self):
-        schema = VIXDataNode.as_tool_schema()
-        assert schema["tool_name"] == "vix_data"
-        assert schema["node_type"] == "VIXDataNode"
-        assert "include_history" in schema["parameters"]
-
-    def test_tool_schemas_have_returns(self):
-        for node_cls in [CurrencyRateNode, FearGreedIndexNode, VIXDataNode]:
-            schema = node_cls.as_tool_schema()
-            assert "returns" in schema
-            assert len(schema["returns"]) > 0
+    def test_tool_schema_has_returns(self):
+        schema = CurrencyRateNode.as_tool_schema()
+        assert "returns" in schema
+        assert len(schema["returns"]) > 0

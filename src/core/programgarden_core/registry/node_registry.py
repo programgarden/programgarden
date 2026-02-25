@@ -96,7 +96,7 @@ class NodeTypeRegistry:
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Market External (credential 불필요)
-            CurrencyRateNode, FearGreedIndexNode, VIXDataNode,
+            CurrencyRateNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
             ScheduleNode, TradingHoursFilterNode,
@@ -134,7 +134,7 @@ class NodeTypeRegistry:
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Market External (credential 불필요)
-            CurrencyRateNode, FearGreedIndexNode, VIXDataNode,
+            CurrencyRateNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
             # Trigger
