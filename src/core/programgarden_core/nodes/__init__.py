@@ -1,12 +1,12 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-52개 노드 타입을 카테고리로 분류:
+57개 노드 타입을 카테고리로 분류:
 - infra (5): StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode
 - broker (2): OverseasStockBrokerNode, OverseasFuturesBrokerNode
-- market (16): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
+- market (17): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
               OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode,
-              WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, CurrencyRateNode, FearGreedIndexNode, VIXDataNode
+              WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, VIXDataNode
 - account (6): OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode,
               OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode
 - trigger (2): ScheduleNode, TradingHoursFilterNode
@@ -56,6 +56,7 @@ from programgarden_core.nodes.symbol import (
     MarketUniverseNode,
     ScreenerNode,
     SymbolFilterNode,
+    ExclusionListNode,
 )
 from programgarden_core.nodes.trigger import (
     ScheduleNode,
@@ -137,6 +138,7 @@ __all__ = [
     "MarketUniverseNode",
     "ScreenerNode",
     "SymbolFilterNode",
+    "ExclusionListNode",
     # Trigger
     "ScheduleNode",
     "TradingHoursFilterNode",

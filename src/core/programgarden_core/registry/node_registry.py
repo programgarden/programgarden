@@ -98,7 +98,7 @@ class NodeTypeRegistry:
             # Market External (credential 불필요)
             CurrencyRateNode, FearGreedIndexNode, VIXDataNode,
             # Symbol (상품 무관)
-            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
+            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
             ScheduleNode, TradingHoursFilterNode,
             ConditionNode, LogicNode,
             PositionSizingNode, PortfolioNode,
@@ -136,7 +136,7 @@ class NodeTypeRegistry:
             # Market External (credential 불필요)
             CurrencyRateNode, FearGreedIndexNode, VIXDataNode,
             # Symbol (상품 무관)
-            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode,
+            WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
             # Trigger
             ScheduleNode, TradingHoursFilterNode,
             # Condition
