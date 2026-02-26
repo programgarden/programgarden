@@ -38,7 +38,7 @@ class TrT1442(TRRequestAbstract, OccursReqAbstract):
         self.request_data = request_data
         if not isinstance(self.request_data, T1442Request):
             raise TrRequestDataNotFoundException()
-        self._generic: GenericTR[T1442Response] = GenericTR[T1442Response](self.request_data, self._build_response, url=URLS.KOREA_STOCK_HIGH_ITEM_URL)
+        self._generic: GenericTR[T1442Response] = GenericTR[T1442Response](self.request_data, self._build_response, url=URLS.KOREA_STOCK_MARKET_URL)
 
     def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> T1442Response:
         resp_json = resp_json or {}
