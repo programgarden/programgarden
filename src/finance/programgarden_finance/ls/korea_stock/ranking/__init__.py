@@ -12,15 +12,9 @@ from .t1452.blocks import T1452InBlock, T1452Request, T1452RequestHeader
 from . import t1463
 from .t1463 import TrT1463
 from .t1463.blocks import T1463InBlock, T1463Request, T1463RequestHeader
-from . import t1422
-from .t1422 import TrT1422
-from .t1422.blocks import T1422InBlock, T1422Request, T1422RequestHeader
 from . import t1441
 from .t1441 import TrT1441
 from .t1441.blocks import T1441InBlock, T1441Request, T1441RequestHeader
-from . import t1442
-from .t1442 import TrT1442
-from .t1442.blocks import T1442InBlock, T1442Request, T1442RequestHeader
 from . import t1466
 from .t1466 import TrT1466
 from .t1466.blocks import T1466InBlock, T1466Request, T1466RequestHeader
@@ -164,46 +158,6 @@ class Ranking:
     거래대금상위.__doc__ = "거래대금 상위 종목(현재가, 등락률, 거래대금, 전일거래대금, 전일비, 시가총액)을 조회합니다."
 
     @require_korean_alias
-    def t1422(
-        self,
-        body: T1422InBlock,
-        header: Optional[T1422RequestHeader] = None,
-        options: Optional[SetupOptions] = None,
-    ) -> TrT1422:
-        """
-        상한가/하한가 종목을 조회합니다.
-
-        시장구분, 당일/전일, 상한/하한 조건으로
-        현재가, 등락률, 거래량, 매도잔량, 매수잔량을 반환합니다.
-        idx 기반 연속조회를 지원합니다.
-
-        Args:
-            body (T1422InBlock): gubun(시장구분), sign(상한/하한), 필터 조건, idx(연속조회키) 입력
-            header (Optional[T1422RequestHeader]): 요청 헤더 정보입니다.
-            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
-
-        Returns:
-            TrT1422: 상하한가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
-        """
-
-        request_data = T1422Request(
-            body={
-                "t1422InBlock": body
-            },
-        )
-        set_tr_header_options(
-            token_manager=self.token_manager,
-            header=header,
-            options=options,
-            request_data=request_data
-        )
-
-        return TrT1422(request_data)
-
-    상하한가 = t1422
-    상하한가.__doc__ = "상한가/하한가 종목(현재가, 등락률, 거래량, 매도잔량, 매수잔량)을 조회합니다."
-
-    @require_korean_alias
     def t1441(
         self,
         body: T1441InBlock,
@@ -242,45 +196,6 @@ class Ranking:
 
     등락율상위 = t1441
     등락율상위.__doc__ = "등락률 상위 종목(현재가, 등락률, 거래량, 시가총액)을 조회합니다."
-
-    @require_korean_alias
-    def t1442(
-        self,
-        body: T1442InBlock,
-        header: Optional[T1442RequestHeader] = None,
-        options: Optional[SetupOptions] = None,
-    ) -> TrT1442:
-        """
-        신고가/신저가 종목을 조회합니다.
-
-        기간별(52주, 연중, 월중 등) 신고가/신저가 종목을 반환합니다.
-        idx 기반 연속조회를 지원합니다.
-
-        Args:
-            body (T1442InBlock): gubun(시장구분), type1(기간구분), type2(고저구분), 필터 조건, idx(연속조회키) 입력
-            header (Optional[T1442RequestHeader]): 요청 헤더 정보입니다.
-            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
-
-        Returns:
-            TrT1442: 신고/신저가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
-        """
-
-        request_data = T1442Request(
-            body={
-                "t1442InBlock": body
-            },
-        )
-        set_tr_header_options(
-            token_manager=self.token_manager,
-            header=header,
-            options=options,
-            request_data=request_data
-        )
-
-        return TrT1442(request_data)
-
-    신고신저가 = t1442
-    신고신저가.__doc__ = "신고가/신저가 종목(52주, 연중, 월중 등 기간별)을 조회합니다."
 
     @require_korean_alias
     def t1466(
@@ -368,9 +283,7 @@ __all__ = [
     t1444,
     t1452,
     t1463,
-    t1422,
     t1441,
-    t1442,
     t1466,
     t1481,
 ]
