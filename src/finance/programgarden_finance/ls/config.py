@@ -41,6 +41,8 @@ class URLS:
     KOREA_STOCK_ETC_URL = f"{LS_URL}/stock/etc"
     KOREA_STOCK_ACCNO_URL = f"{LS_URL}/stock/accno"
     KOREA_STOCK_ORDER_URL = f"{LS_URL}/stock/order"
+    KOREA_STOCK_ETF_URL = f"{LS_URL}/stock/etf"
+    KOREA_STOCK_FRGR_ITT_URL = f"{LS_URL}/stock/frgr-itt"
 
     FO_MARKET_URL = f"{LS_URL}/overseas-futureoption/market-data"
     FO_ACCNO_URL = f"{LS_URL}/overseas-futureoption/accno"

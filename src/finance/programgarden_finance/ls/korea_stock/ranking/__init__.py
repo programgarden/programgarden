@@ -22,6 +22,10 @@ from . import t1481
 from .t1481 import TrT1481
 from .t1481.blocks import T1481InBlock, T1481Request, T1481RequestHeader
 
+from . import t1482
+from .t1482 import TrT1482
+from .t1482.blocks import T1482InBlock, T1482Request, T1482RequestHeader
+
 from programgarden_core.korea_alias import require_korean_alias
 
 
@@ -277,6 +281,34 @@ class Ranking:
     시간외등락율상위 = t1481
     시간외등락율상위.__doc__ = "시간외 거래 등락률 상위 종목(시간외 현재가, 등락률, 거래량)을 조회합니다."
 
+    @require_korean_alias
+    def t1482(
+        self,
+        body: T1482InBlock,
+        header: Optional[T1482RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1482:
+        """
+        LS openAPI의 t1482 시간외거래량상위을(를) 조회합니다.
+        """
+
+        request_data = T1482Request(
+            body={
+                "t1482InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1482(request_data)
+
+    시간외거래량상위 = t1482
+    시간외거래량상위.__doc__ = "시간외 거래량 상위 종목을 조회합니다."
+
 
 __all__ = [
     Ranking,
@@ -286,4 +318,5 @@ __all__ = [
     t1441,
     t1466,
     t1481,
+    t1482,
 ]
