@@ -6,6 +6,16 @@ from . import t8451
 from .t8451 import TrT8451
 from .t8451.blocks import T8451InBlock, T8451Request, T8451RequestHeader
 
+from . import t8452
+from .t8452 import TrT8452
+from .t8452.blocks import T8452InBlock, T8452Request, T8452RequestHeader
+from . import t8453
+from .t8453 import TrT8453
+from .t8453.blocks import T8453InBlock, T8453Request, T8453RequestHeader
+from . import t1665
+from .t1665 import TrT1665
+from .t1665.blocks import T1665InBlock, T1665Request, T1665RequestHeader
+
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 
 
@@ -55,8 +65,95 @@ class Chart:
     주식차트 = t8451
     주식차트.__doc__ = "주식차트(일주월년)를 조회합니다."
 
+    @require_korean_alias
+    def t8452(
+        self,
+        body: T8452InBlock,
+        header: Optional[T8452RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT8452:
+        """
+        LS openAPI의 t8452 주식차트N분을(를) 조회합니다.
+        """
 
-__init__ = [
+        request_data = T8452Request(
+            body={
+                "t8452InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT8452(request_data)
+
+    주식차트N분 = t8452
+    주식차트N분.__doc__ = "주식 차트(N분)를 조회합니다."
+
+    @require_korean_alias
+    def t8453(
+        self,
+        body: T8453InBlock,
+        header: Optional[T8453RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT8453:
+        """
+        LS openAPI의 t8453 주식차트틱을(를) 조회합니다.
+        """
+
+        request_data = T8453Request(
+            body={
+                "t8453InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT8453(request_data)
+
+    주식차트틱 = t8453
+    주식차트틱.__doc__ = "주식 차트(틱/N틱)를 조회합니다."
+
+    @require_korean_alias
+    def t1665(
+        self,
+        body: T1665InBlock,
+        header: Optional[T1665RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1665:
+        """
+        LS openAPI의 t1665 기간별투자자매매추이(차트)을(를) 조회합니다.
+        """
+
+        request_data = T1665Request(
+            body={
+                "t1665InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1665(request_data)
+
+    기간별투자자매매추이 = t1665
+    기간별투자자매매추이.__doc__ = "기간별 투자자 매매추이(차트)를 조회합니다."
+
+
+__all__ = [
     Chart,
     t8451,
+    t8452,
+    t8453,
+    t1665,
 ]

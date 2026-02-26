@@ -8,6 +8,8 @@ from .market import Market
 from .chart import Chart
 from .ranking import Ranking
 from .etc import Etc
+from .etf import Etf
+from .frgr_itt import FrgrItt
 from .accno import Accno
 from .order import Order
 
@@ -48,6 +50,20 @@ class KoreaStock:
     기타.__doc__ = "기타 종목 정보(신규상장, 관리종목 등)를 조회합니다."
 
     @require_korean_alias
+    def etf(self) -> Etf:
+        return Etf(token_manager=self.token_manager)
+
+    ETF = etf
+    ETF.__doc__ = "ETF 시세/일별추이/구성종목을 조회합니다."
+
+    @require_korean_alias
+    def frgr_itt(self) -> FrgrItt:
+        return FrgrItt(token_manager=self.token_manager)
+
+    외인기관 = frgr_itt
+    외인기관.__doc__ = "외인/기관 종목별 매매동향을 조회합니다."
+
+    @require_korean_alias
     def accno(self) -> Accno:
         return Accno(token_manager=self.token_manager)
 
@@ -68,6 +84,8 @@ __all__ = [
     Chart,
     Ranking,
     Etc,
+    Etf,
+    FrgrItt,
     Accno,
     Order,
 ]

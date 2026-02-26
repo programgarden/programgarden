@@ -37,6 +37,13 @@ from . import t1442
 from .t1442 import TrT1442
 from .t1442.blocks import T1442InBlock, T1442Request, T1442RequestHeader
 
+from . import t8407
+from .t8407 import TrT8407
+from .t8407.blocks import T8407InBlock, T8407Request, T8407RequestHeader
+from . import t8454
+from .t8454 import TrT8454
+from .t8454.blocks import T8454InBlock, T8454Request, T8454RequestHeader
+
 from programgarden_core.korea_alias import require_korean_alias
 
 
@@ -480,6 +487,62 @@ class Market:
     신고신저가 = t1442
     신고신저가.__doc__ = "신고가/신저가 종목(52주, 연중, 월중 등 기간별)을 조회합니다."
 
+    @require_korean_alias
+    def t8407(
+        self,
+        body: T8407InBlock,
+        header: Optional[T8407RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT8407:
+        """
+        LS openAPI의 t8407 주식멀티현재가조회을(를) 조회합니다.
+        """
+
+        request_data = T8407Request(
+            body={
+                "t8407InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT8407(request_data)
+
+    주식멀티현재가조회 = t8407
+    주식멀티현재가조회.__doc__ = "주식 멀티 현재가를 조회합니다."
+
+    @require_korean_alias
+    def t8454(
+        self,
+        body: T8454InBlock,
+        header: Optional[T8454RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT8454:
+        """
+        LS openAPI의 t8454 주식시간대별체결조회2을(를) 조회합니다.
+        """
+
+        request_data = T8454Request(
+            body={
+                "t8454InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT8454(request_data)
+
+    주식시간대별체결조회2 = t8454
+    주식시간대별체결조회2.__doc__ = "주식 시간대별 체결2를 조회합니다."
+
 
 __all__ = [
     Market,
@@ -494,4 +557,6 @@ __all__ = [
     t1405,
     t1422,
     t1442,
+    t8407,
+    t8454,
 ]
