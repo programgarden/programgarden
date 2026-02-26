@@ -5,7 +5,7 @@ import aiohttp
 from programgarden_core.exceptions import TrRequestDataNotFoundException
 import logging
 
-logger = logging.getLogger("programgarden.ls.korea_stock.etc.t1404")
+logger = logging.getLogger("programgarden.ls.korea_stock.market.t1404")
 from .blocks import (
     T1404InBlock,
     T1404OutBlock,

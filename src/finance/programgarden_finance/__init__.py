@@ -30,8 +30,8 @@ from .ls.korea_stock.market import t1301
 from .ls.korea_stock.market import t1471
 from .ls.korea_stock.market import t1475
 from .ls.korea_stock.etc import t1403
-from .ls.korea_stock.etc import t1404
-from .ls.korea_stock.etc import t1405
+from .ls.korea_stock.market import t1404
+from .ls.korea_stock.market import t1405
 from .ls.korea_stock.chart import t8451
 from .ls.korea_stock.ranking import t1444
 from .ls.korea_stock.ranking import t1452
