@@ -32,6 +32,9 @@ from .ls.korea_stock.ranking import t1444
 from .ls.korea_stock.ranking import t1452
 from .ls.korea_stock.ranking import t1463
 from .ls.korea_stock.accno import CSPAQ22200
+from .ls.korea_stock.order import (
+    CSPAT00601, CSPAT00701
+)
 
 from .ls.overseas_futureoption.market import (
     o3101, o3104, o3105, o3106, o3107, o3116,
@@ -75,6 +78,8 @@ __all__ = [
     t1452,
     t1463,
     CSPAQ22200,
+    CSPAT00601,
+    CSPAT00701,
 
     COSAQ00102,
     COSAQ01400,

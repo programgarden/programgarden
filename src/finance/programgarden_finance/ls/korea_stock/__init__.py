@@ -9,6 +9,7 @@ from .chart import Chart
 from .ranking import Ranking
 from .etc import Etc
 from .accno import Accno
+from .order import Order
 
 
 class KoreaStock:
@@ -53,6 +54,13 @@ class KoreaStock:
     계좌 = accno
     계좌.__doc__ = "계좌 정보(예수금, 주문가능금액, 잔고 등)를 조회합니다."
 
+    @require_korean_alias
+    def order(self) -> Order:
+        return Order(token_manager=self.token_manager)
+
+    주문 = order
+    주문.__doc__ = "주문(매수/매도/정정)을 처리합니다."
+
 
 __all__ = [
     KoreaStock,
@@ -61,4 +69,5 @@ __all__ = [
     Ranking,
     Etc,
     Accno,
+    Order,
 ]

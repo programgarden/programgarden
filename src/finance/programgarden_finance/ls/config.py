@@ -40,6 +40,7 @@ class URLS:
     KOREA_STOCK_HIGH_ITEM_URL = f"{LS_URL}/stock/high-item"
     KOREA_STOCK_ETC_URL = f"{LS_URL}/stock/etc"
     KOREA_STOCK_ACCNO_URL = f"{LS_URL}/stock/accno"
+    KOREA_STOCK_ORDER_URL = f"{LS_URL}/stock/order"
 
     FO_MARKET_URL = f"{LS_URL}/overseas-futureoption/market-data"
     FO_ACCNO_URL = f"{LS_URL}/overseas-futureoption/accno"
