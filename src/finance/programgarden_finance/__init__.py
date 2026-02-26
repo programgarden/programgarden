@@ -36,9 +36,9 @@ from .ls.korea_stock.chart import t8451
 from .ls.korea_stock.ranking import t1444
 from .ls.korea_stock.ranking import t1452
 from .ls.korea_stock.ranking import t1463
-from .ls.korea_stock.ranking import t1422
+from .ls.korea_stock.market import t1422
 from .ls.korea_stock.ranking import t1441
-from .ls.korea_stock.ranking import t1442
+from .ls.korea_stock.market import t1442
 from .ls.korea_stock.ranking import t1466
 from .ls.korea_stock.ranking import t1481
 from .ls.korea_stock.accno import CSPAQ22200

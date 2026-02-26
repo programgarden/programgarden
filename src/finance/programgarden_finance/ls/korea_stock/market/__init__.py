@@ -30,6 +30,12 @@ from .t1404.blocks import T1404InBlock, T1404Request, T1404RequestHeader
 from . import t1405
 from .t1405 import TrT1405
 from .t1405.blocks import T1405InBlock, T1405Request, T1405RequestHeader
+from . import t1422
+from .t1422 import TrT1422
+from .t1422.blocks import T1422InBlock, T1422Request, T1422RequestHeader
+from . import t1442
+from .t1442 import TrT1442
+from .t1442.blocks import T1442InBlock, T1442Request, T1442RequestHeader
 
 from programgarden_core.korea_alias import require_korean_alias
 
@@ -395,6 +401,85 @@ class Market:
     투자경고매매정지정리매매조회 = t1405
     투자경고매매정지정리매매조회.__doc__ = "투자경고, 매매정지, 정리매매, 투자주의/위험/위험예고 종목을 조회합니다."
 
+    @require_korean_alias
+    def t1422(
+        self,
+        body: T1422InBlock,
+        header: Optional[T1422RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1422:
+        """
+        상한가/하한가 종목을 조회합니다.
+
+        시장구분, 당일/전일, 상한/하한 조건으로
+        현재가, 등락률, 거래량, 매도잔량, 매수잔량을 반환합니다.
+        idx 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1422InBlock): gubun(시장구분), sign(상한/하한), 필터 조건, idx(연속조회키) 입력
+            header (Optional[T1422RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1422: 상하한가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1422Request(
+            body={
+                "t1422InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1422(request_data)
+
+    상하한가 = t1422
+    상하한가.__doc__ = "상한가/하한가 종목(현재가, 등락률, 거래량, 매도잔량, 매수잔량)을 조회합니다."
+
+    @require_korean_alias
+    def t1442(
+        self,
+        body: T1442InBlock,
+        header: Optional[T1442RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1442:
+        """
+        신고가/신저가 종목을 조회합니다.
+
+        기간별(52주, 연중, 월중 등) 신고가/신저가 종목을 반환합니다.
+        idx 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1442InBlock): gubun(시장구분), type1(기간구분), type2(고저구분), 필터 조건, idx(연속조회키) 입력
+            header (Optional[T1442RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1442: 신고/신저가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1442Request(
+            body={
+                "t1442InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1442(request_data)
+
+    신고신저가 = t1442
+    신고신저가.__doc__ = "신고가/신저가 종목(52주, 연중, 월중 등 기간별)을 조회합니다."
+
 
 __all__ = [
     Market,
@@ -407,4 +492,6 @@ __all__ = [
     t1475,
     t1404,
     t1405,
+    t1422,
+    t1442,
 ]
