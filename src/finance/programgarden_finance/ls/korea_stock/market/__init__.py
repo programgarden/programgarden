@@ -15,6 +15,15 @@ from .t1101.blocks import T1101InBlock, T1101Request, T1101RequestHeader
 from . import t1102
 from .t1102 import TrT1102
 from .t1102.blocks import T1102InBlock, T1102Request, T1102RequestHeader
+from . import t1301
+from .t1301 import TrT1301
+from .t1301.blocks import T1301InBlock, T1301Request, T1301RequestHeader
+from . import t1471
+from .t1471 import TrT1471
+from .t1471.blocks import T1471InBlock, T1471Request, T1471RequestHeader
+from . import t1475
+from .t1475 import TrT1475
+from .t1475.blocks import T1475InBlock, T1475Request, T1475RequestHeader
 
 from programgarden_core.korea_alias import require_korean_alias
 
@@ -180,6 +189,126 @@ class Market:
     주식현재가시세 = t1102
     주식현재가시세.__doc__ = "[시세/종합정보] 현재가, 등락률, PER/PBR, 시가총액, 증권사/외국계 매매동향, 재무실적을 조회합니다."
 
+    @require_korean_alias
+    def t1301(
+        self,
+        body: T1301InBlock,
+        header: Optional[T1301RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1301:
+        """
+        주식 시간대별 체결 내역을 조회합니다.
+
+        종목코드, 시작/종료시간 조건으로
+        체결시간, 현재가, 체결량, 매도/매수 체결수량을 반환합니다.
+        cts_time 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1301InBlock): shcode(종목코드), starttime, endtime, cts_time(연속조회키) 입력
+            header (Optional[T1301RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1301: 시간대별체결 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1301Request(
+            body={
+                "t1301InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1301(request_data)
+
+    주식시간대별체결조회 = t1301
+    주식시간대별체결조회.__doc__ = "주식 시간대별 체결 내역(체결시간, 현재가, 체결량, 매도/매수 체결수량)을 조회합니다."
+
+    @require_korean_alias
+    def t1471(
+        self,
+        body: T1471InBlock,
+        header: Optional[T1471RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1471:
+        """
+        시간대별 호가 잔량 추이를 조회합니다.
+
+        종목코드, 시간 조건으로
+        매도잔량, 매수잔량, 호가, 순매수잔량, 매수비율을 반환합니다.
+        time 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1471InBlock): shcode(종목코드), gubun(분단위), time(연속조회키) 입력
+            header (Optional[T1471RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1471: 시간대별호가잔량추이 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1471Request(
+            body={
+                "t1471InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1471(request_data)
+
+    시간대별호가잔량추이 = t1471
+    시간대별호가잔량추이.__doc__ = "시간대별 호가 잔량 추이(매도잔량, 매수잔량, 호가, 순매수잔량, 매수비율)를 조회합니다."
+
+    @require_korean_alias
+    def t1475(
+        self,
+        body: T1475InBlock,
+        header: Optional[T1475RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1475:
+        """
+        체결강도 추이를 조회합니다.
+
+        종목코드, 분/일 구분 조건으로
+        체결강도, 이동평균(5/20/60) 체결강도를 반환합니다.
+        date+time 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1475InBlock): shcode(종목코드), vptype(체결강도구분), gubun(분/일구분) 입력
+            header (Optional[T1475RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1475: 체결강도추이 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1475Request(
+            body={
+                "t1475InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1475(request_data)
+
+    체결강도추이 = t1475
+    체결강도추이.__doc__ = "체결강도 추이(체결강도, 이동평균 5/20/60 체결강도)를 조회합니다."
+
 
 __init__ = [
     Market,
@@ -187,4 +316,7 @@ __init__ = [
     t8450,
     t1101,
     t1102,
+    t1301,
+    t1471,
+    t1475,
 ]
