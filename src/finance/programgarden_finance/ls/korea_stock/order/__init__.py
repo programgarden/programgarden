@@ -15,6 +15,12 @@ from .CSPAT00701.blocks import (
     CSPAT00701Request,
     CSPAT00701RequestHeader,
 )
+from .CSPAT00801 import TrCSPAT00801
+from .CSPAT00801.blocks import (
+    CSPAT00801InBlock1,
+    CSPAT00801Request,
+    CSPAT00801RequestHeader,
+)
 
 from programgarden_core.korea_alias import require_korean_alias
 
@@ -103,9 +109,47 @@ class Order:
     현물정정주문 = cspat00701
     현물정정주문.__doc__ = "국내주식 현물 정정주문을 요청합니다."
 
+    @require_korean_alias
+    def cspat00801(
+        self,
+        body: CSPAT00801InBlock1,
+        header: Optional[CSPAT00801RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrCSPAT00801:
+        """
+        국내주식 현물 취소주문을 요청합니다.
+
+        원주문번호(OrgOrdNo)는 cspat00601(현물주문) 시 받은 OrdNo를 사용합니다.
+
+        Args:
+            body (CSPAT00801InBlock1): 원주문번호, 종목번호, 수량 입력
+            header (Optional[CSPAT00801RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrCSPAT00801: 현물취소주문 인스턴스 (.req() 호출로 실행)
+        """
+        request_data = CSPAT00801Request(
+            body={
+                "CSPAT00801InBlock1": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrCSPAT00801(request_data)
+
+    현물취소주문 = cspat00801
+    현물취소주문.__doc__ = "국내주식 현물 취소주문을 요청합니다."
+
 
 __init__ = [
     Order,
     CSPAT00601,
     CSPAT00701,
+    CSPAT00801,
 ]
