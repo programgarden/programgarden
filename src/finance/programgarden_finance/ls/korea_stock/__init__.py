@@ -8,6 +8,7 @@ from .market import Market
 from .chart import Chart
 from .ranking import Ranking
 from .etc import Etc
+from .accno import Accno
 
 
 class KoreaStock:
@@ -45,6 +46,13 @@ class KoreaStock:
     기타 = etc
     기타.__doc__ = "기타 종목 정보(신규상장, 관리종목 등)를 조회합니다."
 
+    @require_korean_alias
+    def accno(self) -> Accno:
+        return Accno(token_manager=self.token_manager)
+
+    계좌 = accno
+    계좌.__doc__ = "계좌 정보(예수금, 주문가능금액, 잔고 등)를 조회합니다."
+
 
 __all__ = [
     KoreaStock,
@@ -52,4 +60,5 @@ __all__ = [
     Chart,
     Ranking,
     Etc,
+    Accno,
 ]
