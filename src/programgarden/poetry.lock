@@ -2373,35 +2373,45 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "1.9.0"
+version = "1.10.0"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_community-1.9.0-py3-none-any.whl", hash = "sha256:9ec73d78b63aa42a3e6c025c2c9f8053b6b5032c857c46a807383bc1d16b62b4"},
-    {file = "programgarden_community-1.9.0.tar.gz", hash = "sha256:cf7c386dea8e35995810b58590dfead78152611368c8dcd62a42c041911ab5f6"},
+    {file = "programgarden_community-1.10.0-py3-none-any.whl", hash = "sha256:b69d7be76496a3a668e8acec5c94ee65592093c4d2f5c38452233e2c45d0010b"},
+    {file = "programgarden_community-1.10.0.tar.gz", hash = "sha256:1e9f2166f3835293e6ee1cbec7f0f906a580dbe49d6d33c2b11574698464a5a0"},
 ]
 
 [package.dependencies]
-programgarden-core = ">=1.6.0,<2.0.0"
+programgarden-core = ">=1.7.0,<2.0.0"
+
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
 
 [[package]]
 name = "programgarden-core"
-version = "1.6.0"
+version = "1.7.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_core-1.6.0-py3-none-any.whl", hash = "sha256:0bcb5d2f6874006aa2b4c5b99868079ea77047e978311c0f627f66c218ff38c6"},
-    {file = "programgarden_core-1.6.0.tar.gz", hash = "sha256:3bc983d8962e860366de8d1f0cd6f141927395af57df1b845e8855a93a39e657"},
+    {file = "programgarden_core-1.7.0-py3-none-any.whl", hash = "sha256:e8bc81ebbf1a390509d2fcb2e73812bff6901b86f21d567a0db418369515f8d9"},
+    {file = "programgarden_core-1.7.0.tar.gz", hash = "sha256:358dba8662e9ff3b217c6fe19cacee3ab00f8f468de1ccb06d61c1c5196196bb"},
 ]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
+
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
 
 [[package]]
 name = "programgarden-finance"
@@ -4052,4 +4062,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "a96b27d36f3b33d97da1e5d0db7be62df51e901c0d409c0d85522765d7e8439f"
+content-hash = "d1a3e7e011e0bbbde35ff64014a9c0170e83ab36b7ea1d0202f2bd87cd7eac1d"

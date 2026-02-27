@@ -67,18 +67,23 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-core"
-version = "1.6.0"
+version = "1.7.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.6.0-py3-none-any.whl", hash = "sha256:0bcb5d2f6874006aa2b4c5b99868079ea77047e978311c0f627f66c218ff38c6"},
-    {file = "programgarden_core-1.6.0.tar.gz", hash = "sha256:3bc983d8962e860366de8d1f0cd6f141927395af57df1b845e8855a93a39e657"},
+    {file = "programgarden_core-1.7.0-py3-none-any.whl", hash = "sha256:e8bc81ebbf1a390509d2fcb2e73812bff6901b86f21d567a0db418369515f8d9"},
+    {file = "programgarden_core-1.7.0.tar.gz", hash = "sha256:358dba8662e9ff3b217c6fe19cacee3ab00f8f468de1ccb06d61c1c5196196bb"},
 ]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
+
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
 
 [[package]]
 name = "pydantic"
@@ -322,4 +327,4 @@ typing-extensions = ">=4.12.0"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "a4e1ae0287caeff3037d30f81646031cc8b3a434bcd207e17d98fe37c0467626"
+content-hash = "2b976c93473a308d7c95ab6297aa590798459cb03846183a8989873b5653c49b"

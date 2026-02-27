@@ -1,8 +1,11 @@
-## [Unreleased]
+## [1.10.0] - 2026-02-27
 ### Added
 - S/R 레벨 플러그인 2종 추가 (65→67 플러그인)
   - TECHNICAL 2개: SupportResistanceLevels(Swing 기반 지지/저항 레벨 감지+클러스터링), LevelTouch(레벨 터치/돌파/역할전환 감지+state 이력 추적)
 - 테스트 101개 추가 (총 910개)
+
+### Changed
+- deps: programgarden-core ^1.7.0
 
 ## [1.9.0] - 2026-02-25
 ### Added

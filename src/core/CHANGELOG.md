@@ -1,3 +1,7 @@
+## [1.7.0] - 2026-02-27
+### Added
+- i18n: SupportResistanceLevels, LevelTouch 플러그인 번역 키 추가 (ko/en)
+
 ## [1.6.0] - 2026-02-25
 ### Added
 - **ExclusionListNode**: 거래 제외 종목 관리 노드 (`market` 카테고리)

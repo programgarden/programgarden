@@ -1,3 +1,7 @@
+## [1.13.0] - 2026-02-27
+### Changed
+- deps: programgarden-core ^1.7.0, programgarden-community ^1.10.0
+
 ## [1.12.0] - 2026-02-25
 ### Added
 - **ExclusionListNodeExecutor**: 거래 제외 종목 노드 실행 로직
