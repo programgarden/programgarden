@@ -1126,5 +1126,9 @@
   "plugins.TacticalAssetAllocation.name": "Tactical Asset Allocation",
   "plugins.TacticalAssetAllocation.description": "Hold/cash decision based on N-day SMA crossover (Faber 2007)",
   "plugins.MagicFormula.name": "Magic Formula",
-  "plugins.MagicFormula.description": "Selects value stocks by combined ROC + earnings yield ranking (Greenblatt 2005)"
+  "plugins.MagicFormula.description": "Selects value stocks by combined ROC + earnings yield ranking (Greenblatt 2005)",
+  "plugins.SupportResistanceLevels.name": "Support/Resistance Levels",
+  "plugins.SupportResistanceLevels.description": "Dynamic S/R level detection from swing highs/lows with cluster zone strength evaluation",
+  "plugins.LevelTouch.name": "Level Touch",
+  "plugins.LevelTouch.description": "S/R level touch/breakout/role reversal detection with history tracking (first_touch, role_reversal, cluster_bounce)"
 }

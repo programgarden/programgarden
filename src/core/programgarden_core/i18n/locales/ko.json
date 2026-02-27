@@ -1126,5 +1126,9 @@
   "plugins.TacticalAssetAllocation.name": "전술적 자산배분",
   "plugins.TacticalAssetAllocation.description": "N일 SMA 위/아래로 보유/현금 결정 (Faber 2007)",
   "plugins.MagicFormula.name": "마법공식",
-  "plugins.MagicFormula.description": "자본수익률 + 이익수익률 순위 합산으로 가치주 선별 (Greenblatt 2005)"
+  "plugins.MagicFormula.description": "자본수익률 + 이익수익률 순위 합산으로 가치주 선별 (Greenblatt 2005)",
+  "plugins.SupportResistanceLevels.name": "지지/저항 레벨",
+  "plugins.SupportResistanceLevels.description": "Swing High/Low 기반 지지/저항 레벨 동적 감지 + 클러스터링 강도 평가",
+  "plugins.LevelTouch.name": "레벨 터치/돌파",
+  "plugins.LevelTouch.description": "S/R 레벨 터치/돌파/역할전환 감지 + 이력 추적 (first_touch, role_reversal, cluster_bounce)"
 }

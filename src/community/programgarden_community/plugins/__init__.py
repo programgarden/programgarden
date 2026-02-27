@@ -53,6 +53,8 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── seasonal_filter/  # TECHNICAL - 계절성 필터
     ├── tactical_asset_allocation/ # TECHNICAL - 전술적 자산배분
     ├── magic_formula/    # TECHNICAL - 마법공식
+    ├── support_resistance_levels/ # TECHNICAL - 지지/저항 레벨
+    ├── level_touch/      # TECHNICAL - 레벨 터치/돌파
     ├── stop_loss/        # POSITION - 손절
     ├── profit_target/    # POSITION - 익절
     ├── trailing_stop/    # POSITION - 트레일링 스탑
@@ -138,6 +140,8 @@ def register_all_plugins() -> None:
     from .seasonal_filter import SEASONAL_FILTER_SCHEMA, seasonal_filter_condition
     from .tactical_asset_allocation import TAA_SCHEMA, taa_condition
     from .magic_formula import MAGIC_FORMULA_SCHEMA, magic_formula_condition
+    from .support_resistance_levels import SUPPORT_RESISTANCE_LEVELS_SCHEMA, support_resistance_levels_condition
+    from .level_touch import LEVEL_TOUCH_SCHEMA, level_touch_condition
 
     # === POSITION 플러그인 ===
     from .stop_loss import STOP_LOSS_SCHEMA, stop_loss_condition
@@ -208,6 +212,8 @@ def register_all_plugins() -> None:
         ("SeasonalFilter", seasonal_filter_condition, SEASONAL_FILTER_SCHEMA),
         ("TacticalAssetAllocation", taa_condition, TAA_SCHEMA),
         ("MagicFormula", magic_formula_condition, MAGIC_FORMULA_SCHEMA),
+        ("SupportResistanceLevels", support_resistance_levels_condition, SUPPORT_RESISTANCE_LEVELS_SCHEMA),
+        ("LevelTouch", level_touch_condition, LEVEL_TOUCH_SCHEMA),
     ]
 
     # POSITION 등록
