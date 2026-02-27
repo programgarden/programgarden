@@ -440,6 +440,6 @@ WatchlistNode에 여러 종목을 넣으면 각 종목에 대해 **자동으로 
 - [전체 노드 레퍼런스](node_reference.md) - 58개 노드 상세 설명
 - [조건 조합 가이드](logic_guide.md) - 여러 조건을 조합하는 방법
 - [스케줄 가이드](schedule_guide.md) - cron 표현식 작성법
-- [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 65개 분석 전략
+- [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 67개 분석 전략
 - [주문 플러그인](strategies/order_condition.md) - 시장가, 지정가 등 주문 전략
 - [AI 에이전트](ai_agent_guide.md) - GPT/Claude로 시장 분석 자동화
