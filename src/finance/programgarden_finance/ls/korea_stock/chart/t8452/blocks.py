@@ -28,7 +28,8 @@ class T8452InBlock(BaseModel):
     etime: str = Field(default="", description="종료시간(현재미사용)")
     cts_date: str = Field(default="", description="연속일자")
     cts_time: str = Field(default="", description="연속시간")
-    comp_yn: str = Field(default="", description="압축여부(N:비압축)")
+    comp_yn: Literal["N"] = Field(default="N", description="압축여부(N:비압축)")
+    exchgubun: Literal["K", "N", "U"] = Field(default="K", description="거래소구분코드(K:KRX, N:NXT, U:통합)")
 
 
 class T8452OutBlock(BaseModel):

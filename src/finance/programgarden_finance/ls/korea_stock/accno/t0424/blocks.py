@@ -30,26 +30,26 @@ class T0424InBlock(BaseModel):
         charge (str): 제비용포함여부 (0:미포함 1:포함)
         cts_expcode (str): CTS_종목번호 (연속조회시 OutBlock의 동일필드 입력)
     """
-    prcgb: str = Field(
-        default="",
+    prcgb: Literal["1", "2"] = Field(
+        ...,
         title="단가구분",
         description="1:평균단가 2:BEP단가"
     )
     """ 단가구분 (1:평균단가 2:BEP단가) """
-    chegb: str = Field(
-        default="",
+    chegb: Literal["0", "2"] = Field(
+        ...,
         title="체결구분",
         description="0:결제기준잔고 2:체결기준잔고"
     )
     """ 체결구분 (0:결제기준잔고 2:체결기준잔고) """
-    dangb: str = Field(
-        default="",
+    dangb: Literal["0", "1"] = Field(
+        default="0",
         title="단일가구분",
         description="0:정규장 1:시간외단일가"
     )
     """ 단일가구분 (0:정규장 1:시간외단일가) """
-    charge: str = Field(
-        default="",
+    charge: Literal["0", "1"] = Field(
+        default="0",
         title="제비용포함여부",
         description="0:미포함 1:포함"
     )

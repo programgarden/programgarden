@@ -32,13 +32,13 @@ class T1422InBlock(BaseModel):
         idx (int): 연속조회키
         exchgubun (str): 거래소구분코드 (K:KRX N:NXT U:통합)
     """
-    qrygb: str
+    qrygb: Literal["1", "2"]
     """ 조회구분 (1:20종목씩 조회 2:전체조회) """
-    gubun: str
+    gubun: Literal["0", "1", "2"]
     """ 구분 (0:전체 1:코스피 2:코스닥) """
-    jnilgubun: str
+    jnilgubun: Literal["0", "1"]
     """ 전일구분 (0:당일 1:전일) """
-    sign: str
+    sign: Literal["1", "4"]
     """ 상하한구분 (1:상한 4:하한) """
     jc_num: int = 0
     """ 대상제외 비트마스크 """
@@ -50,7 +50,7 @@ class T1422InBlock(BaseModel):
     """ 거래량 """
     idx: int = 0
     """ 연속조회키 (최초 0) """
-    exchgubun: str = "K"
+    exchgubun: Literal["K", "N", "U"] = "K"
     """ 거래소구분코드 (K:KRX N:NXT U:통합) """
 
 

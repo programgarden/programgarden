@@ -25,9 +25,9 @@ class T1404InBlock(BaseModel):
         jongchk (str): 종목체크 (1:관리 2:불성실공시 3:투자유의 4:투자환기)
         cts_shcode (str): 종목코드_CTS (연속조회키)
     """
-    gubun: str
+    gubun: Literal["0", "1", "2"]
     """ 구분 (0:전체 1:코스피 2:코스닥) """
-    jongchk: str
+    jongchk: Literal["1", "2", "3", "4"]
     """ 종목체크 (1:관리 2:불성실공시 3:투자유의 4:투자환기) """
     cts_shcode: str = " "
     """ 종목코드_CTS (연속조회키) """

@@ -35,7 +35,7 @@ class T1471InBlock(BaseModel):
     """ 시간 (연속조회키) """
     cnt: str = "010"
     """ 자료개수 (1~500) """
-    exchgubun: str = "K"
+    exchgubun: Literal["K", "N", "U"] = "K"
     """ 거래소구분코드 (K:KRX N:NXT U:통합) """
 
 

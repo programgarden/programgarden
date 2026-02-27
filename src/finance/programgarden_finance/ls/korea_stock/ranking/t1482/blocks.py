@@ -18,7 +18,10 @@ class T1482ResponseHeader(BlockResponseHeader):
 
 class T1482InBlock(BaseModel):
     """시간외거래량상위 입력 블록"""
-    sort_gbn: int = Field(default=0, description="정렬구분")
+    sort_gbn: Literal[0, 1] = Field(default=0, description="정렬구분(0:거래량, 1:거래대금)")
+    gubun: Literal["0", "1", "2"] = Field(default="0", description="구분(0:전체, 1:코스피, 2:코스닥)")
+    jongchk: Literal["0", "1", "2", "3"] = Field(default="0", description="거래량(0:전체, 1:우선제외, 2:관리제외, 3:우선관리제외)")
+    idx: int = Field(default=0, description="IDX(연속조회시 OutBlock의 idx 입력)")
 
 
 class T1482OutBlock(BaseModel):

@@ -33,7 +33,7 @@ class T8451InBlock(BaseModel):
     """
     shcode: str
     """ 단축코드 """
-    gubun: str = "2"
+    gubun: Literal["2", "3", "4", "5"] = "2"
     """ 주기구분 (2:일, 3:주, 4:월, 5:년) """
     qrycnt: int = 500
     """ 요청건수 (최대 500) """
@@ -43,11 +43,11 @@ class T8451InBlock(BaseModel):
     """ 종료일자 (YYYYMMDD, 처음조회시 "99999999" 또는 당일) """
     cts_date: str = ""
     """ 연속일자 (연속조회시 이전 응답의 cts_date 값) """
-    comp_yn: str = "N"
+    comp_yn: Literal["N"] = "N"
     """ 압축여부 (N:비압축, OPEN API 압축 미제공) """
-    sujung: str = "N"
+    sujung: Literal["Y", "N"] = "N"
     """ 수정주가여부 (Y:적용, N:비적용) """
-    exchgubun: str = "K"
+    exchgubun: Literal["K", "N", "U"] = "K"
     """ 거래소구분코드 (K:KRX, N:NXT, U:통합, 그외 KRX로 처리) """
 
 

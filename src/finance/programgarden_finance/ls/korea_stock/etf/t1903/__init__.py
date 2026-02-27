@@ -99,8 +99,6 @@ class TrT1903(TRRequestAbstract, OccursReqAbstract):
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
             req_data.body["t1903InBlock"].date = resp.cont_block.date
-            req_data.body["t1903InBlock"].hname = resp.cont_block.hname
-            req_data.body["t1903InBlock"].upname = resp.cont_block.upname
         return self._generic.occurs_req(_updater, callback=callback, delay=delay)
 
     async def occurs_req_async(self, callback: Optional[Callable[[Optional[T1903Response], RequestStatus], None]] = None, delay: int = 1) -> list[T1903Response]:
@@ -111,8 +109,6 @@ class TrT1903(TRRequestAbstract, OccursReqAbstract):
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
             req_data.body["t1903InBlock"].date = resp.cont_block.date
-            req_data.body["t1903InBlock"].hname = resp.cont_block.hname
-            req_data.body["t1903InBlock"].upname = resp.cont_block.upname
         return await self._generic.occurs_req_async(_updater, callback=callback, delay=delay)
 
 

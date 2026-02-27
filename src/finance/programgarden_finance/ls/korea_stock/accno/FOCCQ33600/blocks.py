@@ -37,7 +37,7 @@ class FOCCQ33600InBlock1(BaseModel):
         description="조회종료일 (YYYYMMDD)"
     )
     """ 조회종료일 """
-    TermTp: str = Field(
+    TermTp: Literal["1", "2", "3"] = Field(
         default="1",
         title="기간구분",
         description="기간구분 (1:일별 2:주별 3:월별)"

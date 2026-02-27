@@ -21,10 +21,10 @@ class T1702InBlock(BaseModel):
     shcode: str = Field(default="", description="종목코드")
     fromdt: str = Field(default="", description="시작일자")
     todt: str = Field(default="", description="종료일자")
-    volvalgb: str = Field(default="", description="금액수량구분(0:금액1:수량2:단가)")
-    msmdgb: str = Field(default="", description="매수매도구분(0:순매수1:매수2:매도)")
-    gubun: str = Field(default="", description="누적구분(0:일간1:누적)")
-    exchgubun: str = Field(default="", description="거래소구분코드")
+    volvalgb: Literal["0", "1", "2"] = Field(description="금액수량구분(0:금액, 1:수량, 2:단가)")
+    msmdgb: Literal["0", "1", "2"] = Field(description="매수매도구분(0:순매수, 1:매수, 2:매도)")
+    gubun: Literal["0", "1"] = Field(description="누적구분(0:일간, 1:누적)")
+    exchgubun: Literal["K", "N", "U"] = Field(default="K", description="거래소구분코드(K:KRX, N:NXT, U:통합)")
 
 
 class T1702OutBlock1(BaseModel):
@@ -49,7 +49,7 @@ class T1702OutBlock1(BaseModel):
     tjj0011: int = Field(default=0, description="국가외")
     tjj0018: int = Field(default=0, description="기관")
     tjj0016: int = Field(default=0, description="외인계(등록+미등록)")
-    amt0017: int = Field(default=0, description="기타계(기타+국가)")
+    tjj0017: int = Field(default=0, description="기타계(기타+국가)")
     value: int = Field(default=0, description="거래대금")
 
 

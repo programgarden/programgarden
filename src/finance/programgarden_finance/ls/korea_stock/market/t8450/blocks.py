@@ -26,7 +26,7 @@ class T8450InBlock(BaseModel):
     """
     shcode: str
     """ 단축코드 """
-    exchgubun: str = "K"
+    exchgubun: Literal["K", "N", "U"] = "K"
     """ 거래소구분코드 (K: KRX, N: NXT, U: 통합, 그외: KRX로 처리) """
 
 

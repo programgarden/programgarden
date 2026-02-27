@@ -34,9 +34,9 @@ class T1452InBlock(BaseModel):
         volume (int): 최소 거래량 필터 (0이면 필터 없음)
         idx (int): 연속조회키 (최초 0, 연속조회 시 이전 OutBlock.idx)
     """
-    gubun: str
+    gubun: Literal["0", "1", "2"]
     """ 시장구분 (0:전체 1:코스피 2:코스닥) """
-    jnilgubun: str
+    jnilgubun: Literal["1", "2"]
     """ 전일구분 (1:당일 2:전일) """
     sdiff: int = 0
     """ 시작등락율 - 등락률 하한 필터 (0이면 필터 없음) """

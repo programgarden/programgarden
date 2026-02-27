@@ -28,7 +28,8 @@ class T8453InBlock(BaseModel):
     etime: str = Field(default="", description="종료시간(현재미사용)")
     cts_date: str = Field(default="", description="연속일자")
     cts_time: str = Field(default="", description="연속시간")
-    comp_yn: str = Field(default="", description="압축여부(N:비압축)")
+    comp_yn: Literal["N"] = Field(default="N", description="압축여부(N:비압축)")
+    exchgubun: Literal["K", "N", "U"] = Field(default="K", description="거래소구분코드(K:KRX, N:NXT, U:통합)")
 
 
 class T8453OutBlock(BaseModel):
@@ -37,7 +38,7 @@ class T8453OutBlock(BaseModel):
     jisiga: int = Field(default=0, description="전일시가")
     jihigh: int = Field(default=0, description="전일고가")
     jilow: int = Field(default=0, description="전일저가")
-    jicloseㅍ: int = Field(default=0, description="전일종가")
+    jiclosev: int = Field(default=0, description="전일종가")
     jivolume: int = Field(default=0, description="전일거래량")
     disiga: int = Field(default=0, description="당일시가")
     dihigh: int = Field(default=0, description="당일고가")
