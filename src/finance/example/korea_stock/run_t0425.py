@@ -54,7 +54,7 @@ def test_req_t0425():
     for item in response.block:
         medosu_str = {"1": "매도", "2": "매수"}.get(item.medosu, item.medosu)
         logger.info(
-            f"{item.ordno:>10} {item.hname:<14} {medosu_str:>4} {item.price:>10,} "
+            f"{item.ordno:>10} {item.expcode:<14} {medosu_str:>4} {item.price:>10,} "
             f"{item.qty:>8,} {item.cheqty:>8,} {item.ordrem:>8,} {item.status:<10}"
         )
 
