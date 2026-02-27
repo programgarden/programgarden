@@ -33,7 +33,7 @@
 
 ## 전체 플러그인 목록
 
-### 전체 플러그인 (55개)
+### 전체 플러그인 (67개)
 
 | 분류 | 플러그인 | 설명 |
 |------|---------|------|
@@ -44,6 +44,10 @@
 | | WilliamsR | 윌리엄스 %R 오실레이터 |
 | | CCI | 상품채널지수 (과매수/과매도) |
 | | TRIX | 삼중지수이동평균 노이즈 제거 |
+| | ConnorsRSI | RSI + 연속등락 + 이격률 결합 모멘텀 |
+| | MFI | 자금흐름지수 (가격+거래량 기반) |
+| | CoppockCurve | 장기 바닥 탐지 (ROC 평활화) |
+| | TimeSeriesMomentum | 시계열 모멘텀 (절대/상대/위험조정) |
 | **추세** | ADX | 추세 강도 측정 |
 | | MovingAverageCross | 이동평균 골든/데드크로스 |
 | | DualMomentum | 듀얼모멘텀 (절대+상대) |
@@ -51,14 +55,19 @@
 | | IchimokuCloud | 일목균형표 (구름대) |
 | | ParabolicSAR | 파라볼릭 SAR 추세 반전 |
 | | Supertrend | ATR 기반 슈퍼트렌드 |
+| | ElderRay | 엘더레이 (Bull/Bear Power + EMA) |
 | **변동성** | BollingerBands | 볼린저밴드 이탈 |
 | | ATR | ATR 변동성 돌파 |
 | | PriceChannel | 돈치안 채널 돌파 |
 | | GoldenRatio | 피보나치 되돌림 |
 | | KeltnerChannel | 켈트너 채널 (스퀴즈) |
 | | SqueezeMomentum | BB+KC 스퀴즈 발화 + 선형회귀 모멘텀 |
+| | TurtleBreakout | 터틀 채널 돌파 (20/55일 고가/저가) |
+| | VolatilityBreakout | 변동성 돌파 전략 (레인지 대비 돌파) |
 | **가격 레벨** | PivotPoint | 피봇 포인트 (S/R 레벨) |
 | | VWAP | 거래량가중평균가격 |
+| | SupportResistanceLevels | Swing 기반 지지/저항 레벨 감지+클러스터링 |
+| | LevelTouch | 레벨 터치/돌파/역할전환 감지 |
 | **패턴** | ThreeLineStrike | 삼선 타격 (4봉 반전) |
 | | Engulfing | 장악형 (불리시/베어리시) |
 | | HammerShootingStar | 망치/유성형 (반전) |
@@ -74,6 +83,9 @@
 | | CorrelationAnalysis | 자산 간 상관관계 분석 |
 | | MomentumRank | 유니버스 전체 모멘텀 순위 기반 상위/하위 선별 |
 | | MarketInternals | 시장 내부 건강도 (AD비율, MA위 비율, 복합점수) |
+| | SeasonalFilter | 계절성 패턴 필터 (월별/요일별) |
+| | TacticalAssetAllocation | 전술적 자산배분 (모멘텀+SMA 기반) |
+| **복합 전략** | MagicFormula | 마법공식 (수익률+모멘텀 결합 순위) |
 | **멀티타임프레임** | MultiTimeframeConfirmation | 다중 시간프레임 MA 정렬 확인 |
 | **선물 전용** | ContangoBackwardation | 콘탱고/백워데이션 감지 |
 | | CalendarSpread | 캘린더 스프레드 Z-score |
