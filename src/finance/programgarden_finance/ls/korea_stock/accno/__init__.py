@@ -460,6 +460,49 @@ class Accno:
     주식체결미체결 = t0425
     주식체결미체결.__doc__ = "당일 주문별 체결수량, 미체결잔량, 주문상태를 조회합니다."
 
+    def account_tracker(
+        self,
+        real_client,
+        refresh_interval: int = 60,
+        commission_rate=None,
+    ):
+        """
+        계좌 추적기 생성 (보유종목, 예수금, 미체결 실시간 추적)
+
+        Args:
+            real_client: 실시간 클라이언트 (korea_stock().real()) - 필수
+            refresh_interval: API 갱신 주기 (초, 기본 60초)
+            commission_rate: 수수료율 (None이면 0.015%)
+
+        Returns:
+            KrStockAccountTracker: 계좌 추적기 인스턴스
+
+        Example:
+            ```python
+            real = korea_stock().real()
+            await real.connect()
+
+            tracker = accno.account_tracker(real_client=real)
+            await tracker.start()
+
+            tracker.on_position_change(lambda positions: print(positions))
+            tracker.on_balance_change(lambda balance: print(balance))
+
+            await tracker.stop()
+            ```
+        """
+        from ..extension import KrStockAccountTracker
+
+        return KrStockAccountTracker(
+            accno_client=self,
+            real_client=real_client,
+            refresh_interval=refresh_interval,
+            commission_rate=commission_rate,
+        )
+
+    계좌추적기 = account_tracker
+    계좌추적기.__doc__ = "계좌 실시간 추적기를 생성합니다."
+
 
 __init__ = [
     Accno,
