@@ -28,10 +28,10 @@ class CSPAQ12300InBlock1(BaseModel):
         D2balBaseQryTp (str): D2잔고기준조회구분 (기본 "0")
         UprcTpCode (str): 단가구분코드 (기본 "0")
     """
-    BalCreTp: str = Field(
+    BalCreTp: Literal["0", "1", "2", "3", "4", "5", "6"] = Field(
         default="0",
         title="잔고생성구분",
-        description="잔고생성구분"
+        description="0:주식잔고 1:기타 2:재투자잔고 3:유통대주 4:자기융자 5:유통대주 6:자기대주"
     )
     """ 잔고생성구분 """
     CmsnAppTpCode: str = Field(

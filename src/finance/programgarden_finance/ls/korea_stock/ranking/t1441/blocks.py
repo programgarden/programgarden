@@ -32,11 +32,11 @@ class T1441InBlock(BaseModel):
         jc_num2 (int): 대상제외2 비트마스크
         exchgubun (str): 거래소구분코드 (K:KRX N:NXT U:통합)
     """
-    gubun1: str
+    gubun1: Literal["0", "1", "2"]
     """ 구분 (0:전체 1:코스피 2:코스닥) """
-    gubun2: str
+    gubun2: Literal["0", "1", "2"]
     """ 상승하락 (0:상승률 1:하락률 2:보합) """
-    gubun3: str
+    gubun3: Literal["0", "1"]
     """ 당일전일 (0:당일 1:전일) """
     jc_num: int = 0
     """ 대상제외 비트마스크 """
@@ -50,7 +50,7 @@ class T1441InBlock(BaseModel):
     """ 연속조회키 (최초 0) """
     jc_num2: int = 0
     """ 대상제외2 비트마스크 """
-    exchgubun: str = "K"
+    exchgubun: Literal["K", "N", "U"] = "K"
     """ 거래소구분코드 (K:KRX N:NXT U:통합) """
 
 

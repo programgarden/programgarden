@@ -49,13 +49,13 @@ class CSPAT00701InBlock1(BaseModel):
         description="주문수량"
     )
     """ 주문수량 """
-    OrdprcPtnCode: str = Field(
+    OrdprcPtnCode: Literal["00", "03", "05", "06", "07", "61", "81", "82"] = Field(
         default="00",
         title="호가유형코드",
         description="00:지정가 03:시장가 05:조건부지정가 06:최유리지정가 07:최우선지정가 61:장개시전시간외종가 81:시간외종가 82:시간외단일가"
     )
     """ 호가유형코드 (00:지정가 03:시장가 등) """
-    OrdCndiTpCode: str = Field(
+    OrdCndiTpCode: Literal["0", "1", "2"] = Field(
         default="0",
         title="주문조건구분",
         description="0:없음 1:IOC 2:FOK"

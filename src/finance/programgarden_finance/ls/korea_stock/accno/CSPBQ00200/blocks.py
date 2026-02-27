@@ -27,8 +27,8 @@ class CSPBQ00200InBlock1(BaseModel):
         IsuNo (str): 종목번호
         OrdPrc (float): 주문가격
     """
-    BnsTpCode: str = Field(
-        default="",
+    BnsTpCode: Literal["1", "2"] = Field(
+        ...,
         title="매매구분",
         description="1:매도 2:매수"
     )

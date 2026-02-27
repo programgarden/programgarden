@@ -18,7 +18,10 @@ class T1638ResponseHeader(BlockResponseHeader):
 
 class T1638InBlock(BaseModel):
     """종목별잔량/사전공시 입력 블록"""
-    gubun1: str = Field(default="", description="구분")
+    gubun1: Literal["1", "2"] = Field(description="구분(1:코스피, 2:코스닥)")
+    shcode: str = Field(default="", description="종목코드")
+    gubun2: Literal["1", "2", "3", "4", "5", "6", "7"] = Field(description="정렬(1:시가총액비중, 2:순매수잔량상위, 3:순매수잔량하위, 4:매수잔량, 5:매수공시수량, 6:매도잔량, 7:매도공시수량)")
+    exchgubun: Literal["K", "N", "U"] = Field(default="K", description="거래소구분코드(K:KRX, N:NXT, U:통합)")
 
 
 class T1638OutBlock(BaseModel):

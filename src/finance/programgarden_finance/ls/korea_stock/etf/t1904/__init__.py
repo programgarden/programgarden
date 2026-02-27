@@ -98,43 +98,6 @@ class TrT1904(TRRequestAbstract, OccursReqAbstract):
                 raise ValueError("t1904 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
-            req_data.body["t1904InBlock"].chk_tday = resp.cont_block.chk_tday
-            req_data.body["t1904InBlock"].date = resp.cont_block.date
-            req_data.body["t1904InBlock"].price = resp.cont_block.price
-            req_data.body["t1904InBlock"].sign = resp.cont_block.sign
-            req_data.body["t1904InBlock"].change = resp.cont_block.change
-            req_data.body["t1904InBlock"].diff = resp.cont_block.diff
-            req_data.body["t1904InBlock"].volume = resp.cont_block.volume
-            req_data.body["t1904InBlock"].nav = resp.cont_block.nav
-            req_data.body["t1904InBlock"].navsign = resp.cont_block.navsign
-            req_data.body["t1904InBlock"].navchange = resp.cont_block.navchange
-            req_data.body["t1904InBlock"].navdiff = resp.cont_block.navdiff
-            req_data.body["t1904InBlock"].jnilnav = resp.cont_block.jnilnav
-            req_data.body["t1904InBlock"].jnilnavsign = resp.cont_block.jnilnavsign
-            req_data.body["t1904InBlock"].jnilnavchange = resp.cont_block.jnilnavchange
-            req_data.body["t1904InBlock"].jnilnavdiff = resp.cont_block.jnilnavdiff
-            req_data.body["t1904InBlock"].upname = resp.cont_block.upname
-            req_data.body["t1904InBlock"].upcode = resp.cont_block.upcode
-            req_data.body["t1904InBlock"].upprice = resp.cont_block.upprice
-            req_data.body["t1904InBlock"].upsign = resp.cont_block.upsign
-            req_data.body["t1904InBlock"].upchange = resp.cont_block.upchange
-            req_data.body["t1904InBlock"].updiff = resp.cont_block.updiff
-            req_data.body["t1904InBlock"].futname = resp.cont_block.futname
-            req_data.body["t1904InBlock"].futcode = resp.cont_block.futcode
-            req_data.body["t1904InBlock"].futprice = resp.cont_block.futprice
-            req_data.body["t1904InBlock"].futsign = resp.cont_block.futsign
-            req_data.body["t1904InBlock"].futchange = resp.cont_block.futchange
-            req_data.body["t1904InBlock"].futdiff = resp.cont_block.futdiff
-            req_data.body["t1904InBlock"].upname2 = resp.cont_block.upname2
-            req_data.body["t1904InBlock"].upcode2 = resp.cont_block.upcode2
-            req_data.body["t1904InBlock"].upprice2 = resp.cont_block.upprice2
-            req_data.body["t1904InBlock"].etftotcap = resp.cont_block.etftotcap
-            req_data.body["t1904InBlock"].etfnum = resp.cont_block.etfnum
-            req_data.body["t1904InBlock"].etfcunum = resp.cont_block.etfcunum
-            req_data.body["t1904InBlock"].cash = resp.cont_block.cash
-            req_data.body["t1904InBlock"].opcom_nmk = resp.cont_block.opcom_nmk
-            req_data.body["t1904InBlock"].tot_pval = resp.cont_block.tot_pval
-            req_data.body["t1904InBlock"].tot_sigatval = resp.cont_block.tot_sigatval
         return self._generic.occurs_req(_updater, callback=callback, delay=delay)
 
     async def occurs_req_async(self, callback: Optional[Callable[[Optional[T1904Response], RequestStatus], None]] = None, delay: int = 1) -> list[T1904Response]:
@@ -144,43 +107,6 @@ class TrT1904(TRRequestAbstract, OccursReqAbstract):
                 raise ValueError("t1904 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
-            req_data.body["t1904InBlock"].chk_tday = resp.cont_block.chk_tday
-            req_data.body["t1904InBlock"].date = resp.cont_block.date
-            req_data.body["t1904InBlock"].price = resp.cont_block.price
-            req_data.body["t1904InBlock"].sign = resp.cont_block.sign
-            req_data.body["t1904InBlock"].change = resp.cont_block.change
-            req_data.body["t1904InBlock"].diff = resp.cont_block.diff
-            req_data.body["t1904InBlock"].volume = resp.cont_block.volume
-            req_data.body["t1904InBlock"].nav = resp.cont_block.nav
-            req_data.body["t1904InBlock"].navsign = resp.cont_block.navsign
-            req_data.body["t1904InBlock"].navchange = resp.cont_block.navchange
-            req_data.body["t1904InBlock"].navdiff = resp.cont_block.navdiff
-            req_data.body["t1904InBlock"].jnilnav = resp.cont_block.jnilnav
-            req_data.body["t1904InBlock"].jnilnavsign = resp.cont_block.jnilnavsign
-            req_data.body["t1904InBlock"].jnilnavchange = resp.cont_block.jnilnavchange
-            req_data.body["t1904InBlock"].jnilnavdiff = resp.cont_block.jnilnavdiff
-            req_data.body["t1904InBlock"].upname = resp.cont_block.upname
-            req_data.body["t1904InBlock"].upcode = resp.cont_block.upcode
-            req_data.body["t1904InBlock"].upprice = resp.cont_block.upprice
-            req_data.body["t1904InBlock"].upsign = resp.cont_block.upsign
-            req_data.body["t1904InBlock"].upchange = resp.cont_block.upchange
-            req_data.body["t1904InBlock"].updiff = resp.cont_block.updiff
-            req_data.body["t1904InBlock"].futname = resp.cont_block.futname
-            req_data.body["t1904InBlock"].futcode = resp.cont_block.futcode
-            req_data.body["t1904InBlock"].futprice = resp.cont_block.futprice
-            req_data.body["t1904InBlock"].futsign = resp.cont_block.futsign
-            req_data.body["t1904InBlock"].futchange = resp.cont_block.futchange
-            req_data.body["t1904InBlock"].futdiff = resp.cont_block.futdiff
-            req_data.body["t1904InBlock"].upname2 = resp.cont_block.upname2
-            req_data.body["t1904InBlock"].upcode2 = resp.cont_block.upcode2
-            req_data.body["t1904InBlock"].upprice2 = resp.cont_block.upprice2
-            req_data.body["t1904InBlock"].etftotcap = resp.cont_block.etftotcap
-            req_data.body["t1904InBlock"].etfnum = resp.cont_block.etfnum
-            req_data.body["t1904InBlock"].etfcunum = resp.cont_block.etfcunum
-            req_data.body["t1904InBlock"].cash = resp.cont_block.cash
-            req_data.body["t1904InBlock"].opcom_nmk = resp.cont_block.opcom_nmk
-            req_data.body["t1904InBlock"].tot_pval = resp.cont_block.tot_pval
-            req_data.body["t1904InBlock"].tot_sigatval = resp.cont_block.tot_sigatval
         return await self._generic.occurs_req_async(_updater, callback=callback, delay=delay)
 
 

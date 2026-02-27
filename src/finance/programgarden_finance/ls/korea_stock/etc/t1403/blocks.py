@@ -29,7 +29,7 @@ class T1403InBlock(BaseModel):
         enyymm (str): 종료상장월 (YYYYMM 형식, 예: "202512")
         idx (int): 연속조회키 (최초 0, 연속조회 시 이전 OutBlock.idx)
     """
-    gubun: str
+    gubun: Literal["0", "1", "2"]
     """ 시장구분 (0:전체 1:코스피 2:코스닥) """
     styymm: str
     """ 시작상장월 (YYYYMM 형식, 예: "202501") """

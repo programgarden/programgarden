@@ -17,8 +17,14 @@ class T1665ResponseHeader(BlockResponseHeader):
 
 
 class T1665InBlock(BaseModel):
-    """TR명 입력 블록"""
-    market: str = Field(default="", description="시장구분")
+    """기간별투자자매매추이(차트) 입력 블록"""
+    market: Literal["1", "2", "3", "4", "5", "6"] = Field(description="시장구분(1:코스피, 2:KP200, 3:코스닥, 4:선물, 5:풋옵션, 6:콜옵션)")
+    upcode: str = Field(default="", description="업종코드")
+    gubun2: Literal["1", "2"] = Field(description="수치구분(1:수치, 2:누적)")
+    gubun3: Literal["1", "2", "3"] = Field(description="단위구분(1:일, 2:주, 3:월)")
+    from_date: str = Field(description="시작날짜(YYYYMMDD)")
+    to_date: str = Field(description="종료날짜(YYYYMMDD)")
+    exchgubun: Literal["K", "N", "U"] = Field(default="K", description="거래소구분코드(K:KRX, N:NXT, U:통합)")
 
 
 class T1665OutBlock(BaseModel):

@@ -32,13 +32,13 @@ class T1442InBlock(BaseModel):
         idx (int): 연속조회키
         jc_num2 (int): 대상제외2 비트마스크
     """
-    gubun: str
+    gubun: Literal["0", "1", "2"]
     """ 구분 (0:전체 1:코스피 2:코스닥) """
-    type1: str
+    type1: Literal["0", "1"]
     """ 신고신저 (0:신고 1:신저) """
-    type2: str
+    type2: Literal["0", "1", "2", "3", "4", "5", "6", "7"]
     """ 기간 (0:전일 1:5일 2:10일 3:20일 4:60일 5:90일 6:52주 7:년중) """
-    type3: str
+    type3: Literal["0", "1"]
     """ 유지여부 (0:일시돌파 1:돌파유지) """
     jc_num: int = 0
     """ 대상제외 비트마스크 """

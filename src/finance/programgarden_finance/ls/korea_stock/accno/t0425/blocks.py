@@ -36,20 +36,20 @@ class T0425InBlock(BaseModel):
         description="종목번호 (비워두면 전종목)"
     )
     """ 종목번호 (비워두면 전종목) """
-    chegb: str = Field(
-        default="",
+    chegb: Literal["0", "1", "2"] = Field(
+        default="0",
         title="체결구분",
         description="0:전체 1:체결 2:미체결"
     )
     """ 체결구분 (0:전체 1:체결 2:미체결) """
-    medosu: str = Field(
-        default="",
+    medosu: Literal["0", "1", "2"] = Field(
+        default="0",
         title="매매구분",
         description="0:전체 1:매도 2:매수"
     )
     """ 매매구분 (0:전체 1:매도 2:매수) """
-    sortgb: str = Field(
-        default="",
+    sortgb: Literal["1", "2"] = Field(
+        default="1",
         title="정렬순서",
         description="1:주문번호 역순 2:주문번호 순"
     )

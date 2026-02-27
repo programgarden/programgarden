@@ -20,7 +20,7 @@ class T1904InBlock(BaseModel):
     """ETF구성종목조회 입력 블록"""
     shcode: str = Field(default="", description="ETF단축코드")
     date: str = Field(default="", description="PDF적용일자")
-    sgb: str = Field(default="", description="정렬기준(1:평가금액2:증권수)")
+    sgb: Literal["1", "2"] = Field(default="1", description="정렬기준(1:평가금액2:증권수)")
 
 
 class T1904OutBlock(BaseModel):

@@ -31,7 +31,7 @@ class T1475InBlock(BaseModel):
     """
     shcode: str
     """ 종목코드 """
-    vptype: str = "0"
+    vptype: Literal["0", "1"] = "0"
     """ 상승하락 (0:시간별 1:일별) """
     datacnt: int = 0
     """ 데이터개수 """
@@ -41,7 +41,7 @@ class T1475InBlock(BaseModel):
     """ 기준시간 """
     rankcnt: int = 0
     """ 랭크카운터 (미사용) """
-    gubun: str = "0"
+    gubun: Literal["0", "1"] = "0"
     """ 조회구분 (0:일반조회 1:차트조회) """
 
 
