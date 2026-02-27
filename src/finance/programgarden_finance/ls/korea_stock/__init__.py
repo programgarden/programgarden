@@ -14,9 +14,12 @@ from .accno import Accno
 from .order import Order
 from .sector import Sector
 from .investor import Investor
+from .real import Real
 
 
 class KoreaStock:
+
+    _real_instances: Dict[int, "Real"] = {}
 
     def __init__(self, token_manager: TokenManager):
         if not token_manager:
@@ -93,6 +96,41 @@ class KoreaStock:
     투자자 = investor
     투자자.__doc__ = "투자자별 매매 동향(종합, 시간대별, 차트)을 조회합니다."
 
+    @require_korean_alias
+    def real(
+        self,
+        reconnect=True,
+        recv_timeout=5.0,
+        ping_interval=30.0,
+        ping_timeout=5.0,
+        max_backoff=60.0
+    ):
+        key = id(self.token_manager)
+        cached = KoreaStock._real_instances.get(key)
+        if cached is not None:
+            return cached
+        instance = Real(
+            token_manager=self.token_manager,
+            reconnect=reconnect,
+            recv_timeout=recv_timeout,
+            ping_interval=ping_interval,
+            ping_timeout=ping_timeout,
+            max_backoff=max_backoff
+        )
+        KoreaStock._real_instances[key] = instance
+        return instance
+
+    실시간 = real
+    실시간.__doc__ = "실시간 데이터를 조회합니다."
+
+    @classmethod
+    def _clear_real_instance(cls, token_manager_id: int):
+        cls._real_instances.pop(token_manager_id, None)
+
+    @classmethod
+    def _clear_all_real_instances(cls):
+        cls._real_instances.clear()
+
 
 __all__ = [
     KoreaStock,
@@ -106,4 +144,5 @@ __all__ = [
     Order,
     Sector,
     Investor,
+    Real,
 ]
