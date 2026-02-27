@@ -12,6 +12,8 @@ from .etf import Etf
 from .frgr_itt import FrgrItt
 from .accno import Accno
 from .order import Order
+from .sector import Sector
+from .investor import Investor
 
 
 class KoreaStock:
@@ -77,6 +79,20 @@ class KoreaStock:
     주문 = order
     주문.__doc__ = "주문(매수/매도/정정)을 처리합니다."
 
+    @require_korean_alias
+    def sector(self) -> Sector:
+        return Sector(token_manager=self.token_manager)
+
+    업종테마 = sector
+    업종테마.__doc__ = "업종/테마 현재가, 종목시세, 테마별종목을 조회합니다."
+
+    @require_korean_alias
+    def investor(self) -> Investor:
+        return Investor(token_manager=self.token_manager)
+
+    투자자 = investor
+    투자자.__doc__ = "투자자별 매매 동향(종합, 시간대별, 차트)을 조회합니다."
+
 
 __all__ = [
     KoreaStock,
@@ -88,4 +104,6 @@ __all__ = [
     FrgrItt,
     Accno,
     Order,
+    Sector,
+    Investor,
 ]
