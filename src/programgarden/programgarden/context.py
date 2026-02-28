@@ -30,6 +30,7 @@ from programgarden_core.bases.listener import (
     WorkflowPnLEvent,
     PositionDetail,
     RiskEvent,
+    RestartEvent,
     LLMStreamEvent,
     TokenUsageEvent,
     AIToolCallEvent,
@@ -1412,6 +1413,17 @@ class ExecutionContext:
     def is_risk_halted(self) -> bool:
         """M-10: critical risk event에 의해 주문이 중단되었는지 여부."""
         return self._risk_halt
+
+    async def notify_restart(self, event: RestartEvent) -> None:
+        """워크플로우 복구 이벤트 전파. 체크포인트 복원/실패 시 호출."""
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_restart'):
+                    await listener.on_restart(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_restart: {e}")
 
     async def notify_risk_event(self, event: RiskEvent) -> None:
         """위험 이벤트 전파. UI에서 위험 알림 표시용."""

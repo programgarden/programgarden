@@ -1130,5 +1130,11 @@
   "plugins.SupportResistanceLevels.name": "Support/Resistance Levels",
   "plugins.SupportResistanceLevels.description": "Dynamic S/R level detection from swing highs/lows with cluster zone strength evaluation",
   "plugins.LevelTouch.name": "Level Touch",
-  "plugins.LevelTouch.description": "S/R level touch/breakout/role reversal detection with history tracking (first_touch, role_reversal, cluster_bounce)"
+  "plugins.LevelTouch.description": "S/R level touch/breakout/role reversal detection with history tracking (first_touch, role_reversal, cluster_bounce)",
+  "events.restart.checkpoint_restore": "Restoring workflow from checkpoint (job: {job_id})",
+  "events.restart.restore_failed": "Workflow restore failed (job: {job_id}, reason: {reason})",
+  "events.restart.data_gap_warning": "Data gap warning during restore: data may be missing for {gap_sec} seconds since checkpoint",
+  "events.restart.skipped_nodes": "Restore: skipping {count} completed nodes",
+  "events.restart.checkpoint_expired": "Checkpoint expired ({age_sec}s > 600s limit)",
+  "events.restart.workflow_changed": "Workflow definition changed, cannot restore (hash mismatch)"
 }

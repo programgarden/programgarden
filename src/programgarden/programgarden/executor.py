@@ -22,6 +22,7 @@ from programgarden_core.bases.listener import (
     ExecutionListener,
     NodeState,
     EdgeState,
+    RestartEvent,
 )
 from programgarden_core.retry_executor import RetryExecutor
 from programgarden_core.nodes.base import BaseMessagingNode
@@ -12202,12 +12203,223 @@ class WorkflowExecutor:
         # Set workflow job reference for start datetime access
         context.set_workflow_job(job)
 
+        # Checkpoint: 워크플로우 해시 저장 (복구 시 변경 감지용)
+        from programgarden.database.checkpoint_manager import CheckpointManager as _CM
+        job._workflow_json_hash = _CM.compute_workflow_hash(definition)
+
         self._jobs[job_id] = job
 
         # Start execution
         await job.start()
 
         return job
+
+    async def restore(
+        self,
+        definition: Dict[str, Any],
+        job_id: str,
+        context_params: Optional[Dict[str, Any]] = None,
+        secrets: Optional[Dict[str, Any]] = None,
+        listeners: Optional[List[ExecutionListener]] = None,
+        resource_limits: Optional["ResourceLimits"] = None,
+        storage_dir: Optional[str] = None,
+    ) -> "WorkflowJob":
+        """체크포인트에서 워크플로우 복원.
+
+        Args:
+            definition: 워크플로우 정의 (원본과 동일해야 함)
+            job_id: 복원할 Job ID (checkpoint가 존재해야 함)
+            context_params: 런타임 파라미터
+            secrets: 민감 자격증명
+            listeners: ExecutionListener 목록
+            resource_limits: 리소스 제한
+            storage_dir: DB 저장 디렉토리
+
+        Returns:
+            복원된 WorkflowJob
+
+        Raises:
+            ValueError: checkpoint가 없거나, 만료되었거나, 워크플로우가 변경된 경우
+        """
+        from programgarden.database.checkpoint_manager import CheckpointManager
+        from datetime import timezone as _tz
+
+        # 1. Compile
+        resolved, validation = self.compile(definition, context_params)
+        if not validation.is_valid:
+            raise ValueError(f"Workflow validation failed: {validation.errors}")
+
+        # 2. DB에서 checkpoint 로드
+        workflow_id = resolved.workflow_id
+        # DB 경로 결정 (context와 동일 로직)
+        from pathlib import Path
+        if storage_dir:
+            db_dir = Path(storage_dir)
+        elif Path("/app/data").exists():
+            db_dir = Path("/app/data")
+        else:
+            db_dir = Path("./app/data")
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_path = str(db_dir / f"{workflow_id}_workflow.db")
+
+        mgr = CheckpointManager(db_path)
+        checkpoint = mgr.load_checkpoint(job_id)
+
+        # 3. 유효성 검증
+        is_valid, reason = self._validate_checkpoint(checkpoint, definition)
+        if not is_valid:
+            # 복구 실패 알림
+            await self._emit_restore_failure(job_id, reason, storage_dir, listeners)
+            raise ValueError(f"Checkpoint 복구 불가: {reason}")
+
+        # 4. 워크플로우 inputs/credentials 추출
+        workflow_inputs = definition.get("inputs", {})
+        workflow_credentials = definition.get("credentials", [])
+
+        # 5. ResourceContext (execute()와 동일)
+        resource_context = None
+        try:
+            from programgarden.resource import ResourceContext
+            from programgarden_core.models.resource import ResourceLimits as RL
+
+            effective_limits = resource_limits
+            if effective_limits is None:
+                workflow_limits = definition.get("resource_limits")
+                if workflow_limits:
+                    if isinstance(workflow_limits, dict):
+                        effective_limits = RL(**workflow_limits)
+                    else:
+                        effective_limits = workflow_limits
+
+            resource_context = await ResourceContext.create(
+                limits=effective_limits,
+                auto_detect=(effective_limits is None),
+            )
+            await resource_context.start()
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"Failed to initialize ResourceContext: {e}")
+
+        # 6. ExecutionContext 생성
+        context = ExecutionContext(
+            job_id=job_id,
+            workflow_id=workflow_id,
+            context_params=context_params or checkpoint.get("context_params") or {},
+            secrets=secrets,
+            workflow_inputs=workflow_inputs,
+            workflow_credentials=workflow_credentials,
+            resource_context=resource_context,
+            workflow_edges=resolved.edges,
+            workflow_nodes=resolved.nodes,
+            storage_dir=storage_dir,
+        )
+
+        if listeners:
+            context.set_listeners(listeners)
+
+        # 7. Checkpoint outputs 복원
+        for node_id, ports in checkpoint.get("node_outputs", {}).items():
+            for port_name, value in ports.items():
+                context.set_output(node_id, port_name, value)
+
+        # 8. WorkflowJob 생성 + 상태 복원
+        job = WorkflowJob(
+            job_id=job_id,
+            workflow=resolved,
+            context=context,
+            executor=self,
+        )
+
+        # stats/workflow_start_datetime/risk_halt 복원
+        if checkpoint.get("stats"):
+            job.stats.update(checkpoint["stats"])
+        if checkpoint.get("workflow_start_datetime"):
+            try:
+                wsd = datetime.fromisoformat(checkpoint["workflow_start_datetime"])
+                job.workflow_start_datetime = wsd
+            except (ValueError, TypeError):
+                pass
+        if checkpoint.get("risk_halt"):
+            context._risk_halt = True
+
+        context.set_workflow_job(job)
+
+        # 9. 복구 모드 설정
+        job._restore_mode = True
+        job._restore_checkpoint = checkpoint
+        job._completed_node_ids = set(checkpoint.get("completed_nodes", []))
+
+        # 10. Job 등록 + 시작
+        self._jobs[job_id] = job
+        await job.start()
+
+        return job
+
+    def _validate_checkpoint(
+        self,
+        checkpoint: Optional[Dict[str, Any]],
+        definition: Dict[str, Any],
+    ) -> tuple:
+        """체크포인트 유효성 검증.
+
+        Returns:
+            (is_valid: bool, reason: str)
+        """
+        from programgarden.database.checkpoint_manager import CheckpointManager
+        from datetime import timezone as _tz
+
+        # 존재 여부
+        if checkpoint is None:
+            return False, "checkpoint_not_found"
+
+        # 나이 검증 (10분 = 600초)
+        created_at = checkpoint.get("created_at")
+        if created_at:
+            try:
+                cp_time = datetime.fromisoformat(created_at)
+                if cp_time.tzinfo is None:
+                    cp_time = cp_time.replace(tzinfo=_tz.utc)
+                age = (datetime.now(_tz.utc) - cp_time).total_seconds()
+                if age > 600:
+                    return False, f"checkpoint_expired (age={age:.0f}s > 600s)"
+            except (ValueError, TypeError):
+                pass
+
+        # 워크플로우 변경 감지
+        stored_hash = checkpoint.get("workflow_json_hash")
+        if stored_hash:
+            current_hash = CheckpointManager.compute_workflow_hash(definition)
+            if stored_hash != current_hash:
+                return False, "workflow_changed"
+
+        return True, ""
+
+    async def _emit_restore_failure(
+        self,
+        job_id: str,
+        reason: str,
+        storage_dir: Optional[str],
+        listeners: Optional[List[ExecutionListener]],
+    ) -> None:
+        """복구 실패 시 RestartEvent 발행 + 로깅."""
+        logger.critical(f"Checkpoint 복구 실패: job={job_id}, reason={reason}")
+
+        if listeners:
+            event = RestartEvent(
+                job_id=job_id,
+                restart_reason="restore_failed",
+                checkpoint_age_sec=0.0,
+                workflow_type="unknown",
+                skipped_nodes=[],
+                data_gap_warning=f"복구 실패: {reason}",
+            )
+            for listener in listeners:
+                try:
+                    if hasattr(listener, 'on_restart'):
+                        await listener.on_restart(event)
+                except Exception as e:
+                    logger.warning(f"Listener error on_restart: {e}")
 
     async def execute_node(
         self,
@@ -12460,7 +12672,15 @@ class WorkflowJob:
 
         # Execution task
         self._task: Optional[asyncio.Task] = None
-        
+
+        # Checkpoint support
+        self._checkpoint_mgr = None  # CheckpointManager (lazy init)
+        self._checkpoint_task: Optional[asyncio.Task] = None  # 실시간 주기 저장 태스크
+        self._completed_node_ids: Set[str] = set()  # 완료된 노드 ID 집합
+        self._restore_mode: bool = False
+        self._restore_checkpoint: Optional[Dict[str, Any]] = None
+        self._workflow_json_hash: Optional[str] = None  # 워크플로우 정의 해시
+
         # Precompute node categories for optimization
         self._has_schedule_node = self._check_has_schedule_node()
         self._stay_connected_nodes = self._find_stay_connected_nodes()
@@ -12549,15 +12769,47 @@ class WorkflowJob:
         """
         try:
             # Phase 1: Execute main flow
-            await self._execute_main_flow()
+            if self._restore_mode and self._restore_checkpoint:
+                checkpoint = self._restore_checkpoint
+                from datetime import timezone as _tz
+
+                # 복구 알림
+                age_sec = (
+                    datetime.now(_tz.utc) - datetime.fromisoformat(checkpoint["created_at"])
+                ).total_seconds() if checkpoint.get("created_at") else 0.0
+
+                skipped = checkpoint.get("completed_nodes", [])
+                data_gap_msg = None
+                if age_sec > 10:
+                    data_gap_msg = f"체크포인트 이후 {age_sec:.0f}초 동안의 데이터가 누락될 수 있습니다"
+
+                restart_event = RestartEvent(
+                    job_id=self.job_id,
+                    restart_reason="checkpoint_restore",
+                    checkpoint_age_sec=age_sec,
+                    workflow_type=checkpoint.get("workflow_type", "oneshot"),
+                    skipped_nodes=skipped,
+                    data_gap_warning=data_gap_msg,
+                )
+                await self.context.notify_restart(restart_event)
+
+                if checkpoint.get("workflow_type") == "oneshot":
+                    await self._execute_main_flow(skip_nodes=set(skipped))
+                else:
+                    # 실시간: Main Flow 전체 재실행
+                    await self._execute_main_flow()
+                self._restore_mode = False
+                self._restore_checkpoint = None
+            else:
+                await self._execute_main_flow()
             self.stats["flow_executions"] += 1
-            
+
             # Phase 1.5: Cleanup stay_connected=False nodes
             await self.context.cleanup_flow_end_nodes()
-            
+
             # Phase 2: Event loop if stay_connected OR schedule nodes exist
             has_event_sources = (
-                bool(self._stay_connected_nodes) or 
+                bool(self._stay_connected_nodes) or
                 self._has_schedule_node or
                 bool(self.context._persistent_tasks)  # Any persistent background tasks
             )
@@ -12568,16 +12820,22 @@ class WorkflowJob:
                     f"schedule: {self._has_schedule_node}, "
                     f"persistent_tasks: {len(self.context._persistent_tasks)})"
                 )
+                # 실시간 checkpoint 주기 저장 시작
+                self._start_checkpoint_loop()
                 await self._event_loop()
-            
+
             # Phase 3: Mark completed if no failures
             if not self.context.is_failed:
                 self.status = "completed"
             else:
                 self.status = "failed"
-            
+
             self.completed_at = datetime.utcnow()
-            
+
+            # 정상 완료 → checkpoint 삭제
+            self._delete_checkpoint()
+            await self._stop_checkpoint_loop()
+
             # 🆕 Job 완료 알림
             await self.context.notify_job_state(self.status, self.stats)
 
@@ -12601,13 +12859,17 @@ class WorkflowJob:
             # Cleanup listeners
             await self.context.cleanup_listeners()
 
-    async def _execute_main_flow(self) -> None:
+    async def _execute_main_flow(self, skip_nodes: Optional[Set[str]] = None) -> None:
         """Execute all nodes in topological order with state notifications
 
         Supports item-based execution with SplitNode/AggregateNode:
         - SplitNode: Triggers repeated execution of downstream nodes for each item
         - AggregateNode: Collects results from SplitNode branches
+
+        Args:
+            skip_nodes: 복구 모드에서 이미 완료된 노드 ID 집합 (스킵)
         """
+        skip_nodes = skip_nodes or set()
         print(f"🔄 Executing main flow: {self.workflow.execution_order}")
 
         # === Item-based execution setup ===
@@ -12644,6 +12906,17 @@ class WorkflowJob:
 
             node = self.workflow.nodes.get(node_id)
             if not node:
+                continue
+
+            # === Checkpoint restore: 이미 완료된 노드 스킵 ===
+            if node_id in skip_nodes:
+                print(f"  ⏭ Skipping restored node: {node_id} ({node.node_type})")
+                self._completed_node_ids.add(node_id)
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.COMPLETED,
+                )
                 continue
 
             # === Item-based execution: Skip branch nodes (handled by SplitNode) ===
@@ -12822,7 +13095,12 @@ class WorkflowJob:
                     outputs=outputs,
                     duration_ms=duration_ms,
                 )
-                
+
+                # Checkpoint: 노드 완료 추적 + 일회성 워크플로우 노드 완료마다 저장
+                self._completed_node_ids.add(node_id)
+                if not self._stay_connected_nodes:
+                    await self._save_checkpoint()
+
             except Exception as e:
                 # 🆕 노드 실패 알림
                 duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -13842,6 +14120,7 @@ class WorkflowJob:
         """Pause execution"""
         self.status = "paused"
         self.context.pause()
+        await self._save_checkpoint()
 
     async def resume(self) -> None:
         """Resume execution"""
@@ -13852,8 +14131,13 @@ class WorkflowJob:
         """Stop execution gracefully"""
         logger.info(f"Stopping job {self.job_id}")
         self.status = "stopping"
+
+        # Checkpoint 저장 (cleanup 전에)
+        await self._save_checkpoint()
+        await self._stop_checkpoint_loop()
+
         self.context.stop()
-        
+
         # Wait for task to finish cleanup
         if self._task and not self._task.done():
             try:
@@ -14008,3 +14292,77 @@ class WorkflowJob:
             "logs": self.context.get_logs(limit=50),
             "nodes": nodes_state,
         }
+
+    # ============================================================
+    # Checkpoint (Graceful Restart)
+    # ============================================================
+
+    def _get_checkpoint_mgr(self):
+        """CheckpointManager 싱글톤 반환 (지연 로딩)."""
+        if self._checkpoint_mgr is None:
+            from programgarden.database.checkpoint_manager import CheckpointManager
+            db_filename = f"{self.workflow.workflow_id}_workflow.db"
+            db_path = self.context._resolve_db_path(db_filename)
+            self._checkpoint_mgr = CheckpointManager(db_path)
+        return self._checkpoint_mgr
+
+    async def _save_checkpoint(self) -> None:
+        """현재 상태를 DB에 저장."""
+        try:
+            mgr = self._get_checkpoint_mgr()
+
+            node_outputs = {}
+            for node_id, ports in self.context._outputs.items():
+                node_outputs[node_id] = {
+                    port: output.value for port, output in ports.items()
+                }
+
+            mgr.save_checkpoint(
+                job_id=self.job_id,
+                workflow_id=self.workflow.workflow_id,
+                status=self.status,
+                workflow_type="realtime" if self._stay_connected_nodes else "oneshot",
+                completed_nodes=list(self._completed_node_ids),
+                stats=self.stats,
+                node_outputs=node_outputs,
+                workflow_json_hash=self._workflow_json_hash,
+                workflow_start_datetime=self.workflow_start_datetime.isoformat() if self.workflow_start_datetime else None,
+                risk_halt=getattr(self.context, '_risk_halt', False),
+                context_params=self.context.context_params,
+            )
+        except Exception as e:
+            logger.warning(f"Checkpoint 저장 실패: {e}")
+
+    def _delete_checkpoint(self) -> None:
+        """체크포인트 삭제 (정상 완료 시)."""
+        try:
+            mgr = self._get_checkpoint_mgr()
+            mgr.delete_checkpoint(self.job_id)
+        except Exception as e:
+            logger.warning(f"Checkpoint 삭제 실패: {e}")
+
+    async def _checkpoint_loop(self) -> None:
+        """실시간 워크플로우: 30초 주기 체크포인트 저장."""
+        try:
+            while True:
+                await asyncio.sleep(30)
+                await self._save_checkpoint()
+        except asyncio.CancelledError:
+            pass
+
+    def _start_checkpoint_loop(self) -> None:
+        """실시간 워크플로우에서 checkpoint 주기 저장 시작."""
+        if self._checkpoint_task is not None:
+            return
+        self._checkpoint_task = asyncio.ensure_future(self._checkpoint_loop())
+        logger.debug("Checkpoint loop 시작 (30초 주기)")
+
+    async def _stop_checkpoint_loop(self) -> None:
+        """checkpoint 주기 저장 중단."""
+        if self._checkpoint_task and not self._checkpoint_task.done():
+            self._checkpoint_task.cancel()
+            try:
+                await self._checkpoint_task
+            except asyncio.CancelledError:
+                pass
+        self._checkpoint_task = None

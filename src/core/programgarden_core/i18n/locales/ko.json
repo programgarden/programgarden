@@ -1127,5 +1127,11 @@
   "plugins.SupportResistanceLevels.name": "지지/저항 레벨",
   "plugins.SupportResistanceLevels.description": "Swing High/Low 기반 지지/저항 레벨 동적 감지 + 클러스터링 강도 평가",
   "plugins.LevelTouch.name": "레벨 터치/돌파",
-  "plugins.LevelTouch.description": "S/R 레벨 터치/돌파/역할전환 감지 + 이력 추적 (first_touch, role_reversal, cluster_bounce)"
+  "plugins.LevelTouch.description": "S/R 레벨 터치/돌파/역할전환 감지 + 이력 추적 (first_touch, role_reversal, cluster_bounce)",
+  "events.restart.checkpoint_restore": "체크포인트에서 워크플로우 복구 중 (job: {job_id})",
+  "events.restart.restore_failed": "워크플로우 복구 실패 (job: {job_id}, 사유: {reason})",
+  "events.restart.data_gap_warning": "복구 중 데이터 갭 경고: 체크포인트 이후 {gap_sec}초 동안의 데이터가 누락될 수 있습니다",
+  "events.restart.skipped_nodes": "복구: {count}개 완료 노드 스킵",
+  "events.restart.checkpoint_expired": "체크포인트가 만료됨 ({age_sec}초 > 600초 제한)",
+  "events.restart.workflow_changed": "워크플로우 정의가 변경되어 복구 불가 (해시 불일치)"
 }
