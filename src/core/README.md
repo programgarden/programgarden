@@ -43,6 +43,8 @@ poetry add programgarden-core
 | analysis | 2 | BacktestEngineNode, BenchmarkCompareNode |
 | ai | 2 | LLMModelNode, AIAgentNode |
 
+> community 패키지에서 3개 노드 추가: TelegramNode(messaging), FearGreedIndexNode(market), FundamentalDataNode(market) → 전체 58개
+
 ## 사용 예시
 
 ```python
