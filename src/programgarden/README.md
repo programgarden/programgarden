@@ -90,10 +90,10 @@ await job.stop()
 
 ## 주요 특징
 
-- **노드 기반 DSL**: 51개 내장 노드를 조합하여 코딩 없이 자동매매 전략 구성
+- **노드 기반 DSL**: 58개 내장 노드를 조합하여 코딩 없이 자동매매 전략 구성
 - **실시간 처리**: WebSocket 기반 실시간 시세, 계좌, 체결 이벤트 수신
 - **AI Agent 통합**: LLMModelNode + AIAgentNode로 LLM 기반 분석/의사결정
-- **플러그인 확장**: 14개 내장 전략 플러그인 (RSI, MACD, 볼린저밴드 등)
+- **플러그인 확장**: 67개 내장 전략 플러그인 (RSI, MACD, 볼린저밴드, 이치모쿠, 듀얼모멘텀, 터틀브레이크아웃 등)
 - **ExecutionListener**: 10개 이상의 콜백으로 실행 상태 실시간 모니터링
 - **위험 관리**: WorkflowRiskTracker로 HWM/drawdown 추적, 포지션 사이징
 - **동적 노드 주입**: 런타임에 커스텀 노드 등록 및 실행
@@ -102,7 +102,7 @@ await job.stop()
 
 ```
 5-Layer Architecture:
-1. Registry Layer   - 노드/플러그인 메타데이터 (51개 노드, 14개 플러그인)
+1. Registry Layer   - 노드/플러그인 메타데이터 (58개 노드, 67개 플러그인)
 2. Credential Layer - 인증 정보 관리
 3. Definition Layer - JSON 워크플로우 정의 (노드, 엣지, 크레덴셜)
 4. Job Layer        - 상태 유지 실행 인스턴스 (최대 24시간 장기 실행)
