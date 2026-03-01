@@ -18,6 +18,7 @@ from .workflow_risk_tracker import (
     HWMUpdateResult,
     HWMValidationResult,
 )
+from .checkpoint_manager import CheckpointManager
 
 __all__ = [
     "SQLQueryBuilder",
@@ -30,4 +31,5 @@ __all__ = [
     "HWMState",
     "HWMUpdateResult",
     "HWMValidationResult",
+    "CheckpointManager",
 ]

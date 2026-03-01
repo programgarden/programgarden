@@ -35,6 +35,9 @@ from programgarden.tools.job_tools import (
     get_job_state,
     emergency_close_all,
     cancel_all_orders,
+    restore_job,
+    has_checkpoint,
+    get_checkpoint_info,
 )
 from programgarden.tools.event_tools import (
     get_events,
@@ -82,6 +85,9 @@ __all__ = [
     "get_job_state",
     "emergency_close_all",
     "cancel_all_orders",
+    "restore_job",
+    "has_checkpoint",
+    "get_checkpoint_info",
     # Event
     "get_events",
     "get_job_summary",

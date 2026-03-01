@@ -267,3 +267,125 @@ def cancel_all_orders(job_id: str) -> Dict[str, Any]:
         "cancelled_orders": [],
         "failed_orders": [],
     }
+
+
+def restore_job(
+    definition: Dict[str, Any],
+    job_id: str,
+    secrets: Optional[Dict[str, Any]] = None,
+    listeners: Optional[List] = None,
+    storage_dir: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    체크포인트에서 워크플로우 복원
+
+    서버 재시작 후 중단된 워크플로우를 복구합니다.
+    일회성 워크플로우는 완료 노드 스킵 후 미완료 노드부터 재실행하고,
+    실시간 워크플로우는 전체 재실행합니다.
+
+    Args:
+        definition: 워크플로우 정의 (원본과 동일해야 함)
+        job_id: 복원할 Job ID
+        secrets: 민감 자격증명
+        listeners: ExecutionListener 목록
+        storage_dir: DB 저장 디렉토리
+
+    Returns:
+        복원된 Job 상태
+
+    Raises:
+        ValueError: checkpoint 없음, 만료, 워크플로우 변경 시
+
+    Example:
+        >>> restore_job(definition, "job-abc123", secrets={"appkey": "..."})
+        {"job_id": "job-abc123", "status": "running", ...}
+    """
+    executor = _get_executor()
+
+    async def _restore():
+        job = await executor.restore(
+            definition=definition,
+            job_id=job_id,
+            secrets=secrets,
+            listeners=listeners,
+            storage_dir=storage_dir,
+        )
+        return job.get_state()
+
+    return asyncio.run(_restore())
+
+
+def has_checkpoint(
+    workflow_id: str,
+    job_id: str,
+    storage_dir: Optional[str] = None,
+) -> bool:
+    """
+    체크포인트 존재 여부 확인
+
+    Args:
+        workflow_id: Workflow ID
+        job_id: Job ID
+        storage_dir: DB 저장 디렉토리
+
+    Returns:
+        체크포인트 존재 여부
+
+    Example:
+        >>> has_checkpoint("my-strategy", "job-abc123")
+        True
+    """
+    from programgarden.database.checkpoint_manager import CheckpointManager
+    from pathlib import Path
+
+    if storage_dir:
+        db_dir = Path(storage_dir)
+    elif Path("/app/data").exists():
+        db_dir = Path("/app/data")
+    else:
+        db_dir = Path("./app/data")
+
+    db_path = db_dir / f"{workflow_id}_workflow.db"
+    if not db_path.exists():
+        return False
+
+    mgr = CheckpointManager(str(db_path))
+    return mgr.has_checkpoint(job_id)
+
+
+def get_checkpoint_info(
+    workflow_id: str,
+    job_id: str,
+    storage_dir: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    체크포인트 요약 정보 조회 (outputs 제외, 경량)
+
+    Args:
+        workflow_id: Workflow ID
+        job_id: Job ID
+        storage_dir: DB 저장 디렉토리
+
+    Returns:
+        체크포인트 요약 또는 None
+
+    Example:
+        >>> get_checkpoint_info("my-strategy", "job-abc123")
+        {"job_id": "job-abc123", "status": "running", "completed_nodes": [...], ...}
+    """
+    from programgarden.database.checkpoint_manager import CheckpointManager
+    from pathlib import Path
+
+    if storage_dir:
+        db_dir = Path(storage_dir)
+    elif Path("/app/data").exists():
+        db_dir = Path("/app/data")
+    else:
+        db_dir = Path("./app/data")
+
+    db_path = db_dir / f"{workflow_id}_workflow.db"
+    if not db_path.exists():
+        return None
+
+    mgr = CheckpointManager(str(db_path))
+    return mgr.get_checkpoint_info(job_id)
