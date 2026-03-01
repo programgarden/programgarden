@@ -246,8 +246,8 @@ class ExecutionContext:
 
         우선순위:
         1. storage_dir (외부 사용자 지정)
-        2. /app/data (Docker 환경)
-        3. ./app/data (로컬 fallback)
+        2. /app/data (Docker 배포 환경 — 이미 존재해야 함)
+        3. ./app/data (로컬 개발 전용 fallback)
         """
         from pathlib import Path
 
@@ -256,13 +256,20 @@ class ExecutionContext:
             db_dir.mkdir(parents=True, exist_ok=True)
             return str(db_dir / db_filename)
 
-        db_dir = Path("/app/data")
-        if not db_dir.exists():
-            try:
-                db_dir.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                db_dir = Path("./app/data")
-                db_dir.mkdir(parents=True, exist_ok=True)
+        docker_data = Path("/app/data")
+        if docker_data.exists():
+            return str(docker_data / db_filename)
+
+        # Docker 컨테이너 내부인데 /app/data가 없으면 볼륨 마운트 누락
+        if Path("/.dockerenv").exists():
+            raise OSError(
+                "/app/data 디렉토리가 존재하지 않습니다. "
+                "Docker 볼륨 마운트를 확인하세요."
+            )
+
+        # 로컬 개발 환경 fallback
+        db_dir = Path("./app/data")
+        db_dir.mkdir(parents=True, exist_ok=True)
         return str(db_dir / db_filename)
 
     # === DAG Index Building ===
