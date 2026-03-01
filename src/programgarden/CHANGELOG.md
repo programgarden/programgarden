@@ -1,3 +1,20 @@
+## [1.14.0] - 2026-03-01
+### Added
+- **Graceful Restart (C-1)**: 워크플로우 상태 저장/복구 구현
+  - CheckpointManager: `checkpoint_meta` + `checkpoint_outputs` 테이블
+  - 복구 전략: 일회성=완료 노드 스킵, 실시간=Main Flow 전체 재실행
+  - 저장 트리거: stop/pause 즉시, 일회성 노드 완료마다, 실시간 30초 주기
+  - 안전장치: 10분 만료, 워크플로우 해시 변경 감지, checkpoint 미존재 거부
+  - API: `executor.restore()`, `restore_job()`, `has_checkpoint()`, `get_checkpoint_info()`
+  - python_server 통합 64개 테스트
+
+### Fixed
+- LLM provider 테스트 api_key assertion을 set_secret 검증으로 수정
+
+### Changed
+- executor.py: `domestic_stock` → `korea_stock` 리네임 (stub)
+- deps: programgarden-core ^1.8.0, programgarden-finance ^1.4.0, programgarden-community ^1.10.1
+
 ## [1.13.0] - 2026-02-27
 ### Changed
 - deps: programgarden-core ^1.7.0, programgarden-community ^1.10.0

@@ -1,3 +1,12 @@
+## [1.8.0] - 2026-03-01
+### Added
+- **Graceful Restart (C-1)**: CheckpointManager를 통한 워크플로우 상태 저장/복구
+  - `checkpoint_meta` + `checkpoint_outputs` 테이블 (기존 workflow.db에 추가)
+  - 복구 전략: 일회성=완료 노드 스킵, 실시간=Main Flow 전체 재실행
+  - 안전장치: 10분 만료, 워크플로우 해시 변경 감지
+  - RestartEvent 리스너 콜백 + i18n (ko/en)
+- 노드 description 58개 VectorDB 검색용 상세 확장 (en/ko)
+
 ## [1.7.0] - 2026-02-27
 ### Added
 - i18n: SupportResistanceLevels, LevelTouch 플러그인 번역 키 추가 (ko/en)

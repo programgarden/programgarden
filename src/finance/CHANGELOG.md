@@ -1,3 +1,24 @@
+## [1.4.0] - 2026-03-01
+### Added
+- **국내주식(KoreaStock) 69 TR 지원**: `ls.korea_stock()` 진입점
+  - 시세 13개: t9945(마스터), t1101(호가), t1102(현재가), t8450, t8407, t8454 등
+  - 계좌 10개: CSPAQ22200(예수금), CSPAQ12200(잔고), CSPAQ13700(미체결) 등
+  - 주문 3개: CSPAT00601(현물주문), CSPAT00701(정정), CSPAT00801(취소)
+  - 랭킹 7개: t1441(등락률), t1444(시가총액), t1452(거래량) 등
+  - 차트 4개: t8451(일주월년), t8452(분봉), t8453(틱봉), t1665(종합)
+  - 업종/테마 5개, 투자자 7개, ETF 3개, 기타 4개
+  - 실시간 13개: S3_(체결), K3_(KOSDAQ), H1_(호가), SC0~SC4(주문이벤트) 등
+- **KrStockAccountTracker**: SC1 자동 갱신으로 실시간 잔고 추적
+- **Extension 모듈**: `account_tracker()` 확장 메서드
+
+### Fixed
+- `_schedule_coroutine()` TOCTOU race condition 수정 (해외주식/국내주식 공통)
+- investor 6개 / sector 2개 TR URL 엔드포인트 수정
+- 전체 국내주식 TR InBlock Literal 타입 검증 추가 및 버그 수정
+
+### Changed
+- deps: programgarden-core ^1.8.0
+
 ## [1.3.4] - 2026-02-25
 ### Changed
 - deps: programgarden-core ^1.6.0
