@@ -44,7 +44,7 @@ TEST_SYMBOL_NAME = "HLB이노베이션"
 # 주문 방식: "market" = 장중 시장가, "after_hours" = 시간외 단일가
 # 장중(09:00~15:20): ORDER_TYPE = "market"
 # 시간외 단일가(15:20~15:30): ORDER_TYPE = "after_hours"
-ORDER_TYPE = "after_hours"
+ORDER_TYPE = "market"
 
 # 주문가: 0이면 t8450 호가 조회로 자동 설정 (시장가는 무시됨)
 BUY_PRICE = 0

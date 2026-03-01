@@ -486,8 +486,12 @@ class StockAccountTracker:
             asyncio.create_task(coro)
         except RuntimeError:
             # WebSocket 콜백 등 별도 스레드에서 호출 시
-            if self._loop and self._loop.is_running():
-                asyncio.run_coroutine_threadsafe(coro, self._loop)
+            loop = self._loop  # 로컬 복사로 TOCTOU 방지
+            if loop is not None:
+                try:
+                    asyncio.run_coroutine_threadsafe(coro, loop)
+                except RuntimeError:
+                    pass  # loop already closed
 
     # ===== 계좌 수익률 계산 =====
     def _calculate_account_pnl(self) -> AccountPnLInfo:

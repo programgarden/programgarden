@@ -5,6 +5,8 @@ models.py, calculator.py, subscription_manager.py, tracker.py의
 핵심 로직을 검증합니다.
 """
 
+import asyncio
+import threading
 from decimal import Decimal
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1182,3 +1184,236 @@ class TestKrStockAccountTrackerOnTickReceived:
         assert pos.realtime_pnl is not None
         assert pos.realtime_pnl.rural_tax == 0
         assert pos.realtime_pnl.net_profit == 48852
+
+
+# =============================================================
+# Phase 5: SC1 자동 갱신 가상 데이터 테스트
+# =============================================================
+
+
+class TestKrStockAccountTrackerSC1AutoRefresh:
+    """SC1 주문체결 이벤트 → _schedule_coroutine → _delayed_refresh → _fetch_all_data 흐름 검증."""
+
+    def _make_tracker(self):
+        """테스트용 tracker 생성."""
+        accno_client = MagicMock()
+        tracker = KrStockAccountTracker(accno_client=accno_client)
+        return tracker
+
+    def _make_sc1_resp(self, order_type: str):
+        """SC1 체결 응답 mock 생성.
+
+        Args:
+            order_type: '01'=접수, '11'=체결, '12'=정정확인, '13'=취소확인, '14'=거부
+        """
+        resp = MagicMock()
+        resp.body = MagicMock()
+        resp.body.ordxctptncode = order_type
+        return resp
+
+    # ----- _on_order_event 단위 테스트 -----
+
+    def test_on_order_event_triggers_refresh_on_execution(self):
+        """체결(11) 이벤트 → _schedule_coroutine 호출."""
+        tracker = self._make_tracker()
+        tracker._schedule_coroutine = MagicMock()
+
+        tracker._on_order_event(self._make_sc1_resp("11"))
+
+        tracker._schedule_coroutine.assert_called_once()
+
+    def test_on_order_event_triggers_refresh_on_modify_confirm(self):
+        """정정확인(12) → _schedule_coroutine 호출."""
+        tracker = self._make_tracker()
+        tracker._schedule_coroutine = MagicMock()
+
+        tracker._on_order_event(self._make_sc1_resp("12"))
+
+        tracker._schedule_coroutine.assert_called_once()
+
+    def test_on_order_event_triggers_refresh_on_cancel_confirm(self):
+        """취소확인(13) → _schedule_coroutine 호출."""
+        tracker = self._make_tracker()
+        tracker._schedule_coroutine = MagicMock()
+
+        tracker._on_order_event(self._make_sc1_resp("13"))
+
+        tracker._schedule_coroutine.assert_called_once()
+
+    def test_on_order_event_ignores_non_execution(self):
+        """접수(01), 거부(14) → _schedule_coroutine 미호출."""
+        tracker = self._make_tracker()
+        tracker._schedule_coroutine = MagicMock()
+
+        tracker._on_order_event(self._make_sc1_resp("01"))
+        tracker._on_order_event(self._make_sc1_resp("14"))
+
+        tracker._schedule_coroutine.assert_not_called()
+
+    def test_on_order_event_ignores_invalid_resp(self):
+        """None/body 없음 → 무시."""
+        tracker = self._make_tracker()
+        tracker._schedule_coroutine = MagicMock()
+
+        tracker._on_order_event(None)
+
+        resp_no_body = MagicMock()
+        resp_no_body.body = None
+        tracker._on_order_event(resp_no_body)
+
+        tracker._schedule_coroutine.assert_not_called()
+
+    # ----- _schedule_coroutine 단위 테스트 -----
+
+    @pytest.mark.asyncio
+    async def test_schedule_coroutine_from_main_thread(self):
+        """메인 스레드(이벤트 루프 내)에서 호출 → create_task 사용."""
+        tracker = self._make_tracker()
+
+        called = False
+
+        async def dummy_coro():
+            nonlocal called
+            called = True
+
+        tracker._schedule_coroutine(dummy_coro())
+        await asyncio.sleep(0.05)
+
+        assert called is True
+
+    @pytest.mark.asyncio
+    async def test_schedule_coroutine_from_worker_thread(self):
+        """별도 스레드에서 호출 → run_coroutine_threadsafe 사용."""
+        tracker = self._make_tracker()
+        tracker._loop = asyncio.get_running_loop()
+
+        called = asyncio.Event()
+
+        async def dummy_coro():
+            called.set()
+
+        def worker():
+            tracker._schedule_coroutine(dummy_coro())
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join(timeout=2)
+
+        # run_coroutine_threadsafe로 스케줄된 코루틴 실행 대기
+        try:
+            await asyncio.wait_for(called.wait(), timeout=2)
+        except asyncio.TimeoutError:
+            pass
+
+        assert called.is_set()
+
+    @pytest.mark.asyncio
+    async def test_schedule_coroutine_with_closed_loop(self):
+        """loop 종료 상태에서 호출 → 에러 없이 무시."""
+        tracker = self._make_tracker()
+
+        # 이미 닫힌 루프 시뮬레이션
+        closed_loop = asyncio.new_event_loop()
+        closed_loop.close()
+        tracker._loop = closed_loop
+
+        async def dummy_coro():
+            pass
+
+        # 별도 스레드에서 호출 (RuntimeError 경로 진입)
+        error_occurred = False
+
+        def worker():
+            nonlocal error_occurred
+            try:
+                tracker._schedule_coroutine(dummy_coro())
+            except Exception:
+                error_occurred = True
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join(timeout=2)
+
+        assert error_occurred is False
+
+    # ----- SC1 전체 흐름 통합 테스트 -----
+
+    @pytest.mark.asyncio
+    async def test_sc1_full_flow_virtual_data(self):
+        """핵심 통합 테스트: 별도 스레드에서 SC1 체결 이벤트 → _delayed_refresh → _fetch_all_data → 콜백 호출."""
+        tracker = self._make_tracker()
+        tracker._loop = asyncio.get_running_loop()
+        tracker._is_running = True
+
+        # _fetch_all_data mock: 가상 보유종목/예수금 데이터 설정
+        async def mock_fetch_all_data():
+            tracker._positions = {
+                "005930": KrStockPositionItem(
+                    symbol="005930",
+                    symbol_name="삼성전자",
+                    quantity=10,
+                    buy_price=70000,
+                    current_price=75000,
+                    buy_amount=700000,
+                    eval_amount=750000,
+                    market="1",
+                ),
+            }
+            tracker._balance = KrStockBalanceInfo(
+                deposit=1000000,
+                orderable_amount=900000,
+            )
+            tracker._notify_position_change()
+            tracker._notify_balance_change()
+
+        tracker._fetch_all_data = mock_fetch_all_data
+
+        # 콜백 등록
+        position_called = asyncio.Event()
+        balance_called = asyncio.Event()
+
+        def on_position(positions):
+            position_called.set()
+
+        def on_balance(balance):
+            balance_called.set()
+
+        tracker.on_position_change(on_position)
+        tracker.on_balance_change(on_balance)
+
+        # 별도 스레드에서 SC1 체결 이벤트 발생
+        sc1_resp = self._make_sc1_resp("11")  # 체결
+
+        def fire_sc1():
+            tracker._on_order_event(sc1_resp)
+
+        thread = threading.Thread(target=fire_sc1)
+        thread.start()
+        thread.join(timeout=2)
+
+        # DEFAULT_ORDER_DELAY(3초) + 여유 대기
+        wait_timeout = KrStockAccountTracker.DEFAULT_ORDER_DELAY + 2
+
+        try:
+            await asyncio.wait_for(position_called.wait(), timeout=wait_timeout)
+        except asyncio.TimeoutError:
+            pass
+
+        try:
+            await asyncio.wait_for(balance_called.wait(), timeout=wait_timeout)
+        except asyncio.TimeoutError:
+            pass
+
+        # 검증: 콜백이 호출되었는지
+        assert position_called.is_set(), "_fetch_all_data 후 position 콜백이 호출되지 않음"
+        assert balance_called.is_set(), "_fetch_all_data 후 balance 콜백이 호출되지 않음"
+
+        # 검증: 가상 데이터가 반영되었는지
+        positions = tracker.get_positions()
+        assert "005930" in positions
+        assert positions["005930"].quantity == 10
+        assert positions["005930"].symbol_name == "삼성전자"
+
+        balance = tracker.get_balance()
+        assert balance is not None
+        assert balance.orderable_amount == 900000
