@@ -19,15 +19,35 @@ from typing import List, Dict, Any, Optional
 
 def get_programgarden_data_path(workspace_path: Optional[str] = None) -> Path:
     """
-    /app/data/ 폴더 경로를 반환합니다.
+    DB/파일 저장 폴더 경로를 반환합니다.
+
+    우선순위:
+    1. workspace_path (외부 사용자 지정)
+    2. /app/data (Docker 배포 환경 — 이미 존재해야 함)
+    3. ./app/data (로컬 개발 전용 fallback)
 
     Args:
-        workspace_path: 워크스페이스 경로 (None이면 /app/data 사용)
+        workspace_path: 워크스페이스 경로 (None이면 자동 결정)
 
     Returns:
-        /app/data/ 폴더의 Path 객체
+        데이터 폴더의 Path 객체
     """
-    data_dir = Path(workspace_path) if workspace_path else Path("/app/data")
+    if workspace_path:
+        data_dir = Path(workspace_path)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
+    docker_data = Path("/app/data")
+    if docker_data.exists():
+        return docker_data
+
+    if Path("/.dockerenv").exists():
+        raise OSError(
+            "/app/data 디렉토리가 존재하지 않습니다. "
+            "Docker 볼륨 마운트를 확인하세요."
+        )
+
+    data_dir = Path("./app/data")
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 

@@ -11779,19 +11779,9 @@ class SQLiteNodeExecutor(NodeExecutorBase):
         
         db_name = config.get("db_name", "default.db")
         operation = config.get("operation", "simple")
-        
-        # /app/data/ 폴더 경로 구성
-        # context.workspace_path 또는 기본 경로 /app/data 사용
-        workspace_path = getattr(context, 'workspace_path', None)
-        if workspace_path:
-            data_dir = os.path.join(workspace_path, "programgarden_data")
-        else:
-            data_dir = "/app/data"
-        
-        # 폴더 생성 (없으면)
-        os.makedirs(data_dir, exist_ok=True)
-        
-        db_path = os.path.join(data_dir, db_name)
+
+        # _resolve_db_path 와 동일한 경로 결정 로직
+        db_path = context._resolve_db_path(db_name)
         context.log("debug", f"SQLite DB path: {db_path}", node_id)
         
         try:
@@ -12251,15 +12241,8 @@ class WorkflowExecutor:
 
         # 2. DB에서 checkpoint 로드
         workflow_id = resolved.workflow_id
-        # DB 경로 결정 (context와 동일 로직)
-        from pathlib import Path
-        if storage_dir:
-            db_dir = Path(storage_dir)
-        elif Path("/app/data").exists():
-            db_dir = Path("/app/data")
-        else:
-            db_dir = Path("./app/data")
-        db_dir.mkdir(parents=True, exist_ok=True)
+        from programgarden.tools.job_tools import _resolve_data_dir
+        db_dir = _resolve_data_dir(storage_dir)
         db_path = str(db_dir / f"{workflow_id}_workflow.db")
 
         mgr = CheckpointManager(db_path)

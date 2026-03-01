@@ -5,10 +5,37 @@ Workflow execution instance (Job) management tools
 """
 
 from typing import Optional, List, Dict, Any
+from pathlib import Path
 import asyncio
 
 # Global executor (singleton)
 _executor = None
+
+
+def _resolve_data_dir(storage_dir: Optional[str] = None) -> Path:
+    """DB 저장 디렉토리를 결정한다.
+
+    우선순위:
+    1. storage_dir (외부 사용자 지정)
+    2. /app/data (Docker 배포 환경 — 이미 존재해야 함)
+    3. ./app/data (로컬 개발 전용 fallback)
+    """
+    if storage_dir:
+        return Path(storage_dir)
+
+    docker_data = Path("/app/data")
+    if docker_data.exists():
+        return docker_data
+
+    if Path("/.dockerenv").exists():
+        raise OSError(
+            "/app/data 디렉토리가 존재하지 않습니다. "
+            "Docker 볼륨 마운트를 확인하세요."
+        )
+
+    data_dir = Path("./app/data")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
 
 
 def _get_executor():
@@ -336,15 +363,8 @@ def has_checkpoint(
         True
     """
     from programgarden.database.checkpoint_manager import CheckpointManager
-    from pathlib import Path
 
-    if storage_dir:
-        db_dir = Path(storage_dir)
-    elif Path("/app/data").exists():
-        db_dir = Path("/app/data")
-    else:
-        db_dir = Path("./app/data")
-
+    db_dir = _resolve_data_dir(storage_dir)
     db_path = db_dir / f"{workflow_id}_workflow.db"
     if not db_path.exists():
         return False
@@ -374,15 +394,8 @@ def get_checkpoint_info(
         {"job_id": "job-abc123", "status": "running", "completed_nodes": [...], ...}
     """
     from programgarden.database.checkpoint_manager import CheckpointManager
-    from pathlib import Path
 
-    if storage_dir:
-        db_dir = Path(storage_dir)
-    elif Path("/app/data").exists():
-        db_dir = Path("/app/data")
-    else:
-        db_dir = Path("./app/data")
-
+    db_dir = _resolve_data_dir(storage_dir)
     db_path = db_dir / f"{workflow_id}_workflow.db"
     if not db_path.exists():
         return None
