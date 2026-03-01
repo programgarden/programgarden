@@ -477,7 +477,8 @@ class TestLLMModelNodeExecutor:
         conn = result["connection"]
         assert conn["provider"] == "openai"
         assert conn["model"] == "gpt-4o"  # openai는 prefix 없음
-        assert conn["api_key"] == "sk-xxx"
+        assert conn["api_key"] is None  # secrets에 별도 저장됨
+        ctx.set_secret.assert_called_once_with("llm_api_key_llm-1", "sk-xxx")
         assert conn["organization"] == "org-123"
         assert conn["temperature"] == 0.5
         assert conn["max_tokens"] == 2000
@@ -502,7 +503,8 @@ class TestLLMModelNodeExecutor:
         conn = result["connection"]
         assert conn["provider"] == "anthropic"
         assert conn["model"] == "claude-haiku-4-5-20251001"
-        assert conn["api_key"] == "sk-ant-xxx"
+        assert conn["api_key"] is None  # secrets에 별도 저장됨
+        ctx.set_secret.assert_called_once_with("llm_api_key_llm-1", "sk-ant-xxx")
 
 
 # ============================================================

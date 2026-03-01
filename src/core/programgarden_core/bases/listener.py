@@ -27,10 +27,10 @@ Usage:
     job.add_listener(MyListener())
 """
 
-from typing import Protocol, Optional, Dict, Any, Union, runtime_checkable, TYPE_CHECKING
+from typing import Protocol, Optional, Dict, Any, List, Union, runtime_checkable, TYPE_CHECKING
 from enum import Enum
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 if TYPE_CHECKING:
@@ -477,6 +477,30 @@ class AIToolCallEvent:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
+@dataclass
+class RestartEvent:
+    """워크플로우 복구 시 발생하는 이벤트.
+
+    checkpoint에서 복원하거나 복구 실패 시 발행됩니다.
+
+    Attributes:
+        job_id: Job 식별자
+        restart_reason: 복구 사유 ("checkpoint_restore" | "restore_failed")
+        checkpoint_age_sec: 체크포인트 경과 시간 (초)
+        workflow_type: 워크플로우 유형 ("oneshot" | "realtime")
+        skipped_nodes: 스킵된 완료 노드 목록
+        data_gap_warning: 데이터 갭 경고 메시지 (없으면 None)
+        timestamp: 이벤트 시각
+    """
+    job_id: str
+    restart_reason: str
+    checkpoint_age_sec: float
+    workflow_type: str
+    skipped_nodes: List[str] = field(default_factory=list)
+    data_gap_warning: Optional[str] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 @runtime_checkable
 class ExecutionListener(Protocol):
     """
@@ -608,6 +632,17 @@ class ExecutionListener(Protocol):
         """
         ...
 
+    async def on_restart(self, event: 'RestartEvent') -> None:
+        """
+        Called when workflow is restored from checkpoint.
+
+        서버 재시작 후 체크포인트 복구 시 발생.
+
+        Args:
+            event: RestartEvent with restart_reason, skipped_nodes, data_gap_warning.
+        """
+        ...
+
 
 class BaseExecutionListener:
     """
@@ -680,6 +715,10 @@ class BaseExecutionListener:
         pass
 
     async def on_risk_event(self, event: 'RiskEvent') -> None:
+        """Default implementation: do nothing"""
+        pass
+
+    async def on_restart(self, event: 'RestartEvent') -> None:
         """Default implementation: do nothing"""
         pass
 
