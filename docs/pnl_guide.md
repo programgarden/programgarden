@@ -31,7 +31,7 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
 
 | 항목 | 설명 |
 |------|------|
-| `product` | 상품 유형 (`overseas_stock`: 해외주식, `overseas_futures`: 해외선물) |
+| `product` | 상품 유형 (`overseas_stock`: 해외주식, `overseas_futures`: 해외선물, `korea_stock`: 국내주식) |
 | `paper_trading` | 모의투자 여부 (`true`: 모의투자, `false`: 실전투자) |
 | `timestamp` | 수익률 업데이트 시간 |
 | `currency` | 통화 단위 (기본: USD) |
