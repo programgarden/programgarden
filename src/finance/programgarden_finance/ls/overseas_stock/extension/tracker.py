@@ -106,7 +106,8 @@ class StockAccountTracker:
         # Task 관리
         self._refresh_task: Optional[asyncio.Task] = None
         self._is_running = False
-        
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
         # 에러 상태 저장 (서버 오류 등)
         self._last_errors: Dict[str, str] = {}
     
@@ -116,7 +117,8 @@ class StockAccountTracker:
             return
         
         self._is_running = True
-        
+        self._loop = asyncio.get_running_loop()
+
         # 1. WebSocket 연결 (없으면 예외)
         if not self._real_client:
             raise ValueError(
@@ -460,7 +462,7 @@ class StockAccountTracker:
             # 14: 신규체결, 12: 정정완료, 13: 취소완료
             if order_type in ('14', '12', '13'):
                 # 비동기로 재조회 (체결 후 잠시 대기)
-                asyncio.create_task(self._delayed_refresh())
+                self._schedule_coroutine(self._delayed_refresh())
                 
         except Exception as e:
             print(f"[StockAccountTracker] 주문 이벤트 처리 오류: {e}")
@@ -477,6 +479,20 @@ class StockAccountTracker:
             if self._is_running:
                 await self._fetch_all_data()
     
+    def _schedule_coroutine(self, coro):
+        """스레드 안전하게 코루틴 스케줄링 (WebSocket 콜백 스레드 대응)"""
+        try:
+            asyncio.get_running_loop()
+            asyncio.create_task(coro)
+        except RuntimeError:
+            # WebSocket 콜백 등 별도 스레드에서 호출 시
+            loop = self._loop  # 로컬 복사로 TOCTOU 방지
+            if loop is not None:
+                try:
+                    asyncio.run_coroutine_threadsafe(coro, loop)
+                except RuntimeError:
+                    pass  # loop already closed
+
     # ===== 계좌 수익률 계산 =====
     def _calculate_account_pnl(self) -> AccountPnLInfo:
         """전체 계좌 수익률 계산 (총 평가손익 / 총 매입금액)"""
@@ -536,43 +552,43 @@ class StockAccountTracker:
         for callback in self._on_position_change_callbacks:
             try:
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(self._positions.copy()))
+                    self._schedule_coroutine(callback(self._positions.copy()))
                 else:
                     callback(self._positions.copy())
             except Exception:
                 pass
-    
+
     def _notify_balance_change(self):
         """예수금 변경 알림"""
         for callback in self._on_balance_change_callbacks:
             try:
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(self._balances.copy()))
+                    self._schedule_coroutine(callback(self._balances.copy()))
                 else:
                     callback(self._balances.copy())
             except Exception:
                 pass
-    
+
     def _notify_open_orders_change(self):
         """미체결 주문 변경 알림"""
         for callback in self._on_open_orders_change_callbacks:
             try:
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(self._open_orders.copy()))
+                    self._schedule_coroutine(callback(self._open_orders.copy()))
                 else:
                     callback(self._open_orders.copy())
             except Exception:
                 pass
-    
+
     def _notify_account_pnl_change(self):
         """계좌 수익률 변경 알림"""
         if self._account_pnl is None:
             return
-        
+
         for callback in self._on_account_pnl_change_callbacks:
             try:
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(self._account_pnl))
+                    self._schedule_coroutine(callback(self._account_pnl))
                 else:
                     callback(self._account_pnl)
             except Exception:
