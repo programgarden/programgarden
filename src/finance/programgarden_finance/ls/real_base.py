@@ -35,6 +35,7 @@ _RESPONSE_CLASS_CACHE: Dict[str, Optional[tuple]] = {}
 _RESPONSE_MODULE_BASES = [
     "programgarden_finance.ls.overseas_stock.real",
     "programgarden_finance.ls.overseas_futureoption.real",
+    "programgarden_finance.ls.korea_stock.real",
 ]
 
 
@@ -74,6 +75,7 @@ class RealRequestAbstract(ABC):
         self._ws: Optional[ClientConnection] = None
         self._listen_task = None
         self._as01234_connect = False
+        self._sc01234_connect = False
         self._on_message_listeners: Dict[str, Callable[[Any], Any]] = {}
         self._ref_count = 0
         self._ref_lock = asyncio.Lock()  # ref_count 보호용 Lock
@@ -303,6 +305,7 @@ class RealRequestAbstract(ABC):
                                     rsp_msg="",
                                     error_msg=str(e),
                                 )
+                                resp.raw_data = resp_json
 
                             if on_message is None:
                                 continue
@@ -429,14 +432,14 @@ class RealRequestAbstract(ABC):
         """Remove this instance from the singleton caches.
 
         EN:
-            Cleans up references in OverseasStock and OverseasFutureoption
-            class-level caches so the next ``real()`` call creates a fresh
-            instance.
+            Cleans up references in OverseasStock, OverseasFutureoption,
+            and KoreaStock class-level caches so the next ``real()`` call
+            creates a fresh instance.
 
         KO:
-            OverseasStock 및 OverseasFutureoption 클래스 레벨 캐시에서
-            자기 자신을 제거하여 다음 ``real()`` 호출 시 새 인스턴스가
-            생성되도록 합니다.
+            OverseasStock, OverseasFutureoption, KoreaStock 클래스 레벨
+            캐시에서 자기 자신을 제거하여 다음 ``real()`` 호출 시 새
+            인스턴스가 생성되도록 합니다.
         """
         tm_id = id(self._token_manager)
         try:
@@ -449,6 +452,12 @@ class RealRequestAbstract(ABC):
             from programgarden_finance.ls.overseas_futureoption import OverseasFutureoption
             if OverseasFutureoption._real_instances.get(tm_id) is self:
                 del OverseasFutureoption._real_instances[tm_id]
+        except ImportError:
+            pass
+        try:
+            from programgarden_finance.ls.korea_stock import KoreaStock
+            if KoreaStock._real_instances.get(tm_id) is self:
+                del KoreaStock._real_instances[tm_id]
         except ImportError:
             pass
 
@@ -485,6 +494,8 @@ class RealRequestAbstract(ABC):
         if len(self._on_message_listeners) == 0:
             self._as01234_connect = False
             self._remove_real_order()
+            self._sc01234_connect = False
+            self._remove_real_order_korea()
 
     def _add_message_symbols(self, symbols: List[str], tr_cd: str):
         """Subscribe to real-time feeds for given symbols and TR code.
@@ -561,6 +572,71 @@ class RealRequestAbstract(ABC):
                 from programgarden_finance.ls.overseas_futureoption.real.WOH.blocks import WOHRealRequest, WOHRealRequestBody
                 req = WOHRealRequest(
                     body=WOHRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            # ─── 국내주식 시세 TR (8개) ───
+            elif tr_cd == "S3_":
+                from programgarden_finance.ls.korea_stock.real.S3_.blocks import S3_RealRequest, S3_RealRequestBody
+                req = S3_RealRequest(
+                    body=S3_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "K3_":
+                from programgarden_finance.ls.korea_stock.real.K3_.blocks import K3_RealRequest, K3_RealRequestBody
+                req = K3_RealRequest(
+                    body=K3_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "H1_":
+                from programgarden_finance.ls.korea_stock.real.H1_.blocks import H1_RealRequest, H1_RealRequestBody
+                req = H1_RealRequest(
+                    body=H1_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "HA_":
+                from programgarden_finance.ls.korea_stock.real.HA_.blocks import HA_RealRequest, HA_RealRequestBody
+                req = HA_RealRequest(
+                    body=HA_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "NH1":
+                from programgarden_finance.ls.korea_stock.real.NH1.blocks import NH1RealRequest, NH1RealRequestBody
+                req = NH1RealRequest(
+                    body=NH1RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "IJ_":
+                from programgarden_finance.ls.korea_stock.real.IJ_.blocks import IJ_RealRequest, IJ_RealRequestBody
+                req = IJ_RealRequest(
+                    body=IJ_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "DVI":
+                from programgarden_finance.ls.korea_stock.real.DVI.blocks import DVIRealRequest, DVIRealRequestBody
+                req = DVIRealRequest(
+                    body=DVIRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "NVI":
+                from programgarden_finance.ls.korea_stock.real.NVI.blocks import NVIRealRequest, NVIRealRequestBody
+                req = NVIRealRequest(
+                    body=NVIRealRequestBody(
                         tr_key=symbol
                     )
                 )
@@ -655,6 +731,71 @@ class RealRequestAbstract(ABC):
                     )
                 )
                 req.header.tr_type = "4"
+            # ─── 국내주식 시세 TR (8개) ───
+            elif tr_cd == "S3_":
+                from programgarden_finance.ls.korea_stock.real.S3_.blocks import S3_RealRequest, S3_RealRequestBody
+                req = S3_RealRequest(
+                    body=S3_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "K3_":
+                from programgarden_finance.ls.korea_stock.real.K3_.blocks import K3_RealRequest, K3_RealRequestBody
+                req = K3_RealRequest(
+                    body=K3_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "H1_":
+                from programgarden_finance.ls.korea_stock.real.H1_.blocks import H1_RealRequest, H1_RealRequestBody
+                req = H1_RealRequest(
+                    body=H1_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "HA_":
+                from programgarden_finance.ls.korea_stock.real.HA_.blocks import HA_RealRequest, HA_RealRequestBody
+                req = HA_RealRequest(
+                    body=HA_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "NH1":
+                from programgarden_finance.ls.korea_stock.real.NH1.blocks import NH1RealRequest, NH1RealRequestBody
+                req = NH1RealRequest(
+                    body=NH1RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "IJ_":
+                from programgarden_finance.ls.korea_stock.real.IJ_.blocks import IJ_RealRequest, IJ_RealRequestBody
+                req = IJ_RealRequest(
+                    body=IJ_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "DVI":
+                from programgarden_finance.ls.korea_stock.real.DVI.blocks import DVIRealRequest, DVIRealRequestBody
+                req = DVIRealRequest(
+                    body=DVIRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "NVI":
+                from programgarden_finance.ls.korea_stock.real.NVI.blocks import NVIRealRequest, NVIRealRequestBody
+                req = NVIRealRequest(
+                    body=NVIRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
 
             if req is None:
                 break
@@ -725,6 +866,78 @@ class RealRequestAbstract(ABC):
                     tr_type="2"
                 ),
                 body=AS1RealRequestBody(
+                    tr_cd="",
+                    tr_key="",
+                )
+            )
+            req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            asyncio.create_task(self._ws.send(json.dumps(req)))
+
+    def _add_real_order_korea(self):
+        """Auto-subscribe to all Korean stock order lifecycle feeds.
+
+        EN:
+            Registers SC0-SC4 streams in one shot since the broker
+            auto-enables every order channel. Uses SC1 schema to send
+            the registration request with transaction type ``1``.
+
+        KO:
+            증권사가 SC0-SC4 주문 채널을 자동 활성화하므로 한 번의 호출로
+            국내주식 주문 전체 상태를 등록합니다. SC1 스키마를 사용하여
+            트랜잭션 타입 ``1`` 로 등록 요청을 전송합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        # SC0~SC4 어떤 걸로 요청해도 증권사에서 전부 자동 등록되므로
+        # SC1 하나로 등록한다. 중복 등록을 _sc01234_connect 플래그로 방지.
+        if self._sc01234_connect is False:
+            self._sc01234_connect = True
+            from programgarden_finance.ls.korea_stock.real.SC1.blocks import SC1RealRequest, SC1RealRequestBody, SC1RealRequestHeader
+            req = SC1RealRequest(
+                header=SC1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="1"
+                ),
+                body=SC1RealRequestBody(
+                    tr_cd="SC1",
+                    tr_key="",
+                )
+            )
+            req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            asyncio.create_task(self._ws.send(json.dumps(req)))
+
+    def _remove_real_order_korea(self):
+        """Unsubscribe from Korean stock order lifecycle feeds.
+
+        EN:
+            Sends the deregistration request (transaction type ``2``) using
+            the SC1 schema. A single deregistration cancels all five order
+            event types (SC0-SC4).
+
+        KO:
+            SC1 스키마를 이용해 트랜잭션 타입 ``2`` 로 실시간 주문 구독을
+            해제합니다. 한 번의 해제로 접수/체결/정정/취소/거부 5개 이벤트를
+            모두 해제합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._sc01234_connect is True:
+            # SC0~SC4 아무거나로 해제해도 전체 해제됨. SC1을 사용.
+            from programgarden_finance.ls.korea_stock.real.SC1.blocks import SC1RealRequest, SC1RealRequestBody, SC1RealRequestHeader
+            req = SC1RealRequest(
+                header=SC1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="2"
+                ),
+                body=SC1RealRequestBody(
                     tr_cd="",
                     tr_key="",
                 )
