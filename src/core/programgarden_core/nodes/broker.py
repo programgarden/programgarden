@@ -4,6 +4,7 @@ ProgramGarden Core - Broker Nodes
 상품별 브로커 연결 노드:
 - OverseasStockBrokerNode: 해외주식 전용 브로커
 - OverseasFuturesBrokerNode: 해외선물 전용 브로커
+- KoreaStockBrokerNode: 국내주식 전용 브로커
 """
 
 from typing import Optional, List, Literal, Dict, TYPE_CHECKING, ClassVar
@@ -150,5 +151,52 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
                 default=False,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
+            ),
+        }
+
+
+class KoreaStockBrokerNode(BaseBrokerNode):
+    """
+    국내주식 전용 브로커 연결 노드
+
+    LS증권 OpenAPI를 통해 국내주식 거래를 위한 브로커 연결을 생성합니다.
+
+    Note:
+    - 국내주식은 실전투자 전용 (모의투자 미지원)
+    - credential_types: broker_ls_korea_stock
+    """
+
+    type: Literal["KoreaStockBrokerNode"] = "KoreaStockBrokerNode"
+    description: str = "i18n:nodes.KoreaStockBrokerNode.description"
+
+    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker_korea_stock.svg"
+    _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode,
+        )
+        return {
+            "provider": FieldSchema(
+                name="provider",
+                type=FieldType.ENUM,
+                description="i18n:fields.KoreaStockBrokerNode.provider",
+                default="ls-sec.co.kr",
+                enum_values=["ls-sec.co.kr"],
+                enum_labels={"ls-sec.co.kr": "i18n:enums.broker_provider.ls-sec.co.kr"},
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+            ),
+            "credential_id": FieldSchema(
+                name="credential_id",
+                type=FieldType.CREDENTIAL,
+                description="i18n:fields.KoreaStockBrokerNode.credential_id",
+                default=None,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
+                credential_types=["broker_ls_korea_stock"],
             ),
         }

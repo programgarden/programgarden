@@ -1,9 +1,9 @@
 """
 ProgramGarden Core - 노드 타입 정의
 
-55개 노드 타입을 카테고리로 분류:
+68개 노드 타입을 카테고리로 분류:
 - infra (5): StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode
-- broker (2): OverseasStockBrokerNode, OverseasFuturesBrokerNode
+- broker (3): OverseasStockBrokerNode, OverseasFuturesBrokerNode, KoreaStockBrokerNode
 - market (15): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
               OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode,
               WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode
@@ -23,7 +23,7 @@ ProgramGarden Core - 노드 타입 정의
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, Position
 from programgarden_core.nodes.infra import StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode
-from programgarden_core.nodes.broker import OverseasStockBrokerNode, OverseasFuturesBrokerNode
+from programgarden_core.nodes.broker import OverseasStockBrokerNode, OverseasFuturesBrokerNode, KoreaStockBrokerNode
 # Market - 상품별 분리 노드
 from programgarden_core.nodes.data_stock import OverseasStockMarketDataNode
 from programgarden_core.nodes.fundamental_stock import OverseasStockFundamentalNode
@@ -71,6 +71,9 @@ from programgarden_core.nodes.order import (
     OverseasFuturesNewOrderNode,
     OverseasFuturesModifyOrderNode,
     OverseasFuturesCancelOrderNode,
+    KoreaStockNewOrderNode,
+    KoreaStockModifyOrderNode,
+    KoreaStockCancelOrderNode,
 )
 # messaging 노드는 커뮤니티 패키지(TelegramNode 등)에서 제공
 from programgarden_core.nodes.display import (
@@ -88,6 +91,18 @@ from programgarden_core.nodes.backtest import (
 from programgarden_core.nodes.portfolio import PortfolioNode
 # AI (에이전트, LLM 연결)
 from programgarden_core.nodes.ai import LLMModelNode, AIAgentNode
+# Korea Stock (국내주식)
+from programgarden_core.nodes.account_korea_stock import KoreaStockAccountNode
+from programgarden_core.nodes.open_orders_korea_stock import KoreaStockOpenOrdersNode
+from programgarden_core.nodes.data_korea_stock import KoreaStockMarketDataNode
+from programgarden_core.nodes.fundamental_korea_stock import KoreaStockFundamentalNode
+from programgarden_core.nodes.backtest_korea_stock import KoreaStockHistoricalDataNode
+from programgarden_core.nodes.symbol_korea_stock import KoreaStockSymbolQueryNode
+from programgarden_core.nodes.realtime_korea_stock import (
+    KoreaStockRealMarketDataNode,
+    KoreaStockRealAccountNode,
+    KoreaStockRealOrderEventNode,
+)
 
 __all__ = [
     # Base
@@ -168,4 +183,21 @@ __all__ = [
     # AI (에이전트, LLM 연결)
     "LLMModelNode",
     "AIAgentNode",
+    # Broker - Korea Stock (국내주식)
+    "KoreaStockBrokerNode",
+    # Market - Korea Stock (국내주식)
+    "KoreaStockMarketDataNode",
+    "KoreaStockFundamentalNode",
+    "KoreaStockHistoricalDataNode",
+    "KoreaStockRealMarketDataNode",
+    "KoreaStockSymbolQueryNode",
+    # Account - Korea Stock (국내주식)
+    "KoreaStockAccountNode",
+    "KoreaStockOpenOrdersNode",
+    "KoreaStockRealAccountNode",
+    "KoreaStockRealOrderEventNode",
+    # Order - Korea Stock (국내주식)
+    "KoreaStockNewOrderNode",
+    "KoreaStockModifyOrderNode",
+    "KoreaStockCancelOrderNode",
 ]

@@ -72,13 +72,15 @@ description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
-files = [
-    {file = "programgarden_core-1.8.0-py3-none-any.whl", hash = "sha256:db121f15fd1e8315b15abe0fc0fc5c9cfc6bd4402c1321f4ec3fa2c72631d2d1"},
-    {file = "programgarden_core-1.8.0.tar.gz", hash = "sha256:0088b75240775b6971907a42894f3308814c364dc65a5f0349c3e2b40844b71a"},
-]
+files = []
+develop = true
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
+
+[package.source]
+type = "directory"
+url = "../core"
 
 [[package]]
 name = "pydantic"
@@ -322,4 +324,4 @@ typing-extensions = ">=4.12.0"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "a70752dcc5a29e0c797798ea05a0a71e9e289e15742b007f4eab7d9aec4ebe0d"
+content-hash = "163d13717de509bbb879e315ca93af68105f250ec8e1660ce53a8e5f91729622"

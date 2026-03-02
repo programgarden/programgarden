@@ -2379,13 +2379,15 @@ optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
-files = [
-    {file = "programgarden_community-1.10.1-py3-none-any.whl", hash = "sha256:6b4f9fbfa4c61fdf34ebf64ce9fe7306f5627ce0b8de3c696e8ed26d36202122"},
-    {file = "programgarden_community-1.10.1.tar.gz", hash = "sha256:fa63026d9a277b340f7fced67cc796e3b8e0de24dd3463a0a2c85ab5ea4d4882"},
-]
+files = []
+develop = true
 
 [package.dependencies]
-programgarden-core = ">=1.8.0,<2.0.0"
+programgarden-core = {path = "../core", develop = true}
+
+[package.source]
+type = "directory"
+url = "../community"
 
 [[package]]
 name = "programgarden-core"
@@ -2395,13 +2397,15 @@ optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
-files = [
-    {file = "programgarden_core-1.8.0-py3-none-any.whl", hash = "sha256:db121f15fd1e8315b15abe0fc0fc5c9cfc6bd4402c1321f4ec3fa2c72631d2d1"},
-    {file = "programgarden_core-1.8.0.tar.gz", hash = "sha256:0088b75240775b6971907a42894f3308814c364dc65a5f0349c3e2b40844b71a"},
-]
+files = []
+develop = true
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
+
+[package.source]
+type = "directory"
+url = "../core"
 
 [[package]]
 name = "programgarden-finance"
@@ -2411,19 +2415,21 @@ optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
-files = [
-    {file = "programgarden_finance-1.4.0-py3-none-any.whl", hash = "sha256:5c5bebf0c1c8d17f1ed841141c5a0255f671770cf1cbfae7111782c0b89d6cb9"},
-    {file = "programgarden_finance-1.4.0.tar.gz", hash = "sha256:c7b0657ba50763923c8b57cd77759db7f373ecdcf2c9a6bf9641ad387435f7d3"},
-]
+files = []
+develop = true
 
 [package.dependencies]
-aiohttp = ">=3.10.0,<4.0.0"
-programgarden-core = ">=1.8.0,<2.0.0"
+aiohttp = "^3.10.0"
+programgarden-core = {path = "../core", develop = true}
 pydantic = ">=2.11.7,<3.0.0"
-python-dotenv = ">=1.1.1,<2.0.0"
-redis = ">=6.4.0,<7.0.0"
-requests = ">=2.32.4,<3.0.0"
-websockets = ">=15.0.1,<16.0.0"
+python-dotenv = "^1.1.1"
+redis = "^6.4.0"
+requests = "^2.32.4"
+websockets = "^15.0.1"
+
+[package.source]
+type = "directory"
+url = "../finance"
 
 [[package]]
 name = "propcache"
@@ -4052,4 +4058,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "e4c1cf44689859ff6c138ddb7fdc1db3fa8c081c56019cad745eb94dfcb68054"
+content-hash = "64fe2b4cc4f1bac22de27dd5df20115dfe7a7e12b2f150e49f359aeb28f96d22"

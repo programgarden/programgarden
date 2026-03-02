@@ -12057,6 +12057,20 @@ class WorkflowExecutor:
             "OverseasFuturesNewOrderNode": NewOrderNodeExecutor(),
             "OverseasFuturesModifyOrderNode": ModifyOrderNodeExecutor(),
             "OverseasFuturesCancelOrderNode": CancelOrderNodeExecutor(),
+            # 국내주식
+            "KoreaStockBrokerNode": BrokerNodeExecutor(),
+            "KoreaStockAccountNode": AccountNodeExecutor(),
+            "KoreaStockOpenOrdersNode": OpenOrdersNodeExecutor(),
+            "KoreaStockMarketDataNode": MarketDataNodeExecutor(),
+            "KoreaStockFundamentalNode": FundamentalNodeExecutor(),
+            "KoreaStockHistoricalDataNode": HistoricalDataNodeExecutor(),
+            "KoreaStockSymbolQueryNode": SymbolQueryNodeExecutor(),
+            "KoreaStockNewOrderNode": NewOrderNodeExecutor(),
+            "KoreaStockModifyOrderNode": ModifyOrderNodeExecutor(),
+            "KoreaStockCancelOrderNode": CancelOrderNodeExecutor(),
+            "KoreaStockRealMarketDataNode": RealMarketDataNodeExecutor(),
+            "KoreaStockRealAccountNode": RealAccountNodeExecutor(),
+            "KoreaStockRealOrderEventNode": RealOrderEventNodeExecutor(),
             # Data nodes
             "SQLiteNode": SQLiteNodeExecutor(),
             # External market data nodes (credential 불필요, 외부 API)
