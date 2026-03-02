@@ -21,6 +21,7 @@ class ProductScope(str, Enum):
     """노드가 지원하는 상품 범위"""
     STOCK = "overseas_stock"        # 해외주식 전용
     FUTURES = "overseas_futures"    # 해외선물 전용
+    KOREA_STOCK = "korea_stock"    # 국내주식 전용
     ALL = "all"                     # 상품 무관 (범용)
 
 
@@ -148,6 +149,52 @@ OVERSEAS_FUTURES_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
     {"name": "total", "type": "number", "description": "총 예수금"},
     {"name": "available", "type": "number", "description": "매수 가능 금액"},
     {"name": "currency", "type": "string", "description": "통화 코드 (USD 등)"},
+]
+
+# ── 국내주식 REST AccountNode 전용 ──
+KOREA_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "cash", "type": "number", "description": "예수금"},
+    {"name": "total_eval", "type": "number", "description": "총평가금액"},
+    {"name": "stock_eval", "type": "number", "description": "주식평가금액"},
+    {"name": "total_pnl", "type": "number", "description": "평가손익합계"},
+    {"name": "total_pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "orderable_amount", "type": "number", "description": "주문가능금액"},
+]
+
+# ── 국내주식 RealAccountNode 전용 ──
+KOREA_STOCK_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "total", "type": "number", "description": "총 예수금"},
+    {"name": "available", "type": "number", "description": "매수 가능 금액"},
+]
+
+# ── 국내주식 시세 전용 (t1102 기반) ──
+KOREA_STOCK_PRICE_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드 (6자리)"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "open_price", "type": "number", "description": "시가"},
+    {"name": "high_price", "type": "number", "description": "고가"},
+    {"name": "low_price", "type": "number", "description": "저가"},
+    {"name": "market_cap", "type": "number", "description": "시가총액 (억원)"},
+]
+
+# ── 국내주식 펀더멘털 전용 ──
+KOREA_STOCK_FUNDAMENTAL_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "per", "type": "number", "description": "PER"},
+    {"name": "eps", "type": "number", "description": "EPS"},
+    {"name": "pbr", "type": "number", "description": "PBR"},
+    {"name": "market_cap", "type": "number", "description": "시가총액 (억원)"},
+    {"name": "shares_outstanding", "type": "number", "description": "상장주식수"},
+    {"name": "high_52w", "type": "number", "description": "52주 최고가"},
+    {"name": "low_52w", "type": "number", "description": "52주 최저가"},
+    {"name": "industry", "type": "string", "description": "업종명"},
 ]
 
 POSITION_FIELDS: List[Dict[str, str]] = [

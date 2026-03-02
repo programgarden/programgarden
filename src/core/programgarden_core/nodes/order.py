@@ -1,9 +1,10 @@
 """
 ProgramGarden Core - Order Nodes
 
-상품별 주문 노드 (해외주식 3개 + 해외선물 3개 = 총 6개):
+상품별 주문 노드 (해외주식 3개 + 해외선물 3개 + 국내주식 3개 = 총 9개):
 - OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode (해외주식)
 - OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode (해외선물)
+- KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode (국내주식)
 
 입력 구조:
 - NewOrder: orders 배열 [{symbol, exchange, quantity, price}, ...]
@@ -964,6 +965,302 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
                 required=True,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
+                expected_type="str",
+            ),
+        }
+
+
+# =============================================================================
+# 국내주식 주문 노드
+# =============================================================================
+
+class KoreaStockNewOrderNode(BaseOrderNode):
+    """
+    국내주식 신규주문 노드
+
+    국내주식(KOSPI, KOSDAQ) 신규주문을 실행합니다.
+    order 필드에 주문할 종목을 바인딩하세요.
+
+    API: CSPAT00601 (국내주식 신규주문)
+    """
+
+    type: Literal["KoreaStockNewOrderNode"] = "KoreaStockNewOrderNode"
+    description: str = "i18n:nodes.KoreaStockNewOrderNode.description"
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 국내주식 전용 필드
+    price_type: Literal["limit", "market", "conditional_limit"] = Field(
+        default="limit",
+        description="호가 유형 (limit: 지정가, market: 시장가, conditional_limit: 조건부지정가)",
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        )
+        return {
+            **super().get_field_schema(),
+            "side": FieldSchema(
+                name="side",
+                type=FieldType.ENUM,
+                description="i18n:fields.KoreaStockNewOrderNode.side",
+                default="buy",
+                enum_values=["buy", "sell"],
+                enum_labels={
+                    "buy": "i18n:enums.side.buy",
+                    "sell": "i18n:enums.side.sell",
+                },
+                required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                expected_type="str",
+            ),
+            "order_type": FieldSchema(
+                name="order_type",
+                type=FieldType.ENUM,
+                description="i18n:fields.KoreaStockNewOrderNode.order_type",
+                default="limit",
+                enum_values=["market", "limit"],
+                enum_labels={
+                    "market": "i18n:enums.order_type.market",
+                    "limit": "i18n:enums.order_type.limit",
+                },
+                required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                expected_type="str",
+            ),
+            "price_type": FieldSchema(
+                name="price_type",
+                type=FieldType.ENUM,
+                description="i18n:fields.KoreaStockNewOrderNode.price_type",
+                default="limit",
+                enum_values=["limit", "market", "conditional_limit"],
+                enum_labels={
+                    "limit": "i18n:enums.kr_price_type.limit",
+                    "market": "i18n:enums.kr_price_type.market",
+                    "conditional_limit": "i18n:enums.kr_price_type.conditional_limit",
+                },
+                required=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                expected_type="str",
+            ),
+            "order": FieldSchema(
+                name="order",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.KoreaStockNewOrderNode.order",
+                description="i18n:fields.KoreaStockNewOrderNode.order",
+                required=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example={"symbol": "005930", "quantity": 10, "price": 70000},
+                example_binding="{{ nodes.positionSizing.order }}",
+                bindable_sources=[
+                    "PositionSizingNode.order",
+                ],
+                object_schema=[
+                    {"name": "symbol", "type": "STRING", "required": True,
+                     "label": "i18n:fields.order.symbol"},
+                    {"name": "quantity", "type": "INTEGER", "required": True,
+                     "label": "i18n:fields.order.quantity"},
+                    {"name": "price", "type": "NUMBER", "required": False,
+                     "label": "i18n:fields.order.price"},
+                ],
+                expected_type="{symbol: str, quantity: int, price?: float}",
+                help_text="i18n:fields.KoreaStockNewOrderNode.order.help_text",
+            ),
+        }
+
+
+class KoreaStockModifyOrderNode(BaseModifyOrderNode):
+    """
+    국내주식 정정주문 노드
+
+    기존 미체결 주문의 가격이나 수량을 정정합니다.
+
+    API: CSPAT00701 (국내주식 정정주문)
+    """
+
+    type: Literal["KoreaStockModifyOrderNode"] = "KoreaStockModifyOrderNode"
+    description: str = "i18n:nodes.KoreaStockModifyOrderNode.description"
+
+    _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 정정 대상
+    new_quantity: Optional[int] = Field(
+        default=None,
+        description="정정할 수량 (변경하지 않으면 기존 수량 유지)",
+    )
+    new_price: Optional[float] = Field(
+        default=None,
+        description="정정할 가격 (변경하지 않으면 기존 가격 유지)",
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.modify_trigger",
+        ),
+        InputPort(
+            name="original_order_id",
+            type="string",
+            description="i18n:ports.original_order_id",
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="modify_result",
+            type="order_result",
+            description="i18n:ports.modify_result",
+            fields=ORDER_RESULT_FIELDS,
+        ),
+        OutputPort(
+            name="modified_order_id",
+            type="string",
+            description="i18n:ports.modified_order_id",
+        ),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        return {
+            **super().get_field_schema(),
+            "original_order_id": FieldSchema(
+                name="original_order_id",
+                type=FieldType.STRING,
+                description="i18n:fields.KoreaStockModifyOrderNode.original_order_id",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ nodes.account.selected_order.order_id }}",
+                example="ORD20260127001",
+                example_binding="{{ nodes.account.selected_order.order_id }}",
+                bindable_sources=[
+                    "RealAccountNode.open_orders[].order_id",
+                    "KoreaStockNewOrderNode.order_result.order_id",
+                ],
+                expected_type="str",
+            ),
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.STRING,
+                description="i18n:fields.KoreaStockModifyOrderNode.symbol",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="005930",
+                example="005930",
+                expected_type="str",
+            ),
+            "new_quantity": FieldSchema(
+                name="new_quantity",
+                type=FieldType.INTEGER,
+                description="i18n:fields.KoreaStockModifyOrderNode.new_quantity",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="10",
+                expected_type="int",
+            ),
+            "new_price": FieldSchema(
+                name="new_price",
+                type=FieldType.NUMBER,
+                description="i18n:fields.KoreaStockModifyOrderNode.new_price",
+                required=False,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="70000",
+                expected_type="float",
+            ),
+        }
+
+
+class KoreaStockCancelOrderNode(BaseModifyOrderNode):
+    """
+    국내주식 취소주문 노드
+
+    기존 미체결 주문을 취소합니다.
+
+    API: CSPAT00801 (국내주식 취소주문)
+    """
+
+    type: Literal["KoreaStockCancelOrderNode"] = "KoreaStockCancelOrderNode"
+    description: str = "i18n:nodes.KoreaStockCancelOrderNode.description"
+
+    _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.cancel_trigger",
+        ),
+        InputPort(
+            name="original_order_id",
+            type="string",
+            description="i18n:ports.original_order_id",
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="cancel_result",
+            type="order_result",
+            description="i18n:ports.cancel_result",
+            fields=ORDER_RESULT_FIELDS,
+        ),
+        OutputPort(
+            name="cancelled_order_id",
+            type="string",
+            description="i18n:ports.cancelled_order_id",
+        ),
+    ]
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import (
+            FieldSchema, FieldType, FieldCategory, ExpressionMode
+        )
+        return {
+            **super().get_field_schema(),
+            "original_order_id": FieldSchema(
+                name="original_order_id",
+                type=FieldType.STRING,
+                description="i18n:fields.KoreaStockCancelOrderNode.original_order_id",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="{{ nodes.account.selected_order.order_id }}",
+                example="ORD20260127001",
+                example_binding="{{ nodes.account.selected_order.order_id }}",
+                bindable_sources=[
+                    "RealAccountNode.open_orders[].order_id",
+                    "KoreaStockNewOrderNode.order_result.order_id",
+                ],
+                expected_type="str",
+            ),
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.STRING,
+                description="i18n:fields.KoreaStockCancelOrderNode.symbol",
+                required=True,
+                expression_mode=ExpressionMode.BOTH,
+                category=FieldCategory.PARAMETERS,
+                placeholder="005930",
+                example="005930",
                 expected_type="str",
             ),
         }
