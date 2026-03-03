@@ -236,7 +236,7 @@ class TestKoreaStockOpenOrdersExecutor:
 
         resp = MagicMock()
         resp.error_msg = None
-        resp.block1 = [item]
+        resp.block = [item]  # T0425Response.block (T0425OutBlock1 리스트)
 
         mock_t0425 = MagicMock()
         mock_t0425.req_async = AsyncMock(return_value=resp)
