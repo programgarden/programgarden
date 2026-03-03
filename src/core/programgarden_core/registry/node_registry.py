@@ -93,6 +93,13 @@ class NodeTypeRegistry:
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Open Orders (미체결 조회)
             OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
+            # Korea Stock (국내주식)
+            KoreaStockBrokerNode,
+            KoreaStockAccountNode, KoreaStockOpenOrdersNode,
+            KoreaStockMarketDataNode, KoreaStockFundamentalNode,
+            KoreaStockHistoricalDataNode, KoreaStockSymbolQueryNode,
+            KoreaStockRealMarketDataNode, KoreaStockRealAccountNode, KoreaStockRealOrderEventNode,
+            KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode,
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Market External (credential 불필요)
@@ -131,6 +138,13 @@ class NodeTypeRegistry:
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Open Orders (미체결 조회)
             OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
+            # Korea Stock (국내주식)
+            KoreaStockBrokerNode,
+            KoreaStockAccountNode, KoreaStockOpenOrdersNode,
+            KoreaStockMarketDataNode, KoreaStockFundamentalNode,
+            KoreaStockHistoricalDataNode, KoreaStockSymbolQueryNode,
+            KoreaStockRealMarketDataNode, KoreaStockRealAccountNode, KoreaStockRealOrderEventNode,
+            KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode,
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Market External (credential 불필요)
