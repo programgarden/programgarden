@@ -38,12 +38,15 @@ _REALTIME_NODE_TYPES = frozenset({
     "RealAccountNode",
     "OverseasStockRealAccountNode",
     "OverseasFuturesRealAccountNode",
+    "KoreaStockRealAccountNode",
     "RealMarketDataNode",
     "OverseasStockRealMarketDataNode",
     "OverseasFuturesRealMarketDataNode",
+    "KoreaStockRealMarketDataNode",
     "RealOrderEventNode",
     "OverseasStockRealOrderEventNode",
     "OverseasFuturesRealOrderEventNode",
+    "KoreaStockRealOrderEventNode",
 })
 
 # BrokerNode 타입 - NodeRunner에서 직접 실행 대신 credential/connection 자동 처리
@@ -51,6 +54,7 @@ _BROKER_NODE_TYPES = frozenset({
     "BrokerNode",
     "OverseasStockBrokerNode",
     "OverseasFuturesBrokerNode",
+    "KoreaStockBrokerNode",
 })
 
 # 브로커 의존 노드 - connection 자동 주입이 필요한 노드 타입
@@ -69,6 +73,11 @@ _BROKER_DEPENDENT_NODE_TYPES = frozenset({
     # Order
     "OverseasStockNewOrderNode", "OverseasStockModifyOrderNode", "OverseasStockCancelOrderNode",
     "OverseasFuturesNewOrderNode", "OverseasFuturesModifyOrderNode", "OverseasFuturesCancelOrderNode",
+    # Korea Stock
+    "KoreaStockAccountNode", "KoreaStockOpenOrdersNode",
+    "KoreaStockMarketDataNode", "KoreaStockFundamentalNode",
+    "KoreaStockHistoricalDataNode", "KoreaStockSymbolQueryNode",
+    "KoreaStockNewOrderNode", "KoreaStockModifyOrderNode", "KoreaStockCancelOrderNode",
 })
 
 
@@ -142,9 +151,9 @@ class NodeRunner:
 
         paper_trading = data.get("paper_trading", False)
 
-        # overseas_stock은 모의투자 미지원 (LS증권)
-        if product == "overseas_stock" and paper_trading:
-            logger.warning("overseas_stock does not support paper_trading, forcing real mode")
+        # overseas_stock, korea_stock은 모의투자 미지원 (LS증권)
+        if product in ("overseas_stock", "korea_stock") and paper_trading:
+            logger.warning(f"{product} does not support paper_trading, forcing real mode")
             paper_trading = False
 
         return {
@@ -174,7 +183,7 @@ class NodeRunner:
         if not broker_info:
             raise ValueError(
                 f"Broker credential '{credential_id}' not found or not a broker type. "
-                f"Expected type: 'broker_ls_overseas_stock' or 'broker_ls_overseas_futures'"
+                f"Expected type: 'broker_ls_overseas_stock', 'broker_ls_overseas_futures', or 'broker_ls_korea_stock'"
             )
 
         product = broker_info["product"]

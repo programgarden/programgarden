@@ -1572,6 +1572,10 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
             return await self._execute_futures_master(
                 node_id, config, context, appkey, appsecret, paper_trading, max_results
             )
+        elif product_type == "korea_stock":
+            return await self._execute_korea_stock_master(
+                node_id, config, context, appkey, appsecret, max_results
+            )
         else:
             return await self._execute_stock_master(
                 node_id, config, context, appkey, appsecret, max_results
@@ -1662,7 +1666,78 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
             "country": country,
             "product": "overseas_stock",
         }
-    
+
+    async def _execute_korea_stock_master(
+        self,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        appkey: str,
+        appsecret: str,
+        max_results: int,
+    ) -> Dict[str, Any]:
+        """국내주식 종목마스터 조회 (t9945)
+
+        KOSPI(gubun=1) + KOSDAQ(gubun=2) 두 번 호출하여 전체 종목 반환.
+        """
+        from programgarden_finance.ls.korea_stock.market.t9945.blocks import T9945InBlock
+
+        ls, success, error = ensure_ls_login(appkey, appsecret, False, context, node_id, "korea_stock")
+        if not success:
+            return {"symbols": [], "count": 0, "error": error}
+
+        api = ls.korea_stock()
+
+        # stock_exchange 필터: "KOSPI", "KOSDAQ", "" (전체)
+        stock_exchange = config.get("stock_exchange", "")
+
+        all_symbols = []
+
+        # KOSPI + KOSDAQ 조회 (stock_exchange 필터에 따라)
+        gubun_list = []
+        if not stock_exchange or stock_exchange.upper() == "KOSPI":
+            gubun_list.append(("1", "KOSPI"))
+        if not stock_exchange or stock_exchange.upper() == "KOSDAQ":
+            gubun_list.append(("2", "KOSDAQ"))
+
+        try:
+            for gubun, market_name in gubun_list:
+                body = T9945InBlock(gubun=gubun)
+                response = api.market().t9945(body=body).req()
+
+                if response and response.block:
+                    for item in response.block:
+                        shcode = getattr(item, 'shcode', '')
+                        hname = getattr(item, 'hname', '')
+                        etfchk = getattr(item, 'etfchk', '')
+
+                        all_symbols.append({
+                            "exchange": "KRX",
+                            "market": market_name,
+                            "symbol": shcode,
+                            "name": hname,
+                            "is_etf": etfchk == "1",
+                            "product": "korea_stock",
+                        })
+
+                    context.log("debug", f"t9945 {market_name}: {len(response.block)} symbols", node_id)
+
+            # max_results 적용
+            if max_results and len(all_symbols) > max_results:
+                all_symbols = all_symbols[:max_results]
+
+            context.log("info", f"Korea stock master: {len(all_symbols)} symbols", node_id)
+
+            return {
+                "symbols": all_symbols,
+                "count": len(all_symbols),
+                "product": "korea_stock",
+            }
+
+        except Exception as e:
+            context.log("error", f"Korea stock master query failed: {e}", node_id)
+            return {"symbols": [], "count": 0, "error": str(e)}
+
     async def _execute_futures_master(
         self,
         node_id: str,
@@ -1832,14 +1907,24 @@ class BrokerNodeExecutor(NodeExecutorBase):
         provider = config.get("provider", "ls-sec.co.kr")
         company = config.get("company", "ls")
         # node_type에 따라 product 기본값 결정
-        default_product = "overseas_futures" if "Futures" in node_type else "overseas_stock"
+        if "Futures" in node_type:
+            default_product = "overseas_futures"
+        elif "KoreaStock" in node_type:
+            default_product = "korea_stock"
+        else:
+            default_product = "overseas_stock"
         product = config.get("product", default_product)
-        paper_trading = config.get("paper_trading", True)
-        
+        # 국내주식은 실전투자 전용 (paper_trading 필드 없음)
+        if product == "korea_stock":
+            paper_trading = False
+        else:
+            paper_trading = config.get("paper_trading", True)
+
         # ========================================
         # 모의투자 지원 여부 검증
         # - overseas_stock: 모의투자 미지원 (LS증권) → 에러 반환 (자동 실전 전환 금지)
         # - overseas_futures: 모의투자 지원
+        # - korea_stock: 실전투자 전용 (위에서 False 강제)
         # ========================================
         if product == "overseas_stock" and paper_trading:
             context.log(
@@ -2946,9 +3031,99 @@ class AccountNodeExecutor(NodeExecutorBase):
         }
 
     async def _ls_korea_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
-        """LS증권 국내주식 잔고 조회 (TODO: 구현 필요)"""
-        context.log("warning", "LS korea_stock not yet implemented, returning empty", node_id)
-        return self._empty_result("korea_stock not implemented")
+        """
+        LS증권 국내주식 잔고 조회
+
+        - CSPAQ12300: 종목별 잔고내역 (보유종목, 평가손익)
+        - CSPAQ22200: 예수금/주문가능금액
+        """
+        try:
+            from programgarden_finance.ls.korea_stock.accno.CSPAQ12300.blocks import CSPAQ12300InBlock1
+            from programgarden_finance.ls.korea_stock.accno.CSPAQ22200.blocks import CSPAQ22200InBlock1
+
+            # 1. CSPAQ12300: 종목별 잔고내역
+            response = await ls.korea_stock().accno().cspaq12300(
+                body=CSPAQ12300InBlock1()
+            ).req_async()
+
+            positions = []
+            balance_info = {
+                "orderable_amount": 0.0,
+                "deposit": 0.0,
+                "total_eval": 0.0,
+                "purchase_amount": 0.0,
+                "eval_pnl": 0.0,
+                "pnl_rate": 0.0,
+            }
+
+            if response.error_msg:
+                context.log("warning", f"CSPAQ12300 조회 실패: {response.error_msg}", node_id)
+            else:
+                # block2: 잔고 요약
+                if response.block2:
+                    b2 = response.block2
+                    balance_info["orderable_amount"] = float(b2.MnyOrdAbleAmt) if b2.MnyOrdAbleAmt else 0.0
+                    balance_info["total_eval"] = float(b2.BalEvalAmt) if b2.BalEvalAmt else 0.0
+                    balance_info["purchase_amount"] = float(b2.PchsAmt) if b2.PchsAmt else 0.0
+                    balance_info["eval_pnl"] = float(b2.EvalPnl) if b2.EvalPnl else 0.0
+                    balance_info["pnl_rate"] = float(b2.PnlRat) if b2.PnlRat else 0.0
+                    balance_info["deposit"] = float(b2.Dps) if b2.Dps else 0.0
+
+                # block3: 종목별 잔고 리스트
+                for item in (response.block3 or []):
+                    symbol = (item.IsuNo or "").strip()
+                    # IsuNo가 A로 시작하면 앞자리 제거 (A005930 → 005930)
+                    if symbol.startswith("A"):
+                        symbol = symbol[1:]
+                    if not symbol:
+                        continue
+
+                    qty = int(item.BalQty) if item.BalQty else 0
+                    if qty <= 0:
+                        continue
+
+                    current_price = float(item.NowPrc) if item.NowPrc else 0.0
+                    positions.append({
+                        "symbol": symbol,
+                        "exchange": "KRX",
+                        "name": (item.IsuNm or "").strip(),
+                        "quantity": qty,
+                        "price": current_price,
+                        "avg_price": float(item.AvrUprc) if item.AvrUprc else 0.0,
+                        "current_price": current_price,
+                        "pnl_amount": float(item.EvalPnl) if item.EvalPnl else 0.0,
+                        "pnl_rate": float(item.PnlRat) if item.PnlRat else 0.0,
+                        "sellable_qty": int(item.SellAbleQty) if item.SellAbleQty else 0,
+                        "eval_amount": float(item.BalEvalAmt) if item.BalEvalAmt else 0.0,
+                        "product": "korea_stock",
+                    })
+
+            # 2. CSPAQ22200: 예수금/주문가능금액
+            try:
+                cash_response = await ls.korea_stock().accno().cspaq22200(
+                    body=CSPAQ22200InBlock1()
+                ).req_async()
+
+                if not cash_response.error_msg and cash_response.block2:
+                    b2 = cash_response.block2
+                    balance_info["orderable_amount"] = float(b2.MnyOrdAbleAmt) if b2.MnyOrdAbleAmt else balance_info["orderable_amount"]
+                    balance_info["deposit"] = float(b2.Dps) if b2.Dps else balance_info["deposit"]
+                    balance_info["d2_deposit"] = float(b2.D2Dps) if b2.D2Dps else 0.0
+                    balance_info["margin_cash"] = float(b2.MgnMny) if b2.MgnMny else 0.0
+                elif cash_response.error_msg:
+                    context.log("warning", f"CSPAQ22200 조회 실패 (무시): {cash_response.error_msg}", node_id)
+            except Exception as e:
+                context.log("warning", f"CSPAQ22200 조회 실패 (무시): {e}", node_id)
+
+            context.log("info", f"AccountNode (korea_stock): {len(positions)} positions fetched", node_id)
+            return {
+                "positions": positions,
+                "balance": balance_info,
+            }
+
+        except Exception as e:
+            context.log("error", f"Failed to fetch korea_stock positions: {e}", node_id)
+            return self._empty_result(str(e))
 
     async def _ls_overseas_futureoption(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
         """
@@ -3151,12 +3326,70 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
                 return await self._ls_overseas_stock(ls, node_id, context)
             elif product in ("overseas_futures", "overseas_futureoption"):
                 return await self._ls_overseas_futures(ls, node_id, context)
+            elif product == "korea_stock":
+                return await self._ls_korea_stock(ls, node_id, context)
             else:
                 context.log("warning", f"Unsupported product: {product}", node_id)
                 return self._empty_result(f"Unsupported product: {product}")
 
         except Exception as e:
             context.log("error", f"Unexpected error: {e}", node_id)
+            return self._empty_result(str(e))
+
+    async def _ls_korea_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
+        """국내주식 미체결 조회 (t0425)"""
+        try:
+            from programgarden_finance.ls.korea_stock.accno.t0425.blocks import T0425InBlock
+
+            response = await ls.korea_stock().accno().t0425(
+                body=T0425InBlock(
+                    expcode="",      # 빈값: 전체 종목
+                    chegb="2",       # 2: 미체결
+                    medosu="0",      # 0: 전체
+                    sortgb="1",      # 1: 주문번호 역순
+                    cts_ordno="",
+                )
+            ).req_async()
+
+            if response.error_msg:
+                context.log("error", f"t0425 error: {response.error_msg}", node_id)
+                return self._empty_result(response.error_msg)
+
+            open_orders = []
+            for item in response.block1 or []:
+                order_id = str(item.ordno) if item.ordno else ""
+                if not order_id:
+                    continue
+
+                # 미체결잔량이 0이면 완료된 주문
+                remaining = int(item.ordrem) if item.ordrem else 0
+                if remaining <= 0:
+                    continue
+
+                side = "buy" if "매수" in (item.medosu or "") else "sell"
+
+                open_orders.append({
+                    "order_id": order_id,
+                    "exchange": "KRX",
+                    "symbol": (item.expcode or "").strip(),
+                    "name": "",
+                    "side": side,
+                    "order_type": (item.hogagb or "").strip(),
+                    "quantity": int(item.qty) if item.qty else 0,
+                    "filled_quantity": int(item.cheqty) if item.cheqty else 0,
+                    "remaining_quantity": remaining,
+                    "price": float(item.price) if item.price else 0.0,
+                    "order_time": (item.ordtime or "").strip(),
+                })
+
+            context.log("info", f"OpenOrdersNode (korea_stock): {len(open_orders)} open orders", node_id)
+            return {
+                "open_orders": open_orders,
+                "count": len(open_orders),
+            }
+
+        except Exception as e:
+            context.log("error", f"Korea stock open orders error: {e}", node_id)
             return self._empty_result(str(e))
 
     async def _ls_overseas_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
@@ -3428,6 +3661,10 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             )
         elif product == "overseas_futures":
             return await self._ls_futureoption_with_tracker(
+                ls, node_id, config, context, sync_interval_sec, stay_connected
+            )
+        elif product == "korea_stock":
+            return await self._ls_korea_stock_with_tracker(
                 ls, node_id, config, context, sync_interval_sec, stay_connected
             )
         else:
@@ -3813,6 +4050,127 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             context.log("error", f"Futures tracker setup failed: {e}", node_id)
             raise
 
+    async def _ls_korea_stock_with_tracker(
+        self,
+        ls,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        sync_interval_sec: int,
+        stay_connected: bool = True,
+    ) -> Dict[str, Any]:
+        """국내주식 실시간 계좌 추적 (KrStockAccountTracker)"""
+        from decimal import Decimal
+
+        try:
+            commission_rate = Decimal(str(config.get("commission_rate", 0.015))) / 100
+
+            context.log("info", f"Korea stock commission rate: {float(commission_rate)*100:.3f}%", node_id)
+
+            real_client = ls.korea_stock().real()
+            if not await real_client.is_connected():
+                await real_client.connect()
+
+            tracker = ls.korea_stock().accno().account_tracker(
+                real_client=real_client,
+                refresh_interval=sync_interval_sec,
+                commission_rate=commission_rate,
+            )
+
+            token_manager = ls._token_manager if hasattr(ls, '_token_manager') else None
+            reconnect_handler = ReconnectHandler(token_manager)
+
+            async def on_disconnect():
+                can_retry = await reconnect_handler.handle_disconnect()
+                if can_retry:
+                    try:
+                        if not await real_client.is_connected():
+                            await real_client.connect()
+                        await reconnect_handler.on_reconnect_success()
+                        context.log("info", "Korea stock reconnected successfully", node_id)
+                    except Exception as e:
+                        context.log("error", f"Korea stock reconnect failed: {e}", node_id)
+                        await on_disconnect()
+                else:
+                    context.fail(f"Max reconnect attempts exceeded for {node_id}")
+
+            trigger_nodes = config.get("_trigger_on_update_nodes", [])
+            loop = asyncio.get_running_loop()
+
+            def on_position_change(positions: Dict):
+                serialized_positions = []
+                for sym, pos in positions.items():
+                    quantity = pos.quantity
+                    current_price = float(pos.current_price)
+                    serialized_positions.append({
+                        "symbol": sym,
+                        "exchange": "KRX",
+                        "name": getattr(pos, 'symbol_name', sym),
+                        "quantity": quantity,
+                        "price": current_price,
+                        "avg_price": float(pos.buy_price),
+                        "current_price": current_price,
+                        "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
+                        "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
+                        "product": "korea_stock",
+                    })
+
+                context.set_output(node_id, "positions", serialized_positions)
+
+                asyncio.run_coroutine_threadsafe(
+                    context.notify_output_update(
+                        node_id=node_id,
+                        node_type="KoreaStockRealAccountNode",
+                        outputs={"positions": serialized_positions},
+                    ),
+                    loop
+                )
+
+                asyncio.run_coroutine_threadsafe(
+                    context.emit_event(
+                        event_type="realtime_update",
+                        source_node_id=node_id,
+                        data={"positions": serialized_positions},
+                        trigger_nodes=trigger_nodes,
+                    ),
+                    loop
+                )
+
+            tracker.on_position_change(on_position_change)
+            await tracker.start()
+
+            tracker_errors = tracker.get_last_errors()
+            if tracker_errors:
+                for error_key, error_msg in tracker_errors.items():
+                    context.log("error", f"증권사 API 오류 ({error_key}): {error_msg}", node_id)
+                error_summary = ", ".join(tracker_errors.values())
+                raise RuntimeError(f"KoreaStockRealAccountNode 초기화 실패: {error_summary}")
+
+            if stay_connected:
+                context.register_persistent(node_id, tracker)
+                context.log("info", f"KrStockAccountTracker started (stay_connected=True, sync_interval={sync_interval_sec}s)", node_id)
+            else:
+                context.register_cleanup_on_flow_end(node_id, tracker)
+                context.log("info", f"KrStockAccountTracker started (stay_connected=False)", node_id)
+
+            result = self._get_stock_tracker_data(tracker)
+
+            for key, value in result.items():
+                context.set_output(node_id, key, value)
+
+            asyncio.create_task(context.notify_output_update(
+                node_id=node_id,
+                node_type="KoreaStockRealAccountNode",
+                outputs=result,
+            ))
+
+            context.log("info", f"Korea stock initial data: {len(result.get('positions', {}))} positions", node_id)
+            return result
+
+        except Exception as e:
+            context.log("error", f"Korea stock tracker setup failed: {e}", node_id)
+            raise
+
     def _get_stock_tracker_data(self, tracker) -> Dict[str, Any]:
         """해외주식 Tracker에서 현재 데이터 추출 (리스트 형태로 반환)"""
         positions = []
@@ -4057,11 +4415,16 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         # ========================================
         if broker_product == "overseas_stock":
             return await self._execute_stock(
-                node_id, broker_connection, symbols, symbols_with_exchange, 
+                node_id, broker_connection, symbols, symbols_with_exchange,
                 symbols_raw, stay_connected, context
             )
         elif broker_product == "overseas_futures":
             return await self._execute_futures(
+                node_id, broker_connection, symbols, symbols_with_exchange,
+                symbols_raw, stay_connected, context
+            )
+        elif broker_product == "korea_stock":
+            return await self._execute_korea_stock(
                 node_id, broker_connection, symbols, symbols_with_exchange,
                 symbols_raw, stay_connected, context
             )
@@ -4406,7 +4769,141 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             "83": "83",
         }
         return exchange_map.get(exchange.upper(), "82")  # 기본값 NASDAQ
-    
+
+    async def _execute_korea_stock(
+        self,
+        node_id: str,
+        broker_connection: Dict[str, Any],
+        symbols: List[str],
+        symbols_with_exchange: List[Dict[str, str]],
+        symbols_raw: List,
+        stay_connected: bool,
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """국내주식 실시간 시세 (S3_: KOSPI체결, K3_: KOSDAQ체결)"""
+        import asyncio
+        from datetime import datetime
+
+        appkey = broker_connection.get("appkey", "")
+        appsecret = broker_connection.get("appsecret", "")
+
+        loop = asyncio.get_running_loop()
+
+        ls, success, error = ensure_ls_login(appkey, appsecret, False, context, node_id, "korea_stock")
+        if not success:
+            from programgarden_core.exceptions import ConnectionError
+            raise ConnectionError(f"LS login failed: {error}")
+
+        real_client = ls.korea_stock().real()
+        await real_client.connect()
+        context.log("info", f"WebSocket connected for korea_stock", node_id)
+
+        # OHLCV 데이터 저장
+        context.set_node_state(node_id, "ohlcv_bars", {})
+        trigger_nodes = []
+
+        # S3_ (KOSPI체결) 구독
+        s3 = real_client.S3_()
+
+        def on_tick(resp):
+            """S3_/K3_ 틱 데이터 수신 콜백"""
+            try:
+                body = resp.body if hasattr(resp, 'body') else None
+                if body is None:
+                    return
+
+                symbol = getattr(body, 'shcode', '')
+                price = int(getattr(body, 'price', 0) or 0)
+                tick_open = int(getattr(body, 'open', 0) or 0)
+                tick_high = int(getattr(body, 'high', 0) or 0)
+                tick_low = int(getattr(body, 'low', 0) or 0)
+                volume = int(getattr(body, 'volume', 0) or 0)
+                date = datetime.now().strftime('%Y%m%d')
+
+                if symbol and price > 0:
+                    ohlcv_bars = context.get_node_state(node_id, "ohlcv_bars") or {}
+
+                    if symbol not in ohlcv_bars or ohlcv_bars[symbol].get('date') != date:
+                        ohlcv_bars[symbol] = {
+                            "date": date,
+                            "open": tick_open if tick_open > 0 else price,
+                            "high": tick_high if tick_high > 0 else price,
+                            "low": tick_low if tick_low > 0 else price,
+                            "close": price,
+                            "volume": volume,
+                        }
+                    else:
+                        bar = ohlcv_bars[symbol]
+                        if tick_high > 0:
+                            bar["high"] = tick_high
+                        if tick_low > 0:
+                            bar["low"] = tick_low
+                        bar["close"] = price
+                        bar["volume"] = volume
+
+                    context.set_node_state(node_id, "ohlcv_bars", ohlcv_bars)
+
+                    ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
+                    context.set_output(node_id, "ohlcv_data", ohlcv_data)
+                    context.set_output(node_id, "data", ohlcv_data)
+
+                    output_data = {
+                        "ohlcv_data": ohlcv_data,
+                        "symbol": symbol,
+                        "data": ohlcv_data,
+                    }
+
+                    asyncio.run_coroutine_threadsafe(
+                        context.notify_output_update(
+                            node_id=node_id,
+                            node_type="KoreaStockRealMarketDataNode",
+                            outputs=output_data,
+                        ),
+                        loop
+                    )
+
+                    asyncio.run_coroutine_threadsafe(
+                        context.emit_event(
+                            event_type="market_data",
+                            source_node_id=node_id,
+                            data=output_data,
+                            trigger_nodes=trigger_nodes,
+                        ),
+                        loop
+                    )
+            except Exception as e:
+                context.log("warning", f"Korea stock tick parse error: {e}", node_id)
+
+        s3.on_s3__message(on_tick)
+
+        # K3_ (KOSDAQ체결)도 동일 콜백
+        k3 = real_client.K3_()
+        k3.on_k3__message(on_tick)
+
+        # 종목 구독 (6자리 종목코드)
+        subscribe_symbols = [s for s in symbols if s]
+        s3.add_s3__symbols(symbols=subscribe_symbols)
+        k3.add_k3__symbols(symbols=subscribe_symbols)
+        context.log("info", f"Subscribed to S3_/K3_: {subscribe_symbols}", node_id)
+
+        if not stay_connected:
+            context.log("warning", f"stay_connected=False for realtime node", node_id)
+            s3.remove_s3__symbols(symbols=subscribe_symbols)
+            k3.remove_k3__symbols(symbols=subscribe_symbols)
+            await real_client.close()
+        else:
+            context.register_persistent(node_id, real_client)
+            context.set_node_state(node_id, "s3", s3)
+            context.set_node_state(node_id, "k3", k3)
+            context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
+            context.log("info", f"S3_/K3_ subscription active - waiting for ticks...", node_id)
+
+        return {
+            "symbols": symbols_raw,
+            "ohlcv_data": {},
+            "data": {},
+        }
+
     def _resolve_symbols(
         self,
         node_id: str,
@@ -4605,6 +5102,10 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                 )
             elif product == "overseas_futures":
                 return await self._ls_futures_order_event(
+                    ls, node_id, config, context, stay_connected, event_filter
+                )
+            elif product == "korea_stock":
+                return await self._ls_korea_stock_order_event(
                     ls, node_id, config, context, stay_connected, event_filter
                 )
             else:
@@ -5046,6 +5547,156 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             "commission": float(getattr(body, 'ent_fee', 0) or 0),
             "currency": getattr(body, 'crncy_cd', 'USD'),
         }
+
+    async def _ls_korea_stock_order_event(
+        self,
+        ls,
+        node_id: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        stay_connected: bool,
+        event_filter: str = "all",
+    ) -> Dict[str, Any]:
+        """국내주식 실시간 주문 이벤트 (SC0~SC4)
+
+        SC0: 주문접수, SC1: 체결, SC2: 정정확인, SC3: 취소확인, SC4: 거부
+        하나만 등록해도 전체 수신됨.
+        """
+        from datetime import datetime
+
+        product = "korea_stock"
+
+        try:
+            loop = asyncio.get_running_loop()
+            trigger_nodes = config.get("_trigger_on_update_nodes", [])
+
+            def create_handler(_node_id: str, _event_filter: str, _trigger_nodes: list):
+                def handler(resp):
+                    from datetime import datetime
+
+                    header = getattr(resp, 'header', None)
+                    tr_cd = getattr(header, 'tr_cd', 'SC0') if header else 'SC0'
+
+                    if _event_filter != "all" and tr_cd != _event_filter:
+                        return
+
+                    body = getattr(resp, 'body', resp)
+
+                    # SC0~SC4 공통 필드 추출
+                    event_data = {
+                        "timestamp": datetime.now().isoformat(),
+                        "tr_cd": tr_cd,
+                        "symbol": getattr(body, 'shtnIsuNo', getattr(body, 'IsuNo', '')),
+                        "symbol_name": getattr(body, 'IsuNm', ''),
+                        "order_no": getattr(body, 'OrdNo', 0),
+                        "orig_order_no": getattr(body, 'OrgOrdNo', 0),
+                        "side": getattr(body, 'BnsTpCode', ''),
+                        "order_qty": int(getattr(body, 'OrdQty', 0)),
+                        "order_price": float(getattr(body, 'OrdPrc', 0)),
+                        "filled_qty": int(getattr(body, 'ExecQty', 0) or 0),
+                        "filled_price": float(getattr(body, 'ExecPrc', 0) or 0),
+                        "remain_qty": int(getattr(body, 'UnercQty', 0) or 0),
+                        "order_time": getattr(body, 'OrdTime', ''),
+                        "market_code": "KRX",
+                    }
+
+                    # TR별 포트/상태 결정
+                    port_map = {
+                        'SC0': ('accepted', '주문접수'),
+                        'SC1': ('filled', '체결'),
+                        'SC2': ('modified', '정정확인'),
+                        'SC3': ('cancelled', '취소확인'),
+                        'SC4': ('rejected', '거부'),
+                    }
+
+                    port, status_name = port_map.get(tr_cd, ('accepted', f'코드:{tr_cd}'))
+                    event_data["status"] = status_name
+
+                    # 체결 이벤트(SC1)일 때 가격 업데이트
+                    if tr_cd == 'SC1' and event_data['filled_price'] > 0:
+                        order_no_str = str(event_data['order_no'])
+                        order_date = datetime.now().strftime('%Y%m%d')
+                        context.update_workflow_order_fill_price(
+                            order_no=order_no_str,
+                            order_date=order_date,
+                            fill_price=event_data['filled_price'],
+                        )
+
+                    context.set_output(_node_id, port, event_data)
+
+                    side_name = "매수" if event_data['side'] == '2' else "매도"
+
+                    logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] [{_node_id}] 국내주식 {status_name} ({side_name})")
+                    logger.debug(f"  종목: {event_data['symbol']} ({event_data['symbol_name']})")
+
+                    asyncio.run_coroutine_threadsafe(
+                        context.notify_output_update(
+                            node_id=_node_id,
+                            node_type="KoreaStockRealOrderEventNode",
+                            outputs={port: event_data},
+                        ),
+                        loop
+                    )
+
+                    asyncio.run_coroutine_threadsafe(
+                        context.emit_event(
+                            event_type="order_event",
+                            source_node_id=_node_id,
+                            data={port: event_data},
+                            trigger_nodes=_trigger_nodes,
+                        ),
+                        loop
+                    )
+
+                return handler
+
+            handler = create_handler(node_id, event_filter, trigger_nodes)
+            context.register_order_event_handler(product, "SC0", node_id, event_filter, handler)
+
+            if not context.has_order_event_subscription(product):
+                real_client = ls.korea_stock().real()
+                if not await real_client.is_connected():
+                    await real_client.connect()
+
+                context.set_order_event_real_client(product, real_client)
+
+                def master_callback(resp):
+                    handlers = context.get_order_event_handlers(product, "SC0")
+                    for (handler_node_id, handler_filter, handler_func) in handlers:
+                        try:
+                            handler_func(resp)
+                        except Exception as e:
+                            context.log("error", f"Handler error for {handler_node_id}: {e}", handler_node_id)
+
+                real_client.SC0().on_sc0_message(master_callback)
+                context.log("info", f"Master order event callback registered for korea_stock", node_id)
+
+            real_client = context.get_order_event_real_client(product)
+            if stay_connected:
+                context.register_persistent(node_id, real_client, metadata={"event_filter": event_filter})
+                context.log("info", f"SC0~SC4 order event subscription started (filter={event_filter}, stay_connected=True)", node_id)
+            else:
+                context.register_cleanup_on_flow_end(node_id, real_client)
+                context.log("info", f"SC0~SC4 order event subscription started (filter={event_filter}, stay_connected=False)", node_id)
+
+            result = {
+                "status": "subscribed",
+                "product": "korea_stock",
+                "event_type": "SC0~SC4",
+                "event_filter": event_filter,
+            }
+
+            asyncio.create_task(context.notify_output_update(
+                node_id=node_id,
+                node_type="KoreaStockRealOrderEventNode",
+                outputs=result,
+            ))
+
+            return result
+
+        except Exception as e:
+            context.log("error", f"Korea stock order event error: {e}", node_id)
+            return {"error": str(e)}
 
 
 class DisplayNodeExecutor(NodeExecutorBase):
@@ -6472,10 +7123,12 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             result = await self._fetch_overseas_stock(symbols, context, node_id)
         elif product in ("overseas_futureoption", "overseas_futures"):
             result = await self._fetch_overseas_futures(symbols, context, node_id)
+        elif product == "korea_stock":
+            result = await self._fetch_korea_stock(symbols, context, node_id)
         else:
             context.log("error", f"Unsupported product for MarketDataNode: {product}", node_id)
             result = self._empty_result(f"i18n:errors.UNSUPPORTED_PRODUCT|product={product}")
-        
+
         return result
 
     async def _fetch_overseas_stock(
@@ -6653,6 +7306,90 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             context.log("error", f"Market data fetch error: {e}", node_id)
             return self._empty_result(f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}")
 
+    async def _fetch_korea_stock(
+        self,
+        symbols: List[Dict[str, str]],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """국내주식 현재가 조회 (t1102) - 당일 데이터만 반환"""
+
+        credential = context.get_credential()
+        if not credential:
+            context.log("error", "Credential not set. Check BrokerNode credential_id.", node_id)
+            return self._empty_result("i18n:errors.CREDENTIAL_NOT_SET")
+
+        try:
+            from programgarden_finance.ls.korea_stock.market.t1102.blocks import T1102InBlock
+
+            ls, success, error = ensure_ls_login(
+                credential.get("appkey"),
+                credential.get("appsecret"),
+                False,  # 국내주식은 실전 전용
+                context, node_id,
+                product="korea_stock",
+                caller_name="MarketDataNode(korea_stock)"
+            )
+            if not success:
+                context.log("error", f"LS login failed: {error}", node_id)
+                return self._empty_result(f"i18n:errors.LS_LOGIN_FAILED|error={error}")
+
+            api = ls.korea_stock()
+
+            values = []
+
+            for symbol_entry in symbols:
+                try:
+                    symbol = symbol_entry.get("symbol", "")
+                    if not symbol:
+                        continue
+
+                    # t1102 현재가 조회 (6자리 종목코드)
+                    body = T1102InBlock(shcode=symbol)
+
+                    response = api.market().t1102(body=body).req()
+
+                    if response and response.block:
+                        blk = response.block
+
+                        # sign: 1=상한/2=상승 → 양수, 4=하한/5=하락 → 음수
+                        change_val = int(blk.change or 0)
+                        if blk.sign in ("4", "5"):
+                            change_val = -change_val
+
+                        values.append({
+                            "symbol": symbol,
+                            "exchange": "KRX",
+                            "name": str(blk.hname or ""),
+                            "price": int(blk.price or 0),
+                            "change": change_val,
+                            "change_pct": float(blk.diff or 0),
+                            "volume": int(blk.volume or 0),
+                            "open": int(blk.open or 0),
+                            "high": int(blk.high or 0),
+                            "low": int(blk.low or 0),
+                            "close": int(blk.price or 0),
+                            "per": float(blk.per or 0),
+                            "pbr": float(blk.pbrx or 0),
+                        })
+
+                        context.log("debug", f"Fetched KRX:{symbol}: price={blk.price}", node_id)
+                    else:
+                        context.log("warning", f"No data for KRX:{symbol}", node_id)
+
+                except Exception as e:
+                    context.log("warning", f"Failed to fetch KRX:{symbol}: {e}", node_id)
+                    continue
+
+            return {"values": values}
+
+        except ImportError as e:
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._empty_result(f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}")
+        except Exception as e:
+            context.log("error", f"Market data fetch error: {e}", node_id)
+            return self._empty_result(f"i18n:errors.MARKET_DATA_FETCH_ERROR|error={e}")
+
     def _empty_result(self, error_msg: str = "") -> Dict[str, Any]:
         """빈 결과 반환 (에러 시)"""
         result = {"values": []}
@@ -6714,10 +7451,15 @@ class FundamentalNodeExecutor(NodeExecutorBase):
             node_id
         )
 
+        product = broker_connection.get("product", "overseas_stock")
+
         credential = context.get_credential()
         if not credential:
             context.log("error", "Credential not set. Check BrokerNode credential_id.", node_id)
             return self._empty_result("i18n:errors.CREDENTIAL_NOT_SET")
+
+        if product == "korea_stock":
+            return await self._fetch_korea_stock(symbols, credential, context, node_id)
 
         try:
             from programgarden_finance.ls.overseas_stock.market.g3104.blocks import G3104InBlock
@@ -6789,6 +7531,79 @@ class FundamentalNodeExecutor(NodeExecutorBase):
 
                 except Exception as e:
                     context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
+                    continue
+
+            return {"values": values}
+
+        except ImportError as e:
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._empty_result(f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}")
+        except Exception as e:
+            context.log("error", f"Fundamental data fetch error: {e}", node_id)
+            return self._empty_result(f"i18n:errors.FUNDAMENTAL_DATA_FETCH_ERROR|error={e}")
+
+    async def _fetch_korea_stock(
+        self,
+        symbols: List[Dict[str, str]],
+        credential: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """국내주식 펀더멘털 조회 (t1102) - PER, PBR, 시가총액, 52주 고저가 등"""
+
+        try:
+            from programgarden_finance.ls.korea_stock.market.t1102.blocks import T1102InBlock
+
+            ls, success, error = ensure_ls_login(
+                credential.get("appkey"),
+                credential.get("appsecret"),
+                False,  # 국내주식은 실전 전용
+                context, node_id,
+                product="korea_stock",
+                caller_name="FundamentalNode(korea_stock)"
+            )
+            if not success:
+                context.log("error", f"LS login failed: {error}", node_id)
+                return self._empty_result(f"i18n:errors.LS_LOGIN_FAILED|error={error}")
+
+            api = ls.korea_stock()
+
+            values = []
+
+            for symbol_entry in symbols:
+                try:
+                    symbol = symbol_entry.get("symbol", "")
+                    if not symbol:
+                        continue
+
+                    body = T1102InBlock(shcode=symbol)
+                    response = api.market().t1102(body=body).req()
+
+                    if response and response.block:
+                        blk = response.block
+
+                        values.append({
+                            "exchange": "KRX",
+                            "symbol": symbol,
+                            "name": str(blk.hname or ""),
+                            "current_price": int(blk.price or 0),
+                            "volume": int(blk.volume or 0),
+                            "change_percent": float(blk.diff or 0),
+                            "per": float(blk.per or 0),
+                            "pbr": float(blk.pbrx or 0),
+                            "market_cap": int(blk.total or 0),  # 억원
+                            "shares_outstanding": int(blk.listing or 0),  # 천 단위
+                            "high_52w": int(blk.high52w or 0),
+                            "low_52w": int(blk.low52w or 0),
+                            "eps": float(blk.bfeps or 0),  # 전분기 EPS
+                        })
+
+                        context.log("debug", f"Fetched fundamental KRX:{symbol}: PER={blk.per}, PBR={blk.pbrx}", node_id)
+                    else:
+                        context.log("warning", f"No data for KRX:{symbol}", node_id)
+
+                except Exception as e:
+                    context.log("warning", f"Failed to fetch KRX:{symbol}: {e}", node_id)
                     continue
 
             return {"values": values}
@@ -6932,6 +7747,8 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, positions, symbol_exchange_map, symbols_raw)
         elif product in ("overseas_futureoption", "overseas_futures"):
             ohlcv_data = await self._fetch_overseas_futures(symbols, start_date, end_date, interval, context, node_id, symbols_raw)
+        elif product == "korea_stock":
+            ohlcv_data = await self._fetch_korea_stock(symbols, start_date, end_date, interval, context, node_id, symbols_raw)
         else:
             context.log("error", f"Unsupported product for HistoricalDataNode: {product}", node_id)
             ohlcv_data = self._empty_historical_result(symbols_raw, f"i18n:errors.UNSUPPORTED_PRODUCT|product={product}")
@@ -7310,9 +8127,109 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         bars.sort(key=lambda x: x["date"])
         return bars
 
+    async def _fetch_korea_stock(
+        self,
+        symbols: List[str],
+        start_date: str,
+        end_date: str,
+        interval: str,
+        context: ExecutionContext,
+        node_id: str,
+        symbols_raw: List[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """국내주식 차트 데이터 조회 (t8451 일주월년)
+
+        반환: [{symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}, ...]
+        """
+
+        credential = context.get_credential()
+        if not credential:
+            context.log("error", "Credential not set for HistoricalDataNode", node_id)
+            return self._empty_historical_result(symbols_raw or symbols, "i18n:errors.CREDENTIAL_NOT_SET")
+
+        try:
+            from programgarden_finance.ls.korea_stock.chart.t8451.blocks import T8451InBlock
+
+            ls, success, error = ensure_ls_login(
+                credential.get("appkey"),
+                credential.get("appsecret"),
+                False,  # 국내주식은 실전 전용
+                context, node_id,
+                product="korea_stock",
+                caller_name="HistoricalDataNode(korea_stock)"
+            )
+            if not success:
+                context.log("error", f"LS login failed: {error}", node_id)
+                return self._empty_historical_result(symbols_raw or symbols, f"i18n:errors.LS_LOGIN_FAILED|error={error}")
+
+            api = ls.korea_stock()
+
+            # interval → gubun 변환 (t8451: 2=일, 3=주, 4=월, 5=년)
+            gubun_map = {"1d": "2", "1w": "3", "1M": "4", "1Y": "5"}
+            gubun = gubun_map.get(interval, "2")
+
+            result_list = []
+
+            for symbol in symbols:
+                try:
+                    body = T8451InBlock(
+                        shcode=symbol,
+                        gubun=gubun,
+                        qrycnt=500,
+                        sdate=start_date,
+                        edate=end_date or "99999999",
+                        sujung="Y",  # 수정주가 적용
+                    )
+
+                    response = api.chart().t8451(body=body).req()
+
+                    time_series = []
+                    if response and response.block1:
+                        for bar in response.block1:
+                            time_series.append({
+                                "date": str(bar.date),
+                                "open": int(bar.open or 0),
+                                "high": int(bar.high or 0),
+                                "low": int(bar.low or 0),
+                                "close": int(bar.close or 0),
+                                "volume": int(bar.jdiff_vol or 0),
+                            })
+
+                    # 시간순 정렬 (오래된 것부터)
+                    time_series.sort(key=lambda x: x["date"])
+
+                    # symbols_raw에서 exchange 정보 추출
+                    exchange = "KRX"
+
+                    result_list.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "time_series": time_series,
+                    })
+
+                    context.log("debug", f"Fetched KRX:{symbol}: {len(time_series)} bars", node_id)
+
+                except Exception as e:
+                    context.log("warning", f"Failed to fetch KRX:{symbol}: {e}", node_id)
+                    result_list.append({
+                        "symbol": symbol,
+                        "exchange": "KRX",
+                        "time_series": [],
+                        "_error": str(e),
+                    })
+
+            return result_list
+
+        except ImportError as e:
+            context.log("error", f"Finance package not available: {e}", node_id)
+            return self._empty_historical_result(symbols_raw or symbols, f"i18n:errors.FINANCE_PACKAGE_NOT_AVAILABLE|error={e}")
+        except Exception as e:
+            context.log("error", f"Historical data fetch error: {e}", node_id)
+            return self._empty_historical_result(symbols_raw or symbols, f"i18n:errors.HISTORICAL_DATA_FETCH_ERROR|error={e}")
+
     def _empty_historical_result(self, symbols_raw: List, error_msg: str = "") -> List[Dict[str, Any]]:
         """빈 historical 결과 반환 (에러 시)
-        
+
         반환 형식: [{symbol, exchange, time_series: [], _error: "..."}, ...]
         """
         result_list = []
@@ -9539,14 +10456,16 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             return self._error_result("Invalid connection type")
 
         # 노드 타입에서 상품 결정
-        if node_type.startswith("Stock"):
+        if "KoreaStock" in node_type:
+            product = "korea_stock"
+        elif node_type.startswith("Stock"):
             product = "overseas_stock"
         elif node_type.startswith("Futures"):
             product = "overseas_futures"
         else:
             product = broker_connection.get("product", "overseas_stock")
 
-        paper_trading = broker_connection.get("paper_trading", False)
+        paper_trading = broker_connection.get("paper_trading", False) if product != "korea_stock" else False
 
         # === 2. 바인딩 표현식 평가 ===
         config = evaluate_all_bindings(config, context, node_id)
@@ -9632,6 +10551,10 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 )
             elif product in ("overseas_futures", "overseas_futureoption"):
                 return await self._execute_overseas_futures(
+                    ls, normalized_order, side, order_type, config, context, node_id
+                )
+            elif product == "korea_stock":
+                return await self._execute_korea_stock(
                     ls, normalized_order, side, order_type, config, context, node_id
                 )
             else:
@@ -10080,6 +11003,84 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     return True, reason
         return False, ""
 
+    async def _execute_korea_stock(
+        self,
+        ls,
+        order: Dict[str, Any],
+        side: str,
+        order_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """국내주식 신규주문 실행 (CSPAT00601)
+
+        국내주식 주문 규칙:
+        - BnsTpCode: 1=매도, 2=매수
+        - OrdprcPtnCode: 00=지정가, 03=시장가
+        - 가격은 KRW 정수
+        """
+        from programgarden_finance.ls.korea_stock.order.CSPAT00601.blocks import CSPAT00601InBlock1
+
+        symbol = order["symbol"]
+        qty = order["quantity"]
+        price = order["price"]
+
+        # 매매구분: 1=매도, 2=매수
+        bns_tp_code = "1" if side == "sell" else "2"
+
+        # 호가유형코드
+        korea_price_type_map = {
+            "limit": "00",
+            "market": "03",
+        }
+        ordprc_ptn_code = korea_price_type_map.get(order_type, "00")
+
+        # 시장가 주문 시 가격 0
+        ord_prc = 0.0 if ordprc_ptn_code == "03" else float(price)
+
+        try:
+            body = CSPAT00601InBlock1(
+                IsuNo=symbol,
+                OrdQty=qty,
+                OrdPrc=ord_prc,
+                BnsTpCode=bns_tp_code,
+                OrdprcPtnCode=ordprc_ptn_code,
+            )
+
+            order_api = ls.korea_stock().order().cspat00601(body=body)
+            response = await order_api.req_async()
+
+            if response.error_msg:
+                context.log("warning", f"Korea stock order failed: {response.error_msg}", node_id)
+                return self._order_result(
+                    False, symbol, "KRX", side, qty, price,
+                    response.error_msg
+                )
+
+            order_no = ""
+            if response.block2:
+                order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
+
+            context.log(
+                "info",
+                f"Korea stock order: {side} {symbol} qty={qty} price={ord_prc} → OrdNo={order_no}",
+                node_id
+            )
+
+            result = self._order_result(
+                True, symbol, "KRX", side, qty, price
+            )
+            result["order_result"]["order_id"] = order_no
+            result["order_result"]["product"] = "korea_stock"
+            return result
+
+        except Exception as e:
+            context.log("warning", f"Korea stock order exception: {e}", node_id)
+            return self._order_result(
+                False, symbol, "KRX", side, qty, price, str(e)
+            )
+
     def _order_result(
         self,
         success: bool,
@@ -10176,16 +11177,23 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             return self._error_result("Invalid connection type")
 
         # 노드 타입에서 상품 결정
-        product = "overseas_stock" if node_type.startswith("Stock") else "overseas_futures"
-        paper_trading = broker_connection.get("paper_trading", False)
-        
+        if "KoreaStock" in node_type:
+            product = "korea_stock"
+        elif node_type.startswith("Stock"):
+            product = "overseas_stock"
+        elif node_type.startswith("Futures"):
+            product = "overseas_futures"
+        else:
+            product = broker_connection.get("product", "overseas_stock")
+        paper_trading = broker_connection.get("paper_trading", False) if product != "korea_stock" else False
+
         # === 2. 바인딩 표현식 평가 ===
         config = evaluate_all_bindings(config, context, node_id)
-        
+
         # === 3. 정정 정보 추출 ===
         original_order_id = config.get("original_order_id")
         symbol = config.get("symbol", "")
-        exchange = config.get("exchange", "NASDAQ")
+        exchange = config.get("exchange", "KRX" if product == "korea_stock" else "NASDAQ")
         new_quantity = config.get("new_quantity")
         new_price = config.get("new_price")
         side = config.get("side", "buy")
@@ -10234,6 +11242,10 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             elif product in ("overseas_futures", "overseas_futureoption"):
                 return await self._modify_overseas_futures(
                     ls, original_order_id, symbol, exchange, new_quantity, new_price, side, config, context, node_id
+                )
+            elif product == "korea_stock":
+                return await self._modify_korea_stock(
+                    ls, original_order_id, symbol, new_quantity, new_price, config, context, node_id
                 )
             else:
                 context.log("error", f"{node_type}: Unsupported product: {product}", node_id)
@@ -10435,6 +11447,87 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                 "modified_order": None,
             }
 
+    async def _modify_korea_stock(
+        self,
+        ls,
+        original_order_id: str,
+        symbol: str,
+        new_quantity: Optional[int],
+        new_price: Optional[float],
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """국내주식 정정주문 실행 (CSPAT00701)"""
+        from programgarden_finance.ls.korea_stock.order.CSPAT00701.blocks import CSPAT00701InBlock1
+
+        # 호가유형코드 (기본: 지정가)
+        ordprc_ptn_code = config.get("price_type_code", "00")
+
+        try:
+            body = CSPAT00701InBlock1(
+                OrgOrdNo=int(original_order_id),
+                IsuNo=symbol,
+                OrdQty=new_quantity or 0,
+                OrdprcPtnCode=ordprc_ptn_code,
+                OrdPrc=float(new_price) if new_price else 0.0,
+            )
+
+            order_api = ls.korea_stock().order().cspat00701(body=body)
+            response = await order_api.req_async()
+
+            if response.error_msg:
+                context.log("warning", f"Korea stock modify order failed: {response.error_msg}", node_id)
+                return {
+                    "modify_result": {
+                        "success": False,
+                        "error": response.error_msg,
+                        "original_order_id": original_order_id,
+                        "product": "korea_stock",
+                    },
+                    "modified_order": None,
+                }
+
+            new_order_no = ""
+            if response.block2:
+                new_order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
+
+            context.log(
+                "info",
+                f"Korea stock order modified: {symbol} original={original_order_id} → new={new_order_no}",
+                node_id
+            )
+
+            return {
+                "modify_result": {
+                    "success": True,
+                    "original_order_id": original_order_id,
+                    "new_order_id": new_order_no,
+                    "product": "korea_stock",
+                },
+                "modified_order": {
+                    "symbol": symbol,
+                    "exchange": "KRX",
+                    "original_order_id": original_order_id,
+                    "new_order_id": new_order_no,
+                    "new_quantity": new_quantity,
+                    "new_price": new_price,
+                    "status": "modified",
+                },
+            }
+
+        except Exception as e:
+            context.log("warning", f"Korea stock modify order exception: {e}", node_id)
+            return {
+                "modify_result": {
+                    "success": False,
+                    "error": str(e),
+                    "original_order_id": original_order_id,
+                    "product": "korea_stock",
+                },
+                "modified_order": None,
+            }
+
     def _error_result(self, error_msg: str) -> Dict[str, Any]:
         """에러 결과 반환"""
         return {
@@ -10488,16 +11581,23 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             return self._error_result("Invalid connection type")
 
         # 노드 타입에서 상품 결정
-        product = "overseas_stock" if node_type.startswith("Stock") else "overseas_futures"
-        paper_trading = broker_connection.get("paper_trading", False)
-        
+        if "KoreaStock" in node_type:
+            product = "korea_stock"
+        elif node_type.startswith("Stock"):
+            product = "overseas_stock"
+        elif node_type.startswith("Futures"):
+            product = "overseas_futures"
+        else:
+            product = broker_connection.get("product", "overseas_stock")
+        paper_trading = broker_connection.get("paper_trading", False) if product != "korea_stock" else False
+
         # === 2. 바인딩 표현식 평가 ===
         config = evaluate_all_bindings(config, context, node_id)
-        
+
         # === 3. 취소 정보 추출 ===
         order_id = config.get("original_order_id")
         symbol = config.get("symbol", "")
-        exchange = config.get("exchange", "NASDAQ")
+        exchange = config.get("exchange", "KRX" if product == "korea_stock" else "NASDAQ")
         
         if not order_id:
             context.log("error", f"{node_type}: original_order_id가 필수입니다", node_id)
@@ -10543,6 +11643,10 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             elif product in ("overseas_futures", "overseas_futureoption"):
                 return await self._cancel_overseas_futures(
                     ls, order_id, symbol, exchange, config, context, node_id
+                )
+            elif product == "korea_stock":
+                return await self._cancel_korea_stock(
+                    ls, order_id, symbol, config, context, node_id
                 )
             else:
                 context.log("error", f"{node_type}: Unsupported product: {product}", node_id)
@@ -10703,6 +11807,79 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "error": str(e),
                     "order_id": order_id,
                     "product": "overseas_futures",
+                },
+                "cancelled_order": None,
+            }
+
+    async def _cancel_korea_stock(
+        self,
+        ls,
+        order_id: str,
+        symbol: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """국내주식 취소주문 실행 (CSPAT00801)"""
+        from programgarden_finance.ls.korea_stock.order.CSPAT00801.blocks import CSPAT00801InBlock1
+
+        # 취소 수량: config에서 지정하거나, 미지정 시 원주문 잔량 사용
+        cancel_qty = config.get("quantity", 0) or config.get("cancel_quantity", 0)
+        if not cancel_qty:
+            context.log("warning", f"cancel_quantity not specified, using original order remaining qty from order info", node_id)
+            # 미체결 잔량 정보가 없으면 기본 1 (API에서 잔량 초과 시 에러 반환)
+            cancel_qty = config.get("remaining_quantity", 1)
+
+        try:
+            body = CSPAT00801InBlock1(
+                OrgOrdNo=int(order_id),
+                IsuNo=symbol,
+                OrdQty=int(cancel_qty),
+            )
+
+            order_api = ls.korea_stock().order().cspat00801(body=body)
+            response = await order_api.req_async()
+
+            if response.error_msg:
+                context.log("warning", f"Korea stock cancel order failed: {response.error_msg}", node_id)
+                return {
+                    "cancel_result": {
+                        "success": False,
+                        "error": response.error_msg,
+                        "order_id": order_id,
+                        "product": "korea_stock",
+                    },
+                    "cancelled_order": None,
+                }
+
+            context.log(
+                "info",
+                f"Korea stock order cancelled: {symbol} order_id={order_id}",
+                node_id
+            )
+
+            return {
+                "cancel_result": {
+                    "success": True,
+                    "order_id": order_id,
+                    "product": "korea_stock",
+                },
+                "cancelled_order": {
+                    "symbol": symbol,
+                    "exchange": "KRX",
+                    "order_id": order_id,
+                    "status": "cancelled",
+                },
+            }
+
+        except Exception as e:
+            context.log("warning", f"Korea stock cancel order exception: {e}", node_id)
+            return {
+                "cancel_result": {
+                    "success": False,
+                    "error": str(e),
+                    "order_id": order_id,
+                    "product": "korea_stock",
                 },
                 "cancelled_order": None,
             }
