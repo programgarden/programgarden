@@ -1545,7 +1545,14 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         from programgarden_core.models.exchange import ProductType
         
         # product_type 필드에서 상품 유형 확인 (UI에서 선택)
-        product_type = config.get("product_type", "overseas_stock")
+        # node_type으로 기본값 결정 (KoreaStockSymbolQueryNode → korea_stock)
+        if "KoreaStock" in node_type:
+            default_product_type = "korea_stock"
+        elif "Futures" in node_type:
+            default_product_type = "overseas_futures"
+        else:
+            default_product_type = "overseas_stock"
+        product_type = config.get("product_type", default_product_type)
         
         # connection에서 paper_trading 확인 (fallback)
         connection = config.get("connection", {})
@@ -1688,8 +1695,9 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
 
         api = ls.korea_stock()
 
-        # stock_exchange 필터: "KOSPI", "KOSDAQ", "" (전체)
-        stock_exchange = config.get("stock_exchange", "")
+        # stock_exchange / market 필터: "KOSPI", "KOSDAQ", "" (전체)
+        # 노드 필드명은 "market"이지만 하위 호환으로 "stock_exchange"도 지원
+        stock_exchange = config.get("market", config.get("stock_exchange", ""))
 
         all_symbols = []
 
@@ -2179,6 +2187,9 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 await self._subscribe_stock_fill_events(ls, node_id, context)
             elif product == "overseas_futures":
                 await self._subscribe_futures_fill_events(ls, node_id, context)
+            elif product == "korea_stock":
+                # 국내주식 실시간 체결은 KoreaStockRealOrderEventNode에서 처리 (BrokerNode에서 불필요)
+                context.log("debug", f"korea_stock fill subscription skipped (handled by KoreaStockRealOrderEventNode)", node_id)
             else:
                 context.log("warning", f"Unknown product type for fill subscription: {product}", node_id)
                 
@@ -2671,6 +2682,9 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 await self._start_futures_tracker(
                     ls, node_id, product, provider, context,
                 )
+            elif product == "korea_stock":
+                # 국내주식 실시간 계좌 추적은 KoreaStockRealAccountNode에서 처리 (BrokerNode에서 불필요)
+                context.log("debug", f"korea_stock account tracking skipped (handled by KoreaStockRealAccountNode)", node_id)
             else:
                 context.log("warning", f"Unknown product type for tracking: {product}", node_id)
                 
@@ -3356,7 +3370,8 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
                 return self._empty_result(response.error_msg)
 
             open_orders = []
-            for item in response.block1 or []:
+            # T0425Response.block (T0425OutBlock1 리스트)
+            for item in response.block or []:
                 order_id = str(item.ordno) if item.ordno else ""
                 if not order_id:
                     continue

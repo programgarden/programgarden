@@ -136,15 +136,15 @@ When a node outputs an array, the next node automatically executes for each item
 | `format` | pct(), currency(), number() | `{{ format.pct(12.34) }}` → "12.34%" |
 | `lst` | first(), last(), count(), pluck(), flatten() | `{{ lst.pluck(items, 'name') }}` |
 
-### Node Categories (12, 58 nodes)
+### Node Categories (12, 71 nodes)
 
 | Category | Nodes |
 |----------|-------|
-| infra | StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode, OverseasStockBrokerNode, OverseasFuturesBrokerNode |
-| account | OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode, OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode |
-| market | OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode, WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, FundamentalDataNode |
+| infra | StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode, OverseasStockBrokerNode, OverseasFuturesBrokerNode, KoreaStockBrokerNode |
+| account | OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode, OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode, KoreaStockAccountNode, KoreaStockOpenOrdersNode, KoreaStockRealAccountNode, KoreaStockRealOrderEventNode |
+| market | OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode, WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, FundamentalDataNode, KoreaStockMarketDataNode, KoreaStockFundamentalNode, KoreaStockHistoricalDataNode, KoreaStockSymbolQueryNode, KoreaStockRealMarketDataNode |
 | condition | ConditionNode, LogicNode |
-| order | OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode, OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode, PositionSizingNode |
+| order | OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode, OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode, PositionSizingNode, KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode |
 | risk | PortfolioNode |
 | schedule | ScheduleNode, TradingHoursFilterNode |
 | data | SQLiteNode, HTTPRequestNode, FieldMappingNode |
