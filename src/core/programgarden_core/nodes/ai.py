@@ -239,13 +239,13 @@ class AIAgentNode(BaseNode):
     )
 
     # === 도구 선택 ===
-    tool_selection: Literal["all", "bm25"] = Field(
-        default="all",
-        description="도구 선택 방식 (all: 전체 전달, bm25: 관련 도구만 선별)",
+    tool_selection: Literal["all", "semantic"] = Field(
+        default="semantic",
+        description="도구 선택 방식 (all: 전체 전달, semantic: 벡터 유사도 기반 선별)",
     )
     tool_top_k: int = Field(
         default=5,
-        description="BM25 모드에서 LLM에 전달할 최대 도구 수",
+        description="벡터 검색 모드에서 LLM에 전달할 최대 도구 수",
     )
 
     # === 토큰 제한 ===
@@ -428,12 +428,12 @@ class AIAgentNode(BaseNode):
                 required=False,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
-                enum_values=["all", "bm25"],
+                enum_values=["all", "semantic"],
                 enum_labels={
                     "all": "전체 도구 전달",
-                    "bm25": "관련 도구만 선별 (BM25)",
+                    "semantic": "관련 도구만 선별 (벡터 검색)",
                 },
-                default="all",
+                default="semantic",
             ),
             "tool_top_k": FieldSchema(
                 name="tool_top_k",
@@ -445,7 +445,7 @@ class AIAgentNode(BaseNode):
                 default=5,
                 min_value=1,
                 max_value=20,
-                visible_when={"tool_selection": "bm25"},
+                visible_when={"tool_selection": "semantic"},
             ),
             "max_total_tokens": FieldSchema(
                 name="max_total_tokens",

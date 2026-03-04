@@ -235,6 +235,7 @@ LLMModelNode + AIAgentNode로 워크플로우에 LLM 기반 분석/의사결정 
 - **엣지 타입**: `main` (DAG 실행), `ai_model` (LLM 연결), `tool` (도구 등록)
 - **출력 형식**: text, json, structured (output_schema 기반 Pydantic 검증)
 - **프리셋**: risk_manager, technical_analyst, news_analyst, strategist
+- **도구 선택**: `tool_selection` — `semantic` (FastEmbed 벡터 유사도, 기본값), `all` (전체 전달). 도구 6개 이상 시 자동 선별
 - **실시간 보호**: cooldown_sec (기본 60초), ThrottleNode 없이 직접 실시간 노드 연결 차단
 - **Stateless**: 매 실행마다 독립 (대화 기억 없음, 현재 데이터를 Tool로 직접 조회)
 

@@ -12171,16 +12171,14 @@ class AIAgentToolExecutor:
             agent_node_id,
         )
 
-        # BM25 인덱스 빌드 (M-5: 도구 6개 이상일 때 사용)
+        # 벡터 인덱스 빌드 (도구 6개 이상일 때 사용)
         self._all_tools = tools
-        self._build_bm25_index(tools)
+        self._build_embedding_index(tools)
 
         return tools
 
-    def _build_bm25_index(self, tools: List[Dict[str, Any]]) -> None:
-        """BM25 인덱스 빌드 (도구 description + parameter 기반)."""
-        import re as _re
-
+    def _build_embedding_index(self, tools: List[Dict[str, Any]]) -> None:
+        """FastEmbed 벡터 인덱스 빌드 (도구 description + parameter 기반)."""
         docs = []
         for tool in tools:
             func = tool.get("function", {})
@@ -12189,44 +12187,54 @@ class AIAgentToolExecutor:
             param_text = " ".join(
                 f"{k} {v.get('description', '')}" for k, v in params.items()
             )
-            doc_text = f"{func.get('name', '')} {desc} {param_text}"
-            tokens = _re.findall(r'\w+', doc_text.lower())
-            docs.append(tokens)
+            docs.append(f"{func.get('name', '')} {desc} {param_text}")
 
-        self._bm25_docs = docs
-        self._bm25 = None  # lazy init
+        self._tool_docs = docs
+        self._tool_embeddings = None  # lazy init
+        self._embed_model = None
 
     def select_tools(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """BM25 기반 관련 도구 선별 (M-5).
+        """벡터 유사도 기반 관련 도구 선별.
 
-        도구가 5개 이하이면 전체 반환 (BM25 불필요).
+        도구가 5개 이하이면 전체 반환.
         """
-        import re as _re
+        import numpy as np
 
         tools = self._all_tools
         if len(tools) <= 5:
             return tools
 
-        if self._bm25 is None:
+        # Lazy init: 첫 호출 시 모델 로드 + 도구 임베딩
+        if self._tool_embeddings is None:
             try:
-                from rank_bm25 import BM25Okapi
-                self._bm25 = BM25Okapi(self._bm25_docs)
+                from fastembed import TextEmbedding
+
+                self._embed_model = TextEmbedding(
+                    model_name="BAAI/bge-small-en-v1.5",
+                )
+                self._tool_embeddings = np.array(
+                    list(self._embed_model.embed(self._tool_docs))
+                )
             except ImportError:
                 self.context.log(
                     "warning",
-                    "rank-bm25 패키지 미설치 - 전체 도구 전달",
+                    "fastembed 패키지 미설치 - 전체 도구 전달",
                     "",
                 )
                 return tools
 
-        query_tokens = _re.findall(r'\w+', query.lower())
-        if not query_tokens:
+        if not query.strip():
             return tools
 
-        scores = self._bm25.get_scores(query_tokens)
-        indexed = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-        selected_indices = [i for i, _ in indexed[:top_k]]
-        return [tools[i] for i in selected_indices]
+        # 쿼리 임베딩 + cosine similarity
+        query_emb = np.array(list(self._embed_model.embed([query])))[0]
+        norms = np.linalg.norm(self._tool_embeddings, axis=1) * np.linalg.norm(
+            query_emb
+        )
+        norms = np.where(norms == 0, 1e-10, norms)  # zero division 방어
+        scores = self._tool_embeddings @ query_emb / norms
+        top_indices = np.argsort(scores)[-top_k:][::-1]
+        return [tools[i] for i in top_indices]
 
     async def call_tool(
         self,
@@ -12676,14 +12684,14 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         accumulated_tokens = 0  # 누적 토큰 카운터
         streaming = llm_connection.get("streaming", False)
 
-        # M-5: BM25 도구 선택
-        tool_selection = config.get("tool_selection", "all")
+        # Semantic 벡터 도구 선택
+        tool_selection = config.get("tool_selection", "semantic")
         tool_top_k = config.get("tool_top_k", 5)
-        if tool_selection == "bm25" and tools and len(tools) > 5:
+        if tool_selection == "semantic" and tools and len(tools) > 5:
             selected_tools = tool_executor.select_tools(user_prompt, top_k=tool_top_k)
             context.log(
                 "info",
-                f"BM25 tool selection: {len(selected_tools)}/{len(tools)} tools selected",
+                f"Semantic tool selection: {len(selected_tools)}/{len(tools)} tools selected",
                 node_id,
             )
         else:
