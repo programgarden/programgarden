@@ -237,6 +237,9 @@ class ExecutionContext:
         # M-10: Risk halt flag - critical risk event 시 주문 중단
         self._risk_halt: bool = False
 
+        # Shutdown flag: cleanup 진행 중/완료 시 실시간 콜백 차단
+        self._shutdown: bool = False
+
         self._build_dag_index(workflow_edges, workflow_nodes)
 
     # === Storage Directory ===
@@ -710,9 +713,15 @@ class ExecutionContext:
         """Resume execution"""
         self._is_paused = False
 
+    @property
+    def is_shutdown(self) -> bool:
+        """Whether cleanup is in progress or completed"""
+        return self._shutdown
+
     def stop(self) -> None:
         """Stop execution"""
         self._is_running = False
+        self._shutdown = True
 
     def fail(self, reason: str) -> None:
         """Mark execution as failed"""
@@ -739,6 +748,8 @@ class ExecutionContext:
             data: Event payload
             trigger_nodes: List of node IDs to trigger (from edge trigger: "on_update")
         """
+        if self._shutdown:
+            return
         event = WorkflowEvent(
             type=event_type,
             source_node_id=source_node_id,
@@ -971,27 +982,43 @@ class ExecutionContext:
     async def cleanup_persistent_nodes(self) -> None:
         """
         Cleanup all persistent nodes (call on job stop)
+
+        Cleanup 순서:
+        1. shutdown flag 설정 (신규 콜백 차단)
+        2. 실시간 심볼 구독 해제 (GSC/OVC/S3_/K3_)
+        3. SDK 메시지 콜백 제거 (on_remove_*_message)
+        4. Order event master callback SDK 해제
+        5. WebSocket close (tracker stop/close)
+        6. Background task 취소
+        7. 이벤트 큐 드레인
+        8. 메모리 정리
         """
-        # 먼저 실시간 구독 해제 (gsc, ovc 등)
+        # 1. shutdown flag 설정 (콜백에서 run_coroutine_threadsafe 호출 차단)
+        self._shutdown = True
+        # 이미 큐에 들어간 코루틴이 shutdown 가드에 걸리도록 양보
+        await asyncio.sleep(0)
+
+        # 2-3. 실시간 구독 해제 + SDK 콜백 제거
         for node_id in list(self._persistent_metadata.keys()):
             metadata = self._persistent_metadata.get(node_id, {})
-            
-            # GSC 구독 해제 (해외주식)
-            gsc = metadata.get("gsc")
             subscribe_symbols = metadata.get("subscribe_symbols", [])
+
+            # GSC 구독 해제 (해외주식 시세)
+            gsc = metadata.get("gsc")
             if gsc and subscribe_symbols:
                 try:
                     gsc.remove_gsc_symbols(symbols=subscribe_symbols)
                     logger.debug(f"Removed GSC subscription for {node_id}: {subscribe_symbols}")
                 except Exception as e:
                     logger.warning(f"Error removing GSC symbols for {node_id}: {e}")
-                # 메시지 리스너 콜백도 제거 (메모리 릭 방지)
                 try:
                     gsc.on_remove_gsc_message()
-                except Exception:
-                    pass
+                except RuntimeError:
+                    logger.debug(f"GSC callback already detached (WebSocket disconnected): {node_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove GSC callback for {node_id}: {e}")
 
-            # OVC 구독 해제 (해외선물)
+            # OVC 구독 해제 (해외선물 시세)
             ovc = metadata.get("ovc")
             if ovc and subscribe_symbols:
                 try:
@@ -999,24 +1026,81 @@ class ExecutionContext:
                     logger.debug(f"Removed OVC subscription for {node_id}: {subscribe_symbols}")
                 except Exception as e:
                     logger.warning(f"Error removing OVC symbols for {node_id}: {e}")
-                # 메시지 리스너 콜백도 제거 (메모리 릭 방지)
                 try:
                     ovc.on_remove_ovc_message()
-                except Exception:
-                    pass
-        
-        # Stop/Close all trackers (WebSocket clients 등)
+                except RuntimeError:
+                    logger.debug(f"OVC callback already detached (WebSocket disconnected): {node_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove OVC callback for {node_id}: {e}")
+
+            # S3_ 구독 해제 (국내주식 KOSPI 시세)
+            s3 = metadata.get("s3")
+            if s3 and subscribe_symbols:
+                try:
+                    s3.remove_s3__symbols(symbols=subscribe_symbols)
+                    logger.debug(f"Removed S3_ subscription for {node_id}: {subscribe_symbols}")
+                except Exception as e:
+                    logger.warning(f"Error removing S3_ symbols for {node_id}: {e}")
+                try:
+                    s3.on_remove_s3__message()
+                except RuntimeError:
+                    logger.debug(f"S3_ callback already detached: {node_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove S3_ callback for {node_id}: {e}")
+
+            # K3_ 구독 해제 (국내주식 KOSDAQ 시세)
+            k3 = metadata.get("k3")
+            if k3 and subscribe_symbols:
+                try:
+                    k3.remove_k3__symbols(symbols=subscribe_symbols)
+                    logger.debug(f"Removed K3_ subscription for {node_id}: {subscribe_symbols}")
+                except Exception as e:
+                    logger.warning(f"Error removing K3_ symbols for {node_id}: {e}")
+                try:
+                    k3.on_remove_k3__message()
+                except RuntimeError:
+                    logger.debug(f"K3_ callback already detached: {node_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove K3_ callback for {node_id}: {e}")
+
+        # 4. Order event master callback SDK 레벨 해제
+        for product, real_client in self._order_event_real_client.items():
+            try:
+                if product == "overseas_stock":
+                    real_client.AS0().on_remove_as0_message()
+                    logger.debug(f"Removed AS0 master callback for {product}")
+                elif product == "overseas_futures":
+                    for tr_name, remove_method in [
+                        ("TC1", "on_remove_tc1_message"),
+                        ("TC2", "on_remove_tc2_message"),
+                        ("TC3", "on_remove_tc3_message"),
+                    ]:
+                        try:
+                            getattr(getattr(real_client, tr_name)(), remove_method)()
+                            logger.debug(f"Removed {tr_name} master callback for {product}")
+                        except (RuntimeError, AttributeError):
+                            pass
+                elif product == "korea_stock":
+                    real_client.SC0().on_remove_sc0_message()
+                    logger.debug(f"Removed SC0 master callback for {product}")
+            except RuntimeError:
+                logger.debug(f"Order event callback already detached for {product}")
+            except Exception as e:
+                logger.warning(f"Failed to remove order event callback for {product}: {e}")
+
+        self._order_event_handlers.clear()
+        self._order_event_real_client.clear()
+
+        # 5. Stop/Close all trackers (WebSocket clients 등)
         for node_id, tracker in self._persistent_nodes.items():
             try:
-                # stop() 메서드 호출
                 if hasattr(tracker, 'stop'):
                     if asyncio.iscoroutinefunction(tracker.stop):
                         await tracker.stop()
                     else:
                         tracker.stop()
                     logger.debug(f"Stopped persistent node: {node_id}")
-                
-                # close() 메서드 호출 (WebSocket 클라이언트)
+
                 if hasattr(tracker, 'close'):
                     if asyncio.iscoroutinefunction(tracker.close):
                         await tracker.close()
@@ -1025,8 +1109,8 @@ class ExecutionContext:
                     logger.debug(f"Closed persistent node: {node_id}")
             except Exception as e:
                 logger.warning(f"Error stopping persistent node {node_id}: {e}")
-        
-        # Cancel all background tasks
+
+        # 6. Cancel all background tasks
         for node_id, task in self._persistent_tasks.items():
             if not task.done():
                 task.cancel()
@@ -1035,13 +1119,19 @@ class ExecutionContext:
                 except asyncio.CancelledError:
                     pass
                 logger.debug(f"Cancelled persistent task: {node_id}")
-        
-        # Order event handlers 전체 정리 (H-17: master callback 미정리 방지)
-        self._order_event_handlers.clear()
 
+        # 7. 이벤트 큐 드레인 (cleanup 후 잔여 이벤트 제거)
+        while not self._event_queue.empty():
+            try:
+                self._event_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        # 8. 메모리 정리
         self._persistent_nodes.clear()
         self._persistent_tasks.clear()
         self._persistent_metadata.clear()
+        logger.debug("All persistent nodes cleaned up")
 
     # === Cleanup on Flow End (stay_connected=False) ===
 
@@ -1306,8 +1396,11 @@ class ExecutionContext:
         Used for realtime nodes (RealAccountNode, RealMarketDataNode) to
         broadcast output changes without changing node state.
         """
+        if self._shutdown:
+            return
+
         logger.debug(f"📡 notify_output_update: {node_id} outputs={list(outputs.keys())}")
-        
+
         if not self._listeners:
             return
         
