@@ -1,3 +1,7 @@
+## [1.10.2] - 2026-03-04
+### Dependencies
+- programgarden-core ^1.9.0 (국내주식 노드 포함)
+
 ## [1.10.1] - 2026-03-01
 ### Changed
 - deps: programgarden-core ^1.8.0

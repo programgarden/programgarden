@@ -1,3 +1,7 @@
+## [1.4.1] - 2026-03-04
+### Dependencies
+- programgarden-core ^1.9.0 (국내주식 노드 포함)
+
 ## [1.4.0] - 2026-03-01
 ### Added
 - **국내주식(KoreaStock) 69 TR 지원**: `ls.korea_stock()` 진입점
