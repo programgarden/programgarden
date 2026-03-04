@@ -1902,6 +1902,40 @@ class BrokerNodeExecutor(NodeExecutorBase):
     # 활성화된 트래커 저장 (Job 종료 시 정리용)
     _active_trackers: Dict[str, Any] = {}
 
+    async def cleanup_fill_subscriptions(self, job_id: str) -> None:
+        """BrokerNode가 등록한 fill subscription 콜백 정리
+
+        Args:
+            job_id: 해당 job의 fill_subscription만 정리
+        """
+        keys_to_remove = []
+        for key, info in self._active_trackers.items():
+            if not key.startswith(job_id):
+                continue
+            if info.get("type") != "fill_subscription":
+                continue
+            real = info.get("real")
+            if real:
+                # SDK 콜백 해제
+                for tr_name, remove_method in [
+                    ("AS0", "on_remove_as0_message"),
+                    ("AS1", "on_remove_as1_message"),
+                    ("TC2", "on_remove_tc2_message"),
+                    ("TC3", "on_remove_tc3_message"),
+                ]:
+                    if hasattr(real, tr_name):
+                        try:
+                            getattr(getattr(real, tr_name)(), remove_method)()
+                        except (RuntimeError, AttributeError):
+                            pass
+                        except Exception as e:
+                            logger.warning(f"Failed to cleanup fill subscription {key}/{tr_name}: {e}")
+            keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del self._active_trackers[key]
+            logger.debug(f"Cleaned up fill subscription: {key}")
+
     async def execute(
         self,
         node_id: str,
@@ -2223,6 +2257,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
         def on_as0_event(resp):
             """AS0: 주문 접수/정정완료/취소완료 이벤트 처리"""
             try:
+                if context.is_shutdown:
+                    return
                 body = getattr(resp, 'body', resp)
                 ord_type_code = getattr(body, 'sOrdxctPtnCode', '')
                 
@@ -2264,6 +2300,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
         def on_as1_event(resp):
             """AS1: 주문 체결 이벤트 처리"""
             try:
+                if context.is_shutdown:
+                    return
                 body = getattr(resp, 'body', resp)
                 
                 # AS1 체결 전용 필드
@@ -2374,6 +2412,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
             - ordr_prc: 주문가격
             """
             try:
+                if context.is_shutdown:
+                    return
                 body = getattr(resp, 'body', resp)
                 header = getattr(resp, 'header', None)
                 # TC2에서는 svc_id가 body에 있음
@@ -2429,6 +2469,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
             - ccls_tm: 체결시간
             """
             try:
+                if context.is_shutdown:
+                    return
                 body = getattr(resp, 'body', resp)
                 header = getattr(resp, 'header', None)
                 # TC3에서는 svc_id가 body에 있음
@@ -3747,6 +3789,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 포지션 변경 콜백 등록 (이벤트 발생용)
             def on_position_change(positions: Dict):
+                if context.is_shutdown:
+                    return
                 # 포지션 데이터를 list 형태로 변환 (NewOrderNode 호환)
                 serialized_positions = []
                 for sym, pos in positions.items():
@@ -3929,6 +3973,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 포지션 변경 콜백 (실시간 이벤트)
             def on_position_change(positions):
+                if context.is_shutdown:
+                    return
                 # 포지션 데이터를 직렬화 가능한 형태로 변환
                 serialized_positions = {}
                 for sym, pos in positions.items():
@@ -3993,6 +4039,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             
             # 잔고 변경 콜백
             def on_balance_change(balance):
+                if context.is_shutdown:
+                    return
                 context.set_output(node_id, "balance", balance)
                 asyncio.run_coroutine_threadsafe(
                     context.emit_event(
@@ -4113,6 +4161,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             loop = asyncio.get_running_loop()
 
             def on_position_change(positions: Dict):
+                if context.is_shutdown:
+                    return
                 serialized_positions = []
                 for sym, pos in positions.items():
                     quantity = pos.quantity
@@ -4500,6 +4550,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         def on_tick(resp):
             """GSC 틱 데이터 수신 콜백 - OHLCV 형식으로 누적"""
             try:
+                if context.is_shutdown:
+                    return
                 body = resp.body if hasattr(resp, 'body') else None
 
                 if body is None:
@@ -4664,6 +4716,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         def on_tick(resp):
             """OVC 틱 데이터 수신 콜백 - OHLCV 형식으로 누적"""
             try:
+                if context.is_shutdown:
+                    return
                 if not hasattr(resp, 'body') or resp.body is None:
                     context.log("debug", f"OVC subscription confirmed: {resp.rsp_msg if hasattr(resp, 'rsp_msg') else 'OK'}", node_id)
                     return
@@ -4823,6 +4877,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         def on_tick(resp):
             """S3_/K3_ 틱 데이터 수신 콜백"""
             try:
+                if context.is_shutdown:
+                    return
                 body = resp.body if hasattr(resp, 'body') else None
                 if body is None:
                     return
@@ -5164,10 +5220,12 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             # ========================================
             def create_handler(_node_id: str, _event_filter: str, _trigger_nodes: list):
                 """특정 노드용 핸들러 생성 (클로저로 값 캡처)"""
-                
+
                 def handler(resp):
+                    if context.is_shutdown:
+                        return
                     from datetime import datetime
-                    
+
                     # header에서 tr_cd 확인하여 필터링
                     header = getattr(resp, 'header', None)
                     tr_cd = getattr(header, 'tr_cd', 'AS0') if header else 'AS0'
@@ -5269,13 +5327,15 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                 
                 # 마스터 콜백: 모든 등록된 핸들러에게 분배
                 def master_callback(resp):
+                    if context.is_shutdown:
+                        return
                     handlers = context.get_order_event_handlers(product, "AS0")
                     for (handler_node_id, handler_filter, handler_func) in handlers:
                         try:
                             handler_func(resp)
                         except Exception as e:
                             context.log("error", f"Handler error for {handler_node_id}: {e}", handler_node_id)
-                
+
                 real_client.AS0().on_as0_message(master_callback)
                 context.log("info", f"Master order event callback registered for {product}", node_id)
             
@@ -5346,10 +5406,12 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             # ========================================
             def create_handler(tr_cd: str, _node_id: str, _event_filter: str, _trigger_nodes: list):
                 """특정 노드용 핸들러 생성 (클로저로 값 캡처)"""
-                
+
                 def handler(resp):
+                    if context.is_shutdown:
+                        return
                     from datetime import datetime
-                    
+
                     # event_filter 체크
                     if _event_filter != "all" and _event_filter != tr_cd:
                         return
@@ -5432,6 +5494,8 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                 # 마스터 콜백: 모든 등록된 핸들러에게 분배
                 def create_master_callback(tr_cd: str):
                     def master_callback(resp):
+                        if context.is_shutdown:
+                            return
                         handlers = context.get_order_event_handlers(product, tr_cd)
                         for (handler_node_id, handler_filter, handler_func) in handlers:
                             try:
@@ -5587,6 +5651,8 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
 
             def create_handler(_node_id: str, _event_filter: str, _trigger_nodes: list):
                 def handler(resp):
+                    if context.is_shutdown:
+                        return
                     from datetime import datetime
 
                     header = getattr(resp, 'header', None)
@@ -5676,6 +5742,8 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                 context.set_order_event_real_client(product, real_client)
 
                 def master_callback(resp):
+                    if context.is_shutdown:
+                        return
                     handlers = context.get_order_event_handlers(product, "SC0")
                     for (handler_node_id, handler_filter, handler_func) in handlers:
                         try:
@@ -14043,7 +14111,9 @@ class WorkflowJob:
             traceback.print_exc()
             await self.context.notify_job_state("failed", self.stats)
         finally:
-            # Cleanup persistent nodes
+            # Cleanup broker fill subscriptions (SDK 콜백 해제)
+            await self._cleanup_broker_fill_subscriptions()
+            # Cleanup persistent nodes (shutdown flag 설정 + 구독 해제 + WebSocket close)
             await self.context.cleanup_persistent_nodes()
             # Cleanup listeners
             await self.context.cleanup_listeners()
@@ -15316,6 +15386,14 @@ class WorkflowJob:
         self.status = "running"
         self.context.resume()
 
+    async def _cleanup_broker_fill_subscriptions(self) -> None:
+        """BrokerNode의 fill subscription SDK 콜백 정리"""
+        try:
+            broker_executor = BrokerNodeExecutor()
+            await broker_executor.cleanup_fill_subscriptions(self.job_id)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup broker fill subscriptions: {e}")
+
     async def stop(self) -> None:
         """Stop execution gracefully"""
         logger.info(f"Stopping job {self.job_id}")
@@ -15373,6 +15451,7 @@ class WorkflowJob:
                 pass
 
         # Cleanup
+        await self._cleanup_broker_fill_subscriptions()
         await self.context.cleanup_persistent_nodes()
         await self.context.cleanup_flow_end_nodes()
 
@@ -15424,6 +15503,7 @@ class WorkflowJob:
             logger.warning(f"Failed to get pending orders: {e}")
 
         # 모든 리소스 정리
+        await self._cleanup_broker_fill_subscriptions()
         await self.context.cleanup_persistent_nodes()
         await self.context.cleanup_flow_end_nodes()
 
