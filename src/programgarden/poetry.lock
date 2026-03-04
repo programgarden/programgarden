@@ -1564,7 +1564,7 @@ description = "Library to easily interface with LLM API providers"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
-markers = "(sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\") and python_version < \"3.14\""
+markers = "python_version < \"3.14\" and (sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\")"
 files = [
     {file = "litellm-1.81.13-py3-none-any.whl", hash = "sha256:ae4aea2a55e85993f5f6dd36d036519422d24812a1a3e8540d9e987f2d7a4304"},
     {file = "litellm-1.81.13.tar.gz", hash = "sha256:083788d9c94e3371ff1c42e40e0e8198c497772643292a65b1bc91a3b3b537ea"},
@@ -1621,7 +1621,7 @@ description = "Python logging made (stupidly) simple"
 optional = false
 python-versions = "<4.0,>=3.5"
 groups = ["main"]
-markers = "(sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\") and python_version < \"3.14\""
+markers = "python_version < \"3.14\" and (sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\")"
 files = [
     {file = "loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c"},
     {file = "loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6"},
@@ -2793,33 +2793,29 @@ optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
-files = []
-develop = true
+files = [
+    {file = "programgarden_community-1.10.2-py3-none-any.whl", hash = "sha256:8f5096a42607c6a25953c48c201944a9fe2719ad1f8a7fc94b598c6d822ce5a7"},
+    {file = "programgarden_community-1.10.2.tar.gz", hash = "sha256:8e2170baa58af34ac556ac5b3c36a6d5c16986c0d5677922e4cd178edaca9e84"},
+]
 
 [package.dependencies]
-programgarden-core = {path = "../core", develop = true}
-
-[package.source]
-type = "directory"
-url = "../community"
+programgarden-core = ">=1.9.0,<2.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "1.9.0"
+version = "1.9.1"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
-files = []
-develop = true
+files = [
+    {file = "programgarden_core-1.9.1-py3-none-any.whl", hash = "sha256:8213218de5876e156a12361a2a38994c8e3bc044ed15fef0dbf332a198b4c287"},
+    {file = "programgarden_core-1.9.1.tar.gz", hash = "sha256:b02fdb972c0a46d4a5f3c65bc9ac58c23d981837c35332dcf2aae751fa93c17e"},
+]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
-
-[package.source]
-type = "directory"
-url = "../core"
 
 [[package]]
 name = "programgarden-finance"
@@ -2829,21 +2825,19 @@ optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
-files = []
-develop = true
+files = [
+    {file = "programgarden_finance-1.4.1-py3-none-any.whl", hash = "sha256:ea5e1192879a186c39a3a10621e4fad64ecc4de8612871e6d67db6cb0d2355b8"},
+    {file = "programgarden_finance-1.4.1.tar.gz", hash = "sha256:df32bf3933613b8b03800c2c64643c0bad6ede0dc87b72289bb7a6b6522562d0"},
+]
 
 [package.dependencies]
-aiohttp = "^3.10.0"
-programgarden-core = {path = "../core", develop = true}
+aiohttp = ">=3.10.0,<4.0.0"
+programgarden-core = ">=1.9.0,<2.0.0"
 pydantic = ">=2.11.7,<3.0.0"
-python-dotenv = "^1.1.1"
-redis = "^6.4.0"
-requests = "^2.32.4"
-websockets = "^15.0.1"
-
-[package.source]
-type = "directory"
-url = "../finance"
+python-dotenv = ">=1.1.1,<2.0.0"
+redis = ">=6.4.0,<7.0.0"
+requests = ">=2.32.4,<3.0.0"
+websockets = ">=15.0.1,<16.0.0"
 
 [[package]]
 name = "propcache"
@@ -4564,4 +4558,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "f577348529dcf1a01a0ce8de74e84223ae4261603cb128592f8f69840071d341"
+content-hash = "3d529b5641a0dca82051243eacc3a747775f25d40b5759dc2b1fe4bfa0845725"
