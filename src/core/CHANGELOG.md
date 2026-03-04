@@ -1,3 +1,9 @@
+## [1.9.1] - 2026-03-04
+### Changed
+- AIAgentNode: `tool_selection` 필드 `bm25` → `semantic` 변경, 기본값 `"semantic"`
+- AIAgentNode: `tool_top_k` visible_when 조건 `semantic`으로 변경
+- i18n: tool_selection/tool_top_k 번역 BM25 → 벡터 검색 업데이트 (ko/en)
+
 ## [1.9.0] - 2026-03-04
 ### Added
 - **국내주식(KoreaStock) 노드 13개**: broker 1, account 4, market 5, order 3

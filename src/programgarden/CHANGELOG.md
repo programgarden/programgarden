@@ -1,3 +1,15 @@
+## [1.15.1] - 2026-03-04
+### Changed
+- **AIAgent 도구 선택**: BM25 키워드 매칭 → FastEmbed 벡터 유사도 검색 전환
+  - 임베딩 모델: BAAI/bge-small-en-v1.5 (ONNX, ~80MB)
+  - Warm 쿼리 평균 5ms, 정확도 100% (15개 도구 Top-3 기준)
+  - fastembed ImportError 시 전체 도구 전달 fallback 유지
+- `tool_selection` 기본값: `"all"` → `"semantic"`
+
+### Dependencies
+- 추가: `fastembed>=0.4.0`
+- 제거: `rank-bm25>=0.2.2`
+
 ## [1.15.0] - 2026-03-04
 ### Added
 - **국내주식(KoreaStock) Executor**: 12개 korea_stock 분기 구현
