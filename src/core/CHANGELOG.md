@@ -1,3 +1,15 @@
+## [1.9.0] - 2026-03-04
+### Added
+- **국내주식(KoreaStock) 노드 13개**: broker 1, account 4, market 5, order 3
+  - KoreaStockBrokerNode, KoreaStockAccountNode, KoreaStockOpenOrdersNode
+  - KoreaStockMarketDataNode, KoreaStockFundamentalNode, KoreaStockHistoricalDataNode
+  - KoreaStockSymbolQueryNode, KoreaStockRealMarketDataNode
+  - KoreaStockRealAccountNode, KoreaStockRealOrderEventNode
+  - KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode
+- i18n: 국내주식 94키 추가 (ko/en)
+- NodeTypeRegistry: 국내주식 13개 노드 등록
+- core 노드 수: 55 → 68개 (총 71개 = core 68 + community 3)
+
 ## [1.8.0] - 2026-03-01
 ### Added
 - **Graceful Restart (C-1)**: CheckpointManager를 통한 워크플로우 상태 저장/복구

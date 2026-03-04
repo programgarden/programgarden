@@ -1,3 +1,25 @@
+## [1.15.0] - 2026-03-04
+### Added
+- **국내주식(KoreaStock) Executor**: 12개 korea_stock 분기 구현
+  - BrokerNodeExecutor, AccountNodeExecutor, OpenOrdersNodeExecutor
+  - MarketDataNodeExecutor, HistoricalDataNodeExecutor, FundamentalNodeExecutor
+  - SymbolQueryNodeExecutor, RealMarketDataNodeExecutor
+  - RealAccountNodeExecutor, RealOrderEventNodeExecutor
+  - NewOrderNodeExecutor, ModifyOrderNodeExecutor, CancelOrderNodeExecutor
+- NodeRunner: 국내주식 `broker_ls_korea_stock` credential 타입 지원
+- 테스트 259개 추가 (core 220 + executor 22 + workflow 5 + node_runner 12)
+
+### Fixed
+- **실시간 콜백 누수 수정**: 워크플로우 종료 후 WebSocket 콜백 계속 실행되는 문제
+  - shutdown flag + 16개 콜백 guard 추가
+  - GSC/OVC/S3_/K3_ 구독 해제 순서 최적화
+  - SDK 레벨 master_callback 제거 (AS0/TC1-3/SC0)
+  - BrokerNode fill subscription cleanup
+  - stop/cancel/force_stop 모든 종료 경로 통일
+
+### Changed
+- deps: programgarden-core ^1.9.0, programgarden-finance ^1.4.1, programgarden-community ^1.10.2
+
 ## [1.14.0] - 2026-03-01
 ### Added
 - **Graceful Restart (C-1)**: 워크플로우 상태 저장/복구 구현
