@@ -211,7 +211,7 @@ class WorkflowPnLEvent:
     Attributes:
         job_id: Job identifier
         broker_node_id: BrokerNode ID
-        product: Product type ("overseas_stock" or "overseas_futures")
+        product: Product type ("overseas_stock", "overseas_futures", or "korea_stock")
         
         # Workflow position P&L
         workflow_pnl_rate: Workflow position P&L rate (%)
@@ -244,42 +244,50 @@ class WorkflowPnLEvent:
     
     New Fields (v2.0):
         # Workflow product-specific P&L
-        workflow_stock_pnl_rate: Stock-only workflow P&L rate (%)
-        workflow_stock_pnl_amount: Stock-only workflow P&L amount
-        workflow_futures_pnl_rate: Futures-only workflow P&L rate (%)
-        workflow_futures_pnl_amount: Futures-only workflow P&L amount
-        
+        workflow_overseas_stock_pnl_rate: Overseas stock workflow P&L rate (%)
+        workflow_overseas_stock_pnl_amount: Overseas stock workflow P&L amount
+        workflow_overseas_futures_pnl_rate: Overseas futures workflow P&L rate (%)
+        workflow_overseas_futures_pnl_amount: Overseas futures workflow P&L amount
+        workflow_korea_stock_pnl_rate: Korea stock workflow P&L rate (%)
+        workflow_korea_stock_pnl_amount: Korea stock workflow P&L amount
+
         # Account total P&L
         account_total_pnl_rate: Entire account P&L rate (%)
         account_total_pnl_amount: Entire account P&L amount
         account_total_eval_amount: Entire account evaluation amount
         account_total_buy_amount: Entire account buy amount
         total_position_count: Total number of held positions (replaces AccountPnLEvent.position_count)
-        
+
         # Account product-specific P&L
-        account_stock_pnl_rate: Stock-only account P&L rate (%)
-        account_stock_pnl_amount: Stock-only account P&L amount
-        account_futures_pnl_rate: Futures-only account P&L rate (%)
-        account_futures_pnl_amount: Futures-only account P&L amount
-        
+        account_overseas_stock_pnl_rate: Overseas stock account P&L rate (%)
+        account_overseas_stock_pnl_amount: Overseas stock account P&L amount
+        account_overseas_futures_pnl_rate: Overseas futures account P&L rate (%)
+        account_overseas_futures_pnl_amount: Overseas futures account P&L amount
+        account_korea_stock_pnl_rate: Korea stock account P&L rate (%)
+        account_korea_stock_pnl_amount: Korea stock account P&L amount
+
         # Metadata
         workflow_start_datetime: Job start datetime (fixed reference)
         workflow_elapsed_days: Days since workflow started
-        
+
         # Competition fields (only if listener has start_date)
         competition_start_date: Competition start date (YYYYMMDD)
         competition_workflow_pnl_rate: Workflow P&L from competition start date
         competition_workflow_pnl_amount: Workflow P&L amount from competition start date
-        competition_workflow_stock_pnl_rate: Stock workflow P&L from competition start date
-        competition_workflow_stock_pnl_amount: Stock workflow P&L amount from competition start date
-        competition_workflow_futures_pnl_rate: Futures workflow P&L from competition start date
-        competition_workflow_futures_pnl_amount: Futures workflow P&L amount from competition start date
+        competition_workflow_overseas_stock_pnl_rate: Overseas stock workflow P&L from competition start date
+        competition_workflow_overseas_stock_pnl_amount: Overseas stock workflow P&L amount from competition start date
+        competition_workflow_overseas_futures_pnl_rate: Overseas futures workflow P&L from competition start date
+        competition_workflow_overseas_futures_pnl_amount: Overseas futures workflow P&L amount from competition start date
+        competition_workflow_korea_stock_pnl_rate: Korea stock workflow P&L from competition start date
+        competition_workflow_korea_stock_pnl_amount: Korea stock workflow P&L amount from competition start date
         competition_account_pnl_rate: Account P&L from competition start date
         competition_account_pnl_amount: Account P&L amount from competition start date
-        competition_account_stock_pnl_rate: Stock account P&L from competition start date
-        competition_account_stock_pnl_amount: Stock account P&L amount from competition start date
-        competition_account_futures_pnl_rate: Futures account P&L from competition start date
-        competition_account_futures_pnl_amount: Futures account P&L amount from competition start date
+        competition_account_overseas_stock_pnl_rate: Overseas stock account P&L from competition start date
+        competition_account_overseas_stock_pnl_amount: Overseas stock account P&L amount from competition start date
+        competition_account_overseas_futures_pnl_rate: Overseas futures account P&L from competition start date
+        competition_account_overseas_futures_pnl_amount: Overseas futures account P&L amount from competition start date
+        competition_account_korea_stock_pnl_rate: Korea stock account P&L from competition start date
+        competition_account_korea_stock_pnl_amount: Korea stock account P&L amount from competition start date
     
     Example:
         class CompetitionListener(BaseExecutionListener):
@@ -295,7 +303,7 @@ class WorkflowPnLEvent:
     """
     job_id: str
     broker_node_id: str
-    product: str  # "overseas_stock" | "overseas_futures"
+    product: str  # "overseas_stock" | "overseas_futures" | "korea_stock"
 
     # Workflow position P&L
     workflow_pnl_rate: Union[Decimal, float]
@@ -331,13 +339,15 @@ class WorkflowPnLEvent:
     timestamp: datetime = field(default_factory=datetime.utcnow)
     
     # ========== NEW FIELDS (v2.0) ==========
-    
+
     # Workflow product-specific P&L
-    workflow_stock_pnl_rate: Optional[Union[Decimal, float]] = None
-    workflow_stock_pnl_amount: Optional[Union[Decimal, float]] = None
-    workflow_futures_pnl_rate: Optional[Union[Decimal, float]] = None
-    workflow_futures_pnl_amount: Optional[Union[Decimal, float]] = None
-    
+    workflow_overseas_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    workflow_overseas_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    workflow_overseas_futures_pnl_rate: Optional[Union[Decimal, float]] = None
+    workflow_overseas_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+    workflow_korea_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    workflow_korea_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+
     # Account total P&L (all brokers combined)
     account_total_pnl_rate: Optional[Union[Decimal, float]] = None
     account_total_pnl_amount: Optional[Union[Decimal, float]] = None
@@ -346,35 +356,41 @@ class WorkflowPnLEvent:
 
     # Total position count (replaces AccountPnLEvent.position_count)
     total_position_count: int = 0
-    
+
     # Account product-specific P&L
-    account_stock_pnl_rate: Optional[Union[Decimal, float]] = None
-    account_stock_pnl_amount: Optional[Union[Decimal, float]] = None
-    account_futures_pnl_rate: Optional[Union[Decimal, float]] = None
-    account_futures_pnl_amount: Optional[Union[Decimal, float]] = None
-    
+    account_overseas_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    account_overseas_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    account_overseas_futures_pnl_rate: Optional[Union[Decimal, float]] = None
+    account_overseas_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+    account_korea_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    account_korea_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+
     # Workflow metadata
     workflow_start_datetime: Optional[datetime] = None  # Job start time (fixed)
     workflow_elapsed_days: Optional[int] = None  # Days since workflow started
-    
+
     # Competition fields (calculated when listener has start_date)
     competition_start_date: Optional[str] = None  # YYYYMMDD format
-    
+
     # Competition workflow P&L
     competition_workflow_pnl_rate: Optional[Union[Decimal, float]] = None
     competition_workflow_pnl_amount: Optional[Union[Decimal, float]] = None
-    competition_workflow_stock_pnl_rate: Optional[Union[Decimal, float]] = None
-    competition_workflow_stock_pnl_amount: Optional[Union[Decimal, float]] = None
-    competition_workflow_futures_pnl_rate: Optional[Union[Decimal, float]] = None
-    competition_workflow_futures_pnl_amount: Optional[Union[Decimal, float]] = None
-    
+    competition_workflow_overseas_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_workflow_overseas_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_workflow_overseas_futures_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_workflow_overseas_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_workflow_korea_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_workflow_korea_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+
     # Competition account P&L
     competition_account_pnl_rate: Optional[Union[Decimal, float]] = None
     competition_account_pnl_amount: Optional[Union[Decimal, float]] = None
-    competition_account_stock_pnl_rate: Optional[Union[Decimal, float]] = None
-    competition_account_stock_pnl_amount: Optional[Union[Decimal, float]] = None
-    competition_account_futures_pnl_rate: Optional[Union[Decimal, float]] = None
-    competition_account_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_account_overseas_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_account_overseas_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_account_overseas_futures_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_account_overseas_futures_pnl_amount: Optional[Union[Decimal, float]] = None
+    competition_account_korea_stock_pnl_rate: Optional[Union[Decimal, float]] = None
+    competition_account_korea_stock_pnl_amount: Optional[Union[Decimal, float]] = None
 
 
 # ============================================================
