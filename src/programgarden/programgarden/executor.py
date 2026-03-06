@@ -2218,19 +2218,18 @@ class BrokerNodeExecutor(NodeExecutorBase):
             context.log("info", f"Using shared LS instance for fill event subscription (product={product})", node_id)
             
             if product == "overseas_stock":
-                await self._subscribe_stock_fill_events(ls, node_id, context)
+                await self._subscribe_overseas_stock_fill_events(ls, node_id, context)
             elif product == "overseas_futures":
-                await self._subscribe_futures_fill_events(ls, node_id, context)
+                await self._subscribe_overseas_futures_fill_events(ls, node_id, context)
             elif product == "korea_stock":
-                # 국내주식 실시간 체결은 KoreaStockRealOrderEventNode에서 처리 (BrokerNode에서 불필요)
-                context.log("debug", f"korea_stock fill subscription skipped (handled by KoreaStockRealOrderEventNode)", node_id)
+                await self._subscribe_korea_stock_fill_events(ls, node_id, context)
             else:
                 context.log("warning", f"Unknown product type for fill subscription: {product}", node_id)
                 
         except Exception as e:
             context.log("error", f"Failed to subscribe fill events: {e}", node_id)
     
-    async def _subscribe_stock_fill_events(
+    async def _subscribe_overseas_stock_fill_events(
         self,
         ls,
         node_id: str,
@@ -2378,7 +2377,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         
         context.log("info", f"Workflow fill event subscription started (AS0+AS1)", node_id)
     
-    async def _subscribe_futures_fill_events(
+    async def _subscribe_overseas_futures_fill_events(
         self,
         ls,
         node_id: str,
@@ -2525,6 +2524,127 @@ class BrokerNodeExecutor(NodeExecutorBase):
 
         context.log("info", f"Workflow fill event subscription started (TC2+TC3)", node_id)
 
+    async def _subscribe_korea_stock_fill_events(
+        self,
+        ls,
+        node_id: str,
+        context: ExecutionContext,
+    ) -> None:
+        """국내주식 체결 이벤트 구독
+
+        SC1 이벤트 구독 (SC1 등록 시 SC0~SC4 전체 활성화).
+        ordxctptncode 값으로 분기:
+        - '11': 체결 → record_workflow_fill()
+        - '12': 정정확인 → modify_workflow_order()
+        - '13': 취소확인 → cancel_workflow_order()
+        """
+        from datetime import datetime
+
+        real = ls.korea_stock().real()
+        await real.connect()
+
+        # 이벤트 루프 캡처
+        loop = asyncio.get_running_loop()
+
+        def on_sc1_event(resp):
+            """SC1: 주문체결/정정/취소 이벤트 처리"""
+            try:
+                if context.is_shutdown:
+                    return
+                body = getattr(resp, 'body', resp)
+                if not body:
+                    return
+
+                ord_type_code = getattr(body, 'ordxctptncode', '')
+
+                if ord_type_code == '11':  # 체결
+                    exec_qty = int(getattr(body, 'execqty', '0') or '0')
+                    exec_price = float(getattr(body, 'execprc', '0') or '0')
+
+                    if exec_qty <= 0 or exec_price <= 0:
+                        return
+
+                    logger.info(f"[SC1] 국내주식 체결: qty={exec_qty}, price={exec_price}")
+
+                    order_no = str(getattr(body, 'ordno', ''))
+                    order_date = datetime.now().strftime('%Y%m%d')
+                    # shtnIsuno: 'A005930' → '005930' (A 접두사 제거)
+                    raw_symbol = getattr(body, 'shtnIsuno', '')
+                    symbol = raw_symbol.lstrip('A') if raw_symbol.startswith('A') else raw_symbol
+                    bns_tp = getattr(body, 'bnstp', '')  # 1:매도, 2:매수
+                    side = 'buy' if bns_tp == '2' else 'sell'
+                    fill_time = getattr(body, 'exectime', datetime.now().strftime('%H%M%S000'))
+
+                    async def record_and_refresh():
+                        """체결 기록 후 AccountTracker refresh"""
+                        await context.record_workflow_fill(
+                            order_no=order_no,
+                            order_date=order_date,
+                            symbol=symbol,
+                            exchange='KRX',
+                            side=side,
+                            quantity=exec_qty,
+                            price=exec_price,
+                            fill_time=fill_time,
+                            commda_code='40',
+                        )
+
+                        # AccountTracker refresh로 PnL 이벤트 강제 트리거
+                        tracker_key = f"{context.job_id}_{node_id}"
+                        tracker_info = self._active_trackers.get(tracker_key)
+                        if tracker_info and "tracker" in tracker_info:
+                            tracker = tracker_info["tracker"]
+                            if hasattr(tracker, 'refresh_now'):
+                                await tracker.refresh_now()
+                                logger.debug(f"KoreaStockAccountTracker refreshed after fill")
+
+                    asyncio.run_coroutine_threadsafe(record_and_refresh(), loop)
+                    logger.info(f"Workflow fill recorded: {symbol} {side} {exec_qty}@{exec_price}")
+
+                elif ord_type_code == '12':  # 정정확인
+                    order_no = str(getattr(body, 'ordno', ''))
+                    order_date = datetime.now().strftime('%Y%m%d')
+                    new_qty = int(getattr(body, 'mdfycnfqty', '0') or '0')
+                    new_price = float(getattr(body, 'mdfycnfprc', '0') or '0')
+                    asyncio.run_coroutine_threadsafe(
+                        context.modify_workflow_order(
+                            order_no=order_no,
+                            order_date=order_date,
+                            new_quantity=new_qty if new_qty > 0 else None,
+                            new_price=new_price if new_price > 0 else None,
+                        ),
+                        loop
+                    )
+                    logger.debug(f"Workflow order modified (korea_stock): {order_no}")
+
+                elif ord_type_code == '13':  # 취소확인
+                    order_no = str(getattr(body, 'ordno', ''))
+                    order_date = datetime.now().strftime('%Y%m%d')
+                    asyncio.run_coroutine_threadsafe(
+                        context.cancel_workflow_order(
+                            order_no=order_no,
+                            order_date=order_date,
+                        ),
+                        loop
+                    )
+                    logger.debug(f"Workflow order cancelled (korea_stock): {order_no}")
+
+            except Exception as e:
+                logger.warning(f"Error processing SC1 event: {e}")
+
+        # SC1 구독 등록 (SC0~SC4 전체 활성화)
+        real.SC1().on_sc1_message(on_sc1_event)
+
+        # 활성 구독 저장
+        sub_key = f"{context.job_id}_{node_id}_fill_sub"
+        self._active_trackers[sub_key] = {
+            "ls": ls,
+            "real": real,
+            "type": "fill_subscription",
+        }
+
+        context.log("info", f"Workflow fill event subscription started (SC1, korea_stock)", node_id)
+
     async def _sync_fill_prices_from_history(
         self,
         node_id: str,
@@ -2549,20 +2669,23 @@ class BrokerNodeExecutor(NodeExecutorBase):
             
             from programgarden_finance import LS
             
-            ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id)
+            ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, product)
             if not success:
                 context.log("warning", f"Failed to login for fill price sync: {error}", node_id)
                 return
             
             if product == "overseas_stock":
-                await self._sync_stock_fill_prices(ls, orders_without_price, context, node_id)
+                await self._sync_overseas_stock_fill_prices(ls, orders_without_price, context, node_id)
             elif product == "overseas_futures":
-                await self._sync_futures_fill_prices(ls, orders_without_price, context, node_id)
-                
+                await self._sync_overseas_futures_fill_prices(ls, orders_without_price, context, node_id)
+            elif product == "korea_stock":
+                # 국내주식 체결가격 복구는 향후 구현 (t0425 미체결 조회 활용)
+                context.log("debug", f"korea_stock fill price sync not yet implemented", node_id)
+
         except Exception as e:
             context.log("warning", f"Failed to sync fill prices from history: {e}", node_id)
     
-    async def _sync_stock_fill_prices(
+    async def _sync_overseas_stock_fill_prices(
         self,
         ls,
         orders: list,
@@ -2649,7 +2772,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("warning", f"Failed to sync stock fills: {e}", node_id)
     
-    async def _sync_futures_fill_prices(
+    async def _sync_overseas_futures_fill_prices(
         self,
         ls,
         orders: list,
@@ -2717,23 +2840,24 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 return
             
             if product == "overseas_stock":
-                await self._start_stock_tracker(
+                await self._start_overseas_stock_tracker(
                     ls, node_id, product, provider, context,
                 )
             elif product == "overseas_futures":
-                await self._start_futures_tracker(
+                await self._start_overseas_futures_tracker(
                     ls, node_id, product, provider, context,
                 )
             elif product == "korea_stock":
-                # 국내주식 실시간 계좌 추적은 KoreaStockRealAccountNode에서 처리 (BrokerNode에서 불필요)
-                context.log("debug", f"korea_stock account tracking skipped (handled by KoreaStockRealAccountNode)", node_id)
+                await self._start_korea_stock_tracker(
+                    ls, node_id, product, provider, context,
+                )
             else:
                 context.log("warning", f"Unknown product type for tracking: {product}", node_id)
                 
         except Exception as e:
             context.log("error", f"Failed to start account tracking: {e}", node_id)
     
-    async def _start_stock_tracker(
+    async def _start_overseas_stock_tracker(
         self,
         ls,
         node_id: str,
@@ -2794,7 +2918,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         
         context.log("info", f"StockAccountTracker started for {node_id}", node_id)
     
-    async def _start_futures_tracker(
+    async def _start_overseas_futures_tracker(
         self,
         ls,
         node_id: str,
@@ -2857,7 +2981,66 @@ class BrokerNodeExecutor(NodeExecutorBase):
         }
         
         context.log("info", f"FuturesAccountTracker started for {node_id}", node_id)
-    
+
+    async def _start_korea_stock_tracker(
+        self,
+        ls,
+        node_id: str,
+        product: str,
+        provider: str,
+        context: ExecutionContext,
+    ) -> None:
+        """국내주식 계좌 추적기 시작"""
+        accno = ls.korea_stock().accno()
+        real = ls.korea_stock().real()
+        await real.connect()
+
+        tracker = accno.account_tracker(real_client=real)
+
+        # 수익률 콜백 등록
+        def on_pnl_change(pnl_info):
+            # tracker에서 현재 positions 조회
+            current_prices = {}
+            account_positions = {}
+
+            positions = tracker.get_positions()  # Dict[symbol, KrStockPositionItem]
+            if positions:
+                for symbol, pos_item in positions.items():
+                    if pos_item.current_price:
+                        current_prices[symbol] = float(pos_item.current_price)
+                    account_positions[symbol] = {
+                        "symbol": symbol,
+                        "quantity": pos_item.quantity,
+                        "buy_price": float(pos_item.buy_price),
+                        "current_price": float(pos_item.current_price),
+                        "pnl_rate": pos_item.pnl_rate,
+                        "product": product,
+                    }
+
+            asyncio.create_task(
+                context.notify_workflow_pnl(
+                    broker_node_id=node_id,
+                    product=product,
+                    provider=provider,
+                    current_prices=current_prices,
+                    account_positions=account_positions if account_positions else None,
+                    currency="KRW",
+                )
+            )
+
+        tracker.on_account_pnl_change(on_pnl_change)
+        await tracker.start()
+
+        # 활성 트래커 저장 (나중에 정리용)
+        tracker_key = f"{context.job_id}_{node_id}"
+        self._active_trackers[tracker_key] = {
+            "tracker": tracker,
+            "ls": ls,
+            "real": real,
+        }
+
+        context.log("info", f"KoreaStockAccountTracker started for {node_id}", node_id)
+
     def _inject_credentials(
         self,
         credential_id: str,
@@ -3870,7 +4053,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 context.log("info", f"StockAccountTracker started (stay_connected=False, will cleanup after flow)", node_id)
             
             # 초기 데이터 반환 (여기까지 도달했다면 에러 없이 정상)
-            result = self._get_stock_tracker_data(tracker)
+            result = self._get_overseas_stock_tracker_data(tracker)
             
             # 데이터가 비어있는지 확인 (에러 없이 정상 케이스)
             positions_count = len(result.get('positions', []))
@@ -4077,7 +4260,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 context.log("info", f"FuturesAccountTracker started (stay_connected=False, will cleanup after flow)", node_id)
             
             # 초기 데이터 반환 (여기까지 도달했다면 에러 없이 정상)
-            result = self._get_futures_tracker_data(tracker)
+            result = self._get_overseas_futures_tracker_data(tracker)
             
             # 데이터가 비어있는지 확인 (에러 없이 정상 케이스)
             positions_count = len(result.get('positions', {}))
@@ -4218,7 +4401,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 context.register_cleanup_on_flow_end(node_id, tracker)
                 context.log("info", f"KrStockAccountTracker started (stay_connected=False)", node_id)
 
-            result = self._get_stock_tracker_data(tracker)
+            result = self._get_korea_stock_tracker_data(tracker)
 
             for key, value in result.items():
                 context.set_output(node_id, key, value)
@@ -4236,7 +4419,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             context.log("error", f"Korea stock tracker setup failed: {e}", node_id)
             raise
 
-    def _get_stock_tracker_data(self, tracker) -> Dict[str, Any]:
+    def _get_overseas_stock_tracker_data(self, tracker) -> Dict[str, Any]:
         """해외주식 Tracker에서 현재 데이터 추출 (리스트 형태로 반환)"""
         positions = []
         for symbol, pos in tracker.get_positions().items():
@@ -4315,7 +4498,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             "open_orders": open_orders,
         }
 
-    def _get_futures_tracker_data(self, tracker) -> Dict[str, Any]:
+    def _get_overseas_futures_tracker_data(self, tracker) -> Dict[str, Any]:
         """해외선물 Tracker에서 현재 데이터 추출
 
         positions 출력 형식: list[dict]
@@ -4392,14 +4575,70 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             "open_orders": open_orders,
         }
 
+    def _get_korea_stock_tracker_data(self, tracker) -> Dict[str, Any]:
+        """국내주식 KrStockAccountTracker에서 현재 데이터 추출"""
+        positions = []
+        for symbol, pos in tracker.get_positions().items():
+            positions.append({
+                "symbol": symbol,
+                "name": getattr(pos, 'symbol_name', symbol),
+                "qty": pos.quantity,
+                "avg_price": float(pos.buy_price),
+                "current_price": float(pos.current_price),
+                "pnl_rate": pos.pnl_rate,
+                "pnl_amount": float(pos.pnl_amount),
+                "currency": "KRW",
+                "eval_amount": float(pos.eval_amount),
+                "market_code": getattr(pos, 'market', ''),
+            })
+
+        # KrStockAccountTracker.get_balance() → KrStockBalanceInfo (단일 객체)
+        raw_balance = tracker.get_balance()
+        balance = {}
+        if raw_balance:
+            balance["KRW"] = {
+                "deposit": float(raw_balance.deposit),
+                "orderable_amount": float(raw_balance.orderable_amount),
+                "d1_deposit": float(raw_balance.d1_deposit),
+                "d2_deposit": float(raw_balance.d2_deposit),
+            }
+            balance["_summary"] = {
+                "total_deposit": float(raw_balance.deposit),
+            }
+        else:
+            balance = {"cash": 0.0, "total_value": 0.0}
+
+        # open_orders 추출
+        open_orders = {}
+        if hasattr(tracker, 'get_open_orders'):
+            for order_no, order in tracker.get_open_orders().items():
+                open_orders[str(order_no)] = {
+                    "order_no": order_no,
+                    "symbol": getattr(order, 'symbol', ''),
+                    "exchange": "KRX",
+                    "order_type": getattr(order, 'order_type', ''),
+                    "order_price": float(getattr(order, 'order_price', 0)),
+                    "order_qty": int(getattr(order, 'order_qty', 0)),
+                    "filled_qty": int(getattr(order, 'executed_qty', 0)),
+                    "remaining_qty": int(getattr(order, 'remaining_qty', 0)),
+                }
+
+        return {
+            "positions": positions,
+            "balance": balance,
+            "open_orders": open_orders,
+        }
+
     def _get_tracker_data(self, tracker) -> Dict[str, Any]:
         """Tracker에서 현재 데이터 추출 (하위 호환용)"""
         # 타입에 따라 분기
         tracker_type = type(tracker).__name__
         if "Futures" in tracker_type:
-            return self._get_futures_tracker_data(tracker)
+            return self._get_overseas_futures_tracker_data(tracker)
+        elif "KrStock" in tracker_type:
+            return self._get_korea_stock_tracker_data(tracker)
         else:
-            return self._get_stock_tracker_data(tracker)
+            return self._get_overseas_stock_tracker_data(tracker)
 
     def _empty_result(self, error: str = "") -> Dict[str, Any]:
         """빈 결과 반환"""

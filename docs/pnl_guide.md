@@ -34,7 +34,7 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
 | `product` | 상품 유형 (`overseas_stock`: 해외주식, `overseas_futures`: 해외선물, `korea_stock`: 국내주식) |
 | `paper_trading` | 모의투자 여부 (`true`: 모의투자, `false`: 실전투자) |
 | `timestamp` | 수익률 업데이트 시간 |
-| `currency` | 통화 단위 (기본: USD) |
+| `currency` | 통화 단위 (`USD`: 해외주식/해외선물, `KRW`: 국내주식) |
 
 ### 워크플로우 수익률
 
@@ -71,14 +71,16 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
 
 ### 상품별 수익률
 
-해외주식과 해외선물을 동시에 거래할 경우, 상품별로 분리된 수익률도 제공됩니다.
+여러 상품(해외주식, 해외선물, 국내주식)을 동시에 거래할 경우, 상품별로 분리된 수익률도 제공됩니다.
 
 | 항목 | 설명 |
 |------|------|
-| `workflow_stock_pnl_rate` | 워크플로우 주식 수익률 |
-| `workflow_stock_pnl_amount` | 워크플로우 주식 손익금액 |
-| `workflow_futures_pnl_rate` | 워크플로우 선물 수익률 |
-| `workflow_futures_pnl_amount` | 워크플로우 선물 손익금액 |
+| `workflow_overseas_stock_pnl_rate` | 워크플로우 해외주식 수익률 |
+| `workflow_overseas_stock_pnl_amount` | 워크플로우 해외주식 손익금액 |
+| `workflow_overseas_futures_pnl_rate` | 워크플로우 해외선물 수익률 |
+| `workflow_overseas_futures_pnl_amount` | 워크플로우 해외선물 손익금액 |
+| `workflow_korea_stock_pnl_rate` | 워크플로우 국내주식 수익률 |
+| `workflow_korea_stock_pnl_amount` | 워크플로우 국내주식 손익금액 |
 
 ### 계좌 전체 수익률
 
@@ -90,8 +92,9 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
 | `account_total_pnl_amount` | 계좌 전체 손익금액 |
 | `account_total_eval_amount` | 계좌 전체 평가금액 |
 | `account_total_buy_amount` | 계좌 전체 매수금액 |
-| `account_stock_pnl_rate` | 계좌 주식 수익률 |
-| `account_futures_pnl_rate` | 계좌 선물 수익률 |
+| `account_overseas_stock_pnl_rate` | 계좌 해외주식 수익률 |
+| `account_overseas_futures_pnl_rate` | 계좌 해외선물 수익률 |
+| `account_korea_stock_pnl_rate` | 계좌 국내주식 수익률 |
 
 ---
 
@@ -144,6 +147,7 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
 | 모드 전환 시 | 기존 데이터 유지 (삭제 안 함) | 기존 데이터 유지 (삭제 안 함) |
 | 해외주식 | LS증권 모의투자 **미지원** | 지원 |
 | 해외선물 | 지원 | 지원 |
+| 국내주식 | **미지원** (실전투자 전용) | 지원 |
 
 ### 모의투자 설정 방법
 
@@ -197,10 +201,12 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
 
 | 항목 | 설명 |
 |------|------|
-| `competition_workflow_stock_pnl_rate` | 기준일 이후 워크플로우 주식 수익률 |
-| `competition_workflow_futures_pnl_rate` | 기준일 이후 워크플로우 선물 수익률 |
-| `competition_account_stock_pnl_rate` | 기준일 이후 계좌 주식 수익률 |
-| `competition_account_futures_pnl_rate` | 기준일 이후 계좌 선물 수익률 |
+| `competition_workflow_overseas_stock_pnl_rate` | 기준일 이후 워크플로우 해외주식 수익률 |
+| `competition_workflow_overseas_futures_pnl_rate` | 기준일 이후 워크플로우 해외선물 수익률 |
+| `competition_workflow_korea_stock_pnl_rate` | 기준일 이후 워크플로우 국내주식 수익률 |
+| `competition_account_overseas_stock_pnl_rate` | 기준일 이후 계좌 해외주식 수익률 |
+| `competition_account_overseas_futures_pnl_rate` | 기준일 이후 계좌 해외선물 수익률 |
+| `competition_account_korea_stock_pnl_rate` | 기준일 이후 계좌 국내주식 수익률 |
 
 ### 예시: 1월 15일부터의 수익률 추적
 
@@ -328,5 +334,42 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
   ]
 }
 ```
+
+### 국내주식 실전투자
+
+```json
+{
+  "product": "korea_stock",
+  "paper_trading": false,
+  "currency": "KRW",
+
+  "workflow_pnl_rate": 1.85,
+  "workflow_eval_amount": 10185000,
+  "workflow_buy_amount": 10000000,
+  "workflow_pnl_amount": 185000,
+
+  "total_pnl_rate": 1.85,
+  "total_eval_amount": 10185000,
+  "total_buy_amount": 10000000,
+  "total_pnl_amount": 185000,
+
+  "trust_score": 100,
+  "total_position_count": 1,
+
+  "workflow_positions": [
+    {
+      "symbol": "005930",
+      "exchange": "KRX",
+      "quantity": 100,
+      "avg_price": 72000,
+      "current_price": 73350,
+      "pnl_amount": 135000,
+      "pnl_rate": 1.88
+    }
+  ]
+}
+```
+
+> **참고**: 국내주식은 모의투자를 지원하지 않으며, `paper_trading`은 항상 `false`입니다. 통화는 `KRW`(원화)이며, 거래소는 `KRX` 고정입니다.
 
 > **팁**: `workflow_pnl_rate`(워크플로우 수익률)가 전략의 실제 성과를 나타냅니다. `total_pnl_rate`(전체 수익률)에는 수동 매매 결과도 포함되어 있으므로, 전략 평가에는 `workflow_pnl_rate`를 기준으로 삼으세요.
