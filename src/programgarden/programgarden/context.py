@@ -1562,7 +1562,7 @@ class ExecutionContext:
         
         Args:
             broker_node_id: BrokerNode ID
-            product: 상품 유형 (overseas_stock, overseas_futures)
+            product: 상품 유형 (overseas_stock, overseas_futures, korea_stock)
             provider: 증권사 (ls-sec.co.kr)
             current_prices: 현재가 {symbol: price}
             account_positions: 계좌 전체 포지션 {symbol: {quantity, buy_price, current_price, pnl_rate}}
@@ -1645,20 +1645,24 @@ class ExecutionContext:
                     "currency": currency,
                     
                     # 신규 필드: 워크플로우 상품별
-                    "workflow_stock_pnl_rate": base_workflow_result.get("workflow_stock_pnl_rate"),
-                    "workflow_stock_pnl_amount": base_workflow_result.get("workflow_stock_pnl_amount"),
-                    "workflow_futures_pnl_rate": base_workflow_result.get("workflow_futures_pnl_rate"),
-                    "workflow_futures_pnl_amount": base_workflow_result.get("workflow_futures_pnl_amount"),
-                    
+                    "workflow_overseas_stock_pnl_rate": base_workflow_result.get("workflow_overseas_stock_pnl_rate"),
+                    "workflow_overseas_stock_pnl_amount": base_workflow_result.get("workflow_overseas_stock_pnl_amount"),
+                    "workflow_overseas_futures_pnl_rate": base_workflow_result.get("workflow_overseas_futures_pnl_rate"),
+                    "workflow_overseas_futures_pnl_amount": base_workflow_result.get("workflow_overseas_futures_pnl_amount"),
+                    "workflow_korea_stock_pnl_rate": base_workflow_result.get("workflow_korea_stock_pnl_rate"),
+                    "workflow_korea_stock_pnl_amount": base_workflow_result.get("workflow_korea_stock_pnl_amount"),
+
                     # 신규 필드: 계좌 전체/상품별
                     "account_total_pnl_rate": account_result.get("account_total_pnl_rate"),
                     "account_total_pnl_amount": account_result.get("account_total_pnl_amount"),
                     "account_total_eval_amount": account_result.get("account_total_eval_amount"),
                     "account_total_buy_amount": account_result.get("account_total_buy_amount"),
-                    "account_stock_pnl_rate": account_result.get("account_stock_pnl_rate"),
-                    "account_stock_pnl_amount": account_result.get("account_stock_pnl_amount"),
-                    "account_futures_pnl_rate": account_result.get("account_futures_pnl_rate"),
-                    "account_futures_pnl_amount": account_result.get("account_futures_pnl_amount"),
+                    "account_overseas_stock_pnl_rate": account_result.get("account_overseas_stock_pnl_rate"),
+                    "account_overseas_stock_pnl_amount": account_result.get("account_overseas_stock_pnl_amount"),
+                    "account_overseas_futures_pnl_rate": account_result.get("account_overseas_futures_pnl_rate"),
+                    "account_overseas_futures_pnl_amount": account_result.get("account_overseas_futures_pnl_amount"),
+                    "account_korea_stock_pnl_rate": account_result.get("account_korea_stock_pnl_rate"),
+                    "account_korea_stock_pnl_amount": account_result.get("account_korea_stock_pnl_amount"),
 
                     # 총 포지션 수 (AccountPnLEvent.position_count 대체)
                     "total_position_count": len(account_positions) if account_positions else 0,
@@ -1686,16 +1690,20 @@ class ExecutionContext:
                         "competition_start_date": listener_start_date,
                         "competition_workflow_pnl_rate": competition_workflow.get("workflow_pnl_rate"),
                         "competition_workflow_pnl_amount": competition_workflow.get("workflow_pnl_amount"),
-                        "competition_workflow_stock_pnl_rate": competition_workflow.get("workflow_stock_pnl_rate"),
-                        "competition_workflow_stock_pnl_amount": competition_workflow.get("workflow_stock_pnl_amount"),
-                        "competition_workflow_futures_pnl_rate": competition_workflow.get("workflow_futures_pnl_rate"),
-                        "competition_workflow_futures_pnl_amount": competition_workflow.get("workflow_futures_pnl_amount"),
+                        "competition_workflow_overseas_stock_pnl_rate": competition_workflow.get("workflow_overseas_stock_pnl_rate"),
+                        "competition_workflow_overseas_stock_pnl_amount": competition_workflow.get("workflow_overseas_stock_pnl_amount"),
+                        "competition_workflow_overseas_futures_pnl_rate": competition_workflow.get("workflow_overseas_futures_pnl_rate"),
+                        "competition_workflow_overseas_futures_pnl_amount": competition_workflow.get("workflow_overseas_futures_pnl_amount"),
+                        "competition_workflow_korea_stock_pnl_rate": competition_workflow.get("workflow_korea_stock_pnl_rate"),
+                        "competition_workflow_korea_stock_pnl_amount": competition_workflow.get("workflow_korea_stock_pnl_amount"),
                         "competition_account_pnl_rate": competition_account.get("account_total_pnl_rate"),
                         "competition_account_pnl_amount": competition_account.get("account_total_pnl_amount"),
-                        "competition_account_stock_pnl_rate": competition_account.get("account_stock_pnl_rate"),
-                        "competition_account_stock_pnl_amount": competition_account.get("account_stock_pnl_amount"),
-                        "competition_account_futures_pnl_rate": competition_account.get("account_futures_pnl_rate"),
-                        "competition_account_futures_pnl_amount": competition_account.get("account_futures_pnl_amount"),
+                        "competition_account_overseas_stock_pnl_rate": competition_account.get("account_overseas_stock_pnl_rate"),
+                        "competition_account_overseas_stock_pnl_amount": competition_account.get("account_overseas_stock_pnl_amount"),
+                        "competition_account_overseas_futures_pnl_rate": competition_account.get("account_overseas_futures_pnl_rate"),
+                        "competition_account_overseas_futures_pnl_amount": competition_account.get("account_overseas_futures_pnl_amount"),
+                        "competition_account_korea_stock_pnl_rate": competition_account.get("account_korea_stock_pnl_rate"),
+                        "competition_account_korea_stock_pnl_amount": competition_account.get("account_korea_stock_pnl_amount"),
                     })
                 
                 event = WorkflowPnLEvent(**event_data)
@@ -1778,10 +1786,12 @@ class ExecutionContext:
                 "trust_score": 0,
                 "anomaly_count": 0,
                 # 상품별 필드는 tracker에서 채움 (여기서는 None)
-                "workflow_stock_pnl_rate": None,
-                "workflow_stock_pnl_amount": None,
-                "workflow_futures_pnl_rate": None,
-                "workflow_futures_pnl_amount": None,
+                "workflow_overseas_stock_pnl_rate": None,
+                "workflow_overseas_stock_pnl_amount": None,
+                "workflow_overseas_futures_pnl_rate": None,
+                "workflow_overseas_futures_pnl_amount": None,
+                "workflow_korea_stock_pnl_rate": None,
+                "workflow_korea_stock_pnl_amount": None,
             }
         
         # WorkflowPositionTracker로 FIFO 기반 분리 계산
@@ -1830,16 +1840,19 @@ class ExecutionContext:
             return {}
         
         # 상품별 분류
-        stock_positions = {}
-        futures_positions = {}
-        
+        overseas_stock_positions = {}
+        overseas_futures_positions = {}
+        korea_stock_positions = {}
+
         for symbol, pos in account_positions.items():
             pos_product = pos.get("product", "overseas_stock")
             if pos_product == "overseas_stock":
-                stock_positions[symbol] = pos
+                overseas_stock_positions[symbol] = pos
             elif pos_product == "overseas_futures":
-                futures_positions[symbol] = pos
-        
+                overseas_futures_positions[symbol] = pos
+            elif pos_product == "korea_stock":
+                korea_stock_positions[symbol] = pos
+
         # 상품별 수익률 계산
         def calc_pnl(positions: Dict[str, Any]) -> Dict[str, float]:
             total_eval = 0.0
@@ -1858,25 +1871,28 @@ class ExecutionContext:
                 "pnl_amount": pnl_amount,
                 "pnl_rate": pnl_rate,
             }
-        
-        stock_result = calc_pnl(stock_positions)
-        futures_result = calc_pnl(futures_positions)
-        
+
+        os_result = calc_pnl(overseas_stock_positions)
+        of_result = calc_pnl(overseas_futures_positions)
+        ks_result = calc_pnl(korea_stock_positions)
+
         # 전체 합산
-        total_eval = stock_result["eval"] + futures_result["eval"]
-        total_buy = stock_result["buy"] + futures_result["buy"]
+        total_eval = os_result["eval"] + of_result["eval"] + ks_result["eval"]
+        total_buy = os_result["buy"] + of_result["buy"] + ks_result["buy"]
         total_pnl = total_eval - total_buy
         total_pnl_rate = (total_pnl / total_buy * 100) if total_buy > 0 else 0.0
-        
+
         return {
             "account_total_pnl_rate": total_pnl_rate,
             "account_total_pnl_amount": total_pnl,
             "account_total_eval_amount": total_eval,
             "account_total_buy_amount": total_buy,
-            "account_stock_pnl_rate": stock_result["pnl_rate"],
-            "account_stock_pnl_amount": stock_result["pnl_amount"],
-            "account_futures_pnl_rate": futures_result["pnl_rate"],
-            "account_futures_pnl_amount": futures_result["pnl_amount"],
+            "account_overseas_stock_pnl_rate": os_result["pnl_rate"],
+            "account_overseas_stock_pnl_amount": os_result["pnl_amount"],
+            "account_overseas_futures_pnl_rate": of_result["pnl_rate"],
+            "account_overseas_futures_pnl_amount": of_result["pnl_amount"],
+            "account_korea_stock_pnl_rate": ks_result["pnl_rate"],
+            "account_korea_stock_pnl_amount": ks_result["pnl_amount"],
         }
 
     def init_workflow_position_tracker(
@@ -1896,7 +1912,7 @@ class ExecutionContext:
 
         Args:
             broker_node_id: BrokerNode ID (로그용)
-            product: 상품 유형 (overseas_stock, overseas_futures)
+            product: 상품 유형 (overseas_stock, overseas_futures, korea_stock)
             provider: 증권사 (ls, kiwoom, ...)
             paper_trading: 모의투자 모드 (True: 모의, False: 실전)
         """
@@ -1968,7 +1984,7 @@ class ExecutionContext:
 
         Args:
             features: 노드/플러그인이 선언한 risk feature 집합
-            product: 상품 유형 (overseas_stock, overseas_futures)
+            product: 상품 유형 (overseas_stock, overseas_futures, korea_stock)
             provider: 증권사 (ls, kiwoom, ...)
             paper_trading: 모의투자 모드
         """
@@ -2171,13 +2187,14 @@ class ExecutionContext:
                 try:
                     # 현재가로 PnL 계산 (체결가 사용)
                     current_prices = {symbol: price}
+                    currency = "KRW" if self._workflow_product == "korea_stock" else "USD"
                     await self.notify_workflow_pnl(
                         broker_node_id=self._workflow_broker_node_id,
                         product=self._workflow_product,
                         provider="ls-sec.co.kr",
                         current_prices=current_prices,
                         account_positions=None,  # 전체 포지션은 나중에 업데이트됨
-                        currency="USD",
+                        currency=currency,
                     )
                     logger.info(f"PnL refresh triggered after fill: {symbol}")
                 except Exception as pnl_err:
