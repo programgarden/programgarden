@@ -1,3 +1,17 @@
+## [1.9.2] - 2026-03-06
+### Changed
+- WorkflowPnLEvent 필드명 overseas/korea 명확 분리 (v2.0)
+  - `workflow_stock_pnl_rate` → `workflow_overseas_stock_pnl_rate`
+  - `account_stock_pnl_rate` → `account_overseas_stock_pnl_rate`
+  - `workflow_futures_pnl_rate` → `workflow_overseas_futures_pnl_rate`
+  - 동일 패턴으로 competition_* 필드도 overseas_ 접두사 적용
+### Added
+- WorkflowPnLEvent 국내주식(korea_stock) 전용 필드 추가
+  - `workflow_korea_stock_pnl_rate/amount`
+  - `account_korea_stock_pnl_rate/amount`
+  - `competition_workflow_korea_stock_pnl_rate/amount`
+  - `competition_account_korea_stock_pnl_rate/amount`
+
 ## [1.9.1] - 2026-03-04
 ### Changed
 - AIAgentNode: `tool_selection` 필드 `bm25` → `semantic` 변경, 기본값 `"semantic"`

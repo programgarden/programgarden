@@ -1,3 +1,19 @@
+## [1.15.2] - 2026-03-06
+### Added
+- **국내주식 WorkflowPnL FIFO 추적**: KrStockAccountTracker + SC1 체결 이벤트 연동
+  - `_start_korea_stock_tracker`: AccountTracker → notify_workflow_pnl (currency=KRW)
+  - `_subscribe_korea_stock_fill_events`: SC1 체결/정정/취소 → FIFO 포지션 추적
+  - `_get_korea_stock_tracker_data`: 국내주식 전용 tracker 데이터 추출
+- context.py `record_workflow_fill`: product별 currency 동적 결정 (KRW/USD)
+- `_calculate_account_pnl`: korea_stock 포지션 분류 추가
+### Changed
+- 기존 메서드 overseas 접두사 rename (8개)
+  - `_start_stock_tracker` → `_start_overseas_stock_tracker` 등
+- WorkflowPnLEvent 필드명 overseas/korea 분리 (context.py notify_workflow_pnl)
+
+### Dependencies
+- programgarden-core: ^1.9.1 → ^1.9.2
+
 ## [1.15.1] - 2026-03-04
 ### Changed
 - **AIAgent 도구 선택**: BM25 키워드 매칭 → FastEmbed 벡터 유사도 검색 전환
