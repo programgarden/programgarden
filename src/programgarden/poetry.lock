@@ -2803,15 +2803,15 @@ programgarden-core = ">=1.9.0,<2.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "1.9.1"
+version = "1.9.2"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_core-1.9.1-py3-none-any.whl", hash = "sha256:8213218de5876e156a12361a2a38994c8e3bc044ed15fef0dbf332a198b4c287"},
-    {file = "programgarden_core-1.9.1.tar.gz", hash = "sha256:b02fdb972c0a46d4a5f3c65bc9ac58c23d981837c35332dcf2aae751fa93c17e"},
+    {file = "programgarden_core-1.9.2-py3-none-any.whl", hash = "sha256:67d02cfdacdc0486a8747e6bce5b3296ab1d33917bcfed9929952b4f15eb958f"},
+    {file = "programgarden_core-1.9.2.tar.gz", hash = "sha256:90edfb0046b8c0711c5e8d366587604b418c2806b4a59ba2f6a1c6c24f0289d7"},
 ]
 
 [package.dependencies]
@@ -4558,4 +4558,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "3d529b5641a0dca82051243eacc3a747775f25d40b5759dc2b1fe4bfa0845725"
+content-hash = "a810ef7893c55a1c1372d5ae24724224aa47fa6cae47540626e4a6f913eba0ee"
