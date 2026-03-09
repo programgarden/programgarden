@@ -45,7 +45,7 @@ class LLMModelNode(BaseNode):
     # === LLM 설정 ===
     credential_id: Optional[str] = Field(
         default=None,
-        description="LLM API credential (llm_openai, llm_anthropic 등)",
+        description="LLM API credential (llm_openai, llm_anthropic, llm_deepseek 등)",
     )
     model: str = Field(
         default="gpt-4o",
@@ -100,7 +100,7 @@ class LLMModelNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
-                credential_types=["llm_openai", "llm_anthropic", "llm_google"],
+                credential_types=["llm_openai", "llm_anthropic", "llm_deepseek", "llm_google"],
             ),
             "model": FieldSchema(
                 name="model",

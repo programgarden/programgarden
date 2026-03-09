@@ -12228,6 +12228,7 @@ class LLMModelNodeExecutor(NodeExecutorBase):
     _CREDENTIAL_TYPE_TO_PROVIDER = {
         "llm_openai": "openai",
         "llm_anthropic": "anthropic",
+        "llm_deepseek": "deepseek",
         "llm_google": "gemini",
     }
 
