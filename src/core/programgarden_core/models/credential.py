@@ -578,6 +578,42 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
             ]
         }
     ),
+    "llm_deepseek": CredentialTypeSchema(
+        type_id="llm_deepseek",
+        name="DeepSeek (LLM)",
+        description="DeepSeek API - DeepSeek-V3, DeepSeek-R1 등",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-deepseek",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "provider",
+                    "type": "hidden",
+                    "default": "deepseek",
+                },
+                {
+                    "key": "api_key",
+                    "type": "password",
+                    "label": "API Key",
+                    "description": "DeepSeek API Key",
+                    "required": True
+                },
+                {
+                    "key": "base_url",
+                    "type": "text",
+                    "label": "Base URL",
+                    "description": "커스텀 엔드포인트 (선택)",
+                    "required": False
+                }
+            ]
+        }
+    ),
     "llm_google": CredentialTypeSchema(
         type_id="llm_google",
         name="Google Gemini (LLM)",
