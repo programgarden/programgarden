@@ -33,9 +33,11 @@ from programgarden_core.nodes.base import (
 from programgarden_community.nodes.data._parsers import (
     detect_format,
     parse_csv,
+    parse_docx,
     parse_json,
     parse_pdf,
     parse_txt,
+    parse_xlsx,
 )
 
 # 하드 리밋
@@ -92,7 +94,7 @@ class FileReaderNode(BaseNode):
     )
 
     # === 파싱 설정 ===
-    format: Literal["auto", "pdf", "txt", "csv", "json", "md"] = Field(
+    format: Literal["auto", "pdf", "txt", "csv", "json", "md", "docx", "xlsx"] = Field(
         default="auto",
         description="i18n:fields.FileReaderNode.format",
     )
@@ -119,6 +121,12 @@ class FileReaderNode(BaseNode):
     has_header: bool = Field(
         default=True,
         description="i18n:fields.FileReaderNode.has_header",
+    )
+
+    # XLSX 전용
+    sheet_name: Optional[str] = Field(
+        default=None,
+        description="i18n:fields.FileReaderNode.sheet_name",
     )
 
     # === 보안/제한 ===
@@ -206,7 +214,7 @@ class FileReaderNode(BaseNode):
                 type=FieldType.ENUM,
                 description="i18n:fields.FileReaderNode.format",
                 default="auto",
-                enum_values=["auto", "pdf", "txt", "csv", "json", "md"],
+                enum_values=["auto", "pdf", "txt", "csv", "json", "md", "docx", "xlsx"],
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -259,6 +267,15 @@ class FileReaderNode(BaseNode):
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 visible_when={"format": ["auto", "csv"]},
+            ),
+            "sheet_name": FieldSchema(
+                name="sheet_name",
+                type=FieldType.STRING,
+                description="i18n:fields.FileReaderNode.sheet_name",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                visible_when={"format": ["auto", "xlsx"]},
             ),
             "max_file_size_mb": FieldSchema(
                 name="max_file_size_mb",
@@ -395,6 +412,10 @@ class FileReaderNode(BaseNode):
             )
         elif fmt == "json":
             return parse_json(file_bytes, encoding=self.encoding)
+        elif fmt == "docx":
+            return parse_docx(file_bytes)
+        elif fmt == "xlsx":
+            return parse_xlsx(file_bytes, sheet_name=self.sheet_name)
         else:
             # 알 수 없는 포맷 → txt로 fallback
             return parse_txt(file_bytes, encoding=self.encoding)

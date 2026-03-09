@@ -174,6 +174,124 @@ def parse_json(
     return text, data, extra
 
 
+def parse_docx(
+    file_bytes: bytes,
+) -> Tuple[str, Any, Dict[str, Any]]:
+    """
+    DOCX 파싱 (python-docx 사용)
+
+    Returns:
+        (text, data, extra_metadata)
+        - text: 전체 문단 텍스트 (줄바꿈 연결)
+        - data: 테이블 목록 (list[list[list[str]]]) 또는 None
+        - extra_metadata: paragraph_count, table_count
+    """
+    try:
+        from docx import Document
+    except ImportError:
+        raise ImportError(
+            "DOCX 파싱에 python-docx가 필요합니다. "
+            "설치: pip install python-docx"
+        )
+
+    doc = Document(io.BytesIO(file_bytes))
+
+    # 문단 텍스트 추출
+    paragraphs = [p.text for p in doc.paragraphs]
+    full_text = "\n".join(paragraphs)
+
+    # 테이블 추출
+    tables = []
+    for table in doc.tables:
+        rows = []
+        for row in table.rows:
+            rows.append([cell.text for cell in row.cells])
+        tables.append(rows)
+
+    table_data = tables if tables else None
+
+    extra = {
+        "paragraph_count": len(paragraphs),
+        "table_count": len(doc.tables),
+    }
+
+    return full_text, table_data, extra
+
+
+def parse_xlsx(
+    file_bytes: bytes,
+    sheet_name: Optional[str] = None,
+) -> Tuple[str, Any, Dict[str, Any]]:
+    """
+    XLSX 파싱 (openpyxl 사용)
+
+    Args:
+        file_bytes: XLSX 파일 바이트
+        sheet_name: 시트명 (None=활성 시트)
+
+    Returns:
+        (text, data, extra_metadata)
+        - text: CSV 형식 텍스트
+        - data: list[dict] (첫 행을 헤더로 사용) 또는 list[list]
+        - extra_metadata: sheet_name, row_count, column_count, sheet_names
+    """
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        raise ImportError(
+            "XLSX 파싱에 openpyxl이 필요합니다. "
+            "설치: pip install openpyxl"
+        )
+
+    wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    sheet_names = wb.sheetnames
+
+    if sheet_name and sheet_name in sheet_names:
+        ws = wb[sheet_name]
+    else:
+        ws = wb.active
+        sheet_name = ws.title
+
+    # 모든 행 읽기
+    rows = []
+    for row in ws.iter_rows(values_only=True):
+        rows.append([str(cell) if cell is not None else "" for cell in row])
+
+    wb.close()
+
+    if not rows:
+        return "", [], {
+            "sheet_name": sheet_name,
+            "row_count": 0,
+            "column_count": 0,
+            "sheet_names": sheet_names,
+        }
+
+    # 첫 행을 헤더로 사용
+    headers = rows[0]
+    column_count = len(headers)
+
+    if len(rows) > 1:
+        data = [dict(zip(headers, row)) for row in rows[1:]]
+        row_count = len(data)
+    else:
+        data = []
+        row_count = 0
+
+    # CSV 형식 텍스트 생성
+    text_lines = [",".join(row) for row in rows]
+    text = "\n".join(text_lines)
+
+    extra = {
+        "sheet_name": sheet_name,
+        "row_count": row_count,
+        "column_count": column_count,
+        "sheet_names": sheet_names,
+    }
+
+    return text, data, extra
+
+
 # 포맷 → 확장자 매핑
 EXTENSION_MAP = {
     ".pdf": "pdf",
@@ -181,6 +299,8 @@ EXTENSION_MAP = {
     ".csv": "csv",
     ".json": "json",
     ".md": "md",
+    ".docx": "docx",
+    ".xlsx": "xlsx",
 }
 
 # PDF 매직 바이트
