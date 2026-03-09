@@ -32,7 +32,7 @@ src/
 └── community/          # programgarden-community: 67 strategy plugins + 3 community nodes
     └── programgarden_community/
         ├── plugins/    # 67 strategy plugins (RSI, MACD, Ichimoku, ZScore, PairTrading, TurtleBreakout, MagicFormula, SupportResistanceLevels, LevelTouch, etc.)
-        └── nodes/      # Community nodes (TelegramNode, FearGreedIndexNode, FundamentalDataNode)
+        └── nodes/      # Community nodes (TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode)
 ```
 
 ## Development Commands
@@ -136,7 +136,7 @@ When a node outputs an array, the next node automatically executes for each item
 | `format` | pct(), currency(), number() | `{{ format.pct(12.34) }}` → "12.34%" |
 | `lst` | first(), last(), count(), pluck(), flatten() | `{{ lst.pluck(items, 'name') }}` |
 
-### Node Categories (12, 71 nodes)
+### Node Categories (12, 72 nodes)
 
 | Category | Nodes |
 |----------|-------|
@@ -147,7 +147,7 @@ When a node outputs an array, the next node automatically executes for each item
 | order | OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode, OverseasFuturesNewOrderNode, OverseasFuturesModifyOrderNode, OverseasFuturesCancelOrderNode, PositionSizingNode, KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode |
 | risk | PortfolioNode |
 | schedule | ScheduleNode, TradingHoursFilterNode |
-| data | SQLiteNode, HTTPRequestNode, FieldMappingNode |
+| data | SQLiteNode, HTTPRequestNode, FieldMappingNode, FileReaderNode |
 | display | TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
 | analysis | BacktestEngineNode, BenchmarkCompareNode |
 | ai | LLMModelNode, AIAgentNode |
