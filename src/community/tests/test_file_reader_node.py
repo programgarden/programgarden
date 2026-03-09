@@ -2,12 +2,15 @@
 FileReaderNode 단위 테스트
 
 Phase 1: 코어 파서 (PDF/TXT/CSV/JSON/MD) + 복수 파일 + 보안
+Phase 2: DOCX/XLSX 확장 + PDF 테이블
 """
 
 import asyncio
 import base64
+import io
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -19,9 +22,11 @@ from programgarden_community.nodes.data._parsers import (
     _parse_page_range,
     detect_format,
     parse_csv,
+    parse_docx,
     parse_json,
     parse_pdf,
     parse_txt,
+    parse_xlsx,
 )
 from programgarden_community.nodes.data.file_reader import (
     FileReaderNode,
@@ -706,6 +711,361 @@ class TestExtensionMap:
         assert EXTENSION_MAP[".csv"] == "csv"
         assert EXTENSION_MAP[".json"] == "json"
         assert EXTENSION_MAP[".md"] == "md"
+        assert EXTENSION_MAP[".docx"] == "docx"
+        assert EXTENSION_MAP[".xlsx"] == "xlsx"
 
     def test_unsupported_extension(self):
         assert ".xyz" not in EXTENSION_MAP
+
+
+# ============================================================
+# Phase 2: DOCX/XLSX 파서 + PDF 테이블 테스트
+# ============================================================
+
+
+def _create_docx_bytes(paragraphs, tables=None):
+    """테스트용 DOCX 바이트 생성"""
+    from docx import Document
+
+    doc = Document()
+    for p in paragraphs:
+        doc.add_paragraph(p)
+    if tables:
+        for table_data in tables:
+            rows, cols = len(table_data), len(table_data[0])
+            tbl = doc.add_table(rows=rows, cols=cols)
+            for i, row_data in enumerate(table_data):
+                for j, cell_text in enumerate(row_data):
+                    tbl.rows[i].cells[j].text = cell_text
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _create_xlsx_bytes(sheets):
+    """
+    테스트용 XLSX 바이트 생성
+
+    Args:
+        sheets: dict[sheet_name, list[list[value]]]
+    """
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    first = True
+    for name, rows in sheets.items():
+        if first:
+            ws = wb.active
+            ws.title = name
+            first = False
+        else:
+            ws = wb.create_sheet(name)
+        for row in rows:
+            ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+class TestParseDocx:
+    """DOCX 파서 테스트"""
+
+    def test_basic_paragraphs(self):
+        data = _create_docx_bytes(["Hello", "World"])
+        text, tbl_data, meta = parse_docx(data)
+        assert "Hello" in text
+        assert "World" in text
+        assert meta["paragraph_count"] == 2
+        assert meta["table_count"] == 0
+        assert tbl_data is None
+
+    def test_with_table(self):
+        table = [["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]
+        data = _create_docx_bytes(["Header"], tables=[table])
+        text, tbl_data, meta = parse_docx(data)
+        assert "Header" in text
+        assert meta["table_count"] == 1
+        assert tbl_data is not None
+        assert len(tbl_data) == 1
+        assert tbl_data[0][0] == ["Name", "Age"]
+        assert tbl_data[0][1] == ["Alice", "30"]
+
+    def test_multiple_tables(self):
+        t1 = [["A", "B"], ["1", "2"]]
+        t2 = [["X", "Y"], ["3", "4"]]
+        data = _create_docx_bytes(["Doc"], tables=[t1, t2])
+        text, tbl_data, meta = parse_docx(data)
+        assert meta["table_count"] == 2
+        assert len(tbl_data) == 2
+
+    def test_empty_document(self):
+        data = _create_docx_bytes([])
+        text, tbl_data, meta = parse_docx(data)
+        assert text == ""
+        assert meta["paragraph_count"] == 0
+        assert tbl_data is None
+
+    def test_korean_content(self):
+        data = _create_docx_bytes(["안녕하세요", "테스트 문서"])
+        text, tbl_data, meta = parse_docx(data)
+        assert "안녕하세요" in text
+        assert "테스트 문서" in text
+
+    def test_import_error_guard(self):
+        with patch.dict("sys.modules", {"docx": None}):
+            with pytest.raises(ImportError, match="python-docx"):
+                parse_docx(b"fake")
+
+
+class TestParseXlsx:
+    """XLSX 파서 테스트"""
+
+    def test_basic_sheet(self):
+        data = _create_xlsx_bytes({"Sheet1": [["Name", "Price"], ["AAPL", 150], ["GOOG", 2800]]})
+        text, parsed, meta = parse_xlsx(data)
+        assert isinstance(parsed, list)
+        assert len(parsed) == 2
+        assert parsed[0]["Name"] == "AAPL"
+        assert parsed[0]["Price"] == "150"
+        assert meta["row_count"] == 2
+        assert meta["column_count"] == 2
+        assert meta["sheet_name"] == "Sheet1"
+
+    def test_specific_sheet(self):
+        data = _create_xlsx_bytes({
+            "Sheet1": [["A", "B"], ["1", "2"]],
+            "Data": [["X", "Y"], ["3", "4"]],
+        })
+        text, parsed, meta = parse_xlsx(data, sheet_name="Data")
+        assert meta["sheet_name"] == "Data"
+        assert parsed[0]["X"] == "3"
+
+    def test_default_active_sheet(self):
+        data = _create_xlsx_bytes({"First": [["Col"], ["val"]]})
+        text, parsed, meta = parse_xlsx(data)
+        assert meta["sheet_name"] == "First"
+
+    def test_sheet_names_in_metadata(self):
+        data = _create_xlsx_bytes({
+            "A": [["h"], ["v"]],
+            "B": [["h"], ["v"]],
+        })
+        text, parsed, meta = parse_xlsx(data)
+        assert "A" in meta["sheet_names"]
+        assert "B" in meta["sheet_names"]
+
+    def test_empty_sheet(self):
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Empty"
+        buf = io.BytesIO()
+        wb.save(buf)
+
+        text, parsed, meta = parse_xlsx(buf.getvalue())
+        assert parsed == []
+        assert meta["row_count"] == 0
+
+    def test_header_only(self):
+        data = _create_xlsx_bytes({"Sheet1": [["A", "B", "C"]]})
+        text, parsed, meta = parse_xlsx(data)
+        assert parsed == []
+        assert meta["row_count"] == 0
+        assert meta["column_count"] == 3
+
+    def test_csv_text_output(self):
+        data = _create_xlsx_bytes({"Sheet1": [["a", "b"], [1, 2]]})
+        text, parsed, meta = parse_xlsx(data)
+        assert "a,b" in text
+        assert "1,2" in text
+
+    def test_none_cells_as_empty_string(self):
+        """None 셀은 빈 문자열로 변환"""
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["A", "B"])
+        ws.append([1, None])
+        buf = io.BytesIO()
+        wb.save(buf)
+
+        text, parsed, meta = parse_xlsx(buf.getvalue())
+        assert parsed[0]["B"] == ""
+
+    def test_import_error_guard(self):
+        with patch.dict("sys.modules", {"openpyxl": None}):
+            with pytest.raises(ImportError, match="openpyxl"):
+                parse_xlsx(b"fake")
+
+    def test_nonexistent_sheet_falls_back_to_active(self):
+        data = _create_xlsx_bytes({"Sheet1": [["H"], ["V"]]})
+        text, parsed, meta = parse_xlsx(data, sheet_name="NonExistent")
+        assert meta["sheet_name"] == "Sheet1"
+
+
+class TestPdfTables:
+    """PDF 테이블 추출 테스트 (pdfplumber mock)"""
+
+    @patch("pdfplumber.open")
+    @patch("pypdf.PdfReader")
+    def test_extract_tables(self, mock_pdf_cls, mock_plumber):
+        # pypdf mock
+        mock_page = MagicMock()
+        mock_page.extract_text.return_value = "Text content"
+        mock_reader = MagicMock()
+        mock_reader.pages = [mock_page]
+        mock_pdf_cls.return_value = mock_reader
+
+        # pdfplumber mock
+        mock_pb_page = MagicMock()
+        mock_pb_page.extract_tables.return_value = [
+            [["A", "B"], ["1", "2"]],
+        ]
+        mock_pdf_obj = MagicMock()
+        mock_pdf_obj.pages = [mock_pb_page]
+        mock_pdf_obj.__enter__ = lambda s: s
+        mock_pdf_obj.__exit__ = MagicMock(return_value=False)
+        mock_plumber.return_value = mock_pdf_obj
+
+        text, table_data, meta = parse_pdf(b"%PDF-fake", extract_tables=True)
+        assert "Text content" in text
+        assert table_data is not None
+        assert len(table_data) == 1
+        assert table_data[0] == [["A", "B"], ["1", "2"]]
+
+    @patch("pdfplumber.open")
+    @patch("pypdf.PdfReader")
+    def test_no_tables_returns_none(self, mock_pdf_cls, mock_plumber):
+        mock_page = MagicMock()
+        mock_page.extract_text.return_value = "No tables"
+        mock_reader = MagicMock()
+        mock_reader.pages = [mock_page]
+        mock_pdf_cls.return_value = mock_reader
+
+        mock_pb_page = MagicMock()
+        mock_pb_page.extract_tables.return_value = []
+        mock_pdf_obj = MagicMock()
+        mock_pdf_obj.pages = [mock_pb_page]
+        mock_pdf_obj.__enter__ = lambda s: s
+        mock_pdf_obj.__exit__ = MagicMock(return_value=False)
+        mock_plumber.return_value = mock_pdf_obj
+
+        text, table_data, meta = parse_pdf(b"%PDF-fake", extract_tables=True)
+        assert table_data is None
+
+    def test_pdfplumber_import_error(self):
+        with patch.dict("sys.modules", {"pdfplumber": None}):
+            from programgarden_community.nodes.data._parsers import _extract_pdf_tables
+            with pytest.raises(ImportError, match="pdfplumber"):
+                _extract_pdf_tables(b"%PDF-fake", [0])
+
+
+class TestFileReaderNodeDocx:
+    """FileReaderNode DOCX 통합 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_docx_via_base64(self):
+        docx_bytes = _create_docx_bytes(["Hello DOCX", "Second paragraph"])
+        b64 = base64.b64encode(docx_bytes).decode()
+        node = FileReaderNode(id="fr1", file_data=b64, file_name="doc.docx")
+        result = await node.execute(None)
+
+        assert "Hello DOCX" in result["texts"][0]
+        assert result["metadata"][0]["format"] == "docx"
+        assert result["metadata"][0]["paragraph_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_docx_with_table(self):
+        table = [["Symbol", "Price"], ["AAPL", "150"]]
+        docx_bytes = _create_docx_bytes(["Portfolio"], tables=[table])
+        b64 = base64.b64encode(docx_bytes).decode()
+        node = FileReaderNode(id="fr1", file_data=b64, file_name="report.docx")
+        result = await node.execute(None)
+
+        assert result["data_list"][0] is not None  # 테이블 데이터
+        assert result["metadata"][0]["table_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_docx_explicit_format(self):
+        docx_bytes = _create_docx_bytes(["Test"])
+        b64 = base64.b64encode(docx_bytes).decode()
+        node = FileReaderNode(id="fr1", file_data=b64, file_name="noext", format="docx")
+        result = await node.execute(None)
+
+        assert result["metadata"][0]["format"] == "docx"
+
+
+class TestFileReaderNodeXlsx:
+    """FileReaderNode XLSX 통합 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_xlsx_via_base64(self):
+        xlsx_bytes = _create_xlsx_bytes({"Sheet1": [["Name", "Value"], ["A", "1"]]})
+        b64 = base64.b64encode(xlsx_bytes).decode()
+        node = FileReaderNode(id="fr1", file_data=b64, file_name="data.xlsx")
+        result = await node.execute(None)
+
+        assert result["metadata"][0]["format"] == "xlsx"
+        data = result["data_list"][0]
+        assert len(data) == 1
+        assert data[0]["Name"] == "A"
+
+    @pytest.mark.asyncio
+    async def test_xlsx_specific_sheet(self):
+        xlsx_bytes = _create_xlsx_bytes({
+            "Summary": [["H"], ["V"]],
+            "Details": [["X", "Y"], ["1", "2"]],
+        })
+        b64 = base64.b64encode(xlsx_bytes).decode()
+        node = FileReaderNode(
+            id="fr1", file_data=b64, file_name="multi.xlsx", sheet_name="Details"
+        )
+        result = await node.execute(None)
+
+        assert result["metadata"][0]["sheet_name"] == "Details"
+        assert result["data_list"][0][0]["X"] == "1"
+
+    @pytest.mark.asyncio
+    async def test_xlsx_explicit_format(self):
+        xlsx_bytes = _create_xlsx_bytes({"S1": [["A"], ["B"]]})
+        b64 = base64.b64encode(xlsx_bytes).decode()
+        node = FileReaderNode(id="fr1", file_data=b64, file_name="noext", format="xlsx")
+        result = await node.execute(None)
+
+        assert result["metadata"][0]["format"] == "xlsx"
+
+
+class TestDetectFormatPhase2:
+    """Phase 2 포맷 감지 확장 테스트"""
+
+    def test_docx_by_extension(self):
+        assert detect_format(file_name="report.docx") == "docx"
+
+    def test_xlsx_by_extension(self):
+        assert detect_format(file_name="data.xlsx") == "xlsx"
+
+    def test_docx_case_insensitive(self):
+        assert detect_format(file_name="Report.DOCX") == "docx"
+
+    def test_xlsx_case_insensitive(self):
+        assert detect_format(file_name="Data.XLSX") == "xlsx"
+
+    def test_docx_by_path(self):
+        assert detect_format(file_path="uploads/report.docx") == "docx"
+
+    def test_xlsx_by_path(self):
+        assert detect_format(file_path="/app/data/sheet.xlsx") == "xlsx"
+
+
+class TestFileReaderNodeFieldSchemaPhase2:
+    """Phase 2 FieldSchema 추가 검증"""
+
+    def test_sheet_name_in_schema(self):
+        schema = FileReaderNode.get_field_schema()
+        assert "sheet_name" in schema
+
+    def test_format_enum_includes_new_types(self):
+        schema = FileReaderNode.get_field_schema()
+        fmt = schema["format"]
+        assert "docx" in fmt.enum_values
+        assert "xlsx" in fmt.enum_values

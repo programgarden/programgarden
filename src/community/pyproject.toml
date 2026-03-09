@@ -18,10 +18,19 @@ packages = [
 programgarden-core = { path = "../core", develop = true }
 pypdf = ">=4.0.0"
 
+[tool.poetry.extras]
+docx = ["python-docx"]
+xlsx = ["openpyxl"]
+pdf-tables = ["pdfplumber"]
+all-parsers = ["python-docx", "openpyxl", "pdfplumber"]
+
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
 pytest-asyncio = "^0.21.0"
+python-docx = "^1.2.0"
+openpyxl = "^3.1.5"
+pdfplumber = "^0.11.9"
 
 
 [[tool.poetry.source]]
