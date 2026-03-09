@@ -64,6 +64,23 @@ def register_all_nodes() -> None:
         except ValueError as e:
             pass
 
+    # === Data Nodes ===
+    from programgarden_community.nodes.data import FileReaderNode
+
+    data_nodes = [
+        FileReaderNode,
+    ]
+
+    for node_class in data_nodes:
+        try:
+            registry.register_community(
+                node_class,
+                source="community",
+                trust_level="community",
+            )
+        except ValueError as e:
+            pass
+
 
 def get_community_node_list() -> list:
     """
@@ -87,6 +104,12 @@ def get_community_node_list() -> list:
             "category": "market",
             "description": "Financial data via FMP API (profile, income statement, balance sheet, key metrics)",
             "requires_credential": True,
+        },
+        {
+            "type": "FileReaderNode",
+            "category": "data",
+            "description": "Read and parse files (PDF, TXT, CSV, JSON, MD)",
+            "requires_credential": False,
         },
         # 향후 추가될 노드들: SlackNode, DiscordNode, etc.
     ]
