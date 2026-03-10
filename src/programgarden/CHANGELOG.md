@@ -1,3 +1,12 @@
+## [1.15.3] - 2026-03-10
+### Added
+- DeepSeek LLM provider executor 매핑 (`llm_deepseek` → deepseek provider)
+- FileReaderNode executor 통합 (GenericNodeExecutor fallback)
+- FileReaderNode 통합 테스트 18개 (디스패치, 워크플로우 JSON, AIAgentNode tool)
+### Dependencies
+- programgarden-core: ^1.9.2 → ^1.9.3
+- programgarden-community: ^1.10.2 → ^1.10.3
+
 ## [1.15.2] - 2026-03-06
 ### Added
 - **국내주식 WorkflowPnL FIFO 추적**: KrStockAccountTracker + SC1 체결 이벤트 연동

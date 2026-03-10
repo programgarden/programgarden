@@ -1,3 +1,9 @@
+## [1.9.3] - 2026-03-10
+### Added
+- DeepSeek LLM provider credential 스키마 추가 (`llm_deepseek`)
+- LLMModelNode credential_types에 `llm_deepseek` 추가
+- FileReaderNode i18n 번역 키 33개 (ko/en) — 노드명, 필드 설명, 출력 포트
+
 ## [1.9.2] - 2026-03-06
 ### Changed
 - WorkflowPnLEvent 필드명 overseas/korea 명확 분리 (v2.0)
