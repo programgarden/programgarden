@@ -119,18 +119,26 @@ class TestSQLQueryBuilder:
 
 class MockExecutionContext:
     """테스트용 Mock ExecutionContext"""
-    
+
     def __init__(self, workspace_path: str):
         self.workspace_path = workspace_path
+        self._storage_dir = workspace_path
         self.logs = []
-    
+
     def log(self, level: str, message: str, node_id: str = None):
         self.logs.append({"level": level, "message": message, "node_id": node_id})
-    
+
     def get_log_messages(self, level: str = None) -> list:
         if level:
             return [l["message"] for l in self.logs if l["level"] == level]
         return [l["message"] for l in self.logs]
+
+    def _resolve_db_path(self, db_filename: str) -> str:
+        """테스트용 DB 경로 결정 — workspace_path 사용"""
+        from pathlib import Path
+        db_dir = Path(self._storage_dir)
+        db_dir.mkdir(parents=True, exist_ok=True)
+        return str(db_dir / db_filename)
 
 
 class TestSQLiteNodeExecutor:
@@ -169,8 +177,8 @@ class TestSQLiteNodeExecutor:
         assert "error" not in result or result.get("error") is None
         # DDL 쿼리는 affected_count가 -1일 수 있음 (정상)
         
-        # DB 파일 생성 확인
-        db_path = os.path.join(temp_workspace, "programgarden_data", "test.db")
+        # DB 파일 생성 확인 (_resolve_db_path → workspace 직하)
+        db_path = os.path.join(temp_workspace, "test.db")
         assert os.path.exists(db_path)
     
     @pytest.mark.asyncio
@@ -383,18 +391,18 @@ class TestSQLiteNodeExecutor:
     
     @pytest.mark.asyncio
     async def test_data_dir_auto_creation(self, executor, context, temp_workspace):
-        """programgarden_data/ 폴더 자동 생성 확인"""
-        data_dir = os.path.join(temp_workspace, "programgarden_data")
-        assert not os.path.exists(data_dir)
-        
+        """_resolve_db_path를 통한 DB 파일 자동 생성 확인"""
+        db_file = os.path.join(temp_workspace, "auto_created.db")
+        assert not os.path.exists(db_file)
+
         await executor.execute("sqlite_1", "SQLiteNode", {
             "db_name": "auto_created.db",
             "operation": "execute_query",
             "query": "SELECT 1",
         }, context)
-        
-        assert os.path.exists(data_dir)
-        assert os.path.exists(os.path.join(data_dir, "auto_created.db"))
+
+        assert os.path.exists(temp_workspace)
+        assert os.path.exists(db_file)
 
 
 class TestSQLiteTools:

@@ -1,3 +1,17 @@
+## [1.10.3] - 2026-03-10
+### Added
+- FileReaderNode 신규 추가 (community 4번째 노드, data 카테고리)
+  - 지원 포맷: PDF(pypdf), TXT, CSV, JSON, MD, DOCX(python-docx), XLSX(openpyxl)
+  - PDF 테이블 추출: pdfplumber (extract_tables=True)
+  - 복수 파일 일괄 처리, auto-iterate 호환 배열 출력
+  - 보안: /app/data/ 경로 제한, max_file_size_mb, 최대 20개
+  - is_tool_enabled=True (AIAgentNode 도구로 사용 가능)
+- extras 설정: docx, xlsx, pdf-tables, all-parsers
+- 테스트 108개 추가 (총 1018개)
+### Dependencies
+- programgarden-core ^1.9.3
+- pypdf >=4.0.0 (기본), python-docx/openpyxl/pdfplumber (extras)
+
 ## [1.10.2] - 2026-03-04
 ### Dependencies
 - programgarden-core ^1.9.0 (국내주식 노드 포함)

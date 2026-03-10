@@ -2787,31 +2787,32 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "1.10.2"
+version = "1.10.3"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_community-1.10.2-py3-none-any.whl", hash = "sha256:8f5096a42607c6a25953c48c201944a9fe2719ad1f8a7fc94b598c6d822ce5a7"},
-    {file = "programgarden_community-1.10.2.tar.gz", hash = "sha256:8e2170baa58af34ac556ac5b3c36a6d5c16986c0d5677922e4cd178edaca9e84"},
+    {file = "programgarden_community-1.10.3-py3-none-any.whl", hash = "sha256:ce6cf38939e3be1f46a04c660ea98cc79f8df01648876d37f58a2a0d3efdf7ab"},
+    {file = "programgarden_community-1.10.3.tar.gz", hash = "sha256:ae6a711d8faabbbda759b765829c0c1e398fc83e1506ccfc6dcf831296bc5afa"},
 ]
 
 [package.dependencies]
-programgarden-core = ">=1.9.0,<2.0.0"
+programgarden-core = ">=1.9.3,<2.0.0"
+pypdf = ">=4.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "1.9.2"
+version = "1.9.3"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_core-1.9.2-py3-none-any.whl", hash = "sha256:67d02cfdacdc0486a8747e6bce5b3296ab1d33917bcfed9929952b4f15eb958f"},
-    {file = "programgarden_core-1.9.2.tar.gz", hash = "sha256:90edfb0046b8c0711c5e8d366587604b418c2806b4a59ba2f6a1c6c24f0289d7"},
+    {file = "programgarden_core-1.9.3-py3-none-any.whl", hash = "sha256:e96a4634f0f3c95b6d571f3dcb7b7c13fcb270809654ab7b1d6f48a119d19f4b"},
+    {file = "programgarden_core-1.9.3.tar.gz", hash = "sha256:cc2029c89ef0d88c4e837b09a501c494cf3b2b6647a9e97ded20042057e2b75d"},
 ]
 
 [package.dependencies]
@@ -3365,6 +3366,27 @@ files = [
 
 [package.extras]
 windows-terminal = ["colorama (>=0.4.6)"]
+
+[[package]]
+name = "pypdf"
+version = "6.8.0"
+description = "A pure-python PDF library capable of splitting, merging, cropping, and transforming PDF files"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
+files = [
+    {file = "pypdf-6.8.0-py3-none-any.whl", hash = "sha256:2a025080a8dd73f48123c89c57174a5ff3806c71763ee4e49572dc90454943c7"},
+    {file = "pypdf-6.8.0.tar.gz", hash = "sha256:cb7eaeaa4133ce76f762184069a854e03f4d9a08568f0e0623f7ea810407833b"},
+]
+
+[package.extras]
+crypto = ["cryptography"]
+cryptodome = ["PyCryptodome"]
+dev = ["flit", "pip-tools", "pre-commit", "pytest-cov", "pytest-socket", "pytest-timeout", "pytest-xdist", "wheel"]
+docs = ["myst_parser", "sphinx", "sphinx_rtd_theme"]
+full = ["Pillow (>=8.0.0)", "cryptography"]
+image = ["Pillow (>=8.0.0)"]
 
 [[package]]
 name = "pytest"
@@ -4558,4 +4580,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "a810ef7893c55a1c1372d5ae24724224aa47fa6cae47540626e4a6f913eba0ee"
+content-hash = "00dee30210787f06962aa69964ddbe698144a27e4afaa3d1bac2aca7b815a3b5"
