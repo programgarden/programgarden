@@ -1,3 +1,17 @@
+## [1.15.4] - 2026-03-11
+### Fixed
+- emit_realtime_update() 리스너 버그 3건 수정
+  - `self._listener`(미존재) → `self._listeners` 변수명 수정
+  - `extra=data` → `data=data` (LogEvent 스키마 준수)
+  - `job_id` 누락 필드 추가 + 전체 리스너 루프 순회
+### Added
+- 리스너 타입 16개 re-export: `from programgarden import RetryEvent, BaseExecutionListener, ...`
+  - NodeState, EdgeState, NodeStateEvent, EdgeStateEvent, LogEvent, JobStateEvent
+  - DisplayDataEvent, WorkflowPnLEvent, RiskEvent, LLMStreamEvent, TokenUsageEvent
+  - AIToolCallEvent, RestartEvent, RetryEvent, ExecutionListener, BaseExecutionListener
+### Dependencies
+- programgarden-core: ^1.9.3 → ^1.9.4
+
 ## [1.15.3] - 2026-03-10
 ### Added
 - DeepSeek LLM provider executor 매핑 (`llm_deepseek` → deepseek provider)
