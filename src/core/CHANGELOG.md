@@ -1,3 +1,9 @@
+## [1.9.4] - 2026-03-11
+### Fixed
+- RetryEvent를 `programgarden_core.bases.listener`에서 직접 import 가능하도록 수정
+  - 기존: `TYPE_CHECKING` 블록 안에서만 import → 런타임 ImportError 발생
+  - 수정: 런타임 import로 변경
+
 ## [1.9.3] - 2026-03-10
 ### Added
 - DeepSeek LLM provider credential 스키마 추가 (`llm_deepseek`)
