@@ -857,17 +857,21 @@ class ExecutionContext:
         logger.debug(f"Realtime update from {node_id}: {data}")
         
         # Notify listeners if any are registered
-        if self._listener:
-            try:
-                # Create a log event for realtime updates (could be a dedicated event type later)
-                self._listener.on_log(LogEvent(
-                    node_id=node_id,
-                    level="debug",
-                    message=f"Realtime: {data.get('symbol', '')} price={data.get('price', '')} vol={data.get('volume', '')}",
-                    extra=data,
-                ))
-            except Exception as e:
-                logger.warning(f"Error notifying listener of realtime update: {e}")
+        if self._listeners:
+            log_event = LogEvent(
+                job_id=self._job_id or "",
+                node_id=node_id,
+                level="debug",
+                message=f"Realtime: {data.get('symbol', '')} price={data.get('price', '')} vol={data.get('volume', '')}",
+                data=data,
+            )
+            for listener in self._listeners:
+                try:
+                    result = listener.on_log(log_event)
+                    if asyncio.iscoroutine(result):
+                        asyncio.ensure_future(result)
+                except Exception as e:
+                    logger.warning(f"Error notifying listener of realtime update: {e}")
         
         # TODO: Future enhancement - trigger downstream nodes in real-time
         # This would require an event-driven execution model where nodes
