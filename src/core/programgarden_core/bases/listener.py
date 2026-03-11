@@ -27,14 +27,13 @@ Usage:
     job.add_listener(MyListener())
 """
 
-from typing import Protocol, Optional, Dict, Any, List, Union, runtime_checkable, TYPE_CHECKING
+from typing import Protocol, Optional, Dict, Any, List, Union, runtime_checkable
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 
-if TYPE_CHECKING:
-    from programgarden_core.models.resilience import RetryEvent
+from programgarden_core.models.resilience import RetryEvent
 
 
 class NodeState(str, Enum):
