@@ -164,7 +164,7 @@ When a node outputs an array, the next node automatically executes for each item
 | `on_node_state_change` | Node state change (pending/running/completed/failed) |
 | `on_edge_state_change` | Edge state change |
 | `on_log` | Log events |
-| `on_job_state_change` | Job state change |
+| `on_job_state_change` | Job state change (running/cycle_completed/completed/failed/cancelled) |
 | `on_display_data` | Display data |
 | `on_workflow_pnl_update` | Real-time workflow/account P&L (FIFO-based, auto-detected) |
 | `on_retry` | Node retry event (attempt count, error type, next retry delay) |

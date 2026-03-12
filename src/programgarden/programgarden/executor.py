@@ -2006,12 +2006,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
             context.log("info", f"Broker credentials stored (paper_trading={paper_trading})", node_id)
         else:
             context.log("warning", "No credentials found - some features may not work", node_id)
-        
+
         # provider 매핑 (company -> provider)
         if company == "ls":
             provider = "ls-sec.co.kr"
-        
-        context.log("info", f"Broker connected: {provider} ({product}, paper_trading={paper_trading})", node_id)
+
+        if appkey and appsecret:
+            context.log("info", f"Broker connected: {provider} ({product}, paper_trading={paper_trading})", node_id)
+        else:
+            context.log("warning", f"Broker initialized without credentials: {provider} ({product}, paper_trading={paper_trading})", node_id)
         
         # ========================================
         # 워크플로우 포지션 추적기 초기화 (리스너 자동 감지)
@@ -6088,7 +6091,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
         from datetime import datetime
         import json
         
-        chart_type = config.get("chart_type", "summary")
+        # node_type별 chart_type 자동 매핑 (TableDisplayNode 등 개별 노드 지원)
+        _NODE_TYPE_TO_CHART = {
+            "TableDisplayNode": "table",
+            "LineChartNode": "line",
+            "MultiLineChartNode": "multi_line",
+            "CandlestickChartNode": "candlestick",
+            "BarChartNode": "bar",
+            "SummaryDisplayNode": "summary",
+        }
+        chart_type = config.get("chart_type") or _NODE_TYPE_TO_CHART.get(node_type, "summary")
         title = config.get("title", "")
         
         # 데이터 가져오기
@@ -13544,6 +13556,12 @@ class WorkflowExecutor:
             "OverseasStockRealOrderEventNode": RealOrderEventNodeExecutor(),
             "OverseasFuturesRealOrderEventNode": RealOrderEventNodeExecutor(),
             "DisplayNode": DisplayNodeExecutor(),
+            "TableDisplayNode": DisplayNodeExecutor(),
+            "LineChartNode": DisplayNodeExecutor(),
+            "MultiLineChartNode": DisplayNodeExecutor(),
+            "CandlestickChartNode": DisplayNodeExecutor(),
+            "BarChartNode": DisplayNodeExecutor(),
+            "SummaryDisplayNode": DisplayNodeExecutor(),
             "ConditionNode": ConditionNodeExecutor(),
             "LogicNode": LogicNodeExecutor(),  # 조건 조합
             "IfNode": IfNodeExecutor(),  # 조건 분기
@@ -14308,6 +14326,7 @@ class WorkflowJob:
             else:
                 await self._execute_main_flow()
             self.stats["flow_executions"] += 1
+            await self.context.notify_job_state("cycle_completed", self.stats)
 
             # Phase 1.5: Cleanup stay_connected=False nodes
             await self.context.cleanup_flow_end_nodes()
@@ -15328,23 +15347,27 @@ class WorkflowJob:
             if event.type == "realtime_update":
                 self.stats["realtime_updates"] += 1
                 await self._handle_realtime_update(event)
-            
+                await self.context.notify_job_state("cycle_completed", self.stats)
+
             elif event.type == "order_event":
                 # 주문 이벤트도 실시간 업데이트와 동일하게 처리
                 self.stats["realtime_updates"] += 1
                 await self._handle_realtime_update(event)
-            
+                await self.context.notify_job_state("cycle_completed", self.stats)
+
             elif event.type == "market_data":
                 # RealMarketDataNode에서 발생하는 시세 이벤트 → DisplayNode 트리거
                 try:
                     self.stats["realtime_updates"] += 1
                     await self._handle_realtime_update(event)
+                    await self.context.notify_job_state("cycle_completed", self.stats)
                 except Exception as e:
                     logger.warning(f"market_data event handling error: {e}")
-                
+
             elif event.type == "schedule_tick":
                 self.stats["flow_executions"] += 1
                 await self._execute_main_flow()
+                await self.context.notify_job_state("cycle_completed", self.stats)
         
         logger.info("Event loop ended")
 
