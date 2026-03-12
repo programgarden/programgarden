@@ -1,3 +1,15 @@
+## [1.15.5] - 2026-03-12
+### Fixed
+- DisplayNode executor 등록 누락 수정: TableDisplayNode 등 6개 display 서브타입이 GenericNodeExecutor로 fallback되던 문제
+  - `_init_executors()`에 TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode 등록
+  - node_type → chart_type 자동 매핑 로직 추가 (DisplayNodeExecutor)
+- BrokerNode credential 미주입 시 "Broker connected" → "Broker initialized without credentials" 로그 명확화
+### Added
+- `cycle_completed` job state 이벤트: 실시간 워크플로우에서 사이클 완료 시 알림
+  - `on_job_state_change`에서 running/cycle_completed/completed/failed/cancelled 구분 가능
+  - realtime_update, order_event, market_data, schedule_tick 완료 시 발생
+  - 초기 main flow 완료 시에도 발생
+
 ## [1.15.4] - 2026-03-11
 ### Fixed
 - emit_realtime_update() 리스너 버그 3건 수정
