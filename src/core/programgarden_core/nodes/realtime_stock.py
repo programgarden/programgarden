@@ -35,7 +35,8 @@ class OverseasStockRealMarketDataNode(BaseNode):
     """
     해외주식 실시간 시세 노드
 
-    WebSocket을 통해 해외주식 실시간 시세(가격, 거래량, 호가)를 수신합니다.
+    WebSocket을 통해 해외주식 실시간 체결 데이터(가격, 거래량)를 수신합니다.
+    GSC(체결) TR을 사용하며, 호가(GSH) 데이터는 포함되지 않습니다.
     거래소: NYSE, NASDAQ, AMEX
     """
 
