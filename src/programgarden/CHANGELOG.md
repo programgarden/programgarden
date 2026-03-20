@@ -1,3 +1,11 @@
+## [1.15.6] - 2026-03-21
+### Changed
+- executor.py: _execute_stock() docstring에 GSH(호가) 미구독 사유 상세 기재
+  - LS증권 해외주식 API 제약: 개별 호가단계 잔량 미제공, 건수 미제공
+
+### Dependencies
+- programgarden-core ^1.9.5, programgarden-finance ^1.4.2
+
 ## [1.15.5] - 2026-03-12
 ### Fixed
 - DisplayNode executor 등록 누락 수정: TableDisplayNode 등 6개 display 서브타입이 GenericNodeExecutor로 fallback되던 문제
