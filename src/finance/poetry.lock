@@ -708,11 +708,6 @@ files = [
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
 
-[package.source]
-type = "legacy"
-url = "https://test.pypi.org/simple"
-reference = "testpypi"
-
 [[package]]
 name = "propcache"
 version = "0.4.1"
@@ -1385,4 +1380,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "003f5905ce600bbd53828bd23c4665ec961b2fffa41a0274004047a2eeebe84b"
+content-hash = "0d98e820b0db858e666bcfeb015b492a013b06ebb23568695a6221fb877682ac"

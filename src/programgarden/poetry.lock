@@ -2795,17 +2795,12 @@ groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
     {file = "programgarden_community-1.10.3-py3-none-any.whl", hash = "sha256:ce6cf38939e3be1f46a04c660ea98cc79f8df01648876d37f58a2a0d3efdf7ab"},
-    {file = "programgarden_community-1.10.3.tar.gz", hash = "sha256:903c53456c11c1e13cf382c5323e1eb2e1b9002d17fc16a86fd0c78cab5b8b97"},
+    {file = "programgarden_community-1.10.3.tar.gz", hash = "sha256:ae6a711d8faabbbda759b765829c0c1e398fc83e1506ccfc6dcf831296bc5afa"},
 ]
 
 [package.dependencies]
 programgarden-core = ">=1.9.3,<2.0.0"
 pypdf = ">=4.0.0"
-
-[package.source]
-type = "legacy"
-url = "https://test.pypi.org/simple"
-reference = "testpypi"
 
 [[package]]
 name = "programgarden-core"
@@ -2823,11 +2818,6 @@ files = [
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
 
-[package.source]
-type = "legacy"
-url = "https://test.pypi.org/simple"
-reference = "testpypi"
-
 [[package]]
 name = "programgarden-finance"
 version = "1.4.2"
@@ -2838,7 +2828,7 @@ groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
     {file = "programgarden_finance-1.4.2-py3-none-any.whl", hash = "sha256:b0b5b8c57b759840704976e539fb4e3be58388c2e22c770b66686c00191d9e41"},
-    {file = "programgarden_finance-1.4.2.tar.gz", hash = "sha256:aee4971cd8b20c0629d7bae371232352081a0764e7522b877b98c06dd2624e41"},
+    {file = "programgarden_finance-1.4.2.tar.gz", hash = "sha256:84889c7d7f62d82e34dbc584e2ea013459437794ce0e2db31767a33da905c064"},
 ]
 
 [package.dependencies]
@@ -2849,11 +2839,6 @@ python-dotenv = ">=1.1.1,<2.0.0"
 redis = ">=6.4.0,<7.0.0"
 requests = ">=2.32.4,<3.0.0"
 websockets = ">=15.0.1,<16.0.0"
-
-[package.source]
-type = "legacy"
-url = "https://test.pypi.org/simple"
-reference = "testpypi"
 
 [[package]]
 name = "propcache"
@@ -4595,4 +4580,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "56adbb3947418108d004ac7c3324ef937dada543d564d2e40108f75b32edf7a2"
+content-hash = "8dcd1babb97ad9fc743237c07be86b2dc71b9645dec7af62f5d7ae88c0ffb137"
