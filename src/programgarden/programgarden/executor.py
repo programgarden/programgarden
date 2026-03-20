@@ -4748,7 +4748,15 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         stay_connected: bool,
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        """해외주식 실시간 시세 (GSC)"""
+        """해외주식 실시간 시세 (GSC)
+
+        GSC(체결) TR만 구독합니다. GSH(호가)는 구독하지 않습니다.
+        사유: LS증권 해외주식 API 제약으로 GSH의 개별 호가단계 잔량(offerrem2~10,
+        bidrem2~10)이 항상 0이며, 총잔량만 1단계에 합산되어 제공됩니다.
+        건수(offerno/bidno)도 항상 0입니다.
+        개별 호가 잔량이 필요한 경우 REST API(g3106)를 사용하세요.
+        (해외선물/국내주식 실시간 호가는 정상 제공됨)
+        """
         import asyncio
         from datetime import datetime
         

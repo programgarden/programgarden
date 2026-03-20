@@ -1,3 +1,14 @@
+"""
+해외주식 실시간 호가(GSH) 예제
+
+⚠️ LS증권 API 제약 (해외주식 한정):
+- 호가 가격(offerho/bidho 1~10): 정상 제공
+- 개별 잔량(offerrem/bidrem 2~10): 항상 0 (미제공)
+  → offerrem1/bidrem1에 총잔량이 합산되어 나옴
+- 호가 건수(offerno/bidno): 항상 0 (미제공)
+- 개별 호가단계별 잔량이 필요하면 REST API(g3106)를 사용하세요
+- 해외선물/국내주식은 개별 단계별 데이터 정상 제공됨
+"""
 import asyncio
 import os
 from programgarden_finance import LS
