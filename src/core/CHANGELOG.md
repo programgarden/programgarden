@@ -1,3 +1,9 @@
+## [1.9.5] - 2026-03-21
+### Changed
+- OverseasStockRealMarketDataNode description 정정: "호가" → "체결 데이터", GSH 미포함 명시
+- MARKET_DATA_FULL_FIELDS의 bid_price/ask_price에 "해외주식 실시간 미제공" 표시
+- i18n(ko/en) OverseasStockRealMarketDataNode description 정정
+
 ## [1.9.4] - 2026-03-11
 ### Fixed
 - RetryEvent를 `programgarden_core.bases.listener`에서 직접 import 가능하도록 수정

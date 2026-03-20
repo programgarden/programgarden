@@ -1,3 +1,13 @@
+## [1.4.2] - 2026-03-21
+### Changed
+- GSH(실시간 호가) blocks.py: 미제공 필드 description 마킹 + 클래스 docstring 제약사항 추가
+- GSH client.py: RealGSH 클래스 docstring 추가
+- g3106(REST 호가) blocks.py: 건수 미제공 필드 마킹 + 클래스 docstring 추가
+- real_GSH.py 예제: 제약사항 모듈 docstring 추가
+
+### Dependencies
+- programgarden-core ^1.9.5
+
 ## [1.4.1] - 2026-03-04
 ### Dependencies
 - programgarden-core ^1.9.0 (국내주식 노드 포함)

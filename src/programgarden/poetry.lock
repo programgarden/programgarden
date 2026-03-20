@@ -2795,50 +2795,65 @@ groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
     {file = "programgarden_community-1.10.3-py3-none-any.whl", hash = "sha256:ce6cf38939e3be1f46a04c660ea98cc79f8df01648876d37f58a2a0d3efdf7ab"},
-    {file = "programgarden_community-1.10.3.tar.gz", hash = "sha256:ae6a711d8faabbbda759b765829c0c1e398fc83e1506ccfc6dcf831296bc5afa"},
+    {file = "programgarden_community-1.10.3.tar.gz", hash = "sha256:903c53456c11c1e13cf382c5323e1eb2e1b9002d17fc16a86fd0c78cab5b8b97"},
 ]
 
 [package.dependencies]
 programgarden-core = ">=1.9.3,<2.0.0"
 pypdf = ">=4.0.0"
 
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
+
 [[package]]
 name = "programgarden-core"
-version = "1.9.4"
+version = "1.9.5"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_core-1.9.4-py3-none-any.whl", hash = "sha256:bc872cfdcd0fd4b77c2cc2b2b86e091f3a1b4e9cfaa106f853587b3d02075bfd"},
-    {file = "programgarden_core-1.9.4.tar.gz", hash = "sha256:29ca135298c5bf86cd19f3976d52c77fd2db1c259d47724ecce62689ed910fac"},
+    {file = "programgarden_core-1.9.5-py3-none-any.whl", hash = "sha256:71fd3418c62886555732f9239d5404f9423ae4b258926fac112c443d6b603066"},
+    {file = "programgarden_core-1.9.5.tar.gz", hash = "sha256:dd6ee4d6e216378eec463fc50863d8ff53181b5f3e29393e5f4e596c3d505d2d"},
 ]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
 
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
+
 [[package]]
 name = "programgarden-finance"
-version = "1.4.1"
+version = "1.4.2"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_finance-1.4.1-py3-none-any.whl", hash = "sha256:ea5e1192879a186c39a3a10621e4fad64ecc4de8612871e6d67db6cb0d2355b8"},
-    {file = "programgarden_finance-1.4.1.tar.gz", hash = "sha256:df32bf3933613b8b03800c2c64643c0bad6ede0dc87b72289bb7a6b6522562d0"},
+    {file = "programgarden_finance-1.4.2-py3-none-any.whl", hash = "sha256:b0b5b8c57b759840704976e539fb4e3be58388c2e22c770b66686c00191d9e41"},
+    {file = "programgarden_finance-1.4.2.tar.gz", hash = "sha256:aee4971cd8b20c0629d7bae371232352081a0764e7522b877b98c06dd2624e41"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.10.0,<4.0.0"
-programgarden-core = ">=1.9.0,<2.0.0"
+programgarden-core = ">=1.9.5,<2.0.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 redis = ">=6.4.0,<7.0.0"
 requests = ">=2.32.4,<3.0.0"
 websockets = ">=15.0.1,<16.0.0"
+
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
 
 [[package]]
 name = "propcache"
@@ -4580,4 +4595,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "f929462487a26143b648047b22721597a467afaeb2e91a41b835f1c8c48e3e6d"
+content-hash = "56adbb3947418108d004ac7c3324ef937dada543d564d2e40108f75b32edf7a2"
