@@ -9,6 +9,16 @@ if TYPE_CHECKING:
 
 
 class RealGSH():
+    """
+    해외주식 실시간 호가(GSH) WebSocket 클라이언트
+
+    ⚠️ LS증권 API 제약 (해외주식 한정):
+    - 호가 가격(offerho/bidho 1~10)은 정상 제공
+    - 개별 호가단계 잔량(offerrem/bidrem 2~10)은 항상 0 (미제공)
+    - offerrem1/bidrem1은 총잔량(totofferrem/totbidrem)과 동일한 값
+    - 호가 건수(offerno/bidno 1~10)는 항상 0 (미제공)
+    - 개별 잔량이 필요하면 REST API(g3106)를 사용하세요
+    """
     def __init__(self, parent: Real):
         self._parent = parent
 

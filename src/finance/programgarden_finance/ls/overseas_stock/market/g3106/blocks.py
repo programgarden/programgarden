@@ -62,37 +62,25 @@ class G3106Request(BaseModel):
 
 class G3106OutBlock(BaseModel):
     """
-    g3106OutBlock 응답 블록
+    g3106OutBlock 응답 블록 — 해외주식 현재가 호가 조회
+
+    10단계 호가(가격/잔량/건수) + 시세 정보를 제공합니다.
+
+    ⚠️ LS증권 API 제약 (해외주식 한정):
+    - 호가 가격(offerho/bidho 1~10): 정상 제공
+    - 호가 잔량(offerrem/bidrem 1~10): 정상 제공 ✅
+    - 호가 건수(offercnt/bidcnt 1~10): 항상 0 (미제공) ❌
+    - 총건수(offercnt/bidcnt): 항상 0 (미제공) ❌
+    - 해외선물/국내주식은 건수도 정상 제공됨
 
     Attributes:
-        delaygb (Literal["R"])
-        keysymbol (str)
-        exchcd (Literal["81", "82"])
-        symbol (str)
-        korname (str)
-        price (str)
-        floatpoint (str)
-        sign (str)
-        diff (str)
-        rate (str)
-        volume (int)
-        amount (int)
-        jnilclose (str)
-        open (str)
-        high (str)
-        low (str)
-        hotime (str)
-        offerho1 (str)
-        bidho1 (str)
-        offercnt1 (str)
-        bidcnt1 (str)
-        offerrem1 (int)
-        bidrem1 (int)
-        ... (up to 10 levels) ...
-        offercnt (str)
-        bidcnt (str)
-        offer (int)
-        bid (int)
+        delaygb, keysymbol, exchcd, symbol, korname, price, floatpoint,
+        sign, diff, rate, volume, amount, jnilclose, open, high, low, hotime,
+        offerho1~10, bidho1~10 (호가 가격),
+        offerrem1~10, bidrem1~10 (호가 잔량 — 정상 제공),
+        offercnt1~10, bidcnt1~10 (호가 건수 — ⚠️ 항상 0),
+        offercnt, bidcnt (총건수 — ⚠️ 항상 0),
+        offer, bid (총수량)
     """
     delaygb: Literal["R"] = "R"
     """ 지연구분 (항상 R) """
@@ -133,9 +121,9 @@ class G3106OutBlock(BaseModel):
     bidho1: str
     """ 매수호가1 """
     offercnt1: str
-    """ 매도호가건수1 """
+    """ 매도호가건수1 — ⚠️ API 미제공: 항상 0 """
     bidcnt1: str
-    """ 매수호가건수1 """
+    """ 매수호가건수1 — ⚠️ API 미제공: 항상 0 """
     offerrem1: int
     """ 매도호가수량1 """
     bidrem1: int
@@ -157,9 +145,9 @@ class G3106OutBlock(BaseModel):
     bidho3: str
     """ 매수호가3 """
     offercnt3: str
-    """ 매도호가건수3 """
+    """ 매도호가건수3 — ⚠️ API 미제공: 항상 0 """
     bidcnt3: str
-    """ 매수호가건수3 """
+    """ 매수호가건수3 — ⚠️ API 미제공: 항상 0 """
     offerrem3: int
     """ 매도호가수량3 """
     bidrem3: int
@@ -169,9 +157,9 @@ class G3106OutBlock(BaseModel):
     bidho4: str
     """ 매수호가4 """
     offercnt4: str
-    """ 매도호가건수4 """
+    """ 매도호가건수4 — ⚠️ API 미제공: 항상 0 """
     bidcnt4: str
-    """ 매수호가건수4 """
+    """ 매수호가건수4 — ⚠️ API 미제공: 항상 0 """
     offerrem4: int
     """ 매도호가수량4 """
     bidrem4: int
@@ -181,9 +169,9 @@ class G3106OutBlock(BaseModel):
     bidho5: str
     """ 매수호가5 """
     offercnt5: str
-    """ 매도호가건수5 """
+    """ 매도호가건수5 — ⚠️ API 미제공: 항상 0 """
     bidcnt5: str
-    """ 매수호가건수5 """
+    """ 매수호가건수5 — ⚠️ API 미제공: 항상 0 """
     offerrem5: int
     """ 매도호가수량5 """
     bidrem5: int
@@ -193,9 +181,9 @@ class G3106OutBlock(BaseModel):
     bidho6: str
     """ 매수호가6 """
     offercnt6: str
-    """ 매도호가건수6 """
+    """ 매도호가건수6 — ⚠️ API 미제공: 항상 0 """
     bidcnt6: str
-    """ 매수호가건수6 """
+    """ 매수호가건수6 — ⚠️ API 미제공: 항상 0 """
     offerrem6: int
     """ 매도호가수량6 """
     bidrem6: int
@@ -205,9 +193,9 @@ class G3106OutBlock(BaseModel):
     bidho7: str
     """ 매수호가7 """
     offercnt7: str
-    """ 매도호가건수7 """
+    """ 매도호가건수7 — ⚠️ API 미제공: 항상 0 """
     bidcnt7: str
-    """ 매수호가건수7 """
+    """ 매수호가건수7 — ⚠️ API 미제공: 항상 0 """
     offerrem7: int
     """ 매도호가수량7 """
     bidrem7: int
@@ -217,9 +205,9 @@ class G3106OutBlock(BaseModel):
     bidho8: str
     """ 매수호가8 """
     offercnt8: str
-    """ 매도호가건수8 """
+    """ 매도호가건수8 — ⚠️ API 미제공: 항상 0 """
     bidcnt8: str
-    """ 매수호가건수8 """
+    """ 매수호가건수8 — ⚠️ API 미제공: 항상 0 """
     offerrem8: int
     """ 매도호가수량8 """
     bidrem8: int
@@ -229,9 +217,9 @@ class G3106OutBlock(BaseModel):
     bidho9: str
     """ 매수호가9 """
     offercnt9: str
-    """ 매도호가건수9 """
+    """ 매도호가건수9 — ⚠️ API 미제공: 항상 0 """
     bidcnt9: str
-    """ 매수호가건수9 """
+    """ 매수호가건수9 — ⚠️ API 미제공: 항상 0 """
     offerrem9: int
     """ 매도호가수량9 """
     bidrem9: int
@@ -241,17 +229,17 @@ class G3106OutBlock(BaseModel):
     bidho10: str
     """ 매수호가10 """
     offercnt10: str
-    """ 매도호가건수10 """
+    """ 매도호가건수10 — ⚠️ API 미제공: 항상 0 """
     bidcnt10: str
-    """ 매수호가건수10 """
+    """ 매수호가건수10 — ⚠️ API 미제공: 항상 0 """
     offerrem10: int
     """ 매도호가수량10 """
     bidrem10: int
     """ 매수호가수량10 """
     offercnt: str
-    """ 총매도호가건수 """
+    """ 총매도호가건수 — ⚠️ API 미제공: 항상 0 """
     bidcnt: str
-    """ 총매수호가건수 """
+    """ 총매수호가건수 — ⚠️ API 미제공: 항상 0 """
     offer: int
     """ 총매도호가수량 """
     bid: int
