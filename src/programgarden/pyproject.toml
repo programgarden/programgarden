@@ -29,9 +29,9 @@ pytickersymbols = {version = ">=1.17.5", python = ">=3.12,<4.0"}
 aiosqlite = "^0.20.0"
 litellm = ">=1.40.0"
 fastembed = ">=0.4.0"
-programgarden-core = { version = "^1.9.5", source = "testpypi" }
-programgarden-finance = { version = "^1.4.2", source = "testpypi" }
-programgarden-community = { version = "^1.10.3", source = "testpypi" }
+programgarden-core = "^1.9.5"
+programgarden-finance = "^1.4.2"
+programgarden-community = "^1.10.3"
     
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

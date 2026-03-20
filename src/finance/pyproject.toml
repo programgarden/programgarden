@@ -19,7 +19,7 @@ aiohttp = "^3.10.0"
 redis = "^6.4.0"
 websockets = "^15.0.1"
 python-dotenv = "^1.1.1"
-programgarden-core = { version = "^1.9.5", source = "testpypi" }
+programgarden-core = "^1.9.5"
 
 [[tool.poetry.source]]
 name = "testpypi"
