@@ -70,7 +70,7 @@
         }
       },
       "fields": {
-        "lookback_days": 20,
+        "lookback_days": 60,
         "signal_mode": "binary",
         "volatility_adjust": false
       },
@@ -106,12 +106,9 @@
     },
 
     {
-      "id": "if_has_positions",
-      "type": "IfNode",
-      "left": "{{ nodes.account.positions.count() }}",
-      "operator": ">",
-      "right": 0,
-      "position": {"x": 1050, "y": 500}
+      "id": "account_sell",
+      "type": "OverseasStockAccountNode",
+      "position": {"x": 800, "y": 500}
     },
     {
       "id": "sell_order",
@@ -126,14 +123,7 @@
       "resilience": {
         "fallback": {"mode": "skip"}
       },
-      "position": {"x": 1300, "y": 500}
-    },
-    {
-      "id": "telegram_sell",
-      "type": "TelegramNode",
-      "credential_id": "telegram_cred",
-      "template": "🔴 <b>손절 매도</b>\n포지션 청산",
-      "position": {"x": 1300, "y": 500}
+      "position": {"x": 1050, "y": 500}
     }
   ],
   "edges": [
@@ -152,9 +142,8 @@
     {"from": "filter_buy", "to": "buy_order"},
     {"from": "buy_order", "to": "telegram_buy"},
 
-    {"from": "account", "to": "if_has_positions"},
-    {"from": "if_has_positions", "to": "sell_order", "from_port": "true"},
-    {"from": "sell_order", "to": "telegram_sell"}
+    {"from": "trading_hours", "to": "account_sell"},
+    {"from": "account_sell", "to": "sell_order"}
   ],
   "credentials": [
     {
