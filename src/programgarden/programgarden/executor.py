@@ -1122,7 +1122,9 @@ class SymbolFilterNodeExecutor(NodeExecutorBase):
                 output_symbols.append({"symbol": symbol, "exchange": ""})
         
         context.log("info", f"SymbolFilter ({operation}): {len(set_a)} - {len(set_b)} = {len(output_symbols)} symbols", node_id)
-        
+        sym_names = [s.get("symbol", "?") for s in output_symbols]
+        print(f"  [DEBUG filter] {operation}: A={list(set_a)} - B={list(set_b)} = {sym_names}")
+
         return {
             "symbols": output_symbols,
             "count": len(output_symbols),
@@ -7075,6 +7077,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
             f"Condition evaluated: {len(passed_symbols)}/{len(normalized_symbols)} passed",
             node_id,
         )
+        # DEBUG: 종목별 신호 출력
+        for sr in symbol_results:
+            sig = sr.get("signal", sr.get("result", "?"))
+            sym = sr.get("symbol", "?")
+            mom = sr.get("momentum_return", "")
+            mom_str = f", momentum={mom}" if mom != "" else ""
+            print(f"  [DEBUG tsmom] {sym}: signal={sig}{mom_str}")
 
         # SIGNAL_TRIGGERED notification (변화가 있을 때만: passed_symbols 존재)
         if passed_symbols:
@@ -8096,15 +8105,19 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 symbols.append(entry)
                 symbol_exchange_map[entry] = "82"  # 기본값 NASDAQ
         
-        # positions 데이터 가져오기 (market_code 포함)
-        positions = context.get_output(f"_input_{node_id}", "positions")
-        if not positions:
-            positions = context.get_output("account", "positions") or {}
-        
-        # symbol_exchange_map을 positions에 병합 (positions가 우선)
-        for symbol in symbols:
-            if symbol not in positions:
-                positions[symbol] = {"market_code": symbol_exchange_map.get(symbol, "82")}
+        # positions 데이터 가져오기 (market_code 참조용)
+        positions_raw = context.get_output(f"_input_{node_id}", "positions")
+        if not positions_raw:
+            positions_raw = context.get_output("account", "positions") or []
+
+        # 리스트에서 symbol → market_code 매핑 추출
+        if isinstance(positions_raw, list):
+            for pos in positions_raw:
+                if isinstance(pos, dict) and pos.get("symbol"):
+                    sym = pos["symbol"]
+                    mc = pos.get("market_code", pos.get("exchange_code", ""))
+                    if mc and sym not in symbol_exchange_map:
+                        symbol_exchange_map[sym] = mc
         
         if not symbols:
             context.log("warning", "No symbols provided", node_id)
@@ -8135,7 +8148,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         
         # product별 분기 (overseas_futures와 overseas_futureoption은 동일)
         if product == "overseas_stock":
-            ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, positions, symbol_exchange_map, symbols_raw)
+            ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, None, symbol_exchange_map, symbols_raw)
         elif product in ("overseas_futureoption", "overseas_futures"):
             ohlcv_data = await self._fetch_overseas_futures(symbols, start_date, end_date, interval, context, node_id, symbols_raw)
         elif product == "korea_stock":
@@ -8152,7 +8165,9 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         context.log("info", f"HistoricalData output: value={single_value is not None}, ohlcv_count={len(ohlcv_data) if ohlcv_data else 0}", node_id)
         if single_value:
             ts_count = len(single_value.get("time_series", [])) if isinstance(single_value, dict) else 0
-            context.log("debug", f"HistoricalData value: symbol={single_value.get('symbol')}, time_series_count={ts_count}", node_id)
+            print(f"  [DEBUG historical] symbol={single_value.get('symbol')}, time_series={ts_count}bars")
+        else:
+            print(f"  [DEBUG historical] single_value=None, ohlcv_data={len(ohlcv_data) if ohlcv_data else 0}")
 
         return {
             "value": single_value,  # 단일 {symbol, exchange, time_series: [...]}  - 노드 스키마와 일치
@@ -10978,8 +10993,14 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             return None
 
         exchange = order_raw.get("exchange", "NASDAQ")
-        quantity = order_raw.get("quantity", 0)
-        price = order_raw.get("price", 0.0)
+        try:
+            quantity = int(float(order_raw.get("quantity", 0)))
+        except (ValueError, TypeError):
+            quantity = 0
+        try:
+            price = float(order_raw.get("price", 0.0))
+        except (ValueError, TypeError):
+            price = 0.0
 
         # quantity가 없으면 None
         if quantity <= 0:
@@ -11150,8 +11171,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             from programgarden_finance import g3101
 
             
+            # 미해석 표현식 가드 (auto-iterate 미발동 시 {{ item.xxx }} 그대로 넘어옴)
+            if "{{" in symbol or not symbol or len(symbol) > 10:
+                context.log("debug", f"_get_current_price: invalid symbol '{symbol}', skipping g3101", node_id)
+                return None
+
             keysymbol = f"{market_code}{symbol}"
-            
+
             result = ls.overseas_stock().market().현재가조회(
                 g3101.G3101InBlock(
                     delaygb="R",
@@ -14840,6 +14866,9 @@ class WorkflowJob:
                 )
                 all_results.append(outputs)
             except Exception as e:
+                import traceback
+                print(f"  [DEBUG auto-iterate error] node={node_id}, item={item_label}:")
+                traceback.print_exc()
                 self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
                 # continue_on_error: 기본적으로 계속 진행
                 all_results.append({"error": str(e), "item": current_item})

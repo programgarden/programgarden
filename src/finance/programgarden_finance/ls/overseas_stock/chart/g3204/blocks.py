@@ -75,7 +75,7 @@ class G3204Request(BaseModel):
     """ 입력 데이터 블록"""
     options: SetupOptions = SetupOptions(
         rate_limit_count=1,
-        rate_limit_seconds=1,
+        rate_limit_seconds=3,
         on_rate_limit="wait",
         rate_limit_key="g3204"
     )

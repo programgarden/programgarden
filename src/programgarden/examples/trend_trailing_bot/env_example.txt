@@ -1,0 +1,9 @@
+# LS증권 API (필수)
+APPKEY=your_app_key_here
+APPSECRET=your_app_secret_here
+
+# 텔레그램 봇 (선택 — 없으면 알림 비활성)
+# 1. @BotFather에서 봇 생성 → 토큰 발급
+# 2. 봇에 /start 후 @userinfobot 에서 Chat ID 확인
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
