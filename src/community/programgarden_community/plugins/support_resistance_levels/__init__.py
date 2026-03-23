@@ -77,6 +77,13 @@ SUPPORT_RESISTANCE_LEVELS_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=["open", "volume"],
     tags=["support", "resistance", "swing", "cluster", "price_level"],
+    output_fields={
+        "current_price": {"type": "float", "description": "Latest closing price"},
+        "direction": {"type": "str", "description": "Configured direction filter: 'support', 'resistance', or 'both'"},
+        "levels": {"type": "list", "description": "Detected swing-based price levels (list of {price, type, date})"},
+        "clusters": {"type": "list", "description": "Clustered S/R zones with touch count and price range"},
+        "nearest": {"type": "dict", "description": "Nearest S/R level info including price, type, distance, and signal"},
+    },
     locales={
         "ko": {
             "name": "지지/저항 레벨",

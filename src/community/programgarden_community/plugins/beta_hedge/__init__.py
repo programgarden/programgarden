@@ -83,6 +83,11 @@ BETA_HEDGE_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["beta", "hedge", "market_neutral", "risk_management"],
+    output_fields={
+        "beta": {"type": "float", "description": "Calculated beta of this symbol relative to the market benchmark"},
+        "beta_contribution": {"type": "float", "description": "This symbol's contribution to portfolio beta"},
+        "weight": {"type": "float", "description": "Position market value (available when positions are provided)"},
+    },
     locales={
         "ko": {
             "name": "베타 헷지 (Beta Hedge)",

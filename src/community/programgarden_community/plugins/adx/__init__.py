@@ -53,6 +53,11 @@ ADX_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=["open", "volume"],
     tags=["trend", "momentum", "strength"],
+    output_fields={
+        "adx": {"type": "float", "description": "ADX value indicating trend strength (0-100)"},
+        "plus_di": {"type": "float", "description": "Positive Directional Indicator (+DI)"},
+        "minus_di": {"type": "float", "description": "Negative Directional Indicator (-DI)"},
+    },
     locales={
         "ko": {
             "name": "ADX (평균방향지수)",

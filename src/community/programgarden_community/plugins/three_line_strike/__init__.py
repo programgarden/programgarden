@@ -43,6 +43,12 @@ THREE_LINE_STRIKE_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "open", "high", "low", "close"],
     optional_fields=["volume"],
     tags=["candlestick", "pattern", "reversal", "three_line_strike"],
+    output_fields={
+        "pattern_detected": {"type": "bool", "description": "Whether Three Line Strike pattern was detected"},
+        "confidence": {"type": "float", "description": "Pattern confidence score (0.0-1.0)"},
+        "details": {"type": "str", "description": "Detection details or reason for failure"},
+        "pattern_type": {"type": "str", "description": "Pattern direction (bullish/bearish)"},
+    },
     locales={
         "ko": {
             "name": "삼선 타격",

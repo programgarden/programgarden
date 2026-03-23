@@ -51,6 +51,13 @@ TIME_BASED_EXIT_SCHEMA = PluginSchema(
     required_fields=[],
     optional_fields=[],
     tags=["exit", "time", "holding_period"],
+    output_fields={
+        "entry_date": {"type": "str", "description": "Detected entry date (YYYY-MM-DD)"},
+        "hold_days": {"type": "int", "description": "Number of days position has been held"},
+        "max_hold_days": {"type": "int", "description": "Maximum allowed holding days"},
+        "warn": {"type": "bool", "description": "Whether the warning threshold has been crossed"},
+        "action": {"type": "str", "description": "Recommended action: 'exit', 'warn', 'hold', or 'cleared'"},
+    },
     locales={
         "ko": {
             "name": "시간 기반 청산",

@@ -48,6 +48,14 @@ ELDER_RAY_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["elder-ray", "ema", "bull-power", "bear-power", "trend", "divergence"],
+    output_fields={
+        "bull_power": {"type": "float", "description": "Bull Power = High - EMA (positive means bulls above EMA)"},
+        "bear_power": {"type": "float", "description": "Bear Power = Low - EMA (negative means bears below EMA)"},
+        "ema": {"type": "float", "description": "Exponential Moving Average of the close price"},
+        "ema_direction": {"type": "str", "description": "EMA trend direction: 'up', 'down', or 'flat'"},
+        "signal": {"type": "str", "description": "Trading signal: 'buy', 'sell', or 'neutral'"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "엘더 레이",

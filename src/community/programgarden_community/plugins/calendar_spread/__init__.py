@@ -59,6 +59,14 @@ CALENDAR_SPREAD_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["futures", "calendar_spread", "spread_trading", "mean_reversion"],
+    output_fields={
+        "role": {"type": "str", "description": "Contract role: 'front_month' or 'back_month'"},
+        "price": {"type": "float", "description": "Latest close price of this contract"},
+        "spread": {"type": "float", "description": "Current spread value (back minus front price)"},
+        "spread_ma": {"type": "float", "description": "Moving average of the spread"},
+        "z_score": {"type": "float", "description": "Z-Score of the current spread relative to its mean"},
+        "signal": {"type": "str", "description": "Trading signal: 'buy', 'sell', 'exit', or None"},
+    },
     locales={
         "ko": {
             "name": "캘린더 스프레드 (Calendar Spread)",

@@ -62,6 +62,12 @@ MFI_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["volume"],
     tags=["mfi", "money-flow", "volume", "oscillator", "overbought", "oversold"],
+    output_fields={
+        "mfi": {"type": "float", "description": "Money Flow Index value (0–100)"},
+        "overbought_level": {"type": "float", "description": "Configured overbought threshold"},
+        "oversold_level": {"type": "float", "description": "Configured oversold threshold"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "자금흐름지수 (MFI)",

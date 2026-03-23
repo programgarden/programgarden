@@ -53,6 +53,12 @@ BOLLINGER_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["high", "low"],
     tags=["volatility", "mean-reversion"],
+    output_fields={
+        "upper": {"type": "float", "description": "Upper Bollinger Band value"},
+        "middle": {"type": "float", "description": "Middle Bollinger Band (moving average)"},
+        "lower": {"type": "float", "description": "Lower Bollinger Band value"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "볼린저밴드 (Bollinger Bands)",

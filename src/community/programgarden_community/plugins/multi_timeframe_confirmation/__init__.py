@@ -64,6 +64,17 @@ MTF_CONFIRMATION_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["multi_timeframe", "confirmation", "trend", "filter"],
+    output_fields={
+        "short_ma": {"type": "float", "description": "Short-term moving average value"},
+        "medium_ma": {"type": "float", "description": "Medium-term moving average value"},
+        "long_ma": {"type": "float", "description": "Long-term moving average value"},
+        "current_price": {"type": "float", "description": "Current close price"},
+        "short_aligned": {"type": "bool", "description": "Whether short-term timeframe aligns with direction"},
+        "medium_aligned": {"type": "bool", "description": "Whether medium-term timeframe aligns with direction"},
+        "long_aligned": {"type": "bool", "description": "Whether long-term timeframe aligns with direction"},
+        "alignment": {"type": "str", "description": "Alignment ratio string (e.g. '3/3', '2/3')"},
+        "confirmed": {"type": "bool", "description": "Whether the signal is confirmed across timeframes"},
+    },
     locales={
         "ko": {
             "name": "다중 타임프레임 확인 (MTF Confirmation)",

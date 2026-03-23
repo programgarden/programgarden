@@ -51,6 +51,11 @@ HAMMER_SHOOTING_STAR_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "open", "high", "low", "close"],
     optional_fields=["volume"],
     tags=["candlestick", "pattern", "reversal", "hammer", "shooting_star"],
+    output_fields={
+        "pattern_detected": {"type": "bool", "description": "Whether the pattern was detected on the latest candle"},
+        "confidence": {"type": "float", "description": "Pattern confidence score (0.0–1.0)"},
+        "pattern_type": {"type": "str", "description": "Pattern type: 'hammer' or 'shooting_star'"},
+    },
     locales={
         "ko": {
             "name": "망치/유성형",

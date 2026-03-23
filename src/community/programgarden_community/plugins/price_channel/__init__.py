@@ -44,6 +44,12 @@ PRICE_CHANNEL_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=["open", "volume"],
     tags=["trend", "breakout", "channel"],
+    output_fields={
+        "upper_channel": {"type": "float", "description": "Upper Donchian channel (N-day highest high)"},
+        "lower_channel": {"type": "float", "description": "Lower Donchian channel (N-day lowest low)"},
+        "middle_channel": {"type": "float", "description": "Middle channel (average of upper and lower)"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "가격 채널 (돈치안)",

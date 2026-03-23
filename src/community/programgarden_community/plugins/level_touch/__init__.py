@@ -71,6 +71,12 @@ LEVEL_TOUCH_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=["open", "volume"],
     tags=["support", "resistance", "touch", "breakout", "role_reversal"],
+    output_fields={
+        "current_price": {"type": "float", "description": "Latest closing price"},
+        "mode": {"type": "str", "description": "Active detection mode: 'first_touch', 'role_reversal', or 'cluster_bounce'"},
+        "level_events": {"type": "list", "description": "List of level interaction events detected for each configured level"},
+        "signal": {"type": "str", "description": "Strongest trading signal generated: 'buy', 'sell', or None"},
+    },
     locales={
         "ko": {
             "name": "레벨 터치/돌파",

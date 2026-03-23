@@ -82,6 +82,15 @@ TURTLE_BREAKOUT_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["turtle", "donchian", "breakout", "trend", "atr", "dennis"],
+    output_fields={
+        "entry_signal": {"type": "str", "description": "Entry signal: 'long', 'short', or 'none'"},
+        "exit_signal": {"type": "str", "description": "Exit signal: 'exit_long', 'exit_short', or 'none'"},
+        "atr_value": {"type": "float", "description": "Current ATR (N) value for position sizing"},
+        "stop_price": {"type": "float", "description": "Initial stop price based on ATR multiple"},
+        "channel_high": {"type": "float", "description": "Upper Donchian channel level (entry period)"},
+        "channel_low": {"type": "float", "description": "Lower Donchian channel level (entry period)"},
+        "current_close": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "터틀 브레이크아웃",

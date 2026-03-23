@@ -68,6 +68,13 @@ COPPOCK_CURVE_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["open", "high", "low", "volume"],
     tags=["coppock", "momentum", "roc", "wma", "long-term", "market-bottom"],
+    output_fields={
+        "coppock_value": {"type": "float", "description": "Current Coppock Curve value"},
+        "prev_coppock_value": {"type": "float", "description": "Previous period's Coppock Curve value"},
+        "zero_cross_up": {"type": "bool", "description": "Whether the curve crossed zero from below (buy signal)"},
+        "direction_up": {"type": "bool", "description": "Whether the curve is rising"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "코폭 커브",

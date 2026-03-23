@@ -60,6 +60,12 @@ Z_SCORE_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["open", "high", "low", "volume"],
     tags=["zscore", "statistics", "mean-reversion", "normalized"],
+    output_fields={
+        "z_score": {"type": "float", "description": "Current Z-Score of the price relative to its rolling mean"},
+        "mean": {"type": "float", "description": "Rolling mean of the price over the lookback window"},
+        "std": {"type": "float", "description": "Rolling standard deviation of the price over the lookback window"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "Z-Score (표준점수)",

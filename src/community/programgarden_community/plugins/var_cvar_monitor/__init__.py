@@ -76,6 +76,13 @@ VAR_CVAR_MONITOR_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["var", "cvar", "risk", "monitoring", "expected_shortfall"],
+    output_fields={
+        "var_pct": {"type": "float", "description": "Value at Risk over the configured time horizon (%)"},
+        "cvar_pct": {"type": "float", "description": "Conditional VaR (Expected Shortfall) over the time horizon (%)"},
+        "breached": {"type": "bool", "description": "Whether VaR exceeds the alert threshold"},
+        "var_dollar": {"type": "float", "description": "Dollar VaR of the position (available when positions are provided)"},
+        "position_value": {"type": "float", "description": "Total position market value (available when positions are provided)"},
+    },
     locales={
         "ko": {
             "name": "VaR/CVaR 모니터",

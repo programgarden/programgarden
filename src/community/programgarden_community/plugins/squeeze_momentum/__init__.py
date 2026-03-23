@@ -83,6 +83,13 @@ SQUEEZE_MOMENTUM_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["squeeze", "momentum", "bollinger", "keltner", "volatility"],
+    output_fields={
+        "squeeze_on": {"type": "bool", "description": "Whether Bollinger Band is inside Keltner Channel (volatility compression)"},
+        "squeeze_fire": {"type": "bool", "description": "Whether a squeeze just fired (previous squeeze_on → current squeeze_off)"},
+        "momentum": {"type": "float", "description": "Linear regression momentum value (positive = bullish, negative = bearish)"},
+        "momentum_direction": {"type": "str", "description": "Momentum direction: 'long' or 'short'"},
+        "current_close": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "스퀴즈 모멘텀",

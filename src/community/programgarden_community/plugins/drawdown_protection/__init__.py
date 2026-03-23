@@ -54,6 +54,16 @@ DRAWDOWN_PROTECTION_SCHEMA = PluginSchema(
     required_fields=[],
     optional_fields=[],
     tags=["drawdown", "risk", "protection", "portfolio"],
+    output_fields={
+        "drawdown": {"type": "float", "description": "Current drawdown from peak (%)"},
+        "max_drawdown_pct": {"type": "float", "description": "Configured maximum allowed drawdown threshold (%)"},
+        "triggered": {"type": "bool", "description": "Whether drawdown exceeded the threshold"},
+        "action": {"type": "str", "description": "Action taken: 'exit_all', 'reduce_half', 'stop_new_orders', or 'hold'"},
+        "current_price": {"type": "float", "description": "Current market price"},
+        "pnl_rate": {"type": "float", "description": "Current P&L rate (%)"},
+        "hwm_price": {"type": "float", "description": "High-water mark price (available when risk_tracker is active)"},
+        "hwm_drawdown_pct": {"type": "float", "description": "Drawdown from HWM tracked by risk_tracker (available when active)"},
+    },
     locales={
         "ko": {
             "name": "낙폭 보호 (Drawdown Protection)",

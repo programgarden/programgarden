@@ -60,6 +60,10 @@ STOCHASTIC_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=[],
     tags=["momentum", "oscillator"],
+    output_fields={
+        "k": {"type": "float", "description": "Stochastic %K value (0-100)"},
+        "d": {"type": "float", "description": "Stochastic %D value — smoothed moving average of %K (0-100)"},
+    },
     locales={
         "ko": {
             "name": "스토캐스틱 오실레이터",

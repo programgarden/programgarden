@@ -74,6 +74,12 @@ class PluginSchema(BaseModel):
         description="다국어 번역 (locale: {name, description, fields.xxx})",
     )
     
+    # 출력 필드 메타데이터 (symbol_results 내 플러그인 고유 필드)
+    output_fields: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="symbol_results 내 플러그인 고유 출력 필드 메타데이터 ({field: {type, description}})",
+    )
+
     # 리소스 관리 (신규)
     resource_hints: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -96,6 +102,12 @@ class PluginSchema(BaseModel):
             return self.locales[locale]["description"]
         return self.description or ""
     
+    def get_output_field_description(self, field_name: str) -> str:
+        """출력 필드 설명 조회"""
+        if field_name in self.output_fields:
+            return self.output_fields[field_name].get("description", "")
+        return ""
+
     def get_localized_field_description(self, field_name: str, locale: str = "en") -> str:
         """Get localized field description"""
         key = f"fields.{field_name}"
