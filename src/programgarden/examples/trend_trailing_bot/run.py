@@ -51,12 +51,30 @@ from programgarden_core.bases.listener import (
 class BotListener(BaseExecutionListener):
     """자동매매 봇 리스너 — 콘솔 로그 + 상태 추적"""
 
-    def __init__(self):
+    def __init__(self, bot_token="", chat_id=""):
         super().__init__()
         self.cycle_count = 0
         self.buy_count = 0
         self.sell_count = 0
         self.start_time = datetime.now()
+        self.bot_token = bot_token
+        self.chat_id = chat_id
+
+    async def _send_telegram(self, message):
+        """실제 텔레그램 발송 (봇 토큰 있을 때만)"""
+        if not self.bot_token or not self.chat_id:
+            return
+        try:
+            import aiohttp
+            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+            async with aiohttp.ClientSession() as session:
+                await session.post(url, json={
+                    "chat_id": self.chat_id,
+                    "text": message,
+                    "parse_mode": "HTML",
+                })
+        except Exception:
+            pass
 
     async def on_node_state_change(self, event):
         state = event.state.value if hasattr(event.state, "value") else str(event.state)
@@ -73,10 +91,22 @@ class BotListener(BaseExecutionListener):
             ):
                 print(f"  ✅ {event.node_id} ({node_type}){duration}")
 
+            # 실제 매도 체결 시 텔레그램 발송
+            if "sell_order" in event.node_id and event.outputs:
+                orders = event.outputs.get("result", event.outputs.get("submitted_orders", []))
+                if orders and isinstance(orders, list) and len(orders) > 0:
+                    symbols = [o.get("symbol", "?") for o in orders if isinstance(o, dict)]
+                    if symbols:
+                        self.sell_count += 1
+                        await self._send_telegram(
+                            f"🔴 <b>손절 매도</b>\n종목: {', '.join(symbols)}"
+                        )
+                        return
+
             if "buy_order" in event.node_id:
                 self.buy_count += 1
             elif "sell_order" in event.node_id:
-                self.sell_count += 1
+                pass  # 실제 체결 없으면 카운트 안 함
 
         elif state == "failed":
             print(f"  ❌ {event.node_id} FAILED: {event.error}")
@@ -182,7 +212,9 @@ async def main():
     print(f"\n  Ctrl+C 로 종료\n")
 
     pg = ProgramGarden()
-    listener = BotListener()
+    bot_token = os.environ.get("TELEGRAM-TOKEN", "") or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM-CHAT-ID", "") or os.environ.get("TELEGRAM_CHAT_ID", "")
+    listener = BotListener(bot_token=bot_token, chat_id=chat_id)
 
     job = await pg.run_async(workflow, listeners=[listener])
 
