@@ -41,6 +41,12 @@ VWAP_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "volume"],
     optional_fields=["high", "low", "open"],
     tags=["volume", "vwap", "intraday"],
+    output_fields={
+        "vwap": {"type": "float", "description": "Volume weighted average price"},
+        "current_close": {"type": "float", "description": "Current close price"},
+        "upper_band": {"type": "float", "description": "Upper standard deviation band (None if band_multiplier=0)"},
+        "lower_band": {"type": "float", "description": "Lower standard deviation band (None if band_multiplier=0)"},
+    },
     locales={
         "ko": {
             "name": "거래량가중평균가격 (VWAP)",

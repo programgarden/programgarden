@@ -28,6 +28,12 @@ PROFIT_TARGET_SCHEMA = PluginSchema(
     required_fields=[],  # positions 플러그인은 items 불필요
     optional_fields=[],
     tags=["exit", "profit", "realtime"],
+    output_fields={
+        "pnl_rate": {"type": "float", "description": "Current P&L rate (%)"},
+        "current_price": {"type": "float", "description": "Current market price"},
+        "target_percent": {"type": "float", "description": "Profit target threshold (%)"},
+        "reached": {"type": "bool", "description": "Whether profit target was reached (pnl_rate >= target_percent)"},
+    },
     locales={
         "ko": {
             "name": "목표 수익률 (Profit Target)",

@@ -57,6 +57,13 @@ MAX_POSITION_LIMIT_SCHEMA = PluginSchema(
     required_fields=[],
     optional_fields=[],
     tags=["position", "limit", "risk", "weight", "portfolio"],
+    output_fields={
+        "current_price": {"type": "float", "description": "Current market price of this position"},
+        "market_value": {"type": "float", "description": "Total market value of this position"},
+        "weight_pct": {"type": "float", "description": "Position weight as percentage of total portfolio (%)"},
+        "is_overweight": {"type": "bool", "description": "Whether this position exceeds the single position weight limit"},
+        "action_taken": {"type": "str", "description": "Action taken: 'exit', 'reduce', 'block_new', 'warn', or 'hold'"},
+    },
     locales={
         "ko": {
             "name": "최대 포지션 한도",

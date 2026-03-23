@@ -57,6 +57,11 @@ CORRELATION_ANALYSIS_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["correlation", "diversification", "pairs", "portfolio"],
+    output_fields={
+        "max_correlation": {"type": "float", "description": "Highest absolute correlation value found for this symbol across all pairs"},
+        "best_pair": {"type": "str", "description": "Symbol with the highest correlation to this symbol"},
+        "passed": {"type": "bool", "description": "Whether the correlation condition (above/below threshold) was met"},
+    },
     locales={
         "ko": {
             "name": "상관관계 분석 (Correlation Analysis)",

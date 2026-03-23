@@ -53,6 +53,10 @@ SUPERTREND_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["trend", "atr", "supertrend"],
+    output_fields={
+        "supertrend": {"type": "float", "description": "Supertrend line value"},
+        "trend": {"type": "str", "description": "Current trend direction (up/down)"},
+    },
     locales={
         "ko": {
             "name": "슈퍼트렌드",

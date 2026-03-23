@@ -61,6 +61,11 @@ PARABOLIC_SAR_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["trend", "reversal", "parabolic", "trailing_stop"],
+    output_fields={
+        "sar": {"type": "float", "description": "Parabolic SAR value"},
+        "trend": {"type": "str", "description": "Current trend direction (up/down)"},
+        "current_close": {"type": "float", "description": "Current close price"},
+    },
     locales={
         "ko": {
             "name": "파라볼릭 SAR",

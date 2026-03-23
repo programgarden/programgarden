@@ -58,6 +58,12 @@ TSMOM_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["volume"],
     tags=["momentum", "time-series", "tsmom", "trend-following"],
+    output_fields={
+        "momentum_return": {"type": "float", "description": "Raw momentum return over the lookback period (fractional)"},
+        "signal": {"type": "str", "description": "Momentum signal: 'long', 'short', or 'neutral'"},
+        "vol_adjusted_signal": {"type": "float", "description": "Volatility-adjusted signal scaled to target volatility"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "시계열 모멘텀",

@@ -75,6 +75,13 @@ MAGIC_FORMULA_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange"],
     optional_fields=["per", "roe", "ebit", "enterprise_value", "invested_capital", "market_cap", "sector"],
     tags=["magic-formula", "greenblatt", "value", "fundamental", "ranking", "multi-symbol"],
+    output_fields={
+        "roc_rank": {"type": "int", "description": "Rank by Return on Capital (lower = better quality)"},
+        "ey_rank": {"type": "int", "description": "Rank by Earnings Yield (lower = cheaper valuation)"},
+        "combined_rank": {"type": "int", "description": "Combined Magic Formula rank (roc_rank + ey_rank, lower = better)"},
+        "roc_value": {"type": "float", "description": "Actual Return on Capital value (EBIT/IC or ROE)"},
+        "ey_value": {"type": "float", "description": "Actual Earnings Yield value (EBIT/EV or 1/PER)"},
+    },
     locales={
         "ko": {
             "name": "마법공식",

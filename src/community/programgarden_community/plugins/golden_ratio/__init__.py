@@ -59,6 +59,15 @@ GOLDEN_RATIO_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=["open", "volume"],
     tags=["fibonacci", "support", "resistance", "retracement"],
+    output_fields={
+        "fib_level": {"type": "str", "description": "Target Fibonacci retracement level (e.g. '0.618')"},
+        "fib_price": {"type": "float", "description": "Price at the target Fibonacci level"},
+        "swing_high": {"type": "float", "description": "Swing high price used for Fibonacci calculation"},
+        "swing_low": {"type": "float", "description": "Swing low price used for Fibonacci calculation"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+        "distance_pct": {"type": "float", "description": "Distance from current price to Fibonacci level (%)"},
+        "is_uptrend": {"type": "bool", "description": "Whether the detected swing direction is uptrend"},
+    },
     locales={
         "ko": {
             "name": "황금비율 (피보나치 되돌림)",

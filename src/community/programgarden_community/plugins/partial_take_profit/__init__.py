@@ -41,6 +41,15 @@ PARTIAL_TAKE_PROFIT_SCHEMA = PluginSchema(
     required_fields=[],
     optional_fields=[],
     tags=["exit", "profit", "partial", "scaling"],
+    output_fields={
+        "pnl_rate": {"type": "float", "description": "Current P&L rate (%)"},
+        "qty": {"type": "int", "description": "Current position quantity"},
+        "sell_quantity": {"type": "int", "description": "Quantity to sell at this partial take profit level"},
+        "sell_pct": {"type": "float", "description": "Percentage of position to sell (%)"},
+        "level_index": {"type": "int", "description": "Index of the triggered profit level"},
+        "remaining_levels": {"type": "int", "description": "Number of remaining profit levels not yet triggered"},
+        "action": {"type": "str", "description": "Action taken: 'sell', 'hold', 'skip', or 'cleared'"},
+    },
     locales={
         "ko": {
             "name": "분할 익절",

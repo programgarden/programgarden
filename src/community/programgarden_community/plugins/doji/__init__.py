@@ -45,6 +45,12 @@ DOJI_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "open", "high", "low", "close"],
     optional_fields=["volume"],
     tags=["candlestick", "pattern", "doji", "reversal", "indecision"],
+    output_fields={
+        "pattern_detected": {"type": "bool", "description": "Whether the doji pattern was detected on the latest candle"},
+        "doji_type": {"type": "str", "description": "Doji variant: 'standard', 'long_legged', 'dragonfly', or 'gravestone'"},
+        "body_ratio": {"type": "float", "description": "Body-to-range ratio of the candle"},
+        "confidence": {"type": "float", "description": "Pattern confidence score (0.0–1.0)"},
+    },
     locales={
         "ko": {
             "name": "도지",

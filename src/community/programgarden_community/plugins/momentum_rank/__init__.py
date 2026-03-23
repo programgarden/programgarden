@@ -76,6 +76,13 @@ MOMENTUM_RANK_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["momentum", "rank", "screening", "universe", "selection"],
+    output_fields={
+        "momentum": {"type": "float", "description": "Calculated momentum value (%)"},
+        "rank": {"type": "int", "description": "Rank within the universe (1 = highest momentum when selection=top)"},
+        "start_price": {"type": "float", "description": "Price at the start of the lookback window"},
+        "end_price": {"type": "float", "description": "Price at the end of the lookback window (excluding recent days if set)"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "모멘텀 순위",

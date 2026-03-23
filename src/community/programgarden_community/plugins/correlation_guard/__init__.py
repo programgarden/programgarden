@@ -76,6 +76,12 @@ CORRELATION_GUARD_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["correlation", "guard", "regime", "risk_management", "diversification"],
+    output_fields={
+        "max_correlation": {"type": "float", "description": "Highest pairwise correlation found for this symbol"},
+        "correlated_with": {"type": "str", "description": "Symbol most correlated with this one"},
+        "regime": {"type": "str", "description": "Current correlation regime: 'high_correlation' or 'normal'"},
+        "action_taken": {"type": "str", "description": "Action taken: 'exit', 'reduce_X%', 'alert', or 'hold'"},
+    },
     locales={
         "ko": {
             "name": "상관관계 가드 (Correlation Guard)",

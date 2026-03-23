@@ -70,6 +70,17 @@ VOLATILITY_BREAKOUT_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "open", "close", "high", "low"],
     optional_fields=["volume"],
     tags=["volatility", "breakout", "williams", "intraday", "range"],
+    output_fields={
+        "signal": {"type": "str", "description": "Breakout signal: 'long', 'short', or 'none'"},
+        "breakout_price": {"type": "float", "description": "Breakout threshold price (open + k × prev_range)"},
+        "short_breakout_price": {"type": "float", "description": "Downward breakout threshold (open - k × prev_range)"},
+        "prev_range": {"type": "float", "description": "Previous bar's high-low range"},
+        "current_high": {"type": "float", "description": "Current bar's high price"},
+        "current_low": {"type": "float", "description": "Current bar's low price"},
+        "current_close": {"type": "float", "description": "Current bar's close price"},
+        "k_used": {"type": "float", "description": "Effective K factor used (may differ from k_factor if ATR adaptive)"},
+        "atr_value": {"type": "float", "description": "Current ATR value (if ATR adaptive mode)"},
+    },
     locales={
         "ko": {
             "name": "변동성 돌파",

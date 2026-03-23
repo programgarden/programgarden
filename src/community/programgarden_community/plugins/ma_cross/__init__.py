@@ -30,6 +30,11 @@ MA_CROSS_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["trend", "moving_average", "crossover"],
+    output_fields={
+        "short_ma": {"type": "float", "description": "Current short-period moving average value"},
+        "long_ma": {"type": "float", "description": "Current long-period moving average value"},
+        "status": {"type": "str", "description": "Trend status: 'bullish' or 'bearish'"},
+    },
     locales={
         "ko": {
             "name": "이동평균선 크로스 (MA Cross)",

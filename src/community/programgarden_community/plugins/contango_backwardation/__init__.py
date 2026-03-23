@@ -43,6 +43,13 @@ CONTANGO_BACKWARDATION_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["futures", "contango", "backwardation", "term_structure", "spread"],
+    output_fields={
+        "price": {"type": "float", "description": "Latest close price of this contract"},
+        "contract_order": {"type": "int", "description": "Contract expiry order (YYYYMM format)"},
+        "structure": {"type": "str", "description": "Detected term structure: 'contango' or 'backwardation'"},
+        "spread_pct": {"type": "float", "description": "Spread percentage between front and back month contracts"},
+        "significant": {"type": "bool", "description": "Whether the spread exceeds the threshold"},
+    },
     locales={
         "ko": {
             "name": "콘탱고/백워데이션 탐지",

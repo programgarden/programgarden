@@ -56,6 +56,10 @@ RSI_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["momentum", "oscillator"],
+    output_fields={
+        "rsi": {"type": "float", "description": "RSI indicator value (0-100)"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "RSI (상대강도지수)",

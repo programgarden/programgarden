@@ -60,6 +60,12 @@ KELTNER_CHANNEL_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["channel", "keltner", "atr", "ema", "squeeze"],
+    output_fields={
+        "middle": {"type": "float", "description": "Middle band (EMA of close)"},
+        "upper": {"type": "float", "description": "Upper band (middle + multiplier * ATR)"},
+        "lower": {"type": "float", "description": "Lower band (middle - multiplier * ATR)"},
+        "current_close": {"type": "float", "description": "Current close price"},
+    },
     locales={
         "ko": {
             "name": "켈트너 채널",

@@ -51,6 +51,13 @@ ATR_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=[],
     tags=["volatility", "breakout"],
+    output_fields={
+        "atr": {"type": "float", "description": "Average True Range value"},
+        "ma": {"type": "float", "description": "Moving average used as ATR band center"},
+        "upper_band": {"type": "float", "description": "Upper ATR band (MA + ATR * multiplier)"},
+        "lower_band": {"type": "float", "description": "Lower ATR band (MA - ATR * multiplier)"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "ATR (평균진폭)",

@@ -28,6 +28,12 @@ STOP_LOSS_SCHEMA = PluginSchema(
     required_fields=[],  # positions 플러그인은 items 불필요
     optional_fields=[],
     tags=["exit", "risk", "realtime"],
+    output_fields={
+        "pnl_rate": {"type": "float", "description": "Current P&L rate (%)"},
+        "current_price": {"type": "float", "description": "Current market price"},
+        "stop_percent": {"type": "float", "description": "Stop loss threshold (%)"},
+        "triggered": {"type": "bool", "description": "Whether stop loss was triggered (pnl_rate <= stop_percent)"},
+    },
     locales={
         "ko": {
             "name": "손절 라인 (Stop Loss)",
