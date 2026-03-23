@@ -31,6 +31,9 @@ from programgarden_core.bases.listener import (
     PositionDetail,
     RiskEvent,
     RestartEvent,
+    NotificationEvent,
+    NotificationCategory,
+    NotificationSeverity,
     LLMStreamEvent,
     TokenUsageEvent,
     AIToolCallEvent,
@@ -1546,6 +1549,68 @@ class ExecutionContext:
                     await listener.on_risk_event(event)
             except Exception as e:
                 logger.warning(f"Listener error on_risk_event: {e}")
+
+        # RISK_ALERT 자동 래핑: risk_event → notification
+        try:
+            risk_sev = NotificationSeverity.CRITICAL if event.severity == "critical" else (
+                NotificationSeverity.WARNING if event.severity == "warning" else NotificationSeverity.INFO
+            )
+            symbol_tag = f" [{event.symbol}]" if event.symbol else ""
+            await self.notify_notification(NotificationEvent(
+                job_id=self.job_id,
+                category=NotificationCategory.RISK_ALERT,
+                severity=risk_sev,
+                title=f"Risk {event.severity}: {event.event_type}{symbol_tag}",
+                message=str(event.details),
+                data={
+                    "event_type": event.event_type,
+                    "severity": event.severity,
+                    "symbol": event.symbol,
+                    "exchange": event.exchange,
+                    "details": event.details,
+                    "action_hint": event.action_hint,
+                },
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to wrap risk_event as notification: {e}")
+
+    async def notify_notification(self, event: NotificationEvent) -> None:
+        """투자자 알림 이벤트 전파.
+
+        on_log와 달리 변화가 있을 때만 발행되는 공지 성격.
+        소비자: 투자자, 외부 메시징 (텔레그램/카톡), 외부 AI 모델.
+        """
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_notification'):
+                    await listener.on_notification(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_notification: {e}")
+
+    async def send_notification(
+        self,
+        category: NotificationCategory,
+        severity: NotificationSeverity,
+        title: str,
+        message: str,
+        node_id: Optional[str] = None,
+        node_type: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """편의 메서드: NotificationEvent 생성 및 전파."""
+        event = NotificationEvent(
+            job_id=self.job_id,
+            category=category,
+            severity=severity,
+            title=title,
+            message=message,
+            node_id=node_id,
+            node_type=node_type,
+            data=data or {},
+        )
+        await self.notify_notification(event)
 
     async def notify_workflow_pnl(
         self,

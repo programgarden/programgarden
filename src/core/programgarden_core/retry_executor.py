@@ -132,7 +132,31 @@ class RetryExecutor:
 
                 await asyncio.sleep(delay)
 
-        # 모든 재시도 실패: Fallback 처리
+        # 모든 재시도 실패: RETRY_EXHAUSTED notification
+        if hasattr(context, "send_notification"):
+            try:
+                from programgarden_core.bases.listener import (
+                    NotificationCategory,
+                    NotificationSeverity,
+                )
+                await context.send_notification(
+                    category=NotificationCategory.RETRY_EXHAUSTED,
+                    severity=NotificationSeverity.WARNING,
+                    title=f"Retry exhausted: {node.id}",
+                    message=f"{node.__class__.__name__} failed after {config.retry.max_retries} retries: {last_error}",
+                    node_id=node.id,
+                    node_type=node.__class__.__name__,
+                    data={
+                        "node_id": node.id,
+                        "node_type": node.__class__.__name__,
+                        "max_retries": config.retry.max_retries,
+                        "last_error": str(last_error),
+                    },
+                )
+            except Exception as notify_err:
+                logger.warning(f"RETRY_EXHAUSTED notification failed: {notify_err}")
+
+        # Fallback 처리
         return self._handle_fallback(node, last_error, config.fallback)
 
     def _calculate_delay(self, config: RetryConfig, attempt: int) -> float:
