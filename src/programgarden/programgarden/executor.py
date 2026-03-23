@@ -1122,9 +1122,6 @@ class SymbolFilterNodeExecutor(NodeExecutorBase):
                 output_symbols.append({"symbol": symbol, "exchange": ""})
         
         context.log("info", f"SymbolFilter ({operation}): {len(set_a)} - {len(set_b)} = {len(output_symbols)} symbols", node_id)
-        sym_names = [s.get("symbol", "?") for s in output_symbols]
-        print(f"  [DEBUG filter] {operation}: A={list(set_a)} - B={list(set_b)} = {sym_names}")
-
         return {
             "symbols": output_symbols,
             "count": len(output_symbols),
@@ -7077,13 +7074,6 @@ class ConditionNodeExecutor(NodeExecutorBase):
             f"Condition evaluated: {len(passed_symbols)}/{len(normalized_symbols)} passed",
             node_id,
         )
-        # DEBUG: 종목별 신호 출력
-        for sr in symbol_results:
-            sig = sr.get("signal", sr.get("result", "?"))
-            sym = sr.get("symbol", "?")
-            mom = sr.get("momentum_return", "")
-            mom_str = f", momentum={mom}" if mom != "" else ""
-            print(f"  [DEBUG tsmom] {sym}: signal={sig}{mom_str}")
 
         # SIGNAL_TRIGGERED notification (변화가 있을 때만: passed_symbols 존재)
         if passed_symbols:
@@ -8165,9 +8155,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         context.log("info", f"HistoricalData output: value={single_value is not None}, ohlcv_count={len(ohlcv_data) if ohlcv_data else 0}", node_id)
         if single_value:
             ts_count = len(single_value.get("time_series", [])) if isinstance(single_value, dict) else 0
-            print(f"  [DEBUG historical] symbol={single_value.get('symbol')}, time_series={ts_count}bars")
-        else:
-            print(f"  [DEBUG historical] single_value=None, ohlcv_data={len(ohlcv_data) if ohlcv_data else 0}")
+            context.log("debug", f"HistoricalData value: symbol={single_value.get('symbol')}, time_series_count={ts_count}", node_id)
 
         return {
             "value": single_value,  # 단일 {symbol, exchange, time_series: [...]}  - 노드 스키마와 일치
@@ -14866,9 +14854,6 @@ class WorkflowJob:
                 )
                 all_results.append(outputs)
             except Exception as e:
-                import traceback
-                print(f"  [DEBUG auto-iterate error] node={node_id}, item={item_label}:")
-                traceback.print_exc()
                 self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
                 # continue_on_error: 기본적으로 계속 진행
                 all_results.append({"error": str(e), "item": current_item})
