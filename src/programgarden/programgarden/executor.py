@@ -23,6 +23,8 @@ from programgarden_core.bases.listener import (
     NodeState,
     EdgeState,
     RestartEvent,
+    NotificationCategory,
+    NotificationSeverity,
 )
 from programgarden_core.retry_executor import RetryExecutor
 from programgarden_core.nodes.base import BaseMessagingNode
@@ -949,7 +951,21 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                     # 스케줄 시간 도달 - 이벤트 발생
                     cnt += 1
                     context.log("info", f"Schedule tick #{cnt}: {cron_expr}", node_id)
-                    
+
+                    # SCHEDULE_STARTED notification
+                    try:
+                        await context.send_notification(
+                            category=NotificationCategory.SCHEDULE_STARTED,
+                            severity=NotificationSeverity.INFO,
+                            title=f"Schedule cycle #{cnt}",
+                            message=f"Cron: {cron_expr}",
+                            node_id=node_id,
+                            node_type="ScheduleNode",
+                            data={"cycle_number": cnt},
+                        )
+                    except Exception:
+                        pass
+
                     await context.emit_event(
                         event_type="schedule_tick",
                         source_node_id=node_id,
@@ -7059,7 +7075,40 @@ class ConditionNodeExecutor(NodeExecutorBase):
             f"Condition evaluated: {len(passed_symbols)}/{len(normalized_symbols)} passed",
             node_id,
         )
-        
+
+        # SIGNAL_TRIGGERED notification (변화가 있을 때만: passed_symbols 존재)
+        if passed_symbols:
+            passed_names = [s.get("symbol", "?") for s in passed_symbols[:5]]
+            extra = f" +{len(passed_symbols) - 5} more" if len(passed_symbols) > 5 else ""
+            title = f"{plugin_id} signal: {', '.join(passed_names)}{extra}"
+            msg = f"{len(passed_symbols)}/{len(normalized_symbols)} symbols passed"
+
+            output_fields = {}
+            try:
+                from programgarden_core.registry import PluginRegistry
+                _schema = PluginRegistry().get_schema(plugin_id)
+                if _schema and hasattr(_schema, 'output_fields'):
+                    output_fields = _schema.output_fields
+            except Exception:
+                pass
+
+            await context.send_notification(
+                category=NotificationCategory.SIGNAL_TRIGGERED,
+                severity=NotificationSeverity.INFO,
+                title=title,
+                message=msg,
+                node_id=node_id,
+                node_type="ConditionNode",
+                data={
+                    "plugin": plugin_id,
+                    "plugin_output_fields": output_fields,
+                    "symbol_results": symbol_results,
+                    "passed_count": len(passed_symbols),
+                    "failed_count": len(failed_symbols),
+                    "total_count": len(normalized_symbols),
+                },
+            )
+
         return {
             "symbols": normalized_symbols,  # 입력 symbols (거래소 포함)
             "result": len(passed_symbols) > 0,
@@ -14282,6 +14331,19 @@ class WorkflowJob:
         # 🆕 Job 시작 알림
         await self.context.notify_job_state("running", self.stats)
 
+        # WORKFLOW_STARTED notification
+        try:
+            wf_type = "realtime" if getattr(self, "_has_realtime", False) else "oneshot"
+            await self.context.send_notification(
+                category=NotificationCategory.WORKFLOW_STARTED,
+                severity=NotificationSeverity.INFO,
+                title="Workflow started",
+                message=f"Job {self.job_id} started",
+                data={"workflow_type": wf_type},
+            )
+        except Exception as e:
+            logger.debug(f"WORKFLOW_STARTED notification failed: {e}")
+
         # Async execution
         self._task = asyncio.create_task(self._run())
 
@@ -14371,6 +14433,28 @@ class WorkflowJob:
             # 🆕 Job 완료 알림
             await self.context.notify_job_state(self.status, self.stats)
 
+            # WORKFLOW_COMPLETED / FAILED notification
+            try:
+                if self.status == "completed":
+                    duration = (self.completed_at - self.started_at).total_seconds() if self.started_at else 0
+                    await self.context.send_notification(
+                        category=NotificationCategory.WORKFLOW_COMPLETED,
+                        severity=NotificationSeverity.INFO,
+                        title="Workflow completed",
+                        message=f"Job {self.job_id} completed successfully",
+                        data={"duration_sec": round(duration, 1), "executed_nodes": self.stats.get("flow_executions", 0)},
+                    )
+                elif self.status == "failed":
+                    await self.context.send_notification(
+                        category=NotificationCategory.WORKFLOW_FAILED,
+                        severity=NotificationSeverity.CRITICAL,
+                        title="Workflow failed",
+                        message=f"Job {self.job_id} failed",
+                        data={"error": str(self.stats.get("last_error", "Unknown error"))},
+                    )
+            except Exception:
+                pass
+
         except asyncio.CancelledError:
             self.status = "cancelled"
             logger.info(f"Job {self.job_id} cancelled")
@@ -14385,6 +14469,18 @@ class WorkflowJob:
             import traceback
             traceback.print_exc()
             await self.context.notify_job_state("failed", self.stats)
+
+            # WORKFLOW_FAILED notification
+            try:
+                await self.context.send_notification(
+                    category=NotificationCategory.WORKFLOW_FAILED,
+                    severity=NotificationSeverity.CRITICAL,
+                    title="Workflow failed",
+                    message=f"Job {self.job_id} failed: {e}",
+                    data={"error": str(e)},
+                )
+            except Exception:
+                pass
         finally:
             # Cleanup broker fill subscriptions (SDK 콜백 해제)
             await self._cleanup_broker_fill_subscriptions()
@@ -15761,6 +15857,18 @@ class WorkflowJob:
             {"stopped": True, "pending_orders": [...], "warning": "..."}
         """
         logger.warning(f"FORCE STOP (Kill Switch) triggered for job {self.job_id}")
+
+        # RISK_HALT notification
+        try:
+            await self.context.send_notification(
+                category=NotificationCategory.RISK_HALT,
+                severity=NotificationSeverity.CRITICAL,
+                title="Kill Switch activated",
+                message=f"Job {self.job_id} force stopped",
+                data={"reason": "Kill Switch activated", "halted_at": datetime.utcnow().isoformat() + "Z"},
+            )
+        except Exception:
+            pass  # force_stop 중 notification 실패는 무시
         self.status = "force_stopped"
         self.context.stop()
 
