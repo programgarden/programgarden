@@ -43,6 +43,11 @@ ENGULFING_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "open", "high", "low", "close"],
     optional_fields=["volume"],
     tags=["candlestick", "pattern", "reversal", "engulfing"],
+    output_fields={
+        "pattern_detected": {"type": "bool", "description": "Whether the engulfing pattern was detected on the latest candle"},
+        "confidence": {"type": "float", "description": "Pattern confidence score (0.0–1.0)"},
+        "pattern_type": {"type": "str", "description": "Pattern direction: 'bullish' or 'bearish'"},
+    },
     locales={
         "ko": {
             "name": "장악형 패턴",

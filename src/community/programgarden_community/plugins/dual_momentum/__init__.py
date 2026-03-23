@@ -33,6 +33,13 @@ DUAL_MOMENTUM_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["momentum", "trend", "asset_allocation"],
+    output_fields={
+        "momentum": {"type": "float", "description": "Absolute momentum (return over lookback period, %)"},
+        "benchmark_momentum": {"type": "float", "description": "Benchmark momentum for relative comparison (%)"},
+        "absolute_pass": {"type": "bool", "description": "Whether absolute momentum threshold is met"},
+        "relative_pass": {"type": "bool", "description": "Whether relative momentum vs benchmark is met"},
+        "status": {"type": "str", "description": "Evaluation result: 'passed' or 'failed'"},
+    },
     locales={
         "ko": {
             "name": "듀얼 모멘텀 (Dual Momentum)",

@@ -78,6 +78,11 @@ MARKET_INTERNALS_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["high", "low"],
     tags=["breadth", "market", "internals", "advance_decline", "health"],
+    output_fields={
+        "change_pct": {"type": "float", "description": "Price change percentage for this symbol over the lookback period"},
+        "above_ma": {"type": "bool", "description": "Whether this symbol's price is above its own moving average"},
+        "current_price": {"type": "float", "description": "Latest closing price of this symbol"},
+    },
     locales={
         "ko": {
             "name": "시장 내부 지표 (Market Internals)",

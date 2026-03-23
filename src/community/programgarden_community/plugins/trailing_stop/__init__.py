@@ -44,6 +44,14 @@ TRAILING_STOP_SCHEMA = PluginSchema(
         },
     },
     tags=["modify", "tracking", "trailing_stop"],
+    output_fields={
+        "signal": {"type": "str", "description": "Trading signal: 'sell' (trailing stop triggered) or 'hold'"},
+        "hwm_price": {"type": "float", "description": "High-water mark price tracked by risk_tracker"},
+        "current_price": {"type": "float", "description": "Current market price"},
+        "drawdown_pct": {"type": "float", "description": "Current drawdown from high-water mark (%)"},
+        "threshold_pct": {"type": "float", "description": "Allowed drawdown threshold (%) before sell signal"},
+        "profit_pct": {"type": "float", "description": "Profit percentage from entry to high-water mark"},
+    },
     locales={
         "ko": {
             "name": "가격 추적 정정 (Trailing Stop)",

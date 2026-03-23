@@ -61,6 +61,12 @@ RELATIVE_STRENGTH_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["relative_strength", "rotation", "benchmark", "ranking"],
+    output_fields={
+        "rs_score": {"type": "float", "description": "Relative strength score (percentile 0-100, z_score, or raw excess return)"},
+        "rs_raw": {"type": "float", "description": "Raw relative return vs benchmark (asset_return - benchmark_return, %)"},
+        "asset_return": {"type": "float", "description": "Asset return over lookback period (%)"},
+        "benchmark_return": {"type": "float", "description": "Benchmark return over lookback period (%)"},
+    },
     locales={
         "ko": {
             "name": "상대 강도 (Relative Strength)",

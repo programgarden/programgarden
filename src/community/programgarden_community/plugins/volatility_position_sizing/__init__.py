@@ -66,6 +66,12 @@ VOLATILITY_POSITION_SIZING_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["position_sizing", "volatility", "risk_management"],
+    output_fields={
+        "volatility": {"type": "float", "description": "Annualized realized volatility of the symbol (%)"},
+        "position_pct": {"type": "float", "description": "Recommended position size as portfolio percentage (%)"},
+        "target_volatility": {"type": "float", "description": "Target annual volatility used for sizing (%)"},
+        "scaling_method": {"type": "str", "description": "Sizing method applied: 'inverse_vol', 'vol_target', or 'equal_risk'"},
+    },
     locales={
         "ko": {
             "name": "변동성 기반 포지션 사이징",

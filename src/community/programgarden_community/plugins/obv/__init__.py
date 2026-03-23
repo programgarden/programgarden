@@ -45,6 +45,10 @@ OBV_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "volume"],
     optional_fields=["open", "high", "low"],
     tags=["volume", "trend", "momentum"],
+    output_fields={
+        "obv": {"type": "float", "description": "On-Balance Volume cumulative value"},
+        "obv_ma": {"type": "float", "description": "Moving average of OBV"},
+    },
     locales={
         "ko": {
             "name": "OBV (거래량 균형)",

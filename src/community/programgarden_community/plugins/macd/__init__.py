@@ -57,6 +57,11 @@ MACD_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["trend", "momentum"],
+    output_fields={
+        "macd": {"type": "float", "description": "MACD line value (fast EMA minus slow EMA)"},
+        "signal": {"type": "float", "description": "Signal line value (EMA of MACD line)"},
+        "histogram": {"type": "float", "description": "MACD histogram (MACD line minus signal line)"},
+    },
     locales={
         "ko": {
             "name": "MACD (이동평균 수렴확산)",

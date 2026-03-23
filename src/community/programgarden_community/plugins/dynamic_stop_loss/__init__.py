@@ -56,6 +56,16 @@ DYNAMIC_STOP_LOSS_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=[],
     tags=["stop_loss", "atr", "dynamic", "volatility", "exit"],
+    output_fields={
+        "current_price": {"type": "float", "description": "Current market price"},
+        "avg_price": {"type": "float", "description": "Average entry price from position data"},
+        "reference_price": {"type": "float", "description": "Reference price used for stop calculation (entry or trailing high)"},
+        "atr": {"type": "float", "description": "Current ATR value"},
+        "stop_distance": {"type": "float", "description": "Stop distance in price units (ATR × multiplier)"},
+        "stop_price": {"type": "float", "description": "Calculated stop loss price"},
+        "stop_pct": {"type": "float", "description": "Stop distance as percentage of reference price (%)"},
+        "triggered": {"type": "bool", "description": "Whether stop loss was triggered (current_price <= stop_price)"},
+    },
     locales={
         "ko": {
             "name": "동적 손절 (Dynamic Stop Loss)",

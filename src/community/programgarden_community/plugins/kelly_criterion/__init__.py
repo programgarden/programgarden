@@ -70,6 +70,15 @@ KELLY_CRITERION_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["kelly", "position_sizing", "risk_management", "optimal"],
+    output_fields={
+        "kelly_pct": {"type": "float", "description": "Full Kelly position size (%)"},
+        "fractional_kelly_pct": {"type": "float", "description": "Fractional Kelly position size after applying kelly_fraction (%)"},
+        "position_pct": {"type": "float", "description": "Final clamped position size within [min, max] bounds (%)"},
+        "win_rate": {"type": "float", "description": "Historical win rate (fraction of positive returns)"},
+        "avg_win": {"type": "float", "description": "Average winning return (fractional)"},
+        "avg_loss": {"type": "float", "description": "Average losing return absolute value (fractional)"},
+        "payoff_ratio": {"type": "float", "description": "Payoff ratio (avg_win / avg_loss)"},
+    },
     locales={
         "ko": {
             "name": "켈리 기준 (Kelly Criterion)",

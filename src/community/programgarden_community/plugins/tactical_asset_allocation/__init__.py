@@ -58,6 +58,13 @@ TAA_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["open", "high", "low", "volume"],
     tags=["taa", "sma", "trend", "allocation", "faber", "asset-allocation"],
+    output_fields={
+        "trend_signal": {"type": "str", "description": "Trend signal: 'above_sma' (hold), 'below_sma' (cash), or 'insufficient_data'"},
+        "sma_value": {"type": "float", "description": "Current SMA value"},
+        "distance_pct": {"type": "float", "description": "Percentage distance of price from SMA"},
+        "allocation": {"type": "float", "description": "Recommended allocation (0.0 = cash, 1.0 = fully invested)"},
+        "current_close": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "전술적 자산배분",

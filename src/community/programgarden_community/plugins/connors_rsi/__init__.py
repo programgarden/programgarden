@@ -79,6 +79,14 @@ CONNORS_RSI_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["open", "high", "low", "volume"],
     tags=["rsi", "connors", "short-term", "mean-reversion", "oversold"],
+    output_fields={
+        "connors_rsi": {"type": "float", "description": "ConnorsRSI composite value (0–100)"},
+        "rsi_component": {"type": "float", "description": "Classic RSI component value"},
+        "streak_rsi_component": {"type": "float", "description": "Streak RSI component value (consecutive up/down days)"},
+        "pct_rank_component": {"type": "float", "description": "Percentile rank component value"},
+        "streak_value": {"type": "float", "description": "Raw consecutive up/down streak count"},
+        "current_price": {"type": "float", "description": "Latest closing price"},
+    },
     locales={
         "ko": {
             "name": "코너스 RSI",

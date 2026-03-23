@@ -53,6 +53,11 @@ TRIX_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["open", "high", "low", "volume"],
     tags=["trend", "momentum", "trix", "ema"],
+    output_fields={
+        "trix": {"type": "float", "description": "TRIX value (1-day rate of change of triple EMA, %)"},
+        "signal_line": {"type": "float", "description": "Signal line (EMA of TRIX)"},
+        "histogram": {"type": "float", "description": "TRIX minus signal line"},
+    },
     locales={
         "ko": {
             "name": "삼중지수이동평균 (TRIX)",

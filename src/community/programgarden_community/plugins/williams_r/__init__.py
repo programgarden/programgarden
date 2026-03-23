@@ -49,6 +49,9 @@ WILLIAMS_R_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["momentum", "oscillator", "williams"],
+    output_fields={
+        "williams_r": {"type": "float", "description": "Williams %R value (-100 to 0; below -80 oversold, above -20 overbought)"},
+    },
     locales={
         "ko": {
             "name": "윌리엄스 %R",
