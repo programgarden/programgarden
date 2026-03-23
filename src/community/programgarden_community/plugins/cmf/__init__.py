@@ -51,6 +51,10 @@ CMF_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low", "volume"],
     optional_fields=["open"],
     tags=["volume", "accumulation", "distribution", "chaikin"],
+    output_fields={
+        "cmf": {"type": "float", "description": "Chaikin Money Flow value (-1 to 1; positive=accumulation, negative=distribution)"},
+        "mfv": {"type": "float", "description": "Money Flow Volume for the latest bar"},
+    },
     locales={
         "ko": {
             "name": "차이킨 자금흐름 (CMF)",

@@ -51,6 +51,14 @@ BREAKOUT_RETEST_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=["open", "volume"],
     tags=["breakout", "retest", "support", "resistance"],
+    output_fields={
+        "resistance": {"type": "float", "description": "Historical resistance level"},
+        "support": {"type": "float", "description": "Historical support level"},
+        "breakout_level": {"type": "float", "description": "Breakout level price"},
+        "breakout_type": {"type": "str", "description": "Breakout direction (bullish/bearish)"},
+        "current_price": {"type": "float", "description": "Current close price"},
+        "is_retest": {"type": "bool", "description": "Whether price is retesting the breakout level"},
+    },
     locales={
         "ko": {
             "name": "돌파 후 되돌림",

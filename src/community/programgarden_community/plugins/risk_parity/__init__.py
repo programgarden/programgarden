@@ -65,6 +65,11 @@ RISK_PARITY_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["risk_parity", "portfolio", "allocation", "volatility"],
+    output_fields={
+        "volatility": {"type": "float", "description": "Annualized realized volatility of the symbol (%)"},
+        "weight_pct": {"type": "float", "description": "Risk parity portfolio weight for this symbol (%)"},
+        "risk_contribution_pct": {"type": "float", "description": "Percentage of total portfolio risk contributed by this symbol (%)"},
+    },
     locales={
         "ko": {
             "name": "리스크 패리티 (Risk Parity)",

@@ -51,6 +51,20 @@ PIVOT_POINT_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "high", "low", "close"],
     optional_fields=["open", "volume"],
     tags=["pivot", "support", "resistance", "price_level"],
+    output_fields={
+        "pivot_type": {"type": "str", "description": "Pivot calculation method used (standard/fibonacci/camarilla)"},
+        "pp": {"type": "float", "description": "Pivot point level"},
+        "r1": {"type": "float", "description": "First resistance level"},
+        "r2": {"type": "float", "description": "Second resistance level"},
+        "r3": {"type": "float", "description": "Third resistance level"},
+        "s1": {"type": "float", "description": "First support level"},
+        "s2": {"type": "float", "description": "Second support level"},
+        "s3": {"type": "float", "description": "Third support level"},
+        "current_price": {"type": "float", "description": "Current close price"},
+        "nearest_level": {"type": "str", "description": "Name of the nearest pivot level"},
+        "nearest_price": {"type": "float", "description": "Price of the nearest pivot level"},
+        "distance_pct": {"type": "float", "description": "Distance from current price to nearest level (%)"},
+    },
     locales={
         "ko": {
             "name": "피봇 포인트",

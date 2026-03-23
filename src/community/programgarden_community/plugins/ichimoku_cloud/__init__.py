@@ -70,6 +70,16 @@ ICHIMOKU_CLOUD_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["trend", "ichimoku", "cloud", "japanese"],
+    output_fields={
+        "tenkan_sen": {"type": "float", "description": "Conversion line (9-period Donchian midpoint)"},
+        "kijun_sen": {"type": "float", "description": "Base line (26-period Donchian midpoint)"},
+        "senkou_span_a": {"type": "float", "description": "Leading span A (average of tenkan and kijun)"},
+        "senkou_span_b": {"type": "float", "description": "Leading span B (52-period Donchian midpoint)"},
+        "chikou_span": {"type": "float", "description": "Lagging span (current close)"},
+        "current_close": {"type": "float", "description": "Current close price"},
+        "cloud_top": {"type": "float", "description": "Top of the cloud (max of senkou A and B)"},
+        "cloud_bottom": {"type": "float", "description": "Bottom of the cloud (min of senkou A and B)"},
+    },
     locales={
         "ko": {
             "name": "일목균형표",

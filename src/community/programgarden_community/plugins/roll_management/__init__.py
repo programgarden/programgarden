@@ -47,6 +47,15 @@ ROLL_MANAGEMENT_SCHEMA = PluginSchema(
     required_fields=[],
     optional_fields=[],
     tags=["futures", "roll", "expiry", "contract_management"],
+    output_fields={
+        "expiry_date": {"type": "str", "description": "Contract expiry date (YYYY-MM-DD)"},
+        "days_to_expiry": {"type": "int", "description": "Number of days until contract expiry"},
+        "should_roll": {"type": "bool", "description": "Whether it is time to roll to the next contract"},
+        "next_contract": {"type": "str", "description": "Symbol of the next contract to roll into"},
+        "roll_strategy": {"type": "str", "description": "Roll strategy applied: 'calendar', 'volume', or 'spread_optimal'"},
+        "current_price": {"type": "float", "description": "Current market price of the position"},
+        "qty": {"type": "int", "description": "Current position quantity"},
+    },
     locales={
         "ko": {
             "name": "롤오버 관리 (Roll Management)",

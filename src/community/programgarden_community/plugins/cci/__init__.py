@@ -49,6 +49,10 @@ CCI_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=["open", "volume"],
     tags=["momentum", "oscillator", "cci", "futures"],
+    output_fields={
+        "cci": {"type": "float", "description": "CCI value (above +100 overbought, below -100 oversold)"},
+        "typical_price": {"type": "float", "description": "Typical price (High + Low + Close) / 3"},
+    },
     locales={
         "ko": {
             "name": "상품채널지수 (CCI)",

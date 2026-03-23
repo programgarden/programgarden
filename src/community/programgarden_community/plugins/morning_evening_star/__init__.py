@@ -51,6 +51,11 @@ MORNING_EVENING_STAR_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "open", "high", "low", "close"],
     optional_fields=["volume"],
     tags=["candlestick", "pattern", "reversal", "morning_star", "evening_star"],
+    output_fields={
+        "pattern_detected": {"type": "bool", "description": "Whether the 3-candle reversal pattern was detected"},
+        "confidence": {"type": "float", "description": "Pattern confidence score (0.0–1.0)"},
+        "pattern_type": {"type": "str", "description": "Pattern type: 'morning_star' or 'evening_star'"},
+    },
     locales={
         "ko": {
             "name": "샛별/석별형",

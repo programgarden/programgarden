@@ -59,6 +59,13 @@ REGIME_DETECTION_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close", "high", "low"],
     optional_fields=[],
     tags=["regime", "trend", "classification", "adaptive"],
+    output_fields={
+        "regime": {"type": "str", "description": "Market regime classification (bull/bear/sideways)"},
+        "confidence": {"type": "float", "description": "Regime classification confidence (0-100)"},
+        "adx": {"type": "float", "description": "ADX trend strength value"},
+        "ma_slope": {"type": "float", "description": "Moving average slope (% change over 5 periods)"},
+        "vol_percentile": {"type": "float", "description": "Current volatility percentile (0-100)"},
+    },
     locales={
         "ko": {
             "name": "시장 상태 분류 (Regime Detection)",

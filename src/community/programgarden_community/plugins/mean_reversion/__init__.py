@@ -52,6 +52,14 @@ MEAN_REVERSION_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["open", "high", "low", "volume"],
     tags=["mean-reversion", "oversold", "overbought", "deviation"],
+    output_fields={
+        "ma": {"type": "float", "description": "Moving average value"},
+        "std": {"type": "float", "description": "Standard deviation of price"},
+        "upper": {"type": "float", "description": "Upper band (MA + deviation * std)"},
+        "lower": {"type": "float", "description": "Lower band (MA - deviation * std)"},
+        "current_price": {"type": "float", "description": "Current close price"},
+        "deviation_pct": {"type": "float", "description": "Percentage deviation from MA"},
+    },
     locales={
         "ko": {
             "name": "평균 회귀",

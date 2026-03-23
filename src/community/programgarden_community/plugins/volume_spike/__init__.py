@@ -39,6 +39,12 @@ VOLUME_SPIKE_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "volume"],
     optional_fields=[],
     tags=["volume"],
+    output_fields={
+        "current_volume": {"type": "int", "description": "Current bar trading volume"},
+        "avg_volume": {"type": "float", "description": "Average volume over the lookback period"},
+        "ratio": {"type": "float", "description": "Ratio of current volume to average volume"},
+        "passed": {"type": "bool", "description": "Whether volume spike condition is met"},
+    },
     locales={
         "ko": {
             "name": "거래량 급증 (Volume Spike)",

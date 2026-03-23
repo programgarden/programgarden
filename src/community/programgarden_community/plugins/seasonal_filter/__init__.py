@@ -63,6 +63,11 @@ SEASONAL_FILTER_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=["open", "high", "low", "volume"],
     tags=["seasonal", "halloween", "sell-in-may", "calendar", "bouman"],
+    output_fields={
+        "seasonal_signal": {"type": "str", "description": "Seasonal signal: 'buy_period', 'sell_period', or 'unknown'"},
+        "current_month": {"type": "int", "description": "Current month number (1–12)"},
+        "days_to_transition": {"type": "int", "description": "Days until the next seasonal transition"},
+    },
     locales={
         "ko": {
             "name": "계절성 필터",

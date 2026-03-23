@@ -84,6 +84,15 @@ PAIR_TRADING_SCHEMA = PluginSchema(
     required_fields=["symbol", "exchange", "date", "close"],
     optional_fields=[],
     tags=["pair", "spread", "statistical_arbitrage", "mean_reversion", "correlation"],
+    output_fields={
+        "z_score": {"type": "float", "description": "Z-Score of the current spread relative to its rolling mean"},
+        "spread": {"type": "float", "description": "Current spread value between the two symbols"},
+        "mean_spread": {"type": "float", "description": "Rolling mean of the spread"},
+        "std_spread": {"type": "float", "description": "Rolling standard deviation of the spread"},
+        "correlation": {"type": "float", "description": "Pearson correlation between the two symbols' returns"},
+        "signal": {"type": "str", "description": "Trading signal: 'long_a_short_b', 'short_a_long_b', 'exit', or None"},
+        "current_price": {"type": "float", "description": "Latest closing price of this symbol"},
+    },
     locales={
         "ko": {
             "name": "페어 트레이딩",
