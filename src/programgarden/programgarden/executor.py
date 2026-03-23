@@ -23,6 +23,8 @@ from programgarden_core.bases.listener import (
     NodeState,
     EdgeState,
     RestartEvent,
+    NotificationCategory,
+    NotificationSeverity,
 )
 from programgarden_core.retry_executor import RetryExecutor
 from programgarden_core.nodes.base import BaseMessagingNode
@@ -949,7 +951,21 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                     # 스케줄 시간 도달 - 이벤트 발생
                     cnt += 1
                     context.log("info", f"Schedule tick #{cnt}: {cron_expr}", node_id)
-                    
+
+                    # SCHEDULE_STARTED notification
+                    try:
+                        await context.send_notification(
+                            category=NotificationCategory.SCHEDULE_STARTED,
+                            severity=NotificationSeverity.INFO,
+                            title=f"Schedule cycle #{cnt}",
+                            message=f"Cron: {cron_expr}",
+                            node_id=node_id,
+                            node_type="ScheduleNode",
+                            data={"cycle_number": cnt},
+                        )
+                    except Exception:
+                        pass
+
                     await context.emit_event(
                         event_type="schedule_tick",
                         source_node_id=node_id,
@@ -1106,7 +1122,6 @@ class SymbolFilterNodeExecutor(NodeExecutorBase):
                 output_symbols.append({"symbol": symbol, "exchange": ""})
         
         context.log("info", f"SymbolFilter ({operation}): {len(set_a)} - {len(set_b)} = {len(output_symbols)} symbols", node_id)
-        
         return {
             "symbols": output_symbols,
             "count": len(output_symbols),
@@ -7059,7 +7074,40 @@ class ConditionNodeExecutor(NodeExecutorBase):
             f"Condition evaluated: {len(passed_symbols)}/{len(normalized_symbols)} passed",
             node_id,
         )
-        
+
+        # SIGNAL_TRIGGERED notification (변화가 있을 때만: passed_symbols 존재)
+        if passed_symbols:
+            passed_names = [s.get("symbol", "?") for s in passed_symbols[:5]]
+            extra = f" +{len(passed_symbols) - 5} more" if len(passed_symbols) > 5 else ""
+            title = f"{plugin_id} signal: {', '.join(passed_names)}{extra}"
+            msg = f"{len(passed_symbols)}/{len(normalized_symbols)} symbols passed"
+
+            output_fields = {}
+            try:
+                from programgarden_core.registry import PluginRegistry
+                _schema = PluginRegistry().get_schema(plugin_id)
+                if _schema and hasattr(_schema, 'output_fields'):
+                    output_fields = _schema.output_fields
+            except Exception:
+                pass
+
+            await context.send_notification(
+                category=NotificationCategory.SIGNAL_TRIGGERED,
+                severity=NotificationSeverity.INFO,
+                title=title,
+                message=msg,
+                node_id=node_id,
+                node_type="ConditionNode",
+                data={
+                    "plugin": plugin_id,
+                    "plugin_output_fields": output_fields,
+                    "symbol_results": symbol_results,
+                    "passed_count": len(passed_symbols),
+                    "failed_count": len(failed_symbols),
+                    "total_count": len(normalized_symbols),
+                },
+            )
+
         return {
             "symbols": normalized_symbols,  # 입력 symbols (거래소 포함)
             "result": len(passed_symbols) > 0,
@@ -8047,15 +8095,19 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 symbols.append(entry)
                 symbol_exchange_map[entry] = "82"  # 기본값 NASDAQ
         
-        # positions 데이터 가져오기 (market_code 포함)
-        positions = context.get_output(f"_input_{node_id}", "positions")
-        if not positions:
-            positions = context.get_output("account", "positions") or {}
-        
-        # symbol_exchange_map을 positions에 병합 (positions가 우선)
-        for symbol in symbols:
-            if symbol not in positions:
-                positions[symbol] = {"market_code": symbol_exchange_map.get(symbol, "82")}
+        # positions 데이터 가져오기 (market_code 참조용)
+        positions_raw = context.get_output(f"_input_{node_id}", "positions")
+        if not positions_raw:
+            positions_raw = context.get_output("account", "positions") or []
+
+        # 리스트에서 symbol → market_code 매핑 추출
+        if isinstance(positions_raw, list):
+            for pos in positions_raw:
+                if isinstance(pos, dict) and pos.get("symbol"):
+                    sym = pos["symbol"]
+                    mc = pos.get("market_code", pos.get("exchange_code", ""))
+                    if mc and sym not in symbol_exchange_map:
+                        symbol_exchange_map[sym] = mc
         
         if not symbols:
             context.log("warning", "No symbols provided", node_id)
@@ -8086,7 +8138,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         
         # product별 분기 (overseas_futures와 overseas_futureoption은 동일)
         if product == "overseas_stock":
-            ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, positions, symbol_exchange_map, symbols_raw)
+            ohlcv_data = await self._fetch_overseas_stock(symbols, start_date, end_date, interval, context, node_id, None, symbol_exchange_map, symbols_raw)
         elif product in ("overseas_futureoption", "overseas_futures"):
             ohlcv_data = await self._fetch_overseas_futures(symbols, start_date, end_date, interval, context, node_id, symbols_raw)
         elif product == "korea_stock":
@@ -10929,8 +10981,14 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             return None
 
         exchange = order_raw.get("exchange", "NASDAQ")
-        quantity = order_raw.get("quantity", 0)
-        price = order_raw.get("price", 0.0)
+        try:
+            quantity = int(float(order_raw.get("quantity", 0)))
+        except (ValueError, TypeError):
+            quantity = 0
+        try:
+            price = float(order_raw.get("price", 0.0))
+        except (ValueError, TypeError):
+            price = 0.0
 
         # quantity가 없으면 None
         if quantity <= 0:
@@ -11101,8 +11159,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             from programgarden_finance import g3101
 
             
+            # 미해석 표현식 가드 (auto-iterate 미발동 시 {{ item.xxx }} 그대로 넘어옴)
+            if "{{" in symbol or not symbol or len(symbol) > 10:
+                context.log("debug", f"_get_current_price: invalid symbol '{symbol}', skipping g3101", node_id)
+                return None
+
             keysymbol = f"{market_code}{symbol}"
-            
+
             result = ls.overseas_stock().market().현재가조회(
                 g3101.G3101InBlock(
                     delaygb="R",
@@ -14282,6 +14345,19 @@ class WorkflowJob:
         # 🆕 Job 시작 알림
         await self.context.notify_job_state("running", self.stats)
 
+        # WORKFLOW_STARTED notification
+        try:
+            wf_type = "realtime" if getattr(self, "_has_realtime", False) else "oneshot"
+            await self.context.send_notification(
+                category=NotificationCategory.WORKFLOW_STARTED,
+                severity=NotificationSeverity.INFO,
+                title="Workflow started",
+                message=f"Job {self.job_id} started",
+                data={"workflow_type": wf_type},
+            )
+        except Exception as e:
+            logger.debug(f"WORKFLOW_STARTED notification failed: {e}")
+
         # Async execution
         self._task = asyncio.create_task(self._run())
 
@@ -14371,6 +14447,28 @@ class WorkflowJob:
             # 🆕 Job 완료 알림
             await self.context.notify_job_state(self.status, self.stats)
 
+            # WORKFLOW_COMPLETED / FAILED notification
+            try:
+                if self.status == "completed":
+                    duration = (self.completed_at - self.started_at).total_seconds() if self.started_at else 0
+                    await self.context.send_notification(
+                        category=NotificationCategory.WORKFLOW_COMPLETED,
+                        severity=NotificationSeverity.INFO,
+                        title="Workflow completed",
+                        message=f"Job {self.job_id} completed successfully",
+                        data={"duration_sec": round(duration, 1), "executed_nodes": self.stats.get("flow_executions", 0)},
+                    )
+                elif self.status == "failed":
+                    await self.context.send_notification(
+                        category=NotificationCategory.WORKFLOW_FAILED,
+                        severity=NotificationSeverity.CRITICAL,
+                        title="Workflow failed",
+                        message=f"Job {self.job_id} failed",
+                        data={"error": str(self.stats.get("last_error", "Unknown error"))},
+                    )
+            except Exception:
+                pass
+
         except asyncio.CancelledError:
             self.status = "cancelled"
             logger.info(f"Job {self.job_id} cancelled")
@@ -14385,6 +14483,18 @@ class WorkflowJob:
             import traceback
             traceback.print_exc()
             await self.context.notify_job_state("failed", self.stats)
+
+            # WORKFLOW_FAILED notification
+            try:
+                await self.context.send_notification(
+                    category=NotificationCategory.WORKFLOW_FAILED,
+                    severity=NotificationSeverity.CRITICAL,
+                    title="Workflow failed",
+                    message=f"Job {self.job_id} failed: {e}",
+                    data={"error": str(e)},
+                )
+            except Exception:
+                pass
         finally:
             # Cleanup broker fill subscriptions (SDK 콜백 해제)
             await self._cleanup_broker_fill_subscriptions()
@@ -15761,6 +15871,18 @@ class WorkflowJob:
             {"stopped": True, "pending_orders": [...], "warning": "..."}
         """
         logger.warning(f"FORCE STOP (Kill Switch) triggered for job {self.job_id}")
+
+        # RISK_HALT notification
+        try:
+            await self.context.send_notification(
+                category=NotificationCategory.RISK_HALT,
+                severity=NotificationSeverity.CRITICAL,
+                title="Kill Switch activated",
+                message=f"Job {self.job_id} force stopped",
+                data={"reason": "Kill Switch activated", "halted_at": datetime.utcnow().isoformat() + "Z"},
+            )
+        except Exception:
+            pass  # force_stop 중 notification 실패는 무시
         self.status = "force_stopped"
         self.context.stop()
 

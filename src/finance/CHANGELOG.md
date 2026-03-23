@@ -1,3 +1,7 @@
+## [1.4.3] - 2026-03-24
+### Fixed
+- g3204 (해외주식 차트 일주월년별) rate_limit_seconds 1초 → 3초 (API 호출 초과 방지)
+
 ## [1.4.2] - 2026-03-21
 ### Changed
 - GSH(실시간 호가) blocks.py: 미제공 필드 description 마킹 + 클래스 docstring 제약사항 추가

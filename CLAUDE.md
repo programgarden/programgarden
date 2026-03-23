@@ -172,6 +172,7 @@ When a node outputs an array, the next node automatically executes for each item
 | `on_ai_tool_call` | AI Agent tool call (tool_name, duration_ms) |
 | `on_llm_stream` | AI Agent streaming chunk (is_final) |
 | `on_risk_event` | Risk threshold breach (drawdown alert, trailing stop trigger) |
+| `on_notification` | Investor notification (signal, risk, workflow state, schedule, retry exhausted) |
 
 ### Risk Tracker (WorkflowRiskTracker)
 
