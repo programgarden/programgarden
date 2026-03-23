@@ -492,6 +492,59 @@ class AIToolCallEvent:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
+# ============================================================
+# Notification 이벤트
+# ============================================================
+
+class NotificationCategory(str, Enum):
+    """알림 카테고리 — 변화가 있을 때만 발행되는 공지"""
+    SIGNAL_TRIGGERED = "signal_triggered"       # 전략 시그널 발생 (분석 결과)
+    RISK_ALERT = "risk_alert"                   # 리스크 경고 (drawdown 등)
+    RISK_HALT = "risk_halt"                     # Kill Switch / 긴급 정지
+    WORKFLOW_STARTED = "workflow_started"        # 워크플로우 시작
+    WORKFLOW_COMPLETED = "workflow_completed"    # 워크플로우 완료
+    WORKFLOW_FAILED = "workflow_failed"          # 워크플로우 실패
+    RETRY_EXHAUSTED = "retry_exhausted"         # 재시도 모두 소진 (최종 실패)
+    SCHEDULE_STARTED = "schedule_started"       # 스케줄 사이클 시작
+
+
+class NotificationSeverity(str, Enum):
+    """알림 심각도"""
+    INFO = "info"           # 정보 (시작/완료, 시그널)
+    WARNING = "warning"     # 주의 (리스크 경고, 재시도 소진)
+    CRITICAL = "critical"   # 긴급 (Kill Switch, 워크플로우 실패)
+
+
+@dataclass
+class NotificationEvent:
+    """
+    투자자 알림 이벤트.
+
+    on_log는 개발/디버깅용, on_notification은 투자자에게 전달할 핵심 정보.
+    소비자: (1) 투자자, (2) 외부 메시징 (텔레그램/카톡), (3) 외부 AI 모델.
+
+    Attributes:
+        job_id: Job 식별자
+        category: 알림 카테고리
+        severity: 심각도
+        title: 짧은 제목
+        message: 상세 내용
+        node_id: 관련 노드 ID (optional)
+        node_type: 관련 노드 타입 (optional)
+        data: 구조화된 데이터 (카테고리별, AI 소비용)
+        timestamp: 이벤트 시각
+    """
+    job_id: str
+    category: NotificationCategory
+    severity: NotificationSeverity
+    title: str
+    message: str
+    node_id: Optional[str] = None
+    node_type: Optional[str] = None
+    data: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
 @dataclass
 class RestartEvent:
     """워크플로우 복구 시 발생하는 이벤트.
@@ -658,6 +711,18 @@ class ExecutionListener(Protocol):
         """
         ...
 
+    async def on_notification(self, event: 'NotificationEvent') -> None:
+        """
+        Called when an important notification is emitted for the investor.
+
+        투자자에게 전달할 핵심 정보 (시그널, 리스크, 워크플로우 상태 등).
+        on_log와 달리 변화가 있을 때만 발행되는 공지 성격.
+
+        Args:
+            event: NotificationEvent with category, severity, title, message, data.
+        """
+        ...
+
 
 class BaseExecutionListener:
     """
@@ -734,6 +799,10 @@ class BaseExecutionListener:
         pass
 
     async def on_restart(self, event: 'RestartEvent') -> None:
+        """Default implementation: do nothing"""
+        pass
+
+    async def on_notification(self, event: 'NotificationEvent') -> None:
         """Default implementation: do nothing"""
         pass
 
@@ -853,3 +922,20 @@ class ConsoleExecutionListener(BaseExecutionListener):
         symbol_tag = f" [{event.symbol}]" if event.symbol else ""
         print(f"{color}{emoji} RISK {event.severity.upper()}{symbol_tag} "
               f"{event.event_type}: {event.details}{reset}")
+
+    async def on_notification(self, event: 'NotificationEvent') -> None:
+        """Print notification event with severity-based coloring"""
+        severity_style = {
+            "info": ("\033[94m", "ℹ️"),       # Blue
+            "warning": ("\033[93m", "⚠️"),    # Yellow
+            "critical": ("\033[91m", "🚨"),   # Red
+        }
+        reset = "\033[0m"
+        sev = event.severity.value if isinstance(event.severity, Enum) else event.severity
+        color, emoji = severity_style.get(sev, ("\033[0m", "❓"))
+
+        cat = event.category.value if isinstance(event.category, Enum) else event.category
+        node_tag = f" [{event.node_id}]" if event.node_id else ""
+        print(f"{color}{emoji} NOTIFY {cat.upper()}{node_tag} {event.title}{reset}")
+        if event.message:
+            print(f"   {event.message}")

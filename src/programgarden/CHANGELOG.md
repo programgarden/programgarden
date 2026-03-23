@@ -1,3 +1,12 @@
+## [1.15.7] - 2026-03-24
+### Fixed
+- HistoricalDataNode: positions를 리스트로 처리 (account에서 list 반환 시 dict TypeError 수정)
+- NewOrderNode: quantity/price 타입 캐스팅 추가 (API에서 string 반환 시 int/float 자동 변환)
+- NewOrderNode: _get_current_price 미해석 표현식 가드 (`{{ item.xxx }}` → g3101 호출 차단)
+
+### Dependencies
+- programgarden-finance ^1.4.3
+
 ## [1.15.6] - 2026-03-21
 ### Changed
 - executor.py: _execute_stock() docstring에 GSH(호가) 미구독 사유 상세 기재

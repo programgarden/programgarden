@@ -359,6 +359,7 @@ $RECYCLE.BIN/
 */.vscode/
 .github/
 src/programgarden/examples/
+!src/programgarden/examples/trend_trailing_bot/
 .env*
 
 # SQLite DB storage (runtime data)
