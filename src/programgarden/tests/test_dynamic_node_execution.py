@@ -206,7 +206,7 @@ class TestWorkflowResolverValidation:
         result = executor.validate(workflow_with_custom_node)
 
         assert not result.is_valid
-        assert any("스키마가 등록되지 않음" in e for e in result.errors)
+        assert any("schema not registered" in e for e in result.errors)
 
     def test_validate_credential_id_blocked(self, executor, sample_schemas):
         """동적 노드의 credential_id 사용 차단"""
@@ -226,7 +226,7 @@ class TestWorkflowResolverValidation:
         result = executor.validate(workflow)
 
         assert not result.is_valid
-        assert any("credential_id를 사용할 수 없습니다" in e for e in result.errors)
+        assert any("cannot use credential_id" in e for e in result.errors)
 
 
 # ─────────────────────────────────────────────────

@@ -76,6 +76,7 @@ class NodeStateEvent:
     outputs: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     duration_ms: Optional[float] = None
+    warnings: Optional[List[str]] = None
 
 
 @dataclass
