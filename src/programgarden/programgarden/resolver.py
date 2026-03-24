@@ -151,9 +151,6 @@ class WorkflowResolver:
         for error in structure_errors:
             result.add_error(error)
 
-        if not result.is_valid:
-            return result
-
         # 3. Reserved node ID validation
         RESERVED_NODE_IDS = {"nodes", "input", "context"}
         for node in workflow.nodes:
@@ -181,16 +178,16 @@ class WorkflowResolver:
             if is_dynamic_node_type(node_type):
                 if not dynamic_registry.get_schema(node_type):
                     result.add_error(
-                        f"동적 노드 스키마가 등록되지 않음: {node_type}. "
-                        "register_dynamic_schemas()를 먼저 호출하세요."
+                        f"Dynamic node schema not registered: {node_type}. "
+                        "Call register_dynamic_schemas() first."
                     )
                     continue
 
                 # 동적 노드의 credential_id 사용 차단
                 if node.get("credential_id"):
                     result.add_error(
-                        f"동적 노드 '{node_id}'에서는 credential_id를 사용할 수 없습니다. "
-                        "보안상 동적 노드에서는 credential 접근이 차단됩니다."
+                        f"Dynamic node '{node_id}' cannot use credential_id. "
+                        "Credential access is blocked for dynamic nodes for security."
                     )
                 continue
 
@@ -220,6 +217,15 @@ class WorkflowResolver:
 
         # 7. BrokerNode 중복 검증 (같은 product_scope는 1개만 허용)
         self._validate_broker_nodes(workflow, registry, result)
+
+        # 8. 엣지 참조 검증 (존재하지 않는 노드 참조 차단)
+        self._validate_edge_references(workflow, result)
+
+        # 9. 표현식 바인딩 참조 검증 ({{ nodes.xxx }} → xxx가 실제 존재하는지)
+        self._validate_expression_references(workflow, result)
+
+        # 10. credential_id 참조 검증
+        self._validate_credential_references(workflow, result)
 
         return result
 
@@ -294,6 +300,94 @@ class WorkflowResolver:
             for o in outputs
         )
 
+    def _validate_edge_references(
+        self,
+        workflow,
+        result: ValidationResult,
+    ) -> None:
+        """엣지가 참조하는 노드 ID가 실제 존재하는지 검증."""
+        node_ids = {n.get("id") for n in workflow.nodes}
+
+        for edge in workflow.edges:
+            from_raw = getattr(edge, "from_node", "") or ""
+            to_raw = getattr(edge, "to_node", "") or ""
+
+            # dot notation 지원: "if1.true" → node_id = "if1"
+            from_id = from_raw.split(".")[0] if from_raw else ""
+            to_id = to_raw.split(".")[0] if to_raw else ""
+
+            if from_id and from_id not in node_ids:
+                result.add_error(
+                    f"Edge 'from' references non-existent node '{from_id}'. "
+                    f"Available nodes: [{', '.join(sorted(node_ids))}]"
+                )
+            if to_id and to_id not in node_ids:
+                result.add_error(
+                    f"Edge 'to' references non-existent node '{to_id}'. "
+                    f"Available nodes: [{', '.join(sorted(node_ids))}]"
+                )
+
+    def _validate_expression_references(
+        self,
+        workflow,
+        result: ValidationResult,
+    ) -> None:
+        """
+        {{ nodes.xxx.yyy }} 표현식에서 참조하는 노드 ID가 실제 존재하는지 검증.
+        AI 워크플로우 빌더가 잘못된 노드 참조를 사전에 감지할 수 있도록 함.
+        """
+        import re
+
+        node_ids = {n.get("id") for n in workflow.nodes}
+        # {{ nodes.xxx 또는 {{ nodes.xxx.yyy }} 패턴
+        expr_pattern = re.compile(r"\{\{\s*nodes\.(\w+)")
+        skip_keys = {"id", "type", "category", "position"}
+
+        def find_refs(value, node_id: str, field_path: str):
+            if isinstance(value, str):
+                for match in expr_pattern.finditer(value):
+                    ref_id = match.group(1)
+                    if ref_id not in node_ids:
+                        result.add_error(
+                            f"Node '{node_id}' field '{field_path}' references "
+                            f"non-existent node '{ref_id}'. "
+                            f"Available nodes: [{', '.join(sorted(node_ids))}]"
+                        )
+            elif isinstance(value, dict):
+                for k, v in value.items():
+                    find_refs(v, node_id, f"{field_path}.{k}")
+            elif isinstance(value, list):
+                for i, v in enumerate(value):
+                    find_refs(v, node_id, f"{field_path}[{i}]")
+
+        for node in workflow.nodes:
+            node_id = node.get("id", "")
+            for key, value in node.items():
+                if key in skip_keys:
+                    continue
+                find_refs(value, node_id, key)
+
+    def _validate_credential_references(
+        self,
+        workflow,
+        result: ValidationResult,
+    ) -> None:
+        """노드의 credential_id가 credentials 목록에 정의되어 있는지 검증."""
+        defined_creds = set()
+        for cred in (workflow.credentials or []):
+            cid = getattr(cred, "credential_id", None) or (cred.get("credential_id") if isinstance(cred, dict) else None)
+            if cid:
+                defined_creds.add(cid)
+
+        for node in workflow.nodes:
+            cred_id = node.get("credential_id")
+            if cred_id and cred_id not in defined_creds:
+                result.add_error(
+                    f"Node '{node.get('id')}' credential_id '{cred_id}' "
+                    f"is not defined in credentials. "
+                    f"Defined credentials: [{', '.join(sorted(defined_creds)) if defined_creds else 'none'}]"
+                )
+
     def _validate_broker_nodes(
         self,
         workflow,
@@ -329,10 +423,10 @@ class WorkflowResolver:
 
             scope_value = scope.value
             if scope_value in broker_scopes:
-                product_label = "해외주식" if scope == ProductScope.STOCK else "해외선물"
+                product_label = "overseas_stock" if scope == ProductScope.STOCK else "overseas_futures"
                 result.add_error(
-                    f"{product_label} 브로커 노드가 중복됩니다. "
-                    f"'{broker_scopes[scope_value]}'과 '{node_id}' 중 하나만 사용하세요."
+                    f"Duplicate {product_label} broker node. "
+                    f"Only one allowed: '{broker_scopes[scope_value]}' and '{node_id}'. Remove one."
                 )
             else:
                 broker_scopes[scope_value] = node_id
@@ -391,12 +485,11 @@ class WorkflowResolver:
 
             # product_scope 매칭 확인
             if scope.value not in available_brokers:
-                product_label = "해외주식" if scope == ProductScope.STOCK else "해외선물"
+                product_label = "overseas_stock" if scope == ProductScope.STOCK else "overseas_futures"
                 broker_node = "OverseasStockBrokerNode" if scope == ProductScope.STOCK else "OverseasFuturesBrokerNode"
                 result.add_error(
-                    f"노드 '{node.get('id')}' ({node_type})에 필요한 "
-                    f"{product_label} 브로커 노드가 없습니다. "
-                    f"{broker_node}를 추가하세요."
+                    f"Node '{node.get('id')}' ({node_type}) requires {product_label} broker. "
+                    f"Add {broker_node} to the workflow."
                 )
                 continue
 
@@ -405,9 +498,9 @@ class WorkflowResolver:
                 broker_provider_value = available_brokers[scope.value]
                 if broker_provider_value != BrokerProvider.ALL.value and broker_provider_value != provider.value:
                     result.add_error(
-                        f"노드 '{node.get('id')}' ({node_type})는 "
-                        f"'{provider.value}' 증권사 브로커가 필요하지만, "
-                        f"워크플로우에는 '{broker_provider_value}' 브로커가 설정되어 있습니다."
+                        f"Node '{node.get('id')}' ({node_type}) requires "
+                        f"'{provider.value}' broker provider, but workflow has "
+                        f"'{broker_provider_value}' broker configured."
                     )
 
     def resolve(

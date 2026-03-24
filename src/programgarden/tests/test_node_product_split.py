@@ -120,7 +120,7 @@ class TestResolverBrokerMatching:
         }
         result = resolver.validate(workflow)
         assert not result.is_valid
-        assert any("중복" in e for e in result.errors)
+        assert any("Duplicate" in e for e in result.errors)
 
     def test_mixed_brokers_valid(self):
         """해외주식 + 해외선물 브로커 공존 → 검증 통과"""

@@ -1276,14 +1276,15 @@ class ExecutionContext:
         outputs: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         duration_ms: Optional[float] = None,
+        warnings: Optional[List[str]] = None,
     ) -> None:
         """Notify all listeners about node state change."""
         logger.info(f"📡 notify_node_state: {node_id} ({node_type}) → {state.value}")
-        
+
         if not self._listeners:
             logger.warning(f"⚠️ No listeners registered for node state notification!")
             return
-        
+
         event = NodeStateEvent(
             job_id=self.job_id,
             node_id=node_id,
@@ -1292,6 +1293,7 @@ class ExecutionContext:
             outputs=self._sanitize_outputs(outputs),
             error=error,
             duration_ms=duration_ms,
+            warnings=warnings,
         )
         
         for listener in self._listeners:

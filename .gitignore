@@ -361,6 +361,7 @@ $RECYCLE.BIN/
 src/programgarden/examples/
 !src/programgarden/examples/trend_trailing_bot/
 !src/programgarden/examples/bollinger_reversion_bot/
+!src/programgarden/examples/hkex_futures_bot/
 .env*
 
 # SQLite DB storage (runtime data)

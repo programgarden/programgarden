@@ -241,22 +241,22 @@ def evaluate_all_bindings(
 ) -> Dict[str, Any]:
     """
     config 내 모든 {{ }} 표현식을 재귀적으로 평가
-    
+
     - dict, list 내부도 재귀 탐색
     - 평가 실패 시 원본 유지 + 경고 로그
-    
+
     Args:
         config: 노드 config
         context: 실행 컨텍스트
         node_id: 노드 ID
-        
+
     Returns:
         표현식이 평가된 config
     """
     config = config.copy()
     expr_context = context.get_expression_context()
     evaluator = ExpressionEvaluator(expr_context)
-    
+
     def evaluate_value(value: Any) -> Any:
         if isinstance(value, str) and "{{" in value:
             try:
@@ -271,7 +271,7 @@ def evaluate_all_bindings(
         elif isinstance(value, list):
             return [evaluate_value(v) for v in value]
         return value
-    
+
     return {k: evaluate_value(v) for k, v in config.items()}
 
 

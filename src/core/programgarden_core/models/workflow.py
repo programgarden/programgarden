@@ -215,31 +215,33 @@ class WorkflowDefinition(BaseModel):
         """
         errors = []
 
-        # 1. 노드 ID 중복 체크
+        # 1. Duplicate node ID check
         node_ids = self.get_node_ids()
         if len(node_ids) != len(set(node_ids)):
-            errors.append("중복된 노드 ID가 있습니다")
+            seen = set()
+            dupes = [nid for nid in node_ids if nid in seen or seen.add(nid)]
+            errors.append(f"Duplicate node IDs found: {', '.join(dupes)}")
 
-        # 2. 엣지 참조 노드 존재 체크
+        # 2. Edge node reference check
         node_id_set = set(node_ids)
         for edge in self.edges:
             if edge.from_node_id not in node_id_set:
-                errors.append(f"엣지의 출발 노드가 존재하지 않습니다: {edge.from_node_id}")
+                errors.append(f"Edge 'from' references non-existent node: {edge.from_node_id}")
             if edge.to_node_id not in node_id_set:
-                errors.append(f"엣지의 도착 노드가 존재하지 않습니다: {edge.to_node_id}")
+                errors.append(f"Edge 'to' references non-existent node: {edge.to_node_id}")
 
-        # 3. StartNode 존재 체크
+        # 3. StartNode check
         start_nodes = [n for n in self.nodes if n.get("type") == "StartNode"]
         if not start_nodes:
-            errors.append("StartNode가 없습니다 (Definition당 1개 필수)")
+            errors.append("StartNode is required (exactly 1 per workflow)")
         elif len(start_nodes) > 1:
-            errors.append("StartNode가 여러 개입니다 (Definition당 1개만 허용)")
+            errors.append("Multiple StartNodes found (only 1 allowed per workflow)")
 
-        # 4. 순환 참조 체크 (DAG 검증)
+        # 4. Cycle detection (DAG validation)
         cycle = self._detect_cycle()
         if cycle:
-            cycle_path = " → ".join(cycle)
-            errors.append(f"순환 참조가 있습니다: {cycle_path}")
+            cycle_path = " -> ".join(cycle)
+            errors.append(f"Circular reference detected: {cycle_path}")
 
         return errors
 
