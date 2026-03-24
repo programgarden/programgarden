@@ -124,6 +124,7 @@ await job.stop()
 | `on_ai_tool_call` | AI Agent 도구 호출 |
 | `on_llm_stream` | LLM 스트리밍 출력 |
 | `on_risk_event` | 위험 임계값 이벤트 |
+| `on_notification` | 투자자 알림 (시그널, 리스크, 워크플로우 상태, 스케줄, 재시도 소진) |
 
 ## 변경 로그
 

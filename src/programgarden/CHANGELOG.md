@@ -1,3 +1,20 @@
+## [1.15.8] - 2026-03-24
+### Added
+- validate() 검증 3종 추가 (AI 워크플로우 빌더 대응)
+  - _validate_edge_references: 엣지→존재하지 않는 노드 참조 에러
+  - _validate_expression_references: {{ nodes.xxx }} 존재하지 않는 노드 참조 에러
+  - _validate_credential_references: credential_id 미정의 에러
+  - 모든 에러를 한번에 반환 (early return 제거), Available nodes 목록 포함
+- context.py notify_node_state에 warnings 파라미터 추가
+- hkex_futures_bot 예제 (HKEX 미니선물 모의투자)
+- bollinger_reversion_bot 예제 (Bollinger Bands 역추세)
+
+### Changed
+- resolver.py 에러 메시지 전체 영어 통일
+
+### Dependencies
+- programgarden-core ^1.9.6
+
 ## [1.15.7] - 2026-03-24
 ### Fixed
 - HistoricalDataNode: positions를 리스트로 처리 (account에서 list 반환 시 dict TypeError 수정)
