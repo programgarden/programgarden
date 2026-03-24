@@ -1,3 +1,12 @@
+## [1.9.6] - 2026-03-24
+### Added
+- NodeStateEvent에 `warnings: Optional[List[str]]` 필드 추가 (후향 호환)
+
+### Changed
+- validate_structure() 에러 메시지 전체 영어 통일
+  - 중복 노드 ID 에러에 실제 중복 ID 표시
+  - 순환 참조, StartNode, 엣지 참조 에러 영문화
+
 ## [1.9.5] - 2026-03-21
 ### Changed
 - OverseasStockRealMarketDataNode description 정정: "호가" → "체결 데이터", GSH 미포함 명시

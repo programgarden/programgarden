@@ -23,7 +23,10 @@ src/
 ├── programgarden/      # Main package (workflow execution engine) - for external users
 │   ├── programgarden/  # Core module: executor.py, context.py, resolver.py
 │   └── examples/       # Test/demo code for the package
-│       └── python_server/  # FastAPI backend server example
+│       ├── python_server/  # FastAPI backend server example
+│       ├── trend_trailing_bot/     # TSMOM 추세추종 자동매매 (해외주식)
+│       ├── bollinger_reversion_bot/  # Bollinger Bands 평균회귀 (해외주식)
+│       └── hkex_futures_bot/       # HKEX 미니선물 자동매매 (모의투자)
 ├── core/               # programgarden-core: node types, base classes, registry, i18n
 │   └── programgarden_core/
 │       ├── nodes/      # Node definitions (OverseasStockBrokerNode, ConditionNode, etc.)
@@ -33,7 +36,7 @@ src/
 │       └── i18n/locales/  # Translation files (ko.json, en.json)
 ├── finance/            # programgarden-finance: LS Securities API wrapper
 │   └── programgarden_finance/
-└── community/          # programgarden-community: 67 strategy plugins + 3 community nodes
+└── community/          # programgarden-community: 67 strategy plugins + 4 community nodes
     └── programgarden_community/
         ├── plugins/    # 67 strategy plugins (RSI, MACD, Ichimoku, ZScore, PairTrading, TurtleBreakout, MagicFormula, SupportResistanceLevels, LevelTouch, etc.)
         └── nodes/      # Community nodes (TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode)
@@ -435,6 +438,9 @@ Available through `.claude/commands/`:
 
 The `examples/` folder contains integration test code:
 - `python_server/` - FastAPI server for workflow execution
+- `trend_trailing_bot/` - TSMOM 추세추종 자동매매 봇 (해외주식)
+- `bollinger_reversion_bot/` - Bollinger Bands 평균회귀 봇 (해외주식)
+- `hkex_futures_bot/` - HKEX 미니선물 봇 (모의투자)
 
 ### Running Server
 
