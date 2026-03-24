@@ -360,6 +360,7 @@ $RECYCLE.BIN/
 .github/
 src/programgarden/examples/
 !src/programgarden/examples/trend_trailing_bot/
+!src/programgarden/examples/bollinger_reversion_bot/
 .env*
 
 # SQLite DB storage (runtime data)
