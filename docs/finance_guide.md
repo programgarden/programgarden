@@ -37,7 +37,7 @@ poetry add programgarden-finance
 ## 사전 준비
 
 - **계좌 및 API 키 발급**: 투혼앱에서 글로벌 상품 거래 계좌를 비대면 개설 후 `전체 메뉴 → 투자정보 → 투자 파트너 → API` 메뉴에서 자동화매매용 Appkey/Appsecret을 발급받습니다. 분실 방지를 위해 키는 절대 외부에 노출하지 마세요.
-- **Postman 사전 테스트**: OpenAPI 호출이 처음이라면 [Programgarden Postman Workspace](https://www.postman.com/programgarden-team/programgarden/overview)를 통해 REST 스펙과 응답 구조를 먼저 확인해 보세요.
+- **샘플 코드**: 풍부한 예제 코드는 [GitHub 예제 디렉토리](https://github.com/programgarden/programgarden/tree/main/src/finance/example)에서 확인할 수 있습니다.
 ---
 
 ## 라이브러리 구조 한눈에 보기
