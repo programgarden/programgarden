@@ -101,7 +101,7 @@ class SQLiteNode(BaseNode):
     type: Literal["SQLiteNode"] = "SQLiteNode"
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.SQLiteNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/sqlite.svg"
+    _img_url: ClassVar[str] = ""
 
     # === 기본 설정 ===
     db_name: str = Field(
@@ -370,7 +370,7 @@ class HTTPRequestNode(BaseNode):
     type: Literal["HTTPRequestNode"] = "HTTPRequestNode"
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.HTTPRequestNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/httprequest.svg"
+    _img_url: ClassVar[str] = ""
 
     # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수, M-12: ERROR로 강화)
     _connection_rules: ClassVar[List[ConnectionRule]] = [
@@ -744,7 +744,7 @@ class FieldMappingNode(BaseNode):
     type: Literal["FieldMappingNode"] = "FieldMappingNode"
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.FieldMappingNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/fieldmapping.svg"
+    _img_url: ClassVar[str] = ""
 
     # 입력 데이터 (바인딩 지원)
     data: Optional[Any] = Field(

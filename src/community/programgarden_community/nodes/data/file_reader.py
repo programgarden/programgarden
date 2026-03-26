@@ -63,7 +63,7 @@ class FileReaderNode(BaseNode):
     type: Literal["FileReaderNode"] = "FileReaderNode"
     category: NodeCategory = NodeCategory.DATA
     description: str = "i18n:nodes.FileReaderNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/filereader.svg"
+    _img_url: ClassVar[str] = ""
 
     # === 파일 입력 (복수) ===
     file_paths: List[str] = Field(

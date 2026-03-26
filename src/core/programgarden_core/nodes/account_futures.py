@@ -40,7 +40,7 @@ class OverseasFuturesAccountNode(BaseNode):
     type: Literal["OverseasFuturesAccountNode"] = "OverseasFuturesAccountNode"
     category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.OverseasFuturesAccountNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/account_futures.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

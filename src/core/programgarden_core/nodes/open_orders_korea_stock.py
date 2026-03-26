@@ -36,7 +36,7 @@ class KoreaStockOpenOrdersNode(BaseNode):
     type: Literal["KoreaStockOpenOrdersNode"] = "KoreaStockOpenOrdersNode"
     category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.KoreaStockOpenOrdersNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/open_orders_korea_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

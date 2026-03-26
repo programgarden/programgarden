@@ -33,7 +33,7 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
     type: Literal["OverseasFuturesSymbolQueryNode"] = "OverseasFuturesSymbolQueryNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.OverseasFuturesSymbolQueryNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/symbolquery_futures.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

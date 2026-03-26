@@ -41,7 +41,7 @@ class KoreaStockMarketDataNode(BaseNode):
     type: Literal["KoreaStockMarketDataNode"] = "KoreaStockMarketDataNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.KoreaStockMarketDataNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/marketdata_korea_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
