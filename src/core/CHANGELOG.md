@@ -1,3 +1,7 @@
+## [1.9.7] - 2026-03-26
+### Changed
+- 미사용 cdn.programgarden.io `_img_url` 제거 (빈값으로 초기화) — 노드 25개 정리
+
 ## [1.9.6] - 2026-03-24
 ### Added
 - NodeStateEvent에 `warnings: Optional[List[str]]` 필드 추가 (후향 호환)

@@ -1,3 +1,8 @@
+## [1.15.9] - 2026-03-26
+### Dependencies
+- programgarden-core ^1.9.7, programgarden-community ^1.10.4
+- 미사용 cdn.programgarden.io `_img_url` 제거 반영
+
 ## [1.15.8] - 2026-03-24
 ### Added
 - validate() 검증 3종 추가 (AI 워크플로우 빌더 대응)

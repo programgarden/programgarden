@@ -2787,32 +2787,32 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "1.10.3"
+version = "1.10.4"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_community-1.10.3-py3-none-any.whl", hash = "sha256:ce6cf38939e3be1f46a04c660ea98cc79f8df01648876d37f58a2a0d3efdf7ab"},
-    {file = "programgarden_community-1.10.3.tar.gz", hash = "sha256:ae6a711d8faabbbda759b765829c0c1e398fc83e1506ccfc6dcf831296bc5afa"},
+    {file = "programgarden_community-1.10.4-py3-none-any.whl", hash = "sha256:84cac1dbda6bfabb29b2c4c4b5e3a9f229d177ecf450a6de5e9346655daafe91"},
+    {file = "programgarden_community-1.10.4.tar.gz", hash = "sha256:31ef2183638073e309f3a06f86b0abbbca4416a23d8ff74a9ce7ed1efc41ea23"},
 ]
 
 [package.dependencies]
-programgarden-core = ">=1.9.3,<2.0.0"
+programgarden-core = ">=1.9.7,<2.0.0"
 pypdf = ">=4.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "1.9.6"
+version = "1.9.7"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_core-1.9.6-py3-none-any.whl", hash = "sha256:e1b7c8910a9288b0c747594f856684d6ef96a1caa6b26c22e79afb3947fee404"},
-    {file = "programgarden_core-1.9.6.tar.gz", hash = "sha256:fcea2582ebcd9cd6c487ebc005a1bebf664a7998ef99b9e61f5f89548df41b1c"},
+    {file = "programgarden_core-1.9.7-py3-none-any.whl", hash = "sha256:5d7805e77698820c1d09cad5bbf7f2bc505e2e4c1246c818518dd2dbbc26f6d1"},
+    {file = "programgarden_core-1.9.7.tar.gz", hash = "sha256:fdf59118aedc7e8cbbc34bb528318a64dce3fef69643002cb2adf4c1a2efa324"},
 ]
 
 [package.dependencies]
@@ -4580,4 +4580,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "39132a2690b15912ff2d16b35dc8af13866c7fb3b4b5d124096e5b836f124356"
+content-hash = "b6808dd7ae2ee88c76a936f82e71f4e7b73c25af6122f2e0cd3637bb32ab5c42"
