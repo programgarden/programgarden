@@ -41,7 +41,7 @@ class KoreaStockRealMarketDataNode(BaseNode):
     type: Literal["KoreaStockRealMarketDataNode"] = "KoreaStockRealMarketDataNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.KoreaStockRealMarketDataNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realmarketdata_korea_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
@@ -110,7 +110,7 @@ class KoreaStockRealAccountNode(BaseNode):
     type: Literal["KoreaStockRealAccountNode"] = "KoreaStockRealAccountNode"
     category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.KoreaStockRealAccountNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realaccount_korea_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
@@ -203,7 +203,7 @@ class KoreaStockRealOrderEventNode(BaseNode):
     type: Literal["KoreaStockRealOrderEventNode"] = "KoreaStockRealOrderEventNode"
     category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.KoreaStockRealOrderEventNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realorderevent_korea_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

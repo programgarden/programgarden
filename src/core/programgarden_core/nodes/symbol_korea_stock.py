@@ -33,7 +33,7 @@ class KoreaStockSymbolQueryNode(BaseNode):
     type: Literal["KoreaStockSymbolQueryNode"] = "KoreaStockSymbolQueryNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.KoreaStockSymbolQueryNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/symbolquery_korea_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

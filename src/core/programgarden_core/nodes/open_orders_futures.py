@@ -37,7 +37,7 @@ class OverseasFuturesOpenOrdersNode(BaseNode):
     type: Literal["OverseasFuturesOpenOrdersNode"] = "OverseasFuturesOpenOrdersNode"
     category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.OverseasFuturesOpenOrdersNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/open_orders_futures.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

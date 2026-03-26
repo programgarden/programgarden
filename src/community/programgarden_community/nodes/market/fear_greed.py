@@ -60,7 +60,7 @@ class FearGreedIndexNode(BaseNode):
     type: Literal["FearGreedIndexNode"] = "FearGreedIndexNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.FearGreedIndexNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/feargreed.svg"
+    _img_url: ClassVar[str] = ""
 
     # 실시간 노드에서 직접 연결 차단
     _connection_rules: ClassVar[List[ConnectionRule]] = [

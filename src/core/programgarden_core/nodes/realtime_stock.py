@@ -43,7 +43,7 @@ class OverseasStockRealMarketDataNode(BaseNode):
     type: Literal["OverseasStockRealMarketDataNode"] = "OverseasStockRealMarketDataNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.OverseasStockRealMarketDataNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realmarketdata_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
@@ -112,7 +112,7 @@ class OverseasStockRealAccountNode(BaseNode):
     type: Literal["OverseasStockRealAccountNode"] = "OverseasStockRealAccountNode"
     category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.OverseasStockRealAccountNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realaccount_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
@@ -205,7 +205,7 @@ class OverseasStockRealOrderEventNode(BaseNode):
     type: Literal["OverseasStockRealOrderEventNode"] = "OverseasStockRealOrderEventNode"
     category: NodeCategory = NodeCategory.ACCOUNT
     description: str = "i18n:nodes.OverseasStockRealOrderEventNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/realorderevent_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

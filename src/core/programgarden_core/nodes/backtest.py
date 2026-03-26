@@ -518,7 +518,7 @@ class BenchmarkCompareNode(BaseNode):
     type: Literal["BenchmarkCompareNode"] = "BenchmarkCompareNode"
     category: NodeCategory = NodeCategory.ANALYSIS
     description: str = "i18n:nodes.BenchmarkCompareNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/benchmark-compare.svg"
+    _img_url: ClassVar[str] = ""
 
     # Dynamic input: multiple equity_curve bindings
     strategies: List[Any] = Field(

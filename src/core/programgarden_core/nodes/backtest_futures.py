@@ -41,7 +41,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
     type: Literal["OverseasFuturesHistoricalDataNode"] = "OverseasFuturesHistoricalDataNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.OverseasFuturesHistoricalDataNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/historicaldata_futures.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

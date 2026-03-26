@@ -35,7 +35,7 @@ class StartNode(BaseNode):
     description: str = "i18n:nodes.StartNode.description"
     
     # CDN 기반 노드 아이콘 URL (TODO: 실제 CDN URL로 교체)
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/start.svg"
+    _img_url: ClassVar[str] = ""
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
@@ -64,7 +64,7 @@ class ThrottleNode(BaseNode):
     category: NodeCategory = NodeCategory.INFRA
     description: str = "i18n:nodes.ThrottleNode.description"
     
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/throttle.svg"
+    _img_url: ClassVar[str] = ""
     
     # ThrottleNode specific config
     mode: Literal["skip", "latest"] = Field(
@@ -152,7 +152,7 @@ class SplitNode(BaseNode):
     category: NodeCategory = NodeCategory.INFRA
     description: str = "i18n:nodes.SplitNode.description"
 
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/split.svg"
+    _img_url: ClassVar[str] = ""
 
     # SplitNode specific config
     parallel: bool = Field(
@@ -234,7 +234,7 @@ class AggregateNode(BaseNode):
     category: NodeCategory = NodeCategory.INFRA
     description: str = "i18n:nodes.AggregateNode.description"
 
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/aggregate.svg"
+    _img_url: ClassVar[str] = ""
 
     # AggregateNode specific config
     mode: Literal["collect", "filter", "sum", "avg", "min", "max", "count", "first", "last"] = Field(
@@ -328,7 +328,7 @@ class IfNode(BaseNode):
     category: NodeCategory = NodeCategory.INFRA
     description: str = "i18n:nodes.IfNode.description"
 
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/if.svg"
+    _img_url: ClassVar[str] = ""
 
     # 비교 연산 필드
     left: Any = Field(default=None, description="왼쪽 피연산자 (표현식 바인딩 가능)")

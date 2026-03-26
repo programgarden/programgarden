@@ -41,7 +41,7 @@ class OverseasStockMarketDataNode(BaseNode):
     type: Literal["OverseasStockMarketDataNode"] = "OverseasStockMarketDataNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.OverseasStockMarketDataNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/marketdata_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

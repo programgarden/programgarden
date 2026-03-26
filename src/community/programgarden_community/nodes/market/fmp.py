@@ -78,7 +78,7 @@ class FundamentalDataNode(BaseNode):
     type: Literal["FundamentalDataNode"] = "FundamentalDataNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.FundamentalDataNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/fundamental.svg"
+    _img_url: ClassVar[str] = ""
 
     # 실시간 노드에서 직접 연결 차단
     _connection_rules: ClassVar[List[ConnectionRule]] = [

@@ -42,7 +42,7 @@ class OverseasStockFundamentalNode(BaseNode):
     type: Literal["OverseasStockFundamentalNode"] = "OverseasStockFundamentalNode"
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.OverseasStockFundamentalNode.description"
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/fundamental_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 

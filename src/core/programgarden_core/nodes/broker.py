@@ -66,7 +66,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
     type: Literal["OverseasStockBrokerNode"] = "OverseasStockBrokerNode"
     description: str = "i18n:nodes.OverseasStockBrokerNode.description"
 
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
@@ -114,7 +114,7 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
     description: str = "i18n:nodes.OverseasFuturesBrokerNode.description"
     paper_trading: bool = Field(default=False, description="모의투자 모드")
 
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker_futures.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
@@ -169,7 +169,7 @@ class KoreaStockBrokerNode(BaseBrokerNode):
     type: Literal["KoreaStockBrokerNode"] = "KoreaStockBrokerNode"
     description: str = "i18n:nodes.KoreaStockBrokerNode.description"
 
-    _img_url: ClassVar[str] = "https://cdn.programgarden.io/nodes/broker_korea_stock.svg"
+    _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
