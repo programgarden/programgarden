@@ -1,3 +1,9 @@
+## [1.10.4] - 2026-03-26
+### Changed
+- 미사용 cdn.programgarden.io `_img_url` 제거 (빈값으로 초기화) — 노드 3개 정리
+### Dependencies
+- programgarden-core ^1.9.7
+
 ## [1.10.3] - 2026-03-10
 ### Added
 - FileReaderNode 신규 추가 (community 4번째 노드, data 카테고리)

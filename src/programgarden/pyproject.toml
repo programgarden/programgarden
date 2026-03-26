@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.12"
 name = "programgarden"
-version = "1.15.8"
+version = "1.15.9"
 description = "ProgramGarden - 노드 기반 자동매매 DSL 실행 엔진"
 readme = "README.md"
 
@@ -29,9 +29,9 @@ pytickersymbols = {version = ">=1.17.5", python = ">=3.12,<4.0"}
 aiosqlite = "^0.20.0"
 litellm = ">=1.40.0"
 fastembed = ">=0.4.0"
-programgarden-core = "^1.9.6"
+programgarden-core = "^1.9.7"
 programgarden-finance = "^1.4.3"
-programgarden-community = "^1.10.3"
+programgarden-community = "^1.10.4"
     
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
