@@ -13722,6 +13722,12 @@ class WorkflowExecutor:
             resource_limits: Resource limits (CPU, RAM, workers). None = auto-detect
             storage_dir: DB/파일 저장 디렉토리. None = /app/data 또는 ./app/data
         """
+        # Dynamic_ 노드 자동 로드 (definition에 dynamic_nodes가 있으면)
+        dynamic_nodes = definition.get("dynamic_nodes")
+        if dynamic_nodes:
+            loaded = self.load_dynamic_nodes(dynamic_nodes)
+            logger.info(f"Dynamic nodes auto-loaded from definition: {loaded}")
+
         # Compile
         resolved, validation = self.compile(definition, context_params)
         if not validation.is_valid:
@@ -14190,6 +14196,95 @@ class WorkflowExecutor:
         """
         registry = self._get_dynamic_registry()
         registry.clear_injected_classes()
+
+    def load_dynamic_nodes(self, dynamic_nodes: List[Dict[str, Any]]) -> int:
+        """
+        동적 노드 코드 문자열로부터 스키마 등록 + 클래스 주입을 한 번에 처리
+
+        서버에서 받은 dynamic_nodes payload를 직접 전달하면
+        내부에서 exec() → BaseNode 서브클래스 추출 → 스키마 등록 + 클래스 주입.
+
+        register_dynamic_schemas() + inject_node_classes()의 편의 메서드.
+
+        Args:
+            dynamic_nodes: 동적 노드 payload 목록
+                [{
+                    "dynamic_type": "Dynamic_MyRSI",
+                    "dynamic_node_code": "import ...\nclass MyRSINode(BaseNode):\n  ...",
+                    "category": "condition",
+                    "inputs": [...],
+                    "outputs": [...],
+                    "config_schema": {...},
+                }]
+
+        Returns:
+            성공적으로 로드된 노드 수
+
+        Raises:
+            ValueError: dynamic_type 또는 dynamic_node_code가 없는 경우
+
+        Example:
+            executor = WorkflowExecutor()
+            loaded = executor.load_dynamic_nodes(payload["dynamic_nodes"])
+            print(f"{loaded}개 동적 노드 로드 완료")
+            job = await executor.execute(workflow)
+            executor.clear_injected_classes()
+        """
+        if not dynamic_nodes:
+            return 0
+
+        from programgarden_core.nodes.base import BaseNode
+
+        schemas = []
+        classes = {}
+
+        for dn in dynamic_nodes:
+            dynamic_type = dn.get("dynamic_type")
+            code = dn.get("dynamic_node_code")
+
+            if not dynamic_type or not code:
+                raise ValueError(
+                    f"dynamic_type과 dynamic_node_code는 필수: "
+                    f"dynamic_type={dynamic_type!r}"
+                )
+
+            # exec()로 코드 실행 → namespace에서 클래스 추출
+            namespace: Dict[str, Any] = {}
+            exec(code, namespace)
+
+            # BaseNode 서브클래스 중 type이 일치하는 클래스 탐색
+            node_class = None
+            for obj in namespace.values():
+                if (
+                    isinstance(obj, type)
+                    and issubclass(obj, BaseNode)
+                    and obj is not BaseNode
+                    and getattr(obj, "type", "") == dynamic_type
+                ):
+                    node_class = obj
+                    break
+
+            if node_class is None:
+                raise ValueError(
+                    f"코드에서 type='{dynamic_type}'인 "
+                    f"BaseNode 서브클래스를 찾을 수 없음"
+                )
+
+            schemas.append({
+                "node_type": dynamic_type,
+                "category": dn.get("category", "data"),
+                "inputs": dn.get("inputs", []),
+                "outputs": dn.get("outputs", []),
+                "config_schema": dn.get("config_schema", {}),
+                "version": dn.get("version", "1.0.0"),
+            })
+            classes[dynamic_type] = node_class
+
+        if schemas:
+            self.register_dynamic_schemas(schemas)
+            self.inject_node_classes(classes)
+
+        return len(classes)
 
     def list_dynamic_node_types(self) -> List[str]:
         """
