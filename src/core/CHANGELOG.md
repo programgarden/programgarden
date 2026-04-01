@@ -1,3 +1,7 @@
+## [1.9.8] - 2026-04-02
+### Added
+- `PluginRegistry.register_dynamic()`: 동적 플러그인 등록 메서드 (기존 ID 충돌 방지)
+
 ## [1.9.7] - 2026-03-26
 ### Changed
 - 미사용 cdn.programgarden.io `_img_url` 제거 (빈값으로 초기화) — 노드 25개 정리

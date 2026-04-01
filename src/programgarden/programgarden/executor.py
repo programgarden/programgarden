@@ -14253,16 +14253,20 @@ class WorkflowExecutor:
             exec(code, namespace)
 
             # BaseNode 서브클래스 중 type이 일치하는 클래스 탐색
+            # Pydantic 모델에서 type은 클래스 속성이 아니라 model_fields의 default 값임
             node_class = None
             for obj in namespace.values():
                 if (
                     isinstance(obj, type)
                     and issubclass(obj, BaseNode)
                     and obj is not BaseNode
-                    and getattr(obj, "type", "") == dynamic_type
                 ):
-                    node_class = obj
-                    break
+                    # model_fields에서 type 기본값 확인 (Pydantic v2)
+                    type_field = obj.model_fields.get("type")
+                    node_type_val = type_field.default if type_field else None
+                    if node_type_val == dynamic_type:
+                        node_class = obj
+                        break
 
             if node_class is None:
                 raise ValueError(
