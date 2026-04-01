@@ -1,3 +1,9 @@
+## [1.16.0] - 2026-04-02
+### Added
+- `WorkflowExecutor.load_dynamic_nodes(dynamic_nodes)`: 코드 문자열로부터 Dynamic_ 노드 스키마 등록 + 클래스 주입을 한 번에 처리
+- `WorkflowExecutor.execute()` 자동 감지: definition에 `dynamic_nodes` 키가 있으면 자동으로 `load_dynamic_nodes()` 호출
+- 실행서버(pg-worker, 데스크톱 앱) 코드 변경 없이 payload에 `dynamic_nodes` 포함만으로 Dynamic_ 노드 실행 가능
+
 ## [1.15.9] - 2026-03-26
 ### Dependencies
 - programgarden-core ^1.9.7, programgarden-community ^1.10.4
