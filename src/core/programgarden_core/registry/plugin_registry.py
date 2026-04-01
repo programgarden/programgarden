@@ -182,6 +182,47 @@ class PluginRegistry:
         # 최신 버전은 버전 없이도 접근 가능
         self._schemas[plugin_id] = schema
 
+    def register_dynamic(
+        self,
+        plugin_id: str,
+        plugin_callable: Callable,
+        schema: PluginSchema,
+    ) -> None:
+        """
+        동적 플러그인 등록 (충돌 방지)
+
+        기존 등록된 플러그인과 ID가 겹치면 ValueError를 발생시킵니다.
+        community 패키지 기여 없이 런타임에 커스텀 플러그인을 주입할 때 사용합니다.
+
+        Args:
+            plugin_id: 플러그인 ID
+            plugin_callable: 플러그인 실행 함수
+            schema: 플러그인 스키마
+
+        Raises:
+            ValueError: 이미 등록된 plugin_id와 충돌 시
+            TypeError: plugin_callable이 callable이 아닐 때
+        """
+        if not callable(plugin_callable):
+            raise TypeError(
+                f"plugin_callable must be callable, got {type(plugin_callable).__name__}. "
+                f"Plugin '{plugin_id}' registration failed."
+            )
+
+        if plugin_id in self._plugins:
+            existing = self._schemas.get(plugin_id)
+            existing_info = ""
+            if existing:
+                author = existing.author or "unknown"
+                version = existing.version
+                existing_info = f" (version={version}, author={author})"
+            raise ValueError(
+                f"Plugin '{plugin_id}' is already registered{existing_info}. "
+                f"Choose a different plugin_id to avoid overwriting the existing plugin."
+            )
+
+        self.register(plugin_id, plugin_callable, schema)
+
     def get(
         self,
         plugin_id: str,

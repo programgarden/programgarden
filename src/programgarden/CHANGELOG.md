@@ -1,3 +1,10 @@
+## [1.16.1] - 2026-04-02
+### Fixed
+- `load_dynamic_nodes()`: Pydantic v2 model_fields 기반 type 매칭으로 수정 (getattr → model_fields.get)
+
+### Dependencies
+- programgarden-core ^1.9.8
+
 ## [1.16.0] - 2026-04-02
 ### Added
 - `WorkflowExecutor.load_dynamic_nodes(dynamic_nodes)`: 코드 문자열로부터 Dynamic_ 노드 스키마 등록 + 클래스 주입을 한 번에 처리
