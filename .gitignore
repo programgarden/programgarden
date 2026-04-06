@@ -359,9 +359,10 @@ $RECYCLE.BIN/
 */.vscode/
 .github/
 src/programgarden/examples/
-!src/programgarden/examples/trend_trailing_bot/
-!src/programgarden/examples/bollinger_reversion_bot/
-!src/programgarden/examples/hkex_futures_bot/
+!src/programgarden/examples/.env.example
+!src/programgarden/examples/dynamic_plugins/
+!src/programgarden/examples/programmer_example/
+!src/programgarden/examples/workflows/
 src/programgarden/tests/test_dynamic_node_examples.py
 src/programgarden/tests/test_dynamic_plugin_examples.py
 .env*

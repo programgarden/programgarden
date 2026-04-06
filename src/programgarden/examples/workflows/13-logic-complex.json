@@ -1,0 +1,166 @@
+{
+  "id": "13-logic-complex",
+  "name": "복합 조건 (RSI + MACD)",
+  "description": "LogicNode로 RSI 과매도 AND MACD 골든크로스 복합 조건",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 300
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 300
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "exchange": "NASDAQ",
+          "symbol": "AAPL"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "TSLA"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "NVDA"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "MSFT"
+        },
+        {
+          "exchange": "NYSE",
+          "symbol": "JPM"
+        }
+      ],
+      "position": {
+        "x": 450,
+        "y": 300
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "period": "D",
+      "start_date": "{{ date.ago(90, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "position": {
+        "x": 650,
+        "y": 300
+      }
+    },
+    {
+      "id": "rsi_condition",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "data": "{{ nodes.historical.values }}",
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": {
+        "x": 850,
+        "y": 150
+      }
+    },
+    {
+      "id": "macd_condition",
+      "type": "ConditionNode",
+      "plugin": "MACD",
+      "data": "{{ nodes.historical.values }}",
+      "fields": {
+        "fast_period": 12,
+        "slow_period": 26,
+        "signal_period": 9,
+        "signal_type": "golden_cross"
+      },
+      "position": {
+        "x": 850,
+        "y": 450
+      }
+    },
+    {
+      "id": "logic",
+      "type": "LogicNode",
+      "operator": "all",
+      "conditions": [
+        {
+          "is_condition_met": "{{ nodes.rsi_condition.result.passed }}",
+          "passed_symbols": "{{ nodes.rsi_condition.result }}"
+        },
+        {
+          "is_condition_met": "{{ nodes.macd_condition.result.passed }}",
+          "passed_symbols": "{{ nodes.macd_condition.result }}"
+        }
+      ],
+      "position": {
+        "x": 1100,
+        "y": 300
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "rsi_condition"
+    },
+    {
+      "from": "historical",
+      "to": "macd_condition"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "logic"
+    },
+    {
+      "from": "macd_condition",
+      "to": "logic"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

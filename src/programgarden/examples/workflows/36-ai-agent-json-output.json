@@ -1,0 +1,138 @@
+{
+  "id": "36-ai-agent-json-output",
+  "name": "AI Agent JSON 출력 테스트",
+  "description": "output_format=json으로 자유 형식 JSON 응답을 받는 워크플로우",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "llm",
+      "type": "LLMModelNode",
+      "credential_id": "llm_cred",
+      "model": "claude-haiku-4-5-20251001",
+      "temperature": 0.5,
+      "max_tokens": 800,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 350
+      }
+    },
+    {
+      "id": "market",
+      "type": "OverseasStockMarketDataNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "position": {
+        "x": 500,
+        "y": 350
+      }
+    },
+    {
+      "id": "agent",
+      "type": "AIAgentNode",
+      "preset": "custom",
+      "system_prompt": "당신은 시장 데이터 요약 전문가입니다. 항상 JSON 형식으로 응답합니다.",
+      "user_prompt": "현재 시세 데이터를 조회하고, 각 종목의 투자 매력도를 점수화해주세요. JSON 형식으로 응답해주세요.",
+      "output_format": "json",
+      "max_tool_calls": 3,
+      "timeout_seconds": 30,
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    },
+    {
+      "id": "summary",
+      "type": "SummaryDisplayNode",
+      "title": "AI 시장 분석 (JSON)",
+      "data": "{{ nodes.agent.response }}",
+      "position": {
+        "x": 1000,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "llm"
+    },
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "market"
+    },
+    {
+      "from": "llm",
+      "to": "agent",
+      "type": "ai_model"
+    },
+    {
+      "from": "market",
+      "to": "agent",
+      "type": "tool"
+    },
+    {
+      "from": "agent",
+      "to": "summary"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    },
+    {
+      "credential_id": "llm_cred",
+      "type": "llm_anthropic",
+      "data": [
+        {
+          "key": "api_key",
+          "value": "",
+          "type": "password",
+          "label": "API Key"
+        }
+      ]
+    }
+  ]
+}

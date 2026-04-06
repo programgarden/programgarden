@@ -1,0 +1,155 @@
+{
+  "id": "34-ai-agent-technical-analyst",
+  "name": "AI 기술분석가 (차트 분석)",
+  "description": "technical_analyst 프리셋으로 과거 데이터를 Tool로 조회하고 기술적 분석 수행",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 250
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 350
+      }
+    },
+    {
+      "id": "llm",
+      "type": "LLMModelNode",
+      "credential_id": "llm_cred",
+      "model": "claude-haiku-4-5-20251001",
+      "temperature": 0.3,
+      "max_tokens": 1500,
+      "position": {
+        "x": 250,
+        "y": 150
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "NVDA",
+      "exchange": "NASDAQ",
+      "period": "1d",
+      "start_date": "{{ date.ago(30, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "position": {
+        "x": 500,
+        "y": 350
+      }
+    },
+    {
+      "id": "market",
+      "type": "OverseasStockMarketDataNode",
+      "symbols": [
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "position": {
+        "x": 500,
+        "y": 250
+      }
+    },
+    {
+      "id": "agent",
+      "type": "AIAgentNode",
+      "preset": "technical_analyst",
+      "user_prompt": "NVDA의 최근 30일 차트 데이터를 분석하고, 지지선/저항선 및 매매 시그널을 도출해주세요.",
+      "output_format": "structured",
+      "max_tool_calls": 8,
+      "timeout_seconds": 90,
+      "position": {
+        "x": 750,
+        "y": 250
+      }
+    },
+    {
+      "id": "summary",
+      "type": "SummaryDisplayNode",
+      "title": "AI 기술분석 리포트",
+      "data": "{{ nodes.agent.response }}",
+      "position": {
+        "x": 1000,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "start",
+      "to": "llm"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    },
+    {
+      "from": "broker",
+      "to": "market"
+    },
+    {
+      "from": "llm",
+      "to": "agent",
+      "type": "ai_model"
+    },
+    {
+      "from": "historical",
+      "to": "agent",
+      "type": "tool"
+    },
+    {
+      "from": "market",
+      "to": "agent",
+      "type": "tool"
+    },
+    {
+      "from": "agent",
+      "to": "summary"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    },
+    {
+      "credential_id": "llm_cred",
+      "type": "llm_anthropic",
+      "data": [
+        {
+          "key": "api_key",
+          "value": "",
+          "type": "password",
+          "label": "API Key"
+        }
+      ]
+    }
+  ]
+}

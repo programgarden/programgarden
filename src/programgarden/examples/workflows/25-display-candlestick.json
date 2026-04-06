@@ -1,0 +1,89 @@
+{
+  "id": "25-display-candlestick",
+  "name": "캔들스틱 차트",
+  "description": "CandlestickChartNode로 OHLCV 캔들스틱 차트 표시",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": {
+        "symbol": "AAPL",
+        "exchange": "NASDAQ"
+      },
+      "period": "1d",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "position": {
+        "x": 400,
+        "y": 200
+      }
+    },
+    {
+      "id": "chart",
+      "type": "CandlestickChartNode",
+      "title": "AAPL 일봉 차트",
+      "data": "{{ nodes.historical.values }}",
+      "date_field": "date",
+      "open_field": "open",
+      "high_field": "high",
+      "low_field": "low",
+      "close_field": "close",
+      "volume_field": "volume",
+      "position": {
+        "x": 650,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "chart"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

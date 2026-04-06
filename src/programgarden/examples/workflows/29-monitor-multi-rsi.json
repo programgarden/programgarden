@@ -1,0 +1,164 @@
+{
+  "id": "29-monitor-multi-rsi",
+  "name": "멀티심볼 RSI 모니터링 + 차트",
+  "description": "Watchlist → Historical → RSI → MultiLineChart + Table",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 200
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "MSFT",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "GOOGL",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "position": {
+        "x": 350,
+        "y": 100
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "period": "1d",
+      "start_date": "{{ date.ago(30, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "position": {
+        "x": 550,
+        "y": 100
+      }
+    },
+    {
+      "id": "rsi_condition",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": {
+        "x": 750,
+        "y": 100
+      }
+    },
+    {
+      "id": "chart",
+      "type": "MultiLineChartNode",
+      "title": "Tech 종목 RSI 비교",
+      "data": "{{ lst.flatten(nodes.rsi_condition.values, 'time_series') }}",
+      "x_field": "date",
+      "y_field": "rsi",
+      "series_key": "symbol",
+      "signal_field": "signal",
+      "position": {
+        "x": 950,
+        "y": 50
+      }
+    },
+    {
+      "id": "table",
+      "type": "TableDisplayNode",
+      "title": "최신 RSI 현황",
+      "data": "{{ nodes.rsi_condition.result.all() }}",
+      "columns": [
+        "symbol",
+        "exchange",
+        "rsi",
+        "signal"
+      ],
+      "limit": 10,
+      "sort_by": "rsi",
+      "sort_order": "asc",
+      "position": {
+        "x": 950,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "watchlist",
+      "to": "historical"
+    },
+    {
+      "from": "broker",
+      "to": "rsi_condition"
+    },
+    {
+      "from": "historical",
+      "to": "rsi_condition"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "chart"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "table"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

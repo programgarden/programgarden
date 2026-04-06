@@ -1,0 +1,67 @@
+{
+  "id": "99-test-retry",
+  "name": "Retry 테스트",
+  "description": "HTTPRequestNode Retry/Fallback 기능 테스트. python_server의 테스트 엔드포인트 사용. 서버 실행 필요: poetry run python examples/python_server/server.py",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "flaky_api",
+      "type": "HTTPRequestNode",
+      "method": "GET",
+      "url": "http://localhost:8766/api/test/fail-then-succeed?fail_count=2",
+      "timeout_seconds": 10,
+      "resilience": {
+        "retry": {
+          "enabled": true,
+          "max_retries": 3,
+          "base_delay": 0.5,
+          "exponential_backoff": false
+        },
+        "fallback": {
+          "mode": "error"
+        }
+      },
+      "position": {"x": 250, "y": 100}
+    },
+    {
+      "id": "slow_api",
+      "type": "HTTPRequestNode",
+      "method": "GET",
+      "url": "http://localhost:8766/api/test/slow?delay=1",
+      "timeout_seconds": 10,
+      "resilience": {
+        "retry": {
+          "enabled": true,
+          "max_retries": 2,
+          "base_delay": 0.5
+        },
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {"x": 250, "y": 300}
+    },
+    {
+      "id": "result",
+      "type": "TableDisplayNode",
+      "title": "API 응답 결과",
+      "data": [
+        "{{ nodes.flaky_api.response }}",
+        "{{ nodes.slow_api.response }}"
+      ],
+      "columns": ["success", "message", "attempts", "delay"],
+      "position": {"x": 500, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "flaky_api"},
+    {"from": "start", "to": "slow_api"},
+    {"from": "flaky_api", "to": "result"},
+    {"from": "slow_api", "to": "result"}
+  ],
+  "credentials": []
+}

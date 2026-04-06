@@ -1,0 +1,151 @@
+{
+  "id": "rsi_futures_bot_v1",
+  "name": "RSI 과매도 해외선물 자동매매 (모의투자)",
+  "description": "HKEX 미니선물 RSI(14) 과매도(30 이하) 시 롱 진입, 보유 포지션 매 사이클 청산. 1분 간격 모의투자.",
+  "nodes": [
+    {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 300}},
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true,
+      "position": {"x": 200, "y": 300}
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "*/1 * * * *",
+      "timezone": "Asia/Hong_Kong",
+      "enabled": true,
+      "max_duration_hours": 1,
+      "position": {"x": 400, "y": 300}
+    },
+
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "position": {"x": 600, "y": 300}
+    },
+
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "HMHJ26", "exchange": "HKEX"},
+        {"symbol": "HMCEJ26", "exchange": "HKEX"}
+      ],
+      "position": {"x": 600, "y": 100}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasFuturesHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 850, "y": 100}
+    },
+    {
+      "id": "rsi",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": {"x": 1100, "y": 100}
+    },
+
+    {
+      "id": "filter_buy",
+      "type": "SymbolFilterNode",
+      "operation": "difference",
+      "input_a": "{{ nodes.rsi.passed_symbols }}",
+      "input_b": "{{ nodes.account.held_symbols }}",
+      "position": {"x": 1350, "y": 200}
+    },
+    {
+      "id": "buy_order",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "buy",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": 1
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 1600, "y": 200}
+    },
+
+    {
+      "id": "account_sell",
+      "type": "OverseasFuturesAccountNode",
+      "position": {"x": 600, "y": 500}
+    },
+    {
+      "id": "sell_order",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "{{ item.close_side }}",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": "{{ item.quantity }}"
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 850, "y": 500}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "schedule"},
+
+    {"from": "schedule", "to": "account"},
+    {"from": "schedule", "to": "watchlist"},
+
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "rsi"},
+
+    {"from": "rsi", "to": "filter_buy"},
+    {"from": "account", "to": "filter_buy"},
+    {"from": "filter_buy", "to": "buy_order"},
+
+    {"from": "schedule", "to": "account_sell"},
+    {"from": "account_sell", "to": "sell_order"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_strategy",
+      "content": "## RSI 과매도 해외선물 봇 (모의투자)\n\n**전략**: RSI(14) 과매도 역추세\n\n**매수(롱)**: RSI < 30 과매도 종목\n  -> 미보유 종목만 롱 1계약\n\n**청산**: 보유 포지션 전량 반대매매\n\n**주기**: 1분마다 (TradingHoursFilter 없음)\n\n**종목**: HMHJ26 (미니항셍 4월), HMCEJ26 (미니H주 4월)",
+      "color": 3,
+      "width": 340,
+      "height": 260,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}

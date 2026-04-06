@@ -1,0 +1,84 @@
+{
+  "id": "19-trigger-trading-hours",
+  "name": "거래시간 필터",
+  "description": "TradingHoursFilterNode로 거래시간 내에만 실행",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "hours_filter",
+      "type": "TradingHoursFilterNode",
+      "start": "09:30",
+      "end": "16:00",
+      "timezone": "America/New_York",
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+      ],
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 700,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "hours_filter"
+    },
+    {
+      "from": "hours_filter",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

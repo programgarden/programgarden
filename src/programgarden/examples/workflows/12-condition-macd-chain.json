@@ -1,0 +1,111 @@
+{
+  "id": "12-condition-macd-chain",
+  "name": "MACD 골든크로스 + 체이닝",
+  "description": "MACD 플러그인으로 골든크로스 감지 후 메서드 체이닝 테스트",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "universe",
+      "type": "MarketUniverseNode",
+      "universe": "DOW30",
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "period": "D",
+      "start_date": "{{ date.ago(90, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "position": {
+        "x": 650,
+        "y": 200
+      }
+    },
+    {
+      "id": "macd_condition",
+      "type": "ConditionNode",
+      "plugin": "MACD",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}"
+        }
+      },
+      "fields": {
+        "fast_period": 12,
+        "slow_period": 26,
+        "signal_period": 9,
+        "signal_type": "golden_cross"
+      },
+      "position": {
+        "x": 850,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "universe"
+    },
+    {
+      "from": "universe",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "macd_condition"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

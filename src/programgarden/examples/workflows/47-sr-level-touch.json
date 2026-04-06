@@ -1,0 +1,152 @@
+{
+  "id": "47-sr-level-touch",
+  "name": "S/R 레벨 감지 + 터치 판별 (해외선물 모의투자)",
+  "description": "SupportResistanceLevels로 과거 데이터에서 지지/저항 레벨 감지 후, LevelTouch로 레벨 터치/돌파 판별. 단일 종목(Mini Hang Seng).",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode"
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true
+    },
+    {
+      "id": "hist",
+      "type": "OverseasFuturesHistoricalDataNode",
+      "symbol": {
+        "symbol": "HMCEH26",
+        "exchange": "HKEX"
+      },
+      "start_date": "{{ date.ago(120, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d"
+    },
+    {
+      "id": "detect_levels",
+      "type": "ConditionNode",
+      "plugin": "SupportResistanceLevels",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}"
+        }
+      },
+      "fields": {
+        "lookback": 60,
+        "swing_strength": 3,
+        "cluster_tolerance": 0.015,
+        "min_cluster_size": 2,
+        "proximity_threshold": 0.02,
+        "direction": "both"
+      }
+    },
+    {
+      "id": "touch_check",
+      "type": "ConditionNode",
+      "plugin": "LevelTouch",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}"
+        }
+      },
+      "fields": {
+        "levels": "{{ nodes.detect_levels.symbol_results }}",
+        "touch_tolerance": 0.01,
+        "breakout_threshold": 0.015,
+        "confirm_bars": 2,
+        "mode": "first_touch"
+      }
+    },
+    {
+      "id": "if_buy",
+      "type": "IfNode",
+      "left": "{{ nodes.touch_check.result }}",
+      "operator": "==",
+      "right": true
+    },
+    {
+      "id": "sr_table",
+      "type": "TableDisplayNode",
+      "title": "S/R 레벨 감지 결과",
+      "data": "{{ nodes.detect_levels.symbol_results }}"
+    },
+    {
+      "id": "touch_table",
+      "type": "TableDisplayNode",
+      "title": "레벨 터치 판별 결과",
+      "data": "{{ nodes.touch_check.symbol_results }}"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "hist"
+    },
+    {
+      "from": "hist",
+      "to": "detect_levels"
+    },
+    {
+      "from": "hist",
+      "to": "touch_check"
+    },
+    {
+      "from": "detect_levels",
+      "to": "touch_check"
+    },
+    {
+      "from": "touch_check",
+      "to": "if_buy"
+    },
+    {
+      "from": "detect_levels",
+      "to": "sr_table"
+    },
+    {
+      "from": "touch_check",
+      "to": "touch_table"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

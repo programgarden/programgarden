@@ -1,0 +1,84 @@
+{
+  "id": "54-korea-stock-symbol-query",
+  "name": "국내주식 종목마스터 조회",
+  "description": "KoreaStockBrokerNode → KoreaStockSymbolQueryNode: KOSPI 전체 종목 조회 (최대 50개)",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "symquery",
+      "type": "KoreaStockSymbolQueryNode",
+      "market": "KOSPI",
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "KOSPI 종목 목록",
+      "columns": [
+        "symbol",
+        "name",
+        "market",
+        "exchange",
+        "is_etf"
+      ],
+      "data": "{{ nodes.symquery.symbols }}",
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "symquery"
+    },
+    {
+      "from": "symquery",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

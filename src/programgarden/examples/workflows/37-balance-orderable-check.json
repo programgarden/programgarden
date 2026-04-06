@@ -1,0 +1,105 @@
+{
+  "id": "37-balance-orderable-check",
+  "name": "잔고 확인 후 주문 가능 여부 분기",
+  "description": "AccountNode로 잔고 조회 후 orderable_amount 기반으로 IfNode 분기. 확장된 balance 필드(orderable_amount, foreign_cash, exchange_rate) 검증용.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    },
+    {
+      "id": "check_orderable",
+      "type": "IfNode",
+      "left": "{{ nodes.account.balance.orderable_amount }}",
+      "operator": ">=",
+      "right": 100,
+      "position": {
+        "x": 700,
+        "y": 200
+      }
+    },
+    {
+      "id": "can_order",
+      "type": "FieldMappingNode",
+      "mappings": [],
+      "position": {
+        "x": 950,
+        "y": 100
+      }
+    },
+    {
+      "id": "insufficient",
+      "type": "FieldMappingNode",
+      "mappings": [],
+      "position": {
+        "x": 950,
+        "y": 300
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "account",
+      "to": "check_orderable"
+    },
+    {
+      "from": "check_orderable",
+      "to": "can_order",
+      "from_port": "true"
+    },
+    {
+      "from": "check_orderable",
+      "to": "insufficient",
+      "from_port": "false"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

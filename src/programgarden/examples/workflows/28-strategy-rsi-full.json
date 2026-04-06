@@ -1,0 +1,232 @@
+{
+  "id": "28-strategy-rsi-full",
+  "name": "RSI 기반 매매 전략 (전체 흐름)",
+  "description": "Watchlist → Historical → RSI 조건 → PositionSizing → Order까지 전체 흐름",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 250
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 250
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 350,
+        "y": 350
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "MSFT",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "GOOGL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "AMZN",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "position": {
+        "x": 350,
+        "y": 100
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "period": "1d",
+      "start_date": "{{ date.ago(30, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "position": {
+        "x": 550,
+        "y": 100
+      }
+    },
+    {
+      "id": "rsi_condition",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": {
+        "x": 750,
+        "y": 100
+      }
+    },
+    {
+      "id": "market",
+      "type": "OverseasStockMarketDataNode",
+      "symbol": "{{ item }}",
+      "position": {
+        "x": 550,
+        "y": 250
+      }
+    },
+    {
+      "id": "logic",
+      "type": "LogicNode",
+      "operator": "AND",
+      "conditions": [
+        "{{ nodes.rsi_condition.result != null }}",
+        "{{ nodes.rsi_condition.result.rsi < 30 }}"
+      ],
+      "position": {
+        "x": 950,
+        "y": 175
+      }
+    },
+    {
+      "id": "sizing",
+      "type": "PositionSizingNode",
+      "symbol": "{{ nodes.logic.result }}",
+      "balance": "{{ nodes.account.balance.available }}",
+      "market_data": "{{ nodes.market.value }}",
+      "method": "fixed_percent",
+      "max_percent": 10.0,
+      "position": {
+        "x": 1150,
+        "y": 250
+      }
+    },
+    {
+      "id": "new_order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "limit",
+      "order": "{{ nodes.sizing.order }}",
+      "position": {
+        "x": 1350,
+        "y": 250
+      }
+    },
+    {
+      "id": "table",
+      "type": "TableDisplayNode",
+      "title": "RSI 과매도 종목",
+      "data": "{{ nodes.rsi_condition.values.filter('rsi < 30') }}",
+      "columns": [
+        "symbol",
+        "exchange",
+        "rsi",
+        "signal"
+      ],
+      "limit": 10,
+      "sort_by": "rsi",
+      "sort_order": "asc",
+      "position": {
+        "x": 1350,
+        "y": 100
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "watchlist",
+      "to": "historical"
+    },
+    {
+      "from": "watchlist",
+      "to": "market"
+    },
+    {
+      "from": "historical",
+      "to": "rsi_condition"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "logic"
+    },
+    {
+      "from": "market",
+      "to": "logic"
+    },
+    {
+      "from": "account",
+      "to": "sizing"
+    },
+    {
+      "from": "logic",
+      "to": "sizing"
+    },
+    {
+      "from": "market",
+      "to": "sizing"
+    },
+    {
+      "from": "sizing",
+      "to": "new_order"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "table"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

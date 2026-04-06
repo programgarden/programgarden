@@ -1,0 +1,80 @@
+{
+  "id": "17-risk-portfolio",
+  "name": "포트폴리오 관리",
+  "description": "PortfolioNode로 멀티 전략 자본 배분 및 리밸런싱",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 350,
+        "y": 200
+      }
+    },
+    {
+      "id": "portfolio",
+      "type": "PortfolioNode",
+      "total_capital": "{{ nodes.account.balance.total }}",
+      "allocation_method": "equal",
+      "rebalance_rule": "drift",
+      "drift_threshold": 5.0,
+      "capital_sharing": true,
+      "reserve_percent": 5.0,
+      "position": {
+        "x": 550,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "account",
+      "to": "portfolio"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

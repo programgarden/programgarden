@@ -1,0 +1,85 @@
+{
+  "id": "51-korea-stock-open-orders",
+  "name": "국내주식 미체결 조회",
+  "description": "KoreaStockBrokerNode → KoreaStockOpenOrdersNode: 미체결 주문 목록 조회",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "orders",
+      "type": "KoreaStockOpenOrdersNode",
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "국내주식 미체결 주문",
+      "columns": [
+        "order_id",
+        "symbol",
+        "side",
+        "quantity",
+        "price",
+        "remaining_quantity",
+        "order_time"
+      ],
+      "data": "{{ nodes.orders.open_orders }}",
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "orders"
+    },
+    {
+      "from": "orders",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}
