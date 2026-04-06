@@ -1,3 +1,9 @@
+## [1.16.2] - 2026-04-06
+### Dependencies
+- programgarden-core ^1.9.9 (expression filter 연산자 매칭 수정)
+- programgarden-finance ^1.4.4
+- programgarden-community ^1.10.5
+
 ## [1.16.1] - 2026-04-02
 ### Fixed
 - `load_dynamic_nodes()`: Pydantic v2 model_fields 기반 type 매칭으로 수정 (getattr → model_fields.get)

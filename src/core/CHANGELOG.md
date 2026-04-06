@@ -1,3 +1,7 @@
+## [1.9.9] - 2026-04-06
+### Fixed
+- `_filter_data()` regex 연산자 매칭 순서 수정: `>=|<=` 를 `>|<` 보다 앞으로 이동 (longest match first)
+
 ## [1.9.8] - 2026-04-02
 ### Added
 - `PluginRegistry.register_dynamic()`: 동적 플러그인 등록 메서드 (기존 ID 충돌 방지)
