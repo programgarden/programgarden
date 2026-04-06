@@ -545,7 +545,7 @@ def _filter_data(data: List[Any], condition: str) -> List[Any]:
     - "field != value"
     """
     import re
-    match = re.match(r"(\w+(?:\.\w+)*)\s*(>|<|>=|<=|==|!=)\s*(.+)", condition.strip())
+    match = re.match(r"(\w+(?:\.\w+)*)\s*(>=|<=|!=|==|>|<)\s*(.+)", condition.strip())
     if not match:
         return data
 
