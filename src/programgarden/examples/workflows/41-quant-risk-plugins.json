@@ -1,0 +1,192 @@
+{
+  "id": "41-quant-risk-plugins",
+  "name": "퀀트 위험관리 플러그인 워크플로우 (per-symbol)",
+  "description": "KellyCriterion + VarCvarMonitor 워크플로우. WatchlistNode → HistoricalDataNode(auto-iterate) → ConditionNode(items) 패턴. 다중 종목 플러그인(RiskParity, CorrelationGuard, BetaHedge)은 ConditionNode auto-iterate와 호환되지 않으므로 test_quant_risk_api.py에서 NodeRunner+직접호출로 테스트.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 300
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 300
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "MSFT",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "SPY",
+          "exchange": "NYSE"
+        }
+      ],
+      "position": {
+        "x": 450,
+        "y": 300
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(180, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {
+        "x": 650,
+        "y": 300
+      }
+    },
+    {
+      "id": "kelly",
+      "type": "ConditionNode",
+      "plugin": "KellyCriterion",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback": 60,
+        "kelly_fraction": 0.25,
+        "min_position_pct": 2.0,
+        "max_position_pct": 25.0,
+        "return_period": "daily"
+      },
+      "position": {
+        "x": 900,
+        "y": 150
+      }
+    },
+    {
+      "id": "var_monitor",
+      "type": "ConditionNode",
+      "plugin": "VarCvarMonitor",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback": 60,
+        "confidence_level": 95.0,
+        "var_method": "historical",
+        "time_horizon": 1,
+        "alert_threshold_pct": 5.0,
+        "action": "alert_only"
+      },
+      "position": {
+        "x": 900,
+        "y": 450
+      }
+    },
+    {
+      "id": "kelly_table",
+      "type": "TableDisplayNode",
+      "title": "Kelly Criterion Results",
+      "data": "{{ nodes.kelly.symbol_results }}",
+      "position": {
+        "x": 1150,
+        "y": 150
+      }
+    },
+    {
+      "id": "var_table",
+      "type": "TableDisplayNode",
+      "title": "VaR/CVaR Monitor",
+      "data": "{{ nodes.var_monitor.symbol_results }}",
+      "position": {
+        "x": 1150,
+        "y": 450
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "kelly"
+    },
+    {
+      "from": "historical",
+      "to": "var_monitor"
+    },
+    {
+      "from": "kelly",
+      "to": "kelly_table"
+    },
+    {
+      "from": "var_monitor",
+      "to": "var_table"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-1",
+      "content": "## 퀀트 위험관리 플러그인 (Per-Symbol)\nKellyCriterion + VarCvarMonitor: ConditionNode auto-iterate 호환\n\n**다중 종목 플러그인** (RiskParity, CorrelationGuard, BetaHedge):\nConditionNode auto-iterate와 비호환 → NodeRunner + 직접호출 방식으로 테스트",
+      "color": 3,
+      "width": 400,
+      "height": 150,
+      "position": {
+        "x": 50,
+        "y": 50
+      }
+    }
+  ]
+}

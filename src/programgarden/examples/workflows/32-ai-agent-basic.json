@@ -1,0 +1,66 @@
+{
+  "id": "32-ai-agent-basic",
+  "name": "AI Agent 기본 (텍스트 응답)",
+  "description": "LLMModelNode → AIAgentNode 최소 구성. Tool 없이 텍스트 응답만 생성",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "llm",
+      "type": "LLMModelNode",
+      "credential_id": "llm_cred",
+      "model": "claude-haiku-4-5-20251001",
+      "temperature": 0.7,
+      "max_tokens": 500,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "agent",
+      "type": "AIAgentNode",
+      "preset": "custom",
+      "system_prompt": "당신은 금융 시장 분석 전문가입니다. 간결하고 핵심적인 분석을 제공합니다.",
+      "user_prompt": "현재 미국 기술주 시장의 전반적인 동향을 3줄로 요약해주세요.",
+      "output_format": "text",
+      "max_tool_calls": 0,
+      "timeout_seconds": 30,
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "llm"
+    },
+    {
+      "from": "llm",
+      "to": "agent",
+      "type": "ai_model"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "llm_cred",
+      "type": "llm_anthropic",
+      "data": [
+        {
+          "key": "api_key",
+          "value": "",
+          "type": "password",
+          "label": "API Key"
+        }
+      ]
+    }
+  ]
+}

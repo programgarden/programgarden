@@ -1,0 +1,70 @@
+{
+  "id": "06-historical-futures-data",
+  "name": "해외선물 과거 데이터 조회",
+  "description": "해외선물 30일 과거 데이터 조회 (Mini Hang Seng)",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "futures_cred",
+      "paper_trading": true,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasFuturesHistoricalDataNode",
+      "symbol": {
+        "symbol": "HMCEG26",
+        "exchange": "HKEX"
+      },
+      "start_date": "{{ date.ago(30, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "futures_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

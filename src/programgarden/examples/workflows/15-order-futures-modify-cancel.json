@@ -1,0 +1,94 @@
+{
+  "id": "15-order-futures-modify-cancel",
+  "name": "해외선물 주문 정정/취소",
+  "description": "OverseasFuturesModifyOrderNode와 CancelOrderNode 테스트",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "futures_cred",
+      "paper_trading": true,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    },
+    {
+      "id": "modify_order",
+      "type": "OverseasFuturesModifyOrderNode",
+      "original_order_id": "{{ nodes.account.open_orders.first().order_id }}",
+      "symbol": "{{ nodes.account.open_orders.first().symbol }}",
+      "exchange": "{{ nodes.account.open_orders.first().exchange }}",
+      "new_price": 20500.0,
+      "position": {
+        "x": 650,
+        "y": 100
+      }
+    },
+    {
+      "id": "cancel_order",
+      "type": "OverseasFuturesCancelOrderNode",
+      "original_order_id": "{{ nodes.account.open_orders.last().order_id }}",
+      "symbol": "{{ nodes.account.open_orders.last().symbol }}",
+      "exchange": "{{ nodes.account.open_orders.last().exchange }}",
+      "position": {
+        "x": 650,
+        "y": 300
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "account",
+      "to": "modify_order"
+    },
+    {
+      "from": "account",
+      "to": "cancel_order"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "futures_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

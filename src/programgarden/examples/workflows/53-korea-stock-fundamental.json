@@ -1,0 +1,97 @@
+{
+  "id": "53-korea-stock-fundamental",
+  "name": "국내주식 펀더멘털 조회",
+  "description": "KoreaStockBrokerNode → KoreaStockFundamentalNode: 삼성전자·SK하이닉스 PER/PBR 조회",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "fundamental",
+      "type": "KoreaStockFundamentalNode",
+      "symbols": [
+        {
+          "symbol": "005930",
+          "exchange": "KRX"
+        },
+        {
+          "symbol": "000660",
+          "exchange": "KRX"
+        }
+      ],
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "국내주식 펀더멘털",
+      "columns": [
+        "symbol",
+        "name",
+        "current_price",
+        "per",
+        "pbr",
+        "eps",
+        "market_cap",
+        "high_52w",
+        "low_52w"
+      ],
+      "data": "{{ nodes.fundamental.values }}",
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "fundamental"
+    },
+    {
+      "from": "fundamental",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

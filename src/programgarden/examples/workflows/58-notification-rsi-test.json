@@ -1,0 +1,86 @@
+{
+  "id": "58-notification-rsi-test",
+  "name": "Notification RSI 테스트",
+  "description": "on_notification 콜백 검증: WORKFLOW_STARTED + SIGNAL_TRIGGERED + WORKFLOW_COMPLETED",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": false,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "MSFT",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "start_date": "{{ date.ago(30, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "rsi",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "data": "{{ nodes.historical.values }}",
+      "fields": {
+        "period": 14,
+        "threshold": 70,
+        "direction": "below"
+      },
+      "position": {
+        "x": 800,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "rsi"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": []
+    }
+  ]
+}

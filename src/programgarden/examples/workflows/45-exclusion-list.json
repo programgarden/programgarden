@@ -1,0 +1,58 @@
+{
+  "id": "45-exclusion-list",
+  "name": "거래 제외 종목 관리 (ExclusionListNode)",
+  "description": "ExclusionListNode 3가지 패턴 테스트: 제외 목록 선언, 직접 필터링, SymbolFilterNode 연동",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NASDAQ", "symbol": "NVDA"},
+        {"exchange": "NASDAQ", "symbol": "TSLA"},
+        {"exchange": "NYSE", "symbol": "BA"},
+        {"exchange": "NYSE", "symbol": "JPM"}
+      ],
+      "position": {"x": 300, "y": 150}
+    },
+    {
+      "id": "exclusion",
+      "type": "ExclusionListNode",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "NVDA", "reason": "변동성 과다"},
+        {"exchange": "NYSE", "symbol": "BA", "reason": "사고 리스크"}
+      ],
+      "default_reason": "리스크 관리",
+      "input_symbols": "{{ nodes.watchlist.symbols }}",
+      "position": {"x": 600, "y": 150}
+    },
+    {
+      "id": "exclusion_only",
+      "type": "ExclusionListNode",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "TSLA", "reason": "실적 부진"}
+      ],
+      "position": {"x": 600, "y": 450}
+    },
+    {
+      "id": "filter",
+      "type": "SymbolFilterNode",
+      "operation": "difference",
+      "input_a": "{{ nodes.exclusion.filtered }}",
+      "input_b": "{{ nodes.exclusion_only.excluded }}",
+      "position": {"x": 900, "y": 300}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "watchlist"},
+    {"from": "start", "to": "exclusion_only"},
+    {"from": "watchlist", "to": "exclusion"},
+    {"from": "exclusion", "to": "filter"},
+    {"from": "exclusion_only", "to": "filter"}
+  ]
+}

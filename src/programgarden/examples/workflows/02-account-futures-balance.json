@@ -1,0 +1,63 @@
+{
+  "id": "02-account-futures-balance",
+  "name": "해외선물 계좌 조회",
+  "description": "해외선물 모의투자 계좌 연결 및 예수금/포지션 조회",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "futures_cred",
+      "paper_trading": true,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "futures_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

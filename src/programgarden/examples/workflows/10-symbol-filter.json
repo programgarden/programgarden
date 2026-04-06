@@ -1,0 +1,128 @@
+{
+  "id": "10-symbol-filter",
+  "name": "종목 필터링 (관심종목 - 보유종목)",
+  "description": "SymbolFilterNode로 관심종목에서 보유종목 제외",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "exchange": "NASDAQ",
+          "symbol": "AAPL"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "TSLA"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "NVDA"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "MSFT"
+        },
+        {
+          "exchange": "NYSE",
+          "symbol": "JPM"
+        }
+      ],
+      "position": {
+        "x": 450,
+        "y": 100
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 450,
+        "y": 300
+      }
+    },
+    {
+      "id": "filter",
+      "type": "SymbolFilterNode",
+      "operation": "difference",
+      "input_a": "{{ nodes.watchlist.symbols }}",
+      "input_b": "{{ nodes.account.held_symbols }}",
+      "position": {
+        "x": 700,
+        "y": 200
+      }
+    },
+    {
+      "id": "market",
+      "type": "OverseasStockMarketDataNode",
+      "symbol": "{{ item }}",
+      "position": {
+        "x": 950,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "watchlist",
+      "to": "filter"
+    },
+    {
+      "from": "account",
+      "to": "filter"
+    },
+    {
+      "from": "filter",
+      "to": "market"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

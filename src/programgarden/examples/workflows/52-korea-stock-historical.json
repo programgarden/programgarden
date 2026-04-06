@@ -1,0 +1,84 @@
+{
+  "id": "52-korea-stock-historical",
+  "name": "국내주식 과거 데이터 조회",
+  "description": "KoreaStockBrokerNode → KoreaStockHistoricalDataNode: 삼성전자 60일 일봉 조회",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "KoreaStockHistoricalDataNode",
+      "symbol": {
+        "symbol": "005930",
+        "exchange": "KRX"
+      },
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "adjust": true,
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "CandlestickChartNode",
+      "title": "삼성전자 일봉 (60일)",
+      "data": "{{ nodes.historical.value }}",
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

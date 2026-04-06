@@ -1,0 +1,49 @@
+{
+  "id": "56-file-reader",
+  "name": "FileReaderNode 통합 테스트",
+  "description": "FileReaderNode의 3가지 입력 패턴(file_path, file_data, 복수 파일)과 포맷별 파싱(TXT, CSV, JSON)을 검증합니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 0, "y": 200}
+    },
+    {
+      "id": "txt_reader",
+      "type": "FileReaderNode",
+      "file_data": "SGVsbG8gV29ybGQhCuydtOqyg+ydgCBUWFQg7YWM7Iqk7Yq47J6F64uI64ukLg==",
+      "file_name": "test.txt",
+      "position": {"x": 300, "y": 0}
+    },
+    {
+      "id": "csv_reader",
+      "type": "FileReaderNode",
+      "file_data": "c3ltYm9sLGV4Y2hhbmdlLHByaWNlCkFBUEwsTkFTREFRLDE1MC41ClRTTEEsTkFTREFRLDI1MC4wCk5WREEsTkFTREFRLDkwMC4y",
+      "file_name": "stocks.csv",
+      "position": {"x": 300, "y": 200}
+    },
+    {
+      "id": "json_reader",
+      "type": "FileReaderNode",
+      "file_data": "eyJzeW1ib2xzIjpbIkFBUEwiLCJUU0xBIl0sInN0cmF0ZWd5IjoiUlNJIiwicGVyaW9kIjoxNH0=",
+      "file_name": "config.json",
+      "position": {"x": 300, "y": 400}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "txt_reader"},
+    {"from": "start", "to": "csv_reader"},
+    {"from": "start", "to": "json_reader"}
+  ],
+  "credentials": [],
+  "notes": [
+    {
+      "id": "note-1",
+      "content": "## FileReaderNode 통합 테스트\nbase64 인코딩된 TXT/CSV/JSON 파일을 파싱합니다.",
+      "color": 2,
+      "width": 300,
+      "height": 100,
+      "position": {"x": 0, "y": -100}
+    }
+  ]
+}

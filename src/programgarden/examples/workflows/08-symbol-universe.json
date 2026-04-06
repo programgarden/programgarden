@@ -1,0 +1,76 @@
+{
+  "id": "08-symbol-universe",
+  "name": "시장 대표지수 종목 조회",
+  "description": "MarketUniverseNode로 NASDAQ100 종목 가져오기",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "universe",
+      "type": "MarketUniverseNode",
+      "universe": "DOW30",
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    },
+    {
+      "id": "market",
+      "type": "OverseasStockMarketDataNode",
+      "symbol": "{{ item }}",
+      "position": {
+        "x": 650,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "universe"
+    },
+    {
+      "from": "universe",
+      "to": "market"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

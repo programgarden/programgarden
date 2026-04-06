@@ -1,0 +1,73 @@
+{
+  "id": "44-http-resilience",
+  "name": "HTTP Resilience 테스트 (credential 불필요)",
+  "description": "HTTPRequestNode 기본 retry 활성화(H-21) + JSON 파싱 안전성 + IfNode 분기 검증",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "api_json",
+      "type": "HTTPRequestNode",
+      "method": "GET",
+      "url": "https://httpbin.org/json",
+      "timeout_seconds": 30,
+      "position": {"x": 300, "y": 100}
+    },
+    {
+      "id": "api_headers",
+      "type": "HTTPRequestNode",
+      "method": "GET",
+      "url": "https://httpbin.org/headers",
+      "timeout_seconds": 30,
+      "position": {"x": 300, "y": 300}
+    },
+    {
+      "id": "if_success",
+      "type": "IfNode",
+      "left": "{{ nodes['api_json'].status_code }}",
+      "operator": "==",
+      "right": 200,
+      "position": {"x": 550, "y": 100}
+    },
+    {
+      "id": "mapper",
+      "type": "FieldMappingNode",
+      "data": "{{ nodes['api_json'].response }}",
+      "mappings": [
+        {"from": "slideshow", "to": "slideshow_data"}
+      ],
+      "preserve_unmapped": true,
+      "position": {"x": 750, "y": 100}
+    },
+    {
+      "id": "result",
+      "type": "TableDisplayNode",
+      "title": "HTTP Resilience 테스트 결과",
+      "data": [
+        {
+          "test": "JSON API 호출",
+          "status": "{{ nodes['api_json'].status_code }}",
+          "data": "{{ nodes.mapper.data }}"
+        },
+        {
+          "test": "Headers API 호출",
+          "status": "{{ nodes['api_headers'].status_code }}"
+        }
+      ],
+      "columns": ["test", "status", "data"],
+      "position": {"x": 950, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "api_json"},
+    {"from": "start", "to": "api_headers"},
+    {"from": "api_json", "to": "if_success"},
+    {"from": "if_success", "to": "mapper", "from_port": "true"},
+    {"from": "mapper", "to": "result"},
+    {"from": "api_headers", "to": "result"}
+  ],
+  "credentials": []
+}

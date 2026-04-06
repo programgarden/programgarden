@@ -1,0 +1,194 @@
+{
+  "id": "42-tier1-zscore-squeeze",
+  "name": "Tier1 ZScore + SqueezeMomentum 워크플로우",
+  "description": "ZScore와 SqueezeMomentum 플러그인을 실제 LS증권 API 데이터로 테스트. WatchlistNode → HistoricalDataNode(auto-iterate) → ConditionNode(items) 패턴.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 300
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 300
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "MSFT",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "position": {
+        "x": 450,
+        "y": 300
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(90, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {
+        "x": 650,
+        "y": 300
+      }
+    },
+    {
+      "id": "zscore",
+      "type": "ConditionNode",
+      "plugin": "ZScore",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback": 20,
+        "entry_threshold": 2.0,
+        "exit_threshold": 0.5,
+        "direction": "below"
+      },
+      "position": {
+        "x": 900,
+        "y": 150
+      }
+    },
+    {
+      "id": "squeeze",
+      "type": "ConditionNode",
+      "plugin": "SqueezeMomentum",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}"
+        }
+      },
+      "fields": {
+        "bb_period": 20,
+        "bb_std": 2.0,
+        "kc_period": 20,
+        "kc_atr_period": 10,
+        "kc_multiplier": 1.5,
+        "momentum_period": 12,
+        "direction": "squeeze_on"
+      },
+      "position": {
+        "x": 900,
+        "y": 450
+      }
+    },
+    {
+      "id": "zscore_table",
+      "type": "TableDisplayNode",
+      "title": "Z-Score Results",
+      "data": "{{ nodes.zscore.symbol_results }}",
+      "position": {
+        "x": 1150,
+        "y": 150
+      }
+    },
+    {
+      "id": "squeeze_table",
+      "type": "TableDisplayNode",
+      "title": "Squeeze Momentum Results",
+      "data": "{{ nodes.squeeze.symbol_results }}",
+      "position": {
+        "x": 1150,
+        "y": 450
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "zscore"
+    },
+    {
+      "from": "historical",
+      "to": "squeeze"
+    },
+    {
+      "from": "zscore",
+      "to": "zscore_table"
+    },
+    {
+      "from": "squeeze",
+      "to": "squeeze_table"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-1",
+      "content": "## Tier 1 - ZScore + SqueezeMomentum\nZScore: 표준편차 정규화 과매도/과매수\nSqueezeMomentum: BB+KC 스퀴즈 발화 + 선형회귀 모멘텀",
+      "color": 5,
+      "width": 350,
+      "height": 120,
+      "position": {
+        "x": 50,
+        "y": 50
+      }
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "id": "24-display-multi-line",
+  "name": "멀티라인 차트",
+  "description": "MultiLineChartNode로 여러 종목의 RSI를 하나의 차트에 표시",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 200
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "MSFT",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "position": {
+        "x": 350,
+        "y": 50
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "period": "1d",
+      "start_date": "{{ date.ago(30, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "position": {
+        "x": 550,
+        "y": 50
+      }
+    },
+    {
+      "id": "condition",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "data": "{{ nodes.historical.values }}",
+      "params": {
+        "period": 14
+      },
+      "position": {
+        "x": 550,
+        "y": 200
+      }
+    },
+    {
+      "id": "chart",
+      "type": "MultiLineChartNode",
+      "title": "Tech 종목 RSI 비교",
+      "data": "{{ lst.flatten(nodes.condition.values, 'time_series') }}",
+      "x_field": "date",
+      "y_field": "rsi",
+      "series_key": "symbol",
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "watchlist",
+      "to": "historical"
+    },
+    {
+      "from": "broker",
+      "to": "condition"
+    },
+    {
+      "from": "historical",
+      "to": "condition"
+    },
+    {
+      "from": "condition",
+      "to": "chart"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

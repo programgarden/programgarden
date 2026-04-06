@@ -1,0 +1,110 @@
+{
+  "id": "39-realtime-futures-tick",
+  "name": "해외선물 실시간 틱 (모의투자)",
+  "description": "해외선물 모의투자 모드에서 실시간 OVC 틱 데이터 수신 확인. HKEX 항셍지수 선물 2월물 (HMCEG26) 구독. 모의투자는 홍콩거래소만 지원.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "futures_cred",
+      "paper_trading": true,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "exchange": "HKEX",
+          "symbol": "HMCEG26"
+        }
+      ],
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "realtime",
+      "type": "OverseasFuturesRealMarketDataNode",
+      "stay_connected": true,
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    },
+    {
+      "id": "throttle",
+      "type": "ThrottleNode",
+      "mode": "latest",
+      "interval_sec": 3,
+      "pass_first": true,
+      "position": {
+        "x": 1000,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "data": "{{ nodes.throttle.data }}",
+      "position": {
+        "x": 1250,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "realtime"
+    },
+    {
+      "from": "realtime",
+      "to": "throttle"
+    },
+    {
+      "from": "throttle",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "futures_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

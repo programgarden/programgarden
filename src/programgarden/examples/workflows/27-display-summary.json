@@ -1,0 +1,76 @@
+{
+  "id": "27-display-summary",
+  "name": "요약 디스플레이",
+  "description": "SummaryDisplayNode로 계좌 잔고 요약 표시",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 400,
+        "y": 200
+      }
+    },
+    {
+      "id": "summary",
+      "type": "SummaryDisplayNode",
+      "title": "계좌 잔고 요약",
+      "data": "{{ nodes.account.balance }}",
+      "position": {
+        "x": 600,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "account",
+      "to": "summary"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

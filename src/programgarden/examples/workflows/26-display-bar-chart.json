@@ -1,0 +1,78 @@
+{
+  "id": "26-display-bar-chart",
+  "name": "바 차트 (종목별 손익)",
+  "description": "BarChartNode로 종목별 손익 막대 차트 표시",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 400,
+        "y": 200
+      }
+    },
+    {
+      "id": "chart",
+      "type": "BarChartNode",
+      "title": "종목별 손익",
+      "data": "{{ nodes.account.positions }}",
+      "x_field": "symbol",
+      "y_field": "pnl",
+      "position": {
+        "x": 600,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "account",
+      "to": "chart"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

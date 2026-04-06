@@ -1,0 +1,74 @@
+{
+  "id": "18-trigger-schedule",
+  "name": "스케줄 트리거",
+  "description": "ScheduleNode로 주기적 워크플로우 실행",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "0 9 * * 1-5",
+      "timezone": "America/New_York",
+      "enabled": true,
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "schedule"
+    },
+    {
+      "from": "schedule",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

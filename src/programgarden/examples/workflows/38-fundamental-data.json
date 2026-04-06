@@ -1,0 +1,120 @@
+{
+  "id": "38-fundamental-data",
+  "name": "해외주식 펀더멘털 조회 테스트",
+  "description": "OverseasStockFundamentalNode로 AAPL, MSFT 종목정보(PER, EPS, 시가총액 등)를 조회합니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 0,
+        "y": 100
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 100
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "exchange": "NASDAQ",
+          "symbol": "AAPL"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "MSFT"
+        }
+      ],
+      "position": {
+        "x": 200,
+        "y": 250
+      }
+    },
+    {
+      "id": "split",
+      "type": "SplitNode",
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "fundamental",
+      "type": "OverseasStockFundamentalNode",
+      "symbol": "{{ nodes.split.item }}",
+      "position": {
+        "x": 600,
+        "y": 250
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "펀더멘털 데이터",
+      "columns": [
+        "symbol",
+        "name",
+        "per",
+        "eps",
+        "market_cap",
+        "high_52w",
+        "low_52w"
+      ],
+      "data": "{{ nodes.fundamental.values }}",
+      "position": {
+        "x": 800,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "split"
+    },
+    {
+      "from": "split",
+      "to": "fundamental"
+    },
+    {
+      "from": "fundamental",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "id": "14-order-futures-new",
+  "name": "해외선물 신규 주문",
+  "description": "OverseasFuturesNewOrderNode로 해외선물 신규 주문 테스트",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "futures_cred",
+      "paper_trading": true,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    },
+    {
+      "id": "new_order",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "buy",
+      "order_type": "limit",
+      "order": {
+        "symbol": "HMCEG26",
+        "exchange": "HKEX",
+        "quantity": 1,
+        "price": 9500.0
+      },
+      "position": {
+        "x": 650,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "account",
+      "to": "new_order"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "futures_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

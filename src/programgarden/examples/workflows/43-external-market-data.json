@@ -1,0 +1,81 @@
+{
+  "id": "43-external-market-data",
+  "name": "외부 시장 데이터 (credential 불필요)",
+  "description": "CurrencyRateNode + FearGreedIndexNode + IfNode 조합. 주식장 종료 후에도 테스트 가능.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "fx",
+      "type": "CurrencyRateNode",
+      "base_currency": "USD",
+      "target_currencies": ["KRW", "JPY", "EUR"],
+      "position": {"x": 300, "y": 100}
+    },
+    {
+      "id": "fgi",
+      "type": "FearGreedIndexNode",
+      "position": {"x": 300, "y": 300}
+    },
+    {
+      "id": "if_fear",
+      "type": "IfNode",
+      "left": "{{ nodes.fgi.value }}",
+      "operator": "<=",
+      "right": 25,
+      "position": {"x": 550, "y": 300}
+    },
+    {
+      "id": "fear_alert",
+      "type": "SummaryDisplayNode",
+      "title": "극단적 공포 감지",
+      "data": {
+        "fear_greed_value": "{{ nodes.fgi.value }}",
+        "fear_greed_label": "{{ nodes.fgi.label }}",
+        "action": "포지션 축소 권장"
+      },
+      "position": {"x": 800, "y": 200}
+    },
+    {
+      "id": "normal_status",
+      "type": "SummaryDisplayNode",
+      "title": "시장 심리 정상",
+      "data": {
+        "fear_greed_value": "{{ nodes.fgi.value }}",
+        "fear_greed_label": "{{ nodes.fgi.label }}",
+        "action": "정상 운영"
+      },
+      "position": {"x": 800, "y": 400}
+    },
+    {
+      "id": "market_overview",
+      "type": "TableDisplayNode",
+      "title": "시장 종합 현황",
+      "data": [
+        {
+          "indicator": "USD/KRW",
+          "value": "{{ nodes.fx.krw_rate }}"
+        },
+        {
+          "indicator": "Fear & Greed",
+          "value": "{{ nodes.fgi.value }} ({{ nodes.fgi.label }})"
+        }
+      ],
+      "columns": ["indicator", "value"],
+      "position": {"x": 800, "y": 600}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "fx"},
+    {"from": "start", "to": "fgi"},
+    {"from": "fgi", "to": "if_fear"},
+    {"from": "if_fear", "to": "fear_alert", "from_port": "true"},
+    {"from": "if_fear", "to": "normal_status", "from_port": "false"},
+    {"from": "fx", "to": "market_overview"},
+    {"from": "fgi", "to": "market_overview"}
+  ],
+  "credentials": []
+}

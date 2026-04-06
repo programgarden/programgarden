@@ -1,0 +1,125 @@
+{
+  "id": "16-risk-position-sizing",
+  "name": "포지션 사이징",
+  "description": "PositionSizingNode로 계좌 잔고 기반 주문 수량 계산",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 350,
+        "y": 200
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "position": {
+        "x": 350,
+        "y": 50
+      }
+    },
+    {
+      "id": "market",
+      "type": "OverseasStockMarketDataNode",
+      "symbol": "{{ item }}",
+      "position": {
+        "x": 500,
+        "y": 50
+      }
+    },
+    {
+      "id": "sizing",
+      "type": "PositionSizingNode",
+      "symbol": "{{ item }}",
+      "balance": "{{ nodes.account.balance.available }}",
+      "market_data": "{{ nodes.market.value }}",
+      "method": "fixed_percent",
+      "max_percent": 10.0,
+      "position": {
+        "x": 650,
+        "y": 200
+      }
+    },
+    {
+      "id": "new_order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "limit",
+      "order": "{{ nodes.sizing.order }}",
+      "position": {
+        "x": 800,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "watchlist",
+      "to": "market"
+    },
+    {
+      "from": "account",
+      "to": "sizing"
+    },
+    {
+      "from": "market",
+      "to": "sizing"
+    },
+    {
+      "from": "sizing",
+      "to": "new_order"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

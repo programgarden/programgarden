@@ -1,0 +1,110 @@
+{
+  "id": "55-korea-stock-schedule",
+  "name": "국내주식 스케줄 반복 조회",
+  "description": "ScheduleNode로 10초마다 국내주식(삼성전자·SK하이닉스) 현재가를 반복 조회합니다.\n- cron: */10 * * * * * (초 단위, 10초 간격)\n- 국내주식은 실전투자 전용 (paper_trading 없음)\n- 2~3회 반복 확인 후 job.stop()으로 종료",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "*/10 * * * * *",
+      "timezone": "Asia/Seoul",
+      "enabled": true,
+      "max_duration_hours": 0.1,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "market",
+      "type": "KoreaStockMarketDataNode",
+      "symbols": [
+        {
+          "symbol": "005930",
+          "exchange": "KRX"
+        },
+        {
+          "symbol": "000660",
+          "exchange": "KRX"
+        }
+      ],
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "국내주식 현재가 (스케줄)",
+      "columns": [
+        "symbol",
+        "name",
+        "price",
+        "change",
+        "change_pct",
+        "volume"
+      ],
+      "data": "{{ nodes.market.values }}",
+      "position": {
+        "x": 1000,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "schedule"
+    },
+    {
+      "from": "schedule",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "market"
+    },
+    {
+      "from": "market",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

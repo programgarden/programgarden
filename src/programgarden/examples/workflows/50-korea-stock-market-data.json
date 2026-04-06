@@ -1,0 +1,101 @@
+{
+  "id": "50-korea-stock-market-data",
+  "name": "국내주식 현재가 조회",
+  "description": "KoreaStockBrokerNode → KoreaStockMarketDataNode: 삼성전자·SK하이닉스·카카오 시세 조회",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "market",
+      "type": "KoreaStockMarketDataNode",
+      "symbols": [
+        {
+          "symbol": "005930",
+          "exchange": "KRX"
+        },
+        {
+          "symbol": "000660",
+          "exchange": "KRX"
+        },
+        {
+          "symbol": "035720",
+          "exchange": "KRX"
+        }
+      ],
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "국내주식 현재가",
+      "columns": [
+        "symbol",
+        "name",
+        "price",
+        "change",
+        "change_pct",
+        "volume",
+        "open",
+        "high",
+        "low"
+      ],
+      "data": "{{ nodes.market.values }}",
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "market"
+    },
+    {
+      "from": "market",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

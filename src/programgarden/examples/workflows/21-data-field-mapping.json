@@ -1,0 +1,90 @@
+{
+  "id": "21-data-field-mapping",
+  "name": "필드 매핑 + Auto-Iterate",
+  "description": "AccountNode 포지션에 FieldMappingNode 적용 (item, index, total)",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 200
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 350,
+        "y": 200
+      }
+    },
+    {
+      "id": "mapper",
+      "type": "FieldMappingNode",
+      "data": "{{ nodes.account.positions }}",
+      "mappings": [
+        {
+          "from": "ovrs_stck_name",
+          "to": "name"
+        },
+        {
+          "from": "stck_bsop_unpr",
+          "to": "entry_price"
+        },
+        {
+          "from": "ord_psbl_qty",
+          "to": "quantity"
+        }
+      ],
+      "preserve_unmapped": true,
+      "position": {
+        "x": 550,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "account",
+      "to": "mapper"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

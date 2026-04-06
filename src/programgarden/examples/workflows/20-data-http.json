@@ -1,0 +1,56 @@
+{
+  "id": "20-data-http",
+  "name": "HTTP 요청",
+  "description": "HTTPRequestNode로 외부 API 호출 및 FieldMappingNode로 데이터 변환. httpbin.org를 사용한 테스트 예제",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "api_call",
+      "type": "HTTPRequestNode",
+      "method": "GET",
+      "url": "https://httpbin.org/json",
+      "timeout_seconds": 30,
+      "resilience": {
+        "retry": {
+          "enabled": true,
+          "max_retries": 3,
+          "base_delay": 1.0,
+          "exponential_backoff": true
+        },
+        "fallback": {
+          "mode": "error"
+        }
+      },
+      "position": {"x": 250, "y": 200}
+    },
+    {
+      "id": "mapper",
+      "type": "FieldMappingNode",
+      "data": "{{ nodes.api_call.response }}",
+      "mappings": [
+        {"from": "slideshow.title", "to": "title"},
+        {"from": "slideshow.author", "to": "author"}
+      ],
+      "preserve_unmapped": true,
+      "position": {"x": 500, "y": 200}
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "HTTP 응답 결과",
+      "data": "{{ [nodes.mapper.data] }}",
+      "columns": ["title", "author"],
+      "position": {"x": 750, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "api_call"},
+    {"from": "api_call", "to": "mapper"},
+    {"from": "mapper", "to": "display"}
+  ],
+  "credentials": []
+}
