@@ -1,3 +1,7 @@
+## [1.10.5] - 2026-04-06
+### Dependencies
+- programgarden-core ^1.9.9 (expression filter 연산자 매칭 수정)
+
 ## [1.10.4] - 2026-03-26
 ### Changed
 - 미사용 cdn.programgarden.io `_img_url` 제거 (빈값으로 초기화) — 노드 3개 정리

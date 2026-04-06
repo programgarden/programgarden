@@ -1,3 +1,7 @@
+## [1.4.4] - 2026-04-06
+### Dependencies
+- programgarden-core ^1.9.9 (expression filter 연산자 매칭 수정)
+
 ## [1.4.3] - 2026-03-24
 ### Fixed
 - g3204 (해외주식 차트 일주월년별) rate_limit_seconds 1초 → 3초 (API 호출 초과 방지)
