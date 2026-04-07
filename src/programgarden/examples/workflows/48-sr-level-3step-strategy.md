@@ -160,12 +160,3 @@ graph LR
 1. **sizing** (PositionSizingNode) --> **buy_order** (OverseasStockNewOrderNode)
 1. **buy_order** (OverseasStockNewOrderNode) --> **signal_table** (TableDisplayNode)
 1. **sr_detect** (ConditionNode) --> **level_table** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

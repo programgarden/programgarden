@@ -45,12 +45,3 @@ graph LR
 1. **if_success** (IfNode) --true--> **mapper** (FieldMappingNode)
 1. **mapper** (FieldMappingNode) --> **result** (TableDisplayNode)
 1. **api_headers** (HTTPRequestNode) --> **result** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

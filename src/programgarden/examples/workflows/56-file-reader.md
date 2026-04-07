@@ -32,12 +32,3 @@ graph LR
 1. **start** (StartNode) --> **txt_reader** (FileReaderNode)
 1. **start** (StartNode) --> **csv_reader** (FileReaderNode)
 1. **start** (StartNode) --> **json_reader** (FileReaderNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

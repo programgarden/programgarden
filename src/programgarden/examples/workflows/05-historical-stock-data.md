@@ -33,12 +33,3 @@ graph LR
 
 1. **start** (StartNode) --> **broker** (OverseasStockBrokerNode)
 1. **broker** (OverseasStockBrokerNode) --> **historical** (OverseasStockHistoricalDataNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

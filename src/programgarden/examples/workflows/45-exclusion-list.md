@@ -41,12 +41,3 @@ graph LR
 1. **watchlist** (WatchlistNode) --> **exclusion** (ExclusionListNode)
 1. **exclusion** (ExclusionListNode) --> **filter** (SymbolFilterNode)
 1. **exclusion_only** (ExclusionListNode) --> **filter** (SymbolFilterNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

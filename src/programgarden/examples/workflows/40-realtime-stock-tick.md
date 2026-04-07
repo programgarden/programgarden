@@ -49,12 +49,3 @@ graph LR
 1. **watchlist** (WatchlistNode) --> **realtime** (OverseasStockRealMarketDataNode)
 1. **realtime** (OverseasStockRealMarketDataNode) --> **throttle** (ThrottleNode)
 1. **throttle** (ThrottleNode) --> **display** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

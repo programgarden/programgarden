@@ -33,12 +33,3 @@ graph LR
 1. **start** (StartNode) --> **api_call** (HTTPRequestNode)
 1. **api_call** (HTTPRequestNode) --> **mapper** (FieldMappingNode)
 1. **mapper** (FieldMappingNode) --> **display** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

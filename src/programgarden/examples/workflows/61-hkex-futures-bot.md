@@ -106,12 +106,3 @@ graph LR
 1. **buy_order** (OverseasFuturesNewOrderNode) --> **telegram_buy** (TelegramNode)
 1. **trading_hours** (TradingHoursFilterNode) --> **account_sell** (OverseasFuturesAccountNode)
 1. **account_sell** (OverseasFuturesAccountNode) --> **sell_order** (OverseasFuturesNewOrderNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

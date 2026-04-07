@@ -43,12 +43,3 @@ graph LR
 1. **start** (StartNode) --> **broker** (OverseasFuturesBrokerNode)
 1. **broker** (OverseasFuturesBrokerNode) --> **account** (OverseasFuturesAccountNode)
 1. **account** (OverseasFuturesAccountNode) --> **new_order** (OverseasFuturesNewOrderNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

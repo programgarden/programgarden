@@ -81,12 +81,3 @@ graph LR
 1. **market** (OverseasStockMarketDataNode) --> **sizing** (PositionSizingNode)
 1. **sizing** (PositionSizingNode) --> **new_order** (OverseasStockNewOrderNode)
 1. **rsi_condition** (ConditionNode) --> **table** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

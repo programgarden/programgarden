@@ -69,12 +69,3 @@ graph LR
 1. **historical** (OverseasStockHistoricalDataNode) --> **var_monitor** (ConditionNode)
 1. **kelly** (ConditionNode) --> **kelly_table** (TableDisplayNode)
 1. **var_monitor** (ConditionNode) --> **var_table** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

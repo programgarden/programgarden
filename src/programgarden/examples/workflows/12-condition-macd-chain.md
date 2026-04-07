@@ -47,12 +47,3 @@ graph LR
 1. **broker** (OverseasStockBrokerNode) --> **universe** (MarketUniverseNode)
 1. **universe** (MarketUniverseNode) --> **historical** (OverseasStockHistoricalDataNode)
 1. **historical** (OverseasStockHistoricalDataNode) --> **macd_condition** (ConditionNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

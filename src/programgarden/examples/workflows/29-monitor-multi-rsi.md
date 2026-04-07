@@ -56,12 +56,3 @@ graph LR
 1. **historical** (OverseasStockHistoricalDataNode) --> **rsi_condition** (ConditionNode)
 1. **rsi_condition** (ConditionNode) --> **chart** (MultiLineChartNode)
 1. **rsi_condition** (ConditionNode) --> **table** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

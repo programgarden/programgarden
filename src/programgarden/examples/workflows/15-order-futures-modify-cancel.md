@@ -47,12 +47,3 @@ graph LR
 1. **broker** (OverseasFuturesBrokerNode) --> **account** (OverseasFuturesAccountNode)
 1. **account** (OverseasFuturesAccountNode) --> **modify_order** (OverseasFuturesModifyOrderNode)
 1. **account** (OverseasFuturesAccountNode) --> **cancel_order** (OverseasFuturesCancelOrderNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```
