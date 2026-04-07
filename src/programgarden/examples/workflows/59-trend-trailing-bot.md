@@ -108,12 +108,3 @@ graph LR
 1. **trading_hours** (TradingHoursFilterNode) --> **account_sell** (OverseasStockAccountNode)
 1. **account_sell** (OverseasStockAccountNode) --> **if_stop_loss** (IfNode)
 1. **if_stop_loss** (IfNode) --true--> **sell_order** (OverseasStockNewOrderNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

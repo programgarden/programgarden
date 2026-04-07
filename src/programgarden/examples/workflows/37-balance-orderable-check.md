@@ -49,12 +49,3 @@ graph LR
 1. **account** (OverseasStockAccountNode) --> **check_orderable** (IfNode)
 1. **check_orderable** (IfNode) --true--> **can_order** (FieldMappingNode)
 1. **check_orderable** (IfNode) --false--> **insufficient** (FieldMappingNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

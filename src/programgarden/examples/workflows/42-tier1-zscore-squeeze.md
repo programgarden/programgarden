@@ -67,12 +67,3 @@ graph LR
 1. **historical** (OverseasStockHistoricalDataNode) --> **squeeze** (ConditionNode)
 1. **zscore** (ConditionNode) --> **zscore_table** (TableDisplayNode)
 1. **squeeze** (ConditionNode) --> **squeeze_table** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

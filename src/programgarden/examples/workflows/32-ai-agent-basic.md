@@ -35,12 +35,3 @@ graph LR
 
 1. **start** (StartNode) --> **llm** (LLMModelNode)
 1. **llm** (LLMModelNode) --> **agent** (AIAgentNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

@@ -41,12 +41,3 @@ graph LR
 1. **start** (StartNode) --> **hours_filter** (TradingHoursFilterNode)
 1. **hours_filter** (TradingHoursFilterNode) --> **broker** (OverseasStockBrokerNode)
 1. **broker** (OverseasStockBrokerNode) --> **account** (OverseasStockAccountNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

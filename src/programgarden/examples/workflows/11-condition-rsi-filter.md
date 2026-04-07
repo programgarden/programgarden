@@ -48,12 +48,3 @@ graph LR
 1. **broker** (OverseasStockBrokerNode) --> **watchlist** (WatchlistNode)
 1. **watchlist** (WatchlistNode) --> **historical** (OverseasStockHistoricalDataNode)
 1. **historical** (OverseasStockHistoricalDataNode) --> **rsi_condition** (ConditionNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

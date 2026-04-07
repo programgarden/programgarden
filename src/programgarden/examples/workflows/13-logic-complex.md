@@ -62,12 +62,3 @@ graph LR
 1. **historical** (OverseasStockHistoricalDataNode) --> **macd_condition** (ConditionNode)
 1. **rsi_condition** (ConditionNode) --> **logic** (LogicNode)
 1. **macd_condition** (ConditionNode) --> **logic** (LogicNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

@@ -66,12 +66,3 @@ graph LR
 1. **touch_check** (ConditionNode) --> **if_buy** (IfNode)
 1. **detect_levels** (ConditionNode) --> **sr_table** (TableDisplayNode)
 1. **touch_check** (ConditionNode) --> **touch_table** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

@@ -47,12 +47,3 @@ graph LR
 1. **if_fear** (IfNode) --false--> **normal_status** (SummaryDisplayNode)
 1. **fx** (CurrencyRateNode) --> **market_overview** (TableDisplayNode)
 1. **fgi** (FearGreedIndexNode) --> **market_overview** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

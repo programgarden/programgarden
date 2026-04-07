@@ -60,12 +60,3 @@ graph LR
 1. **account** (OverseasStockAccountNode) --> **agent** (AIAgentNode)
 1. **market** (OverseasStockMarketDataNode) --> **agent** (AIAgentNode)
 1. **agent** (AIAgentNode) --> **table** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

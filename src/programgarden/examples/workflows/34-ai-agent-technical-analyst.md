@@ -60,12 +60,3 @@ graph LR
 1. **historical** (OverseasStockHistoricalDataNode) --> **agent** (AIAgentNode)
 1. **market** (OverseasStockMarketDataNode) --> **agent** (AIAgentNode)
 1. **agent** (AIAgentNode) --> **summary** (SummaryDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

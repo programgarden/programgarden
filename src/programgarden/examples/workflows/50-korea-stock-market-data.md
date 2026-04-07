@@ -41,12 +41,3 @@ graph LR
 1. **start** (StartNode) --> **broker** (KoreaStockBrokerNode)
 1. **broker** (KoreaStockBrokerNode) --> **market** (KoreaStockMarketDataNode)
 1. **market** (KoreaStockMarketDataNode) --> **display** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

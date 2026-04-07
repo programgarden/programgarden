@@ -219,12 +219,3 @@ graph LR
 1. **portfolio** (PortfolioNode) --> **sizing** (PositionSizingNode)
 1. **sizing** (PositionSizingNode) --> **new_order** (OverseasFuturesNewOrderNode)
 1. **new_order** (OverseasFuturesNewOrderNode) --> **order_table** (TableDisplayNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```

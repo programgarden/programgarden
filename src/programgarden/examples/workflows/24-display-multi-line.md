@@ -51,12 +51,3 @@ graph LR
 1. **broker** (OverseasStockBrokerNode) --> **condition** (ConditionNode)
 1. **historical** (OverseasStockHistoricalDataNode) --> **condition** (ConditionNode)
 1. **condition** (ConditionNode) --> **chart** (MultiLineChartNode)
-
-## How to Run
-
-```python
-from programgarden import ProgramGarden
-
-pg = ProgramGarden()
-job = await pg.run_async(workflow)
-```
