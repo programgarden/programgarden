@@ -1,3 +1,10 @@
+## [1.11.0] - 2026-04-09
+### Added
+- TECHNICAL 플러그인 7종: RSIDivergence, UltimateOscillator, KDJ, Aroon, HeikinAshi, VortexIndicator, HurstExponent
+- POSITION 플러그인 3종: SharpeRatioMonitor, SortinoRatio, CalmarRatio
+- 총 플러그인: 67 → 77개 (TECHNICAL 59 + POSITION 18)
+- 테스트 174개 추가 (총 1203개)
+
 ## [1.10.5] - 2026-04-06
 ### Dependencies
 - programgarden-core ^1.9.9 (expression filter 연산자 매칭 수정)

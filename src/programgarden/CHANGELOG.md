@@ -1,3 +1,10 @@
+## [1.17.0] - 2026-04-09
+### Added
+- 워크플로우 예제 5개 추가 (63~67번): RSI Divergence, KDJ+Aroon, Heikin-Ashi+Vortex, Hurst Regime, Performance Ratios
+
+### Dependencies
+- programgarden-community ^1.11.0 (플러그인 10종 추가)
+
 ## [1.16.2] - 2026-04-06
 ### Dependencies
 - programgarden-core ^1.9.9 (expression filter 연산자 매칭 수정)

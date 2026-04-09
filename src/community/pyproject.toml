@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.12"
 name = "programgarden-community"
-version = "1.10.5"
+version = "1.11.0"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 readme = "README.md"
 
@@ -15,7 +15,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-programgarden-core = "^1.9.9"
+programgarden-core = { version = "^1.9.9", source = "testpypi" }
 pypdf = ">=4.0.0"
 
 [tool.poetry.extras]
