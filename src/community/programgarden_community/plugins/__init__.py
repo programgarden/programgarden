@@ -55,6 +55,13 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── magic_formula/    # TECHNICAL - 마법공식
     ├── support_resistance_levels/ # TECHNICAL - 지지/저항 레벨
     ├── level_touch/      # TECHNICAL - 레벨 터치/돌파
+    ├── rsi_divergence/   # TECHNICAL - RSI 다이버전스
+    ├── ultimate_oscillator/ # TECHNICAL - 얼티밋 오실레이터
+    ├── kdj/              # TECHNICAL - KDJ
+    ├── aroon/            # TECHNICAL - 아룬
+    ├── heikin_ashi/      # TECHNICAL - 하이킨아시
+    ├── vortex_indicator/ # TECHNICAL - 보텍스 지표
+    ├── hurst_exponent/   # TECHNICAL - 허스트 지수
     ├── stop_loss/        # POSITION - 손절
     ├── profit_target/    # POSITION - 익절
     ├── trailing_stop/    # POSITION - 트레일링 스탑
@@ -69,7 +76,10 @@ ProgramGarden Community - 플러그인 레지스트리
     ├── correlation_guard/ # POSITION - 상관관계 가드
     ├── beta_hedge/       # POSITION - 베타 헷지
     ├── dynamic_stop_loss/ # POSITION - 동적 손절
-    └── max_position_limit/ # POSITION - 최대 포지션 한도
+    ├── max_position_limit/ # POSITION - 최대 포지션 한도
+    ├── sharpe_ratio_monitor/ # POSITION - 샤프비율 모니터
+    ├── sortino_ratio/    # POSITION - 소르티노 비율
+    └── calmar_ratio/     # POSITION - 칼마 비율
 
 사용법:
     from programgarden_community.plugins import register_all_plugins, get_plugin
@@ -142,6 +152,13 @@ def register_all_plugins() -> None:
     from .magic_formula import MAGIC_FORMULA_SCHEMA, magic_formula_condition
     from .support_resistance_levels import SUPPORT_RESISTANCE_LEVELS_SCHEMA, support_resistance_levels_condition
     from .level_touch import LEVEL_TOUCH_SCHEMA, level_touch_condition
+    from .rsi_divergence import RSI_DIVERGENCE_SCHEMA, rsi_divergence_condition
+    from .ultimate_oscillator import ULTIMATE_OSCILLATOR_SCHEMA, ultimate_oscillator_condition
+    from .kdj import KDJ_SCHEMA, kdj_condition
+    from .aroon import AROON_SCHEMA, aroon_condition
+    from .heikin_ashi import HEIKIN_ASHI_SCHEMA, heikin_ashi_condition
+    from .vortex_indicator import VORTEX_INDICATOR_SCHEMA, vortex_indicator_condition
+    from .hurst_exponent import HURST_EXPONENT_SCHEMA, hurst_exponent_condition
 
     # === POSITION 플러그인 ===
     from .stop_loss import STOP_LOSS_SCHEMA, stop_loss_condition
@@ -159,6 +176,9 @@ def register_all_plugins() -> None:
     from .beta_hedge import BETA_HEDGE_SCHEMA, beta_hedge_condition
     from .dynamic_stop_loss import DYNAMIC_STOP_LOSS_SCHEMA, dynamic_stop_loss_condition
     from .max_position_limit import MAX_POSITION_LIMIT_SCHEMA, max_position_limit_condition
+    from .sharpe_ratio_monitor import SHARPE_RATIO_MONITOR_SCHEMA, sharpe_ratio_monitor_condition
+    from .sortino_ratio import SORTINO_RATIO_SCHEMA, sortino_ratio_condition
+    from .calmar_ratio import CALMAR_RATIO_SCHEMA, calmar_ratio_condition
 
     # TECHNICAL 등록
     technical_plugins = [
@@ -214,6 +234,13 @@ def register_all_plugins() -> None:
         ("MagicFormula", magic_formula_condition, MAGIC_FORMULA_SCHEMA),
         ("SupportResistanceLevels", support_resistance_levels_condition, SUPPORT_RESISTANCE_LEVELS_SCHEMA),
         ("LevelTouch", level_touch_condition, LEVEL_TOUCH_SCHEMA),
+        ("RSIDivergence", rsi_divergence_condition, RSI_DIVERGENCE_SCHEMA),
+        ("UltimateOscillator", ultimate_oscillator_condition, ULTIMATE_OSCILLATOR_SCHEMA),
+        ("KDJ", kdj_condition, KDJ_SCHEMA),
+        ("Aroon", aroon_condition, AROON_SCHEMA),
+        ("HeikinAshi", heikin_ashi_condition, HEIKIN_ASHI_SCHEMA),
+        ("VortexIndicator", vortex_indicator_condition, VORTEX_INDICATOR_SCHEMA),
+        ("HurstExponent", hurst_exponent_condition, HURST_EXPONENT_SCHEMA),
     ]
 
     # POSITION 등록
@@ -233,6 +260,9 @@ def register_all_plugins() -> None:
         ("BetaHedge", beta_hedge_condition, BETA_HEDGE_SCHEMA),
         ("DynamicStopLoss", dynamic_stop_loss_condition, DYNAMIC_STOP_LOSS_SCHEMA),
         ("MaxPositionLimit", max_position_limit_condition, MAX_POSITION_LIMIT_SCHEMA),
+        ("SharpeRatioMonitor", sharpe_ratio_monitor_condition, SHARPE_RATIO_MONITOR_SCHEMA),
+        ("SortinoRatio", sortino_ratio_condition, SORTINO_RATIO_SCHEMA),
+        ("CalmarRatio", calmar_ratio_condition, CALMAR_RATIO_SCHEMA),
     ]
 
     for plugin_id, plugin_callable, schema in technical_plugins + position_plugins:

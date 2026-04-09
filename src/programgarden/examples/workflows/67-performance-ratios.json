@@ -1,0 +1,152 @@
+{
+  "id": "67-performance-ratios",
+  "name": "Sharpe/Sortino/Calmar 성과 모니터링",
+  "description": "3가지 성과 비율(Sharpe, Sortino, Calmar)로 포트폴리오 종목의 위험조정 수익률을 모니터링합니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {"x": 250, "y": 300}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "AAPL", "exchange": "NASDAQ"},
+        {"symbol": "MSFT", "exchange": "NASDAQ"},
+        {"symbol": "GOOGL", "exchange": "NASDAQ"},
+        {"symbol": "NVDA", "exchange": "NASDAQ"}
+      ],
+      "position": {"x": 450, "y": 300}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(252, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 650, "y": 300}
+    },
+    {
+      "id": "sharpe",
+      "type": "ConditionNode",
+      "plugin": "SharpeRatioMonitor",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback": 60,
+        "risk_free_rate": 0.04,
+        "threshold": 1.0,
+        "direction": "above"
+      },
+      "position": {"x": 900, "y": 100}
+    },
+    {
+      "id": "sortino",
+      "type": "ConditionNode",
+      "plugin": "SortinoRatio",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback": 60,
+        "mar": 0.0,
+        "threshold": 1.5,
+        "direction": "above"
+      },
+      "position": {"x": 900, "y": 300}
+    },
+    {
+      "id": "calmar",
+      "type": "ConditionNode",
+      "plugin": "CalmarRatio",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback": 252,
+        "threshold": 1.0,
+        "direction": "above"
+      },
+      "position": {"x": 900, "y": 500}
+    },
+    {
+      "id": "sharpe_table",
+      "type": "TableDisplayNode",
+      "title": "Sharpe Ratio (60일)",
+      "data": "{{ nodes.sharpe.symbol_results }}",
+      "position": {"x": 1200, "y": 100}
+    },
+    {
+      "id": "sortino_table",
+      "type": "TableDisplayNode",
+      "title": "Sortino Ratio (60일)",
+      "data": "{{ nodes.sortino.symbol_results }}",
+      "position": {"x": 1200, "y": 300}
+    },
+    {
+      "id": "calmar_table",
+      "type": "TableDisplayNode",
+      "title": "Calmar Ratio (1년)",
+      "data": "{{ nodes.calmar.symbol_results }}",
+      "position": {"x": 1200, "y": 500}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "sharpe"},
+    {"from": "historical", "to": "sortino"},
+    {"from": "historical", "to": "calmar"},
+    {"from": "sharpe", "to": "sharpe_table"},
+    {"from": "sortino", "to": "sortino_table"},
+    {"from": "calmar", "to": "calmar_table"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-1",
+      "content": "## 성과 비율 3종 모니터링\n- **Sharpe**: 전체 변동성 대비 초과수익 (> 1.0 양호)\n- **Sortino**: 하방 변동성만 고려 (> 1.5 양호)\n- **Calmar**: CAGR / MDD (> 1.0 양호)\n- Sortino > Sharpe이면 상승 비대칭 수익 구조",
+      "color": 1,
+      "width": 400,
+      "height": 140,
+      "position": {"x": 50, "y": 50}
+    }
+  ]
+}
