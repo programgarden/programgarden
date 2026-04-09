@@ -1,0 +1,92 @@
+{
+  "id": "63-rsi-divergence",
+  "name": "RSI Divergence 다이버전스 감지",
+  "description": "RSIDivergence 플러그인으로 가격-RSI 괴리를 감지합니다. Bullish divergence(가격 LL + RSI HL)는 반등 신호, Bearish divergence(가격 HH + RSI LH)는 하락 반전 신호입니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {"x": 250, "y": 300}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "AAPL", "exchange": "NASDAQ"},
+        {"symbol": "TSLA", "exchange": "NASDAQ"},
+        {"symbol": "NVDA", "exchange": "NASDAQ"}
+      ],
+      "position": {"x": 450, "y": 300}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(90, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 650, "y": 300}
+    },
+    {
+      "id": "divergence",
+      "type": "ConditionNode",
+      "plugin": "RSIDivergence",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "rsi_period": 14,
+        "lookback": 50,
+        "pivot_window": 5,
+        "divergence_type": "both"
+      },
+      "position": {"x": 900, "y": 300}
+    },
+    {
+      "id": "result_table",
+      "type": "TableDisplayNode",
+      "title": "RSI Divergence Results",
+      "data": "{{ nodes.divergence.symbol_results }}",
+      "position": {"x": 1150, "y": 300}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "divergence"},
+    {"from": "divergence", "to": "result_table"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-1",
+      "content": "## RSI Divergence\n- Bullish: 가격 Lower Low + RSI Higher Low → 반등\n- Bearish: 가격 Higher High + RSI Lower High → 하락\n- pivot_window로 피크/트로프 감지 감도 조절",
+      "color": 3,
+      "width": 350,
+      "height": 130,
+      "position": {"x": 50, "y": 50}
+    }
+  ]
+}

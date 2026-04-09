@@ -33,7 +33,7 @@
 
 ## 전체 플러그인 목록
 
-### 전체 플러그인 (67개)
+### 전체 플러그인 (77개)
 
 | 분류 | 플러그인 | 설명 |
 |------|---------|------|
@@ -87,6 +87,13 @@
 | | TacticalAssetAllocation | 전술적 자산배분 (모멘텀+SMA 기반) |
 | **복합 전략** | MagicFormula | 마법공식 (수익률+모멘텀 결합 순위) |
 | **멀티타임프레임** | MultiTimeframeConfirmation | 다중 시간프레임 MA 정렬 확인 |
+| **다이버전스** | RSIDivergence | 가격-RSI 괴리 감지 (강세/약세 다이버전스) |
+| **아시아 지표** | KDJ | K/D/J 라인 (스토캐스틱 확장, 한중일 인기) |
+| **추세 감지** | Aroon | 아룬 Up/Down 추세 방향+강도 |
+| | HeikinAshi | 하이킨아시 캔들 노이즈 제거+추세 신호 |
+| | VortexIndicator | +VI/-VI 크로스 추세 방향 판단 |
+| **멀티 기간** | UltimateOscillator | Larry Williams 3기간(7,14,28) 가중 오실레이터 |
+| **레짐 분석** | HurstExponent | 허스트 지수 (추세/평균회귀/랜덤워크 분류) |
 | **선물 전용** | ContangoBackwardation | 콘탱고/백워데이션 감지 |
 | | CalendarSpread | 캘린더 스프레드 Z-score |
 | **포지션 관리** | ProfitTarget | 목표 수익률 익절 |
@@ -104,6 +111,9 @@
 | | VarCvarMonitor | VaR/CVaR 모니터링 |
 | | CorrelationGuard | 상관관계 가드 (레짐 감시) |
 | | BetaHedge | 베타 헷지 (포트폴리오 베타 관리) |
+| **성과 비율** | SharpeRatioMonitor | 연율화 샤프비율 실시간 모니터링 |
+| | SortinoRatio | 소르티노 비율 (하방 위험 조정 수익률) |
+| | CalmarRatio | 칼마 비율 (CAGR / 최대낙폭) |
 
 ---
 
