@@ -1,0 +1,128 @@
+{
+  "id": "66-hurst-regime",
+  "name": "Hurst Exponent 시장 레짐 분류",
+  "description": "Hurst 지수로 각 종목의 시장 레짐(추세/평균회귀/랜덤워크)을 분류합니다. UltimateOscillator와 함께 사용하여 레짐에 맞는 전략을 선택할 수 있습니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {"x": 250, "y": 300}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "AAPL", "exchange": "NASDAQ"},
+        {"symbol": "MSFT", "exchange": "NASDAQ"},
+        {"symbol": "AMZN", "exchange": "NASDAQ"},
+        {"symbol": "NVDA", "exchange": "NASDAQ"}
+      ],
+      "position": {"x": 450, "y": 300}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(252, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 650, "y": 300}
+    },
+    {
+      "id": "hurst",
+      "type": "ConditionNode",
+      "plugin": "HurstExponent",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "min_window": 10,
+        "max_window": 100,
+        "num_windows": 10,
+        "signal_type": "trending",
+        "h_threshold": 0.55
+      },
+      "position": {"x": 900, "y": 150}
+    },
+    {
+      "id": "uo",
+      "type": "ConditionNode",
+      "plugin": "UltimateOscillator",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}"
+        }
+      },
+      "fields": {
+        "period1": 7,
+        "period2": 14,
+        "period3": 28,
+        "overbought": 70.0,
+        "oversold": 30.0,
+        "direction": "below"
+      },
+      "position": {"x": 900, "y": 450}
+    },
+    {
+      "id": "hurst_table",
+      "type": "TableDisplayNode",
+      "title": "Hurst Exponent — 시장 레짐",
+      "data": "{{ nodes.hurst.symbol_results }}",
+      "position": {"x": 1150, "y": 150}
+    },
+    {
+      "id": "uo_table",
+      "type": "TableDisplayNode",
+      "title": "Ultimate Oscillator",
+      "data": "{{ nodes.uo.symbol_results }}",
+      "position": {"x": 1150, "y": 450}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "hurst"},
+    {"from": "historical", "to": "uo"},
+    {"from": "hurst", "to": "hurst_table"},
+    {"from": "uo", "to": "uo_table"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-1",
+      "content": "## Hurst + Ultimate Oscillator\n- Hurst > 0.55 → 추세 지속 종목 → 모멘텀 전략 적합\n- Hurst < 0.45 → 평균회귀 종목 → 역추세 전략 적합\n- UO 과매도(< 30) 종목 중 추세 레짐만 선별",
+      "color": 6,
+      "width": 380,
+      "height": 130,
+      "position": {"x": 50, "y": 50}
+    }
+  ]
+}

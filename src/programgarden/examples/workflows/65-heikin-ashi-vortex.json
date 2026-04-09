@@ -1,0 +1,123 @@
+{
+  "id": "65-heikin-ashi-vortex",
+  "name": "Heikin-Ashi + Vortex 추세 확인",
+  "description": "Heikin-Ashi 연속 양봉으로 추세를 감지하고, Vortex Indicator로 추세 방향을 확인합니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {"x": 250, "y": 300}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "AAPL", "exchange": "NASDAQ"},
+        {"symbol": "GOOGL", "exchange": "NASDAQ"},
+        {"symbol": "META", "exchange": "NASDAQ"}
+      ],
+      "position": {"x": 450, "y": 300}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 650, "y": 300}
+    },
+    {
+      "id": "heikin_ashi",
+      "type": "ConditionNode",
+      "plugin": "HeikinAshi",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "consecutive_count": 3,
+        "signal_type": "bullish"
+      },
+      "position": {"x": 900, "y": 150}
+    },
+    {
+      "id": "vortex",
+      "type": "ConditionNode",
+      "plugin": "VortexIndicator",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "signal_type": "bullish_trend"
+      },
+      "position": {"x": 900, "y": 450}
+    },
+    {
+      "id": "ha_table",
+      "type": "TableDisplayNode",
+      "title": "Heikin-Ashi Results",
+      "data": "{{ nodes.heikin_ashi.symbol_results }}",
+      "position": {"x": 1150, "y": 150}
+    },
+    {
+      "id": "vortex_table",
+      "type": "TableDisplayNode",
+      "title": "Vortex Indicator Results",
+      "data": "{{ nodes.vortex.symbol_results }}",
+      "position": {"x": 1150, "y": 450}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "heikin_ashi"},
+    {"from": "historical", "to": "vortex"},
+    {"from": "heikin_ashi", "to": "ha_table"},
+    {"from": "vortex", "to": "vortex_table"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-1",
+      "content": "## Heikin-Ashi + Vortex\n- Heikin-Ashi: 연속 3양봉 → 상승 추세 신호\n- Vortex: +VI > -VI → 상승 추세 확인\n- 두 지표가 같은 방향이면 신뢰도 높은 추세",
+      "color": 4,
+      "width": 350,
+      "height": 120,
+      "position": {"x": 50, "y": 50}
+    }
+  ]
+}

@@ -35,9 +35,9 @@ src/
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect
         config.py — API URLs, rate limits
-  community/ [79 .py] — programgarden-community 1.10.2
+  community/ [89 .py] — programgarden-community 1.10.5
     programgarden_community/
-      plugins/ [68 dirs] — 67 strategy plugins (TECHNICAL 52, POSITION 15)
+      plugins/ [78 dirs] — 77 strategy plugins (TECHNICAL 59, POSITION 18)
       nodes/ — 4 community nodes
         messaging/telegram.py — TelegramNode
         market/fear_greed.py — FearGreedIndexNode
@@ -49,7 +49,7 @@ src/
 programgarden-core → Node type definitions, models, registry, i18n, expression engine | path:src/core | key:nodes/base.py
 programgarden → Workflow execution engine (DAG executor, context, resolver, NodeRunner) | path:src/programgarden | key:executor.py
 programgarden-finance → LS Securities OpenAPI wrapper (REST+WebSocket, 3 products) | path:src/finance | key:ls/real_base.py
-programgarden-community → Strategy plugins (67) + community nodes (4) | path:src/community | key:plugins/__init__.py
+programgarden-community → Strategy plugins (77) + community nodes (4) | path:src/community | key:plugins/__init__.py
 
 ## KEY_FILES
 src/core/programgarden_core/nodes/base.py → BaseNode, ProductScope, NodeCategory, OutputPort, FieldSchema refs
