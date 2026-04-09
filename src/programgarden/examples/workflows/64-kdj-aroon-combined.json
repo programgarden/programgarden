@@ -1,0 +1,136 @@
+{
+  "id": "64-kdj-aroon-combined",
+  "name": "KDJ + Aroon 복합 조건",
+  "description": "KDJ 골든크로스와 Aroon 상승추세를 LogicNode로 결합합니다. 두 조건이 모두 충족될 때 강한 매수 신호입니다.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {"x": 250, "y": 300}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "AAPL", "exchange": "NASDAQ"},
+        {"symbol": "MSFT", "exchange": "NASDAQ"},
+        {"symbol": "AMZN", "exchange": "NASDAQ"}
+      ],
+      "position": {"x": 450, "y": 300}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 650, "y": 300}
+    },
+    {
+      "id": "kdj",
+      "type": "ConditionNode",
+      "plugin": "KDJ",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}"
+        }
+      },
+      "fields": {
+        "n_period": 9,
+        "k_smooth": 3,
+        "d_smooth": 3,
+        "signal_type": "golden_cross"
+      },
+      "position": {"x": 900, "y": 150}
+    },
+    {
+      "id": "aroon",
+      "type": "ConditionNode",
+      "plugin": "Aroon",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}"
+        }
+      },
+      "fields": {
+        "period": 25,
+        "signal_type": "uptrend",
+        "threshold": 70.0
+      },
+      "position": {"x": 900, "y": 450}
+    },
+    {
+      "id": "logic",
+      "type": "LogicNode",
+      "operator": "AND",
+      "conditions": [
+        "{{ nodes.kdj.result }}",
+        "{{ nodes.aroon.result }}"
+      ],
+      "position": {"x": 1150, "y": 300}
+    },
+    {
+      "id": "kdj_table",
+      "type": "TableDisplayNode",
+      "title": "KDJ Results",
+      "data": "{{ nodes.kdj.symbol_results }}",
+      "position": {"x": 1400, "y": 150}
+    },
+    {
+      "id": "aroon_table",
+      "type": "TableDisplayNode",
+      "title": "Aroon Results",
+      "data": "{{ nodes.aroon.symbol_results }}",
+      "position": {"x": 1400, "y": 450}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "kdj"},
+    {"from": "historical", "to": "aroon"},
+    {"from": "kdj", "to": "logic"},
+    {"from": "aroon", "to": "logic"},
+    {"from": "kdj", "to": "kdj_table"},
+    {"from": "aroon", "to": "aroon_table"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-1",
+      "content": "## KDJ + Aroon 복합 전략\n- KDJ 골든크로스: K선이 D선 상향 돌파\n- Aroon 상승추세: Up > 70, Down < 30\n- AND 조건으로 강한 매수 신호만 필터링",
+      "color": 2,
+      "width": 350,
+      "height": 120,
+      "position": {"x": 50, "y": 50}
+    }
+  ]
+}

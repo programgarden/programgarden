@@ -36,9 +36,9 @@ src/
 │       └── i18n/locales/  # Translation files (ko.json, en.json)
 ├── finance/            # programgarden-finance: LS Securities API wrapper
 │   └── programgarden_finance/
-└── community/          # programgarden-community: 67 strategy plugins + 4 community nodes
+└── community/          # programgarden-community: 77 strategy plugins + 4 community nodes
     └── programgarden_community/
-        ├── plugins/    # 67 strategy plugins (RSI, MACD, Ichimoku, ZScore, PairTrading, TurtleBreakout, MagicFormula, SupportResistanceLevels, LevelTouch, etc.)
+        ├── plugins/    # 77 strategy plugins (RSI, MACD, Ichimoku, ZScore, PairTrading, TurtleBreakout, MagicFormula, SupportResistanceLevels, LevelTouch, RSIDivergence, KDJ, Aroon, HeikinAshi, HurstExponent, SharpeRatioMonitor, etc.)
         └── nodes/      # Community nodes (TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode)
 ```
 
