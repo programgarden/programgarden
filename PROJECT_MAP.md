@@ -68,7 +68,7 @@ src/programgarden/programgarden/database/workflow_risk_tracker.py → WorkflowRi
 src/programgarden/programgarden/database/checkpoint_manager.py → CheckpointManager (graceful restart)
 src/finance/programgarden_finance/ls/real_base.py → WebSocket singleton, ref_count, auto-resubscribe
 src/finance/programgarden_finance/ls/overseas_stock/extension/tracker.py → StockAccountTracker (FIFO PnL)
-src/community/programgarden_community/plugins/__init__.py → 67 plugin registrations
+src/community/programgarden_community/plugins/__init__.py → 77 plugin registrations
 
 ## PATTERNS
 - Node-based DSL: Pydantic BaseNode subclasses with typed input/output ports
@@ -111,7 +111,7 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Korea Stock Nodes: 13 nodes (broker, account, market, order, realtime, symbol)
 - [x] Korea Stock Finance API: 56 REST + 13 Real TR with KrStockAccountTracker
 - [x] AI Agent: LLMModelNode + AIAgentNode with tool edges, FastEmbed vector selection
-- [x] Strategy Plugins: 67 plugins (TECHNICAL 52 + POSITION 15)
+- [x] Strategy Plugins: 77 plugins (TECHNICAL 59 + POSITION 18)
 - [x] Community Nodes: TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode
 - [x] IfNode: conditional branching with cascading skip
 - [x] Graceful Restart: checkpoint save/restore with 10-min expiry
