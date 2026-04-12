@@ -245,6 +245,11 @@ class TradingHoursFilterNode(BaseNode):
         - 워크플로우 종료 시: graceful shutdown
         """
         import time as _time
+        # dry_run: 거래시간 대기 없이 즉시 통과
+        if getattr(context, "is_dry_run", False):
+            context.log("info", "[dry_run] TradingHoursFilter bypassed", self.id)
+            return {"passed": True, "reason": "dry_run_bypass"}
+
         check_interval = 60  # 1분마다 체크
         wait_start = _time.monotonic()
         max_wait_sec = self.max_wait_hours * 3600

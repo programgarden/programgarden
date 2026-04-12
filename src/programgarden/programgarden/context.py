@@ -278,6 +278,19 @@ class ExecutionContext:
         db_dir.mkdir(parents=True, exist_ok=True)
         return str(db_dir / db_filename)
 
+    # === Dry Run ===
+
+    @property
+    def is_dry_run(self) -> bool:
+        """Workflow is running in dry_run mode.
+
+        When True, side-effectful nodes (주문/Realtime/알림) skip external calls
+        and return simulated responses. Query/백테스트 nodes still execute normally.
+
+        Enable via ``context_params={"dry_run": True}`` in ``pg.run_async``.
+        """
+        return bool(self.context_params.get("dry_run", False))
+
     # === DAG Index Building ===
 
     def _build_dag_index(
