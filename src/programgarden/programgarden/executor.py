@@ -364,7 +364,23 @@ class GenericNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("error", f"Failed to create node instance: {e}", node_id)
             return {"error": str(e)}
-        
+
+        # dry_run 가드: Messaging/Notification 노드는 no-op 반환
+        if context.is_dry_run:
+            try:
+                from programgarden_core.nodes.base import NodeCategory
+                node_category = getattr(node_instance, "category", None)
+                if node_category == NodeCategory.MESSAGING:
+                    context.log(
+                        "info",
+                        f"[dry_run] {node_type} skipped (messaging node)",
+                        node_id,
+                    )
+                    return {"status": "simulated", "dry_run": True}
+            except Exception:
+                # NodeCategory import 실패는 무시 — dry_run 가드가 동작 안 할 뿐
+                pass
+
         # execute() 메서드 호출
         if hasattr(node_instance, "execute"):
             try:
@@ -916,6 +932,25 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                     itr = croniter(cron_expr, datetime.now(tz))
 
                 while cnt < count and context.is_running:
+                    # dry_run: 루프 진입 즉시 1회 emit 후 종료
+                    if context.is_dry_run:
+                        cnt += 1
+                        context.log(
+                            "info",
+                            f"[dry_run] Schedule tick #{cnt} (single cycle), exiting scheduler",
+                            node_id,
+                        )
+                        await context.emit_event(
+                            event_type="schedule_tick",
+                            source_node_id=node_id,
+                            data={
+                                "cron": cron_expr,
+                                "count": cnt,
+                                "triggered_at": datetime.now(tz).isoformat(),
+                                "dry_run": True,
+                            },
+                        )
+                        break
                     # M-6: max_duration_hours 초과 시 스케줄 종료
                     if (_time.monotonic() - start_mono) >= max_duration_sec:
                         context.log(
@@ -3800,14 +3835,24 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         import sys
+
+        # dry_run: WebSocket 미개방, skip 반환
+        if context.is_dry_run:
+            context.log(
+                "warning",
+                f"[dry_run] {node_type} skipped (realtime WebSocket disabled)",
+                node_id,
+            )
+            return {"status": "skipped_dry_run", "dry_run": True}
+
         # 옵션 확인
         stay_connected = config.get("stay_connected", True)
         sync_interval_sec = config.get("sync_interval_sec", 60)
-        
-        
+
+
         # config에서 connection 확인 (자동 주입 또는 명시적 바인딩)
         broker_connection = config.get("connection")
-        
+
         # connection 없으면 에러 - 자동 주입 또는 명시적 바인딩 필요
         if not broker_connection:
             context.log("error", "RealAccountNode: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
@@ -4682,12 +4727,21 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         from programgarden_core.exceptions import ValidationError, ConnectionError
-        
+
+        # dry_run: WebSocket 미개방, skip 반환
+        if context.is_dry_run:
+            context.log(
+                "warning",
+                f"[dry_run] {node_type} skipped (realtime WebSocket disabled)",
+                node_id,
+            )
+            return {"status": "skipped_dry_run", "dry_run": True}
+
         # ========================================
         # 1. BrokerNode connection 획득 (config 바인딩 필수)
         # ========================================
         broker_connection = config.get("connection")
-        
+
         # connection 없으면 에러 - 자동 주입 또는 명시적 바인딩 필요
         if not broker_connection:
             error_msg = (
@@ -5343,9 +5397,18 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
+        # dry_run: WebSocket 미개방, skip 반환
+        if context.is_dry_run:
+            context.log(
+                "warning",
+                f"[dry_run] {node_type} skipped (realtime WebSocket disabled)",
+                node_id,
+            )
+            return {"status": "skipped_dry_run", "dry_run": True}
+
         # 옵션 확인
         stay_connected = config.get("stay_connected", True)
-        
+
         # config에서 connection 확인 (자동 주입 또는 명시적 바인딩)
         broker_connection = config.get("connection")
 
@@ -10830,6 +10893,22 @@ class NewOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """신규 주문 실행"""
 
+        # dry_run: LS API 미호출, 모의 응답 반환
+        if context.is_dry_run:
+            import uuid
+            order_id = f"DRYRUN-{uuid.uuid4()}"
+            context.log(
+                "info",
+                f"[dry_run] {node_type} simulated order → {order_id}",
+                node_id,
+            )
+            return {
+                "order_id": order_id,
+                "status": "simulated",
+                "dry_run": True,
+                "requested": config,
+            }
+
         # M-10: Risk halt 체크 - critical risk event로 주문 중단
         if context.is_risk_halted:
             context.log(
@@ -11566,6 +11645,22 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """주문 정정 실행"""
 
+        # dry_run: LS API 미호출, 모의 응답 반환
+        if context.is_dry_run:
+            import uuid
+            order_id = f"DRYRUN-{uuid.uuid4()}"
+            context.log(
+                "info",
+                f"[dry_run] {node_type} simulated modify → {order_id}",
+                node_id,
+            )
+            return {
+                "order_id": order_id,
+                "status": "simulated",
+                "dry_run": True,
+                "requested": config,
+            }
+
         # M-10: Risk halt 체크
         if context.is_risk_halted:
             context.log("warning", f"{node_type}: 위험 이벤트로 인해 주문 정정이 중단되었습니다", node_id)
@@ -11974,6 +12069,22 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         """주문 취소 실행"""
+
+        # dry_run: LS API 미호출, 모의 응답 반환
+        if context.is_dry_run:
+            import uuid
+            order_id = f"DRYRUN-{uuid.uuid4()}"
+            context.log(
+                "info",
+                f"[dry_run] {node_type} simulated cancel → {order_id}",
+                node_id,
+            )
+            return {
+                "order_id": order_id,
+                "status": "simulated",
+                "dry_run": True,
+                "requested": config,
+            }
 
         # === 1. Connection 확인 ===
         broker_connection = config.get("connection")

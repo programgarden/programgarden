@@ -1,3 +1,7 @@
+## [1.10.0] - 2026-04-13
+### Added
+- `TradingHoursFilterNode`: `context.is_dry_run=True` 시 대기 없이 즉시 통과 (`{"passed": True, "reason": "dry_run_bypass"}`)
+
 ## [1.9.9] - 2026-04-06
 ### Fixed
 - `_filter_data()` regex 연산자 매칭 순서 수정: `>=|<=` 를 `>|<` 보다 앞으로 이동 (longest match first)

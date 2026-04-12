@@ -62,6 +62,24 @@ job = await pg.run_async(
 await job.stop()
 ```
 
+### Dry Run (워크플로우 검증용 모의 실행)
+
+실제 주문/알림/Realtime WebSocket 연결 없이 워크플로우를 검증합니다.
+
+- ScheduleNode / TradingHoursFilterNode → 1 cycle 후 즉시 종료
+- 주문 노드 → LS API 미호출, `{"order_id": "DRYRUN-<uuid>", "status": "simulated", ...}` 반환
+- Realtime 노드 → WebSocket 미개방, `{"status": "skipped_dry_run"}` 반환
+- Messaging 노드(Telegram 등) → no-op, `{"status": "simulated"}` 반환
+- 조회/백테스트 노드 → 기존 동작 유지 (실제 API 경로)
+
+```python
+job = await pg.run_async(
+    definition=workflow_definition,
+    context={"dry_run": True},
+    secrets={...},
+)
+```
+
 ### 워크플로우 정의 (JSON)
 
 ```json

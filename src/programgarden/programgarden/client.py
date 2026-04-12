@@ -83,6 +83,14 @@ class ProgramGarden:
             ...     secrets={"credential_id": {"appkey": "...", "appsecret": "..."}},
             ...     storage_dir="./my_data",
             ... )
+
+            # Dry run (검증용): 주문/Realtime/알림 노드 실제 호출 없이 시뮬레이션
+            >>> job = pg.run(
+            ...     workflow,
+            ...     context={"dry_run": True},
+            ...     wait=True,
+            ...     timeout=60,
+            ... )
         """
         # Parse resource_limits if provided
         limits = None
