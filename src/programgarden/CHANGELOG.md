@@ -1,6 +1,6 @@
 ## [1.18.0] - 2026-04-13
 ### Added
-- **dry_run 모드**: `context_params={"dry_run": True}`로 워크플로우 실행 검증 (`ExecutionContext.is_dry_run` property)
+- **dry_run 모드**: `pg.run(workflow, context={"dry_run": True})`로 워크플로우 실행 검증 (`ExecutionContext.is_dry_run` property)
   - `ScheduleNode` / `TradingHoursFilterNode`: 1 cycle 후 즉시 종료 (또는 대기 없이 통과)
   - 주문 노드 (`NewOrder` / `ModifyOrder` / `CancelOrder`): LS API 미호출, `{"order_id": "DRYRUN-<uuid>", "status": "simulated", ...}` 반환
   - Realtime 노드 (`RealAccount` / `RealMarketData` / `RealOrderEvent`): WebSocket 미개방, `{"status": "skipped_dry_run"}` 반환
