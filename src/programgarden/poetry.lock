@@ -2787,15 +2787,15 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "1.10.5"
+version = "1.11.0"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_community-1.10.5-py3-none-any.whl", hash = "sha256:bb0a6511d37541634220f72ac26544776e1b250e7ce3bbec9442d820fd4485eb"},
-    {file = "programgarden_community-1.10.5.tar.gz", hash = "sha256:87c76f0279db468776bbfa4f3f3a35844789be0a9939760d3315c0b3bf34002a"},
+    {file = "programgarden_community-1.11.0-py3-none-any.whl", hash = "sha256:24aaf19e86fe2556f041b0959291893d8b8aa22b33bfa0660541c092775d7da5"},
+    {file = "programgarden_community-1.11.0.tar.gz", hash = "sha256:dc1456ea24d0514f40e837cba494bdba22c1b14b6d34a07692c54723b1026a2d"},
 ]
 
 [package.dependencies]
@@ -2804,15 +2804,15 @@ pypdf = ">=4.0.0"
 
 [[package]]
 name = "programgarden-core"
-version = "1.9.9"
+version = "1.10.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_core-1.9.9-py3-none-any.whl", hash = "sha256:eeddb93a4c02ed375a18a4fe1c8e79acbc66212488943ea1dfc95c7d774c02b0"},
-    {file = "programgarden_core-1.9.9.tar.gz", hash = "sha256:4163835824132bfb80de4d3993e2247ee4ad4b80c3f0fbd42748276b340bc4d3"},
+    {file = "programgarden_core-1.10.0-py3-none-any.whl", hash = "sha256:b36bed2b807baff67580eeb1d091d31eeed8d11b573ea20917ac207a7cbf522a"},
+    {file = "programgarden_core-1.10.0.tar.gz", hash = "sha256:ba24679409ccb9f2459a9d6a714133325800268278f753f19a64aa2dc2ed0fe1"},
 ]
 
 [package.dependencies]
@@ -4580,4 +4580,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "b6ebcede2fb512b183ad0390ac1d150211a86adc28b68f2d43338e57a413438f"
+content-hash = "96bf1e8bc4254a4b6eda33535a24723e81aa80a38a42f1e47cce3efdbba648ff"
