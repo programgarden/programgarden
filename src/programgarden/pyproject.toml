@@ -42,11 +42,6 @@ fastapi = "^0.128.0"
 uvicorn = "^0.40.0"
 
 
-[[tool.poetry.source]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-priority = "supplemental"
-
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
