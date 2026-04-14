@@ -51,7 +51,17 @@ class WatchlistNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS)
+        OutputPort(
+            name="symbols",
+            type="symbol_list",
+            description="i18n:ports.symbols",
+            fields=SYMBOL_LIST_FIELDS,
+            example=[
+                {"exchange": "NASDAQ", "symbol": "AAPL"},
+                {"exchange": "NASDAQ", "symbol": "TSLA"},
+                {"exchange": "NYSE", "symbol": "JPM"},
+            ],
+        ),
     ]
 
     @classmethod

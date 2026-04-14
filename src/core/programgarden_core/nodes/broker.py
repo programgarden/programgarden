@@ -48,6 +48,10 @@ class BaseBrokerNode(BaseNode):
             name="connection",
             type="broker_connection",
             description="i18n:ports.connection",
+            # Executor 가 DAG 전파용으로 주입하는 불투명 핸들. 일반 노드는
+            # 참조할 필요가 없고 broker 의존 노드 (Market/Account/Order)
+            # 가 자동 소비. 값 shape 은 내부 전용.
+            example={"_opaque": True, "provider": "ls-sec.co.kr"},
         )
     ]
 
