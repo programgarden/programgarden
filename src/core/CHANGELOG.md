@@ -1,3 +1,29 @@
+## [1.11.0] - 2026-04-14
+### Added
+- `OutputPort.example: Optional[Any]` 필드 신설 — 노드 출력 shape 을 LLM/클라이언트에 예시로 노출.
+- 15개 critical 노드 출력 포트에 example shape 채움:
+  StartNode, OverseasStockBrokerNode(connection), OverseasStockMarketDataNode(value),
+  OverseasStockHistoricalDataNode(value), OverseasStockAccountNode(held_symbols/balance/positions),
+  BaseOrderNode(result, 모든 Order 노드 상속), WatchlistNode(symbols),
+  IfNode(true/false/result), ConditionNode(result), LogicNode(result/passed_symbols),
+  ScheduleNode(trigger), TradingHoursFilterNode(passed/blocked),
+  SplitNode(item/index/total), AggregateNode(array/value/count).
+- FieldSchema `example` 값 채움 — Order/Schedule/Broker/Historical/Condition/Logic/If 노드
+  critical 필드 100% 커버리지:
+  - `OverseasStockNewOrderNode`/`OverseasFuturesNewOrderNode`: side, order_type, price_type
+  - `BaseOrderNode`: rate_limit_interval, rate_limit_action
+  - `OverseasStockHistoricalDataNode`/`OverseasFuturesHistoricalDataNode`: adjust
+  - `OverseasStockBrokerNode`/`OverseasFuturesBrokerNode`: provider, credential_id, paper_trading
+  - `IfNode`: operator
+  - `ConditionNode`: plugin
+  - `LogicNode`: operator, threshold
+  - `ScheduleNode`: enabled, max_duration_hours
+  - `TradingHoursFilterNode`: max_wait_hours
+
+### Changed
+- broker 노드 credential_id help_text 추가 — LLM 이 `<credentials_context>` 블록의 id 를
+  그대로 사용하고 `pending_*` placeholder 환각을 억제하도록 지침 명시.
+
 ## [1.10.0] - 2026-04-13
 ### Added
 - `TradingHoursFilterNode`: `context.is_dry_run=True` 시 대기 없이 즉시 통과 (`{"passed": True, "reason": "dry_run_bypass"}`)

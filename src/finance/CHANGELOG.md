@@ -1,3 +1,10 @@
+## [1.5.0] - 2026-04-14
+### Dependencies
+- programgarden-core ^1.11.0 (FieldSchema/OutputPort example 확장 — 노드 스키마에 shape 예시 노출).
+
+### Changed
+- 코드 변경 없음. core 의존성 버전 업데이트에 따른 동반 배포.
+
 ## [1.4.4] - 2026-04-06
 ### Dependencies
 - programgarden-core ^1.9.9 (expression filter 연산자 매칭 수정)

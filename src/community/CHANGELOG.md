@@ -1,3 +1,13 @@
+## [1.12.0] - 2026-04-14
+### Added
+- `TelegramNode` 출력 포트 example shape 노출:
+  - `sent`: `{"sent": True, "chat_id": "123456789"}`
+  - `message_id`: `"1234"`
+- LLM 이 `{{ nodes.telegram.sent }}` expression 작성 시 출력 shape 즉시 파악 가능.
+
+### Dependencies
+- programgarden-core ^1.11.0 (OutputPort.example 신설 지원).
+
 ## [1.11.0] - 2026-04-09
 ### Added
 - TECHNICAL 플러그인 7종: RSIDivergence, UltimateOscillator, KDJ, Aroon, HeikinAshi, VortexIndicator, HurstExponent
