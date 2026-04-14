@@ -39,7 +39,12 @@ class StartNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="start", type="signal", description="i18n:ports.start")
+        OutputPort(
+            name="start",
+            type="signal",
+            description="i18n:ports.start",
+            example={"started_at": "2026-04-14T09:30:00-04:00"},
+        ),
     ]
 
     @classmethod
@@ -174,9 +179,24 @@ class SplitNode(BaseNode):
         InputPort(name="array", type="array", description="i18n:ports.split_array")
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="item", type="any", description="i18n:ports.split_item"),
-        OutputPort(name="index", type="integer", description="i18n:ports.split_index"),
-        OutputPort(name="total", type="integer", description="i18n:ports.split_total"),
+        OutputPort(
+            name="item",
+            type="any",
+            description="i18n:ports.split_item",
+            example={"exchange": "NASDAQ", "symbol": "AAPL"},
+        ),
+        OutputPort(
+            name="index",
+            type="integer",
+            description="i18n:ports.split_index",
+            example=0,
+        ),
+        OutputPort(
+            name="total",
+            type="integer",
+            description="i18n:ports.split_total",
+            example=3,
+        ),
     ]
 
     @classmethod
@@ -254,9 +274,27 @@ class AggregateNode(BaseNode):
         InputPort(name="item", type="any", description="i18n:ports.aggregate_item")
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="array", type="array", description="i18n:ports.aggregate_array"),
-        OutputPort(name="value", type="number", description="i18n:ports.aggregate_value"),
-        OutputPort(name="count", type="integer", description="i18n:ports.aggregate_count"),
+        OutputPort(
+            name="array",
+            type="array",
+            description="i18n:ports.aggregate_array",
+            example=[
+                {"exchange": "NASDAQ", "symbol": "AAPL", "rsi": 28.5},
+                {"exchange": "NASDAQ", "symbol": "TSLA", "rsi": 62.1},
+            ],
+        ),
+        OutputPort(
+            name="value",
+            type="number",
+            description="i18n:ports.aggregate_value",
+            example=45.3,
+        ),
+        OutputPort(
+            name="count",
+            type="integer",
+            description="i18n:ports.aggregate_count",
+            example=2,
+        ),
     ]
 
     @classmethod
@@ -344,9 +382,24 @@ class IfNode(BaseNode):
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="true", type="any", description="i18n:ports.if_true"),
-        OutputPort(name="false", type="any", description="i18n:ports.if_false"),
-        OutputPort(name="result", type="boolean", description="i18n:ports.if_result"),
+        OutputPort(
+            name="true",
+            type="any",
+            description="i18n:ports.if_true",
+            example={"passed": True, "value": "whatever left operand resolved to"},
+        ),
+        OutputPort(
+            name="false",
+            type="any",
+            description="i18n:ports.if_false",
+            example={"passed": False, "value": "whatever left operand resolved to"},
+        ),
+        OutputPort(
+            name="result",
+            type="boolean",
+            description="i18n:ports.if_result",
+            example=True,
+        ),
     ]
 
     @classmethod

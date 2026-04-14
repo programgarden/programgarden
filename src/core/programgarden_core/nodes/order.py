@@ -167,6 +167,17 @@ class BaseOrderNode(BaseNode):
             type="order_result",
             description="i18n:ports.order_result",
             fields=ORDER_RESULT_FIELDS,
+            example=[
+                {
+                    "order_id": "250414-00123",
+                    "exchange": "NASDAQ",
+                    "symbol": "AAPL",
+                    "side": "buy",
+                    "quantity": 10,
+                    "price": 187.45,
+                    "status": "accepted",
+                },
+            ],
         ),
     ]
 

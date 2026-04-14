@@ -61,11 +61,13 @@ class TelegramNode(BaseMessagingNode):
             name="sent",
             type="signal",
             description="Message sent confirmation",
+            example={"sent": True, "chat_id": "123456789"},
         ),
         OutputPort(
             name="message_id",
             type="string",
             description="Telegram message ID for reference",
+            example="1234",
         ),
     ]
     

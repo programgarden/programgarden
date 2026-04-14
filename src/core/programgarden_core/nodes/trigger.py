@@ -51,7 +51,12 @@ class ScheduleNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="trigger", type="signal", description="i18n:ports.trigger")
+        OutputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.trigger",
+            example={"fired_at": "2026-04-14T09:30:00-04:00", "cycle_index": 0},
+        ),
     ]
 
     @classmethod
@@ -136,10 +141,16 @@ class TradingHoursFilterNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="passed", type="signal", description="i18n:ports.passed"
+            name="passed",
+            type="signal",
+            description="i18n:ports.passed",
+            example={"passed": True, "reason": "within_trading_hours"},
         ),
         OutputPort(
-            name="blocked", type="signal", description="i18n:ports.blocked"
+            name="blocked",
+            type="signal",
+            description="i18n:ports.blocked",
+            example={"passed": False, "reason": "outside_trading_hours"},
         ),
     ]
 

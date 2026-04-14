@@ -89,6 +89,15 @@ class ConditionNode(PluginNode):
             type="condition_result",
             description="i18n:ports.condition_result",
             fields=CONDITION_RESULT_FIELDS,
+            example={
+                "is_condition_met": True,
+                "passed_symbols": [
+                    {"exchange": "NASDAQ", "symbol": "AAPL"},
+                ],
+                "details": [
+                    {"symbol": "AAPL", "exchange": "NASDAQ", "passed": True, "value": 28.5, "threshold": 30, "direction": "below"},
+                ],
+            },
         ),
     ]
 
@@ -226,12 +235,19 @@ class LogicNode(BaseNode):
             type="condition_result",
             description="i18n:ports.result",
             fields=CONDITION_RESULT_FIELDS,
+            example={
+                "is_condition_met": True,
+                "passed_symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
+            },
         ),
         OutputPort(
             name="passed_symbols",
             type="symbol_list",
             description="i18n:ports.passed_symbols",
             fields=SYMBOL_LIST_FIELDS,
+            example=[
+                {"exchange": "NASDAQ", "symbol": "AAPL"},
+            ],
         ),
     ]
 
