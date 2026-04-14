@@ -1,3 +1,21 @@
+## [1.19.0] - 2026-04-14
+### Dependencies
+- programgarden-core ^1.11.0 — FieldSchema/OutputPort example 확장
+- programgarden-finance ^1.5.0 — core 동반 버전업
+- programgarden-community ^1.12.0 — TelegramNode 포트 example 노출
+
+### Added (from core 1.11.0)
+- `OutputPort.example: Optional[Any]` 필드 — 15개 critical 노드 shape 노출.
+- Order/Schedule/Broker/Historical/Condition/Logic/If 노드 FieldSchema `example`
+  100% 커버리지 — `get_node_schema` 응답에서 필드별 예시 값 제공.
+- Broker 노드 credential_id help_text 에 `<credentials_context>` verbatim 규칙 명시.
+
+### Added (from community 1.12.0)
+- `TelegramNode.sent` / `TelegramNode.message_id` 출력 포트 example shape.
+
+### Changed
+- 코드 변경 없음. 의존 패키지 버전업에 따른 동반 배포.
+
 ## [1.18.0] - 2026-04-13
 ### Added
 - **dry_run 모드**: `pg.run(workflow, context={"dry_run": True})`로 워크플로우 실행 검증 (`ExecutionContext.is_dry_run` property)
