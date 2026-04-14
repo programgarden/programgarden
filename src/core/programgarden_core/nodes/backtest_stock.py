@@ -75,7 +75,22 @@ class OverseasStockHistoricalDataNode(BaseNode):
         InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="value", type="ohlcv_data", description="i18n:ports.ohlcv_value", fields=HISTORICAL_DATA_FIELDS),
+        OutputPort(
+            name="value",
+            type="ohlcv_data",
+            description="i18n:ports.ohlcv_value",
+            fields=HISTORICAL_DATA_FIELDS,
+            example=[
+                {
+                    "symbol": "AAPL",
+                    "exchange": "NASDAQ",
+                    "time_series": [
+                        {"date": "20260413", "open": 186.10, "high": 188.20, "low": 185.50, "close": 187.45, "volume": 12_345_678},
+                        {"date": "20260412", "open": 184.50, "high": 187.00, "low": 184.00, "close": 186.10, "volume": 11_222_333},
+                    ],
+                },
+            ],
+        ),
     ]
 
     @classmethod
@@ -162,5 +177,6 @@ class OverseasStockHistoricalDataNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
                 ui_component=UIComponent.CHECKBOX,
+                example=True,
             ),
         }

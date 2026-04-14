@@ -60,7 +60,21 @@ class OverseasStockMarketDataNode(BaseNode):
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="value", type="market_data", description="i18n:ports.market_data_value", fields=PRICE_DATA_FIELDS),
+        OutputPort(
+            name="value",
+            type="market_data",
+            description="i18n:ports.market_data_value",
+            fields=PRICE_DATA_FIELDS,
+            example={
+                "exchange": "NASDAQ",
+                "symbol": "AAPL",
+                "current_price": 187.45,
+                "volume": 12_345_678,
+                "change_percent": -1.23,
+                "per": 28.5,
+                "eps": 6.57,
+            },
+        ),
     ]
 
     @classmethod

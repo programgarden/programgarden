@@ -162,5 +162,6 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
                 ui_component=UIComponent.CHECKBOX,
+                example=True,
             ),
         }
