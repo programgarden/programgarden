@@ -105,6 +105,8 @@ class ConditionNode(PluginNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_PLUGIN_SELECT,
+                example="RSI",
+                help_text="Plugin id from get_plugin_catalog (e.g. RSI, MACD, BollingerBands).",
             ),
             # === DATA: items { from, extract } 방식 ===
             "items": FieldSchema(
@@ -258,6 +260,7 @@ class LogicNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 help_text="i18n:fields.LogicNode.operator.help_text",
+                example="all",
             ),
             "threshold": FieldSchema(
                 name="threshold",
@@ -268,6 +271,7 @@ class LogicNode(BaseNode):
                 visible_when={"operator": ["at_least", "at_most", "exactly", "weighted"]},
                 help_text="i18n:fields.LogicNode.threshold.help_text",
                 placeholder="2 또는 0.6",
+                example=2,
             ),
             "conditions": FieldSchema(
                 name="conditions",

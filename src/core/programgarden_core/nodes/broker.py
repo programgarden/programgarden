@@ -85,6 +85,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
                 enum_labels={"ls-sec.co.kr": "i18n:enums.broker_provider.ls-sec.co.kr"},
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
+                example="ls-sec.co.kr",
             ),
             "credential_id": FieldSchema(
                 name="credential_id",
@@ -95,6 +96,8 @@ class OverseasStockBrokerNode(BaseBrokerNode):
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
                 credential_types=["broker_ls_overseas_stock"],
+                example="cred_stock",
+                help_text="Use the credential id provided in user message <credentials_context> block (verbatim). Do NOT invent.",
             ),
         }
 
@@ -133,6 +136,7 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
                 enum_labels={"ls-sec.co.kr": "i18n:enums.broker_provider.ls-sec.co.kr"},
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
+                example="ls-sec.co.kr",
             ),
             "credential_id": FieldSchema(
                 name="credential_id",
@@ -143,6 +147,8 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
                 credential_types=["broker_ls_overseas_futures"],
+                example="cred_futures",
+                help_text="Use the credential id provided in user message <credentials_context> block (verbatim). Do NOT invent.",
             ),
             "paper_trading": FieldSchema(
                 name="paper_trading",
@@ -151,6 +157,8 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
                 default=False,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
+                example=True,
+                help_text="Set true for paper trading mode. Overseas futures only allow paper trading in the test suite.",
             ),
         }
 

@@ -185,6 +185,7 @@ class BaseOrderNode(BaseNode):
                 max=300,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
+                example=5,
             ),
             "rate_limit_action": FieldSchema(
                 name="rate_limit_action",
@@ -198,6 +199,7 @@ class BaseOrderNode(BaseNode):
                 },
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
+                example="skip",
             ),
         }
 
@@ -297,6 +299,7 @@ class BaseModifyOrderNode(BaseNode):
                 max=300,
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
+                example=5,
             ),
             "rate_limit_action": FieldSchema(
                 name="rate_limit_action",
@@ -310,6 +313,7 @@ class BaseModifyOrderNode(BaseNode):
                 },
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
+                example="skip",
             ),
         }
 
@@ -365,6 +369,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 expected_type="str",
+                example="buy",
             ),
             "order_type": FieldSchema(
                 name="order_type",
@@ -380,6 +385,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 expected_type="str",
+                example="limit",
             ),
             "price_type": FieldSchema(
                 name="price_type",
@@ -399,6 +405,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 expected_type="str",
+                example="limit",
             ),
             "order": FieldSchema(
                 name="order",
@@ -708,6 +715,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 expected_type="str",
+                example="buy",
             ),
             "order_type": FieldSchema(
                 name="order_type",
@@ -723,6 +731,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 expected_type="str",
+                example="limit",
             ),
             "expiry_month": FieldSchema(
                 name="expiry_month",

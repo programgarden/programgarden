@@ -88,6 +88,7 @@ class ScheduleNode(BaseNode):
                 default=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
+                example=True,
             ),
             "max_duration_hours": FieldSchema(
                 name="max_duration_hours",
@@ -99,6 +100,7 @@ class ScheduleNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
                 expected_type="float",
+                example=24.0,
             ),
         }
 
@@ -200,6 +202,7 @@ class TradingHoursFilterNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
                 expected_type="float",
+                example=24.0,
             ),
         }
 

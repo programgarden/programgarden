@@ -394,6 +394,7 @@ class IfNode(BaseNode):
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
+                example=">=",
             ),
             "right": FieldSchema(
                 name="right",

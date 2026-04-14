@@ -105,6 +105,10 @@ class OutputPort(BaseModel):
     display_name: Optional[str] = None  # 사용자 표시용 이름 (i18n 키 또는 직접 값)
     description: Optional[str] = None
     fields: Optional[List[Dict[str, Any]]] = None  # 구조화된 서브필드 정의
+    # 출력 값의 shape 예시 — LLM 이 `nodes.X.{port}` 표현식 작성 시
+    # 어떤 키/타입이 나오는지 즉시 파악하도록 노출. fields 만으로는 중첩
+    # 구조나 array 여부를 시각화하기 어려운 한계 보완.
+    example: Optional[Any] = None
 
 
 # === OutputPort.fields 공통 상수 ===

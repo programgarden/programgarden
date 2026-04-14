@@ -52,9 +52,42 @@ class OverseasStockAccountNode(BaseNode):
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols", fields=SYMBOL_LIST_FIELDS),
-        OutputPort(name="balance", type="balance_data", description="i18n:ports.balance", fields=OVERSEAS_STOCK_BALANCE_FIELDS),
-        OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=POSITION_FIELDS),
+        OutputPort(
+            name="held_symbols",
+            type="symbol_list",
+            description="i18n:ports.held_symbols",
+            fields=SYMBOL_LIST_FIELDS,
+            example=[
+                {"exchange": "NASDAQ", "symbol": "AAPL"},
+                {"exchange": "NASDAQ", "symbol": "TSLA"},
+            ],
+        ),
+        OutputPort(
+            name="balance",
+            type="balance_data",
+            description="i18n:ports.balance",
+            fields=OVERSEAS_STOCK_BALANCE_FIELDS,
+            example={
+                "total_pnl_rate": 7.42,
+                "cash_krw": 5_000_000,
+                "stock_eval_krw": 12_500_000,
+                "total_eval_krw": 17_500_000,
+                "total_pnl_krw": 1_210_000,
+                "orderable_amount": 3_500.50,
+                "foreign_cash": 3_800.10,
+                "exchange_rate": 1380.25,
+            },
+        ),
+        OutputPort(
+            name="positions",
+            type="position_data",
+            description="i18n:ports.positions",
+            fields=POSITION_FIELDS,
+            example=[
+                {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 10, "avg_price": 175.20, "pnl_rate": 6.99},
+                {"symbol": "TSLA", "exchange": "NASDAQ", "quantity": 5, "avg_price": 240.00, "pnl_rate": -2.50},
+            ],
+        ),
     ]
 
     @classmethod
