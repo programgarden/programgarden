@@ -1,3 +1,25 @@
+## [1.20.0] - 2026-04-16
+
+### Changed
+- **경로 결정 로직 단순화** (`_resolve_data_dir`, `get_programgarden_data_path`,
+  `_resolve_db_path`): storage_dir > /app/data (mkdir 시도) > ./app/data (권한
+  부재 시 폴백) 3단 우선순위. 기존 `/.dockerenv` 체크 + OSError raise 제거 —
+  /app/data 가 없는 Docker 컨테이너에서도 크래시 대신 자동 mkdir 또는 로컬
+  폴백. storage_dir 전달 시에도 mkdir 자동 생성.
+
+### Fixed (dry_run DB 쓰기 차단)
+- `ExecutionContext.init_workflow_position_tracker()` — `is_dry_run` True 시
+  트래커 초기화 skip (DB 파일 생성 방지).
+- `ExecutionContext.init_risk_tracker()` — 동일하게 dry_run skip.
+- `SQLiteNodeExecutor.execute()` — dry_run 모드에서 SELECT 만 허용. INSERT
+  /UPDATE/DELETE/UPSERT 쿼리는 시뮬레이션 응답(`{rows:[], affected_count:0,
+  last_insert_id:None}`)으로 대체. `execute_query` 모드는 SQL 첫 키워드로,
+  `simple` 모드는 `action == "select"` 여부로 판정.
+
+### Docs
+- `ProgramGarden.run/run_async`, `WorkflowExecutor.execute` 의 `storage_dir`
+  docstring 갱신 — 기본값 설명을 새 로직에 맞게 명시.
+
 ## [1.19.0] - 2026-04-14
 ### Dependencies
 - programgarden-core ^1.11.0 — FieldSchema/OutputPort example 확장
