@@ -252,8 +252,8 @@ class ExecutionContext:
 
         우선순위:
         1. storage_dir (외부 사용자 지정)
-        2. /app/data (Docker 배포 환경 — 이미 존재해야 함)
-        3. ./app/data (로컬 개발 전용 fallback)
+        2. /app/data (기본값 — GKE/Docker PVC 마운트 포인트)
+        3. ./app/data (로컬 폴백 — /app/data mkdir 권한이 없을 때만)
         """
         from pathlib import Path
 
@@ -262,21 +262,14 @@ class ExecutionContext:
             db_dir.mkdir(parents=True, exist_ok=True)
             return str(db_dir / db_filename)
 
-        docker_data = Path("/app/data")
-        if docker_data.exists():
-            return str(docker_data / db_filename)
-
-        # Docker 컨테이너 내부인데 /app/data가 없으면 볼륨 마운트 누락
-        if Path("/.dockerenv").exists():
-            raise OSError(
-                "/app/data 디렉토리가 존재하지 않습니다. "
-                "Docker 볼륨 마운트를 확인하세요."
-            )
-
-        # 로컬 개발 환경 fallback
-        db_dir = Path("./app/data")
-        db_dir.mkdir(parents=True, exist_ok=True)
-        return str(db_dir / db_filename)
+        default = Path("/app/data")
+        try:
+            default.mkdir(parents=True, exist_ok=True)
+            return str(default / db_filename)
+        except (PermissionError, OSError):
+            fallback = Path("./app/data")
+            fallback.mkdir(parents=True, exist_ok=True)
+            return str(fallback / db_filename)
 
     # === Dry Run ===
 
@@ -2011,6 +2004,10 @@ class ExecutionContext:
             logger.debug("No workflow_pnl listener registered, skipping tracker init")
             return
 
+        if self.is_dry_run:
+            logger.debug("dry_run 모드 — position tracker 초기화 스킵 (DB 쓰기 차단)")
+            return
+
         if self._workflow_position_tracker is not None:
             logger.debug("Workflow position tracker already initialized")
             return
@@ -2073,6 +2070,9 @@ class ExecutionContext:
             paper_trading: 모의투자 모드
         """
         if not features:
+            return
+        if self.is_dry_run:
+            logger.debug("dry_run 모드 — risk tracker 초기화 스킵 (DB 쓰기 차단)")
             return
         if self._workflow_risk_tracker is not None:
             return

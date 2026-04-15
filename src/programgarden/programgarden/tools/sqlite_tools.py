@@ -23,8 +23,8 @@ def get_programgarden_data_path(workspace_path: Optional[str] = None) -> Path:
 
     우선순위:
     1. workspace_path (외부 사용자 지정)
-    2. /app/data (Docker 배포 환경 — 이미 존재해야 함)
-    3. ./app/data (로컬 개발 전용 fallback)
+    2. /app/data (기본값 — GKE/Docker PVC 마운트 포인트)
+    3. ./app/data (로컬 폴백 — /app/data mkdir 권한이 없을 때만)
 
     Args:
         workspace_path: 워크스페이스 경로 (None이면 자동 결정)
@@ -37,19 +37,14 @@ def get_programgarden_data_path(workspace_path: Optional[str] = None) -> Path:
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
 
-    docker_data = Path("/app/data")
-    if docker_data.exists():
-        return docker_data
-
-    if Path("/.dockerenv").exists():
-        raise OSError(
-            "/app/data 디렉토리가 존재하지 않습니다. "
-            "Docker 볼륨 마운트를 확인하세요."
-        )
-
-    data_dir = Path("./app/data")
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir
+    default = Path("/app/data")
+    try:
+        default.mkdir(parents=True, exist_ok=True)
+        return default
+    except (PermissionError, OSError):
+        fallback = Path("./app/data")
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 def validate_filename(filename: str) -> bool:

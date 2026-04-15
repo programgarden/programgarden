@@ -69,7 +69,7 @@ class ProgramGarden:
             secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
             resource_limits: Resource limits (max_cpu_percent, max_memory_percent, etc.)
                            If None, auto-detects from system or uses workflow's resource_limits
-            storage_dir: DB/파일 저장 디렉토리 (default: /app/data or ./app/data)
+            storage_dir: DB/파일 저장 디렉토리. None 이면 /app/data 기본값 (GKE/Docker PVC 마운트 포인트). 로컬에서 /app/data mkdir 권한 부재 시 ./app/data 로 폴백.
             wait: Whether to wait for completion (default True)
             timeout: Maximum wait time (seconds), None for no limit
 
@@ -137,7 +137,7 @@ class ProgramGarden:
             secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
             resource_limits: Resource limits (max_cpu_percent, max_memory_percent, etc.)
                            If None, auto-detects from system or uses workflow's resource_limits
-            storage_dir: DB/파일 저장 디렉토리 (default: /app/data or ./app/data)
+            storage_dir: DB/파일 저장 디렉토리. None 이면 /app/data 기본값 (GKE/Docker PVC 마운트 포인트). 로컬에서 /app/data mkdir 권한 부재 시 ./app/data 로 폴백.
             listeners: List of ExecutionListener instances for state callbacks (Option A)
 
         Returns:
