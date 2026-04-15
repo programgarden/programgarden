@@ -13482,10 +13482,31 @@ class SQLiteNodeExecutor(NodeExecutorBase):
         db_name = config.get("db_name", "default.db")
         operation = config.get("operation", "simple")
 
-        # _resolve_db_path 와 동일한 경로 결정 로직
+        # dry_run 모드에서는 SELECT만 허용. INSERT/UPDATE/DELETE/UPSERT는
+        # 시뮬레이션 응답으로 대체하여 디스크 쓰기를 차단한다.
+        if getattr(context, "is_dry_run", False):
+            if operation == "execute_query":
+                query_text = (config.get("query") or "").strip()
+                if not query_text.upper().startswith("SELECT"):
+                    context.log(
+                        "warning",
+                        f"SQLiteNode: dry_run 모드 — 쓰기 쿼리 무시됨 ({query_text[:40]}...)",
+                        node_id,
+                    )
+                    return {"rows": [], "affected_count": 0, "last_insert_id": None}
+            else:
+                action = (config.get("action") or "select").lower()
+                if action != "select":
+                    context.log(
+                        "warning",
+                        f"SQLiteNode: dry_run 모드 — {action.upper()} 작업 무시됨",
+                        node_id,
+                    )
+                    return {"rows": [], "affected_count": 0, "last_insert_id": None}
+
         db_path = context._resolve_db_path(db_name)
         context.log("debug", f"SQLite DB path: {db_path}", node_id)
-        
+
         try:
             async with aiosqlite.connect(db_path) as db:
                 # Row를 dict로 변환하도록 설정
@@ -13831,7 +13852,7 @@ class WorkflowExecutor:
             job_id: Job ID (auto-generated if not provided)
             listeners: List of ExecutionListener instances for state callbacks
             resource_limits: Resource limits (CPU, RAM, workers). None = auto-detect
-            storage_dir: DB/파일 저장 디렉토리. None = /app/data 또는 ./app/data
+            storage_dir: DB/파일 저장 디렉토리. None = /app/data 기본값 (로컬에서 권한 없으면 ./app/data 로 폴백)
         """
         # Dynamic_ 노드 자동 로드 (definition에 dynamic_nodes가 있으면)
         dynamic_nodes = definition.get("dynamic_nodes")
