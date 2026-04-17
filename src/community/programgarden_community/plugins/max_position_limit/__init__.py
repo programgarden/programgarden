@@ -5,11 +5,13 @@ MaxPositionLimit (최대 포지션 한도) 플러그인
 POSITION Type A (positions 기반, StopLoss 패턴).
 
 입력 형식:
-- positions: 보유 포지션 {symbol: {current_price, qty, market_value, ...}}
+- positions: 보유 포지션 (list[dict])
+  예: [{"symbol": "AAPL", "current_price": 150.0, "qty": 100, "market_value": 15000.0, ...}, ...]
 - fields: {max_positions, max_total_value, max_single_weight_pct, action}
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Set
+
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
@@ -78,13 +80,11 @@ MAX_POSITION_LIMIT_SCHEMA = PluginSchema(
 
 
 async def max_position_limit_condition(
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """최대 포지션 한도 조건 평가"""
-    if positions is None:
-        positions = {}
     if fields is None:
         fields = {}
 
@@ -93,6 +93,7 @@ async def max_position_limit_condition(
     max_single_weight_pct = fields.get("max_single_weight_pct", 20.0)
     action = fields.get("action", "warn")
 
+    positions = positions or []
     if not positions:
         return {
             "passed_symbols": [], "failed_symbols": [],
@@ -101,19 +102,23 @@ async def max_position_limit_condition(
             "analysis": {"error": "No positions data"},
         }
 
-    # 포지션 정보 수집
-    position_count = len(positions)
-    total_value = 0
+    # 포지션 정보 수집 (symbol 없는 항목은 제외)
+    valid_positions: List[Dict[str, Any]] = [
+        p for p in positions if isinstance(p, dict) and p.get("symbol")
+    ]
+    position_count = len(valid_positions)
+    total_value = 0.0
     symbol_values: Dict[str, float] = {}
 
-    for symbol, pos_data in positions.items():
+    for pos_data in valid_positions:
+        symbol = pos_data["symbol"]
         market_value = pos_data.get("market_value", 0)
-        if market_value == 0:
+        if not market_value:
             current_price = pos_data.get("current_price", 0)
-            qty = pos_data.get("qty", 0)
+            qty = pos_data.get("qty", pos_data.get("quantity", 0))
             market_value = current_price * qty
-        symbol_values[symbol] = market_value
-        total_value += market_value
+        symbol_values[symbol] = float(market_value)
+        total_value += float(market_value)
 
     # 위반 확인
     violations = []
@@ -135,15 +140,17 @@ async def max_position_limit_condition(
                 violations.append(f"{symbol} weight {weight_pct:.1f}% > max {max_single_weight_pct}%")
 
     any_violation = len(violations) > 0
+    excess_symbols = _excess_symbols(valid_positions, max_positions, symbol_values)
 
     # 결과 구성
     passed, failed, symbol_results = [], [], []
 
-    for symbol, pos_data in positions.items():
+    for pos_data in valid_positions:
+        symbol = pos_data["symbol"]
         current_price = pos_data.get("current_price", 0)
-        exchange = pos_data.get("market_code", "UNKNOWN")
+        exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
-        exchange_name = exchange_map.get(exchange, exchange)
+        exchange_name = exchange_map.get(str(exchange), exchange)
         sym_dict = {"symbol": symbol, "exchange": exchange_name}
 
         value = symbol_values.get(symbol, 0)
@@ -155,7 +162,7 @@ async def max_position_limit_condition(
 
         if any_violation:
             if action == "exit_excess":
-                if is_overweight or (count_exceeded and symbol in _excess_symbols(positions, max_positions, symbol_values)):
+                if is_overweight or (count_exceeded and symbol in excess_symbols):
                     action_taken = "exit"
                     is_passed = True
                 else:
@@ -203,7 +210,11 @@ async def max_position_limit_condition(
     }
 
 
-def _excess_symbols(positions: Dict[str, Any], max_positions: int, symbol_values: Dict[str, float]) -> set:
+def _excess_symbols(
+    positions: List[Dict[str, Any]],
+    max_positions: int,
+    symbol_values: Dict[str, float],
+) -> Set[str]:
     """초과 종목 선별 (가치 가장 작은 순)"""
     if len(positions) <= max_positions:
         return set()

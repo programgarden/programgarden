@@ -1,32 +1,36 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-03-09T00:00:00
+@updated: 2026-04-17T00:00:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
 ## TREE
 src/
-  core/ [71 .py] — programgarden-core 1.9.2
+  core/ [71 .py] — programgarden-core 1.9.9
     programgarden_core/
       nodes/ [37 .py] — 72 node classes (12 categories)
-      models/ [9 .py] — edge, workflow, credential, resilience, connection_rule
-      registry/ [4 .py] — node, plugin, credential, dynamic_node
-      bases/ [7 .py] — listener, client, components, storage
+      models/ [12 .py] — edge, workflow, credential, resilience, connection_rule, event, exchange, job, plugin_resource, resource
+      registry/ [5 .py] — node, plugin, credential, dynamic_node
+      bases/ [8 .py] — listener, client, components, mixins, products, sql, storage
       expression/ [2 .py] — template evaluator ({{ nodes.x.y }})
       i18n/ [2 .py + 2 .json] — translator, ko.json, en.json
       presets/ [1 .py + 4 .json] — AI agent presets
-  programgarden/ [31 .py] — programgarden 1.15.2
+  programgarden/ [30 .py] — programgarden 1.17.0
     programgarden/
       executor.py — WorkflowExecutor, NodeExecutors, WorkflowJob
       context.py — ExecutionContext, state, events
       resolver.py — DAG resolver, expression binding
       node_runner.py — standalone node execution
+      binding_validator.py — type validation (list[dict], position_data)
       client.py — ProgramGarden.run() facade
-      database/ [3 .py] — checkpoint, position_tracker, risk_tracker
+      database/ [5 .py] — checkpoint, position_tracker, risk_tracker, query_builder
       providers/ [3 .py] — LLM provider (litellm), errors
-      tools/ [5 .py] — registry, sqlite, job, credential, event tools
+      tools/ [7 .py] — registry, sqlite, job, credential, event, definition tools
     examples/python_server/ — FastAPI demo server (port 8766)
-  finance/ [339 .py] — programgarden-finance 1.4.1
+    examples/trend_trailing_bot/ — TSMOM 60-day trend following bot
+    examples/bollinger_reversion_bot/ — Bollinger Bands mean reversion bot
+    examples/hkex_futures_bot/ — HKEX mini futures bot (paper trading)
+  finance/ [339 .py] — programgarden-finance 1.4.4
     programgarden_finance/
       ls/ — LS Securities API wrapper
         overseas_stock/ — REST 17 TR + Real 10 TR + extension (tracker)
@@ -35,7 +39,7 @@ src/
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect
         config.py — API URLs, rate limits
-  community/ [89 .py] — programgarden-community 1.10.5
+  community/ [89 .py] — programgarden-community 1.11.0
     programgarden_community/
       plugins/ [78 dirs] — 77 strategy plugins (TECHNICAL 59, POSITION 18)
       nodes/ — 4 community nodes
@@ -52,9 +56,10 @@ programgarden-finance → LS Securities OpenAPI wrapper (REST+WebSocket, 3 produ
 programgarden-community → Strategy plugins (77) + community nodes (4) | path:src/community | key:plugins/__init__.py
 
 ## KEY_FILES
-src/core/programgarden_core/nodes/base.py → BaseNode, ProductScope, NodeCategory, OutputPort, FieldSchema refs
-src/core/programgarden_core/nodes/order.py → BaseOrderNode, 6 order nodes (stock/futures/korea)
+src/core/programgarden_core/nodes/base.py → BaseNode, ProductScope, NodeCategory, OutputPort, POSITION_FIELDS
+src/core/programgarden_core/nodes/order.py → BaseOrderNode, order nodes (stock/futures/korea)
 src/core/programgarden_core/nodes/ai.py → LLMModelNode, AIAgentNode
+src/core/programgarden_core/nodes/condition.py → ConditionNode (positions: list[dict])
 src/core/programgarden_core/models/field_binding.py → FieldSchema, UIComponent, ExpressionMode
 src/core/programgarden_core/models/workflow.py → WorkflowDefinition, StickyNote
 src/core/programgarden_core/registry/node_registry.py → NodeTypeRegistry, NodeTypeSchema
@@ -64,10 +69,12 @@ src/programgarden/programgarden/executor.py → WorkflowExecutor, all NodeExecut
 src/programgarden/programgarden/context.py → ExecutionContext, state management, event emission
 src/programgarden/programgarden/resolver.py → WorkflowResolver, DAG sort, expression binding
 src/programgarden/programgarden/node_runner.py → NodeRunner for standalone node execution
+src/programgarden/programgarden/binding_validator.py → type validator (position_data: list[dict])
 src/programgarden/programgarden/database/workflow_risk_tracker.py → WorkflowRiskTracker (HWM, window, events, state)
 src/programgarden/programgarden/database/checkpoint_manager.py → CheckpointManager (graceful restart)
 src/finance/programgarden_finance/ls/real_base.py → WebSocket singleton, ref_count, auto-resubscribe
 src/finance/programgarden_finance/ls/overseas_stock/extension/tracker.py → StockAccountTracker (FIFO PnL)
+src/finance/programgarden_finance/ls/korea_stock/extension/tracker.py → KrStockAccountTracker (FIFO PnL)
 src/community/programgarden_community/plugins/__init__.py → 77 plugin registrations
 
 ## PATTERNS
@@ -84,24 +91,25 @@ src/community/programgarden_community/plugins/__init__.py → 77 plugin registra
 - FIFO PnL Tracking: per-product position tracking with WorkflowPnLEvent
 - AI Agent Tool System: existing nodes as LLM function-calling tools via tool edges
 - Dynamic Node Injection: runtime Dynamic_ prefixed node class injection
+- List-based Collections: symbol_list, order_list, ohlcv_data, position_data all use list[dict]
 - i18n: ko/en translations for all node fields, ports, enums
 - Poetry Monorepo: 4 packages with path-based develop dependencies
 
 ## DEPS
-### programgarden-core 1.9.2
+### programgarden-core 1.9.9
 pydantic>=2.0.0
 
-### programgarden 1.15.2
+### programgarden 1.17.0
 pydantic>=2.0.0 | croniter^6.0.0 | aiohttp^3.9.0 | aiosqlite^0.20.0
 litellm>=1.40.0 | fastembed>=0.4.0 | yfinance^0.2.0 | psutil^6.0.0
 python-dotenv^1.1.0 | pytickersymbols>=1.17.5 | lxml^6.0.2
 dev: fastapi^0.128.0 | uvicorn^0.40.0 | pytest^8.0.0
 
-### programgarden-finance 1.4.1
+### programgarden-finance 1.4.4
 pydantic>=2.11.7 | requests^2.32.4 | aiohttp^3.10.0 | websockets^15.0.1
 redis^6.4.0 | python-dotenv^1.1.1
 
-### programgarden-community 1.10.2
+### programgarden-community 1.11.0
 pypdf>=4.0.0
 extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 
@@ -123,8 +131,11 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Dynamic Node Injection: Dynamic_ prefix runtime nodes
 - [x] FIFO PnL: overseas stock/futures/korea stock tracking
 - [x] DeepSeek LLM: provider support added
-- [~] FileReaderNode: Phase 1-5 done, branch not merged to main
-- [~] Korea Stock Nodes: branch not merged to main (executor + tests done)
+- [x] on_notification callback: investor notification channel (8 categories, 3 severities)
+- [x] Plugin output_fields: schema documents plugin-specific output fields
+- [x] FileReaderNode: 7 formats (PDF/TXT/CSV/JSON/MD/DOCX/XLSX) + pdfplumber tables
+- [x] position_data list[dict] unify: overseas futures producer + 10 consumer plugins aligned
+- [x] Example bots: trend_trailing_bot, bollinger_reversion_bot, hkex_futures_bot
 
 ## CONVENTIONS
 - language: Python 3.12+, docs/comments in Korean, code in English
@@ -136,5 +147,6 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - i18n keys: nodes.{Type}.name, fields.{Type}.{field}, outputs.{Type}.{port}
 - credential: credential_id reference, data as List[CredentialDataItem]
 - symbol format: [{symbol, exchange, ...}] array, never use symbol as dict key
+- position_data: list[dict] with "symbol" key (never dict keyed by symbol)
 - expression: {{ nodes.nodeId.port }} with nodes. prefix
 - no Co-Authored-By: git commits must not include Co-Authored-By lines

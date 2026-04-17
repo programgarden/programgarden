@@ -1,3 +1,7 @@
+## [1.11.1] - 2026-04-17
+### Changed
+- `ConditionNode.positions` field example을 dict 형태에서 list[dict] 형태로 변경 (position_data 컨벤션 통일)
+
 ## [1.11.0] - 2026-04-14
 ### Added
 - `OutputPort.example: Optional[Any]` 필드 신설 — 노드 출력 shape 을 LLM/클라이언트에 예시로 노출.

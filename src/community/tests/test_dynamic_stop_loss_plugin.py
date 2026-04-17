@@ -36,16 +36,16 @@ class TestDynamicStopLossPlugin:
     @pytest.fixture
     def positions_normal(self):
         """정상 포지션"""
-        return {
-            "AAPL": {"current_price": 150, "avg_price": 140, "qty": 10, "market_code": "82"},
-        }
+        return [
+            {"symbol": "AAPL", "current_price": 150, "avg_price": 140, "qty": 10, "market_code": "82"},
+        ]
 
     @pytest.fixture
     def positions_stop(self):
         """손절 포지션 (현재가 < 손절가)"""
-        return {
-            "AAPL": {"current_price": 120, "avg_price": 150, "qty": 10, "market_code": "82"},
-        }
+        return [
+            {"symbol": "AAPL", "current_price": 120, "avg_price": 150, "qty": 10, "market_code": "82"},
+        ]
 
     def test_calculate_atr(self):
         """ATR 계산"""
@@ -98,13 +98,15 @@ class TestDynamicStopLossPlugin:
     @pytest.mark.asyncio
     async def test_no_positions(self):
         """포지션 없음"""
-        result = await dynamic_stop_loss_condition(positions={}, fields={})
+        result = await dynamic_stop_loss_condition(positions=[], fields={})
         assert result["result"] is False
 
     @pytest.mark.asyncio
     async def test_no_data_fallback(self):
         """시계열 데이터 없이 (fallback ATR)"""
-        positions = {"AAPL": {"current_price": 100, "avg_price": 110, "qty": 10, "market_code": "82"}}
+        positions = [
+            {"symbol": "AAPL", "current_price": 100, "avg_price": 110, "qty": 10, "market_code": "82"}
+        ]
         result = await dynamic_stop_loss_condition(
             data=[],
             positions=positions,
@@ -133,10 +135,10 @@ class TestDynamicStopLossPlugin:
     async def test_multi_positions(self, price_data):
         """다종목 포지션"""
         data = price_data + _make_price_data("MSFT", 30, 300, 5)
-        positions = {
-            "AAPL": {"current_price": 150, "avg_price": 140, "qty": 10, "market_code": "82"},
-            "MSFT": {"current_price": 250, "avg_price": 300, "qty": 5, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "current_price": 150, "avg_price": 140, "qty": 10, "market_code": "82"},
+            {"symbol": "MSFT", "current_price": 250, "avg_price": 300, "qty": 5, "market_code": "82"},
+        ]
         result = await dynamic_stop_loss_condition(
             data=data,
             positions=positions,

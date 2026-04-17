@@ -7,13 +7,14 @@ TimeBasedExit (시간 기반 청산) 플러그인
 - 포지션이 사라진 종목의 상태도 자동 정리
 
 입력 형식:
-- positions: RealAccountNode의 positions 출력 {symbol: {qty, ...}}
+- positions: RealAccountNode의 positions 출력 (list[dict])
+  예: [{"symbol": "AAPL", "qty": 100, ...}, ...]
 - fields: {max_hold_days, warn_days}
 - context: strategy_state 접근용 (선택)
 """
 
 from datetime import date, timedelta
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
@@ -70,7 +71,7 @@ TIME_BASED_EXIT_SCHEMA = PluginSchema(
 
 
 async def time_based_exit_condition(
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
     context: Any = None,
     **kwargs,
@@ -79,18 +80,18 @@ async def time_based_exit_condition(
     시간 기반 청산 조건 평가
 
     Args:
-        positions: {symbol: {qty, ...}}
+        positions: RealAccountNode의 positions 출력 (list[dict])
+                   [{"symbol": "AAPL", "qty": 100, ...}, ...]
         fields: {max_hold_days, warn_days}
         context: strategy_state 접근용
     """
-    if positions is None:
-        positions = {}
     if fields is None:
         fields = {}
 
     max_hold_days = fields.get("max_hold_days", 5)
     warn_days = fields.get("warn_days", 0)
 
+    positions = positions or []
     if not positions:
         return {
             "passed_symbols": [],
@@ -121,11 +122,14 @@ async def time_based_exit_condition(
 
     passed, failed, symbol_results = [], [], []
 
-    for symbol, pos_data in positions.items():
+    for pos_data in positions:
+        symbol = pos_data.get("symbol")
+        if not symbol:
+            continue
         qty = pos_data.get("qty", pos_data.get("quantity", 0))
-        exchange = pos_data.get("market_code", "UNKNOWN")
+        exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
-        exchange_name = exchange_map.get(exchange, exchange)
+        exchange_name = exchange_map.get(str(exchange), exchange)
         sym_dict = {"symbol": symbol, "exchange": exchange_name}
 
         # 수량 0이면 청산 완료 → 상태 삭제

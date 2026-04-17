@@ -27,16 +27,16 @@ class TestRollManagementPlugin:
         current_month_code = month_code_map[now.month]
         year_str = str(now.year)[-2:]
         symbol = f"CL{current_month_code}{year_str}"
-        return {
-            symbol: {"current_price": 70.5, "qty": 2, "market_code": "CME"},
-        }
+        return [
+            {"symbol": symbol, "current_price": 70.5, "qty": 2, "market_code": "CME"},
+        ]
 
     @pytest.fixture
     def positions_far_expiry(self):
         """만기 먼 포지션"""
-        return {
-            "CLZ30": {"current_price": 72.0, "qty": 3, "market_code": "CME"},
-        }
+        return [
+            {"symbol": "CLZ30", "current_price": 72.0, "qty": 3, "market_code": "CME"},
+        ]
 
     # === 스키마 테스트 ===
     def test_schema_id(self):
@@ -109,7 +109,7 @@ class TestRollManagementPlugin:
 
     @pytest.mark.asyncio
     async def test_empty_positions(self):
-        result = await roll_management_condition(positions={}, fields={})
+        result = await roll_management_condition(positions=[], fields={})
         assert result["result"] is False
 
     @pytest.mark.asyncio
@@ -136,9 +136,9 @@ class TestRollManagementPlugin:
 
     @pytest.mark.asyncio
     async def test_invalid_symbol_handling(self):
-        positions = {
-            "INVALID": {"current_price": 70.0, "qty": 1, "market_code": "CME"},
-        }
+        positions = [
+            {"symbol": "INVALID", "current_price": 70.0, "qty": 1, "market_code": "CME"},
+        ]
         result = await roll_management_condition(positions=positions, fields={})
         assert result["result"] is False
         assert len(result["failed_symbols"]) == 1

@@ -228,7 +228,7 @@ def get_job_state(job_id: str) -> Optional[Dict[str, Any]]:
 
     Example:
         >>> get_job_state("job-abc123")
-        {"job_id": "job-abc123", "positions": {...}, "balances": {...}, ...}
+        {"job_id": "job-abc123", "positions": [...], "balances": {...}, ...}
     """
     # TODO: Implement actual state snapshot
     job = get_job(job_id)
@@ -238,7 +238,7 @@ def get_job_state(job_id: str) -> Optional[Dict[str, Any]]:
     return {
         "job_id": job_id,
         "paused_at": job.get("paused_at"),
-        "positions": {},
+        "positions": [],
         "balances": {},
         "pending_orders": [],
         "condition_states": {},
