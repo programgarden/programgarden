@@ -14,7 +14,15 @@
   "id": "rsi",
   "type": "ConditionNode",
   "plugin": "RSI",
-  "data": "{{ nodes.history.values }}",
+  "items": {
+    "from": "{{ nodes.history.value.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}",
+      "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}",
+      "close": "{{ row.close }}"
+    }
+  },
   "fields": {
     "period": 14,
     "threshold": 30,
@@ -24,10 +32,31 @@
 ```
 
 - `plugin`: 사용할 플러그인 이름
-- `data`: 분석할 OHLCV 데이터 (HistoricalDataNode의 출력)
+- `items.from`: 순회할 시계열 배열 (보통 `HistoricalDataNode.value.time_series`)
+- `items.extract`: 각 행(row)에서 꺼낼 필드를 정의 — `row.date`, `row.close` 등으로 현재 행 참조
 - `fields`: 플러그인별 파라미터
 
-> **주의**: `data`에는 반드시 OHLCV 시계열 데이터가 필요합니다. 보통 `HistoricalDataNode`의 출력(`{{ nodes.history.values }}`)을 연결합니다. 데이터가 부족하면 정확한 판단이 어렵습니다.
+### 포지션 기반 플러그인 (StopLoss / ProfitTarget / TrailingStop 등)
+
+`items` 대신 `positions` 필드에 계좌 포지션 배열을 바인딩합니다.
+
+```json
+{
+  "id": "stop",
+  "type": "ConditionNode",
+  "plugin": "StopLoss",
+  "positions": "{{ nodes.account.positions }}",
+  "fields": {"stop_percent": -3.0}
+}
+```
+
+> **📦 포지션 데이터 포맷 (v1.20.1 기준)**: `positions`는 **list[dict]** 포맷입니다. 각 원소: `{symbol, exchange, quantity, avg_price, current_price, pnl_rate, pnl_amount, currency, product, ...}`. 1.20.1 이전의 해외선물 dict(symbol-keyed) 포맷은 더 이상 사용되지 않습니다.
+
+> **⚠️ `data: "{{ nodes.history.values }}"`는 더 이상 지원되지 않습니다**: 구 버전 문서의 `data:` 필드는 현재 `ConditionNode.config_schema`에 존재하지 않으며, 사용 시 validate는 통과하지만 런타임에 `ConditionNode 'xxx': items가 설정되지 않았습니다. items { from, extract } 형태로 추가하세요` 에러가 발생하고 플러그인이 실행되지 않습니다. 반드시 `items: {from, extract}` 형태를 사용하세요.
+>
+> 또한 `.values` (복수) 가 아니라 `HistoricalDataNode`의 출력은 `value.time_series` (단수 + 내부 배열) 형태로 접근합니다.
+
+> **💡 extract 필드 추가**: 위 예시는 `close` (종가)만 추출합니다. 플러그인에 따라 `open`, `high`, `low`, `volume` 등 추가 필드가 필요하면 `extract` 안에 `"high": "{{ row.high }}"` 식으로 추가하세요. 각 플러그인의 **필요 데이터** 항목을 참고하세요.
 
 ---
 
@@ -134,7 +163,7 @@
   "id": "rsiBuy",
   "type": "ConditionNode",
   "plugin": "RSI",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"period": 14, "threshold": 30, "direction": "below"}
 }
 ```
@@ -161,7 +190,7 @@
   "id": "macdBuy",
   "type": "ConditionNode",
   "plugin": "MACD",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"fast_period": 12, "slow_period": 26, "signal_period": 9, "signal_type": "bullish_cross"}
 }
 ```
@@ -186,7 +215,7 @@
   "id": "stochastic",
   "type": "ConditionNode",
   "plugin": "Stochastic",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"k_period": 14, "d_period": 3, "threshold": 20, "direction": "oversold"}
 }
 ```
@@ -209,7 +238,7 @@
   "id": "obv",
   "type": "ConditionNode",
   "plugin": "OBV",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"ma_period": 20, "direction": "bullish"}
 }
 ```
@@ -235,7 +264,7 @@
   "id": "adx",
   "type": "ConditionNode",
   "plugin": "ADX",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"period": 14, "threshold": 25, "direction": "uptrend"}
 }
 ```
@@ -261,7 +290,7 @@
   "id": "maCross",
   "type": "ConditionNode",
   "plugin": "MovingAverageCross",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"short_period": 5, "long_period": 20, "cross_type": "golden"}
 }
 ```
@@ -286,7 +315,7 @@
   "id": "dualMom",
   "type": "ConditionNode",
   "plugin": "DualMomentum",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"lookback_period": 252, "absolute_threshold": 0, "use_relative": true}
 }
 ```
@@ -310,7 +339,7 @@
   "id": "breakout",
   "type": "ConditionNode",
   "plugin": "BreakoutRetest",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"lookback": 20, "retest_threshold": 0.02, "direction": "bullish"}
 }
 ```
@@ -334,7 +363,7 @@
   "id": "bb",
   "type": "ConditionNode",
   "plugin": "BollingerBands",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"period": 20, "std_dev": 2.0, "position": "below_lower"}
 }
 ```
@@ -358,7 +387,7 @@
   "id": "atr",
   "type": "ConditionNode",
   "plugin": "ATR",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"period": 14, "multiplier": 2.0, "direction": "breakout_up"}
 }
 ```
@@ -381,7 +410,7 @@
   "id": "donchian",
   "type": "ConditionNode",
   "plugin": "PriceChannel",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"period": 20, "direction": "breakout_high"}
 }
 ```
@@ -404,7 +433,7 @@
   "id": "fib",
   "type": "ConditionNode",
   "plugin": "GoldenRatio",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"lookback": 50, "level": "0.618", "direction": "support", "tolerance": 0.02}
 }
 ```
@@ -430,7 +459,7 @@
   "id": "pivot",
   "type": "ConditionNode",
   "plugin": "PivotPoint",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"pivot_type": "standard", "direction": "support", "tolerance": 0.01}
 }
 ```
@@ -462,7 +491,7 @@
   "id": "threeLineStrike",
   "type": "ConditionNode",
   "plugin": "ThreeLineStrike",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"pattern": "bullish", "min_body_pct": 0.3}
 }
 ```
@@ -492,7 +521,7 @@
   "id": "volumeSpike",
   "type": "ConditionNode",
   "plugin": "VolumeSpike",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"period": 20, "multiplier": 2.0}
 }
 ```
@@ -516,7 +545,7 @@
   "id": "meanRev",
   "type": "ConditionNode",
   "plugin": "MeanReversion",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"ma_period": 20, "deviation": 2.0, "direction": "oversold"}
 }
 ```
@@ -599,9 +628,9 @@
 ```json
 {
   "nodes": [
-    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.history.values }}", "fields": {"period": 14, "threshold": 30, "direction": "below"}},
-    {"id": "macd", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.history.values }}", "fields": {"signal_type": "bullish_cross"}},
-    {"id": "adx", "type": "ConditionNode", "plugin": "ADX", "data": "{{ nodes.history.values }}", "fields": {"threshold": 25, "direction": "uptrend"}},
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
+    {"id": "macd", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"signal_type": "bullish_cross"}},
+    {"id": "adx", "type": "ConditionNode", "plugin": "ADX", "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"threshold": 25, "direction": "uptrend"}},
     {
       "id": "logic",
       "type": "LogicNode",
@@ -1185,7 +1214,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "regime",
   "type": "ConditionNode",
   "plugin": "RegimeDetection",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"ma_period": 20, "adx_period": 14, "adx_threshold": 25, "vol_lookback": 60}
 }
 ```
@@ -1216,7 +1245,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "rs",
   "type": "ConditionNode",
   "plugin": "RelativeStrength",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"lookback": 60, "benchmark_symbol": "SPY", "rank_method": "percentile", "threshold": 50, "direction": "above"}
 }
 ```
@@ -1241,7 +1270,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "corr",
   "type": "ConditionNode",
   "plugin": "CorrelationAnalysis",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"lookback": 60, "method": "pearson", "threshold": 0.7, "direction": "above"}
 }
 ```
@@ -1269,7 +1298,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "mtf",
   "type": "ConditionNode",
   "plugin": "MultiTimeframeConfirmation",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"short_period": 5, "medium_period": 20, "long_period": 60, "direction": "bullish", "require_all": true}
 }
 ```
@@ -1371,7 +1400,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "volSizing",
   "type": "ConditionNode",
   "plugin": "VolatilityPositionSizing",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"vol_lookback": 20, "scaling_method": "inverse_vol", "max_position_pct": 40, "min_position_pct": 5}
 }
 ```
@@ -1420,7 +1449,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "zscore",
   "type": "ConditionNode",
   "plugin": "ZScore",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"lookback": 20, "entry_threshold": 2.0, "direction": "below"}
 }
 ```
@@ -1448,7 +1477,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "squeeze",
   "type": "ConditionNode",
   "plugin": "SqueezeMomentum",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"direction": "squeeze_fire_long"}
 }
 ```
@@ -1474,7 +1503,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "rank",
   "type": "ConditionNode",
   "plugin": "MomentumRank",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"lookback": 63, "top_n": 3, "selection": "top"}
 }
 ```
@@ -1501,7 +1530,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "market",
   "type": "ConditionNode",
   "plugin": "MarketInternals",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"metric": "composite", "threshold": 50, "direction": "above"}
 }
 ```
@@ -1529,7 +1558,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "pair",
   "type": "ConditionNode",
   "plugin": "PairTrading",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "fields": {"symbol_a": "AAPL", "symbol_b": "MSFT", "entry_z": 2.0}
 }
 ```
@@ -1553,7 +1582,7 @@ MA 기울기, ADX, 변동성 백분위를 조합하여 현재 시장 상태를 *
   "id": "dynStop",
   "type": "ConditionNode",
   "plugin": "DynamicStopLoss",
-  "data": "{{ nodes.history.values }}",
+  "items": {"from": "{{ nodes.history.value.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}},
   "positions": "{{ nodes.account.positions }}",
   "fields": {"atr_period": 14, "atr_multiplier": 2.0}
 }

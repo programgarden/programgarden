@@ -61,6 +61,84 @@
 
 ---
 
+## 2.5. ⚠️ passed_symbols 결합 규칙 (Scope 주의사항)
+
+LogicNode는 `is_condition_met`(boolean)뿐만 아니라 각 condition의 `passed_symbols`(종목 목록)도 연산자에 따라 결합합니다.
+
+| 연산자 | `passed_symbols` 결합 방식 |
+|--------|----------------------------|
+| `all` | **교집합** (intersection) — 모든 condition이 통과시킨 **공통** 종목만 남음 |
+| `any` | **합집합** (union) — 어떤 condition이라도 통과시킨 종목을 모두 포함 |
+| 기타 | 연산자 의미에 따라 유사하게 결합 (`at_least`는 N개 이상 통과한 종목 교집합 등) |
+
+### 이 규칙 때문에 막히는 대표적인 함정
+
+> **상황**: "NASDAQ 전체 추세가 상승일 때만 개별 종목(NASDAQ100)의 RSI 매수 신호를 발생"
+
+잘못된 구성:
+```json
+{
+  "id": "marketTrend",
+  "type": "ConditionNode",
+  "plugin": "TimeSeriesMomentum",
+  "items": { "from": "{{ nodes.qqqHistory.value.time_series }}", "extract": {...} }
+  // passed_symbols → ["QQQ"]
+},
+{
+  "id": "rsi",
+  "type": "ConditionNode",
+  "plugin": "RSI",
+  "items": { "from": "{{ nodes.nasdaq100History.value.time_series }}", "extract": {...} }
+  // passed_symbols → ["AAPL", "MSFT", "NVDA", ...]
+},
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "operator": "all",
+  "conditions": [
+    {"is_condition_met": "{{ nodes.marketTrend.result }}", "passed_symbols": "{{ nodes.marketTrend.passed_symbols }}"},
+    {"is_condition_met": "{{ nodes.rsi.result }}", "passed_symbols": "{{ nodes.rsi.passed_symbols }}"}
+  ]
+}
+```
+
+- `marketTrend.passed_symbols` = `[QQQ]`
+- `rsi.passed_symbols` = `[AAPL, MSFT, NVDA, ...]`
+- `all` 연산자의 교집합 결과 = **`[]` (빈 배열)** → 매수 가능한 종목 0개로 끝
+
+### 올바른 패턴: 시장 게이트 + 종목 필터 분리
+
+서로 **다른 symbol universe**를 평가하는 조건은 LogicNode에 묶지 말고, 시장 게이트는 `IfNode`로 선행 분기하여 처리하세요.
+
+```json
+{
+  "nodes": [
+    {"id": "marketTrend", "type": "ConditionNode", "plugin": "TimeSeriesMomentum", "items": {...}, "fields": {...}},
+    {
+      "id": "gate",
+      "type": "IfNode",
+      "left": "{{ nodes.marketTrend.result.is_condition_met }}",
+      "operator": "==",
+      "right": true
+    },
+    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "items": {...}, "fields": {...}}
+  ],
+  "edges": [
+    {"from": "marketTrend", "to": "gate"},
+    {"from": "gate", "to": "rsi", "from_port": "true"}
+  ]
+}
+```
+
+이 패턴에서는:
+1. `marketTrend`(QQQ 1종목)가 먼저 실행되어 시장 추세 판정
+2. `IfNode`가 `true` 포트로 분기하면 하위 `rsi` 체인 실행
+3. `false`면 하위 체인 전체 캐스케이딩 스킵
+
+> **요약**: LogicNode는 동일/유사 universe의 condition을 결합할 때 유용합니다. 단일 지표(시장 지수 등)를 스칼라 게이트로 쓰려면 **IfNode 또는 상위 스케줄 분기**로 분리하세요.
+
+---
+
 ## 3. 지원되는 논리 연산자
 
 ### 한눈에 보기

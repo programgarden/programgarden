@@ -32,7 +32,8 @@ AAPL의 기술적 분석을 AI에게 맡기는 워크플로우입니다.
     {
       "id": "broker",
       "type": "OverseasStockBrokerNode",
-      "credential_id": "my-broker"
+      "credential_id": "my-broker",
+      "paper_trading": false
     },
     {
       "id": "llm",

@@ -29,11 +29,32 @@ flowchart LR
 ```json
 {
   "nodes": [
-    { "id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-cred" },
+    { "id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-cred", "paper_trading": false },
     { "id": "watchlist", "type": "WatchlistNode", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}] },
     { "id": "history", "type": "OverseasStockHistoricalDataNode", "interval": "1d" },
-    { "id": "rsi", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.history.values }}" },
-    { "id": "order", "type": "OverseasStockNewOrderNode", "plugin": "MarketOrder", "fields": { "side": "buy" } }
+    { "id": "rsi", "type": "ConditionNode", "plugin": "RSI",
+      "items": {
+        "from": "{{ nodes.history.value.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": { "period": 14, "threshold": 30, "direction": "below" }
+    },
+    { "id": "marketData", "type": "OverseasStockMarketDataNode", "symbol": "{{ item }}" },
+    { "id": "sizing", "type": "PositionSizingNode",
+      "symbol": "{{ item }}",
+      "balance": "{{ nodes.account.balance }}",
+      "market_data": "{{ nodes.marketData.value }}",
+      "method": "fixed_percent", "max_percent": 10
+    },
+    { "id": "order", "type": "OverseasStockNewOrderNode",
+      "side": "buy", "order_type": "market",
+      "order": "{{ nodes.sizing.order }}"
+    }
   ],
   "edges": [
     { "from": "broker", "to": "watchlist" },
