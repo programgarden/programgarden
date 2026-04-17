@@ -38,7 +38,7 @@ class TestTimeBasedExitPlugin:
         tracker = MockRiskTracker()
         context = MockContext(tracker)
 
-        positions = {"AAPL": {"qty": 100, "market_code": "82"}}
+        positions = [{"symbol": "AAPL", "qty": 100, "market_code": "82"}]
         result = await time_based_exit_condition(
             positions=positions,
             fields={"max_hold_days": 5, "warn_days": 0},
@@ -59,7 +59,7 @@ class TestTimeBasedExitPlugin:
         tracker._state["time_exit.AAPL.entry_date"] = entry
         context = MockContext(tracker)
 
-        positions = {"AAPL": {"qty": 100, "market_code": "82"}}
+        positions = [{"symbol": "AAPL", "qty": 100, "market_code": "82"}]
         result = await time_based_exit_condition(
             positions=positions,
             fields={"max_hold_days": 5},
@@ -78,7 +78,7 @@ class TestTimeBasedExitPlugin:
         tracker._state["time_exit.AAPL.entry_date"] = entry
         context = MockContext(tracker)
 
-        positions = {"AAPL": {"qty": 100, "market_code": "82"}}
+        positions = [{"symbol": "AAPL", "qty": 100, "market_code": "82"}]
         result = await time_based_exit_condition(
             positions=positions,
             fields={"max_hold_days": 5, "warn_days": 2},
@@ -96,14 +96,14 @@ class TestTimeBasedExitPlugin:
         tracker._state["time_exit.AAPL.entry_date"] = "2025-01-01"
         context = MockContext(tracker)
 
-        positions = {"AAPL": {"qty": 0, "market_code": "82"}}
+        positions = [{"symbol": "AAPL", "qty": 0, "market_code": "82"}]
         await time_based_exit_condition(positions=positions, fields={}, context=context)
         assert "time_exit.AAPL.entry_date" not in tracker._state
 
     @pytest.mark.asyncio
     async def test_without_context(self):
         """context 없이 실행"""
-        positions = {"AAPL": {"qty": 100, "market_code": "82"}}
+        positions = [{"symbol": "AAPL", "qty": 100, "market_code": "82"}]
         result = await time_based_exit_condition(
             positions=positions,
             fields={"max_hold_days": 5},
@@ -114,7 +114,7 @@ class TestTimeBasedExitPlugin:
     @pytest.mark.asyncio
     async def test_empty_positions(self):
         """빈 포지션"""
-        result = await time_based_exit_condition(positions={}, fields={})
+        result = await time_based_exit_condition(positions=[], fields={})
         assert result["result"] is False
 
     @pytest.mark.asyncio
@@ -125,10 +125,10 @@ class TestTimeBasedExitPlugin:
         tracker._state["time_exit.NVDA.entry_date"] = (date.today() - timedelta(days=2)).isoformat()
         context = MockContext(tracker)
 
-        positions = {
-            "AAPL": {"qty": 100, "market_code": "82"},
-            "NVDA": {"qty": 50, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "qty": 100, "market_code": "82"},
+            {"symbol": "NVDA", "qty": 50, "market_code": "82"},
+        ]
         result = await time_based_exit_condition(
             positions=positions,
             fields={"max_hold_days": 5},

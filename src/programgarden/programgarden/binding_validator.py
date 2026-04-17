@@ -82,7 +82,10 @@ class BindingTypeValidator:
             all(isinstance(i, (str, dict)) for i in v)
         ),
         "market_data": lambda v: isinstance(v, dict),
-        "position_data": lambda v: isinstance(v, (dict, list)),
+        "position_data": lambda v: (
+            isinstance(v, list) and
+            all(isinstance(i, dict) for i in v)
+        ),
         "balance_data": lambda v: isinstance(v, dict),
         "order_list": lambda v: isinstance(v, list),
     }

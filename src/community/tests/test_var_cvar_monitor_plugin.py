@@ -186,10 +186,10 @@ class TestVarCvarMonitorPlugin:
     @pytest.mark.asyncio
     async def test_portfolio_var_with_positions(self, mock_data_two_symbols):
         """positions 있을 때 달러 VaR 계산"""
-        positions = {
-            "AAPL": {"current_price": 150.0, "qty": 100},
-            "TSLA": {"current_price": 200.0, "qty": 50},
-        }
+        positions = [
+            {"symbol": "AAPL", "current_price": 150.0, "qty": 100},
+            {"symbol": "TSLA", "current_price": 200.0, "qty": 50},
+        ]
         result = await var_cvar_monitor_condition(
             data=mock_data_two_symbols,
             fields={"lookback": 60, "alert_threshold_pct": 0.1},

@@ -182,7 +182,7 @@ class ConditionNode(PluginNode):
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
                 placeholder="{{ nodes.realAccount.positions }}",
-                example={"AAPL": {"qty": 10, "avg_price": 150.0, "pnl_rate": 5.5}},
+                example=[{"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 10, "avg_price": 150.0, "pnl_rate": 5.5}],
                 example_binding="{{ nodes.realAccount.positions }}",
                 bindable_sources=[
                     "RealAccountNode.positions",

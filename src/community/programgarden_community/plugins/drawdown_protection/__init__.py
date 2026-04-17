@@ -5,7 +5,8 @@ DrawdownProtection (낙폭 보호) 플러그인
 risk_tracker HWM 활용하여 임계 초과 시 전체 청산/절반 축소/신규 주문 중단.
 
 입력 형식:
-- positions: RealAccountNode의 positions 출력 {symbol: {pnl_rate, current_price, ...}}
+- positions: RealAccountNode의 positions 출력 (list[dict])
+  예: [{"symbol": "AAPL", "pnl_rate": -5.2, "current_price": 150.0, ...}, ...]
 - fields: {max_drawdown_pct, action, recovery_threshold}
 """
 
@@ -77,14 +78,12 @@ DRAWDOWN_PROTECTION_SCHEMA = PluginSchema(
 
 
 async def drawdown_protection_condition(
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
     context: Any = None,
     **kwargs,
 ) -> dict:
     """낙폭 보호 조건 평가"""
-    if positions is None:
-        positions = {}
     if fields is None:
         fields = {}
 
@@ -92,6 +91,7 @@ async def drawdown_protection_condition(
     action = fields.get("action", "exit_all")
     recovery_threshold = fields.get("recovery_threshold", 5.0)
 
+    positions = positions or []
     if not positions:
         return {
             "passed_symbols": [], "failed_symbols": [],
@@ -103,13 +103,16 @@ async def drawdown_protection_condition(
     passed, failed, symbol_results = [], [], []
     has_risk_tracker = context and hasattr(context, "risk_tracker") and context.risk_tracker
 
-    for symbol, pos_data in positions.items():
+    for pos_data in positions:
+        symbol = pos_data.get("symbol")
+        if not symbol:
+            continue
         pnl_rate = pos_data.get("pnl_rate", 0)
         current_price = pos_data.get("current_price", 0)
-        exchange = pos_data.get("market_code", "UNKNOWN")
+        exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
 
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
-        exchange_name = exchange_map.get(exchange, exchange)
+        exchange_name = exchange_map.get(str(exchange), exchange)
         sym_dict = {"symbol": symbol, "exchange": exchange_name}
 
         # risk_tracker HWM 기반 drawdown (우선)
@@ -142,7 +145,7 @@ async def drawdown_protection_condition(
         if triggered:
             # action에 따라 sell_quantity 설정
             if action == "reduce_half":
-                qty = pos_data.get("qty", 0)
+                qty = pos_data.get("qty", pos_data.get("quantity", 0))
                 sym_dict["sell_quantity"] = max(1, int(qty) // 2)
             passed.append(sym_dict)
         else:

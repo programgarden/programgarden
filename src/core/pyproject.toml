@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.12"
 name = "programgarden-core"
-version = "1.11.0"
+version = "1.11.1"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 readme = "README.md"
 

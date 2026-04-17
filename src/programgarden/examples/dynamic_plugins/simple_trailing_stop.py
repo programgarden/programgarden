@@ -3,14 +3,14 @@ Dynamic Plugin 예제: SimpleTrailingStop
 
 추적 손절(Trailing Stop) 플러그인.
 고점 대비 하락폭이 trail_percent를 초과하면 매도 신호.
-POSITION 카테고리 — positions 딕셔너리 사용.
+POSITION 카테고리 — positions 배열(list[dict]) 사용.
 
 워크플로우 사용:
     {"type": "ConditionNode", "plugin": "SimpleTrailingStop",
      "positions": "{{ nodes.account.positions }}"}
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
@@ -36,24 +36,26 @@ SCHEMA = PluginSchema(
 
 
 async def simple_trailing_stop_condition(
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> dict:
-    if positions is None:
-        positions = {}
     if fields is None:
         fields = {}
 
     trail_pct = fields.get("trail_percent", 5.0)
 
+    positions = positions or []
     if not positions:
         return {"passed_symbols": [], "failed_symbols": [], "symbol_results": [],
                 "values": [], "result": False, "error": "positions 데이터가 없습니다."}
 
     passed, failed, results = [], [], []
 
-    for symbol, pos in positions.items():
+    for pos in positions:
+        symbol = pos.get("symbol")
+        if not symbol:
+            continue
         pnl_rate = pos.get("pnl_rate", 0)
         # high_pnl_rate는 RealAccountNode가 추적하는 최고 수익률
         # 없으면 현재 pnl_rate를 고점으로 가정

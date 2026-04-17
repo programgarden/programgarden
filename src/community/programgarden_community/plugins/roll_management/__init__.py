@@ -5,7 +5,8 @@ RollManagement (롤오버 관리) 플러그인 - 선물 전용
 월물 코드에서 만기를 추출하여 잔여일 기반 롤오버 타이밍 결정.
 
 입력 형식:
-- positions: 선물 포지션 {symbol: {qty, current_price, market_code, ...}}
+- positions: 선물 포지션 (list[dict])
+  예: [{"symbol": "HSIZ25", "qty": 1, "current_price": 17500.0, "exchange": "HKEX", ...}, ...]
 - fields: {days_before_expiry, roll_strategy}
 """
 
@@ -131,20 +132,19 @@ def _get_next_contract(symbol: str) -> str:
 
 
 async def roll_management_condition(
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
     context: Any = None,
     **kwargs,
 ) -> dict:
     """롤오버 관리 조건 평가"""
-    if positions is None:
-        positions = {}
     if fields is None:
         fields = {}
 
     days_before_expiry = fields.get("days_before_expiry", 5)
     roll_strategy = fields.get("roll_strategy", "calendar")
 
+    positions = positions or []
     if not positions:
         return {
             "passed_symbols": [], "failed_symbols": [],
@@ -156,8 +156,11 @@ async def roll_management_condition(
     now = datetime.now()
     passed, failed, symbol_results = [], [], []
 
-    for symbol, pos_data in positions.items():
-        exchange = pos_data.get("market_code", "UNKNOWN")
+    for pos_data in positions:
+        symbol = pos_data.get("symbol")
+        if not symbol:
+            continue
+        exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
         sym_dict = {"symbol": symbol, "exchange": exchange}
 
         expiry = _parse_expiry_date(symbol)
@@ -181,7 +184,7 @@ async def roll_management_condition(
             "next_contract": next_contract,
             "roll_strategy": roll_strategy,
             "current_price": pos_data.get("current_price", 0),
-            "qty": pos_data.get("qty", 0),
+            "qty": pos_data.get("qty", pos_data.get("quantity", 0)),
         }
 
         # state 저장 (롤오버 이력)

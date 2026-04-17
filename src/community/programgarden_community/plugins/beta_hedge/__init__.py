@@ -7,7 +7,8 @@ BetaHedge (베타 헷지) 플러그인
 입력 형식:
 - data: 플랫 배열 [{symbol, exchange, date, close, ...}, ...]
   - 반드시 market_symbol (기본: SPY) 데이터가 포함되어야 함
-- positions (선택): {symbol: {current_price, qty, ...}} - 포트폴리오 베타 계산용
+- positions (선택): 보유 포지션 (list[dict]) — 포트폴리오 베타 계산용
+  예: [{"symbol": "AAPL", "current_price": 150.0, "qty": 100, ...}, ...]
 - fields: {lookback, market_symbol, target_beta, beta_tolerance, hedge_method, ...}
 """
 
@@ -141,11 +142,18 @@ async def beta_hedge_condition(
     fields: Dict[str, Any],
     field_mapping: Optional[Dict[str, str]] = None,
     symbols: Optional[List[Dict[str, str]]] = None,
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     context: Any = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """베타 헷지 조건 평가"""
+    # positions를 symbol → dict 매핑으로 변환 (list[dict] 컨벤션)
+    position_map: Dict[str, Dict[str, Any]] = {}
+    if positions:
+        for p in positions:
+            if isinstance(p, dict) and p.get("symbol"):
+                position_map[p["symbol"]] = p
+
     mapping = field_mapping or {}
     close_field = mapping.get("close_field", "close")
     date_field = mapping.get("date_field", "date")
@@ -259,14 +267,15 @@ async def beta_hedge_condition(
         }
 
     # 포트폴리오 베타 계산
-    if positions:
+    if position_map:
         total_value = 0
         weighted_beta = 0
         for bd in beta_data:
             sym = bd["symbol"]
-            if sym in positions:
-                pos = positions[sym]
-                pos_value = float(pos.get("current_price", 0)) * int(pos.get("qty", 0))
+            if sym in position_map:
+                pos = position_map[sym]
+                qty = int(pos.get("qty", pos.get("quantity", 0)))
+                pos_value = float(pos.get("current_price", 0)) * qty
                 weighted_beta += bd["beta"] * pos_value
                 total_value += pos_value
         portfolio_beta = weighted_beta / total_value if total_value > 0 else 0
@@ -333,9 +342,10 @@ async def beta_hedge_condition(
         sym_dict = {"symbol": symbol, "exchange": exchange}
 
         # 포트폴리오 내 비중 기반 기여도
-        if positions and symbol in positions:
-            pos = positions[symbol]
-            pos_value = float(pos.get("current_price", 0)) * int(pos.get("qty", 0))
+        if symbol in position_map:
+            pos = position_map[symbol]
+            qty = int(pos.get("qty", pos.get("quantity", 0)))
+            pos_value = float(pos.get("current_price", 0)) * qty
             beta_contribution = round(bd["beta"] * pos_value, 2) if pos_value > 0 else 0
         else:
             beta_contribution = round(bd["beta"] / len(beta_data), 4)
@@ -345,10 +355,11 @@ async def beta_hedge_condition(
             "beta": bd["beta"],
             "beta_contribution": beta_contribution,
         }
-        if positions and symbol in positions:
-            pos = positions[symbol]
+        if symbol in position_map:
+            pos = position_map[symbol]
+            qty = int(pos.get("qty", pos.get("quantity", 0)))
             result_info["weight"] = round(
-                float(pos.get("current_price", 0)) * int(pos.get("qty", 0)), 2
+                float(pos.get("current_price", 0)) * qty, 2
             )
 
         symbol_results.append(result_info)

@@ -36,17 +36,17 @@ class TestDrawdownProtectionPlugin:
 
     @pytest.fixture
     def positions_normal(self):
-        return {
-            "AAPL": {"pnl_rate": 5.0, "current_price": 157.5, "qty": 10, "market_code": "82"},
-            "MSFT": {"pnl_rate": -2.0, "current_price": 392.0, "qty": 5, "market_code": "82"},
-        }
+        return [
+            {"symbol": "AAPL", "pnl_rate": 5.0, "current_price": 157.5, "qty": 10, "market_code": "82"},
+            {"symbol": "MSFT", "pnl_rate": -2.0, "current_price": 392.0, "qty": 5, "market_code": "82"},
+        ]
 
     @pytest.fixture
     def positions_drawdown(self):
-        return {
-            "AAPL": {"pnl_rate": -12.5, "current_price": 131.25, "qty": 10, "market_code": "82"},
-            "MSFT": {"pnl_rate": -15.0, "current_price": 340.0, "qty": 5, "market_code": "82"},
-        }
+        return [
+            {"symbol": "AAPL", "pnl_rate": -12.5, "current_price": 131.25, "qty": 10, "market_code": "82"},
+            {"symbol": "MSFT", "pnl_rate": -15.0, "current_price": 340.0, "qty": 5, "market_code": "82"},
+        ]
 
     # === 스키마 테스트 ===
     def test_schema_id(self):
@@ -89,10 +89,10 @@ class TestDrawdownProtectionPlugin:
 
     @pytest.mark.asyncio
     async def test_partial_trigger(self):
-        positions = {
-            "AAPL": {"pnl_rate": -5.0, "current_price": 142.5, "qty": 10, "market_code": "82"},
-            "MSFT": {"pnl_rate": -15.0, "current_price": 340.0, "qty": 5, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "pnl_rate": -5.0, "current_price": 142.5, "qty": 10, "market_code": "82"},
+            {"symbol": "MSFT", "pnl_rate": -15.0, "current_price": 340.0, "qty": 5, "market_code": "82"},
+        ]
         result = await drawdown_protection_condition(
             positions=positions,
             fields={"max_drawdown_pct": -10.0},
@@ -102,7 +102,7 @@ class TestDrawdownProtectionPlugin:
 
     @pytest.mark.asyncio
     async def test_empty_positions(self):
-        result = await drawdown_protection_condition(positions={}, fields={})
+        result = await drawdown_protection_condition(positions=[], fields={})
         assert result["result"] is False
 
     @pytest.mark.asyncio

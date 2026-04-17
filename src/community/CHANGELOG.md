@@ -1,3 +1,13 @@
+## [1.12.1] - 2026-04-17
+### Fixed
+- position 기반 플러그인 10종의 `positions` 파라미터를 `list[dict]` 포맷으로 통일 (해외선물 RealAccountNode dict 출력 사용 시 `AttributeError: 'list' object has no attribute 'items'` 오류 수정)
+  - stop_loss, profit_target, partial_take_profit, drawdown_protection, max_position_limit, time_based_exit, dynamic_stop_loss, roll_management: `positions.items()` → list 순회
+  - var_cvar_monitor, beta_hedge: 내부에서 `positions` list를 symbol→dict 매핑으로 재구성 (`positions[symbol]` 접근 패턴 유지)
+- 각 플러그인 docstring `{symbol: {...}}` 예시를 `[{symbol, ...}, ...]` 로 업데이트
+- `exchange` 필드 우선 사용, `market_code` 폴백으로 정합성 개선
+### Dependencies
+- programgarden-core ^1.11.1
+
 ## [1.12.0] - 2026-04-14
 ### Added
 - `TelegramNode` 출력 포트 example shape 노출:

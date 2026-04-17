@@ -66,10 +66,10 @@ class TestBetaHedgePlugin:
 
     @pytest.fixture
     def mock_positions(self):
-        return {
-            "TSLA": {"current_price": 250.0, "qty": 100},
-            "JNJ": {"current_price": 165.0, "qty": 200},
-        }
+        return [
+            {"symbol": "TSLA", "current_price": 250.0, "qty": 100},
+            {"symbol": "JNJ", "current_price": 165.0, "qty": 200},
+        ]
 
     # === 스키마 테스트 ===
     def test_schema_id(self):

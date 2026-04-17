@@ -15,20 +15,20 @@ class TestMaxPositionLimitPlugin:
     @pytest.fixture
     def positions_normal(self):
         """정상 포지션 (3종목)"""
-        return {
-            "AAPL": {"current_price": 150, "qty": 10, "market_value": 1500, "market_code": "82"},
-            "MSFT": {"current_price": 400, "qty": 5, "market_value": 2000, "market_code": "82"},
-            "GOOG": {"current_price": 170, "qty": 8, "market_value": 1360, "market_code": "82"},
-        }
+        return [
+            {"symbol": "AAPL", "current_price": 150, "qty": 10, "market_value": 1500, "market_code": "82"},
+            {"symbol": "MSFT", "current_price": 400, "qty": 5, "market_value": 2000, "market_code": "82"},
+            {"symbol": "GOOG", "current_price": 170, "qty": 8, "market_value": 1360, "market_code": "82"},
+        ]
 
     @pytest.fixture
     def positions_heavy(self):
         """비중 쏠림 포지션"""
-        return {
-            "AAPL": {"current_price": 150, "qty": 100, "market_value": 15000, "market_code": "82"},
-            "MSFT": {"current_price": 400, "qty": 2, "market_value": 800, "market_code": "82"},
-            "GOOG": {"current_price": 170, "qty": 1, "market_value": 170, "market_code": "82"},
-        }
+        return [
+            {"symbol": "AAPL", "current_price": 150, "qty": 100, "market_value": 15000, "market_code": "82"},
+            {"symbol": "MSFT", "current_price": 400, "qty": 2, "market_value": 800, "market_code": "82"},
+            {"symbol": "GOOG", "current_price": 170, "qty": 1, "market_value": 170, "market_code": "82"},
+        ]
 
     @pytest.mark.asyncio
     async def test_within_limits(self, positions_normal):
@@ -91,15 +91,15 @@ class TestMaxPositionLimitPlugin:
     @pytest.mark.asyncio
     async def test_no_positions(self):
         """포지션 없음"""
-        result = await max_position_limit_condition(positions={}, fields={})
+        result = await max_position_limit_condition(positions=[], fields={})
         assert result["result"] is False
 
     @pytest.mark.asyncio
     async def test_market_value_fallback(self):
         """market_value 없을 때 current_price * qty"""
-        positions = {
-            "AAPL": {"current_price": 100, "qty": 10, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "current_price": 100, "qty": 10, "market_code": "82"},
+        ]
         result = await max_position_limit_condition(
             positions=positions,
             fields={"max_positions": 10},

@@ -7,7 +7,8 @@ PartialTakeProfit (분할 익절) 플러그인
 - 포지션 청산 시 상태 자동 삭제
 
 입력 형식:
-- positions: RealAccountNode의 positions 출력 {symbol: {pnl_rate, qty, ...}}
+- positions: RealAccountNode의 positions 출력 (list[dict])
+  예: [{"symbol": "AAPL", "pnl_rate": 6.5, "qty": 100, ...}, ...]
 - fields: {levels}
 - context: strategy_state 접근용 (선택)
 """
@@ -75,7 +76,7 @@ def _parse_levels(levels_raw: Any) -> List[Dict[str, float]]:
 
 
 async def partial_take_profit_condition(
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
     context: Any = None,
     **kwargs,
@@ -84,20 +85,20 @@ async def partial_take_profit_condition(
     분할 익절 조건 평가
 
     Args:
-        positions: {symbol: {pnl_rate, qty, ...}}
+        positions: RealAccountNode의 positions 출력 (list[dict])
+                   [{"symbol": "AAPL", "pnl_rate": 6.5, "qty": 100, ...}, ...]
         fields: {levels: JSON string or list}
         context: strategy_state 접근용
 
     Returns:
         passed_symbols, failed_symbols, symbol_results (sell_quantity, sell_pct, level_index 포함)
     """
-    if positions is None:
-        positions = {}
     if fields is None:
         fields = {}
 
     levels = _parse_levels(fields.get("levels", None))
 
+    positions = positions or []
     if not positions:
         return {
             "passed_symbols": [],
@@ -126,12 +127,15 @@ async def partial_take_profit_condition(
 
     passed, failed, symbol_results = [], [], []
 
-    for symbol, pos_data in positions.items():
+    for pos_data in positions:
+        symbol = pos_data.get("symbol")
+        if not symbol:
+            continue
         pnl_rate = pos_data.get("pnl_rate", 0)
         qty = pos_data.get("qty", pos_data.get("quantity", 0))
-        exchange = pos_data.get("market_code", "UNKNOWN")
+        exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
-        exchange_name = exchange_map.get(exchange, exchange)
+        exchange_name = exchange_map.get(str(exchange), exchange)
         sym_dict = {"symbol": symbol, "exchange": exchange_name}
 
         # 수량 0이면 청산 완료 → 상태 삭제

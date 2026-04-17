@@ -6,7 +6,8 @@ StopLoss와 차별: 고정% 대신 변동성(ATR)에 따라 손절 폭이 자동
 
 입력 형식 (POSITION Type B - data + positions 하이브리드):
 - data: 시계열 데이터 (ATR 계산용) [{symbol, exchange, date, close, high, low, ...}]
-- positions: 보유 포지션 {symbol: {current_price, avg_price, qty, ...}}
+- positions: 보유 포지션 (list[dict])
+  예: [{"symbol": "AAPL", "current_price": 150.0, "avg_price": 140.0, "qty": 100, ...}, ...]
 - fields: {atr_period, atr_multiplier, use_positions, trailing}
 """
 
@@ -105,7 +106,7 @@ def _calculate_atr(highs: List[float], lows: List[float], closes: List[float], p
 
 async def dynamic_stop_loss_condition(
     data: Optional[List[Dict[str, Any]]] = None,
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
     field_mapping: Optional[Dict[str, str]] = None,
     **kwargs,
@@ -113,8 +114,7 @@ async def dynamic_stop_loss_condition(
     """동적 손절 조건 평가"""
     if data is None:
         data = []
-    if positions is None:
-        positions = {}
+    positions = positions or []
     if fields is None:
         fields = {}
 
@@ -153,13 +153,16 @@ async def dynamic_stop_loss_condition(
 
     passed, failed, symbol_results = [], [], []
 
-    for symbol, pos_data in positions.items():
+    for pos_data in positions:
+        symbol = pos_data.get("symbol")
+        if not symbol:
+            continue
         current_price = pos_data.get("current_price", 0)
         avg_price = pos_data.get("avg_price", current_price)
-        exchange = pos_data.get("market_code", "UNKNOWN")
+        exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
 
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
-        exchange_name = exchange_map.get(exchange, exchange)
+        exchange_name = exchange_map.get(str(exchange), exchange)
         sym_dict = {"symbol": symbol, "exchange": exchange_name}
 
         # ATR 계산

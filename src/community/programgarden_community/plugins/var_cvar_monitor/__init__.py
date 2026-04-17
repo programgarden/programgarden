@@ -6,7 +6,8 @@ Value at Risk(VaR)와 Conditional VaR(CVaR, Expected Shortfall) 계산.
 
 입력 형식:
 - data: 플랫 배열 [{symbol, exchange, date, close, ...}, ...]
-- positions (선택): {symbol: {current_price, qty, ...}} - 달러 VaR 계산용
+- positions (선택): 보유 포지션 (list[dict]) — 달러 VaR 계산용
+  예: [{"symbol": "AAPL", "current_price": 150.0, "qty": 100, ...}, ...]
 - fields: {lookback, confidence_level, var_method, time_horizon, alert_threshold_pct, action}
 """
 
@@ -129,11 +130,18 @@ async def var_cvar_monitor_condition(
     fields: Dict[str, Any],
     field_mapping: Optional[Dict[str, str]] = None,
     symbols: Optional[List[Dict[str, str]]] = None,
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     context: Any = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """VaR/CVaR 모니터 조건 평가"""
+    # positions를 symbol → dict 매핑으로 변환 (list[dict] 컨벤션)
+    position_map: Dict[str, Dict[str, Any]] = {}
+    if positions:
+        for p in positions:
+            if isinstance(p, dict) and p.get("symbol"):
+                position_map[p["symbol"]] = p
+
     mapping = field_mapping or {}
     close_field = mapping.get("close_field", "close")
     date_field = mapping.get("date_field", "date")
@@ -240,10 +248,10 @@ async def var_cvar_monitor_condition(
         }
 
         # positions가 있으면 달러 VaR 계산
-        if positions and symbol in positions:
-            pos = positions[symbol]
+        if symbol in position_map:
+            pos = position_map[symbol]
             current_price = float(pos.get("current_price", 0))
-            qty = int(pos.get("qty", 0))
+            qty = int(pos.get("qty", pos.get("quantity", 0)))
             position_value = current_price * qty
             result_info["var_dollar"] = round(position_value * var_nd, 2)
             result_info["position_value"] = round(position_value, 2)
@@ -255,8 +263,8 @@ async def var_cvar_monitor_condition(
             if action == "exit_all":
                 sym_dict["sell_quantity"] = "all"
             elif action == "reduce_position":
-                if positions and symbol in positions:
-                    qty = int(positions[symbol].get("qty", 0))
+                if symbol in position_map:
+                    qty = int(position_map[symbol].get("qty", position_map[symbol].get("quantity", 0)))
                     sym_dict["sell_quantity"] = max(1, qty // 2)
             passed.append(sym_dict)
 

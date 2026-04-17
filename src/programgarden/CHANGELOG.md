@@ -1,3 +1,20 @@
+## [1.20.1] - 2026-04-17
+### Fixed
+- 해외선물 RealAccountNode `on_position_change` 콜백의 `serialized_positions` 직렬화를 dict에서 list로 통일 (해외주식/국내주식 producer와 동일 포맷)
+  - position 기반 ConditionNode 플러그인이 `AttributeError: 'list' object has no attribute 'items'` 로 실패하던 버그 해결
+  - `quantity`/`price` 필드를 NewOrderNode 호환 형식으로 추가
+- 초기 데이터 debug 로그의 `result.get('positions', {}).items()` → list 순회로 수정 (해외주식/해외선물/국내주식 3곳)
+- `_fetch_overseas_stock`의 positions dict-keyed 접근을 list 기반 `position_market_code` 매핑으로 치환 (HistoricalDataNode)
+- `tools/job_tools.py` `get_job_state()` snapshot의 positions 기본값 `{}` → `[]`
+
+### Changed
+- `binding_validator.py`: `position_data` 타입 검증 엄격화 — `isinstance(v, (dict, list))` → `isinstance(v, list) and all(isinstance(i, dict) for i in v)`
+- `examples/dynamic_plugins/` 예제 3종 (simple_stop_loss, simple_profit_target, simple_trailing_stop): positions list 순회로 변경
+
+### Dependencies
+- programgarden-core ^1.11.1
+- programgarden-community ^1.12.1
+
 ## [1.20.0] - 2026-04-16
 
 ### Changed

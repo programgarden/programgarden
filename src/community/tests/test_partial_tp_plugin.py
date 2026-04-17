@@ -37,9 +37,9 @@ class TestPartialTakeProfitPlugin:
         tracker = MockRiskTracker()
         context = MockContext(tracker)
 
-        positions = {
-            "AAPL": {"pnl_rate": 6.0, "qty": 100, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "pnl_rate": 6.0, "qty": 100, "market_code": "82"},
+        ]
         result = await partial_take_profit_condition(
             positions=positions,
             fields={"levels": [{"pnl_pct": 5, "sell_pct": 50}, {"pnl_pct": 10, "sell_pct": 30}]},
@@ -55,9 +55,9 @@ class TestPartialTakeProfitPlugin:
     @pytest.mark.asyncio
     async def test_no_level_triggered(self):
         """수익률 부족으로 미트리거"""
-        positions = {
-            "AAPL": {"pnl_rate": 3.0, "qty": 100, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "pnl_rate": 3.0, "qty": 100, "market_code": "82"},
+        ]
         result = await partial_take_profit_condition(
             positions=positions,
             fields={"levels": [{"pnl_pct": 5, "sell_pct": 50}]},
@@ -73,9 +73,9 @@ class TestPartialTakeProfitPlugin:
         tracker._state["partial_tp.AAPL.original_qty"] = 100
         context = MockContext(tracker)
 
-        positions = {
-            "AAPL": {"pnl_rate": 6.0, "qty": 50, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "pnl_rate": 6.0, "qty": 50, "market_code": "82"},
+        ]
         result = await partial_take_profit_condition(
             positions=positions,
             fields={"levels": [{"pnl_pct": 5, "sell_pct": 50}, {"pnl_pct": 10, "sell_pct": 30}]},
@@ -92,9 +92,9 @@ class TestPartialTakeProfitPlugin:
         tracker._state["partial_tp.AAPL.original_qty"] = 100
         context = MockContext(tracker)
 
-        positions = {
-            "AAPL": {"pnl_rate": 12.0, "qty": 50, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "pnl_rate": 12.0, "qty": 50, "market_code": "82"},
+        ]
         result = await partial_take_profit_condition(
             positions=positions,
             fields={"levels": [{"pnl_pct": 5, "sell_pct": 50}, {"pnl_pct": 10, "sell_pct": 30}]},
@@ -113,9 +113,9 @@ class TestPartialTakeProfitPlugin:
         tracker._state["partial_tp.AAPL.original_qty"] = 100
         context = MockContext(tracker)
 
-        positions = {
-            "AAPL": {"pnl_rate": 0, "qty": 0, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "pnl_rate": 0, "qty": 0, "market_code": "82"},
+        ]
         await partial_take_profit_condition(positions=positions, fields={}, context=context)
         assert "partial_tp.AAPL.completed_levels" not in tracker._state
         assert "partial_tp.AAPL.original_qty" not in tracker._state
@@ -123,9 +123,9 @@ class TestPartialTakeProfitPlugin:
     @pytest.mark.asyncio
     async def test_without_context(self):
         """context 없이 실행 (상태 관리 없음)"""
-        positions = {
-            "AAPL": {"pnl_rate": 8.0, "qty": 100, "market_code": "82"},
-        }
+        positions = [
+            {"symbol": "AAPL", "pnl_rate": 8.0, "qty": 100, "market_code": "82"},
+        ]
         result = await partial_take_profit_condition(
             positions=positions,
             fields={"levels": [{"pnl_pct": 5, "sell_pct": 50}]},
@@ -135,13 +135,13 @@ class TestPartialTakeProfitPlugin:
     @pytest.mark.asyncio
     async def test_empty_positions(self):
         """빈 포지션"""
-        result = await partial_take_profit_condition(positions={}, fields={})
+        result = await partial_take_profit_condition(positions=[], fields={})
         assert result["result"] is False
 
     @pytest.mark.asyncio
     async def test_levels_json_string(self):
         """levels를 JSON 문자열로 전달"""
-        positions = {"AAPL": {"pnl_rate": 6.0, "qty": 100, "market_code": "82"}}
+        positions = [{"symbol": "AAPL", "pnl_rate": 6.0, "qty": 100, "market_code": "82"}]
         result = await partial_take_profit_condition(
             positions=positions,
             fields={"levels": '[{"pnl_pct": 5, "sell_pct": 50}]'},

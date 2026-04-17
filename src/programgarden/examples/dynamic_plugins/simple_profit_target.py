@@ -2,14 +2,14 @@
 Dynamic Plugin 예제: SimpleProfitTarget
 
 익절 플러그인. 보유 종목 수익률이 목표에 도달하면 매도 신호 발생.
-POSITION 카테고리 — positions 딕셔너리 사용.
+POSITION 카테고리 — positions 배열(list[dict]) 사용.
 
 워크플로우 사용:
     {"type": "ConditionNode", "plugin": "SimpleProfitTarget",
      "positions": "{{ nodes.account.positions }}"}
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
@@ -33,24 +33,26 @@ SCHEMA = PluginSchema(
 
 
 async def simple_profit_target_condition(
-    positions: Optional[Dict[str, Any]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> dict:
-    if positions is None:
-        positions = {}
     if fields is None:
         fields = {}
 
     target_pct = fields.get("target_percent", 10.0)
 
+    positions = positions or []
     if not positions:
         return {"passed_symbols": [], "failed_symbols": [], "symbol_results": [],
                 "values": [], "result": False, "error": "positions 데이터가 없습니다."}
 
     passed, failed, results = [], [], []
 
-    for symbol, pos in positions.items():
+    for pos in positions:
+        symbol = pos.get("symbol")
+        if not symbol:
+            continue
         pnl_rate = pos.get("pnl_rate", 0)
         exchange = pos.get("exchange", "UNKNOWN")
         sym_dict = {"symbol": symbol, "exchange": exchange}

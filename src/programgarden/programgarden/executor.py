@@ -4139,11 +4139,12 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             logger.debug(f"{'='*60}")
             logger.debug(f"보유 종목: {result.get('symbols', [])}")
             logger.debug(f"잔고: {result.get('balance', {})}")
-            for sym, pos in result.get('positions', {}).items():
-                logger.debug(f"  - {sym}: 수량={pos.get('qty')}, 평단가=${pos.get('avg_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 수익률={pos.get('pnl_rate'):.2f}%")
+            for pos in result.get('positions', []):
+                sym = pos.get('symbol', '')
+                logger.debug(f"  - {sym}: 수량={pos.get('qty')}, 평단가=${pos.get('avg_price', 0):.2f}, 현재가=${pos.get('current_price', 0):.2f}, 수익률={pos.get('pnl_rate', 0):.2f}%")
             logger.debug(f"{'='*60}\n")
-            
-            context.log("info", f"Initial account data loaded: {len(result.get('positions', {}))} positions", node_id)
+
+            context.log("info", f"Initial account data loaded: {len(result.get('positions', []))} positions", node_id)
             return result
             
         except Exception as e:
@@ -4221,8 +4222,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             def on_position_change(positions):
                 if context.is_shutdown:
                     return
-                # 포지션 데이터를 직렬화 가능한 형태로 변환
-                serialized_positions = {}
+                # 포지션 데이터를 list 형태로 변환 (NewOrderNode 호환, position_data 컨벤션)
+                serialized_positions = []
                 for sym, pos in positions.items():
                     # realtime_pnl이 None이 아닌 경우만 안전하게 접근
                     realtime_pnl = getattr(pos, 'realtime_pnl', None)
@@ -4231,23 +4232,26 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                         pnl_rate = float(getattr(realtime_pnl, 'pnl_rate', 0) or 0)
                     elif hasattr(pos, 'pnl_rate') and pos.pnl_rate is not None:
                         pnl_rate = float(pos.pnl_rate)
-                    
+
                     is_long = getattr(pos, 'is_long', True)
-                    serialized_positions[sym] = {
+                    quantity = int(getattr(pos, 'quantity', 0))
+                    current_price = float(getattr(pos, 'current_price', 0))
+                    serialized_positions.append({
                         "symbol": sym,
                         "exchange": getattr(pos, 'exchange_code', ''),
                         "name": getattr(pos, 'symbol_name', sym),
                         "direction": "long" if is_long else "short",
                         "close_side": "sell" if is_long else "buy",
-                        "qty": int(getattr(pos, 'quantity', 0)),
-                        "quantity": int(getattr(pos, 'quantity', 0)),  # NewOrderNode 호환
+                        "qty": quantity,
+                        "quantity": quantity,  # NewOrderNode 호환
+                        "price": current_price,  # NewOrderNode 호환
                         "entry_price": float(getattr(pos, 'entry_price', 0)),
-                        "current_price": float(getattr(pos, 'current_price', 0)),
+                        "current_price": current_price,
                         "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
                         "pnl_rate": pnl_rate,
                         "currency": getattr(pos, 'currency', 'USD'),
                         "product": "overseas_futures",  # 상품 유형
-                    }
+                    })
                 
                 # 컨텍스트에 최신 데이터 저장
                 context.set_output(node_id, "positions", serialized_positions)
@@ -4326,7 +4330,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             result = self._get_overseas_futures_tracker_data(tracker)
             
             # 데이터가 비어있는지 확인 (에러 없이 정상 케이스)
-            positions_count = len(result.get('positions', {}))
+            positions_count = len(result.get('positions', []))
             if positions_count == 0:
                 context.log("info", "ℹ️ 해외선물 보유종목이 없습니다. (포지션이 없거나 장 마감 시간일 수 있음)", node_id)
             
@@ -4346,13 +4350,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             logger.debug(f"{'='*60}")
             logger.debug(f"보유 종목: {result.get('symbols', [])}")
             logger.debug(f"잔고: {result.get('balance', {})}")
-            for sym, pos in result.get('positions', {}).items():
-                direction = '롱' if pos.get('is_long') else '숏'
-                logger.debug(f"  - {sym} ({direction}): 수량={pos.get('qty')}, 진입가=${pos.get('entry_price'):.2f}, 현재가=${pos.get('current_price'):.2f}, 손익=${pos.get('pnl_amount'):.2f}")
+            for pos in result.get('positions', []):
+                sym = pos.get('symbol', '')
+                direction = '롱' if pos.get('direction') == 'long' else '숏'
+                logger.debug(f"  - {sym} ({direction}): 수량={pos.get('quantity')}, 진입가=${pos.get('entry_price', 0):.2f}, 현재가=${pos.get('current_price', 0):.2f}, 손익=${pos.get('pnl_amount', 0):.2f}")
             logger.debug(f"미체결: {list(result.get('open_orders', {}).keys())}")
             logger.debug(f"{'='*60}\n")
-            
-            context.log("info", f"Initial futures data loaded: {len(result.get('positions', {}))} positions", node_id)
+
+            context.log("info", f"Initial futures data loaded: {len(result.get('positions', []))} positions", node_id)
             return result
             
         except Exception as e:
@@ -4475,7 +4480,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 outputs=result,
             ))
 
-            context.log("info", f"Korea stock initial data: {len(result.get('positions', {}))} positions", node_id)
+            context.log("info", f"Korea stock initial data: {len(result.get('positions', []))} positions", node_id)
             return result
 
         except Exception as e:
@@ -8304,14 +8309,14 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 return self._empty_historical_result(symbols, f"i18n:errors.LS_LOGIN_FAILED|error={error}")
             
             api = ls.overseas_stock()
-            
+
             # interval → gubun 변환 (g3204: 2=일, 3=주, 4=월, 5=년)
             gubun_map = {"1d": "2", "1w": "3", "1M": "4", "1Y": "5"}
             gubun = gubun_map.get(interval, "2")
-            
+
             # 거래소 코드 매핑 (역변환용)
             exchcd_to_exchange = {"82": "NASDAQ", "81": "NYSE", "83": "AMEX"}
-            
+
             # symbols_raw에서 exchange 정보 추출
             symbol_to_exchange = {}
             if symbols_raw:
@@ -8320,17 +8325,24 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                         sym = entry.get("symbol", "")
                         exch = entry.get("exchange", "NASDAQ")
                         symbol_to_exchange[sym] = exch
-            
+
+            # positions(list[dict])에서 symbol → market_code 매핑 구성
+            position_market_code: Dict[str, str] = {}
+            if positions:
+                iterator = positions.values() if isinstance(positions, dict) else positions
+                for pos in iterator:
+                    if isinstance(pos, dict):
+                        sym = pos.get("symbol")
+                        mc = pos.get("market_code") or ""
+                        if sym and mc:
+                            position_market_code[sym] = mc
+
             result_list = []  # [{symbol, exchange, time_series: [...]}, ...]
-            
+
             for symbol in symbols:
                 try:
                     # positions에서 market_code 가져오기 (LS증권 거래소 코드: 81=NYSE/AMEX, 82=NASDAQ)
-                    exchcd = "82"  # 기본값 NASDAQ
-                    if positions and symbol in positions:
-                        pos_market_code = positions[symbol].get("market_code", "")
-                        if pos_market_code:
-                            exchcd = pos_market_code
+                    exchcd = position_market_code.get(symbol) or "82"  # 기본값 NASDAQ
                     
                     # symbols_raw에서 exchange 정보 가져오기 (우선순위: symbols_raw > exchcd 변환)
                     exchange = symbol_to_exchange.get(symbol) or exchcd_to_exchange.get(exchcd, "NASDAQ")
