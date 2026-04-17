@@ -32,9 +32,12 @@
 {
   "id": "broker",
   "type": "OverseasStockBrokerNode",
-  "credential_id": "my-broker"
+  "credential_id": "my-broker",
+  "paper_trading": false
 }
 ```
+
+> **주의**: `OverseasStockBrokerNode`는 `paper_trading: false`를 반드시 명시해야 합니다. LS증권이 해외주식 모의투자를 지원하지 않기 때문에 생략 시 기본값(`true`)으로 인식되어 연결이 실패합니다.
 
 | 필드 | 필수 | 설명 |
 |------|:----:|------|
@@ -254,17 +257,35 @@ flowchart LR
 ```json
 {
   "nodes": [
-    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-broker"},
+    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-broker", "paper_trading": false},
+    {"id": "account", "type": "OverseasStockAccountNode"},
     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}]},
-    {"id": "history", "type": "OverseasStockHistoricalDataNode", "interval": "1d"},
-    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"}},
-    {"id": "order", "type": "OverseasStockNewOrderNode", "plugin": "MarketOrder", "fields": {"side": "buy", "amount_type": "percent_balance", "amount": 10}}
+    {"id": "history", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ item }}", "interval": "1d"},
+    {
+      "id": "rsi", "type": "ConditionNode", "plugin": "RSI",
+      "items": {
+        "from": "{{ nodes.history.value.time_series }}",
+        "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}
+      },
+      "fields": {"period": 14, "threshold": 30, "direction": "below"}
+    },
+    {"id": "marketData", "type": "OverseasStockMarketDataNode", "symbol": "{{ item }}"},
+    {
+      "id": "sizing", "type": "PositionSizingNode",
+      "symbol": "{{ item }}", "balance": "{{ nodes.account.balance }}",
+      "market_data": "{{ nodes.marketData.value }}",
+      "method": "fixed_percent", "max_percent": 10
+    },
+    {"id": "order", "type": "OverseasStockNewOrderNode", "side": "buy", "order_type": "market", "order": "{{ nodes.sizing.order }}"}
   ],
   "edges": [
     {"from": "broker", "to": "watchlist"},
     {"from": "watchlist", "to": "history"},
     {"from": "history", "to": "rsi"},
-    {"from": "rsi", "to": "order"}
+    {"from": "rsi", "to": "marketData"},
+    {"from": "marketData", "to": "sizing"},
+    {"from": "account", "to": "sizing"},
+    {"from": "sizing", "to": "order"}
   ],
   "credentials": [
     {

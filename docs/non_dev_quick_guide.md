@@ -55,7 +55,8 @@ flowchart LR
     {
       "id": "broker",
       "type": "OverseasStockBrokerNode",
-      "credential_id": "my-broker"
+      "credential_id": "my-broker",
+      "paper_trading": false
     },
     {
       "id": "watchlist",
@@ -67,13 +68,22 @@ flowchart LR
     {
       "id": "history",
       "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
       "interval": "1d"
     },
     {
       "id": "rsi",
       "type": "ConditionNode",
       "plugin": "RSI",
-      "data": "{{ nodes.history.values }}",
+      "items": {
+        "from": "{{ nodes.history.value.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
       "fields": {
         "period": 14,
         "threshold": 30,
@@ -81,21 +91,39 @@ flowchart LR
       }
     },
     {
+      "id": "marketData",
+      "type": "OverseasStockMarketDataNode",
+      "symbol": "{{ item }}"
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode"
+    },
+    {
+      "id": "sizing",
+      "type": "PositionSizingNode",
+      "symbol": "{{ item }}",
+      "balance": "{{ nodes.account.balance }}",
+      "market_data": "{{ nodes.marketData.value }}",
+      "method": "fixed_percent",
+      "max_percent": 10
+    },
+    {
       "id": "order",
       "type": "OverseasStockNewOrderNode",
-      "plugin": "MarketOrder",
-      "fields": {
-        "side": "buy",
-        "amount_type": "percent_balance",
-        "amount": 10
-      }
+      "side": "buy",
+      "order_type": "market",
+      "order": "{{ nodes.sizing.order }}"
     }
   ],
   "edges": [
     {"from": "broker", "to": "watchlist"},
     {"from": "watchlist", "to": "history"},
     {"from": "history", "to": "rsi"},
-    {"from": "rsi", "to": "order"}
+    {"from": "rsi", "to": "marketData"},
+    {"from": "marketData", "to": "sizing"},
+    {"from": "account", "to": "sizing"},
+    {"from": "sizing", "to": "order"}
   ],
   "credentials": [
     {
@@ -112,13 +140,19 @@ flowchart LR
 
 **무슨 일이 일어나나요?**
 
-1. **OverseasStockBrokerNode**: LS증권에 로그인합니다
+1. **OverseasStockBrokerNode**: LS증권 실계좌에 로그인합니다 (`paper_trading: false` 필수)
 2. **WatchlistNode**: AAPL을 매매 대상으로 지정합니다
 3. **OverseasStockHistoricalDataNode**: AAPL의 최근 주가 데이터를 가져옵니다
-4. **ConditionNode (RSI)**: RSI가 30 이하인지 확인합니다
-5. **OverseasStockNewOrderNode (MarketOrder)**: 조건이 맞으면 예수금의 10%로 시장가 매수합니다
+4. **ConditionNode (RSI)**: `items.from` 으로 시계열을 순회하며 RSI가 30 이하인지 확인합니다
+5. **OverseasStockMarketDataNode**: 현재가 정보를 조회합니다
+6. **PositionSizingNode**: 잔고와 현재가로 주문 수량을 계산하여 `order: {symbol, exchange, quantity, price}`를 출력합니다
+7. **OverseasStockNewOrderNode**: `PositionSizingNode.order`를 바인딩하여 시장가 매수를 실행합니다
 
-> **주의**: 실제 돈이 사용됩니다! 처음에는 반드시 소액(1~2만원)으로 테스트하세요.
+> **주의**: 실제 돈이 사용됩니다! 처음에는 반드시 소액으로 테스트하세요.
+
+> **⚠️ ConditionNode는 `items` 필드 필수**: 구 버전 가이드의 `data: "{{ nodes.history.values }}"` 패턴은 더 이상 지원되지 않습니다. 반드시 `items: {from, extract}` 형태를 사용해야 하며, 생략 시 런타임 로그에 `ConditionNode 'xxx': items가 설정되지 않았습니다. items { from, extract } 형태로 추가하세요` 에러가 발생하고 플러그인이 실행되지 않습니다.
+
+> **⚠️ 주문 노드에는 플러그인을 쓰지 않습니다**: `MarketOrder` / `LimitOrder` 플러그인은 실제로 존재하지 않습니다. `side` / `order_type` / `order` 필드를 직접 사용하고, 수량은 `PositionSizingNode`에서 계산하여 `order` 필드에 바인딩하세요.
 
 ---
 
@@ -149,11 +183,18 @@ flowchart LR
 {
   "id": "broker",
   "type": "OverseasStockBrokerNode",
-  "credential_id": "my-broker"
+  "credential_id": "my-broker",
+  "paper_trading": false
 }
 ```
 
-> **주의**: 해외선물을 거래하려면 `OverseasFuturesBrokerNode`를 사용하세요.
+> **⚠️ `OverseasStockBrokerNode`는 `paper_trading: false` 필수**: Executor의 `paper_trading` 기본값이 `true`이기 때문에, 이 필드를 생략하면 기본값으로 처리되어 연결이 즉시 거부됩니다 (LS증권 해외주식은 실거래만 제공). 연결 실패 시 시세·계좌·주문 등 후속 노드 전부가 깨지므로 **반드시 `false`로 명시**하세요.
+>
+> | 노드 | `paper_trading` | 의미 |
+> |------|-----------------|------|
+> | `OverseasStockBrokerNode` | `false` **필수 명시** | 실거래 연결 |
+> | `OverseasFuturesBrokerNode` | `true` / `false` | `true` → 모의투자, `false` → 실거래 |
+> | `KoreaStockBrokerNode` | (지정 불가) | 내부적으로 항상 `false` |
 
 ### WatchlistNode (관심 종목)
 
@@ -186,8 +227,10 @@ flowchart LR
 }
 ```
 
-| cron 예시 | 의미 |
-|-----------|------|
+> **cron 포맷**: ProgramGarden 문서는 **6-field (`초 분 시 일 월 요일`)** 로 통일합니다. 5-field(`분 시 일 월 요일`)도 지원되지만 혼동 방지를 위해 항상 초 필드를 명시하세요. 자세한 내용은 [스케줄 가이드](schedule_guide.md)를 참고하세요.
+
+| cron 예시 (6-field) | 의미 |
+|---------------------|------|
 | `0 30 9 * * mon-fri` | 평일 뉴욕시간 9:30 (정규장 시작) |
 | `0 */15 9-16 * * mon-fri` | 평일 9~16시, 15분마다 |
 | `0 0 10 * * mon-fri` | 평일 뉴욕시간 10:00 |
@@ -229,7 +272,15 @@ flowchart LR
   "id": "rsi",
   "type": "ConditionNode",
   "plugin": "RSI",
-  "data": "{{ nodes.history.values }}",
+  "items": {
+    "from": "{{ nodes.history.value.time_series }}",
+    "extract": {
+      "symbol": "{{ item.symbol }}",
+      "exchange": "{{ item.exchange }}",
+      "date": "{{ row.date }}",
+      "close": "{{ row.close }}"
+    }
+  },
   "fields": {
     "period": 14,
     "threshold": 30,
@@ -239,8 +290,11 @@ flowchart LR
 ```
 
 - `plugin`: 사용할 분석 전략 ([종목조건 플러그인 목록](strategies/stock_condition.md))
-- `fields`: 전략에 필요한 설정값
-- `data`: 분석할 시세 데이터
+- `items.from`: 순회할 배열 지정 (보통 `HistoricalDataNode`의 `value.time_series`)
+- `items.extract`: 각 행(row)에서 추출할 필드 정의 — `row.date`, `row.close` 등으로 접근
+- `fields`: 플러그인별 파라미터
+
+> **주의**: 구 버전의 `data: "{{ nodes.history.values }}"` 형태는 더 이상 동작하지 않습니다. `items: {from, extract}`로 교체하세요.
 
 ### LogicNode (조건 조합)
 
@@ -265,24 +319,39 @@ flowchart LR
 
 ### NewOrderNode (신규 주문)
 
-조건이 맞으면 주문을 냅니다.
+조건이 맞으면 주문을 냅니다. **주문 노드는 플러그인을 사용하지 않고**, `PositionSizingNode`에서 계산한 `order`를 바인딩합니다.
 
 ```json
-{
-  "id": "order",
-  "type": "OverseasStockNewOrderNode",
-  "plugin": "MarketOrder",
-  "fields": {
+[
+  {
+    "id": "marketData",
+    "type": "OverseasStockMarketDataNode",
+    "symbol": "{{ item }}"
+  },
+  {
+    "id": "sizing",
+    "type": "PositionSizingNode",
+    "symbol": "{{ item }}",
+    "balance": "{{ nodes.account.balance }}",
+    "market_data": "{{ nodes.marketData.value }}",
+    "method": "fixed_percent",
+    "max_percent": 10
+  },
+  {
+    "id": "order",
+    "type": "OverseasStockNewOrderNode",
     "side": "buy",
-    "amount_type": "percent_balance",
-    "amount": 10
+    "order_type": "market",
+    "order": "{{ nodes.sizing.order }}"
   }
-}
+]
 ```
 
-- `plugin`: 주문 방식 ([주문 플러그인 목록](strategies/order_condition.md))
 - `side`: `buy`(매수) 또는 `sell`(매도)
-- `amount_type`: `percent_balance`(예수금 비율), `fixed`(고정 수량), `all`(전량)
+- `order_type`: `market`(시장가) 또는 `limit`(지정가)
+- `order`: `{symbol, exchange, quantity, price?}` 형태. `PositionSizingNode.order`를 바인딩하는 것이 표준 패턴
+
+> **⚠️ 참고**: 구 버전의 `plugin: "MarketOrder"` + `amount_type`/`amount` 패턴은 실제로 구현되지 않은 예제였습니다. 더 자세한 사용법은 [주문 노드 사용법](strategies/order_condition.md)을 참고하세요.
 
 ---
 
@@ -314,29 +383,65 @@ flowchart LR
 ```json
 {
   "nodes": [
-    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-broker"},
+    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-broker", "paper_trading": false},
+    {"id": "account", "type": "OverseasStockAccountNode"},
     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "NVDA"}]},
-    {"id": "history", "type": "OverseasStockHistoricalDataNode", "interval": "1d"},
+    {"id": "history", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ item }}", "interval": "1d"},
     {
       "id": "rsi",
       "type": "ConditionNode",
       "plugin": "RSI",
-      "data": "{{ nodes.history.values }}",
+      "items": {
+        "from": "{{ nodes.history.value.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
       "fields": {"period": 14, "threshold": 30, "direction": "below"}
     },
     {
       "id": "macd",
       "type": "ConditionNode",
       "plugin": "MACD",
-      "data": "{{ nodes.history.values }}",
+      "items": {
+        "from": "{{ nodes.history.value.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
       "fields": {"signal_type": "bullish_cross"}
     },
-    {"id": "logic", "type": "LogicNode", "operator": "all"},
+    {
+      "id": "logic",
+      "type": "LogicNode",
+      "operator": "all",
+      "conditions": [
+        {"is_condition_met": "{{ nodes.rsi.result }}", "passed_symbols": "{{ nodes.rsi.passed_symbols }}"},
+        {"is_condition_met": "{{ nodes.macd.result }}", "passed_symbols": "{{ nodes.macd.passed_symbols }}"}
+      ]
+    },
+    {"id": "marketData", "type": "OverseasStockMarketDataNode", "symbol": "{{ item }}"},
+    {
+      "id": "sizing",
+      "type": "PositionSizingNode",
+      "symbol": "{{ item }}",
+      "balance": "{{ nodes.account.balance }}",
+      "market_data": "{{ nodes.marketData.value }}",
+      "method": "fixed_percent",
+      "max_percent": 10
+    },
     {
       "id": "order",
       "type": "OverseasStockNewOrderNode",
-      "plugin": "MarketOrder",
-      "fields": {"side": "buy", "amount_type": "percent_balance", "amount": 10}
+      "side": "buy",
+      "order_type": "market",
+      "order": "{{ nodes.sizing.order }}"
     }
   ],
   "edges": [
@@ -346,7 +451,10 @@ flowchart LR
     {"from": "history", "to": "macd"},
     {"from": "rsi", "to": "logic"},
     {"from": "macd", "to": "logic"},
-    {"from": "logic", "to": "order"}
+    {"from": "logic", "to": "marketData"},
+    {"from": "marketData", "to": "sizing"},
+    {"from": "account", "to": "sizing"},
+    {"from": "sizing", "to": "order"}
   ],
   "credentials": [
     {
@@ -368,13 +476,44 @@ flowchart LR
 ```json
 {
   "nodes": [
-    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-broker"},
+    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-broker", "paper_trading": false},
     {"id": "schedule", "type": "ScheduleNode", "cron": "0 0 10 * * mon-fri", "timezone": "America/New_York"},
     {"id": "tradingHours", "type": "TradingHoursFilterNode", "start": "09:30", "end": "16:00", "timezone": "America/New_York", "days": ["mon", "tue", "wed", "thu", "fri"]},
+    {"id": "account", "type": "OverseasStockAccountNode"},
     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}]},
-    {"id": "history", "type": "OverseasStockHistoricalDataNode", "interval": "1d"},
-    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.history.values }}", "fields": {"period": 14, "threshold": 30, "direction": "below"}},
-    {"id": "order", "type": "OverseasStockNewOrderNode", "plugin": "MarketOrder", "fields": {"side": "buy", "amount_type": "percent_balance", "amount": 10}}
+    {"id": "history", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ item }}", "interval": "1d"},
+    {
+      "id": "rsi",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ nodes.history.value.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {"period": 14, "threshold": 30, "direction": "below"}
+    },
+    {"id": "marketData", "type": "OverseasStockMarketDataNode", "symbol": "{{ item }}"},
+    {
+      "id": "sizing",
+      "type": "PositionSizingNode",
+      "symbol": "{{ item }}",
+      "balance": "{{ nodes.account.balance }}",
+      "market_data": "{{ nodes.marketData.value }}",
+      "method": "fixed_percent",
+      "max_percent": 10
+    },
+    {
+      "id": "order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "market",
+      "order": "{{ nodes.sizing.order }}"
+    }
   ],
   "edges": [
     {"from": "schedule", "to": "tradingHours"},
@@ -382,7 +521,10 @@ flowchart LR
     {"from": "broker", "to": "watchlist"},
     {"from": "watchlist", "to": "history"},
     {"from": "history", "to": "rsi"},
-    {"from": "rsi", "to": "order"}
+    {"from": "rsi", "to": "marketData"},
+    {"from": "marketData", "to": "sizing"},
+    {"from": "account", "to": "sizing"},
+    {"from": "sizing", "to": "order"}
   ],
   "credentials": [
     {

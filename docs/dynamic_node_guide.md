@@ -640,7 +640,7 @@ async def execute(self, context) -> Dict[str, Any]:
 ```json
 {
     "nodes": [
-        {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "cred-1"},
+        {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "cred-1", "paper_trading": false},
         {"id": "historical", "type": "OverseasStockHistoricalDataNode"},
         {"id": "custom_rsi", "type": "Dynamic_RSI", "period": 14}
     ],
