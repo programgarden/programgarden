@@ -4,9 +4,9 @@ ProgramGarden Core - 노드 타입 정의
 68개 노드 타입을 카테고리로 분류:
 - infra (5): StartNode, ThrottleNode, SplitNode, AggregateNode, IfNode
 - broker (3): OverseasStockBrokerNode, OverseasFuturesBrokerNode, KoreaStockBrokerNode
-- market (15): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
+- market (16): OverseasStockMarketDataNode, OverseasStockFundamentalNode, OverseasFuturesMarketDataNode, OverseasStockHistoricalDataNode, OverseasFuturesHistoricalDataNode,
               OverseasStockRealMarketDataNode, OverseasFuturesRealMarketDataNode, OverseasStockSymbolQueryNode, OverseasFuturesSymbolQueryNode,
-              WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode
+              WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, MarketStatusNode
 - account (6): OverseasStockAccountNode, OverseasFuturesAccountNode, OverseasStockRealAccountNode, OverseasFuturesRealAccountNode,
               OverseasStockRealOrderEventNode, OverseasFuturesRealOrderEventNode
 - trigger (2): ScheduleNode, TradingHoursFilterNode
@@ -50,6 +50,8 @@ from programgarden_core.nodes.symbol_futures import OverseasFuturesSymbolQueryNo
 from programgarden_core.nodes.data import SQLiteNode, HTTPRequestNode, FieldMappingNode
 # Market External (credential 불필요, 무료 외부 API)
 from programgarden_core.nodes.market_external import CurrencyRateNode
+# Market Status (JIF 장운영정보 — broker credential agnostic)
+from programgarden_core.nodes.market_status import MarketStatusNode
 # Symbol (상품 무관)
 from programgarden_core.nodes.symbol import (
     WatchlistNode,
@@ -146,6 +148,8 @@ __all__ = [
     "FieldMappingNode",
     # Market External (credential 불필요)
     "CurrencyRateNode",
+    # Market Status (JIF 장운영정보)
+    "MarketStatusNode",
     # Symbol (상품 무관)
     "WatchlistNode",
     "MarketUniverseNode",
