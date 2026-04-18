@@ -363,6 +363,130 @@ class MarketStatusNode(BaseNode):
             ),
         }
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Subscribe to real-time market open/close status for up to 12 markets (US, KOSPI, KOSDAQ, KRX_FUTURES, NXT, KRX_NIGHT, HK_AM, HK_PM, CN_AM, CN_PM, JP_AM, JP_PM) via LS Securities JIF WebSocket",
+            "Gate US trading workflows on the us_is_open boolean port to avoid placing orders outside market hours",
+            "Build a multi-market status dashboard showing which global markets are currently open",
+        ],
+        "when_not_to_use": [
+            "For overseas futures exchange status (CME, SGX, HKEX Futures) — JIF does not cover these; they are blocked by Pydantic validation",
+            "When per-exchange granularity within the US is needed (NASDAQ vs NYSE vs AMEX individually) — JIF provides a single aggregate US code; per-exchange status is NOT available",
+            "When no broker connection is present — MarketStatusNode requires a parent BrokerNode for the JIF WebSocket session",
+        ],
+        "typical_scenarios": [
+            "OverseasStockBrokerNode → MarketStatusNode → IfNode (us_is_open == true) → trading logic",
+            "KoreaStockBrokerNode → MarketStatusNode → TableDisplayNode (multi-market status dashboard)",
+            "MarketStatusNode as AI Agent Tool to answer 'Is the US market open?' queries in natural language",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Covers 12 JIF market keys: US, KOSPI, KOSDAQ, KRX_FUTURES, NXT, KRX_NIGHT, HK_AM, HK_PM, CN_AM, CN_PM, JP_AM, JP_PM",
+        "9 output ports: statuses (full array), event (latest transition), us_is_open, kospi_is_open, kosdaq_is_open, krx_futures_is_open, hk_is_open, cn_is_open, jp_is_open",
+        "stay_connected=True keeps the JIF subscription alive for the workflow lifetime; set False for one-shot AI Agent Tool calls",
+        "include_extended_hours=True counts pre-market/after-market sessions as open for the *_is_open convenience ports",
+        "is_tool_enabled=True — AI Agent can call this node to answer real-time market-hours questions",
+        "Product scope is ALL — works with OverseasStockBrokerNode, OverseasFuturesBrokerNode, or KoreaStockBrokerNode",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Passing 'NASDAQ', 'NYSE', or 'AMEX' as a market key to get per-exchange US status",
+            "reason": "JIF provides a single aggregate US code. Per-exchange granularity (NASDAQ vs NYSE vs AMEX) is NOT available — the Pydantic Literal will reject these keys at validation time.",
+            "alternative": "Use 'US' as the market key. It covers all US equity exchanges (NASDAQ, NYSE, AMEX) as a single aggregate status.",
+        },
+        {
+            "pattern": "Passing 'CME', 'SGX', or 'HKEX' (overseas futures) as a market key",
+            "reason": "JIF does not support overseas futures exchanges. These values are excluded from the Pydantic Literal and will raise a ValidationError.",
+            "alternative": "Overseas futures exchange hours are not available through MarketStatusNode. Use a schedule-based ThrottleNode or TradingHoursFilterNode with fixed time ranges instead.",
+        },
+        {
+            "pattern": "Using MarketStatusNode without a parent BrokerNode in the DAG",
+            "reason": "MarketStatusNode requires a broker WebSocket session for the JIF subscription. Without a BrokerNode upstream, execution will fail.",
+            "alternative": "Always include at least one BrokerNode (OverseasStockBrokerNode, OverseasFuturesBrokerNode, or KoreaStockBrokerNode) upstream of MarketStatusNode.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Gate US trading on market open status",
+            "description": "MarketStatusNode subscribes to the US JIF market code; IfNode uses us_is_open to route to trading logic (true) or a closed-market notification (false).",
+            "workflow_snippet": {
+                "id": "market_status_us_gate",
+                "name": "US Market Hours Gate",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "market_status", "type": "MarketStatusNode", "markets": ["US"], "stay_connected": True, "include_extended_hours": False},
+                    {"id": "if_open", "type": "IfNode", "left": "{{ nodes.market_status.us_is_open }}", "operator": "==", "right": True},
+                    {"id": "display_open", "type": "TableDisplayNode", "data": "{{ nodes.market_status.statuses }}"},
+                    {"id": "display_closed", "type": "TableDisplayNode", "data": "{{ nodes.market_status.statuses }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "market_status"},
+                    {"from": "market_status", "to": "if_open"},
+                    {"from": "if_open", "to": "display_open", "from_port": "true"},
+                    {"from": "if_open", "to": "display_closed", "from_port": "false"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "Displays market status; trading logic proceeds only when US market is open (regular hours).",
+        },
+        {
+            "title": "Multi-market status dashboard",
+            "description": "Subscribe to US, KOSPI, KOSDAQ, and HK_AM/HK_PM markets simultaneously and display the full status table.",
+            "workflow_snippet": {
+                "id": "market_status_dashboard",
+                "name": "Multi-Market Status Dashboard",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "market_status", "type": "MarketStatusNode", "markets": ["US", "KOSPI", "KOSDAQ", "HK_AM", "HK_PM"], "stay_connected": True, "include_extended_hours": False},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market_status.statuses }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "market_status"},
+                    {"from": "market_status", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "A real-time table showing open/close status for US, KOSPI, KOSDAQ, and HK AM/PM sessions.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The trigger input is optional. markets defaults to [] which subscribes to all 12 JIF markets. Pass a subset like ['US'] or ['KOSPI', 'KOSDAQ'] to reduce subscription scope. stay_connected=True is required for real-time workflows; set False only for one-shot AI Agent Tool queries.",
+        "output_consumption": "Use us_is_open (and other *_is_open ports) directly as IfNode left operands for market-hour gating. Use statuses for full event data in TableDisplayNode. Use event for the latest transition notification.",
+        "common_combinations": [
+            "BrokerNode → MarketStatusNode → IfNode (us_is_open) → WatchlistNode → SplitNode → NewOrderNode",
+            "MarketStatusNode → TableDisplayNode (status dashboard)",
+            "MarketStatusNode as AI Agent Tool connected via tool edge to AIAgentNode",
+        ],
+        "pitfalls": [
+            "US is a single aggregate JIF code — per-exchange status (NASDAQ vs NYSE vs AMEX) is NOT available. Do not pass individual exchange names as market keys.",
+            "Overseas futures exchanges (CME, SGX, HKEX Futures) are not supported by JIF — their market keys will fail Pydantic validation.",
+            "MarketStatusNode requires a parent BrokerNode in the DAG. Placing it without an upstream broker will cause execution failure.",
+            "HK_AM and HK_PM are separate JIF codes for Hong Kong morning and afternoon sessions — use hk_is_open which combines both for a single open/close signal.",
+        ],
+    }
+
     async def execute(self, context: Any) -> Dict[str, Any]:
         """Fallback execution — the programgarden executor injects a
         runtime-aware implementation that subscribes to the JIF stream.

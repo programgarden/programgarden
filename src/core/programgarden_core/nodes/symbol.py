@@ -12,7 +12,7 @@ SymbolQueryNode는 상품별 분리됨:
 - symbol_futures.py → OverseasFuturesSymbolQueryNode
 """
 
-from typing import Optional, List, Literal, Dict, Any, Union, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, ClassVar, Union, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -63,6 +63,127 @@ class WatchlistNode(BaseNode):
             ],
         ),
     ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Define a static watchlist of symbols that seeds the rest of the workflow",
+            "Provide a fixed set of symbols to iterate over with SplitNode for per-symbol processing",
+            "Supply a curated set of equities or futures contracts to downstream market-data or order nodes",
+        ],
+        "when_not_to_use": [
+            "When you need dynamic symbol discovery based on market conditions — use ScreenerNode or MarketUniverseNode instead",
+            "When symbols change at runtime — bind a dynamic source instead of hardcoding in WatchlistNode",
+        ],
+        "typical_scenarios": [
+            "WatchlistNode → SplitNode → OverseasStockMarketDataNode → ConditionNode (fetch quotes for each symbol)",
+            "WatchlistNode → ExclusionListNode → SplitNode → OverseasStockNewOrderNode (filter then order)",
+            "WatchlistNode → OverseasStockHistoricalDataNode (seed historical data pull for a fixed universe)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Stores a static list of {symbol, exchange} entries that can include any supported exchange (NASDAQ, NYSE, AMEX, CME, EUREX, SGX, HKEX)",
+        "Outputs a symbol_list that is auto-iterated by downstream nodes when paired with SplitNode",
+        "No broker connection required — runs as an independent data-source node",
+        "Supports expression binding so the list can be populated from another node's symbols output at runtime",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using {'AAPL': {...}} dict-keyed format instead of [{symbol, exchange}] list",
+            "reason": "ProgramGarden requires list[dict] with symbol and exchange keys. Dict-keyed symbols fail validation.",
+            "alternative": "Use [{\"symbol\": \"AAPL\", \"exchange\": \"NASDAQ\"}] format.",
+        },
+        {
+            "pattern": "Adding 200+ symbols directly to WatchlistNode without pagination or batching",
+            "reason": "Large lists iterate one-by-one via SplitNode which may exceed rate limits on downstream API calls.",
+            "alternative": "Add a ThrottleNode between SplitNode and market-data nodes to limit the request rate.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Fetch quotes for a fixed watchlist",
+            "description": "WatchlistNode seeds three NASDAQ symbols; SplitNode iterates them; OverseasStockMarketDataNode fetches the current price for each.",
+            "workflow_snippet": {
+                "id": "watchlist_quotes",
+                "name": "Watchlist Quote Fetch",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}, {"symbol": "NVDA", "exchange": "NASDAQ"}]},
+                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.watchlist.symbols }}"},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "split"},
+                    {"from": "split", "to": "market"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "market", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "A table of current prices for AAPL, MSFT, and NVDA.",
+        },
+        {
+            "title": "Watchlist with exclusion filter before ordering",
+            "description": "WatchlistNode provides candidates; ExclusionListNode removes blacklisted symbols; remaining symbols go to an order node.",
+            "workflow_snippet": {
+                "id": "watchlist_exclusion_order",
+                "name": "Watchlist Exclusion Order",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "TSLA", "exchange": "NASDAQ"}, {"symbol": "AMZN", "exchange": "NASDAQ"}]},
+                    {"id": "exclusion", "type": "ExclusionListNode", "symbols": [{"symbol": "TSLA", "exchange": "NASDAQ", "reason": "high volatility"}], "input_symbols": "{{ nodes.watchlist.symbols }}"},
+                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.exclusion.filtered }}"},
+                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "{{ nodes.split.item.symbol }}", "exchange": "{{ nodes.split.item.exchange }}", "order_type": "limit", "side": "buy", "quantity": 1, "price": 100.0},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "exclusion"},
+                    {"from": "exclusion", "to": "split"},
+                    {"from": "split", "to": "order"},
+                    {"from": "broker", "to": "order"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "Limit buy orders placed for AAPL and AMZN; TSLA skipped by exclusion list.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "No runtime inputs required. The symbols field is configured statically in the node. Alternatively bind it to another node's symbols output via expression to make it dynamic.",
+        "output_consumption": "Connect symbols to SplitNode.items for per-symbol iteration, or pass directly to ExclusionListNode.input_symbols, ScreenerNode.symbols, or SymbolFilterNode.input_a for list-level operations.",
+        "common_combinations": [
+            "WatchlistNode → SplitNode → OverseasStockMarketDataNode",
+            "WatchlistNode → ExclusionListNode → SplitNode → NewOrderNode",
+            "WatchlistNode → SymbolFilterNode (difference with account holdings) → SplitNode → NewOrderNode",
+        ],
+        "pitfalls": [
+            "Do not use dict-keyed symbols. Always use list[dict] with symbol and exchange keys.",
+            "WatchlistNode does not validate whether the exchange supports the given symbol — validation happens at execution time in the broker node.",
+            "Mixing futures and equity symbols in one WatchlistNode is allowed but downstream nodes may only accept one product type.",
+        ],
+    }
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -129,6 +250,98 @@ class MarketUniverseNode(BaseNode):
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="count", type="integer", description="종목 수"),
     ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Automatically retrieve all constituents of a major US index (NASDAQ100, S&P500, S&P100, DOW30) as a trading universe",
+            "Seed a screening or filtering pipeline with a broad index-membership list without manual symbol entry",
+            "Run a systematic strategy over an entire index, then narrow down with ScreenerNode or SymbolFilterNode",
+        ],
+        "when_not_to_use": [
+            "For overseas futures universes — this node covers US equities only",
+            "When you need custom or non-index symbol lists — use WatchlistNode instead",
+            "When the index needs real-time rebalancing — constituent data is sourced from pytickersymbols (snapshot, not live)",
+        ],
+        "typical_scenarios": [
+            "MarketUniverseNode (NASDAQ100) → ScreenerNode (volume_min filter) → SplitNode → ConditionNode",
+            "MarketUniverseNode (SP500) → SymbolFilterNode (difference with held symbols) → SplitNode → NewOrderNode",
+            "MarketUniverseNode (DOW30) → SplitNode → OverseasStockHistoricalDataNode → ConditionNode (momentum)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns the complete constituent list for NASDAQ100, S&P500, S&P100, or DOW30 as a symbol_list with exchange metadata",
+        "No broker connection required — uses pytickersymbols library, runs standalone",
+        "Outputs count port alongside symbols so downstream aggregation can track universe size",
+        "Supports all exchange types present in the chosen index (NASDAQ, NYSE) automatically",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using MarketUniverseNode for overseas futures (CME, HKEX) universes",
+            "reason": "MarketUniverseNode only supports US equity indexes. Overseas futures have no constituent list.",
+            "alternative": "Manually define futures symbols using WatchlistNode with the appropriate CME/HKEX exchange codes.",
+        },
+        {
+            "pattern": "Passing the full SP500 (~503 symbols) directly to a market-data node without rate limiting",
+            "reason": "503 sequential API calls will exceed broker rate limits and may result in errors.",
+            "alternative": "Add a ThrottleNode after SplitNode to control request pacing.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Fetch NASDAQ100 universe and display count",
+            "description": "MarketUniverseNode loads all NASDAQ100 constituents, TableDisplayNode shows the list and count.",
+            "workflow_snippet": {
+                "id": "nasdaq100_universe",
+                "name": "NASDAQ100 Universe",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "universe", "type": "MarketUniverseNode", "universe": "NASDAQ100"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.universe.symbols }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "universe"},
+                    {"from": "universe", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "A table of ~101 NASDAQ100 constituent symbols with exchange metadata.",
+        },
+        {
+            "title": "SP500 universe screened by minimum market cap",
+            "description": "MarketUniverseNode fetches all S&P500 members; ScreenerNode keeps only those above $100B market cap.",
+            "workflow_snippet": {
+                "id": "sp500_screened",
+                "name": "SP500 Large Cap Screen",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "universe", "type": "MarketUniverseNode", "universe": "SP500"},
+                    {"id": "screener", "type": "ScreenerNode", "symbols": "{{ nodes.universe.symbols }}", "market_cap_min": 100000000000},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.screener.symbols }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "universe"},
+                    {"from": "universe", "to": "screener"},
+                    {"from": "screener", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "A filtered list of S&P500 companies with market cap above $100B.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "No inputs required. Configure the universe field to one of NASDAQ100, SP500, SP100, or DOW30. The node fetches constituents at execution time from pytickersymbols.",
+        "output_consumption": "Connect symbols to ScreenerNode.symbols for further filtering, or to SplitNode.items for per-symbol iteration. Use count for logging or conditional branching.",
+        "common_combinations": [
+            "MarketUniverseNode → ScreenerNode → SplitNode → OverseasStockMarketDataNode",
+            "MarketUniverseNode → SymbolFilterNode (subtract held positions) → SplitNode → NewOrderNode",
+            "MarketUniverseNode → ExclusionListNode → SplitNode → ConditionNode",
+        ],
+        "pitfalls": [
+            "Constituent data comes from pytickersymbols which updates periodically — it may lag actual index changes by days.",
+            "For large indexes (SP500), always add a ThrottleNode before downstream API calls.",
+            "MarketUniverseNode does not support overseas futures — use WatchlistNode for CME/HKEX symbols.",
+        ],
+    }
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -212,6 +425,98 @@ class ScreenerNode(BaseNode):
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="count", type="integer", description="결과 종목 수"),
     ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Filter a symbol universe by fundamental criteria such as market cap, average volume, or sector",
+            "Narrow down a large index (e.g. SP500) to tradeable candidates before applying technical conditions",
+            "Combine with MarketUniverseNode to build a quantitative screening pipeline sourced from Yahoo Finance",
+        ],
+        "when_not_to_use": [
+            "For technical indicator-based filtering (RSI, MACD) — use ConditionNode with the appropriate plugin instead",
+            "For set operations on existing symbol lists — use SymbolFilterNode (intersection/difference/union)",
+            "When broker-specific fundamental data is preferred — ScreenerNode uses Yahoo Finance data which may differ",
+        ],
+        "typical_scenarios": [
+            "MarketUniverseNode (NASDAQ100) → ScreenerNode (Technology sector, volume_min=1M) → SplitNode → OverseasStockMarketDataNode",
+            "WatchlistNode → ScreenerNode (market_cap_min filter) → SymbolFilterNode → SplitNode → NewOrderNode",
+            "ScreenerNode (standalone, no input) → SplitNode → OverseasStockHistoricalDataNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Filters symbols by market cap (min/max), minimum average volume, sector, and exchange; all filters are optional and combinable",
+        "Can run without input symbols to screen the entire market, or accept a symbol_list input to narrow an existing universe",
+        "Outputs a sorted (largest market cap first) symbol_list and a count port for downstream conditional logic",
+        "Powered by Yahoo Finance API — no broker credential required",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using ScreenerNode alone for technical indicator criteria (RSI oversold, MACD crossover)",
+            "reason": "ScreenerNode only supports fundamental/descriptive filters. Technical signals require historical price data and indicator computation.",
+            "alternative": "Chain ScreenerNode (fundamental pre-filter) → SplitNode → OverseasStockHistoricalDataNode → ConditionNode (technical filter).",
+        },
+        {
+            "pattern": "Setting max_results to 500 without downstream rate limiting",
+            "reason": "500 symbols iterating through API calls will trigger rate limits.",
+            "alternative": "Keep max_results to a manageable size (50–100) or add a ThrottleNode after SplitNode.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Screen NASDAQ100 for large-cap tech stocks",
+            "description": "MarketUniverseNode loads NASDAQ100 constituents; ScreenerNode keeps only Technology sector symbols with market cap above $100B and volume above 1M.",
+            "workflow_snippet": {
+                "id": "screener_nasdaq_tech",
+                "name": "NASDAQ100 Tech Screen",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "universe", "type": "MarketUniverseNode", "universe": "NASDAQ100"},
+                    {"id": "screener", "type": "ScreenerNode", "symbols": "{{ nodes.universe.symbols }}", "sector": "Technology", "market_cap_min": 100000000000, "volume_min": 1000000, "max_results": 20},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.screener.symbols }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "universe"},
+                    {"from": "universe", "to": "screener"},
+                    {"from": "screener", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "Up to 20 NASDAQ100 Technology stocks with market cap >$100B and average volume >1M shares.",
+        },
+        {
+            "title": "Standalone screener without input universe",
+            "description": "ScreenerNode runs without an upstream universe, screening the entire market for high-volume NASDAQ stocks.",
+            "workflow_snippet": {
+                "id": "screener_standalone",
+                "name": "NASDAQ High Volume Screen",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "screener", "type": "ScreenerNode", "exchange": "NASDAQ", "volume_min": 5000000, "max_results": 50},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.screener.symbols }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "screener"},
+                    {"from": "screener", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "Up to 50 NASDAQ stocks with average daily volume above 5M shares.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The symbols input is optional. When connected, ScreenerNode filters only those symbols. When empty, it screens the full market. All filter fields (market_cap_min, volume_min, sector, exchange) are independently optional.",
+        "output_consumption": "Connect symbols to SplitNode.items for per-symbol iteration, or to SymbolFilterNode/ExclusionListNode for further set operations. Use count for logging or conditional branching with IfNode.",
+        "common_combinations": [
+            "MarketUniverseNode → ScreenerNode → SplitNode → OverseasStockMarketDataNode",
+            "ScreenerNode → SymbolFilterNode (difference with held positions) → SplitNode → NewOrderNode",
+            "ScreenerNode → SplitNode → OverseasStockHistoricalDataNode → ConditionNode (RSI/MACD)",
+        ],
+        "pitfalls": [
+            "ScreenerNode relies on Yahoo Finance data which may have delays or inconsistencies with broker data.",
+            "Setting no filters returns all symbols up to max_results — always set at least one filter for production strategies.",
+            "The sector filter uses Yahoo Finance sector names; ensure exact match (e.g. 'Financial Services' not 'Finance').",
+        ],
+    }
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -389,6 +694,128 @@ class ExclusionListNode(BaseNode):
     def is_tool_enabled(cls) -> bool:
         return True
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Maintain a blacklist of symbols that must never be traded, and automatically block them in downstream order nodes",
+            "Dynamically combine a static blacklist with runtime-derived symbols (e.g. currently held positions) to prevent duplicate buys",
+            "Filter an incoming symbol universe to remove excluded symbols before passing to order logic",
+        ],
+        "when_not_to_use": [
+            "For set intersection or union operations between two symbol lists — use SymbolFilterNode instead",
+            "When you only need to subtract held positions without a persistent exclusion list — SymbolFilterNode with operation='difference' is simpler",
+        ],
+        "typical_scenarios": [
+            "WatchlistNode → ExclusionListNode (static blacklist + dynamic held positions) → SplitNode → NewOrderNode",
+            "MarketUniverseNode → ExclusionListNode → ScreenerNode → SplitNode → ConditionNode",
+            "ExclusionListNode (standalone) exposed as AI Agent Tool for 'what symbols are excluded and why?' queries",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Merges static symbols (manual blacklist) with dynamic_symbols (runtime-bound) into a unified excluded list with per-symbol reason tracking",
+        "When input_symbols is connected, outputs a filtered list (filtered port) with excluded symbols removed — ready for downstream order nodes",
+        "Automatic order-block safety: downstream OverseasStockNewOrderNode and other order nodes check the exclusion list and abort if the target symbol is listed",
+        "is_tool_enabled=True — AI Agent can query the exclusion list to explain which symbols are blocked and why",
+        "Four output ports: excluded (full blacklist), filtered (input minus excluded), count (blacklist size), reasons (symbol→reason map)",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Bypassing ExclusionListNode and placing orders directly after WatchlistNode",
+            "reason": "Without ExclusionListNode in the path, the automatic order-block safety does not activate and blacklisted symbols may be traded.",
+            "alternative": "Always route the symbol list through ExclusionListNode before any order node when a blacklist is required.",
+        },
+        {
+            "pattern": "Using ExclusionListNode for set intersection (keep symbols in both lists)",
+            "reason": "ExclusionListNode only supports removal (difference), not intersection.",
+            "alternative": "Use SymbolFilterNode with operation='intersection' for intersection logic.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Static blacklist blocks order placement",
+            "description": "TSLA is statically blacklisted; ExclusionListNode filters it out from the watchlist; the remaining symbols proceed to the order node. TSLA order is automatically blocked.",
+            "workflow_snippet": {
+                "id": "exclusion_order_block",
+                "name": "Exclusion List Order Block",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "TSLA", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}]},
+                    {"id": "exclusion", "type": "ExclusionListNode", "symbols": [{"symbol": "TSLA", "exchange": "NASDAQ", "reason": "high volatility blacklist"}], "input_symbols": "{{ nodes.watchlist.symbols }}"},
+                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.exclusion.filtered }}"},
+                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "{{ nodes.split.item.symbol }}", "exchange": "{{ nodes.split.item.exchange }}", "order_type": "limit", "side": "buy", "quantity": 1, "price": 150.0},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "exclusion"},
+                    {"from": "exclusion", "to": "split"},
+                    {"from": "split", "to": "order"},
+                    {"from": "broker", "to": "order"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "Buy orders placed for AAPL and MSFT. TSLA order is blocked by the exclusion list.",
+        },
+        {
+            "title": "Dynamic exclusion: skip already-held positions",
+            "description": "Account node provides current holdings; ExclusionListNode merges them with a static blacklist to prevent duplicate purchases.",
+            "workflow_snippet": {
+                "id": "exclusion_dynamic_held",
+                "name": "Exclusion Dynamic Held Positions",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "universe", "type": "MarketUniverseNode", "universe": "NASDAQ100"},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "exclusion", "type": "ExclusionListNode", "symbols": [{"symbol": "NVDA", "exchange": "NASDAQ", "reason": "manually excluded"}], "dynamic_symbols": "{{ nodes.account.held_symbols }}", "input_symbols": "{{ nodes.universe.symbols }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.exclusion.filtered }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "broker", "to": "universe"},
+                    {"from": "universe", "to": "exclusion"},
+                    {"from": "account", "to": "exclusion"},
+                    {"from": "exclusion", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "NASDAQ100 symbols minus NVDA (static) and all currently held positions.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Three inputs: symbols (static blacklist, configured), dynamic_symbols (runtime-bound additional exclusions), input_symbols (universe to filter). Only symbols is required; the other two are optional.",
+        "output_consumption": "Use filtered as the cleaned symbol list for downstream order or split nodes. Use excluded for audit display. Use reasons for AI Agent tool queries about why symbols are blocked.",
+        "common_combinations": [
+            "WatchlistNode/MarketUniverseNode → ExclusionListNode → SplitNode → NewOrderNode",
+            "AccountNode.held_symbols → ExclusionListNode.dynamic_symbols (prevent duplicate buys)",
+            "ExclusionListNode → SplitNode → OverseasStockMarketDataNode (price check only non-blacklisted)",
+        ],
+        "pitfalls": [
+            "The automatic order-block only applies when the order node is downstream of ExclusionListNode in the DAG — bypassing it removes the protection.",
+            "dynamic_symbols must be a list[dict] with symbol and exchange keys. Passing plain strings will fail.",
+            "If input_symbols is not connected, the filtered port returns an empty list — connect input_symbols when you need the filtered output.",
+        ],
+    }
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
@@ -508,6 +935,130 @@ class SymbolFilterNode(BaseNode):
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="count", type="integer", description="결과 종목 수"),
     ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Compute the difference between two symbol lists to find new buy candidates (watchlist minus held positions)",
+            "Compute the intersection of two signal lists to find symbols confirmed by multiple independent strategies",
+            "Merge two symbol lists into a union for a combined trading universe",
+        ],
+        "when_not_to_use": [
+            "When you need to remove symbols based on a persistent blacklist with reason tracking — use ExclusionListNode instead",
+            "When filtering by fundamental criteria (market cap, sector) — use ScreenerNode instead",
+            "When applying technical indicator conditions to a symbol list — use ConditionNode with the appropriate plugin",
+        ],
+        "typical_scenarios": [
+            "WatchlistNode → SymbolFilterNode (difference: watchlist minus account holdings) → SplitNode → NewOrderNode",
+            "ConditionNode.passed_symbols + ConditionNode.passed_symbols → SymbolFilterNode (intersection: both signals agree) → NewOrderNode",
+            "MarketUniverseNode + WatchlistNode → SymbolFilterNode (union: combined universe) → ScreenerNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Supports three set operations — difference (A minus B), intersection (A AND B), and union (A OR B) — on any two symbol_list inputs",
+        "Matching is done by (symbol, exchange) pair, so the same ticker on different exchanges is treated as distinct",
+        "Outputs a symbol_list and a count for use in downstream conditional logic",
+        "No broker connection required — pure list computation",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using SymbolFilterNode for blacklisting with reason tracking",
+            "reason": "SymbolFilterNode performs pure set operations without reason metadata. It cannot store 'why' a symbol was removed.",
+            "alternative": "Use ExclusionListNode which supports per-symbol reason fields and automatic order-block safety.",
+        },
+        {
+            "pattern": "Connecting input_b from a node that may output an empty list without handling the empty case",
+            "reason": "For difference with an empty input_b, all of input_a passes through. For intersection with empty input_b, no symbols pass through — this may silently halt order generation.",
+            "alternative": "Add an IfNode checking count > 0 before passing the result to order nodes.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Subtract held positions from watchlist (buy only new)",
+            "description": "WatchlistNode provides candidates; AccountNode provides current holdings; SymbolFilterNode (difference) returns only symbols not already held.",
+            "workflow_snippet": {
+                "id": "symbolfiler_difference",
+                "name": "Watchlist Minus Holdings",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}, {"symbol": "NVDA", "exchange": "NASDAQ"}]},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "filter", "type": "SymbolFilterNode", "operation": "difference", "input_a": "{{ nodes.watchlist.symbols }}", "input_b": "{{ nodes.account.held_symbols }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.filter.symbols }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "filter"},
+                    {"from": "account", "to": "filter"},
+                    {"from": "filter", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "Symbols in the watchlist that are not currently held in the account.",
+        },
+        {
+            "title": "Intersection of two signal lists (confirm with two strategies)",
+            "description": "Two ConditionNode outputs (RSI oversold, MACD golden cross) are intersected; only symbols signaled by both strategies proceed.",
+            "workflow_snippet": {
+                "id": "symbolfiler_intersection",
+                "name": "Dual Signal Intersection",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}]},
+                    {"id": "rsi_cond", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.watchlist.symbols }}"},
+                    {"id": "macd_cond", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.watchlist.symbols }}"},
+                    {"id": "filter", "type": "SymbolFilterNode", "operation": "intersection", "input_a": "{{ nodes.rsi_cond.passed_symbols }}", "input_b": "{{ nodes.macd_cond.passed_symbols }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.filter.symbols }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "rsi_cond"},
+                    {"from": "watchlist", "to": "macd_cond"},
+                    {"from": "rsi_cond", "to": "filter"},
+                    {"from": "macd_cond", "to": "filter"},
+                    {"from": "filter", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "Symbols that are simultaneously RSI-oversold and MACD-golden-cross.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "input_a is required; input_b is optional (union/intersection with empty input_b returns input_a unchanged for union, empty for intersection). Both must be list[dict] with symbol and exchange keys.",
+        "output_consumption": "Connect symbols to SplitNode.items for per-symbol order/data-fetch iteration. Use count with IfNode to guard against empty results before ordering.",
+        "common_combinations": [
+            "WatchlistNode + AccountNode.held_symbols → SymbolFilterNode (difference) → SplitNode → NewOrderNode",
+            "ConditionNode.passed_symbols + ConditionNode.passed_symbols → SymbolFilterNode (intersection) → SplitNode → NewOrderNode",
+            "MarketUniverseNode + WatchlistNode → SymbolFilterNode (union) → ScreenerNode",
+        ],
+        "pitfalls": [
+            "Matching is by (symbol, exchange) pair — AAPL:NASDAQ and AAPL:NYSE are treated as different symbols.",
+            "An intersection with an empty input_b produces zero results and will silently skip all downstream order nodes.",
+            "SymbolFilterNode does not track reasons for removal — use ExclusionListNode if audit trail is needed.",
+        ],
+    }
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

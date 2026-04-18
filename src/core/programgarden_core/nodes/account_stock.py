@@ -5,7 +5,7 @@ ProgramGarden Core - Stock Account Node
 - OverseasStockAccountNode: 해외주식 계좌 잔고, 보유종목 조회 (REST API 1회성)
 """
 
-from typing import List, Literal, Dict, ClassVar, TYPE_CHECKING
+from typing import Any, List, Literal, Dict, ClassVar, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -43,6 +43,119 @@ class OverseasStockAccountNode(BaseNode):
     _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Query the overseas stock account balance and held positions at a specific point in time (one-shot REST call)",
+            "Feed held_symbols into downstream market-data or condition nodes for portfolio-level strategies",
+            "Check orderable cash balance before placing new orders",
+        ],
+        "when_not_to_use": [
+            "When you need live streaming updates — use OverseasStockRealAccountNode instead",
+            "For open (unfilled) order lists — use OverseasStockOpenOrdersNode",
+            "For overseas futures accounts — use OverseasFuturesAccountNode",
+        ],
+        "typical_scenarios": [
+            "Start → OverseasStockBrokerNode → OverseasStockAccountNode → TableDisplayNode (balance dashboard)",
+            "Start → OverseasStockBrokerNode → OverseasStockAccountNode → ConditionNode (check orderable cash > threshold)",
+            "OverseasStockAccountNode.held_symbols → OverseasStockMarketDataNode (auto-iterate mark-to-market)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns three ports: held_symbols (symbol list), balance (cash/equity summary), positions (per-symbol P&L)",
+        "is_tool_enabled=True — AI Agent can call this node as a tool to inspect portfolio state",
+        "One-shot REST call: safe to use in scheduled or on-demand workflows without WebSocket overhead",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using OverseasStockAccountNode inside a realtime loop expecting tick-level freshness",
+            "reason": "Each execution makes a fresh REST call; high-frequency calling will hit API rate limits and lag behind tick data.",
+            "alternative": "Use OverseasStockRealAccountNode which maintains a WebSocket subscription and updates state incrementally.",
+        },
+        {
+            "pattern": "Wiring OverseasStockAccountNode without an upstream OverseasStockBrokerNode",
+            "reason": "The node requires an active LS-Sec session; without the broker in the DAG the executor cannot inject the connection and the call fails.",
+            "alternative": "Always place OverseasStockBrokerNode upstream and connect it via a main edge before AccountNode.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Account balance dashboard",
+            "description": "Read overseas stock account state and display positions and balance in a table.",
+            "workflow_snippet": {
+                "id": "overseas-stock-account-balance",
+                "name": "Overseas Stock Account Balance",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "display", "type": "TableDisplayNode", "title": "Positions", "data": "{{ nodes.account.positions }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "account", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "positions port: list of {symbol, exchange, quantity, avg_price, pnl_rate}; balance port: {cash_krw, total_eval_krw, orderable_amount}; held_symbols: [{symbol, exchange}].",
+        },
+        {
+            "title": "Portfolio mark-to-market via held_symbols auto-iterate",
+            "description": "Fetch account positions then auto-iterate market data for every held symbol to compute live mark-to-market.",
+            "workflow_snippet": {
+                "id": "overseas-stock-account-mtm",
+                "name": "Account + Mark-to-Market",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ item }}"},
+                    {"id": "display", "type": "TableDisplayNode", "title": "Live Prices", "data": "{{ nodes.market.data }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "account", "to": "market"},
+                    {"from": "market", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "For each held symbol the MarketDataNode emits current price/volume; TableDisplayNode shows live mark-to-market data.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Accepts an optional trigger signal on the `trigger` input port. No explicit binding needed — the broker connection is auto-injected by the executor via DAG traversal.",
+        "output_consumption": "Three ports: `held_symbols` (array of {symbol, exchange}) feeds symbol-iterating nodes; `positions` (array of position dicts) feeds condition/display nodes; `balance` (single object) feeds orderable-cash checks.",
+        "common_combinations": [
+            "OverseasStockAccountNode.held_symbols → OverseasStockMarketDataNode (mark-to-market)",
+            "OverseasStockAccountNode.balance → IfNode (orderable cash threshold)",
+            "OverseasStockAccountNode.positions → ConditionNode with PortfolioPlugin (drawdown check)",
+            "OverseasStockAccountNode.positions → FieldMappingNode → TableDisplayNode",
+        ],
+        "pitfalls": [
+            "Each call is a fresh REST round-trip; do not place inside a high-frequency realtime loop",
+            "held_symbols and positions arrays auto-iterate downstream nodes — wrap in AggregateNode first if you need them as a single batch",
+        ],
+    }
 
     @classmethod
     def is_tool_enabled(cls) -> bool:

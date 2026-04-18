@@ -1,4 +1,17 @@
 ## [Unreleased]
+### Added
+- **NodeTypeSchema AI metadata** — 5 new optional fields (`usage`, `features`,
+  `anti_patterns`, `examples`, `node_guide`) feed the workflow-generation AI
+  chatbot directly. Each node class exposes them as flat ClassVars
+  (`_usage` / `_features` / `_anti_patterns` / `_examples` / `_node_guide`),
+  mirroring the existing `_img_url` / `_connection_rules` / `_rate_limit`
+  convention. All 73 registered nodes (69 core + 4 community) filled.
+  - English-only authoring — no i18n bridge. See `memory/feedback_english_only.md`.
+  - Every `examples[].workflow_snippet` is a full workflow JSON that passes
+    `WorkflowExecutor.validate()` — enforced by
+    `test_metadata_workflow_snippets_validate` (146 tests) so snippets serve
+    as executable ground truth for downstream consumers.
+
 ### Removed
 - **AIAgentNode `tool_selection` / `tool_top_k` 필드 삭제** — 전체 도구가 LLM 에 항상 전달되도록 단순화
   - `enum_values=["all", "semantic"]` → 필드 자체 제거

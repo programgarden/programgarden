@@ -50,7 +50,157 @@ class TelegramNode(BaseMessagingNode):
     
     # 노드 아이콘 (텔레그램 로고)
     _img_url: ClassVar[str] = "https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg"
-    
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Send a trade signal notification to an investor after a ConditionNode fires (e.g. RSI oversold buy alert)",
+            "Notify on risk events such as trailing stop trigger, daily loss limit breach, or drawdown alert",
+            "Confirm order execution by forwarding fill details (symbol, quantity, price) to a Telegram chat",
+            "Deliver scheduled summary reports (portfolio PnL, open positions) at the end of a trading session",
+        ],
+        "when_not_to_use": [
+            "As the primary data source — TelegramNode only sends outbound messages, it cannot receive or read messages",
+            "For high-frequency per-tick notifications — combine with ThrottleNode or IfNode to limit message volume",
+            "When no Telegram bot credential is available — credential_id with bot_token and chat_id is required",
+        ],
+        "typical_scenarios": [
+            "ConditionNode (signal=True) → TelegramNode (alert with symbol and RSI value)",
+            "OverseasStockNewOrderNode → TelegramNode (order fill confirmation)",
+            "PortfolioNode → TelegramNode (daily PnL summary at session end)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Sends Telegram messages via Bot API using bot_token and chat_id injected from a 'telegram_bot' credential — no secrets in workflow JSON",
+        "Supports Jinja2-style template variables (e.g. {{symbol}}, {{price}}) resolved at runtime from upstream node outputs",
+        "HTML parse mode enabled by default — supports <b>, <i>, and <code> formatting in messages",
+        "Built-in resilience with configurable retry and fallback (skip or error) for transient network failures",
+        "Returns 'sent' (bool) and 'message_id' (str) output ports for downstream confirmation checks",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Connecting TelegramNode directly after a real-time market data node without throttling",
+            "reason": "Real-time nodes fire on every tick; sending a Telegram message per tick will quickly hit Bot API rate limits (30 messages/sec global, 1 message/sec per chat).",
+            "alternative": "Insert ThrottleNode or IfNode between the real-time node and TelegramNode to gate messages to meaningful events only.",
+        },
+        {
+            "pattern": "Embedding bot_token and chat_id directly in the workflow JSON fields instead of using credential_id",
+            "reason": "Hard-coded secrets in workflow JSON are visible to anyone who exports the workflow and cannot be rotated centrally.",
+            "alternative": "Always use credential_id pointing to a 'telegram_bot' credential entry in the credentials section.",
+        },
+        {
+            "pattern": "Using TelegramNode as the only error reporter without a fallback",
+            "reason": "If the Telegram API is unreachable, no error notification is delivered, silencing failures completely.",
+            "alternative": "Set resilience.fallback.mode='skip' and additionally log errors via TableDisplayNode or on_log listener in your execution listener.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "RSI buy signal alert",
+            "description": "When RSI drops below the oversold threshold, send a Telegram message with the symbol and RSI value.",
+            "workflow_snippet": {
+                "id": "telegram_rsi_alert",
+                "name": "Telegram RSI Alert",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 20},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}", "period": 14, "oversold": 30, "overbought": 70},
+                    {
+                        "id": "notify",
+                        "type": "TelegramNode",
+                        "credential_id": "tg_cred",
+                        "template": "Buy signal: {{ nodes.condition.symbol }} RSI={{ nodes.condition.rsi }}",
+                    },
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "notify"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    },
+                    {
+                        "credential_id": "tg_cred",
+                        "type": "telegram_bot",
+                        "data": [
+                            {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+                            {"key": "chat_id", "value": "", "type": "string", "label": "Chat ID"},
+                        ],
+                    },
+                ],
+            },
+            "expected_output": "sent=True, message_id='<telegram_msg_id>' confirming the alert was delivered.",
+        },
+        {
+            "title": "Risk alert — trailing stop triggered",
+            "description": "After a TrailingStop plugin fires, notify the investor via Telegram before cancelling open orders.",
+            "workflow_snippet": {
+                "id": "telegram_risk_alert",
+                "name": "Telegram Risk Alert",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "risk", "type": "ConditionNode", "plugin": "TrailingStop", "data": "{{ nodes.account.positions }}", "trail_pct": 5.0},
+                    {
+                        "id": "alert",
+                        "type": "TelegramNode",
+                        "credential_id": "tg_cred",
+                        "template": "Trailing stop hit: {{ nodes.risk.symbol }} drawdown={{ nodes.risk.drawdown_pct }}%",
+                    },
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "account", "to": "risk"},
+                    {"from": "risk", "to": "alert"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    },
+                    {
+                        "credential_id": "tg_cred",
+                        "type": "telegram_bot",
+                        "data": [
+                            {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+                            {"key": "chat_id", "value": "", "type": "string", "label": "Chat ID"},
+                        ],
+                    },
+                ],
+            },
+            "expected_output": "sent=True with the formatted risk alert message confirming Telegram delivery.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "TelegramNode has no mandatory data input port. The 'template' field accepts static text or {{ expression }} variables that reference upstream node outputs (e.g. {{ nodes.condition.rsi }}). The node resolves template variables at execution time using ExecutionContext.",
+        "output_consumption": "Check 'sent' (bool) to confirm delivery. Use 'message_id' if you need to reference or delete the Telegram message later. On failure, 'sent' is False and an 'error' key describes the reason — handle with resilience.fallback or a downstream IfNode.",
+        "common_combinations": [
+            "ConditionNode (signal) → TelegramNode (alert)",
+            "OverseasStockNewOrderNode → TelegramNode (fill confirmation)",
+            "PortfolioNode → TelegramNode (PnL summary)",
+            "IfNode (true branch) → TelegramNode + OverseasStockNewOrderNode in parallel",
+        ],
+        "pitfalls": [
+            "Template variables must match actual output port names of upstream nodes — a typo (e.g. {{ nodes.cond.rsi }} vs {{ nodes.condition.rsi }}) silently resolves to an empty string.",
+            "chat_id must be a string even if it looks like a number — set it as a string in the credential data.",
+            "Telegram Bot API rejects messages longer than 4096 characters; truncate long summaries before passing to the template.",
+        ],
+    }
+
     # credential에서 자동 주입됨 (exclude=True로 UI/스키마에서 제외)
     bot_token: Optional[str] = Field(default=None, exclude=True)
     chat_id: Optional[str] = Field(default=None, exclude=True)

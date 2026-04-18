@@ -243,6 +243,109 @@ class CurrencyRateNode(BaseNode):
         OutputPort(name="krw_rate", type="number", description="i18n:outputs.CurrencyRateNode.krw_rate"),
     ]
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Fetch the current FX rate for one or more currency pairs (e.g. USD/KRW, USD/JPY) using the ECB/frankfurter.app public API",
+            "Gate an overseas trading strategy on USD/KRW rate thresholds to reduce currency risk",
+            "Provide the current exchange rate to PositionSizingNode for KRW-denominated portfolio calculations",
+        ],
+        "when_not_to_use": [
+            "When you need tick-level FX streaming — CurrencyRateNode polls once per call, not continuously",
+            "When you need broker-provided FX rates — this node uses public ECB data which updates once per business day",
+        ],
+        "typical_scenarios": [
+            "CurrencyRateNode → IfNode (krw_rate >= 1400) → conditional order block during high FX risk",
+            "CurrencyRateNode → FieldMappingNode → PositionSizingNode (KRW-adjusted position size)",
+            "StartNode → CurrencyRateNode → TableDisplayNode (daily FX rate dashboard)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "No broker credential required — uses public frankfurter.app (ECB) as primary with open.er-api.com as fallback",
+        "Supports any currency pair; default is USD→KRW; multiple target currencies can be fetched in one call",
+        "Exposes a dedicated krw_rate port for the common USD/KRW use-case alongside a full rates array",
+        "is_tool_enabled=True — AI Agent can call this node to answer FX rate queries",
+        "Built-in resilience: 3 retries with exponential backoff; rate-limited to once every 30 seconds (ECB updates daily)",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Connecting CurrencyRateNode directly after a real-time market-data node (RealMarketDataNode) without a ThrottleNode",
+            "reason": "Real-time nodes fire on every tick; CurrencyRateNode is rate-limited to 30-second intervals and will queue up or drop calls.",
+            "alternative": "Insert a ThrottleNode (e.g. interval=300s) between the real-time node and CurrencyRateNode.",
+        },
+        {
+            "pattern": "Using CurrencyRateNode for intraday high-frequency FX rate checks",
+            "reason": "ECB rates update once per business day. Intraday rate fluctuations are not reflected.",
+            "alternative": "Use a broker-provided FX endpoint or a dedicated real-time FX data source for intraday accuracy.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Gate US trading on USD/KRW rate",
+            "description": "CurrencyRateNode fetches the current USD/KRW rate; IfNode blocks trading when KRW is weaker than 1400 per USD to limit currency risk.",
+            "workflow_snippet": {
+                "id": "currency_rate_gate",
+                "name": "FX Rate Trading Gate",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "fx", "type": "CurrencyRateNode", "base_currency": "USD", "target_currencies": ["KRW"]},
+                    {"id": "if_fx", "type": "IfNode", "left": "{{ nodes.fx.krw_rate }}", "operator": "<", "right": 1400},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fx.rates }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "fx"},
+                    {"from": "fx", "to": "if_fx"},
+                    {"from": "if_fx", "to": "broker", "from_port": "true"},
+                    {"from": "if_fx", "to": "display", "from_port": "false"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "Broker connects and trading proceeds when USD/KRW < 1400; otherwise displays FX rate only.",
+        },
+        {
+            "title": "Daily FX rate dashboard",
+            "description": "Fetch USD/KRW, USD/JPY, and USD/EUR rates and display them in a table at workflow start.",
+            "workflow_snippet": {
+                "id": "currency_rate_dashboard",
+                "name": "FX Rate Dashboard",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "fx", "type": "CurrencyRateNode", "base_currency": "USD", "target_currencies": ["KRW", "JPY", "EUR"]},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fx.rates }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "fx"},
+                    {"from": "fx", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "A table showing USD/KRW, USD/JPY, and USD/EUR exchange rates from the ECB.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The trigger input port is optional. When connected, the node re-fetches FX data each time a signal arrives. base_currency defaults to USD; target_currencies defaults to ['KRW'].",
+        "output_consumption": "Use krw_rate directly in IfNode comparisons for FX gates. Use rates (array of {currency, rate} objects) for multi-currency display or downstream calculations.",
+        "common_combinations": [
+            "StartNode → CurrencyRateNode → IfNode (FX gate) → BrokerNode",
+            "ThrottleNode → CurrencyRateNode → FieldMappingNode → PositionSizingNode",
+            "CurrencyRateNode → TableDisplayNode (daily FX rate report)",
+        ],
+        "pitfalls": [
+            "ECB rates are updated once per business day — do not use for intraday FX precision.",
+            "KRW is a valid target currency but NOT a valid base currency on frankfurter.app; always use USD, EUR, or another major currency as the base.",
+            "Rate limiting is set to 30-second minimum intervals. If triggered more frequently, calls are queued, not dropped.",
+        ],
+    }
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (

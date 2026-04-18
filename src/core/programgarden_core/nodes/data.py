@@ -151,6 +151,160 @@ class SQLiteNode(BaseNode):
         description="충돌 시 기준 컬럼 (upsert용). 예: 'symbol'",
     )
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Persist strategy state between workflow cycles (e.g. high-water-mark, trailing stop level, position entry price)",
+            "Log trade signals or risk events to a local SQLite database for later review",
+            "Cache external API responses locally to avoid redundant HTTP calls across cycles",
+            "Read stored configuration or parameter tables that change infrequently",
+        ],
+        "when_not_to_use": [
+            "For temporary within-cycle data passing — use expression bindings between nodes instead",
+            "For shared multi-process or multi-host state — SQLite is local/single-process only",
+            "For large time-series storage (thousands of rows per cycle) — prefer a dedicated database",
+        ],
+        "typical_scenarios": [
+            "StartNode → SQLiteNode (select peak_price) → ConditionNode → SQLiteNode (upsert peak_price)",
+            "OverseasStockNewOrderNode → SQLiteNode (insert order log with symbol/price/quantity)",
+            "SQLiteNode (select strategy params) → ConditionNode (use params in signal logic)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Two operating modes: 'simple' (GUI-driven select/insert/update/delete/upsert) and 'execute_query' (raw SQL with parameter binding)",
+        "Named parameter binding (`:symbol` syntax) prevents SQL injection in execute_query mode",
+        "Upsert support via 'on_conflict' column in simple mode — ideal for idempotent state updates",
+        "Outputs rows (list), affected_count (int), and last_insert_id (int) to cover all read/write patterns",
+        "is_tool_enabled=True — AI Agent can use SQLiteNode as a tool to read or write local state",
+        "Databases are scoped to /app/data/ directory; db_name selects the file",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using execute_query mode with string interpolation instead of parameter binding",
+            "reason": "String interpolation is vulnerable to SQL injection when field values come from expressions. Always use :param placeholders.",
+            "alternative": "Use 'parameters' field with named placeholders: query='WHERE symbol = :symbol', parameters={'symbol': '{{ item.symbol }}'}.",
+        },
+        {
+            "pattern": "Storing the entire OHLCV time series (thousands of rows) in SQLite every cycle",
+            "reason": "Repeated bulk writes slow down the workflow cycle and bloat the database file unnecessarily.",
+            "alternative": "Only persist the scalar state values you need (e.g. peak_price, last_signal) and let the workflow re-fetch raw data each cycle.",
+        },
+        {
+            "pattern": "Using SQLiteNode as a message queue between concurrent nodes",
+            "reason": "SQLite has limited concurrency support; simultaneous writes from AggregateNode branches can cause lock contention.",
+            "alternative": "Use AggregateNode to collect results first, then write to SQLiteNode in a single sequential step.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Persist high-water-mark for trailing stop",
+            "description": "After each market data fetch, upsert the highest price seen so far into SQLite. A subsequent ConditionNode reads the stored level to decide whether to sell.",
+            "workflow_snippet": {
+                "id": "sqlite_hwm_trail",
+                "name": "SQLite High Water Mark",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}]},
+                    {
+                        "id": "upsert_hwm",
+                        "type": "SQLiteNode",
+                        "db_name": "strategy.db",
+                        "operation": "simple",
+                        "table": "hwm",
+                        "action": "upsert",
+                        "values": {"symbol": "{{ nodes.market.value.symbol }}", "peak": "{{ nodes.market.value.close }}"},
+                        "on_conflict": "symbol",
+                    },
+                    {
+                        "id": "read_hwm",
+                        "type": "SQLiteNode",
+                        "db_name": "strategy.db",
+                        "operation": "simple",
+                        "table": "hwm",
+                        "action": "select",
+                        "where_clause": "symbol = :symbol",
+                        "parameters": {"symbol": "AAPL"},
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.read_hwm.rows }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "market", "to": "upsert_hwm"},
+                    {"from": "upsert_hwm", "to": "read_hwm"},
+                    {"from": "read_hwm", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "rows from hwm table showing the latest peak price for AAPL.",
+        },
+        {
+            "title": "Log order signals to SQLite for audit trail",
+            "description": "After a ConditionNode generates a buy signal, insert a record into an order_log table with symbol, signal, and timestamp.",
+            "workflow_snippet": {
+                "id": "sqlite_order_log",
+                "name": "SQLite Order Log",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "MSFT", "exchange": "NASDAQ"}], "period": "1m", "count": 60},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}", "period": 14, "oversold": 30, "overbought": 70},
+                    {
+                        "id": "log_signal",
+                        "type": "SQLiteNode",
+                        "db_name": "audit.db",
+                        "operation": "simple",
+                        "table": "signal_log",
+                        "action": "insert",
+                        "values": {"symbol": "MSFT", "signal": "{{ nodes.condition.signal }}", "rsi": "{{ nodes.condition.rsi }}"},
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.log_signal.rows }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "log_signal"},
+                    {"from": "log_signal", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "affected_count=1 confirming the signal row was inserted; rows=[{symbol, signal, rsi}].",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Trigger and data inputs are optional. Provide 'data' when the values to write come from a previous node's output (e.g. the whole market value dict). For simple mode, use the 'values' field to specify column→expression mappings directly.",
+        "output_consumption": "For SELECT queries, consume 'rows' (list[dict]) as the primary output — pipe to TableDisplayNode or ConditionNode. For INSERT/UPDATE/DELETE, check 'affected_count' to verify the write succeeded. 'last_insert_id' is useful for relational record linking.",
+        "common_combinations": [
+            "OverseasStockMarketDataNode → SQLiteNode (upsert) → SQLiteNode (select) → ConditionNode",
+            "ConditionNode → SQLiteNode (insert signal log) → TableDisplayNode",
+            "StartNode → SQLiteNode (select config) → ConditionNode (use stored params)",
+        ],
+        "pitfalls": [
+            "SQLite files persist between restarts — always use upsert (not insert) for state tracking to avoid duplicate rows.",
+            "WHERE clause uses named binding (:param) not Python f-string %s style. Use 'parameters' dict to supply values.",
+            "execute_query mode can run any SQL including DROP TABLE — validate queries carefully before deploying.",
+        ],
+    }
+
     @classmethod
     def is_tool_enabled(cls) -> bool:
         return True
@@ -418,6 +572,131 @@ class HTTPRequestNode(BaseNode):
         ),
         description="재시도 및 실패 처리 설정",
     )
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Fetch data from an external REST API (market data, news, economic indicators, webhooks)",
+            "POST trade signals or alerts to an external system (Slack, webhook, custom backend)",
+            "Call authentication-protected APIs using HTTP credentials (Bearer token, Basic auth, API key in header)",
+            "Integrate any HTTP/HTTPS endpoint that is not covered by built-in ProgramGarden nodes",
+        ],
+        "when_not_to_use": [
+            "For LS Securities brokerage operations — use the dedicated broker/market/account/order nodes instead",
+            "For Telegram notifications — use TelegramNode which handles the Telegram Bot API correctly",
+            "For real-time streaming data — HTTPRequestNode is request/response only, not a streaming client",
+        ],
+        "typical_scenarios": [
+            "StartNode → HTTPRequestNode (GET economic calendar API) → ConditionNode (check today's events)",
+            "ConditionNode (buy signal) → HTTPRequestNode (POST webhook alert) → OverseasStockNewOrderNode",
+            "StartNode → HTTPRequestNode (GET fear & greed index) → FieldMappingNode → ConditionNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Supports all HTTP methods: GET, POST, PUT, PATCH, DELETE with optional query params and request body",
+        "Built-in resilience: retry on 5xx and 429 with exponential backoff (enabled by default, max_retries=3)",
+        "Credential integration for Bearer token, HTTP Basic, custom header, and query-param auth patterns",
+        "Rate-limited: minimum 1-second interval and max 3 concurrent calls; real-time node connections blocked",
+        "is_tool_enabled=True — AI Agent can invoke HTTPRequestNode as a tool to fetch live external data",
+        "Outputs response (parsed JSON or raw text), status_code, success flag, and error string for downstream branching",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Connecting a real-time node (e.g. OverseasStockRealMarketDataNode) directly to HTTPRequestNode",
+            "reason": "Real-time nodes fire on every tick, causing HTTPRequestNode to flood the external API. The workflow validator blocks this with an ERROR.",
+            "alternative": "Insert a ThrottleNode between the real-time node and HTTPRequestNode to limit the call rate.",
+        },
+        {
+            "pattern": "Embedding secrets (API keys, passwords) directly in the url or body fields",
+            "reason": "Hardcoded secrets are visible in the workflow JSON and logs, creating a security risk.",
+            "alternative": "Use the credential_id field with an appropriate HTTP credential type (http_bearer, http_header, etc.).",
+        },
+        {
+            "pattern": "Setting timeout_seconds to 1 for external APIs",
+            "reason": "External APIs can legitimately take several seconds; a 1-second timeout causes spurious failures and retries.",
+            "alternative": "Keep timeout_seconds at 30 (default) or increase it for known slow endpoints.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Fetch fear-and-greed index from external API",
+            "description": "GET the CNN Fear & Greed Index value and feed it into a ConditionNode to gate trading decisions.",
+            "workflow_snippet": {
+                "id": "http_fear_greed",
+                "name": "Fear-Greed HTTP Fetch",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {
+                        "id": "fg_api",
+                        "type": "HTTPRequestNode",
+                        "method": "GET",
+                        "url": "https://fear-and-greed-index.p.rapidapi.com/v1/fgi",
+                        "headers": {"X-RapidAPI-Host": "fear-and-greed-index.p.rapidapi.com"},
+                        "timeout_seconds": 15,
+                    },
+                    {"id": "display", "type": "SummaryDisplayNode", "data": "{{ nodes.fg_api.response }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "fg_api"},
+                    {"from": "fg_api", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "response={fgi: {value: 42, valueText: 'Fear', ...}}, status_code=200, success=true.",
+        },
+        {
+            "title": "POST webhook alert on buy signal",
+            "description": "When ConditionNode generates a buy signal, send a JSON payload to a Slack-compatible webhook URL.",
+            "workflow_snippet": {
+                "id": "http_webhook_alert",
+                "name": "Webhook Buy Alert",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1m", "count": 60},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}", "period": 14, "oversold": 30, "overbought": 70},
+                    {
+                        "id": "webhook",
+                        "type": "HTTPRequestNode",
+                        "method": "POST",
+                        "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+                        "body": {"text": "Buy signal: AAPL RSI={{ nodes.condition.rsi }}"},
+                        "timeout_seconds": 10,
+                    },
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "webhook"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "status_code=200, success=true confirming the webhook POST was accepted.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The 'url' field is the only required config. Use 'body' for POST/PUT/PATCH payloads (auto-serialized to JSON). Use 'query_params' for GET parameters. The 'data' input port can supply dynamic values from upstream nodes via expression.",
+        "output_consumption": "Check 'success' (boolean) before consuming 'response'. On failure, 'error' contains the HTTP status string. 'response' is auto-parsed JSON when the Content-Type is application/json, otherwise raw text.",
+        "common_combinations": [
+            "StartNode → HTTPRequestNode (GET) → FieldMappingNode → ConditionNode",
+            "ConditionNode → HTTPRequestNode (POST webhook) → SummaryDisplayNode",
+            "HTTPRequestNode → SQLiteNode (cache response) → ConditionNode",
+        ],
+        "pitfalls": [
+            "response can be a string (non-JSON) or a dict — always validate the type before using nested expressions like {{ nodes.http.response.data }}.",
+            "The retry mechanism retries on 5xx and 429 but NOT on 4xx. A 401 Unauthorized will not be retried — fix the credential.",
+            "Real-time node connections are blocked at the validator level — always use ThrottleNode as an intermediary.",
+        ],
+    }
 
     @classmethod
     def is_tool_enabled(cls) -> bool:
@@ -767,6 +1046,136 @@ class FieldMappingNode(BaseNode):
         default=True,
         description="Whether to keep unmapped fields in output",
     )
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Rename fields from an external API response to match ProgramGarden standard field names (e.g. 'lastPrice' → 'close')",
+            "Normalize data between nodes with incompatible field naming conventions",
+            "Prepare data for ConditionNode or BacktestEngineNode which expect specific field names (date, open, high, low, close, volume)",
+            "Bridge HTTPRequestNode responses to downstream analytics nodes without writing custom code",
+        ],
+        "when_not_to_use": [
+            "For computing new derived fields (e.g. pct_change, ratio) — use expression bindings or ConditionNode plugin logic instead",
+            "When field names already match the expected format — unnecessary FieldMappingNode adds latency with no benefit",
+            "For filtering rows or selecting a subset of the data — use ConditionNode or SQLiteNode query instead",
+        ],
+        "typical_scenarios": [
+            "HTTPRequestNode (GET external price API) → FieldMappingNode (rename fields) → ConditionNode (RSI on standardized data)",
+            "OverseasStockHistoricalDataNode → FieldMappingNode (add exchange alias field) → BacktestEngineNode",
+            "HTTPRequestNode → FieldMappingNode → TableDisplayNode (clean column names for display)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Handles three data shapes: list[dict] (renames each row), plain dict (renames top-level keys), and dict[str, dict] (renames nested dicts)",
+        "preserve_unmapped=True (default) keeps fields that have no mapping rule, preventing data loss",
+        "Outputs original_fields and mapped_fields lists so downstream logic can verify the transformation",
+        "Mappings are configured as [{from, to}] pairs in the UI's visual mapping editor — no code required",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Chaining multiple FieldMappingNodes in sequence to perform simple renames one-by-one",
+            "reason": "A single FieldMappingNode accepts an unlimited mapping list. Chaining nodes adds overhead.",
+            "alternative": "Put all rename rules in one FieldMappingNode's mappings list.",
+        },
+        {
+            "pattern": "Using FieldMappingNode to compute derived values (e.g. pct_change = (close - open) / open)",
+            "reason": "FieldMappingNode only renames keys — it cannot compute new values. Expressions in the 'to' field are not evaluated.",
+            "alternative": "Use expression bindings like {{ finance.pct_change(row.open, row.close) }} in a ConditionNode or downstream node field.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Rename external API fields to OHLCV standard",
+            "description": "An external price API returns 'lastPrice', 'dailyVolume', 'tradeDate'. FieldMappingNode renames them so ConditionNode plugins receive the expected 'close', 'volume', 'date' keys.",
+            "workflow_snippet": {
+                "id": "fieldmap_rename_ohlcv",
+                "name": "Field Rename OHLCV",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {
+                        "id": "api",
+                        "type": "HTTPRequestNode",
+                        "method": "GET",
+                        "url": "https://api.example.com/v1/price?symbol=AAPL",
+                        "timeout_seconds": 15,
+                    },
+                    {
+                        "id": "mapper",
+                        "type": "FieldMappingNode",
+                        "data": "{{ nodes.api.response }}",
+                        "mappings": [
+                            {"from": "lastPrice", "to": "close"},
+                            {"from": "dailyVolume", "to": "volume"},
+                            {"from": "tradeDate", "to": "date"},
+                        ],
+                        "preserve_unmapped": True,
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.mapper.mapped_data }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "api"},
+                    {"from": "api", "to": "mapper"},
+                    {"from": "mapper", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "mapped_data with keys 'close', 'volume', 'date' instead of the original external names.",
+        },
+        {
+            "title": "Normalize historical data before BacktestEngineNode",
+            "description": "Historical data from a third-party source uses 'adjClose' instead of 'close'. FieldMappingNode fixes this before BacktestEngineNode processes it.",
+            "workflow_snippet": {
+                "id": "fieldmap_backtest_prep",
+                "name": "Field Map Backtest Prep",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "SPY", "exchange": "NYSE"}], "period": "1d", "count": 252},
+                    {
+                        "id": "mapper",
+                        "type": "FieldMappingNode",
+                        "data": "{{ nodes.historical.values }}",
+                        "mappings": [
+                            {"from": "adjClose", "to": "close"},
+                        ],
+                        "preserve_unmapped": True,
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.mapper.mapped_data }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "mapper"},
+                    {"from": "mapper", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "mapped_data list where each row has 'close' key (renamed from 'adjClose') plus all original OHLCV fields preserved.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The 'data' field must be an expression binding (expression_only mode) pointing to a list[dict], dict, or dict[str, dict]. Configure 'mappings' as a list of {from, to} pairs. Set preserve_unmapped=False only when you want to drop all non-mapped fields.",
+        "output_consumption": "Consume 'mapped_data' — its shape mirrors the input shape (list stays list, dict stays dict). Use 'original_fields' and 'mapped_fields' outputs for debugging or AI tool schema validation.",
+        "common_combinations": [
+            "HTTPRequestNode → FieldMappingNode → ConditionNode",
+            "OverseasStockHistoricalDataNode → FieldMappingNode → BacktestEngineNode",
+            "FieldMappingNode → TableDisplayNode (clean column display)",
+        ],
+        "pitfalls": [
+            "If 'from' key does not exist in the data, that mapping rule is silently skipped — verify field names against the actual API response.",
+            "FieldMappingNode does not recurse into nested objects within a row. Only top-level keys are renamed.",
+            "Using preserve_unmapped=False will drop ALL unmapped fields including symbol and exchange — only use when you explicitly want projection.",
+        ],
+    }
 
     _inputs: List[InputPort] = [
         InputPort(

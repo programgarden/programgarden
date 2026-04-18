@@ -149,6 +149,182 @@ class BacktestEngineNode(BaseNode):
         description="i18n:fields.BacktestEngineNode.strategy_name",
     )
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Simulate a trading strategy on historical OHLCV data to evaluate performance before live deployment",
+            "Calculate performance metrics (total return, Sharpe ratio, MDD, win rate) for a signal-based strategy",
+            "Test different position sizing methods (equal weight, Kelly, fixed percent, ATR-based) against the same signal set",
+            "Compare multiple stop-loss and take-profit combinations to find optimal exit parameters",
+        ],
+        "when_not_to_use": [
+            "For live trading — BacktestEngineNode is for historical simulation only. Use NewOrderNode for live orders.",
+            "When you only need to visualize raw historical prices without signal simulation — use HistoricalDataNode directly",
+            "For real-time paper trading simulation — use actual broker nodes with paper_trading=True",
+        ],
+        "typical_scenarios": [
+            "OverseasStockHistoricalDataNode → ConditionNode → BacktestEngineNode → LineChartNode (equity curve)",
+            "OverseasStockHistoricalDataNode → ConditionNode → BacktestEngineNode → BenchmarkCompareNode → MultiLineChartNode",
+            "PortfolioNode → BacktestEngineNode (allocated_capital port for multi-strategy capital allocation)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Unified engine: executes backtest AND computes performance metrics in a single node",
+        "Five position sizing modes: equal_weight, kelly, fixed_percent, fixed_amount, atr_based",
+        "Configurable exit rules: stop_loss_percent, take_profit_percent, trailing_stop_percent, max_holding_days",
+        "Outputs four ports: equity_curve (time series), trades (log), metrics (summary dict), summary (alias for metrics)",
+        "Commission and slippage parameters for realistic cost modeling",
+        "allow_short flag enables short-selling simulation; allow_fractional enables fractional share sizing",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using BacktestEngineNode without setting commission_rate and slippage",
+            "reason": "With zero costs the backtest overfits to the historical data and shows unrealistically high returns that cannot be achieved live.",
+            "alternative": "Always set commission_rate (e.g. 0.001 = 0.1%) and slippage (e.g. 0.0005) to model realistic trading costs.",
+        },
+        {
+            "pattern": "Running BacktestEngineNode on only 30 days of data to validate a long-term strategy",
+            "reason": "Short backtest periods are statistically unreliable. A strategy can appear profitable by chance on 30 days.",
+            "alternative": "Use at least 1-2 years of daily data (252-504 bars) or equivalent intraday data for meaningful results.",
+        },
+        {
+            "pattern": "Optimizing stop_loss_percent across dozens of backtests on the same dataset without out-of-sample testing",
+            "reason": "Repeated optimization on the same data leads to curve-fitting. The optimal parameters will likely fail on new data.",
+            "alternative": "Split data into in-sample (training) and out-of-sample (validation) periods. Only optimize on the training set.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "RSI mean-reversion backtest for AAPL",
+            "description": "Fetch 1 year of daily AAPL data, generate RSI signals, run a backtest with equal-weight sizing and 5% stop-loss, then chart the equity curve.",
+            "workflow_snippet": {
+                "id": "backtest_rsi_aapl",
+                "name": "RSI Backtest AAPL",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 252},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}", "period": 14, "oversold": 30, "overbought": 70},
+                    {
+                        "id": "backtest",
+                        "type": "BacktestEngineNode",
+                        "initial_capital": 10000,
+                        "commission_rate": 0.001,
+                        "slippage": 0.0005,
+                        "position_sizing": "equal_weight",
+                        "stop_loss_percent": 5.0,
+                        "risk_free_rate": 0.02,
+                        "items": {
+                            "from": "{{ nodes.historical.values }}",
+                            "extract": {
+                                "symbol": "AAPL",
+                                "exchange": "NASDAQ",
+                                "date": "{{ row.date }}",
+                                "open": "{{ row.open }}",
+                                "high": "{{ row.high }}",
+                                "low": "{{ row.low }}",
+                                "close": "{{ row.close }}",
+                                "signal": "{{ row.signal }}",
+                            },
+                        },
+                    },
+                    {"id": "chart", "type": "LineChartNode", "title": "RSI Strategy Equity", "data": "{{ nodes.backtest.equity_curve }}", "x_field": "date", "y_field": "equity"},
+                    {"id": "summary", "type": "SummaryDisplayNode", "title": "Performance Metrics", "data": "{{ nodes.backtest.metrics }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "backtest"},
+                    {"from": "backtest", "to": "chart"},
+                    {"from": "backtest", "to": "summary"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "equity_curve (list of {date, equity}), metrics: {total_return, sharpe_ratio, max_drawdown, win_rate, total_trades}.",
+        },
+        {
+            "title": "MACD trend-following backtest with trailing stop",
+            "description": "Use MACD signals on SPY with a 3% trailing stop and Kelly position sizing to simulate a trend-following strategy.",
+            "workflow_snippet": {
+                "id": "backtest_macd_spy",
+                "name": "MACD Trailing Stop Backtest",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "SPY", "exchange": "NYSE"}], "period": "1d", "count": 504},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.historical.values }}"},
+                    {
+                        "id": "backtest",
+                        "type": "BacktestEngineNode",
+                        "initial_capital": 50000,
+                        "commission_rate": 0.001,
+                        "slippage": 0.0005,
+                        "position_sizing": "kelly",
+                        "kelly_fraction": 0.25,
+                        "trailing_stop_percent": 3.0,
+                        "risk_free_rate": 0.04,
+                        "items": {
+                            "from": "{{ nodes.historical.values }}",
+                            "extract": {
+                                "symbol": "SPY",
+                                "exchange": "NYSE",
+                                "date": "{{ row.date }}",
+                                "open": "{{ row.open }}",
+                                "high": "{{ row.high }}",
+                                "low": "{{ row.low }}",
+                                "close": "{{ row.close }}",
+                                "signal": "{{ row.signal }}",
+                            },
+                        },
+                    },
+                    {"id": "chart", "type": "LineChartNode", "title": "MACD Kelly Equity Curve", "data": "{{ nodes.backtest.equity_curve }}", "x_field": "date", "y_field": "equity"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "backtest"},
+                    {"from": "backtest", "to": "chart"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "equity_curve with trailing-stop exits visible as sharp drops halted at 3% below the peak, plus metrics showing Kelly-adjusted returns.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The 'items' field uses a {from, extract} structure. 'from' is an expression pointing to the historical data array. 'extract' maps column names (symbol, exchange, date, open, high, low, close, signal) from each row using {{ row.fieldName }} expressions. The 'signal' extract field must match the column name that ConditionNode writes buy/sell signals to.",
+        "output_consumption": "Use 'equity_curve' for time-series visualization (LineChartNode, MultiLineChartNode). Use 'trades' for a detailed trade-by-trade table (TableDisplayNode). Use 'metrics' or 'summary' (identical) for the performance summary card (SummaryDisplayNode). Feed 'equity_curve' into BenchmarkCompareNode for multi-strategy comparison.",
+        "common_combinations": [
+            "HistoricalDataNode → ConditionNode → BacktestEngineNode → LineChartNode (equity curve)",
+            "BacktestEngineNode.trades → TableDisplayNode (trade log)",
+            "BacktestEngineNode.metrics → SummaryDisplayNode (performance metrics card)",
+            "BacktestEngineNode.equity_curve → BenchmarkCompareNode → MultiLineChartNode",
+        ],
+        "pitfalls": [
+            "The 'extract.signal' value must exactly match the signal field name in ConditionNode output — a mismatch results in zero signals and the backtest runs as buy-and-hold.",
+            "initial_capital must be at least 100. Setting it too low causes position sizing to fail with zero-quantity orders.",
+            "BacktestEngineNode runs synchronously — very large datasets (10,000+ rows, 50+ symbols) can make the workflow cycle slow. Consider reducing count or using daily rather than intraday data.",
+        ],
+    }
+
     _inputs: List[InputPort] = [
         InputPort(
             name="items",
@@ -519,6 +695,164 @@ class BenchmarkCompareNode(BaseNode):
     category: NodeCategory = NodeCategory.ANALYSIS
     description: str = "i18n:nodes.BenchmarkCompareNode.description"
     _img_url: ClassVar[str] = ""
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Compare two or more backtest equity curves side by side using a common performance metric (Sharpe, return, MDD, Calmar)",
+            "Rank multiple strategies by a chosen metric to identify the best performer",
+            "Generate a combined_curve for MultiLineChartNode to visualize all strategies on a single chart",
+            "Produce a comparison_metrics table for TableDisplayNode or BarChartNode to compare returns across strategies",
+        ],
+        "when_not_to_use": [
+            "For comparing a single strategy against itself — BenchmarkCompareNode needs at least two equity curves",
+            "For live strategy ranking — this node operates on historical backtest outputs only",
+            "For computing raw performance metrics of a single strategy — use BacktestEngineNode.metrics directly",
+        ],
+        "typical_scenarios": [
+            "BacktestEngineNode (RSI) + BacktestEngineNode (MACD) → BenchmarkCompareNode → MultiLineChartNode",
+            "BenchmarkCompareNode → BarChartNode (x=strategy_name, y=sharpe — Sharpe ratio bar chart)",
+            "BenchmarkCompareNode → TableDisplayNode (ranking — sorted strategy leaderboard)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Accepts a list of equity_curve arrays from multiple BacktestEngineNode outputs for head-to-head comparison",
+        "Outputs combined_curve (all series merged) for MultiLineChartNode visualization",
+        "Outputs comparison_metrics and ranking (sorted by ranking_metric) for tabular display",
+        "Configurable ranking_metric: sharpe (default), return, mdd, calmar",
+        "date_field, equity_field, name_field can be customized for non-standard data sources",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Feeding raw price data (not equity curves) into BenchmarkCompareNode",
+            "reason": "BenchmarkCompareNode expects equity curve format {date, equity, strategy_name}. Raw OHLCV price data has a different schema and will produce incorrect metrics.",
+            "alternative": "Always use BacktestEngineNode.equity_curve as input. Run a buy-and-hold backtest for the benchmark asset (SPY) as the reference curve.",
+        },
+        {
+            "pattern": "Comparing strategies backtested on different date ranges",
+            "reason": "Strategies with different start/end dates are compared over misaligned time periods, making performance metrics incomparable.",
+            "alternative": "Ensure all BacktestEngineNode instances use the same historical data date range before feeding into BenchmarkCompareNode.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Compare RSI strategy vs MACD strategy on SPY",
+            "description": "Run two BacktestEngineNodes (RSI and MACD signals) on the same SPY history, then rank them by Sharpe ratio.",
+            "workflow_snippet": {
+                "id": "benchmark_rsi_vs_macd",
+                "name": "RSI vs MACD Comparison",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "SPY", "exchange": "NYSE"}], "period": "1d", "count": 252},
+                    {"id": "rsi_cond", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}", "period": 14, "oversold": 30, "overbought": 70},
+                    {"id": "macd_cond", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.historical.values }}"},
+                    {
+                        "id": "backtest_rsi",
+                        "type": "BacktestEngineNode",
+                        "initial_capital": 10000,
+                        "commission_rate": 0.001,
+                        "slippage": 0.0005,
+                        "position_sizing": "equal_weight",
+                        "strategy_name": "RSI Strategy",
+                        "items": {"from": "{{ nodes.historical.values }}", "extract": {"symbol": "SPY", "exchange": "NYSE", "date": "{{ row.date }}", "open": "{{ row.open }}", "high": "{{ row.high }}", "low": "{{ row.low }}", "close": "{{ row.close }}", "signal": "{{ row.signal }}"}},
+                    },
+                    {
+                        "id": "backtest_macd",
+                        "type": "BacktestEngineNode",
+                        "initial_capital": 10000,
+                        "commission_rate": 0.001,
+                        "slippage": 0.0005,
+                        "position_sizing": "equal_weight",
+                        "strategy_name": "MACD Strategy",
+                        "items": {"from": "{{ nodes.historical.values }}", "extract": {"symbol": "SPY", "exchange": "NYSE", "date": "{{ row.date }}", "open": "{{ row.open }}", "high": "{{ row.high }}", "low": "{{ row.low }}", "close": "{{ row.close }}", "signal": "{{ row.signal }}"}},
+                    },
+                    {"id": "benchmark", "type": "BenchmarkCompareNode", "strategies": "{{ [nodes.backtest_rsi.equity_curve, nodes.backtest_macd.equity_curve] }}", "ranking_metric": "sharpe"},
+                    {"id": "ranking_table", "type": "TableDisplayNode", "title": "Strategy Ranking", "data": "{{ nodes.benchmark.ranking }}", "limit": 10},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "rsi_cond"},
+                    {"from": "historical", "to": "macd_cond"},
+                    {"from": "rsi_cond", "to": "backtest_rsi"},
+                    {"from": "macd_cond", "to": "backtest_macd"},
+                    {"from": "backtest_rsi", "to": "benchmark"},
+                    {"from": "backtest_macd", "to": "benchmark"},
+                    {"from": "benchmark", "to": "ranking_table"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "ranking table listing RSI Strategy and MACD Strategy sorted by Sharpe ratio descending, with columns: strategy_name, total_return, sharpe, max_drawdown.",
+        },
+        {
+            "title": "Multi-strategy equity curve comparison chart",
+            "description": "Feed combined_curve from BenchmarkCompareNode to MultiLineChartNode to visualize all strategy equity curves on one chart.",
+            "workflow_snippet": {
+                "id": "benchmark_multiline",
+                "name": "Multi-Strategy Equity Chart",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "QQQ", "exchange": "NASDAQ"}], "period": "1d", "count": 252},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.historical.values }}"},
+                    {
+                        "id": "backtest",
+                        "type": "BacktestEngineNode",
+                        "initial_capital": 10000,
+                        "commission_rate": 0.001,
+                        "slippage": 0.0005,
+                        "position_sizing": "equal_weight",
+                        "strategy_name": "MACD QQQ",
+                        "items": {"from": "{{ nodes.historical.values }}", "extract": {"symbol": "QQQ", "exchange": "NASDAQ", "date": "{{ row.date }}", "open": "{{ row.open }}", "high": "{{ row.high }}", "low": "{{ row.low }}", "close": "{{ row.close }}", "signal": "{{ row.signal }}"}},
+                    },
+                    {"id": "benchmark", "type": "BenchmarkCompareNode", "strategies": "{{ nodes.backtest.equity_curve }}", "ranking_metric": "sharpe"},
+                    {"id": "chart", "type": "MultiLineChartNode", "title": "Equity Curve Comparison", "data": "{{ nodes.benchmark.combined_curve }}", "x_field": "date", "y_field": "equity", "series_key": "strategy_name"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "backtest"},
+                    {"from": "backtest", "to": "benchmark"},
+                    {"from": "benchmark", "to": "chart"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "A multi-line chart showing the equity curve for MACD QQQ strategy, with strategy_name as the series differentiator.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The 'strategies' field expects a list of equity_curve arrays. Each equity_curve item must contain date, equity, and strategy_name fields (or customize via date_field, equity_field, name_field). Bind using an expression that wraps multiple BacktestEngineNode.equity_curve outputs into a list.",
+        "output_consumption": "Use 'combined_curve' → MultiLineChartNode for visualization. Use 'comparison_metrics' → TableDisplayNode or BarChartNode for metric comparison. Use 'ranking' → TableDisplayNode for sorted leaderboard display.",
+        "common_combinations": [
+            "BacktestEngineNode (x2+) → BenchmarkCompareNode → MultiLineChartNode",
+            "BenchmarkCompareNode.ranking → TableDisplayNode",
+            "BenchmarkCompareNode.comparison_metrics → BarChartNode (Sharpe bar chart)",
+        ],
+        "pitfalls": [
+            "All strategy equity curves must cover the same date range — misaligned dates cause incorrect comparison metrics.",
+            "strategy_name must be unique per equity curve. If multiple BacktestEngineNodes have the same strategy_name, the ranking will have duplicate entries.",
+            "BenchmarkCompareNode does not fetch benchmark data (SPY, QQQ) automatically. You must run a separate buy-and-hold BacktestEngineNode and include its equity_curve in the strategies list.",
+        ],
+    }
 
     # Dynamic input: multiple equity_curve bindings
     strategies: List[Any] = Field(
