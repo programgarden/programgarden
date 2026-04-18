@@ -372,3 +372,8 @@ CLAUDE.md
 json_dynamic_widget_built_in_widgets/
 vector_db_docs/
 src/finance/ls_finance_korea_stock_guide/*
+
+# 개발자 본인 운영 스크립트 (실행 데이터/로그)
+scripts/*/data/
+scripts/**/*.db
+scripts/**/*.log
