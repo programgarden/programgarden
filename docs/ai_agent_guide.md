@@ -331,14 +331,6 @@ JIF 는 미국 거래소를 거래소 단위(NASDAQ/NYSE 분리)로 제공하지
 
 오전/오후를 구분하지 않고 "홍콩장" 으로 물으면 `markets=["HK_AM", "HK_PM"]` 로 편의 포트 `hk_is_open` 사용.
 
-### FastEmbed Semantic Matching 키워드
-
-AI Agent 도구 선택(`tool_selection="semantic"`, 기본값) 시 FastEmbed 벡터 검색이 사용하는 주요 키워드 (영문):
-
-`market hours, trading hours, market status, market open, market closed, weekend, holiday, pre-market, after-market, regular hours, extended hours, KOSPI status, KOSDAQ, US market, Hong Kong market, Japan market, China market, circuit breaker, sidecar, session, exchange status`
-
-도구 6개 이상일 때 자동 활성화되어 관련도 높은 도구만 LLM 에 전달 (컨텍스트 절약).
-
 ### 제한 사항: 해외선물 질의 답변 불가
 
 > **This tool does not support overseas futures markets.**

@@ -43,7 +43,7 @@ poetry add programgarden-core
 | analysis | 2 | BacktestEngineNode, BenchmarkCompareNode |
 | ai | 2 | LLMModelNode, AIAgentNode |
 
-> community 패키지에서 4개 노드 추가: TelegramNode(messaging), FearGreedIndexNode(market), FundamentalDataNode(market), FileReaderNode(data) → 전체 72개
+> community 패키지에서 4개 노드 추가: TelegramNode(messaging), FearGreedIndexNode(market), FundamentalDataNode(market), FileReaderNode(data) → 전체 73개
 
 ## 사용 예시
 
@@ -70,7 +70,7 @@ print(schema.config_schema)
 
 ```
 programgarden_core/
-├── nodes/          # 68개 노드 정의 (base.py, infra.py, account.py, ...)
+├── nodes/          # 69개 노드 정의 (base.py, infra.py, account.py, ...)
 ├── bases/          # Finance 베이스 클래스
 ├── models/         # Pydantic 모델 (FieldSchema, Edge, WorkflowDefinition 등)
 ├── registry/       # NodeTypeRegistry, PluginRegistry
