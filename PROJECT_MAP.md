@@ -26,10 +26,10 @@ src/
       database/ [5 .py] — checkpoint, position_tracker, risk_tracker, query_builder
       providers/ [3 .py] — LLM provider (litellm), errors
       tools/ [7 .py] — registry, sqlite, job, credential, event, definition tools
-    examples/python_server/ — FastAPI demo server (port 8766)
-    examples/trend_trailing_bot/ — TSMOM 60-day trend following bot
-    examples/bollinger_reversion_bot/ — Bollinger Bands mean reversion bot
-    examples/hkex_futures_bot/ — HKEX mini futures bot (paper trading)
+    examples/workflows/ [67 .json + 67 .md + 00-workflow-guide.md] — runnable workflow demos (incl. 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures)
+    examples/dynamic_plugins/ [11 .py] — user-contributed simple_* plugin examples
+    examples/dynamic_nodes/ [1 .py] — Dynamic_* node definition example
+    examples/programmer_example/ [3 .py] — live integration scripts (AI agent, quant)
   finance/ [339 .py] — programgarden-finance 1.4.4
     programgarden_finance/
       ls/ — LS Securities API wrapper
@@ -136,7 +136,8 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Plugin output_fields: schema documents plugin-specific output fields
 - [x] FileReaderNode: 7 formats (PDF/TXT/CSV/JSON/MD/DOCX/XLSX) + pdfplumber tables
 - [x] position_data list[dict] unify: overseas futures producer + 10 consumer plugins aligned
-- [x] Example bots: trend_trailing_bot, bollinger_reversion_bot, hkex_futures_bot
+- [x] Example bots (consolidated into examples/workflows/): 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures
+- [x] Node AI metadata: 5 ClassVars (_usage / _features / _anti_patterns / _examples / _node_guide) on all 73 nodes
 - [x] MarketStatusNode: JIF-based real-time market status (12 markets, broker-agnostic, AI-Tool enabled)
 
 ## CONVENTIONS
