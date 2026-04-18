@@ -80,6 +80,144 @@ class FundamentalDataNode(BaseNode):
     description: str = "i18n:nodes.FundamentalDataNode.description"
     _img_url: ClassVar[str] = ""
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Screen stocks by fundamental quality metrics (P/E, ROE, EPS, market cap) before applying technical entry signals",
+            "Implement value-investing strategies (e.g. Magic Formula — combine high ROIC with low EV/EBITDA) using key_metrics data",
+            "Provide company profile data to an AIAgentNode for fundamental analysis or sector comparison",
+            "Pull quarterly or annual income statements for ratio-based filters in a ScreenerNode → FundamentalDataNode pipeline",
+        ],
+        "when_not_to_use": [
+            "When broker-integrated fundamental data is sufficient — OverseasStockFundamentalNode (LS-based) is preferred for live trading workflows since it does not require a separate API key",
+            "For high-frequency or intraday analysis — fundamental data changes quarterly at most; calling this node per tick is wasteful",
+            "For domestic (Korean) stocks — this node covers international equities via FMP; use KoreaStockFundamentalNode for KOSPI/KOSDAQ",
+        ],
+        "typical_scenarios": [
+            "WatchlistNode → FundamentalDataNode (profile) → ConditionNode (filter by P/E < 20) → OverseasStockNewOrderNode",
+            "MarketUniverseNode → FundamentalDataNode (key_metrics) → FieldMappingNode (rank by ROIC) → ScreenerNode",
+            "FundamentalDataNode (income_statement) → AIAgentNode (summarize revenue trend)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Four data types via Financial Modeling Prep API: 'profile' (company overview + valuation ratios), 'key_metrics' (ROIC, EV/EBITDA, net debt), 'income_statement', and 'balance_sheet'",
+        "Credential-based API key management — FMP API key stored in a 'fmp_api' credential, never embedded in workflow JSON",
+        "Batch profile fetch (up to 5 symbols per request) with automatic batching for larger symbol lists",
+        "Supports 'annual' and 'quarter' period options with configurable record limit (1–10) for income_statement and balance_sheet types",
+        "is_tool_enabled=True — AI Agent can invoke this node as a tool to fetch fundamentals on demand during analysis",
+        "Distinct from OverseasStockFundamentalNode: FundamentalDataNode uses FMP (no broker required), OverseasStockFundamentalNode uses LS Securities API (broker required)",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Calling FundamentalDataNode on every workflow cycle for intraday trading",
+            "reason": "Fundamental data is quarterly; repeated calls waste FMP API quota (250 calls/day on the free tier) and add latency without updating the data.",
+            "alternative": "Call FundamentalDataNode once at workflow start or on a daily schedule; cache results in SQLiteNode for the rest of the session.",
+        },
+        {
+            "pattern": "Confusing FundamentalDataNode with OverseasStockFundamentalNode",
+            "reason": "OverseasStockFundamentalNode uses the LS Securities broker connection and does not require an FMP API key. Using FundamentalDataNode unnecessarily introduces an external dependency.",
+            "alternative": "Use OverseasStockFundamentalNode for LS-connected workflows. Reserve FundamentalDataNode for fundamentals not available through LS (e.g. detailed income statements, ROIC).",
+        },
+        {
+            "pattern": "Passing more than 5 symbols at once expecting a single batched response",
+            "reason": "FMP profile endpoint batches up to 5 symbols. For key_metrics and financial statements, requests are issued per-symbol sequentially; large lists trigger long execution times and quota exhaustion.",
+            "alternative": "Pre-filter your watchlist to a focused set (5–10 names) using ScreenerNode or ConditionNode before calling FundamentalDataNode.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Filter watchlist by P/E ratio",
+            "description": "Fetch company profiles for a watchlist and keep only stocks with P/E below 20 for further technical analysis.",
+            "workflow_snippet": {
+                "id": "fmp_pe_filter",
+                "name": "FMP PE Filter",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {
+                        "id": "fundamental",
+                        "type": "FundamentalDataNode",
+                        "credential_id": "fmp_cred",
+                        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}],
+                        "data_type": "profile",
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.data }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "fundamental"},
+                    {"from": "fundamental", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    },
+                    {
+                        "credential_id": "fmp_cred",
+                        "type": "fmp_api",
+                        "data": [
+                            {"key": "api_key", "value": "", "type": "password", "label": "FMP API Key"},
+                        ],
+                    },
+                ],
+            },
+            "expected_output": "data: list of company profile dicts with symbol, per, pbr, roe, market_cap fields. summary: {data_type, symbol_count, record_count}.",
+        },
+        {
+            "title": "Key metrics for value screening",
+            "description": "Pull annual key metrics for two candidates and display them for manual review before running a value-ranking model.",
+            "workflow_snippet": {
+                "id": "fmp_key_metrics",
+                "name": "FMP Key Metrics",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {
+                        "id": "metrics",
+                        "type": "FundamentalDataNode",
+                        "credential_id": "fmp_cred",
+                        "symbols": [{"symbol": "GOOG", "exchange": "NASDAQ"}, {"symbol": "META", "exchange": "NASDAQ"}],
+                        "data_type": "key_metrics",
+                        "period": "annual",
+                        "limit": 1,
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.metrics.data }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "metrics"},
+                    {"from": "metrics", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "fmp_cred",
+                        "type": "fmp_api",
+                        "data": [
+                            {"key": "api_key", "value": "", "type": "password", "label": "FMP API Key"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "data: list of key metric dicts with roic, ev_to_ebitda, roe, net_debt per symbol. summary: {data_type='key_metrics', symbol_count=2, record_count=2}.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Provide 'symbols' as a list of {symbol, exchange} dicts. The 'symbols' input port also accepts upstream array output (e.g. from WatchlistNode) via expression binding. Choose 'data_type' to control which FMP endpoint is called. 'period' and 'limit' apply only to income_statement, balance_sheet, and key_metrics.",
+        "output_consumption": "Consume 'data' (list[dict]) as the primary output — each element is a normalized record for one symbol. Pipe to FieldMappingNode for column renaming, to ConditionNode for ratio-based filtering, or to TableDisplayNode for review. 'summary' provides high-level counts (symbol_count, record_count) useful for validation.",
+        "common_combinations": [
+            "WatchlistNode → FundamentalDataNode (profile) → FieldMappingNode → ConditionNode (ratio filter)",
+            "FundamentalDataNode (key_metrics) → AIAgentNode (value ranking prompt)",
+            "FundamentalDataNode (income_statement) → SQLiteNode (cache quarterly data)",
+        ],
+        "pitfalls": [
+            "FMP free tier allows ~250 API calls per day — use SQLiteNode caching to avoid exhausting quota during testing.",
+            "'per' (P/E ratio) and 'pbr' fields can be 0 when FMP does not have the data; guard against division by zero in ConditionNode expressions.",
+            "The 'exchange' field in profile output uses FMP's short name (e.g. 'NASDAQ', 'NYSE') which may differ from the LS Securities exchange codes — align before cross-referencing.",
+        ],
+    }
+
     # 실시간 노드에서 직접 연결 차단
     _connection_rules: ClassVar[List[ConnectionRule]] = [
         ConnectionRule(

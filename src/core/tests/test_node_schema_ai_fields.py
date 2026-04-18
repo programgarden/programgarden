@@ -34,9 +34,6 @@ except ImportError:
 
 
 TARGET_NODE_COUNT = 73
-# Floor that proves forward progress without forcing the fill-in to be
-# atomic. Bump this every time more node classes gain `_ai_metadata`.
-MIN_FILLED_NODES = 14
 
 
 def _all_types() -> List[str]:
@@ -131,15 +128,19 @@ def test_metadata_workflow_snippets_validate(node_type: str):
 # ---------------------------------------------------------------------------
 
 
-def test_metadata_coverage_floor():
-    """At least MIN_FILLED_NODES must declare `_ai_metadata`.
+def test_metadata_coverage_full():
+    """Every registered node must declare `_ai_metadata`.
 
-    Bump MIN_FILLED_NODES whenever a new node class gains metadata. Once
-    all 73 are filled, replace the floor with an equality check.
+    Phase 2 fill-in is complete; any new node class must add the 5 AI
+    ClassVars at introduction time.
     """
-    filled = _filled_types()
-    assert len(filled) >= MIN_FILLED_NODES, (
-        f"expected at least {MIN_FILLED_NODES} filled nodes, got {len(filled)}"
+    filled = set(_filled_types())
+    registered = set(_all_types())
+    missing = sorted(registered - filled)
+    assert not missing, f"{len(missing)} nodes missing _ai_metadata: {missing}"
+    assert len(registered) >= TARGET_NODE_COUNT or not _COMMUNITY_AVAILABLE, (
+        f"expected at least {TARGET_NODE_COUNT} registered nodes "
+        f"(community available={_COMMUNITY_AVAILABLE}), got {len(registered)}"
     )
 
 

@@ -9,7 +9,7 @@ Item-based execution:
 - Output: 단일 value (해당 종목의 과거 OHLCV 데이터)
 """
 
-from typing import Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
+from typing import Any, Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -70,6 +70,134 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
     @classmethod
     def is_tool_enabled(cls) -> bool:
         return True
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Retrieve daily (or intraday) OHLCV history for an overseas futures contract (CME, EUREX, SGX, HKEX) for technical analysis or backtesting",
+            "Feed historical candles into ConditionNode plugins (MACD, Bollinger, etc.) that operate on futures price series",
+            "Use `{{ date.ago(N, format='yyyymmdd') }}` for start_date to maintain a rolling lookback window",
+        ],
+        "when_not_to_use": [
+            "For overseas stock historical data — use OverseasStockHistoricalDataNode",
+            "For Korean domestic stock history — use KoreaStockHistoricalDataNode",
+            "When you only need the current quote snapshot — use OverseasFuturesMarketDataNode",
+        ],
+        "typical_scenarios": [
+            "SplitNode.item → OverseasFuturesHistoricalDataNode → ConditionNode (Bollinger strategy on futures)",
+            "OverseasFuturesHistoricalDataNode.value → BacktestEngineNode (futures strategy backtest)",
+            "OverseasFuturesHistoricalDataNode.value → BenchmarkCompareNode (performance vs benchmark)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns time_series list of OHLCV candles: [{date, open, high, low, close, volume}, ...] ordered oldest-first",
+        "Supports intervals: 1m, 5m, 15m, 1h, 1d, 1w, 1M — daily is the default for swing/position strategies",
+        "start_date / end_date accept YYYYMMDD strings or `{{ date.ago(N, format='yyyymmdd') }}` expressions",
+        "adjust=True applies roll-adjusted prices for continuous contract backtesting",
+        "is_tool_enabled=True — AI Agent can fetch futures history for technical analysis autonomously",
+        "Item-based execution: pair with SplitNode to fetch OHLCV for multiple contracts",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Binding `{{ nodes.historical.value }}` directly to ConditionNode data instead of `.time_series`",
+            "reason": "The value port is a dict containing a `time_series` key — plugins expect a plain list of candle dicts.",
+            "alternative": "Bind `{{ nodes.historical.value.time_series }}` to the ConditionNode data field.",
+        },
+        {
+            "pattern": "Using adjust=False for a continuous contract strategy that spans roll periods",
+            "reason": "Unadjusted prices have discontinuities at contract roll dates, which distort momentum and mean-reversion signals.",
+            "alternative": "Set adjust=True for strategies that look back across multiple roll periods.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "60-day daily history for Bollinger strategy on E-mini S&P",
+            "description": "Fetch 60 days of ESH26 daily OHLCV and compute Bollinger Bands for a mean-reversion signal.",
+            "workflow_snippet": {
+                "id": "overseas_futures_historical_bollinger",
+                "name": "Futures Bollinger Strategy",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "ESH26", "exchange": "CME"}]},
+                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(60, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1d", "adjust": False},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "BollingerBands", "data": "{{ nodes.historical.value.time_series }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_futures",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "value.time_series: [{date, open, high, low, close, volume}, ...]. ConditionNode computes upper/lower bands and emits signal.",
+        },
+        {
+            "title": "HKEX mini-futures intraday scan",
+            "description": "Fetch 1-hour bars for the past 10 days for HKEX mini-futures and apply MACD.",
+            "workflow_snippet": {
+                "id": "overseas_futures_historical_hkex_macd",
+                "name": "HKEX Intraday MACD",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "MHIH26", "exchange": "HKEX"}]},
+                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(10, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1h", "adjust": False},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.historical.value.time_series }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_futures",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "MACD crossover signal computed from 1-hour HKEX mini-futures bars; result port emits buy/sell signal.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": (
+            "The `symbol` field takes a single {exchange, symbol} dict — bind to `{{ nodes.split.item }}` for multi-contract iteration. "
+            "Exchange values: CME, EUREX, SGX, HKEX. Symbol includes contract month code (e.g., ESH26). "
+            "start_date / end_date: use `{{ date.ago(N, format='yyyymmdd') }}` for rolling lookback. "
+            "interval options: 1m, 5m, 15m, 1h, 1d, 1w, 1M."
+        ),
+        "output_consumption": (
+            "The `value` port emits {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. "
+            "Access via `{{ nodes.historical.value.time_series }}` for ConditionNode plugins."
+        ),
+        "common_combinations": [
+            "SplitNode.item → OverseasFuturesHistoricalDataNode → ConditionNode (technical signal on futures history)",
+            "OverseasFuturesHistoricalDataNode.value → BacktestEngineNode (futures backtest)",
+            "OverseasFuturesHistoricalDataNode.value → LineChartNode (price history display)",
+        ],
+        "pitfalls": [
+            "Bind `.time_series` not `.value` to ConditionNode data — the value port wraps the list in a dict",
+            "Use OverseasFuturesBrokerNode (not OverseasStockBrokerNode) upstream",
+            "Contract month codes change every quarter — update symbol (e.g., ESH26 → ESM26) when rolling",
+        ],
+    }
 
     _inputs: List[InputPort] = [
         InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),

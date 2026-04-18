@@ -65,6 +65,135 @@ class FileReaderNode(BaseNode):
     description: str = "i18n:nodes.FileReaderNode.description"
     _img_url: ClassVar[str] = ""
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Feed research reports, earnings call transcripts (PDF), or news articles (TXT/MD) into an AIAgentNode for LLM-based analysis",
+            "Load a CSV watchlist or XLSX portfolio snapshot exported from a spreadsheet tool for further processing",
+            "Parse a JSON configuration file stored in /app/data/ to dynamically drive workflow parameters",
+            "Batch-read multiple documents (up to 20) at once and auto-iterate the outputs downstream via the list-format outputs",
+        ],
+        "when_not_to_use": [
+            "For files outside /app/data/ — FileReaderNode enforces a strict path sandbox; files must be pre-uploaded to /app/data/",
+            "For live data streams or frequently updated files where the workflow reads the same path every cycle — reads are one-shot per execution; consider SQLiteNode for structured mutable state",
+            "For very large files (> max_file_size_mb limit, default 10 MB) — split large documents or increase the limit within the 50 MB maximum",
+        ],
+        "typical_scenarios": [
+            "StartNode → FileReaderNode (PDF report) → AIAgentNode (summarize earnings report)",
+            "StartNode → FileReaderNode (CSV watchlist) → ConditionNode (filter symbols) → OverseasStockNewOrderNode",
+            "StartNode → FileReaderNode (XLSX portfolio) → FieldMappingNode → TableDisplayNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Supports 7 file formats: PDF (with optional table extraction via pdfplumber), TXT, CSV, JSON, MD, DOCX, and XLSX — format auto-detected from file extension when format='auto'",
+        "Single-file convenience fields (file_path, file_data, file_name) and batch list fields (file_paths, file_data_list, file_names) for processing up to 20 files per execution",
+        "Base64-encoded file_data input allows passing file content from upstream HTTP or database nodes without writing to disk",
+        "Strict /app/data/ path sandbox — prevents directory traversal; files outside the sandbox are rejected at runtime",
+        "Three output arrays (texts, data_list, metadata) enable auto-iterate downstream: texts for LLM ingestion, data_list for structured CSV/JSON/XLSX rows, metadata for audit",
+        "is_tool_enabled=True — AI Agent can invoke FileReaderNode as a tool to read documents on demand during reasoning",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using file_path with an absolute OS path outside /app/data/ (e.g. /Users/john/docs/report.pdf)",
+            "reason": "FileReaderNode enforces a /app/data/ sandbox for security; absolute paths outside this directory raise a ValueError at runtime.",
+            "alternative": "Pre-upload files to /app/data/ and reference them with a relative path (e.g. 'reports/report.pdf') or an absolute path under /app/data/ (e.g. '/app/data/reports/report.pdf').",
+        },
+        {
+            "pattern": "Passing the raw 'texts' list directly to an LLM prompt as a Python list object",
+            "reason": "The 'texts' output is a list[str]; embedding a Python list repr in a prompt produces ugly formatting and wastes tokens.",
+            "alternative": "Use {{ nodes.reader.texts | join('\\n---\\n') }} expression or extract a single item with {{ nodes.reader.texts[0] }} for cleaner prompt injection.",
+        },
+        {
+            "pattern": "Setting extract_tables=True for non-PDF files",
+            "reason": "extract_tables only applies to PDF parsing (via pdfplumber); it is silently ignored for TXT, CSV, and other formats.",
+            "alternative": "For CSV or XLSX, the structured rows are already available in 'data_list' without needing extract_tables.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Summarize a PDF earnings report with AI Agent",
+            "description": "Read a PDF earnings report from /app/data/ and pass its text to an AI Agent for summarization.",
+            "workflow_snippet": {
+                "id": "file_reader_pdf_ai",
+                "name": "File Reader PDF AI Summary",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {
+                        "id": "reader",
+                        "type": "FileReaderNode",
+                        "file_path": "reports/earnings.pdf",
+                        "format": "auto",
+                        "pages": "1-10",
+                    },
+                    {"id": "llm", "type": "LLMModelNode", "credential_id": "llm_cred", "model": "gpt-4o-mini"},
+                    {
+                        "id": "agent",
+                        "type": "AIAgentNode",
+                        "prompt": "Summarize the following earnings report: {{ nodes.reader.texts[0] }}",
+                        "output_format": "text",
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.agent.text }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "reader"},
+                    {"from": "reader", "to": "agent"},
+                    {"from": "llm", "to": "agent", "type": "ai_model"},
+                    {"from": "agent", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "llm_cred",
+                        "type": "llm_openai",
+                        "data": [
+                            {"key": "api_key", "value": "", "type": "password", "label": "API Key"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "AIAgentNode text output with a structured summary of the earnings report content.",
+        },
+        {
+            "title": "Load CSV watchlist and display filtered symbols",
+            "description": "Read a CSV file containing a stock watchlist and display the parsed rows as a table.",
+            "workflow_snippet": {
+                "id": "file_reader_csv_watchlist",
+                "name": "File Reader CSV Watchlist",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {
+                        "id": "reader",
+                        "type": "FileReaderNode",
+                        "file_path": "watchlists/tech_stocks.csv",
+                        "format": "csv",
+                        "has_header": True,
+                        "delimiter": ",",
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.reader.data_list }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "reader"},
+                    {"from": "reader", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "TableDisplayNode shows parsed CSV rows as a structured table with columns from the CSV header.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Provide either single-file fields (file_path for path, file_data for base64 content) or batch list fields (file_paths, file_data_list). Single and batch fields can be combined — file_path is promoted to file_paths[0] if file_paths is empty. file_names provides display names when using base64 data. Paths are resolved relative to /app/data/.",
+        "output_consumption": "Use 'texts' (list[str]) for LLM prompt injection or text processing. Use 'data_list' (list[any]) for structured data from CSV/JSON/XLSX — each element is a list of row dicts (CSV) or parsed object (JSON). Use 'metadata' (list[dict]) for file_name, format, and size_bytes per file. All three outputs are arrays, enabling auto-iterate for per-file processing downstream.",
+        "common_combinations": [
+            "FileReaderNode (PDF) → AIAgentNode (summarize or extract key data)",
+            "FileReaderNode (CSV) → FieldMappingNode → ConditionNode (filter rows)",
+            "FileReaderNode (JSON config) → FieldMappingNode → ConditionNode (apply parameters)",
+            "FileReaderNode (XLSX) → TableDisplayNode (portfolio review)",
+        ],
+        "pitfalls": [
+            "File must exist at /app/data/<file_path> at execution time — FileNotFoundError is raised if the file is missing; upload files before running the workflow.",
+            "PDF text extraction quality depends on whether the PDF contains selectable text; scanned image PDFs yield empty 'texts' without OCR support.",
+            "extract_tables=True requires pdfplumber to be installed in the community package; if absent, table extraction silently falls back to text-only parsing.",
+        ],
+    }
+
     # === 파일 입력 (복수) ===
     file_paths: List[str] = Field(
         default_factory=list,

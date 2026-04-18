@@ -68,6 +68,138 @@ class LLMModelNode(BaseNode):
         description="스트리밍 응답 사용 여부",
     )
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Provide an LLM API connection to one or more AIAgentNodes — analogous to OverseasStockBrokerNode for broker connections",
+            "Switch between LLM providers (OpenAI, Anthropic, DeepSeek, Google) without changing AIAgentNode configuration",
+            "Share one LLMModelNode connection across multiple AIAgentNodes in the same workflow",
+            "Control model parameters (temperature, max_tokens, seed) centrally for reproducible AI responses",
+        ],
+        "when_not_to_use": [
+            "LLMModelNode itself does not generate responses — it only provides the connection. Always pair it with AIAgentNode.",
+            "For simple text processing without LLM — use FieldMappingNode or expression bindings instead",
+        ],
+        "typical_scenarios": [
+            "LLMModelNode (OpenAI gpt-4o) → AIAgentNode (ai_model edge) — basic LLM-powered agent",
+            "LLMModelNode (Anthropic claude) → AIAgentNode1 (risk_manager) + AIAgentNode2 (news_analyst) — shared LLM for two agents",
+            "LLMModelNode (temperature=0) → AIAgentNode (structured output) — deterministic trading signal generation",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Supports four LLM providers: llm_openai, llm_anthropic, llm_deepseek, llm_google via credential_id",
+        "Configurable model ID, temperature (0.0-2.0), max_tokens, seed (for reproducibility), and streaming flag",
+        "Connects to AIAgentNode via 'ai_model' edge type — NOT a 'main' edge",
+        "One LLMModelNode can supply multiple AIAgentNodes (fan-out pattern, each agent gets its own connection context)",
+        "is_tool_enabled=False — LLMModelNode itself cannot be used as a tool by AIAgentNode",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Connecting LLMModelNode to AIAgentNode with a regular 'main' edge instead of an 'ai_model' edge",
+            "reason": "A main edge triggers DAG execution order but does not inject the LLM connection into AIAgentNode. The agent will fail with 'no LLM model configured'.",
+            "alternative": "Use edge type 'ai_model': {\"from\": \"llm\", \"to\": \"agent\", \"type\": \"ai_model\"}",
+        },
+        {
+            "pattern": "Using an OpenAI credential_id with a model name from Anthropic (e.g. credential=llm_openai, model='claude-sonnet-4')",
+            "reason": "The credential type determines which API endpoint is called. Mixing providers causes authentication errors.",
+            "alternative": "Match credential type to model: llm_openai → gpt-4o/gpt-4o-mini, llm_anthropic → claude-* models.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Minimal LLM connection to AIAgentNode",
+            "description": "LLMModelNode connects to AIAgentNode via ai_model edge, providing GPT-4o for market commentary generation.",
+            "workflow_snippet": {
+                "id": "llm_basic",
+                "name": "LLM Basic Connection",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "llm", "type": "LLMModelNode", "credential_id": "llm_cred", "model": "gpt-4o", "temperature": 0.7, "max_tokens": 500},
+                    {"id": "agent", "type": "AIAgentNode", "user_prompt": "Describe the current market sentiment in one paragraph.", "output_format": "text", "max_tool_calls": 0, "cooldown_sec": 60},
+                    {"id": "summary", "type": "SummaryDisplayNode", "title": "Market Commentary", "data": "{{ nodes.agent.response }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "llm"},
+                    {"from": "llm", "to": "agent", "type": "ai_model"},
+                    {"from": "agent", "to": "summary"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "llm_cred",
+                        "type": "llm_openai",
+                        "data": [
+                            {"key": "api_key", "value": "", "type": "password", "label": "API Key"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "A text response from GPT-4o displayed in the SummaryDisplayNode.",
+        },
+        {
+            "title": "Anthropic Claude with low temperature for deterministic structured output",
+            "description": "Use Anthropic Claude at temperature=0 with seed for reproducible structured trading signals via AIAgentNode.",
+            "workflow_snippet": {
+                "id": "llm_anthropic_structured",
+                "name": "Claude Structured Signal",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "llm", "type": "LLMModelNode", "credential_id": "llm_cred", "model": "claude-haiku-4-5-20251001", "temperature": 0.0, "max_tokens": 200, "seed": 42},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}]},
+                    {
+                        "id": "agent",
+                        "type": "AIAgentNode",
+                        "system_prompt": "You are a trading signal generator. Return only valid JSON.",
+                        "user_prompt": "Based on the market data tool output, generate a trading signal for AAPL.",
+                        "output_format": "structured",
+                        "output_schema": {"signal": {"type": "string", "enum": ["buy", "hold", "sell"]}, "confidence": {"type": "number"}},
+                        "max_tool_calls": 3,
+                        "cooldown_sec": 60,
+                    },
+                    {"id": "summary", "type": "SummaryDisplayNode", "title": "Trading Signal", "data": "{{ nodes.agent.response }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "start", "to": "llm"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "llm", "to": "agent", "type": "ai_model"},
+                    {"from": "market", "to": "agent", "type": "tool"},
+                    {"from": "agent", "to": "summary"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    },
+                    {
+                        "credential_id": "llm_cred",
+                        "type": "llm_anthropic",
+                        "data": [
+                            {"key": "api_key", "value": "", "type": "password", "label": "API Key"},
+                        ],
+                    },
+                ],
+            },
+            "expected_output": "A structured JSON object: {signal: 'buy'|'hold'|'sell', confidence: 0.0-1.0} validated against output_schema.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "LLMModelNode requires a credential_id referencing a valid LLM credential (llm_openai, llm_anthropic, llm_deepseek, or llm_google). Set model to the exact model ID for the provider. No data input is needed — this node only establishes the API connection.",
+        "output_consumption": "The 'connection' output port uses edge type 'ai_model', NOT 'main'. Connect it to AIAgentNode's ai_model input. The connection object is not a data value — it is an internal LLM client handle passed to the agent.",
+        "common_combinations": [
+            "LLMModelNode → AIAgentNode (ai_model edge) — always paired",
+            "LLMModelNode → AIAgentNode1 + AIAgentNode2 (fan-out: share one LLM across two agents)",
+        ],
+        "pitfalls": [
+            "Edge type must be 'ai_model' — omitting the type field defaults to 'main' which does NOT inject the LLM connection.",
+            "streaming=True streams tokens via on_llm_stream callback but may cause issues with structured output parsing — keep streaming=False for json/structured output_format.",
+            "max_tokens applies to the LLM output only, not the total context window. If max_tokens is too low the response may be truncated mid-sentence.",
+        ],
+    }
+
     _inputs: List[InputPort] = [
         InputPort(
             name="trigger",
@@ -195,6 +327,175 @@ class AIAgentNode(BaseNode):
         max_concurrent=1,
         on_throttle="skip",
     )
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Analyze market data, account positions, or news using an LLM and produce a text summary or structured trading signal",
+            "Orchestrate multiple data sources (market data, account, historical) as tools and let the LLM decide which to call",
+            "Generate structured buy/sell/hold signals with confidence scores and reasoning using output_format='structured'",
+            "Perform periodic risk assessments on portfolio positions using the risk_manager or technical_analyst preset",
+        ],
+        "when_not_to_use": [
+            "For simple rule-based signal generation — use ConditionNode with a plugin (much faster, no LLM cost)",
+            "For real-time tick-by-tick decisions — AIAgentNode has a minimum cooldown_sec and must not connect directly to real-time nodes",
+            "For stateful multi-turn conversations — AIAgentNode is stateless by design. Each execution starts fresh.",
+        ],
+        "typical_scenarios": [
+            "LLMModelNode → AIAgentNode (risk_manager preset) + OverseasStockAccountNode (tool) → TableDisplayNode",
+            "LLMModelNode → AIAgentNode (technical_analyst preset) + OverseasStockMarketDataNode (tool) → SummaryDisplayNode",
+            "LLMModelNode → AIAgentNode (structured output) → IfNode (check signal field) → OverseasStockNewOrderNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Stateless per execution — no conversation memory. Current data is fetched via tool calls each cycle.",
+        "Tool edges: any node connected via 'tool' edge type becomes an LLM-callable function. All connected tools are passed to the LLM; tool selection is handled by the LLM's own reasoning.",
+        "Four output formats: text (raw string), json (parsed dict), structured (Pydantic-validated against output_schema)",
+        "Four built-in presets: risk_manager, technical_analyst, news_analyst, strategist — each pre-fills system_prompt",
+        "Real-time node direct connection is blocked (ERROR). Use ThrottleNode as intermediary for real-time data sources.",
+        "cooldown_sec (default 60) prevents the agent from executing more often than once per minute",
+        "max_total_tokens (default 100,000) caps total token spend per execution cycle",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Connecting a real-time node (RealMarketDataNode) directly to AIAgentNode without ThrottleNode",
+            "reason": "Real-time nodes fire on every tick. Without throttling, AIAgentNode would call the LLM API thousands of times per minute, causing massive cost and rate limit errors. The workflow validator blocks this with an ERROR.",
+            "alternative": "Insert ThrottleNode between the real-time source and AIAgentNode. Set ThrottleNode interval to match your intended analysis frequency (e.g. 60s).",
+        },
+        {
+            "pattern": "Setting output_format='structured' without defining output_schema",
+            "reason": "Without output_schema, the structured format parser has no schema to validate against, so output falls back to raw JSON without type guarantees.",
+            "alternative": "Always provide output_schema when using output_format='structured'. Define the expected fields, types, and enums explicitly.",
+        },
+        {
+            "pattern": "Using AIAgentNode for simple threshold-based decisions (e.g. if RSI < 30 then buy)",
+            "reason": "LLM calls are slow (1-10 seconds), costly, and non-deterministic. A simple threshold check is better served by ConditionNode which is instantaneous and free.",
+            "alternative": "Use ConditionNode with RSI plugin for threshold logic. Reserve AIAgentNode for complex reasoning that genuinely requires language understanding.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Risk manager agent with account and market data tools",
+            "description": "AIAgentNode with risk_manager preset uses OverseasStockAccountNode and OverseasStockMarketDataNode as tools to analyze portfolio risk and suggest position adjustments.",
+            "workflow_snippet": {
+                "id": "aiagent_risk_manager",
+                "name": "AI Risk Manager",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "llm", "type": "LLMModelNode", "credential_id": "llm_cred", "model": "gpt-4o", "temperature": 0.3, "max_tokens": 1000},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "NVDA", "exchange": "NASDAQ"}]},
+                    {
+                        "id": "agent",
+                        "type": "AIAgentNode",
+                        "preset": "risk_manager",
+                        "user_prompt": "Analyze my current portfolio positions and assess risk. Suggest stop-loss levels for each position.",
+                        "output_format": "structured",
+                        "output_schema": {"positions": {"type": "array", "items": {"type": "object", "properties": {"symbol": {"type": "string"}, "risk_level": {"type": "string"}, "suggested_stop_loss": {"type": "number"}}}}},
+                        "max_tool_calls": 5,
+                        "cooldown_sec": 60,
+                    },
+                    {"id": "table", "type": "TableDisplayNode", "title": "Risk Analysis", "data": "{{ nodes.agent.response }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "start", "to": "llm"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "llm", "to": "agent", "type": "ai_model"},
+                    {"from": "account", "to": "agent", "type": "tool"},
+                    {"from": "market", "to": "agent", "type": "tool"},
+                    {"from": "agent", "to": "table"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    },
+                    {
+                        "credential_id": "llm_cred",
+                        "type": "llm_openai",
+                        "data": [
+                            {"key": "api_key", "value": "", "type": "password", "label": "API Key"},
+                        ],
+                    },
+                ],
+            },
+            "expected_output": "Structured JSON with positions array containing symbol, risk_level, and suggested_stop_loss for each holding.",
+        },
+        {
+            "title": "Technical analyst agent generating buy/hold/sell signals",
+            "description": "AIAgentNode in technical_analyst mode uses historical data and market quote tools to generate a structured trading signal with confidence and reasoning.",
+            "workflow_snippet": {
+                "id": "aiagent_tech_analyst",
+                "name": "AI Technical Analyst",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "llm", "type": "LLMModelNode", "credential_id": "llm_cred", "model": "gpt-4o", "temperature": 0.2, "max_tokens": 800},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "TSLA", "exchange": "NASDAQ"}], "period": "1d", "count": 60},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "TSLA", "exchange": "NASDAQ"}]},
+                    {
+                        "id": "agent",
+                        "type": "AIAgentNode",
+                        "preset": "technical_analyst",
+                        "user_prompt": "Analyze TSLA using the available historical and market data tools. Generate a trading signal.",
+                        "output_format": "structured",
+                        "output_schema": {"signal": {"type": "string", "enum": ["buy", "hold", "sell"]}, "confidence": {"type": "number"}, "reasoning": {"type": "string"}},
+                        "max_tool_calls": 5,
+                        "cooldown_sec": 60,
+                    },
+                    {"id": "summary", "type": "SummaryDisplayNode", "title": "TSLA Signal", "data": "{{ nodes.agent.response }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "start", "to": "llm"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "llm", "to": "agent", "type": "ai_model"},
+                    {"from": "historical", "to": "agent", "type": "tool"},
+                    {"from": "market", "to": "agent", "type": "tool"},
+                    {"from": "agent", "to": "summary"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    },
+                    {
+                        "credential_id": "llm_cred",
+                        "type": "llm_openai",
+                        "data": [
+                            {"key": "api_key", "value": "", "type": "password", "label": "API Key"},
+                        ],
+                    },
+                ],
+            },
+            "expected_output": "Structured JSON: {signal: 'buy'|'hold'|'sell', confidence: 0.0-1.0, reasoning: 'Technical analysis summary...'}, validated against output_schema.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Connect LLMModelNode via 'ai_model' edge (required). Connect tool nodes via 'tool' edges (optional, zero or more). The 'trigger' input port fires the agent via a 'main' edge from an upstream node. Set user_prompt using {{ }} expressions to inject live data context into the prompt.",
+        "output_consumption": "For output_format='text': response is a string — pipe to SummaryDisplayNode. For 'json': response is a dict — pipe to TableDisplayNode or IfNode. For 'structured': response is a validated dict matching output_schema — use dot notation in expressions ({{ nodes.agent.response.signal }}) for downstream branching.",
+        "common_combinations": [
+            "LLMModelNode + AccountNode(tool) + MarketDataNode(tool) → AIAgentNode (risk analysis)",
+            "LLMModelNode + HistoricalDataNode(tool) → AIAgentNode → IfNode (route by signal field)",
+            "AIAgentNode (structured) → IfNode (check signal) → OverseasStockNewOrderNode",
+        ],
+        "pitfalls": [
+            "tool_selection and tool_top_k fields were removed. All tool-edge nodes are passed to the LLM. The LLM decides which tools to call based on their descriptions.",
+            "cooldown_sec minimum is enforced at runtime. Setting cooldown_sec=1 does not guarantee 1-second execution — it depends on the rate_limit configuration.",
+            "output_format='structured' requires a valid JSON Schema in output_schema. Invalid schemas cause parsing failures.",
+        ],
+    }
 
     # === 프롬프트 ===
     preset: Optional[str] = Field(
