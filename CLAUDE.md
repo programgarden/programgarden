@@ -247,6 +247,46 @@ LLMModelNode + AIAgentNode로 워크플로우에 LLM 기반 분석/의사결정 
 - **실시간 보호**: cooldown_sec (기본 60초), ThrottleNode 없이 직접 실시간 노드 연결 차단
 - **Stateless**: 매 실행마다 독립 (대화 기억 없음, 현재 데이터를 Tool로 직접 조회)
 
+### Node AI Metadata (Schema 5 필드)
+
+워크플로우 생성 AI 챗봇이 노드 스키마만 보고 정확한 JSON 을 만들 수 있도록, 73개 모든 노드가 5개 플랫 `ClassVar` 로 AI 메타데이터를 노출합니다 (`_img_url` / `_connection_rules` / `_rate_limit` 등 기존 패턴과 동일).
+
+| ClassVar | 타입 | 내용 |
+|----------|------|------|
+| `_usage` | `Dict[str, Any]` | `when_to_use` / `when_not_to_use` / `typical_scenarios` (각 `List[str]`) |
+| `_features` | `List[str]` | 강점·특징 불릿 (≥2) |
+| `_anti_patterns` | `List[Dict[str, str]]` | 각 항목 `{pattern, reason, alternative}` — 흔한 오용과 올바른 대안 |
+| `_examples` | `List[Dict[str, Any]]` | 각 항목 `{title, description, workflow_snippet, expected_output}` (≥2). `workflow_snippet` 은 `WorkflowExecutor.validate()` 를 통과하는 풀세트 workflow JSON |
+| `_node_guide` | `Dict[str, Any]` | `input_handling` / `output_consumption` / `common_combinations` (List[str]) / `pitfalls` (List[str]) |
+
+**원칙**:
+- **영어 전용** — i18n 우회. 모든 AI 메타데이터는 영어로 직접 기술.
+- **실행 가능 예제** — `examples[].workflow_snippet` 은 ground truth. 수정 예제로 바로 복사·적용 가능.
+- **신규 노드 필수** — 노드 추가 시 5개 `ClassVar` 모두 채워야 함 (`test_node_schema_ai_fields.py::test_metadata_coverage_full` 강제).
+- **Registry 노출** — `NodeTypeRegistry.get_schema()` 가 `usage` / `features` / `anti_patterns` / `examples` / `node_guide` 5 신규 필드로 노출.
+
+```python
+class StartNode(BaseNode):
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": ["Mark the explicit entry point of a workflow's main flow"],
+        "when_not_to_use": ["Use ScheduleNode instead for cron-style triggers"],
+        "typical_scenarios": ["Every workflow has exactly one StartNode at the top"],
+    }
+    _features: ClassVar[List[str]] = ["Zero configuration", "Produces a trigger signal"]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {"pattern": "Multiple StartNodes", "reason": "...", "alternative": "..."},
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {"title": "...", "description": "...", "workflow_snippet": {...}, "expected_output": "..."},
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "None.",
+        "output_consumption": "Emits a single trigger signal on main output.",
+        "common_combinations": ["StartNode → Broker → Account"],
+        "pitfalls": ["Exactly one StartNode per workflow"],
+    }
+```
+
 ### Resilience (Retry/Fallback)
 
 외부 API 호출 노드에서 `resilience` 필드로 재시도 및 실패 처리 설정:
