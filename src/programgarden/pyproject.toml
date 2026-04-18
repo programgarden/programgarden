@@ -28,14 +28,9 @@ lxml = "^6.0.2"
 pytickersymbols = {version = ">=1.17.5", python = ">=3.12,<4.0"}
 aiosqlite = "^0.20.0"
 litellm = ">=1.40.0"
-programgarden-core = { version = "^1.12.0", source = "testpypi" }
-programgarden-finance = { version = "^1.5.1", source = "testpypi" }
-programgarden-community = { version = "^1.13.0", source = "testpypi" }
-
-[[tool.poetry.source]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-priority = "supplemental"
+programgarden-core = "^1.12.0"
+programgarden-finance = "^1.5.1"
+programgarden-community = "^1.13.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
