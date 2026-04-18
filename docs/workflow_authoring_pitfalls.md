@@ -216,39 +216,56 @@ TradingHours는 단일 출력 dict `{"passed": true/false}`만 반환하고, 하
 - **스케줄 트리거의 게이트**로만 사용 (e.g., `ScheduleNode → TradingHoursFilterNode → 실행 노드`)
 - 실시간 WebSocket 경로에서는 **쓰지 말 것**: 60초 block-wait이 WebSocket
   이벤트 처리를 지연시킬 수 있음
-- **"주말엔 주문 스킵 + Telegram 알림"** 같은 분기는 **IfNode로 직접 구현**
+- **"주말엔 주문 스킵 + Telegram 알림"** 같은 실시간 분기는 **MarketStatusNode + IfNode** 로 직접 구현
 
-### 주말/휴장 분기 패턴 (권장)
+### 주말/휴장 분기 패턴 (권장) — MarketStatusNode 기반
 
-**옵션 A: 플러그인에 market-open 플래그 포함**
-```python
-# plugin에서
-from datetime import datetime
-import pytz
+**⚠️ 비권장 (레거시)**: 플러그인 내부에 `pytz + datetime` 으로 NYSE 장 시간을
+하드코딩하던 방식은 **공휴일 미반영 + 프리마켓/에프터마켓 미구분 + 서킷브레이커
+감지 불가** 로 운영 안정성이 떨어집니다. 대신 JIF 실시간 스트림을 사용하는
+MarketStatusNode 를 쓰세요.
 
-def is_market_open() -> bool:
-    now = datetime.now(pytz.timezone("America/New_York"))
-    if now.weekday() >= 5:   # sat/sun
-        return False
-    minutes = now.hour * 60 + now.minute
-    return 9*60+30 <= minutes < 16*60
+**권장 패턴**
 
-return {
-    "passed_symbols": passed if is_market_open() else [],
-    "market_closed_triggers": [] if is_market_open() else passed,
-    "market_open": is_market_open(),
-    ...
+```json
+{
+  "nodes": [
+    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred"},
+    {"id": "market_status", "type": "MarketStatusNode",
+     "markets": ["US"], "stay_connected": true},
+    {"id": "scalable_trailing_stop", "type": "ConditionNode",
+     "plugin": "Dynamic_ScalableTrailingStop",
+     "positions": "{{ nodes.real_account.positions }}"},
+    {"id": "if_trigger", "type": "IfNode",
+     "left": "{{ nodes.scalable_trailing_stop.passed_symbols }}",
+     "operator": "is_not_empty"},
+    {"id": "if_us_open", "type": "IfNode",
+     "left": "{{ nodes.market_status.us_is_open }}",
+     "operator": "==", "right": true}
+  ],
+  "edges": [
+    {"from": "broker", "to": "market_status"},
+    {"from": "scalable_trailing_stop", "to": "if_trigger"},
+    {"from": "if_trigger", "to": "if_us_open", "from_port": "true"},
+    {"from": "if_us_open", "to": "sell_order", "from_port": "true"},
+    {"from": "if_us_open", "to": "telegram_market_closed", "from_port": "false"}
+  ]
 }
 ```
 
-**옵션 B: IfNode로 출력 필드 기반 분기**
-```json
-{"id": "if_market_open", "type": "IfNode",
- "left": "{{ nodes.scalable_trailing_stop.market_open }}",
- "operator": "==", "right": true}
-```
+**장점**
+- JIF 실시간 스트림 → 공휴일 휴장/서킷브레이커/사이드카 자동 반영
+- 초기 이벤트 미수신 시 `us_is_open=False` → 보수적 skip (오주문 방지)
+- 플러그인은 순수 트레일링스탑 계산만 담당 — 시장 시간 책임 분리
 
-이후 `from_port: "true"` → sell path, `from_port: "false"` → telegram 알림.
+### ⚠️ 해외선물 시장 상태는 MarketStatusNode 로 확인 불가
+
+JIF 는 **해외주식(US/CN/HK/JP) + 국내주식/파생** 만 지원하며,
+**해외선물(CME, HKEX Futures, SGX, EUREX) 은 범위 밖**입니다.
+`markets=["CME"]` 등 해외선물 키를 지정하면 Pydantic `ValidationError` 가
+발생합니다.
+
+해외선물 시장 시간 판단이 필요하면 `ScheduleNode` + `TradingHoursFilterNode` 조합으로 심볼별 정규거래시간을 하드코딩하세요 (공휴일 미반영 한계 인지).
 
 ---
 

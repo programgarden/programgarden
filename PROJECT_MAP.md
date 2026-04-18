@@ -1,6 +1,6 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-04-17T00:00:00
+@updated: 2026-04-18T00:00:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
@@ -8,7 +8,7 @@
 src/
   core/ [71 .py] — programgarden-core 1.9.9
     programgarden_core/
-      nodes/ [37 .py] — 72 node classes (12 categories)
+      nodes/ [38 .py] — 73 node classes (12 categories)
       models/ [12 .py] — edge, workflow, credential, resilience, connection_rule, event, exchange, job, plugin_resource, resource
       registry/ [5 .py] — node, plugin, credential, dynamic_node
       bases/ [8 .py] — listener, client, components, mixins, products, sql, storage
@@ -36,6 +36,7 @@ src/
         overseas_stock/ — REST 17 TR + Real 10 TR + extension (tracker)
         overseas_futureoption/ — REST 26 TR + Real 7 TR + extension (tracker)
         korea_stock/ — REST 56 TR + Real 13 TR + extension (tracker)
+        common/ — Real 1 TR (JIF market status, broker-agnostic)
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect
         config.py — API URLs, rate limits
@@ -136,6 +137,7 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] FileReaderNode: 7 formats (PDF/TXT/CSV/JSON/MD/DOCX/XLSX) + pdfplumber tables
 - [x] position_data list[dict] unify: overseas futures producer + 10 consumer plugins aligned
 - [x] Example bots: trend_trailing_bot, bollinger_reversion_bot, hkex_futures_bot
+- [x] MarketStatusNode: JIF-based real-time market status (12 markets, broker-agnostic, AI-Tool enabled)
 
 ## CONVENTIONS
 - language: Python 3.12+, docs/comments in Korean, code in English
