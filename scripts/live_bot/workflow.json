@@ -1,0 +1,324 @@
+{
+  "id": "live_bot_v1",
+  "name": "실전 위험관리 + 추세매수 봇",
+  "description": "실시간 트레일링스탑(연속형) 위험관리 + 나스닥 추세 필터 + 재무 양호 종목 매수 + 텔레그램 알림 — 미국 장 운영 여부는 JIF MarketStatusNode 로 실시간 판별",
+  "nodes": [
+    { "id": "start", "type": "StartNode", "position": { "x": 50, "y": 400 } },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": false,
+      "position": { "x": 220, "y": 400 }
+    },
+
+    {
+      "id": "market_status",
+      "type": "MarketStatusNode",
+      "markets": ["US"],
+      "stay_connected": true,
+      "position": { "x": 420, "y": 250 }
+    },
+
+    {
+      "id": "real_account",
+      "type": "OverseasStockRealAccountNode",
+      "stay_connected": true,
+      "sync_interval_sec": 30,
+      "commission_rate": 0.25,
+      "tax_rate": 0.0,
+      "position": { "x": 420, "y": 650 }
+    },
+    {
+      "id": "scalable_trailing_stop",
+      "type": "ConditionNode",
+      "plugin": "Dynamic_ScalableTrailingStop",
+      "positions": "{{ nodes.real_account.positions }}",
+      "fields": {
+        "initial_stop_pct": 5.0,
+        "min_trail_pct": 4.0,
+        "trail_factor": 0.35
+      },
+      "position": { "x": 700, "y": 650 }
+    },
+    {
+      "id": "if_trigger_open",
+      "type": "IfNode",
+      "left": "{{ nodes.scalable_trailing_stop.passed_symbols }}",
+      "operator": "is_not_empty",
+      "position": { "x": 900, "y": 650 }
+    },
+    {
+      "id": "if_us_open",
+      "type": "IfNode",
+      "left": "{{ nodes.market_status.us_is_open }}",
+      "operator": "==",
+      "right": true,
+      "position": { "x": 1080, "y": 650 }
+    },
+    {
+      "id": "sell_items",
+      "type": "FieldMappingNode",
+      "data": "{{ nodes.scalable_trailing_stop.passed_symbols }}",
+      "mappings": [],
+      "preserve_unmapped": true,
+      "position": { "x": 1260, "y": 550 }
+    },
+    {
+      "id": "sell_order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "sell",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": "{{ item.quantity }}"
+      },
+      "resilience": {
+        "retry": { "enabled": false },
+        "fallback": { "mode": "skip" }
+      },
+      "position": { "x": 1440, "y": 550 }
+    },
+    {
+      "id": "telegram_sell",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🔴 매도 체결\n종목: {{ item.symbol }} ({{ item.exchange }})\n수량: {{ item.quantity }}\n사유: 스케일러블 트레일링스탑 트리거",
+      "position": { "x": 1620, "y": 550 }
+    },
+    {
+      "id": "telegram_market_closed",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🟡 트레일링스탑 트리거 감지 (미국장 휴장 — 주문 스킵)\n트리거 종목 수: {{ nodes.scalable_trailing_stop.passed_symbols.count() }}",
+      "position": { "x": 1260, "y": 760 }
+    },
+
+    {
+      "id": "schedule_buy",
+      "type": "ScheduleNode",
+      "cron": "*/30 * * * 1-5",
+      "timezone": "Asia/Seoul",
+      "enabled": true,
+      "max_duration_hours": 720,
+      "position": { "x": 420, "y": 150 }
+    },
+    {
+      "id": "trading_hours",
+      "type": "TradingHoursFilterNode",
+      "start": "22:30",
+      "end": "05:00",
+      "timezone": "Asia/Seoul",
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "position": { "x": 620, "y": 150 }
+    },
+
+    {
+      "id": "nasdaq_historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": { "symbol": "QQQ", "exchange": "NASDAQ" },
+      "start_date": "{{ date.ago(120, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": { "x": 1020, "y": 150 }
+    },
+    {
+      "id": "nasdaq_trend",
+      "type": "ConditionNode",
+      "plugin": "TimeSeriesMomentum",
+      "items": {
+        "from": "{{ nodes.nasdaq_historical.time_series }}",
+        "extract": {
+          "symbol": "QQQ",
+          "exchange": "NASDAQ",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback_days": 90,
+        "signal_mode": "binary",
+        "volatility_adjust": false
+      },
+      "position": { "x": 1220, "y": 150 }
+    },
+    {
+      "id": "if_nasdaq_up",
+      "type": "IfNode",
+      "left": "{{ nodes.nasdaq_trend.result }}",
+      "operator": "==",
+      "right": true,
+      "position": { "x": 1420, "y": 150 }
+    },
+
+    {
+      "id": "screener",
+      "type": "ScreenerNode",
+      "market_cap_min": 5000000000,
+      "volume_min": 1000000,
+      "exchange": "NASDAQ",
+      "max_results": 50,
+      "position": { "x": 1620, "y": 150 }
+    },
+    {
+      "id": "exclude_held",
+      "type": "ExclusionListNode",
+      "dynamic_symbols": "{{ nodes.real_account.held_symbols }}",
+      "input_symbols": "{{ nodes.screener.symbols }}",
+      "default_reason": "already_held",
+      "position": { "x": 1820, "y": 150 }
+    },
+    {
+      "id": "stock_historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(120, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": { "x": 2020, "y": 150 }
+    },
+    {
+      "id": "stock_trend",
+      "type": "ConditionNode",
+      "plugin": "TimeSeriesMomentum",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback_days": 90,
+        "signal_mode": "binary",
+        "volatility_adjust": true,
+        "vol_target": 0.20
+      },
+      "position": { "x": 2220, "y": 150 }
+    },
+    {
+      "id": "fundamental",
+      "type": "OverseasStockFundamentalNode",
+      "symbol": "{{ item }}",
+      "position": { "x": 2420, "y": 150 }
+    },
+    {
+      "id": "if_per_ok",
+      "type": "IfNode",
+      "left": "{{ nodes.fundamental.value.per }}",
+      "operator": ">=",
+      "right": 5,
+      "position": { "x": 2620, "y": 150 }
+    },
+    {
+      "id": "if_per_ok_upper",
+      "type": "IfNode",
+      "left": "{{ nodes.fundamental.value.per }}",
+      "operator": "<=",
+      "right": 30,
+      "position": { "x": 2820, "y": 150 }
+    },
+
+    {
+      "id": "position_sizing",
+      "type": "PositionSizingNode",
+      "symbol": "{{ nodes.fundamental.value }}",
+      "balance": "{{ nodes.real_account.balance.orderable_amount }}",
+      "method": "fixed_percent",
+      "max_percent": 10.0,
+      "position": { "x": 3020, "y": 150 }
+    },
+    {
+      "id": "buy_order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "market",
+      "order": "{{ nodes.position_sizing.order }}",
+      "resilience": {
+        "retry": { "enabled": false },
+        "fallback": { "mode": "skip" }
+      },
+      "position": { "x": 3220, "y": 150 }
+    },
+    {
+      "id": "telegram_buy",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🟢 매수 체결\n종목: {{ nodes.position_sizing.order.symbol }} ({{ nodes.position_sizing.order.exchange }})\n수량: {{ nodes.position_sizing.order.quantity }}\n추세: 나스닥 ↑ + 종목 ↑ + PER 양호",
+      "position": { "x": 3420, "y": 150 }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "broker" },
+
+    { "from": "broker", "to": "market_status" },
+
+    { "from": "broker", "to": "real_account" },
+    { "from": "real_account", "to": "scalable_trailing_stop" },
+
+    { "from": "scalable_trailing_stop", "to": "if_trigger_open" },
+    { "from": "if_trigger_open", "to": "if_us_open", "from_port": "true" },
+    { "from": "if_us_open", "to": "sell_items", "from_port": "true" },
+    { "from": "sell_items", "to": "sell_order" },
+    { "from": "sell_order", "to": "telegram_sell" },
+    { "from": "if_us_open", "to": "telegram_market_closed", "from_port": "false" },
+
+    { "from": "broker", "to": "schedule_buy" },
+    { "from": "schedule_buy", "to": "trading_hours" },
+    { "from": "trading_hours", "to": "nasdaq_historical" },
+    { "from": "nasdaq_historical", "to": "nasdaq_trend" },
+    { "from": "nasdaq_trend", "to": "if_nasdaq_up" },
+
+    { "from": "if_nasdaq_up", "to": "screener", "from_port": "true" },
+    { "from": "screener", "to": "exclude_held" },
+    { "from": "real_account", "to": "exclude_held" },
+    { "from": "exclude_held", "to": "stock_historical" },
+    { "from": "stock_historical", "to": "stock_trend" },
+    { "from": "stock_trend", "to": "fundamental" },
+
+    { "from": "fundamental", "to": "if_per_ok" },
+    { "from": "if_per_ok", "to": "if_per_ok_upper", "from_port": "true" },
+    { "from": "if_per_ok_upper", "to": "position_sizing", "from_port": "true" },
+    { "from": "position_sizing", "to": "buy_order" },
+    { "from": "buy_order", "to": "telegram_buy" }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        { "key": "appkey", "value": "", "type": "password", "label": "App Key" },
+        { "key": "appsecret", "value": "", "type": "password", "label": "App Secret" }
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        { "key": "bot_token", "value": "", "type": "password", "label": "Bot Token" },
+        { "key": "chat_id", "value": "", "type": "text", "label": "Chat ID" }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_overview",
+      "content": "## 실전 봇 v1\n\n**위험관리** (실시간 WebSocket)\n- real_account → scalable_trailing_stop 연속형 트레일링\n- HWM 기준: 0%→-5%, 5%→+1%, 10%→+6%, 20%→+13%, 30%→+19.5%\n- 공식: `trail_dist = max(4%, HWM%*0.35)`, `stop = HWM - trail_dist`\n- 트리거 발생 시 `market_status.us_is_open` 이 true 일 때만 매도 주문 (JIF 장운영정보 기반, 휴일/서킷브레이커 자동 대응)\n\n**매수** (30분 스케줄, 평일 미국장)\n1. 나스닥 QQQ 90일 추세 양수\n2. ScreenerNode: NASDAQ / 시총 50억$ / 거래량 100만주+\n3. 보유 종목 제외\n4. 종목별 TSMOM 90일 추세 양수\n5. PER 5~30 필터\n6. 예수금 orderable_amount의 10% 매수 (= 50% 사용 × 5종목 분산 시 각 10%)",
+      "color": 1,
+      "width": 420,
+      "height": 400,
+      "position": { "x": 30, "y": 30 }
+    },
+    {
+      "id": "note_params",
+      "content": "## 파라미터 변경 가이드\n\n**트레일링스탑**\n- `initial_stop_pct`: 초기 손절 폭 (기본 5%)\n- `min_trail_pct`: 최소 trail 거리 (기본 4%)\n- `trail_factor`: HWM 대비 trail 스케일 (기본 0.35)\n\n**매수 주기**: schedule_buy.cron (기본 `*/30 * * * 1-5`)\n**거래 시간**: trading_hours.start/end (KST 기준)\n**종목당 비중**: position_sizing.max_percent (기본 10%)\n**PER 범위**: if_per_ok(>=5) + if_per_ok_upper(<=30)\n\n**시장 상태**: market_status.markets=['US'] (JIF 실시간). 초기 수신 전 us_is_open=None → IfNode `== true` 비교는 False → 매도 스킵 (보수적 기본값)",
+      "color": 3,
+      "width": 380,
+      "height": 300,
+      "position": { "x": 30, "y": 430 }
+    }
+  ]
+}
