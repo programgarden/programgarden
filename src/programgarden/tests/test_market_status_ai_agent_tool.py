@@ -132,6 +132,59 @@ class TestMarketStatusToolSchema:
         assert "stay_connected" in params
         assert "include_extended_hours" in params
 
+    def test_tool_schema_resolves_i18n_keys(self):
+        """as_tool_schema() 는 'i18n:...' 리터럴이 아니라 실제 번역값을
+        내보내야 함. LLM 은 번역되지 않은 키를 의미있게 해석할 수 없음."""
+
+        from programgarden_core.nodes.market_status import MarketStatusNode
+
+        schema = MarketStatusNode.as_tool_schema(locale="en")
+
+        # display_name 은 번역된 자연어
+        assert not schema["display_name"].startswith("i18n:"), (
+            f"display_name 이 번역되지 않았음: {schema['display_name']}"
+        )
+
+        # 각 파라미터 description 이 번역된 자연어
+        for param_name, param in schema["parameters"].items():
+            desc = param.get("description", "")
+            assert not desc.startswith("i18n:"), (
+                f"parameters.{param_name}.description 미번역: {desc}"
+            )
+
+        # returns 포트 description 도 번역
+        for port_name, port in schema["returns"].items():
+            desc = port.get("description", "")
+            assert not desc.startswith("i18n:"), (
+                f"returns.{port_name}.description 미번역: {desc}"
+            )
+
+    def test_tool_schema_markets_description_includes_exchange_mapping(self):
+        """LLM 이 'NASDAQ 열렸어?' 같은 질문에서 markets=['US'] 로 매핑
+        하려면 description 에 거래소 커버 범위가 명시되어야 함."""
+
+        from programgarden_core.nodes.market_status import MarketStatusNode
+
+        schema = MarketStatusNode.as_tool_schema(locale="en")
+        markets_desc = schema["parameters"]["markets"]["description"]
+
+        # 미국 시장 매핑 — NASDAQ, NYSE 언급
+        assert "NASDAQ" in markets_desc, (
+            "LLM 매핑 힌트로 NASDAQ 이 description 에 명시되어야 함"
+        )
+        assert "NYSE" in markets_desc
+        # 한국 시장 별도 코드 명시
+        assert "KOSPI" in markets_desc
+        assert "KOSDAQ" in markets_desc
+        # 세션 분리 명시
+        assert "HK_AM" in markets_desc or "Hong Kong" in markets_desc
+        # JIF 한계 명시 — per-exchange granularity 불가
+        assert "per-exchange" in markets_desc.lower() or (
+            "not available" in markets_desc.lower()
+        )
+        # 해외선물 범위 밖 명시
+        assert "futures" in markets_desc.lower()
+
     def test_tool_schema_markets_excludes_overseas_futures(self):
         """markets 파라미터 enum 에 해외선물 키(CME/SGX/HKEX_FUTURES) 부재.
         Plan 의 'JIF 범위 밖' 제약을 tool schema 에서 강제하여 LLM 에게
