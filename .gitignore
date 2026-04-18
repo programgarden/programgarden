@@ -377,3 +377,6 @@ src/finance/ls_finance_korea_stock_guide/*
 scripts/*/data/
 scripts/**/*.db
 scripts/**/*.log
+
+# 핸드오버 가이드 (클라이언트/서버 개발자 인수인계용, gitignored)
+.handover/
