@@ -1,12 +1,41 @@
 ## [Unreleased]
+
+## [1.21.0] - 2026-04-18
+### Added
+- `tests/test_examples_validation.py` (203 pass + 1 xfail + 1 skip):
+  - `TestWorkflowStaticValidation` — every bundled `examples/workflows/*.json`
+    (67 files) passes `WorkflowExecutor.validate()`.
+  - `TestWorkflowDryRunCycle` — `dry_run=True` + mocked `ensure_ls_login`
+    runs one cycle per workflow; long-running realtime/bot workflows are
+    stopped after 5s and asserted to reach a terminal state.
+  - `TestProgrammerExamples` — import-smoke for every script in
+    `examples/programmer_example/`.
+- `pytest.ini` — `testpaths=tests` so `examples/programmer_example` scripts
+  are not collected as test suites.
+
+### Fixed
+- `examples/workflows/09-symbol-query-stock.json` — missing
+  `paper_trading: false` on the broker node. Overseas-stock brokers reject
+  paper mode, so SymbolQueryNode crashed on `None` connection under
+  dry_run. Added the flag; the workflow now completes cleanly.
+
 ### Removed
-- **AIAgentNode semantic tool selection 제거** — 벡터 기반 도구 선별 인프라 전체 제거
-  - `AIAgentNode.tool_selection` / `tool_top_k` 필드 삭제 (전체 도구가 LLM 에 항상 전달됨)
-  - `AIAgentToolExecutor._build_embedding_index` / `select_tools` 메서드 삭제
-  - `fastembed>=0.4.0` 의존성 제거 (onnxruntime, rank-bm25, pillow, sympy 포함 5개 패키지 제거)
-  - `tests/test_vector_tool_selection.py` 삭제 (19 tests)
-  - i18n 키 `fields.AIAgentNode.tool_selection*` / `tool_top_k*` 제거
-  - Node description 이 풍부해지면서 LLM 이 직접 도구 목록을 보고 선택 가능 — 벡터 검색 over-engineering 제거
+- **AIAgentNode semantic tool selection infrastructure** — end-to-end removal:
+  - `AIAgentNode.tool_selection` / `tool_top_k` fields deleted (every
+    connected tool is always forwarded to the LLM).
+  - `AIAgentToolExecutor._build_embedding_index` / `select_tools`
+    methods deleted.
+  - `fastembed>=0.4.0` dependency removed — also prunes `onnxruntime`,
+    `rank-bm25`, `pillow`, `sympy`, `py-rust-stemmers`.
+  - `tests/test_vector_tool_selection.py` deleted (19 tests).
+  - Vector search on a 73-node / ~dozens-of-tools registry was
+    over-engineering; richer node descriptions in core 1.12.0 make direct
+    LLM tool selection sufficient.
+
+### Dependencies
+- programgarden-core ^1.12.0 (NodeTypeSchema AI metadata)
+- programgarden-finance ^1.5.1 (compatibility)
+- programgarden-community ^1.13.0 (AI metadata on 4 community nodes)
 
 ## [1.20.1] - 2026-04-17
 ### Fixed

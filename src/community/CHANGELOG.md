@@ -1,3 +1,16 @@
+## [1.13.0] - 2026-04-18
+### Added
+- AI schema ClassVars on all 4 community nodes (`TelegramNode`,
+  `FearGreedIndexNode`, `FundamentalDataNode`, `FileReaderNode`):
+  `_usage`, `_features`, `_anti_patterns`, `_examples`, `_node_guide`.
+  Each `_examples[].workflow_snippet` is a full workflow JSON that passes
+  `WorkflowExecutor.validate()`. English-only authoring.
+
+### Dependencies
+- programgarden-core ^1.12.0 (NodeTypeSchema AI metadata — 5 new
+  optional fields on every node, AIAgentNode `tool_selection` /
+  `tool_top_k` removed).
+
 ## [1.12.1] - 2026-04-17
 ### Fixed
 - position 기반 플러그인 10종의 `positions` 파라미터를 `list[dict]` 포맷으로 통일 (해외선물 RealAccountNode dict 출력 사용 시 `AttributeError: 'list' object has no attribute 'items'` 오류 수정)
