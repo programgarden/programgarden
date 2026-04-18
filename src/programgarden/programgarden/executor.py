@@ -12976,70 +12976,7 @@ class AIAgentToolExecutor:
             agent_node_id,
         )
 
-        # 벡터 인덱스 빌드 (도구 6개 이상일 때 사용)
-        self._all_tools = tools
-        self._build_embedding_index(tools)
-
         return tools
-
-    def _build_embedding_index(self, tools: List[Dict[str, Any]]) -> None:
-        """FastEmbed 벡터 인덱스 빌드 (도구 description + parameter 기반)."""
-        docs = []
-        for tool in tools:
-            func = tool.get("function", {})
-            desc = func.get("description", "")
-            params = func.get("parameters", {}).get("properties", {})
-            param_text = " ".join(
-                f"{k} {v.get('description', '')}" for k, v in params.items()
-            )
-            docs.append(f"{func.get('name', '')} {desc} {param_text}")
-
-        self._tool_docs = docs
-        self._tool_embeddings = None  # lazy init
-        self._embed_model = None
-
-    def select_tools(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """벡터 유사도 기반 관련 도구 선별.
-
-        도구가 5개 이하이면 전체 반환.
-        """
-        import numpy as np
-
-        tools = self._all_tools
-        if len(tools) <= 5:
-            return tools
-
-        # Lazy init: 첫 호출 시 모델 로드 + 도구 임베딩
-        if self._tool_embeddings is None:
-            try:
-                from fastembed import TextEmbedding
-
-                self._embed_model = TextEmbedding(
-                    model_name="BAAI/bge-small-en-v1.5",
-                )
-                self._tool_embeddings = np.array(
-                    list(self._embed_model.embed(self._tool_docs))
-                )
-            except ImportError:
-                self.context.log(
-                    "warning",
-                    "fastembed 패키지 미설치 - 전체 도구 전달",
-                    "",
-                )
-                return tools
-
-        if not query.strip():
-            return tools
-
-        # 쿼리 임베딩 + cosine similarity
-        query_emb = np.array(list(self._embed_model.embed([query])))[0]
-        norms = np.linalg.norm(self._tool_embeddings, axis=1) * np.linalg.norm(
-            query_emb
-        )
-        norms = np.where(norms == 0, 1e-10, norms)  # zero division 방어
-        scores = self._tool_embeddings @ query_emb / norms
-        top_indices = np.argsort(scores)[-top_k:][::-1]
-        return [tools[i] for i in top_indices]
 
     async def call_tool(
         self,
@@ -13489,18 +13426,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         accumulated_tokens = 0  # 누적 토큰 카운터
         streaming = llm_connection.get("streaming", False)
 
-        # Semantic 벡터 도구 선택
-        tool_selection = config.get("tool_selection", "semantic")
-        tool_top_k = config.get("tool_top_k", 5)
-        if tool_selection == "semantic" and tools and len(tools) > 5:
-            selected_tools = tool_executor.select_tools(user_prompt, top_k=tool_top_k)
-            context.log(
-                "info",
-                f"Semantic tool selection: {len(selected_tools)}/{len(tools)} tools selected",
-                node_id,
-            )
-        else:
-            selected_tools = tools
+        selected_tools = tools
 
         context.log("info", f"AIAgent starting (model={llm_connection.get('model')}, tools={len(selected_tools)})", node_id)
 

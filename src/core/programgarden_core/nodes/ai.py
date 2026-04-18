@@ -238,16 +238,6 @@ class AIAgentNode(BaseNode):
         description="Tool 호출 실패 시 전략",
     )
 
-    # === 도구 선택 ===
-    tool_selection: Literal["all", "semantic"] = Field(
-        default="semantic",
-        description="도구 선택 방식 (all: 전체 전달, semantic: 벡터 유사도 기반 선별)",
-    )
-    tool_top_k: int = Field(
-        default=5,
-        description="벡터 검색 모드에서 LLM에 전달할 최대 도구 수",
-    )
-
     # === 토큰 제한 ===
     max_total_tokens: int = Field(
         default=100000,
@@ -420,32 +410,6 @@ class AIAgentNode(BaseNode):
                     "abort": "노드 실행 실패",
                 },
                 default="retry_with_context",
-            ),
-            "tool_selection": FieldSchema(
-                name="tool_selection",
-                type=FieldType.ENUM,
-                description="i18n:fields.AIAgentNode.tool_selection",
-                required=False,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                enum_values=["all", "semantic"],
-                enum_labels={
-                    "all": "전체 도구 전달",
-                    "semantic": "관련 도구만 선별 (벡터 검색)",
-                },
-                default="semantic",
-            ),
-            "tool_top_k": FieldSchema(
-                name="tool_top_k",
-                type=FieldType.INTEGER,
-                description="i18n:fields.AIAgentNode.tool_top_k",
-                required=False,
-                category=FieldCategory.SETTINGS,
-                expression_mode=ExpressionMode.FIXED_ONLY,
-                default=5,
-                min_value=1,
-                max_value=20,
-                visible_when={"tool_selection": "semantic"},
             ),
             "max_total_tokens": FieldSchema(
                 name="max_total_tokens",

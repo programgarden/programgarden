@@ -5,7 +5,7 @@ Risk management nodes:
 - PositionSizingNode: Position size calculation
 """
 
-from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING, ClassVar
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -107,6 +107,173 @@ class PositionSizingNode(BaseNode):
             ],
         ),
     ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Compute per-symbol order size from balance + market data before handing off to NewOrderNode",
+            "Switch sizing method (fixed percent / Kelly / ATR) without rewriting the pipeline",
+            "Standardize risk exposure across different strategies (share the same PositionSizingNode config)",
+        ],
+        "when_not_to_use": [
+            "Fixed-quantity simple tests — set `quantity` directly on NewOrderNode and skip sizing entirely",
+            "Portfolio-level rebalancing — use PortfolioNode to compute allocations first, then size each leg",
+            "Per-leg position-management signals (stop-loss / trailing) — that lives in ConditionNode with position-management plugins",
+        ],
+        "typical_scenarios": [
+            "ConditionNode.result → SplitNode → PositionSizingNode(method='fixed_percent', max_percent=5) → NewOrderNode",
+            "AccountNode.balance + MarketDataNode → PositionSizingNode(method='atr_based') → NewOrderNode",
+            "ConditionNode + historical → PositionSizingNode(method='kelly', kelly_fraction=0.25) → order loop",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "5 sizing methods: fixed_percent / fixed_amount / fixed_quantity / kelly / atr_based",
+        "Item-based execution — pair with SplitNode to size every candidate symbol independently",
+        "`max_percent` caps the position regardless of method — defensive guardrail against outsized orders",
+        "Outputs ready-to-consume order shape `{symbol, exchange, quantity, price}`",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "method='kelly' without a statistical edge estimate",
+            "reason": "Kelly assumes you have a reliable win-rate / payout estimate; guessing leads to oversized bets.",
+            "alternative": "Fall back to fixed_percent with a small max_percent (1–3 %) until you have historical edge data, then switch to Kelly with kelly_fraction=0.25 (quarter-Kelly) for safety.",
+        },
+        {
+            "pattern": "Binding `symbol` as a raw string (e.g. 'AAPL')",
+            "reason": "PositionSizingNode expects the symbol object `{exchange, symbol}` to determine the right broker and price lookups.",
+            "alternative": "Bind `{{ nodes.split.item }}` or `{{ nodes.condition.passed_symbols[0] }}`, not the plain string.",
+        },
+        {
+            "pattern": "Skipping `market_data` for ATR-based sizing",
+            "reason": "ATR requires recent price history; without `market_data` the node falls back to a degenerate value.",
+            "alternative": "Wire OverseasStockMarketDataNode.value into `market_data` before using method='atr_based'.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Fixed-percent sizing then place order",
+            "description": "Condition finds oversold symbols; SplitNode per-symbol; PositionSizingNode caps each at 5% of balance; NewOrderNode places the trade.",
+            "workflow_snippet": {
+                "id": "sizing-fixed-percent",
+                "name": "Fixed percent sizing",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}]},
+                    {
+                        "id": "historical",
+                        "type": "OverseasStockHistoricalDataNode",
+                        "symbol": "{{ item }}",
+                        "period": "1d",
+                        "start_date": "20260301",
+                        "end_date": "20260401",
+                    },
+                    {
+                        "id": "rsi",
+                        "type": "ConditionNode",
+                        "plugin": "RSI",
+                        "items": {
+                            "from": "{{ item.time_series }}",
+                            "extract": {
+                                "symbol": "{{ item.symbol }}",
+                                "exchange": "{{ item.exchange }}",
+                                "date": "{{ row.date }}",
+                                "close": "{{ row.close }}",
+                            },
+                        },
+                        "fields": {"period": 14, "threshold": 30, "direction": "below"},
+                    },
+                    {"id": "split", "type": "SplitNode"},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
+                    {
+                        "id": "size",
+                        "type": "PositionSizingNode",
+                        "method": "fixed_percent",
+                        "max_percent": 5.0,
+                        "symbol": "{{ nodes.split.item }}",
+                        "balance": "{{ nodes.account.balance }}",
+                        "market_data": "{{ nodes.market.value }}",
+                    },
+                    {
+                        "id": "order",
+                        "type": "OverseasStockNewOrderNode",
+                        "symbol": "{{ nodes.size.order.symbol }}",
+                        "exchange": "{{ nodes.size.order.exchange }}",
+                        "quantity": "{{ nodes.size.order.quantity }}",
+                        "price": "{{ nodes.size.order.price }}",
+                        "side": "buy",
+                    },
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "historical"},
+                    {"from": "historical", "to": "rsi"},
+                    {"from": "rsi", "to": "split"},
+                    {"from": "split", "to": "market"},
+                    {"from": "market", "to": "size"},
+                    {"from": "account", "to": "size"},
+                    {"from": "size", "to": "order"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "PositionSizingNode produces an order dict with quantity capped at 5% of balance; OrderNode consumes it and fires the buy.",
+        },
+        {
+            "title": "ATR-based risk sizing",
+            "description": "Risk 1% of account per trade, sized against the symbol's 14-day ATR.",
+            "workflow_snippet": {
+                "id": "sizing-atr",
+                "name": "ATR-based sizing",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
+                    {
+                        "id": "size",
+                        "type": "PositionSizingNode",
+                        "method": "atr_based",
+                        "atr_risk_percent": 1.0,
+                        "max_percent": 10.0,
+                        "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"},
+                        "balance": "{{ nodes.account.balance }}",
+                        "market_data": "{{ nodes.market.value }}",
+                    },
+                    {"id": "display", "type": "SummaryDisplayNode", "title": "Sized order", "data": {"order": "{{ nodes.size.order }}"}},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "market", "to": "size"},
+                    {"from": "account", "to": "size"},
+                    {"from": "size", "to": "display"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "SummaryDisplay renders the order dict with quantity derived from 1% risk divided by current ATR; max_percent still caps total exposure at 10%.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "`symbol` is the object `{symbol, exchange}`. `balance` is scalar (AccountNode.balance). `market_data` is MarketDataNode.value (required for ATR).",
+        "output_consumption": "`order` output is `{symbol, exchange, quantity, price}`. Feed into NewOrderNode by binding each subfield.",
+        "common_combinations": [
+            "SplitNode → PositionSizingNode → NewOrderNode (per-symbol sizing loop)",
+            "ConditionNode → PositionSizingNode(kelly) → NewOrderNode",
+            "AccountNode + MarketDataNode → PositionSizingNode(atr_based) → NewOrderNode",
+        ],
+        "pitfalls": [
+            "`symbol` must be the object form, not a plain string",
+            "method='kelly' needs kelly_fraction <= 1.0 (quarter-Kelly = 0.25 is a sane default)",
+            "method='atr_based' needs `market_data` bound — otherwise the fallback produces a zero / tiny quantity",
+        ],
+    }
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

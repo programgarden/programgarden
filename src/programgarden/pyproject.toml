@@ -28,7 +28,6 @@ lxml = "^6.0.2"
 pytickersymbols = {version = ">=1.17.5", python = ">=3.12,<4.0"}
 aiosqlite = "^0.20.0"
 litellm = ">=1.40.0"
-fastembed = ">=0.4.0"
 programgarden-core = "^1.11.1"
 programgarden-finance = "^1.5.0"
 programgarden-community = "^1.12.1"

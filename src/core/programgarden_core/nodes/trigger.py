@@ -6,7 +6,7 @@ Trigger/filter nodes:
 - TradingHoursFilterNode: Trading hours filter
 """
 
-from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING, ClassVar
 from datetime import datetime
 import asyncio
 
@@ -58,6 +58,113 @@ class ScheduleNode(BaseNode):
             example={"fired_at": "2026-04-14T09:30:00-04:00", "cycle_index": 0},
         ),
     ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Run the main flow on a cron schedule (every N minutes, daily at 09:30 ET, weekly market close, …)",
+            "Bound long-running workflows with max_duration_hours to avoid runaway schedulers",
+            "Combine with TradingHoursFilterNode to fire only on weekdays within market hours",
+        ],
+        "when_not_to_use": [
+            "Event-driven flows (realtime ticks, order fills) — use Real*Node sources instead",
+            "One-shot workflows — StartNode alone is enough; ScheduleNode would loop forever",
+            "Sub-minute cadence — cron's minimum granularity is 1 minute; use ThrottleNode for sub-minute pacing",
+        ],
+        "typical_scenarios": [
+            "Start → ScheduleNode (0 9 * * 1-5) → trading body (fires 09:00 ET on weekdays)",
+            "Start → ScheduleNode (*/15 * * * *) → TradingHoursFilterNode → signals",
+            "Start → ScheduleNode (0 */4 * * *) → portfolio snapshot → TableDisplayNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Standard 5-field cron expression — minute / hour / day / month / weekday",
+        "Timezone-aware (IANA names) — 'America/New_York', 'Asia/Seoul', 'UTC'",
+        "max_duration_hours caps total runtime; the scheduler exits cleanly at the limit",
+        "enabled=False freezes the trigger without removing the node from the DAG",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using ScheduleNode with `* * * * *` (every minute) to poll cheap data",
+            "reason": "Every fire triggers the full main flow — brokers, LS TRs, downstream plugins. Even if cheap per run, it accumulates rate-limit pressure.",
+            "alternative": "Increase the interval (e.g. `*/5 * * * *`) or use a realtime source (Real*Node) with ThrottleNode for downstream pacing.",
+        },
+        {
+            "pattern": "Missing timezone — relying on the server default",
+            "reason": "Different environments / deployments may default to UTC, causing `0 9 * * *` to fire at the wrong hour.",
+            "alternative": "Always set timezone to the intended market tz: 'America/New_York' for US, 'Asia/Seoul' for KRX, 'Asia/Hong_Kong' for HKEX.",
+        },
+        {
+            "pattern": "No TradingHoursFilterNode downstream for time-sensitive trading",
+            "reason": "Cron fires exactly at the cron cadence, including weekends and holidays; orders may slip onto a closed market.",
+            "alternative": "Chain `ScheduleNode → TradingHoursFilterNode (from_port='passed') → trading body` so cron-after-hours is silently blocked.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "9:30 ET weekday open trigger",
+            "description": "Runs the trading body once at 09:30 America/New_York, Monday through Friday.",
+            "workflow_snippet": {
+                "id": "schedule-us-open",
+                "name": "US market-open schedule",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "30 9 * * 1-5", "timezone": "America/New_York"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Every weekday at 09:30 ET, broker session opens and the account is queried. Off-schedule cycles are skipped.",
+        },
+        {
+            "title": "Every 15 minutes intraday, trading-hours gated",
+            "description": "ScheduleNode fires every 15 minutes; TradingHoursFilterNode only forwards during 09:30–16:00 ET; downstream runs signals and displays the result.",
+            "workflow_snippet": {
+                "id": "schedule-intraday",
+                "name": "Intraday 15-min schedule",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "*/15 * * * *", "timezone": "America/New_York"},
+                    {"id": "hours", "type": "TradingHoursFilterNode", "start": "09:30", "end": "16:00", "timezone": "America/New_York", "days": ["mon", "tue", "wed", "thu", "fri"]},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "SPY", "exchange": "NYSE"}]},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ item }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "hours"},
+                    {"from": "hours", "to": "broker", "from_port": "passed"},
+                    {"from": "broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "market"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Every 15 minutes the cron fires; trading-hours gate passes only 09:30–16:00 weekdays; SPY quote fetched on passing cycles.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "No data inputs. All behavior is configured via `cron`, `timezone`, `enabled`, `max_duration_hours`.",
+        "output_consumption": "`trigger` output carries `{fired_at, cycle_index}`. Downstream nodes usually just need an incoming edge; explicit binding is optional.",
+        "common_combinations": [
+            "StartNode → ScheduleNode → trading body (plain cron workflow)",
+            "StartNode → ScheduleNode → TradingHoursFilterNode → body (market-hours gate)",
+            "StartNode → ScheduleNode → RealMarketDataNode (subscribe once per cycle)",
+        ],
+        "pitfalls": [
+            "Always set `timezone` explicitly — server defaults are not portable",
+            "Pair with TradingHoursFilterNode when the cron expression does not already encode market hours",
+            "max_duration_hours caps the total runtime; for indefinite bots set it generously (up to 720h)",
+        ],
+    }
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -153,6 +260,110 @@ class TradingHoursFilterNode(BaseNode):
             example={"passed": False, "reason": "outside_trading_hours"},
         ),
     ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Gate a scheduled or realtime flow so it only acts during market hours",
+            "Separate weekday / weekend logic without hard-coding the cron expression",
+            "Enforce a start-of-day / end-of-day window around a fixed trading body",
+        ],
+        "when_not_to_use": [
+            "Actual exchange status (holidays, circuit breakers) — use MarketStatusNode (JIF-backed) for authoritative market state",
+            "Strict cron cadence without time windowing — ScheduleNode alone is enough",
+            "Realtime-only workflows that naturally stop outside market hours (no ticks arrive) — filter adds no value",
+        ],
+        "typical_scenarios": [
+            "ScheduleNode → TradingHoursFilterNode → trading body (passed branch)",
+            "TradingHoursFilterNode → IfNode(reason='...') for per-reason branching",
+            "Start → TradingHoursFilterNode → long-running realtime subscription (cleanup at close)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Configurable start / end in HH:MM form and IANA timezone",
+        "`days` whitelist supports weekend-only or weekday-only flows",
+        "Dual outputs: `passed` (within hours) and `blocked` (outside) for explicit branching",
+        "max_wait_hours safeguards long waits — the node timeouts instead of stalling forever",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using TradingHoursFilterNode as a holiday / circuit-breaker check",
+            "reason": "The node only knows HH:MM windows + day-of-week; it has no knowledge of US federal holidays or KRX short-sale suspensions.",
+            "alternative": "Chain MarketStatusNode (JIF) before TradingHoursFilterNode for authoritative exchange state.",
+        },
+        {
+            "pattern": "Missing timezone — defaulting to server time",
+            "reason": "A 'start=09:30' window interpreted in UTC would open 4–5 hours off US market open, causing workflows to gate incorrectly.",
+            "alternative": "Always set timezone to the target market's IANA name (America/New_York, Asia/Seoul, Asia/Hong_Kong, Asia/Tokyo).",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Pass signals only during US market hours",
+            "description": "Schedule fires every 5 minutes; TradingHoursFilter passes only 09:30–16:00 on weekdays; downstream trading body runs only during hours.",
+            "workflow_snippet": {
+                "id": "hours-filter-us",
+                "name": "Schedule + trading hours",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "*/5 * * * *", "timezone": "America/New_York"},
+                    {"id": "hours", "type": "TradingHoursFilterNode", "start": "09:30", "end": "16:00", "timezone": "America/New_York", "days": ["mon", "tue", "wed", "thu", "fri"]},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "hours"},
+                    {"from": "hours", "to": "broker", "from_port": "passed"},
+                    {"from": "broker", "to": "account"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Cron fires every 5 min; account query runs only during US trading hours on weekdays. Off-hours cycles hit the blocked branch and skip downstream.",
+        },
+        {
+            "title": "Branch on blocked path for after-hours notification",
+            "description": "TradingHoursFilterNode forks: passed branch runs trading body, blocked branch sends an after-hours notice.",
+            "workflow_snippet": {
+                "id": "hours-filter-notify",
+                "name": "Trading hours fork",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "0 * * * *", "timezone": "America/New_York"},
+                    {"id": "hours", "type": "TradingHoursFilterNode", "start": "09:30", "end": "16:00", "timezone": "America/New_York", "days": ["mon", "tue", "wed", "thu", "fri"]},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "closed_notice", "type": "SummaryDisplayNode", "title": "Market closed", "data": {"reason": "outside_hours"}},
+                ],
+                "edges": [
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "hours"},
+                    {"from": "hours", "to": "broker", "from_port": "passed"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "hours", "to": "closed_notice", "from_port": "blocked"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Hourly cron; within hours → account query; outside hours → SummaryDisplay renders the closed notice.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Trigger edge from upstream (ScheduleNode or StartNode). Window is configured via start / end / timezone / days.",
+        "output_consumption": "`passed` port runs during-hours branches; `blocked` runs after-hours branches. Use edge `from_port` to pick which downstream fires.",
+        "common_combinations": [
+            "ScheduleNode → TradingHoursFilterNode → trading body",
+            "TradingHoursFilterNode → OverseasStockRealMarketDataNode (start realtime only in-hours)",
+            "TradingHoursFilterNode → IfNode on `reason` field for per-state branching",
+        ],
+        "pitfalls": [
+            "Always specify `timezone` — server default is not portable",
+            "For holidays / CB / market status use MarketStatusNode (JIF) instead of or alongside this node",
+            "`days` names are lowercase 3-letter: mon / tue / wed / thu / fri / sat / sun",
+        ],
+    }
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
