@@ -6132,6 +6132,348 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             return {"error": str(e)}
 
 
+class MarketStatusNodeExecutor(NodeExecutorBase):
+    """MarketStatusNode executor — JIF 기반 실시간 시장 상태 추적.
+
+    Broker credential type 무관(해외주식/해외선물/국내주식 중 아무 BrokerNode).
+    broker의 기존 WSS 세션과 별도로 ``Common.real()`` 공용 WebSocket 세션을
+    생성하여 JIF TR 하나를 구독합니다. token_manager 는 broker 로그인에서
+    재사용하므로 중복 로그인 없음.
+
+    stay_connected=True (기본): 구독 유지하며 콜백마다 context._market_status_cache
+    + set_output 갱신. 워크플로우 종료 시 cleanup_jif_subscriptions 에서 해제.
+
+    stay_connected=False: 최대 5초 기다리며 수신된 이벤트 반영한 snapshot 반환
+    후 즉시 tr_type=4 해제. AI Agent Tool 일회성 조회용.
+    """
+
+    # {f"{job_id}::{node_id}": {"jif": RealJIF, "real": Real, "stay_connected": bool}}
+    _active_subscriptions: Dict[str, Any] = {}
+
+    # Canonical market list for the convenience boolean ports. Updated in
+    # lock-step with the OutputPort definitions on ``MarketStatusNode``.
+    _SOLO_MARKET_PORTS = (
+        ("US", "us_is_open"),
+        ("KOSPI", "kospi_is_open"),
+        ("KOSDAQ", "kosdaq_is_open"),
+        ("KRX_FUTURES", "krx_futures_is_open"),
+    )
+
+    _COMBO_MARKET_PORTS = (
+        ("hk_is_open", "HK_AM", "HK_PM"),
+        ("cn_is_open", "CN_AM", "CN_PM"),
+        ("jp_is_open", "JP_AM", "JP_PM"),
+    )
+
+    async def cleanup_jif_subscriptions(self, job_id: str) -> None:
+        """Unsubscribe every active JIF stream registered for the given job.
+
+        Mirrors ``BrokerNodeExecutor.cleanup_fill_subscriptions`` so the
+        executor's shutdown sequence can wipe market-status subscriptions
+        without touching unrelated real-time feeds.
+        """
+
+        keys_to_remove = []
+        for key, info in self._active_subscriptions.items():
+            if not key.startswith(f"{job_id}::"):
+                continue
+            jif = info.get("jif")
+            real = info.get("real")
+            if jif is not None:
+                try:
+                    jif.on_remove_jif_message()
+                except (RuntimeError, AttributeError):
+                    pass
+                except Exception as e:
+                    logger.warning(f"JIF unsubscribe failed for {key}: {e}")
+            if real is not None:
+                try:
+                    await real.close()
+                except Exception as e:
+                    logger.warning(f"Common.real close failed for {key}: {e}")
+            keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del self._active_subscriptions[key]
+            logger.debug(f"Cleaned up JIF subscription: {key}")
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        import asyncio
+        from datetime import datetime
+
+        from programgarden_core.exceptions import ConnectionError, ValidationError
+
+        # dry_run skip — WebSocket 불가
+        if context.is_dry_run:
+            context.log(
+                "warning",
+                f"[dry_run] MarketStatusNode skipped (realtime WebSocket disabled)",
+                node_id,
+            )
+            return {"status": "skipped_dry_run", "dry_run": True}
+
+        # 1. broker_connection 획득
+        # MarketStatusNode 는 product_scope=ALL 이므로 auto-injection 에서 제외.
+        # 여기서 직접 find_parent_output(...) 로 아무 BrokerNode 나 수용.
+        broker_connection = config.get("connection")
+        if not broker_connection:
+            for broker_type in (
+                "OverseasStockBrokerNode",
+                "KoreaStockBrokerNode",
+                "OverseasFuturesBrokerNode",
+            ):
+                candidates = context.find_parent_outputs(node_id, broker_type)
+                if candidates:
+                    _bnode_id, _dist, outputs = candidates[0]
+                    broker_connection = outputs.get("connection")
+                    if broker_connection:
+                        context.log(
+                            "debug",
+                            f"MarketStatusNode: broker_connection resolved from "
+                            f"{broker_type}/{_bnode_id} (distance={_dist})",
+                            node_id,
+                        )
+                        break
+
+        if not broker_connection:
+            raise ConnectionError(
+                "MarketStatusNode: BrokerNode 연결이 필요합니다. "
+                "OverseasStockBrokerNode / OverseasFuturesBrokerNode / "
+                "KoreaStockBrokerNode 중 아무거나 상위에 배치하세요."
+            )
+
+        # 2. LS 로그인 (broker 와 동일 instance 재사용)
+        appkey = broker_connection.get("appkey", "")
+        appsecret = broker_connection.get("appsecret", "")
+        paper_trading = bool(broker_connection.get("paper_trading", False))
+        broker_product = broker_connection.get("product", "overseas_stock")
+
+        ls, success, error = ensure_ls_login(
+            appkey, appsecret, paper_trading, context, node_id, broker_product,
+            caller_name="MarketStatusNode",
+        )
+        if not success:
+            raise ConnectionError(f"MarketStatusNode LS login failed: {error}")
+
+        # 3. Common.real() — broker WSS 와 독립된 공용 세션
+        from programgarden_finance.ls.common import Common
+
+        common = Common(token_manager=ls.token_manager)
+        real = common.real()
+        await real.connect()
+        context.log(
+            "info",
+            f"JIF WebSocket connected via Common.real (paper_trading={paper_trading})",
+            node_id,
+        )
+
+        # 4. 구독 설정
+        markets_filter = config.get("markets", []) or []
+        stay_connected = bool(config.get("stay_connected", True))
+        include_extended = bool(config.get("include_extended_hours", False))
+        trigger_nodes = config.get("_trigger_on_update_nodes", [])
+
+        jif = real.JIF()
+        loop = asyncio.get_running_loop()
+
+        # Track subscription for cleanup (registered even for stay_connected=False
+        # so that an error between subscribe and unsubscribe still gets cleaned up)
+        sub_key = f"{context.job_id}::{node_id}"
+        MarketStatusNodeExecutor._active_subscriptions[sub_key] = {
+            "jif": jif,
+            "real": real,
+            "stay_connected": stay_connected,
+        }
+
+        def _is_open(market: str) -> bool:
+            flag = context.is_market_open(market, include_extended=include_extended)
+            return bool(flag) if flag is not None else False
+
+        def _compute_conv_booleans() -> Dict[str, bool]:
+            conv: Dict[str, bool] = {}
+            for market, port_name in self._SOLO_MARKET_PORTS:
+                conv[port_name] = _is_open(market)
+            for port_name, am_key, pm_key in self._COMBO_MARKET_PORTS:
+                conv[port_name] = bool(_is_open(am_key) or _is_open(pm_key))
+            return conv
+
+        def on_jif_message(resp):
+            """JIFRealResponse 수신 콜백 — cache/output/notification 일괄 갱신."""
+
+            try:
+                if context.is_shutdown:
+                    return
+                body = getattr(resp, "body", None)
+                if body is None:
+                    # ACK payload (rsp_cd only). Ignore.
+                    return
+
+                jangubun = str(getattr(body, "jangubun", "") or "")
+                jstatus = str(getattr(body, "jstatus", "") or "")
+                if not jangubun:
+                    return
+
+                # Canonical market key + open-state derivations (core 레이어)
+                from programgarden_core.nodes.market_status import (
+                    JANGUBUN_TO_MARKET,
+                    is_extended_open,
+                    is_regular_open,
+                )
+                from programgarden_finance.ls.common.real.JIF.constants import (
+                    resolve_jstatus,
+                )
+
+                market = JANGUBUN_TO_MARKET.get(jangubun, jangubun)
+
+                # markets 필터 (설정됐으면 구독 자체가 서버측 제약은 아니므로
+                # 여기서 클라이언트 필터링 적용)
+                if markets_filter and market not in markets_filter:
+                    return
+
+                status_info = resolve_jstatus(jstatus)
+                reg_open = is_regular_open(jstatus)
+                ext_open = is_extended_open(jstatus)
+
+                new_status = {
+                    "market": market,
+                    "jangubun": jangubun,
+                    "jstatus": jstatus,
+                    "jstatus_label": status_info["label"],
+                    "is_regular_open": reg_open,
+                    "is_extended_open": ext_open,
+                    "is_open": ext_open if include_extended else reg_open,
+                    "updated_at": datetime.now().isoformat(),
+                }
+
+                # 이전 상태 조회 (transition 감지용)
+                prev_status = context.get_market_status(market)
+                prev_jstatus = prev_status.get("jstatus") if prev_status else None
+                prev_label = prev_status.get("jstatus_label") if prev_status else None
+                is_transition = prev_jstatus is not None and prev_jstatus != jstatus
+
+                # Cache update
+                context.update_market_status(market, new_status)
+
+                # Output update — 바인딩 리졸버가 이 값을 읽음
+                all_statuses = list(context.get_all_market_statuses().values())
+                outputs = {
+                    "statuses": all_statuses,
+                    "event": {
+                        "market": market,
+                        "jstatus": jstatus,
+                        "jstatus_label": status_info["label"],
+                        "prev_jstatus": prev_jstatus,
+                        "prev_jstatus_label": prev_label,
+                        "transitioned_at": new_status["updated_at"],
+                    },
+                    **_compute_conv_booleans(),
+                }
+
+                for port_name, port_value in outputs.items():
+                    context.set_output(node_id, port_name, port_value)
+
+                # SSE broadcast
+                asyncio.run_coroutine_threadsafe(
+                    context.notify_output_update(
+                        node_id=node_id,
+                        node_type="MarketStatusNode",
+                        outputs=outputs,
+                    ),
+                    loop,
+                )
+
+                # 전이 notification (prev != new)
+                if is_transition:
+                    asyncio.run_coroutine_threadsafe(
+                        context.send_notification(
+                            category=NotificationCategory.SCHEDULE_STARTED,
+                            severity=NotificationSeverity.INFO,
+                            title=f"Market status change: {market}",
+                            message=(
+                                f"{market}: {prev_label or prev_jstatus} → "
+                                f"{status_info['label']} "
+                                f"(jstatus {prev_jstatus} → {jstatus})"
+                            ),
+                            node_id=node_id,
+                            node_type="MarketStatusNode",
+                            data={
+                                "market": market,
+                                "jangubun": jangubun,
+                                "prev_jstatus": prev_jstatus,
+                                "jstatus": jstatus,
+                                "jstatus_label": status_info["label"],
+                                "is_regular_open": reg_open,
+                                "is_extended_open": ext_open,
+                            },
+                        ),
+                        loop,
+                    )
+
+                # Trigger downstream nodes
+                if trigger_nodes:
+                    asyncio.run_coroutine_threadsafe(
+                        context.emit_event(
+                            event_type="market_status",
+                            source_node_id=node_id,
+                            data=outputs,
+                            trigger_nodes=trigger_nodes,
+                        ),
+                        loop,
+                    )
+            except Exception as e:
+                context.log("warning", f"JIF message parse error: {e}", node_id)
+
+        jif.on_jif_message(on_jif_message)
+        context.log(
+            "info",
+            f"JIF subscription started "
+            f"(markets={markets_filter or 'all 12'}, "
+            f"stay_connected={stay_connected}, "
+            f"include_extended_hours={include_extended})",
+            node_id,
+        )
+
+        # One-shot 모드: 5초 대기 → 수신된 이벤트 반영 후 해제
+        if not stay_connected:
+            wait_timeout = 5.0
+            check_interval = 0.1
+            deadline = loop.time() + wait_timeout
+            while loop.time() < deadline:
+                if context.get_all_market_statuses():
+                    break
+                await asyncio.sleep(check_interval)
+
+            try:
+                jif.on_remove_jif_message()
+            except Exception:
+                pass
+            MarketStatusNodeExecutor._active_subscriptions.pop(sub_key, None)
+            try:
+                await real.close()
+            except Exception:
+                pass
+
+        # 초기/최종 output (stay_connected=True 에서는 현재까지 수신된 snapshot,
+        # False 에서는 해제 직전 snapshot 을 그대로 반환)
+        initial_statuses = list(context.get_all_market_statuses().values())
+        initial_outputs: Dict[str, Any] = {
+            "statuses": initial_statuses,
+            "event": None,
+            **_compute_conv_booleans(),
+        }
+        for port_name, port_value in initial_outputs.items():
+            context.set_output(node_id, port_name, port_value)
+
+        return initial_outputs
+
+
 class DisplayNodeExecutor(NodeExecutorBase):
     """
     DisplayNode executor - 명시적 chart_type 기반 시각화
@@ -13833,6 +14175,8 @@ class WorkflowExecutor:
             "SQLiteNode": SQLiteNodeExecutor(),
             # External market data nodes (credential 불필요, 외부 API)
             "CurrencyRateNode": GenericNodeExecutor(),
+            # Market Status (JIF, broker credential type 무관)
+            "MarketStatusNode": MarketStatusNodeExecutor(),
             # AI nodes
             "LLMModelNode": LLMModelNodeExecutor(),
             "AIAgentNode": AIAgentNodeExecutor(),
@@ -14758,6 +15102,8 @@ class WorkflowJob:
         finally:
             # Cleanup broker fill subscriptions (SDK 콜백 해제)
             await self._cleanup_broker_fill_subscriptions()
+            # Cleanup MarketStatusNode JIF subscriptions
+            await self._cleanup_jif_subscriptions()
             # Cleanup persistent nodes (shutdown flag 설정 + 구독 해제 + WebSocket close)
             await self.context.cleanup_persistent_nodes()
             # Cleanup listeners
@@ -16043,6 +16389,14 @@ class WorkflowJob:
         except Exception as e:
             logger.warning(f"Failed to cleanup broker fill subscriptions: {e}")
 
+    async def _cleanup_jif_subscriptions(self) -> None:
+        """MarketStatusNode의 JIF 구독 SDK 콜백 정리."""
+        try:
+            ms_executor = MarketStatusNodeExecutor()
+            await ms_executor.cleanup_jif_subscriptions(self.job_id)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup JIF subscriptions: {e}")
+
     async def stop(self) -> None:
         """Stop execution gracefully"""
         logger.info(f"Stopping job {self.job_id}")
@@ -16101,6 +16455,7 @@ class WorkflowJob:
 
         # Cleanup
         await self._cleanup_broker_fill_subscriptions()
+        await self._cleanup_jif_subscriptions()
         await self.context.cleanup_persistent_nodes()
         await self.context.cleanup_flow_end_nodes()
 
@@ -16165,6 +16520,7 @@ class WorkflowJob:
 
         # 모든 리소스 정리
         await self._cleanup_broker_fill_subscriptions()
+        await self._cleanup_jif_subscriptions()
         await self.context.cleanup_persistent_nodes()
         await self.context.cleanup_flow_end_nodes()
 

@@ -172,6 +172,11 @@ class ExecutionContext:
         # Realtime data buffer
         self._realtime_data: Dict[str, Any] = {}
 
+        # Market status cache (JIF 기반, MarketStatusNode 전용)
+        # key=market canonical name (e.g. "US"), value=dict(jstatus, label,
+        # is_open, is_regular_open, is_extended_open, updated_at, jangubun)
+        self._market_status_cache: Dict[str, Dict[str, Any]] = {}
+
         # Providers
         self._data_provider: Optional[DataProvider] = None
         self._account_provider: Optional[AccountProvider] = None
@@ -604,6 +609,47 @@ class ExecutionContext:
     def get_realtime_data(self, key: str) -> Optional[Any]:
         """Get realtime data"""
         return self._realtime_data.get(key)
+
+    # === Market Status (JIF-based) ===
+
+    def update_market_status(self, market: str, status: Dict[str, Any]) -> None:
+        """Update the cached status snapshot for a canonical market key.
+
+        Called by MarketStatusNodeExecutor on each JIF event. ``market``
+        is one of the 12 canonical keys (KOSPI, US, HK_AM, ...). Unknown
+        codes are stored as-is so debugging can still inspect them.
+        """
+
+        self._market_status_cache[market] = status
+
+    def get_market_status(self, market: str) -> Optional[Dict[str, Any]]:
+        """Return the latest status snapshot for ``market`` or None if
+        no JIF event has been received yet for that market."""
+
+        return self._market_status_cache.get(market)
+
+    def is_market_open(
+        self, market: str, include_extended: bool = False
+    ) -> Optional[bool]:
+        """Convenience helper for ``{{ ... is_market_open("US") }}``.
+
+        Returns ``None`` when no event has been received for the market
+        (distinct from ``False``, which means an event said the market
+        is closed). Honours the ``include_extended`` flag to cover
+        pre/after-market sessions.
+        """
+
+        status = self._market_status_cache.get(market)
+        if not status:
+            return None
+        if include_extended:
+            return bool(status.get("is_extended_open", False))
+        return bool(status.get("is_regular_open", False))
+
+    def get_all_market_statuses(self) -> Dict[str, Dict[str, Any]]:
+        """Shallow copy of the full market status snapshot cache."""
+
+        return dict(self._market_status_cache)
 
     # === Data Query (Provider Delegation) ===
 
