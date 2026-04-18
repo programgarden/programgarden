@@ -328,6 +328,7 @@ class MarketStatusNode(BaseNode):
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
+                enum_values=list(SUPPORTED_MARKETS),
                 ui_options={
                     "multiple": True,
                     "options": list(SUPPORTED_MARKETS),

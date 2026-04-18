@@ -132,38 +132,39 @@ class TestMarketStatusToolSchema:
         assert "stay_connected" in params
         assert "include_extended_hours" in params
 
-    def test_market_key_literal_excludes_overseas_futures(self):
-        """MarketKey Literal 이 해외선물 키 (CME/SGX/HKEX_FUTURES) 제외.
-        Plan 의 'JIF 범위 밖' 제약을 Pydantic 타입에서 강제.
+    def test_tool_schema_markets_excludes_overseas_futures(self):
+        """markets 파라미터 enum 에 해외선물 키(CME/SGX/HKEX_FUTURES) 부재.
+        Plan 의 'JIF 범위 밖' 제약을 tool schema 에서 강제하여 LLM 에게
+        올바른 허용값 힌트 전달."""
 
-        Pydantic Literal 의 validation 이 tool schema 의 enum 보다 상위
-        방어선. LLM 이 arguments 로 해외선물 키를 넘기더라도 Pydantic
-        ValidationError 가 발생하여 tool 실행 자체가 차단됨.
+        from programgarden_core.nodes.market_status import MarketStatusNode
 
-        (참고: core as_tool_schema 는 현재 Literal 을 enum 으로 노출하지
-        않음 — 별도 개선 과제. 본 테스트는 타입 레벨 방어를 검증.)
-        """
+        schema = MarketStatusNode.as_tool_schema()
+        markets_param = schema["parameters"]["markets"]
 
-        from typing import get_args
+        # enum_values 가 FieldSchema 에서 설정되어 as_tool_schema 가
+        # param["enum"] 으로 노출
+        assert "enum" in markets_param, (
+            "markets 파라미터 enum 이 tool schema 에 노출되어야 함"
+        )
+        enum_values = set(markets_param["enum"])
 
-        from programgarden_core.nodes.market_status import MarketKey
-
-        literal_values = set(get_args(MarketKey))
-
-        # JIF 지원 12개 시장만 허용
+        # 해외선물 시장 키는 tool schema 에서 제외
         forbidden = {"CME", "SGX", "HKEX_FUTURES", "SGX_FUTURES", "EUREX"}
-        assert not (forbidden & literal_values), (
-            f"해외선물 시장 키가 MarketKey Literal 에 포함됨: "
-            f"{forbidden & literal_values}"
+        assert not (forbidden & enum_values), (
+            f"해외선물 시장 키가 tool schema 에 포함됨: {forbidden & enum_values}"
         )
 
-        # 대표 JIF 시장 키 포함 검증
+        # JIF 지원 대표 시장 키 포함
         expected = {"US", "KOSPI", "KOSDAQ", "HK_AM", "HK_PM", "JP_AM", "CN_AM"}
-        assert expected.issubset(literal_values), (
-            f"JIF 지원 시장이 MarketKey 에서 누락: {expected - literal_values}"
+        assert expected.issubset(enum_values), (
+            f"JIF 지원 시장이 tool schema 에서 누락: {expected - enum_values}"
         )
 
-        # Pydantic 검증 — 해외선물 키 주입 시 ValidationError
+    def test_market_key_literal_rejects_overseas_futures_at_validation(self):
+        """Pydantic Literal validation — LLM 이 tool schema enum 을 무시
+        하더라도 ValidationError 로 tool 실행 차단 (2차 방어선)."""
+
         from pydantic import ValidationError
 
         from programgarden_core.nodes.market_status import MarketStatusNode
