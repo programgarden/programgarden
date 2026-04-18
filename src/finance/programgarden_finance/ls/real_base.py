@@ -36,6 +36,7 @@ _RESPONSE_MODULE_BASES = [
     "programgarden_finance.ls.overseas_stock.real",
     "programgarden_finance.ls.overseas_futureoption.real",
     "programgarden_finance.ls.korea_stock.real",
+    "programgarden_finance.ls.common.real",
 ]
 
 
@@ -641,6 +642,16 @@ class RealRequestAbstract(ABC):
                     )
                 )
                 req.header.tr_type = "3"
+            # ─── 공용 TR (broker-agnostic): JIF 장운영정보 ───
+            elif tr_cd == "JIF":
+                from programgarden_finance.ls.common.real.JIF.blocks import JIFRealRequest, JIFRealRequestBody
+                req = JIFRealRequest(
+                    body=JIFRealRequestBody(
+                        tr_cd="JIF",
+                        tr_key="0",
+                    )
+                )
+                req.header.tr_type = "3"
             else:
                 continue
 
@@ -793,6 +804,16 @@ class RealRequestAbstract(ABC):
                 req = NVIRealRequest(
                     body=NVIRealRequestBody(
                         tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            # ─── 공용 TR (broker-agnostic): JIF 장운영정보 해제 ───
+            elif tr_cd == "JIF":
+                from programgarden_finance.ls.common.real.JIF.blocks import JIFRealRequest, JIFRealRequestBody
+                req = JIFRealRequest(
+                    body=JIFRealRequestBody(
+                        tr_cd="JIF",
+                        tr_key="0",
                     )
                 )
                 req.header.tr_type = "4"

@@ -4,11 +4,12 @@ from typing import Optional
 from programgarden_core.korea_alias import require_korean_alias
 from programgarden_core.bases import BaseClient, SingletonClientMixin
 
-from . import overseas_stock, overseas_futureoption, korea_stock, oauth
+from . import overseas_stock, overseas_futureoption, korea_stock, common, oauth
 
 from .overseas_stock import OverseasStock
 from .overseas_futureoption import OverseasFutureoption
 from .korea_stock import KoreaStock
+from .common import Common
 from .oauth.generate_token import GenerateToken
 from .oauth.generate_token.token.blocks import TokenInBlock
 from .token_manager import TokenManager
@@ -197,6 +198,21 @@ class LS(SingletonClientMixin, BaseClient):
     국내주식 = korea_stock
     국내주식.__doc__ = "국내 주식 데이터를 조회합니다."
 
+    @require_korean_alias
+    def common(self) -> Common:
+        """broker credential 타입과 무관한 공용 실시간 TR(JIF 등)을 조회합니다."""
+
+        # 토큰 확인
+        if not self.ensure_token():
+            raise LoginException("토큰이 유효하지 않습니다.")
+
+        return Common(
+            token_manager=self.token_manager,
+        )
+
+    공용 = common
+    공용.__doc__ = "broker credential 타입과 무관한 공용 실시간 TR(JIF 등)을 조회합니다."
+
     def ensure_token(self, force_refresh: bool = False) -> bool:
         """토큰이 만료(또는 임박)되었으면 재발급합니다."""
         if not self.token_manager:
@@ -215,6 +231,7 @@ __all__ = [
     OverseasStock,
     OverseasFutureoption,
     KoreaStock,
+    Common,
     GenerateToken,
     URLS,
     TokenManager,
@@ -222,5 +239,6 @@ __all__ = [
     overseas_stock,
     overseas_futureoption,
     korea_stock,
+    common,
     oauth,
 ]
