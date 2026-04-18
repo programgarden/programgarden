@@ -1,3 +1,13 @@
+## [1.5.1] - 2026-04-18
+### Dependencies
+- programgarden-core ^1.12.0 (NodeTypeSchema AI metadata — 5 new optional
+  fields on every node, AIAgentNode `tool_selection` / `tool_top_k`
+  removed).
+
+### Changed
+- No code changes. Compatibility release paired with the
+  core 1.12.0 / community 1.13.0 / programgarden 1.21.0 publish cycle.
+
 ## [1.5.0] - 2026-04-14
 ### Dependencies
 - programgarden-core ^1.11.0 (FieldSchema/OutputPort example 확장 — 노드 스키마에 shape 예시 노출).

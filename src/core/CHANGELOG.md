@@ -1,4 +1,6 @@
 ## [Unreleased]
+
+## [1.12.0] - 2026-04-18
 ### Added
 - **NodeTypeSchema AI metadata** — 5 new optional fields (`usage`, `features`,
   `anti_patterns`, `examples`, `node_guide`) feed the workflow-generation AI
@@ -6,17 +8,27 @@
   (`_usage` / `_features` / `_anti_patterns` / `_examples` / `_node_guide`),
   mirroring the existing `_img_url` / `_connection_rules` / `_rate_limit`
   convention. All 73 registered nodes (69 core + 4 community) filled.
-  - English-only authoring — no i18n bridge. See `memory/feedback_english_only.md`.
+  - English-only authoring — no i18n bridge.
   - Every `examples[].workflow_snippet` is a full workflow JSON that passes
     `WorkflowExecutor.validate()` — enforced by
     `test_metadata_workflow_snippets_validate` (146 tests) so snippets serve
     as executable ground truth for downstream consumers.
+- `test_node_schema_completeness.py` (624 parametrized tests) — every
+  registered node exposes resolved i18n descriptions for top-level / ports /
+  config_schema in both ko and en.
+- `test_node_schema_ai_fields.py` — 148 assertions (73 shape + 73
+  snippet-validate + 2 coverage). `test_metadata_coverage_full` enforces
+  strict equality; any new node must ship AI metadata at introduction time.
 
 ### Removed
-- **AIAgentNode `tool_selection` / `tool_top_k` 필드 삭제** — 전체 도구가 LLM 에 항상 전달되도록 단순화
-  - `enum_values=["all", "semantic"]` → 필드 자체 제거
-  - i18n 키 `fields.AIAgentNode.tool_selection` / `tool_selection_help` / `tool_top_k` / `tool_top_k_help` (ko/en) 제거
-  - FastEmbed 벡터 검색 over-engineering 회수 — 도구 description 만으로 LLM 자체 선택 가능
+- **AIAgentNode `tool_selection` / `tool_top_k` fields** — simplified so
+  every connected tool is always forwarded to the LLM. Description-based
+  selection is left to the model.
+  - i18n keys `fields.AIAgentNode.tool_selection*` / `tool_top_k*` (ko/en)
+    removed alongside the fields.
+  - Part of the FastEmbed vector-search rollback — the downstream
+    `programgarden` package drops its semantic tool-selection infrastructure
+    entirely in 1.21.0.
 
 ## [1.11.1] - 2026-04-17
 ### Changed
