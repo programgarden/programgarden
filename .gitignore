@@ -326,6 +326,14 @@ pyrightconfig.json
 pyvenv.cfg
 pip-selfcheck.json
 
+# override: repo-root scripts/ 는 실제 소스 (live_bot 등) — venv 패턴에서 제외
+!/scripts/
+!/scripts/**
+# scripts 내 파이썬 캐시는 계속 제외 (위 override 에서 덮어쓰지 않도록 재선언)
+scripts/**/__pycache__/
+scripts/**/*.pyc
+scripts/**/*.pyo
+
 ### Windows ###
 # Windows thumbnail cache files
 Thumbs.db
