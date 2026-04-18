@@ -701,11 +701,6 @@ files = [
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
 
-[package.source]
-type = "legacy"
-url = "https://test.pypi.org/simple"
-reference = "testpypi"
-
 [[package]]
 name = "pycparser"
 version = "3.0"
@@ -1035,4 +1030,4 @@ xlsx = []
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "626dc6183e0eaab69ac548e8ae3d157eff67e9d9d35de6bd1b596dbfa711d34e"
+content-hash = "192fa69bea22275033b727cba94ed7f15437c6ecc7f46163246f1bc854fa48bf"
