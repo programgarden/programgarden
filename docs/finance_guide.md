@@ -446,6 +446,74 @@ options = SetupOptions(
 - 주문: `CIDBT00100`(신규), `CIDBT00900`(정정), `CIDBT01000`(취소)
 - 실시간: `OVC`(체결), `OVH`(호가), `TC1`~`TC3`, `WOC`, `WOH`
 
+### 공용 (Broker-agnostic)
+
+브로커 상품 구분 없이 공용으로 사용하는 실시간 TR. `Common.real()` 세션을 통해 구독하며 3종 broker(overseas_stock / overseas_futureoption / korea_stock) 중 아무거나 로그인된 상태에서 접근 가능합니다.
+
+- 실시간: `JIF`(장운영정보 — 12개 시장 개장/종가/CB/사이드카 상태)
+
+#### JIF (장운영정보) 지원 시장 12종
+
+LS 스펙의 `jangubun` 코드를 내부 상수 `MarketKey` 로 매핑:
+
+| jangubun | MarketKey | 범위 |
+|----------|-----------|------|
+| `1` | `KOSPI` | 코스피 (KRX 유가증권시장) |
+| `2` | `KOSDAQ` | 코스닥 |
+| `5` | `KRX_FUTURES` | 코스피 관련 파생상품 (선물/옵션) |
+| `6` | `NXT` | KRX NXT 전용 |
+| `8` | `KRX_NIGHT` | KRX 야간파생 |
+| `9` | `US` | 미국 주식 전체 (NASDAQ, NYSE, AMEX 등 — 거래소별 세분 없음) |
+| `A` | `CN_AM` | 중국 주식 오전 |
+| `B` | `CN_PM` | 중국 주식 오후 |
+| `C` | `HK_AM` | 홍콩 주식 오전 |
+| `D` | `HK_PM` | 홍콩 주식 오후 |
+| `E` | `JP_AM` | 일본 주식 오전 |
+| `F` | `JP_PM` | 일본 주식 오후 |
+
+**⚠️ 해외선물 시장 미지원**: CME, HKEX Futures, SGX 등은 JIF 범위 밖입니다. 해외선물 시장 시간 판단은 심볼별 `trading_hours` 메타데이터 또는 외부 데이터 소스를 사용해야 합니다.
+
+#### jstatus (장상태) 50여 코드
+
+공통: `11` 장전동시호가개시, `21` 장시작, `41` 장마감, `51` 시간외종가매매개시, `54` 시간외단일가매매종료, `55` 프리마켓 개시, `56` 에프터마켓 개시, `57` 프리마켓 마감, `58` 에프터마켓 마감 등
+
+KOSPI/KOSDAQ 한정 (jangubun=1,2): `61` 서킷브레이크1단계발동, `64`/`66` 사이드카 매도/매수 발동, `68` 서킷브레이크2단계발동, `69` 서킷브레이크3단계발동·당일 장종료 등
+
+선물/옵션 한정 (jangubun=5): `61` 코스피관련파생상품 당일 장종료, `62` 서킷브레이크 해제, `70`~`77` 상/하한가 확대 단계
+
+전체 코드 매핑은 `programgarden_finance.ls.common.real.JIF.constants.JSTATUS_LABELS` 참조 (`resolve_jstatus()` 헬퍼 제공).
+
+#### 사용 예제
+
+```python
+import asyncio
+from programgarden_finance import LS, oauth
+
+async def main():
+    tm = oauth.generate_token(appkey="xxx", appsecret="yyy", paper_trading=False)
+    ls = LS.overseas_stock(tm)
+    await ls.login()
+
+    # 공용 Common 세션 — broker 세션과 독립 WebSocket
+    common = ls.token_manager.common()
+    real = common.real()
+    jif = real.JIF()
+
+    async def on_event(event):
+        # event: JIFRealResponse — header(tr_cd='JIF'), body(jangubun, jstatus)
+        jang = event.body.jangubun
+        jst = event.body.jstatus
+        print(f"[JIF] jangubun={jang} jstatus={jst}")
+
+    await jif.on_jif_message(on_event)
+    await asyncio.sleep(60)  # 60초 구독
+    await jif.on_remove_jif_message()
+
+asyncio.run(main())
+```
+
+평일 KST 09~15시 실행 시 KOSPI/KOSDAQ 개장 이벤트 자동 수신. 주말/휴장 시간에는 이벤트 없음.
+
 패키지 루트에서는 주요 심볼을 재노출해 손쉽게 가져올 수 있습니다.
 
 ```python
