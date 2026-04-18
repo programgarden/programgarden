@@ -104,6 +104,8 @@ class NodeTypeRegistry:
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Market External (credential 불필요)
             CurrencyRateNode,
+            # Market Status (JIF 장운영정보 — credential agnostic)
+            MarketStatusNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
             ScheduleNode, TradingHoursFilterNode,
@@ -149,6 +151,8 @@ class NodeTypeRegistry:
             SQLiteNode, HTTPRequestNode, FieldMappingNode,
             # Market External (credential 불필요)
             CurrencyRateNode,
+            # Market Status (JIF 장운영정보 — credential agnostic)
+            MarketStatusNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
             # Trigger
