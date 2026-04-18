@@ -18,7 +18,6 @@ graph LR
     table[/"TableDisplay"/]
     start --> broker
     watchlist --> historical
-    broker --> rsi_condition
     historical --> rsi_condition
     rsi_condition --> chart
     rsi_condition --> table
@@ -52,7 +51,6 @@ graph LR
 
 1. **start** (StartNode) --> **broker** (OverseasStockBrokerNode)
 1. **watchlist** (WatchlistNode) --> **historical** (OverseasStockHistoricalDataNode)
-1. **broker** (OverseasStockBrokerNode) --> **rsi_condition** (ConditionNode)
 1. **historical** (OverseasStockHistoricalDataNode) --> **rsi_condition** (ConditionNode)
 1. **rsi_condition** (ConditionNode) --> **chart** (MultiLineChartNode)
 1. **rsi_condition** (ConditionNode) --> **table** (TableDisplayNode)

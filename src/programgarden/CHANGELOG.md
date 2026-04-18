@@ -1,5 +1,27 @@
 ## [Unreleased]
 
+## [1.21.1] - 2026-04-19
+### Fixed
+- `executor.py` `BrokerNodeExecutor` — `paper_trading` default aligned with
+  Pydantic model (`True` → `False`). Previously, any `OverseasStockBrokerNode`
+  that omitted the `paper_trading` field (the majority of bundled examples)
+  errored out at runtime with "overseas_stock은 모의투자를 지원하지 않습니다"
+  because the executor defaulted to paper mode while overseas_stock has no
+  paper channel. Regular execution of stock workflows now works out of the
+  box; `dry_run` path is unchanged.
+- `examples/workflows/29-monitor-multi-rsi.json` — removed a spurious
+  `broker → rsi_condition` edge. ConditionNode does not need a broker
+  connection, and the broker output (single `connection` object) interfered
+  with `historical → rsi_condition` auto-iterate, causing
+  "정의되지 않은 변수: item" on `items.from: "{{ item.time_series }}"`.
+  Companion `.md` synced.
+
+### Verified
+- Full integration run of all 67 `examples/workflows/*.json` against live
+  LS Securities API (real `APPKEY/APPSECRET`): 66 PASS + 1 long-running
+  (20s runner cap, terminal state reached). No regressions to
+  `test_examples_validation.py` (203 passed).
+
 ## [1.21.0] - 2026-04-18
 ### Added
 - `tests/test_examples_validation.py` (203 pass + 1 xfail + 1 skip):
