@@ -2194,7 +2194,12 @@ class BrokerNodeExecutor(NodeExecutorBase):
         return features & valid
 
     def _get_plugin_risk_features(self, plugin_name: str) -> set:
-        """플러그인 모듈에서 risk_features 속성 조회"""
+        """플러그인 모듈에서 risk_features 속성 조회
+
+        1) registry.get_plugin_module() 우선 사용
+        2) 등록된 plugin callable의 __module__ 역추적 (Dynamic 플러그인 지원)
+        3) hardcoded fallback (하위 호환)
+        """
         try:
             from programgarden_core.registry import PluginRegistry
             registry = PluginRegistry()
@@ -2202,7 +2207,19 @@ class BrokerNodeExecutor(NodeExecutorBase):
             if plugin_module:
                 return set(getattr(plugin_module, 'risk_features', set()))
 
-            # 직접 import 시도
+            # callable의 __module__ 로 모듈 역추적 (일반화된 동적 플러그인 지원)
+            plugin_callable = registry.get(plugin_name) if hasattr(registry, 'get') else None
+            if plugin_callable:
+                module_name = getattr(plugin_callable, '__module__', None)
+                if module_name:
+                    import sys
+                    mod = sys.modules.get(module_name)
+                    if mod is not None:
+                        features = getattr(mod, 'risk_features', None)
+                        if features:
+                            return set(features)
+
+            # 직접 import 시도 (하위 호환 fallback)
             import importlib
             module_map = {
                 "TrailingStop": "programgarden_community.plugins.trailing_stop",
