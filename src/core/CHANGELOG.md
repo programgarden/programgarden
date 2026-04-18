@@ -1,3 +1,10 @@
+## [Unreleased]
+### Removed
+- **AIAgentNode `tool_selection` / `tool_top_k` 필드 삭제** — 전체 도구가 LLM 에 항상 전달되도록 단순화
+  - `enum_values=["all", "semantic"]` → 필드 자체 제거
+  - i18n 키 `fields.AIAgentNode.tool_selection` / `tool_selection_help` / `tool_top_k` / `tool_top_k_help` (ko/en) 제거
+  - FastEmbed 벡터 검색 over-engineering 회수 — 도구 description 만으로 LLM 자체 선택 가능
+
 ## [1.11.1] - 2026-04-17
 ### Changed
 - `ConditionNode.positions` field example을 dict 형태에서 list[dict] 형태로 변경 (position_data 컨벤션 통일)

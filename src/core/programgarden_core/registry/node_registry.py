@@ -50,6 +50,55 @@ class NodeTypeSchema(BaseModel):
         description="Node-level rate limit config (min_interval_sec, max_concurrent, etc.)",
     )
 
+    # === AI chatbot metadata (English, loaded from _ai_metadata/{NodeType}.json) ===
+    usage: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Granular usage guidance authored in English for the workflow-"
+            "generation AI chatbot. Shape:\n"
+            "- when_to_use: List[str] — concrete scenarios this node is for\n"
+            "- when_not_to_use: List[str] — cases where a different node fits better\n"
+            "- typical_scenarios: List[str] — 3–5 common workflow patterns"
+        ),
+    )
+    features: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Bullet list of strengths / constraints in English. Example: "
+            "'Auto-iterates over upstream array output', 'No credential required'."
+        ),
+    )
+    anti_patterns: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description=(
+            "Common misuses with alternatives (English). Each entry: "
+            "- pattern: str — the misuse\n"
+            "- reason: str — why it is wrong\n"
+            "- alternative: str — the correct approach (another node / expression)"
+        ),
+    )
+    examples: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description=(
+            "Executable full workflow examples (2–3 per node) authored in "
+            "English. Each entry: title / description / workflow_snippet "
+            "(complete dict with nodes, edges, credentials, bindings) / "
+            "expected_output. The workflow_snippet MUST pass "
+            "WorkflowExecutor.validate()."
+        ),
+    )
+    node_guide: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Text-oriented guide complementing examples (English). Shape:\n"
+            "- input_handling: str — how inputs are supplied "
+            "(direct / `{{ nodes.X.Y }}` / auto-iterate / credential)\n"
+            "- output_consumption: str — output shape + how downstream nodes bind\n"
+            "- common_combinations: List[str] — frequently paired node chains\n"
+            "- pitfalls: List[str] — connection caveats and shape requirements"
+        ),
+    )
+
 
 class NodeTypeRegistry:
     """
@@ -325,6 +374,9 @@ class NodeTypeRegistry:
         # display_name: i18n 키 (기본값), locale 전달 시 번역됨
         display_name = f"i18n:nodes.{type_name}.name"
 
+        # AI-facing metadata — each field is a flat ClassVar on the class,
+        # mirroring the existing `_img_url` / `_connection_rules` / `_rate_limit`
+        # pattern. English only. Missing attribute → None.
         schema = NodeTypeSchema(
             node_type=type_name,
             display_name=display_name,
@@ -339,6 +391,11 @@ class NodeTypeRegistry:
             display_data_schema=display_data_schema,
             connection_rules=serialized_connection_rules,
             rate_limit=serialized_rate_limit,
+            usage=getattr(node_class, "_usage", None),
+            features=getattr(node_class, "_features", None),
+            anti_patterns=getattr(node_class, "_anti_patterns", None),
+            examples=getattr(node_class, "_examples", None),
+            node_guide=getattr(node_class, "_node_guide", None),
         )
         self._schemas[type_name] = schema
 

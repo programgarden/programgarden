@@ -1,3 +1,13 @@
+## [Unreleased]
+### Removed
+- **AIAgentNode semantic tool selection 제거** — 벡터 기반 도구 선별 인프라 전체 제거
+  - `AIAgentNode.tool_selection` / `tool_top_k` 필드 삭제 (전체 도구가 LLM 에 항상 전달됨)
+  - `AIAgentToolExecutor._build_embedding_index` / `select_tools` 메서드 삭제
+  - `fastembed>=0.4.0` 의존성 제거 (onnxruntime, rank-bm25, pillow, sympy 포함 5개 패키지 제거)
+  - `tests/test_vector_tool_selection.py` 삭제 (19 tests)
+  - i18n 키 `fields.AIAgentNode.tool_selection*` / `tool_top_k*` 제거
+  - Node description 이 풍부해지면서 LLM 이 직접 도구 목록을 보고 선택 가능 — 벡터 검색 over-engineering 제거
+
 ## [1.20.1] - 2026-04-17
 ### Fixed
 - 해외선물 RealAccountNode `on_position_change` 콜백의 `serialized_positions` 직렬화를 dict에서 list로 통일 (해외주식/국내주식 producer와 동일 포맷)

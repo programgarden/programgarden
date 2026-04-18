@@ -23,10 +23,13 @@ src/
 ├── programgarden/      # Main package (workflow execution engine) - for external users
 │   ├── programgarden/  # Core module: executor.py, context.py, resolver.py
 │   └── examples/       # Test/demo code for the package
-│       ├── python_server/  # FastAPI backend server example
-│       ├── trend_trailing_bot/     # TSMOM 추세추종 자동매매 (해외주식)
-│       ├── bollinger_reversion_bot/  # Bollinger Bands 평균회귀 (해외주식)
-│       └── hkex_futures_bot/       # HKEX 미니선물 자동매매 (모의투자)
+│       ├── workflows/           # 67 runnable workflow JSON + companion .md docs
+│       │                        #   including: 59-trend-trailing-bot (TSMOM),
+│       │                        #   60-bollinger-reversion-bot (mean-reversion),
+│       │                        #   61-hkex-futures-bot (paper-traded HKEX mini)
+│       ├── dynamic_plugins/     # 11 user-contributed plugin examples
+│       ├── dynamic_nodes/       # Dynamic node definition example (Dynamic_*)
+│       └── programmer_example/  # 3 live integration scripts (AI agent, quant)
 ├── core/               # programgarden-core: node types, base classes, registry, i18n
 │   └── programgarden_core/
 │       ├── nodes/      # Node definitions (OverseasStockBrokerNode, ConditionNode, etc.)
@@ -54,11 +57,8 @@ cd src/programgarden && poetry run pytest tests/
 # Run a single test
 cd src/programgarden && poetry run pytest tests/test_file.py::test_function -v
 
-# Run example server (port 8766)
-cd src/programgarden && poetry run python examples/python_server/server.py
-
-# Kill server if port is occupied
-lsof -ti:8766 | xargs kill -9
+# Run the full examples validation suite (static validate + dry_run cycles)
+cd src/programgarden && poetry run pytest tests/test_examples_validation.py -v
 ```
 
 ## Architecture
@@ -243,7 +243,7 @@ LLMModelNode + AIAgentNode로 워크플로우에 LLM 기반 분석/의사결정 
 - **엣지 타입**: `main` (DAG 실행), `ai_model` (LLM 연결), `tool` (도구 등록)
 - **출력 형식**: text, json, structured (output_schema 기반 Pydantic 검증)
 - **프리셋**: risk_manager, technical_analyst, news_analyst, strategist
-- **도구 선택**: `tool_selection` — `semantic` (FastEmbed 벡터 유사도, 기본값), `all` (전체 전달). 도구 6개 이상 시 자동 선별
+- **도구 선택**: 모든 연결된 tool 노드가 그대로 LLM 에 전달됩니다. Description 기반 선택은 LLM 자체 판단에 맡깁니다 (벡터 검색 / BM25 인프라는 1.21에서 제거됨).
 - **실시간 보호**: cooldown_sec (기본 60초), ThrottleNode 없이 직접 실시간 노드 연결 차단
 - **Stateless**: 매 실행마다 독립 (대화 기억 없음, 현재 데이터를 Tool로 직접 조회)
 
@@ -437,13 +437,18 @@ Available through `.claude/commands/`:
 ### Integration Testing
 
 The `examples/` folder contains integration test code:
-- `python_server/` - FastAPI server for workflow execution
-- `trend_trailing_bot/` - TSMOM 추세추종 자동매매 봇 (해외주식)
-- `bollinger_reversion_bot/` - Bollinger Bands 평균회귀 봇 (해외주식)
-- `hkex_futures_bot/` - HKEX 미니선물 봇 (모의투자)
+- `workflows/` — 67 runnable workflow JSON files (includes trend-trailing,
+  Bollinger reversion, HKEX futures bot entries at 59/60/61)
+- `dynamic_plugins/` — 11 user-contributed plugin examples
+- `dynamic_nodes/` — `Dynamic_*` node definition example
+- `programmer_example/` — live scripts (AI agent, quant plugins)
 
-### Running Server
+### Running the examples validation suite
 
 ```bash
-cd src/programgarden && poetry run python examples/python_server/server.py
+cd src/programgarden && poetry run pytest tests/test_examples_validation.py
 ```
+
+Covers static `validate()` on every workflow JSON, a dry_run + mocked
+LS login cycle per workflow, and import-smoke tests for
+`programmer_example/`.

@@ -159,6 +159,152 @@ class PortfolioNode(BaseNode):
         ),
     ]
 
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Allocate capital across multiple strategies (equal / custom / risk_parity / momentum)",
+            "Generate rebalancing signals on a periodic or drift-based schedule",
+            "Compose portfolio of portfolios — each PortfolioNode can feed another PortfolioNode",
+            "Track combined equity / metrics (Sharpe, MDD) across multiple BacktestEngineNode results",
+        ],
+        "when_not_to_use": [
+            "Single-strategy workflows with no capital-split decision — PositionSizingNode alone is enough",
+            "Per-trade position-management (stop-loss / trailing) — use ConditionNode with position plugins",
+            "Pure order-routing without rebalancing — skip PortfolioNode",
+        ],
+        "typical_scenarios": [
+            "2× BacktestEngineNode → PortfolioNode(equal) → combined_metrics / equity",
+            "Strategy backtests + AccountNode → PortfolioNode(risk_parity, periodic monthly) → rebalance_orders",
+            "PortfolioNode → PortfolioNode (parent) for tiered capital hierarchies",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "4 allocation methods: equal / custom (explicit weights) / risk_parity / momentum",
+        "4 rebalance rules: none / periodic / drift / both (periodic + drift)",
+        "Supports Portfolio of Portfolios — nested PortfolioNodes auto-inherit parent's allocated capital",
+        "_risk_features={'hwm','window'} — Risk tracker auto-activates for HWM / drawdown monitoring",
+        "capital_sharing + reserve_percent knobs govern idle-capital reallocation",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "allocation_method='custom' without `custom_allocations`",
+            "reason": "Custom mode requires explicit weights that sum to 1.0 — leaving it empty silently falls back to equal weights, hiding the intent.",
+            "alternative": "Always populate `custom_allocations: {strategy_1: 0.4, strategy_2: 0.6}` when method='custom', or pick 'equal' / 'risk_parity' for automatic weighting.",
+        },
+        {
+            "pattern": "rebalance_rule='drift' without `drift_threshold`",
+            "reason": "Drift mode needs a numeric threshold to detect when the real weights deviate too far from target; without it nothing triggers.",
+            "alternative": "Set `drift_threshold: 5.0` (e.g. rebalance when any strategy drifts >5% from target).",
+        },
+        {
+            "pattern": "Overriding `total_capital` on a child PortfolioNode connected to a parent",
+            "reason": "When a parent PortfolioNode feeds allocated_capital downstream, child's total_capital is inherited automatically; manual overrides are ignored or cause inconsistency.",
+            "alternative": "Leave `total_capital` at its default for child nodes and bind the parent's `allocated_capital.<strategy_id>` via edge.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Equal-weight backtest portfolio",
+            "description": "Two BacktestEngineNode results feed PortfolioNode with equal weighting; combined metrics render downstream.",
+            "workflow_snippet": {
+                "id": "portfolio-equal-backtest",
+                "name": "Equal-weight backtest portfolio",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {
+                        "id": "historical",
+                        "type": "OverseasStockHistoricalDataNode",
+                        "symbol": {"symbol": "SPY", "exchange": "NYSE"},
+                        "period": "1d",
+                        "start_date": "20260101",
+                        "end_date": "20260401",
+                    },
+                    {
+                        "id": "rsi_strategy",
+                        "type": "BacktestEngineNode",
+                        "strategy": "RSI",
+                        "data": "{{ nodes.historical.values }}",
+                        "initial_capital": 50000,
+                    },
+                    {
+                        "id": "macd_strategy",
+                        "type": "BacktestEngineNode",
+                        "strategy": "MACD",
+                        "data": "{{ nodes.historical.values }}",
+                        "initial_capital": 50000,
+                    },
+                    {"id": "portfolio", "type": "PortfolioNode", "total_capital": 100000, "allocation_method": "equal"},
+                    {"id": "summary", "type": "SummaryDisplayNode", "title": "Combined metrics", "data": "{{ nodes.portfolio.combined_metrics }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "rsi_strategy"},
+                    {"from": "historical", "to": "macd_strategy"},
+                    {"from": "rsi_strategy", "to": "portfolio"},
+                    {"from": "macd_strategy", "to": "portfolio"},
+                    {"from": "portfolio", "to": "summary"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "combined_metrics contains aggregated Sharpe / MDD / CAGR across both strategies; equity curves merge 50/50.",
+        },
+        {
+            "title": "Live portfolio with monthly rebalancing",
+            "description": "Custom weights (60/40); monthly periodic rebalance generates rebalance_orders when allocation drifts.",
+            "workflow_snippet": {
+                "id": "portfolio-live-rebalance",
+                "name": "Live portfolio with rebalance",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "0 9 1 * *", "timezone": "America/New_York"},
+                    {
+                        "id": "portfolio",
+                        "type": "PortfolioNode",
+                        "total_capital": 100000,
+                        "allocation_method": "custom",
+                        "custom_allocations": {"equities": 0.6, "bonds": 0.4},
+                        "rebalance_rule": "periodic",
+                        "rebalance_frequency": "monthly",
+                        "capital_sharing": True,
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "title": "Rebalance orders", "data": "{{ nodes.portfolio.rebalance_orders }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "portfolio"},
+                    {"from": "account", "to": "portfolio"},
+                    {"from": "portfolio", "to": "display"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "On the 1st of each month at 09:00 ET, PortfolioNode emits rebalance_orders when the 60/40 split drifts; table renders the orders.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "`strategy_results` (multiple=True, min=1) from BacktestEngineNode or PortfolioNode. `account_state` optional for live mode. All allocation / rebalance settings are configuration, not bindings.",
+        "output_consumption": "`combined_equity` + `combined_metrics` for backtest analytics; `rebalance_orders` + `rebalance_signal` for live rebalancing; `allocated_capital` for cascading to child portfolios; `allocation_weights` for transparency.",
+        "common_combinations": [
+            "BacktestEngineNode × N → PortfolioNode (equal) → SummaryDisplayNode",
+            "PortfolioNode → PortfolioNode (parent→child with inherited total_capital)",
+            "ScheduleNode + AccountNode → PortfolioNode (rebalance) → TableDisplayNode(rebalance_orders)",
+        ],
+        "pitfalls": [
+            "`custom_allocations` must sum to 1.0 when method='custom'",
+            "`drift_threshold` is required for rebalance_rule in {drift, both}",
+            "Child PortfolioNodes should leave `total_capital` unset to inherit from parent",
+            "_risk_features={'hwm','window'} activates the risk tracker automatically — expect DB writes when not in dry_run",
+        ],
+    }
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 필드 스키마 (클라이언트 UI용)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

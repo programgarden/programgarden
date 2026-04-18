@@ -15,6 +15,7 @@
       "id": "broker",
       "type": "OverseasStockBrokerNode",
       "credential_id": "broker_cred",
+      "paper_trading": false,
       "position": {
         "x": 250,
         "y": 200
