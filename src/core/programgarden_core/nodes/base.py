@@ -467,20 +467,25 @@ class BaseNode(BaseModel):
         return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
     @classmethod
-    def as_tool_schema(cls) -> Dict[str, Any]:
+    def as_tool_schema(cls, locale: str = "en") -> Dict[str, Any]:
         """
         이 노드를 AI Tool로 사용할 때의 스키마.
 
         AI Agent가 LLM에 Tool 목록을 전달할 때 사용합니다.
-        노드의 설정 가능한 필드(FieldSchema)를 Tool 파라미터로 변환합니다.
+        노드의 설정 가능한 필드(FieldSchema)를 Tool 파라미터로 변환하고,
+        `i18n:` 접두어 문자열은 지정된 locale 의 실제 번역값으로 해석됩니다.
+
+        Args:
+            locale: 번역 locale (기본값 "en"). LLM 은 영어 description 을
+                선호하므로 AI Agent Tool 호출용에는 "en" 을 권장.
 
         Returns:
             dict: {
                 "tool_name": "overseas_stock_market_data",  (LLM function calling용 snake_case)
                 "node_type": "OverseasStockMarketDataNode", (원본 클래스명)
-                "display_name": "i18n:nodes.OverseasStockMarketDataNode.name", (UI 표시용 i18n 키)
+                "display_name": "Overseas Stock Market Data", (locale 번역)
                 "description": "...",
-                "parameters": {...},
+                "parameters": {...},  (각 필드 description 이 번역된 자연어)
                 "returns": {...},
             }
         """
@@ -520,7 +525,7 @@ class BaseNode(BaseModel):
                 out_dict["description"] = out.description
             returns[out.name] = out_dict
 
-        return {
+        result = {
             "tool_name": cls._to_snake_case(cls.__name__),
             "node_type": cls.__name__,
             "display_name": f"i18n:nodes.{cls.__name__}.name",
@@ -528,6 +533,12 @@ class BaseNode(BaseModel):
             "parameters": parameters,
             "returns": returns,
         }
+
+        # i18n 키 ("i18n:..." prefix) 를 실제 번역값으로 resolve.
+        # LLM 은 번역되지 않은 리터럴 키를 보면 의미를 추론할 수 없으므로,
+        # tool schema export 시점에 locale 기반 번역값으로 대체.
+        from programgarden_core.i18n.translator import _translate_i18n_strings
+        return _translate_i18n_strings(result, locale)
 
 
 class PluginNode(BaseNode):
