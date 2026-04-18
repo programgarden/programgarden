@@ -2010,7 +2010,10 @@ class BrokerNodeExecutor(NodeExecutorBase):
         if product == "korea_stock":
             paper_trading = False
         else:
-            paper_trading = config.get("paper_trading", True)
+            # Default matches Pydantic BrokerNode.paper_trading default (False).
+            # overseas_stock has no paper channel → default True would fail-closed
+            # with "모의투자 미지원" on every unset workflow.
+            paper_trading = config.get("paper_trading", False)
 
         # ========================================
         # 모의투자 지원 여부 검증
