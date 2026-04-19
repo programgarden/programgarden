@@ -1,12 +1,12 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-04-18T00:00:00
+@updated: 2026-04-19T00:00:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
 ## TREE
 src/
-  core/ [71 .py] — programgarden-core 1.9.9
+  core/ [72 .py] — programgarden-core 1.12.0
     programgarden_core/
       nodes/ [38 .py] — 73 node classes (12 categories)
       models/ [12 .py] — edge, workflow, credential, resilience, connection_rule, event, exchange, job, plugin_resource, resource
@@ -15,7 +15,7 @@ src/
       expression/ [2 .py] — template evaluator ({{ nodes.x.y }})
       i18n/ [2 .py + 2 .json] — translator, ko.json, en.json
       presets/ [1 .py + 4 .json] — AI agent presets
-  programgarden/ [30 .py] — programgarden 1.17.0
+  programgarden/ [30 .py] — programgarden 1.21.1
     programgarden/
       executor.py — WorkflowExecutor, NodeExecutors, WorkflowJob
       context.py — ExecutionContext, state, events
@@ -30,7 +30,7 @@ src/
     examples/dynamic_plugins/ [11 .py] — user-contributed simple_* plugin examples
     examples/dynamic_nodes/ [1 .py] — Dynamic_* node definition example
     examples/programmer_example/ [3 .py] — live integration scripts (AI agent, quant)
-  finance/ [339 .py] — programgarden-finance 1.4.4
+  finance/ [482 .py] — programgarden-finance 1.5.1
     programgarden_finance/
       ls/ — LS Securities API wrapper
         overseas_stock/ — REST 17 TR + Real 10 TR + extension (tracker)
@@ -40,7 +40,7 @@ src/
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect
         config.py — API URLs, rate limits
-  community/ [89 .py] — programgarden-community 1.11.0
+  community/ [89 .py] — programgarden-community 1.13.0
     programgarden_community/
       plugins/ [78 dirs] — 77 strategy plugins (TECHNICAL 59, POSITION 18)
       nodes/ — 4 community nodes
@@ -97,20 +97,20 @@ src/community/programgarden_community/plugins/__init__.py → 77 plugin registra
 - Poetry Monorepo: 4 packages with path-based develop dependencies
 
 ## DEPS
-### programgarden-core 1.9.9
+### programgarden-core 1.12.0
 pydantic>=2.0.0
 
-### programgarden 1.17.0
+### programgarden 1.21.1
 pydantic>=2.0.0 | croniter^6.0.0 | aiohttp^3.9.0 | aiosqlite^0.20.0
-litellm>=1.40.0 | fastembed>=0.4.0 | yfinance^0.2.0 | psutil^6.0.0
+litellm>=1.40.0 | yfinance^0.2.0 | psutil^6.0.0
 python-dotenv^1.1.0 | pytickersymbols>=1.17.5 | lxml^6.0.2
 dev: fastapi^0.128.0 | uvicorn^0.40.0 | pytest^8.0.0
 
-### programgarden-finance 1.4.4
+### programgarden-finance 1.5.1
 pydantic>=2.11.7 | requests^2.32.4 | aiohttp^3.10.0 | websockets^15.0.1
 redis^6.4.0 | python-dotenv^1.1.1
 
-### programgarden-community 1.11.0
+### programgarden-community 1.13.0
 pypdf>=4.0.0
 extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 
@@ -119,7 +119,7 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Overseas Futures Nodes: 22 nodes (same structure as stock)
 - [x] Korea Stock Nodes: 13 nodes (broker, account, market, order, realtime, symbol)
 - [x] Korea Stock Finance API: 56 REST + 13 Real TR with KrStockAccountTracker
-- [x] AI Agent: LLMModelNode + AIAgentNode with tool edges, FastEmbed vector selection
+- [x] AI Agent: LLMModelNode + AIAgentNode with tool edges (all connected tools forwarded to LLM)
 - [x] Strategy Plugins: 77 plugins (TECHNICAL 59 + POSITION 18)
 - [x] Community Nodes: TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode
 - [x] IfNode: conditional branching with cascading skip
