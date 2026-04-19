@@ -1,0 +1,110 @@
+{
+  "id": "70-telegram-rsi-oversold",
+  "name": "RSI 과매도 종목 텔레그램 알림",
+  "description": "감시 종목 중 RSI < 30 (과매도) 발견 시 텔레그램 알림. 왕초보: '과매도 종목 있으면 알려줘'",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": false,
+      "position": {"x": 250, "y": 200}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "AAPL", "exchange": "NASDAQ"},
+        {"symbol": "MSFT", "exchange": "NASDAQ"},
+        {"symbol": "NVDA", "exchange": "NASDAQ"},
+        {"symbol": "TSLA", "exchange": "NASDAQ"}
+      ],
+      "position": {"x": 450, "y": 200}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "period": "D",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "position": {"x": 700, "y": 200}
+    },
+    {
+      "id": "rsi_condition",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": {"x": 950, "y": 200}
+    },
+    {
+      "id": "if_found",
+      "type": "IfNode",
+      "left": "{{ nodes.rsi_condition.is_condition_met }}",
+      "operator": "==",
+      "right": true,
+      "position": {"x": 1200, "y": 200}
+    },
+    {
+      "id": "telegram_alert",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "📉 <b>RSI 과매도 종목 발견!</b>\n\n🔍 감시 종목: AAPL, MSFT, NVDA, TSLA\n📊 조건: RSI(14) < 30\n🎯 과매도 종목: {{ nodes.rsi_condition.passed_symbols }}\n\n💡 역추세 매수 검토 대상 (확정 매매 아님)",
+      "position": {"x": 1450, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "rsi_condition"},
+    {"from": "rsi_condition", "to": "if_found"},
+    {"from": "if_found", "to": "telegram_alert", "from_port": "true"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_guide",
+      "content": "## 왕초보 튜토리얼\n\n**질문**: '과매도 종목 있으면 텔레그램으로 알려줘'\n\n**흐름**:\n1. WatchlistNode → 감시 종목 4개\n2. HistoricalDataNode → 60일 일봉 조회 (auto-iterate)\n3. ConditionNode(RSI) → RSI 14일 계산, threshold=30 below\n4. IfNode → is_condition_met == true 체크\n5. TelegramNode → passed_symbols 목록 전송\n\n**RSI 해석**:\n- RSI < 30: 과매도 (저점 반등 가능)\n- RSI > 70: 과매수 (고점 조정 가능)\n- direction='above' + threshold=70 으로 과매수 알림 변형 가능\n\n**주의**: 이 워크플로우는 '신호' 만 전달. 실제 매매는 별도 주문 노드 필요",
+      "color": 2,
+      "width": 360,
+      "height": 300,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}

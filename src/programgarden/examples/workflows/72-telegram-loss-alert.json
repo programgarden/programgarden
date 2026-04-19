@@ -1,0 +1,90 @@
+{
+  "id": "72-telegram-loss-alert",
+  "name": "손실 위험 텔레그램 경고",
+  "description": "계좌 수익률 -3% 이하일 때 텔레그램 경고. 왕초보: '내 계좌가 손실나면 바로 알려줘'",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": false,
+      "position": {"x": 250, "y": 200}
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {"x": 450, "y": 200}
+    },
+    {
+      "id": "if_loss",
+      "type": "IfNode",
+      "left": "{{ nodes.account.balance.total_pnl_rate }}",
+      "operator": "<=",
+      "right": -3,
+      "position": {"x": 700, "y": 100}
+    },
+    {
+      "id": "if_profit",
+      "type": "IfNode",
+      "left": "{{ nodes.account.balance.total_pnl_rate }}",
+      "operator": ">=",
+      "right": 5,
+      "position": {"x": 700, "y": 300}
+    },
+    {
+      "id": "telegram_loss",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "⚠️ <b>손실 경고!</b>\n\n📉 현재 수익률: {{ nodes.account.balance.total_pnl_rate }}%\n💸 평가손익: ₩{{ nodes.account.balance.total_pnl_krw }}\n📊 평가총액: ₩{{ nodes.account.balance.total_eval_krw }}\n\n🛡️ 리스크 관리 점검을 권장합니다.\n- 손절 라인 확인\n- 포지션 크기 조정\n- 과매도 종목 추매 검토",
+      "position": {"x": 950, "y": 100}
+    },
+    {
+      "id": "telegram_profit",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🎉 <b>수익 알림!</b>\n\n📈 현재 수익률: {{ nodes.account.balance.total_pnl_rate }}%\n💰 평가손익: ₩{{ nodes.account.balance.total_pnl_krw }}\n📊 평가총액: ₩{{ nodes.account.balance.total_eval_krw }}\n\n💡 차익실현 검토 시점:\n- 목표 수익률 도달 여부\n- 트레일링 스탑 설정\n- 일부 분할 매도 고려",
+      "position": {"x": 950, "y": 300}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "account"},
+    {"from": "account", "to": "if_loss"},
+    {"from": "account", "to": "if_profit"},
+    {"from": "if_loss", "to": "telegram_loss", "from_port": "true"},
+    {"from": "if_profit", "to": "telegram_profit", "from_port": "true"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_guide",
+      "content": "## 왕초보 튜토리얼\n\n**질문**: '내 계좌 손실 나면 바로 알려줘 + 수익 5% 넘으면도 알려줘'\n\n**흐름**:\n1. AccountNode 하나에서 두 개의 IfNode 로 분기\n2. IfNode(if_loss) → 수익률 <= -3%\n3. IfNode(if_profit) → 수익률 >= +5%\n4. 각각의 true 분기에 다른 TelegramNode 연결\n\n**DAG 병렬 분기**: 한 노드에서 여러 엣지로 나가면 병렬 실행\n\n**임계값 조정**:\n- 보수적: if_loss right=-1, if_profit right=+3\n- 공격적: if_loss right=-5, if_profit right=+10\n\n**스케줄화**: StartNode → ScheduleNode(cron='*/30 9-16 * * 1-5')\n→ 평일 장중 30분마다 체크",
+      "color": 0,
+      "width": 380,
+      "height": 320,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}

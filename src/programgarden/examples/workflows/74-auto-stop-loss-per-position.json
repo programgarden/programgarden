@@ -1,0 +1,99 @@
+{
+  "id": "74-auto-stop-loss-per-position",
+  "name": "포지션별 자동 손절 + 텔레그램 (선물 모의)",
+  "description": "보유 포지션 각각에 대해 손실률 -5% 이하면 자동 전량 매도 + 텔레그램 경고. 리스크 관리 자동화 튜토리얼.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true,
+      "position": {"x": 250, "y": 300}
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "*/5 * * * *",
+      "timezone": "Asia/Hong_Kong",
+      "enabled": true,
+      "max_duration_hours": 1,
+      "position": {"x": 450, "y": 300}
+    },
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "position": {"x": 650, "y": 300}
+    },
+    {
+      "id": "if_big_loss",
+      "type": "IfNode",
+      "left": "{{ item.pnl_rate }}",
+      "operator": "<=",
+      "right": -5,
+      "position": {"x": 900, "y": 300}
+    },
+    {
+      "id": "sell_order",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "{{ item.close_side }}",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": "{{ item.quantity }}"
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 1150, "y": 300}
+    },
+    {
+      "id": "telegram_stop_loss",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🛑 <b>손절 매도 체결!</b>\n\n📉 종목: {{ item.symbol }} ({{ item.exchange }})\n📊 수량: {{ item.quantity }}계약\n💸 손실률: {{ item.pnl_rate }}%\n⚠️ 손절 라인: -5%\n\n🛡️ 리스크 보호 작동: 추가 손실 방지",
+      "position": {"x": 1400, "y": 300}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "schedule"},
+    {"from": "schedule", "to": "account"},
+    {"from": "account", "to": "if_big_loss"},
+    {"from": "if_big_loss", "to": "sell_order", "from_port": "true"},
+    {"from": "sell_order", "to": "telegram_stop_loss"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_risk",
+      "content": "## 포지션별 자동 손절\n\n**트리거**: 5분마다 (cron */5)\n**조건**: 각 포지션의 pnl_rate <= -5%\n**액션**: 전량 시장가 매도 + 텔레그램\n\n**핵심 패턴: Per-position Auto-iterate**\n- Account → IfNode → Sell → Telegram\n- AccountNode의 positions 리스트가 각 노드에 auto-iterate\n- IfNode의 {{ item.pnl_rate }} 가 각 포지션에 개별 평가됨\n- 손절 조건 충족한 포지션만 sell_order 실행\n\n**close_side**: \n- 롱 포지션 보유 시 close_side='sell'\n- 숏 포지션 보유 시 close_side='buy'\n- AccountNode가 자동 계산\n\n**안전장치**:\n- paper_trading=true (모의)\n- resilience.fallback=skip (일부 실패 허용)\n- 조건 미충족 포지션은 IfNode false 분기에서 스킵",
+      "color": 0,
+      "width": 380,
+      "height": 380,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}

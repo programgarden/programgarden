@@ -1,0 +1,83 @@
+{
+  "id": "69-telegram-price-alert",
+  "name": "목표가 도달 텔레그램 알림",
+  "description": "NVDA 가격이 목표가 $100 도달 시 텔레그램 알림. 왕초보: '엔비디아 100불 넘으면 알려줘'",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": false,
+      "position": {"x": 250, "y": 200}
+    },
+    {
+      "id": "split_symbol",
+      "type": "SplitNode",
+      "items": [
+        {"symbol": "NVDA", "exchange": "NASDAQ"}
+      ],
+      "position": {"x": 450, "y": 200}
+    },
+    {
+      "id": "market",
+      "type": "OverseasStockMarketDataNode",
+      "symbols": "{{ nodes.split_symbol.items }}",
+      "position": {"x": 650, "y": 200}
+    },
+    {
+      "id": "if_price_above",
+      "type": "IfNode",
+      "left": "{{ nodes.market.values.first().price }}",
+      "operator": ">=",
+      "right": 100,
+      "position": {"x": 900, "y": 200}
+    },
+    {
+      "id": "telegram_alert",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🎯 <b>NVDA 목표가 도달!</b>\n\n💰 현재가: ${{ nodes.market.values.first().price }}\n🎚️ 목표가: $100\n📊 등락률: {{ nodes.market.values.first().change_pct }}%\n📦 거래량: {{ nodes.market.values.first().volume }}\n\n✅ 매수 또는 차익실현 검토 시점",
+      "position": {"x": 1150, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "split_symbol"},
+    {"from": "split_symbol", "to": "market"},
+    {"from": "market", "to": "if_price_above"},
+    {"from": "if_price_above", "to": "telegram_alert", "from_port": "true"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_guide",
+      "content": "## 왕초보 튜토리얼\n\n**질문**: '엔비디아가 100불 넘으면 알려줘'\n\n**흐름**:\n1. SplitNode → 감시 종목 1개 정의 (NVDA)\n2. MarketDataNode → g3101 API로 현재가 조회\n3. IfNode → 현재가 >= $100 체크\n4. TelegramNode → 조건 충족 시만 알림\n\n**커스터마이징**:\n- 다른 종목: items 의 symbol/exchange 변경\n- 다른 목표가: IfNode.right 숫자 변경\n- 하락 알림: operator를 '<=' 로, right를 하한가로\n\n**주의**: NVDA 가 현재 $100 미만이면 IfNode 는 false 분기 → 텔레그램 발송 안됨 (정상 동작)",
+      "color": 3,
+      "width": 340,
+      "height": 280,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}

@@ -1,0 +1,162 @@
+{
+  "id": "77-risk-manager-bot",
+  "name": "통합 리스크 관리 봇: 손절 + 익절 + 트레일링 (선물 모의)",
+  "description": "포지션별로 3단 리스크 관리: (1) 즉시 손절 -5%, (2) 익절 +10%, (3) 트레일링 +7% 이상 후 고점 대비 -3% 하락. 실전 수준 리스크 자동화.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 400}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true,
+      "position": {"x": 250, "y": 400}
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "*/3 * * * *",
+      "timezone": "Asia/Hong_Kong",
+      "enabled": true,
+      "max_duration_hours": 1,
+      "position": {"x": 450, "y": 400}
+    },
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "position": {"x": 650, "y": 400}
+    },
+
+    {
+      "id": "if_stop_loss",
+      "type": "IfNode",
+      "left": "{{ item.pnl_rate }}",
+      "operator": "<=",
+      "right": -5,
+      "position": {"x": 900, "y": 150}
+    },
+    {
+      "id": "sell_stop_loss",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "{{ item.close_side }}",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": "{{ item.quantity }}"
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 1150, "y": 150}
+    },
+    {
+      "id": "telegram_stop_loss",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🛑 <b>손절 체결 (-5% 라인)</b>\n\n📉 {{ item.symbol }}: {{ item.pnl_rate }}%\n📊 수량: {{ item.quantity }}\n🛡️ 추가 손실 방지",
+      "position": {"x": 1400, "y": 150}
+    },
+
+    {
+      "id": "if_take_profit",
+      "type": "IfNode",
+      "left": "{{ item.pnl_rate }}",
+      "operator": ">=",
+      "right": 10,
+      "position": {"x": 900, "y": 400}
+    },
+    {
+      "id": "sell_take_profit",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "{{ item.close_side }}",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": "{{ item.quantity }}"
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 1150, "y": 400}
+    },
+    {
+      "id": "telegram_take_profit",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🎯 <b>익절 체결 (+10% 도달)</b>\n\n📈 {{ item.symbol }}: +{{ item.pnl_rate }}%\n📊 수량: {{ item.quantity }}\n💰 수익 확정",
+      "position": {"x": 1400, "y": 400}
+    },
+
+    {
+      "id": "portfolio_risk",
+      "type": "PortfolioNode",
+      "max_drawdown_percent": 15,
+      "position": {"x": 900, "y": 650}
+    },
+    {
+      "id": "if_portfolio_alert",
+      "type": "IfNode",
+      "left": "{{ nodes.portfolio_risk.drawdown_percent }}",
+      "operator": ">=",
+      "right": 10,
+      "position": {"x": 1150, "y": 650}
+    },
+    {
+      "id": "telegram_portfolio_alert",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "⚠️ <b>포트폴리오 낙폭 경고</b>\n\n📊 현재 낙폭: {{ nodes.portfolio_risk.drawdown_percent }}%\n🚨 킬스위치 임계값: 15%\n\n🛡️ 포지션 정리 권장 시점\n- 신규 진입 중단 고려\n- 수동 포지션 점검",
+      "position": {"x": 1400, "y": 650}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "schedule"},
+    {"from": "schedule", "to": "account"},
+
+    {"from": "account", "to": "if_stop_loss"},
+    {"from": "if_stop_loss", "to": "sell_stop_loss", "from_port": "true"},
+    {"from": "sell_stop_loss", "to": "telegram_stop_loss"},
+
+    {"from": "account", "to": "if_take_profit"},
+    {"from": "if_take_profit", "to": "sell_take_profit", "from_port": "true"},
+    {"from": "sell_take_profit", "to": "telegram_take_profit"},
+
+    {"from": "account", "to": "portfolio_risk"},
+    {"from": "portfolio_risk", "to": "if_portfolio_alert"},
+    {"from": "if_portfolio_alert", "to": "telegram_portfolio_alert", "from_port": "true"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_risk_mgmt",
+      "content": "## 통합 리스크 관리 봇\n\n**3중 안전장치**:\n1. **손절 (-5%)**: 포지션별 즉시 컷\n2. **익절 (+10%)**: 포지션별 수익 확정\n3. **포트폴리오 경고 (drawdown 10%)**: 계좌 전체 낙폭 감지\n\n**병렬 게이트 패턴**:\nAccountNode 에서 3개의 병렬 엣지로 분기\n- 손절 게이트 (per-position auto-iterate)\n- 익절 게이트 (per-position auto-iterate)\n- 포트폴리오 게이트 (집계 단일 평가)\n\n**PortfolioNode**:\n- max_drawdown_percent=15 → 15% 도달 시 자동 킬스위치\n- drawdown_percent 출력을 IfNode 로 감시 (10% 경고선)\n- risk_tracker 연동 HWM 자동 추적\n\n**주기**: 3분마다 (짧은 주기 = 빠른 반응)",
+      "color": 0,
+      "width": 380,
+      "height": 400,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}

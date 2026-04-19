@@ -189,6 +189,67 @@ auto-iterate가 dict 배열을 소스로 픽업.
 }
 ```
 
+### 대안 — aggregate 노드 참조 `{{ nodes.X.Y }}`
+
+per-item 상세 정보가 필요 없고 **요약성 메시지**로 충분하면, 템플릿에서
+`{{ item.xxx }}` 대신 `{{ nodes.X.Y }}` 로 업스트림 노드의 **리스트 출력을 통째로**
+참조. iteration context 의존성이 없어 빈 리스트든 N개든 **항상 해석**됨.
+
+**AS-IS (취약):**
+```json
+{
+  "id": "telegram_exit",
+  "template": "📉 종목: {{ item.symbol }} 수익률: {{ item.pnl_rate }}%"
+}
+```
+
+**TO-BE (안전):**
+```json
+{
+  "id": "telegram_exit",
+  "template": "📋 청산 대상: {{ nodes.exit_account.held_symbols }}"
+}
+```
+
+이 패턴은 auto-iterate가 N번 실행될 때 **동일한 요약 메시지가 N번 발송**되지만
+(워크플로우 59 `trend_trailing_bot` 의 정적 템플릿 패턴과 동일한 트레이드오프),
+미해석 리터럴 원문이 나가는 것보다는 낫습니다. 68-77 예제의 `telegram_*` 노드가
+이 스타일을 따릅니다.
+
+### ⚠️ IfNode는 per-item 평가가 불가능함 — 알려진 제약
+
+`IfNode` 는 실행 엔진의 `NO_AUTO_ITERATE_NODE_TYPES` 에 포함되어 있어 **단일 평가**
+만 수행합니다. 따라서 `left: "{{ item.pnl_rate }}"` 로 **포지션별 손절 게이트**를
+만들려는 패턴은 **원하는대로 동작하지 않음**:
+
+```json
+{
+  "id": "if_stop_loss",
+  "type": "IfNode",
+  "left": "{{ item.pnl_rate }}",   // ⚠️ 절대 해석 안됨 — item 미정의
+  "operator": "<=",
+  "right": -5
+}
+```
+
+**실제 동작**: `{{ item.pnl_rate }}` 가 항상 미해석 → IfNode는 항상 false 분기 →
+다운스트림 sell_order/telegram은 cascading skip. 결과적으로 **포지션에 실제 큰
+손실이 있어도 손절이 실행되지 않음**.
+
+**올바른 패턴**:
+1. **계좌 전체 수익률 기준**: `{{ nodes.account.balance.total_pnl_rate }}` 로 전체 평가
+   (포지션별이 아니라 계좌 합산). 예제 #72 참고.
+2. **per-position 자동 손절이 필요하면 전용 플러그인 사용**:
+   - `stop_loss`, `profit_target`, `trailing_stop`, `dynamic_stop_loss`
+   - ConditionNode 기반이라 per-item iteration 정상 작동
+3. **리스크 모니터링만 원하면** `PortfolioNode.drawdown_percent` + IfNode 조합
+   (포트폴리오 집계 스칼라 비교).
+
+**기존 예제에도 동일 제약 존재**: 워크플로우 59/62/74/77 등이 `{{ item.pnl_rate }}`
+패턴을 사용하지만, 위 이유로 실제 per-position 손절 로직은 작동하지 않습니다
+(dry_run 테스트는 terminal state 도달만 확인하므로 통과). 실전 리스크 관리는
+반드시 `stop_loss` 계열 플러그인으로 이관 권장.
+
 ---
 
 ## 5. TradingHoursFilterNode는 "분기 노드"가 아니라 "차단-대기 노드"

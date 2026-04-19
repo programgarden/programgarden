@@ -1,0 +1,131 @@
+{
+  "id": "73-auto-buy-bollinger-lower",
+  "name": "볼린저 하단 터치 자동 매수 + 텔레그램 (선물 모의)",
+  "description": "HKEX 미니선물 볼린저밴드 하단 터치 시 자동 롱 진입 + 텔레그램 체결 알림. 단순 매수 자동화 튜토리얼.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 300}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true,
+      "position": {"x": 250, "y": 300}
+    },
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "position": {"x": 450, "y": 500}
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "HMHJ26", "exchange": "HKEX"},
+        {"symbol": "HMCEJ26", "exchange": "HKEX"}
+      ],
+      "position": {"x": 450, "y": 100}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasFuturesHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 700, "y": 100}
+    },
+    {
+      "id": "bollinger",
+      "type": "ConditionNode",
+      "plugin": "BollingerBands",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 20,
+        "std_dev": 2.0,
+        "position": "below_lower"
+      },
+      "position": {"x": 950, "y": 100}
+    },
+    {
+      "id": "filter_not_held",
+      "type": "SymbolFilterNode",
+      "operation": "difference",
+      "input_a": "{{ nodes.bollinger.passed_symbols }}",
+      "input_b": "{{ nodes.account.held_symbols }}",
+      "position": {"x": 1200, "y": 300}
+    },
+    {
+      "id": "buy_order",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "buy",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": 1
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 1450, "y": 300}
+    },
+    {
+      "id": "telegram_buy",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "✅ <b>볼린저 하단 매수 스캔 완료 (선물 모의)</b>\n\n🎯 후보 종목: {{ nodes.filter_not_held.symbols }}\n⚙️ 전략: 볼린저밴드(20, 2) 하단 터치 = 역추세 진입\n📊 거래소: HKEX 미니선물\n\n💡 실제 체결 내역은 LS HTS/MTS 에서 확인하세요.",
+      "position": {"x": 1700, "y": 300}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "account"},
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+    {"from": "historical", "to": "bollinger"},
+    {"from": "bollinger", "to": "filter_not_held"},
+    {"from": "account", "to": "filter_not_held"},
+    {"from": "filter_not_held", "to": "buy_order"},
+    {"from": "buy_order", "to": "telegram_buy"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_strategy",
+      "content": "## 볼린저 하단 자동 매수\n\n**전략**: 볼린저밴드(20,2) 평균회귀\n**진입**: 하단 터치 → 롱 1계약\n**거래소**: HKEX 미니선물 (모의)\n\n**파이프라인**:\n1. Watchlist → 감시 종목 2개\n2. Historical → 60일 일봉 auto-iterate\n3. BollingerBands → below_lower 필터\n4. SymbolFilter → 기보유 제외 (중복 매수 방지)\n5. NewOrder(market, qty=1) → auto-iterate 매수\n6. Telegram → 체결 건별 알림\n\n**안전장치**:\n- paper_trading=true (모의투자)\n- resilience.fallback=skip (주문 실패시 다음 종목)\n- SymbolFilter로 중복 매수 차단",
+      "color": 3,
+      "width": 360,
+      "height": 320,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}
