@@ -1,0 +1,168 @@
+{
+  "id": "75-day-trading-bot",
+  "name": "데이트레이딩 자동화: 장시작 매수 + 장마감 청산 (선물 모의)",
+  "description": "2중 스케줄로 장 시작 시 자동 진입 + 장 마감 전 전량 청산. HKEX 미니선물 모의 데이트레이딩 봇.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 400}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true,
+      "position": {"x": 250, "y": 400}
+    },
+
+    {
+      "id": "schedule_entry",
+      "type": "ScheduleNode",
+      "cron": "30 9 * * 1-5",
+      "timezone": "Asia/Hong_Kong",
+      "enabled": true,
+      "max_duration_hours": 24,
+      "position": {"x": 450, "y": 200}
+    },
+    {
+      "id": "entry_watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "HMHJ26", "exchange": "HKEX"}
+      ],
+      "position": {"x": 650, "y": 200}
+    },
+    {
+      "id": "entry_historical",
+      "type": "OverseasFuturesHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(20, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 850, "y": 200}
+    },
+    {
+      "id": "entry_momentum",
+      "type": "ConditionNode",
+      "plugin": "TimeSeriesMomentum",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback_days": 10,
+        "signal_mode": "binary",
+        "volatility_adjust": false
+      },
+      "position": {"x": 1050, "y": 200}
+    },
+    {
+      "id": "entry_buy_order",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "buy",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": 1
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 1300, "y": 200}
+    },
+    {
+      "id": "telegram_entry",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🔔 <b>장 시작 매수 사이클 실행</b>\n\n⏰ HKEX 09:30 HKT\n🎯 추세 양수 종목: {{ nodes.entry_momentum.passed_symbols }}\n🔍 신호: 10일 TimeSeriesMomentum\n\n📌 청산 예정: 15:55 HKT (장 마감 전)\n💡 체결 내역은 LS HTS/MTS 에서 확인하세요.",
+      "position": {"x": 1550, "y": 200}
+    },
+
+    {
+      "id": "schedule_exit",
+      "type": "ScheduleNode",
+      "cron": "55 15 * * 1-5",
+      "timezone": "Asia/Hong_Kong",
+      "enabled": true,
+      "max_duration_hours": 24,
+      "position": {"x": 450, "y": 600}
+    },
+    {
+      "id": "exit_account",
+      "type": "OverseasFuturesAccountNode",
+      "position": {"x": 650, "y": 600}
+    },
+    {
+      "id": "exit_sell_order",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "{{ item.close_side }}",
+      "order_type": "market",
+      "order": {
+        "symbol": "{{ item.symbol }}",
+        "exchange": "{{ item.exchange }}",
+        "quantity": "{{ item.quantity }}"
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 900, "y": 600}
+    },
+    {
+      "id": "telegram_exit",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🔕 <b>장 마감 청산 사이클 실행</b>\n\n⏰ HKEX 15:55 HKT\n📋 청산 대상: {{ nodes.exit_account.held_symbols }}\n\n✅ 오버나이트 리스크 제거 시도 완료\n💡 체결 내역은 LS HTS/MTS 에서 확인하세요.",
+      "position": {"x": 1150, "y": 600}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+
+    {"from": "broker", "to": "schedule_entry"},
+    {"from": "schedule_entry", "to": "entry_watchlist"},
+    {"from": "entry_watchlist", "to": "entry_historical"},
+    {"from": "entry_historical", "to": "entry_momentum"},
+    {"from": "entry_momentum", "to": "entry_buy_order"},
+    {"from": "entry_buy_order", "to": "telegram_entry"},
+
+    {"from": "broker", "to": "schedule_exit"},
+    {"from": "schedule_exit", "to": "exit_account"},
+    {"from": "exit_account", "to": "exit_sell_order"},
+    {"from": "exit_sell_order", "to": "telegram_exit"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_daytrading",
+      "content": "## 데이트레이딩 자동화\n\n**원칙**: 오버나이트 리스크 제거 (당일 진입/당일 청산)\n\n**2중 스케줄**:\n1. schedule_entry: 평일 09:30 HKT (장 시작)\n   → 모멘텀 양수인 종목 매수\n2. schedule_exit: 평일 15:55 HKT (장 마감 5분 전)\n   → 보유 포지션 전량 청산\n\n**DAG 구조**:\n- broker → schedule_entry → 매수 파이프라인\n- broker → schedule_exit → 청산 파이프라인\n- 두 스케줄이 독립 병렬 실행\n\n**진입 필터**: TimeSeriesMomentum(10일)\n- 단기 추세 양수면 매수\n- 추세 음수면 매수 스킵 (빈 passed_symbols)",
+      "color": 5,
+      "width": 380,
+      "height": 360,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}

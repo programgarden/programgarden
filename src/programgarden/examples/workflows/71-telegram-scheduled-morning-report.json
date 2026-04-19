@@ -1,0 +1,83 @@
+{
+  "id": "71-telegram-scheduled-morning-report",
+  "name": "매일 아침 정기 텔레그램 리포트",
+  "description": "매일 오전 9시 (KST) 자동으로 계좌 요약을 텔레그램 전송. 왕초보: '매일 아침 내 계좌 알려줘'",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {"x": 50, "y": 200}
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": false,
+      "position": {"x": 200, "y": 200}
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "0 9 * * 1-5",
+      "timezone": "Asia/Seoul",
+      "enabled": true,
+      "max_duration_hours": 720,
+      "position": {"x": 400, "y": 200}
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {"x": 600, "y": 200}
+    },
+    {
+      "id": "if_has_balance",
+      "type": "IfNode",
+      "left": "{{ nodes.account.balance.total_eval_krw }}",
+      "operator": ">",
+      "right": 0,
+      "position": {"x": 800, "y": 200}
+    },
+    {
+      "id": "telegram_morning",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "☀️ <b>굿모닝! 오늘의 계좌 현황</b>\n📅 {{ date.today(format='yyyy-mm-dd') }}\n\n📊 평가 총액: ₩{{ nodes.account.balance.total_eval_krw }}\n💵 주문가능금액: ${{ nodes.account.balance.orderable_amount }}\n💴 외화현금: ${{ nodes.account.balance.foreign_cash }}\n📈 수익률: {{ nodes.account.balance.total_pnl_rate }}%\n💹 평가손익: ₩{{ nodes.account.balance.total_pnl_krw }}\n\n🌅 오늘도 성공적인 투자 되세요!",
+      "position": {"x": 1050, "y": 200}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "schedule"},
+    {"from": "schedule", "to": "account"},
+    {"from": "account", "to": "if_has_balance"},
+    {"from": "if_has_balance", "to": "telegram_morning", "from_port": "true"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_guide",
+      "content": "## 왕초보 튜토리얼\n\n**질문**: '매일 아침에 내 계좌 상태 텔레그램으로 보내줘'\n\n**흐름**:\n1. ScheduleNode → cron '0 9 * * 1-5' (평일 오전 9시 KST)\n2. BrokerNode → 자동 로그인\n3. AccountNode → 잔고/포지션 조회\n4. IfNode → 잔고 > 0 게이트\n5. TelegramNode → 날짜 포함 리포트 전송\n\n**cron 표현식**:\n- '0 9 * * 1-5': 평일(월~금) 오전 9시\n- '0 9,18 * * *': 매일 오전 9시 + 오후 6시\n- '*/30 * * * 1-5': 평일 30분마다\n\n**실행 방법**: 워크플로우 실행 후 프로세스 유지 (max_duration_hours=720 → 30일 유효)\n\n**날짜 헬퍼**: {{ date.today(format='yyyy-mm-dd') }} → '2026-04-19'",
+      "color": 4,
+      "width": 360,
+      "height": 320,
+      "position": {"x": 30, "y": 30}
+    }
+  ]
+}

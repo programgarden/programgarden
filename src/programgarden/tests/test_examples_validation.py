@@ -50,6 +50,11 @@ LONG_RUNNING_WORKFLOWS = {
     "60-bollinger-reversion-bot",
     "61-hkex-futures-bot",
     "62-rsi-futures-bot",
+    "71-telegram-scheduled-morning-report",
+    "74-auto-stop-loss-per-position",
+    "75-day-trading-bot",
+    "76-golden-cross-auto-buy",
+    "77-risk-manager-bot",
 }
 
 # Workflows whose dry_run execution depends on mock-friendly TR responses
@@ -83,9 +88,9 @@ class TestWorkflowStaticValidation:
     """Every bundled example workflow must pass WorkflowExecutor.validate()."""
 
     def test_workflow_files_discovered(self):
-        """Sanity: repo ships with 67 example workflows."""
-        assert len(WORKFLOW_FILES) == 67, (
-            f"expected 67 workflow JSON files, found {len(WORKFLOW_FILES)}"
+        """Sanity: repo ships with 77 example workflows."""
+        assert len(WORKFLOW_FILES) == 77, (
+            f"expected 77 workflow JSON files, found {len(WORKFLOW_FILES)}"
         )
 
     @pytest.mark.parametrize("wf_path", WORKFLOW_FILES, ids=_ids(WORKFLOW_FILES))
