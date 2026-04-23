@@ -83,7 +83,7 @@ class PluginResourceHints(BaseModel):
         default=100,
         ge=1,
         le=1000,
-        description="호출당 처리 가능한 최대 종목 수. 초과 시 자동 배치 분할",
+        description="호출당 처리 가능한 최대 Symbol count. 초과 시 자동 배치 분할",
     )
     
     cpu_intensive: bool = Field(

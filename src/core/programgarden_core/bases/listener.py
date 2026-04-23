@@ -425,9 +425,9 @@ class LLMStreamEvent:
     Attributes:
         job_id: Job 식별자
         node_id: AIAgentNode ID
-        token: 수신된 토큰 텍스트
+        token: 수신된 토큰 Text
         is_final: 마지막 토큰 여부
-        timestamp: 이벤트 시각
+        timestamp: Event time
     """
     job_id: str
     node_id: str
@@ -452,7 +452,7 @@ class TokenUsageEvent:
         output_tokens: 출력 토큰 수
         total_tokens: 총 토큰 수
         cost_usd: 예상 비용 (USD)
-        timestamp: 이벤트 시각
+        timestamp: Event time
     """
     job_id: str
     node_id: str
@@ -481,7 +481,7 @@ class AIToolCallEvent:
         tool_input: Tool에 전달된 인자
         tool_output: Tool 실행 결과 (완료 시)
         duration_ms: 실행 시간 (ms, 완료 시)
-        timestamp: 이벤트 시각
+        timestamp: Event time
     """
     job_id: str
     node_id: str
@@ -533,7 +533,7 @@ class NotificationEvent:
         node_id: 관련 노드 ID (optional)
         node_type: 관련 노드 타입 (optional)
         data: 구조화된 데이터 (카테고리별, AI 소비용)
-        timestamp: 이벤트 시각
+        timestamp: Event time
     """
     job_id: str
     category: NotificationCategory
@@ -559,7 +559,7 @@ class RestartEvent:
         workflow_type: 워크플로우 유형 ("oneshot" | "realtime")
         skipped_nodes: 스킵된 완료 노드 목록
         data_gap_warning: 데이터 갭 경고 메시지 (없으면 None)
-        timestamp: 이벤트 시각
+        timestamp: Event time
     """
     job_id: str
     restart_reason: str

@@ -224,8 +224,8 @@ class FundamentalDataNode(BaseNode):
             deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
             required_intermediate="ThrottleNode",
             severity=ConnectionSeverity.WARNING,
-            reason="i18n:connection_rules.realtime_to_external_api.reason",
-            suggestion="i18n:connection_rules.realtime_to_external_api.suggestion",
+            reason="Direct connection from realtime node to external API node is not recommended. Each tick would trigger an external API request, potentially hitting rate limits.",
+            suggestion="Place a ThrottleNode between the realtime node and external API node to control request frequency.",
         ),
     ]
 
@@ -369,9 +369,9 @@ class FundamentalDataNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CUSTOM_RESILIENCE_EDITOR,
                 object_schema=[
-                    {"name": "retry.enabled", "type": "BOOLEAN", "default": True, "description": "자동 재시도 활성화"},
-                    {"name": "retry.max_retries", "type": "INTEGER", "default": 3, "min_value": 1, "max_value": 10, "description": "최대 재시도 횟수"},
-                    {"name": "fallback.mode", "type": "ENUM", "default": "error", "enum_values": ["error", "skip", "default_value"], "description": "모든 재시도 실패 시 동작"},
+                    {"name": "retry.enabled", "type": "BOOLEAN", "default": True, "description": "Enable automatic retry"},
+                    {"name": "retry.max_retries", "type": "INTEGER", "default": 3, "min_value": 1, "max_value": 10, "description": "Max Retries"},
+                    {"name": "fallback.mode", "type": "ENUM", "default": "error", "enum_values": ["error", "skip", "default_value"], "description": "Action when all retries fail"},
                 ],
                 group="resilience",
             ),
@@ -400,7 +400,7 @@ class FundamentalDataNode(BaseNode):
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
 
         if self.data_type == "profile":
-            # profile은 일괄 조회 가능 (최대 5종목)
+            # profile은 일괄 조회 가능 (최대 5Symbol)
             all_data = await self._fetch_profile(symbol_list, api_key, timeout)
         elif self.data_type == "key_metrics":
             all_data = await self._fetch_key_metrics(symbol_list, api_key, timeout)
@@ -435,7 +435,7 @@ class FundamentalDataNode(BaseNode):
         import asyncio
 
         results = []
-        # 5종목씩 배치 (FMP 일괄 조회 한도)
+        # 5Symbol씩 배치 (FMP 일괄 조회 한도)
         for i in range(0, len(symbols), 5):
             batch = symbols[i:i + 5]
             joined = ",".join(batch)

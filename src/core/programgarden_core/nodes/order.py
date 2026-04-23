@@ -68,8 +68,8 @@ class BaseOrderNode(BaseNode):
             deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
             required_intermediate="ThrottleNode",
             severity=ConnectionSeverity.ERROR,
-            reason="i18n:connection_rules.realtime_to_order.reason",
-            suggestion="i18n:connection_rules.realtime_to_order.suggestion",
+            reason="Direct connection from realtime node to order node is blocked. Each tick would trigger an order, potentially causing unintended mass orders.",
+            suggestion="Place a ThrottleNode between the realtime node and order node to control execution frequency.",
         ),
     ]
 
@@ -230,8 +230,8 @@ class BaseModifyOrderNode(BaseNode):
             deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
             required_intermediate="ThrottleNode",
             severity=ConnectionSeverity.ERROR,
-            reason="i18n:connection_rules.realtime_to_order.reason",
-            suggestion="i18n:connection_rules.realtime_to_order.suggestion",
+            reason="Direct connection from realtime node to order node is blocked. Each tick would trigger an order, potentially causing unintended mass orders.",
+            suggestion="Place a ThrottleNode between the realtime node and order node to control execution frequency.",
         ),
     ]
 
@@ -251,15 +251,15 @@ class BaseModifyOrderNode(BaseNode):
     # 정정/취소 대상
     original_order_id: Any = Field(
         default=None,
-        description="정정/취소할 원주문번호",
+        description="정정/취소할 원Order ID",
     )
     symbol: Any = Field(
         default=None,
-        description="종목 코드",
+        description="Symbol code",
     )
     exchange: Any = Field(
         default=None,
-        description="거래소 코드",
+        description="Exchange code",
     )
 
     # Resilience: 정정/취소 노드도 기본적으로 재시도 비활성화
@@ -338,7 +338,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
     해외주식 신규주문 노드
 
     미국 주식(NYSE, NASDAQ, AMEX) 신규주문을 실행합니다.
-    orders 필드에 주문할 종목 목록을 바인딩하세요.
+    orders 필드에 주문할 Symbol 목록을 바인딩하세요.
 
     API: COSAT00301 (해외주식 신규주문)
     """
@@ -599,7 +599,7 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
     """
     해외주식 정정주문 노드
 
-    기존 미체결 주문의 가격이나 수량을 정정합니다.
+    기존 미체결 주문의 Price이나 Quantity을 정정합니다.
 
     API: COSAT00302 (해외주식 정정주문)
     """
@@ -755,11 +755,11 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
     # 정정 대상
     new_quantity: Optional[int] = Field(
         default=None,
-        description="정정할 수량 (변경하지 않으면 기존 수량 유지)",
+        description="정정할 Quantity (변경하지 않으면 기존 Quantity 유지)",
     )
     new_price: Optional[float] = Field(
         default=None,
-        description="정정할 가격 (변경하지 않으면 기존 가격 유지)",
+        description="정정할 Price (변경하지 않으면 기존 Price 유지)",
     )
 
     _inputs: List[InputPort] = [
@@ -1105,7 +1105,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
     해외선물 신규주문 노드
 
     해외선물(CME, EUREX, SGX, HKEX 등) 신규주문을 실행합니다.
-    orders 필드에 주문할 종목 목록을 바인딩하세요.
+    orders 필드에 주문할 Symbol 목록을 바인딩하세요.
 
     API: CIDBT00100 (해외선물 신규주문)
     """
@@ -1356,7 +1356,7 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
     """
     해외선물 정정주문 노드
 
-    기존 미체결 주문의 가격이나 수량을 정정합니다.
+    기존 미체결 주문의 Price이나 Quantity을 정정합니다.
 
     API: CIDBT00200 (해외선물 정정주문)
     """
@@ -1506,11 +1506,11 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
     # 정정 대상
     new_quantity: Optional[int] = Field(
         default=None,
-        description="정정할 수량",
+        description="정정할 Quantity",
     )
     new_price: Optional[float] = Field(
         default=None,
-        description="정정할 가격",
+        description="정정할 Price",
     )
 
     _inputs: List[InputPort] = [
@@ -1840,7 +1840,7 @@ class KoreaStockNewOrderNode(BaseOrderNode):
     국내주식 신규주문 노드
 
     국내주식(KOSPI, KOSDAQ) 신규주문을 실행합니다.
-    order 필드에 주문할 종목을 바인딩하세요.
+    order 필드에 주문할 Symbol을 바인딩하세요.
 
     API: CSPAT00601 (국내주식 신규주문)
     """
@@ -1873,7 +1873,7 @@ class KoreaStockNewOrderNode(BaseOrderNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Supports price_type options: 'limit' (지정가), 'market' (시장가), 'conditional_limit' (조건부지정가)",
+        "Supports price_type options: 'limit', 'market', 'conditional_limit'.",
         "KRW-denominated: symbol is a 6-digit Korean stock code (e.g. '005930' for Samsung Electronics); no exchange field required",
         "is_tool_enabled=True — AI Agent can call this node as a tool to place Korean stock orders",
         "Real-market only — paper_trading mode is not supported for Korean domestic stocks; KoreaStockBrokerNode enforces this",
@@ -2100,7 +2100,7 @@ class KoreaStockModifyOrderNode(BaseModifyOrderNode):
     """
     국내주식 정정주문 노드
 
-    기존 미체결 주문의 가격이나 수량을 정정합니다.
+    기존 미체결 주문의 Price이나 Quantity을 정정합니다.
 
     API: CSPAT00701 (국내주식 정정주문)
     """
@@ -2249,11 +2249,11 @@ class KoreaStockModifyOrderNode(BaseModifyOrderNode):
     # 정정 대상
     new_quantity: Optional[int] = Field(
         default=None,
-        description="정정할 수량 (변경하지 않으면 기존 수량 유지)",
+        description="정정할 Quantity (변경하지 않으면 기존 Quantity 유지)",
     )
     new_price: Optional[float] = Field(
         default=None,
-        description="정정할 가격 (변경하지 않으면 기존 가격 유지)",
+        description="정정할 Price (변경하지 않으면 기존 Price 유지)",
     )
 
     _inputs: List[InputPort] = [

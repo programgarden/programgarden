@@ -6,7 +6,7 @@ ProgramGarden Core - Futures Historical Data Node
 
 Item-based execution:
 - Input: 단일 symbol (SplitNode에서 분리된 아이템)
-- Output: 단일 value (해당 종목의 과거 OHLCV 데이터)
+- Output: 단일 value (해당 Symbol의 과거 OHLCV 데이터)
 """
 
 from typing import Any, Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -28,14 +28,14 @@ from programgarden_core.nodes.base import (
 
 class OverseasFuturesHistoricalDataNode(BaseNode):
     """
-    해외선물 과거 데이터 조회 노드 (단일 종목)
+    해외선물 과거 데이터 조회 노드 (단일 Symbol)
 
-    SplitNode와 함께 사용하여 개별 종목의 과거 OHLCV 데이터를 조회합니다.
+    SplitNode와 함께 사용하여 개별 Symbol의 과거 OHLCV 데이터를 조회합니다.
     거래소: CME, EUREX, SGX, HKEX
 
     Item-based execution:
-    - Input: symbol (단일 종목 {exchange, symbol})
-    - Output: value (해당 종목의 과거 OHLCV 데이터)
+    - Input: symbol (단일 Symbol {exchange, symbol})
+    - Output: value (해당 Symbol의 과거 OHLCV 데이터)
     """
 
     type: Literal["OverseasFuturesHistoricalDataNode"] = "OverseasFuturesHistoricalDataNode"
@@ -45,7 +45,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
-    # 단일 종목 (Item-based execution)
+    # 단일 Symbol (Item-based execution)
     symbol: Optional[Dict[str, str]] = Field(
         default=None,
         description="Single symbol entry with exchange and symbol code",

@@ -44,7 +44,7 @@ class NodeCategory(str, Enum):
     # 계좌: 잔고, 포지션, 체결 내역 (실시간/REST)
     ACCOUNT = "account"
 
-    # 시장: 시세, 종목 목록, 과거 데이터
+    # 시장: 시세, Symbol 목록, 과거 데이터
     MARKET = "market"
 
     # 조건: 매매 조건 판단 (기술적 분석, 로직 조합)
@@ -113,256 +113,256 @@ class OutputPort(BaseModel):
 
 # === OutputPort.fields 공통 상수 ===
 SYMBOL_LIST_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드 (NASDAQ, NYSE, CME 등)"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "exchange", "type": "string", "description": "Exchange code (e.g. NASDAQ, NYSE, CME)"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
 ]
 
 # ── 해외주식 REST AccountNode 전용 ──
 OVERSEAS_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
-    {"name": "total_pnl_rate", "type": "number", "description": "수익률 (%)"},
-    {"name": "cash_krw", "type": "number", "description": "원화예수금"},
-    {"name": "stock_eval_krw", "type": "number", "description": "주식환산평가금액"},
-    {"name": "total_eval_krw", "type": "number", "description": "원화평가합계"},
-    {"name": "total_pnl_krw", "type": "number", "description": "환산평가손익"},
-    {"name": "orderable_amount", "type": "number", "description": "외화주문가능금액 (USD)"},
-    {"name": "foreign_cash", "type": "number", "description": "외화예수금 (USD)"},
-    {"name": "exchange_rate", "type": "number", "description": "기준환율"},
+    {"name": "total_pnl_rate", "type": "number", "description": "Return (%)"},
+    {"name": "cash_krw", "type": "number", "description": "KRW deposit"},
+    {"name": "stock_eval_krw", "type": "number", "description": "Stock converted evaluation amount"},
+    {"name": "total_eval_krw", "type": "number", "description": "KRW evaluation total"},
+    {"name": "total_pnl_krw", "type": "number", "description": "Converted unrealized P&L"},
+    {"name": "orderable_amount", "type": "number", "description": "Foreign currency purchasable amount (USD)"},
+    {"name": "foreign_cash", "type": "number", "description": "Foreign currency cash (USD)"},
+    {"name": "exchange_rate", "type": "number", "description": "Exchange rate"},
 ]
 
 # ── 해외선물 REST AccountNode 전용 ──
 OVERSEAS_FUTURES_BALANCE_FIELDS: List[Dict[str, str]] = [
-    {"name": "deposit", "type": "number", "description": "예수금"},
-    {"name": "orderable_amount", "type": "number", "description": "주문가능금액"},
-    {"name": "total_orderable", "type": "number", "description": "전체 주문가능금액 합산"},
-    {"name": "margin", "type": "number", "description": "위탁증거금"},
-    {"name": "maintenance_margin", "type": "number", "description": "유지증거금"},
-    {"name": "margin_call_rate", "type": "number", "description": "마진콜율 (%)"},
-    {"name": "total_eval", "type": "number", "description": "평가예탁총금액"},
-    {"name": "settlement_pnl", "type": "number", "description": "청산손익"},
+    {"name": "deposit", "type": "number", "description": "Balance"},
+    {"name": "orderable_amount", "type": "number", "description": "Orderable amount"},
+    {"name": "total_orderable", "type": "number", "description": "Total orderable amount"},
+    {"name": "margin", "type": "number", "description": "Initial margin"},
+    {"name": "maintenance_margin", "type": "number", "description": "Maintenance margin"},
+    {"name": "margin_call_rate", "type": "number", "description": "Margin call rate (%)"},
+    {"name": "total_eval", "type": "number", "description": "Total evaluation amount"},
+    {"name": "settlement_pnl", "type": "number", "description": "Settlement P&L"},
 ]
 
 # ── 해외주식 RealAccountNode 전용 ──
 OVERSEAS_STOCK_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
-    {"name": "total", "type": "number", "description": "총 예수금"},
-    {"name": "available", "type": "number", "description": "매수 가능 금액"},
-    {"name": "currency", "type": "string", "description": "통화 코드 (USD 등)"},
+    {"name": "total", "type": "number", "description": "Total deposit"},
+    {"name": "available", "type": "number", "description": "Purchasable amount"},
+    {"name": "currency", "type": "string", "description": "Currency code (e.g. USD)"},
 ]
 
 # ── 해외선물 RealAccountNode 전용 ──
 OVERSEAS_FUTURES_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
-    {"name": "total", "type": "number", "description": "총 예수금"},
-    {"name": "available", "type": "number", "description": "매수 가능 금액"},
-    {"name": "currency", "type": "string", "description": "통화 코드 (USD 등)"},
+    {"name": "total", "type": "number", "description": "Total deposit"},
+    {"name": "available", "type": "number", "description": "Purchasable amount"},
+    {"name": "currency", "type": "string", "description": "Currency code (e.g. USD)"},
 ]
 
 # ── 국내주식 REST AccountNode 전용 ──
 KOREA_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
-    {"name": "cash", "type": "number", "description": "예수금"},
-    {"name": "total_eval", "type": "number", "description": "총평가금액"},
-    {"name": "stock_eval", "type": "number", "description": "주식평가금액"},
-    {"name": "total_pnl", "type": "number", "description": "평가손익합계"},
-    {"name": "total_pnl_rate", "type": "number", "description": "수익률 (%)"},
-    {"name": "orderable_amount", "type": "number", "description": "주문가능금액"},
+    {"name": "cash", "type": "number", "description": "Balance"},
+    {"name": "total_eval", "type": "number", "description": "Total evaluation amount"},
+    {"name": "stock_eval", "type": "number", "description": "Stock evaluation amount"},
+    {"name": "total_pnl", "type": "number", "description": "Unrealized P&L total"},
+    {"name": "total_pnl_rate", "type": "number", "description": "Return (%)"},
+    {"name": "orderable_amount", "type": "number", "description": "Orderable amount"},
 ]
 
 # ── 국내주식 RealAccountNode 전용 ──
 KOREA_STOCK_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
-    {"name": "total", "type": "number", "description": "총 예수금"},
-    {"name": "available", "type": "number", "description": "매수 가능 금액"},
+    {"name": "total", "type": "number", "description": "Total deposit"},
+    {"name": "available", "type": "number", "description": "Purchasable amount"},
 ]
 
 # ── 국내주식 시세 전용 (t1102 기반) ──
 KOREA_STOCK_PRICE_DATA_FIELDS: List[Dict[str, str]] = [
-    {"name": "symbol", "type": "string", "description": "종목코드 (6자리)"},
-    {"name": "name", "type": "string", "description": "종목명"},
-    {"name": "current_price", "type": "number", "description": "현재가"},
-    {"name": "volume", "type": "number", "description": "거래량"},
-    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
-    {"name": "open_price", "type": "number", "description": "시가"},
-    {"name": "high_price", "type": "number", "description": "고가"},
-    {"name": "low_price", "type": "number", "description": "저가"},
-    {"name": "market_cap", "type": "number", "description": "시가총액 (억원)"},
+    {"name": "symbol", "type": "string", "description": "Symbol code (6 digits)"},
+    {"name": "name", "type": "string", "description": "Symbol name"},
+    {"name": "current_price", "type": "number", "description": "Current price"},
+    {"name": "volume", "type": "number", "description": "Volume"},
+    {"name": "change_percent", "type": "number", "description": "Change rate (%)"},
+    {"name": "open_price", "type": "number", "description": "Open price"},
+    {"name": "high_price", "type": "number", "description": "High price"},
+    {"name": "low_price", "type": "number", "description": "Low price"},
+    {"name": "market_cap", "type": "number", "description": "Market cap (KRW 100M)"},
 ]
 
 # ── 국내주식 펀더멘털 전용 ──
 KOREA_STOCK_FUNDAMENTAL_FIELDS: List[Dict[str, str]] = [
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "name", "type": "string", "description": "종목명"},
-    {"name": "current_price", "type": "number", "description": "현재가"},
-    {"name": "volume", "type": "number", "description": "거래량"},
-    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "name", "type": "string", "description": "Symbol name"},
+    {"name": "current_price", "type": "number", "description": "Current price"},
+    {"name": "volume", "type": "number", "description": "Volume"},
+    {"name": "change_percent", "type": "number", "description": "Change rate (%)"},
     {"name": "per", "type": "number", "description": "PER"},
     {"name": "eps", "type": "number", "description": "EPS"},
     {"name": "pbr", "type": "number", "description": "PBR"},
-    {"name": "market_cap", "type": "number", "description": "시가총액 (억원)"},
-    {"name": "shares_outstanding", "type": "number", "description": "상장주식수"},
-    {"name": "high_52w", "type": "number", "description": "52주 최고가"},
-    {"name": "low_52w", "type": "number", "description": "52주 최저가"},
-    {"name": "industry", "type": "string", "description": "업종명"},
+    {"name": "market_cap", "type": "number", "description": "Market cap (KRW 100M)"},
+    {"name": "shares_outstanding", "type": "number", "description": "Listed shares"},
+    {"name": "high_52w", "type": "number", "description": "52-week high"},
+    {"name": "low_52w", "type": "number", "description": "52-week low"},
+    {"name": "industry", "type": "string", "description": "Sector"},
 ]
 
 POSITION_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "quantity", "type": "number", "description": "보유 수량"},
-    {"name": "avg_price", "type": "number", "description": "평균 매입가"},
-    {"name": "current_price", "type": "number", "description": "현재가"},
-    {"name": "pnl", "type": "number", "description": "평가 손익"},
-    {"name": "pnl_percent", "type": "number", "description": "수익률 (%)"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "quantity", "type": "number", "description": "Held quantity"},
+    {"name": "avg_price", "type": "number", "description": "Average entry price"},
+    {"name": "current_price", "type": "number", "description": "Current price"},
+    {"name": "pnl", "type": "number", "description": "Unrealized P&L"},
+    {"name": "pnl_percent", "type": "number", "description": "Return (%)"},
 ]
 
 ORDER_RESULT_FIELDS: List[Dict[str, str]] = [
-    {"name": "order_id", "type": "string", "description": "주문번호"},
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
-    {"name": "quantity", "type": "number", "description": "주문수량"},
-    {"name": "price", "type": "number", "description": "주문가격"},
-    {"name": "status", "type": "string", "description": "주문 상태"},
+    {"name": "order_id", "type": "string", "description": "Order ID"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "side", "type": "string", "description": "Side (buy/sell)"},
+    {"name": "quantity", "type": "number", "description": "Order quantity"},
+    {"name": "price", "type": "number", "description": "Order price"},
+    {"name": "status", "type": "string", "description": "Order status"},
 ]
 
 PRICE_DATA_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "current_price", "type": "number", "description": "현재가"},
-    {"name": "volume", "type": "number", "description": "거래량"},
-    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
-    {"name": "per", "type": "number", "description": "PER (주가수익비율)"},
-    {"name": "eps", "type": "number", "description": "EPS (주당순이익)"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "current_price", "type": "number", "description": "Current price"},
+    {"name": "volume", "type": "number", "description": "Volume"},
+    {"name": "change_percent", "type": "number", "description": "Change rate (%)"},
+    {"name": "per", "type": "number", "description": "PER (price-to-earnings ratio)"},
+    {"name": "eps", "type": "number", "description": "EPS (earnings per share)"},
 ]
 
 FUNDAMENTAL_DATA_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "name", "type": "string", "description": "영문 종목명"},
-    {"name": "industry", "type": "string", "description": "업종명"},
-    {"name": "nation", "type": "string", "description": "국가명"},
-    {"name": "exchange_name", "type": "string", "description": "거래소명"},
-    {"name": "current_price", "type": "number", "description": "현재가"},
-    {"name": "volume", "type": "number", "description": "거래량"},
-    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
-    {"name": "per", "type": "number", "description": "PER (주가수익비율)"},
-    {"name": "eps", "type": "number", "description": "EPS (주당순이익)"},
-    {"name": "market_cap", "type": "number", "description": "시가총액"},
-    {"name": "shares_outstanding", "type": "number", "description": "발행주식수"},
-    {"name": "high_52w", "type": "number", "description": "52주 최고가"},
-    {"name": "low_52w", "type": "number", "description": "52주 최저가"},
-    {"name": "exchange_rate", "type": "number", "description": "환율"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "name", "type": "string", "description": "Symbol name (English)"},
+    {"name": "industry", "type": "string", "description": "Sector"},
+    {"name": "nation", "type": "string", "description": "Country name"},
+    {"name": "exchange_name", "type": "string", "description": "Exchange name"},
+    {"name": "current_price", "type": "number", "description": "Current price"},
+    {"name": "volume", "type": "number", "description": "Volume"},
+    {"name": "change_percent", "type": "number", "description": "Change rate (%)"},
+    {"name": "per", "type": "number", "description": "PER (price-to-earnings ratio)"},
+    {"name": "eps", "type": "number", "description": "EPS (earnings per share)"},
+    {"name": "market_cap", "type": "number", "description": "Market cap"},
+    {"name": "shares_outstanding", "type": "number", "description": "Issued shares"},
+    {"name": "high_52w", "type": "number", "description": "52-week high"},
+    {"name": "low_52w", "type": "number", "description": "52-week low"},
+    {"name": "exchange_rate", "type": "number", "description": "Exchange rate"},
 ]
 
 HISTORICAL_DATA_FIELDS: List[Dict[str, str]] = [
-    {"name": "date", "type": "string", "description": "날짜 (YYYYMMDD)"},
-    {"name": "open", "type": "number", "description": "시가"},
-    {"name": "high", "type": "number", "description": "고가"},
-    {"name": "low", "type": "number", "description": "저가"},
-    {"name": "close", "type": "number", "description": "종가"},
-    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "date", "type": "string", "description": "Date (YYYYMMDD)"},
+    {"name": "open", "type": "number", "description": "Open price"},
+    {"name": "high", "type": "number", "description": "High price"},
+    {"name": "low", "type": "number", "description": "Low price"},
+    {"name": "close", "type": "number", "description": "Close price"},
+    {"name": "volume", "type": "number", "description": "Volume"},
 ]
 
 ORDER_LIST_FIELDS: List[Dict[str, str]] = [
-    {"name": "order_id", "type": "string", "description": "주문번호"},
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
-    {"name": "order_type", "type": "string", "description": "주문유형 (market/limit)"},
-    {"name": "quantity", "type": "number", "description": "주문수량"},
-    {"name": "price", "type": "number", "description": "주문가격"},
-    {"name": "status", "type": "string", "description": "주문 상태"},
+    {"name": "order_id", "type": "string", "description": "Order ID"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "side", "type": "string", "description": "Side (buy/sell)"},
+    {"name": "order_type", "type": "string", "description": "Order type (market/limit)"},
+    {"name": "quantity", "type": "number", "description": "Order quantity"},
+    {"name": "price", "type": "number", "description": "Order price"},
+    {"name": "status", "type": "string", "description": "Order status"},
 ]
 
 OPEN_ORDER_FIELDS: List[Dict[str, str]] = [
-    {"name": "order_id", "type": "string", "description": "주문번호"},
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "name", "type": "string", "description": "종목명"},
-    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
-    {"name": "order_type", "type": "string", "description": "주문유형 (market/limit)"},
-    {"name": "quantity", "type": "number", "description": "주문수량"},
-    {"name": "filled_quantity", "type": "number", "description": "체결수량"},
-    {"name": "remaining_quantity", "type": "number", "description": "미체결수량"},
-    {"name": "price", "type": "number", "description": "주문가격"},
-    {"name": "order_time", "type": "string", "description": "주문시각"},
+    {"name": "order_id", "type": "string", "description": "Order ID"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "name", "type": "string", "description": "Symbol name"},
+    {"name": "side", "type": "string", "description": "Side (buy/sell)"},
+    {"name": "order_type", "type": "string", "description": "Order type (market/limit)"},
+    {"name": "quantity", "type": "number", "description": "Order quantity"},
+    {"name": "filled_quantity", "type": "number", "description": "Execution quantity"},
+    {"name": "remaining_quantity", "type": "number", "description": "Unfilled quantity"},
+    {"name": "price", "type": "number", "description": "Order price"},
+    {"name": "order_time", "type": "string", "description": "Order time"},
 ]
 
 ORDER_EVENT_FIELDS: List[Dict[str, str]] = [
-    {"name": "order_id", "type": "string", "description": "주문번호"},
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "side", "type": "string", "description": "매매구분"},
-    {"name": "quantity", "type": "number", "description": "주문수량"},
-    {"name": "filled_quantity", "type": "number", "description": "체결수량"},
-    {"name": "price", "type": "number", "description": "주문가격"},
-    {"name": "filled_price", "type": "number", "description": "체결가격"},
-    {"name": "event_type", "type": "string", "description": "이벤트 유형"},
-    {"name": "timestamp", "type": "string", "description": "이벤트 시각"},
+    {"name": "order_id", "type": "string", "description": "Order ID"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "side", "type": "string", "description": "Side"},
+    {"name": "quantity", "type": "number", "description": "Order quantity"},
+    {"name": "filled_quantity", "type": "number", "description": "Execution quantity"},
+    {"name": "price", "type": "number", "description": "Order price"},
+    {"name": "filled_price", "type": "number", "description": "Execution price"},
+    {"name": "event_type", "type": "string", "description": "Event type"},
+    {"name": "timestamp", "type": "string", "description": "Event time"},
 ]
 
 OHLCV_DATA_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "open", "type": "number", "description": "시가"},
-    {"name": "high", "type": "number", "description": "고가"},
-    {"name": "low", "type": "number", "description": "저가"},
-    {"name": "close", "type": "number", "description": "종가"},
-    {"name": "volume", "type": "number", "description": "거래량"},
-    {"name": "timestamp", "type": "string", "description": "캔들 시각"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "open", "type": "number", "description": "Open price"},
+    {"name": "high", "type": "number", "description": "High price"},
+    {"name": "low", "type": "number", "description": "Low price"},
+    {"name": "close", "type": "number", "description": "Close price"},
+    {"name": "volume", "type": "number", "description": "Volume"},
+    {"name": "timestamp", "type": "string", "description": "Candle time"},
 ]
 
 MARKET_DATA_FULL_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "current_price", "type": "number", "description": "현재가"},
-    {"name": "bid_price", "type": "number", "description": "매수호가 (해외주식 실시간에서는 미제공)"},
-    {"name": "ask_price", "type": "number", "description": "매도호가 (해외주식 실시간에서는 미제공)"},
-    {"name": "volume", "type": "number", "description": "거래량"},
-    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
-    {"name": "timestamp", "type": "string", "description": "시세 시각"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "current_price", "type": "number", "description": "Current price"},
+    {"name": "bid_price", "type": "number", "description": "Bid price (not provided for overseas stock realtime)"},
+    {"name": "ask_price", "type": "number", "description": "Ask price (not provided for overseas stock realtime)"},
+    {"name": "volume", "type": "number", "description": "Volume"},
+    {"name": "change_percent", "type": "number", "description": "Change rate (%)"},
+    {"name": "timestamp", "type": "string", "description": "Quote time"},
 ]
 
 CONDITION_RESULT_FIELDS: List[Dict[str, str]] = [
-    {"name": "passed", "type": "boolean", "description": "조건 충족 여부"},
-    {"name": "value", "type": "number", "description": "계산된 지표 값"},
-    {"name": "threshold", "type": "number", "description": "비교 기준값"},
-    {"name": "direction", "type": "string", "description": "비교 방향 (above/below/cross)"},
+    {"name": "passed", "type": "boolean", "description": "Condition met flag"},
+    {"name": "value", "type": "number", "description": "Calculated indicator value"},
+    {"name": "threshold", "type": "number", "description": "Comparison baseline"},
+    {"name": "direction", "type": "string", "description": "Comparison direction (above/below/cross)"},
 ]
 
 EQUITY_CURVE_FIELDS: List[Dict[str, str]] = [
-    {"name": "date", "type": "string", "description": "날짜"},
-    {"name": "equity", "type": "number", "description": "자산 가치"},
-    {"name": "drawdown", "type": "number", "description": "낙폭 (%)"},
-    {"name": "returns", "type": "number", "description": "수익률"},
+    {"name": "date", "type": "string", "description": "Date"},
+    {"name": "equity", "type": "number", "description": "Asset value"},
+    {"name": "drawdown", "type": "number", "description": "Drawdown (%)"},
+    {"name": "returns", "type": "number", "description": "Total Return"},
 ]
 
 TRADE_FIELDS: List[Dict[str, str]] = [
-    {"name": "date", "type": "string", "description": "거래일"},
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "side", "type": "string", "description": "매매구분"},
-    {"name": "quantity", "type": "number", "description": "수량"},
-    {"name": "price", "type": "number", "description": "가격"},
-    {"name": "pnl", "type": "number", "description": "손익"},
+    {"name": "date", "type": "string", "description": "Trade date"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "side", "type": "string", "description": "Side"},
+    {"name": "quantity", "type": "number", "description": "Quantity"},
+    {"name": "price", "type": "number", "description": "Price"},
+    {"name": "pnl", "type": "number", "description": "P&L"},
 ]
 
 PERFORMANCE_METRICS_FIELDS: List[Dict[str, str]] = [
-    {"name": "total_return", "type": "number", "description": "총 수익률 (%)"},
-    {"name": "annualized_return", "type": "number", "description": "연환산 수익률 (%)"},
-    {"name": "max_drawdown", "type": "number", "description": "최대 낙폭 (%)"},
-    {"name": "sharpe_ratio", "type": "number", "description": "샤프 비율"},
-    {"name": "win_rate", "type": "number", "description": "승률 (%)"},
-    {"name": "trade_count", "type": "integer", "description": "거래 횟수"},
+    {"name": "total_return", "type": "number", "description": "Total return (%)"},
+    {"name": "annualized_return", "type": "number", "description": "Annualized return (%)"},
+    {"name": "max_drawdown", "type": "number", "description": "Max drawdown (%)"},
+    {"name": "sharpe_ratio", "type": "number", "description": "Sharpe Ratio"},
+    {"name": "win_rate", "type": "number", "description": "Win rate (%)"},
+    {"name": "trade_count", "type": "integer", "description": "Trade count"},
 ]
 
 QUANTITY_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "quantity", "type": "number", "description": "산출 수량"},
+    {"name": "exchange", "type": "string", "description": "Exchange code"},
+    {"name": "symbol", "type": "string", "description": "Symbol code"},
+    {"name": "quantity", "type": "number", "description": "산출 Quantity"},
     {"name": "weight", "type": "number", "description": "비중 (%)"},
 ]
 
 ALLOCATED_CAPITAL_FIELDS: List[Dict[str, str]] = [
-    {"name": "strategy_id", "type": "string", "description": "전략 ID"},
-    {"name": "allocated", "type": "number", "description": "배분 금액"},
-    {"name": "weight", "type": "number", "description": "배분 비중 (%)"},
+    {"name": "strategy_id", "type": "string", "description": "Strategy ID"},
+    {"name": "allocated", "type": "number", "description": "Allocated amount"},
+    {"name": "weight", "type": "number", "description": "Allocation weight (%)"},
 ]
 
 
@@ -721,7 +721,7 @@ class BaseMessagingNode(BaseNode):
             "resilience.retry.max_retries": FieldSchema(
                 name="resilience.retry.max_retries",
                 type=FieldType.INTEGER,
-                label="최대 재시도 횟수",
+                label="Max Retries",
                 description="1~10회 사이로 설정",
                 default=3,
                 min=1,
@@ -732,7 +732,7 @@ class BaseMessagingNode(BaseNode):
             "resilience.retry.base_delay": FieldSchema(
                 name="resilience.retry.base_delay",
                 type=FieldType.NUMBER,
-                label="재시도 대기 시간 (초)",
+                label="Retry Delay (sec)",
                 description="첫 재시도까지 대기 시간",
                 default=1.0,
                 min=0.1,

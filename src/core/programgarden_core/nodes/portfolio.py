@@ -67,7 +67,7 @@ class PortfolioNode(BaseNode):
     )
     custom_allocations: Optional[Dict[str, float]] = Field(
         default=None,
-        description="커스텀 배분 비율 (strategy_id: 비율, 합계=1.0). allocation_method='custom'일 때 사용",
+        description="Custom 배분 비율 (strategy_id: 비율, 합계=1.0). allocation_method='custom'일 때 사용",
     )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -34,7 +34,7 @@ class KoreaStockRealMarketDataNode(BaseNode):
     """
     국내주식 실시간 시세 노드
 
-    WebSocket을 통해 국내주식 실시간 시세(가격, 거래량, 호가)를 수신합니다.
+    WebSocket을 통해 국내주식 실시간 시세(Price, Volume, 호가)를 수신합니다.
     거래소: KRX (KOSPI, KOSDAQ)
     """
 
@@ -179,7 +179,7 @@ class KoreaStockRealMarketDataNode(BaseNode):
         default=True,
         description="Keep WebSocket connection alive between flow executions.",
     )
-    # 단일 종목 (Item-based execution) - 국내주식은 exchange 불필요
+    # 단일 Symbol (Item-based execution) - 국내주식은 exchange 불필요
     symbol: Optional[Dict[str, str]] = Field(
         default=None,
         description="Single symbol entry with symbol code (6-digit)",
@@ -232,8 +232,8 @@ class KoreaStockRealAccountNode(BaseNode):
     """
     국내주식 실시간 계좌 정보 노드
 
-    국내주식 보유종목, 잔고, 미체결, 실시간 손익을 제공합니다.
-    수수료율 설정으로 정확한 손익 계산을 지원합니다.
+    국내주식 보유Symbol, 잔고, 미체결, 실시간 P&L을 제공합니다.
+    수수료율 설정으로 정확한 P&L 계산을 지원합니다.
     세율은 market(KOSPI/KOSDAQ)에 따라 자동 결정됩니다.
     """
 

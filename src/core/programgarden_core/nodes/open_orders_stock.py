@@ -27,9 +27,9 @@ class OverseasStockOpenOrdersNode(BaseNode):
     해외주식 미체결 주문 조회 노드
 
     REST API로 현재 미체결 주문 목록을 조회합니다:
-    - 주문번호, 종목코드, 매매구분
-    - 주문수량, 체결수량, 미체결수량
-    - 주문가격, 주문시각
+    - Order ID, Symbol code, Side
+    - Order quantity, Execution quantity, Unfilled quantity
+    - Order price, Order time
 
     미체결 주문을 수정하거나 취소할 때 활용합니다.
     """

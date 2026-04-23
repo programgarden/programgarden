@@ -35,7 +35,7 @@ class OverseasStockRealMarketDataNode(BaseNode):
     """
     해외주식 실시간 시세 노드
 
-    WebSocket을 통해 해외주식 실시간 체결 데이터(가격, 거래량)를 수신합니다.
+    WebSocket을 통해 해외주식 실시간 체결 데이터(Price, Volume)를 수신합니다.
     GSC(체결) TR을 사용하며, 호가(GSH) 데이터는 포함되지 않습니다.
     거래소: NYSE, NASDAQ, AMEX
     """
@@ -181,7 +181,7 @@ class OverseasStockRealMarketDataNode(BaseNode):
         default=True,
         description="Keep WebSocket connection alive between flow executions.",
     )
-    # 단일 종목 (Item-based execution)
+    # 단일 Symbol (Item-based execution)
     symbol: Optional[Dict[str, str]] = Field(
         default=None,
         description="Single symbol entry with exchange and symbol code",
@@ -235,8 +235,8 @@ class OverseasStockRealAccountNode(BaseNode):
     """
     해외주식 실시간 계좌 정보 노드
 
-    해외주식 보유종목, 잔고, 미체결, 실시간 손익을 제공합니다.
-    수수료율/세금율 설정으로 정확한 손익 계산을 지원합니다.
+    해외주식 보유Symbol, 잔고, 미체결, 실시간 P&L을 제공합니다.
+    수수료율/세금율 설정으로 정확한 P&L 계산을 지원합니다.
     """
 
     type: Literal["OverseasStockRealAccountNode"] = "OverseasStockRealAccountNode"

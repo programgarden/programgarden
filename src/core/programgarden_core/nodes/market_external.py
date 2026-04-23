@@ -2,7 +2,7 @@
 ProgramGarden Core - External Market Data Nodes
 
 credential 불필요, 무료 외부 API 기반 시장 데이터 노드:
-- CurrencyRateNode: 환율 조회 (frankfurter.app, ECB 기반)
+- CurrencyRateNode: Exchange rate 조회 (frankfurter.app, ECB 기반)
 
 FearGreedIndexNode → community 패키지로 이동 (programgarden_community.nodes.market.fear_greed)
 VIXDataNode → 삭제 (Yahoo Finance CDN 차단 위험, 사용처 없음)
@@ -167,10 +167,10 @@ async def _fetch_json_with_fallback(
 
 class CurrencyRateNode(BaseNode):
     """
-    환율 조회 노드 (frankfurter.app, ECB 기반)
+    Exchange rate 조회 노드 (frankfurter.app, ECB 기반)
 
-    credential 불필요. 기준 통화 대비 대상 통화의 환율을 조회합니다.
-    해외투자 시 환율 변동 감지 및 전략 조정에 활용합니다.
+    credential 불필요. 기준 통화 대비 대상 통화의 Exchange rate을 조회합니다.
+    해외투자 시 Exchange rate 변동 감지 및 전략 조정에 활용합니다.
 
     Example DSL:
         {
@@ -192,12 +192,12 @@ class CurrencyRateNode(BaseNode):
             deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
             required_intermediate="ThrottleNode",
             severity=ConnectionSeverity.WARNING,
-            reason="i18n:connection_rules.realtime_to_external_api.reason",
-            suggestion="i18n:connection_rules.realtime_to_external_api.suggestion",
+            reason="Direct connection from realtime node to external API node is not recommended. Each tick would trigger an external API request, potentially hitting rate limits.",
+            suggestion="Place a ThrottleNode between the realtime node and external API node to control request frequency.",
         ),
     ]
 
-    # L-2: ECB 환율은 하루 1회 업데이트 → 30초 간격이면 충분
+    # L-2: ECB Exchange rate은 하루 1회 업데이트 → 30초 간격이면 충분
     _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
         min_interval_sec=30,
         max_concurrent=1,
@@ -397,16 +397,16 @@ class CurrencyRateNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CUSTOM_RESILIENCE_EDITOR,
                 object_schema=[
-                    {"name": "retry.enabled", "type": "BOOLEAN", "default": True, "description": "자동 재시도 활성화"},
-                    {"name": "retry.max_retries", "type": "INTEGER", "default": 3, "min_value": 1, "max_value": 10, "description": "최대 재시도 횟수"},
-                    {"name": "fallback.mode", "type": "ENUM", "default": "error", "enum_values": ["error", "skip", "default_value"], "description": "모든 재시도 실패 시 동작"},
+                    {"name": "retry.enabled", "type": "BOOLEAN", "default": True, "description": "Enable automatic retry"},
+                    {"name": "retry.max_retries", "type": "INTEGER", "default": 3, "min_value": 1, "max_value": 10, "description": "Max Retries"},
+                    {"name": "fallback.mode", "type": "ENUM", "default": "error", "enum_values": ["error", "skip", "default_value"], "description": "Action when all retries fail"},
                 ],
                 group="resilience",
             ),
         }
 
     async def execute(self, context: Any) -> Dict[str, Any]:
-        """환율 데이터 조회 (L-1: fallback provider 지원)"""
+        """Exchange rate 데이터 조회 (L-1: fallback provider 지원)"""
         targets = ",".join(self.target_currencies)
 
         # L-1: Primary (frankfurter.app) → Fallback (open.er-api.com)

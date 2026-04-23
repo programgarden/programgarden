@@ -8,7 +8,7 @@ ProgramGarden Community - TelegramNode
         "id": "telegram",
         "type": "TelegramNode",
         "credential_id": "telegram-bot-001",
-        "template": "🎯 체결: {{symbol}} {{quantity}}주 @ {{price}}"
+        "template": "🎯 Filled: {{symbol}} {{quantity}} shares @ {{price}}"
     }
     
     credential "telegram-bot-001":
@@ -236,19 +236,19 @@ class TelegramNode(BaseMessagingNode):
             "template": FieldSchema(
                 name="template",
                 type=FieldType.STRING,
-                description="메시지 템플릿. Jinja2 스타일 변수 사용 가능 (예: {{symbol}}, {{price}})",
+                description="Message template. Supports Jinja2-style variables (e.g. {{symbol}}, {{price}}).",
                 default="",
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                placeholder="🎯 체결: {{symbol}} {{quantity}}주 @ {{price}}",
-                example="📈 {{symbol}} RSI: {{rsi}} → 매수 신호!",
+                placeholder="🎯 Filled: {{symbol}} {{quantity}} shares @ {{price}}",
+                example="📈 {{symbol}} RSI: {{rsi}} → Buy signal!",
                 expected_type="str",
             ),
             "credential_id": FieldSchema(
                 name="credential_id",
                 type=FieldType.STRING,
-                description="텔레그램 봇 credential ID. credentials 섹션에 {bot_token, chat_id} 정의 필요",
+                description="Telegram bot credential ID. {bot_token, chat_id} must be defined in the credentials section.",
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,

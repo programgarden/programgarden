@@ -1,7 +1,7 @@
 """
-ProgramGarden Core - 거래소 코드 매핑
+ProgramGarden Core - Exchange code 매핑
 
-증권사별 거래소 코드와 사용자 친화적 이름 매핑을 정의합니다.
+증권사별 Exchange code와 사용자 친화적 이름 매핑을 정의합니다.
 - 해외주식: NYSE, NASDAQ, AMEX 등
 - 해외선물: CME, COMEX, NYMEX 등
 """
@@ -19,7 +19,7 @@ class ProductType(str, Enum):
 
 class ExchangeInfo(BaseModel):
     """거래소 정보"""
-    code: str = Field(..., description="API용 거래소 코드 (예: 81, 82, CME)")
+    code: str = Field(..., description="API용 Exchange code (예: 81, 82, CME)")
     name: str = Field(..., description="사용자 친화적 이름 (예: NYSE, NASDAQ)")
     full_name: str = Field(default="", description="거래소 전체 이름")
     country: str = Field(default="US", description="국가 코드")
@@ -28,7 +28,7 @@ class ExchangeInfo(BaseModel):
     
 class ExchangeRegistry:
     """
-    증권사별 거래소 코드 레지스트리
+    증권사별 Exchange code 레지스트리
     
     동적으로 거래소 목록을 로드/갱신할 수 있습니다.
     """
@@ -219,16 +219,16 @@ exchange_registry = ExchangeRegistry()
 
 class SymbolEntry(BaseModel):
     """
-    종목 엔트리 (거래소 + 종목코드)
+    Symbol 엔트리 (거래소 + Symbol code)
     
     사용자는 거래소 이름(NYSE, NASDAQ)으로 입력하고,
     실행 시점에 API 코드(81, 82)로 변환됩니다.
     """
     exchange: str = Field(..., description="거래소 이름 (NYSE, NASDAQ, CME 등)")
-    symbol: str = Field(..., description="종목코드 (AAPL, NVDA, NQH25 등)")
+    symbol: str = Field(..., description="Symbol code (AAPL, NVDA, NQH25 등)")
     
     def to_api_symbol(self, broker: str, product: ProductType) -> str:
-        """API용 종목코드 생성 (예: 82AAPL)"""
+        """API용 Symbol code 생성 (예: 82AAPL)"""
         code = exchange_registry.name_to_code(broker, product, self.exchange)
         if code is None:
             raise ValueError(f"Unknown exchange: {self.exchange}")
@@ -241,7 +241,7 @@ class SymbolEntry(BaseModel):
         return self.symbol
     
     def get_exchange_code(self, broker: str, product: ProductType) -> str:
-        """API용 거래소 코드 반환"""
+        """API용 Exchange code 반환"""
         code = exchange_registry.name_to_code(broker, product, self.exchange)
         if code is None:
             raise ValueError(f"Unknown exchange: {self.exchange}")
@@ -291,7 +291,7 @@ class SymbolEntry(BaseModel):
 
 def _guess_exchange(symbol: str) -> str:
     """
-    종목코드로 거래소 추정 (fallback용)
+    Symbol code로 거래소 추정 (fallback용)
     
     주의: 정확하지 않을 수 있으므로 명시적 거래소 지정 권장
     """
@@ -328,10 +328,10 @@ def normalize_symbol(value: any) -> SymbolEntry:
 
 def normalize_symbols(values: list) -> list:
     """
-    종목 리스트를 SymbolEntry 리스트로 정규화
+    Symbol 리스트를 SymbolEntry 리스트로 정규화
     
     Args:
-        values: 다양한 형식의 종목 리스트
+        values: 다양한 형식의 Symbol 리스트
         
     Returns:
         SymbolEntry 인스턴스 리스트
@@ -385,7 +385,7 @@ def symbols_to_dict_list(symbols: list) -> list:
 
 def extract_symbol_codes(symbols: list) -> list:
     """
-    종목 리스트에서 종목코드만 추출 (하위호환용)
+    Symbol 리스트에서 Symbol code만 추출 (하위호환용)
     
     Args:
         symbols: SymbolEntry, dict, 또는 str 리스트

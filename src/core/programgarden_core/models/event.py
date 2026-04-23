@@ -11,7 +11,7 @@ from enum import Enum
 
 
 class EventType(str, Enum):
-    """이벤트 유형"""
+    """Event type"""
 
     # 워크플로우 이벤트
     WORKFLOW_STARTED = "workflow_started"
@@ -70,7 +70,7 @@ class Event(BaseModel):
     )
 
     # 이벤트 정보
-    type: EventType = Field(..., description="이벤트 유형")
+    type: EventType = Field(..., description="Event type")
     node_id: Optional[str] = Field(
         default=None,
         description="관련 노드 ID",

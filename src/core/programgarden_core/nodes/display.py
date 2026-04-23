@@ -27,42 +27,42 @@ from programgarden_core.nodes.base import (
 # ── OutputPort.fields 상수 (Display 노드용) ──
 
 TABLE_DISPLAY_FIELDS: List[Dict[str, Any]] = [
-    {"name": "columns", "type": "dynamic", "description": "표시할 컬럼 (설정에 따라 결정)"},
+    {"name": "columns", "type": "dynamic", "description": "Columns to display (determined by settings)"},
 ]
 
 LINE_CHART_FIELDS: List[Dict[str, Any]] = [
-    {"name": "x", "type": "dynamic", "description": "X축 값 (x_field로 지정)"},
-    {"name": "y", "type": "dynamic", "description": "Y축 값 (y_field로 지정)"},
-    {"name": "signal", "type": "string", "description": "매매 시그널 (buy/sell)", "nullable": True},
-    {"name": "side", "type": "string", "description": "포지션 방향 (long/short)", "nullable": True},
+    {"name": "x", "type": "dynamic", "description": "X-axis value (specified via x_field)"},
+    {"name": "y", "type": "dynamic", "description": "Y-axis value (specified via y_field)"},
+    {"name": "signal", "type": "string", "description": "Trade signal (buy/sell)", "nullable": True},
+    {"name": "side", "type": "string", "description": "Position side (long/short)", "nullable": True},
 ]
 
 MULTI_LINE_CHART_FIELDS: List[Dict[str, Any]] = [
-    {"name": "x", "type": "dynamic", "description": "X축 값 (x_field로 지정)"},
-    {"name": "y", "type": "dynamic", "description": "Y축 값 (y_field로 지정)"},
-    {"name": "series_key", "type": "dynamic", "description": "시리즈 구분 키 (series_key로 지정)"},
-    {"name": "signal", "type": "string", "description": "매매 시그널 (buy/sell)", "nullable": True},
-    {"name": "side", "type": "string", "description": "포지션 방향 (long/short)", "nullable": True},
+    {"name": "x", "type": "dynamic", "description": "X-axis value (specified via x_field)"},
+    {"name": "y", "type": "dynamic", "description": "Y-axis value (specified via y_field)"},
+    {"name": "series_key", "type": "dynamic", "description": "Series key (specified via series_key)"},
+    {"name": "signal", "type": "string", "description": "Trade signal (buy/sell)", "nullable": True},
+    {"name": "side", "type": "string", "description": "Position side (long/short)", "nullable": True},
 ]
 
 CANDLESTICK_CHART_FIELDS: List[Dict[str, Any]] = [
-    {"name": "date", "type": "dynamic", "description": "날짜 (date_field로 지정)"},
-    {"name": "open", "type": "number", "description": "시가 (open_field로 지정)"},
-    {"name": "high", "type": "number", "description": "고가 (high_field로 지정)"},
-    {"name": "low", "type": "number", "description": "저가 (low_field로 지정)"},
-    {"name": "close", "type": "number", "description": "종가 (close_field로 지정)"},
-    {"name": "volume", "type": "number", "description": "거래량 (volume_field로 지정)", "nullable": True},
-    {"name": "signal", "type": "string", "description": "매매 시그널 (buy/sell)", "nullable": True},
-    {"name": "side", "type": "string", "description": "포지션 방향 (long/short)", "nullable": True},
+    {"name": "date", "type": "dynamic", "description": "Date (specified via date_field)"},
+    {"name": "open", "type": "number", "description": "Open price (specified via open_field)"},
+    {"name": "high", "type": "number", "description": "High price (specified via high_field)"},
+    {"name": "low", "type": "number", "description": "Low price (specified via low_field)"},
+    {"name": "close", "type": "number", "description": "Close price (specified via close_field)"},
+    {"name": "volume", "type": "number", "description": "Volume (specified via volume_field)", "nullable": True},
+    {"name": "signal", "type": "string", "description": "Trade signal (buy/sell)", "nullable": True},
+    {"name": "side", "type": "string", "description": "Position side (long/short)", "nullable": True},
 ]
 
 BAR_CHART_FIELDS: List[Dict[str, Any]] = [
-    {"name": "x", "type": "dynamic", "description": "X축 값 (x_field로 지정)"},
-    {"name": "y", "type": "dynamic", "description": "Y축 값 (y_field로 지정)"},
+    {"name": "x", "type": "dynamic", "description": "X-axis value (specified via x_field)"},
+    {"name": "y", "type": "dynamic", "description": "Y-axis value (specified via y_field)"},
 ]
 
 SUMMARY_DISPLAY_FIELDS: List[Dict[str, Any]] = [
-    {"name": "data", "type": "any", "description": "요약 데이터 (JSON 객체 또는 원시값)"},
+    {"name": "data", "type": "any", "description": "Summary data (JSON object or primitive value)"},
 ]
 
 
@@ -94,12 +94,12 @@ class BaseDisplayNode(BaseNode):
 
     title: Optional[str] = Field(
         default=None,
-        description="차트 제목",
+        description="Chart title",
     )
 
     data: Any = Field(
         default=None,
-        description="데이터 바인딩 (예: {{ nodes.condition.values }})",
+        description="Data binding (예: {{ nodes.condition.values }})",
     )
 
     _inputs: List[InputPort] = [
@@ -134,14 +134,14 @@ class BaseDisplayNode(BaseNode):
             "title": FieldSchema(
                 name="title",
                 type=FieldType.STRING,
-                description="차트 제목",
+                description="Chart title",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
             ),
             "data": FieldSchema(
                 name="data",
                 type=FieldType.STRING,
-                description="데이터 바인딩",
+                description="Data binding",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 example_binding="{{ nodes.condition.values }}",
@@ -300,24 +300,24 @@ class TableDisplayNode(BaseDisplayNode):
 
     columns: Optional[List[str]] = Field(
         default=None,
-        description="표시할 컬럼 목록 (미지정시 전체)",
+        description="Columns to display (미지정시 전체)",
     )
 
     limit: Optional[int] = Field(
         default=10,
-        description="최대 표시 개수",
+        description="Max display count",
         ge=1,
         le=100,
     )
 
     sort_by: Optional[str] = Field(
         default=None,
-        description="정렬 기준 필드",
+        description="Sort-by field",
     )
 
     sort_order: Optional[Literal["asc", "desc"]] = Field(
         default="desc",
-        description="정렬 순서",
+        description="Sort order",
     )
 
     @classmethod
@@ -330,7 +330,7 @@ class TableDisplayNode(BaseDisplayNode):
             "columns": FieldSchema(
                 name="columns",
                 type=FieldType.ARRAY,
-                description="표시할 컬럼 목록",
+                description="Columns to display",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_options={"multiple": True},
@@ -338,7 +338,7 @@ class TableDisplayNode(BaseDisplayNode):
             "limit": FieldSchema(
                 name="limit",
                 type=FieldType.INTEGER,
-                description="최대 표시 개수",
+                description="Max display count",
                 default=10,
                 min_value=1,
                 max_value=100,
@@ -348,14 +348,14 @@ class TableDisplayNode(BaseDisplayNode):
             "sort_by": FieldSchema(
                 name="sort_by",
                 type=FieldType.STRING,
-                description="정렬 기준 필드",
+                description="Sort-by field",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
             ),
             "sort_order": FieldSchema(
                 name="sort_order",
                 type=FieldType.ENUM,
-                description="정렬 순서",
+                description="Sort order",
                 enum_values=["asc", "desc"],
                 default="desc",
                 category=FieldCategory.SETTINGS,
@@ -520,22 +520,22 @@ class LineChartNode(BaseDisplayNode):
 
     x_field: Optional[str] = Field(
         default=None,
-        description="X축 필드명 (예: date)",
+        description="X-axis field name (예: date)",
     )
 
     y_field: Optional[str] = Field(
         default=None,
-        description="Y축 필드명 (예: rsi)",
+        description="Y-axis field name (예: rsi)",
     )
 
     signal_field: Optional[str] = Field(
         default=None,
-        description="시그널 필드명 (buy/sell 마커 표시)",
+        description="Signal field name (buy/sell markers)",
     )
 
     side_field: Optional[str] = Field(
         default=None,
-        description="포지션 방향 필드명 (long/short 구분)",
+        description="Position side field name (long/short)",
     )
 
     @classmethod
@@ -548,7 +548,7 @@ class LineChartNode(BaseDisplayNode):
             "x_field": FieldSchema(
                 name="x_field",
                 type=FieldType.STRING,
-                description="X축 필드명",
+                description="X-axis field name",
                 placeholder="date",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -558,7 +558,7 @@ class LineChartNode(BaseDisplayNode):
             "y_field": FieldSchema(
                 name="y_field",
                 type=FieldType.STRING,
-                description="Y축 필드명",
+                description="Y-axis field name",
                 placeholder="rsi",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -568,7 +568,7 @@ class LineChartNode(BaseDisplayNode):
             "signal_field": FieldSchema(
                 name="signal_field",
                 type=FieldType.STRING,
-                description="시그널 필드명 (buy/sell 마커 표시)",
+                description="Signal field name (buy/sell markers)",
                 placeholder="signal",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -577,7 +577,7 @@ class LineChartNode(BaseDisplayNode):
             "side_field": FieldSchema(
                 name="side_field",
                 type=FieldType.STRING,
-                description="포지션 방향 필드명 (long/short 구분)",
+                description="Position side field name (long/short)",
                 placeholder="side",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -751,12 +751,12 @@ class MultiLineChartNode(BaseDisplayNode):
 
     x_field: Optional[str] = Field(
         default=None,
-        description="X축 필드명 (예: date)",
+        description="X-axis field name (예: date)",
     )
 
     y_field: Optional[str] = Field(
         default=None,
-        description="Y축 필드명 (예: rsi)",
+        description="Y-axis field name (예: rsi)",
     )
 
     series_key: Optional[str] = Field(
@@ -766,29 +766,29 @@ class MultiLineChartNode(BaseDisplayNode):
 
     signal_field: Optional[str] = Field(
         default=None,
-        description="시그널 필드명 (buy/sell 마커 표시)",
+        description="Signal field name (buy/sell markers)",
     )
 
     side_field: Optional[str] = Field(
         default=None,
-        description="포지션 방향 필드명 (long/short 구분)",
+        description="Position side field name (long/short)",
     )
 
     limit: Optional[int] = Field(
         default=10,
-        description="최대 표시 개수",
+        description="Max display count",
         ge=1,
         le=100,
     )
 
     sort_by: Optional[str] = Field(
         default=None,
-        description="정렬 기준 필드",
+        description="Sort-by field",
     )
 
     sort_order: Optional[Literal["asc", "desc"]] = Field(
         default="desc",
-        description="정렬 순서",
+        description="Sort order",
     )
 
     @classmethod
@@ -801,7 +801,7 @@ class MultiLineChartNode(BaseDisplayNode):
             "x_field": FieldSchema(
                 name="x_field",
                 type=FieldType.STRING,
-                description="X축 필드명",
+                description="X-axis field name",
                 placeholder="date",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -811,7 +811,7 @@ class MultiLineChartNode(BaseDisplayNode):
             "y_field": FieldSchema(
                 name="y_field",
                 type=FieldType.STRING,
-                description="Y축 필드명",
+                description="Y-axis field name",
                 placeholder="rsi",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -821,7 +821,7 @@ class MultiLineChartNode(BaseDisplayNode):
             "series_key": FieldSchema(
                 name="series_key",
                 type=FieldType.STRING,
-                description="시리즈 구분 키 (심볼별 라인)",
+                description="Series key (line per symbol)",
                 placeholder="symbol",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -831,7 +831,7 @@ class MultiLineChartNode(BaseDisplayNode):
             "signal_field": FieldSchema(
                 name="signal_field",
                 type=FieldType.STRING,
-                description="시그널 필드명 (buy/sell 마커 표시)",
+                description="Signal field name (buy/sell markers)",
                 placeholder="signal",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -840,7 +840,7 @@ class MultiLineChartNode(BaseDisplayNode):
             "side_field": FieldSchema(
                 name="side_field",
                 type=FieldType.STRING,
-                description="포지션 방향 필드명 (long/short 구분)",
+                description="Position side field name (long/short)",
                 placeholder="side",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -849,7 +849,7 @@ class MultiLineChartNode(BaseDisplayNode):
             "limit": FieldSchema(
                 name="limit",
                 type=FieldType.INTEGER,
-                description="최대 표시 개수",
+                description="Max display count",
                 default=10,
                 min_value=1,
                 max_value=100,
@@ -859,14 +859,14 @@ class MultiLineChartNode(BaseDisplayNode):
             "sort_by": FieldSchema(
                 name="sort_by",
                 type=FieldType.STRING,
-                description="정렬 기준 필드",
+                description="Sort-by field",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
             ),
             "sort_order": FieldSchema(
                 name="sort_order",
                 type=FieldType.ENUM,
-                description="정렬 순서",
+                description="Sort order",
                 enum_values=["asc", "desc"],
                 default="desc",
                 category=FieldCategory.SETTINGS,
@@ -1075,42 +1075,42 @@ class CandlestickChartNode(BaseDisplayNode):
 
     date_field: Optional[str] = Field(
         default=None,
-        description="날짜 필드명",
+        description="Date field name",
     )
 
     open_field: Optional[str] = Field(
         default=None,
-        description="시가 필드명",
+        description="Open price field name",
     )
 
     high_field: Optional[str] = Field(
         default=None,
-        description="고가 필드명",
+        description="High price field name",
     )
 
     low_field: Optional[str] = Field(
         default=None,
-        description="저가 필드명",
+        description="Low price field name",
     )
 
     close_field: Optional[str] = Field(
         default=None,
-        description="종가 필드명",
+        description="Close price field name",
     )
 
     volume_field: Optional[str] = Field(
         default=None,
-        description="거래량 필드명 (선택)",
+        description="Volume field name (optional)",
     )
 
     signal_field: Optional[str] = Field(
         default=None,
-        description="시그널 필드명 (buy/sell 마커 표시)",
+        description="Signal field name (buy/sell markers)",
     )
 
     side_field: Optional[str] = Field(
         default=None,
-        description="포지션 방향 필드명 (long/short 구분)",
+        description="Position side field name (long/short)",
     )
 
     @classmethod
@@ -1123,7 +1123,7 @@ class CandlestickChartNode(BaseDisplayNode):
             "date_field": FieldSchema(
                 name="date_field",
                 type=FieldType.STRING,
-                description="날짜 필드명",
+                description="Date field name",
                 placeholder="date",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1133,7 +1133,7 @@ class CandlestickChartNode(BaseDisplayNode):
             "open_field": FieldSchema(
                 name="open_field",
                 type=FieldType.STRING,
-                description="시가 필드명",
+                description="Open price field name",
                 placeholder="open",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1143,7 +1143,7 @@ class CandlestickChartNode(BaseDisplayNode):
             "high_field": FieldSchema(
                 name="high_field",
                 type=FieldType.STRING,
-                description="고가 필드명",
+                description="High price field name",
                 placeholder="high",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1153,7 +1153,7 @@ class CandlestickChartNode(BaseDisplayNode):
             "low_field": FieldSchema(
                 name="low_field",
                 type=FieldType.STRING,
-                description="저가 필드명",
+                description="Low price field name",
                 placeholder="low",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1163,7 +1163,7 @@ class CandlestickChartNode(BaseDisplayNode):
             "close_field": FieldSchema(
                 name="close_field",
                 type=FieldType.STRING,
-                description="종가 필드명",
+                description="Close price field name",
                 placeholder="close",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1173,7 +1173,7 @@ class CandlestickChartNode(BaseDisplayNode):
             "volume_field": FieldSchema(
                 name="volume_field",
                 type=FieldType.STRING,
-                description="거래량 필드명 (선택)",
+                description="Volume field name (optional)",
                 placeholder="volume",
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1182,7 +1182,7 @@ class CandlestickChartNode(BaseDisplayNode):
             "signal_field": FieldSchema(
                 name="signal_field",
                 type=FieldType.STRING,
-                description="시그널 필드명 (buy/sell 마커 표시)",
+                description="Signal field name (buy/sell markers)",
                 placeholder="signal",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1191,7 +1191,7 @@ class CandlestickChartNode(BaseDisplayNode):
             "side_field": FieldSchema(
                 name="side_field",
                 type=FieldType.STRING,
-                description="포지션 방향 필드명 (long/short 구분)",
+                description="Position side field name (long/short)",
                 placeholder="side",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1354,12 +1354,12 @@ class BarChartNode(BaseDisplayNode):
 
     x_field: Optional[str] = Field(
         default=None,
-        description="X축 필드명",
+        description="X-axis field name",
     )
 
     y_field: Optional[str] = Field(
         default=None,
-        description="Y축 필드명",
+        description="Y-axis field name",
     )
 
     @classmethod
@@ -1372,7 +1372,7 @@ class BarChartNode(BaseDisplayNode):
             "x_field": FieldSchema(
                 name="x_field",
                 type=FieldType.STRING,
-                description="X축 필드명",
+                description="X-axis field name",
                 placeholder="category",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -1382,7 +1382,7 @@ class BarChartNode(BaseDisplayNode):
             "y_field": FieldSchema(
                 name="y_field",
                 type=FieldType.STRING,
-                description="Y축 필드명",
+                description="Y-axis field name",
                 placeholder="value",
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,

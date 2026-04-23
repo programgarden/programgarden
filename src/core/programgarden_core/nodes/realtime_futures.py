@@ -35,7 +35,7 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
     """
     해외선물 실시간 시세 노드
 
-    WebSocket을 통해 해외선물 실시간 시세(가격, 거래량, 호가)를 수신합니다.
+    WebSocket을 통해 해외선물 실시간 시세(Price, Volume, 호가)를 수신합니다.
     거래소: CME, EUREX, SGX, HKEX
     """
 
@@ -180,7 +180,7 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
         default=True,
         description="Keep WebSocket connection alive between flow executions.",
     )
-    # 단일 종목 (Item-based execution)
+    # 단일 Symbol (Item-based execution)
     symbol: Optional[Dict[str, str]] = Field(
         default=None,
         description="Single symbol entry with exchange and symbol code",
@@ -234,8 +234,8 @@ class OverseasFuturesRealAccountNode(BaseNode):
     """
     해외선물 실시간 계좌 정보 노드
 
-    해외선물 보유종목, 잔고, 미체결, 실시간 손익을 제공합니다.
-    계약당 수수료 설정으로 정확한 손익 계산을 지원합니다.
+    해외선물 보유Symbol, 잔고, 미체결, 실시간 P&L을 제공합니다.
+    계약당 수수료 설정으로 정확한 P&L 계산을 지원합니다.
     """
 
     type: Literal["OverseasFuturesRealAccountNode"] = "OverseasFuturesRealAccountNode"

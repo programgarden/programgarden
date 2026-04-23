@@ -56,7 +56,7 @@ class UIComponent(str, Enum):
     사용 가이드:
     - 기본 위젯: ui_component 생략 → FieldType에서 자동 추론
     - 세부 옵션: ui_options로 지정 (keyboardType, maxLines 등)
-    - 커스텀 위젯: ui_component 명시 필수 (CUSTOM_* 접두사)
+    - Custom 위젯: ui_component 명시 필수 (CUSTOM_* 접두사)
     
     FieldType → json_dynamic_widget 자동 매핑:
     - STRING → text_form_field
@@ -73,7 +73,7 @@ class UIComponent(str, Enum):
     DROPDOWN_BUTTON_FORM_FIELD = "dropdown_button_form_field"
     SLIDER = "slider"
     
-    # === ProgramGarden 커스텀 위젯 ===
+    # === ProgramGarden Custom 위젯 ===
     CUSTOM_CREDENTIAL_SELECT = "custom_credential_select"
     CUSTOM_SYMBOL_EDITOR = "custom_symbol_editor"
     CUSTOM_EXPRESSION_TOGGLE = "custom_expression_toggle"
@@ -283,7 +283,7 @@ class FieldSchema(BaseModel):
     )
     help_text: Optional[str] = Field(
         default=None,
-        description="추가 도움말 텍스트",
+        description="추가 도움말 Text",
     )
     
     # Credential 타입 필터 (CREDENTIAL_SELECT 전용)

@@ -1,7 +1,7 @@
 """
 ProgramGarden Community - FileReaderNode
 
-PDF, TXT, CSV, JSON, MD 파일을 읽어 텍스트/데이터로 변환하는 파서 노드.
+PDF, TXT, CSV, JSON, MD 파일을 읽어 Text/데이터로 변환하는 파서 노드.
 노드는 파싱만 담당하며, 파일 소스(Firebase, S3 등)는 노드 밖에서 처리합니다.
 
 사용 예시:
@@ -48,7 +48,7 @@ _BASE_DIR = Path("/app/data")
 
 class FileReaderNode(BaseNode):
     """
-    파일 파서 노드 — PDF, TXT, CSV, JSON, MD 파일을 읽어 텍스트/데이터로 변환합니다.
+    파일 파서 노드 — PDF, TXT, CSV, JSON, MD 파일을 읽어 Text/데이터로 변환합니다.
     노드는 파싱만 담당하며, 파일 소스(Firebase, S3, 로컬 업로드 등)는 노드 밖에서 처리합니다.
 
     Example DSL:

@@ -66,11 +66,11 @@ class ConnectionRule(BaseModel):
     # 사용자에게 보여줄 이유와 제안 (i18n 키 지원)
     reason: str = Field(
         default="",
-        description="차단/경고 이유 (i18n 키 또는 직접 텍스트)",
+        description="차단/경고 이유 (i18n 키 또는 직접 Text)",
     )
     suggestion: str = Field(
         default="",
-        description="해결 방법 제안 (i18n 키 또는 직접 텍스트)",
+        description="해결 방법 제안 (i18n 키 또는 직접 Text)",
     )
 
 

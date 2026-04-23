@@ -44,7 +44,7 @@ class RetryConfig(BaseModel):
 
     Attributes:
         enabled: 재시도 활성화 여부
-        max_retries: 최대 재시도 횟수 (0~10)
+        max_retries: Max Retries (0~10)
         base_delay: 기본 대기 시간 (초)
         exponential_backoff: 지수 백오프 적용 여부
         max_delay: 최대 대기 시간 (초)
@@ -144,7 +144,7 @@ class RetryEvent:
         job_id: Job 식별자
         node_id: 노드 ID
         attempt: 현재 시도 (1부터 시작)
-        max_retries: 최대 재시도 횟수
+        max_retries: Max Retries
         error_type: 에러 유형
         error_message: 에러 메시지
         next_retry_in: 다음 재시도까지 대기 시간 (초)

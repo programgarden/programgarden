@@ -1,8 +1,8 @@
 """
 ProgramGarden Core - Stock Symbol Query Node
 
-해외주식 전체종목조회:
-- OverseasStockSymbolQueryNode: 해외주식 전체 거래 가능 종목 조회 (g3190 API)
+해외주식 전체Symbol조회:
+- OverseasStockSymbolQueryNode: 해외주식 전체 거래 가능 Symbol 조회 (g3190 API)
 """
 
 from typing import Any, Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -24,10 +24,10 @@ from programgarden_core.nodes.base import (
 
 class OverseasStockSymbolQueryNode(BaseNode):
     """
-    해외주식 전체종목조회 노드
+    해외주식 전체Symbol조회 노드
 
-    해외주식 전체 거래 가능 종목을 조회합니다.
-    g3190 API (마스터상장종목조회) 사용.
+    해외주식 전체 거래 가능 Symbol을 조회합니다.
+    g3190 API (마스터상장Symbol조회) 사용.
     """
 
     type: Literal["OverseasStockSymbolQueryNode"] = "OverseasStockSymbolQueryNode"
@@ -188,7 +188,7 @@ class OverseasStockSymbolQueryNode(BaseNode):
             "country": FieldSchema(
                 name="country",
                 type=FieldType.ENUM,
-                description="국가 코드. US: 미국, HK: 홍콩, JP: 일본, CN: 중국",
+                description="Country code. US, HK, JP, CN.",
                 default="US",
                 enum_values=["US", "HK", "JP", "CN", "VN", "ID"],
                 enum_labels={
@@ -208,7 +208,7 @@ class OverseasStockSymbolQueryNode(BaseNode):
             "stock_exchange": FieldSchema(
                 name="stock_exchange",
                 type=FieldType.ENUM,
-                description="거래소 구분. NYSE/AMEX: 81, NASDAQ: 82, 전체: 빈값",
+                description="Exchange code. NYSE/AMEX: 81, NASDAQ: 82, all: empty.",
                 enum_values=["", "81", "82"],
                 enum_labels={
                     "": "i18n:enums.stock_exchange_code.all",
@@ -224,7 +224,7 @@ class OverseasStockSymbolQueryNode(BaseNode):
             "max_results": FieldSchema(
                 name="max_results",
                 type=FieldType.INTEGER,
-                description="최대 조회 건수. 연속 조회로 전체 데이터를 가져옵니다.",
+                description="Max result count. Uses continuous query to fetch all data.",
                 default=500,
                 min_value=100,
                 max_value=10000,

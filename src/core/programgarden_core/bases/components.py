@@ -20,7 +20,7 @@ class BaseAccno(ABC, metaclass=EnforceKoreanAliasABCMeta):
 
     KO:
         계좌 관련 기능을 제공하는 객체의 기본 클래스입니다.
-        (예: 잔고 조회, 예수금 조회 등)
+        (예: 잔고 조회, Balance 조회 등)
     """
     pass
 
@@ -40,15 +40,15 @@ class BaseChart(ABC, metaclass=EnforceKoreanAliasABCMeta):
 
 
 class BaseMarket(ABC, metaclass=EnforceKoreanAliasABCMeta):
-    """시세 및 종목 정보 관련 기능을 제공하는 객체의 기본 클래스
+    """시세 및 Symbol 정보 관련 기능을 제공하는 객체의 기본 클래스
 
     EN:
         Base class for market data and symbol information.
         (e.g., current price inquiry, order book inquiry, etc.)
 
     KO:
-        시세 및 종목 정보 관련 기능을 제공하는 객체의 기본 클래스입니다.
-        (예: 현재가 조회, 호가 조회 등)
+        시세 및 Symbol 정보 관련 기능을 제공하는 객체의 기본 클래스입니다.
+        (예: Current price 조회, 호가 조회 등)
     """
     pass
 

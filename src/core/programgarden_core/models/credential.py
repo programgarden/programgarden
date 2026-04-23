@@ -311,7 +311,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
     "http_header": CredentialTypeSchema(
         type_id="http_header",
         name="HTTP Header Auth",
-        description="커스텀 헤더 인증 (X-API-Key 등)",
+        description="Custom 헤더 인증 (X-API-Key 등)",
         widget_schema={
             "fields": [
                 {
@@ -326,7 +326,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                     "key": "header_name",
                     "type": "text",
                     "label": "Header Name",
-                    "description": "헤더 이름 (예: X-API-Key, Authorization)",
+                    "description": "Header name (예: X-API-Key, Authorization)",
                     "default": "X-API-Key",
                     "required": True
                 },
@@ -334,7 +334,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                     "key": "header_value",
                     "type": "password",
                     "label": "Header Value",
-                    "description": "헤더 값 (API 키 등)",
+                    "description": "Header value (API 키 등)",
                     "required": True
                 }
             ]
@@ -389,7 +389,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                     "key": "param_name",
                     "type": "text",
                     "label": "Parameter Name",
-                    "description": "쿼리 파라미터 이름",
+                    "description": "쿼리 Parameter name",
                     "default": "api_key",
                     "required": True
                 },
@@ -397,7 +397,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                     "key": "param_value",
                     "type": "password",
                     "label": "Parameter Value",
-                    "description": "쿼리 파라미터 값",
+                    "description": "쿼리 Parameter value",
                     "required": True
                 }
             ]
@@ -406,7 +406,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
     "http_custom": CredentialTypeSchema(
         type_id="http_custom",
         name="Custom HTTP Credential",
-        description="커스텀 HTTP 인증 - Headers, Query Params, Body에 사용할 값들을 자유롭게 정의",
+        description="Custom HTTP 인증 - Headers, Query Params, Body에 사용할 값들을 자유롭게 정의",
         widget_schema={
             "fields": [
                 {
@@ -419,7 +419,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                 }
             ],
             "dynamic": True,
-            "dynamic_description": "커스텀 HTTP Credential은 동적으로 key-value 쌍을 정의할 수 있습니다. 서버 API를 통해 관리하세요."
+            "dynamic_description": "Custom HTTP Credential은 동적으로 key-value 쌍을 정의할 수 있습니다. 서버 API를 통해 관리하세요."
         }
     ),
     # ============================================================
@@ -462,7 +462,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                     "key": "base_url",
                     "type": "text",
                     "label": "Base URL",
-                    "description": "커스텀 엔드포인트 (선택, OpenAI 호환 API용)",
+                    "description": "Custom 엔드포인트 (선택, OpenAI 호환 API용)",
                     "required": False
                 }
             ]
@@ -498,7 +498,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                     "key": "base_url",
                     "type": "text",
                     "label": "Base URL",
-                    "description": "커스텀 엔드포인트 (선택)",
+                    "description": "Custom 엔드포인트 (선택)",
                     "required": False
                 }
             ]
@@ -608,7 +608,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
                     "key": "base_url",
                     "type": "text",
                     "label": "Base URL",
-                    "description": "커스텀 엔드포인트 (선택)",
+                    "description": "Custom 엔드포인트 (선택)",
                     "required": False
                 }
             ]

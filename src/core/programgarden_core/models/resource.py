@@ -152,7 +152,7 @@ class ResourceLimits(BaseModel):
     max_symbols_per_condition: int = Field(
         default=100, 
         ge=1,
-        description="조건 노드당 최대 처리 종목 수"
+        description="조건 노드당 최대 처리 Symbol count"
     )
     max_backtest_days: int = Field(
         default=1095,  # 3년

@@ -2,7 +2,7 @@
 ProgramGarden Core - Stock Account Node
 
 해외주식 계좌 조회:
-- OverseasStockAccountNode: 해외주식 계좌 잔고, 보유종목 조회 (REST API 1회성)
+- OverseasStockAccountNode: 해외주식 계좌 잔고, 보유Symbol 조회 (REST API 1회성)
 """
 
 from typing import Any, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -29,9 +29,9 @@ class OverseasStockAccountNode(BaseNode):
     해외주식 REST API 1회성 계좌 조회 노드
 
     특정 시점의 해외주식 계좌 정보를 REST API로 조회합니다:
-    - 보유종목 목록
-    - 각 종목별 포지션 (수량, 평균단가, 평가금액, 손익률)
-    - 예수금/총자산
+    - 보유Symbol 목록
+    - 각 Symbol별 포지션 (Quantity, 평균단가, 평가금액, P&L률)
+    - Balance/총자산
 
     미체결 주문 조회는 OverseasStockOpenOrdersNode를 사용하세요.
     실시간 업데이트가 필요하면 OverseasStockRealAccountNode를 사용하세요.

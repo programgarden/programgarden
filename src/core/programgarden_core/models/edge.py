@@ -6,7 +6,7 @@ ProgramGarden Core - Edge 모델
 - tool: AI Agent의 Tool로 등록 (DAG 순서에서 제외, 필요 시 호출)
 - ai_model: LLM 연결 제공 (DAG 순서에서 제외)
 
-데이터 바인딩은 노드 config에서 {{ nodeId.field }} 표현식으로 처리
+Data binding은 노드 config에서 {{ nodeId.field }} 표현식으로 처리
 """
 
 from enum import Enum
@@ -41,7 +41,7 @@ class Edge(BaseModel):
         ai_model 엣지 (LLM 연결):
         - {"from": "llm", "to": "ai-trader", "type": "ai_model"}
 
-        데이터 바인딩 (노드 config):
+        Data binding (노드 config):
         - "symbols": "{{ watchlist.symbols }}"
         - "price": "{{ marketData.price }}"
     """

@@ -1,8 +1,8 @@
 """
 ProgramGarden Core - Korea Stock Symbol Query Node
 
-국내주식 전체종목조회:
-- KoreaStockSymbolQueryNode: KOSPI/KOSDAQ 전체 거래 가능 종목 조회 (t9945 API)
+국내주식 전체Symbol조회:
+- KoreaStockSymbolQueryNode: KOSPI/KOSDAQ 전체 거래 가능 Symbol 조회 (t9945 API)
 """
 
 from typing import Any, Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
@@ -24,10 +24,10 @@ from programgarden_core.nodes.base import (
 
 class KoreaStockSymbolQueryNode(BaseNode):
     """
-    국내주식 전체종목조회 노드
+    국내주식 전체Symbol조회 노드
 
-    KOSPI/KOSDAQ 전체 거래 가능 종목을 조회합니다.
-    t9945 API (마스터상장종목조회) 사용.
+    KOSPI/KOSDAQ 전체 거래 가능 Symbol을 조회합니다.
+    t9945 API (마스터상장Symbol조회) 사용.
     """
 
     type: Literal["KoreaStockSymbolQueryNode"] = "KoreaStockSymbolQueryNode"

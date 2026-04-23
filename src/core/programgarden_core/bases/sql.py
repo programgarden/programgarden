@@ -78,7 +78,7 @@ class BaseSQLNode(BaseStorageNode):
         description="충돌 시 기준 컬럼 (upsert용)",
     )
     
-    # 입력 포트 - 동적 데이터 바인딩
+    # 입력 포트 - 동적 Data binding
     _inputs: List[InputPort] = [
         InputPort(
             name="trigger",

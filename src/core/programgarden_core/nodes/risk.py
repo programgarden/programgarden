@@ -23,11 +23,11 @@ from programgarden_core.nodes.base import (
 
 class PositionSizingNode(BaseNode):
     """
-    Position size calculation node (단일 종목)
+    Position size calculation node (단일 Symbol)
 
     Item-based execution:
-    - Input: symbol (단일 종목), balance, market_data (해당 종목 시세)
-    - Output: order (해당 종목의 주문 정보 {symbol, exchange, quantity, price})
+    - Input: symbol (단일 Symbol), balance, market_data (해당 Symbol 시세)
+    - Output: order (해당 Symbol의 주문 정보 {symbol, exchange, quantity, price})
 
     Supports various position sizing methods: Kelly, fixed ratio, ATR-based
     """
@@ -39,15 +39,15 @@ class PositionSizingNode(BaseNode):
     # === 바인딩 필드 (Item-based execution) ===
     symbol: Any = Field(
         default=None,
-        description="단일 종목 {exchange, symbol} (SplitNode.item 또는 ConditionNode.result 바인딩)",
+        description="단일 Symbol {exchange, symbol} (SplitNode.item 또는 ConditionNode.result 바인딩)",
     )
     balance: Any = Field(
         default=None,
-        description="예수금/매수가능금액 (AccountNode.balance 또는 RealAccountNode.balance 바인딩)",
+        description="Balance/매수가능금액 (AccountNode.balance 또는 RealAccountNode.balance 바인딩)",
     )
     market_data: Any = Field(
         default=None,
-        description="해당 종목 시세 데이터 (MarketDataNode.value 바인딩)",
+        description="해당 Symbol 시세 데이터 (MarketDataNode.value 바인딩)",
     )
 
     # PositionSizingNode specific config
@@ -100,10 +100,10 @@ class PositionSizingNode(BaseNode):
             type="order",
             description="i18n:ports.order",
             fields=[
-                {"name": "symbol", "type": "string", "description": "종목코드"},
-                {"name": "exchange", "type": "string", "description": "거래소 코드"},
-                {"name": "quantity", "type": "number", "description": "주문 수량"},
-                {"name": "price", "type": "number", "description": "주문 가격"},
+                {"name": "symbol", "type": "string", "description": "Symbol code"},
+                {"name": "exchange", "type": "string", "description": "Exchange code"},
+                {"name": "quantity", "type": "number", "description": "Order quantity"},
+                {"name": "price", "type": "number", "description": "Order price"},
             ],
         ),
     ]

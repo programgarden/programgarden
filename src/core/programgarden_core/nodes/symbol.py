@@ -193,7 +193,7 @@ class WatchlistNode(BaseNode):
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="관심종목 목록입니다. 각 항목에 거래소(exchange)와 종목코드(symbol)를 입력하세요.",
+                description="Watchlist. Enter exchange and symbol code for each item.",
                 required=True,
                 array_item_type=FieldType.OBJECT,
                 expression_mode=ExpressionMode.BOTH,
@@ -204,10 +204,10 @@ class WatchlistNode(BaseNode):
                         {"value": "NASDAQ", "label": "NASDAQ"},
                         {"value": "NYSE", "label": "NYSE"},
                         {"value": "AMEX", "label": "AMEX"},
-                        {"value": "CME", "label": "CME (시카고상업거래소)"},
-                        {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
-                        {"value": "SGX", "label": "SGX (싱가포르거래소)"},
-                        {"value": "HKEX", "label": "HKEX (홍콩거래소)"},
+                        {"value": "CME", "label": "CME (Chicago Mercantile Exchange)"},
+                        {"value": "EUREX", "label": "EUREX (European Futures Exchange)"},
+                        {"value": "SGX", "label": "SGX (Singapore Exchange)"},
+                        {"value": "HKEX", "label": "HKEX (Hong Kong Exchange)"},
                     ],
                 },
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}, {"exchange": "NASDAQ", "symbol": "TSLA"}],
@@ -220,12 +220,12 @@ class WatchlistNode(BaseNode):
 
 class MarketUniverseNode(BaseNode):
     """
-    대표지수 종목 노드 (Market Universe Node)
+    대표지수 Symbol 노드 (Market Universe Node)
     
     ⚠️ 해외주식(overseas_stock) 전용 노드입니다. 해외선물은 지원하지 않습니다.
     
-    S&P500, NASDAQ100 등 미국 대표 지수의 구성 종목을 자동으로 가져옵니다.
-    pytickersymbols 라이브러리를 활용하여 최신 인덱스 구성종목을 조회합니다.
+    S&P500, NASDAQ100 등 미국 대표 지수의 구성 Symbol을 자동으로 가져옵니다.
+    pytickersymbols 라이브러리를 활용하여 최신 인덱스 구성Symbol을 조회합니다.
     Broker 연결 없이 독립적으로 실행됩니다.
     
     지원 인덱스 (LS증권 거래 가능):
@@ -248,7 +248,7 @@ class MarketUniverseNode(BaseNode):
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
-        OutputPort(name="count", type="integer", description="종목 수"),
+        OutputPort(name="count", type="integer", description="Symbol count"),
     ]
 
     _usage: ClassVar[Dict[str, Any]] = {
@@ -370,10 +370,10 @@ class MarketUniverseNode(BaseNode):
 
 class ScreenerNode(BaseNode):
     """
-    조건으로 종목찾기 노드 (Screener Node)
+    조건으로 Symbol찾기 노드 (Screener Node)
     
-    시가총액, 거래량, 섹터 등 조건을 설정하면
-    해당 조건을 만족하는 종목만 골라냅니다.
+    Market cap, Volume, 섹터 등 조건을 설정하면
+    해당 조건을 만족하는 Symbol만 골라냅니다.
     Yahoo Finance API를 활용합니다.
     """
 
@@ -381,24 +381,24 @@ class ScreenerNode(BaseNode):
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.ScreenerNode.description"
 
-    # 입력 종목 리스트 (선택사항) - 바인딩 또는 직접 입력
+    # 입력 Symbol 리스트 (선택사항) - 바인딩 또는 직접 입력
     symbols: Optional[Union[List[Dict[str, str]], str]] = Field(
         default=None,
-        description="필터링할 종목 리스트. 없으면 전체 시장에서 검색",
+        description="필터링할 Symbol 리스트. 없으면 전체 시장에서 검색",
     )
     
     # 스크리닝 조건
     market_cap_min: Optional[float] = Field(
         default=None,
-        description="최소 시가총액 (달러). 예: 10000000000 = 100억 달러",
+        description="최소 Market cap (달러). 예: 10000000000 = 100억 달러",
     )
     market_cap_max: Optional[float] = Field(
         default=None,
-        description="최대 시가총액 (달러)",
+        description="최대 Market cap (달러)",
     )
     volume_min: Optional[int] = Field(
         default=None,
-        description="최소 평균 거래량 (주). 예: 1000000 = 100만주",
+        description="최소 평균 Volume (주). 예: 1000000 = 100만주",
     )
     sector: Optional[str] = Field(
         default=None,
@@ -417,13 +417,13 @@ class ScreenerNode(BaseNode):
         InputPort(
             name="symbols",
             type="symbol_list",
-            description="필터링할 종목 리스트 (선택사항). 없으면 전체 시장에서 검색",
+            description="Symbol list to filter (optional). If omitted, searches the entire market.",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
-        OutputPort(name="count", type="integer", description="결과 종목 수"),
+        OutputPort(name="count", type="integer", description="Result symbol count"),
     ]
 
     _usage: ClassVar[Dict[str, Any]] = {
@@ -522,11 +522,11 @@ class ScreenerNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
         return {
-            # === PARAMETERS: 입력 종목 리스트 (선택사항) ===
+            # === PARAMETERS: 입력 Symbol 리스트 (선택사항) ===
             "symbols": FieldSchema(
                 name="symbols",
                 type=FieldType.ARRAY,
-                description="필터링할 종목 리스트입니다. 비워두면 전체 시장에서 검색합니다. 다른 노드의 symbols 출력을 연결하면 해당 종목들만 필터링합니다.",
+                description="Symbol list to filter. Leave empty to search the entire market. Connect another node's symbols output to filter only those symbols.",
                 required=False,
                 array_item_type=FieldType.OBJECT,
                 expression_mode=ExpressionMode.BOTH,
@@ -537,10 +537,10 @@ class ScreenerNode(BaseNode):
                         {"value": "NASDAQ", "label": "NASDAQ"},
                         {"value": "NYSE", "label": "NYSE"},
                         {"value": "AMEX", "label": "AMEX"},
-                        {"value": "CME", "label": "CME (시카고상업거래소)"},
-                        {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
-                        {"value": "SGX", "label": "SGX (싱가포르거래소)"},
-                        {"value": "HKEX", "label": "HKEX (홍콩거래소)"},
+                        {"value": "CME", "label": "CME (Chicago Mercantile Exchange)"},
+                        {"value": "EUREX", "label": "EUREX (European Futures Exchange)"},
+                        {"value": "SGX", "label": "SGX (Singapore Exchange)"},
+                        {"value": "HKEX", "label": "HKEX (Hong Kong Exchange)"},
                     ],
                 },
                 example=[{"exchange": "NASDAQ", "symbol": "AAPL"}],
@@ -548,45 +548,45 @@ class ScreenerNode(BaseNode):
                 bindable_sources=["WatchlistNode.symbols", "MarketUniverseNode.symbols", "SymbolQueryNode.symbols"],
                 expected_type="list[dict]",
             ),
-            # === PARAMETERS: 시가총액 필터 ===
+            # === PARAMETERS: Market cap 필터 ===
             "market_cap_min": FieldSchema(
                 name="market_cap_min",
                 type=FieldType.NUMBER,
-                description="최소 시가총액을 입력하세요 (달러 단위). 예: 100억 달러 = 10000000000. 유동성 낮은 소형주를 제외하려면 설정하세요.",
+                description="Enter the minimum market cap (in USD). e.g. USD 10B = 10000000000. Set to exclude low-liquidity small caps.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=10000000000,
-                placeholder="예: 10000000000 (100억 달러)",
+                placeholder="e.g. 10000000000 (USD 10B)",
                 expected_type="float",
             ),
             "market_cap_max": FieldSchema(
                 name="market_cap_max",
                 type=FieldType.NUMBER,
-                description="최대 시가총액을 입력하세요. 중소형주만 찾으려면 설정하세요.",
+                description="Enter the max market cap. Set to filter for small/mid-cap only.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=50000000000,
                 expected_type="float",
             ),
-            # === PARAMETERS: 거래량 필터 ===
+            # === PARAMETERS: Volume 필터 ===
             "volume_min": FieldSchema(
                 name="volume_min",
                 type=FieldType.INTEGER,
-                description="최소 평균 거래량 (주 단위). 예: 100만주 = 1000000. 거래량이 적은 종목은 주문 체결이 어려울 수 있습니다.",
+                description="Minimum average volume (in shares). e.g. 1M shares = 1000000. Low-volume symbols may be difficult to fill.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=1000000,
-                placeholder="예: 1000000 (100만주)",
+                placeholder="e.g. 1000000 (1M shares)",
                 expected_type="int",
             ),
             # === PARAMETERS: 섹터/거래소 필터 ===
             "sector": FieldSchema(
                 name="sector",
                 type=FieldType.ENUM,
-                description="특정 섹터만 찾으려면 선택하세요. 비워두면 전체 섹터.",
+                description="Select a specific sector to filter. Leave empty for all sectors.",
                 required=False,
                 enum_values=["", "Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Communication Services", "Industrials", "Consumer Defensive", "Energy", "Utilities", "Real Estate", "Basic Materials"],
                 enum_labels={
@@ -611,7 +611,7 @@ class ScreenerNode(BaseNode):
             "exchange": FieldSchema(
                 name="exchange",
                 type=FieldType.ENUM,
-                description="특정 거래소 종목만 찾으려면 선택하세요. 비워두면 전체 거래소.",
+                description="Select a specific exchange to filter. Leave empty for all exchanges.",
                 required=False,
                 enum_values=["", "NASDAQ", "NYSE", "AMEX"],
                 enum_labels={
@@ -629,7 +629,7 @@ class ScreenerNode(BaseNode):
             "max_results": FieldSchema(
                 name="max_results",
                 type=FieldType.INTEGER,
-                description="최대 몇 개 종목을 가져올지 설정하세요. 시가총액 큰 순으로 정렬됩니다.",
+                description="Set the max number of symbols to fetch. Sorted by market cap descending.",
                 default=100,
                 min_value=1,
                 max_value=500,
@@ -643,14 +643,14 @@ class ScreenerNode(BaseNode):
 
 class ExclusionListNode(BaseNode):
     """
-    거래 제외 종목 노드 (Exclusion List Node)
+    거래 제외 Symbol 노드 (Exclusion List Node)
 
-    거래하지 않을 종목을 관리합니다.
+    거래하지 않을 Symbol을 관리합니다.
     직접 입력하거나 다른 노드 출력을 연결하여 자동으로 제외할 수 있습니다.
 
     사용 예시:
-    - 특정 종목을 수동으로 블랙리스트 지정
-    - 보유 종목을 동적으로 연결하여 중복 매수 방지
+    - 특정 Symbol을 수동으로 블랙리스트 지정
+    - 보유 Symbol을 동적으로 연결하여 중복 매수 방지
     - input_symbols 연결 시 제외 적용된 결과를 직접 출력
     """
 
@@ -658,28 +658,28 @@ class ExclusionListNode(BaseNode):
     category: NodeCategory = NodeCategory.MARKET
     description: str = "i18n:nodes.ExclusionListNode.description"
 
-    # 1. 수동 입력: 사용자가 직접 종목을 지정
+    # 1. 수동 입력: 사용자가 직접 Symbol을 지정
     symbols: List[Dict[str, str]] = Field(
         default_factory=list,
-        description="제외할 종목 목록 [{exchange, symbol, reason?}, ...]",
+        description="제외할 Symbol 목록 [{exchange, symbol, reason?}, ...]",
     )
 
-    # 2. 동적 입력: 다른 노드 출력을 바인딩하여 동적으로 제외 종목 추가
+    # 2. 동적 입력: 다른 노드 출력을 바인딩하여 동적으로 제외 Symbol 추가
     dynamic_symbols: Optional[List[Dict[str, str]]] = Field(
         default=None,
-        description="동적으로 추가할 제외 종목 (다른 노드 출력 바인딩)",
+        description="동적으로 추가할 제외 Symbol (다른 노드 출력 바인딩)",
     )
 
-    # 3. 필터 대상: 제외를 적용할 원본 종목 리스트 (선택)
+    # 3. 필터 대상: 제외를 적용할 원본 Symbol 리스트 (선택)
     input_symbols: Optional[List[Dict[str, str]]] = Field(
         default=None,
-        description="필터링할 원본 종목 리스트 (연결 시 제외 적용된 결과 출력)",
+        description="필터링할 원본 Symbol 리스트 (연결 시 제외 적용된 결과 출력)",
     )
 
-    # 4. 기본 제외 사유 (수동 입력 종목에 개별 reason이 없을 때 사용)
+    # 4. 기본 Exclusion reason (수동 입력 Symbol에 개별 reason이 없을 때 사용)
     default_reason: str = Field(
         default="",
-        description="기본 제외 사유 (개별 종목에 reason이 없을 때 적용)",
+        description="기본 Exclusion reason (개별 Symbol에 reason이 없을 때 적용)",
     )
 
     _inputs: List[InputPort] = []
@@ -834,16 +834,16 @@ class ExclusionListNode(BaseNode):
                         {"value": "NASDAQ", "label": "NASDAQ"},
                         {"value": "NYSE", "label": "NYSE"},
                         {"value": "AMEX", "label": "AMEX"},
-                        {"value": "CME", "label": "CME (시카고상업거래소)"},
-                        {"value": "EUREX", "label": "EUREX (유럽선물거래소)"},
-                        {"value": "SGX", "label": "SGX (싱가포르거래소)"},
-                        {"value": "HKEX", "label": "HKEX (홍콩거래소)"},
+                        {"value": "CME", "label": "CME (Chicago Mercantile Exchange)"},
+                        {"value": "EUREX", "label": "EUREX (European Futures Exchange)"},
+                        {"value": "SGX", "label": "SGX (Singapore Exchange)"},
+                        {"value": "HKEX", "label": "HKEX (Hong Kong Exchange)"},
                     ],
                     "extra_fields": [
-                        {"key": "reason", "label": "제외 사유", "type": "string", "required": False},
+                        {"key": "reason", "label": "Exclusion reason", "type": "string", "required": False},
                     ],
                 },
-                example=[{"exchange": "NASDAQ", "symbol": "NVDA", "reason": "과열 우려"}],
+                example=[{"exchange": "NASDAQ", "symbol": "NVDA", "reason": "Overheating risk"}],
                 example_binding="{{ nodes.watchlist.symbols }}",
                 bindable_sources=["WatchlistNode.symbols", "MarketUniverseNode.symbols", "ScreenerNode.symbols"],
                 expected_type="list[dict]",
@@ -879,8 +879,8 @@ class ExclusionListNode(BaseNode):
                 required=False,
                 expression_mode=ExpressionMode.BOTH,
                 category=FieldCategory.PARAMETERS,
-                example="보유 종목 중복 매수 방지",
-                placeholder="예: 실적 부진, 리스크 과다",
+                example="Prevent duplicate purchases of held symbols",
+                placeholder="e.g. Poor earnings, excessive risk",
                 expected_type="str",
             ),
         }
@@ -888,12 +888,12 @@ class ExclusionListNode(BaseNode):
 
 class SymbolFilterNode(BaseNode):
     """
-    종목 비교/필터 노드 (Symbol Filter Node)
+    Symbol 비교/필터 노드 (Symbol Filter Node)
     
-    두 종목 리스트를 비교하여 교집합, 합집합, 차집합을 계산합니다.
+    두 Symbol 리스트를 비교하여 교집합, 합집합, 차집합을 계산합니다.
     
     사용 예시:
-    - 관심종목 - 보유종목 = 신규 매수 대상 (중복 매수 방지)
+    - 관심Symbol - 보유Symbol = 신규 매수 대상 (중복 매수 방지)
     - RSI과매도 ∩ MACD골든크로스 = 강력 매수 신호
     """
 
@@ -910,30 +910,30 @@ class SymbolFilterNode(BaseNode):
     # input_a, input_b는 바인딩으로 받음
     input_a: Optional[List[Dict[str, str]]] = Field(
         default=None,
-        description="첫 번째 종목 리스트 (필수)",
+        description="첫 번째 Symbol 리스트 (필수)",
     )
     input_b: Optional[List[Dict[str, str]]] = Field(
         default=None,
-        description="두 번째 종목 리스트 (선택)",
+        description="두 번째 Symbol 리스트 (선택)",
     )
 
     _inputs: List[InputPort] = [
         InputPort(
             name="input_a",
             type="symbol_list",
-            description="첫 번째 종목 리스트 (예: 관심종목)",
+            description="First symbol list (e.g. watchlist)",
             required=True,
         ),
         InputPort(
             name="input_b",
             type="symbol_list",
-            description="두 번째 종목 리스트 (예: 보유종목)",
+            description="Second symbol list (e.g. held positions)",
             required=False,
         ),
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
-        OutputPort(name="count", type="integer", description="결과 종목 수"),
+        OutputPort(name="count", type="integer", description="Result symbol count"),
     ]
 
     _usage: ClassVar[Dict[str, Any]] = {
@@ -1067,7 +1067,7 @@ class SymbolFilterNode(BaseNode):
             "operation": FieldSchema(
                 name="operation",
                 type=FieldType.ENUM,
-                description="어떤 비교를 할지 선택하세요.",
+                description="Select the comparison type.",
                 default="difference",
                 required=True,
                 enum_values=["difference", "intersection", "union"],
@@ -1084,7 +1084,7 @@ class SymbolFilterNode(BaseNode):
             "input_a": FieldSchema(
                 name="input_a",
                 type=FieldType.ARRAY,
-                description="첫 번째 종목 리스트입니다. WatchlistNode나 다른 노드의 symbols 출력을 연결하세요.",
+                description="First symbol list. Connect the symbols output from WatchlistNode or other nodes.",
                 required=True,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -1095,7 +1095,7 @@ class SymbolFilterNode(BaseNode):
             "input_b": FieldSchema(
                 name="input_b",
                 type=FieldType.ARRAY,
-                description="두 번째 종목 리스트입니다. 비교할 대상을 연결하세요. 예: 보유종목(AccountNode.held_symbols)",
+                description="Second symbol list. Connect the comparison target. e.g. held positions (AccountNode.held_symbols).",
                 required=False,
                 expression_mode=ExpressionMode.EXPRESSION_ONLY,
                 category=FieldCategory.PARAMETERS,

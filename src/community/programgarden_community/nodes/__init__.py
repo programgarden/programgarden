@@ -1,7 +1,7 @@
 """
 ProgramGarden Community - 커뮤니티 노드
 
-커뮤니티에서 기여한 커스텀 노드 타입.
+커뮤니티에서 기여한 Custom 노드 타입.
 - messaging: TelegramNode 등 알림/메시징 노드
 - market: FearGreedIndexNode 등 외부 시장 데이터 노드
 - data: FileReaderNode 등 데이터 처리 노드

@@ -6,7 +6,7 @@ ProgramGarden Core - Korea Stock Market Data Node
 
 Item-based execution:
 - Input: 단일 symbol (SplitNode에서 분리된 아이템)
-- Output: 단일 value (해당 종목의 시세)
+- Output: 단일 value (해당 Symbol의 시세)
 """
 
 from typing import Any, List, Literal, Dict, ClassVar, Optional, TYPE_CHECKING
@@ -28,14 +28,14 @@ from programgarden_core.nodes.base import (
 
 class KoreaStockMarketDataNode(BaseNode):
     """
-    국내주식 REST API 시세 조회 노드 (단일 종목)
+    국내주식 REST API 시세 조회 노드 (단일 Symbol)
 
-    SplitNode와 함께 사용하여 개별 종목의 시세를 조회합니다.
+    SplitNode와 함께 사용하여 개별 Symbol의 시세를 조회합니다.
     거래소: KRX (KOSPI, KOSDAQ)
 
     Item-based execution:
-    - Input: symbol (단일 종목 {symbol})
-    - Output: value (해당 종목의 시세 데이터)
+    - Input: symbol (단일 Symbol {symbol})
+    - Output: value (해당 Symbol의 시세 데이터)
     """
 
     type: Literal["KoreaStockMarketDataNode"] = "KoreaStockMarketDataNode"
@@ -45,7 +45,7 @@ class KoreaStockMarketDataNode(BaseNode):
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
-    # 단일 종목 (Item-based execution) - 국내주식은 exchange 불필요
+    # 단일 Symbol (Item-based execution) - 국내주식은 exchange 불필요
     symbol: Optional[Dict[str, str]] = Field(
         default=None,
         description="Single symbol entry with symbol code (6-digit)",

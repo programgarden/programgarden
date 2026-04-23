@@ -1,12 +1,12 @@
 """
 ProgramGarden Core - Stock Fundamental Node
 
-해외주식 종목정보(펀더멘털) 조회:
-- OverseasStockFundamentalNode: g3104 API 기반 종목정보 조회
+해외주식 Symbol정보(펀더멘털) 조회:
+- OverseasStockFundamentalNode: g3104 API 기반 Symbol정보 조회
 
 Item-based execution:
 - Input: 단일 symbol (SplitNode에서 분리된 아이템)
-- Output: 단일 value (해당 종목의 펀더멘털 데이터)
+- Output: 단일 value (해당 Symbol의 펀더멘털 데이터)
 """
 
 from typing import Any, List, Literal, Dict, ClassVar, Optional, TYPE_CHECKING
@@ -28,15 +28,15 @@ from programgarden_core.nodes.base import (
 
 class OverseasStockFundamentalNode(BaseNode):
     """
-    해외주식 종목정보(펀더멘털) 조회 노드 (단일 종목)
+    해외주식 Symbol정보(펀더멘털) 조회 노드 (단일 Symbol)
 
-    PER, EPS, 시가총액, 발행주식수, 52주 고/저가, 업종 등
-    종목의 기본적 분석 데이터를 조회합니다.
+    PER, EPS, Market cap, Issued shares, 52주 고/Low price, 업종 등
+    Symbol의 기본적 분석 데이터를 조회합니다.
     거래소: NYSE, NASDAQ, AMEX
 
     Item-based execution:
-    - Input: symbol (단일 종목 {exchange, symbol})
-    - Output: value (해당 종목의 펀더멘털 데이터)
+    - Input: symbol (단일 Symbol {exchange, symbol})
+    - Output: value (해당 Symbol의 펀더멘털 데이터)
     """
 
     type: Literal["OverseasStockFundamentalNode"] = "OverseasStockFundamentalNode"
@@ -46,7 +46,7 @@ class OverseasStockFundamentalNode(BaseNode):
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
-    # 단일 종목 (Item-based execution)
+    # 단일 Symbol (Item-based execution)
     symbol: Optional[Dict[str, str]] = Field(
         default=None,
         description="Single symbol entry with exchange and symbol code",

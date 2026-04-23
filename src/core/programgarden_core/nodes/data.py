@@ -40,7 +40,7 @@ from programgarden_core.models.connection_rule import (
 )
 
 
-# HTTP 요청 재시도용 커스텀 예외 클래스
+# HTTP 요청 재시도용 Custom 예외 클래스
 class HTTPServerError(Exception):
     """HTTP 5xx 서버 에러 - 재시도 가능"""
     pass
@@ -532,8 +532,8 @@ class HTTPRequestNode(BaseNode):
             deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
             required_intermediate="ThrottleNode",
             severity=ConnectionSeverity.ERROR,
-            reason="i18n:connection_rules.realtime_to_http.reason",
-            suggestion="i18n:connection_rules.realtime_to_http.suggestion",
+            reason="Direct connection from realtime node to HTTPRequestNode is not recommended. Each tick would trigger an HTTP request, potentially hitting external API rate limits.",
+            suggestion="Place a ThrottleNode between the realtime node and HTTP request node to control request frequency.",
         ),
     ]
 
@@ -750,8 +750,8 @@ class HTTPRequestNode(BaseNode):
                 expected_type="dict[str, str]",
                 ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
                 object_schema=[
-                    {"name": "key", "type": "STRING", "description": "파라미터 이름"},
-                    {"name": "value", "type": "STRING", "description": "파라미터 값"},
+                    {"name": "key", "type": "STRING", "description": "Parameter name"},
+                    {"name": "value", "type": "STRING", "description": "Parameter value"},
                 ],
             ),
             "body": FieldSchema(
@@ -782,8 +782,8 @@ class HTTPRequestNode(BaseNode):
                 expected_type="dict[str, str]",
                 ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
                 object_schema=[
-                    {"name": "key", "type": "STRING", "description": "헤더 이름"},
-                    {"name": "value", "type": "STRING", "description": "헤더 값"},
+                    {"name": "key", "type": "STRING", "description": "Header name"},
+                    {"name": "value", "type": "STRING", "description": "Header value"},
                 ],
                 group="advanced",
             ),
@@ -812,7 +812,7 @@ class HTTPRequestNode(BaseNode):
                         "name": "retry.enabled",
                         "type": "BOOLEAN",
                         "default": False,
-                        "description": "자동 재시도 활성화 (서버 오류, 네트워크 문제 시 자동 재시도)",
+                        "description": "Enable automatic retry (retry on server errors or network issues)",
                     },
                     {
                         "name": "retry.max_retries",
@@ -820,7 +820,7 @@ class HTTPRequestNode(BaseNode):
                         "default": 3,
                         "min_value": 1,
                         "max_value": 10,
-                        "description": "최대 재시도 횟수",
+                        "description": "Max Retries",
                     },
                     {
                         "name": "retry.base_delay",
@@ -828,14 +828,14 @@ class HTTPRequestNode(BaseNode):
                         "default": 1.0,
                         "min_value": 0.1,
                         "max_value": 60.0,
-                        "description": "재시도 대기 시간 (초)",
+                        "description": "Retry Delay (sec)",
                     },
                     {
                         "name": "fallback.mode",
                         "type": "ENUM",
                         "default": "error",
                         "enum_values": ["error", "skip", "default_value"],
-                        "description": "모든 재시도 실패 시 동작",
+                        "description": "Action when all retries fail",
                         "enum_labels": {
                             "error": "i18n:enums.fallback_mode.error",
                             "skip": "i18n:enums.fallback_mode.skip",
@@ -1013,8 +1013,8 @@ class FieldMappingNode(BaseNode):
             "type": "FieldMappingNode",
             "data": "{{ nodes.api.response.data }}",
             "mappings": [
-                {"from": "lastPrice", "to": "close", "description": "마지막 체결가 → 종가"},
-                {"from": "vol", "to": "volume", "description": "당일 누적 거래량"}
+                {"from": "lastPrice", "to": "close", "description": "마지막 체결가 → Close price"},
+                {"from": "vol", "to": "volume", "description": "당일 누적 Volume"}
             ],
             "preserve_unmapped": true
         }
@@ -1249,7 +1249,7 @@ class FieldMappingNode(BaseNode):
                         "type": "STRING",
                         "required": True,
                         "description": "i18n:fields.FieldMappingNode.mappings.from",
-                        "placeholder": "원본 필드명 (예: lastPrice)",
+                        "placeholder": "Source field name (e.g. lastPrice)",
                         "ui_width": "50%",
                     },
                     {
@@ -1257,12 +1257,12 @@ class FieldMappingNode(BaseNode):
                         "type": "STRING",
                         "required": True,
                         "description": "i18n:fields.FieldMappingNode.mappings.to",
-                        "placeholder": "표준 필드명 (예: close)",
+                        "placeholder": "Standard field name (e.g. close)",
                         "ui_width": "50%",
                         "suggestions": ["symbol", "exchange", "date", "open", "high", "low", "close", "volume"],
                     },
                 ],
-                help_text="(+) 버튼으로 매핑 규칙 추가",
+                help_text="Use (+) button to add mapping rules",
             ),
             # === SETTINGS: 부가 설정 ===
             "preserve_unmapped": FieldSchema(

@@ -1,12 +1,12 @@
 """
 ProgramGarden Core - Korea Stock Fundamental Node
 
-국내주식 종목정보(펀더멘털) 조회:
-- KoreaStockFundamentalNode: t1102 API 기반 종목정보 조회
+국내주식 Symbol정보(펀더멘털) 조회:
+- KoreaStockFundamentalNode: t1102 API 기반 Symbol정보 조회
 
 Item-based execution:
 - Input: 단일 symbol (SplitNode에서 분리된 아이템)
-- Output: 단일 value (해당 종목의 펀더멘털 데이터)
+- Output: 단일 value (해당 Symbol의 펀더멘털 데이터)
 """
 
 from typing import Any, List, Literal, Dict, ClassVar, Optional, TYPE_CHECKING
@@ -28,15 +28,15 @@ from programgarden_core.nodes.base import (
 
 class KoreaStockFundamentalNode(BaseNode):
     """
-    국내주식 종목정보(펀더멘털) 조회 노드 (단일 종목)
+    국내주식 Symbol정보(펀더멘털) 조회 노드 (단일 Symbol)
 
-    PER, EPS, PBR, 시가총액, 상장주식수, 52주 고/저가, 업종 등
-    종목의 기본적 분석 데이터를 조회합니다.
+    PER, EPS, PBR, Market cap, Listed shares, 52주 고/Low price, 업종 등
+    Symbol의 기본적 분석 데이터를 조회합니다.
     거래소: KRX (KOSPI, KOSDAQ)
 
     Item-based execution:
-    - Input: symbol (단일 종목 {symbol})
-    - Output: value (해당 종목의 펀더멘털 데이터)
+    - Input: symbol (단일 Symbol {symbol})
+    - Output: value (해당 Symbol의 펀더멘털 데이터)
     """
 
     type: Literal["KoreaStockFundamentalNode"] = "KoreaStockFundamentalNode"
@@ -46,7 +46,7 @@ class KoreaStockFundamentalNode(BaseNode):
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
-    # 단일 종목 (Item-based execution) - 국내주식은 exchange 불필요
+    # 단일 Symbol (Item-based execution) - 국내주식은 exchange 불필요
     symbol: Optional[Dict[str, str]] = Field(
         default=None,
         description="Single symbol entry with symbol code (6-digit)",

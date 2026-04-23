@@ -24,25 +24,25 @@ class JobStatus(str, Enum):
 class PositionInfo(BaseModel):
     """보유 포지션 정보"""
 
-    symbol: str = Field(..., description="종목 코드")
-    quantity: int = Field(..., description="보유 수량")
-    entry_price: float = Field(..., description="평균 매입가")
+    symbol: str = Field(..., description="Symbol code")
+    quantity: int = Field(..., description="Held quantity")
+    entry_price: float = Field(..., description="Average entry price")
     entry_time: Optional[datetime] = Field(default=None, description="진입 시간")
-    current_price: Optional[float] = Field(default=None, description="현재가")
-    unrealized_pnl: Optional[float] = Field(default=None, description="미실현 손익")
-    pnl_rate: Optional[float] = Field(default=None, description="수익률 (%)")
+    current_price: Optional[float] = Field(default=None, description="Current price")
+    unrealized_pnl: Optional[float] = Field(default=None, description="미실현 P&L")
+    pnl_rate: Optional[float] = Field(default=None, description="Return (%)")
 
 
 class PendingOrderInfo(BaseModel):
     """미체결 주문 정보"""
 
     order_id: str = Field(..., description="주문 ID")
-    symbol: str = Field(..., description="종목 코드")
+    symbol: str = Field(..., description="Symbol code")
     side: str = Field(..., description="매수/매도 (buy/sell)")
     order_type: str = Field(..., description="주문 유형 (market/limit)")
-    quantity: int = Field(..., description="주문 수량")
-    price: Optional[float] = Field(default=None, description="주문 가격 (지정가)")
-    status: str = Field(default="pending", description="주문 상태")
+    quantity: int = Field(..., description="Order quantity")
+    price: Optional[float] = Field(default=None, description="Order price (지정가)")
+    status: str = Field(default="pending", description="Order status")
     created_at: Optional[datetime] = Field(default=None, description="주문 시간")
 
 
@@ -69,7 +69,7 @@ class JobState(BaseModel):
     # 포지션 상태
     positions: Dict[str, PositionInfo] = Field(
         default_factory=dict,
-        description="보유 포지션 (종목코드별)",
+        description="보유 포지션 (Symbol code별)",
     )
 
     # 잔고 상태
@@ -90,10 +90,10 @@ class JobState(BaseModel):
         description="조건 노드별 상태 (node_id별)",
     )
 
-    # 전략 컨텍스트 (사용자 정의)
+    # 전략 컨Text (사용자 정의)
     strategy_context: Dict[str, Any] = Field(
         default_factory=dict,
-        description="전략별 커스텀 상태 (예: phase, trade_count_today)",
+        description="전략별 Custom 상태 (예: phase, trade_count_today)",
     )
 
     can_restore: bool = Field(
@@ -121,10 +121,10 @@ class WorkflowJob(BaseModel):
         description="현재 상태",
     )
 
-    # 실행 컨텍스트 (Definition inputs에 바인딩)
+    # 실행 컨Text (Definition inputs에 바인딩)
     context: Dict[str, Any] = Field(
         default_factory=dict,
-        description="실행 컨텍스트 (credential_id, symbols 등)",
+        description="실행 컨Text (credential_id, symbols 등)",
     )
 
     # 타임스탬프

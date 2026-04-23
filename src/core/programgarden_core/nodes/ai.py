@@ -33,10 +33,11 @@ from programgarden_core.models.connection_rule import (
 
 class LLMModelNode(BaseNode):
     """
-    LLM 모델 연결 노드 - AI Agent에 LLM 연결을 제공
+    LLM Model connection node — provides an LLM connection to AI Agents.
 
-    BrokerNode 패턴과 동일: credential로 API 연결, ai_model 엣지로 AIAgentNode에 전파.
-    같은 LLMModelNode를 여러 AIAgentNode가 공유 가능.
+    Follows the same pattern as BrokerNode: establishes an API connection via
+    credential and propagates it to AIAgentNode through the ai_model edge.
+    A single LLMModelNode can be shared by multiple AIAgentNodes.
     """
 
     type: Literal["LLMModelNode"] = "LLMModelNode"
@@ -204,7 +205,7 @@ class LLMModelNode(BaseNode):
         InputPort(
             name="trigger",
             type="signal",
-            description="실행 트리거",
+            description="Execution trigger",
             required=False,
         ),
     ]
@@ -213,7 +214,7 @@ class LLMModelNode(BaseNode):
         OutputPort(
             name="connection",
             type="ai_model",
-            description="LLM 연결 정보 (AIAgentNode의 ai_model 포트에 연결)",
+            description="LLM connection info (connect to AIAgentNode's ai_model port)",
         ),
     ]
 
@@ -242,7 +243,7 @@ class LLMModelNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 default="gpt-4o",
-                placeholder="gpt-4o, claude-sonnet-4-5-20250929, llama3.1 등",
+                placeholder="e.g. gpt-4o, claude-sonnet-4-5-20250929, llama3.1",
                 help_text="i18n:fields.LLMModelNode.model_help",
             ),
             "temperature": FieldSchema(
@@ -292,19 +293,21 @@ class LLMModelNode(BaseNode):
 
 class AIAgentNode(BaseNode):
     """
-    AI Agent 노드 - tool 엣지로 연결된 기존 노드들을 도구로 활용하는 범용 에이전트
+    AI Agent node — a general-purpose agent that uses existing nodes connected
+    via tool edges as tools.
 
-    워크플로우에서 LLM을 호출하여 데이터 분석, 의사결정을 수행하고,
-    필요 시 tool 엣지로 연결된 노드들을 도구로 호출합니다.
+    Calls the LLM within a workflow to perform data analysis and decision making,
+    and can invoke connected nodes as tools via tool edges as needed.
 
-    매 실행마다 stateless로 동작 (트레이딩 자동화에서 대화 기억은 불필요,
-    현재 데이터를 Tool로 직접 조회하여 판단).
+    Operates statelessly per run (conversation memory is unnecessary for trading
+    automation — the agent fetches current data directly via tools for each
+    decision).
 
-    포트:
-    - trigger (main 엣지): 실행 트리거
-    - ai_model (ai_model 엣지): LLMModelNode에서 LLM 연결 주입
-    - tools (tool 엣지, 복수): 기존 노드를 Tool로 등록
-    - response (출력): AI 응답 (output_format에 따라 string/object)
+    Ports:
+    - trigger (main edge): execution trigger
+    - ai_model (ai_model edge): LLM connection injected from LLMModelNode
+    - tools (tool edge, multiple): existing nodes registered as tools
+    - response (output): AI response (string/object depending on output_format)
     """
 
     type: Literal["AIAgentNode"] = "AIAgentNode"
@@ -316,8 +319,8 @@ class AIAgentNode(BaseNode):
             deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
             required_intermediate="ThrottleNode",
             severity=ConnectionSeverity.ERROR,
-            reason="i18n:connection_rules.realtime_to_ai_agent.reason",
-            suggestion="i18n:connection_rules.realtime_to_ai_agent.suggestion",
+            reason="Direct connection from realtime node to AIAgentNode is blocked. Each tick would trigger an LLM call, potentially causing excessive costs.",
+            suggestion="Place a ThrottleNode between the realtime node and AI Agent to control call frequency.",
         ),
     ]
 
@@ -550,19 +553,19 @@ class AIAgentNode(BaseNode):
         InputPort(
             name="trigger",
             type="signal",
-            description="실행 트리거 (main 엣지)",
+            description="Execution trigger (main edge)",
             required=False,
         ),
         InputPort(
             name="ai_model",
             type="ai_model",
-            description="LLM 연결 (ai_model 엣지로 LLMModelNode 연결)",
+            description="LLM connection (connect LLMModelNode via ai_model edge)",
             required=True,
         ),
         InputPort(
             name="tools",
             type="tool",
-            description="AI 도구 (tool 엣지로 기존 노드 연결, 복수 가능)",
+            description="AI tools (existing nodes connected via tool edges, multiple allowed)",
             required=False,
             multiple=True,
         ),
@@ -572,7 +575,7 @@ class AIAgentNode(BaseNode):
         OutputPort(
             name="response",
             type="any",
-            description="AI 응답 (output_format에 따라: text→string, json/structured→object)",
+            description="AI response (per output_format: text→string, json/structured→object).",
         ),
     ]
 
@@ -595,11 +598,11 @@ class AIAgentNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 enum_values=["custom", "risk_manager", "news_analyst", "technical_analyst", "strategist"],
                 enum_labels={
-                    "custom": "커스텀",
-                    "risk_manager": "위험관리자",
-                    "news_analyst": "뉴스분석가",
-                    "technical_analyst": "기술분석가",
-                    "strategist": "전략본부장",
+                    "custom": "Custom",
+                    "risk_manager": "Risk Manager",
+                    "news_analyst": "News Analyst",
+                    "technical_analyst": "Technical Analyst",
+                    "strategist": "Strategist",
                 },
                 default="custom",
             ),
@@ -612,7 +615,7 @@ class AIAgentNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CUSTOM_CODE_EDITOR,
                 ui_options={"language": "markdown", "min_lines": 4, "max_lines": 10},
-                placeholder="당신은 10년 경력의 퀀트 트레이더입니다...",
+                placeholder="You are a quant trader with 10 years of experience...",
                 help_text="i18n:fields.AIAgentNode.system_prompt_help",
             ),
             "user_prompt": FieldSchema(
@@ -624,7 +627,7 @@ class AIAgentNode(BaseNode):
                 expression_mode=ExpressionMode.BOTH,
                 ui_component=UIComponent.CUSTOM_CODE_EDITOR,
                 ui_options={"language": "markdown", "min_lines": 3, "max_lines": 8},
-                placeholder="현재 포지션을 분석하고 리스크를 평가해주세요.",
+                placeholder="Analyze current positions and evaluate the risk.",
                 example_binding="{{ nodes.account.positions }}",
                 help_text="i18n:fields.AIAgentNode.user_prompt_help",
             ),
@@ -637,9 +640,9 @@ class AIAgentNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 enum_values=["text", "json", "structured"],
                 enum_labels={
-                    "text": "텍스트",
+                    "text": "Text",
                     "json": "JSON",
-                    "structured": "구조화 (스키마)",
+                    "structured": "Structured (schema)",
                 },
                 default="text",
             ),
@@ -654,9 +657,9 @@ class AIAgentNode(BaseNode):
                 ui_options={"language": "json", "min_lines": 3},
                 visible_when={"output_format": "structured"},
                 example={
-                    "signal": {"type": "string", "enum": ["buy", "hold", "sell"], "description": "매매 신호"},
-                    "confidence": {"type": "number", "description": "확신도 (0~1)"},
-                    "reasoning": {"type": "string", "description": "판단 근거"},
+                    "signal": {"type": "string", "enum": ["buy", "hold", "sell"], "description": "Trade signal"},
+                    "confidence": {"type": "number", "description": "Confidence (0~1)"},
+                    "reasoning": {"type": "string", "description": "Reasoning"},
                 },
             ),
 
@@ -706,9 +709,9 @@ class AIAgentNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 enum_values=["retry_with_context", "skip", "abort"],
                 enum_labels={
-                    "retry_with_context": "재시도 (에러 컨텍스트 전달)",
-                    "skip": "무시하고 계속",
-                    "abort": "노드 실행 실패",
+                    "retry_with_context": "Retry (pass error context)",
+                    "skip": "Ignore and continue",
+                    "abort": "Node execution failed",
                 },
                 default="retry_with_context",
             ),
@@ -722,6 +725,6 @@ class AIAgentNode(BaseNode):
                 default=100000,
                 min_value=0,
                 max_value=10000000,
-                help_text="실행당 최대 토큰 수. 0=무제한. 초과 시 현재까지의 결과로 응답 생성.",
+                help_text="Max tokens per run. 0 = unlimited. If exceeded, responds with results accumulated so far.",
             ),
         }

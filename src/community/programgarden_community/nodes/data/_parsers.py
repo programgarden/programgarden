@@ -41,7 +41,7 @@ def parse_pdf(
     # 페이지 범위 파싱
     page_indices = _parse_page_range(pages, total_pages)
 
-    # 텍스트 추출
+    # Text 추출
     texts = []
     for idx in page_indices:
         page = reader.pages[idx]
@@ -132,7 +132,7 @@ def parse_csv(
     delimiter: str = ",",
     has_header: bool = True,
 ) -> Tuple[str, Any, Dict[str, Any]]:
-    """CSV 파싱 → 구조화 데이터 (list[dict]) + 원본 텍스트"""
+    """CSV 파싱 → 구조화 데이터 (list[dict]) + 원본 Text"""
     text = file_bytes.decode(encoding)
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     rows = list(reader)
@@ -161,7 +161,7 @@ def parse_json(
     file_bytes: bytes,
     encoding: str = "utf-8",
 ) -> Tuple[str, Any, Dict[str, Any]]:
-    """JSON 파싱 → 파싱된 객체 + 원본 텍스트"""
+    """JSON 파싱 → 파싱된 객체 + 원본 Text"""
     text = file_bytes.decode(encoding)
     data = json.loads(text)
 
@@ -182,7 +182,7 @@ def parse_docx(
 
     Returns:
         (text, data, extra_metadata)
-        - text: 전체 문단 텍스트 (줄바꿈 연결)
+        - text: 전체 문단 Text (줄바꿈 연결)
         - data: 테이블 목록 (list[list[list[str]]]) 또는 None
         - extra_metadata: paragraph_count, table_count
     """
@@ -196,7 +196,7 @@ def parse_docx(
 
     doc = Document(io.BytesIO(file_bytes))
 
-    # 문단 텍스트 추출
+    # 문단 Text 추출
     paragraphs = [p.text for p in doc.paragraphs]
     full_text = "\n".join(paragraphs)
 
@@ -231,7 +231,7 @@ def parse_xlsx(
 
     Returns:
         (text, data, extra_metadata)
-        - text: CSV 형식 텍스트
+        - text: CSV 형식 Text
         - data: list[dict] (첫 행을 헤더로 사용) 또는 list[list]
         - extra_metadata: sheet_name, row_count, column_count, sheet_names
     """
@@ -278,7 +278,7 @@ def parse_xlsx(
         data = []
         row_count = 0
 
-    # CSV 형식 텍스트 생성
+    # CSV 형식 Text 생성
     text_lines = [",".join(row) for row in rows]
     text = "\n".join(text_lines)
 
