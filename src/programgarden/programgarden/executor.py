@@ -2072,26 +2072,29 @@ class BrokerNodeExecutor(NodeExecutorBase):
         # ========================================
         # 워크플로우 포지션 추적기 초기화 (리스너 자동 감지)
         # on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작
+        # dry_run 모드에서는 주문/실시간 콜백이 모두 skip 되어 추적 대상이 없으므로
+        # SQLite 파일 생성 자체를 건너뛴다.
         # ========================================
-        context.init_workflow_position_tracker(
-            broker_node_id=node_id,
-            product=product,
-            provider=provider,
-            paper_trading=paper_trading,
-        )
-
-        # ========================================
-        # 위험관리 추적기 초기화 (노드/플러그인 risk feature 수집)
-        # risk_features를 선언한 노드/플러그인이 있으면 RiskTracker 자동 시작
-        # ========================================
-        risk_features = self._collect_risk_features(context)
-        if risk_features:
-            context.init_risk_tracker(
-                features=risk_features,
+        if not context.is_dry_run:
+            context.init_workflow_position_tracker(
+                broker_node_id=node_id,
                 product=product,
                 provider=provider,
                 paper_trading=paper_trading,
             )
+
+            # ========================================
+            # 위험관리 추적기 초기화 (노드/플러그인 risk feature 수집)
+            # risk_features를 선언한 노드/플러그인이 있으면 RiskTracker 자동 시작
+            # ========================================
+            risk_features = self._collect_risk_features(context)
+            if risk_features:
+                context.init_risk_tracker(
+                    features=risk_features,
+                    product=product,
+                    provider=provider,
+                    paper_trading=paper_trading,
+                )
 
         # ========================================
         # Fallback: 체결내역 조회로 시장가 주문 가격 복구
