@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+## [1.21.2] - 2026-04-29
+### Fixed
+- `executor.py` `BrokerNodeExecutor` — guard `init_workflow_position_tracker`
+  and `init_risk_tracker` calls behind `if not context.is_dry_run:`. Previously
+  every dry-run accumulated an empty `{workflow_id}_workflow.db` SQLite file
+  in the runtime data directory because the trackers always opened the DB
+  even though all order/realtime callbacks were skipped. dry-run now leaves
+  no DB artifacts; live trading paths are unchanged.
+
 ## [1.21.1] - 2026-04-19
 ### Fixed
 - `executor.py` `BrokerNodeExecutor` — `paper_trading` default aligned with
