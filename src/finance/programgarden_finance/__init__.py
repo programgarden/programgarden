@@ -82,6 +82,7 @@ from .ls.korea_stock.investor import t1603
 from .ls.korea_stock.investor import t1617
 from .ls.korea_stock.investor import t1621
 from .ls.korea_stock.investor import t1664
+from .ls.korea_stock.program import t1631
 from .ls.korea_stock.program import t1636
 from .ls.korea_stock.sector import t1511
 from .ls.korea_stock.sector import t1516
