@@ -698,7 +698,13 @@ class TestGuard8T1633UniqueFields:
         assert "k200basis" not in T1633OutBlock1.model_fields
 
     def test_outblock1_float_coerce_from_zero_padded_string(self):
-        """LS may serialise jisu / change as zero-padded strings — verify coerce."""
+        """Pydantic str→float coerce works for jisu / change.
+
+        Verifies the model accepts string inputs (e.g., '329.85') and
+        coerces to float. Whether LS actually serialises numeric fields
+        as strings on this TR is not asserted — that requires live
+        verification.
+        """
         row = T1633OutBlock1.model_validate({
             "date": "20230619",
             "jisu": "329.85",
