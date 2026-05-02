@@ -242,8 +242,14 @@ class T1636OutBlock1(BaseModel):
     sgta: int = Field(
         default=0,
         title="시가총액 (Market capitalization)",
-        description="Market capitalization in KRW. Length 15.",
-        examples=[356_952_750_330, 311_431_702_400],
+        description=(
+            "Market capitalization in LS server-side units (length 15). "
+            "Empirically observed to be denominated in 억 원 (100M KRW); the "
+            "exact unit convention is not published in the LS public spec, so "
+            "do not divide ``mkcap_cmpr_val`` from ``svalue`` and ``sgta`` "
+            "directly without confirming units."
+        ),
+        examples=[12_891_044, 356_952_750_330],
     )
     rate: float = Field(
         default=0.0,
@@ -273,11 +279,15 @@ class T1636OutBlock1(BaseModel):
         title="시총대비순매수비중 (Net-buy ratio vs market cap)",
         description=(
             "Net-buy ratio versus market cap, in % (LS scale 6.2). "
-            "Computed as ``svalue / sgta * 100`` (net-buy amount over market cap). "
-            "A positive value indicates program net buy exceeds net sell relative to "
-            "the symbol's market cap. Added by LS Securities on 2026-01-08."
+            "Computed server-side by LS — the exact formula and unit conventions "
+            "between ``svalue`` and ``sgta`` are not published in the public spec, "
+            "so do not derive this value locally; consume it as returned. "
+            "A positive value indicates program net buy exceeds net sell relative "
+            "to the symbol's market cap. LS may serialize this value as a string "
+            "(e.g., '-0.01'); Pydantic auto-coerces to float. "
+            "Added by LS Securities on 2026-01-08."
         ),
-        examples=[4.56, -1.20, 0.0],
+        examples=[-0.01, 0.03, -0.18],
     )
 
 
