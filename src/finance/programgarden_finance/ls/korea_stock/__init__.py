@@ -103,7 +103,13 @@ class KoreaStock:
         return Program(token_manager=self.token_manager)
 
     프로그램매매 = program
-    프로그램매매.__doc__ = "Query Korean stock program-trading flow data."
+    프로그램매매.__doc__ = (
+        "Query Korean stock program-trading flow data — comprehensive "
+        "summary (t1631 / 프로그램매매종합조회), time-bucketed trend "
+        "(t1632 / 시간대별프로그램매매추이), period trend (t1633 / "
+        "기간별프로그램매매추이), and per-symbol trend (t1636 / "
+        "종목별프로그램매매동향)."
+    )
 
     @require_korean_alias
     def real(

@@ -6,11 +6,13 @@ from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
 
-from . import t1631, t1632, t1636
+from . import t1631, t1632, t1633, t1636
 from .t1631 import TrT1631
 from .t1631.blocks import T1631InBlock, T1631Request, T1631RequestHeader
 from .t1632 import TrT1632
 from .t1632.blocks import T1632InBlock, T1632Request, T1632RequestHeader
+from .t1633 import TrT1633
+from .t1633.blocks import T1633InBlock, T1633Request, T1633RequestHeader
 from .t1636 import TrT1636
 from .t1636.blocks import T1636InBlock, T1636Request, T1636RequestHeader
 
@@ -23,12 +25,17 @@ class Program:
         - ``t1631`` — Program trading comprehensive query (거래소 / 코스닥,
           summary aggregates + program trading rows).
         - ``t1632`` — Time-bucketed program-trading trend (KP200/BASIS +
-          program flow per time bucket). Supports tr_cont paging.
+          program flow per time bucket). Supports tr_cont paging
+          (date + time cursors).
+        - ``t1633`` — Period-based (daily / weekly / monthly) program-
+          trading trend over [fdate, tdate]. Supports tr_cont paging
+          (date cursor only).
         - ``t1636`` — Program trading flow per symbol.
 
     Korean aliases are exposed for parity with the rest of the SDK
     (``프로그램매매`` on KoreaStock, ``프로그램매매종합조회``,
-    ``시간대별프로그램매매추이``, and ``종목별프로그램매매동향`` here).
+    ``시간대별프로그램매매추이``, ``기간별프로그램매매추이``, and
+    ``종목별프로그램매매동향`` here).
     """
 
     def __init__(self, token_manager: TokenManager):
@@ -149,6 +156,71 @@ class Program:
     )
 
     @require_korean_alias
+    def t1633(
+        self,
+        body: T1633InBlock,
+        header: Optional[T1633RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1633:
+        """Return a TrT1633 request handle for the period-based program-trading trend query.
+
+        Returns daily / weekly / monthly program-trading flow (KP200 jisu,
+        sign, change, total / arbitrage / non-arbitrage buy, sell, net-buy,
+        and volume) over an [fdate, tdate] period for KOSPI (``gubun='0'``)
+        or KOSDAQ (``gubun='1'``). The period unit is selected by ``gubun3``
+        (``'1'`` daily / ``'2'`` weekly / ``'3'`` monthly).
+
+        Supports tr_cont continuation paging via a SINGLE ``date`` CTS
+        cursor (unlike t1632 which uses date + time). First request must
+        send ``date=' '`` (single space) per the LS official example
+        payload — this is the default value on ``T1633InBlock``.
+
+        WARNING: ``gubun`` encoding matches t1632 (``'0'`` = 거래소,
+        ``'1'`` = 코스닥) but is OPPOSITE of t1631 (``'1'`` = 거래소,
+        ``'2'`` = 코스닥). ``gubun2`` and ``gubun3`` enum domains differ
+        from t1632 (which fixes both at ``Literal['1']``) — see
+        ``T1633InBlock`` for the full enum lists. ``fdate`` / ``tdate``
+        are validated by ``pattern=r"^\\d{8}$"`` (8 numeric digits).
+
+        Args:
+            body: ``T1633InBlock`` — gubun (market: '0'=거래소, '1'=코스닥),
+                gubun1 (amount/qty: '0'=금액, '1'=수량),
+                gubun2 (value/cumulative: '0'=수치, '1'=누적),
+                gubun3 (period unit: '1'=일, '2'=주, '3'=월),
+                fdate / tdate (YYYYMMDD period bounds, 8 numeric digits),
+                gubun4 ('0'=Default, '1'=직전대비증감),
+                date (continuation cursor; default ' ' for first request),
+                exchgubun ('K'/'N'/'U', default 'K').
+            header: Optional request header overrides.
+            options: Optional setup options (rate limit, retry behavior).
+
+        Returns:
+            TrT1633 — call ``.req()`` for a single page or ``.occurs_req()``
+            to auto-page through the whole period.
+        """
+
+        request_data = T1633Request(
+            body={
+                "t1633InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1633(request_data)
+
+    기간별프로그램매매추이 = t1633
+    기간별프로그램매매추이.__doc__ = (
+        "Query period-based (daily / weekly / monthly) program-trading flow "
+        "on KOSPI / KOSDAQ over an [fdate, tdate] period. Supports tr_cont "
+        "auto-paging via occurs_req() with a single date cursor."
+    )
+
+    @require_korean_alias
     def t1636(
         self,
         body: T1636InBlock,
@@ -199,5 +271,6 @@ __all__ = [
     Program,
     t1631,
     t1632,
+    t1633,
     t1636,
 ]
