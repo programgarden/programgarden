@@ -10,11 +10,11 @@ Covers:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 from unittest.mock import MagicMock
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.korea_stock import KoreaStock
@@ -360,3 +360,59 @@ class TestTrT1636OccursReqUpdater:
         resp = T1636Response(header=None, cont_block=None, block=[])
         with pytest.raises(ValueError, match="missing continuation"):
             updater(tr.request_data, resp)
+
+
+# ---------------------------------------------------------------------------
+# 7. Field(examples=[...]) regression guard
+# ---------------------------------------------------------------------------
+
+
+class TestFieldExamplesValidate:
+    """Each value declared in ``Field(examples=[...])`` must round-trip through
+    ``TypeAdapter(<annotation>).validate_python(value)``.
+
+    Why: AI chatbots read these examples from ``model_json_schema()`` and
+    learn from them. A typo or wrong type in an example silently teaches the
+    chatbot bad input. This guard fails fast if any example value diverges
+    from its field's declared type / Literal set.
+    """
+
+    @pytest.mark.parametrize(
+        "model_cls",
+        [T1636InBlock, T1636OutBlock, T1636OutBlock1],
+        ids=["T1636InBlock", "T1636OutBlock", "T1636OutBlock1"],
+    )
+    def test_all_field_examples_validate(self, model_cls: Type[BaseModel]):
+        failures: list[str] = []
+        for field_name, field_info in model_cls.model_fields.items():
+            examples = field_info.examples or []
+            if not examples:
+                continue
+            adapter = TypeAdapter(field_info.annotation)
+            for ex in examples:
+                try:
+                    adapter.validate_python(ex)
+                except ValidationError as exc:
+                    failures.append(
+                        f"{model_cls.__name__}.{field_name} example {ex!r} "
+                        f"failed: {exc.errors()[0]['msg']}"
+                    )
+        assert not failures, "Invalid Field examples:\n" + "\n".join(failures)
+
+    @pytest.mark.parametrize(
+        "model_cls",
+        [T1636InBlock, T1636OutBlock1],
+        ids=["T1636InBlock", "T1636OutBlock1"],
+    )
+    def test_every_field_has_examples(self, model_cls: Type[BaseModel]):
+        """Every public field in user-facing blocks must declare at least one
+        example so the JSON schema carries usable AI hints."""
+        missing = [
+            name
+            for name, info in model_cls.model_fields.items()
+            if not (info.examples or [])
+        ]
+        assert not missing, (
+            f"{model_cls.__name__} fields without examples=[...]: {missing}. "
+            "All InBlock / OutBlock1 fields must carry AI-readable examples."
+        )
