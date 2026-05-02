@@ -6,9 +6,11 @@ from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
 
-from . import t1631, t1636
+from . import t1631, t1632, t1636
 from .t1631 import TrT1631
 from .t1631.blocks import T1631InBlock, T1631Request, T1631RequestHeader
+from .t1632 import TrT1632
+from .t1632.blocks import T1632InBlock, T1632Request, T1632RequestHeader
 from .t1636 import TrT1636
 from .t1636.blocks import T1636InBlock, T1636Request, T1636RequestHeader
 
@@ -20,11 +22,13 @@ class Program:
     exposes:
         - ``t1631`` — Program trading comprehensive query (거래소 / 코스닥,
           summary aggregates + program trading rows).
+        - ``t1632`` — Time-bucketed program-trading trend (KP200/BASIS +
+          program flow per time bucket). Supports tr_cont paging.
         - ``t1636`` — Program trading flow per symbol.
 
     Korean aliases are exposed for parity with the rest of the SDK
-    (``프로그램매매`` on KoreaStock, ``프로그램매매종합조회`` and
-    ``종목별프로그램매매동향`` here).
+    (``프로그램매매`` on KoreaStock, ``프로그램매매종합조회``,
+    ``시간대별프로그램매매추이``, and ``종목별프로그램매매동향`` here).
     """
 
     def __init__(self, token_manager: TokenManager):
@@ -88,6 +92,63 @@ class Program:
     )
 
     @require_korean_alias
+    def t1632(
+        self,
+        body: T1632InBlock,
+        header: Optional[T1632RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1632:
+        """Return a TrT1632 request handle for the time-bucketed program-trading trend query.
+
+        Returns time-bucketed KP200 index, BASIS, and program-trading flow
+        (total / arbitrage / non-arbitrage buy, sell, and net-buy) for KOSPI
+        (``gubun='0'``) or KOSDAQ (``gubun='1'``).
+
+        Supports tr_cont continuation paging via ``date`` + ``time`` CTS
+        cursors. Use ``occurs_req()`` or ``occurs_req_async()`` to auto-page
+        through all time buckets.
+
+        WARNING: ``gubun`` encoding differs from t1631.
+        t1632 uses ``'0'`` for KOSPI (거래소) and ``'1'`` for KOSDAQ.
+        t1631 uses ``'1'`` for 거래소 and ``'2'`` for KOSDAQ.
+
+        Args:
+            body: ``T1632InBlock`` — gubun (market: '0'=거래소, '1'=코스닥),
+                gubun1 (amount/qty: '0'=금액, '1'=수량),
+                gubun2 (prior-period change, fixed '1'),
+                gubun3 (prior-day flag, fixed '1'),
+                date / time (empty for first request; CTS cursors for paging),
+                exchgubun ('K'/'N'/'U', default 'K').
+            header: Optional request header overrides.
+            options: Optional setup options (rate limit, retry behavior).
+
+        Returns:
+            TrT1632 — call ``.req()`` for a single page or ``.occurs_req()``
+            to auto-page through all time buckets.
+        """
+
+        request_data = T1632Request(
+            body={
+                "t1632InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1632(request_data)
+
+    시간대별프로그램매매추이 = t1632
+    시간대별프로그램매매추이.__doc__ = (
+        "Query time-bucketed KP200/BASIS and program-trading flow (total / "
+        "arbitrage / non-arbitrage) per time bucket for KOSPI or KOSDAQ. "
+        "Supports tr_cont auto-paging via occurs_req()."
+    )
+
+    @require_korean_alias
     def t1636(
         self,
         body: T1636InBlock,
@@ -137,5 +198,6 @@ class Program:
 __all__ = [
     Program,
     t1631,
+    t1632,
     t1636,
 ]
