@@ -1,3 +1,11 @@
+## [Unreleased]
+### Added
+- t1633 (기간별프로그램매매추이) — daily / weekly / monthly program-trading
+  trend over [fdate, tdate] period on KOSPI / KOSDAQ. Supports tr_cont
+  continuation paging via single `date` CTS cursor (unlike t1632 which
+  pages by date+time). Korean alias: `기간별프로그램매매추이`. Korea
+  Stock REST TR count 59 → 60.
+
 ## [1.5.1] - 2026-04-18
 ### Dependencies
 - programgarden-core ^1.12.0 (NodeTypeSchema AI metadata — 5 new optional
