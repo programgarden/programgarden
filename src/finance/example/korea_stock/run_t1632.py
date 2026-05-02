@@ -139,14 +139,17 @@ def test_scenario2_occurs_req_autopaging():
 
     def _page_callback(page_response, status):
         nonlocal page_count, total_rows
+        if page_response is None:
+            logger.info(f"[occurs_req] status={status.name}")
+            return
         page_count += 1
-        rows = len(page_response.block) if page_response else 0
+        rows = len(page_response.block)
         total_rows += rows
         logger.info(
-            f"[occurs_req page {page_count}] "
+            f"[occurs_req page {page_count}] status={status.name}, "
             f"rsp_cd={page_response.rsp_cd!r}, rows={rows}"
         )
-        if page_response and page_response.cont_block:
+        if page_response.cont_block:
             logger.info(
                 f"  cont_block — date={page_response.cont_block.date!r}, "
                 f"time={page_response.cont_block.time!r}"
