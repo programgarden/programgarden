@@ -32,11 +32,9 @@ Key design notes:
   non-numeric inputs immediately.
 - First request must send ``date=' '`` (single space) per the LS official
   example payload — modelled as the default value.
-- The ``sign`` row field has a per-xingAPI documented enum
-  (1=상한 / 2=상승 / 3=보합 / 4=하한 / 5=하락). The LS REST spec does
-  not officially restate this code domain — modelled as ``str`` to match
-  whatever the REST API returns; the xingAPI mapping is included in the
-  description as a hint only.
+- The ``sign`` row field is documented in the xingAPI companion spec
+  with the enum '1'=상한 / '2'=상승 / '3'=보합 / '4'=하한 / '5'=하락.
+  Modelled as ``str``.
 - Inferred formulas, units, or row ordering that are not in the LS public
   spec are intentionally omitted — consume every value as reported by LS.
 
@@ -264,11 +262,7 @@ class T1633OutBlock1(BaseModel):
     jisu: float = Field(
         default=0.0,
         title="KP200 (KP200 index value)",
-        description=(
-            "KP200 index value for this period bucket. Length 6.2 (LS "
-            "scale). LS may serialise this as a zero-padded string "
-            "(e.g., '329.85') — Pydantic auto-coerces to float."
-        ),
+        description="KP200 index value for this period bucket. Length 6.2 (LS scale).",
         examples=[329.85, 345.17, 1006.59],
     )
     sign: str = Field(
@@ -278,22 +272,14 @@ class T1633OutBlock1(BaseModel):
             "Change direction indicator. Length 1. Per the xingAPI "
             "companion documentation: '1' = 상한 (limit-up), "
             "'2' = 상승 (up), '3' = 보합 (unchanged), "
-            "'4' = 하한 (limit-down), '5' = 하락 (down). Whether the "
-            "LS REST API returns the same code domain is not officially "
-            "restated in the REST spec — consume the raw value as "
-            "reported and validate against this xingAPI mapping "
-            "defensively."
+            "'4' = 하한 (limit-down), '5' = 하락 (down)."
         ),
         examples=["2", "5", "3"],
     )
     change: float = Field(
         default=0.0,
         title="대비 (Change from prior)",
-        description=(
-            "Change from the prior period. Length 6.2 (LS scale). LS may "
-            "serialise this as a zero-padded string (e.g., '016.32') — "
-            "Pydantic auto-coerces to float."
-        ),
+        description="Change from the prior period. Length 6.2 (LS scale).",
         examples=[16.32, 1.98, 0.0, -2.30],
     )
     tot3: int = Field(
@@ -365,12 +351,7 @@ class T1633OutBlock1(BaseModel):
     volume: int = Field(
         default=0,
         title="거래량 (Volume)",
-        description=(
-            "Trading volume for this period bucket. Length 12. Unit and "
-            "exact aggregation scope (e.g., whether ``volume`` matches "
-            "``tot1 + tot2`` or any other identity) are not published by "
-            "LS — consume as reported. t1632 has no equivalent field."
-        ),
+        description="Trading volume for this period bucket. Length 12.",
         examples=[245, 153589, 0],
     )
 
