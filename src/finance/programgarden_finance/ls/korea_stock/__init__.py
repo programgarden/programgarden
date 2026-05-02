@@ -14,6 +14,7 @@ from .accno import Accno
 from .order import Order
 from .sector import Sector
 from .investor import Investor
+from .program import Program
 from .real import Real
 
 
@@ -97,6 +98,14 @@ class KoreaStock:
     투자자.__doc__ = "투자자별 매매 동향(종합, 시간대별, 차트)을 조회합니다."
 
     @require_korean_alias
+    def program(self) -> Program:
+        """Return the Program domain client for Korean stock program-trading TRs (``/stock/program``)."""
+        return Program(token_manager=self.token_manager)
+
+    프로그램매매 = program
+    프로그램매매.__doc__ = "Query Korean stock program-trading flow data."
+
+    @require_korean_alias
     def real(
         self,
         reconnect=True,
@@ -144,5 +153,6 @@ __all__ = [
     Order,
     Sector,
     Investor,
+    Program,
     Real,
 ]
