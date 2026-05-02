@@ -200,10 +200,12 @@ class T1632OutBlock(BaseModel):
         title="거래소별구분코드 (Exchange-specific division code)",
         description=(
             "Exchange-specific division code. Length 2. Declared Required "
-            "in the LS spec but absent from the LS official example response "
-            "— defaults to empty string for compatibility."
+            "in the LS spec but absent from the LS official example payload. "
+            "Live LS responses populate this with a single character "
+            "(observed: '0' for KOSPI/거래소). Defaults to empty string for "
+            "missing-field compatibility."
         ),
-        examples=["", "K"],
+        examples=["0", ""],
     )
 
 
@@ -236,7 +238,7 @@ class T1632OutBlock1(BaseModel):
             "LS may serialise this as a zero-padded string (e.g., '342.67') "
             "— Pydantic coerces automatically."
         ),
-        examples=[342.67],
+        examples=[342.67, 1006.59],
     )
     sign: str = Field(
         default="",
@@ -256,7 +258,7 @@ class T1632OutBlock1(BaseModel):
             "serialise as a zero-padded string (e.g., '004.59') — Pydantic "
             "coerces automatically."
         ),
-        examples=[4.59, 0.0, -2.30],
+        examples=[4.59, 7.56, 0.0, -2.30],
     )
     k200basis: float = Field(
         default=0.0,
@@ -266,7 +268,7 @@ class T1632OutBlock1(BaseModel):
             "The LS spec does not document the computation formula for this "
             "value — consume as reported."
         ),
-        examples=[0.28],
+        examples=[0.28, -1.34],
     )
     tot3: int = Field(
         default=0,
