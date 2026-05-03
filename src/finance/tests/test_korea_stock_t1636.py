@@ -416,3 +416,58 @@ class TestFieldExamplesValidate:
             f"{model_cls.__name__} fields without examples=[...]: {missing}. "
             "All InBlock / OutBlock1 fields must carry AI-readable examples."
         )
+
+
+# ===========================================================================
+# Anti-inference guard (Phase A2 correction): description must NOT carry
+# units (KRW / shares) or arithmetic identities not declared by xingAPI.
+# ===========================================================================
+
+
+class TestNoInferredUnits:
+    """xingAPI FUNCTION_MAP does not declare currency/quantity units or
+    arithmetic identities for these fields. The AI chatbot ingests
+    description verbatim, so any inferred unit ("in KRW" / "in shares")
+    or identity claim ("svalue = stksvalue - offervalue") would degrade
+    workflow generation accuracy.
+    """
+
+    @pytest.mark.parametrize(
+        "field_name",
+        [
+            "price", "change", "volume",
+            "svalue", "offervalue", "stksvalue",
+            "svolume", "offervolume", "stksvolume",
+        ],
+    )
+    def test_t1636_no_inferred_unit_in_description(self, field_name: str):
+        desc = T1636OutBlock1.model_fields[field_name].description or ""
+        assert "in KRW" not in desc, (
+            f"T1636OutBlock1.{field_name}: description must not infer KRW unit."
+        )
+        assert "in shares" not in desc, (
+            f"T1636OutBlock1.{field_name}: description must not infer shares unit."
+        )
+
+    @pytest.mark.parametrize("field_name", ["svalue", "svolume"])
+    def test_t1636_no_arithmetic_identity_in_description(self, field_name: str):
+        desc = T1636OutBlock1.model_fields[field_name].description or ""
+        assert "Identity:" not in desc, (
+            f"T1636OutBlock1.{field_name}: description must not assert an "
+            "arithmetic identity (xingAPI FUNCTION_MAP declares none)."
+        )
+        assert "stksvalue - offervalue" not in desc, (
+            f"T1636OutBlock1.{field_name}: must not embed svalue identity."
+        )
+        assert "stksvolume - offervolume" not in desc, (
+            f"T1636OutBlock1.{field_name}: must not embed svolume identity."
+        )
+
+    def test_t1636_outblock1_docstring_has_no_arithmetic_identity(self):
+        doc = T1636OutBlock1.__doc__ or ""
+        assert "stksvalue - offervalue" not in doc, (
+            "T1636OutBlock1 docstring must not assert svalue arithmetic identity."
+        )
+        assert "Identity:" not in doc, (
+            "T1636OutBlock1 docstring must not declare LS-undocumented identity."
+        )
