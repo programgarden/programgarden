@@ -568,3 +568,26 @@ class TestNoInferredUnits:
         assert "stksvalue - offervalue" not in doc, (
             "T1637OutBlock1 docstring must not embed svalue arithmetic identity."
         )
+
+
+# ===========================================================================
+# Phase A3 — sign field anti-inference guard
+# ===========================================================================
+
+
+class TestT1637SignNoInferredEnum:
+    """xingAPI FUNCTION_MAP declares ``sign`` as char(1) with no enum mapping.
+    Embedding '1' = upper limit / '5' = down would teach the AI chatbot a
+    semantic mapping that LS does not publish.
+    """
+
+    def test_sign_no_inferred_enum_mapping(self):
+        desc = T1637OutBlock1.model_fields["sign"].description or ""
+        for forbidden in [
+            "limit-up", "limit-down",
+            "upper limit", "lower limit",
+            "상한", "하한", "상승", "하락",
+        ]:
+            assert forbidden not in desc, (
+                f"T1637OutBlock1.sign: must not embed inferred enum token '{forbidden}'."
+            )

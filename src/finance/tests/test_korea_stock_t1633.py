@@ -713,3 +713,41 @@ class TestGuard8T1633UniqueFields:
         })
         assert row.jisu == pytest.approx(329.85)
         assert row.change == pytest.approx(16.32)
+
+
+# ===========================================================================
+# Phase A3 — sign field anti-inference guard
+# ===========================================================================
+
+
+class TestT1633SignNoInferredEnum:
+    """xingAPI FUNCTION_MAP declares ``sign`` as char(1) with no enum mapping.
+    The previous description embedded '1' = 상한 / '2' = 상승 / ... etc. via
+    the xingAPI companion documentation reference — but that companion is not
+    the LS public spec. Anti-inference applies to both the field description
+    and the module docstring (since the docstring is also AI-ingested).
+    """
+
+    def test_sign_field_no_inferred_enum_mapping(self):
+        desc = T1633OutBlock1.model_fields["sign"].description or ""
+        for forbidden in [
+            "limit-up", "limit-down",
+            "upper limit", "lower limit",
+            "상한", "하한", "상승", "하락",
+            "xingAPI companion",
+        ]:
+            assert forbidden not in desc, (
+                f"T1633OutBlock1.sign: must not embed inferred enum token '{forbidden}'."
+            )
+
+    def test_module_docstring_no_inferred_sign_enum(self):
+        import programgarden_finance.ls.korea_stock.program.t1633.blocks as t1633_blocks
+
+        doc = t1633_blocks.__doc__ or ""
+        for forbidden in [
+            "'1'=상한", "'5'=하락", "상한 / '2'=상승",
+            "xingAPI companion spec",
+        ]:
+            assert forbidden not in doc, (
+                f"t1633 blocks module docstring must not embed sign enum '{forbidden}'."
+            )
