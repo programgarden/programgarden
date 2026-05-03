@@ -35,7 +35,7 @@ src/
       ls/ — LS Securities API wrapper
         overseas_stock/ — REST 17 TR + Real 10 TR + extension (tracker)
         overseas_futureoption/ — REST 26 TR + Real 7 TR + extension (tracker)
-        korea_stock/ — REST 60 TR + Real 13 TR + extension (tracker)
+        korea_stock/ — REST 61 TR + Real 13 TR + extension (tracker)
         common/ — Real 1 TR (JIF market status, broker-agnostic)
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect

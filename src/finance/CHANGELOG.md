@@ -5,6 +5,13 @@
   continuation paging via single `date` CTS cursor (unlike t1632 which
   pages by date+time). Korean alias: `기간별프로그램매매추이`. Korea
   Stock REST TR count 59 → 60.
+- t1637 (종목별프로그램매매추이) — per-symbol program-trading time series.
+  Two display modes selected by `gubun2`: time-bucketed within a trading
+  day (`'0'`) or daily across multiple trading days (`'1'`). Supports
+  tr_cont continuation paging via a gubun2-aware cursor (time cursor in
+  time mode, date cursor in daily mode); `cts_idx` is a chart marker
+  fixed at 9999 per LS spec and is NOT used for paging. Korean alias:
+  `종목별프로그램매매추이`. Korea Stock REST TR count 60 → 61.
 
 ## [1.5.1] - 2026-04-18
 ### Dependencies
