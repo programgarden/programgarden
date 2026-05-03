@@ -514,3 +514,57 @@ class TestFieldExamplesValidate:
             f"{model_cls.__name__} fields without examples=[...]: {missing}. "
             "All InBlock / OutBlock1 fields must carry AI-readable examples."
         )
+
+
+# ===========================================================================
+# Anti-inference guard (Phase A2 correction): description must NOT carry
+# units (KRW / shares) or sibling-TR identity references not declared by xingAPI.
+# ===========================================================================
+
+
+class TestNoInferredUnits:
+    """xingAPI FUNCTION_MAP does not declare currency/quantity units, and
+    cross-referencing the t1636 sibling TR for an identity claim is itself
+    inference. The AI chatbot ingests description verbatim — any inferred
+    unit ("in KRW" / "in shares") or sibling-TR hedge would degrade
+    workflow generation accuracy.
+    """
+
+    @pytest.mark.parametrize(
+        "field_name",
+        [
+            "price", "change", "volume",
+            "svalue", "offervalue", "stksvalue",
+            "svolume", "offervolume", "stksvolume",
+        ],
+    )
+    def test_t1637_no_inferred_unit_in_description(self, field_name: str):
+        desc = T1637OutBlock1.model_fields[field_name].description or ""
+        assert "in KRW" not in desc, (
+            f"T1637OutBlock1.{field_name}: description must not infer KRW unit."
+        )
+        assert "in shares" not in desc, (
+            f"T1637OutBlock1.{field_name}: description must not infer shares unit."
+        )
+
+    @pytest.mark.parametrize("field_name", ["svalue", "svolume"])
+    def test_t1637_no_sibling_tr_identity_reference(self, field_name: str):
+        desc = T1637OutBlock1.model_fields[field_name].description or ""
+        assert "Per the t1636 sibling TR" not in desc, (
+            f"T1637OutBlock1.{field_name}: must not hedge via sibling TR reference."
+        )
+        assert "t1636 sibling TR" not in desc, (
+            f"T1637OutBlock1.{field_name}: must not reference sibling TR identity."
+        )
+        assert "Identity:" not in desc, (
+            f"T1637OutBlock1.{field_name}: must not assert an identity claim."
+        )
+
+    def test_t1637_outblock1_docstring_has_no_sibling_tr_identity(self):
+        doc = T1637OutBlock1.__doc__ or ""
+        assert "t1636 sibling TR" not in doc, (
+            "T1637OutBlock1 docstring must not hedge via sibling TR identity."
+        )
+        assert "stksvalue - offervalue" not in doc, (
+            "T1637OutBlock1 docstring must not embed svalue arithmetic identity."
+        )

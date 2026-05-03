@@ -176,17 +176,10 @@ class T1637OutBlock(BaseModel):
 class T1637OutBlock1(BaseModel):
     """t1637OutBlock1 — per-symbol program-trading time-series row.
 
-    Note on LS field naming (counter-intuitive — confirmed in t1636 sibling TR):
+    Note on LS field naming (counter-intuitive):
         - ``svalue`` / ``svolume`` are the **net-buy** amount/quantity.
         - ``stksvalue`` / ``stksvolume`` are the **buy** amount/quantity.
         - ``offervalue`` / ``offervolume`` are the **sell** amount/quantity.
-
-    The t1637 LS public spec does not document the relationship between these
-    six fields directly. The t1636 sibling TR (which shares the same naming
-    convention) documents ``svalue == stksvalue - offervalue``; the t1637
-    LS official example response carries all-zero buy/sell amounts and
-    quantities so the identity cannot be verified locally from the example.
-    Consume values as returned by LS.
 
     Row ordering (date / time DESC vs ASC) is not documented by LS. The LS
     official example response shows DESC ordering (newest first), but do not
@@ -209,7 +202,7 @@ class T1637OutBlock1(BaseModel):
     price: int = Field(
         default=0,
         title="현재가 (Current price)",
-        description="Current price in KRW. Length 8.",
+        description="Current price. Length 8.",
         examples=[3685, 3645, 70000],
     )
     sign: str = Field(
@@ -225,7 +218,7 @@ class T1637OutBlock1(BaseModel):
     change: int = Field(
         default=0,
         title="대비 (Price change)",
-        description="Price change versus previous close in KRW. Length 8.",
+        description="Price change versus previous close. Length 8.",
         examples=[0, 25, -20],
     )
     diff: float = Field(
@@ -241,54 +234,46 @@ class T1637OutBlock1(BaseModel):
     volume: int = Field(
         default=0,
         title="거래량 (Trading volume)",
-        description="Total trading volume in shares. Length 12.",
+        description="Total trading volume. Length 12.",
         examples=[0, 76162, 322192],
     )
     svalue: int = Field(
         default=0,
         title="순매수금액 (Program net-buy amount)",
         description=(
-            "Program net-buy amount in KRW. Per the t1636 sibling TR LS uses the "
-            "same naming convention (svalue=net-buy, stksvalue=buy, "
-            "offervalue=sell); the t1637 LS spec does not document the identity "
-            "directly — consume values as returned. A positive value indicates "
-            "net buy; a negative value indicates net sell. Length 15."
+            "Program net-buy amount. A positive value indicates net buy; "
+            "a negative value indicates net sell. Length 15."
         ),
         examples=[188914, -74311, 0],
     )
     offervalue: int = Field(
         default=0,
         title="매도금액 (Program sell amount)",
-        description="Program sell amount in KRW. Length 15.",
+        description="Program sell amount. Length 15.",
         examples=[0, 800_000_000],
     )
     stksvalue: int = Field(
         default=0,
         title="매수금액 (Program buy amount)",
-        description="Program buy amount in KRW. Length 15.",
+        description="Program buy amount. Length 15.",
         examples=[0, 1_000_000_000],
     )
     svolume: int = Field(
         default=0,
         title="순매수수량 (Program net-buy quantity)",
-        description=(
-            "Program net-buy quantity in shares. Per the t1636 sibling TR LS "
-            "uses the same naming convention (svolume=net-buy, stksvolume=buy, "
-            "offervolume=sell); the t1637 LS spec does not document the identity "
-            "directly — consume values as returned. Length 12."
-        ),
+        description="Program net-buy quantity. Length 12.",
         examples=[49935, -20307, 0],
     )
     offervolume: int = Field(
         default=0,
         title="매도수량 (Program sell quantity)",
-        description="Program sell quantity in shares. Length 12.",
+        description="Program sell quantity. Length 12.",
         examples=[0, 8_000],
     )
     stksvolume: int = Field(
         default=0,
         title="매수수량 (Program buy quantity)",
-        description="Program buy quantity in shares. Length 12.",
+        description="Program buy quantity. Length 12.",
         examples=[0, 10_000],
     )
     shcode: str = Field(

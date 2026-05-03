@@ -145,7 +145,6 @@ class T1636OutBlock1(BaseModel):
         - ``svalue`` / ``svolume`` are the **net-buy** amount/quantity.
         - ``stksvalue`` / ``stksvolume`` are the **buy** amount/quantity.
         - ``offervalue`` / ``offervolume`` are the **sell** amount/quantity.
-        - Identity: ``svalue == stksvalue - offervalue`` (and same for volume).
     """
 
     rank: int = Field(
@@ -163,7 +162,7 @@ class T1636OutBlock1(BaseModel):
     price: int = Field(
         default=0,
         title="현재가 (Current price)",
-        description="Current price in KRW. Length 8.",
+        description="Current price. Length 8.",
         examples=[3685, 7360, 70000],
     )
     sign: str = Field(
@@ -178,7 +177,7 @@ class T1636OutBlock1(BaseModel):
     change: int = Field(
         default=0,
         title="대비 (Price change)",
-        description="Price change versus previous close in KRW. Length 8.",
+        description="Price change versus previous close. Length 8.",
         examples=[25, -20, 0],
     )
     diff: float = Field(
@@ -194,49 +193,45 @@ class T1636OutBlock1(BaseModel):
     volume: int = Field(
         default=0,
         title="거래량 (Trading volume)",
-        description="Total trading volume in shares. Length 12.",
+        description="Total trading volume. Length 12.",
         examples=[76162, 322192],
     )
     svalue: int = Field(
         default=0,
         title="순매수금액 (Program net-buy amount)",
         description=(
-            "Program net-buy amount in KRW. Identity: ``svalue = stksvalue - offervalue`` "
-            "(net-buy = buy - sell). A positive value indicates net buy. Length 12."
+            "Program net-buy amount. A positive value indicates net buy. Length 12."
         ),
         examples=[200_000_000, -50_000_000, 0],
     )
     offervalue: int = Field(
         default=0,
         title="매도금액 (Program sell amount)",
-        description="Program sell amount in KRW. Length 12.",
+        description="Program sell amount. Length 12.",
         examples=[800_000_000, 0],
     )
     stksvalue: int = Field(
         default=0,
         title="매수금액 (Program buy amount)",
-        description="Program buy amount in KRW. Length 12.",
+        description="Program buy amount. Length 12.",
         examples=[1_000_000_000, 0],
     )
     svolume: int = Field(
         default=0,
         title="순매수수량 (Program net-buy quantity)",
-        description=(
-            "Program net-buy quantity in shares. Identity: "
-            "``svolume = stksvolume - offervolume`` (net-buy = buy - sell). Length 12."
-        ),
+        description="Program net-buy quantity. Length 12.",
         examples=[49935, 2_000, -500],
     )
     offervolume: int = Field(
         default=0,
         title="매도수량 (Program sell quantity)",
-        description="Program sell quantity in shares. Length 12.",
+        description="Program sell quantity. Length 12.",
         examples=[74893, 8_000],
     )
     stksvolume: int = Field(
         default=0,
         title="매수수량 (Program buy quantity)",
-        description="Program buy quantity in shares. Length 12.",
+        description="Program buy quantity. Length 12.",
         examples=[124828, 10_000],
     )
     sgta: int = Field(
