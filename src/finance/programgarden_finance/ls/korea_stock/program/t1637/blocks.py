@@ -209,9 +209,10 @@ class T1637OutBlock1(BaseModel):
         default="",
         title="대비구분 (Price change sign)",
         description=(
-            "Price change sign code (LS standard). '1' = upper limit, '2' = up, "
-            "'3' = unchanged, '4' = lower limit, '5' = down. May be empty in the "
-            "LS official example response."
+            "Change direction indicator. Length 1. The LS spec for t1637 "
+            "does not publish an enum mapping for this field — consume the "
+            "raw value as reported by LS without assuming any symbol mapping. "
+            "May be empty in the LS official example response."
         ),
         examples=["", "2", "5"],
     )

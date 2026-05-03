@@ -471,3 +471,53 @@ class TestNoInferredUnits:
         assert "Identity:" not in doc, (
             "T1636OutBlock1 docstring must not declare LS-undocumented identity."
         )
+
+
+# ===========================================================================
+# Phase A3 — sgta / mkcap_cmpr_val / sign anti-inference guards
+# ===========================================================================
+
+
+class TestNoInferredEnumOrUnit:
+    """xingAPI FUNCTION_MAP declares no currency unit for ``sgta`` (long, 15),
+    no arithmetic between ``mkcap_cmpr_val`` and (``svalue``, ``sgta``), and
+    no enum mapping for ``sign`` (char, 1). The AI chatbot ingests the
+    description verbatim, so embedding inferred '억 원' units, identity
+    formulas, or sign enums (e.g., '1' = upper limit) would degrade workflow
+    generation accuracy.
+    """
+
+    def test_t1636_sgta_no_inferred_unit(self):
+        desc = T1636OutBlock1.model_fields["sgta"].description or ""
+        assert "Empirically observed" not in desc, (
+            "T1636OutBlock1.sgta: must not include 'Empirically observed' wording."
+        )
+        assert "억 원" not in desc, (
+            "T1636OutBlock1.sgta: must not infer 억 원 unit."
+        )
+        assert "100M KRW" not in desc, (
+            "T1636OutBlock1.sgta: must not infer 100M KRW unit."
+        )
+
+    def test_t1636_mkcap_cmpr_val_no_arithmetic_inference(self):
+        desc = T1636OutBlock1.model_fields["mkcap_cmpr_val"].description or ""
+        assert "svalue" not in desc, (
+            "T1636OutBlock1.mkcap_cmpr_val: must not reference svalue identity."
+        )
+        assert "sgta" not in desc, (
+            "T1636OutBlock1.mkcap_cmpr_val: must not reference sgta identity."
+        )
+        assert "in %" not in desc, (
+            "T1636OutBlock1.mkcap_cmpr_val: must not infer % unit."
+        )
+
+    def test_t1636_sign_no_inferred_enum_mapping(self):
+        desc = T1636OutBlock1.model_fields["sign"].description or ""
+        for forbidden in [
+            "limit-up", "limit-down",
+            "upper limit", "lower limit",
+            "상한", "하한", "상승", "하락",
+        ]:
+            assert forbidden not in desc, (
+                f"T1636OutBlock1.sign: must not embed inferred enum token '{forbidden}'."
+            )

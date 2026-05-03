@@ -32,9 +32,9 @@ Key design notes:
   non-numeric inputs immediately.
 - First request must send ``date=' '`` (single space) per the LS official
   example payload — modelled as the default value.
-- The ``sign`` row field is documented in the xingAPI companion spec
-  with the enum '1'=상한 / '2'=상승 / '3'=보합 / '4'=하한 / '5'=하락.
-  Modelled as ``str``.
+- The ``sign`` row field is modelled as ``str``. The LS public spec
+  does not publish an enum mapping for this field — consume the raw
+  value as reported by LS.
 - Inferred formulas, units, or row ordering that are not in the LS public
   spec are intentionally omitted — consume every value as reported by LS.
 
@@ -269,10 +269,9 @@ class T1633OutBlock1(BaseModel):
         default="",
         title="대비구분 (Change sign)",
         description=(
-            "Change direction indicator. Length 1. Per the xingAPI "
-            "companion documentation: '1' = 상한 (limit-up), "
-            "'2' = 상승 (up), '3' = 보합 (unchanged), "
-            "'4' = 하한 (limit-down), '5' = 하락 (down)."
+            "Change direction indicator. Length 1. The LS spec for t1633 "
+            "does not publish an enum mapping for this field — consume the "
+            "raw value as reported by LS without assuming any symbol mapping."
         ),
         examples=["2", "5", "3"],
     )
