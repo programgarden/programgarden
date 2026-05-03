@@ -544,3 +544,39 @@ class TestGuard7FieldSetRegression:
         assert row.k200jisu == pytest.approx(342.67)
         assert row.change == pytest.approx(4.59)
         assert row.k200basis == pytest.approx(0.28)
+
+
+# ===========================================================================
+# Guard 8 — xingAPI FUNCTION_MAP metadata alignment (Phase A1 correction)
+# ===========================================================================
+
+
+class TestGuard8FieldLengthMatchesXingAPI:
+    """xingAPI FUNCTION_MAP is the ground truth for field length.
+
+    AI chatbot consumes the description verbatim — any drift from the
+    LS xingAPI metadata (e.g., the prior ``Length 6 (HHMMSS)`` claim
+    for the ``time`` field) directly degrades workflow generation.
+    """
+
+    def test_t1632_inblock_time_field_length_matches_ls_spec(self):
+        """xingAPI FUNCTION_MAP: T1632InBlock.time = char,8."""
+        desc = T1632InBlock.model_fields["time"].description
+        assert "Length 8" in desc, (
+            "T1632InBlock.time must declare Length 8 (xingAPI FUNCTION_MAP)."
+        )
+        assert "Length 6" not in desc, (
+            "T1632InBlock.time must NOT declare Length 6 — that contradicts "
+            "the xingAPI FUNCTION_MAP (char,8)."
+        )
+
+    def test_t1632_outblock_time_field_length_matches_ls_spec(self):
+        """xingAPI FUNCTION_MAP: T1632OutBlock.time = char,8."""
+        desc = T1632OutBlock.model_fields["time"].description
+        assert "Length 8" in desc, (
+            "T1632OutBlock.time must declare Length 8 (xingAPI FUNCTION_MAP)."
+        )
+        assert "Length 6" not in desc, (
+            "T1632OutBlock.time must NOT declare Length 6 — that contradicts "
+            "the xingAPI FUNCTION_MAP (char,8)."
+        )

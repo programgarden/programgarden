@@ -116,7 +116,7 @@ class T1632InBlock(BaseModel):
         default="",
         title="시간 (Time cursor)",
         description=(
-            "Time cursor for continuation paging. Length 6 (HHMMSS). "
+            "Time cursor for continuation paging. Length 8 (LS spec). "
             "Send empty string for the first request. For subsequent pages "
             "use the value from ``T1632OutBlock.time``."
         ),
@@ -181,8 +181,8 @@ class T1632OutBlock(BaseModel):
         default="",
         title="시간CTS (Time continuation cursor)",
         description=(
-            "Time continuation cursor. Length 6. Used alongside ``date`` to "
-            "request the next page when ``tr_cont='Y'``."
+            "Time continuation cursor. Length 8 (LS spec). Used alongside "
+            "``date`` to request the next page when ``tr_cont='Y'``."
         ),
         examples=["175811", ""],
     )
