@@ -68,7 +68,8 @@ class T1632InBlock(BaseModel):
             "Market division. '0' = 거래소 (KOSPI exchange / KRX), "
             "'1' = 코스닥 (KOSDAQ). Required. "
             "NOTE: encoding is OPPOSITE to t1631 — t1631 uses '1' for 거래소 "
-            "and '2' for KOSDAQ. Do not copy-paste t1631 inputs here."
+            "and '2' for KOSDAQ. Do not copy-paste t1631 inputs here. "
+            "Length 1."
         ),
         examples=["0", "1"],
     )
@@ -77,7 +78,7 @@ class T1632InBlock(BaseModel):
         title="금액수량구분 (Amount/quantity mode)",
         description=(
             "Amount or quantity mode. '0' = 금액 (amount), "
-            "'1' = 수량 (quantity). Required."
+            "'1' = 수량 (quantity). Required. Length 1."
         ),
         examples=["0", "1"],
     )
@@ -128,7 +129,7 @@ class T1632InBlock(BaseModel):
         description=(
             "Exchange division code. 'K' = KRX, 'N' = NXT, 'U' = 통합 "
             "(unified). Per LS spec, any other value is treated as KRX "
-            "server-side. Defaults to 'K'."
+            "server-side. Defaults to 'K'. Length 1."
         ),
         examples=["K", "N", "U"],
     )

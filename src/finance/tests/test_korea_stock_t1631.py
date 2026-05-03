@@ -494,3 +494,23 @@ class TestFieldExamplesValidate:
             f"{model_cls.__name__} fields without examples=[...]: {missing}. "
             "All InBlock / OutBlock / OutBlock1 fields must carry AI-readable examples."
         )
+
+
+class TestInBlockCharLengthConsistency:
+    """xingAPI FUNCTION_MAP: char,1 fields must declare ``Length 1``.
+
+    AI chatbot consumes the description verbatim. Inconsistent length
+    documentation across sibling program TRs (some declare ``Length 8``
+    for date fields, some omit ``Length 1`` for char,1 enums) produces
+    drift in workflow JSON generation. xingAPI ground truth declares
+    every InBlock char,1 field as ``char,1`` — the description must
+    surface that explicitly.
+    """
+
+    @pytest.mark.parametrize("field_name", ["gubun", "dgubun", "exchgubun"])
+    def test_t1631_inblock_char_one_length_documented(self, field_name: str):
+        desc = T1631InBlock.model_fields[field_name].description or ""
+        assert "Length 1" in desc, (
+            f"T1631InBlock.{field_name} must document 'Length 1' "
+            f"(xingAPI FUNCTION_MAP: char,1)."
+        )
