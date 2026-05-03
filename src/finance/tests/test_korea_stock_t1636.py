@@ -521,3 +521,24 @@ class TestNoInferredEnumOrUnit:
             assert forbidden not in desc, (
                 f"T1636OutBlock1.sign: must not embed inferred enum token '{forbidden}'."
             )
+
+
+class TestInBlockCharLengthConsistency:
+    """xingAPI FUNCTION_MAP: char,1 fields must declare ``Length 1``.
+
+    Sibling program TRs drift in length-string coverage of
+    single-character enum fields. xingAPI ground truth declares every
+    InBlock char,1 field as ``char,1`` — the description must surface
+    that explicitly so the AI chatbot generates consistent payloads.
+    ``gubun2`` is omitted: it enumerates every accepted value via
+    ``Literal['0', '1', '2', '3', '4']``, which is surfaced directly in
+    the JSON schema.
+    """
+
+    @pytest.mark.parametrize("field_name", ["gubun", "gubun1", "exchgubun"])
+    def test_t1636_inblock_char_one_length_documented(self, field_name: str):
+        desc = T1636InBlock.model_fields[field_name].description or ""
+        assert "Length 1" in desc, (
+            f"T1636InBlock.{field_name} must document 'Length 1' "
+            f"(xingAPI FUNCTION_MAP: char,1)."
+        )

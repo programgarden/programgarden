@@ -580,3 +580,24 @@ class TestGuard8FieldLengthMatchesXingAPI:
             "T1632OutBlock.time must NOT declare Length 6 — that contradicts "
             "the xingAPI FUNCTION_MAP (char,8)."
         )
+
+
+class TestInBlockCharLengthConsistency:
+    """xingAPI FUNCTION_MAP: char,1 fields must declare ``Length 1``.
+
+    Sibling program TRs (t1631 / t1633 / t1636) drift in length-string
+    coverage of single-character enum fields. xingAPI ground truth
+    declares every InBlock char,1 field as ``char,1`` — the description
+    must surface that explicitly so the AI chatbot generates
+    consistent payloads. ``gubun2`` and ``gubun3`` are intentionally
+    omitted: both are forced to ``Literal['1']`` already, which the
+    JSON schema surfaces directly.
+    """
+
+    @pytest.mark.parametrize("field_name", ["gubun", "gubun1", "exchgubun"])
+    def test_t1632_inblock_char_one_length_documented(self, field_name: str):
+        desc = T1632InBlock.model_fields[field_name].description or ""
+        assert "Length 1" in desc, (
+            f"T1632InBlock.{field_name} must document 'Length 1' "
+            f"(xingAPI FUNCTION_MAP: char,1)."
+        )

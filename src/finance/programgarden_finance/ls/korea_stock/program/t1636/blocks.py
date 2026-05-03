@@ -42,7 +42,7 @@ class T1636InBlock(BaseModel):
         ...,
         title="구분 (Market division)",
         description=(
-            "Market division. '0' = KOSPI (코스피), '1' = KOSDAQ (코스닥). Required."
+            "Market division. '0' = KOSPI (코스피), '1' = KOSDAQ (코스닥). Required. Length 1."
         ),
         examples=["0", "1"],
     )
@@ -51,7 +51,7 @@ class T1636InBlock(BaseModel):
         title="금액수량구분 (Amount/quantity selector)",
         description=(
             "Amount-vs-quantity selector for the result set. "
-            "'0' = quantity / 수량, '1' = amount / 금액. Required."
+            "'0' = quantity / 수량, '1' = amount / 금액. Required. Length 1."
         ),
         examples=["0", "1"],
     )
@@ -90,7 +90,7 @@ class T1636InBlock(BaseModel):
         title="거래소구분코드 (Exchange division code)",
         description=(
             "Exchange filter. 'K' = KRX (default), 'N' = NXT, 'U' = unified KRX+NXT. "
-            "Other values are treated as KRX per LS spec."
+            "Other values are treated as KRX per LS spec. Length 1."
         ),
         examples=["K", "N", "U"],
     )

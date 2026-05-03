@@ -53,7 +53,8 @@ class T1631InBlock(BaseModel):
         description=(
             "Market division. '1' = 거래소 (exchange), '2' = 코스닥 (KOSDAQ). "
             "Required. NOTE: t1636 uses a different ``gubun`` encoding for the "
-            "same market dimension — do not copy-paste t1636 inputs verbatim."
+            "same market dimension — do not copy-paste t1636 inputs verbatim. "
+            "Length 1."
         ),
         examples=["1", "2"],
     )
@@ -63,7 +64,7 @@ class T1631InBlock(BaseModel):
         description=(
             "Date selection mode. '1' = 당일조회 (same-day query — sdate/edate "
             "may be left empty per LS official example), '2' = 기간조회 "
-            "(period query over [sdate, edate]). Required."
+            "(period query over [sdate, edate]). Required. Length 1."
         ),
         examples=["1", "2"],
     )
@@ -94,7 +95,7 @@ class T1631InBlock(BaseModel):
             "Exchange division code. 'K' = KRX, 'N' = NXT, 'U' = 통합 "
             "(unified). Per LS spec, any other value is treated as KRX "
             "server-side. (This client uses 'K' as the default for "
-            "convenience — LS spec marks the field as Required.)"
+            "convenience — LS spec marks the field as Required.) Length 1."
         ),
         examples=["K", "N", "U"],
     )
