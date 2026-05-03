@@ -6,7 +6,7 @@ from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
 
-from . import t1631, t1632, t1633, t1636
+from . import t1631, t1632, t1633, t1636, t1637
 from .t1631 import TrT1631
 from .t1631.blocks import T1631InBlock, T1631Request, T1631RequestHeader
 from .t1632 import TrT1632
@@ -15,6 +15,8 @@ from .t1633 import TrT1633
 from .t1633.blocks import T1633InBlock, T1633Request, T1633RequestHeader
 from .t1636 import TrT1636
 from .t1636.blocks import T1636InBlock, T1636Request, T1636RequestHeader
+from .t1637 import TrT1637
+from .t1637.blocks import T1637InBlock, T1637Request, T1637RequestHeader
 
 
 class Program:
@@ -31,11 +33,15 @@ class Program:
           trading trend over [fdate, tdate]. Supports tr_cont paging
           (date cursor only).
         - ``t1636`` — Program trading flow per symbol.
+        - ``t1637`` — Per-symbol program-trading time series, bucketed by
+          time (gubun2='0') or by day (gubun2='1'). Supports tr_cont
+          paging via a gubun2-aware cursor (time cursor in time mode,
+          date cursor in daily mode).
 
     Korean aliases are exposed for parity with the rest of the SDK
     (``프로그램매매`` on KoreaStock, ``프로그램매매종합조회``,
-    ``시간대별프로그램매매추이``, ``기간별프로그램매매추이``, and
-    ``종목별프로그램매매동향`` here).
+    ``시간대별프로그램매매추이``, ``기간별프로그램매매추이``,
+    ``종목별프로그램매매동향``, and ``종목별프로그램매매추이`` here).
     """
 
     def __init__(self, token_manager: TokenManager):
@@ -266,6 +272,60 @@ class Program:
         "(includes the net-buy ratio versus market cap added by LS on 2026-01-08)."
     )
 
+    @require_korean_alias
+    def t1637(
+        self,
+        body: T1637InBlock,
+        header: Optional[T1637RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1637:
+        """Return a TrT1637 request handle for per-symbol program-trading time series.
+
+        Returns the program-trading flow (price, change, percent change, volume,
+        plus buy / sell / net-buy amount and quantity) for one Korean stock,
+        bucketed by time (``gubun2='0'``) or by day (``gubun2='1'``).
+
+        Supports tr_cont continuation paging via a single cursor selected by
+        ``gubun2``: time cursor in time mode, date cursor in daily mode.
+        ``cts_idx`` is described in the LS spec as a chart-query marker
+        (``IDXCTS(9999:차트)``); it is fixed at 9999 by default and is not
+        used for continuation paging by this SDK (the date / time cursors
+        are used per LS spec).
+
+        Args:
+            body: ``T1637InBlock`` — gubun1 (qty/amount), gubun2 (time/daily mode),
+                shcode (6-digit stock code), date / time (continuation cursors,
+                empty on first request), cts_idx (chart marker, default 9999),
+                exchgubun ('K'/'N'/'U', default 'K').
+            header: Optional request header overrides.
+            options: Optional setup options (rate limit, retry behavior).
+
+        Returns:
+            TrT1637 — call ``.req()`` for a single page or ``.occurs_req()``
+            to auto-page through the whole time series.
+        """
+
+        request_data = T1637Request(
+            body={
+                "t1637InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1637(request_data)
+
+    종목별프로그램매매추이 = t1637
+    종목별프로그램매매추이.__doc__ = (
+        "Query per-symbol program-trading time series (price, change, buy / sell / "
+        "net-buy amount and quantity) bucketed by time or day. Supports tr_cont "
+        "auto-paging via occurs_req() with a gubun2-aware cursor."
+    )
+
 
 __all__ = [
     Program,
@@ -273,4 +333,5 @@ __all__ = [
     t1632,
     t1633,
     t1636,
+    t1637,
 ]
