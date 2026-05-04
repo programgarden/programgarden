@@ -118,7 +118,7 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Overseas Stock Nodes: 22 nodes (broker, account, market, order, realtime, symbol)
 - [x] Overseas Futures Nodes: 22 nodes (same structure as stock)
 - [x] Korea Stock Nodes: 13 nodes (broker, account, market, order, realtime, symbol)
-- [x] Korea Stock Finance API: 59 REST + 13 Real TR with KrStockAccountTracker
+- [x] Korea Stock Finance API: 63 REST + 13 Real TR with KrStockAccountTracker
 - [x] AI Agent: LLMModelNode + AIAgentNode with tool edges (all connected tools forwarded to LLM)
 - [x] Strategy Plugins: 77 plugins (TECHNICAL 59 + POSITION 18)
 - [x] Community Nodes: TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode
