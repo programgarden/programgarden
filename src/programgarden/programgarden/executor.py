@@ -14823,6 +14823,35 @@ class WorkflowJob:
         self._has_schedule_node = self._check_has_schedule_node()
         self._stay_connected_nodes = self._find_stay_connected_nodes()
 
+        # Per-node state cache listener — mirrors every NodeStateEvent into
+        # _node_states/_node_errors/_node_durations so get_state() surfaces
+        # accurate per-node diagnostics without scraping logs.
+        from programgarden_core.bases import BaseExecutionListener
+
+        class _NodeStateCacheListener(BaseExecutionListener):
+            """Internal listener that updates WorkflowJob's per-node diagnostic cache."""
+
+            def __init__(inner_self, job: "WorkflowJob") -> None:
+                super().__init__()
+                inner_self._job = job
+
+            async def on_node_state_change(inner_self, event) -> None:
+                ts = (
+                    event.timestamp.isoformat()
+                    if event.error and event.timestamp is not None
+                    else None
+                )
+                inner_self._job._record_node_state(
+                    event.node_id,
+                    event.state,
+                    error=event.error,
+                    duration_ms=event.duration_ms,
+                    error_timestamp=ts,
+                )
+
+        self._node_state_cache_listener = _NodeStateCacheListener(self)
+        self.context.add_listener(self._node_state_cache_listener)
+
     # === Listener Management ===
 
     def add_listener(self, listener: ExecutionListener) -> "WorkflowJob":
@@ -15141,7 +15170,7 @@ class WorkflowJob:
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
-                    state=NodeState.COMPLETED,
+                    state=NodeState.SKIPPED,
                 )
                 continue
 
@@ -15302,7 +15331,8 @@ class WorkflowJob:
                     await self._save_checkpoint()
 
             except Exception as e:
-                # 🆕 노드 실패 알림
+                # 🆕 노드 실패 알림 — listener (_NodeStateCacheListener) 가 자동으로
+                # _node_states / _node_errors / _node_durations 에 캐시함
                 duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 error_msg = str(e)
                 error_ts = datetime.utcnow().isoformat()
@@ -15312,13 +15342,6 @@ class WorkflowJob:
                     state=NodeState.FAILED,
                     error=error_msg,
                     duration_ms=duration_ms,
-                )
-                self._record_node_state(
-                    node_id,
-                    NodeState.FAILED,
-                    error=error_msg,
-                    duration_ms=duration_ms,
-                    error_timestamp=error_ts,
                 )
                 self.stats["errors_count"] += 1
                 self.stats["last_error"] = f"{node_id}: {error_msg}"
@@ -16559,15 +16582,29 @@ class WorkflowJob:
             self._node_durations[node_id] = duration_ms
 
     def get_state(self) -> Dict[str, Any]:
-        """Get state snapshot"""
-        # 노드별 상태 및 outputs 수집
-        nodes_state = {}
-        for node_id in self.context._outputs.keys():
-            outputs = self.context.get_all_outputs(node_id)
-            nodes_state[node_id] = {
-                "state": "completed",
-                "outputs": outputs,
+        """Get state snapshot.
+
+        Returns a diagnostic payload that surfaces per-node state, errors,
+        and duration sourced from `_node_states` / `_node_errors` /
+        `_node_durations` caches (populated by `_NodeStateCacheListener` on
+        every `notify_node_state` event). All workflow nodes appear in
+        `nodes` (default `state="pending"` for not-yet-executed nodes), so
+        callers can rely on key presence regardless of execution progress.
+        """
+        # Per-node state: every workflow node, defaulting to "pending"
+        nodes_state: Dict[str, Dict[str, Any]] = {}
+        for node_id, node in self.workflow.nodes.items():
+            cached_state = self._node_states.get(node_id, NodeState.PENDING)
+            entry: Dict[str, Any] = {
+                "state": cached_state.value,
+                "node_type": node.node_type,
+                "outputs": self.context.get_all_outputs(node_id),
             }
+            if node_id in self._node_errors:
+                entry["error"] = self._node_errors[node_id]
+            if node_id in self._node_durations:
+                entry["duration_ms"] = self._node_durations[node_id]
+            nodes_state[node_id] = entry
 
         return {
             "job_id": self.job_id,
