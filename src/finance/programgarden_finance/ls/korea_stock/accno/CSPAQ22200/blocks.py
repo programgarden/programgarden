@@ -156,6 +156,17 @@ class CSPAQ22200OutBlock2(BaseModel):
     """ 금일매수정산금액 """
     CslLoanAmtdt1: int = Field(default=0, title="매도대금담보대출금액", description="매도대금담보대출금액")
     """ 매도대금담보대출금액 """
+    RcvblUablOrdAbleAmt: int = Field(
+        default=0,
+        title="미수불가주문가능금액 (Order-able amount disallowing receivable)",
+        description=(
+            "Order-able cash amount that excludes the unsettled-receivable-disallowed portion. "
+            "in KRW. Length 16. Pydantic auto-coerces. "
+            "Added by LS Securities on 2026-04-10."
+        ),
+        examples=[306, 0, 100000],
+    )
+    """ 미수불가주문가능금액 """
 
 
 class CSPAQ22200Response(BaseModel):
