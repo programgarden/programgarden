@@ -6,7 +6,7 @@ from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
 
-from . import t1631, t1632, t1633, t1636, t1637, t1640
+from . import t1631, t1632, t1633, t1636, t1637, t1640, t1662
 from .t1631 import TrT1631
 from .t1631.blocks import T1631InBlock, T1631Request, T1631RequestHeader
 from .t1632 import TrT1632
@@ -19,6 +19,8 @@ from .t1637 import TrT1637
 from .t1637.blocks import T1637InBlock, T1637Request, T1637RequestHeader
 from .t1640 import TrT1640
 from .t1640.blocks import T1640InBlock, T1640Request, T1640RequestHeader
+from .t1662 import TrT1662
+from .t1662.blocks import T1662InBlock, T1662Request, T1662RequestHeader
 
 
 class Program:
@@ -42,12 +44,18 @@ class Program:
         - ``t1640`` — Program-trading mini snapshot for one market +
           arbitrage combination (no continuation; uses unique 2-digit
           ``gubun`` encoding distinct from sibling TRs).
+        - ``t1662`` — Time-chart program-trading query: Object Array of
+          time-bucketed KP200 / BASIS / sign / change / total /
+          arbitrage / non-arbitrage buy / sell / net-buy / volume rows
+          for KOSPI (``gubun='0'``) or KOSDAQ (``gubun='1'``). Single
+          response — no continuation paging.
 
     Korean aliases are exposed for parity with the rest of the SDK
     (``프로그램매매`` on KoreaStock, ``프로그램매매종합조회``,
     ``시간대별프로그램매매추이``, ``기간별프로그램매매추이``,
-    ``종목별프로그램매매동향``, ``종목별프로그램매매추이``, and
-    ``프로그램매매종합조회미니`` here).
+    ``종목별프로그램매매동향``, ``종목별프로그램매매추이``,
+    ``프로그램매매종합조회미니``, and
+    ``시간대별프로그램매매추이차트`` here).
     """
 
     def __init__(self, token_manager: TokenManager):
@@ -387,6 +395,53 @@ class Program:
         "for one market + arbitrage combination."
     )
 
+    @require_korean_alias
+    def t1662(
+        self,
+        body: T1662InBlock,
+        header: Optional[T1662RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1662:
+        """Return a TrT1662 request handle for the time-chart program-trading query.
+
+        Returns time-bucketed KP200 / BASIS / sign / change / program-trading flow
+        rows (Object Array) for KOSPI (``gubun='0'``) or KOSDAQ (``gubun='1'``).
+        Unlike t1632 (which supports tr_cont CTS paging), t1662 returns the entire
+        chart in a single response — no continuation, no occurs_req.
+
+        Args:
+            body: ``T1662InBlock`` — gubun (market: '0'=거래소, '1'=코스닥),
+                gubun1 (amount/qty: '0'=금액, '1'=수량),
+                gubun3 (today/prior: '0'=당일, '1'=전일),
+                exchgubun ('K'/'N'/'U', default 'K').
+            header: Optional request header overrides.
+            options: Optional setup options (rate limit, retry behavior).
+
+        Returns:
+            TrT1662 — call ``.req()`` or ``.req_async()``. No ``occurs_req`` method.
+        """
+
+        request_data = T1662Request(
+            body={
+                "t1662InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1662(request_data)
+
+    시간대별프로그램매매추이차트 = t1662
+    시간대별프로그램매매추이차트.__doc__ = (
+        "Query time-chart program-trading flow (KP200 / BASIS / change-sign / "
+        "total / arbitrage / non-arbitrage buy / sell / net-buy / volume) per time "
+        "bucket on KOSPI or KOSDAQ. Single response — no continuation paging."
+    )
+
 
 __all__ = [
     Program,
@@ -396,4 +451,5 @@ __all__ = [
     t1636,
     t1637,
     t1640,
+    t1662,
 ]
