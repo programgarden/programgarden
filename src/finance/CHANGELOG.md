@@ -1,4 +1,16 @@
 ## [Unreleased]
+### Added
+- `CSPAQ12200OutBlock2` / `CSPAQ22200OutBlock2` — new field
+  `RcvblUablOrdAbleAmt` (미수불가주문가능금액, KRW Length 16). LS
+  Securities applied the addition on 2026-04-10 17:00 KST. Inserted right
+  after `DpslRestrcAmt` (CSPAQ12200) and `CslLoanAmtdt1` (CSPAQ22200) per
+  LS notice. Backward compatible (`default=0` accepts pre-update LS
+  responses).
+- Regression guards — first unit tests for the two TRs:
+  `tests/test_korea_stock_CSPAQ12200.py` (7) +
+  `tests/test_korea_stock_CSPAQ22200.py` (7) = 14 tests covering field
+  presence, default, decoding, position assertion, audit trail, official
+  example response, and `examples=[...]` self-validation.
 
 ## [1.6.0] - 2026-05-04
 ### Dependencies

@@ -130,6 +130,17 @@ class CSPAQ12200OutBlock2(BaseModel):
     """ 신용담보재사용금액 """
     DpslRestrcAmt: int = Field(default=0, title="처분제한금액", description="처분제한금액")
     """ 처분제한금액 """
+    RcvblUablOrdAbleAmt: int = Field(
+        default=0,
+        title="미수불가주문가능금액 (Order-able amount disallowing receivable)",
+        description=(
+            "Order-able cash amount that excludes the unsettled-receivable-disallowed portion. "
+            "in KRW. Length 16. Pydantic auto-coerces. "
+            "Added by LS Securities on 2026-04-10."
+        ),
+        examples=[306, 0, 100000],
+    )
+    """ 미수불가주문가능금액 """
     MnyoutAbleAmt2: int = Field(default=0, title="현금출금가능금액2", description="현금출금가능금액2")
     """ 현금출금가능금액2 """
     SeOrdAbleAmt: int = Field(default=0, title="거래소주문가능금액", description="거래소주문가능금액")
