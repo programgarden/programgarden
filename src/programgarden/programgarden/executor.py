@@ -8,7 +8,7 @@ Workflow execution engine
 - Event-based realtime updates
 """
 
-from typing import Optional, Dict, Any, List, Callable, Awaitable, Set
+from typing import Optional, Dict, Any, List, Callable, Awaitable, Set, Tuple
 from datetime import datetime
 import asyncio
 import uuid
@@ -16606,6 +16606,50 @@ class WorkflowJob:
                 entry["duration_ms"] = self._node_durations[node_id]
             nodes_state[node_id] = entry
 
+        # Aggregated structured errors — primary debugging surface for
+        # external callers (chatbot sandbox, dry_run validators). Always
+        # present, even when empty, so callers can rely on the key.
+        errors: List[Dict[str, Any]] = []
+        seen: Set[Tuple[str, str]] = set()  # dedup on (node_id, error_message)
+
+        # 1) Per-node cached failures (highest fidelity — direct from FAILED state)
+        for node_id, err_msg in self._node_errors.items():
+            key = (node_id, err_msg)
+            if key in seen:
+                continue
+            seen.add(key)
+            node = self.workflow.nodes.get(node_id)
+            errors.append({
+                "node_id": node_id,
+                "node_type": node.node_type if node else None,
+                "error": err_msg,
+                "timestamp": self._node_error_timestamps.get(node_id),
+                "level": "error",
+            })
+
+        # 2) Log-derived errors (covers top-level and event-loop paths whose
+        #    failure does not pass through notify_node_state)
+        for log in self.context.get_logs(level="error", limit=200):
+            log_node_id = log.get("node_id") or ""
+            msg = log.get("message", "")
+            key = (log_node_id, msg)
+            if key in seen:
+                continue
+            seen.add(key)
+            node = self.workflow.nodes.get(log_node_id) if log_node_id else None
+            errors.append({
+                "node_id": log_node_id or None,
+                "node_type": node.node_type if node else None,
+                "error": msg,
+                "timestamp": log.get("timestamp"),
+                "level": log.get("level", "error"),
+            })
+
+        # Sort by timestamp ascending so callers reading errors[0] always
+        # land on the earliest (typically root-cause) failure. Entries
+        # without a timestamp fall to the end while preserving relative order.
+        errors.sort(key=lambda x: (x["timestamp"] is None, x["timestamp"] or ""))
+
         return {
             "job_id": self.job_id,
             "workflow_id": self.workflow.workflow_id,
@@ -16617,6 +16661,7 @@ class WorkflowJob:
             "stay_connected_nodes": self._stay_connected_nodes,
             "logs": self.context.get_logs(limit=50),
             "nodes": nodes_state,
+            "errors": errors,
         }
 
     # ============================================================
