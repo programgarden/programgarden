@@ -1,5 +1,52 @@
 ## [Unreleased]
 
+## [1.21.5] - 2026-05-05
+### Fixed
+- `WorkflowJob.get_state()` — diagnostic payload completeness (Bug 1/2/3).
+  External chatbot / dry_run validators previously received `status="failed"`
+  with an empty `errors` surface, forcing LLMs into infinite retry plateaus.
+  - **Bug 1 (node state hardcoding)**: `nodes_state[*].state` was hardcoded
+    to `"completed"` for every node that produced any output. A node that
+    emitted partial output before failing was reported as completed. Now
+    backed by `_node_states` cache populated via internal listener
+    (`_NodeStateCacheListener`) on every `notify_node_state` event.
+  - **Bug 2 (`stats["last_error"]` dead code)**: the WORKFLOW_FAILED
+    notification read `stats.get("last_error", "Unknown error")` but
+    nothing ever wrote `last_error` — the value was always the fallback
+    string. Now set in 3 except paths (`_run_node`, top-level `execute`,
+    `_event_loop` triggered-node) plus structured `stats["last_error_detail"]`
+    `{node_id, node_type, error, timestamp}`.
+  - **Bug 3 (no `errors[]` field)**: failure messages only existed in
+    `logs[]`, forcing every caller to scrape error-level entries. Added
+    structured `errors: List[{node_id, node_type, error, timestamp, level}]`
+    field to `get_state()` — always present (possibly `[]`), populated from
+    `_node_errors` cache + ERROR-level log entries, sorted by timestamp
+    ascending so `errors[0]` is the root-cause failure.
+
+### Changed
+- `nodes_state` now contains every workflow node (default
+  `state="pending"` for not-yet-executed nodes), allowing callers to rely
+  on key presence regardless of execution progress.
+- `nodes_state[node_id]` now exposes `node_type`, `error`, `duration_ms`
+  (when available) in addition to `state` / `outputs`.
+- IfNode inactive branches now report `NodeState.SKIPPED` instead of
+  `NodeState.COMPLETED` (semantic correction — listener-visible only;
+  no API changes). Checkpoint-restored nodes continue to use COMPLETED
+  because they truly completed in a prior session.
+
+### Added
+- `tests/test_get_state_diagnostics.py` — 9 regression guards covering
+  every decision in the v1.21.5 fix matrix (node state cache, last_error
+  setter, errors aggregation, dedup, timestamp sort, IfNode SKIPPED,
+  pending base, backward-compat).
+
+### Compatibility
+- All existing `get_state()` keys retained (`job_id`, `workflow_id`,
+  `status`, `started_at`, `completed_at`, `stats`, `has_schedule`,
+  `stay_connected_nodes`, `logs`, `nodes`). Existing callers
+  (`tests/test_examples_validation.py:154`) unchanged.
+- `ExecutionListener` / `NodeStateEvent` interfaces unchanged.
+
 ## [1.21.4] - 2026-05-04
 ### Dependencies
 - programgarden-core ^1.12.2 (batch sync, no core code changes).
