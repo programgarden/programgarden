@@ -144,8 +144,24 @@ class CSPBQ00200OutBlock2(BaseModel):
     """ 증거금률50%주문가능금액 """
     MgnRat60pctOrdAbleAmt: int = Field(default=0, title="증거금률60%주문가능금액", description="증거금률60%주문가능금액")
     """ 증거금률60%주문가능금액 """
-    MgnRat100pctOrdAbleAmt: int = Field(default=0, title="증거금률100%주문가능금액", description="증거금률100%주문가능금액")
-    """ 증거금률100%주문가능금액 """
+    MgnRat100pctOrdAbleAmt: int = Field(
+        default=0,
+        title="미수주문가능금액 (Order-able amount eligible for 미수 / credit ordering)",
+        description=(
+            "Order-able amount eligible for 미수주문 (missed-payment / credit ordering). "
+            "Field semantic was changed by LS Securities on 2026-04-11 12:00 KST: "
+            "until 2026-04-10 this field held 증거금률 100% 주문가능 금액 (100% margin-rate "
+            "order-able amount). From 2026-04-11 onward, the legacy 증거금률 100% value is "
+            "exposed by RcvblUablOrdAbleAmt on CSPAQ12200/22200; CSPBQ00200 itself does not "
+            "expose the legacy value (LS notice marks CSPBQ00200 as semantic-change-only, "
+            "no field addition). Callers needing the 증거금률 100% semantic must call "
+            "CSPAQ12200 or CSPAQ22200 and read RcvblUablOrdAbleAmt instead. The Korean "
+            "field title was also updated upstream to reflect the new semantic. "
+            "in KRW. Length 16. Pydantic auto-coerces."
+        ),
+        examples=[79744009, 306, 0],
+    )
+    """ 미수주문가능금액 (의미 변경: 2026-04-11 LS Securities) """
     MgnRat100MnyOrdAbleAmt: int = Field(default=0, title="증거금률100%현금주문가능금액", description="증거금률100%현금주문가능금액")
     """ 증거금률100%현금주문가능금액 """
     OrdAbleQty: int = Field(default=0, title="주문가능수량", description="주문가능수량")

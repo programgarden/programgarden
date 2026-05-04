@@ -1,16 +1,42 @@
 ## [Unreleased]
+### Changed
+- `CSPAQ12200OutBlock2` / `CSPAQ22200OutBlock2` / `CSPBQ00200OutBlock2`
+  — `MgnRat100pctOrdAbleAmt` field semantic flip applied by LS Securities
+  on 2026-04-11 12:00 KST (originally announced for 2026-04-10 17:00 KST,
+  rescheduled by LS notice). Until 2026-04-10 the field held
+  증거금률 100% 주문가능 금액 (100% margin-rate order-able amount); from
+  2026-04-11 onward the same field carries 미수주문 가능 금액
+  (credit/missed-payment-eligible order-able amount). Field name and
+  Pydantic type are unchanged — only the meaning of the value rotated.
+  Title and description on all three OutBlocks were updated to record
+  both the pre-2026-04-11 and post-2026-04-11 semantic so AI workflow
+  generators do not reuse the old mental model. Migration: callers that
+  previously read `MgnRat100pctOrdAbleAmt` for 증거금률 100% semantics
+  must switch to `RcvblUablOrdAbleAmt` on CSPAQ12200/22200 (CSPBQ00200
+  itself does not expose the legacy value — LS marked CSPBQ00200 as
+  semantic-change only, no field addition).
+- `CSPAQ12200OutBlock2` / `CSPAQ22200OutBlock2` — `RcvblUablOrdAbleAmt`
+  audit-trail date corrected from 2026-04-10 to 2026-04-11 to match the
+  rescheduled LS rollout window. Description expanded to note that the
+  field carries the legacy 증거금률 100% 주문가능 금액 previously exposed
+  by `MgnRat100pctOrdAbleAmt`, so callers understand the swap intent.
+
 ### Added
 - `CSPAQ12200OutBlock2` / `CSPAQ22200OutBlock2` — new field
   `RcvblUablOrdAbleAmt` (미수불가주문가능금액, KRW Length 16). LS
-  Securities applied the addition on 2026-04-10 17:00 KST. Inserted right
+  Securities applied the addition on 2026-04-11 12:00 KST (originally
+  announced for 2026-04-10 17:00 KST, then rescheduled). Inserted right
   after `DpslRestrcAmt` (CSPAQ12200) and `CslLoanAmtdt1` (CSPAQ22200) per
   LS notice. Backward compatible (`default=0` accepts pre-update LS
   responses).
-- Regression guards — first unit tests for the two TRs:
-  `tests/test_korea_stock_CSPAQ12200.py` (7) +
-  `tests/test_korea_stock_CSPAQ22200.py` (7) = 14 tests covering field
-  presence, default, decoding, position assertion, audit trail, official
-  example response, and `examples=[...]` self-validation.
+- Regression guards — `tests/test_korea_stock_CSPAQ12200.py` (14) +
+  `tests/test_korea_stock_CSPAQ22200.py` (14) +
+  `tests/test_korea_stock_CSPBQ00200.py` (9) = 37 tests covering field
+  presence, default, decoding, position assertion, 2026-04-11 audit
+  trail, semantic-change description (date / old & new meaning /
+  replacement field reference), official example response decode,
+  CSPBQ00200's "변경 only" asymmetry (no `RcvblUablOrdAbleAmt`
+  addition), and `examples=[...]` self-validation.
 
 ## [1.6.0] - 2026-05-04
 ### Dependencies
