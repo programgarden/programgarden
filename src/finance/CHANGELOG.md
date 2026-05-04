@@ -12,6 +12,36 @@
   time mode, date cursor in daily mode); `cts_idx` is a chart marker
   fixed at 9999 per LS spec and is NOT used for paging. Korean alias:
   `종목별프로그램매매추이`. Korea Stock REST TR count 60 → 61.
+- t1640 (프로그램매매종합조회미니) — single-snapshot program-trading
+  aggregates (buy / sell / net-buy quantity, amount, day-over-day
+  changes, and basis) for one market + arbitrage combination selected
+  by a unique 2-digit `gubun` encoding (`'11'`/`'12'`/`'13'` for
+  거래소 total/arbitrage/non-arbitrage, `'21'`/`'22'`/`'23'` for KOSDAQ
+  total/arbitrage/non-arbitrage). No continuation paging — a single
+  response covers the entire query. xingAPI FUNCTION_MAP type mapping:
+  six `*value` / `*valdiff` fields are `double` (float), distinct from
+  t1631 / t1636 sibling TRs which declare the same Korean labels as
+  `long` (int). Korean alias: `프로그램매매종합조회미니`. Korea Stock
+  REST TR count 61 → 62.
+
+### Fixed
+- t1632: `time` field length description 6 → 8 (LS xingAPI FUNCTION_MAP
+  ground truth: both InBlock and OutBlock declare `time` as char,8).
+
+### Changed
+- t1631 ~ t1637: AI chatbot training accuracy — removed inferred
+  expressions in field descriptions per xingAPI FUNCTION_MAP metadata:
+  - t1636 / t1637: removed unit inferences (`"in KRW"`, `"in shares"`)
+    on 9 + 9 = 18 OutBlock fields.
+  - t1636: removed `sgta` "Empirically observed to be 억 원" inference,
+    `mkcap_cmpr_val` formula / identity inference, OutBlock1 docstring
+    identity formula.
+  - t1637: removed OutBlock1 docstring sibling-TR identity reference.
+  - t1633 / t1636 / t1637: removed `sign` enum mapping
+    (`'1'`=상한 / `'2'`=상승 / etc.) — unified with t1632 conservative
+    pattern (`"does not publish an enum mapping"`).
+  - t1631 / t1632 / t1633 / t1636 InBlock `char,1` fields — appended
+    `"Length 1."` for description consistency (13 fields).
 
 ## [1.5.1] - 2026-04-18
 ### Dependencies
