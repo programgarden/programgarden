@@ -16610,14 +16610,12 @@ class WorkflowJob:
         # external callers (chatbot sandbox, dry_run validators). Always
         # present, even when empty, so callers can rely on the key.
         errors: List[Dict[str, Any]] = []
-        seen: Set[Tuple[str, str]] = set()  # dedup on (node_id, error_message)
+        cached_node_ids: Set[str] = set()    # node IDs already covered by _node_errors cache
+        seen_log_keys: Set[Tuple[str, str]] = set()  # dedup on (node_id, log_message)
 
         # 1) Per-node cached failures (highest fidelity — direct from FAILED state)
         for node_id, err_msg in self._node_errors.items():
-            key = (node_id, err_msg)
-            if key in seen:
-                continue
-            seen.add(key)
+            cached_node_ids.add(node_id)
             node = self.workflow.nodes.get(node_id)
             errors.append({
                 "node_id": node_id,
@@ -16628,14 +16626,19 @@ class WorkflowJob:
             })
 
         # 2) Log-derived errors (covers top-level and event-loop paths whose
-        #    failure does not pass through notify_node_state)
+        #    failure does not pass through notify_node_state). Skip logs for
+        #    node_ids already in the cache — cache version is authoritative
+        #    (raw exception message; log adds "Node X failed: " prefix and
+        #    would otherwise produce a near-duplicate entry).
         for log in self.context.get_logs(level="error", limit=200):
             log_node_id = log.get("node_id") or ""
-            msg = log.get("message", "")
-            key = (log_node_id, msg)
-            if key in seen:
+            if log_node_id and log_node_id in cached_node_ids:
                 continue
-            seen.add(key)
+            msg = log.get("message", "")
+            log_key = (log_node_id, msg)
+            if log_key in seen_log_keys:
+                continue
+            seen_log_keys.add(log_key)
             node = self.workflow.nodes.get(log_node_id) if log_node_id else None
             errors.append({
                 "node_id": log_node_id or None,
