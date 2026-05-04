@@ -1,3 +1,14 @@
+## [1.13.2] - 2026-05-04
+### Internal
+- Batch release sync with finance 1.6.1 (CSPAQ12200/22200/CSPBQ00200
+  semantic flip + RcvblUablOrdAbleAmt addition rescheduled to
+  2026-04-11 12:00 KST). No community code changes — version bump
+  for monorepo coherence so programgarden 1.21.4 can pin a single
+  core version across siblings.
+
+### Dependencies
+- programgarden-core ^1.12.2 (batch release sync — no core code changes).
+
 ## [1.13.1] - 2026-05-04
 ### Internal
 - Batch release sync with finance 1.6.0 (Korea Stock program TR

@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+## [1.21.4] - 2026-05-04
+### Dependencies
+- programgarden-core ^1.12.2 (batch sync, no core code changes).
+- programgarden-finance ^1.6.1 (CSPAQ12200 / CSPAQ22200 / CSPBQ00200
+  semantic flip + new `RcvblUablOrdAbleAmt` field, both rescheduled by
+  LS to 2026-04-11 12:00 KST. Backward compatible — `default=0` accepts
+  pre-update LS responses).
+- programgarden-community ^1.13.2 (batch sync, no community code
+  changes).
+
+### Docs
+- Node count corrected from 72 to 73 in
+  `docs/node_runner_guide.md` and `src/programgarden/README.md`
+  (FileReaderNode added at v1.13.1 had not been propagated to those
+  two doc references). All other doc surfaces already reflected the
+  73-node total.
+
 ## [1.21.3] - 2026-05-04
 ### Dependencies
 - programgarden-core ^1.12.1 (batch sync, no core code changes).

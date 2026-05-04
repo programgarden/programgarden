@@ -1,4 +1,10 @@
 ## [Unreleased]
+
+## [1.6.1] - 2026-05-04
+### Dependencies
+- programgarden-core ^1.12.2 (batch sync — no core code changes,
+  monorepo coherence with finance 1.6.1).
+
 ### Changed
 - `CSPAQ12200OutBlock2` / `CSPAQ22200OutBlock2` / `CSPBQ00200OutBlock2`
   — `MgnRat100pctOrdAbleAmt` field semantic flip applied by LS Securities
