@@ -1,5 +1,27 @@
 ## [Unreleased]
 
+## [1.21.3] - 2026-05-04
+### Dependencies
+- programgarden-core ^1.12.1 (batch sync, no core code changes).
+- programgarden-finance ^1.6.0 (Korea Stock program TR additions:
+  t1631 / t1632 / t1633 / t1636 / t1637 / t1640 / t1662 — REST count
+  56 → 63 on `/stock/program` domain).
+- programgarden-community ^1.13.1 (batch sync, no community code changes).
+
+### Added
+- `examples/workflows/` — 10 beginner / intermediate Telegram workflow
+  examples (68~77):
+  - 68 portfolio summary, 69 price alert, 70 RSI oversold, 71 scheduled
+    morning report, 72 loss alert (beginner — overseas stock query +
+    Telegram notify).
+  - 73 auto-buy bollinger lower, 74 per-position stop-loss scanner,
+    75 day-trading bot, 76 golden-cross auto-buy, 77 risk-manager bot
+    (intermediate — overseas futures paper trading).
+  - Each JSON passes `WorkflowExecutor.validate()` + dry_run cycle.
+  - NOTE: `examples/` is excluded from the wheel (`pyproject.toml`
+    `exclude = ["examples", ...]`); this entry tracks the example pack
+    bundled with the source distribution / repo for documentation.
+
 ## [1.21.2] - 2026-04-29
 ### Fixed
 - `executor.py` `BrokerNodeExecutor` — guard `init_workflow_position_tracker`

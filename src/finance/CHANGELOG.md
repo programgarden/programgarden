@@ -1,10 +1,34 @@
 ## [Unreleased]
+
+## [1.6.0] - 2026-05-04
+### Dependencies
+- programgarden-core ^1.12.1 (batch release sync — no core code changes,
+  monorepo coherence).
+
 ### Added
+- t1631 (프로그램매매종합조회) — Korea Stock program-trading
+  comprehensive query. Returns eight scalar order/remainder aggregates
+  (sell vs buy × arbitrage vs non-arbitrage × unfilled-remaining vs
+  ordered) plus an Object Array of program-trading rows. No
+  continuation paging — a single response covers same-day or period
+  queries. Korean alias: `프로그램매매종합조회`. Korea Stock REST TR
+  count 56 → 57.
+- t1632 (시간대별프로그램매매추이) — Korea Stock time-bucketed
+  program-trading trend. Returns KP200 / BASIS continuation marker plus
+  Object Array of per-time-bucket rows (KP200 / BASIS / total /
+  arbitrage / non-arbitrage buy / sell / net-buy). Supports tr_cont
+  paging via date + time CTS cursors via `occurs_req()`. Korean alias:
+  `시간대별프로그램매매추이`. Korea Stock REST TR count 57 → 58.
 - t1633 (기간별프로그램매매추이) — daily / weekly / monthly program-trading
   trend over [fdate, tdate] period on KOSPI / KOSDAQ. Supports tr_cont
   continuation paging via single `date` CTS cursor (unlike t1632 which
   pages by date+time). Korean alias: `기간별프로그램매매추이`. Korea
-  Stock REST TR count 59 → 60.
+  Stock REST TR count 58 → 59.
+- t1636 (종목별프로그램매매동향) — per-symbol program trading flow.
+  Includes the net-buy ratio versus market cap added by LS on
+  2026-01-08. Supports IDXCTS-based continuation paging via `cts_idx`.
+  Korean alias: `종목별프로그램매매동향`. Korea Stock REST TR count
+  59 → 60.
 - t1637 (종목별프로그램매매추이) — per-symbol program-trading time series.
   Two display modes selected by `gubun2`: time-bucketed within a trading
   day (`'0'`) or daily across multiple trading days (`'1'`). Supports
