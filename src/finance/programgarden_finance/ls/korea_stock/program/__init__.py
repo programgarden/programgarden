@@ -6,7 +6,7 @@ from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
 
-from . import t1631, t1632, t1633, t1636, t1637
+from . import t1631, t1632, t1633, t1636, t1637, t1640
 from .t1631 import TrT1631
 from .t1631.blocks import T1631InBlock, T1631Request, T1631RequestHeader
 from .t1632 import TrT1632
@@ -17,6 +17,8 @@ from .t1636 import TrT1636
 from .t1636.blocks import T1636InBlock, T1636Request, T1636RequestHeader
 from .t1637 import TrT1637
 from .t1637.blocks import T1637InBlock, T1637Request, T1637RequestHeader
+from .t1640 import TrT1640
+from .t1640.blocks import T1640InBlock, T1640Request, T1640RequestHeader
 
 
 class Program:
@@ -37,11 +39,15 @@ class Program:
           time (gubun2='0') or by day (gubun2='1'). Supports tr_cont
           paging via a gubun2-aware cursor (time cursor in time mode,
           date cursor in daily mode).
+        - ``t1640`` — Program-trading mini snapshot for one market +
+          arbitrage combination (no continuation; uses unique 2-digit
+          ``gubun`` encoding distinct from sibling TRs).
 
     Korean aliases are exposed for parity with the rest of the SDK
     (``프로그램매매`` on KoreaStock, ``프로그램매매종합조회``,
     ``시간대별프로그램매매추이``, ``기간별프로그램매매추이``,
-    ``종목별프로그램매매동향``, and ``종목별프로그램매매추이`` here).
+    ``종목별프로그램매매동향``, ``종목별프로그램매매추이``, and
+    ``프로그램매매종합조회미니`` here).
     """
 
     def __init__(self, token_manager: TokenManager):
@@ -326,6 +332,61 @@ class Program:
         "auto-paging via occurs_req() with a gubun2-aware cursor."
     )
 
+    @require_korean_alias
+    def t1640(
+        self,
+        body: T1640InBlock,
+        header: Optional[T1640RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1640:
+        """Return a TrT1640 request handle for the program-trading mini snapshot query.
+
+        Returns a single ``T1640OutBlock`` object containing buy / sell / net-buy
+        quantity, amount, day-over-day changes, and the basis (KP200 future vs
+        spot) ratio for one market + arbitrage combination selected by ``gubun``
+        ('11'/'12'/'13' for 거래소 total/arbitrage/non-arbitrage,
+        '21'/'22'/'23' for KOSDAQ total/arbitrage/non-arbitrage).
+
+        Unlike t1636 / t1637, this TR has **no continuation paging** — a single
+        response covers the entire query.
+
+        WARNING: ``gubun`` encoding is unique to t1640 (2-digit market +
+        arbitrage combined codes). Do NOT copy-paste from sibling program TRs
+        (t1631 '1'/'2', t1632 / t1633 / t1636 / t1637 '0'/'1') — they will be
+        rejected as invalid.
+
+        Args:
+            body: ``T1640InBlock`` — gubun (combined market + arbitrage code,
+                6 enum), exchgubun ('K'/'N'/'U', default 'K').
+            header: Optional request header overrides.
+            options: Optional setup options (rate limit, retry behavior).
+
+        Returns:
+            TrT1640 — call ``.req()`` or ``.req_async()``. No ``occurs_req``
+            method (no continuation).
+        """
+
+        request_data = T1640Request(
+            body={
+                "t1640InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1640(request_data)
+
+    프로그램매매종합조회미니 = t1640
+    프로그램매매종합조회미니.__doc__ = (
+        "Query Korean stock program-trading mini snapshot — single object with "
+        "buy / sell / net-buy quantity, amount, day-over-day changes, and basis "
+        "for one market + arbitrage combination."
+    )
+
 
 __all__ = [
     Program,
@@ -334,4 +395,5 @@ __all__ = [
     t1633,
     t1636,
     t1637,
+    t1640,
 ]

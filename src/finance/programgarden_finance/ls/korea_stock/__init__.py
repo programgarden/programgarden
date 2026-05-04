@@ -107,8 +107,10 @@ class KoreaStock:
         "Query Korean stock program-trading flow data — comprehensive "
         "summary (t1631 / 프로그램매매종합조회), time-bucketed trend "
         "(t1632 / 시간대별프로그램매매추이), period trend (t1633 / "
-        "기간별프로그램매매추이), and per-symbol trend (t1636 / "
-        "종목별프로그램매매동향)."
+        "기간별프로그램매매추이), per-symbol snapshot (t1636 / "
+        "종목별프로그램매매동향), per-symbol time series (t1637 / "
+        "종목별프로그램매매추이), and mini snapshot (t1640 / "
+        "프로그램매매종합조회미니)."
     )
 
     @require_korean_alias
