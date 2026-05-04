@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [1.12.1] - 2026-05-04
+### Internal
+- Batch release sync with finance 1.6.0 (Korea Stock program TR
+  additions: t1631 / t1632 / t1633 / t1636 / t1637 / t1640 / t1662).
+  No core code changes — version bump for monorepo coherence so
+  programgarden 1.21.3 can pin a single core version across siblings.
+
 ## [1.12.0] - 2026-04-18
 ### Added
 - **NodeTypeSchema AI metadata** — 5 new optional fields (`usage`, `features`,

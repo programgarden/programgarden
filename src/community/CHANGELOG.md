@@ -1,3 +1,13 @@
+## [1.13.1] - 2026-05-04
+### Internal
+- Batch release sync with finance 1.6.0 (Korea Stock program TR
+  additions: t1631 / t1632 / t1633 / t1636 / t1637 / t1640 / t1662).
+  No community code changes — version bump for monorepo coherence so
+  programgarden 1.21.3 can pin a single core version across siblings.
+
+### Dependencies
+- programgarden-core ^1.12.1 (batch release sync — no core code changes).
+
 ## [1.13.0] - 2026-04-18
 ### Added
 - AI schema ClassVars on all 4 community nodes (`TelegramNode`,
