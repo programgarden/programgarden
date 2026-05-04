@@ -23,6 +23,21 @@
   t1631 / t1636 sibling TRs which declare the same Korean labels as
   `long` (int). Korean alias: `프로그램매매종합조회미니`. Korea Stock
   REST TR count 61 → 62.
+- t1662 (시간대별프로그램매매추이차트) — time-chart program-trading
+  Object Array. Returns a `List[T1662OutBlock]` of time-bucketed KP200
+  index, BASIS, change-sign (LS-published `'1'`=상한 / `'2'`=상승 /
+  `'3'`=보합 / `'4'`=하한 / `'5'`=하락), change value, and total /
+  arbitrage / non-arbitrage buy / sell / net-buy + volume per row for
+  KOSPI (`gubun='0'`) or KOSDAQ (`gubun='1'`). Inputs select market
+  (`gubun`), amount/quantity mode (`gubun1`), today/prior-day axis
+  (`gubun3`), and exchange (`exchgubun`). Single response — no
+  continuation paging (no `occurs_req`). Korean alias:
+  `시간대별프로그램매매추이차트` (note `차트` suffix to avoid collision
+  with t1632's `시간대별프로그램매매추이`). Field policy: every InBlock
+  field is Required (no inferred defaults); OutBlock numeric / string
+  fields use defensive zero defaults for parsing LS-omitted fields, and
+  `sign` uses `Optional[Literal[...]] = None` (None = LS-omitted
+  sentinel, NOT 보합). Korea Stock REST TR count 62 → 63.
 
 ### Fixed
 - t1632: `time` field length description 6 → 8 (LS xingAPI FUNCTION_MAP
