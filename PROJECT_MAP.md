@@ -1,12 +1,12 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-05-04T00:00:00
+@updated: 2026-05-04T15:00:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
 ## TREE
 src/
-  core/ [72 .py] — programgarden-core 1.12.0
+  core/ [72 .py] — programgarden-core 1.12.2
     programgarden_core/
       nodes/ [38 .py] — 73 node classes (12 categories)
       models/ [12 .py] — edge, workflow, credential, resilience, connection_rule, event, exchange, job, plugin_resource, resource
@@ -15,7 +15,7 @@ src/
       expression/ [2 .py] — template evaluator ({{ nodes.x.y }})
       i18n/ [2 .py + 2 .json] — translator, ko.json, en.json
       presets/ [1 .py + 4 .json] — AI agent presets
-  programgarden/ [30 .py] — programgarden 1.21.1
+  programgarden/ [30 .py] — programgarden 1.21.4
     programgarden/
       executor.py — WorkflowExecutor, NodeExecutors, WorkflowJob
       context.py — ExecutionContext, state, events
@@ -26,21 +26,21 @@ src/
       database/ [5 .py] — checkpoint, position_tracker, risk_tracker, query_builder
       providers/ [3 .py] — LLM provider (litellm), errors
       tools/ [7 .py] — registry, sqlite, job, credential, event, definition tools
-    examples/workflows/ [67 .json + 67 .md + 00-workflow-guide.md] — runnable workflow demos (incl. 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures)
+    examples/workflows/ [77 .json + 77 .md + 00-workflow-guide.md] — runnable workflow demos (incl. 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures, 68-77 telegram-beginner)
     examples/dynamic_plugins/ [11 .py] — user-contributed simple_* plugin examples
     examples/dynamic_nodes/ [1 .py] — Dynamic_* node definition example
     examples/programmer_example/ [3 .py] — live integration scripts (AI agent, quant)
-  finance/ [482 .py] — programgarden-finance 1.5.1
+  finance/ [360 .py] — programgarden-finance 1.6.1
     programgarden_finance/
       ls/ — LS Securities API wrapper
-        overseas_stock/ — REST 17 TR + Real 10 TR + extension (tracker)
-        overseas_futureoption/ — REST 26 TR + Real 7 TR + extension (tracker)
+        overseas_stock/ — REST 17 TR + Real 7 TR + extension (tracker)
+        overseas_futureoption/ — REST 28 TR + Real 7 TR + extension (tracker)
         korea_stock/ — REST 63 TR + Real 13 TR + extension (tracker)
         common/ — Real 1 TR (JIF market status, broker-agnostic)
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect
         config.py — API URLs, rate limits
-  community/ [89 .py] — programgarden-community 1.13.0
+  community/ [89 .py] — programgarden-community 1.13.2
     programgarden_community/
       plugins/ [78 dirs] — 77 strategy plugins (TECHNICAL 59, POSITION 18)
       nodes/ — 4 community nodes
@@ -97,20 +97,20 @@ src/community/programgarden_community/plugins/__init__.py → 77 plugin registra
 - Poetry Monorepo: 4 packages with path-based develop dependencies
 
 ## DEPS
-### programgarden-core 1.12.0
+### programgarden-core 1.12.2
 pydantic>=2.0.0
 
-### programgarden 1.21.1
+### programgarden 1.21.4
 pydantic>=2.0.0 | croniter^6.0.0 | aiohttp^3.9.0 | aiosqlite^0.20.0
 litellm>=1.40.0 | yfinance^0.2.0 | psutil^6.0.0
 python-dotenv^1.1.0 | pytickersymbols>=1.17.5 | lxml^6.0.2
 dev: fastapi^0.128.0 | uvicorn^0.40.0 | pytest^8.0.0
 
-### programgarden-finance 1.5.1
+### programgarden-finance 1.6.1
 pydantic>=2.11.7 | requests^2.32.4 | aiohttp^3.10.0 | websockets^15.0.1
 redis^6.4.0 | python-dotenv^1.1.1
 
-### programgarden-community 1.13.0
+### programgarden-community 1.13.2
 pypdf>=4.0.0
 extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 
