@@ -88,6 +88,7 @@ from .ls.korea_stock.program import t1633
 from .ls.korea_stock.program import t1636
 from .ls.korea_stock.program import t1637
 from .ls.korea_stock.program import t1640
+from .ls.korea_stock.program import t1662
 from .ls.korea_stock.sector import t1511
 from .ls.korea_stock.sector import t1516
 from .ls.korea_stock.sector import t1531
@@ -195,6 +196,7 @@ __all__ = [
     t1636,
     t1637,
     t1640,
+    t1662,
 
     COSAQ00102,
     COSAQ01400,

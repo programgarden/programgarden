@@ -109,8 +109,9 @@ class KoreaStock:
         "(t1632 / 시간대별프로그램매매추이), period trend (t1633 / "
         "기간별프로그램매매추이), per-symbol snapshot (t1636 / "
         "종목별프로그램매매동향), per-symbol time series (t1637 / "
-        "종목별프로그램매매추이), and mini snapshot (t1640 / "
-        "프로그램매매종합조회미니)."
+        "종목별프로그램매매추이), mini snapshot (t1640 / "
+        "프로그램매매종합조회미니), and time-chart Object Array "
+        "(t1662 / 시간대별프로그램매매추이차트)."
     )
 
     @require_korean_alias
