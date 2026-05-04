@@ -16610,12 +16610,14 @@ class WorkflowJob:
         # external callers (chatbot sandbox, dry_run validators). Always
         # present, even when empty, so callers can rely on the key.
         errors: List[Dict[str, Any]] = []
-        cached_node_ids: Set[str] = set()    # node IDs already covered by _node_errors cache
+        cached_node_ids: Set[str] = set()         # node IDs already covered by _node_errors cache
+        cached_messages: Set[str] = set()         # raw exception strings cached (for top-level log dedup)
         seen_log_keys: Set[Tuple[str, str]] = set()  # dedup on (node_id, log_message)
 
         # 1) Per-node cached failures (highest fidelity — direct from FAILED state)
         for node_id, err_msg in self._node_errors.items():
             cached_node_ids.add(node_id)
+            cached_messages.add(err_msg)
             node = self.workflow.nodes.get(node_id)
             errors.append({
                 "node_id": node_id,
@@ -16629,12 +16631,17 @@ class WorkflowJob:
         #    failure does not pass through notify_node_state). Skip logs for
         #    node_ids already in the cache — cache version is authoritative
         #    (raw exception message; log adds "Node X failed: " prefix and
-        #    would otherwise produce a near-duplicate entry).
+        #    would otherwise produce a near-duplicate entry). Also skip
+        #    top-level except logs (no node_id) whose raw message is already
+        #    represented by a cached failure — they are zero-information
+        #    duplicates of the same exception bubbling up to the job boundary.
         for log in self.context.get_logs(level="error", limit=200):
             log_node_id = log.get("node_id") or ""
             if log_node_id and log_node_id in cached_node_ids:
                 continue
             msg = log.get("message", "")
+            if not log_node_id and msg in cached_messages:
+                continue
             log_key = (log_node_id, msg)
             if log_key in seen_log_keys:
                 continue
