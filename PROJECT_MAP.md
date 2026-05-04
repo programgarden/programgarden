@@ -139,6 +139,7 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Example bots (consolidated into examples/workflows/): 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures
 - [x] Node AI metadata: 5 ClassVars (_usage / _features / _anti_patterns / _examples / _node_guide) on all 73 nodes
 - [x] MarketStatusNode: JIF-based real-time market status (12 markets, broker-agnostic, AI-Tool enabled)
+- [x] get_state() diagnostic payload (1.21.5): per-node state cache via internal listener, stats.last_error setter, structured errors[] field with timestamp sort + (node_id) dedup
 
 ## CONVENTIONS
 - language: Python 3.12+, docs/comments in Korean, code in English
