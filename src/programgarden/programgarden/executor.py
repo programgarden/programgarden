@@ -8,7 +8,7 @@ Workflow execution engine
 - Event-based realtime updates
 """
 
-from typing import Optional, Dict, Any, List, Callable, Awaitable, Set
+from typing import Optional, Dict, Any, List, Callable, Awaitable, Set, Tuple
 from datetime import datetime
 import asyncio
 import uuid
@@ -14791,13 +14791,15 @@ class WorkflowJob:
         self.workflow_start_datetime: datetime = datetime.now(timezone.utc)
 
         # Statistics
-        self.stats = {
+        self.stats: Dict[str, Any] = {
             "conditions_evaluated": 0,
             "orders_placed": 0,
             "orders_filled": 0,
             "errors_count": 0,
             "flow_executions": 0,
             "realtime_updates": 0,
+            "last_error": None,
+            "last_error_detail": None,
         }
 
         # Execution task
@@ -14807,6 +14809,12 @@ class WorkflowJob:
         self._checkpoint_mgr = None  # CheckpointManager (lazy init)
         self._checkpoint_task: Optional[asyncio.Task] = None  # 실시간 주기 저장 태스크
         self._completed_node_ids: Set[str] = set()  # 완료된 노드 ID 집합
+
+        # Per-node diagnostic cache for get_state() (in-memory only, not persisted to checkpoint)
+        self._node_states: Dict[str, NodeState] = {}        # node_id -> latest NodeState
+        self._node_errors: Dict[str, str] = {}              # node_id -> last error message
+        self._node_durations: Dict[str, float] = {}         # node_id -> last duration_ms
+        self._node_error_timestamps: Dict[str, str] = {}    # node_id -> ISO timestamp of last failure
         self._restore_mode: bool = False
         self._restore_checkpoint: Optional[Dict[str, Any]] = None
         self._workflow_json_hash: Optional[str] = None  # 워크플로우 정의 해시
@@ -14814,6 +14822,35 @@ class WorkflowJob:
         # Precompute node categories for optimization
         self._has_schedule_node = self._check_has_schedule_node()
         self._stay_connected_nodes = self._find_stay_connected_nodes()
+
+        # Per-node state cache listener — mirrors every NodeStateEvent into
+        # _node_states/_node_errors/_node_durations so get_state() surfaces
+        # accurate per-node diagnostics without scraping logs.
+        from programgarden_core.bases import BaseExecutionListener
+
+        class _NodeStateCacheListener(BaseExecutionListener):
+            """Internal listener that updates WorkflowJob's per-node diagnostic cache."""
+
+            def __init__(inner_self, job: "WorkflowJob") -> None:
+                super().__init__()
+                inner_self._job = job
+
+            async def on_node_state_change(inner_self, event) -> None:
+                ts = (
+                    event.timestamp.isoformat()
+                    if event.error and event.timestamp is not None
+                    else None
+                )
+                inner_self._job._record_node_state(
+                    event.node_id,
+                    event.state,
+                    error=event.error,
+                    duration_ms=event.duration_ms,
+                    error_timestamp=ts,
+                )
+
+        self._node_state_cache_listener = _NodeStateCacheListener(self)
+        self.context.add_listener(self._node_state_cache_listener)
 
     # === Listener Management ===
 
@@ -15013,7 +15050,17 @@ class WorkflowJob:
         except Exception as e:
             self.status = "failed"
             self.stats["errors_count"] += 1
-            self.context.log("error", str(e))
+            error_msg = str(e)
+            # Preserve _run_node's last_error if already set (more specific node-level info).
+            if not self.stats.get("last_error"):
+                self.stats["last_error"] = error_msg
+                self.stats["last_error_detail"] = {
+                    "node_id": None,
+                    "node_type": None,
+                    "error": error_msg,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            self.context.log("error", error_msg)
             logger.exception(f"Job {self.job_id} failed: {e}")
             print(f"❌ Job {self.job_id} failed: {e}")
             import traceback
@@ -15123,7 +15170,7 @@ class WorkflowJob:
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
-                    state=NodeState.COMPLETED,
+                    state=NodeState.SKIPPED,
                 )
                 continue
 
@@ -15284,16 +15331,26 @@ class WorkflowJob:
                     await self._save_checkpoint()
 
             except Exception as e:
-                # 🆕 노드 실패 알림
+                # 🆕 노드 실패 알림 — listener (_NodeStateCacheListener) 가 자동으로
+                # _node_states / _node_errors / _node_durations 에 캐시함
                 duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+                error_msg = str(e)
+                error_ts = datetime.utcnow().isoformat()
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
                     state=NodeState.FAILED,
-                    error=str(e),
+                    error=error_msg,
                     duration_ms=duration_ms,
                 )
                 self.stats["errors_count"] += 1
+                self.stats["last_error"] = f"{node_id}: {error_msg}"
+                self.stats["last_error_detail"] = {
+                    "node_id": node_id,
+                    "node_type": node.node_type,
+                    "error": error_msg,
+                    "timestamp": error_ts,
+                }
                 self.context.log("error", f"Node {node_id} failed: {e}", node_id)
                 raise
 
@@ -16277,8 +16334,23 @@ class WorkflowJob:
 
             except Exception as e:
                 self._release_rate_limit_guard(node_id)
+                error_msg = str(e)
+                error_ts = datetime.utcnow().isoformat()
+                self._record_node_state(
+                    node_id,
+                    NodeState.FAILED,
+                    error=error_msg,
+                    error_timestamp=error_ts,
+                )
                 self.context.log("error", f"Error in triggered node {node_id}: {e}", node_id)
                 self.stats["errors_count"] += 1
+                self.stats["last_error"] = f"{node_id}: {error_msg}"
+                self.stats["last_error_detail"] = {
+                    "node_id": node_id,
+                    "node_type": node.node_type if node else None,
+                    "error": error_msg,
+                    "timestamp": error_ts,
+                }
     
     def _find_downstream_nodes(self, start_nodes: List[str]) -> List[str]:
         """
@@ -16487,16 +16559,99 @@ class WorkflowJob:
             "warning": warning_msg,
         }
 
+    def _record_node_state(
+        self,
+        node_id: str,
+        state: NodeState,
+        error: Optional[str] = None,
+        duration_ms: Optional[float] = None,
+        error_timestamp: Optional[str] = None,
+    ) -> None:
+        """Update local per-node diagnostic cache used by get_state().
+
+        Mirrors the most recent NodeState event so get_state() can surface
+        accurate node-level state/error/duration without relying on listener
+        replay or scraping logs.
+        """
+        self._node_states[node_id] = state
+        if error is not None:
+            self._node_errors[node_id] = error
+            if error_timestamp is not None:
+                self._node_error_timestamps[node_id] = error_timestamp
+        if duration_ms is not None:
+            self._node_durations[node_id] = duration_ms
+
     def get_state(self) -> Dict[str, Any]:
-        """Get state snapshot"""
-        # 노드별 상태 및 outputs 수집
-        nodes_state = {}
-        for node_id in self.context._outputs.keys():
-            outputs = self.context.get_all_outputs(node_id)
-            nodes_state[node_id] = {
-                "state": "completed",
-                "outputs": outputs,
+        """Get state snapshot.
+
+        Returns a diagnostic payload that surfaces per-node state, errors,
+        and duration sourced from `_node_states` / `_node_errors` /
+        `_node_durations` caches (populated by `_NodeStateCacheListener` on
+        every `notify_node_state` event). All workflow nodes appear in
+        `nodes` (default `state="pending"` for not-yet-executed nodes), so
+        callers can rely on key presence regardless of execution progress.
+        """
+        # Per-node state: every workflow node, defaulting to "pending"
+        nodes_state: Dict[str, Dict[str, Any]] = {}
+        for node_id, node in self.workflow.nodes.items():
+            cached_state = self._node_states.get(node_id, NodeState.PENDING)
+            entry: Dict[str, Any] = {
+                "state": cached_state.value,
+                "node_type": node.node_type,
+                "outputs": self.context.get_all_outputs(node_id),
             }
+            if node_id in self._node_errors:
+                entry["error"] = self._node_errors[node_id]
+            if node_id in self._node_durations:
+                entry["duration_ms"] = self._node_durations[node_id]
+            nodes_state[node_id] = entry
+
+        # Aggregated structured errors — primary debugging surface for
+        # external callers (chatbot sandbox, dry_run validators). Always
+        # present, even when empty, so callers can rely on the key.
+        errors: List[Dict[str, Any]] = []
+        cached_node_ids: Set[str] = set()    # node IDs already covered by _node_errors cache
+        seen_log_keys: Set[Tuple[str, str]] = set()  # dedup on (node_id, log_message)
+
+        # 1) Per-node cached failures (highest fidelity — direct from FAILED state)
+        for node_id, err_msg in self._node_errors.items():
+            cached_node_ids.add(node_id)
+            node = self.workflow.nodes.get(node_id)
+            errors.append({
+                "node_id": node_id,
+                "node_type": node.node_type if node else None,
+                "error": err_msg,
+                "timestamp": self._node_error_timestamps.get(node_id),
+                "level": "error",
+            })
+
+        # 2) Log-derived errors (covers top-level and event-loop paths whose
+        #    failure does not pass through notify_node_state). Skip logs for
+        #    node_ids already in the cache — cache version is authoritative
+        #    (raw exception message; log adds "Node X failed: " prefix and
+        #    would otherwise produce a near-duplicate entry).
+        for log in self.context.get_logs(level="error", limit=200):
+            log_node_id = log.get("node_id") or ""
+            if log_node_id and log_node_id in cached_node_ids:
+                continue
+            msg = log.get("message", "")
+            log_key = (log_node_id, msg)
+            if log_key in seen_log_keys:
+                continue
+            seen_log_keys.add(log_key)
+            node = self.workflow.nodes.get(log_node_id) if log_node_id else None
+            errors.append({
+                "node_id": log_node_id or None,
+                "node_type": node.node_type if node else None,
+                "error": msg,
+                "timestamp": log.get("timestamp"),
+                "level": log.get("level", "error"),
+            })
+
+        # Sort by timestamp ascending so callers reading errors[0] always
+        # land on the earliest (typically root-cause) failure. Entries
+        # without a timestamp fall to the end while preserving relative order.
+        errors.sort(key=lambda x: (x["timestamp"] is None, x["timestamp"] or ""))
 
         return {
             "job_id": self.job_id,
@@ -16509,6 +16664,7 @@ class WorkflowJob:
             "stay_connected_nodes": self._stay_connected_nodes,
             "logs": self.context.get_logs(limit=50),
             "nodes": nodes_state,
+            "errors": errors,
         }
 
     # ============================================================
