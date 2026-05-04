@@ -98,8 +98,22 @@ class CSPAQ22200OutBlock2(BaseModel):
     """ 코스닥금액 """
     CrdtPldgOrdAmt: int = Field(default=0, title="신용담보주문금액", description="신용담보주문금액")
     """ 신용담보주문금액 """
-    MgnRat100pctOrdAbleAmt: int = Field(default=0, title="증거금률100퍼센트주문가능금액", description="증거금률100퍼센트주문가능금액")
-    """ 증거금률100퍼센트주문가능금액 """
+    MgnRat100pctOrdAbleAmt: int = Field(
+        default=0,
+        title="미수주문가능금액 (Order-able amount eligible for 미수 / credit ordering)",
+        description=(
+            "Order-able amount eligible for 미수주문 (missed-payment / credit ordering). "
+            "Field semantic was changed by LS Securities on 2026-04-11 12:00 KST: "
+            "until 2026-04-10 this field held 증거금률 100% 주문가능 금액 (100% margin-rate "
+            "order-able amount). From 2026-04-11 onward, the legacy 증거금률 100% value is "
+            "exposed by RcvblUablOrdAbleAmt instead. Callers needing the 증거금률 100% "
+            "semantic must migrate to RcvblUablOrdAbleAmt. The Korean field title was also "
+            "updated upstream to reflect the new semantic. in KRW. Length 16. "
+            "Pydantic auto-coerces."
+        ),
+        examples=[306, 0, 100000],
+    )
+    """ 미수주문가능금액 (의미 변경: 2026-04-11 LS Securities) """
     MgnRat35ordAbleAmt: int = Field(default=0, title="증거금률35%주문가능금액", description="증거금률35%주문가능금액")
     """ 증거금률35%주문가능금액 """
     MgnRat50ordAbleAmt: int = Field(default=0, title="증거금률50%주문가능금액", description="증거금률50%주문가능금액")
@@ -158,11 +172,14 @@ class CSPAQ22200OutBlock2(BaseModel):
     """ 매도대금담보대출금액 """
     RcvblUablOrdAbleAmt: int = Field(
         default=0,
-        title="미수불가주문가능금액 (Order-able amount disallowing receivable)",
+        title="미수불가주문가능금액 (Order-able amount disallowing 미수 / credit ordering)",
         description=(
-            "Order-able cash amount that excludes the unsettled-receivable-disallowed portion. "
-            "in KRW. Length 16. Pydantic auto-coerces. "
-            "Added by LS Securities on 2026-04-10."
+            "Order-able amount that disallows 미수 (missed-payment / credit) usage. "
+            "Added by LS Securities on 2026-04-11. From 2026-04-11 12:00 KST onward, "
+            "this field carries the legacy 증거금률 100% 주문가능 금액 (100% margin-rate "
+            "order-able amount) that was previously exposed by MgnRat100pctOrdAbleAmt. "
+            "Callers that previously read MgnRat100pctOrdAbleAmt for 증거금률 100% semantics "
+            "must migrate to this field. in KRW. Length 16. Pydantic auto-coerces."
         ),
         examples=[306, 0, 100000],
     )
