@@ -120,7 +120,7 @@ job = await pg.run_async(
 
 ```
 5-Layer Architecture:
-1. Registry Layer   - 노드/플러그인 메타데이터 (72개 노드, 77개 플러그인)
+1. Registry Layer   - 노드/플러그인 메타데이터 (73개 노드, 77개 플러그인)
 2. Credential Layer - 인증 정보 관리
 3. Definition Layer - JSON 워크플로우 정의 (노드, 엣지, 크레덴셜)
 4. Job Layer        - 상태 유지 실행 인스턴스 (최대 24시간 장기 실행)
