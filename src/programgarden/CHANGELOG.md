@@ -1,4 +1,6 @@
 ## [Unreleased]
+
+## [1.21.6] - 2026-05-06
 ### Fixed
 - `WorkflowJob` — dry_run hang on ScheduleNode/realtime workflows. The
   executor entered `_event_loop()` whenever a workflow contained a
