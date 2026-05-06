@@ -1,3 +1,44 @@
+"""Pydantic models for LS Securities OpenAPI GSH (Overseas Stock Real-time Orderbook).
+
+GSH is a Real-time WebSocket TR that pushes 10-level bid/ask orderbook
+updates for overseas-stock symbols (US markets — NYSE / NASDAQ / AMEX).
+The ``GSHRealRequestBody`` carries the WebSocket subscription envelope
+(``tr_cd`` + ``tr_key`` — exchange-prefixed symbol such as ``"81SOXL"``
+padded to 18 characters); the ``GSHRealResponseBody`` carries the per-update
+orderbook push payload.
+
+⚠️ LS API constraint observed in this codebase (overseas-stock only):
+    - Per-level prices (``offerho1``..``offerho10`` / ``bidho1``..``bidho10``)
+      are populated normally.
+    - Level-1 remaining quantities (``offerrem1`` / ``bidrem1``) actually
+      carry the *aggregate* total quantity (same as ``totofferrem`` /
+      ``totbidrem``) — LS does not split level-1 separately.
+    - Per-level remaining quantities for levels 2..10 (``offerrem2`` …
+      ``offerrem10`` / ``bidrem2`` … ``bidrem10``) are always 0.
+    - Per-level order-counts (``offerno1``..``offerno10`` /
+      ``bidno1``..``bidno10``) and aggregate count totals (``totoffercnt``
+      / ``totbidcnt``) are always 0.
+    - Aggregate quantity totals (``totofferrem`` / ``totbidrem``) are the
+      only reliably populated quantity values.
+    - This constraint applies to overseas-stock only — overseas-futures
+      (OVH / WOH) and Korea-stock (H1_ / HA_) populate per-level fields
+      normally.
+    - Use REST API ``g3106`` if per-level remaining quantities are needed.
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
+2026-05-06 finance TR field metadata plan):
+    - Description text mirrors LS Korean source labels translated into
+      English. Korean source label is appended in parentheses.
+    - The "always 0" notes mirror existing in-codebase observations and
+      are preserved verbatim — they are observed behaviour, not inferred.
+    - Decimal scale and currency unit are NOT declared in the available
+      source — examples use illustrative values only.
+    - ``examples`` for ``tr_key`` come from
+      ``src/finance/example/overseas_stock/real_GSH.py`` ("81SOXL"); response
+      examples mirror typical LS WS orderbook-push payload shapes (with
+      level-2..10 quantities / counts forced to 0 per the API constraint).
+"""
+
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from websockets import Response
@@ -6,16 +47,40 @@ from ....models import BlockRealRequestHeader, BlockRealResponseHeader
 
 
 class GSHRealRequestHeader(BlockRealRequestHeader):
+    """GSH real-time request header. Inherits the standard LS WS request header schema."""
     pass
 
 
 class GSHRealResponseHeader(BlockRealResponseHeader):
+    """GSH real-time response header. Inherits the standard LS WS response header schema."""
     pass
 
 
 class GSHRealRequestBody(BaseModel):
-    tr_cd: str = Field("GSH", description="거래 CD")
-    tr_key: Optional[str] = Field(None, max_length=18, description="단축코드 + padding(공백12자리)")
+    """GSHRealRequestBody — WebSocket subscription envelope for orderbook push.
+
+    ``tr_key`` is the LS-internal 18-character key combining exchange code
+    and ticker; if shorter, it is right-padded with spaces by the validator
+    below.
+    """
+
+    tr_cd: str = Field(
+        default="GSH",
+        title="거래 CD (TR code)",
+        description="Fixed TR code identifier for this subscription. Always 'GSH'.",
+        examples=["GSH"],
+    )
+    tr_key: Optional[str] = Field(
+        default=None,
+        max_length=18,
+        title="단축코드 + padding (Exchange-prefixed key, 18-char space-padded)",
+        description=(
+            "Exchange-prefixed key combining exchange code (2 chars: '81' = "
+            "NYSE / AMEX, '82' = NASDAQ) and short symbol code, then "
+            "right-padded with spaces to 18 characters."
+        ),
+        examples=["81SOXL             ", "82TSLA             "],
+    )
 
     @field_validator("tr_key", mode="before")
     def ensure_trailing_12_spaces(cls, v: Optional[str]) -> Optional[str]:
@@ -31,141 +96,488 @@ class GSHRealRequestBody(BaseModel):
 
 class GSHRealRequest(BaseModel):
     """
-    해외주식 호가 실시간 요청
+    해외주식 호가 실시간 요청 (Overseas Stock Real-time Orderbook — request envelope).
     """
     header: GSHRealRequestHeader = Field(
         GSHRealRequestHeader(
             token="",
             tr_type="3"
         ),
-        title="요청 헤더 데이터 블록",
-        description="GSH API 요청을 위한 헤더 데이터 블록"
+        title="요청 헤더 데이터 블록 (Request header block)",
+        description="GSH WebSocket subscription header block (token + tr_type)."
     )
-    """요청 헤더 데이터 블록"""
     body: GSHRealRequestBody = Field(
         GSHRealRequestBody(
             tr_cd="GSH",
             tr_key=""
         ),
-        title="입력 데이터 블록",
-        description="해외주식 호가 입력 데이터 블록",
+        title="입력 데이터 블록 (Input body block)",
+        description="해외주식 호가 input body — TR code and 18-char exchange-prefixed key.",
     )
 
 
 class GSHRealResponseBody(BaseModel):
+    """GSHRealResponseBody — 10-level orderbook push payload for a US overseas stock.
+
+    See module-level docstring for the LS API constraint that forces
+    per-level quantities (levels 2..10) and all per-level / total order-counts
+    to 0 for overseas stock.
     """
-    GSH 실시간 응답 바디 모델
 
-    필드 설명은 LS증권 WSS GSH 응답 규격에 따릅니다.
+    symbol: str = Field(
+        ...,
+        title="종목코드 (Symbol / ticker)",
+        description="Ticker symbol of the issue (e.g., 'SOXL', 'AAPL').",
+        examples=["SOXL", "AAPL"],
+    )
+    loctime: str = Field(
+        ...,
+        title="현지호가시간 (Orderbook time — local exchange)",
+        description="Orderbook update time at the local exchange in HHMMSS format.",
+        examples=["093015"],
+    )
+    kortime: str = Field(
+        ...,
+        title="한국호가시간 (Orderbook time — Korea local time)",
+        description="Orderbook update time in Korea local time, HHMMSS.",
+        examples=["223015"],
+    )
 
-    ⚠️ LS증권 API 제약 (해외주식 한정):
-    - 호가 가격(offerho/bidho 1~10): 정상 제공
-    - 잔량(offerrem/bidrem 2~10): 항상 0 (개별 호가단계 잔량 미제공)
-    - 잔량(offerrem1/bidrem1): totofferrem/totbidrem과 동일 (총잔량이 1단계에 합산)
-    - 건수(offerno/bidno 1~10): 항상 0 (호가 건수 미제공)
-    - 해외선물(OVH/WOH), 국내주식(H1_/HA_)은 개별 단계별 데이터 정상 제공됨
+    # Level 1
+    offerho1: float = Field(
+        ...,
+        title="매도호가1 (Ask price — level 1)",
+        description=(
+            "Ask price at level 1. Decimal scale not declared in available "
+            "source — consume as returned by LS."
+        ),
+        examples=[12.24],
+    )
+    bidho1: float = Field(
+        ...,
+        title="매수호가1 (Bid price — level 1)",
+        description="Bid price at level 1.",
+        examples=[12.20],
+    )
+    offerrem1: int = Field(
+        ...,
+        title="매도호가잔량1 (Ask remaining quantity — level 1, aggregate)",
+        description=(
+            "Ask remaining quantity at level 1. ⚠️ For overseas stock LS "
+            "does NOT split level 1 — this carries the aggregate total ask "
+            "quantity (same as ``totofferrem``)."
+        ),
+        examples=[1000],
+    )
+    bidrem1: int = Field(
+        ...,
+        title="매수호가잔량1 (Bid remaining quantity — level 1, aggregate)",
+        description=(
+            "Bid remaining quantity at level 1. ⚠️ For overseas stock LS "
+            "does NOT split level 1 — this carries the aggregate total bid "
+            "quantity (same as ``totbidrem``)."
+        ),
+        examples=[1500],
+    )
+    offerno1: int = Field(
+        ...,
+        title="매도호가건수1 (Ask order-count — level 1)",
+        description="Ask order count at level 1. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno1: int = Field(
+        ...,
+        title="매수호가건수1 (Bid order-count — level 1)",
+        description="Bid order count at level 1. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    개별 잔량이 필요하면 REST API(g3106)를 사용하세요.
-    """
-    symbol: str = Field(..., title="종목코드", description="종목코드 (예: SOXL)")
-    """종목코드"""
-    loctime: str = Field(..., title="현지호가시간", description="현지 호가 시간 (HHMMSS)")
-    """현지 호가 시간 (HHMMSS)"""
-    kortime: str = Field(..., title="한국호가시간", description="한국 호가 시간 (HHMMSS)")
-    """한국 호가 시간 (HHMMSS)"""
+    # Level 2
+    offerho2: float = Field(
+        ...,
+        title="매도호가2 (Ask price — level 2)",
+        description="Ask price at level 2.",
+        examples=[12.25],
+    )
+    bidho2: float = Field(
+        ...,
+        title="매수호가2 (Bid price — level 2)",
+        description="Bid price at level 2.",
+        examples=[12.19],
+    )
+    offerrem2: int = Field(
+        ...,
+        title="매도호가잔량2 (Ask remaining quantity — level 2)",
+        description="Ask remaining quantity at level 2. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem2: int = Field(
+        ...,
+        title="매수호가잔량2 (Bid remaining quantity — level 2)",
+        description="Bid remaining quantity at level 2. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno2: int = Field(
+        ...,
+        title="매도호가건수2 (Ask order-count — level 2)",
+        description="Ask order count at level 2. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno2: int = Field(
+        ...,
+        title="매수호가건수2 (Bid order-count — level 2)",
+        description="Bid order count at level 2. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    # Offer/Bid price and quantities for levels 1..10
-    offerho1: float = Field(..., title="매도호가1", description="매도호가1 (소수점 포함, 예: 12.2400)")
-    """매도호가1"""
-    bidho1: float = Field(..., title="매수호가1", description="매수호가1 (소수점 포함, 예: 12.2000)")
-    """매수호가1"""
-    offerrem1: int = Field(..., title="매도호가잔량1", description="매도호가 잔량 (⚠️ 실제로는 totofferrem과 동일한 총잔량)")
-    """매도호가 잔량1 — 실제로는 총잔량(totofferrem)이 합산되어 나옴"""
-    bidrem1: int = Field(..., title="매수호가잔량1", description="매수호가 잔량 (⚠️ 실제로는 totbidrem과 동일한 총잔량)")
-    """매수호가 잔량1 — 실제로는 총잔량(totbidrem)이 합산되어 나옴"""
-    offerno1: int = Field(..., title="매도호가건수1", description="매도호가 건수 (⚠️ API 미제공: 항상 0)")
-    """매도호가 건수1 — API 미제공: 항상 0"""
-    bidno1: int = Field(..., title="매수호가건수1", description="매수호가 건수 (⚠️ API 미제공: 항상 0)")
-    """매수호가 건수1 — API 미제공: 항상 0"""
+    # Level 3
+    offerho3: float = Field(
+        ...,
+        title="매도호가3 (Ask price — level 3)",
+        description="Ask price at level 3.",
+        examples=[12.26],
+    )
+    bidho3: float = Field(
+        ...,
+        title="매수호가3 (Bid price — level 3)",
+        description="Bid price at level 3.",
+        examples=[12.18],
+    )
+    offerrem3: int = Field(
+        ...,
+        title="매도호가잔량3 (Ask remaining quantity — level 3)",
+        description="Ask remaining quantity at level 3. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem3: int = Field(
+        ...,
+        title="매수호가잔량3 (Bid remaining quantity — level 3)",
+        description="Bid remaining quantity at level 3. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno3: int = Field(
+        ...,
+        title="매도호가건수3 (Ask order-count — level 3)",
+        description="Ask order count at level 3. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno3: int = Field(
+        ...,
+        title="매수호가건수3 (Bid order-count — level 3)",
+        description="Bid order count at level 3. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    offerho2: float = Field(..., title="매도호가2", description="매도호가2 (소수점 포함)")
-    bidho2: float = Field(..., title="매수호가2", description="매수호가2 (소수점 포함)")
-    offerrem2: int = Field(..., title="매도호가잔량2", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem2: int = Field(..., title="매수호가잔량2", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno2: int = Field(..., title="매도호가건수2", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno2: int = Field(..., title="매수호가건수2", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
+    # Level 4
+    offerho4: float = Field(
+        ...,
+        title="매도호가4 (Ask price — level 4)",
+        description="Ask price at level 4.",
+        examples=[12.27],
+    )
+    bidho4: float = Field(
+        ...,
+        title="매수호가4 (Bid price — level 4)",
+        description="Bid price at level 4.",
+        examples=[12.17],
+    )
+    offerrem4: int = Field(
+        ...,
+        title="매도호가잔량4 (Ask remaining quantity — level 4)",
+        description="Ask remaining quantity at level 4. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem4: int = Field(
+        ...,
+        title="매수호가잔량4 (Bid remaining quantity — level 4)",
+        description="Bid remaining quantity at level 4. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno4: int = Field(
+        ...,
+        title="매도호가건수4 (Ask order-count — level 4)",
+        description="Ask order count at level 4. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno4: int = Field(
+        ...,
+        title="매수호가건수4 (Bid order-count — level 4)",
+        description="Bid order count at level 4. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    offerho3: float = Field(..., title="매도호가3", description="매도호가3 (소수점 포함)")
-    bidho3: float = Field(..., title="매수호가3", description="매수호가3 (소수점 포함)")
-    offerrem3: int = Field(..., title="매도호가잔량3", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem3: int = Field(..., title="매수호가잔량3", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno3: int = Field(..., title="매도호가건수3", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno3: int = Field(..., title="매수호가건수3", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
+    # Level 5
+    offerho5: float = Field(
+        ...,
+        title="매도호가5 (Ask price — level 5)",
+        description="Ask price at level 5.",
+        examples=[12.28],
+    )
+    bidho5: float = Field(
+        ...,
+        title="매수호가5 (Bid price — level 5)",
+        description="Bid price at level 5.",
+        examples=[12.16],
+    )
+    offerrem5: int = Field(
+        ...,
+        title="매도호가잔량5 (Ask remaining quantity — level 5)",
+        description="Ask remaining quantity at level 5. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem5: int = Field(
+        ...,
+        title="매수호가잔량5 (Bid remaining quantity — level 5)",
+        description="Bid remaining quantity at level 5. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno5: int = Field(
+        ...,
+        title="매도호가건수5 (Ask order-count — level 5)",
+        description="Ask order count at level 5. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno5: int = Field(
+        ...,
+        title="매수호가건수5 (Bid order-count — level 5)",
+        description="Bid order count at level 5. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    offerho4: float = Field(..., title="매도호가4", description="매도호가4 (소수점 포함)")
-    bidho4: float = Field(..., title="매수호가4", description="매수호가4 (소수점 포함)")
-    offerrem4: int = Field(..., title="매도호가잔량4", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem4: int = Field(..., title="매수호가잔량4", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno4: int = Field(..., title="매도호가건수4", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno4: int = Field(..., title="매수호가건수4", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
+    # Level 6
+    offerho6: float = Field(
+        ...,
+        title="매도호가6 (Ask price — level 6)",
+        description="Ask price at level 6.",
+        examples=[12.29],
+    )
+    bidho6: float = Field(
+        ...,
+        title="매수호가6 (Bid price — level 6)",
+        description="Bid price at level 6.",
+        examples=[12.15],
+    )
+    offerrem6: int = Field(
+        ...,
+        title="매도호가잔량6 (Ask remaining quantity — level 6)",
+        description="Ask remaining quantity at level 6. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem6: int = Field(
+        ...,
+        title="매수호가잔량6 (Bid remaining quantity — level 6)",
+        description="Bid remaining quantity at level 6. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno6: int = Field(
+        ...,
+        title="매도호가건수6 (Ask order-count — level 6)",
+        description="Ask order count at level 6. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno6: int = Field(
+        ...,
+        title="매수호가건수6 (Bid order-count — level 6)",
+        description="Bid order count at level 6. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    offerho5: float = Field(..., title="매도호가5", description="매도호가5 (소수점 포함)")
-    bidho5: float = Field(..., title="매수호가5", description="매수호가5 (소수점 포함)")
-    offerrem5: int = Field(..., title="매도호가잔량5", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem5: int = Field(..., title="매수호가잔량5", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno5: int = Field(..., title="매도호가건수5", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno5: int = Field(..., title="매수호가건수5", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
+    # Level 7
+    offerho7: float = Field(
+        ...,
+        title="매도호가7 (Ask price — level 7)",
+        description="Ask price at level 7.",
+        examples=[12.30],
+    )
+    bidho7: float = Field(
+        ...,
+        title="매수호가7 (Bid price — level 7)",
+        description="Bid price at level 7.",
+        examples=[12.14],
+    )
+    offerrem7: int = Field(
+        ...,
+        title="매도호가잔량7 (Ask remaining quantity — level 7)",
+        description="Ask remaining quantity at level 7. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem7: int = Field(
+        ...,
+        title="매수호가잔량7 (Bid remaining quantity — level 7)",
+        description="Bid remaining quantity at level 7. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno7: int = Field(
+        ...,
+        title="매도호가건수7 (Ask order-count — level 7)",
+        description="Ask order count at level 7. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno7: int = Field(
+        ...,
+        title="매수호가건수7 (Bid order-count — level 7)",
+        description="Bid order count at level 7. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    offerho6: float = Field(..., title="매도호가6", description="매도호가6 (소수점 포함)")
-    bidho6: float = Field(..., title="매수호가6", description="매수호가6 (소수점 포함)")
-    offerrem6: int = Field(..., title="매도호가잔량6", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem6: int = Field(..., title="매수호가잔량6", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno6: int = Field(..., title="매도호가건수6", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno6: int = Field(..., title="매수호가건수6", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
+    # Level 8
+    offerho8: float = Field(
+        ...,
+        title="매도호가8 (Ask price — level 8)",
+        description="Ask price at level 8.",
+        examples=[12.31],
+    )
+    bidho8: float = Field(
+        ...,
+        title="매수호가8 (Bid price — level 8)",
+        description="Bid price at level 8.",
+        examples=[12.13],
+    )
+    offerrem8: int = Field(
+        ...,
+        title="매도호가잔량8 (Ask remaining quantity — level 8)",
+        description="Ask remaining quantity at level 8. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem8: int = Field(
+        ...,
+        title="매수호가잔량8 (Bid remaining quantity — level 8)",
+        description="Bid remaining quantity at level 8. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno8: int = Field(
+        ...,
+        title="매도호가건수8 (Ask order-count — level 8)",
+        description="Ask order count at level 8. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno8: int = Field(
+        ...,
+        title="매수호가건수8 (Bid order-count — level 8)",
+        description="Bid order count at level 8. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    offerho7: float = Field(..., title="매도호가7", description="매도호가7 (소수점 포함)")
-    bidho7: float = Field(..., title="매수호가7", description="매수호가7 (소수점 포함)")
-    offerrem7: int = Field(..., title="매도호가잔량7", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem7: int = Field(..., title="매수호가잔량7", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno7: int = Field(..., title="매도호가건수7", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno7: int = Field(..., title="매수호가건수7", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
+    # Level 9
+    offerho9: float = Field(
+        ...,
+        title="매도호가9 (Ask price — level 9)",
+        description="Ask price at level 9.",
+        examples=[12.32],
+    )
+    bidho9: float = Field(
+        ...,
+        title="매수호가9 (Bid price — level 9)",
+        description="Bid price at level 9.",
+        examples=[12.12],
+    )
+    offerrem9: int = Field(
+        ...,
+        title="매도호가잔량9 (Ask remaining quantity — level 9)",
+        description="Ask remaining quantity at level 9. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem9: int = Field(
+        ...,
+        title="매수호가잔량9 (Bid remaining quantity — level 9)",
+        description="Bid remaining quantity at level 9. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno9: int = Field(
+        ...,
+        title="매도호가건수9 (Ask order-count — level 9)",
+        description="Ask order count at level 9. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno9: int = Field(
+        ...,
+        title="매수호가건수9 (Bid order-count — level 9)",
+        description="Bid order count at level 9. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    offerho8: float = Field(..., title="매도호가8", description="매도호가8 (소수점 포함)")
-    bidho8: float = Field(..., title="매수호가8", description="매수호가8 (소수점 포함)")
-    offerrem8: int = Field(..., title="매도호가잔량8", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem8: int = Field(..., title="매수호가잔량8", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno8: int = Field(..., title="매도호가건수8", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno8: int = Field(..., title="매수호가건수8", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
+    # Level 10
+    offerho10: float = Field(
+        ...,
+        title="매도호가10 (Ask price — level 10)",
+        description="Ask price at level 10.",
+        examples=[12.33],
+    )
+    bidho10: float = Field(
+        ...,
+        title="매수호가10 (Bid price — level 10)",
+        description="Bid price at level 10.",
+        examples=[12.11],
+    )
+    offerrem10: int = Field(
+        ...,
+        title="매도호가잔량10 (Ask remaining quantity — level 10)",
+        description="Ask remaining quantity at level 10. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidrem10: int = Field(
+        ...,
+        title="매수호가잔량10 (Bid remaining quantity — level 10)",
+        description="Bid remaining quantity at level 10. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    offerno10: int = Field(
+        ...,
+        title="매도호가건수10 (Ask order-count — level 10)",
+        description="Ask order count at level 10. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    bidno10: int = Field(
+        ...,
+        title="매수호가건수10 (Bid order-count — level 10)",
+        description="Bid order count at level 10. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
 
-    offerho9: float = Field(..., title="매도호가9", description="매도호가9 (소수점 포함)")
-    bidho9: float = Field(..., title="매수호가9", description="매수호가9 (소수점 포함)")
-    offerrem9: int = Field(..., title="매도호가잔량9", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem9: int = Field(..., title="매수호가잔량9", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno9: int = Field(..., title="매도호가건수9", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno9: int = Field(..., title="매수호가건수9", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-
-    offerho10: float = Field(..., title="매도호가10", description="매도호가10 (소수점 포함)")
-    bidho10: float = Field(..., title="매수호가10", description="매수호가10 (소수점 포함)")
-    offerrem10: int = Field(..., title="매도호가잔량10", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidrem10: int = Field(..., title="매수호가잔량10", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    offerno10: int = Field(..., title="매도호가건수10", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-    bidno10: int = Field(..., title="매수호가건수10", description="⚠️ API 미제공: 항상 0 (해외주식 제약)")
-
-    totoffercnt: int = Field(..., title="매도호가총건수", description="매도호가의 총 건수 (⚠️ API 미제공: 항상 0)")
-    totbidcnt: int = Field(..., title="매수호가총건수", description="매수호가의 총 건수 (⚠️ API 미제공: 항상 0)")
-    totofferrem: int = Field(..., title="매도호가총수량", description="매도호가의 총 수량 (유일하게 유효한 잔량 — offerrem1과 동일)")
-    totbidrem: int = Field(..., title="매수호가총수량", description="매수호가의 총 수량 (유일하게 유효한 잔량 — bidrem1과 동일)")
+    # Aggregate totals
+    totoffercnt: int = Field(
+        ...,
+        title="매도호가총건수 (Total ask order-count)",
+        description="Total ask order count. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    totbidcnt: int = Field(
+        ...,
+        title="매수호가총건수 (Total bid order-count)",
+        description="Total bid order count. ⚠️ LS API does not expose this for overseas stock — always 0.",
+        examples=[0],
+    )
+    totofferrem: int = Field(
+        ...,
+        title="매도호가총수량 (Total ask remaining quantity)",
+        description=(
+            "Total ask remaining quantity. The only reliably populated ask "
+            "quantity for overseas stock — same value also appears in "
+            "``offerrem1``."
+        ),
+        examples=[1000],
+    )
+    totbidrem: int = Field(
+        ...,
+        title="매수호가총수량 (Total bid remaining quantity)",
+        description=(
+            "Total bid remaining quantity. The only reliably populated bid "
+            "quantity for overseas stock — same value also appears in "
+            "``bidrem1``."
+        ),
+        examples=[1500],
+    )
 
 
 class GSHRealResponse(BaseModel):
     header: Optional[GSHRealResponseHeader]
     body: Optional[GSHRealResponseBody]
 
-    rsp_cd: str = Field(..., title="응답 코드")
+    rsp_cd: str = Field(..., title="응답 코드 (Response code)")
     """응답 코드"""
-    rsp_msg: str = Field(..., title="응답 메시지")
+    rsp_msg: str = Field(..., title="응답 메시지 (Response message)")
     """응답 메시지"""
-    error_msg: Optional[str] = Field(None, title="오류 메시지")
+    error_msg: Optional[str] = Field(None, title="오류 메시지 (Error message)")
     """오류 메시지 (있으면)"""
     _raw_data: Optional[Response] = PrivateAttr(default=None)
     """private으로 BaseModel의 직렬화에 포함시키지 않는다"""
