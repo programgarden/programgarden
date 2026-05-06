@@ -1,4 +1,36 @@
 ## [Unreleased]
+### Fixed
+- `WorkflowJob` — dry_run hang on ScheduleNode/realtime workflows. The
+  executor entered `_event_loop()` whenever a workflow contained a
+  ScheduleNode or `stay_connected` node, even under `dry_run=True`. The
+  inner `scheduler_task` correctly emitted a single `schedule_tick` and
+  exited per-node, but the parent event loop kept waiting for ticks that
+  never arrived — workflows ran until external cancellation (typically a
+  60s sandbox timeout). External chatbots producing 3-node ScheduleNode
+  workflows therefore plateaued and were forced to fall back to 2-node
+  saves without the schedule branch.
+  - Guard added at `WorkflowExecutor` Phase 2: when `is_dry_run` is set,
+    `_event_loop()` is skipped entirely. Persistent tasks registered by
+    ScheduleNode are cancelled in the existing `cleanup_persistent_nodes()`
+    finally path, so cleanup semantics are unchanged.
+  - All 9 schedule-based example workflows (`18-trigger-schedule`,
+    `55-korea-stock-schedule`, `59-trend-trailing-bot`,
+    `60-bollinger-reversion-bot`, `71-telegram-scheduled-morning-report`,
+    `74-auto-stop-loss-per-position`, `75-day-trading-bot`,
+    `76-golden-cross-auto-buy`, `77-risk-manager-bot`) now reach
+    `status="completed"` within ~0.5s under dry_run instead of the prior
+    forced-cancel path.
+
+### Changed
+- `tests/test_examples_validation.py::LONG_RUNNING_WORKFLOWS` reduced to
+  empty set. Every workflow is now expected to terminate naturally under
+  dry_run rather than be force-stopped by the test harness timeout.
+
+### Added
+- `tests/test_dry_run.py::test_schedule_node_workflow_dry_run_terminates`
+  — regression guard asserting Start→ScheduleNode workflows reach
+  `status="completed"` within 5s under dry_run (previously hung
+  indefinitely).
 
 ## [1.21.5] - 2026-05-05
 ### Fixed

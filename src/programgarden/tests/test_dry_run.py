@@ -249,7 +249,7 @@ async def test_query_node_still_calls_api():
 # ============================================================
 
 async def test_dry_run_completes_quickly():
-    """ScheduleNode + Order 조합 워크플로우가 dry_run 으로 30초 이내 종료"""
+    """StartNode-only 워크플로우가 dry_run 으로 30초 이내 종료 (smoke)"""
     workflow = {
         "id": "test-dry-run-wf",
         "name": "Dry Run Quick Test",
@@ -279,4 +279,64 @@ async def test_dry_run_completes_quickly():
     assert elapsed < 30.0, f"dry_run 워크플로우가 30초 내 종료되지 않음 (elapsed={elapsed:.1f}s)"
     assert job.status in ("completed", "finished", "success"), (
         f"dry_run workflow should complete, got status={job.status}"
+    )
+
+
+# ============================================================
+# 7. Regression: ScheduleNode workflow must terminate under dry_run
+# ============================================================
+
+async def test_schedule_node_workflow_dry_run_terminates():
+    """ScheduleNode + downstream 노드가 dry_run 에서 _event_loop 진입 없이 자연 종료.
+
+    이전 버전에서는 _event_loop 가 schedule_tick 을 무한 대기하여 외부 60s
+    sandbox timeout 까지 hang 되었음. dry_run 가드 추가로 메인 플로우 1회
+    실행 후 자연 종료되어야 함 (status=completed, 5초 이내).
+    """
+    workflow = {
+        "id": "test-schedule-dry-run",
+        "name": "Schedule Dry Run Regression",
+        "nodes": [
+            {"id": "start", "type": "StartNode"},
+            {
+                "id": "cron",
+                "type": "ScheduleNode",
+                "cron": "*/5 * * * *",
+                "timezone": "America/New_York",
+                "enabled": True,
+            },
+        ],
+        "edges": [
+            {"from": "start", "to": "cron"},
+        ],
+    }
+
+    executor = WorkflowExecutor()
+    start = time.monotonic()
+
+    job = await executor.execute(
+        workflow,
+        context_params={"dry_run": True},
+        job_id=f"dry-run-schedule-{int(time.time() * 1000)}",
+    )
+
+    # 잡 실행 task 가 자연 종료되기까지 대기 — 최대 5초
+    try:
+        await asyncio.wait_for(job._task, timeout=5.0)
+    except asyncio.TimeoutError:
+        await job.stop()
+        elapsed = time.monotonic() - start
+        raise AssertionError(
+            f"ScheduleNode 워크플로우가 dry_run 에서 5초 내 종료 안 됨 "
+            f"(elapsed={elapsed:.1f}s, status={job.status}). "
+            f"_event_loop 가 schedule_tick 을 무한 대기 중일 가능성."
+        )
+
+    elapsed = time.monotonic() - start
+    assert elapsed < 5.0, f"dry_run termination too slow (elapsed={elapsed:.1f}s)"
+    assert job.status == "completed", (
+        f"expected status='completed', got {job.status!r} (elapsed={elapsed:.1f}s)"
+    )
+    assert job.stats["errors_count"] == 0, (
+        f"unexpected errors: {job.stats.get('last_error')}"
     )

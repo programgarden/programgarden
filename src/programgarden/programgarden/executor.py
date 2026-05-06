@@ -14994,7 +14994,11 @@ class WorkflowJob:
                 self._has_schedule_node or
                 bool(self.context._persistent_tasks)  # Any persistent background tasks
             )
-            if has_event_sources and self.context.is_running:
+            # dry_run: skip event loop. ScheduleNode/realtime executors emit a
+            # single dry_run cycle and exit; staying in the event loop would
+            # block forever waiting for ticks that never arrive. Persistent
+            # tasks are cleaned up in the finally block below.
+            if has_event_sources and self.context.is_running and not self.context.is_dry_run:
                 logger.info(
                     f"Entering event loop "
                     f"(stay_connected: {self._stay_connected_nodes}, "
@@ -15004,6 +15008,12 @@ class WorkflowJob:
                 # 실시간 checkpoint 주기 저장 시작
                 self._start_checkpoint_loop()
                 await self._event_loop()
+            elif has_event_sources and self.context.is_dry_run:
+                logger.info(
+                    f"[dry_run] Skipping event loop "
+                    f"(schedule: {self._has_schedule_node}, "
+                    f"persistent_tasks: {len(self.context._persistent_tasks)})"
+                )
 
             # Phase 3: Mark completed if no failures
             if not self.context.is_failed:

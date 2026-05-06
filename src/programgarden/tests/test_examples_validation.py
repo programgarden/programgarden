@@ -37,25 +37,12 @@ EXAMPLES_DIR = Path(__file__).parent.parent / "examples" / "workflows"
 PROGRAMMER_DIR = Path(__file__).parent.parent / "examples" / "programmer_example"
 WORKFLOW_FILES: List[Path] = sorted(EXAMPLES_DIR.glob("*.json"))
 
-# Workflows that intentionally run past a single cycle (realtime feeds,
-# scheduled bots). They are expected to be cancelled by the test harness
-# once the timeout hits — not a failure signal.
-LONG_RUNNING_WORKFLOWS = {
-    "18-trigger-schedule",
-    "39-realtime-futures-tick",
-    "40-realtime-stock-tick",
-    "55-korea-stock-schedule",
-    "57-futures-paper-backtest-heavy",
-    "59-trend-trailing-bot",
-    "60-bollinger-reversion-bot",
-    "61-hkex-futures-bot",
-    "62-rsi-futures-bot",
-    "71-telegram-scheduled-morning-report",
-    "74-auto-stop-loss-per-position",
-    "75-day-trading-bot",
-    "76-golden-cross-auto-buy",
-    "77-risk-manager-bot",
-}
+# Workflows that historically required forced cancellation under dry_run
+# because the event loop blocked on schedule_tick / realtime ticks that
+# never arrive. Since the executor now skips _event_loop in dry_run mode
+# (ScheduleNode/Real* executors emit a single dry_run cycle and exit),
+# every workflow is expected to reach status='completed' naturally.
+LONG_RUNNING_WORKFLOWS: set[str] = set()
 
 # Workflows whose dry_run execution depends on mock-friendly TR responses
 # that MagicMock cannot synthesize (e.g. auto-iterate from historical into
