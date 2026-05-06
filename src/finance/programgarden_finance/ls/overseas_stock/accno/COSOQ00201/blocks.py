@@ -1,3 +1,39 @@
+"""Pydantic models for LS Securities OpenAPI COSOQ00201 (Overseas Stock Comprehensive Balance Valuation).
+
+COSOQ00201 returns a comprehensive snapshot of an overseas stock account's
+balance and valuation as of ``BaseDt`` (YYYYMMDD), broken down into:
+
+    - OutBlock1: input echo (account / base date / filters).
+    - OutBlock2: overall valuation summary (returns, KRW-converted totals,
+      per-day estimated deposit, loan amount, etc.).
+    - OutBlock3: per-currency balance detail (deposit, valuation, P&L,
+      base FX rate, etc.).
+    - OutBlock4: per-symbol balance detail (quantity, unit price,
+      foreign-currency valuation, base FX rate, loan terms, etc.).
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and
+the 2026-05-06 finance TR field metadata plan):
+    - Description text mirrors the LS Korean source labels translated
+      into English. Korean source label is appended in parentheses for
+      AI chatbot Korean↔English mapping.
+    - Field length, currency unit, decimal scale, and complete enum
+      mappings are NOT declared in the source available to this codebase.
+      Where the Korean spec is silent the description states "consume
+      as returned by LS" and does not invent additional values.
+    - ``examples`` come from
+      ``src/finance/example/overseas_stock/run_cosoq00201.py`` where
+      present, plus safe placeholder values
+      (``"12345678901"`` for account numbers — never real accounts).
+
+Note on amount-field types:
+    Several fields that semantically represent monetary amounts are
+    declared as ``float`` (``DpsConvEvalAmt``, ``StkConvEvalAmt``, …).
+    LS may return these as numeric or stringified-numeric depending on
+    the gateway; Pydantic v2 coerces stringified numerics into ``float``
+    automatically. The decimal scale is not declared in the source
+    available to this codebase — consume the value as returned by LS.
+"""
+
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, PrivateAttr, Field
@@ -7,63 +43,56 @@ from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class COSOQ00201RequestHeader(BlockRequestHeader):
+    """COSOQ00201 request header. Inherits the standard LS request header schema."""
     pass
 
 
 class COSOQ00201ResponseHeader(BlockResponseHeader):
+    """COSOQ00201 response header. Inherits the standard LS response header schema."""
     pass
 
 
 class COSOQ00201InBlock1(BaseModel):
-    """
-    COSOQ00201InBlock1 데이터 블록
+    """COSOQ00201InBlock1 — input block for overseas stock comprehensive balance valuation."""
 
-    LS증권 OpenAPI의 COSOQ00201 해외주식 종합잔고평가 조회에 사용되는 입력 데이터 블록입니다.
-
-    Attributes:
-        RecCnt (int): 레코드갯수 (예: 1)
-        BaseDt (str): 기준일자 (YYYYMMDD)
-        CrcyCode (str): 통화코드 (ALL: 전체, USD: 미국 등)
-        AstkBalTpCode (str): 해외증권잔고구분코드 (00: 전체, 10: 일반, 20: 소수점)
-    """
     RecCnt: int = Field(
         default=1,
-        title="레코드갯수",
-        description="레코드갯수 (예: 1)"
+        title="레코드갯수 (Record count)",
+        description="Number of records sent in this request. LS examples typically use 1.",
+        examples=[1],
     )
-    """레코드갯수"""
-
     BaseDt: str = Field(
         default="",
-        title="기준일자",
-        description="기준일자 (YYYYMMDD)"
+        title="기준일자 (Base date)",
+        description=(
+            "Reference date for the balance snapshot, in YYYYMMDD format. "
+            "Empty string is rejected by LS; pass a concrete date."
+        ),
+        examples=["20231020", "20260122"],
     )
-    """기준일자 (YYYYMMDD)"""
-
     CrcyCode: str = Field(
         default="ALL",
-        title="통화코드",
-        description="통화코드 (ALL: 전체, USD: 미국 등)"
+        title="통화코드 (Currency code)",
+        description=(
+            "Currency filter. 'ALL' = all currencies (전체), 'USD' = U.S. dollar "
+            "(미국). The LS spec wording for this TR ends with '등' (etc.); "
+            "additional ISO-4217-style currency codes may be accepted server-side."
+        ),
+        examples=["ALL", "USD"],
     )
-    """통화코드 (ALL: 전체, USD: 미국 등)"""
-
     AstkBalTpCode: str = Field(
         default="00",
-        title="해외증권잔고구분코드",
-        description="해외증권잔고구분코드 (00: 전체, 10: 일반, 20: 소수점)"
+        title="해외증권잔고구분코드 (Overseas-stock balance type code)",
+        description=(
+            "Overseas-stock balance classification filter. '00' = all (전체), "
+            "'10' = standard (일반), '20' = fractional (소수점)."
+        ),
+        examples=["00", "10", "20"],
     )
-    """해외증권잔고구분코드 (00: 전체, 10: 일반, 20: 소수점)"""
 
 
 class COSOQ00201Request(BaseModel):
-    """
-    COSOQ00201Request 데이터 블록
-    해외주식 종합잔고평가 조회 요청을 위한 데이터 블록입니다.
-
-    Attributes:
-        header (COSOQ00201RequestHeader): 요청 헤더 데이터 블록
-        body (COSOQ00201InBlock1): 요청 본문 데이터 블록
-    """
+    """COSOQ00201 full request envelope (header + body + setup options)."""
     header: COSOQ00201RequestHeader = COSOQ00201RequestHeader(
         content_type="application/json; charset=utf-8",
         authorization="",
@@ -72,595 +101,481 @@ class COSOQ00201Request(BaseModel):
         tr_cont_key="",
         mac_address=""
     )
-    """요청 헤더 데이터 블록"""
     body: dict[Literal["COSOQ00201InBlock1"], COSOQ00201InBlock1] = Field(
         ...,
-        title="입력 데이터 블록",
-        description="해외주식 종합잔고평가 조회를 위한 입력 데이터 블록"
+        title="입력 데이터 블록 (Input body)",
+        description="Wrapped input block keyed by 'COSOQ00201InBlock1'.",
     )
-    """요청 본문 데이터 블록"""
     options: SetupOptions = SetupOptions(
         rate_limit_count=1,
         rate_limit_seconds=2,
         on_rate_limit="wait",
         rate_limit_key="COSOQ00201"
     )
-    """코드 실행 전 설정(setup)을 위한 옵션"""
 
 
 class COSOQ00201OutBlock1(BaseModel):
-    """
-    COSOQ00201OutBlock1 데이터 블록
+    """COSOQ00201OutBlock1 — input echo block.
 
-    응답의 첫 번째 출력 블록으로 계좌 기본정보를 포함합니다.
-
-    Attributes:
-        RecCnt (int): 레코드갯수
-        AcntNo (str): 계좌번호
-        Pwd (str): 비밀번호
-        BaseDt (str): 기준일자
-        CrcyCode (str): 통화코드
-        AstkBalTpCode (str): 해외증권잔고구분코드
+    LS echoes the InBlock1 inputs back in OutBlock1 along with the
+    account number. The actual valuation data lives in OutBlock2 / 3 / 4.
     """
     RecCnt: int = Field(
         default=0,
-        title="레코드갯수",
-        description="응답된 레코드 개수"
+        title="레코드갯수 (Record count)",
+        description="Echoed record count from the request.",
+        examples=[0, 1],
     )
-    """레코드갯수"""
-
     AcntNo: str = Field(
         default="",
-        title="계좌번호",
-        description="계좌번호"
+        title="계좌번호 (Account number)",
+        description="Account number associated with the query. Length not declared in available source.",
+        examples=["12345678901"],
     )
-    """계좌번호"""
-
     Pwd: str = Field(
         default="",
-        title="비밀번호",
-        description="비밀번호"
+        title="비밀번호 (Account password)",
+        description=(
+            "Account password as echoed by LS. Treat as sensitive — avoid logging. "
+            "Real production responses may mask or omit this value."
+        ),
+        examples=[""],
     )
-    """비밀번호"""
-
     BaseDt: str = Field(
         default="",
-        title="기준일자",
-        description="기준일자 (YYYYMMDD)"
+        title="기준일자 (Base date)",
+        description="Echoed base date in YYYYMMDD format.",
+        examples=["20231020"],
     )
-    """기준일자"""
-
     CrcyCode: str = Field(
         default="",
-        title="통화코드",
-        description="통화코드"
+        title="통화코드 (Currency code)",
+        description="Echoed currency filter ('ALL' = all, 'USD' = U.S. dollar, etc.).",
+        examples=["ALL", "USD"],
     )
-    """통화코드"""
-
     AstkBalTpCode: str = Field(
         default="",
-        title="해외증권잔고구분코드",
-        description="해외증권잔고구분코드"
+        title="해외증권잔고구분코드 (Overseas-stock balance type code)",
+        description="Echoed balance type filter. '00' = all, '10' = standard, '20' = fractional.",
+        examples=["00", "10", "20"],
     )
-    """해외증권잔고구분코드"""
 
 
 class COSOQ00201OutBlock2(BaseModel):
-    """
-    COSOQ00201OutBlock2 데이터 블록
+    """COSOQ00201OutBlock2 — overall valuation summary.
 
-    응답의 두 번째 출력 블록으로 전체 평가 요약을 포함합니다.
-
-    Attributes:
-        RecCnt (int): 레코드갯수
-        ErnRat (float): 수익율
-        DpsConvEvalAmt (float): 예수금환산평가금액
-        StkConvEvalAmt (float): 주식환산평가금액
-        DpsastConvEvalAmt (float): 예탁자산환산평가금액
-        WonEvalSumAmt (float): 원화평가합계금액
-        ConvEvalPnlAmt (float): 환산평가손익금액
-        WonDpsBalAmt (float): 원화예수금잔고금액
-        D2EstiDps (float): D2추정예수금
-        LoanAmt (float): 대출금액
+    Aggregated valuation across all currencies, expressed in KRW where
+    converted (``…ConvEvalAmt``) and in KRW directly for ``WonEvalSumAmt``
+    / ``WonDpsBalAmt``. Decimal scale not declared in available source.
     """
     RecCnt: int = Field(
         default=0,
-        title="레코드갯수",
-        description="응답된 레코드 개수"
+        title="레코드갯수 (Record count)",
+        description="Record count for this aggregate block.",
+        examples=[0, 1],
     )
-    """레코드갯수"""
-
     ErnRat: float = Field(
         default=0.0,
-        title="수익율",
-        description="수익율"
+        title="수익율 (Return rate)",
+        description=(
+            "Account-level return rate. Unit (percent vs. ratio) and sign convention "
+            "are not declared in available source — consume as returned by LS."
+        ),
+        examples=[0.0, 12.34, -3.21],
     )
-    """수익율"""
-
     DpsConvEvalAmt: float = Field(
         default=0.0,
-        title="예수금환산평가금액",
-        description="예수금환산평가금액"
+        title="예수금환산평가금액 (Deposit converted-valuation amount)",
+        description="Deposit valuation converted to KRW.",
+        examples=[0.0, 1000000.0],
     )
-    """예수금환산평가금액"""
-
     StkConvEvalAmt: float = Field(
         default=0.0,
-        title="주식환산평가금액",
-        description="주식환산평가금액"
+        title="주식환산평가금액 (Stock converted-valuation amount)",
+        description="Stock valuation converted to KRW.",
+        examples=[0.0, 5000000.0],
     )
-    """주식환산평가금액"""
-
     DpsastConvEvalAmt: float = Field(
         default=0.0,
-        title="예탁자산환산평가금액",
-        description="예탁자산환산평가금액"
+        title="예탁자산환산평가금액 (Deposited-asset converted-valuation amount)",
+        description="Deposited-asset valuation converted to KRW.",
+        examples=[0.0, 6000000.0],
     )
-    """예탁자산환산평가금액"""
-
     WonEvalSumAmt: float = Field(
         default=0.0,
-        title="원화평가합계금액",
-        description="원화평가합계금액"
+        title="원화평가합계금액 (KRW total valuation amount)",
+        description="Total valuation expressed directly in KRW.",
+        examples=[0.0, 6000000.0],
     )
-    """원화평가합계금액"""
-
     ConvEvalPnlAmt: float = Field(
         default=0.0,
-        title="환산평가손익금액",
-        description="환산평가손익금액"
+        title="환산평가손익금액 (Converted-valuation P&L amount)",
+        description="Converted P&L amount (in KRW). Sign indicates gain (+) / loss (-).",
+        examples=[0.0, 100000.0, -50000.0],
     )
-    """환산평가손익금액"""
-
     WonDpsBalAmt: float = Field(
         default=0.0,
-        title="원화예수금잔고금액",
-        description="원화예수금잔고금액"
+        title="원화예수금잔고금액 (KRW deposit balance amount)",
+        description="KRW deposit balance.",
+        examples=[0.0, 200000.0],
     )
-    """원화예수금잔고금액"""
-
     D2EstiDps: float = Field(
         default=0.0,
-        title="D2추정예수금",
-        description="D2추정예수금"
+        title="D2추정예수금 (D+2 estimated deposit)",
+        description="Estimated deposit balance two business days after the base date.",
+        examples=[0.0, 250000.0],
     )
-    """D2추정예수금"""
-
     LoanAmt: float = Field(
         default=0.0,
-        title="대출금액",
-        description="대출금액"
+        title="대출금액 (Loan amount)",
+        description="Total loan amount. Currency / decimal scale not declared in available source.",
+        examples=[0.0, 100000.0],
     )
-    """대출금액"""
 
 
 class COSOQ00201OutBlock3(BaseModel):
-    """
-    COSOQ00201OutBlock3 데이터 블록
+    """COSOQ00201OutBlock3 — per-currency balance detail row.
 
-    응답의 세 번째 출력 블록으로 통화별 잔고 상세를 포함한 리스트입니다.
-
-    Attributes:
-        CrcyCode (str): 통화코드
-        FcurrDps (float): 외화예수금
-        FcurrEvalAmt (float): 외화평가금액
-        FcurrEvalPnlAmt (float): 외화평가손익금액
-        PnlRat (float): 손익율
-        BaseXchrat (float): 기준환율
-        DpsConvEvalAmt (float): 예수금환산평가금액
-        PchsAmt (float): 매입금액
-        StkConvEvalAmt (float): 주식환산평가금액
-        ConvEvalPnlAmt (float): 환산평가손익금액
-        FcurrBuyAmt (float): 외화매수금액
-        FcurrOrdAbleAmt (float): 외화주문가능금액
-        LoanAmt (float): 대출금액
+    One record per currency present in the account. Foreign-currency
+    fields are denominated in ``CrcyCode``; converted-valuation fields
+    are expressed in KRW. Decimal scale not declared in available source.
     """
     CrcyCode: str = Field(
         default="",
-        title="통화코드",
-        description="통화코드"
+        title="통화코드 (Currency code)",
+        description="ISO-4217-style currency code (e.g., 'USD', 'JPY').",
+        examples=["USD", "JPY"],
     )
-    """통화코드"""
-
     FcurrDps: float = Field(
         default=0.0,
-        title="외화예수금",
-        description="외화예수금"
+        title="외화예수금 (Foreign-currency deposit)",
+        description="Foreign-currency deposit balance in ``CrcyCode``.",
+        examples=[0.0, 1000.0],
     )
-    """외화예수금"""
-
     FcurrEvalAmt: float = Field(
         default=0.0,
-        title="외화평가금액",
-        description="외화평가금액"
+        title="외화평가금액 (Foreign-currency valuation amount)",
+        description="Foreign-currency valuation amount in ``CrcyCode``.",
+        examples=[0.0, 5000.0],
     )
-    """외화평가금액"""
-
     FcurrEvalPnlAmt: float = Field(
         default=0.0,
-        title="외화평가손익금액",
-        description="외화평가손익금액"
+        title="외화평가손익금액 (Foreign-currency valuation P&L amount)",
+        description="Foreign-currency P&L in ``CrcyCode``. Sign indicates gain (+) / loss (-).",
+        examples=[0.0, 100.0, -50.0],
     )
-    """외화평가손익금액"""
-
     PnlRat: float = Field(
         default=0.0,
-        title="손익율",
-        description="손익율"
+        title="손익율 (P&L ratio)",
+        description=(
+            "P&L ratio for this currency bucket. Unit (percent vs. ratio) not "
+            "declared in available source — consume as returned by LS."
+        ),
+        examples=[0.0, 12.34],
     )
-    """손익율"""
-
     BaseXchrat: float = Field(
         default=0.0,
-        title="기준환율",
-        description="기준환율"
+        title="기준환율 (Base FX rate)",
+        description=(
+            "Base FX rate used to convert ``CrcyCode`` to KRW. Decimal scale not "
+            "declared in available source."
+        ),
+        examples=[0.0, 1300.0],
     )
-    """기준환율"""
-
     DpsConvEvalAmt: float = Field(
         default=0.0,
-        title="예수금환산평가금액",
-        description="예수금환산평가금액"
+        title="예수금환산평가금액 (Deposit converted-valuation amount, KRW)",
+        description="Deposit valuation for this currency converted to KRW.",
+        examples=[0.0, 1300000.0],
     )
-    """예수금환산평가금액"""
-
     PchsAmt: float = Field(
         default=0.0,
-        title="매입금액",
-        description="매입금액"
+        title="매입금액 (Purchase amount)",
+        description="Total purchase amount for instruments held in ``CrcyCode``.",
+        examples=[0.0, 4000.0],
     )
-    """매입금액"""
-
     StkConvEvalAmt: float = Field(
         default=0.0,
-        title="주식환산평가금액",
-        description="주식환산평가금액"
+        title="주식환산평가금액 (Stock converted-valuation amount, KRW)",
+        description="Stock valuation for this currency converted to KRW.",
+        examples=[0.0, 5500000.0],
     )
-    """주식환산평가금액"""
-
     ConvEvalPnlAmt: float = Field(
         default=0.0,
-        title="환산평가손익금액",
-        description="환산평가손익금액"
+        title="환산평가손익금액 (Converted-valuation P&L amount, KRW)",
+        description="Converted P&L for this currency in KRW. Sign indicates gain (+) / loss (-).",
+        examples=[0.0, 100000.0, -50000.0],
     )
-    """환산평가손익금액"""
-
     FcurrBuyAmt: float = Field(
         default=0.0,
-        title="외화매수금액",
-        description="외화매수금액"
+        title="외화매수금액 (Foreign-currency buy amount)",
+        description="Foreign-currency buy amount in ``CrcyCode``.",
+        examples=[0.0, 4000.0],
     )
-    """외화매수금액"""
-
     FcurrOrdAbleAmt: float = Field(
         default=0.0,
-        title="외화주문가능금액",
-        description="외화주문가능금액"
+        title="외화주문가능금액 (Foreign-currency orderable amount)",
+        description="Foreign-currency amount available for new orders in ``CrcyCode``.",
+        examples=[0.0, 1000.0],
     )
-    """외화주문가능금액"""
-
     LoanAmt: float = Field(
         default=0.0,
-        title="대출금액",
-        description="대출금액"
+        title="대출금액 (Loan amount)",
+        description="Loan amount for this currency bucket. Currency / scale not declared in available source.",
+        examples=[0.0, 1000.0],
     )
-    """대출금액"""
 
 
 class COSOQ00201OutBlock4(BaseModel):
-    """
-    COSOQ00201OutBlock4 데이터 블록
+    """COSOQ00201OutBlock4 — per-symbol balance detail row.
 
-    응답의 네 번째 출력 블록으로 종목별 잔고 상세를 포함한 리스트입니다.
-
-    Attributes:
-        CrcyCode (str): 통화코드
-        ShtnIsuNo (str): 단축종목번호
-        IsuNo (str): 종목번호
-        JpnMktHanglIsuNm (str): 일본시장한글종목명
-        AstkBalTpCode (str): 해외증권잔고구분코드
-        AstkBalTpCodeNm (str): 해외증권잔고구분코드명
-        AstkBalQty (float): 해외증권잔고수량
-        AstkSellAbleQty (float): 해외증권매도가능수량
-        FcstckUprc (float): 외화증권단가
-        FcurrBuyAmt (float): 외화매수금액
-        FcstckMktIsuCode (str): 외화증권시장종목코드
-        OvrsScrtsCurpri (float): 해외증권시세
-        FcurrEvalAmt (float): 외화평가금액
-        FcurrEvalPnlAmt (float): 외화평가손익금액
-        PnlRat (float): 손익율
-        BaseXchrat (float): 기준환율
-        PchsAmt (float): 매입금액
-        DpsConvEvalAmt (float): 예수금환산평가금액
-        StkConvEvalAmt (float): 주식환산평가금액
-        ConvEvalPnlAmt (float): 환산평가손익금액
-        AstkSettQty (float): 해외증권결제수량
-        MktTpNm (str): 시장구분명
-        FcurrMktCode (str): 외화시장코드
-        LoanDt (str): 대출일자
-        LoanDtlClssCode (str): 대출상세분류코드
-        LoanAmt (float): 대출금액
-        DueDt (str): 만기일자
-        AstkBasePrc (float): 해외증권기준가격
+    One record per held symbol. Foreign-currency fields are in
+    ``CrcyCode``; converted-valuation fields are in KRW. Decimal scale
+    not declared in available source — consume as returned by LS.
     """
     CrcyCode: str = Field(
         default="",
-        title="통화코드",
-        description="통화코드"
+        title="통화코드 (Currency code)",
+        description="ISO-4217-style currency code for the symbol's quote currency.",
+        examples=["USD", "JPY"],
     )
-    """통화코드"""
-
     ShtnIsuNo: str = Field(
         default="",
-        title="단축종목번호",
-        description="단축종목번호"
+        title="단축종목번호 (Short issue code)",
+        description="Short symbol code (e.g., 'AAPL', 'MSFT').",
+        examples=["AAPL", "MSFT"],
     )
-    """단축종목번호"""
-
     IsuNo: str = Field(
         default="",
-        title="종목번호",
-        description="종목번호"
+        title="종목번호 (Issue code)",
+        description="Full LS-internal issue code. May differ from ``ShtnIsuNo`` for some markets.",
+        examples=["AAPL", "MSFT"],
     )
-    """종목번호"""
-
     JpnMktHanglIsuNm: str = Field(
         default="",
-        title="일본시장한글종목명",
-        description="일본시장한글종목명"
+        title="일본시장한글종목명 (Japan market Korean issue name)",
+        description="Korean display name when applicable to Japan market; empty otherwise.",
+        examples=["", "도요타자동차"],
     )
-    """일본시장한글종목명"""
-
     AstkBalTpCode: str = Field(
         default="",
-        title="해외증권잔고구분코드",
-        description="해외증권잔고구분코드"
+        title="해외증권잔고구분코드 (Overseas-stock balance type code)",
+        description="Balance type for this position. '10' = standard, '20' = fractional.",
+        examples=["10", "20"],
     )
-    """해외증권잔고구분코드"""
-
     AstkBalTpCodeNm: str = Field(
         default="",
-        title="해외증권잔고구분코드명",
-        description="해외증권잔고구분코드명"
+        title="해외증권잔고구분코드명 (Overseas-stock balance type name)",
+        description="Display name of the balance type.",
+        examples=["일반", "소수점"],
     )
-    """해외증권잔고구분코드명"""
-
     AstkBalQty: int = Field(
         default=0,
-        title="해외증권잔고수량",
-        description="해외증권잔고수량"
+        title="해외증권잔고수량 (Overseas-stock balance quantity)",
+        description=(
+            "Holdings quantity. Integer typed in the SDK — fractional positions "
+            "(``AstkBalTpCode='20'``) may be truncated by Pydantic int coercion."
+        ),
+        examples=[0, 100],
     )
-    """해외증권잔고수량"""
-
     AstkSellAbleQty: int = Field(
         default=0,
-        title="해외증권매도가능수량",
-        description="해외증권매도가능수량"
+        title="해외증권매도가능수량 (Overseas-stock sellable quantity)",
+        description=(
+            "Quantity available to sell. Integer typed in the SDK — fractional "
+            "positions may be truncated by Pydantic int coercion."
+        ),
+        examples=[0, 100],
     )
-    """해외증권매도가능수량"""
-
     FcstckUprc: float = Field(
         default=0.0,
-        title="외화증권단가",
-        description="외화증권단가"
+        title="외화증권단가 (Foreign-currency security unit price)",
+        description="Average unit price in ``CrcyCode``.",
+        examples=[0.0, 150.25],
     )
-    """외화증권단가"""
-
     FcurrBuyAmt: float = Field(
         default=0.0,
-        title="외화매수금액",
-        description="외화매수금액"
+        title="외화매수금액 (Foreign-currency buy amount)",
+        description="Total purchase amount in ``CrcyCode``.",
+        examples=[0.0, 15025.0],
     )
-    """외화매수금액"""
-
     FcstckMktIsuCode: str = Field(
         default="",
-        title="외화증권시장종목코드",
-        description="외화증권시장종목코드"
+        title="외화증권시장종목코드 (Foreign-currency market issue code)",
+        description="Market-prefixed issue code (LS-internal format).",
+        examples=["", "NASD.AAPL"],
     )
-    """외화증권시장종목코드"""
-
     OvrsScrtsCurpri: float = Field(
         default=0.0,
-        title="해외증권시세",
-        description="해외증권시세"
+        title="해외증권시세 (Overseas-stock current price)",
+        description="Current market price in ``CrcyCode`` as of ``BaseDt``.",
+        examples=[0.0, 152.10],
     )
-    """해외증권시세"""
-
     FcurrEvalAmt: float = Field(
         default=0.0,
-        title="외화평가금액",
-        description="외화평가금액"
+        title="외화평가금액 (Foreign-currency valuation amount)",
+        description="Foreign-currency valuation in ``CrcyCode``.",
+        examples=[0.0, 15210.0],
     )
-    """외화평가금액"""
-
     FcurrEvalPnlAmt: float = Field(
         default=0.0,
-        title="외화평가손익금액",
-        description="외화평가손익금액"
+        title="외화평가손익금액 (Foreign-currency valuation P&L amount)",
+        description="Foreign-currency P&L in ``CrcyCode``. Sign indicates gain (+) / loss (-).",
+        examples=[0.0, 185.0, -50.0],
     )
-    """외화평가손익금액"""
-
     PnlRat: float = Field(
         default=0.0,
-        title="손익율",
-        description="손익율"
+        title="손익율 (P&L ratio)",
+        description=(
+            "P&L ratio for this position. Unit (percent vs. ratio) not declared "
+            "in available source — consume as returned by LS."
+        ),
+        examples=[0.0, 12.34, -3.21],
     )
-    """손익율"""
-
     BaseXchrat: float = Field(
         default=0.0,
-        title="기준환율",
-        description="기준환율"
+        title="기준환율 (Base FX rate)",
+        description="Base FX rate used to convert ``CrcyCode`` to KRW.",
+        examples=[0.0, 1300.0],
     )
-    """기준환율"""
-
     PchsAmt: float = Field(
         default=0.0,
-        title="매입금액",
-        description="매입금액"
+        title="매입금액 (Purchase amount)",
+        description="Total purchase amount. Currency follows ``CrcyCode`` per LS spec wording.",
+        examples=[0.0, 15025.0],
     )
-    """매입금액"""
-
     DpsConvEvalAmt: float = Field(
         default=0.0,
-        title="예수금환산평가금액",
-        description="예수금환산평가금액"
+        title="예수금환산평가금액 (Deposit converted-valuation amount, KRW)",
+        description="Deposit converted-valuation contribution from this position, in KRW.",
+        examples=[0.0, 1300000.0],
     )
-    """예수금환산평가금액"""
-
     StkConvEvalAmt: float = Field(
         default=0.0,
-        title="주식환산평가금액",
-        description="주식환산평산가금액"
+        title="주식환산평가금액 (Stock converted-valuation amount, KRW)",
+        description="Stock valuation for this position converted to KRW.",
+        examples=[0.0, 19773000.0],
     )
-    """주식환산평가금액"""
-
     ConvEvalPnlAmt: float = Field(
         default=0.0,
-        title="환산평가손익금액",
-        description="환산평가손익금액"
+        title="환산평가손익금액 (Converted-valuation P&L amount, KRW)",
+        description="Converted P&L for this position in KRW. Sign indicates gain (+) / loss (-).",
+        examples=[0.0, 240500.0, -65000.0],
     )
-    """환산평가손익금액"""
-
     AstkSettQty: float = Field(
         default=0.0,
-        title="해외증권결제수량",
-        description="해외증권결제수량"
+        title="해외증권결제수량 (Overseas-stock settlement quantity)",
+        description=(
+            "Settled quantity. Float typed to accommodate fractional positions "
+            "(``AstkBalTpCode='20'``)."
+        ),
+        examples=[0.0, 100.0, 0.5],
     )
-    """해외증권결제수량"""
-
     MktTpNm: str = Field(
         default="",
-        title="시장구분명",
-        description="시장구분명"
+        title="시장구분명 (Market type name)",
+        description="Display name of the market (e.g., '뉴욕', '나스닥', '도쿄').",
+        examples=["뉴욕", "나스닥"],
     )
-    """시장구분명"""
-
     FcurrMktCode: str = Field(
         default="",
-        title="외화시장코드",
-        description="외화시장코드"
+        title="외화시장코드 (Foreign-currency market code)",
+        description=(
+            "LS-internal foreign-currency market code. Enum mapping not declared "
+            "in available source — consume as returned by LS."
+        ),
+        examples=["81", "82"],
     )
-    """외화시장코드"""
-
     LoanDt: str = Field(
         default="",
-        title="대출일자",
-        description="대출일자"
+        title="대출일자 (Loan date)",
+        description="Loan date in YYYYMMDD format. Empty when not applicable.",
+        examples=["", "20260101"],
     )
-    """대출일자"""
-
     LoanDtlClssCode: str = Field(
         default="",
-        title="대출상세분류코드",
-        description="대출상세분류코드"
+        title="대출상세분류코드 (Loan detail classification code)",
+        description=(
+            "Loan classification code. Enum mapping not declared in available "
+            "source — consume as returned by LS."
+        ),
+        examples=["", "01"],
     )
-    """대출상세분류코드"""
-
     LoanAmt: float = Field(
         default=0.0,
-        title="대출금액",
-        description="대출금액"
+        title="대출금액 (Loan amount)",
+        description="Loan amount for this position. Currency / scale not declared in available source.",
+        examples=[0.0, 1000.0],
     )
-    """대출금액"""
-
     DueDt: str = Field(
         default="",
-        title="만기일자",
-        description="만기일자"
+        title="만기일자 (Due / maturity date)",
+        description="Loan maturity date in YYYYMMDD format. Empty when not applicable.",
+        examples=["", "20260301"],
     )
-    """만기일자"""
-
     AstkBasePrc: float = Field(
         default=0.0,
-        title="해외증권기준가격",
-        description="해외증권기준가격"
+        title="해외증권기준가격 (Overseas-stock base price)",
+        description=(
+            "Base reference price for the position in ``CrcyCode``. Exact derivation "
+            "(close-of-day, settlement price, etc.) not declared in available source."
+        ),
+        examples=[0.0, 150.0],
     )
-    """해외증권기준가격"""
 
 
 class COSOQ00201Response(BaseModel):
-    """
-    COSOQ00201 API에 대한 응답 클래스.
-
-    Attributes:
-        header (Optional[COSOQ00201ResponseHeader]): 요청 헤더 데이터 블록
-        COSOQ00201OutBlock1 (Optional[COSOQ00201OutBlock1]): 첫 번째 출력 블록
-        COSOQ00201OutBlock2 (Optional[COSOQ00201OutBlock2]): 두 번째 출력 블록
-        COSOQ00201OutBlock3 (List[COSOQ00201OutBlock3]): 세 번째 출력 블록 리스트
-        COSOQ00201OutBlock4 (List[COSOQ00201OutBlock4]): 네 번째 출력 블록 리스트
-        rsp_cd (str): API 호출 상태를 나타내는 응답 코드.
-        rsp_msg (str): API 호출 결과에 대한 추가 정보를 제공하는 응답 메시지
-        error_msg (Optional[str]): 오류 발생 시 오류 메시지, 없을 경우 None
-    """
+    """COSOQ00201 full response envelope."""
     header: Optional[COSOQ00201ResponseHeader] = Field(
         None,
-        title="요청 헤더 데이터 블록",
-        description="COSOQ00201 API 응답의 요청 헤더 데이터 블록"
+        title="응답 헤더 (Response header)",
+        description="Response header block. None on transport / HTTP errors.",
     )
-    """요청 헤더 데이터 블록"""
-
     block1: Optional[COSOQ00201OutBlock1] = Field(
         None,
-        title="첫 번째 출력 블록",
-        description="첫 번째 출력 블록"
+        title="첫번째 출력 블록 (First output block — input echo)",
+        description="Input echo block (mirrors the InBlock1 inputs).",
     )
-    """첫 번째 출력 블록"""
-
     block2: Optional[COSOQ00201OutBlock2] = Field(
         None,
-        title="두 번째 출력 블록",
-        description="두 번째 출력 블록"
+        title="두번째 출력 블록 (Second output block — overall valuation summary)",
+        description="Overall valuation summary across all currencies.",
     )
-    """두 번째 출력 블록"""
-
     block3: List[COSOQ00201OutBlock3] = Field(
         default_factory=list,
-        title="세 번째 출력 블록 리스트",
-        description="세 번째 출력 블록 리스트"
+        title="세번째 출력 블록 리스트 (Third output block — per-currency rows)",
+        description="Per-currency balance detail rows.",
     )
-    """세 번째 출력 블록 리스트"""
-
     block4: List[COSOQ00201OutBlock4] = Field(
         default_factory=list,
-        title="네 번째 출력 블록 리스트",
-        description="네 번째 출력 블록 리스트"
+        title="네번째 출력 블록 리스트 (Fourth output block — per-symbol rows)",
+        description="Per-symbol balance detail rows.",
     )
-    """네 번째 출력 블록 리스트"""
     status_code: Optional[int] = Field(
         None,
-        title="HTTP 상태 코드",
-        description="요청에 대한 HTTP 상태 코드"
+        title="HTTP 상태 코드 (HTTP status code)",
+        description="HTTP status code from the request. None when no response was received.",
     )
-    """HTTP 상태 코드"""
-
     rsp_cd: str = Field(
         ...,
-        title="응답코드",
-        description="API 호출 상태를 나타내는 응답 코드"
+        title="응답 코드 (LS response code)",
+        description="LS response code. '00000' indicates success.",
     )
-    """응답코드"""
-
     rsp_msg: str = Field(
         ...,
-        title="응답메시지",
-        description="API 호출 결과에 대한 추가 정보를 제공하는 응답 메시지"
+        title="응답 메시지 (LS response message)",
+        description="LS response message text.",
     )
-    """응답메시지"""
-
     error_msg: Optional[str] = Field(
         None,
-        title="오류 메시지",
-        description="오류 발생 시 오류 메시지"
+        title="오류 메시지 (Error message)",
+        description="Error message when an exception or HTTP error occurred. None on success.",
     )
-    """오류 메시지 (오류 발생 시)"""
     _raw_data: Optional[Response] = PrivateAttr(default=None)
-    """ private으로 BaseModel의 직렬화에 포함시키지 않는다 """
 
     @property
     def raw_data(self) -> Optional[Response]:
-        """API 호출에 대한 원시 응답 데이터"""
+        """Raw underlying response object (for debugging)."""
         return self._raw_data
 
     @raw_data.setter

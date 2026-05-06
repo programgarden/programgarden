@@ -1,3 +1,29 @@
+"""Pydantic models for LS Securities OpenAPI COSAQ01400 (Overseas Stock Reservation-Order History).
+
+COSAQ01400 returns the processing-result history for reservation
+(예약주문) orders placed against an overseas stock account, including
+each reservation's order date, reserved order number, instrument,
+quantity, price-type, status, and any error details (OutBlock2).
+
+Use ``SrtDt`` / ``EndDt`` (YYYYMMDD) to bound the query window. Filter
+by ``BnsTpCode`` (buy/sell), ``RsvOrdCndiCode`` (reservation condition),
+and ``RsvOrdStatCode`` (reservation status) as required.
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and
+the 2026-05-06 finance TR field metadata plan):
+    - Description text mirrors the LS Korean source labels translated
+      into English. Korean source label is appended in parentheses for
+      AI chatbot Korean↔English mapping.
+    - Field length, currency unit, decimal scale, and complete enum
+      mappings are NOT declared in the source available to this codebase.
+      Where the Korean spec is silent the description states "consume
+      as returned by LS" and does not invent additional values.
+    - ``examples`` come from
+      ``src/finance/example/overseas_stock/run_cosoq01400.py`` where
+      present, plus safe placeholder values
+      (``"12345678901"`` for account numbers — never real accounts).
+"""
+
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, PrivateAttr
@@ -7,93 +33,88 @@ from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class COSAQ01400RequestHeader(BlockRequestHeader):
+    """COSAQ01400 request header. Inherits the standard LS request header schema."""
     pass
 
 
 class COSAQ01400ResponseHeader(BlockResponseHeader):
+    """COSAQ01400 response header. Inherits the standard LS response header schema."""
     pass
 
 
 class COSAQ01400InBlock1(BaseModel):
-    """
-    COSAQ01400InBlock1 데이터 블록
+    """COSAQ01400InBlock1 — input block for overseas stock reservation-order history."""
 
-    LS증권 OpenAPI의 COSAQ01400 예약주문 처리결과 조회에 사용되는 입력 데이터 블록입니다.
-
-    Attributes:
-        RecCnt (int): 레코드갯수
-        QryTpCode (str): 조회구분코드
-        CntryCode (str): 국가코드
-        SrtDt (str): 시작일자
-        EndDt (str): 종료일자
-        BnsTpCode (str): 매매구분코드
-        RsvOrdCndiCode (str): 예약주문조건코드
-        RsvOrdStatCode (str): 예약주문상태코드
-    """
     RecCnt: int = Field(
         default=1,
-        title="레코드 갯수",
-        description="레코드 갯수 (예: 1건)"
+        title="레코드갯수 (Record count)",
+        description="Number of records sent in this request. LS examples typically use 1.",
+        examples=[1],
     )
-    """레코드갯수"""
     QryTpCode: str = Field(
         default="1",
-        title="조회구분코드",
-        description="조회 구분 코드"
+        title="조회구분코드 (Query type code)",
+        description=(
+            "Query type. '1' = by account (계좌별). The LS spec documents only "
+            "'1' for this TR; consume any other value as returned."
+        ),
+        examples=["1"],
     )
-    """조회구분코드 1@계좌별"""
-
     CntryCode: str = Field(
         ...,
-        title="국가코드",
-        description="국가 코드"
+        title="국가코드 (Country code)",
+        description=(
+            "Country code (LS-internal numeric string). The LS spec for this TR "
+            "does not publish a complete enum mapping in the source available to "
+            "this codebase — pass the value documented for your target market "
+            "(example uses '001') and consume the response code as returned by LS."
+        ),
+        examples=["001"],
     )
-    """국가코드"""
-
     SrtDt: str = Field(
         ...,
-        title="시작일자",
-        description="시작 일자"
+        title="시작일자 (Start date)",
+        description="Query window start date in YYYYMMDD format. Required.",
+        examples=["20251201", "20260101"],
     )
-    """시작일자"""
-
     EndDt: str = Field(
         ...,
-        title="종료일자",
-        description="종료 일자"
+        title="종료일자 (End date)",
+        description="Query window end date in YYYYMMDD format. Required.",
+        examples=["20260123", "20260131"],
     )
-    """종료일자"""
-
     BnsTpCode: str = Field(
         ...,
-        title="매매구분코드",
-        description="매매 구분 코드"
+        title="매매구분코드 (Buy/sell type code)",
+        description=(
+            "Buy/sell filter. '0' = all (전체), '1' = sell (매도), '2' = buy (매수)."
+        ),
+        examples=["0", "1", "2"],
     )
-    """매매구분코드 0@전체, 1@매도, 2@매수"""
-
     RsvOrdCndiCode: str = Field(
         ...,
-        title="예약주문조건코드",
-        description="예약 주문 조건 코드"
+        title="예약주문조건코드 (Reservation order condition code)",
+        description=(
+            "Reservation condition code (LS-internal). The example uses '00'. "
+            "Complete enum mapping not declared in available source — consume as "
+            "returned by LS."
+        ),
+        examples=["00"],
     )
-    """예약주문조건코드"""
-
     RsvOrdStatCode: str = Field(
         ...,
-        title="예약주문상태코드",
-        description="예약 주문 상태 코드"
+        title="예약주문상태코드 (Reservation order status code)",
+        description=(
+            "Reservation status code (LS-internal). The example uses '1'. "
+            "Complete enum mapping not declared in available source — consume as "
+            "returned by LS."
+        ),
+        examples=["1"],
     )
-    """예약주문상태코드"""
 
 
 class COSAQ01400Request(BaseModel):
-    """
-    COSAQ01400 API 요청 클래스.
-
-    Attributes:
-        header (COSAQ01400RequestHeader): 요청 헤더 데이터 블록.
-        body (dict[Literal["COSAQ01400InBlock1"], COSAQ01400InBlock1]): 주문 내역 조회를 위한 입력 데이터 블록.
-    """
+    """COSAQ01400 full request envelope (header + body + setup options)."""
     header: COSAQ01400RequestHeader = Field(
         COSAQ01400RequestHeader(
             content_type="application/json; charset=utf-8",
@@ -103,18 +124,14 @@ class COSAQ01400Request(BaseModel):
             tr_cont_key="",
             mac_address=""
         ),
-        title="요청 헤더 데이터 블록",
-        description="API 요청에 필요한 헤더 정보"
+        title="요청 헤더 (Request header)",
+        description="Request header block carrying tr_cd, authorization, and continuation flags.",
     )
-    """요청 헤더 데이터 블록"""
-
     body: dict[Literal["COSAQ01400InBlock1"], COSAQ01400InBlock1] = Field(
         ...,
-        title="입력 데이터 블록",
-        description="주문 내역 조회를 위한 입력 데이터 블록"
+        title="입력 데이터 블록 (Input body)",
+        description="Wrapped input block keyed by 'COSAQ01400InBlock1'.",
     )
-    """ 입력 데이터 블록"""
-
     options: SetupOptions = Field(
         SetupOptions(
             rate_limit_count=1,
@@ -122,309 +139,269 @@ class COSAQ01400Request(BaseModel):
             on_rate_limit="wait",
             rate_limit_key="COSAQ01400"
         ),
-        title="설정 옵션",
-        description="코드 실행 전 설정(setup)을 위한 옵션"
+        title="설정 옵션 (Setup options)",
+        description="Pre-execution setup options (rate limit, retry behavior).",
     )
-    """코드 실행 전 설정(setup)을 위한 옵션"""
 
 
 class COSAQ01400OutBlock1(BaseModel):
-    """
-    COSAQ01400OutBlock1 데이터 블록
+    """COSAQ01400OutBlock1 — input echo block.
 
-    LS증권 OpenAPI의 COSAQ01400 예약주문 처리결과 조회 응답 첫 번째 출력 블록입니다.
-
-    Attributes:
-        RecCnt (int): 레코드갯수
-        QryTpCode (str): 조회구분코드
-        CntryCode (str): 국가코드
-        AcntNo (str): 계좌번호
-        Pwd (str): 비밀번호
-        SrtDt (str): 시작일자
-        EndDt (str): 종료일자
-        BnsTpCode (str): 매매구분코드
-        RsvOrdCndiCode (str): 예약주문조건코드
-        RsvOrdStatCode (str): 예약주문상태코드
+    LS echoes the InBlock1 inputs back in OutBlock1. Use this only for
+    verification — the actual reservation rows live in OutBlock2.
     """
     RecCnt: int = Field(
         default=1,
-        title="레코드갯수",
-        description="응답된 레코드 개수"
+        title="레코드갯수 (Record count)",
+        description="Echoed record count from the request.",
+        examples=[0, 1],
     )
-    """레코드갯수"""
     QryTpCode: str = Field(
         default="1",
-        title="조회구분코드",
-        description="조회 구분 코드 (예: 1@계좌별)"
+        title="조회구분코드 (Query type code)",
+        description="Echoed query type. '1' = by account.",
+        examples=["1"],
     )
-    """조회구분코드"""
     CntryCode: str = Field(
         default="",
-        title="국가코드",
-        description="국가 코드"
+        title="국가코드 (Country code)",
+        description="Echoed country code from the request.",
+        examples=["001"],
     )
-    """국가코드"""
     AcntNo: str = Field(
         default="",
-        title="계좌번호",
-        description="계좌 번호"
+        title="계좌번호 (Account number)",
+        description="Account number associated with the query. Length not declared in available source.",
+        examples=["12345678901"],
     )
-    """계좌번호"""
     Pwd: str = Field(
         default="",
-        title="비밀번호",
-        description="계좌 비밀번호"
+        title="비밀번호 (Account password)",
+        description=(
+            "Account password as echoed by LS. Treat as sensitive — avoid logging. "
+            "Real production responses may mask or omit this value."
+        ),
+        examples=[""],
     )
-    """비밀번호"""
     SrtDt: str = Field(
         default="",
-        title="시작일자",
-        description="조회 시작일자 (YYYYMMDD)"
+        title="시작일자 (Start date)",
+        description="Echoed query start date in YYYYMMDD format.",
+        examples=["20251201"],
     )
-    """시작일자"""
     EndDt: str = Field(
         default="",
-        title="종료일자",
-        description="조회 종료일자 (YYYYMMDD)"
+        title="종료일자 (End date)",
+        description="Echoed query end date in YYYYMMDD format.",
+        examples=["20260123"],
     )
-    """종료일자"""
     BnsTpCode: str = Field(
         default="0",
-        title="매매구분코드",
-        description="매매 구분 코드 (0@전체, 1@매도, 2@매수)"
+        title="매매구분코드 (Buy/sell type code)",
+        description="Echoed buy/sell filter. '0' = all, '1' = sell, '2' = buy.",
+        examples=["0", "1", "2"],
     )
-    """매매구분코드"""
     RsvOrdCndiCode: str = Field(
         default="",
-        title="예약주문조건코드",
-        description="예약 주문 조건 코드"
+        title="예약주문조건코드 (Reservation order condition code)",
+        description="Echoed reservation condition code.",
+        examples=["00"],
     )
-    """예약주문조건코드"""
     RsvOrdStatCode: str = Field(
         default="",
-        title="예약주문상태코드",
-        description="예약 주문 상태 코드"
+        title="예약주문상태코드 (Reservation order status code)",
+        description="Echoed reservation status code.",
+        examples=["1"],
     )
-    """예약주문상태코드"""
 
 
 class COSAQ01400OutBlock2(BaseModel):
-    """
-    COSAQ01400OutBlock2 데이터 블록
+    """COSAQ01400OutBlock2 — per-reservation detail row.
 
-    LS증권 OpenAPI의 COSAQ01400 예약주문 처리결과 조회 응답 두 번째 출력 블록입니다.
-
-    Attributes:
-        AcntNo (str): 계좌번호
-        AcntNm (str): 계좌명
-        OrdDt (str): 주문일자
-        OrdNo (int): 주문번호
-        RsvOrdInptDt (str): 예약주문입력일자
-        RsvOrdNo (int): 예약주문번호
-        ShtnIsuNo (str): 단축종목번호
-        JpnMktHanglIsuNm (str): 일본시장한글종목명
-        OrdQty (int): 주문수량
-        OrdprcPtnNm (str): 호가유형명
-        OvrsOrdPrc (float): 해외주문가
-        BnsTpNm (str): 매매구분명
-        ExecQty (int): 체결수량
-        UnercQty (int): 미체결수량
-        TotExecQty (int): 총체결수량
-        CrcyCode (str): 통화코드
-        RsvOrdStatCode (str): 예약주문상태코드
-        MktTpNm (str): 시장구분명
-        ErrCnts (str): 오류내용
-        LoanDt (str): 대출일자
-        MgntrnCode (str): 신용거래코드
+    One record per reservation order matching the query window and
+    filters. Field length, decimal scale, and currency unit are not
+    declared in the source available to this codebase — consume as
+    returned by LS.
     """
     AcntNo: str = Field(
         default="",
-        title="계좌번호",
-        description="계좌번호"
+        title="계좌번호 (Account number)",
+        description="Account number for the reservation order.",
+        examples=["12345678901"],
     )
-    """계좌번호"""
     AcntNm: str = Field(
         default="",
-        title="계좌명",
-        description="계좌명"
+        title="계좌명 (Account name)",
+        description="Display name of the account.",
+        examples=["홍길동"],
     )
-    """계좌명"""
     OrdDt: str = Field(
         default="",
-        title="주문일자",
-        description="주문일자 (YYYYMMDD)"
+        title="주문일자 (Order date)",
+        description="Order date in YYYYMMDD format.",
+        examples=["20260120"],
     )
-    """주문일자"""
     OrdNo: int = Field(
         default=0,
-        title="주문번호",
-        description="주문번호"
+        title="주문번호 (Order number)",
+        description="Order number (LS-issued numeric identifier) for the executed order, if any.",
+        examples=[0, 1234567],
     )
-    """주문번호"""
     RsvOrdInptDt: str = Field(
         default="",
-        title="예약주문입력일자",
-        description="예약주문 입력일자"
+        title="예약주문입력일자 (Reservation order input date)",
+        description="Reservation input date in YYYYMMDD format.",
+        examples=["20260119"],
     )
-    """예약주문입력일자"""
     RsvOrdNo: int = Field(
         default=0,
-        title="예약주문번호",
-        description="예약주문번호"
+        title="예약주문번호 (Reservation order number)",
+        description="Reservation order number (LS-issued numeric identifier).",
+        examples=[0, 9001],
     )
-    """예약주문번호"""
     ShtnIsuNo: str = Field(
         default="",
-        title="단축종목번호",
-        description="단축 종목 번호"
+        title="단축종목번호 (Short issue code)",
+        description="Short symbol code for the issue (e.g., 'AAPL', 'MSFT').",
+        examples=["AAPL", "MSFT"],
     )
-    """단축종목번호"""
     JpnMktHanglIsuNm: str = Field(
         default="",
-        title="일본시장한글종목명",
-        description="일본시장 한글 종목명"
+        title="일본시장한글종목명 (Japan market Korean issue name)",
+        description="Korean display name of the issue when applicable to Japan market.",
+        examples=["", "도요타자동차"],
     )
-    """일본시장한글종목명"""
     OrdQty: int = Field(
         default=0,
-        title="주문수량",
-        description="주문 수량"
+        title="주문수량 (Order quantity)",
+        description="Reservation order quantity (shares).",
+        examples=[0, 100],
     )
-    """주문수량"""
     OrdprcPtnNm: str = Field(
         default="",
-        title="호가유형명",
-        description="호가 유형명"
+        title="호가유형명 (Order-price type name)",
+        description="Display name of the order-price type (e.g., limit / market).",
+        examples=["지정가", "시장가"],
     )
-    """호가유형명"""
     OvrsOrdPrc: float = Field(
         default=0.0,
-        title="해외주문가",
-        description="해외 주문 가격"
+        title="해외주문가 (Overseas order price)",
+        description=(
+            "Reserved order price in the instrument's quote currency. Decimal "
+            "scale not declared in available source — consume as returned by LS."
+        ),
+        examples=[0.0, 150.25],
     )
-    """해외주문가"""
     BnsTpNm: str = Field(
         default="",
-        title="매매구분명",
-        description="매매구분명"
+        title="매매구분명 (Buy/sell type name)",
+        description="Display name of the buy/sell side (e.g., '매도', '매수').",
+        examples=["매도", "매수"],
     )
-    """매매구분명"""
     ExecQty: int = Field(
         default=0,
-        title="체결수량",
-        description="체결 수량"
+        title="체결수량 (Executed quantity)",
+        description="Quantity that has been executed for this reservation.",
+        examples=[0, 100],
     )
-    """체결수량"""
     UnercQty: int = Field(
         default=0,
-        title="미체결수량",
-        description="미체결 수량"
+        title="미체결수량 (Unexecuted quantity)",
+        description="Remaining unexecuted quantity for this reservation.",
+        examples=[0, 100],
     )
-    """미체결수량"""
     TotExecQty: int = Field(
         default=0,
-        title="총체결수량",
-        description="총 체결 수량"
+        title="총체결수량 (Total executed quantity)",
+        description="Total executed quantity across this reservation's lifecycle.",
+        examples=[0, 100],
     )
-    """총체결수량"""
     CrcyCode: str = Field(
         default="",
-        title="통화코드",
-        description="통화 코드"
+        title="통화코드 (Currency code)",
+        description="Order currency. 'USD' = U.S. dollar; other ISO-4217-style codes may appear.",
+        examples=["USD", "JPY"],
     )
-    """통화코드"""
     RsvOrdStatCode: str = Field(
         default="",
-        title="예약주문상태코드",
-        description="예약주문 상태 코드"
+        title="예약주문상태코드 (Reservation order status code)",
+        description=(
+            "Reservation status code as recorded for this row. Complete enum "
+            "mapping not declared in available source — consume as returned by LS."
+        ),
+        examples=["1", "2"],
     )
-    """예약주문상태코드"""
     MktTpNm: str = Field(
         default="",
-        title="시장구분명",
-        description="시장 구분명"
+        title="시장구분명 (Market type name)",
+        description="Display name of the market (e.g., '뉴욕', '나스닥').",
+        examples=["뉴욕", "나스닥"],
     )
-    """시장구분명"""
     ErrCnts: str = Field(
         default="",
-        title="오류내용",
-        description="오류 내용"
+        title="오류내용 (Error content)",
+        description="Error description text when the reservation processing failed; empty otherwise.",
+        examples=[""],
     )
-    """오류내용"""
     LoanDt: str = Field(
         default="",
-        title="대출일자",
-        description="대출일자 (YYYYMMDD)"
+        title="대출일자 (Loan date)",
+        description="Loan date in YYYYMMDD format. Empty when not applicable.",
+        examples=["", "20260101"],
     )
-    """대출일자"""
     MgntrnCode: str = Field(
         default="",
-        title="신용거래코드",
-        description="신용거래코드"
+        title="신용거래코드 (Credit transaction code)",
+        description=(
+            "Credit (margin) transaction code. Enum mapping not declared in "
+            "available source — consume as returned by LS."
+        ),
+        examples=["", "01"],
     )
-    """신용거래코드"""
 
 
 class COSAQ01400Response(BaseModel):
-    """
-    COSAQ01400 API에 대한 응답 클래스.
-
-    Attributes:
-        header (Optional[COSAQ01400ResponseHeader]): 요청 헤더 데이터 블록
-        COSAQ01400OutBlock1 (Optional[COSAQ01400OutBlock1]): 첫 번째 출력 블록
-        COSAQ01400OutBlock2 (List[COSAQ01400OutBlock2]): 두 번째 출력 블록 리스트
-        rsp_cd (str): 응답코드
-        rsp_msg (str): 응답메시지
-        error_msg (Optional[str]): 오류 메시지 (오류 발생 시)
-    """
+    """COSAQ01400 full response envelope."""
     header: Optional[COSAQ01400ResponseHeader] = Field(
         None,
-        title="요청 헤더 데이터 블록",
-        description="요청 헤더 데이터 블록"
+        title="응답 헤더 (Response header)",
+        description="Response header block. None on transport / HTTP errors.",
     )
-    """요청 헤더 데이터 블록"""
     block1: Optional[COSAQ01400OutBlock1] = Field(
         None,
-        title="첫 번째 출력 블록",
-        description="첫 번째 출력 블록"
+        title="첫번째 출력 블록 (First output block — input echo)",
+        description="Input echo block (mirrors the InBlock1 inputs).",
     )
-    """첫 번째 출력 블록"""
     block2: List[COSAQ01400OutBlock2] = Field(
         default_factory=list,
-        title="두 번째 출력 블록 리스트",
-        description="두 번째 출력 블록 리스트"
+        title="두번째 출력 블록 리스트 (Second output block — per-reservation detail rows)",
+        description="Per-reservation detail rows.",
     )
-    """두 번째 출력 블록 리스트"""
     status_code: Optional[int] = Field(
         None,
-        title="HTTP 상태 코드",
-        description="요청에 대한 HTTP 상태 코드"
+        title="HTTP 상태 코드 (HTTP status code)",
+        description="HTTP status code from the request. None when no response was received.",
     )
-    """HTTP 상태 코드"""
     rsp_cd: str = Field(
         ...,
-        title="응답코드",
-        description="응답코드"
+        title="응답 코드 (LS response code)",
+        description="LS response code. '00000' indicates success.",
     )
-    """응답코드"""
     rsp_msg: str = Field(
         ...,
-        title="응답메시지",
-        description="응답메시지"
+        title="응답 메시지 (LS response message)",
+        description="LS response message text.",
     )
-    """응답메시지"""
     error_msg: Optional[str] = Field(
         None,
-        title="오류 메시지",
-        description="오류 메시지 (오류 발생 시)"
+        title="오류 메시지 (Error message)",
+        description="Error message when an exception or HTTP error occurred. None on success.",
     )
-    """오류 메시지 (오류 발생 시)"""
     _raw_data: Optional[Response] = PrivateAttr(default=None)
-    """ private으로 BaseModel의 직렬화에 포함시키지 않는다 """
 
     @property
     def raw_data(self) -> Optional[Response]:
-        """API 호출에 대한 원시 응답 데이터"""
+        """Raw underlying response object (for debugging)."""
         return self._raw_data
 
     @raw_data.setter
