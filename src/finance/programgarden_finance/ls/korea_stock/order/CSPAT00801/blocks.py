@@ -1,3 +1,27 @@
+"""Pydantic models for LS Securities OpenAPI CSPAT00801 (Korea Stock Spot Cancel Order).
+
+CSPAT00801 cancels an existing Korean spot equity order. ``OrgOrdNo`` is the
+original order number returned by CSPAT00601 in OutBlock2.OrdNo (or the latest
+order number returned by CSPAT00701 in a modify chain). InBlock1 carries the
+cancel parameters; OutBlock1 echoes them back; OutBlock2 returns the new
+LS-assigned cancel-order number plus the parent order number (``PrntOrdNo``).
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
+2026-05-06 finance TR field metadata plan):
+    - Description text mirrors the LS Korean source labels translated into English.
+      The Korean source label is appended in parentheses inside ``title`` for
+      AI chatbot Korean<->English mapping.
+    - OutBlock fields whose enum mapping is not declared in available source
+      use "consume as returned by LS."
+    - ``examples`` come from ``src/finance/example/korea_stock/run_CSPAT00801.py``
+      (cancel against an intentionally non-existent OrgOrdNo for safe testing)
+      plus safe placeholder values. Account number placeholder ``"12345678901"``
+      is always used -- never real accounts.
+
+SAFETY: This is a live order-cancel TR. Examples are illustrative only and
+must NOT be used as-is to cancel real orders.
+"""
+
 from typing import Literal, Optional
 
 from pydantic import BaseModel, PrivateAttr, Field
@@ -7,189 +31,403 @@ from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class CSPAT00801RequestHeader(BlockRequestHeader):
-    """CSPAT00801 요청용 Header"""
+    """CSPAT00801 request header. Inherits the standard LS request header schema."""
     pass
 
 
 class CSPAT00801ResponseHeader(BlockResponseHeader):
-    """CSPAT00801 응답용 Header"""
+    """CSPAT00801 response header. Inherits the standard LS response header schema."""
     pass
 
 
 class CSPAT00801InBlock1(BaseModel):
-    """
-    CSPAT00801InBlock1 - 현물취소주문 입력 블록
+    """CSPAT00801InBlock1 -- input block for a Korean spot cancel order.
 
-    기존 주문을 취소합니다.
-    원주문번호(OrgOrdNo)는 CSPAT00601 주문 시 받은 OrdNo를 사용합니다.
-
-    Attributes:
-        OrgOrdNo (int): 원주문번호 (취소 대상 주문번호)
-        IsuNo (str): 종목번호 (주식/ETF: 종목코드 or A+종목코드, ELW: J+종목코드, ETN: Q+종목코드)
-        OrdQty (int): 주문수량
+    Cancels (or partially cancels) an existing order identified by ``OrgOrdNo``.
+    ``OrdQty`` is the quantity to cancel -- LS interprets this as a partial-cancel
+    request when smaller than the open quantity of the original order.
     """
+
     OrgOrdNo: int = Field(
         ...,
-        title="원주문번호",
-        description="취소 대상 주문번호 (CSPAT00601 주문 시 받은 OrdNo)"
+        title="원주문번호 (Original order number)",
+        description=(
+            "Order number to cancel. Use the ``OrdNo`` returned by CSPAT00601 "
+            "OutBlock2 for the original order, or the latest ``OrdNo`` from "
+            "CSPAT00701 in a modify chain."
+        ),
+        examples=[1234567, 999999],
     )
-    """ 원주문번호 (취소 대상 주문번호) """
     IsuNo: str = Field(
         ...,
-        title="종목번호",
-        description="주식/ETF: 종목코드 or A+종목코드(모의투자는 A+종목코드), ELW: J+종목코드, ETN: Q+종목코드"
+        title="종목번호 (Issue / symbol code)",
+        description=(
+            "Issue code of the original order. Stock / ETF: 6-digit code or "
+            "'A' + 6-digit code (simulation accounts always use 'A' + code). "
+            "ELW: 'J' + 6-digit code. ETN: 'Q' + 6-digit code."
+        ),
+        examples=["005930", "A005930"],
     )
-    """ 종목번호 """
     OrdQty: int = Field(
         ...,
-        title="주문수량",
-        description="주문수량"
+        title="주문수량 (Order quantity)",
+        description=(
+            "Quantity to cancel in shares. A value smaller than the open quantity "
+            "of the original order is interpreted as a partial-cancel request."
+        ),
+        examples=[1, 10],
     )
-    """ 주문수량 """
 
 
 class CSPAT00801Request(BaseModel):
-    """
-    CSPAT00801 API 요청 - 현물취소주문
+    """CSPAT00801 full request envelope (header + body + setup options)."""
 
-    Attributes:
-        header (CSPAT00801RequestHeader)
-        body (dict[Literal["CSPAT00801InBlock1"], CSPAT00801InBlock1])
-    """
-    header: CSPAT00801RequestHeader = CSPAT00801RequestHeader(
-        content_type="application/json; charset=utf-8",
-        authorization="",
-        tr_cd="CSPAT00801",
-        tr_cont="N",
-        tr_cont_key="",
-        mac_address=""
+    header: CSPAT00801RequestHeader = Field(
+        CSPAT00801RequestHeader(
+            content_type="application/json; charset=utf-8",
+            authorization="",
+            tr_cd="CSPAT00801",
+            tr_cont="N",
+            tr_cont_key="",
+            mac_address=""
+        ),
+        title="요청 헤더 (Request header)",
+        description="Request header block carrying tr_cd, authorization, and continuation flags.",
     )
-    body: dict[Literal["CSPAT00801InBlock1"], CSPAT00801InBlock1]
-    options: SetupOptions = SetupOptions(
-        rate_limit_count=3,
-        rate_limit_seconds=1,
-        on_rate_limit="wait",
-        rate_limit_key="CSPAT00801"
+    body: dict[Literal["CSPAT00801InBlock1"], CSPAT00801InBlock1] = Field(
+        ...,
+        title="입력 데이터 블록 (Input body)",
+        description="Wrapped input block keyed by 'CSPAT00801InBlock1'.",
     )
-    """코드 실행 전 설정(setup)을 위한 옵션"""
+    options: SetupOptions = Field(
+        SetupOptions(
+            rate_limit_count=3,
+            rate_limit_seconds=1,
+            on_rate_limit="wait",
+            rate_limit_key="CSPAT00801"
+        ),
+        title="설정 옵션 (Setup options)",
+        description="Pre-execution setup options (rate limit, retry behavior).",
+    )
 
 
 class CSPAT00801OutBlock1(BaseModel):
+    """CSPAT00801OutBlock1 -- input echo block.
+
+    LS echoes the InBlock1 inputs back along with server-appended fields
+    (account number, password, communication medium, basket / strategy fields).
     """
-    CSPAT00801OutBlock1 - 현물취소주문 입력 echo-back 블록
-    """
-    RecCnt: int = Field(default=0, title="레코드갯수")
-    """ 레코드갯수 """
-    OrgOrdNo: int = Field(default=0, title="원주문번호")
-    """ 원주문번호 """
-    AcntNo: str = Field(default="", title="계좌번호")
-    """ 계좌번호 """
-    InptPwd: str = Field(default="", title="입력비밀번호")
-    """ 입력비밀번호 """
-    IsuNo: str = Field(default="", title="종목번호")
-    """ 종목번호 """
-    OrdQty: int = Field(default=0, title="주문수량")
-    """ 주문수량 """
-    CommdaCode: str = Field(default="", title="통신매체코드")
-    """ 통신매체코드 """
-    GrpId: str = Field(default="", title="그룹ID")
-    """ 그룹ID """
-    StrtgCode: str = Field(default="", title="전략코드")
-    """ 전략코드 """
-    OrdSeqNo: int = Field(default=0, title="주문회차")
-    """ 주문회차 """
-    PtflNo: int = Field(default=0, title="포트폴리오번호")
-    """ 포트폴리오번호 """
-    BskNo: int = Field(default=0, title="바스켓번호")
-    """ 바스켓번호 """
-    TrchNo: int = Field(default=0, title="트렌치번호")
-    """ 트렌치번호 """
-    ItemNo: int = Field(default=0, title="아이템번호")
-    """ 아이템번호 """
+
+    RecCnt: int = Field(
+        default=0,
+        title="레코드갯수 (Record count)",
+        description="Echoed record count.",
+        examples=[0, 1],
+    )
+    OrgOrdNo: int = Field(
+        default=0,
+        title="원주문번호 (Original order number)",
+        description="Echoed original order number.",
+        examples=[0, 1234567],
+    )
+    AcntNo: str = Field(
+        default="",
+        title="계좌번호 (Account number)",
+        description="Account number associated with the order. Length not declared in available source.",
+        examples=["12345678901"],
+    )
+    InptPwd: str = Field(
+        default="",
+        title="입력비밀번호 (Input password)",
+        description=(
+            "Account password echoed by LS. Treat as sensitive -- avoid logging. "
+            "Real production responses may mask or omit this value."
+        ),
+        examples=[""],
+    )
+    IsuNo: str = Field(
+        default="",
+        title="종목번호 (Issue / symbol code)",
+        description="Echoed issue code.",
+        examples=["005930", "A005930"],
+    )
+    OrdQty: int = Field(
+        default=0,
+        title="주문수량 (Order quantity)",
+        description="Echoed cancel quantity.",
+        examples=[0, 1],
+    )
+    CommdaCode: str = Field(
+        default="",
+        title="통신매체코드 (Communication medium code)",
+        description=(
+            "Communication channel code recorded by LS for this cancel request. "
+            "Enum mapping not declared in available source -- consume as returned by LS."
+        ),
+        examples=[""],
+    )
+    GrpId: str = Field(
+        default="",
+        title="그룹ID (Group ID)",
+        description="Order group identifier for institutional / basket orders.",
+        examples=[""],
+    )
+    StrtgCode: str = Field(
+        default="",
+        title="전략코드 (Strategy code)",
+        description=(
+            "Strategy code for institutional / basket orders. Enum mapping not "
+            "declared in available source -- consume as returned by LS."
+        ),
+        examples=[""],
+    )
+    OrdSeqNo: int = Field(
+        default=0,
+        title="주문회차 (Order sequence number)",
+        description="Order sequence number for batched / multi-step orders.",
+        examples=[0],
+    )
+    PtflNo: int = Field(
+        default=0,
+        title="포트폴리오번호 (Portfolio number)",
+        description="Portfolio identifier for institutional orders.",
+        examples=[0],
+    )
+    BskNo: int = Field(
+        default=0,
+        title="바스켓번호 (Basket number)",
+        description="Basket identifier for institutional / basket orders.",
+        examples=[0],
+    )
+    TrchNo: int = Field(
+        default=0,
+        title="트렌치번호 (Tranche number)",
+        description="Tranche identifier for institutional / basket orders.",
+        examples=[0],
+    )
+    ItemNo: int = Field(
+        default=0,
+        title="아이템번호 (Item number)",
+        description="Item index within the order basket / tranche.",
+        examples=[0],
+    )
 
 
 class CSPAT00801OutBlock2(BaseModel):
-    """
-    CSPAT00801OutBlock2 - 현물취소주문 결과 블록
+    """CSPAT00801OutBlock2 -- cancel acknowledgment block.
 
-    취소 주문 접수 결과를 제공합니다. OrdNo(주문번호)가 핵심 필드입니다.
+    Returned on a successful cancel submission. ``OrdNo`` is the new LS-assigned
+    cancel-order number; ``PrntOrdNo`` is the parent order number that was
+    cancelled.
     """
-    RecCnt: int = Field(default=0, title="레코드갯수")
-    """ 레코드갯수 """
-    OrdNo: int = Field(default=0, title="주문번호")
-    """ 주문번호 """
-    PrntOrdNo: int = Field(default=0, title="모주문번호")
-    """ 모주문번호 """
-    OrdTime: str = Field(default="", title="주문시각")
-    """ 주문시각 """
-    OrdMktCode: str = Field(default="", title="주문시장코드")
-    """ 주문시장코드 """
-    OrdPtnCode: str = Field(default="", title="주문유형코드")
-    """ 주문유형코드 """
-    ShtnIsuNo: str = Field(default="", title="단축종목번호")
-    """ 단축종목번호 """
-    PrgmOrdprcPtnCode: str = Field(default="", title="프로그램호가유형코드")
-    """ 프로그램호가유형코드 """
-    StslOrdprcTpCode: str = Field(default="", title="공매도호가구분")
-    """ 공매도호가구분 """
-    StslAbleYn: str = Field(default="", title="공매도가능여부")
-    """ 공매도가능여부 """
-    MgntrnCode: str = Field(default="", title="신용거래코드")
-    """ 신용거래코드 """
-    LoanDt: str = Field(default="", title="대출일")
-    """ 대출일 """
-    CvrgOrdTp: str = Field(default="", title="반대매매주문구분")
-    """ 반대매매주문구분 """
-    LpYn: str = Field(default="", title="유동성공급자여부")
-    """ 유동성공급자여부 """
-    MgempNo: str = Field(default="", title="관리사원번호")
-    """ 관리사원번호 """
-    BnsTpCode: str = Field(default="", title="매매구분")
-    """ 매매구분 """
-    SpareOrdNo: int = Field(default=0, title="예비주문번호")
-    """ 예비주문번호 """
-    CvrgSeqno: int = Field(default=0, title="반대매매일련번호")
-    """ 반대매매일련번호 """
-    RsvOrdNo: int = Field(default=0, title="예약주문번호")
-    """ 예약주문번호 """
-    AcntNm: str = Field(default="", title="계좌명")
-    """ 계좌명 """
-    IsuNm: str = Field(default="", title="종목명")
-    """ 종목명 """
+
+    RecCnt: int = Field(
+        default=0,
+        title="레코드갯수 (Record count)",
+        description="Record count for this acknowledgment block.",
+        examples=[0, 1],
+    )
+    OrdNo: int = Field(
+        default=0,
+        title="주문번호 (Order number)",
+        description="LS-assigned new order number for the cancel order.",
+        examples=[0, 1234569],
+    )
+    PrntOrdNo: int = Field(
+        default=0,
+        title="모주문번호 (Parent order number)",
+        description="Parent order number that was cancelled.",
+        examples=[0, 1234567],
+    )
+    OrdTime: str = Field(
+        default="",
+        title="주문시각 (Order time)",
+        description=(
+            "Time the cancel order was accepted. Format not declared in available "
+            "source -- consume as returned by LS."
+        ),
+        examples=["", "090015123"],
+    )
+    OrdMktCode: str = Field(
+        default="",
+        title="주문시장코드 (Order market code)",
+        description=(
+            "Market the order was routed to. Enum mapping not declared in available "
+            "source -- consume as returned by LS."
+        ),
+        examples=[""],
+    )
+    OrdPtnCode: str = Field(
+        default="",
+        title="주문유형코드 (Order pattern code)",
+        description=(
+            "Order-pattern classification. Enum mapping not declared in available "
+            "source -- consume as returned by LS."
+        ),
+        examples=[""],
+    )
+    ShtnIsuNo: str = Field(
+        default="",
+        title="단축종목번호 (Short issue code)",
+        description="Short issue code (6-digit) for the cancelled instrument.",
+        examples=["005930"],
+    )
+    PrgmOrdprcPtnCode: str = Field(
+        default="",
+        title="프로그램호가유형코드 (Program order-price type code)",
+        description=(
+            "Program-trade order-price type. Enum mapping not declared in available "
+            "source -- consume as returned by LS."
+        ),
+        examples=[""],
+    )
+    StslOrdprcTpCode: str = Field(
+        default="",
+        title="공매도호가구분 (Short-sale order-price type code)",
+        description=(
+            "Short-sale order-price classification. Enum mapping not declared in "
+            "available source -- consume as returned by LS."
+        ),
+        examples=[""],
+    )
+    StslAbleYn: str = Field(
+        default="",
+        title="공매도가능여부 (Short-sale eligibility flag)",
+        description=(
+            "Whether the original order was eligible to be treated as a short sale. "
+            "Enum mapping not declared in available source -- consume as returned by LS."
+        ),
+        examples=["", "Y", "N"],
+    )
+    MgntrnCode: str = Field(
+        default="",
+        title="신용거래코드 (Credit-trade code)",
+        description=(
+            "Credit-trade flag inherited from the original order. See CSPAT00601 "
+            "InBlock1 for the enum mapping."
+        ),
+        examples=["000"],
+    )
+    LoanDt: str = Field(
+        default="",
+        title="대출일 (Loan date)",
+        description="Loan origination date inherited from the original order.",
+        examples=[""],
+    )
+    CvrgOrdTp: str = Field(
+        default="",
+        title="반대매매주문구분 (Forced-liquidation order type)",
+        description=(
+            "Forced-liquidation classification. Enum mapping not declared in "
+            "available source -- consume as returned by LS."
+        ),
+        examples=[""],
+    )
+    LpYn: str = Field(
+        default="",
+        title="유동성공급자여부 (Liquidity-provider flag)",
+        description=(
+            "Whether the order originates from a registered liquidity provider. "
+            "Enum mapping not declared in available source -- consume as returned by LS."
+        ),
+        examples=["", "Y", "N"],
+    )
+    MgempNo: str = Field(
+        default="",
+        title="관리사원번호 (Managing-staff number)",
+        description="Internal staff/manager identifier recorded by LS.",
+        examples=[""],
+    )
+    BnsTpCode: str = Field(
+        default="",
+        title="매매구분 (Buy/sell type code)",
+        description="Buy/sell flag inherited from the original order. '1' = sell, '2' = buy.",
+        examples=["1", "2"],
+    )
+    SpareOrdNo: int = Field(
+        default=0,
+        title="예비주문번호 (Reserve order number)",
+        description="Spare order number for internal LS bookkeeping.",
+        examples=[0],
+    )
+    CvrgSeqno: int = Field(
+        default=0,
+        title="반대매매일련번호 (Forced-liquidation sequence number)",
+        description="Sequence number for forced-liquidation chains; 0 for ordinary orders.",
+        examples=[0],
+    )
+    RsvOrdNo: int = Field(
+        default=0,
+        title="예약주문번호 (Reserved order number)",
+        description="Reserved-order identifier; 0 when not a reserved order.",
+        examples=[0],
+    )
+    AcntNm: str = Field(
+        default="",
+        title="계좌명 (Account name)",
+        description="Display name of the account that placed the order.",
+        examples=["홍길동", "Test Account"],
+    )
+    IsuNm: str = Field(
+        default="",
+        title="종목명 (Issue name)",
+        description="Display name of the cancelled issue.",
+        examples=["삼성전자", "Samsung Electronics"],
+    )
 
 
 class CSPAT00801Response(BaseModel):
-    """
-    CSPAT00801 API 전체 응답 - 현물취소주문
+    """CSPAT00801 full response envelope.
 
-    Attributes:
-        header (Optional[CSPAT00801ResponseHeader])
-        block1 (Optional[CSPAT00801OutBlock1]): 입력 echo-back
-        block2 (Optional[CSPAT00801OutBlock2]): 취소 결과 (주문번호, 모주문번호 등)
-        rsp_cd (str): 응답코드
-        rsp_msg (str): 응답메시지
-        error_msg (Optional[str]): 에러 시 메시지
+    ``rsp_cd`` codes are not declared in available source -- inspect ``rsp_msg``
+    for accept / reject reasons. A cancel against a non-existent ``OrgOrdNo``
+    typically returns a non-success ``rsp_cd`` with descriptive ``rsp_msg``.
     """
-    header: Optional[CSPAT00801ResponseHeader] = None
+
+    header: Optional[CSPAT00801ResponseHeader] = Field(
+        None,
+        title="응답 헤더 (Response header)",
+        description="Response header block. None on transport / HTTP errors.",
+    )
     block1: Optional[CSPAT00801OutBlock1] = Field(
         None,
-        title="입력 echo-back",
-        description="취소주문 입력 파라미터 echo-back 블록"
+        title="첫번째 출력 블록 (First output block -- input echo)",
+        description="Input echo block (mirrors InBlock1 plus server-appended fields).",
     )
     block2: Optional[CSPAT00801OutBlock2] = Field(
         None,
-        title="취소 결과",
-        description="주문번호, 모주문번호, 주문시각 등 취소 접수 결과"
+        title="두번째 출력 블록 (Second output block -- cancel acknowledgment)",
+        description=(
+            "Cancel acknowledgment block. Contains the new LS-assigned cancel-order "
+            "number plus parent order number on success."
+        ),
     )
-    status_code: Optional[int] = Field(None, title="HTTP 상태 코드")
-    rsp_cd: str
-    rsp_msg: str
-    error_msg: Optional[str] = Field(None, title="오류메시지")
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP 상태 코드 (HTTP status code)",
+        description="HTTP status code from the request. None when no response was received.",
+    )
+    rsp_cd: str = Field(
+        ...,
+        title="응답 코드 (LS response code)",
+        description="LS response code. Specific success / failure codes not declared in available source.",
+    )
+    rsp_msg: str = Field(
+        ...,
+        title="응답 메시지 (LS response message)",
+        description="LS response message text.",
+    )
+    error_msg: Optional[str] = Field(
+        None,
+        title="오류 메시지 (Error message)",
+        description="Error message when an exception or HTTP error occurred. None on success.",
+    )
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 
     @property
     def raw_data(self) -> Optional[Response]:
+        """Raw underlying response object (for debugging)."""
         return self._raw_data
 
     @raw_data.setter

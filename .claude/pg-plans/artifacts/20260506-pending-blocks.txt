@@ -7,9 +7,6 @@
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/common/real/JIF/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/oauth/revoke_token/revoke/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/oauth/generate_token/token/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/order/CSPAT00701/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/order/CSPAT00801/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/order/CSPAT00601/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/ranking/t1452/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/ranking/t1463/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/ranking/t1482/blocks.py
