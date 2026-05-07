@@ -1,66 +1,88 @@
-from typing import List, Literal, Optional
+"""Pydantic models for LS Securities OpenAPI o3104 (Overseas futures daily tick query).
 
-from pydantic import BaseModel, PrivateAttr, Field
+o3104 returns a list of daily (or weekly/monthly) trade records for one
+overseas futures contract — price, OHLC, volume, and change-vs-previous
+per bar.
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
+2026-05-06 finance TR field metadata plan):
+    - Description text mirrors the LS Korean source labels translated into
+      English. Korean source label is appended in parentheses.
+    - Decimal scale, currency unit, and ``sign``/``cgubun`` enum codes are
+      NOT enumerated in the source available to this codebase.
+    - Time ordering of OutBlock1 list rows is not declared in the source;
+      consume as returned by LS.
+    - ``examples`` come from ``src/finance/example/overseas_futureoption/run_o3104.py``
+      (gubun='1', shcode='CUSU25', date='20250808') plus neutral placeholders.
+"""
+
+from typing import Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field, PrivateAttr
 from requests import Response
 
 from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class O3104RequestHeader(BlockRequestHeader):
+    """o3104 request header. Inherits the standard LS request header schema."""
     pass
 
 
 class O3104ResponseHeader(BlockResponseHeader):
+    """o3104 response header. Inherits the standard LS response header schema."""
     pass
 
 
 class O3104InBlock(BaseModel):
-    """
-    o3104InBlock 데이터 블록
+    """o3104InBlock — input block for the overseas futures daily tick query."""
 
-    Attributes:
-        gubun (Literal["0", "1", "2"]): 조회구분 (0:일별 1:주별 2:월별)
-        shcode (str): 단축코드
-        date (str): 조회일자 (YYYYMMDD)
-    """
     gubun: Literal["0", "1", "2"] = Field(
         ...,
-        title="조회구분",
-        description="조회구분 (0:일별 1:주별 2:월별)"
+        title="Query period type (조회구분)",
+        description=(
+            "Period type for the query. '0' = daily (일별), "
+            "'1' = weekly (주별), '2' = monthly (월별)."
+        ),
+        examples=["1", "0", "2"],
     )
-
     shcode: str = Field(
         ...,
-        title="단축코드",
-        description="단축코드 (8자리)"
+        title="Short code (단축코드)",
+        description=(
+            "LS 8-character short instrument code for the contract "
+            "(e.g., 'CUSU25')."
+        ),
+        examples=["CUSU25", "ESM26"],
     )
-
     date: str = Field(
         ...,
-        title="조회일자",
-        description="조회일자 (YYYYMMDD)"
+        title="Query date YYYYMMDD (조회일자)",
+        description="Reference date for the query in YYYYMMDD format.",
+        examples=["20250808", "20260315"],
     )
 
 
 class O3104Request(BaseModel):
-    """
-    o3104 API 요청 전체 구조
-    """
-    header: O3104RequestHeader = O3104RequestHeader(
-        content_type="application/json; charset=utf-8",
-        authorization="",
-        tr_cd="o3104",
-        tr_cont="N",
-        tr_cont_key="",
-        mac_address=""
+    """o3104 full request envelope (header + body + setup options)."""
+
+    header: O3104RequestHeader = Field(
+        O3104RequestHeader(
+            content_type="application/json; charset=utf-8",
+            authorization="",
+            tr_cd="o3104",
+            tr_cont="N",
+            tr_cont_key="",
+            mac_address=""
+        ),
+        title="Request header (요청 헤더)",
+        description="Request header block carrying tr_cd, authorization, and continuation flags.",
     )
-    """요청 헤더"""
-    body: dict[Literal["o3104InBlock"], O3104InBlock] = Field(
+    body: Dict[Literal["o3104InBlock"], O3104InBlock] = Field(
         ...,
-        title="입력 데이터 블록",
-        description="입력 데이터 블록 (키: 'o3104InBlock')"
+        title="Input body (입력 데이터 블록)",
+        description="Wrapped input block keyed by 'o3104InBlock'.",
     )
-    """입력 데이터 블록"""
     options: SetupOptions = Field(
         SetupOptions(
             rate_limit_count=1,
@@ -68,115 +90,140 @@ class O3104Request(BaseModel):
             on_rate_limit="wait",
             rate_limit_key="o3104"
         ),
-        title="설정 옵션",
-        description="코드 실행 전 설정(setup)을 위한 옵션"
+        title="Setup options (설정 옵션)",
+        description="Pre-execution setup options (rate limit, retry behavior).",
     )
-    """코드 실행 전 설정(setup)을 위한 옵션"""
 
 
 class O3104OutBlock1(BaseModel):
-    """
-    o3104OutBlock1 데이터 블록 리스트 항목
+    """o3104OutBlock1 — one daily/weekly/monthly bar record.
 
-    Attributes:
-        chedate (str): 일자 (YYYYMMDD)
-        price (float): 현재가
-        sign (str): 대비구분
-        change (float): 대비
-        diff (float): 등락율
-        open (float): 시가
-        high (float): 고가
-        low (float): 저가
-        cgubun (str): 체결구분
-        volume (int): 누적거래량
+    Decimal scale is not declared in the source available to this codebase.
+    Time ordering of rows: consume as returned by LS.
     """
+
     chedate: str = Field(
         ...,
-        title="일자",
-        description="일자 (YYYYMMDD)"
+        title="Date YYYYMMDD (일자)",
+        description="Bar date in YYYYMMDD format.",
+        examples=["20250808", "20260315"],
     )
-
     price: float = Field(
         ...,
-        title="현재가",
-        description="현재가"
+        title="Current price (현재가)",
+        description=(
+            "Closing / current price for the bar. "
+            "Decimal scale not declared in available source."
+        ),
+        examples=[5780.25, 21300.0],
     )
-
     sign: str = Field(
         ...,
-        title="대비구분",
-        description="대비구분"
+        title="Change-vs-previous sign (대비구분)",
+        description=(
+            "Sign indicator vs. previous bar. "
+            "Specific values not declared in available source; consume as returned by LS."
+        ),
+        examples=["2", "5"],
     )
-
     change: float = Field(
         ...,
-        title="대비",
-        description="대비"
+        title="Change vs. previous (대비)",
+        description=(
+            "Absolute change vs. previous bar. "
+            "Decimal scale not declared in available source."
+        ),
+        examples=[10.25, -5.0],
     )
-
     diff: float = Field(
         ...,
-        title="등락율",
-        description="등락율"
+        title="Change rate (등락율)",
+        description=(
+            "Percent change vs. previous bar. "
+            "Decimal scale not declared in available source."
+        ),
+        examples=[0.18, -0.02],
     )
-
     open: float = Field(
         ...,
-        title="시가",
-        description="시가"
+        title="Open price (시가)",
+        description=(
+            "Opening price of the bar. "
+            "Decimal scale not declared in available source."
+        ),
+        examples=[5770.0, 21280.0],
     )
-
     high: float = Field(
         ...,
-        title="고가",
-        description="고가"
+        title="High price (고가)",
+        description="Highest traded price of the bar.",
+        examples=[5790.5, 21320.0],
     )
-
     low: float = Field(
         ...,
-        title="저가",
-        description="저가"
+        title="Low price (저가)",
+        description="Lowest traded price of the bar.",
+        examples=[5760.0, 21260.0],
     )
-
     cgubun: str = Field(
         ...,
-        title="체결구분",
-        description="체결구분"
+        title="Trade-side classification (체결구분)",
+        description=(
+            "Trade-side classification code. "
+            "Specific values not declared in available source; consume as returned by LS."
+        ),
+        examples=["1", "2"],
     )
-
     volume: int = Field(
         ...,
-        title="누적거래량",
-        description="누적거래량"
+        title="Cumulative volume (누적거래량)",
+        description="Cumulative trading volume for the bar (contracts).",
+        examples=[150000, 320000],
     )
 
 
 class O3104Response(BaseModel):
-    """
-    o3104 API 응답 전체 구조
-    """
+    """o3104 full response envelope."""
+
     header: Optional[O3104ResponseHeader] = Field(
         None,
-        title="응답 헤더",
-        description="응답 헤더 데이터 블록"
+        title="Response header (응답 헤더)",
+        description="Response header block. None on transport / HTTP errors.",
     )
     block1: List[O3104OutBlock1] = Field(
         ...,
-        title="출력 블록 리스트",
-        description="o3104 응답의 출력 블록 리스트"
+        title="Bar list (출력 블록 리스트)",
+        description=(
+            "List of daily/weekly/monthly bar records. "
+            "Time ordering: consume as returned by LS."
+        ),
     )
     status_code: Optional[int] = Field(
         None,
-        title="HTTP 상태 코드",
-        description="HTTP 상태 코드"
+        title="HTTP status code (HTTP 상태 코드)",
+        description="HTTP status code from the request. None when no response was received.",
     )
-    rsp_cd: str = Field(..., title="응답 코드", description="응답 코드")
-    rsp_msg: str = Field(..., title="응답 메시지", description="응답 메시지")
-    error_msg: Optional[str] = Field(None, title="오류 메시지", description="오류 메시지 (있으면)")
+    rsp_cd: str = Field(
+        ...,
+        title="LS response code (응답 코드)",
+        description="LS response code. '00000' indicates success.",
+    )
+    rsp_msg: str = Field(
+        ...,
+        title="LS response message (응답 메시지)",
+        description="LS response message text.",
+    )
+    error_msg: Optional[str] = Field(
+        None,
+        title="Error message (오류 메시지)",
+        description="Error message when an exception or HTTP error occurred. None on success.",
+    )
+
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 
     @property
     def raw_data(self) -> Optional[Response]:
+        """Raw underlying response object (for debugging)."""
         return self._raw_data
 
     @raw_data.setter
