@@ -1,3 +1,21 @@
+"""Pydantic models for LS Securities OpenAPI CIDBQ01500 (Overseas Futures Open Position Balance).
+
+CIDBQ01500 returns the outstanding (open) position balance for overseas futures/options,
+including per-position details (symbol, side, quantity, P&L, margin) across currencies.
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
+2026-05-06 finance TR field metadata plan):
+    - Description text mirrors the LS Korean source labels translated into English.
+      Korean source label is appended in parentheses for AI chatbot Korean↔English mapping.
+    - Field length, decimal scale, currency unit, and complete enum mappings are NOT declared
+      in the source available to this codebase. Where ambiguous, descriptions state
+      "consume as returned by LS."
+    - PnL fields (LpnlAmt, FutsDueBfLpnlAmt, AbrdFutsEvalPnlAmt) include positive,
+      negative, and zero examples as required by plan policy.
+    - ``examples`` come from ``src/finance/example/overseas_futureoption/run_CIDBQ01500.py``
+      where present, plus safe placeholder values ("12345678901" for account numbers).
+"""
+
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, PrivateAttr, Field
@@ -7,485 +25,481 @@ from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class CIDBQ01500RequestHeader(BlockRequestHeader):
+    """CIDBQ01500 request header. Inherits the standard LS request header schema."""
     pass
 
 
 class CIDBQ01500ResponseHeader(BlockResponseHeader):
+    """CIDBQ01500 response header. Inherits the standard LS response header schema."""
     pass
 
 
 class CIDBQ01500InBlock1(BaseModel):
-    """
-    CIDBQ01500InBlock1 데이터 블록
+    """CIDBQ01500InBlock1 — input block for overseas futures open position balance query."""
 
-    해외선물 미결제잔고내역 조회에 사용되는 입력 데이터 블록입니다.
-
-    Attributes:
-        RecCnt (int): 레코드갯수
-        AcntTpCode (str): 계좌구분코드 (1:위탁)
-        QryDt (str): 조회일자 (YYYYMMDD)
-        BalTpCode (str): 잔고구분코드 (1:합산, 2:건별)
-        FcmAcntNo (str): FCM계좌번호 (선택, 예제에 포함되어 있음)
-    """
     RecCnt: int = Field(
         default=1,
-        title="레코드갯수",
-        description="레코드갯수 (예: 1)"
+        title="Record count (레코드갯수)",
+        description="Number of records in this request. LS examples use 1.",
+        examples=[1],
     )
-    """레코드갯수"""
 
     AcntTpCode: str = Field(
         default="1",
-        title="계좌구분코드",
-        description="계좌구분코드 (1:위탁)"
+        title="Account type code (계좌구분코드)",
+        description="Account type. '1' = consignment (위탁). Enum mapping not fully declared in available source.",
+        examples=["1"],
     )
-    """계좌구분코드 (1:위탁)"""
 
     QryDt: str = Field(
         default="",
-        title="조회일자",
-        description="조회일자 (YYYYMMDD)"
+        title="Query date (조회일자)",
+        description=(
+            "Query date in YYYYMMDD format. From the example script: '20260117'. "
+            "Pass empty string for the current trading date."
+        ),
+        examples=["20260117", "20260101", ""],
     )
-    """조회일자 (YYYYMMDD)"""
 
     BalTpCode: str = Field(
         default="1",
-        title="잔고구분코드",
-        description="잔고구분코드 (1:합산, 2:건별)"
+        title="Balance type code (잔고구분코드)",
+        description="Balance aggregation type. '1' = aggregated (합산), '2' = per-entry (건별).",
+        examples=["1", "2"],
     )
-    """잔고구분코드 (1:합산, 2:건별)"""
 
     FcmAcntNo: str = Field(
         default="",
-        title="FCM계좌번호",
-        description="FCM계좌번호 (예제에 존재하므로 선택적으로 포함)"
+        title="FCM account number (FCM계좌번호)",
+        description=(
+            "FCM (Futures Commission Merchant) account number. "
+            "Pass empty string when not applicable. Length not declared in available source."
+        ),
+        examples=[""],
     )
-    """FCM계좌번호 (선택)"""
 
 
 class CIDBQ01500Request(BaseModel):
-    """
-    CIDBQ01500Request 데이터 블록
+    """CIDBQ01500 full request envelope (header + body + setup options)."""
 
-    해외선물 미결제잔고내역 조회 요청을 위한 데이터 블록입니다.
-
-    Attributes:
-        header (CIDBQ01500RequestHeader): 요청 헤더 데이터 블록
-        body (CIDBQ01500InBlock1): 요청 본문 데이터 블록
-    """
-    header: CIDBQ01500RequestHeader = CIDBQ01500RequestHeader(
-        content_type="application/json; charset=utf-8",
-        authorization="",
-        tr_cd="CIDBQ01500",
-        tr_cont="N",
-        tr_cont_key="",
-        mac_address=""
+    header: CIDBQ01500RequestHeader = Field(
+        CIDBQ01500RequestHeader(
+            content_type="application/json; charset=utf-8",
+            authorization="",
+            tr_cd="CIDBQ01500",
+            tr_cont="N",
+            tr_cont_key="",
+            mac_address=""
+        ),
+        title="Request header (요청 헤더 데이터 블록)",
+        description="Request header block carrying tr_cd, authorization, and continuation flags.",
     )
-    """요청 헤더 데이터 블록"""
-
     body: dict[Literal["CIDBQ01500InBlock1"], CIDBQ01500InBlock1] = Field(
         ...,
-        title="입력 데이터 블록",
-        description="해외선물 미결제잔고내역 조회를 위한 입력 데이터 블록"
+        title="Input body (입력 데이터 블록)",
+        description="Wrapped input block keyed by 'CIDBQ01500InBlock1'.",
     )
-    """요청 본문 데이터 블록"""
-
-    options: SetupOptions = SetupOptions(
-        rate_limit_count=1,
-        rate_limit_seconds=1,
-        on_rate_limit="wait",
-        rate_limit_key="CIDBQ01500"
+    options: SetupOptions = Field(
+        SetupOptions(
+            rate_limit_count=1,
+            rate_limit_seconds=1,
+            on_rate_limit="wait",
+            rate_limit_key="CIDBQ01500"
+        ),
+        title="Setup options (설정 옵션)",
+        description="Pre-execution setup options (rate limit, retry behavior).",
     )
-    """코드 실행 전 설정(setup)을 위한 옵션"""
 
 
 class CIDBQ01500OutBlock1(BaseModel):
-    """
-    CIDBQ01500OutBlock1 데이터 블록
+    """CIDBQ01500OutBlock1 — input echo block with account identity.
 
-    응답의 첫 번째 출력 블록으로 계좌 기본정보를 포함합니다.
-
-    Attributes:
-        RecCnt (int): 레코드갯수
-        AcntTpCode (str): 계좌구분코드
-        AcntNo (str): 계좌번호
-        FcmAcntNo (str): FCM계좌번호
-        Pwd (str): 비밀번호
-        QryDt (str): 조회일자
-        BalTpCode (str): 잔고구분코드
+    LS echoes the request inputs plus the resolved account number and password.
+    The actual position detail rows are in OutBlock2.
     """
+
     RecCnt: int = Field(
         default=0,
-        title="레코드갯수",
-        description="응답된 레코드 개수"
+        title="Record count (레코드갯수)",
+        description="Echoed record count from the request.",
+        examples=[0, 1],
     )
-    """레코드갯수"""
 
     AcntTpCode: str = Field(
         default="",
-        title="계좌구분코드",
-        description="계좌구분코드"
+        title="Account type code (계좌구분코드)",
+        description="Echoed account type. '1' = consignment (위탁).",
+        examples=["1"],
     )
-    """계좌구분코드"""
 
     AcntNo: str = Field(
         default="",
-        title="계좌번호",
-        description="계좌번호"
+        title="Account number (계좌번호)",
+        description="Account number for the query. Length not declared in available source.",
+        examples=["12345678901"],
     )
-    """계좌번호"""
 
     FcmAcntNo: str = Field(
         default="",
-        title="FCM계좌번호",
-        description="FCM계좌번호"
+        title="FCM account number (FCM계좌번호)",
+        description="Echoed FCM account number. Empty when not applicable.",
+        examples=[""],
     )
-    """FCM계좌번호"""
 
     Pwd: str = Field(
         default="",
-        title="비밀번호",
-        description="비밀번호"
+        title="Account password (비밀번호)",
+        description=(
+            "Account password as echoed by LS. Treat as sensitive — avoid logging. "
+            "Real production responses may mask or omit this value."
+        ),
+        examples=[""],
     )
-    """비밀번호"""
 
     QryDt: str = Field(
         default="",
-        title="조회일자",
-        description="조회일자 (YYYYMMDD)"
+        title="Query date (조회일자)",
+        description="Echoed query date in YYYYMMDD format.",
+        examples=["20260117", ""],
     )
-    """조회일자 (YYYYMMDD)"""
 
     BalTpCode: str = Field(
         default="",
-        title="잔고구분코드",
-        description="잔고구분코드"
+        title="Balance type code (잔고구분코드)",
+        description="Echoed balance type. '1' = aggregated, '2' = per-entry.",
+        examples=["1", "2"],
     )
-    """잔고구분코드"""
 
 
 class CIDBQ01500OutBlock2(BaseModel):
-    """
-    CIDBQ01500OutBlock2 데이터 블록 (Occurs)
+    """CIDBQ01500OutBlock2 — per-position open balance detail row (Occurs).
 
-    응답의 두 번째 출력 블록으로 일별/종목별 상세 잔고 항목 리스트입니다.
-
-    Attributes (주요):
-        BaseDt (str): 기준일자
-        Dps (float): 예수금
-        LpnlAmt (float): 청산손익금액
-        FutsDueBfLpnlAmt (float): 선물만기전청산손익금액
-        FutsDueBfCmsn (float): 선물만기전수수료
-        CsgnMgn (float): 위탁증거금액
-        MaintMgn (float): 유지증거금
-        CtlmtAmt (float): 신용한도금액
-        AddMgn (float): 추가증거금액
-        MgnclRat (float): 마진콜율
-        OrdAbleAmt (float): 주문가능금액
-        WthdwAbleAmt (float): 인출가능금액
-        AcntNo (str): 계좌번호
-        IsuCodeVal (str): 종목코드값
-        IsuNm (str): 종목명
-        CrcyCodeVal (str): 통화코드값
-        OvrsDrvtPrdtCode (str): 해외파생상품코드
-        OvrsDrvtOptTpCode (str): 해외파생옵션구분코드
-        DueDt (str): 만기일자
-        OvrsDrvtXrcPrc (float): 해외파생행사가격
-        BnsTpCode (str): 매매구분코드
-        CmnCodeNm (str): 공통코드명
-        TpCodeNm (str): 구분코드명
-        BalQty (float): 잔고수량
-        PchsPrc (float): 매입가격
-        OvrsDrvtNowPrc (float): 해외파생현재가
-        AbrdFutsEvalPnlAmt (float): 해외선물평가손익금액
-        CsgnCmsn (float): 위탁수수료
-        PosNo (str): 포지션번호
-        EufOneCmsnAmt (float): 거래소비용1수수료금액
-        EufTwoCmsnAmt (float): 거래소비용2수수료금액
+    One record per open position (or per aggregated position when BalTpCode='1').
+    Currency unit, decimal scale, and multiplier are not declared in the source
+    available to this codebase — consume values as returned by LS.
     """
+
     BaseDt: str = Field(
         default="",
-        title="기준일자",
-        description="기준일자 (YYYYMMDD)"
+        title="Base date (기준일자)",
+        description="Base date for the position record in YYYYMMDD format.",
+        examples=["20260117", "20260101"],
     )
-    """기준일자"""
 
     Dps: float = Field(
         default=0.0,
-        title="예수금",
-        description="예수금"
+        title="Deposit (예수금)",
+        description=(
+            "Deposit / cash balance. Currency and decimal scale not declared in available source. "
+            "Consume as returned by LS."
+        ),
+        examples=[10000.0, 0.0],
     )
-    """예수금"""
 
     LpnlAmt: float = Field(
         default=0.0,
-        title="청산손익금액",
-        description="청산손익금액"
+        title="Liquidation P&L amount (청산손익금액)",
+        description=(
+            "Realized P&L from liquidated positions. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[1234.56, -789.01, 0.0],
     )
-    """청산손익금액"""
 
     FutsDueBfLpnlAmt: float = Field(
         default=0.0,
-        title="선물만기전청산손익금액",
-        description="선물만기전청산손익금액"
+        title="Pre-expiry liquidation P&L amount (선물만기전청산손익금액)",
+        description=(
+            "Realized P&L from positions liquidated before futures expiry. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[500.0, -200.0, 0.0],
     )
-    """선물만기전청산손익금액"""
 
     FutsDueBfCmsn: float = Field(
         default=0.0,
-        title="선물만기전수수료",
-        description="선물만기전수수료"
+        title="Pre-expiry commission (선물만기전수수료)",
+        description=(
+            "Commission incurred for positions settled before futures expiry. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[10.0, 0.0],
     )
-    """선물만기전수수료"""
 
     CsgnMgn: float = Field(
         default=0.0,
-        title="위탁증거금액",
-        description="위탁증거금액"
+        title="Consignment margin amount (위탁증거금액)",
+        description=(
+            "Required margin for consignment positions. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[5000.0, 0.0],
     )
-    """위탁증거금액"""
 
     MaintMgn: float = Field(
         default=0.0,
-        title="유지증거금",
-        description="유지증거금"
+        title="Maintenance margin (유지증거금)",
+        description=(
+            "Maintenance margin level. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[4000.0, 0.0],
     )
-    """유지증거금"""
 
     CtlmtAmt: float = Field(
         default=0.0,
-        title="신용한도금액",
-        description="신용한도금액"
+        title="Credit limit amount (신용한도금액)",
+        description=(
+            "Credit limit amount. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[0.0, 100000.0],
     )
-    """신용한도금액"""
 
     AddMgn: float = Field(
         default=0.0,
-        title="추가증거금액",
-        description="추가증거금액"
+        title="Additional margin amount (추가증거금액)",
+        description=(
+            "Additional (variation/call) margin required. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[0.0, 1000.0],
     )
-    """추가증거금액"""
 
     MgnclRat: float = Field(
         default=0.0,
-        title="마진콜율",
-        description="마진콜율"
+        title="Margin call rate (마진콜율)",
+        description=(
+            "Margin call ratio. Scale and unit not declared in available source — "
+            "consume as returned by LS."
+        ),
+        examples=[0.0, 75.5, 110.0],
     )
-    """마진콜율"""
 
     OrdAbleAmt: float = Field(
         default=0.0,
-        title="주문가능금액",
-        description="주문가능금액"
+        title="Orderable amount (주문가능금액)",
+        description=(
+            "Available funds for placing new orders. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[5000.0, 0.0],
     )
-    """주문가능금액"""
 
     WthdwAbleAmt: float = Field(
         default=0.0,
-        title="인출가능금액",
-        description="인출가능금액"
+        title="Withdrawable amount (인출가능금액)",
+        description=(
+            "Amount that can be withdrawn from the account. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[3000.0, 0.0],
     )
-    """인출가능금액"""
 
     AcntNo: str = Field(
         default="",
-        title="계좌번호",
-        description="계좌번호"
+        title="Account number (계좌번호)",
+        description="Account number for this position record. Length not declared in available source.",
+        examples=["12345678901"],
     )
-    """계좌번호"""
 
     IsuCodeVal: str = Field(
         default="",
-        title="종목코드값",
-        description="종목코드값"
+        title="Issue code value (종목코드값)",
+        description="Instrument code for this open position.",
+        examples=["ADM23", "ESM26", "NQU26"],
     )
-    """종목코드값"""
 
     IsuNm: str = Field(
         default="",
-        title="종목명",
-        description="종목명"
+        title="Issue name (종목명)",
+        description="Display name of the instrument.",
+        examples=["E-MINI S&P500", "GOLD FUTURES"],
     )
-    """종목명"""
 
     CrcyCodeVal: str = Field(
         default="",
-        title="통화코드값",
-        description="통화코드값"
+        title="Currency code value (통화코드값)",
+        description="Currency code for this position. Enum not fully declared in available source.",
+        examples=["USD", "HKD"],
     )
-    """통화코드값"""
 
     OvrsDrvtPrdtCode: str = Field(
         default="",
-        title="해외파생상품코드",
-        description="해외파생상품코드"
+        title="Overseas derivative product code (해외파생상품코드)",
+        description=(
+            "Product type code for the overseas derivative. "
+            "Enum mapping not declared in available source — consume as returned by LS."
+        ),
+        examples=["", "F", "O"],
     )
-    """해외파생상품코드"""
 
     OvrsDrvtOptTpCode: str = Field(
         default="",
-        title="해외파생옵션구분코드",
-        description="해외파생옵션구분코드"
+        title="Overseas derivative option type code (해외파생옵션구분코드)",
+        description=(
+            "Option type classification. "
+            "Enum mapping not declared in available source — consume as returned by LS."
+        ),
+        examples=["", "C", "P"],
     )
-    """해외파생옵션구분코드"""
 
     DueDt: str = Field(
         default="",
-        title="만기일자",
-        description="만기일자 (YYYYMMDD)"
+        title="Expiry date (만기일자)",
+        description="Instrument expiry date in YYYYMMDD format.",
+        examples=["20260321", "20260620", ""],
     )
-    """만기일자"""
 
     OvrsDrvtXrcPrc: float = Field(
         default=0.0,
-        title="해외파생행사가격",
-        description="해외파생행사가격"
+        title="Overseas derivative exercise price (해외파생행사가격)",
+        description=(
+            "Strike / exercise price for option instruments. "
+            "0 for futures. Decimal scale not declared in available source."
+        ),
+        examples=[0.0, 5000.0, 4800.0],
     )
-    """해외파생행사가격"""
 
     BnsTpCode: str = Field(
         default="",
-        title="매매구분코드",
-        description="매매구분코드 (1: 매도, 2: 매수)"
+        title="Buy/sell type code (매매구분코드)",
+        description="Position direction. '1' = sell (매도), '2' = buy (매수).",
+        examples=["1", "2"],
     )
-    """매매구분코드 (1: 매도, 2: 매수)"""
 
     CmnCodeNm: str = Field(
         default="",
-        title="공통코드명",
-        description="공통코드명"
+        title="Common code name (공통코드명)",
+        description="Common classification name as returned by LS.",
+        examples=["", "선물"],
     )
-    """공통코드명"""
 
     TpCodeNm: str = Field(
         default="",
-        title="구분코드명",
-        description="구분코드명"
+        title="Type code name (구분코드명)",
+        description="Type classification name as returned by LS.",
+        examples=["", "신규"],
     )
-    """구분코드명"""
 
     BalQty: float = Field(
         default=0.0,
-        title="잔고수량",
-        description="잔고수량"
+        title="Balance quantity (잔고수량)",
+        description="Open position quantity (contracts). Scale not declared in available source.",
+        examples=[1.0, 5.0, 0.0],
     )
-    """잔고수량"""
 
     PchsPrc: float = Field(
         default=0.0,
-        title="매입가격",
-        description="매입가격"
+        title="Purchase price (매입가격)",
+        description=(
+            "Average purchase (entry) price for the open position. "
+            "Decimal scale not declared in available source."
+        ),
+        examples=[4500.25, 1900.0, 0.0],
     )
-    """매입가격"""
 
     OvrsDrvtNowPrc: float = Field(
         default=0.0,
-        title="해외파생현재가",
-        description="해외파생현재가"
+        title="Overseas derivative current price (해외파생현재가)",
+        description=(
+            "Current market price of the instrument. "
+            "Decimal scale not declared in available source."
+        ),
+        examples=[4550.0, 1920.5, 0.0],
     )
-    """해외파생현재가"""
 
     AbrdFutsEvalPnlAmt: float = Field(
         default=0.0,
-        title="해외선물평가손익금액",
-        description="해외선물평가손익금액"
+        title="Overseas futures unrealized P&L amount (해외선물평가손익금액)",
+        description=(
+            "Unrealized (mark-to-market) P&L for the open position. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[1234.56, -789.01, 0.0],
     )
-    """해외선물평가손익금액"""
 
     CsgnCmsn: float = Field(
         default=0.0,
-        title="위탁수수료",
-        description="위탁수수료"
+        title="Consignment commission (위탁수수료)",
+        description=(
+            "Commission charged for the consignment. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[5.0, 0.0],
     )
-    """위탁수수료"""
 
     PosNo: str = Field(
         default="",
-        title="포지션번호",
-        description="포지션번호"
+        title="Position number (포지션번호)",
+        description="LS-assigned position identifier. Length not declared in available source.",
+        examples=["", "1", "00001"],
     )
-    """포지션번호"""
 
     EufOneCmsnAmt: float = Field(
         default=0.0,
-        title="거래소비용1수수료금액",
-        description="거래소비용1수수료금액"
+        title="Exchange fee 1 commission amount (거래소비용1수수료금액)",
+        description=(
+            "Exchange cost 1 fee amount. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[0.0, 1.25],
     )
-    """거래소비용1수수료금액"""
 
     EufTwoCmsnAmt: float = Field(
         default=0.0,
-        title="거래소비용2수수료금액",
-        description="거래소비용2수수료금액"
+        title="Exchange fee 2 commission amount (거래소비용2수수료금액)",
+        description=(
+            "Exchange cost 2 fee amount. "
+            "Currency and decimal scale not declared in available source."
+        ),
+        examples=[0.0, 0.75],
     )
-    """거래소비용2수수료금액"""
 
 
 class CIDBQ01500Response(BaseModel):
-    """
-    CIDBQ01500 API에 대한 응답 클래스.
+    """CIDBQ01500 full response envelope."""
 
-    Attributes:
-        header (Optional[CIDBQ01500ResponseHeader]): 요청 헤더 데이터 블록
-        block1 (Optional[CIDBQ01500OutBlock1]): 첫 번째 출력 블록
-        block2 (List[CIDBQ01500OutBlock2]): 두 번째 출력 블록 리스트 (Occurs)
-        rsp_cd (str): 응답코드
-        rsp_msg (str): 응답메시지
-        status_code (int): HTTP 상태 코드
-        error_msg (Optional[str]): 오류 메시지
-    """
     header: Optional[CIDBQ01500ResponseHeader] = Field(
         None,
-        title="요청 헤더 데이터 블록",
-        description="CIDBQ01500 API 응답의 요청 헤더 데이터 블록"
+        title="Response header (요청 헤더 데이터 블록)",
+        description="Response header block. None on transport / HTTP errors.",
     )
-    """요청 헤더 데이터 블록"""
-
     block1: Optional[CIDBQ01500OutBlock1] = Field(
         None,
-        title="첫 번째 출력 블록",
-        description="첫 번째 출력 블록"
+        title="First output block — input echo (첫 번째 출력 블록)",
+        description="Input echo block with resolved account number.",
     )
-    """첫 번째 출력 블록"""
-
     block2: List[CIDBQ01500OutBlock2] = Field(
         default_factory=list,
-        title="두 번째 출력 블록 리스트",
-        description="두 번째 출력 블록 리스트"
+        title="Second output block — per-position detail rows (두 번째 출력 블록 리스트)",
+        description="Per-position open balance detail rows. Ordering follows BalTpCode setting.",
     )
-    """두 번째 출력 블록 리스트"""
-    status_code: int = Field(
-        ...,
-        title="HTTP 상태 코드",
-        description="API 호출에 대한 HTTP 상태 코드"
+    status_code: Optional[int] = Field(
+        None,
+        title="HTTP status code (HTTP 상태 코드)",
+        description="HTTP status code from the request. None when no response was received.",
     )
-    """HTTP 상태 코드"""
     rsp_cd: str = Field(
         ...,
-        title="응답코드",
-        description="API 호출 상태를 나타내는 응답 코드"
+        title="LS response code (응답코드)",
+        description="LS response code. '00000' indicates success.",
     )
-    """응답코드"""
-
     rsp_msg: str = Field(
         ...,
-        title="응답메시지",
-        description="API 호출 결과에 대한 추가 정보를 제공하는 응답 메시지"
+        title="LS response message (응답메시지)",
+        description="LS response message text.",
     )
-    """응답메시지"""
-
     error_msg: Optional[str] = Field(
         None,
-        title="오류 메시지",
-        description="오류 발생 시 오류 메시지"
+        title="Error message (오류 메시지)",
+        description="Error message when an exception or HTTP error occurred. None on success.",
     )
-    """오류 메시지 (오류 발생 시)"""
     _raw_data: Optional[Response] = PrivateAttr(default=None)
-    """ private으로 BaseModel의 직렬화에 포함시키지 않는다 """
 
     @property
     def raw_data(self) -> Optional[Response]:
-        """API 호출에 대한 원시 응답 데이터"""
+        """Raw underlying response object (for debugging)."""
         return self._raw_data
 
     @raw_data.setter
