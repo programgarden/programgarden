@@ -1,3 +1,29 @@
+"""Pydantic models for LS Securities OpenAPI CIDBT00900 (Overseas Futures Modify Order).
+
+CIDBT00900 modifies (정정) an existing overseas futures order. ``FutsOrdTpCode``
+is fixed at '2' (정정). The original LS-assigned order number must be supplied
+via ``OvrsFutsOrgOrdNo``. ``FutsOrdPtnCode`` is fixed at '2' (지정가) — modify
+operations require a limit price.
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
+2026-05-06 finance TR field metadata plan):
+    - Description text mirrors the LS Korean source labels translated into
+      English. Korean source label is appended in parentheses for AI chatbot
+      Korean↔English mapping.
+    - Enum codes (FutsOrdTpCode, BnsTpCode, FutsOrdPtnCode) are documented
+      verbatim from the Korean source docstring.
+    - Decimal scale, currency unit, contract multiplier, and tick-value
+      semantics for overseas futures are NOT declared in the source available
+      to this codebase. Where ambiguous, descriptions state
+      "consume as returned by LS" or "not declared in available source".
+    - ``examples`` come from ``src/finance/example/overseas_futureoption/run_CIDBT00900.py``
+      (ADZ25 modify of order '2250') plus safe placeholder values. Account
+      number placeholder "12345678901" is always used — never real accounts.
+
+SAFETY: This is a live order-modification TR. Examples are illustrative only
+and must NOT be used as-is to submit real order modifications.
+"""
+
 from typing import Literal, Optional
 from pydantic import BaseModel, PrivateAttr, Field
 from requests import Response
@@ -6,128 +32,141 @@ from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class CIDBT00900RequestHeader(BlockRequestHeader):
+    """CIDBT00900 request header. Inherits the standard LS request header schema."""
     pass
 
 
 class CIDBT00900ResponseHeader(BlockResponseHeader):
+    """CIDBT00900 response header. Inherits the standard LS response header schema."""
     pass
 
 
 class CIDBT00900InBlock1(BaseModel):
-    """
-    CIDBT00900InBlock1 데이터 블록
+    """CIDBT00900InBlock1 — input block for an overseas futures modify order.
 
-    Attributes:
-        RecCnt (int): 레코드갯수
-        OrdDt (str): 주문일자 (YYYYMMDD)
-        OvrsFutsOrgOrdNo (str): 해외선물원주문번호
-        IsuCodeVal (str): 종목코드값
-        FutsOrdTpCode (Literal["2"]): 선물주문구분코드 (2:정정)
-        BnsTpCode (Literal["1","2"]): 매매구분코드 (1:매도, 2:매수)
-        FutsOrdPtnCode (Literal["2"]): 선물주문유형코드 (2:지정가)
-        CrcyCodeVal (str): 통화코드값
-        OvrsDrvtOrdPrc (float): 해외파생주문가격
-        CndiOrdPrc (float): 조건주문가격
-        OrdQty (int): 주문수량
-        OvrsDrvtPrdtCode (str): 해외파생상품코드
-        DueYymm (str): 만기년월
-        ExchCode (str): 거래소코드
+    ``FutsOrdTpCode`` is always '2' (정정) and ``FutsOrdPtnCode`` is always '2'
+    (지정가). ``OvrsFutsOrgOrdNo`` identifies the existing order to modify;
+    the remaining fields specify the revised order parameters.
     """
+
     RecCnt: int = Field(
         default=1,
-        title="레코드갯수",
-        description="레코드갯수 (예: 1)"
+        title="Record count (레코드갯수)",
+        description="Number of records sent in this request. LS examples always use 1.",
+        examples=[1],
     )
-    """레코드 갯수 (예: 1)"""
     OrdDt: str = Field(
         ...,
-        title="주문일자",
-        description="YYYYMMDD 형식"
+        title="Order date (주문일자)",
+        description="Order date in YYYYMMDD format. Example script uses today's date via strftime.",
+        examples=["20260507", "20260601"],
     )
-    """주문일자 (YYYYMMDD)"""
     OvrsFutsOrgOrdNo: str = Field(
         ...,
-        title="해외선물원주문번호",
-        description="해외선물원주문번호"
+        title="Overseas futures original order number (해외선물원주문번호)",
+        description=(
+            "LS-assigned order number of the existing order to be modified. "
+            "Obtained from a prior CIDBT00100 OutBlock2.OvrsFutsOrdNo response."
+        ),
+        examples=["2250", "2278"],
     )
-    """해외선물원주문번호"""
     IsuCodeVal: str = Field(
         ...,
-        title="종목코드값",
-        description="종목코드값"
+        title="Issue code value (종목코드값)",
+        description=(
+            "LS instrument code for the overseas futures contract being modified. "
+            "Must match the original order's instrument."
+        ),
+        examples=["ADZ25", "ESM26", "NQU26"],
     )
-    """종목코드값"""
     FutsOrdTpCode: Literal["2"] = Field(
         ...,
-        title="선물주문구분코드",
-        description="2:정정"
+        title="Futures order type code (선물주문구분코드)",
+        description="Futures order type. Always '2' = modify order (정정) for CIDBT00900.",
+        examples=["2"],
     )
-    """선물주문구분코드 (2:정정)"""
     BnsTpCode: Literal["1", "2"] = Field(
         ...,
-        title="매매구분코드",
-        description="1:매도, 2:매수"
+        title="Buy/sell type code (매매구분코드)",
+        description="Trade direction. '1' = sell (매도), '2' = buy (매수).",
+        examples=["1", "2"],
     )
-    """매매구분코드 1:매도, 2:매수"""
     FutsOrdPtnCode: Literal["2"] = Field(
         ...,
-        title="선물주문유형코드",
-        description="2:지정가"
+        title="Futures order pattern code (선물주문유형코드)",
+        description="Order pattern. Always '2' = limit order (지정가) for modify operations.",
+        examples=["2"],
     )
-    """선물주문유형코드 2:지정가"""
     CrcyCodeVal: str = Field(
         "",
-        title="통화코드값",
-        description="통화코드값 (공백 허용)"
+        title="Currency code value (통화코드값)",
+        description=(
+            "Currency code value for the order. Empty / blank string is accepted "
+            "by LS. Enum mapping not declared in available source — consume as "
+            "returned by LS."
+        ),
+        examples=["", "USD"],
     )
-    """통화코드값 (공백 허용)"""
     OvrsDrvtOrdPrc: float = Field(
         ...,
-        title="해외파생주문가격",
-        description="해외파생주문가격"
+        title="Overseas derivative order price (해외파생주문가격)",
+        description=(
+            "Revised limit order price in the instrument's quote currency. "
+            "Decimal scale not declared in available source — consume as "
+            "returned by LS."
+        ),
+        examples=[0.64935, 4500.25],
     )
-    """해외파생주문가격"""
     CndiOrdPrc: float = Field(
         ...,
-        title="조건주문가격",
-        description="조건주문가격"
+        title="Conditional order price (조건주문가격)",
+        description=(
+            "Condition / trigger price. Example script uses 0. Decimal scale "
+            "and trigger semantics not declared in available source — consume "
+            "as returned by LS."
+        ),
+        examples=[0, 0.0],
     )
-    """조건주문가격"""
     OrdQty: int = Field(
         ...,
-        title="주문수량",
-        description="주문수량"
+        title="Order quantity (주문수량)",
+        description="Revised order quantity in contracts. Example script uses 1.",
+        examples=[1, 5],
     )
-    """주문수량"""
     OvrsDrvtPrdtCode: str = Field(
         "",
-        title="해외파생상품코드",
-        description="해외파생상품코드 (공백 허용)"
+        title="Overseas derivative product code (해외파생상품코드)",
+        description=(
+            "Overseas derivative product code. Empty / blank string is accepted "
+            "by LS. Code values not declared in available source — consume as "
+            "returned by LS."
+        ),
+        examples=["", " "],
     )
-    """해외파생상품코드"""
     DueYymm: str = Field(
         "",
-        title="만기년월",
-        description="만기년월 (YYMM)"
+        title="Due year/month (만기년월)",
+        description=(
+            "Contract expiry year/month. Format hinted as YYMM in the source "
+            "docstring; full length / zero-pad rules not declared in available "
+            "source — consume as returned by LS."
+        ),
+        examples=["", "2512"],
     )
-    """만기년월"""
     ExchCode: str = Field(
         "",
-        title="거래소코드",
-        description="거래소코드 (공백 허용)"
+        title="Exchange code (거래소코드)",
+        description=(
+            "Exchange code. Empty / blank string is accepted by LS. Enum "
+            "mapping not declared in available source — consume as returned by LS."
+        ),
+        examples=["", "CME"],
     )
-    """거래소코드"""
 
 
 class CIDBT00900Request(BaseModel):
-    """
-    CIDBT00900 API 요청 클래스.
+    """CIDBT00900 full request envelope (header + body + setup options)."""
 
-    Attributes:
-        header (CIDBT00900RequestHeader): 요청 헤더 데이터 블록.
-        body (dict[Literal["CIDBT00900InBlock1"], CIDBT00900InBlock1]): 입력 데이터 블록.
-        options (SetupOptions): 설정 옵션.
-    """
     header: CIDBT00900RequestHeader = Field(
         CIDBT00900RequestHeader(
             content_type="application/json; charset=utf-8",
@@ -137,16 +176,14 @@ class CIDBT00900Request(BaseModel):
             tr_cont_key="",
             mac_address=""
         ),
-        title="요청 헤더 데이터 블록",
-        description="CIDBT00900 API 요청을 위한 헤더 데이터 블록"
+        title="Request header (요청 헤더)",
+        description="Request header block carrying tr_cd, authorization, and continuation flags.",
     )
-    """요청 헤더 데이터 블록"""
     body: dict[str, CIDBT00900InBlock1] = Field(
         ...,
-        title="입력 데이터 블록",
-        description="해외선물 정정주문 입력 데이터 블록"
+        title="Input body (입력 데이터 블록)",
+        description="Wrapped input block keyed by 'CIDBT00900InBlock1'.",
     )
-    """입력 데이터 블록 (키: 'CIDBT00900InBlock1')"""
     options: SetupOptions = Field(
         SetupOptions(
             rate_limit_count=5,
@@ -154,234 +191,211 @@ class CIDBT00900Request(BaseModel):
             on_rate_limit="wait",
             rate_limit_key="CIDBT00900"
         ),
-        title="설정 옵션",
-        description="코드 실행 전 설정(setup)을 위한 옵션"
+        title="Setup options (설정 옵션)",
+        description="Pre-execution setup options (rate limit, retry behavior).",
     )
-    """실행 전 설정 옵션 (rate limit 등)"""
 
 
 class CIDBT00900OutBlock1(BaseModel):
-    """
-    CIDBT00900OutBlock1 데이터 블록 (응답)
+    """CIDBT00900OutBlock1 — input echo block for the modify order request.
 
-    Attributes:
-        RecCnt (int): 레코드갯수
-        OrdDt (str): 주문일자
-        RegBrnNo (str): 등록지점번호
-        AcntNo (str): 계좌번호
-        Pwd (str): 비밀번호
-        OvrsFutsOrgOrdNo (str): 해외선물원주문번호
-        IsuCodeVal (str): 종목코드값
-        FutsOrdTpCode (str): 선물주문구분코드
-        BnsTpCode (str): 매매구분코드
-        FutsOrdPtnCode (str): 선물주문유형코드
-        CrcyCodeVal (str): 통화코드값
-        OvrsDrvtOrdPrc (float): 해외파생주문가격
-        CndiOrdPrc (float): 조건주문가격
-        OrdQty (int): 주문수량
-        OvrsDrvtPrdtCode (str): 해외파생상품코드
-        DueYymm (str): 만기년월
-        ExchCode (str): 거래소코드
+    LS echoes the InBlock1 inputs back in OutBlock1. Additional server-side
+    fields ``RegBrnNo``, ``AcntNo``, and ``Pwd`` identify the originating
+    branch / account.
     """
+
     RecCnt: int = Field(
         default=0,
-        title="레코드갯수",
-        description="응답된 레코드 개수"
+        title="Record count (레코드갯수)",
+        description="Echoed record count.",
+        examples=[0, 1],
     )
-    """응답된 레코드 개수"""
     OrdDt: str = Field(
         default="",
-        title="주문일자",
-        description="주문일자"
+        title="Order date (주문일자)",
+        description="Echoed order date in YYYYMMDD format.",
+        examples=["", "20260507"],
     )
-    """주문일자"""
     RegBrnNo: str = Field(
         default="",
-        title="등록지점번호",
-        description="등록지점번호"
+        title="Registered branch number (등록지점번호)",
+        description="Branch number registered to the account. Length not declared in available source.",
+        examples=["", "001"],
     )
-    """등록지점번호"""
     AcntNo: str = Field(
         default="",
-        title="계좌번호",
-        description="계좌번호"
+        title="Account number (계좌번호)",
+        description="Account number that placed the modification. Length not declared in available source.",
+        examples=["", "12345678901"],
     )
-    """계좌번호"""
     Pwd: str = Field(
         default="",
-        title="비밀번호",
-        description="비밀번호"
+        title="Password (비밀번호)",
+        description=(
+            "Account password echoed by LS. Treat as sensitive — avoid logging. "
+            "Real production responses may mask or omit this value."
+        ),
+        examples=[""],
     )
-    """비밀번호"""
     OvrsFutsOrgOrdNo: str = Field(
         default="",
-        title="해외선물원주문번호",
-        description="해외선물원주문번호"
+        title="Overseas futures original order number (해외선물원주문번호)",
+        description="Echoed original order number that was modified.",
+        examples=["", "2250"],
     )
-    """해외선물원주문번호"""
     IsuCodeVal: str = Field(
         default="",
-        title="종목코드값",
-        description="종목코드값"
+        title="Issue code value (종목코드값)",
+        description="Echoed instrument code for the modified overseas futures contract.",
+        examples=["", "ADZ25"],
     )
-    """종목코드값"""
     FutsOrdTpCode: str = Field(
         default="",
-        title="선물주문구분코드",
-        description="선물주문구분코드"
+        title="Futures order type code (선물주문구분코드)",
+        description="Echoed futures order type. '2' = modify order (정정) for CIDBT00900.",
+        examples=["", "2"],
     )
-    """선물주문구분코드"""
     BnsTpCode: str = Field(
         default="",
-        title="매매구분코드",
-        description="매매구분코드"
+        title="Buy/sell type code (매매구분코드)",
+        description="Echoed trade direction. '1' = sell (매도), '2' = buy (매수).",
+        examples=["", "1", "2"],
     )
-    """매매구분코드"""
     FutsOrdPtnCode: str = Field(
         default="",
-        title="선물주문유형코드",
-        description="선물주문유형코드"
+        title="Futures order pattern code (선물주문유형코드)",
+        description="Echoed order pattern. '2' = limit (지정가) for modify operations.",
+        examples=["", "2"],
     )
-    """선물주문유형코드"""
     CrcyCodeVal: str = Field(
         default="",
-        title="통화코드값",
-        description="통화코드값"
+        title="Currency code value (통화코드값)",
+        description="Echoed currency code value. Enum mapping not declared in available source.",
+        examples=["", "USD"],
     )
-    """통화코드값"""
     OvrsDrvtOrdPrc: float = Field(
         default=0.0,
-        title="해외파생주문가격",
-        description="해외파생주문가격"
+        title="Overseas derivative order price (해외파생주문가격)",
+        description="Echoed revised limit order price. Decimal scale not declared in available source.",
+        examples=[0.0, 0.64935],
     )
-    """해외파생주문가격"""
     CndiOrdPrc: float = Field(
         default=0.0,
-        title="조건주문가격",
-        description="조건주문가격"
+        title="Conditional order price (조건주문가격)",
+        description="Echoed condition price. Decimal scale not declared in available source.",
+        examples=[0.0],
     )
-    """조건주문가격"""
     OrdQty: int = Field(
         default=0,
-        title="주문수량",
-        description="주문수량"
+        title="Order quantity (주문수량)",
+        description="Echoed revised order quantity in contracts.",
+        examples=[0, 1],
     )
-    """주문수량"""
     OvrsDrvtPrdtCode: str = Field(
         default="",
-        title="해외파생상품코드",
-        description="해외파생상품코드"
+        title="Overseas derivative product code (해외파생상품코드)",
+        description="Echoed overseas derivative product code. Code values not declared in available source.",
+        examples=["", " "],
     )
-    """해외파생상품코드"""
     DueYymm: str = Field(
         default="",
-        title="만기년월",
-        description="만기년월"
+        title="Due year/month (만기년월)",
+        description="Echoed contract expiry year/month. Format not declared in available source.",
+        examples=["", "2512"],
     )
-    """만기년월"""
     ExchCode: str = Field(
         default="",
-        title="거래소코드",
-        description="거래소코드"
+        title="Exchange code (거래소코드)",
+        description="Echoed exchange code. Enum mapping not declared in available source.",
+        examples=["", "CME"],
     )
-    """거래소코드"""
 
 
 class CIDBT00900OutBlock2(BaseModel):
-    """
-    CIDBT00900OutBlock2 데이터 블록 (응답)
+    """CIDBT00900OutBlock2 — modification acknowledgment block.
 
-    Attributes:
-        RecCnt (int): 레코드갯수
-        AcntNo (str): 계좌번호
-        OvrsFutsOrdNo (str): 해외선물주문번호
-        InnerMsgCnts (str): 내부메시지내용
+    Carries the LS-assigned overseas futures order number for the modified
+    order plus an inner message string. Present only on a successful
+    modification.
     """
+
     RecCnt: int = Field(
         default=0,
-        title="레코드갯수",
-        description="응답된 레코드 개수"
+        title="Record count (레코드갯수)",
+        description="Record count for this acknowledgment block.",
+        examples=[0, 1],
     )
-    """응답된 레코드 개수"""
     AcntNo: str = Field(
         default="",
-        title="계좌번호",
-        description="계좌번호"
+        title="Account number (계좌번호)",
+        description="Account number that placed the modification.",
+        examples=["", "12345678901"],
     )
-    """계좌번호"""
     OvrsFutsOrdNo: str = Field(
         default="",
-        title="해외선물주문번호",
-        description="해외선물주문번호"
+        title="Overseas futures order number (해외선물주문번호)",
+        description=(
+            "LS-assigned overseas futures order number for the modification. "
+            "Use this value for any subsequent modify or cancel against the "
+            "newly-modified order."
+        ),
+        examples=["", "2250", "2278"],
     )
-    """해외선물주문번호"""
     InnerMsgCnts: str = Field(
         default="",
-        title="내부메시지내용",
-        description="내부메시지내용"
+        title="Inner message contents (내부메시지내용)",
+        description=(
+            "Server-side inner message text accompanying the modification "
+            "acknowledgment. Content semantics not declared in available "
+            "source — consume as returned by LS."
+        ),
+        examples=["", "정상 처리"],
     )
-    """내부메시지내용"""
 
 
 class CIDBT00900Response(BaseModel):
-    """
-    CIDBT00900 API에 대한 응답 클래스.
+    """CIDBT00900 full response envelope."""
 
-    Attributes:
-        header (Optional[CIDBT00900ResponseHeader]): 요청 헤더 데이터 블록
-        block1 (Optional[CIDBT00900OutBlock1]): 첫번째 출력 블록
-        block2 (Optional[CIDBT00900OutBlock2]): 두번째 출력 블록
-        rsp_cd (str): 응답 코드
-        rsp_msg (str): 응답 메시지
-        error_msg (Optional[str]): 오류 메시지
-    """
     header: Optional[CIDBT00900ResponseHeader] = Field(
         None,
-        title="요청 헤더 데이터 블록",
-        description="CIDBT00900 API 응답을 위한 요청 헤더 데이터 블록"
+        title="Response header (응답 헤더)",
+        description="Response header block. None on transport / HTTP errors.",
     )
-    """요청 헤더 데이터 블록 (응답)"""
     block1: Optional[CIDBT00900OutBlock1] = Field(
         None,
-        title="첫번째 출력 블록",
-        description="CIDBT00900 API 응답의 첫번째 출력 블록"
+        title="First output block — input echo (첫번째 출력 블록 — 입력 에코)",
+        description="Input echo block (mirrors InBlock1 inputs plus server-appended fields).",
     )
-    """첫번째 출력 블록 (CIDBT00900OutBlock1)"""
     block2: Optional[CIDBT00900OutBlock2] = Field(
         None,
-        title="두번째 출력 블록",
-        description="CIDBT00900 API 응답의 두번째 출력 블록"
+        title="Second output block — modification acknowledgment (두번째 출력 블록 — 정정 응답)",
+        description="Modification acknowledgment block. Contains LS-assigned order number on success.",
     )
-    """두번째 출력 블록 (CIDBT00900OutBlock2)"""
     status_code: Optional[int] = Field(
         None,
-        title="HTTP 상태 코드",
-        description="요청에 대한 HTTP 상태 코드"
+        title="HTTP status code (HTTP 상태 코드)",
+        description="HTTP status code from the request. None when no response was received.",
     )
-    """HTTP 상태 코드"""
     rsp_cd: str = Field(
         ...,
-        title="응답 코드",
-        description="CIDBT00900 API 응답의 상태 코드"
+        title="LS response code (응답 코드)",
+        description="LS response code. '00000' indicates success.",
     )
-    """응답 코드"""
     rsp_msg: str = Field(
         ...,
-        title="응답 메시지",
-        description="CIDBT00900 API 응답의 상태 메시지"
+        title="LS response message (응답 메시지)",
+        description="LS response message text.",
     )
-    """응답 메시지"""
     error_msg: Optional[str] = Field(
         None,
-        title="오류 메시지",
-        description="CIDBT00900 API 응답의 오류 메시지"
+        title="Error message (오류 메시지)",
+        description="Error message when an exception or HTTP error occurred. None on success.",
     )
-    """오류 메시지 (있으면)"""
     _raw_data: Optional[Response] = PrivateAttr(default=None)
-    """private으로 BaseModel의 직렬화에 포함시키지 않는다"""
 
     @property
     def raw_data(self) -> Optional[Response]:
+        """Raw underlying response object (for debugging)."""
         return self._raw_data
 
     @raw_data.setter
