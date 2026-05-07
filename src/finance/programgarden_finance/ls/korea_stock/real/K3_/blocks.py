@@ -1,13 +1,17 @@
-"""KOSDAQ 체결(K3_) 실시간 WebSocket 요청/응답 모델
+"""Pydantic models for LS Securities OpenAPI K3_ (KOSDAQ per-trade tick stream).
 
-EN:
-    Pydantic models for the K3_ (KOSDAQ Trade Execution) real-time WebSocket stream.
-    Provides real-time tick-by-tick trade data for KOSDAQ-listed stocks.
-    Field structure is identical to S3_ (KOSPI).
+K3_ is a Real-time WebSocket TR that pushes per-trade tick data for
+KOSDAQ-listed stocks.  Field structure is identical to S3_ (KOSPI
+per-trade tick) — only the listing market differs.
 
-KO:
-    KOSDAQ 종목의 실시간 체결(틱) 데이터를 수신하기 위한 WebSocket 요청/응답 모델입니다.
-    필드 구조는 S3_(KOSPI 체결)와 동일하며, KOSDAQ 종목에 대한 데이터를 수신합니다.
+The ``K3_RealRequestBody`` carries the WebSocket subscription envelope
+(``tr_cd`` + ``tr_key`` — 6-digit short symbol code); the
+``K3_RealResponseBody`` carries the per-tick push payload.
+
+Field source policy: identical to S3_ (see that module's docstring for
+the full policy).  ``examples`` for ``tr_key`` and ``shcode`` mirror the
+example script (``src/finance/example/korea_stock/real_K3_.py`` uses
+``"293490"``).
 """
 
 from typing import Optional
@@ -18,128 +22,244 @@ from ....models import BlockRealRequestHeader, BlockRealResponseHeader
 
 
 class K3_RealRequestHeader(BlockRealRequestHeader):
+    """K3_ real-time request header. Inherits the standard LS WS request header schema."""
     pass
 
 
 class K3_RealResponseHeader(BlockRealResponseHeader):
+    """K3_ real-time response header. Inherits the standard LS WS response header schema."""
     pass
 
 
 class K3_RealRequestBody(BaseModel):
-    tr_cd: str = Field("K3_", description="거래 CD")
-    tr_key: str = Field(..., max_length=8, description="KOSDAQ 종목 단축코드 6자리 또는 8자리 (예: '122870')")
+    """K3_RealRequestBody — WebSocket subscription envelope for KOSDAQ per-trade tick push."""
+
+    tr_cd: str = Field(
+        default="K3_",
+        title="거래 CD (TR code)",
+        description="Fixed TR code identifier for this subscription. Always 'K3_'.",
+        examples=["K3_"],
+    )
+    tr_key: str = Field(
+        ...,
+        max_length=8,
+        title="단축코드 (Short symbol code)",
+        description="6-digit (or 8-character) KOSDAQ short symbol code.",
+        examples=["293490", "086520"],
+    )
 
 
 class K3_RealRequest(BaseModel):
-    """KOSDAQ 체결(K3_) 실시간 시세 등록/해제 요청
-
-    EN:
-        WebSocket subscription request for KOSDAQ real-time trade execution data.
-        Use tr_type='3' to subscribe, '4' to unsubscribe.
-
-    KO:
-        KOSDAQ 종목의 실시간 체결 데이터 수신을 위한 WebSocket 등록/해제 요청입니다.
-        tr_type '3'으로 실시간 등록, '4'로 해제합니다.
-    """
+    """KOSDAQ 체결(K3_) 실시간 시세 등록/해제 요청."""
     header: K3_RealRequestHeader = Field(
         K3_RealRequestHeader(token="", tr_type="3"),
-        title="요청 헤더",
+        title="요청 헤더 (Request header)",
         description="K3_ 실시간 시세 등록/해제를 위한 헤더 블록"
     )
     body: K3_RealRequestBody = Field(
         K3_RealRequestBody(tr_cd="K3_", tr_key=""),
-        title="요청 바디",
+        title="요청 바디 (Request body)",
         description="KOSDAQ 체결 실시간 등록에 필요한 종목코드 정보"
     )
 
 
 class K3_RealResponseBody(BaseModel):
-    """KOSDAQ 체결(K3_) 실시간 응답 바디
+    """K3_RealResponseBody — KOSDAQ per-trade tick push payload (27 fields)."""
 
-    EN:
-        Real-time KOSDAQ trade execution data body containing 27 fields.
-        Field structure is identical to S3_ (KOSPI Trade Execution).
-
-    KO:
-        KOSDAQ 종목의 실시간 체결 데이터 바디입니다.
-        필드 구조는 S3_(KOSPI 체결)와 동일한 27개 필드를 포함합니다.
-    """
-    chetime: str = Field(..., title="체결시간", description="체결시간 (HHMMSS, 예: '104904')")
-    """체결시간"""
-    sign: str = Field(..., title="전일대비구분", description="전일대비구분 (1:상한, 2:상승, 3:보합, 4:하한, 5:하락)")
-    """전일대비구분"""
-    change: str = Field(..., title="전일대비", description="전일대비 가격 변동폭")
-    """전일대비"""
-    drate: str = Field(..., title="등락율", description="전일대비 등락율 (%, 예: '29.68')")
-    """등락율"""
-    price: str = Field(..., title="현재가", description="현재 체결가격")
-    """현재가"""
-    opentime: str = Field(..., title="시가시간", description="시가 형성 시간 (HHMMSS)")
-    """시가시간"""
-    open: str = Field(..., title="시가", description="당일 시가")
-    """시가"""
-    hightime: str = Field(..., title="고가시간", description="고가 형성 시간 (HHMMSS)")
-    """고가시간"""
-    high: str = Field(..., title="고가", description="당일 고가")
-    """고가"""
-    lowtime: str = Field(..., title="저가시간", description="저가 형성 시간 (HHMMSS)")
-    """저가시간"""
-    low: str = Field(..., title="저가", description="당일 저가")
-    """저가"""
-    cgubun: str = Field(..., title="체결구분", description="체결구분 ('+':매수체결, '-':매도체결)")
-    """체결구분"""
-    cvolume: str = Field(..., title="체결량", description="이번 체결의 체결수량")
-    """체결량"""
-    volume: str = Field(..., title="누적거래량", description="당일 누적 거래량")
-    """누적거래량"""
-    value: str = Field(..., title="누적거래대금", description="당일 누적 거래대금 (백만원)")
-    """누적거래대금"""
-    mdvolume: str = Field(..., title="매도누적체결량", description="당일 매도 누적 체결수량")
-    """매도누적체결량"""
-    mdchecnt: str = Field(..., title="매도누적체결건수", description="당일 매도 누적 체결 건수")
-    """매도누적체결건수"""
-    msvolume: str = Field(..., title="매수누적체결량", description="당일 매수 누적 체결수량")
-    """매수누적체결량"""
-    mschecnt: str = Field(..., title="매수누적체결건수", description="당일 매수 누적 체결 건수")
-    """매수누적체결건수"""
-    cpower: str = Field(..., title="체결강도", description="체결강도 (매수체결량/매도체결량*100, 예: '44.30')")
-    """체결강도"""
-    w_avrg: str = Field(..., title="가중평균가", description="거래량 가중 평균가격")
-    """가중평균가"""
-    offerho: str = Field(..., title="매도호가", description="매도 최우선호가 (매도1호가)")
-    """매도호가"""
-    bidho: str = Field(..., title="매수호가", description="매수 최우선호가 (매수1호가)")
-    """매수호가"""
-    status: str = Field(..., title="장정보", description="장 상태 정보 ('00':장중)")
-    """장정보"""
-    jnilvolume: str = Field(..., title="전일동시간대거래량", description="전일 동시간대까지의 누적 거래량")
-    """전일동시간대거래량"""
-    shcode: str = Field(..., title="단축코드", description="종목 단축코드 6자리 (예: '122870')")
-    """단축코드"""
-    exchname: str = Field(..., title="거래소명", description="거래소명 (예: 'KRX')")
-    """거래소명"""
+    chetime: str = Field(
+        ...,
+        title="체결시간 (Trade time)",
+        description="Trade execution time in HHMMSS format.",
+        examples=["104904", "153000"],
+    )
+    sign: str = Field(
+        ...,
+        title="전일대비구분 (Prior-day change sign)",
+        description=(
+            "Prior-day change sign code. LS-source-declared values: "
+            "'1'=upper limit, '2'=up, '3'=unchanged, '4'=lower limit, '5'=down."
+        ),
+        examples=["1", "2", "3", "4", "5"],
+    )
+    change: str = Field(
+        ...,
+        title="전일대비 (Prior-day change)",
+        description=(
+            "Magnitude of prior-day change in price (always non-negative; "
+            "direction encoded in ``sign``). Decimal scale not declared."
+        ),
+        examples=["3500", "0"],
+    )
+    drate: str = Field(
+        ...,
+        title="등락율 (Change rate)",
+        description="Prior-day change rate in percent (sign carried by ``sign``).",
+        examples=["29.68", "0.00"],
+    )
+    price: str = Field(
+        ...,
+        title="현재가 (Current price)",
+        description="Current trade price.",
+        examples=["28000"],
+    )
+    opentime: str = Field(
+        ...,
+        title="시가시간 (Open time)",
+        description="Time at which the open price was formed (HHMMSS).",
+        examples=["090000"],
+    )
+    open: str = Field(
+        ...,
+        title="시가 (Open)",
+        description="Session open price.",
+        examples=["27000"],
+    )
+    hightime: str = Field(
+        ...,
+        title="고가시간 (High time)",
+        description="Time at which the session high was formed (HHMMSS).",
+        examples=["100515"],
+    )
+    high: str = Field(
+        ...,
+        title="고가 (High)",
+        description="Session high price.",
+        examples=["29000"],
+    )
+    lowtime: str = Field(
+        ...,
+        title="저가시간 (Low time)",
+        description="Time at which the session low was formed (HHMMSS).",
+        examples=["093015"],
+    )
+    low: str = Field(
+        ...,
+        title="저가 (Low)",
+        description="Session low price.",
+        examples=["26500"],
+    )
+    cgubun: str = Field(
+        ...,
+        title="체결구분 (Trade side)",
+        description=(
+            "Trade side code. LS-source-declared values: '+'=buy-side fill, "
+            "'-'=sell-side fill."
+        ),
+        examples=["+", "-"],
+    )
+    cvolume: str = Field(
+        ...,
+        title="체결량 (Trade volume)",
+        description="Volume of this individual trade.",
+        examples=["100", "1234"],
+    )
+    volume: str = Field(
+        ...,
+        title="누적거래량 (Cumulative volume)",
+        description="Cumulative session volume up to this trade.",
+        examples=["1234567"],
+    )
+    value: str = Field(
+        ...,
+        title="누적거래대금 (Cumulative trade value)",
+        description=(
+            "Cumulative session trade value. Korean source labels the unit "
+            "as '백만원' (million KRW) — preserved verbatim."
+        ),
+        examples=["12345"],
+    )
+    mdvolume: str = Field(
+        ...,
+        title="매도누적체결량 (Cumulative sell-side volume)",
+        description="Cumulative sell-side fill volume for the session.",
+        examples=["654321"],
+    )
+    mdchecnt: str = Field(
+        ...,
+        title="매도누적체결건수 (Cumulative sell-side fill count)",
+        description="Cumulative sell-side fill count for the session.",
+        examples=["1234"],
+    )
+    msvolume: str = Field(
+        ...,
+        title="매수누적체결량 (Cumulative buy-side volume)",
+        description="Cumulative buy-side fill volume for the session.",
+        examples=["580246"],
+    )
+    mschecnt: str = Field(
+        ...,
+        title="매수누적체결건수 (Cumulative buy-side fill count)",
+        description="Cumulative buy-side fill count for the session.",
+        examples=["1120"],
+    )
+    cpower: str = Field(
+        ...,
+        title="체결강도 (Trade strength)",
+        description=(
+            "Trade strength. LS-source-declared formula: "
+            "cpower = msvolume / mdvolume * 100 (in percent)."
+        ),
+        examples=["44.30", "332.56"],
+    )
+    w_avrg: str = Field(
+        ...,
+        title="가중평균가 (Volume-weighted average price)",
+        description="Volume-weighted average price (VWAP).",
+        examples=["27800"],
+    )
+    offerho: str = Field(
+        ...,
+        title="매도호가 (Best ask price)",
+        description="Current best ask (level-1 sell quote).",
+        examples=["28000"],
+    )
+    bidho: str = Field(
+        ...,
+        title="매수호가 (Best bid price)",
+        description="Current best bid (level-1 buy quote).",
+        examples=["27950"],
+    )
+    status: str = Field(
+        ...,
+        title="장정보 (Session phase code)",
+        description=(
+            "Session phase code. LS-source-declared value: '00'=intraday. "
+            "Other LS-defined codes may appear — consume as returned by LS."
+        ),
+        examples=["00"],
+    )
+    jnilvolume: str = Field(
+        ...,
+        title="전일동시간대거래량 (Prior-day same-time cumulative volume)",
+        description="Prior trading day's cumulative volume up to the same time-of-day.",
+        examples=["1023456"],
+    )
+    shcode: str = Field(
+        ...,
+        title="단축코드 (Short symbol code)",
+        description="6-digit short symbol code matching the subscribed ``tr_key``.",
+        examples=["293490", "086520"],
+    )
+    exchname: str = Field(
+        ...,
+        title="거래소명 (Exchange name)",
+        description="Exchange name string. Typically 'KRX' for this TR.",
+        examples=["KRX"],
+    )
 
 
 class K3_RealResponse(BaseModel):
-    """KOSDAQ 체결(K3_) 실시간 응답
+    """KOSDAQ 체결(K3_) 실시간 응답.
 
-    EN:
-        Complete response model for K3_ real-time KOSDAQ trade execution data.
-
-    KO:
-        KOSDAQ 체결 실시간 데이터의 전체 응답 모델입니다.
+    Complete response model for K3_ real-time KOSDAQ per-trade tick data.
     """
     header: Optional[K3_RealResponseHeader]
     body: Optional[K3_RealResponseBody]
 
-    rsp_cd: str = Field(..., title="응답 코드")
-    """응답 코드"""
-    rsp_msg: str = Field(..., title="응답 메시지")
-    """응답 메시지"""
-    error_msg: Optional[str] = Field(None, title="오류 메시지")
-    """오류 메시지 (있으면)"""
+    rsp_cd: str = Field(..., title="응답 코드 (Response code)")
+    rsp_msg: str = Field(..., title="응답 메시지 (Response message)")
+    error_msg: Optional[str] = Field(None, title="오류 메시지 (Error message)")
     _raw_data: Optional[Response] = PrivateAttr(default=None)
-    """private으로 BaseModel의 직렬화에 포함시키지 않는다"""
 
     @property
     def raw_data(self) -> Optional[Response]:

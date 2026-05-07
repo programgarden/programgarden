@@ -1,14 +1,30 @@
-"""(NXT) VI발동해제(NVI) 실시간 WebSocket 요청/응답 모델
+"""Pydantic models for LS Securities OpenAPI NVI (NXT VI trigger / release).
 
-EN:
-    Pydantic models for the NVI (NXT Volatility Interruption) real-time WebSocket stream.
-    Provides real-time notifications when a VI is triggered or released for
-    NXT(Next Trading System)-listed stocks.
+NVI is a Real-time WebSocket TR that pushes Volatility Interruption (VI)
+trigger / release events for NXT (Next Trading System)-listed stocks.
+The ``NVIRealRequestBody`` carries the WebSocket subscription envelope
+(``tr_cd`` + ``tr_key``); the ``NVIRealResponseBody`` carries the
+per-event push payload — VI type, reference prices (int), trigger price
+(int), short code, time, exchange name and the exchange-prefixed short
+code.
 
-KO:
-    NXT(넥스트거래소) VI(변동성완화장치) 발동/해제 데이터를 수신하기 위한
-    WebSocket 요청/응답 모델입니다. VI 발동 시 기준가격, 발동가격, 구분 등
-    9개 필드를 포함하며, 가격 필드는 int 타입입니다.
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and
+the 2026-05-06 finance TR field metadata plan):
+    - Description text mirrors LS Korean source labels translated into
+      English.  Korean source label is appended in parentheses inside
+      ``title``.
+    - ``vi_gubun`` enum (0=release, 1=static trigger, 2=dynamic trigger,
+      3=static&dynamic) is preserved verbatim from the in-codebase Korean
+      source.
+    - Reference-price "0 means N/A" / trigger-price "0 means release"
+      semantics mirror existing in-codebase observations and are
+      preserved verbatim — observed behaviour, not inferred.
+    - Decimal scale and currency unit are NOT declared in the available
+      source — examples use illustrative values only.
+    - ``tr_key`` is padded to 10 characters: ``'N'`` + 6-digit code +
+      3 trailing spaces.  Use ``'0000000000'`` (10 zeros) to subscribe
+      to events for all NXT stocks.  ``examples`` mirror the example
+      script (``src/finance/example/korea_stock/real_NVI.py``).
 """
 
 from typing import Optional
@@ -19,16 +35,36 @@ from ....models import BlockRealRequestHeader, BlockRealResponseHeader
 
 
 class NVIRealRequestHeader(BlockRealRequestHeader):
+    """NVI real-time request header. Inherits the standard LS WS request header schema."""
     pass
 
 
 class NVIRealResponseHeader(BlockRealResponseHeader):
+    """NVI real-time response header. Inherits the standard LS WS response header schema."""
     pass
 
 
 class NVIRealRequestBody(BaseModel):
-    tr_cd: str = Field("NVI", description="거래 CD")
-    tr_key: str = Field(..., max_length=10, description="'N' + 종목코드 6자리 + 공백 3자리 (예: 'N000880   ') 또는 전체종목 '0000000000'")
+    """NVIRealRequestBody — WebSocket subscription envelope for NXT VI push."""
+
+    tr_cd: str = Field(
+        default="NVI",
+        title="거래 CD (TR code)",
+        description="Fixed TR code identifier for this subscription. Always 'NVI'.",
+        examples=["NVI"],
+    )
+    tr_key: str = Field(
+        ...,
+        max_length=10,
+        title="단축코드 + padding ('N' + 6-digit code + 3 spaces)",
+        description=(
+            "Exchange-prefixed key combining 'N' + 6-digit short code, "
+            "right-padded with spaces to 10 characters. Use the LS-documented "
+            "all-stocks special key '0000000000' (10 zeros) to receive VI "
+            "events for all NXT stocks."
+        ),
+        examples=["N000880   ", "N115450   ", "0000000000"],
+    )
 
     @field_validator("tr_key", mode="before")
     def ensure_10_char_padding(cls, v: Optional[str]) -> Optional[str]:
@@ -43,85 +79,110 @@ class NVIRealRequestBody(BaseModel):
 
 
 class NVIRealRequest(BaseModel):
-    """(NXT) VI발동해제(NVI) 실시간 등록/해제 요청
+    """(NXT) VI발동해제(NVI) 실시간 등록/해제 요청.
 
-    EN:
-        WebSocket subscription request for NXT VI (Volatility Interruption) events.
-        Use tr_type='3' to subscribe, '4' to unsubscribe.
-        Set tr_key='0000000000' to receive VI events for all NXT stocks.
-
-    KO:
-        NXT VI(변동성완화장치) 발동/해제 이벤트를 수신하기 위한 WebSocket 등록/해제 요청입니다.
-        tr_type '3'으로 실시간 등록, '4'로 해제합니다.
-        tr_key에 '0000000000'을 지정하면 전 종목 VI 이벤트를 수신합니다.
+    Use ``tr_type='3'`` to subscribe, ``'4'`` to unsubscribe.  Set
+    ``tr_key='0000000000'`` to receive VI events for all NXT stocks.
     """
     header: NVIRealRequestHeader = Field(
         NVIRealRequestHeader(token="", tr_type="3"),
-        title="요청 헤더",
+        title="요청 헤더 (Request header)",
         description="NVI 실시간 시세 등록/해제를 위한 헤더 블록"
     )
     body: NVIRealRequestBody = Field(
         NVIRealRequestBody(tr_cd="NVI", tr_key=""),
-        title="요청 바디",
+        title="요청 바디 (Request body)",
         description="NXT VI발동해제 실시간 등록에 필요한 종목코드 정보"
     )
 
 
 class NVIRealResponseBody(BaseModel):
-    """(NXT) VI발동해제(NVI) 실시간 응답 바디
+    """NVIRealResponseBody — NXT VI trigger / release push payload (9 fields)."""
 
-    EN:
-        Real-time NXT VI event data body containing 9 fields:
-        VI type, reference prices (int), trigger price (int), stock code,
-        time, exchange name, and exchange-specific short code.
-
-    KO:
-        NXT VI(변동성완화장치) 발동/해제 이벤트 데이터 바디입니다.
-        VI 구분, 발동기준가격(int), 발동가격(int), 종목코드, 거래소별단축코드
-        등 9개 필드를 포함합니다.
-    """
-    vi_gubun: str = Field(..., title="구분", description="VI 구분 (0:해제, 1:정적발동, 2:동적발동, 3:정적&동적)")
-    """구분"""
-    svi_recprice: int = Field(..., title="정적VI발동기준가격", description="정적 VI 발동 기준가격 (0이면 해당 없음)")
-    """정적VI발동기준가격"""
-    dvi_recprice: int = Field(..., title="동적VI발동기준가격", description="동적 VI 발동 기준가격 (0이면 해당 없음)")
-    """동적VI발동기준가격"""
-    vi_trgprice: int = Field(..., title="VI발동가격", description="VI 발동을 유발한 가격 (0이면 해제)")
-    """VI발동가격"""
-    shcode: str = Field(..., title="단축코드", description="NXT 종목 단축코드 9자리")
-    """단축코드"""
-    ref_shcode: str = Field(..., title="참조코드", description="참조코드 (미사용)")
-    """참조코드"""
-    time: str = Field(..., title="시간", description="VI 발동/해제 시간 (HHMMSS)")
-    """시간"""
-    exchname: str = Field(..., title="거래소명", description="거래소명 (예: 'NXT')")
-    """거래소명"""
-    ex_shcode: str = Field(..., title="거래소별단축코드", description="거래소별 단축코드 (예: 'N115450')")
-    """거래소별단축코드"""
+    vi_gubun: str = Field(
+        ...,
+        title="구분 (VI type)",
+        description=(
+            "VI type code. LS-source-declared values: '0'=release, "
+            "'1'=static trigger, '2'=dynamic trigger, '3'=static&dynamic. "
+            "Other LS-defined codes may appear — consume as returned by LS."
+        ),
+        examples=["0", "1", "2", "3"],
+    )
+    svi_recprice: int = Field(
+        ...,
+        title="정적VI발동기준가격 (Static VI reference price)",
+        description=(
+            "Static VI reference (base) price. 0 indicates N/A — observed "
+            "behaviour, preserved verbatim from the in-codebase Korean "
+            "source. Decimal scale not declared in available source."
+        ),
+        examples=[0, 73500],
+    )
+    dvi_recprice: int = Field(
+        ...,
+        title="동적VI발동기준가격 (Dynamic VI reference price)",
+        description=(
+            "Dynamic VI reference (base) price. 0 indicates N/A — observed "
+            "behaviour, preserved verbatim. Decimal scale not declared in "
+            "available source."
+        ),
+        examples=[0, 73600],
+    )
+    vi_trgprice: int = Field(
+        ...,
+        title="VI발동가격 (VI trigger price)",
+        description=(
+            "Price that triggered the VI event. 0 indicates the event is a "
+            "release rather than a trigger — observed behaviour, preserved "
+            "verbatim. Decimal scale not declared in available source."
+        ),
+        examples=[0, 73450],
+    )
+    shcode: str = Field(
+        ...,
+        title="단축코드 (Short symbol code)",
+        description="NXT short symbol code (9 characters as returned by LS).",
+        examples=["115450000", "000880000"],
+    )
+    ref_shcode: str = Field(
+        ...,
+        title="참조코드 (Reference code)",
+        description="Reference code. Reserved by LS — currently unused; consume as returned.",
+        examples=[""],
+    )
+    time: str = Field(
+        ...,
+        title="시간 (Time)",
+        description="VI trigger / release time in HHMMSS format.",
+        examples=["092415", "153000"],
+    )
+    exchname: str = Field(
+        ...,
+        title="거래소명 (Exchange name)",
+        description="Exchange name string. Typically 'NXT' for this TR.",
+        examples=["NXT"],
+    )
+    ex_shcode: str = Field(
+        ...,
+        title="거래소별단축코드 (Exchange-prefixed short symbol code)",
+        description="Exchange-prefixed short symbol code (e.g. 'N115450').",
+        examples=["N115450", "N000880"],
+    )
 
 
 class NVIRealResponse(BaseModel):
-    """(NXT) VI발동해제(NVI) 실시간 응답
+    """(NXT) VI발동해제(NVI) 실시간 응답.
 
-    EN:
-        Complete response model for NVI real-time NXT VI event data.
-        Contains header (TR code) and body (VI event details).
-
-    KO:
-        NXT VI(변동성완화장치) 발동/해제 실시간 데이터의 전체 응답 모델입니다.
-        header에 TR코드, body에 VI 이벤트 상세 데이터가 포함됩니다.
+    Complete response model for NVI real-time NXT VI event data.
     """
     header: Optional[NVIRealResponseHeader]
     body: Optional[NVIRealResponseBody]
 
-    rsp_cd: str = Field(..., title="응답 코드")
-    """응답 코드"""
-    rsp_msg: str = Field(..., title="응답 메시지")
-    """응답 메시지"""
-    error_msg: Optional[str] = Field(None, title="오류 메시지")
-    """오류 메시지 (있으면)"""
+    rsp_cd: str = Field(..., title="응답 코드 (Response code)")
+    rsp_msg: str = Field(..., title="응답 메시지 (Response message)")
+    error_msg: Optional[str] = Field(None, title="오류 메시지 (Error message)")
     _raw_data: Optional[Response] = PrivateAttr(default=None)
-    """private으로 BaseModel의 직렬화에 포함시키지 않는다"""
 
     @property
     def raw_data(self) -> Optional[Response]:

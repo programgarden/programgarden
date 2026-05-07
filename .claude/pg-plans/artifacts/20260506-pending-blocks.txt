@@ -1,9 +1,3 @@
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/HA_/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/SC3/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/SC4/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/NVI/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/DVI/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/IJ_/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/common/real/JIF/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/oauth/revoke_token/revoke/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/oauth/generate_token/token/blocks.py
@@ -12,10 +6,3 @@
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/sector/t1532/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/sector/t1537/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/sector/t1531/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/H1_/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/SC1/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/NH1/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/SC0/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/S3_/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/K3_/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/SC2/blocks.py

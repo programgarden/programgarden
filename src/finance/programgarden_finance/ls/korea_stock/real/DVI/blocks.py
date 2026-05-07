@@ -1,14 +1,29 @@
-"""시간외단일가 VI발동해제(DVI) 실시간 WebSocket 요청/응답 모델
+"""Pydantic models for LS Securities OpenAPI DVI (KRX after-hours single-price VI).
 
-EN:
-    Pydantic models for the DVI (KRX Volatility Interruption) real-time WebSocket stream.
-    Provides real-time notifications when a VI (Volatility Interruption) is triggered
-    or released for KRX-listed stocks during after-hours single-price trading.
+DVI is a Real-time WebSocket TR that pushes Volatility Interruption (VI)
+trigger / release events for KRX-listed stocks during after-hours
+single-price trading.  The ``DVIRealRequestBody`` carries the WebSocket
+subscription envelope (``tr_cd`` + ``tr_key`` — short symbol code, or
+``'000000'`` for all stocks); the ``DVIRealResponseBody`` carries the
+per-event push payload (VI type, reference prices, trigger price,
+short code, time, exchange name).
 
-KO:
-    KRX 시간외단일가 VI(변동성완화장치) 발동/해제 데이터를 수신하기 위한
-    WebSocket 요청/응답 모델입니다. VI 발동 시 기준가격, 발동가격, 구분
-    (정적/동적/정적&동적) 등 8개 필드를 포함합니다.
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and
+the 2026-05-06 finance TR field metadata plan):
+    - Description text mirrors LS Korean source labels translated into
+      English.  Korean source label is appended in parentheses inside
+      ``title``.
+    - ``vi_gubun`` enum (0=release, 1=static trigger, 2=dynamic trigger,
+      3=static&dynamic) is preserved verbatim from the in-codebase Korean
+      source.
+    - Reference-price "0 means N/A" / trigger-price "0 means release"
+      semantics mirror existing in-codebase observations and are
+      preserved verbatim — observed behaviour, not inferred.
+    - Decimal scale and currency unit are NOT declared in the available
+      source — examples use illustrative values only.
+    - ``examples`` for ``tr_key`` mirror the example script
+      (``src/finance/example/korea_stock/real_DVI.py`` uses ``"*"``) and
+      the LS-documented all-stocks special key ``"000000"``.
 """
 
 from typing import Optional
@@ -19,20 +34,39 @@ from ....models import BlockRealRequestHeader, BlockRealResponseHeader
 
 
 class DVIRealRequestHeader(BlockRealRequestHeader):
+    """DVI real-time request header. Inherits the standard LS WS request header schema."""
     pass
 
 
 class DVIRealResponseHeader(BlockRealResponseHeader):
+    """DVI real-time response header. Inherits the standard LS WS response header schema."""
     pass
 
 
 class DVIRealRequestBody(BaseModel):
-    tr_cd: str = Field("DVI", description="거래 CD")
-    tr_key: str = Field(..., max_length=6, description="종목 단축코드 6자리 (예: '086520') 또는 전체종목 '000000'")
+    """DVIRealRequestBody — WebSocket subscription envelope for KRX VI push."""
+
+    tr_cd: str = Field(
+        default="DVI",
+        title="거래 CD (TR code)",
+        description="Fixed TR code identifier for this subscription. Always 'DVI'.",
+        examples=["DVI"],
+    )
+    tr_key: str = Field(
+        ...,
+        max_length=6,
+        title="단축코드 (Short symbol code)",
+        description=(
+            "6-digit short symbol code for the target stock. Use the "
+            "LS-documented special key '000000' to receive VI events for "
+            "all KRX-listed stocks."
+        ),
+        examples=["086520", "000000"],
+    )
 
 
 class DVIRealRequest(BaseModel):
-    """시간외단일가 VI발동해제(DVI) 실시간 등록/해제 요청
+    """KRX 시간외단일가 VI발동해제(DVI) 실시간 등록/해제 요청
 
     EN:
         WebSocket subscription request for KRX VI (Volatility Interruption) events.
@@ -46,68 +80,98 @@ class DVIRealRequest(BaseModel):
     """
     header: DVIRealRequestHeader = Field(
         DVIRealRequestHeader(token="", tr_type="3"),
-        title="요청 헤더",
+        title="요청 헤더 (Request header)",
         description="DVI 실시간 시세 등록/해제를 위한 헤더 블록"
     )
     body: DVIRealRequestBody = Field(
         DVIRealRequestBody(tr_cd="DVI", tr_key=""),
-        title="요청 바디",
+        title="요청 바디 (Request body)",
         description="VI발동해제 실시간 등록에 필요한 종목코드 정보"
     )
 
 
 class DVIRealResponseBody(BaseModel):
-    """시간외단일가 VI발동해제(DVI) 실시간 응답 바디
+    """DVIRealResponseBody — KRX VI trigger / release push payload (8 fields)."""
 
-    EN:
-        Real-time KRX VI event data body containing 8 fields:
-        VI type (trigger/release), reference prices, trigger price,
-        stock code, time, and exchange name.
-
-    KO:
-        KRX VI(변동성완화장치) 발동/해제 이벤트 데이터 바디입니다.
-        VI 구분(발동/해제), 발동기준가격, 발동가격, 종목코드 등 8개 필드를 포함합니다.
-    """
-    vi_gubun: str = Field(..., title="구분", description="VI 구분 (0:해제, 1:정적발동, 2:동적발동, 3:정적&동적)")
-    """구분"""
-    svi_recprice: str = Field(..., title="정적VI발동기준가격", description="정적 VI 발동 기준가격 (0이면 해당 없음)")
-    """정적VI발동기준가격"""
-    dvi_recprice: str = Field(..., title="동적VI발동기준가격", description="동적 VI 발동 기준가격 (0이면 해당 없음)")
-    """동적VI발동기준가격"""
-    vi_trgprice: str = Field(..., title="VI발동가격", description="VI 발동을 유발한 가격 (0이면 해제)")
-    """VI발동가격"""
-    shcode: str = Field(..., title="단축코드", description="VI가 발동/해제된 종목 단축코드 6자리 (KEY)")
-    """단축코드"""
-    ref_shcode: str = Field(..., title="참조코드", description="참조코드 (미사용)")
-    """참조코드"""
-    time: str = Field(..., title="시간", description="VI 발동/해제 시간 (HHMMSS, 예: '092415')")
-    """시간"""
-    exchname: str = Field(..., title="거래소명", description="거래소명 (예: 'KRX')")
-    """거래소명"""
+    vi_gubun: str = Field(
+        ...,
+        title="구분 (VI type)",
+        description=(
+            "VI type code. LS-source-declared values: '0'=release, "
+            "'1'=static trigger, '2'=dynamic trigger, '3'=static&dynamic. "
+            "Other LS-defined codes may appear — consume as returned by LS."
+        ),
+        examples=["0", "1", "2", "3"],
+    )
+    svi_recprice: str = Field(
+        ...,
+        title="정적VI발동기준가격 (Static VI reference price)",
+        description=(
+            "Static VI reference (base) price. '0' indicates N/A — "
+            "observed behaviour, preserved verbatim from the in-codebase "
+            "Korean source. Decimal scale not declared in available source."
+        ),
+        examples=["0", "73500"],
+    )
+    dvi_recprice: str = Field(
+        ...,
+        title="동적VI발동기준가격 (Dynamic VI reference price)",
+        description=(
+            "Dynamic VI reference (base) price. '0' indicates N/A — "
+            "observed behaviour, preserved verbatim. Decimal scale not "
+            "declared in available source."
+        ),
+        examples=["0", "73600"],
+    )
+    vi_trgprice: str = Field(
+        ...,
+        title="VI발동가격 (VI trigger price)",
+        description=(
+            "Price that triggered the VI event. '0' indicates the event "
+            "is a release rather than a trigger — observed behaviour, "
+            "preserved verbatim. Decimal scale not declared in available "
+            "source."
+        ),
+        examples=["0", "73450"],
+    )
+    shcode: str = Field(
+        ...,
+        title="단축코드 (Short symbol code)",
+        description="Short symbol code (6 digits) of the stock for which VI was triggered or released.",
+        examples=["086520", "005930"],
+    )
+    ref_shcode: str = Field(
+        ...,
+        title="참조코드 (Reference code)",
+        description="Reference code. Reserved by LS — currently unused; consume as returned.",
+        examples=[""],
+    )
+    time: str = Field(
+        ...,
+        title="시간 (Time)",
+        description="VI trigger / release time in HHMMSS format.",
+        examples=["092415", "153000"],
+    )
+    exchname: str = Field(
+        ...,
+        title="거래소명 (Exchange name)",
+        description="Exchange name string. Typically 'KRX' for this TR.",
+        examples=["KRX"],
+    )
 
 
 class DVIRealResponse(BaseModel):
-    """시간외단일가 VI발동해제(DVI) 실시간 응답
+    """KRX 시간외단일가 VI발동해제(DVI) 실시간 응답.
 
-    EN:
-        Complete response model for DVI real-time VI event data.
-        Contains header (TR code, stock code) and body (VI event details).
-
-    KO:
-        KRX VI(변동성완화장치) 발동/해제 실시간 데이터의 전체 응답 모델입니다.
-        header에 TR코드와 종목코드, body에 VI 이벤트 상세 데이터가 포함됩니다.
+    Complete response model for DVI real-time VI event data.
     """
     header: Optional[DVIRealResponseHeader]
     body: Optional[DVIRealResponseBody]
 
-    rsp_cd: str = Field(..., title="응답 코드")
-    """응답 코드"""
-    rsp_msg: str = Field(..., title="응답 메시지")
-    """응답 메시지"""
-    error_msg: Optional[str] = Field(None, title="오류 메시지")
-    """오류 메시지 (있으면)"""
+    rsp_cd: str = Field(..., title="응답 코드 (Response code)")
+    rsp_msg: str = Field(..., title="응답 메시지 (Response message)")
+    error_msg: Optional[str] = Field(None, title="오류 메시지 (Error message)")
     _raw_data: Optional[Response] = PrivateAttr(default=None)
-    """private으로 BaseModel의 직렬화에 포함시키지 않는다"""
 
     @property
     def raw_data(self) -> Optional[Response]:

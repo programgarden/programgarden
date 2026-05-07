@@ -1,13 +1,15 @@
-"""주식주문정정(SC2) 실시간 WebSocket 요청/응답 모델
+"""Pydantic models for LS Securities OpenAPI SC2 (Stock order modify-confirm push).
 
-EN:
-    Pydantic models for the SC2 (Stock Order Modification) real-time WebSocket stream.
-    Receives real-time notifications when a stock order modification is confirmed.
-    Response body has the same field structure as SC1 (Stock Order Execution).
+SC2 is a Real-time WebSocket TR that pushes per-event notifications when
+a stock order modification is confirmed by the exchange.  Subscription is
+account-keyed (``tr_type='1'``); a single SC0..SC4 registration enables
+all five order-event streams.
 
-KO:
-    주식 주문정정 확인 시 실시간 알림을 수신하기 위한 WebSocket 요청/응답 모델입니다.
-    응답 바디는 SC1(주식주문체결)과 동일한 필드 구조를 사용합니다.
+The ``SC2RealResponseBody`` inherits ``SC1RealResponseBody`` — same
+~130 fields.  When ``ordxctptncode='12'`` the event is a modify-confirm.
+
+Field source policy: identical to SC1 (see that module's docstring for
+the full policy).
 """
 
 from typing import Optional
@@ -19,76 +21,69 @@ from ..SC1.blocks import SC1RealResponseBody
 
 
 class SC2RealRequestHeader(BlockRealRequestHeader):
+    """SC2 real-time request header. Inherits the standard LS WS request header schema."""
     pass
 
 
 class SC2RealResponseHeader(BlockRealResponseHeader):
+    """SC2 real-time response header. Inherits the standard LS WS response header schema."""
     pass
 
 
 class SC2RealRequestBody(BaseModel):
-    tr_cd: str = Field("SC2", description="거래 CD")
-    tr_key: Optional[str] = Field(None, max_length=8, description="단축코드 (계좌등록/해제 시 필수값 아님)")
+    """SC2RealRequestBody — WebSocket subscription envelope for stock order modify-confirm push."""
+
+    tr_cd: str = Field(
+        default="SC2",
+        title="거래 CD (TR code)",
+        description="Fixed TR code identifier for this subscription. Always 'SC2'.",
+        examples=["SC2"],
+    )
+    tr_key: Optional[str] = Field(
+        default=None,
+        max_length=8,
+        title="단축코드 (Short symbol code, optional)",
+        description=(
+            "Optional short symbol code. SC0..SC4 subscriptions are "
+            "account-scoped (``tr_type='1'``) so this is typically left "
+            "blank."
+        ),
+        examples=["", "005930"],
+    )
 
 
 class SC2RealRequest(BaseModel):
-    """주식주문정정(SC2) 실시간 등록/해제 요청
-
-    EN:
-        WebSocket subscription request for stock order modification notifications.
-        Use tr_type='1' to register, '2' to unregister.
-        SC0-SC4 share the same registration - registering any one enables all five.
-
-    KO:
-        주식주문정정 실시간 알림을 위한 WebSocket 등록/해제 요청입니다.
-        SC0-SC4는 하나만 등록해도 5개 주문 이벤트가 모두 활성화됩니다.
-    """
+    """주식주문정정(SC2) 실시간 등록/해제 요청."""
     header: SC2RealRequestHeader = Field(
         SC2RealRequestHeader(token="", tr_type="1"),
-        title="요청 헤더",
+        title="요청 헤더 (Request header)",
         description="SC2 실시간 계좌등록/해제를 위한 헤더 블록"
     )
     body: SC2RealRequestBody = Field(
         SC2RealRequestBody(tr_cd="SC2", tr_key=""),
-        title="요청 바디",
+        title="요청 바디 (Request body)",
         description="주식주문정정 실시간 등록 바디"
     )
 
 
 class SC2RealResponseBody(SC1RealResponseBody):
-    """주식주문정정(SC2) 실시간 응답 바디
+    """SC2RealResponseBody — modify-confirm event (ordxctptncode='12').
 
-    EN:
-        Inherits SC1RealResponseBody. Same ~107 fields.
-        When ordxctptncode='12', it indicates a modification confirmation.
-
-    KO:
-        SC1RealResponseBody를 상속합니다. 동일한 약 107개 필드.
-        ordxctptncode='12'이면 정정확인을 의미합니다.
+    Inherits ``SC1RealResponseBody`` verbatim.  ``ordxctptncode='12'``
+    indicates this event is a modify confirmation.
     """
     pass
 
 
 class SC2RealResponse(BaseModel):
-    """주식주문정정(SC2) 실시간 응답
-
-    EN:
-        Complete response model for SC2 real-time order modification data.
-
-    KO:
-        주식주문정정 실시간 데이터의 전체 응답 모델입니다.
-    """
+    """주식주문정정(SC2) 실시간 응답."""
     header: Optional[SC2RealResponseHeader]
     body: Optional[SC2RealResponseBody]
 
-    rsp_cd: str = Field(..., title="응답 코드")
-    """응답 코드"""
-    rsp_msg: str = Field(..., title="응답 메시지")
-    """응답 메시지"""
-    error_msg: Optional[str] = Field(None, title="오류 메시지")
-    """오류 메시지 (있으면)"""
+    rsp_cd: str = Field(..., title="응답 코드 (Response code)")
+    rsp_msg: str = Field(..., title="응답 메시지 (Response message)")
+    error_msg: Optional[str] = Field(None, title="오류 메시지 (Error message)")
     _raw_data: Optional[Response] = PrivateAttr(default=None)
-    """private으로 BaseModel의 직렬화에 포함시키지 않는다"""
 
     @property
     def raw_data(self) -> Optional[Response]:
