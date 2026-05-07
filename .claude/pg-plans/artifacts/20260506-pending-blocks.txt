@@ -13,13 +13,6 @@
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/etc/t1638/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/etc/t1927/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/common/real/JIF/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/real/TC1/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/real/OVH/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/real/WOC/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/real/TC3/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/real/TC2/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/real/OVC/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/real/WOH/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/oauth/revoke_token/revoke/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/oauth/generate_token/token/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/order/CSPAT00701/blocks.py
