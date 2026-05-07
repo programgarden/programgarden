@@ -4,10 +4,6 @@
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/NVI/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/DVI/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/IJ_/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/chart/t8451/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/chart/t1665/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/chart/t8452/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/chart/t8453/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/etc/t1941/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/etc/t1403/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/etc/t1638/blocks.py
