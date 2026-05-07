@@ -12,10 +12,6 @@
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/market/o3137/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/market/o3101/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/market/o3106/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/chart/o3117/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/chart/o3103/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/chart/o3108/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/overseas_futureoption/chart/o3139/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/HA_/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/SC3/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/real/SC4/blocks.py
