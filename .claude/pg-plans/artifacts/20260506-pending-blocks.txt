@@ -60,13 +60,3 @@
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/investor/t1601/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/investor/t1664/blocks.py
 /Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/frgr_itt/t1702/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/CSPAQ12300/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/CSPAQ00600/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/CSPAQ13700/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/t0424/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/t0425/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/CDPCQ04700/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/FOCCQ33600/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/CSPBQ00200/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/CSPAQ12200/blocks.py
-/Users/jyj/ls_projects/programgarden/src/finance/programgarden_finance/ls/korea_stock/accno/CSPAQ22200/blocks.py

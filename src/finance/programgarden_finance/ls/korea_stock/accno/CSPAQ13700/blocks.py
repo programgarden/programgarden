@@ -1,3 +1,21 @@
+"""Pydantic models for LS Securities OpenAPI CSPAQ13700 (Cash Account Order Execution History).
+
+CSPAQ13700 returns the cash-equity account's order and execution history
+for a target trading day, in three response blocks:
+    - ``CSPAQ13700OutBlock1`` (block1): echo-back of the input parameters
+      (market scope, side filter, symbol filter, fill filter, target date,
+      starting order number, ordering, order pattern).
+    - ``CSPAQ13700OutBlock2`` (block2): summary aggregates — total filled
+      and ordered quantities and amounts split by buy / sell.
+    - ``CSPAQ13700OutBlock3`` (block3): per-order detail rows including
+      original order number (for modify / cancel chains), order quantity /
+      price, fill quantity / price, fill timing and order metadata.
+
+Field descriptions follow LS official spec wording. Korean field labels
+(한글명) are appended in parentheses so AI chatbots can map between English
+descriptions and Korean LS documentation.
+"""
+
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, PrivateAttr
@@ -7,282 +25,449 @@ from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class CSPAQ13700RequestHeader(BlockRequestHeader):
-    """CSPAQ13700 요청용 Header"""
+    """CSPAQ13700 request header. Inherits the standard LS request header schema."""
     pass
 
 
 class CSPAQ13700ResponseHeader(BlockResponseHeader):
-    """CSPAQ13700 응답용 Header"""
+    """CSPAQ13700 response header. Standard LS response header schema."""
     pass
 
 
 class CSPAQ13700InBlock1(BaseModel):
-    """
-    CSPAQ13700InBlock1 - 현물계좌 주문체결내역 조회 입력 블록
+    """CSPAQ13700InBlock1 — input block for cash account order execution history.
 
-    Attributes:
-        OrdMktCode (str): 주문시장코드 (기본 "00")
-        BnsTpCode (str): 매매구분코드 (기본 "0")
-        IsuNo (str): 종목번호 (기본 "")
-        ExecYn (str): 체결여부 (기본 "0")
-        OrdDt (str): 주문일자 (YYYYMMDD)
-        SrtOrdNo2 (int): 시작주문번호2 (기본 999999999)
-        BkseqTpCode (str): 역순구분코드 (기본 "0")
-        OrdPtnCode (str): 주문패턴코드 (기본 "00")
+    Defaults select all markets, both sides, all symbols, all orders (filled
+    and unfilled), starting from the highest order number on the current
+    trading day. Adjust the filters to scope the query.
     """
+
     OrdMktCode: str = Field(
         default="00",
-        title="주문시장코드",
-        description="주문시장코드"
+        title="주문시장코드 (Order market code)",
+        description=(
+            "Order market scope. Default ``\"00\"`` selects all markets. The "
+            "complete enum mapping is not declared in the available LS source — "
+            "consume per LS convention."
+        ),
+        examples=["00", "01", "02"],
     )
-    """ 주문시장코드 """
     BnsTpCode: str = Field(
         default="0",
-        title="매매구분코드",
-        description="매매구분코드"
+        title="매매구분코드 (Side filter)",
+        description=(
+            "Side filter for the query. Default ``\"0\"`` selects both buy and "
+            "sell. The complete enum mapping is not declared in the available "
+            "LS source — consume per LS convention."
+        ),
+        examples=["0", "1", "2"],
     )
-    """ 매매구분코드 """
     IsuNo: str = Field(
         default="",
-        title="종목번호",
-        description="종목번호"
+        title="종목번호 (Stock code)",
+        description=(
+            "LS-prefixed Korean stock code (``A`` + 6-digit short code) to "
+            "filter by, or empty string for all symbols."
+        ),
+        examples=["", "A005930", "A000660"],
     )
-    """ 종목번호 """
     ExecYn: str = Field(
         default="0",
-        title="체결여부",
-        description="체결여부"
+        title="체결여부 (Fill filter)",
+        description=(
+            "Fill-state filter. Default ``\"0\"`` selects both filled and "
+            "unfilled. The complete enum mapping is not declared in the "
+            "available LS source — consume per LS convention."
+        ),
+        examples=["0", "1", "2"],
     )
-    """ 체결여부 """
     OrdDt: str = Field(
         default="",
-        title="주문일자",
-        description="주문일자 (YYYYMMDD)"
+        title="주문일자 (Order date)",
+        description=(
+            "Target trading date in ``YYYYMMDD`` format. Empty string is "
+            "treated by LS as the current trading day."
+        ),
+        examples=["", "20260507", "20260103"],
     )
-    """ 주문일자 """
     SrtOrdNo2: int = Field(
         default=999999999,
-        title="시작주문번호2",
-        description="시작주문번호2"
+        title="시작주문번호2 (Starting order number)",
+        description=(
+            "Starting order number for paging. Pass ``999999999`` (default) "
+            "on the first call to start from the highest order number; on "
+            "subsequent calls pass the smallest order number returned in the "
+            "previous page minus 1 to fetch older rows. Length 9."
+        ),
+        examples=[999_999_999, 12_345],
     )
-    """ 시작주문번호2 """
     BkseqTpCode: str = Field(
         default="0",
-        title="역순구분코드",
-        description="역순구분코드"
+        title="역순구분코드 (Reverse-order code)",
+        description=(
+            "Result ordering selector. Default ``\"0\"``. The complete enum "
+            "mapping is not declared in the available LS source — consume per "
+            "LS convention."
+        ),
+        examples=["0", "1"],
     )
-    """ 역순구분코드 """
     OrdPtnCode: str = Field(
         default="00",
-        title="주문패턴코드",
-        description="주문패턴코드"
+        title="주문패턴코드 (Order pattern code)",
+        description=(
+            "Order pattern filter (e.g., regular / reserved / loan-related). "
+            "Default ``\"00\"`` selects all patterns. The complete enum "
+            "mapping is not declared in the available LS source — consume per "
+            "LS convention."
+        ),
+        examples=["00", "01"],
     )
-    """ 주문패턴코드 """
 
 
 class CSPAQ13700Request(BaseModel):
-    """
-    CSPAQ13700 API 요청 - 현물계좌 주문체결내역 조회
+    """CSPAQ13700 full request envelope (header + body + setup options)."""
 
-    Attributes:
-        header (CSPAQ13700RequestHeader)
-        body (dict[Literal["CSPAQ13700InBlock1"], CSPAQ13700InBlock1])
-    """
     header: CSPAQ13700RequestHeader = CSPAQ13700RequestHeader(
         content_type="application/json; charset=utf-8",
         authorization="",
         tr_cd="CSPAQ13700",
         tr_cont="N",
         tr_cont_key="",
-        mac_address=""
+        mac_address="",
     )
     body: dict[Literal["CSPAQ13700InBlock1"], CSPAQ13700InBlock1]
     options: SetupOptions = SetupOptions(
         rate_limit_count=1,
         rate_limit_seconds=1,
         on_rate_limit="wait",
-        rate_limit_key="CSPAQ13700"
+        rate_limit_key="CSPAQ13700",
     )
-    """코드 실행 전 설정(setup)을 위한 옵션"""
+    """Pre-execution setup options (rate limit, retry behavior)."""
 
 
 class CSPAQ13700OutBlock1(BaseModel):
-    """
-    CSPAQ13700OutBlock1 - 입력 echo-back 블록
+    """CSPAQ13700OutBlock1 — input echo-back block."""
 
-    Attributes:
-        OrdMktCode (str): 주문시장코드
-        BnsTpCode (str): 매매구분코드
-        IsuNo (str): 종목번호
-        ExecYn (str): 체결여부
-        OrdDt (str): 주문일자
-        SrtOrdNo2 (int): 시작주문번호2
-        BkseqTpCode (str): 역순구분코드
-        OrdPtnCode (str): 주문패턴코드
-    """
-    OrdMktCode: str = Field(default="00", title="주문시장코드", description="주문시장코드")
-    """ 주문시장코드 """
-    BnsTpCode: str = Field(default="0", title="매매구분코드", description="매매구분코드")
-    """ 매매구분코드 """
-    IsuNo: str = Field(default="", title="종목번호", description="종목번호")
-    """ 종목번호 """
-    ExecYn: str = Field(default="0", title="체결여부", description="체결여부")
-    """ 체결여부 """
-    OrdDt: str = Field(default="", title="주문일자", description="주문일자 (YYYYMMDD)")
-    """ 주문일자 """
-    SrtOrdNo2: int = Field(default=999999999, title="시작주문번호2", description="시작주문번호2")
-    """ 시작주문번호2 """
-    BkseqTpCode: str = Field(default="0", title="역순구분코드", description="역순구분코드")
-    """ 역순구분코드 """
-    OrdPtnCode: str = Field(default="00", title="주문패턴코드", description="주문패턴코드")
-    """ 주문패턴코드 """
+    OrdMktCode: str = Field(
+        default="00",
+        title="주문시장코드 (Order market code)",
+        description="Echo of the input ``OrdMktCode``.",
+        examples=["00", "01"],
+    )
+    BnsTpCode: str = Field(
+        default="0",
+        title="매매구분코드 (Side filter)",
+        description="Echo of the input ``BnsTpCode``.",
+        examples=["0", "1", "2"],
+    )
+    IsuNo: str = Field(
+        default="",
+        title="종목번호 (Stock code)",
+        description="Echo of the input ``IsuNo``.",
+        examples=["", "A005930"],
+    )
+    ExecYn: str = Field(
+        default="0",
+        title="체결여부 (Fill filter)",
+        description="Echo of the input ``ExecYn``.",
+        examples=["0", "1", "2"],
+    )
+    OrdDt: str = Field(
+        default="",
+        title="주문일자 (Order date, YYYYMMDD)",
+        description="Echo of the input ``OrdDt``.",
+        examples=["", "20260507"],
+    )
+    SrtOrdNo2: int = Field(
+        default=999999999,
+        title="시작주문번호2 (Starting order number)",
+        description="Echo of the input ``SrtOrdNo2``.",
+        examples=[999_999_999, 12_345],
+    )
+    BkseqTpCode: str = Field(
+        default="0",
+        title="역순구분코드 (Reverse-order code)",
+        description="Echo of the input ``BkseqTpCode``.",
+        examples=["0", "1"],
+    )
+    OrdPtnCode: str = Field(
+        default="00",
+        title="주문패턴코드 (Order pattern code)",
+        description="Echo of the input ``OrdPtnCode``.",
+        examples=["00", "01"],
+    )
 
 
 class CSPAQ13700OutBlock2(BaseModel):
-    """
-    CSPAQ13700OutBlock2 - 주문체결 요약 블록
+    """CSPAQ13700OutBlock2 — order execution summary block.
 
-    Attributes:
-        RecCnt (int): 레코드갯수
-        SellExecAmt (int): 매도체결금액
-        BuyExecAmt (int): 매수체결금액
-        SellExecQty (int): 매도체결수량
-        BuyExecQty (int): 매수체결수량
-        SellOrdQty (int): 매도주문수량
-        BuyOrdQty (int): 매수주문수량
+    Returns aggregate execution / order quantities and amounts split by
+    buy / sell side, scoped to the requested filters.
     """
-    RecCnt: int = Field(default=0, title="레코드갯수", description="레코드갯수")
-    """ 레코드갯수 """
-    SellExecAmt: int = Field(default=0, title="매도체결금액", description="매도체결금액")
-    """ 매도체결금액 """
-    BuyExecAmt: int = Field(default=0, title="매수체결금액", description="매수체결금액")
-    """ 매수체결금액 """
-    SellExecQty: int = Field(default=0, title="매도체결수량", description="매도체결수량")
-    """ 매도체결수량 """
-    BuyExecQty: int = Field(default=0, title="매수체결수량", description="매수체결수량")
-    """ 매수체결수량 """
-    SellOrdQty: int = Field(default=0, title="매도주문수량", description="매도주문수량")
-    """ 매도주문수량 """
-    BuyOrdQty: int = Field(default=0, title="매수주문수량", description="매수주문수량")
-    """ 매수주문수량 """
+
+    RecCnt: int = Field(
+        default=0,
+        title="레코드갯수 (Record count)",
+        description="Number of records returned. Always 1 for this summary block.",
+        examples=[0, 1],
+    )
+    SellExecAmt: int = Field(
+        default=0,
+        title="매도체결금액 (Sell fill amount)",
+        description=(
+            "Total sell-side filled amount for the matching orders. "
+            "Currency: KRW."
+        ),
+        examples=[0, 3_500_000],
+    )
+    BuyExecAmt: int = Field(
+        default=0,
+        title="매수체결금액 (Buy fill amount)",
+        description=(
+            "Total buy-side filled amount for the matching orders. "
+            "Currency: KRW."
+        ),
+        examples=[0, 7_000_000],
+    )
+    SellExecQty: int = Field(
+        default=0,
+        title="매도체결수량 (Sell fill quantity)",
+        description="Total sell-side filled quantity (shares).",
+        examples=[0, 50, 500],
+    )
+    BuyExecQty: int = Field(
+        default=0,
+        title="매수체결수량 (Buy fill quantity)",
+        description="Total buy-side filled quantity (shares).",
+        examples=[0, 100, 1_000],
+    )
+    SellOrdQty: int = Field(
+        default=0,
+        title="매도주문수량 (Sell order quantity)",
+        description="Total sell-side ordered quantity (shares).",
+        examples=[0, 60, 600],
+    )
+    BuyOrdQty: int = Field(
+        default=0,
+        title="매수주문수량 (Buy order quantity)",
+        description="Total buy-side ordered quantity (shares).",
+        examples=[0, 100, 1_200],
+    )
 
 
 class CSPAQ13700OutBlock3(BaseModel):
-    """
-    CSPAQ13700OutBlock3 - 주문체결내역 배열 블록
+    """CSPAQ13700OutBlock3 — per-order execution detail row.
 
-    Attributes:
-        OrdDt (str): 주문일자
-        OrdNo (int): 주문번호
-        OrgOrdNo (int): 원주문번호
-        IsuNo (str): 종목번호
-        IsuNm (str): 종목명
-        BnsTpCode (str): 매매구분코드
-        BnsTpNm (str): 매매구분명
-        OrdQty (int): 주문수량
-        OrdPrc (float): 주문단가
-        ExecQty (int): 체결수량
-        ExecPrc (float): 체결단가
-        ExecTrxTime (str): 체결처리시각
-        LastExecTime (str): 최종체결시각
-        OrdprcPtnCode (str): 주문가유형코드
-        OrdprcPtnNm (str): 주문가유형명
-        OrdCndiTpCode (str): 주문조건구분코드
-        AllExecQty (int): 전체체결수량
-        OrdTime (str): 주문시각
-        OpDrtnNo (str): 운용지시번호
-        RmnOrdQty (int): 잔여주문수량
-        OrdGb (str): 주문구분
-        Rectgb (str): 접수구분
+    Each row describes one order placed within the requested scope, with
+    fill quantity / price, original order number for modify / cancel chains,
+    fill timing, price-type metadata, and order channel.
     """
-    OrdDt: str = Field(default="", title="주문일자", description="주문일자")
-    """ 주문일자 """
-    OrdNo: int = Field(default=0, title="주문번호", description="주문번호")
-    """ 주문번호 """
-    OrgOrdNo: int = Field(default=0, title="원주문번호", description="원주문번호")
-    """ 원주문번호 """
-    IsuNo: str = Field(default="", title="종목번호", description="종목번호")
-    """ 종목번호 """
-    IsuNm: str = Field(default="", title="종목명", description="종목명")
-    """ 종목명 """
-    BnsTpCode: str = Field(default="", title="매매구분코드", description="매매구분코드")
-    """ 매매구분코드 """
-    BnsTpNm: str = Field(default="", title="매매구분명", description="매매구분명")
-    """ 매매구분명 """
-    OrdQty: int = Field(default=0, title="주문수량", description="주문수량")
-    """ 주문수량 """
-    OrdPrc: float = Field(default=0.0, title="주문단가", description="주문단가")
-    """ 주문단가 """
-    ExecQty: int = Field(default=0, title="체결수량", description="체결수량")
-    """ 체결수량 """
-    ExecPrc: float = Field(default=0.0, title="체결단가", description="체결단가")
-    """ 체결단가 """
-    ExecTrxTime: str = Field(default="", title="체결처리시각", description="체결처리시각")
-    """ 체결처리시각 """
-    LastExecTime: str = Field(default="", title="최종체결시각", description="최종체결시각")
-    """ 최종체결시각 """
-    OrdprcPtnCode: str = Field(default="", title="주문가유형코드", description="주문가유형코드")
-    """ 주문가유형코드 """
-    OrdprcPtnNm: str = Field(default="", title="주문가유형명", description="주문가유형명")
-    """ 주문가유형명 """
-    OrdCndiTpCode: str = Field(default="", title="주문조건구분코드", description="주문조건구분코드")
-    """ 주문조건구분코드 """
-    AllExecQty: int = Field(default=0, title="전체체결수량", description="전체체결수량")
-    """ 전체체결수량 """
-    OrdTime: str = Field(default="", title="주문시각", description="주문시각")
-    """ 주문시각 """
-    OpDrtnNo: str = Field(default="", title="운용지시번호", description="운용지시번호")
-    """ 운용지시번호 """
-    RmnOrdQty: int = Field(default=0, title="잔여주문수량", description="잔여주문수량")
-    """ 잔여주문수량 """
-    OrdGb: str = Field(default="", title="주문구분", description="주문구분")
-    """ 주문구분 """
-    Rectgb: str = Field(default="", title="접수구분", description="접수구분")
-    """ 접수구분 """
+
+    OrdDt: str = Field(
+        default="",
+        title="주문일자 (Order date, YYYYMMDD)",
+        description="Trading date on which the order was placed.",
+        examples=["", "20260507"],
+    )
+    OrdNo: int = Field(
+        default=0,
+        title="주문번호 (Order number)",
+        description="LS-assigned order number for the trading day.",
+        examples=[1, 12_345, 99_999],
+    )
+    OrgOrdNo: int = Field(
+        default=0,
+        title="원주문번호 (Original order number)",
+        description=(
+            "Original order number for modify / cancel chains. 0 for fresh "
+            "orders that are not modifications or cancellations."
+        ),
+        examples=[0, 12_345],
+    )
+    IsuNo: str = Field(
+        default="",
+        title="종목번호 (Stock code)",
+        description="LS-prefixed Korean stock code.",
+        examples=["", "A005930", "A000660"],
+    )
+    IsuNm: str = Field(
+        default="",
+        title="종목명 (Stock display name)",
+        description="Korean stock display name.",
+        examples=["", "삼성전자", "SK하이닉스"],
+    )
+    BnsTpCode: str = Field(
+        default="",
+        title="매매구분코드 (Side code)",
+        description=(
+            "Side code for the order. The complete enum mapping is not "
+            "declared in the available LS source — consume as returned by LS."
+        ),
+        examples=["", "1", "2"],
+    )
+    BnsTpNm: str = Field(
+        default="",
+        title="매매구분명 (Side display name)",
+        description=(
+            "Korean display name corresponding to ``BnsTpCode`` (e.g., 매도, "
+            "매수)."
+        ),
+        examples=["", "매수", "매도"],
+    )
+    OrdQty: int = Field(
+        default=0,
+        title="주문수량 (Order quantity)",
+        description="Quantity ordered (shares).",
+        examples=[1, 10, 100],
+    )
+    OrdPrc: float = Field(
+        default=0.0,
+        title="주문단가 (Order price)",
+        description=(
+            "Order price (KRW). May be 0 for market orders. LS may serialize "
+            "this value as a string; Pydantic auto-coerces to float."
+        ),
+        examples=[0.0, 70_000.0, 250_000.0],
+    )
+    ExecQty: int = Field(
+        default=0,
+        title="체결수량 (Fill quantity)",
+        description="Filled quantity for this order (shares).",
+        examples=[0, 10, 100],
+    )
+    ExecPrc: float = Field(
+        default=0.0,
+        title="체결단가 (Fill price)",
+        description=(
+            "Average fill price for this order. LS may serialize this value "
+            "as a string; Pydantic auto-coerces to float."
+        ),
+        examples=[0.0, 71_500.0, 248_000.0],
+    )
+    ExecTrxTime: str = Field(
+        default="",
+        title="체결처리시각 (Fill processing time)",
+        description=(
+            "Server-side fill processing timestamp. Format follows LS "
+            "convention (HHMMSS or HHMMSSmmm) — consume as returned."
+        ),
+        examples=["", "093015", "153000123"],
+    )
+    LastExecTime: str = Field(
+        default="",
+        title="최종체결시각 (Last fill time)",
+        description=(
+            "Timestamp of the final fill on this order. Format follows LS "
+            "convention — consume as returned."
+        ),
+        examples=["", "093015", "153000"],
+    )
+    OrdprcPtnCode: str = Field(
+        default="",
+        title="주문가유형코드 (Price-type code)",
+        description=(
+            "Price-type code for the order (limit / market / etc.). The "
+            "complete enum mapping is not declared in the available LS source — "
+            "consume as returned by LS."
+        ),
+        examples=["", "00", "03"],
+    )
+    OrdprcPtnNm: str = Field(
+        default="",
+        title="주문가유형명 (Price-type display name)",
+        description=(
+            "Korean display name corresponding to ``OrdprcPtnCode`` (e.g., "
+            "지정가, 시장가)."
+        ),
+        examples=["", "지정가", "시장가"],
+    )
+    OrdCndiTpCode: str = Field(
+        default="",
+        title="주문조건구분코드 (Order condition code)",
+        description=(
+            "Order condition code (e.g., FOK / IOC). The complete enum "
+            "mapping is not declared in the available LS source — consume as "
+            "returned by LS."
+        ),
+        examples=["", "0", "1"],
+    )
+    AllExecQty: int = Field(
+        default=0,
+        title="전체체결수량 (Total filled quantity)",
+        description=(
+            "Cumulative filled quantity across all fills on this order "
+            "(shares)."
+        ),
+        examples=[0, 10, 100],
+    )
+    OrdTime: str = Field(
+        default="",
+        title="주문시각 (Order time)",
+        description=(
+            "Order placement timestamp. Format follows LS convention "
+            "(HHMMSS or HHMMSSmmm) — consume as returned."
+        ),
+        examples=["", "093015", "153000"],
+    )
+    OpDrtnNo: str = Field(
+        default="",
+        title="운용지시번호 (Operation instruction number)",
+        description=(
+            "Internal operation instruction number used by LS for institutional "
+            "trading workflows. Empty for retail orders."
+        ),
+        examples=["", "OP12345"],
+    )
+    RmnOrdQty: int = Field(
+        default=0,
+        title="잔여주문수량 (Remaining order quantity)",
+        description="Remaining unfilled quantity for this order (shares).",
+        examples=[0, 10, 50],
+    )
+    OrdGb: str = Field(
+        default="",
+        title="주문구분 (Order classification)",
+        description=(
+            "Order classification flag. The complete enum mapping is not "
+            "declared in the available LS source — consume as returned by LS."
+        ),
+        examples=["", "1", "2"],
+    )
+    Rectgb: str = Field(
+        default="",
+        title="접수구분 (Reception classification)",
+        description=(
+            "Reception classification flag (channel / venue acknowledgement). "
+            "The complete enum mapping is not declared in the available LS "
+            "source — consume as returned by LS."
+        ),
+        examples=["", "1", "2"],
+    )
 
 
 class CSPAQ13700Response(BaseModel):
-    """
-    CSPAQ13700 API 전체 응답 - 현물계좌 주문체결내역 조회
+    """CSPAQ13700 full API response envelope."""
 
-    Attributes:
-        header (Optional[CSPAQ13700ResponseHeader])
-        block1 (Optional[CSPAQ13700OutBlock1]): 입력 echo-back
-        block2 (Optional[CSPAQ13700OutBlock2]): 주문체결 요약 데이터
-        block3 (List[CSPAQ13700OutBlock3]): 주문체결내역 배열
-        status_code (Optional[int]): HTTP 상태 코드
-        rsp_cd (str): 응답코드 ("00000" = 정상)
-        rsp_msg (str): 응답메시지
-        error_msg (Optional[str]): 에러 시 메시지
-    """
     header: Optional[CSPAQ13700ResponseHeader] = None
     block1: Optional[CSPAQ13700OutBlock1] = Field(
-        None,
-        title="입력 echo-back",
-        description="입력 파라미터 echo-back 블록"
+        default=None,
+        title="CSPAQ13700OutBlock1 (Input echo-back)",
+        description="Echo-back of the input parameters.",
     )
     block2: Optional[CSPAQ13700OutBlock2] = Field(
-        None,
-        title="주문체결 요약 데이터",
-        description="주문체결 요약 정보 (체결금액/수량 합계)"
+        default=None,
+        title="CSPAQ13700OutBlock2 (Order execution summary)",
+        description="Aggregate buy / sell ordered and filled quantities and amounts.",
     )
     block3: List[CSPAQ13700OutBlock3] = Field(
         default_factory=list,
-        title="주문체결내역 배열",
-        description="주문별 체결내역 목록"
+        title="CSPAQ13700OutBlock3 (Per-order detail list)",
+        description="List of per-order rows scoped to the requested filters.",
     )
-    status_code: Optional[int] = Field(
-        None,
-        title="HTTP 상태 코드",
-        description="요청에 대한 HTTP 상태 코드"
-    )
-    rsp_cd: str = Field(default="", title="응답코드", description="응답코드")
-    rsp_msg: str = Field(default="", title="응답메시지", description="응답메시지")
-    error_msg: Optional[str] = Field(
-        None,
-        title="오류메시지",
-        description="오류메시지 (있으면)"
-    )
+    status_code: Optional[int] = Field(default=None, title="HTTP status code")
+    rsp_cd: str = Field(default="", title="Response code")
+    rsp_msg: str = Field(default="", title="Response message")
+    error_msg: Optional[str] = Field(default=None, title="Error message")
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 

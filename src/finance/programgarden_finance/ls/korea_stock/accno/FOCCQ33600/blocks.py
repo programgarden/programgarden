@@ -1,3 +1,23 @@
+"""Pydantic models for LS Securities OpenAPI FOCCQ33600 (Account Periodic Return Detail).
+
+FOCCQ33600 returns periodic performance metrics for a Korean cash-equity
+account over a date range, broken down at daily / weekly / monthly
+granularity per ``TermTp``. Three response blocks are returned:
+    - ``FOCCQ33600OutBlock1`` (block1): echo-back of the input parameters.
+    - ``FOCCQ33600OutBlock2`` (block2): account-level summary — display
+      name, total trade contract amount, deposits and withdrawals, average
+      invested principal balance, total invested PnL and total invested
+      return rate.
+    - ``FOCCQ33600OutBlock3`` (block3): per-period rows — base date, opening
+      and closing valuation, average invested principal balance, trade
+      contract amount, securities-equivalent in / out flows, evaluation PnL,
+      period return rate and a benchmark index value.
+
+Field descriptions follow LS official spec wording. Korean field labels
+(한글명) are appended in parentheses so AI chatbots can map between English
+descriptions and Korean LS documentation.
+"""
+
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, PrivateAttr
@@ -7,199 +27,298 @@ from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class FOCCQ33600RequestHeader(BlockRequestHeader):
-    """FOCCQ33600 요청용 Header"""
+    """FOCCQ33600 request header. Inherits the standard LS request header schema."""
     pass
 
 
 class FOCCQ33600ResponseHeader(BlockResponseHeader):
-    """FOCCQ33600 응답용 Header"""
+    """FOCCQ33600 response header. Standard LS response header schema."""
     pass
 
 
 class FOCCQ33600InBlock1(BaseModel):
-    """
-    FOCCQ33600InBlock1 - 주식 계좌 기간별 수익률 상세 입력 블록
+    """FOCCQ33600InBlock1 — input block for account periodic return detail.
 
-    Attributes:
-        QrySrtDt (str): 조회시작일 (YYYYMMDD)
-        QryEndDt (str): 조회종료일 (YYYYMMDD)
-        TermTp (str): 기간구분 (기본 "1": 1:일별 2:주별 3:월별)
+    Specify the date range with ``QrySrtDt`` / ``QryEndDt`` (YYYYMMDD) and
+    the per-row granularity with ``TermTp`` (daily / weekly / monthly).
     """
+
     QrySrtDt: str = Field(
         default="",
-        title="조회시작일",
-        description="조회시작일 (YYYYMMDD)"
+        title="조회시작일 (Query start date, YYYYMMDD)",
+        description="Inclusive lower bound of the query date range.",
+        examples=["", "20260101", "20260201"],
     )
-    """ 조회시작일 """
     QryEndDt: str = Field(
         default="",
-        title="조회종료일",
-        description="조회종료일 (YYYYMMDD)"
+        title="조회종료일 (Query end date, YYYYMMDD)",
+        description="Inclusive upper bound of the query date range.",
+        examples=["", "20260131", "20260228"],
     )
-    """ 조회종료일 """
     TermTp: Literal["1", "2", "3"] = Field(
         default="1",
-        title="기간구분",
-        description="기간구분 (1:일별 2:주별 3:월별)"
+        title="기간구분 (Period granularity)",
+        description=(
+            "Per-row granularity. '1' = 일별 (daily, default), '2' = 주별 "
+            "(weekly), '3' = 월별 (monthly). Length 1."
+        ),
+        examples=["1", "2", "3"],
     )
-    """ 기간구분 """
 
 
 class FOCCQ33600Request(BaseModel):
-    """
-    FOCCQ33600 API 요청 - 주식 계좌 기간별 수익률 상세
+    """FOCCQ33600 full request envelope (header + body + setup options)."""
 
-    Attributes:
-        header (FOCCQ33600RequestHeader)
-        body (dict[Literal["FOCCQ33600InBlock1"], FOCCQ33600InBlock1])
-    """
     header: FOCCQ33600RequestHeader = FOCCQ33600RequestHeader(
         content_type="application/json; charset=utf-8",
         authorization="",
         tr_cd="FOCCQ33600",
         tr_cont="N",
         tr_cont_key="",
-        mac_address=""
+        mac_address="",
     )
     body: dict[Literal["FOCCQ33600InBlock1"], FOCCQ33600InBlock1]
     options: SetupOptions = SetupOptions(
         rate_limit_count=1,
         rate_limit_seconds=1,
         on_rate_limit="wait",
-        rate_limit_key="FOCCQ33600"
+        rate_limit_key="FOCCQ33600",
     )
-    """코드 실행 전 설정(setup)을 위한 옵션"""
+    """Pre-execution setup options (rate limit, retry behavior)."""
 
 
 class FOCCQ33600OutBlock1(BaseModel):
-    """
-    FOCCQ33600OutBlock1 - 입력 echo-back 블록
+    """FOCCQ33600OutBlock1 — input echo-back block."""
 
-    Attributes:
-        QrySrtDt (str): 조회시작일
-        QryEndDt (str): 조회종료일
-        TermTp (str): 기간구분
-    """
-    QrySrtDt: str = Field(default="", title="조회시작일", description="조회시작일 (YYYYMMDD)")
-    """ 조회시작일 """
-    QryEndDt: str = Field(default="", title="조회종료일", description="조회종료일 (YYYYMMDD)")
-    """ 조회종료일 """
-    TermTp: str = Field(default="1", title="기간구분", description="기간구분 (1:일별 2:주별 3:월별)")
-    """ 기간구분 """
+    QrySrtDt: str = Field(
+        default="",
+        title="조회시작일 (Query start date, YYYYMMDD)",
+        description="Echo of the input ``QrySrtDt``.",
+        examples=["", "20260101"],
+    )
+    QryEndDt: str = Field(
+        default="",
+        title="조회종료일 (Query end date, YYYYMMDD)",
+        description="Echo of the input ``QryEndDt``.",
+        examples=["", "20260131"],
+    )
+    TermTp: str = Field(
+        default="1",
+        title="기간구분 (Period granularity)",
+        description=(
+            "Echo of the input ``TermTp`` ('1' = daily, '2' = weekly, "
+            "'3' = monthly)."
+        ),
+        examples=["1", "2", "3"],
+    )
 
 
 class FOCCQ33600OutBlock2(BaseModel):
-    """
-    FOCCQ33600OutBlock2 - 수익률 요약 블록
+    """FOCCQ33600OutBlock2 — account-level return summary block.
 
-    Attributes:
-        RecCnt (int): 레코드갯수
-        AcntNm (str): 계좌명
-        BnsctrAmt (int): 매매약정금액
-        MnyinAmt (int): 입금
-        MnyoutAmt (int): 출금
-        InvstAvrbalPramt (int): 투자원금평잔
-        InvstPlAmt (int): 투자손익
-        InvstErnrat (float): 투자수익률
+    Returns aggregate metrics across the requested date range: trade
+    contract amount, total deposits and withdrawals, average invested
+    principal balance, total invested PnL and total invested return rate.
     """
-    RecCnt: int = Field(default=0, title="레코드갯수", description="레코드갯수")
-    """ 레코드갯수 """
-    AcntNm: str = Field(default="", title="계좌명", description="계좌명")
-    """ 계좌명 """
-    BnsctrAmt: int = Field(default=0, title="매매약정금액", description="매매약정금액")
-    """ 매매약정금액 """
-    MnyinAmt: int = Field(default=0, title="입금", description="입금")
-    """ 입금 """
-    MnyoutAmt: int = Field(default=0, title="출금", description="출금")
-    """ 출금 """
-    InvstAvrbalPramt: int = Field(default=0, title="투자원금평잔", description="투자원금평잔")
-    """ 투자원금평잔 """
-    InvstPlAmt: int = Field(default=0, title="투자손익", description="투자손익")
-    """ 투자손익 """
-    InvstErnrat: float = Field(default=0.0, title="투자수익률", description="투자수익률")
-    """ 투자수익률 """
+
+    RecCnt: int = Field(
+        default=0,
+        title="레코드갯수 (Record count)",
+        description="Number of records returned. Always 1 for this summary block.",
+        examples=[0, 1],
+    )
+    AcntNm: str = Field(
+        default="",
+        title="계좌명 (Account display name)",
+        description="Korean display name of the account.",
+        examples=["", "홍길동"],
+    )
+    BnsctrAmt: int = Field(
+        default=0,
+        title="매매약정금액 (Trade contract amount)",
+        description=(
+            "Total trade contract amount across the requested date range. "
+            "Currency: KRW."
+        ),
+        examples=[0, 100_000_000],
+    )
+    MnyinAmt: int = Field(
+        default=0,
+        title="입금 (Deposit)",
+        description=(
+            "Total deposit amount across the requested date range. "
+            "Currency: KRW."
+        ),
+        examples=[0, 5_000_000],
+    )
+    MnyoutAmt: int = Field(
+        default=0,
+        title="출금 (Withdrawal)",
+        description=(
+            "Total withdrawal amount across the requested date range. "
+            "Currency: KRW."
+        ),
+        examples=[0, 1_000_000],
+    )
+    InvstAvrbalPramt: int = Field(
+        default=0,
+        title="투자원금평잔 (Average invested principal balance)",
+        description=(
+            "Average invested principal balance across the requested date "
+            "range, used as the denominator of the invested return rate. "
+            "Currency: KRW."
+        ),
+        examples=[0, 80_000_000],
+    )
+    InvstPlAmt: int = Field(
+        default=0,
+        title="투자손익 (Invested PnL)",
+        description=(
+            "Total invested profit and loss across the requested date range. "
+            "Sign convention follows LS server output. Currency: KRW."
+        ),
+        examples=[0, 5_000_000, -1_500_000],
+    )
+    InvstErnrat: float = Field(
+        default=0.0,
+        title="투자수익률 (Invested return rate)",
+        description=(
+            "Invested return rate across the requested date range, in percent. "
+            "LS may serialize this value as a string; Pydantic auto-coerces "
+            "to float."
+        ),
+        examples=[0.0, 6.25, -1.84],
+    )
 
 
 class FOCCQ33600OutBlock3(BaseModel):
-    """
-    FOCCQ33600OutBlock3 - 기간별 수익률 상세 배열 블록
+    """FOCCQ33600OutBlock3 — per-period return detail row.
 
-    Attributes:
-        BaseDt (str): 기준일
-        FdEvalAmt (int): 기초평가
-        EotEvalAmt (int): 기말평가
-        InvstAvrbalPramt (int): 투자원금평잔
-        BnsctrAmt (int): 매매약정
-        MnyinSecinAmt (int): 입금고액
-        MnyoutSecoutAmt (int): 출금고액
-        EvalPnlAmt (int): 평가손익
-        TermErnrat (float): 기간수익률
-        Idx (float): 지수
+    Each row describes one period at the granularity selected by ``TermTp``,
+    with opening / closing valuation, average invested principal balance,
+    trade contract amount, securities-equivalent in / out flows, evaluation
+    PnL, period return rate and a benchmark index value.
     """
-    BaseDt: str = Field(default="", title="기준일", description="기준일")
-    """ 기준일 """
-    FdEvalAmt: int = Field(default=0, title="기초평가", description="기초평가")
-    """ 기초평가 """
-    EotEvalAmt: int = Field(default=0, title="기말평가", description="기말평가")
-    """ 기말평가 """
-    InvstAvrbalPramt: int = Field(default=0, title="투자원금평잔", description="투자원금평잔")
-    """ 투자원금평잔 """
-    BnsctrAmt: int = Field(default=0, title="매매약정", description="매매약정")
-    """ 매매약정 """
-    MnyinSecinAmt: int = Field(default=0, title="입금고액", description="입금고액")
-    """ 입금고액 """
-    MnyoutSecoutAmt: int = Field(default=0, title="출금고액", description="출금고액")
-    """ 출금고액 """
-    EvalPnlAmt: int = Field(default=0, title="평가손익", description="평가손익")
-    """ 평가손익 """
-    TermErnrat: float = Field(default=0.0, title="기간수익률", description="기간수익률")
-    """ 기간수익률 """
-    Idx: float = Field(default=0.0, title="지수", description="지수")
-    """ 지수 """
+
+    BaseDt: str = Field(
+        default="",
+        title="기준일 (Base date, YYYYMMDD)",
+        description=(
+            "Base date of the period (period-end date for weekly / monthly "
+            "rows)."
+        ),
+        examples=["", "20260203", "20260228"],
+    )
+    FdEvalAmt: int = Field(
+        default=0,
+        title="기초평가 (Opening valuation)",
+        description=(
+            "Account valuation at the start of the period. Currency: KRW."
+        ),
+        examples=[0, 80_000_000],
+    )
+    EotEvalAmt: int = Field(
+        default=0,
+        title="기말평가 (Closing valuation)",
+        description=(
+            "Account valuation at the end of the period. Currency: KRW."
+        ),
+        examples=[0, 82_500_000],
+    )
+    InvstAvrbalPramt: int = Field(
+        default=0,
+        title="투자원금평잔 (Average invested principal balance)",
+        description=(
+            "Average invested principal balance over the period. "
+            "Currency: KRW."
+        ),
+        examples=[0, 80_000_000],
+    )
+    BnsctrAmt: int = Field(
+        default=0,
+        title="매매약정 (Trade contract amount)",
+        description=(
+            "Total trade contract amount during the period. Currency: KRW."
+        ),
+        examples=[0, 5_000_000],
+    )
+    MnyinSecinAmt: int = Field(
+        default=0,
+        title="입금고액 (Deposit / securities-in amount)",
+        description=(
+            "Total deposit amount and securities-in (transfer-in) value during "
+            "the period. Currency: KRW."
+        ),
+        examples=[0, 1_000_000],
+    )
+    MnyoutSecoutAmt: int = Field(
+        default=0,
+        title="출금고액 (Withdrawal / securities-out amount)",
+        description=(
+            "Total withdrawal amount and securities-out (transfer-out) value "
+            "during the period. Currency: KRW."
+        ),
+        examples=[0, 500_000],
+    )
+    EvalPnlAmt: int = Field(
+        default=0,
+        title="평가손익 (Evaluation PnL)",
+        description=(
+            "Evaluation profit and loss for the period. Sign convention "
+            "follows LS server output. Currency: KRW."
+        ),
+        examples=[0, 2_500_000, -800_000],
+    )
+    TermErnrat: float = Field(
+        default=0.0,
+        title="기간수익률 (Period return rate)",
+        description=(
+            "Period return rate in percent. LS may serialize this value as a "
+            "string; Pydantic auto-coerces to float."
+        ),
+        examples=[0.0, 3.13, -1.00],
+    )
+    Idx: float = Field(
+        default=0.0,
+        title="지수 (Benchmark index)",
+        description=(
+            "Benchmark index value reported alongside the period return. The "
+            "specific index used is not declared in the available LS source — "
+            "consume as returned by LS."
+        ),
+        examples=[0.0, 2_500.50, 850.20],
+    )
 
 
 class FOCCQ33600Response(BaseModel):
-    """
-    FOCCQ33600 API 전체 응답 - 주식 계좌 기간별 수익률 상세
+    """FOCCQ33600 full API response envelope."""
 
-    Attributes:
-        header (Optional[FOCCQ33600ResponseHeader])
-        block1 (Optional[FOCCQ33600OutBlock1]): 입력 echo-back
-        block2 (Optional[FOCCQ33600OutBlock2]): 수익률 요약 데이터
-        block3 (List[FOCCQ33600OutBlock3]): 기간별 수익률 상세 배열
-        status_code (Optional[int]): HTTP 상태 코드
-        rsp_cd (str): 응답코드 ("00000" = 정상)
-        rsp_msg (str): 응답메시지
-        error_msg (Optional[str]): 에러 시 메시지
-    """
     header: Optional[FOCCQ33600ResponseHeader] = None
     block1: Optional[FOCCQ33600OutBlock1] = Field(
-        None,
-        title="입력 echo-back",
-        description="입력 파라미터 echo-back 블록"
+        default=None,
+        title="FOCCQ33600OutBlock1 (Input echo-back)",
+        description="Echo-back of the input parameters.",
     )
     block2: Optional[FOCCQ33600OutBlock2] = Field(
-        None,
-        title="수익률 요약 데이터",
-        description="계좌 전체 기간 수익률 요약"
+        default=None,
+        title="FOCCQ33600OutBlock2 (Return summary)",
+        description=(
+            "Account-level summary across the requested date range: trade "
+            "contract amount, deposits / withdrawals, average invested "
+            "principal balance, invested PnL and return rate."
+        ),
     )
     block3: List[FOCCQ33600OutBlock3] = Field(
         default_factory=list,
-        title="기간별 수익률 상세 배열",
-        description="일별/주별/월별 수익률 상세 목록"
+        title="FOCCQ33600OutBlock3 (Per-period detail list)",
+        description=(
+            "List of per-period rows at the granularity selected by ``TermTp``."
+        ),
     )
-    status_code: Optional[int] = Field(
-        None,
-        title="HTTP 상태 코드",
-        description="요청에 대한 HTTP 상태 코드"
-    )
-    rsp_cd: str = Field(default="", title="응답코드", description="응답코드")
-    rsp_msg: str = Field(default="", title="응답메시지", description="응답메시지")
-    error_msg: Optional[str] = Field(
-        None,
-        title="오류메시지",
-        description="오류메시지 (있으면)"
-    )
+    status_code: Optional[int] = Field(default=None, title="HTTP status code")
+    rsp_cd: str = Field(default="", title="Response code")
+    rsp_msg: str = Field(default="", title="Response message")
+    error_msg: Optional[str] = Field(default=None, title="Error message")
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 
