@@ -112,7 +112,7 @@ class GSHRealRequest(BaseModel):
             tr_key=""
         ),
         title="입력 데이터 블록 (Input body block)",
-        description="해외주식 호가 input body — TR code and 18-char exchange-prefixed key.",
+        description="GSH (overseas-stock orderbook) input body — TR code and 18-char exchange-prefixed key.",
     )
 
 

@@ -77,7 +77,7 @@ class AS3RealRequest(BaseModel):
             tr_key=""
         ),
         title="입력 데이터 블록 (Input body block)",
-        description="해외주식주문취소(미국) input body — TR code and short symbol key.",
+        description="AS3 (overseas-stock order cancel-confirm, US) input body — TR code and short symbol key.",
     )
 
 

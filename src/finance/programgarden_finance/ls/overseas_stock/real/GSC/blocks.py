@@ -94,7 +94,7 @@ class GSCRealRequest(BaseModel):
             tr_key=""
         ),
         title="입력 데이터 블록 (Input body block)",
-        description="해외주식 실시간 시세 input body — TR code and 18-char exchange-prefixed key.",
+        description="GSC (overseas-stock real-time quote) input body — TR code and 18-char exchange-prefixed key.",
     )
 
 

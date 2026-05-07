@@ -82,7 +82,7 @@ class AS4RealRequest(BaseModel):
             tr_key=""
         ),
         title="입력 데이터 블록 (Input body block)",
-        description="해외주식주문거부(미국) input body — TR code and short symbol key.",
+        description="AS4 (overseas-stock order rejection, US) input body — TR code and short symbol key.",
     )
 
 

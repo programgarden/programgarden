@@ -53,16 +53,16 @@ class SC3RealRequestBody(BaseModel):
 
 
 class SC3RealRequest(BaseModel):
-    """주식주문취소(SC3) 실시간 등록/해제 요청."""
+    """SC3 (stock-order cancel-confirm) real-time subscription request."""
     header: SC3RealRequestHeader = Field(
         SC3RealRequestHeader(token="", tr_type="1"),
         title="요청 헤더 (Request header)",
-        description="SC3 실시간 계좌등록/해제를 위한 헤더 블록"
+        description="SC3 WebSocket subscription header block (token + tr_type; tr_type='1' register account / '2' unregister)."
     )
     body: SC3RealRequestBody = Field(
         SC3RealRequestBody(tr_cd="SC3", tr_key=""),
         title="요청 바디 (Request body)",
-        description="주식주문취소 실시간 등록 바디"
+        description="SC3 input body — TR code 'SC3' for stock-order cancel-confirm events; tr_key empty (account-level subscription)."
     )
 
 
@@ -76,7 +76,7 @@ class SC3RealResponseBody(SC1RealResponseBody):
 
 
 class SC3RealResponse(BaseModel):
-    """주식주문취소(SC3) 실시간 응답."""
+    """SC3 (stock-order cancel-confirm) real-time response."""
     header: Optional[SC3RealResponseHeader]
     body: Optional[SC3RealResponseBody]
 

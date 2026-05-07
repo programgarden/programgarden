@@ -90,7 +90,7 @@ class SC0RealRequestBody(BaseModel):
 
 
 class SC0RealRequest(BaseModel):
-    """주식주문접수(SC0) 실시간 등록/해제 요청.
+    """SC0 (stock-order acceptance) real-time subscription request.
 
     Use ``tr_type='1'`` to register the account, ``'2'`` to unregister.
     A single SC0..SC4 registration enables all five order-event streams.
@@ -98,12 +98,12 @@ class SC0RealRequest(BaseModel):
     header: SC0RealRequestHeader = Field(
         SC0RealRequestHeader(token="", tr_type="1"),
         title="요청 헤더 (Request header)",
-        description="SC0 실시간 계좌등록/해제를 위한 헤더 블록"
+        description="SC0 WebSocket subscription header block (token + tr_type; tr_type='1' register account / '2' unregister)."
     )
     body: SC0RealRequestBody = Field(
         SC0RealRequestBody(tr_cd="SC0", tr_key=""),
         title="요청 바디 (Request body)",
-        description="주식주문접수 실시간 등록 바디"
+        description="SC0 input body — TR code 'SC0' for stock-order acceptance events; tr_key empty (account-level subscription)."
     )
 
 
@@ -341,7 +341,7 @@ class SC0RealResponseBody(BaseModel):
 
 
 class SC0RealResponse(BaseModel):
-    """주식주문접수(SC0) 실시간 응답.
+    """SC0 (stock-order acceptance) real-time response.
 
     Complete response model for SC0 real-time stock order acceptance data.
     """

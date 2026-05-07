@@ -53,16 +53,16 @@ class SC4RealRequestBody(BaseModel):
 
 
 class SC4RealRequest(BaseModel):
-    """주식주문거부(SC4) 실시간 등록/해제 요청."""
+    """SC4 (stock-order rejection) real-time subscription request."""
     header: SC4RealRequestHeader = Field(
         SC4RealRequestHeader(token="", tr_type="1"),
         title="요청 헤더 (Request header)",
-        description="SC4 실시간 계좌등록/해제를 위한 헤더 블록"
+        description="SC4 WebSocket subscription header block (token + tr_type; tr_type='1' register account / '2' unregister)."
     )
     body: SC4RealRequestBody = Field(
         SC4RealRequestBody(tr_cd="SC4", tr_key=""),
         title="요청 바디 (Request body)",
-        description="주식주문거부 실시간 등록 바디"
+        description="SC4 input body — TR code 'SC4' for stock-order rejection events; tr_key empty (account-level subscription)."
     )
 
 
@@ -76,7 +76,7 @@ class SC4RealResponseBody(SC1RealResponseBody):
 
 
 class SC4RealResponse(BaseModel):
-    """주식주문거부(SC4) 실시간 응답."""
+    """SC4 (stock-order rejection) real-time response."""
     header: Optional[SC4RealResponseHeader]
     body: Optional[SC4RealResponseBody]
 

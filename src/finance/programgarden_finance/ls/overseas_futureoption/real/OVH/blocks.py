@@ -98,7 +98,7 @@ class OVHRealRequest(BaseModel):
     body: OVHRealRequestBody = Field(
         ...,
         title="입력 데이터 블록 (Input body block)",
-        description="해외선물 호가 input body — TR code and 8-char space-padded futures symbol.",
+        description="OVH (overseas-futures orderbook) input body — TR code and 8-char space-padded futures symbol.",
     )
 
 

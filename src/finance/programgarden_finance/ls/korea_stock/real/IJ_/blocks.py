@@ -72,19 +72,19 @@ class IJ_RealRequestBody(BaseModel):
 
 
 class IJ_RealRequest(BaseModel):
-    """업종지수(IJ_) 실시간 시세 등록/해제 요청.
+    """IJ_ (sector index) real-time quote subscription request.
 
     Use ``tr_type='3'`` to subscribe, ``'4'`` to unsubscribe.
     """
     header: IJ_RealRequestHeader = Field(
         IJ_RealRequestHeader(token="", tr_type="3"),
         title="요청 헤더 (Request header)",
-        description="IJ_ 실시간 시세 등록/해제를 위한 헤더 블록"
+        description="IJ_ WebSocket subscription header block (token + tr_type; tr_type='3' subscribe / '4' unsubscribe)."
     )
     body: IJ_RealRequestBody = Field(
         IJ_RealRequestBody(tr_cd="IJ_", tr_key=""),
         title="요청 바디 (Request body)",
-        description="업종지수 실시간 등록에 필요한 업종코드 정보"
+        description="IJ_ input body — TR code 'IJ_' and sector code as tr_key."
     )
 
 
@@ -266,7 +266,7 @@ class IJ_RealResponseBody(BaseModel):
 
 
 class IJ_RealResponse(BaseModel):
-    """업종지수(IJ_) 실시간 응답.
+    """IJ_ (sector index) real-time response.
 
     Complete response model for IJ_ real-time sector index data.
     """

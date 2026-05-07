@@ -84,19 +84,19 @@ class SC1RealRequestBody(BaseModel):
 
 
 class SC1RealRequest(BaseModel):
-    """주식주문체결(SC1) 실시간 등록/해제 요청.
+    """SC1 (stock-order execution) real-time subscription request.
 
     Use ``tr_type='1'`` to register the account, ``'2'`` to unregister.
     """
     header: SC1RealRequestHeader = Field(
         SC1RealRequestHeader(token="", tr_type="1"),
         title="요청 헤더 (Request header)",
-        description="SC1 실시간 계좌등록/해제를 위한 헤더 블록"
+        description="SC1 WebSocket subscription header block (token + tr_type; tr_type='1' register account / '2' unregister)."
     )
     body: SC1RealRequestBody = Field(
         SC1RealRequestBody(tr_cd="SC1", tr_key=""),
         title="요청 바디 (Request body)",
-        description="주식주문체결 실시간 등록 바디"
+        description="SC1 input body — TR code 'SC1' for stock-order execution events; tr_key empty (account-level subscription)."
     )
 
 
@@ -325,7 +325,7 @@ class SC1RealResponseBody(BaseModel):
 
 
 class SC1RealResponse(BaseModel):
-    """주식주문체결(SC1) 실시간 응답.
+    """SC1 (stock-order execution) real-time response.
 
     Complete response model for SC1 real-time stock order execution data.
     """

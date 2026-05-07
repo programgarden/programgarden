@@ -77,7 +77,7 @@ class AS2RealRequest(BaseModel):
             tr_key=""
         ),
         title="입력 데이터 블록 (Input body block)",
-        description="해외주식주문정정(미국) input body — TR code and short symbol key.",
+        description="AS2 (overseas-stock order modify-confirm, US) input body — TR code and short symbol key.",
     )
 
 

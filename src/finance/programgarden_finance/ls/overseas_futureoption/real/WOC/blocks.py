@@ -108,7 +108,7 @@ class WOCRealRequest(BaseModel):
     body: WOCRealRequestBody = Field(
         ...,
         title="입력 데이터 블록 (Input body block)",
-        description="해외옵션 체결(WOC) input body — TR code and 8-char space-padded option symbol.",
+        description="WOC (overseas-options trade tape) input body — TR code and 8-char space-padded option symbol.",
     )
 
 

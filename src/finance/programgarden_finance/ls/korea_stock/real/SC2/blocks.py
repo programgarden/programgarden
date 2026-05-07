@@ -53,16 +53,16 @@ class SC2RealRequestBody(BaseModel):
 
 
 class SC2RealRequest(BaseModel):
-    """주식주문정정(SC2) 실시간 등록/해제 요청."""
+    """SC2 (stock-order modify-confirm) real-time subscription request."""
     header: SC2RealRequestHeader = Field(
         SC2RealRequestHeader(token="", tr_type="1"),
         title="요청 헤더 (Request header)",
-        description="SC2 실시간 계좌등록/해제를 위한 헤더 블록"
+        description="SC2 WebSocket subscription header block (token + tr_type; tr_type='1' register account / '2' unregister)."
     )
     body: SC2RealRequestBody = Field(
         SC2RealRequestBody(tr_cd="SC2", tr_key=""),
         title="요청 바디 (Request body)",
-        description="주식주문정정 실시간 등록 바디"
+        description="SC2 input body — TR code 'SC2' for stock-order modify-confirm events; tr_key empty (account-level subscription)."
     )
 
 
@@ -76,7 +76,7 @@ class SC2RealResponseBody(SC1RealResponseBody):
 
 
 class SC2RealResponse(BaseModel):
-    """주식주문정정(SC2) 실시간 응답."""
+    """SC2 (stock-order modify-confirm) real-time response."""
     header: Optional[SC2RealResponseHeader]
     body: Optional[SC2RealResponseBody]
 
