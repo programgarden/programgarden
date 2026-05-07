@@ -1,70 +1,93 @@
+"""Pydantic models for LS Securities OpenAPI access-token revocation (접근토큰 폐기).
+
+Revokes a previously-issued access token. Inherits the OAuth header chain
+from ``oauth.generate_token.token``.
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
+2026-05-06 finance TR field metadata plan, Phase 5 OAuth caveat):
+    - ``token_type_hint`` 2-way ('access_token' / 'refresh_token') is
+      LS-source-declared verbatim. Whether refresh tokens are actually
+      supported is not asserted here — preserved as the source declares.
+    - ``code`` / ``message`` semantics in the response block are LS-defined
+      and not declared in detail in the available source.
+"""
+
 from typing import Dict, Literal, Optional
+
 from programgarden_finance.ls.oauth.generate_token import (
     TokenRequestHeader,
     TokenResponseHeader,
 )
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr
 from requests import Response
 
 
 class RevokeRequestHeader(TokenRequestHeader):
-    """접근토큰 폐기 요청용 Header"""
+    """Revoke request header. Inherits the LS OAuth header schema."""
     pass
 
 
 class RevokeResponseHeader(TokenResponseHeader):
-    """접근토큰 폐기 응답용 Header"""
+    """Revoke response header. Inherits the LS OAuth header schema."""
     pass
 
 
 class RevokeInBlock(BaseModel):
-    """
-    revokeInBlock 입력 블록
+    """revokeInBlock — input block for the access-token revocation request."""
 
-    Attributes:
-        appkey (str): 고객 앱Key
-        appsecretkey (str): 고객 앱 비밀Key
-        token (str): 접근토큰
-        token_type_hint (Literal["access_token", "refresh_token"]): 토큰 유형 hint
-    """
-    appkey: str
-    appsecretkey: str
-    token: str
-    token_type_hint: Literal["access_token", "refresh_token"]
+    appkey: str = Field(
+        ...,
+        title="앱Key (App key)",
+        description="Customer-issued LS Securities app key.",
+        examples=["YOUR_APP_KEY"],
+    )
+    appsecretkey: str = Field(
+        ...,
+        title="앱비밀Key (App secret key)",
+        description="Customer-issued LS Securities app secret key.",
+        examples=["YOUR_APP_SECRET"],
+    )
+    token: str = Field(
+        ...,
+        title="접근토큰 (Access token)",
+        description="Bearer access token to revoke.",
+        examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."],
+    )
+    token_type_hint: Literal["access_token", "refresh_token"] = Field(
+        ...,
+        title="토큰 유형 hint (Token type hint)",
+        description="Token type hint. LS source declares 2-way: 'access_token' or 'refresh_token'. Refresh-token support is not asserted; preserved verbatim per source.",
+        examples=["access_token"],
+    )
 
 
 class RevokeRequest(BaseModel):
-    """
-    Revoke API 요청
+    """Revoke request envelope."""
 
-    Attributes:
-        header (RevokeRequestHeader)
-        body (Dict[Literal["revokeInBlock"], RevokeInBlock]]
-    """
     header: RevokeRequestHeader
     body: Dict[Literal["revokeInBlock"], RevokeInBlock]
 
 
 class RevokeOutBlock(BaseModel):
-    """
-    revokeOutBlock 응답 블록
+    """revokeOutBlock — access-token revocation response block."""
 
-    Attributes:
-        code (int): 응답코드
-        message (str): 응답메시지
-    """
-    code: int
-    message: str
+    code: int = Field(
+        ...,
+        title="응답코드 (Response code)",
+        description="LS-defined response code. Code semantics not declared in detail in the available source.",
+        examples=[0, 200],
+    )
+    message: str = Field(
+        ...,
+        title="응답메시지 (Response message)",
+        description="LS-defined response message.",
+        examples=["success"],
+    )
 
 
 class RevokeResponse(BaseModel):
-    """
-    Revoke API 전체 응답
+    """Revoke response envelope."""
 
-    Attributes:
-        header (Optional[RevokeResponseHeader])
-        block (Optional[RevokeOutBlock])
-    """
     header: Optional[RevokeResponseHeader]
     block: Optional[RevokeOutBlock]
 

@@ -1,49 +1,72 @@
+"""Pydantic models for LS Securities OpenAPI access-token issuance (접근토큰 발급).
+
+POSTs an OAuth2-style ``client_credentials`` grant to obtain a Bearer access
+token used for downstream LS Securities REST / WebSocket calls.
+
+Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
+2026-05-06 finance TR field metadata plan, Phase 5 OAuth caveat):
+    - ``grant_type`` and ``scope`` constants are LS-source-declared as fixed
+      string literals; the plan flags LS OAuth handling as potentially
+      diverging from standard OAuth2, so values are preserved verbatim with
+      no inferred OAuth2 semantics.
+    - ``token_type`` is LS-source-declared as ``Bearer``.
+    - ``expires_in`` is the access-token lifetime in seconds per LS source;
+      no exact lifetime value is asserted.
+    - The request content-type is ``application/x-www-form-urlencoded`` per
+      LS source; this is enforced at the request envelope level, not via
+      field metadata.
+"""
+
 from typing import Literal, Optional
 
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr
 from requests import Response
 
 from ....models import OAuthRequestHeader, OAuthResponseHeader, SetupOptions
 
 
 class TokenRequestHeader(OAuthRequestHeader):
-    """접근토큰 발급 요청용 Header"""
+    """Token-issuance request header. Inherits the standard LS OAuth header schema."""
     pass
 
 
 class TokenResponseHeader(OAuthResponseHeader):
-    """접근토큰 발급 응답용 Header"""
+    """Token-issuance response header. Inherits the standard LS OAuth header schema."""
     pass
 
 
 class TokenInBlock(BaseModel):
-    """
-    tokenInBlock 입력 블록
+    """tokenInBlock — input block for the access-token issuance request."""
 
-    Attributes:
-        grant_type (Literal["client_credentials"]): 권한부여 Type, 항상 "client_credentials"로 고정
-        appkey (str): 고객 앱Key
-        appsecretkey (str): 고객 앱 비밀Key
-        scope (Literal["oob"]): scope
-    """
-    grant_type: Literal["client_credentials"] = "client_credentials"
-    """ 권한부여 Type, 항상 "client_credentials"로 고정 """
-    appkey: str
-    """ 고객 앱Key """
-    appsecretkey: str
-    """ 고객 앱 비밀Key """
-    scope: Literal["oob"] = "oob"
-    """ 항상 "oob"로 고정 """
+    grant_type: Literal["client_credentials"] = Field(
+        default="client_credentials",
+        title="권한부여 Type (Grant type)",
+        description="OAuth grant type. LS source declares this as fixed literal 'client_credentials'.",
+        examples=["client_credentials"],
+    )
+    appkey: str = Field(
+        ...,
+        title="앱Key (App key)",
+        description="Customer-issued LS Securities app key.",
+        examples=["YOUR_APP_KEY"],
+    )
+    appsecretkey: str = Field(
+        ...,
+        title="앱비밀Key (App secret key)",
+        description="Customer-issued LS Securities app secret key.",
+        examples=["YOUR_APP_SECRET"],
+    )
+    scope: Literal["oob"] = Field(
+        default="oob",
+        title="scope (Scope)",
+        description="OAuth scope. LS source declares this as fixed literal 'oob'.",
+        examples=["oob"],
+    )
 
 
 class TokenRequest(BaseModel):
-    """
-    Token API 요청
+    """Token-issuance request envelope."""
 
-    Attributes:
-        header (TokenRequestHeader)
-        body (TokenInBlock]
-    """
     header: TokenRequestHeader = TokenRequestHeader(content_type="application/x-www-form-urlencoded")
     body: TokenInBlock
     options: SetupOptions = SetupOptions(
@@ -52,33 +75,40 @@ class TokenRequest(BaseModel):
         on_rate_limit="wait",
         rate_limit_key="token"
     )
-    """코드 실행 전 설정(setup)을 위한 옵션"""
 
 
 class TokenOutBlock(BaseModel):
-    """
-    tokenOutBlock 응답 블록
+    """tokenOutBlock — access-token issuance response block."""
 
-    Attributes:
-        access_token (str): 접근토큰
-        expires_in (int): 접근토큰 유효기간(초)
-        scope (Literal["oob"]): scope
-        token_type (Literal["Bearer"]): 토큰 유형
-    """
-    access_token: str
-    expires_in: int
-    scope: Literal["oob"]
-    token_type: Literal["Bearer"]
+    access_token: str = Field(
+        ...,
+        title="접근토큰 (Access token)",
+        description="Bearer access token used in subsequent LS Securities REST / WebSocket calls.",
+        examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."],
+    )
+    expires_in: int = Field(
+        ...,
+        title="유효기간(초) (Lifetime in seconds)",
+        description="Access-token lifetime in seconds per LS source. Exact value not asserted.",
+        examples=[86400],
+    )
+    scope: Literal["oob"] = Field(
+        ...,
+        title="scope (Scope)",
+        description="OAuth scope. LS source declares this as fixed literal 'oob'.",
+        examples=["oob"],
+    )
+    token_type: Literal["Bearer"] = Field(
+        ...,
+        title="토큰 유형 (Token type)",
+        description="Token type. LS source declares this as fixed literal 'Bearer'.",
+        examples=["Bearer"],
+    )
 
 
 class TokenResponse(BaseModel):
-    """
-    Token API 전체 응답
+    """Token-issuance response envelope."""
 
-    Attributes:
-        header (Optional[TokenResponseHeader])
-        block (Optional[TokenOutBlock])
-    """
     header: Optional[TokenResponseHeader]
     block: Optional[TokenOutBlock]
 

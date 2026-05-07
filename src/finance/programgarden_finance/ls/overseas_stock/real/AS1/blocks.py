@@ -771,11 +771,8 @@ class AS1RealResponse(BaseModel):
     body: Optional[AS1RealResponseBody]
 
     rsp_cd: str = Field(..., title="응답 코드 (Response code)")
-    """응답 코드"""
     rsp_msg: str = Field(..., title="응답 메시지 (Response message)")
-    """응답 메시지"""
     error_msg: Optional[str] = Field(None, title="오류 메시지 (Error message)")
-    """오류 메시지 (있으면)"""
     _raw_data: Optional[Response] = PrivateAttr(default=None)
     """private으로 BaseModel의 직렬화에 포함시키지 않는다"""
 

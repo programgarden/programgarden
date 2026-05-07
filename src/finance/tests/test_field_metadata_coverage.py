@@ -13,9 +13,12 @@ Discovered class name patterns:
     - REST: ``*InBlock``, ``*InBlock1``, ``*OutBlock``, ``*OutBlock1``, ``*OutBlock2`` …
     - WebSocket Real: ``*RealRequestBody``, ``*RealResponseBody``.
 
-Files still pending Phase 2~5 conversion are dynamically skipped via the artifact at
-``.claude/pg-plans/artifacts/20260506-pending-blocks.txt`` — removing an entry
-there auto-unskips that file's classes.
+Phase 5 (2026-05-07) finished the conversion sweep — every blocks.py under
+``programgarden_finance.ls`` now declares ``Field(examples=[...])``. The
+``20260506-pending-blocks.txt`` artifact remains in the repo as an empty
+honeypot: if a future blocks.py is added without ``examples=``, paste its
+absolute path into the artifact to dynamically skip while it is being
+back-filled.
 
 Run only this module:
 
@@ -161,11 +164,18 @@ def test_discovery_found_classes():
 
 
 @pytest.mark.field_metadata
-def test_pending_artifact_present():
-    """The Phase 0 reconnaissance artifact must exist while Phase 2~5 is in flight."""
-    assert PENDING_ARTIFACT.is_file(), (
-        f"Expected Phase 0 artifact at {PENDING_ARTIFACT}. "
-        "If Phase 5 finished, drop this assertion alongside removing the artifact."
+def test_no_pending_blocks_remain():
+    """Phase 5 finished the conversion sweep: the pending artifact must be empty.
+
+    Re-populate ``20260506-pending-blocks.txt`` only if a newly-added blocks.py
+    is being back-filled with ``Field(examples=[...])``.
+    """
+    if not PENDING_ARTIFACT.is_file():
+        return
+    pending = [line for line in PENDING_ARTIFACT.read_text().splitlines() if line.strip()]
+    assert not pending, (
+        f"Pending artifact at {PENDING_ARTIFACT} is non-empty: {pending}. "
+        "Convert these files or clear the artifact."
     )
 
 
