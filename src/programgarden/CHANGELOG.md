@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+## [1.21.7] - 2026-05-08
+### Dependencies
+- programgarden-finance ^1.6.3 — picks up the TR field-metadata sweep
+  (138/138 `blocks.py` modules now declare
+  `Field(title="한글 (English)", description=<English>, examples=[...])`
+  on every InBlock / OutBlock / OutBlockN field) plus the t1109
+  (시간외체결량 / off-hours execution volume) Korea Stock TR added in
+  finance 1.6.2. No programgarden code changes — meta-package version
+  bumped to track the finance release on the same v1.21.x line.
+
 ## [1.21.6] - 2026-05-06
 ### Fixed
 - `WorkflowJob` — dry_run hang on ScheduleNode/realtime workflows. The
