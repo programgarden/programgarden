@@ -1,5 +1,56 @@
 ## [Unreleased]
 
+## [1.6.3] - 2026-05-08
+### Added
+- AI-chatbot-ready field metadata across every TR `blocks.py` in the LS
+  Securities client tree (138/138 TR modules, 100% coverage). Every
+  InBlock / OutBlock / OutBlockN field now declares
+  `Field(title="한글 (English)", description=<English>, examples=[...])`
+  so external workflow-builder chatbots can drive `model_json_schema()`
+  directly without reading source. Coverage by domain:
+  - `overseas_stock/`: 24 TRs (accno / chart / market / order / real)
+  - `overseas_futureoption/`: 35 TRs (accno / chart / market / order /
+    real)
+  - `korea_stock/`: 67 TRs (accno / chart / etc / etf / frgr_itt /
+    investor / market / order / ranking / real / sector)
+  - `oauth/` + `common/real`: oauth `generate_token` /
+    `revoke_token` + JIF (sector-index real subscribe/unsubscribe
+    body) modules.
+- Pending-blocks honeypot test (`test_no_pending_blocks_remain`) guards
+  against `blocks.py` regressions where new TRs ship without the AI
+  metadata field set. Reads
+  `.claude/pg-plans/artifacts/20260506-pending-blocks.txt` (currently
+  empty).
+- No-inferred-formulas description guards across `dan_sign` /
+  `jangubun` / `jstatus` / time-suffix fields (LS-undocumented enum
+  mappings, formulas, scales, and units are explicitly NOT asserted —
+  descriptions carry `"not declared in available source"` /
+  `"consume as returned by LS"` qualifiers per the
+  `feedback_no_inferred_formulas` policy).
+
+### Changed
+- `blocks.py` class docstrings and Field `description=` strings —
+  Korean → English across the TR field-metadata scope (blocks.py
+  only). Translated: 12 class docstrings + 22 Field descriptions on
+  korea_stock/real (IJ_, SC0..SC4), overseas_stock/real (AS0..AS4,
+  GSC, GSH), and overseas_futureoption/real (OVC, OVH, WOC, WOH).
+  Plus 30 vestigial trailing Korean docstring statements
+  (`"""응답 코드"""` etc.) removed from 10 blocks.py modules.
+  Korean parenthetical references in established description templates
+  ("(상한가)", "(매도)", "(뉴욕)") preserved as the AI
+  Korean↔English mapping convention, not a translation gap.
+- Field signature uplift: TR `blocks.py` Field declarations migrated
+  from positional `Field(<default>, description=...)` shape (where
+  applicable) to keyword `Field(<default>, title=..., description=...,
+  examples=[...])` shape. Wire formats, default values, types, and
+  pydantic aliases preserved — public API behavior unchanged.
+
+### Verification
+- `rg '^\s*"""[가-힣]' src/finance/programgarden_finance/ls/ | grep blocks.py | wc -l` → 0
+- `rg '^\s*description="[가-힣]' src/finance/programgarden_finance/ls/ | grep blocks.py | wc -l` → 0
+- `find src/finance/programgarden_finance/ls -name blocks.py | xargs grep -L "examples=" | wc -l` → 0
+- Regression: 1929 passed (Phase 6 baseline maintained, no behavior delta).
+
 ## [1.6.2] - 2026-05-08
 ### Added
 - `t1109` (시간외체결량 / Off-hours execution volume) — new TR under

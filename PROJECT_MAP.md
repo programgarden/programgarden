@@ -1,6 +1,6 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-05-08T16:50:00
+@updated: 2026-05-08T18:00:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
@@ -30,7 +30,7 @@ src/
     examples/dynamic_plugins/ [11 .py] — user-contributed simple_* plugin examples
     examples/dynamic_nodes/ [1 .py] — Dynamic_* node definition example
     examples/programmer_example/ [3 .py] — live integration scripts (AI agent, quant)
-  finance/ [360 .py] — programgarden-finance 1.6.1
+  finance/ [360 .py] — programgarden-finance 1.6.3 (AI metadata coverage 100% on 138 TR blocks.py)
     programgarden_finance/
       ls/ — LS Securities API wrapper
         overseas_stock/ — REST 17 TR + Real 7 TR + extension (tracker)
@@ -106,7 +106,7 @@ litellm>=1.40.0 | yfinance^0.2.0 | psutil^6.0.0
 python-dotenv^1.1.0 | pytickersymbols>=1.17.5 | lxml^6.0.2
 dev: fastapi^0.128.0 | uvicorn^0.40.0 | pytest^8.0.0
 
-### programgarden-finance 1.6.1
+### programgarden-finance 1.6.3
 pydantic>=2.11.7 | requests^2.32.4 | aiohttp^3.10.0 | websockets^15.0.1
 redis^6.4.0 | python-dotenv^1.1.1
 
@@ -118,7 +118,8 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Overseas Stock Nodes: 22 nodes (broker, account, market, order, realtime, symbol)
 - [x] Overseas Futures Nodes: 22 nodes (same structure as stock)
 - [x] Korea Stock Nodes: 13 nodes (broker, account, market, order, realtime, symbol)
-- [x] Korea Stock Finance API: 63 REST + 13 Real TR with KrStockAccountTracker
+- [x] Korea Stock Finance API: 64 REST + 13 Real TR with KrStockAccountTracker
+- [x] Finance TR AI Metadata: 138/138 blocks.py with Field(title/description/examples) — chatbot-ready model_json_schema()
 - [x] AI Agent: LLMModelNode + AIAgentNode with tool edges (all connected tools forwarded to LLM)
 - [x] Strategy Plugins: 77 plugins (TECHNICAL 59 + POSITION 18)
 - [x] Community Nodes: TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode
