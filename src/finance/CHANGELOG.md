@@ -1,5 +1,31 @@
 ## [Unreleased]
 
+## [1.6.2] - 2026-05-08
+### Added
+- `t1109` (시간외체결량 / Off-hours execution volume) — new TR under
+  `programgarden_finance.ls.korea_stock.market.t1109`. Returns
+  off-hours per-trade rows (single-price 시간외 단일가 + after-hours
+  close 시간외 종가) for a Korean stock symbol with trade time, price,
+  previous-day direction code, percent change, trade strength, and
+  cumulative volume. Pagination uses the `dan_chetime` + `idx` cursor
+  pair echoed back in `T1109OutBlock`. Rate limit: 1/sec.
+- `Market.t1109()` + `Market.시간외체결량` Korean alias on the
+  `KoreaStock.시세()` domain. Top-level `programgarden_finance.t1109`
+  re-export.
+- AI metadata field set (Korean↔English title, English description,
+  examples) on every t1109 InBlock / OutBlock / OutBlock1 field per
+  the `feedback_tr_field_metadata` convention. `dan_sign` description
+  follows the no-inferred-formulas policy (no enum mapping asserted).
+- `dan_chetime` description documents the observed `HHMMSS` + 4-digit
+  suffix structure with an LS-spec disclaimer (suffix unit not
+  formally declared — sub-second component or per-second sequence).
+- Regression guards in `tests/test_korea_stock_t1109.py` (33 tests):
+  Field examples typecheck, model_fields coverage, LS official example
+  response round-trip, anti-inference guards for `dan_sign` /
+  `dan_price` / `dan_change` / `dan_chetime`.
+- Example script `example/korea_stock/run_t1109.py` (single + occurs_req
+  smoke test).
+
 ## [1.6.1] - 2026-05-04
 ### Dependencies
 - programgarden-core ^1.12.2 (batch sync — no core code changes,

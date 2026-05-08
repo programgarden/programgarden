@@ -18,6 +18,9 @@ from .t1102.blocks import T1102InBlock, T1102Request, T1102RequestHeader
 from . import t1301
 from .t1301 import TrT1301
 from .t1301.blocks import T1301InBlock, T1301Request, T1301RequestHeader
+from . import t1109
+from .t1109 import TrT1109
+from .t1109.blocks import T1109InBlock, T1109Request, T1109RequestHeader
 from . import t1471
 from .t1471 import TrT1471
 from .t1471.blocks import T1471InBlock, T1471Request, T1471RequestHeader
@@ -247,6 +250,46 @@ class Market:
 
     주식시간대별체결조회 = t1301
     주식시간대별체결조회.__doc__ = "주식 시간대별 체결 내역(체결시간, 현재가, 체결량, 매도/매수 체결수량)을 조회합니다."
+
+    @require_korean_alias
+    def t1109(
+        self,
+        body: T1109InBlock,
+        header: Optional[T1109RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1109:
+        """
+        주식 시간외 체결 내역(시간외 단일가/시간외 종가)을 조회합니다.
+
+        종목코드 조건으로 시간외 체결시간, 현재가, 전일대비, 등락율, 체결량,
+        체결강도, 누적거래량을 반환합니다.
+        ``dan_chetime`` + ``idx`` 페어 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1109InBlock): shcode(종목코드), dan_chetime(체결cts), idx(연속조회 인덱스) 입력
+            header (Optional[T1109RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1109: 시간외체결량 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1109Request(
+            body={
+                "t1109InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1109(request_data)
+
+    시간외체결량 = t1109
+    시간외체결량.__doc__ = "주식 시간외 체결 내역(시간외 단일가/시간외 종가)을 조회합니다."
 
     @require_korean_alias
     def t1471(
@@ -551,6 +594,7 @@ __all__ = [
     t1101,
     t1102,
     t1301,
+    t1109,
     t1471,
     t1475,
     t1404,

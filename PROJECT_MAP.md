@@ -1,6 +1,6 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-05-04T15:00:00
+@updated: 2026-05-08T16:50:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
@@ -35,7 +35,7 @@ src/
       ls/ — LS Securities API wrapper
         overseas_stock/ — REST 17 TR + Real 7 TR + extension (tracker)
         overseas_futureoption/ — REST 28 TR + Real 7 TR + extension (tracker)
-        korea_stock/ — REST 63 TR + Real 13 TR + extension (tracker)
+        korea_stock/ — REST 64 TR + Real 13 TR + extension (tracker)
         common/ — Real 1 TR (JIF market status, broker-agnostic)
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect
