@@ -45,10 +45,21 @@
 ```
 src/
 ├── programgarden/          # 워크플로우 실행 엔진 (메인 패키지)
+│   └── examples/           # 워크플로우 예제 (workflows JSON, dynamic_plugins, programmer_example)
 ├── core/                   # 노드 타입, 베이스 클래스, 레지스트리, i18n
 ├── finance/                # LS증권 OpenAPI 래퍼 (해외주식, 해외선물, 국내주식)
+│   └── example/            # LS증권 데이터 API 호출 예제 (TR 단위)
 └── community/              # 전략 플러그인 (RSI, MACD 등)
 ```
+
+## 예제
+
+- **워크플로우(자동매매)**: [`src/programgarden/examples/`](src/programgarden/examples/)
+  - `workflows/` — 67개 실행 가능한 워크플로우 JSON + 동반 `.md` 문서
+  - `dynamic_plugins/`, `dynamic_nodes/` — 런타임 동적 주입 예시
+  - `programmer_example/` — AI Agent · quant 통합 스크립트
+- **LS증권 데이터 API**: [`src/finance/example/`](src/finance/example/)
+  - 해외주식 · 해외선물 · 국내주식 TR 호출 샘플
 
 ## 설치
 

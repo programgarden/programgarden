@@ -101,3 +101,6 @@ flowchart LR
 - [빠른 시작 가이드](non_dev_quick_guide.md) — 5분 만에 첫 전략 만들기
 - [워크플로우 구조 이해](structure.md) — 노드, 엣지, 인증의 개념
 - [전체 노드 레퍼런스](node_reference.md) — 73개 노드 상세 설명
+- **예제 코드 둘러보기**
+  - 워크플로우(자동매매): [`src/programgarden/examples/`](https://github.com/programgarden/programgarden/tree/main/src/programgarden/examples)
+  - LS증권 데이터 API: [`src/finance/example/`](https://github.com/programgarden/programgarden/tree/main/src/finance/example)
