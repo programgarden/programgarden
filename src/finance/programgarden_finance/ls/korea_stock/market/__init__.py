@@ -18,6 +18,9 @@ from .t1102.blocks import T1102InBlock, T1102Request, T1102RequestHeader
 from . import t1104
 from .t1104 import TrT1104
 from .t1104.blocks import T1104InBlock, T1104InBlock1, T1104Request, T1104RequestHeader
+from . import t1105
+from .t1105 import TrT1105
+from .t1105.blocks import T1105InBlock, T1105Request, T1105RequestHeader
 from . import t1301
 from .t1301 import TrT1301
 from .t1301.blocks import T1301InBlock, T1301Request, T1301RequestHeader
@@ -278,6 +281,47 @@ class Market:
 
     주식현재가시세메모 = t1104
     주식현재가시세메모.__doc__ = "주식 현재가 시세메모(시세/최고저가/Pivot/이동평균선)를 항목별로 조회합니다."
+
+    @require_korean_alias
+    def t1105(
+        self,
+        body: T1105InBlock,
+        header: Optional[T1105RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1105:
+        """
+        주식 피봇/디마크 레벨을 조회합니다.
+
+        종목코드, 거래소구분 조건으로
+        피봇(pbot), 1차/2차 저항(offer1/2), 1차/2차 지지(supp1/2),
+        기준가격(stdprc), Demark 저항(offerd), Demark 지지(suppd)를 반환합니다.
+        연속조회 cursor 가 없는 단발성 TR 입니다.
+
+        Args:
+            body (T1105InBlock): shcode(종목코드 6자리), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1105RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1105: 피봇/디마크 조회 인스턴스 (.req() 단건 호출)
+        """
+
+        request_data = T1105Request(
+            body={
+                "t1105InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1105(request_data)
+
+    주식피봇디마크조회 = t1105
+    주식피봇디마크조회.__doc__ = "주식 피봇/디마크 레벨(피봇, 1/2차 저항/지지, 기준가격, Demark 저항/지지)을 조회합니다."
 
     @require_korean_alias
     def t1301(
@@ -920,6 +964,7 @@ __all__ = [
     t1101,
     t1102,
     t1104,
+    t1105,
     t1301,
     t1109,
     t1302,
