@@ -24,6 +24,9 @@ from .t1109.blocks import T1109InBlock, T1109Request, T1109RequestHeader
 from . import t1302
 from .t1302 import TrT1302
 from .t1302.blocks import T1302InBlock, T1302Request, T1302RequestHeader
+from . import t1305
+from .t1305 import TrT1305
+from .t1305.blocks import T1305InBlock, T1305Request, T1305RequestHeader
 from . import t1486
 from .t1486 import TrT1486
 from .t1486.blocks import T1486InBlock, T1486Request, T1486RequestHeader
@@ -338,6 +341,49 @@ class Market:
 
     주식분별주가조회 = t1302
     주식분별주가조회.__doc__ = "주식 분별 주가(30초/1/3/5/10/30/60분 봉)를 조회합니다."
+
+    @require_korean_alias
+    def t1305(
+        self,
+        body: T1305InBlock,
+        header: Optional[T1305RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1305:
+        """
+        주식 기간별 주가(일/주/월 봉)를 조회합니다.
+
+        종목코드, 봉 구분(일/주/월), 거래소 조건으로
+        시가/고가/저가/종가, 거래량, 외인/기관/개인 순매수, 체결강도,
+        소진율, 회전율, 시가/고가/저가 대비 등락률을 반환합니다.
+        ``date`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1305InBlock): shcode(종목코드), dwmcode(1=일/2=주/3=월),
+                date(연속조회키), idx(미사용, 0), cnt(건수 1 이상),
+                exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1305RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1305: 기간별주가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1305Request(
+            body={
+                "t1305InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1305(request_data)
+
+    기간별주가 = t1305
+    기간별주가.__doc__ = "주식 기간별 주가(일/주/월 봉)를 조회합니다."
 
     @require_korean_alias
     def t1486(
@@ -685,6 +731,7 @@ __all__ = [
     t1301,
     t1109,
     t1302,
+    t1305,
     t1486,
     t1471,
     t1475,
