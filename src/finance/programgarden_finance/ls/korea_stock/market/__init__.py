@@ -24,6 +24,9 @@ from .t1109.blocks import T1109InBlock, T1109Request, T1109RequestHeader
 from . import t1302
 from .t1302 import TrT1302
 from .t1302.blocks import T1302InBlock, T1302Request, T1302RequestHeader
+from . import t1486
+from .t1486 import TrT1486
+from .t1486.blocks import T1486InBlock, T1486Request, T1486RequestHeader
 from . import t1471
 from .t1471 import TrT1471
 from .t1471.blocks import T1471InBlock, T1471Request, T1471RequestHeader
@@ -337,6 +340,47 @@ class Market:
     주식분별주가조회.__doc__ = "주식 분별 주가(30초/1/3/5/10/30/60분 봉)를 조회합니다."
 
     @require_korean_alias
+    def t1486(
+        self,
+        body: T1486InBlock,
+        header: Optional[T1486RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1486:
+        """
+        시간별 예상체결가(예상체결가, 예상체결량, Top-of-book 호가/잔량)를 조회합니다.
+
+        종목코드, 거래소 조건으로 시간 버킷별 예상체결가, sign(전일대비구분),
+        전일대비/등락률, 예상체결량, 매도/매수 1단계 호가/잔량을 반환합니다.
+        ``cts_time`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1486InBlock): shcode(종목코드), cts_time(연속조회키),
+                cnt(조회건수), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1486RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1486: 시간별예상체결가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1486Request(
+            body={
+                "t1486InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1486(request_data)
+
+    시간별예상체결가 = t1486
+    시간별예상체결가.__doc__ = "시간별 예상체결가(예상체결가, 예상체결량, Top-of-book 호가/잔량)를 조회합니다."
+
+    @require_korean_alias
     def t1471(
         self,
         body: T1471InBlock,
@@ -641,6 +685,7 @@ __all__ = [
     t1301,
     t1109,
     t1302,
+    t1486,
     t1471,
     t1475,
     t1404,
