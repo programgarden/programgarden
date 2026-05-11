@@ -33,6 +33,9 @@ from .t1302.blocks import T1302InBlock, T1302Request, T1302RequestHeader
 from . import t1305
 from .t1305 import TrT1305
 from .t1305.blocks import T1305InBlock, T1305Request, T1305RequestHeader
+from . import t1310
+from .t1310 import TrT1310
+from .t1310.blocks import T1310InBlock, T1310Request, T1310RequestHeader
 from . import t1486
 from .t1486 import TrT1486
 from .t1486.blocks import T1486InBlock, T1486Request, T1486RequestHeader
@@ -487,6 +490,49 @@ class Market:
 
     기간별주가 = t1305
     기간별주가.__doc__ = "주식 기간별 주가(일/주/월 봉)를 조회합니다."
+
+    @require_korean_alias
+    def t1310(
+        self,
+        body: T1310InBlock,
+        header: Optional[T1310RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1310:
+        """
+        주식 당일/전일 분틱(분 또는 틱 단위) 시세를 조회합니다.
+
+        종목코드, 당일전일구분(0/1), 분틱구분(0/1), 거래소 조건으로
+        체결시간, 현재가, 전일대비, 등락률, 체결강도, 거래량,
+        매수/매도 누적 체결수량+건수, 순체결량+건수를 반환합니다.
+        ``cts_time`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1310InBlock): daygb(0=당일/1=전일), timegb(0=분/1=틱),
+                shcode(종목코드 6자리), endtime(HHMM 종료시간),
+                cts_time(연속조회키), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1310RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1310: 당일전일분틱 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1310Request(
+            body={
+                "t1310InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1310(request_data)
+
+    주식당일전일분틱조회 = t1310
+    주식당일전일분틱조회.__doc__ = "주식 당일/전일 분틱(분 또는 틱 단위) 시세를 조회합니다."
 
     @require_korean_alias
     def t1486(
@@ -969,6 +1015,7 @@ __all__ = [
     t1109,
     t1302,
     t1305,
+    t1310,
     t1486,
     t1488,
     t1471,
