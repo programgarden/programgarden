@@ -54,6 +54,9 @@ from .t1442.blocks import T1442InBlock, T1442Request, T1442RequestHeader
 from . import t1449
 from .t1449 import TrT1449
 from .t1449.blocks import T1449InBlock, T1449Request, T1449RequestHeader
+from . import t1427
+from .t1427 import TrT1427
+from .t1427.blocks import T1427InBlock, T1427Request, T1427RequestHeader
 
 from . import t8407
 from .t8407 import TrT8407
@@ -758,6 +761,52 @@ class Market:
     가격대별매매비중조회.__doc__ = "가격대별 매매비중(현재가 요약 + 가격대별 체결가/비중/매수비율)을 조회합니다."
 
     @require_korean_alias
+    def t1427(
+        self,
+        body: T1427InBlock,
+        header: Optional[T1427RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1427:
+        """
+        상한가/하한가에 근접한(직전) 종목을 조회합니다.
+
+        시장구분(전체/KOSPI/KOSDAQ), 상하한가구분(상한직전/하한직전),
+        등락율 임계치, 대상제외 비트마스크(관리종목/시장경보/거래정지 등),
+        현재가/거래량 필터로 현재가, 등락률, 거래량, 거래증가율, 상/하한가,
+        대비율, 시가/고가/저가, 연속(lmtdaycnt), 거래대금, 시가총액을 반환합니다.
+        ``idx`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1427InBlock): qrygb(조회구분 1/그외), gubun(거래소구분 0/1/2),
+                signgubun(상하한가구분 1/2), diff(등락율 임계치),
+                jc_num(대상제외 비트마스크), sprice/eprice(현재가 범위),
+                volume(누적거래량 임계치), idx(연속조회키),
+                jshex(전일상하한제외 c/C) 입력
+            header (Optional[T1427RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1427: 상하한가직전 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1427Request(
+            body={
+                "t1427InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1427(request_data)
+
+    상하한가직전 = t1427
+    상하한가직전.__doc__ = "상한가/하한가에 근접한(직전) 종목(현재가, 등락률, 거래량, 거래증가율, 상/하한가, 연속일수)을 조회합니다."
+
+    @require_korean_alias
     def t8407(
         self,
         body: T8407InBlock,
@@ -833,6 +882,7 @@ __all__ = [
     t1422,
     t1442,
     t1449,
+    t1427,
     t8407,
     t8454,
 ]
