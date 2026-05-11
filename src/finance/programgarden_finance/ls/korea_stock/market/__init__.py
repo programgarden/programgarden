@@ -51,6 +51,9 @@ from .t1422.blocks import T1422InBlock, T1422Request, T1422RequestHeader
 from . import t1442
 from .t1442 import TrT1442
 from .t1442.blocks import T1442InBlock, T1442Request, T1442RequestHeader
+from . import t1449
+from .t1449 import TrT1449
+from .t1449.blocks import T1449InBlock, T1449Request, T1449RequestHeader
 
 from . import t8407
 from .t8407 import TrT8407
@@ -713,6 +716,48 @@ class Market:
     신고신저가.__doc__ = "신고가/신저가 종목(52주, 연중, 월중 등 기간별)을 조회합니다."
 
     @require_korean_alias
+    def t1449(
+        self,
+        body: T1449InBlock,
+        header: Optional[T1449RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1449:
+        """
+        가격대별 매매비중을 조회합니다.
+
+        종목코드, 일자구분(당일/전일/당일+전일) 조건으로
+        현재가 요약(현재가, 전일대비, 등락률, 거래량, 매수/매도 체결량) 및
+        가격대별 행(체결가, sign, 전일대비, 등락률(tickdiff), 체결수량,
+        비중(diff), 매도/매수 체결량, 매수비율(msdiff))을 반환합니다.
+        연속조회 cursor가 없는 단발성 TR입니다.
+
+        Args:
+            body (T1449InBlock): shcode(종목코드 6자리), dategb(1=당일/2=전일/3=당일+전일) 입력
+            header (Optional[T1449RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1449: 가격대별매매비중 조회 인스턴스 (.req() 단건 호출)
+        """
+
+        request_data = T1449Request(
+            body={
+                "t1449InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1449(request_data)
+
+    가격대별매매비중조회 = t1449
+    가격대별매매비중조회.__doc__ = "가격대별 매매비중(현재가 요약 + 가격대별 체결가/비중/매수비율)을 조회합니다."
+
+    @require_korean_alias
     def t8407(
         self,
         body: T8407InBlock,
@@ -787,6 +832,7 @@ __all__ = [
     t1405,
     t1422,
     t1442,
+    t1449,
     t8407,
     t8454,
 ]
