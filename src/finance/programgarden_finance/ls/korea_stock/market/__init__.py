@@ -1,5 +1,5 @@
 
-from typing import Optional
+from typing import List, Optional
 from programgarden_finance.ls.tr_base import set_tr_header_options
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
@@ -15,6 +15,9 @@ from .t1101.blocks import T1101InBlock, T1101Request, T1101RequestHeader
 from . import t1102
 from .t1102 import TrT1102
 from .t1102.blocks import T1102InBlock, T1102Request, T1102RequestHeader
+from . import t1104
+from .t1104 import TrT1104
+from .t1104.blocks import T1104InBlock, T1104InBlock1, T1104Request, T1104RequestHeader
 from . import t1301
 from .t1301 import TrT1301
 from .t1301.blocks import T1301InBlock, T1301Request, T1301RequestHeader
@@ -228,6 +231,53 @@ class Market:
 
     주식현재가시세 = t1102
     주식현재가시세.__doc__ = "[시세/종합정보] 현재가, 등락률, PER/PBR, 시가총액, 증권사/외국계 매매동향, 재무실적을 조회합니다."
+
+    @require_korean_alias
+    def t1104(
+        self,
+        t1104InBlock_body: T1104InBlock,
+        t1104InBlock1_body: Optional[List[T1104InBlock1]] = None,
+        header: Optional[T1104RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1104:
+        """
+        LS openAPI의 t1104 주식현재가시세메모를 조회합니다.
+
+        종목코드 + 거래소구분 + 조회 디렉티브 리스트(t1104InBlock1)로
+        시세/최고저가/Pivot/이동평균선 메모를 항목별로 조회합니다.
+
+        Args:
+            t1104InBlock_body (T1104InBlock): code(종목코드 6자리),
+                nrec(t1104InBlock1 개수), exchgubun(거래소 K/N/U) 입력
+            t1104InBlock1_body (Optional[List[T1104InBlock1]]): 조회 디렉티브
+                리스트. 각 항목은 indx(occurs index),
+                gubn(1:시세/2:최고저가/3:Pivot/4:이동평균선),
+                dat1(1:시가/2:고가/3:저가/4:가중평균가),
+                dat2(1:당일/2:전일) 입력
+            header (Optional[T1104RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1104: 시세메모 조회 인스턴스 (.req() 단건)
+        """
+
+        request_data = T1104Request(
+            body={
+                "t1104InBlock": t1104InBlock_body,
+                "t1104InBlock1": t1104InBlock1_body,
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1104(request_data)
+
+    주식현재가시세메모 = t1104
+    주식현재가시세메모.__doc__ = "주식 현재가 시세메모(시세/최고저가/Pivot/이동평균선)를 항목별로 조회합니다."
 
     @require_korean_alias
     def t1301(
@@ -869,6 +919,7 @@ __all__ = [
     t8450,
     t1101,
     t1102,
+    t1104,
     t1301,
     t1109,
     t1302,
