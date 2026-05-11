@@ -21,6 +21,9 @@ from .t1301.blocks import T1301InBlock, T1301Request, T1301RequestHeader
 from . import t1109
 from .t1109 import TrT1109
 from .t1109.blocks import T1109InBlock, T1109Request, T1109RequestHeader
+from . import t1302
+from .t1302 import TrT1302
+from .t1302.blocks import T1302InBlock, T1302Request, T1302RequestHeader
 from . import t1471
 from .t1471 import TrT1471
 from .t1471.blocks import T1471InBlock, T1471Request, T1471RequestHeader
@@ -290,6 +293,48 @@ class Market:
 
     시간외체결량 = t1109
     시간외체결량.__doc__ = "주식 시간외 체결 내역(시간외 단일가/시간외 종가)을 조회합니다."
+
+    @require_korean_alias
+    def t1302(
+        self,
+        body: T1302InBlock,
+        header: Optional[T1302RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1302:
+        """
+        주식 분별 주가(30초/1/3/5/10/30/60분 봉)를 조회합니다.
+
+        종목코드, 봉 구분, 거래소 조건으로
+        체결시간, 시가/고가/저가/종가, 거래량, 매수/매도 체결수량 + 건수,
+        시간별 매수/매도 체결량, 잔량을 반환합니다.
+        ``cts_time`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1302InBlock): shcode(종목코드), gubun(봉 구분 0~6),
+                time(연속조회키), cnt(건수 1~900), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1302RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1302: 분별주가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1302Request(
+            body={
+                "t1302InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1302(request_data)
+
+    주식분별주가조회 = t1302
+    주식분별주가조회.__doc__ = "주식 분별 주가(30초/1/3/5/10/30/60분 봉)를 조회합니다."
 
     @require_korean_alias
     def t1471(
@@ -595,6 +640,7 @@ __all__ = [
     t1102,
     t1301,
     t1109,
+    t1302,
     t1471,
     t1475,
     t1404,
