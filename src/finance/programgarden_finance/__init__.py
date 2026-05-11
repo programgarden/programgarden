@@ -43,6 +43,7 @@ from .ls.korea_stock.market import t1109
 from .ls.korea_stock.market import t1302
 from .ls.korea_stock.market import t1305
 from .ls.korea_stock.market import t1486
+from .ls.korea_stock.market import t1488
 from .ls.korea_stock.market import t1471
 from .ls.korea_stock.market import t1475
 from .ls.korea_stock.etc import t1403
@@ -157,6 +158,7 @@ __all__ = [
     t1302,
     t1305,
     t1486,
+    t1488,
     t1471,
     t1475,
     t1403,
