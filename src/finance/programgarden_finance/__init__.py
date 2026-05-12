@@ -62,6 +62,7 @@ from .ls.korea_stock.ranking import t1441
 from .ls.korea_stock.market import t1442
 from .ls.korea_stock.market import t1449
 from .ls.korea_stock.market import t1427
+from .ls.korea_stock.market import t1410
 from .ls.korea_stock.ranking import t1466
 from .ls.korea_stock.ranking import t1481
 from .ls.korea_stock.accno import CSPAQ22200
@@ -183,6 +184,7 @@ __all__ = [
     t1442,
     t1449,
     t1427,
+    t1410,
     t1466,
     t1481,
     CSPAQ22200,
