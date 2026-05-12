@@ -69,6 +69,9 @@ from .t1449.blocks import T1449InBlock, T1449Request, T1449RequestHeader
 from . import t1427
 from .t1427 import TrT1427
 from .t1427.blocks import T1427InBlock, T1427Request, T1427RequestHeader
+from . import t1410
+from .t1410 import TrT1410
+from .t1410.blocks import T1410InBlock, T1410Request, T1410RequestHeader
 
 from . import t8407
 from .t8407 import TrT8407
@@ -992,6 +995,46 @@ class Market:
     상하한가직전.__doc__ = "상한가/하한가에 근접한(직전) 종목(현재가, 등락률, 거래량, 거래증가율, 상/하한가, 연속일수)을 조회합니다."
 
     @require_korean_alias
+    def t1410(
+        self,
+        body: T1410InBlock,
+        header: Optional[T1410RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1410:
+        """
+        시장구분별(전체/코스피/코스닥) 초저유동성 종목을 조회합니다.
+
+        시장구분 조건으로 한글명, 현재가, 전일대비/등락률, 누적거래량,
+        종목코드를 반환합니다. ``cts_shcode`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1410InBlock): gubun(0=전체/1=코스피/2=코스닥),
+                cts_shcode(연속조회키) 입력
+            header (Optional[T1410RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1410: 초저유동성 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1410Request(
+            body={
+                "t1410InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1410(request_data)
+
+    초저유동성조회 = t1410
+    초저유동성조회.__doc__ = "시장구분별(전체/코스피/코스닥) 초저유동성 종목(한글명, 현재가, 등락률, 누적거래량)을 조회합니다."
+
+    @require_korean_alias
     def t8407(
         self,
         body: T8407InBlock,
@@ -1072,6 +1115,7 @@ __all__ = [
     t1442,
     t1449,
     t1427,
+    t1410,
     t8407,
     t8454,
 ]
