@@ -1,6 +1,6 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-05-08T18:00:00
+@updated: 2026-05-13T01:00:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
@@ -30,12 +30,12 @@ src/
     examples/dynamic_plugins/ [11 .py] — user-contributed simple_* plugin examples
     examples/dynamic_nodes/ [1 .py] — Dynamic_* node definition example
     examples/programmer_example/ [3 .py] — live integration scripts (AI agent, quant)
-  finance/ [360 .py] — programgarden-finance 1.6.3 (AI metadata coverage 100% on 138 TR blocks.py)
+  finance/ [383 .py] — programgarden-finance 1.6.5 (AI metadata coverage 100% on 150 TR blocks.py)
     programgarden_finance/
       ls/ — LS Securities API wrapper
         overseas_stock/ — REST 17 TR + Real 7 TR + extension (tracker)
         overseas_futureoption/ — REST 28 TR + Real 7 TR + extension (tracker)
-        korea_stock/ — REST 66 TR + Real 13 TR + extension (tracker)
+        korea_stock/ — REST 75 TR + Real 13 TR + extension (tracker)
         common/ — Real 1 TR (JIF market status, broker-agnostic)
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect
@@ -118,8 +118,9 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Overseas Stock Nodes: 22 nodes (broker, account, market, order, realtime, symbol)
 - [x] Overseas Futures Nodes: 22 nodes (same structure as stock)
 - [x] Korea Stock Nodes: 13 nodes (broker, account, market, order, realtime, symbol)
-- [x] Korea Stock Finance API: 64 REST + 13 Real TR with KrStockAccountTracker
-- [x] Finance TR AI Metadata: 138/138 blocks.py with Field(title/description/examples) — chatbot-ready model_json_schema()
+- [x] Korea Stock Finance API: 75 REST + 13 Real TR with KrStockAccountTracker
+- [x] Finance TR AI Metadata: 150/150 blocks.py with Field(title/description/examples) — chatbot-ready model_json_schema()
+- [x] Korea Stock Market TR 11: t1302/t1486/t1305/t1488/t1449/t1427/t1104/t1105/t1310/t1308/t1410 series — partial-evidence sign enum policy on t1410 (LS undocumented, sibling convention + live row evidence)
 - [x] AI Agent: LLMModelNode + AIAgentNode with tool edges (all connected tools forwarded to LLM)
 - [x] Strategy Plugins: 77 plugins (TECHNICAL 59 + POSITION 18)
 - [x] Community Nodes: TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode

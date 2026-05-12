@@ -8,7 +8,7 @@
 
 > **⚠️ 모의투자 안내**: 해외선물은 `홍콩거래소 (HKEX)`의 모의투자만 지원되며, `CME`, `EUREX` 등 다른 거래소와 해외주식은 모의투자가 지원되지 않습니다 (실전투자만 가능). 모의투자 시 실제 체결 가격과 차이가 발생하니 유의하시기 바랍니다. [빠른 실행 가이드 보기](https://programgarden.gitbook.io/docs/invest/non_dev_quick_guide)
 
-> **📢 현황**: 국내주식 Finance API(69개 TR) + 워크플로우 노드 13개가 추가되었습니다. 코인은 제작중입니다.
+> **📢 현황**: 국내주식 Finance API(88개 TR) + 워크플로우 노드 13개가 추가되었습니다. 코인은 제작중입니다.
 
 ## 소개
 
@@ -55,7 +55,7 @@ src/
 ## 예제
 
 - **워크플로우(자동매매)**: [`src/programgarden/examples/`](src/programgarden/examples/)
-  - `workflows/` — 67개 실행 가능한 워크플로우 JSON + 동반 `.md` 문서
+  - `workflows/` — 77개 실행 가능한 워크플로우 JSON + 동반 `.md` 문서
   - `dynamic_plugins/`, `dynamic_nodes/` — 런타임 동적 주입 예시
   - `programmer_example/` — AI Agent · quant 통합 스크립트
 - **LS증권 데이터 API**: [`src/finance/example/`](src/finance/example/)

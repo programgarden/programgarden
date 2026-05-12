@@ -1,3 +1,14 @@
+## [1.13.3] - 2026-05-12
+### Internal
+- Batch release sync with finance 1.6.4 (11 Korea Stock Market TRs:
+  t1302 / t1486 / t1305 / t1488 / t1449 / t1427 / t1104 / t1105 /
+  t1310 / t1308 / t1410 added under `ls.korea_stock().market()`).
+  No community code changes — version bump for monorepo coherence so
+  programgarden 1.21.8 can pin a single core version across siblings.
+
+### Dependencies
+- programgarden-core ^1.12.2 (batch release sync — no core code changes).
+
 ## [1.13.2] - 2026-05-04
 ### Internal
 - Batch release sync with finance 1.6.1 (CSPAQ12200/22200/CSPBQ00200

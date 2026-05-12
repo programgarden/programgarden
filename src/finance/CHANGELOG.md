@@ -1,5 +1,113 @@
 ## [Unreleased]
 
+## [1.6.5] - 2026-05-13
+### Fixed
+- **11 Korea Stock TR `rate_limit_key` 누락 정정** — `t1665` / `t8452` /
+  `t8453` / `t8407` / `t8454` / `t1901` / `t1903` / `t1904` / `t1638` /
+  `t1927` / `t1702` 의 `SetupOptions(rate_limit_count=1, rate_limit_seconds=1)`
+  설정에 `rate_limit_key` 가 빠져 있어 동일 TR 인스턴스를 여러 개 생성하면
+  각자 독립 카운터로 동작 → LS 서버단 `IGW00201` (호출 거래건수 초과)
+  발생. `t8451` 패턴 (`on_rate_limit="wait"` + `rate_limit_key="<tr_id>"`)
+  으로 통일하여 라이브러리 단일 프로세스 내 자동 직렬화 보장.
+- **17 Korea Stock TR `exchgubun` Literal 필드 거짓 docstring 정정** —
+  `t8451` / `t1102` / `t1104` / `t1105` / `t1302` / `t1305` / `t1308` /
+  `t1310` / `t1486` / `t8450` / `t1631` / `t1632` / `t1633` / `t1636` /
+  `t1637` / `t1640` / `t1662` 의 `Literal["K","N","U"]` 필드 description
+  에 "Other values are treated as KRX per LS source." 같은 거짓 문구
+  산재. Pydantic Literal 은 다른 값을 거부하므로 LS 서버 측 "그외 KRX
+  처리" 로직에 도달 불가 → 외부 사용자가 `exchgubun=""` 빈 문자열
+  전달 시 `ValidationError` 반복 크래시 원인. "Pydantic validates
+  strictly — only 'K', 'N', 'U' are accepted; empty string and other
+  values are rejected." 로 정정.
+- **CSPAT00601 응답 코드 가시성 향상** — 주문 TR 응답 코드 `00040`
+  (매수 접수) / `00039` (매도 접수) 가 docstring 에만 있고 README /
+  finance_guide 미게재. 외부 사용자가 `rsp_cd != "00000"` 로 실패
+  판정 → 정상 주문 거부로 오분류 → 내부 포지션과 실계좌 불일치 →
+  `01478` 매도가능수량 부족 반복 장애 원인. README "응답 코드 참조"
+  새 섹션 + finance_guide 상세 (라이브러리 자동 throttle 메커니즘 +
+  Redis 공유 패턴 포함) 신규 게재.
+
+### Added
+- `example/korea_stock/run_CSPAT00601_with_SC1.py` — CSPAT00601
+  `block2.OrdNo` (int) ↔ SC1 `body.ordno` (str) 캐스팅 매칭 + 부분체결
+  누적 + 거부 이벤트 처리 + asyncio.Future timeout 참고 예제.
+- `docs/alphaworks_ls_response_2026-05-12.md` — AlphaWorks 운영
+  보고에 대한 라이브러리 측 답신 (§1~§8 7 개 최종 질문 + 섹션별
+  verification 요청 답변).
+
+### Internal
+- 회귀 안전망 5 개 신규: `tests/test_setup_options_coverage.py` (3) —
+  모든 blocks.py 의 `SetupOptions(...)` 가 `rate_limit_key` +
+  `on_rate_limit="wait"` 설정 여부 AST 기반 자동 검증.
+  `tests/test_literal_field_docstring_truth.py` (2) — Literal 타입
+  필드 description 에 거짓 클레임 자동 검출. `CSPAT00601.MbrNo` 등
+  `str` 타입 truthful 클레임은 negative-control 로 통과.
+- `tests/test_cspat00601_sc1_mock.py` 신규 (10) — 파서 (4) + OrdNo
+  캐스팅 계약 (1) + asyncio Future 매칭 라이프사이클 (5). 실라이브
+  검증은 장중 별도 수행 필요.
+- 회귀: finance 전체 2563 / 2563 PASS.
+
+### Dependencies
+- programgarden-core ^1.12.2 (unchanged).
+
+## [1.6.4] - 2026-05-12
+### Added
+- **11 Korea Stock Market TR** under `ls.korea_stock().market()` —
+  Korea Stock REST TR count 64 → 75, total finance TR blocks.py
+  139 → 150 (AI-chatbot field metadata coverage remains 100%):
+  - `t1302` 주식분별주가조회 / Stock minute-bar price query —
+    intraday minute-aggregated OHLCV rows for a single Korean symbol
+    over the trading day, with `cts_time` cursor pagination.
+  - `t1305` 기간별주가 / Stock period-bar price query —
+    daily/weekly/monthly/yearly bar OHLCV rows over a date range,
+    bar interval selectable via `gubun` enum (D/W/M/Y).
+  - `t1308` 주식시간대별체결조회챠트 / Stock time-bucket execution chart —
+    time-bucketed (1/5/10/30/60-minute) execution aggregates with
+    LS-declared `sign` enum (1=상한 / 2=상승 / 3=보합 / 4=하한 / 5=하락).
+  - `t1310` 주식당일전일분틱조회 / Stock today-yesterday minute-tick —
+    intraday tick-level prints for a symbol, today or yesterday
+    selectable via `gubun` enum.
+  - `t1410` 초저유동성조회 / Stock ultra-low-liquidity query —
+    ranked ultra-low-liquidity rows for a market scope (`gubun`:
+    전체/코스피/코스닥) with `cts_shcode` cursor. **sign enum policy**:
+    LS spec table does NOT formally declare the mapping; partial
+    evidence (LS official example response with `sign='3'` on no-change
+    rows + `sign='5'` on down rows, plus live 2026-05-12 calls
+    returning `sign='1'` on limit-up rows) supports the sibling
+    1=상한 / 2=상승 / 3=보합 / 4=하한 / 5=하락 convention used by
+    t1308 / t1422 / t1427 / t1449. `sign='1'`/`'2'`/`'4'` rows are
+    unobserved in our 2026-05-12 evidence set and documented as
+    partial-evidence in `T1410OutBlock1.sign` description.
+    `change` is the absolute price-delta magnitude (unsigned), not
+    a percent; pair with `sign` for direction and `diff` for percent.
+  - `t1427` 상/하한가직전 / Stock near-limit-up/down —
+    symbols approaching 상한가/하한가 threshold, market scope via
+    `gubun`, direction via `updnflag`.
+  - `t1449` 가격대별매매비중조회 / Price-bucket trade-share query —
+    intraday trade volume distribution across price buckets.
+  - `t1486` 시간별예상체결가 / Time-of-day expected execution price —
+    pre-market / post-market expected execution price per time bucket.
+  - `t1488` 예상체결가등락율상위 / Top expected-price percent-movers —
+    ranked top movers in expected execution price during the
+    pre-market call auction phase.
+  - `t1104` 주식현재가시세메모 / Stock quote + memo — current quote
+    enriched with KRX memo flags (관리종목 / 투자유의 / 거래정지 etc).
+  - `t1105` 주식피봇/디마크조회 / Stock pivot / DeMark query —
+    classic pivot R1/R2/R3 + DeMark levels for a symbol.
+- Per-TR top-level export + `example/korea_stock/run_*.py` runnable
+  scripts for t1104 / t1105 / t1410.
+
+### Internal
+- t1410 `sign`-enum partial-evidence policy follows the project
+  `feedback_no_inferred_formulas` rule: descriptions explicitly
+  separate LS-declared facts (gubun mapping, cts_shcode cursor)
+  from partial-evidence claims (sign convention, unobserved values).
+- 11 plan documents under `.claude/pg-plans/` covering each TR's
+  field-mapping decisions (now untracked per `.gitignore` policy).
+
+### Dependencies
+- programgarden-core ^1.12.2 (unchanged).
+
 ## [1.6.3] - 2026-05-08
 ### Added
 - AI-chatbot-ready field metadata across every TR `blocks.py` in the LS

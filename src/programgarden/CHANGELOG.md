@@ -1,5 +1,37 @@
 ## [Unreleased]
 
+## [1.21.9] - 2026-05-13
+### Dependencies
+- programgarden-finance ^1.6.5 — picks up the AlphaWorks-reported
+  Korea Stock library fixes:
+  - 11 Korea Stock TR (`t1665` / `t8452` / `t8453` / `t8407` / `t8454`
+    / `t1901` / `t1903` / `t1904` / `t1638` / `t1927` / `t1702`)
+    `rate_limit_key` 누락 정정 → multi-instance IGW00201 throttle
+    충돌 차단.
+  - 17 Korea Stock TR `exchgubun` Literal 필드의 거짓 docstring 정정
+    ("treated as KRX" 문구 제거) → 외부 사용자 `ValidationError`
+    크래시 원인 해소.
+  - CSPAT00601 응답 코드 `00040` / `00039` (매수/매도 접수) 가 README +
+    finance_guide 표 + WebSocket SC1 매칭 예제로 신규 게재 →
+    `rsp_cd != "00000"` 잘못된 실패 판정으로 인한 `01478` 매도가능수량
+    부족 반복 장애 원인 해소.
+  No programgarden code changes — meta-package patch bump tracks the
+  finance hotfix on the same v1.21.x line.
+- programgarden-community ^1.13.3 (unchanged).
+
+## [1.21.8] - 2026-05-12
+### Dependencies
+- programgarden-finance ^1.6.4 — picks up the 11 Korea Stock Market
+  TR additions (t1302 / t1486 / t1305 / t1488 / t1449 / t1427 /
+  t1104 / t1105 / t1310 / t1308 / t1410) under
+  `ls.korea_stock().market()`. Korea Stock REST TR count 64 → 75,
+  total finance TR `blocks.py` 139 → 150 with AI-chatbot field
+  metadata coverage maintained at 100%. No programgarden code
+  changes — meta-package version bumped to track the finance
+  release on the same v1.21.x line.
+- programgarden-community ^1.13.3 (batch release sync — no community
+  code changes).
+
 ## [1.21.7] - 2026-05-08
 ### Dependencies
 - programgarden-finance ^1.6.3 — picks up the TR field-metadata sweep
