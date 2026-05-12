@@ -17,29 +17,43 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and
       ('0' = all (전체), '1' = KOSPI (코스피), '2' = KOSDAQ (코스닥));
       description embeds the mapping verbatim.
     - ``sign`` enum mapping is **NOT formally declared** by LS in the
-      t1410 field specification table, but the LS official example
-      response shipped with the t1410 spec carries enough evidence to
-      partially identify the mapping: the example row with
-      ``change=0`` / ``diff="000.00"`` (no change) carries ``sign="3"``,
-      and the example row with ``diff="-00.88"`` (down) carries
-      ``sign="5"`` — both consistent with the 1=상한 / 2=상승 /
-      3=보합 / 4=하한 / 5=하락 convention published by sibling TRs
-      (t1308 / t1422 / t1427 / t1449). Values ``"1"`` / ``"2"`` /
-      ``"4"`` have not been observed in the available t1410 example
-      response and are not independently declared for t1410.
+      t1410 field specification table, but two independent sources of
+      partial evidence support the sibling 1=상한 / 2=상승 / 3=보합 /
+      4=하한 / 5=하락 convention published by t1308 / t1422 / t1427 /
+      t1449:
+        (a) the LS official example response shipped with the t1410
+            spec carries ``sign="3"`` on a row with ``change=0`` /
+            ``diff="000.00"`` (no change) and ``sign="5"`` on a row
+            with ``diff="-00.88"`` (down);
+        (b) live calls against the LS Korea Stock REST endpoint on
+            2026-05-12 additionally returned ``sign="1"`` on a row
+            with ``change=+1350`` / ``diff=+30.0%`` (limit-up hit
+            for ``014915 성문전자우``) and ``sign="2"`` on multiple
+            other rows with positive ``diff`` (up).
+      Only ``sign="4"`` (limit down) has not been observed in any
+      available source for t1410 and is not independently declared.
       Description reflects this partial evidence; consume any sign
       value as returned by LS without glyph translation.
-    - Sign convention of ``change`` (signed magnitude — example
-      response carries non-negative values only; full sign domain
-      unverified), the time-window of ``volume`` (LS labels it
-      "누적거래량" — the cumulative aspect is declared but the exact
-      window (intraday vs multi-day) is not), row ordering of
-      ``OutBlock1`` rows (the LS example response shows price
-      descending mixed with volume ascending — no single sort key
-      declared), the currency unit and decimal scale of price fields,
-      and the structure of the ``cts_shcode`` cursor are NOT declared
-      in the source available to this codebase; consume as returned
-      by LS.
+    - Sign convention of ``change`` (the LS example response and
+      live 2026-05-12 calls both consistently returned non-negative
+      values across all rows, including rows where ``sign`` indicated
+      down/limit-down — suggesting ``change`` is a magnitude-only
+      field with direction encoded separately in ``sign``, but LS
+      has not formally declared this convention so the schema still
+      accepts negative integers and consumers should not rely on
+      non-negative-ness), the time-window of
+      ``volume`` (LS labels it "누적거래량" — the cumulative aspect
+      is declared but the exact window (intraday vs multi-day) is
+      not), row ordering of ``OutBlock1`` rows (the LS example
+      response shows price descending mixed with volume ascending —
+      no single sort key declared; live 2026-05-12 calls for
+      ``gubun="0"`` empirically returned KOSPI rows first across the
+      first page (cts_shcode-paginated) with KOSDAQ rows surfacing on
+      subsequent pages, but this paging-order is not formally declared
+      in available LS source), the currency unit and decimal scale of
+      price fields, and the structure of the ``cts_shcode`` cursor
+      are NOT declared in the source available to this codebase;
+      consume as returned by LS.
     - ``diff`` (LS scale 6.2) is serialized as a zero-padded string by
       LS in example responses (e.g., ``"-00.88"``, ``"000.00"``);
       Pydantic coerces to float.
@@ -158,30 +172,41 @@ class T1410OutBlock1(BaseModel):
         description=(
             "Previous-day direction code. Length 1. LS does not "
             "declare the enum mapping in the t1410 field specification "
-            "table, but the LS official example response for t1410 "
-            "carries sign='3' on a row with change=0 / diff='000.00' "
+            "table, but two independent sources of partial evidence "
+            "support the 1=상한 (limit up) / 2=상승 (up) / "
+            "3=보합 (unchanged) / 4=하한 (lower limit) / 5=하락 (down) "
+            "convention published by sibling TRs (t1308, t1422, t1427, "
+            "t1449): "
+            "(a) the LS official example response for t1410 carries "
+            "sign='3' on a row with change=0 / diff='000.00' "
             "(unchanged) and sign='5' on a row with diff='-00.88' "
-            "(down) — consistent with the 1=상한 (limit up) / "
-            "2=상승 (up) / 3=보합 (unchanged) / 4=하한 (lower limit) / "
-            "5=하락 (down) convention published by sibling TRs "
-            "(t1308, t1422, t1427, t1449). Values '1', '2', '4' have "
-            "not been observed in the available t1410 example response "
-            "and are not independently declared for t1410. Consume as "
-            "returned by LS without glyph translation."
+            "(down); "
+            "(b) live calls against the LS Korea Stock REST endpoint "
+            "on 2026-05-12 additionally returned sign='1' on a row "
+            "with change=+1350 / diff=+30.0% (limit-up hit) and "
+            "sign='2' on rows with positive diff (up). Only sign='4' "
+            "(limit down) has not been observed in any available "
+            "source for t1410 and is not independently declared. "
+            "Consume as returned by LS without glyph translation."
         ),
-        examples=["3", "5"],
+        examples=["1", "2", "3", "5"],
     )
     change: int = Field(
         default=0,
         title="전일대비 (Previous-day delta)",
         description=(
-            "Magnitude of change versus previous close. Sign convention "
-            "is not declared in available LS source — the t1410 example "
-            "response carries non-negative values only and the full "
-            "sign domain is unverified. Consume as returned by LS. "
+            "Magnitude of change versus previous close. The LS example "
+            "response and live 2026-05-12 calls both consistently "
+            "returned non-negative values across all rows — including "
+            "rows where ``sign`` indicated down/limit-down (e.g., "
+            "sign='5' with change=+1500 / diff=-2.5%) — suggesting "
+            "``change`` carries magnitude only, with direction encoded "
+            "separately in ``sign``. LS has not formally declared this "
+            "convention; the schema still accepts negative integers "
+            "and consumers should not rely on non-negative-ness. "
             "Length 8."
         ),
-        examples=[0, 50, -25],
+        examples=[0, 50, 1500],
     )
     diff: float = Field(
         default=0.0,
@@ -202,9 +227,11 @@ class T1410OutBlock1(BaseModel):
             "(``누적거래량``). The cumulative aspect is declared by "
             "LS, but the exact window scope (intraday cumulative vs "
             "multi-day cumulative) is not formally declared in "
-            "available LS source. Length 12."
+            "available LS source. Live 2026-05-12 calls confirmed "
+            "``volume=0`` rows do occur in the response (genuine "
+            "no-trade ultra-low-liquidity symbols). Length 12."
         ),
-        examples=[22, 140, 1500000],
+        examples=[0, 22, 140, 1500000],
     )
     shcode: str = Field(
         default="",
@@ -232,10 +259,14 @@ class T1410Response(BaseModel):
         title="초저유동성 종목 리스트 (Ultra-low-liquidity stock rows)",
         description=(
             "List of ultra-low-liquidity stock rows. Row ordering is "
-            "not declared in available LS source — the LS example "
-            "response shows price descending mixed with volume "
-            "ascending, with no single declared sort key. Consume as "
-            "returned by LS."
+            "not formally declared in available LS source — the LS "
+            "example response shows price descending mixed with "
+            "volume ascending, with no single declared sort key. "
+            "Live 2026-05-12 calls for ``gubun='0'`` empirically "
+            "returned KOSPI rows on the first page (cts_shcode-"
+            "paginated) with KOSDAQ rows surfacing on subsequent "
+            "pages, but this paging-order is not formally declared by "
+            "LS. Consume as returned by LS."
         ),
     )
     status_code: Optional[int] = Field(

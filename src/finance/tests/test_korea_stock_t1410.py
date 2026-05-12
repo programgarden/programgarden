@@ -562,19 +562,42 @@ class TestSignPartialEvidencePolicy:
 
     def test_sign_description_carries_unobserved_values_disclaimer(self):
         desc = T1410OutBlock1.model_fields["sign"].description or ""
-        # '1' / '2' / '4' must all be called out as unobserved.
-        for token in ["'1'", "'2'", "'4'"]:
-            assert token in desc, (
-                f"T1410OutBlock1.sign description must list unobserved "
-                f"value {token} explicitly."
-            )
+        # After 2026-05-12 live verification, '1' (limit up) and '2' (up)
+        # have been observed. Only '4' (limit down) remains unobserved
+        # in any available source for t1410.
+        assert "'4'" in desc, (
+            "T1410OutBlock1.sign description must mention the still-"
+            "unobserved sign value '4' (limit down) explicitly."
+        )
         assert "not been observed" in desc, (
-            "T1410OutBlock1.sign description must state '1' / '2' / '4' "
-            "have 'not been observed' in the t1410 example response."
+            "T1410OutBlock1.sign description must state sign='4' has "
+            "'not been observed' in any available source for t1410."
         )
         assert "not independently declared" in desc, (
             "T1410OutBlock1.sign description must state the unobserved "
-            "values are 'not independently declared' for t1410."
+            "value is 'not independently declared' for t1410."
+        )
+
+    def test_sign_description_carries_live_observed_values(self):
+        """2026-05-12 라이브 호출에서 sign='1' (limit up @ 30.0%) +
+        sign='2' (up) 가 t1410 자체 응답에서 관찰됨. description 이
+        라이브 관찰 사실을 인용하는지 강제."""
+        desc = T1410OutBlock1.model_fields["sign"].description or ""
+        assert "live calls" in desc.lower() or "live 2026-05-12" in desc.lower(), (
+            "T1410OutBlock1.sign description must cite live calls as "
+            "the second partial-evidence source (after example response)."
+        )
+        assert "sign='1'" in desc, (
+            "T1410OutBlock1.sign description must reference the live-"
+            "observed sign='1' (limit-up hit)."
+        )
+        assert "sign='2'" in desc, (
+            "T1410OutBlock1.sign description must reference the live-"
+            "observed sign='2' (up)."
+        )
+        assert "limit-up" in desc.lower() or "limit up" in desc.lower(), (
+            "T1410OutBlock1.sign description must call out limit-up "
+            "(상한) semantics from the sign='1' live observation."
         )
 
 
