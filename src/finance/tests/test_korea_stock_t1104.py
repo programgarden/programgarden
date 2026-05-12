@@ -432,12 +432,15 @@ class TestEnumMappingDocumented:
             assert token in desc
 
     def test_exchgubun_mapping_present_in_inblock(self):
+        # Description must list the K/N/U enum mapping AND state that the
+        # Pydantic Literal strictly rejects empty string and other values
+        # (LS-side "treat as KRX" coercion is unreachable through this client).
         desc = T1104InBlock.model_fields["exchgubun"].description or ""
         for token in [
             "'K' = KRX", "한국거래소",
             "'N' = NXT", "넥스트레이드",
             "'U' = unified", "통합",
-            "Other values are treated as KRX",
+            "validates strictly", "rejected",
         ]:
             assert token in desc
 

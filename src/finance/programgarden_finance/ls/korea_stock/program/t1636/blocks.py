@@ -90,7 +90,7 @@ class T1636InBlock(BaseModel):
         title="거래소구분코드 (Exchange division code)",
         description=(
             "Exchange filter. 'K' = KRX (default), 'N' = NXT, 'U' = unified KRX+NXT. "
-            "Other values are treated as KRX per LS spec. Length 1."
+            "Pydantic validates strictly — only these three are accepted; empty string and other values are rejected. Length 1."
         ),
         examples=["K", "N", "U"],
     )

@@ -68,7 +68,7 @@ class T1105InBlock(BaseModel):
             "'K' = KRX (한국거래소), "
             "'N' = NXT (넥스트레이드), "
             "'U' = unified (통합). "
-            "Other values are treated as KRX per LS source."
+            "Pydantic validates strictly — only these three are accepted; empty string and other values are rejected. Omit the field to use the 'K' default."
         ),
         examples=["K", "N", "U"],
     )

@@ -76,7 +76,7 @@ class T1640InBlock(BaseModel):
         title="거래소구분코드 (Exchange division code)",
         description=(
             "Exchange division code. 'K' = KRX, 'N' = NXT, 'U' = unified KRX+NXT. "
-            "Per LS spec, any other value is treated as KRX server-side. Length 1."
+            "Pydantic validates strictly — only 'K', 'N', 'U' are accepted; empty string and other values are rejected. Length 1."
         ),
         examples=["K", "N", "U"],
     )

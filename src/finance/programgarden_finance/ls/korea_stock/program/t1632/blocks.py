@@ -128,8 +128,8 @@ class T1632InBlock(BaseModel):
         title="거래소구분코드 (Exchange division code)",
         description=(
             "Exchange division code. 'K' = KRX, 'N' = NXT, 'U' = 통합 "
-            "(unified). Per LS spec, any other value is treated as KRX "
-            "server-side. Defaults to 'K'. Length 1."
+            "(unified). Pydantic validates strictly — only 'K', 'N', 'U' are "
+            "accepted; empty string and other values are rejected. Defaults to 'K'. Length 1."
         ),
         examples=["K", "N", "U"],
     )

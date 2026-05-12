@@ -111,7 +111,7 @@ class T1310InBlock(BaseModel):
             "'K' = KRX, "
             "'N' = NXT (next-trade), "
             "'U' = unified (통합). "
-            "Any other input is treated as KRX by LS."
+            "Pydantic validates strictly — only these three are accepted; empty string and other values are rejected."
         ),
         examples=["K", "N", "U"],
     )

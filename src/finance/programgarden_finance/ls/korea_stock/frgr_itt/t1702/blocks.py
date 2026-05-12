@@ -278,7 +278,12 @@ class T1702Request(BaseModel):
         mac_address=""
     )
     body: dict = {}
-    options: SetupOptions = SetupOptions(rate_limit_count=1, rate_limit_seconds=1)
+    options: SetupOptions = SetupOptions(
+        rate_limit_count=1,
+        rate_limit_seconds=1,
+        on_rate_limit="wait",
+        rate_limit_key="t1702",
+    )
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 
 

@@ -108,8 +108,9 @@ class T8451InBlock(BaseModel):
         title="거래소구분코드 (Exchange division code)",
         description=(
             "Exchange division code. 'K' = KRX (한국거래소), 'N' = NXT "
-            "(넥스트레이드), 'U' = unified (통합). Other values are treated "
-            "as KRX per LS source."
+            "(넥스트레이드), 'U' = unified (통합). Pydantic validates strictly "
+            "— only 'K', 'N', 'U' are accepted; empty string and other values "
+            "are rejected. Omit the field to use the 'K' default."
         ),
         examples=["K", "N", "U"],
     )

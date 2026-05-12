@@ -104,8 +104,9 @@ class T1662InBlock(BaseModel):
             "Exchange division code. 'K' = KRX, 'N' = NXT, 'U' = 통합 "
             "(unified). Required. Length 1. "
             "NOTE: this field is documented in the LS REST spec but absent "
-            "from the xingAPI FUNCTION_MAP — REST-only. Per LS spec, any "
-            "other value is treated as KRX server-side."
+            "from the xingAPI FUNCTION_MAP — REST-only. Pydantic validates "
+            "strictly — only 'K', 'N', 'U' are accepted; empty string and "
+            "other values are rejected."
         ),
         examples=["K", "N", "U"],
     )

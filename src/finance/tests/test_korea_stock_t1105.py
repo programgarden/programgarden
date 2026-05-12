@@ -407,9 +407,11 @@ class TestModelFieldsCoverage:
 
 class TestExchgubunEnumDocumented:
     """LS publishes the ``exchgubun`` enum mapping
-    (K = KRX, N = NXT, U = unified) + "그외 입력값은 KRX로 처리" coercion
-    rule. The InBlock description must embed the mapping + coercion rule
-    so the AI chatbot generates correct workflows.
+    (K = KRX, N = NXT, U = unified). The Pydantic Literal type in this
+    client strictly rejects empty string and other values before LS sees
+    them — the LS-side "그외 입력값은 KRX로 처리" coercion is therefore
+    unreachable. The description must embed the mapping AND the strict
+    validation contract so the AI chatbot generates correct workflows.
     """
 
     def test_exchgubun_enum_mapping_present(self):
@@ -417,12 +419,13 @@ class TestExchgubunEnumDocumented:
         for token in [
             "'K'", "'N'", "'U'",
             "KRX", "NXT", "unified",
-            "treated as KRX",
+            "validates strictly", "rejected",
         ]:
             assert token in desc, (
-                f"T1105InBlock.exchgubun description missing LS-declared "
-                f"token '{token}'. LS publishes the K/N/U enum mapping + "
-                f"'그외 KRX 처리' coercion rule; description must mirror it."
+                f"T1105InBlock.exchgubun description missing required token "
+                f"'{token}'. Description must list the K/N/U enum mapping AND "
+                f"state that Pydantic validates strictly (rejecting empty "
+                f"string and other values)."
             )
 
 

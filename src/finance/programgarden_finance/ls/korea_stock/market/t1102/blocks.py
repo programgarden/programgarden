@@ -57,7 +57,7 @@ class T1102InBlock(BaseModel):
     exchgubun: Literal["K", "N", "U"] = Field(
         default="K",
         title="거래소구분코드 (Exchange division code)",
-        description="Exchange division. 'K' = KRX, 'N' = NXT, 'U' = unified. Other values are treated as KRX per LS source.",
+        description="Exchange division. 'K' = KRX, 'N' = NXT, 'U' = unified. Pydantic validates strictly — only 'K', 'N', 'U' are accepted; empty string and other values are rejected. Omit the field to use the 'K' default.",
         examples=["K", "N", "U"],
     )
 

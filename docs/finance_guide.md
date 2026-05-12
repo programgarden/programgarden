@@ -66,7 +66,7 @@ futures.real()
 
 # 국내 주식 도메인
 korea = ls.korea_stock()
-korea.market()    # 시장 정보 (현재가, 호가, 마스터 등 13개 TR)
+korea.market()    # 시장 정보 (현재가, 호가, 마스터 등 25개 TR)
 korea.chart()     # 차트 데이터 (일/주/월/년, 분봉 등 4개 TR)
 korea.accno()     # 계좌/잔고 (잔고, 예수금, 미체결 등 10개 TR)
 korea.order()     # 주문 (현물주문, 정정, 취소 3개 TR)
@@ -451,6 +451,75 @@ options = SetupOptions(
 브로커 상품 구분 없이 공용으로 사용하는 실시간 TR. `Common.real()` 세션을 통해 구독하며 3종 broker(overseas_stock / overseas_futureoption / korea_stock) 중 아무거나 로그인된 상태에서 접근 가능합니다.
 
 - 실시간: `JIF`(장운영정보 — 12개 시장 개장/종가/CB/사이드카 상태)
+
+---
+
+## 응답 코드 참조
+
+### 국내 주식 주문 (`CSPAT00601` / `CSPAT00701` / `CSPAT00801`)
+
+| `rsp_cd` | 의미 | 분류 | 권장 처리 |
+|----------|------|------|----------|
+| `00040` | 매수주문 정상 접수 (모의/실전) | 성공 (매수 전용) | `OrdNo` 추적 시작 |
+| `00039` | 매도주문 정상 접수 (모의/실전) | 성공 (매도 전용) | `OrdNo` 추적 시작 |
+| `01478` | 매도가능수량 부족 | 거부 (LS 측 잔고 검증) | 실제잔고 재조회 후 내부 포지션 동기화 |
+| `IGW00201` | 호출 거래건수 초과 | 시스템 (재시도 가능) | `on_rate_limit="wait"` 자동 대기 |
+
+> ⚠️ **중요**: 조회/계좌 TR 은 일반 성공 코드 `"00000"` 을 사용하지만, **주문 TR `CSPAT006xx` 는 방향별 성공 코드 `"00040"` / `"00039"` 를 사용**합니다. `rsp_cd != "00000"` 로 실패 판정하는 코드는 정상 주문 응답을 거부로 오분류하여 내부 포지션 추적이 실제 계좌와 어긋날 수 있습니다 (AlphaWorks 2026-05-12 사고 사례 참조).
+
+#### 권장 주문 성공 판정 로직
+
+```python
+def is_order_accepted(resp: CSPAT00601Response, is_buy: bool) -> bool:
+    # 1. Transport / HTTP 에러 1차 차단
+    if resp.error_msg is not None:
+        return False
+    if resp.status_code is None or resp.status_code >= 400:
+        return False
+
+    # 2. 방향별 LS 응답 코드 (가장 권위 있는 신호)
+    expected = "00040" if is_buy else "00039"
+    if resp.rsp_cd != expected:
+        return False
+
+    # 3. block2 / OrdNo 무결성 (안전망)
+    if resp.block2 is None or resp.block2.OrdNo == 0:
+        return False  # 응답코드는 성공인데 OrdNo 미부여 → 추적 불가
+
+    return True
+```
+
+- **1차 권위 신호**: `rsp_cd ∈ {"00040", "00039"}` (방향별)
+- **함께 검증**: `block2.OrdNo > 0` — SC1 매칭 / 정정·취소 호출에 필수
+- **금지**: `rsp_msg` 텍스트 비교 (LS 측 메시지 텍스트 변경 가능)
+
+성공 시 `resp.block2.OrdNo` (int) 를 `str()` 캐스팅하여 `SC1RealResponseBody.ordno` (str) 와 매칭하면 부분체결 / 완전체결 / 거부 이벤트를 실시간으로 추적할 수 있습니다. 전체 예제: `example/korea_stock/run_CSPAT00601_with_SC1.py`, 파서/매칭 로직 mock 검증: `tests/test_cspat00601_sc1_mock.py`.
+
+### 호출 한도 (`IGW00201`) 응답 패턴
+
+라이브러리는 호출 한도 초과 시 예외를 발생시키지 않고 **응답 객체 필드로 일관 반환**합니다:
+
+| 필드 | 정상 (HTTP 200) | 한도 초과 (`IGW00201`) | 빈 데이터 |
+|------|---------------|----------------------|----------|
+| `status_code` | `200` | `500` | `200` |
+| `rsp_cd` | `"00000"` (조회) / `"00040"` 등 (주문) | `"IGW00201"` | `"00000"` |
+| `rsp_msg` | `"정상처리되었습니다."` | `"호출 거래건수를 초과하였습니다."` | `"정상처리되었습니다."` |
+| `error_msg` | `None` | `"HTTP 500: 호출 거래건수를 초과하였습니다."` | `None` |
+| `block` / `block1` | data | `None` / `[]` | data / `[]` |
+
+→ **호출 한도 vs 빈 데이터 구분**: `status_code == 200 and error_msg is None` 이면 정상 응답이고, `block1 == []` 이면 진짜로 데이터가 없는 것입니다. `status_code >= 400` 또는 `rsp_cd == "IGW00201"` 이면 시스템 측 거부이므로 재시도 가능합니다.
+
+#### 라이브러리 측 자동 throttle
+
+모든 Korea Stock TR 의 `SetupOptions` 는 `on_rate_limit="wait"` + 공유 `rate_limit_key="<tr_id>"` 가 설정되어 있어, 동일 프로세스 내 호출은 라이브러리가 자동으로 직렬화합니다. 즉:
+
+- 45 종목 분봉 (t8452) 동시 감시 → 1 초당 1 회씩 자동 직렬화, IGW00201 발생 X
+- ETF 스크리닝 (t1901/t1903/t1904) 다종목 호출 → 자동 throttle
+- 사용자가 별도 sleep / retry 로직 작성 불필요
+
+`IGW00201` 이 응답에 노출되는 경우는 동일 계정으로 **여러 프로세스가 동시 호출** 하여 라이브러리 단일 프로세스 throttle 을 우회한 경우입니다. 이 경우 Redis 등 외부 저장소로 `rate_limit_key` 상태를 공유하는 것이 권장 패턴입니다 (위 [요청 속도 직접 조절](#요청-속도-직접-조절rate-limiting) 섹션 참조).
+
+---
 
 #### JIF (장운영정보) 지원 시장 12종
 
