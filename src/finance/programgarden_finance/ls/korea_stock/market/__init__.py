@@ -33,6 +33,9 @@ from .t1302.blocks import T1302InBlock, T1302Request, T1302RequestHeader
 from . import t1305
 from .t1305 import TrT1305
 from .t1305.blocks import T1305InBlock, T1305Request, T1305RequestHeader
+from . import t1308
+from .t1308 import TrT1308
+from .t1308.blocks import T1308InBlock, T1308Request, T1308RequestHeader
 from . import t1310
 from .t1310 import TrT1310
 from .t1310.blocks import T1310InBlock, T1310Request, T1310RequestHeader
@@ -490,6 +493,48 @@ class Market:
 
     기간별주가 = t1305
     기간별주가.__doc__ = "주식 기간별 주가(일/주/월 봉)를 조회합니다."
+
+    @require_korean_alias
+    def t1308(
+        self,
+        body: T1308InBlock,
+        header: Optional[T1308RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1308:
+        """
+        주식 시간대별 봉 데이터(분 단위 OHLC + 체결 통계 + 체결강도)를 조회합니다.
+
+        종목코드, 시작/종료시간(HHMM), 분간격, 거래소 조건으로
+        체결시간, 현재가, 전일대비/등락률, 체결강도(거래량/건수), 거래량,
+        매도/매수 체결수량+건수, 시고저를 반환합니다.
+        연속조회 cursor가 없는 단발성 TR입니다.
+
+        Args:
+            body (T1308InBlock): shcode(종목코드 6자리), starttime(HHMM),
+                endtime(HHMM), bun_term(분간격 2자), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1308RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1308: 시간대별체결 챠트 조회 인스턴스 (.req() 단건 호출)
+        """
+
+        request_data = T1308Request(
+            body={
+                "t1308InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1308(request_data)
+
+    주식시간대별체결조회챠트 = t1308
+    주식시간대별체결조회챠트.__doc__ = "주식 시간대별 봉 데이터(분 단위 OHLC + 체결 통계 + 체결강도)를 조회합니다."
 
     @require_korean_alias
     def t1310(
@@ -1015,6 +1060,7 @@ __all__ = [
     t1109,
     t1302,
     t1305,
+    t1308,
     t1310,
     t1486,
     t1488,
