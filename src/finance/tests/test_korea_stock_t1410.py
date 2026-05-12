@@ -635,6 +635,33 @@ class TestNoInferredUnitOrSemantics:
                 f"'{forbidden}' — LS spec does not declare it."
             )
 
+    def test_change_description_carries_price_delta_identity(self):
+        """2026-05-12 라이브 호출 결과 ``change`` 가 price delta
+        (가격 차이) 임이 math identity 로 확인됨:
+        |change| ≈ price × |diff|/100 (every observed row).
+        Description 이 이 identity 와 'price' 표현을 인용하는지 강제 —
+        consumers (특히 AI 챗봇) 가 change 를 volume delta 로 오인하지
+        않도록 차단.
+        """
+        desc = T1410OutBlock1.model_fields["change"].description or ""
+        assert "price" in desc.lower(), (
+            "T1410OutBlock1.change description must explicitly mention "
+            "'price' so consumers do not mistake it for a volume delta."
+        )
+        # Math identity reference — at least one of these tokens.
+        identity_tokens = ["price × |diff|", "|change|", "price - previous_close", "prev_close"]
+        assert any(tok in desc for tok in identity_tokens), (
+            f"T1410OutBlock1.change description must reference the "
+            f"price-delta identity from live observations. Expected at "
+            f"least one of: {identity_tokens}."
+        )
+        # Live verification source citation.
+        assert "live" in desc.lower() and "2026-05-12" in desc, (
+            "T1410OutBlock1.change description must cite the live "
+            "2026-05-12 verification as the empirical source for the "
+            "price-delta identity."
+        )
+
     def test_volume_window_scope_not_asserted(self):
         """LS declares volume is cumulative ('누적거래량') but does NOT
         declare the exact window (intraday vs multi-day). The description

@@ -34,14 +34,20 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and
       available source for t1410 and is not independently declared.
       Description reflects this partial evidence; consume any sign
       value as returned by LS without glyph translation.
-    - Sign convention of ``change`` (the LS example response and
-      live 2026-05-12 calls both consistently returned non-negative
-      values across all rows, including rows where ``sign`` indicated
-      down/limit-down — suggesting ``change`` is a magnitude-only
-      field with direction encoded separately in ``sign``, but LS
-      has not formally declared this convention so the schema still
-      accepts negative integers and consumers should not rely on
-      non-negative-ness), the time-window of
+    - The semantics of ``change`` are empirically clear from live
+      2026-05-12 calls — the identity
+      ``|change| ≈ price × |diff|/100`` holds on every observed row
+      (e.g., price=5850 / change=1350 / diff=+30.0% / prev_close=4500
+      → |5850-4500|=1350), confirming ``change`` is the *price*
+      delta versus previous close (not a volume delta, despite
+      ``전일대비`` being a generic Korean label). All observed rows
+      returned non-negative values including down/limit-down rows
+      (e.g., sign='5' with change=+1500 / diff=-2.5%), so
+      ``change`` is magnitude-only with direction encoded separately
+      in ``sign``. LS has not formally declared either the
+      price-delta semantics or the magnitude-only convention, so
+      the schema still accepts negative integers and consumers
+      should not rely on non-negative-ness. The time-window of
       ``volume`` (LS labels it "누적거래량" — the cumulative aspect
       is declared but the exact window (intraday vs multi-day) is
       not), row ordering of ``OutBlock1`` rows (the LS example
@@ -193,18 +199,25 @@ class T1410OutBlock1(BaseModel):
     )
     change: int = Field(
         default=0,
-        title="전일대비 (Previous-day delta)",
+        title="전일대비 (Previous-day price delta)",
         description=(
-            "Magnitude of change versus previous close. The LS example "
-            "response and live 2026-05-12 calls both consistently "
-            "returned non-negative values across all rows — including "
-            "rows where ``sign`` indicated down/limit-down (e.g., "
-            "sign='5' with change=+1500 / diff=-2.5%) — suggesting "
-            "``change`` carries magnitude only, with direction encoded "
-            "separately in ``sign``. LS has not formally declared this "
-            "convention; the schema still accepts negative integers "
-            "and consumers should not rely on non-negative-ness. "
-            "Length 8."
+            "Magnitude of **price** change versus previous close — "
+            "i.e., abs(price - previous_close). Live 2026-05-12 calls "
+            "verify the identity ``|change| ≈ price × |diff|/100`` on "
+            "every observed row: e.g., 흥국화재우 price=5620, "
+            "change=50, diff=-0.88% → prev_close≈5670, |5620-5670|=50; "
+            "성문전자우 price=5850, change=1350, diff=+30.0% (limit-up) "
+            "→ prev_close=4500, |5850-4500|=1350; 미원홀딩스 "
+            "price=58500, change=1500, diff=-2.5% → prev_close=60000, "
+            "|58500-60000|=1500. The LS example response and all live "
+            "calls returned non-negative values across all rows — "
+            "including rows where ``sign`` indicated down/limit-down "
+            "(e.g., sign='5' with change=+1500 / diff=-2.5%) — so "
+            "``change`` carries magnitude only and direction is "
+            "encoded separately in ``sign``. LS has not formally "
+            "declared this magnitude-only convention; the schema "
+            "still accepts negative integers and consumers should "
+            "not rely on non-negative-ness. Length 8."
         ),
         examples=[0, 50, 1500],
     )
