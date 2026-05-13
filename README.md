@@ -103,6 +103,13 @@ workflow JSON that runs through `WorkflowExecutor`. Follow this context strictly
   Auto-iterate (`item` / `index` / `total`) when an upstream node emits an
   array. Function namespaces: `date.*`, `finance.*`, `stats.*`, `format.*`,
   `lst.*`.
+- Edge types: `main` (default DAG execution), `ai_model` (connects
+  `LLMModelNode` → `AIAgentNode`), `tool` (registers a node as an AI Agent
+  tool). `IfNode` branches use `from_port: "true"` / `"false"` (or dot
+  notation `"from": "if1.true"`).
+- i18n keys live in `src/core/programgarden_core/i18n/locales/{ko,en}.json`
+  under the patterns `nodes.{Type}.name|description`,
+  `fields.{Type}.{field}`, `outputs.{Type}.{port}`.
 - Two execution entry points:
   (1) `WorkflowExecutor` — run an entire JSON workflow.
   (2) `NodeRunner` — run a single node standalone.
@@ -113,7 +120,8 @@ workflow JSON that runs through `WorkflowExecutor`. Follow this context strictly
 
 ```
 First read `CLAUDE.md` to learn the node / edge / expression rules, then study
-one or two similar examples in `src/programgarden/examples/workflows/`.
+`src/programgarden/examples/workflows/01-account-stock-balance.json` plus one
+or two strategy workflows in the same directory.
 Then build the following workflow JSON:
 
 - Goal: buy at market for 5 NASDAQ tickers whose RSI is <= 30
@@ -124,17 +132,24 @@ Then build the following workflow JSON:
 
 ```
 Running this workflow JSON raises `Node X failed: ...`.
-Use `WorkflowExecutor.dry_run()` to locate where it breaks and diagnose the
-root cause. Wire up an `ExecutionListener` to print node state transitions if
-it helps.
+Run it in dry-run mode by passing
+`context_params={"dry_run": True, "max_cycles": 1}` to
+`WorkflowExecutor.execute()`. Order, messaging, and real-time nodes will
+return mock results so you can locate where the actual error happens.
+Wire up an `ExecutionListener`
+(see `src/core/programgarden_core/bases/listener.py`) to print node and edge
+state transitions while it runs.
 ```
 
 ### Contribute a new plugin
 
 ```
-Add a new strategy plugin `IchimokuCloud` to ProgramGarden. Mirror the
-structure of `src/community/programgarden_community/plugins/rsi/`
-(plugin.py, metadata.json, tests/). Write all i18n keys in English only.
+Add a new strategy plugin `IchimokuCloud` to ProgramGarden. The plugin layout
+is a single `__init__.py` inside
+`src/community/programgarden_community/plugins/<plugin_name>/` plus an
+optional `README.md`. See `plugins/rsi/__init__.py` for the canonical
+example. Plugins are registered through `plugins/__init__.py`. Write all i18n
+keys in English only.
 ```
 
 ## Gotchas — call these out up front, they trip agents constantly
@@ -150,12 +165,21 @@ structure of `src/community/programgarden_community/plugins/rsi/`
    Enabling `resilience.retry.enabled = True` needs explicit justification.
 5. Auto-iterate: when the upstream node emits an array, the downstream node
    runs once per item — no explicit loop needed.
+6. There is **no** `WorkflowExecutor.dry_run()` method. Dry-run is enabled
+   via `execute(..., context_params={"dry_run": True})`.
 
 ## Reference files to read before answering
 
 - `CLAUDE.md` — node catalog, architecture, examples (read first)
 - `PROJECT_MAP.md` — repo index
+- `src/programgarden/programgarden/executor.py` — `WorkflowExecutor`,
+  `execute()`, `validate()`, dry-run behavior
+- `src/core/programgarden_core/bases/listener.py` — `ExecutionListener`
+  callback contract
 - `src/programgarden/examples/workflows/` — 77 runnable workflow JSON files
+  (start with `01-account-stock-balance.json`)
+- `src/community/programgarden_community/plugins/rsi/__init__.py` — canonical
+  plugin shape
 ````
 
 </details>
@@ -175,14 +199,16 @@ Follow this context strictly.
 
 ## What this library is
 
-- A typed async wrapper over LS Securities OpenAPI. Each TR (e.g. `t1410`,
-  `t8407`) is a Pydantic `blocks.py` module exposing `InBlock` / `OutBlock`
-  types plus an async caller.
-- Coverage: ~150 TR blocks. Overseas Stock / Overseas Futures / Korea Stock
-  REST, plus 13 real-time WebSocket TRs.
+- A typed sync/async wrapper over LS Securities OpenAPI. Each TR (e.g.
+  `t1410`, `t8407`) is a Pydantic `blocks.py` module exposing
+  `InBlock` / `OutBlock` types. The TR class itself exposes both `.req()`
+  (sync) and `.req_async()` (async) callers.
+- Coverage: ~150 TR blocks across Overseas Stock / Overseas Futures / Korea
+  Stock REST, plus ~28 real-time WebSocket TR blocks (7 overseas stock +
+  7 overseas futures + 13 Korea stock + 1 shared).
 - TR layout:
   `src/finance/programgarden_finance/ls/{market_segment}/{kind}/t####/` —
-  every TR has a folder; `blocks.py` defines all fields with
+  every TR has its own folder; `blocks.py` defines all fields with
   `Field(title=..., description=..., examples=[...])`.
 - Authentication: `appkey` + `appsecret` from the LS Securities developer
   portal. Token refresh and rate-limit handling are built in.
@@ -198,7 +224,8 @@ Follow this context strictly.
 ```
 Using `programgarden_finance`, write a script that calls Korea Stock TR
 `t1410` (초저유동성조회 / ultra-low-liquidity query).
-See `src/finance/example/korea_stock/` for the calling convention.
+See `src/finance/example/korea_stock/run_t1410.py` for the canonical calling
+convention (both `.req()` and `.req_async()` patterns).
 Read `appkey` / `appsecret` from env vars `LS_APPKEY` / `LS_APPSECRET`.
 ```
 
@@ -207,7 +234,9 @@ Read `appkey` / `appsecret` from env vars `LS_APPKEY` / `LS_APPSECRET`.
 ```
 I need to fetch minute-bar OHLCV for a Korea stock. Browse
 `src/finance/programgarden_finance/ls/korea_stock/` to find the right TR,
-read its `blocks.py` to understand the InBlock fields, then write a runnable
+read its `blocks.py` to understand the InBlock / OutBlock fields
+(`src/finance/programgarden_finance/ls/korea_stock/market/t1410/blocks.py` is
+a canonical reference for field metadata structure), then write a runnable
 example modeled after the matching
 `src/finance/example/korea_stock/run_t####.py`.
 ```
@@ -216,9 +245,10 @@ example modeled after the matching
 
 ```
 Subscribe to Korea Stock real-time price ticks using `programgarden_finance`.
-Use the singleton WebSocket pattern shown in
-`src/finance/programgarden_finance/ls/.../real_base.py`. Print each tick as it
-arrives and handle reconnect cleanly.
+Use the singleton WebSocket pattern from
+`src/finance/programgarden_finance/ls/real_base.py`. See
+`src/finance/example/korea_stock/real_S3_.py` for a complete subscription
+example. Print each tick as it arrives and handle reconnect cleanly.
 ```
 
 ## Gotchas — call these out up front, they trip agents constantly
@@ -239,7 +269,10 @@ arrives and handle reconnect cleanly.
 
 - `src/finance/example/` — runnable per-TR samples (overseas stock / futures /
   Korea stock)
-- `src/finance/programgarden_finance/ls/` — all TR blocks
+- `src/finance/programgarden_finance/ls/real_base.py` — singleton WebSocket
+  pattern for all real-time subscriptions
+- `src/finance/programgarden_finance/ls/korea_stock/market/t1410/blocks.py` —
+  canonical TR `blocks.py` to mirror when adding or studying a TR
 - LS Securities OpenAPI portal: https://openapi.ls-sec.co.kr/apiservice
 ````
 
