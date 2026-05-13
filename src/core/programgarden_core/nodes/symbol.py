@@ -387,34 +387,44 @@ class ScreenerNode(BaseNode):
         description="필터링할 종목 리스트. 없으면 전체 시장에서 검색",
     )
     
+    # 시장 선택 (upstream broker 기반 자동 결정 + 명시적 선택 지원)
+    market: Literal["auto", "overseas_stock", "overseas_futures", "korea_stock"] = Field(
+        default="auto",
+        description=(
+            "대상 시장. auto = upstream broker 로 자동 결정 (없으면 overseas_stock 가정). "
+            "overseas_stock = 해외주식, overseas_futures = 해외선물, korea_stock = 국내주식. "
+            "시장에 따라 표시되는 필드(market_cap, sector 등)가 달라집니다."
+        ),
+    )
+
     # 스크리닝 조건
     market_cap_min: Optional[float] = Field(
         default=None,
-        description="최소 시가총액 (달러). 예: 10000000000 = 100억 달러",
+        description="최소 시가총액 [해외주식/국내주식 전용. 선물에서는 무시됨]. 통화: 해외=USD, 국내=KRW. 예: 10000000000 = 100억 (USD 또는 KRW)",
     )
     market_cap_max: Optional[float] = Field(
         default=None,
-        description="최대 시가총액 (달러)",
+        description="최대 시가총액 [해외주식/국내주식 전용. 선물에서는 무시됨]. 통화: 해외=USD, 국내=KRW",
     )
     volume_min: Optional[int] = Field(
         default=None,
-        description="최소 평균 거래량 (주). 예: 1000000 = 100만주",
+        description="최소 평균 거래량. 단위: 주식=주(shares), 선물=계약(contracts). 예: 1000000 = 100만",
     )
     price_min: Optional[float] = Field(
         default=None,
-        description="최소 주가 ($). 예: 1.0 = $1 이상. 동전주 발굴 등 가격대 필터링에 사용",
+        description="최소 가격. 통화: 해외=USD, 국내=KRW. 예: 1.0 = $1 이상 (해외) 또는 1원 이상 (국내). 동전주 발굴 등 가격대 필터링에 사용",
     )
     price_max: Optional[float] = Field(
         default=None,
-        description="최대 주가 ($). 예: 5.0 = $5 이하. 동전주 발굴 등 가격대 필터링에 사용",
+        description="최대 가격. 통화: 해외=USD, 국내=KRW. 예: 5.0 = $5 이하 (해외) 또는 5원 이하 (국내). 동전주 발굴 등 가격대 필터링에 사용",
     )
     sector: Optional[str] = Field(
         default=None,
-        description="섹터 필터 (Technology, Healthcare, Finance 등)",
+        description="섹터 필터 (Technology, Healthcare, Finance 등) [해외주식/국내주식 전용. 선물에서는 무시됨]",
     )
     exchange: Optional[str] = Field(
         default=None,
-        description="거래소 필터 (NASDAQ, NYSE, AMEX)",
+        description="거래소 필터. 주식: NASDAQ/NYSE/AMEX (해외) 또는 KOSPI/KOSDAQ (국내). 선물: CME/CBOT/NYMEX/ICE",
     )
     max_results: int = Field(
         default=100,
@@ -441,26 +451,27 @@ class ScreenerNode(BaseNode):
 
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
-            "Filter a symbol universe by fundamental criteria such as market cap, average volume, or sector",
+            "Filter a symbol universe by fundamental criteria such as market cap, average volume, price band, or sector",
             "Narrow down a large index (e.g. SP500) to tradeable candidates before applying technical conditions",
-            "Combine with MarketUniverseNode to build a quantitative screening pipeline sourced from Yahoo Finance",
+            "Multi-market screening: overseas stocks (LS g3190 or yfinance), overseas futures (yfinance), Korea stocks (yfinance) — broker is auto-detected from upstream",
         ],
         "when_not_to_use": [
             "For technical indicator-based filtering (RSI, MACD) — use ConditionNode with the appropriate plugin instead",
             "For set operations on existing symbol lists — use SymbolFilterNode (intersection/difference/union)",
-            "When broker-specific fundamental data is preferred — ScreenerNode uses Yahoo Finance data which may differ",
+            "For futures-specific filters (open interest, expiry month, asset class) — not yet supported; pass a curated WatchlistNode upstream and apply such filters elsewhere",
         ],
         "typical_scenarios": [
             "MarketUniverseNode (NASDAQ100) → ScreenerNode (Technology sector, volume_min=1M) → SplitNode → OverseasStockMarketDataNode",
-            "WatchlistNode → ScreenerNode (market_cap_min filter) → SymbolFilterNode → SplitNode → NewOrderNode",
-            "ScreenerNode (standalone, no input) → SplitNode → OverseasStockHistoricalDataNode",
+            "OverseasFuturesBrokerNode → WatchlistNode (CL=F, GC=F, ES=F) → ScreenerNode (market='overseas_futures', volume_min=100K) → SplitNode",
+            "KoreaStockBrokerNode → KoreaStockSymbolQueryNode → ScreenerNode (market='korea_stock', price_min=10000) → SplitNode",
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Filters symbols by market cap (min/max), minimum average volume, sector, and exchange; all filters are optional and combinable",
-        "Can run without input symbols to screen the entire market, or accept a symbol_list input to narrow an existing universe",
+        "Filters symbols by market cap (min/max), minimum average volume, price band (min/max), sector, and exchange; all filters are optional and combinable",
+        "Auto-detects the upstream broker (OverseasStockBrokerNode / OverseasFuturesBrokerNode / KoreaStockBrokerNode) and routes the data source accordingly",
+        "Manual market override via the `market` field (auto / overseas_stock / overseas_futures / korea_stock); stock-only filters (market_cap, sector) hide on futures via visible_when",
+        "Overseas stock fast path: LS g3190 + g3101 (with broker credential); other markets and the no-broker case fall back to yfinance",
         "Outputs a sorted (largest market cap first) symbol_list and a count port for downstream conditional logic",
-        "Powered by Yahoo Finance API — no broker credential required",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -472,6 +483,16 @@ class ScreenerNode(BaseNode):
             "pattern": "Setting max_results to 500 without downstream rate limiting",
             "reason": "500 symbols iterating through API calls will trigger rate limits.",
             "alternative": "Keep max_results to a manageable size (50–100) or add a ThrottleNode after SplitNode.",
+        },
+        {
+            "pattern": "Setting data_source='ls' for overseas_futures or korea_stock markets",
+            "reason": "The LS branch is currently implemented for overseas_stock only. Other markets log a warning and fall back to yfinance, which is the intended outcome but the warning adds noise.",
+            "alternative": "Use data_source='auto' (or 'yfinance' explicitly) for futures and Korea stocks; reserve 'ls' for overseas_stock workflows that need the fastest path.",
+        },
+        {
+            "pattern": "Running ScreenerNode for overseas_futures or korea_stock without input symbols",
+            "reason": "The yfinance universe fallback is built on SP500, which is meaningless for futures/Korea stocks.",
+            "alternative": "Feed a WatchlistNode or OverseasFuturesSymbolQueryNode / KoreaStockSymbolQueryNode into the screener's symbols input.",
         },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
@@ -515,18 +536,56 @@ class ScreenerNode(BaseNode):
             },
             "expected_output": "Up to 50 NASDAQ stocks with average daily volume above 5M shares.",
         },
+        {
+            "title": "Filter overseas futures contracts by volume and price",
+            "description": "WatchlistNode provides futures symbols (CL=F, GC=F, ES=F); ScreenerNode filters by minimum volume and price range via yfinance. Stock-only fields (market_cap, sector) are hidden by visible_when in this market.",
+            "workflow_snippet": {
+                "id": "screener_futures",
+                "name": "Futures Volume Screen",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "futures_broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker"},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [
+                        {"exchange": "NYMEX", "symbol": "CL=F"},
+                        {"exchange": "COMEX", "symbol": "GC=F"},
+                        {"exchange": "CME", "symbol": "ES=F"},
+                    ]},
+                    {
+                        "id": "screener",
+                        "type": "ScreenerNode",
+                        "market": "overseas_futures",
+                        "symbols": "{{ nodes.watchlist.symbols }}",
+                        "volume_min": 100000,
+                        "price_min": 10.0,
+                        "max_results": 10,
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.screener.symbols }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "futures_broker"},
+                    {"from": "futures_broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "screener"},
+                    {"from": "screener", "to": "display"},
+                ],
+                "credentials": [{"credential_id": "broker", "type": "broker_ls_overseas_futures", "data": []}],
+            },
+            "expected_output": "Up to 10 futures contracts with average volume above 100K and price above $10, sourced from yfinance.",
+        },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
-        "input_handling": "The symbols input is optional. When connected, ScreenerNode filters only those symbols. When empty, it screens the full market. All filter fields (market_cap_min, volume_min, sector, exchange) are independently optional.",
+        "input_handling": "The symbols input is optional for overseas_stock (a SP500 fallback universe kicks in via yfinance), but is REQUIRED for overseas_futures and korea_stock — the screener errors out without it because the SP500 fallback is irrelevant for those markets. Stock-only fields (market_cap_min/max, sector) are automatically ignored on futures, with a warning logged. All filter fields are independently optional.",
         "output_consumption": "Connect symbols to SplitNode.items for per-symbol iteration, or to SymbolFilterNode/ExclusionListNode for further set operations. Use count for logging or conditional branching with IfNode.",
         "common_combinations": [
             "MarketUniverseNode → ScreenerNode → SplitNode → OverseasStockMarketDataNode",
             "ScreenerNode → SymbolFilterNode (difference with held positions) → SplitNode → NewOrderNode",
-            "ScreenerNode → SplitNode → OverseasStockHistoricalDataNode → ConditionNode (RSI/MACD)",
+            "OverseasFuturesBrokerNode → WatchlistNode → ScreenerNode(market='overseas_futures') → SplitNode",
+            "KoreaStockBrokerNode → KoreaStockSymbolQueryNode → ScreenerNode(market='korea_stock') → SplitNode",
         ],
         "pitfalls": [
-            "ScreenerNode relies on Yahoo Finance data which may have delays or inconsistencies with broker data.",
+            "ScreenerNode relies on Yahoo Finance data (or LS g3190/g3101 for overseas_stock) which may have delays or inconsistencies with realtime broker data.",
             "Setting no filters returns all symbols up to max_results — always set at least one filter for production strategies.",
+            "data_source='ls' is only effective for overseas_stock. Other markets log a warning and fall back to yfinance — set data_source='yfinance' explicitly to silence the warning.",
+            "If the user-specified `market` disagrees with the upstream broker's product, the user choice wins and a warning is logged. Wire only one broker per workflow or set `market` explicitly to avoid ambiguity.",
             "The sector filter uses Yahoo Finance sector names; ensure exact match (e.g. 'Financial Services' not 'Finance').",
         ],
     }
@@ -561,45 +620,65 @@ class ScreenerNode(BaseNode):
                 bindable_sources=["WatchlistNode.symbols", "MarketUniverseNode.symbols", "SymbolQueryNode.symbols"],
                 expected_type="list[dict]",
             ),
+            # === PARAMETERS: 시장 선택 ===
+            "market": FieldSchema(
+                name="market",
+                type=FieldType.ENUM,
+                description="대상 시장을 선택하세요. '자동'을 권장합니다 (브로커 노드에 맞춰 자동 결정).",
+                default="auto",
+                enum_values=["auto", "overseas_stock", "overseas_futures", "korea_stock"],
+                enum_labels={
+                    "auto": "자동 (브로커 노드 기준)",
+                    "overseas_stock": "해외주식",
+                    "overseas_futures": "해외선물",
+                    "korea_stock": "국내주식",
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="auto",
+                expected_type="str",
+            ),
             # === PARAMETERS: 시가총액 필터 ===
             "market_cap_min": FieldSchema(
                 name="market_cap_min",
                 type=FieldType.NUMBER,
-                description="최소 시가총액을 입력하세요 (달러 단위). 예: 100억 달러 = 10000000000. 유동성 낮은 소형주를 제외하려면 설정하세요.",
+                description="최소 시가총액을 입력하세요. 통화: 해외=USD, 국내=KRW. 예: 100억 = 10000000000. 유동성 낮은 소형주를 제외하려면 설정하세요. [해외주식/국내주식 전용]",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=10000000000,
-                placeholder="예: 10000000000 (100억 달러)",
+                placeholder="예: 10000000000 (100억)",
                 expected_type="float",
+                visible_when={"market": ["auto", "overseas_stock", "korea_stock"]},
             ),
             "market_cap_max": FieldSchema(
                 name="market_cap_max",
                 type=FieldType.NUMBER,
-                description="최대 시가총액을 입력하세요. 중소형주만 찾으려면 설정하세요.",
+                description="최대 시가총액을 입력하세요. 통화: 해외=USD, 국내=KRW. 중소형주만 찾으려면 설정하세요. [해외주식/국내주식 전용]",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=50000000000,
                 expected_type="float",
+                visible_when={"market": ["auto", "overseas_stock", "korea_stock"]},
             ),
             # === PARAMETERS: 거래량 필터 ===
             "volume_min": FieldSchema(
                 name="volume_min",
                 type=FieldType.INTEGER,
-                description="최소 평균 거래량 (주 단위). 예: 100만주 = 1000000. 거래량이 적은 종목은 주문 체결이 어려울 수 있습니다.",
+                description="최소 평균 거래량. 단위: 주식=주(shares), 선물=계약(contracts). 예: 100만 = 1000000. 거래량이 적은 종목은 주문 체결이 어려울 수 있습니다.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example=1000000,
-                placeholder="예: 1000000 (100만주)",
+                placeholder="예: 1000000 (100만)",
                 expected_type="int",
             ),
             # === PARAMETERS: 가격 필터 ===
             "price_min": FieldSchema(
                 name="price_min",
                 type=FieldType.NUMBER,
-                description="최소 주가 (달러). 동전주 발굴이나 저가주 필터링에 사용하세요. 예: 1.0 = $1 이상.",
+                description="최소 가격. 통화: 해외=USD, 국내=KRW. 동전주 발굴이나 저가주 필터링에 사용하세요. 예: 1.0 = $1 (해외) 또는 1원 (국내) 이상.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -610,7 +689,7 @@ class ScreenerNode(BaseNode):
             "price_max": FieldSchema(
                 name="price_max",
                 type=FieldType.NUMBER,
-                description="최대 주가 (달러). 고가주 제외나 동전주 상한선 설정에 사용하세요. 예: 5.0 = $5 이하.",
+                description="최대 가격. 통화: 해외=USD, 국내=KRW. 고가주 제외나 동전주 상한선 설정에 사용하세요. 예: 5.0 = $5 (해외) 또는 5원 (국내) 이하.",
                 required=False,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
@@ -622,7 +701,7 @@ class ScreenerNode(BaseNode):
             "sector": FieldSchema(
                 name="sector",
                 type=FieldType.ENUM,
-                description="특정 섹터만 찾으려면 선택하세요. 비워두면 전체 섹터.",
+                description="특정 섹터만 찾으려면 선택하세요. 비워두면 전체 섹터. [해외주식/국내주식 전용. 선물에서는 무시됨]",
                 required=False,
                 enum_values=["", "Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Communication Services", "Industrials", "Consumer Defensive", "Energy", "Utilities", "Real Estate", "Basic Materials"],
                 enum_labels={
@@ -643,6 +722,7 @@ class ScreenerNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="Technology",
                 expected_type="str",
+                visible_when={"market": ["auto", "overseas_stock", "korea_stock"]},
             ),
             "exchange": FieldSchema(
                 name="exchange",
