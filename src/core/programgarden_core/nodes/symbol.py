@@ -400,6 +400,14 @@ class ScreenerNode(BaseNode):
         default=None,
         description="최소 평균 거래량 (주). 예: 1000000 = 100만주",
     )
+    price_min: Optional[float] = Field(
+        default=None,
+        description="최소 주가 ($). 예: 1.0 = $1 이상. 동전주 발굴 등 가격대 필터링에 사용",
+    )
+    price_max: Optional[float] = Field(
+        default=None,
+        description="최대 주가 ($). 예: 5.0 = $5 이하. 동전주 발굴 등 가격대 필터링에 사용",
+    )
     sector: Optional[str] = Field(
         default=None,
         description="섹터 필터 (Technology, Healthcare, Finance 등)",
@@ -409,8 +417,13 @@ class ScreenerNode(BaseNode):
         description="거래소 필터 (NASDAQ, NYSE, AMEX)",
     )
     max_results: int = Field(
-        default=100, 
+        default=100,
         description="최대 결과 수"
+    )
+
+    data_source: Literal["auto", "ls", "yfinance"] = Field(
+        default="auto",
+        description="자료 가져올 곳. auto=브로커 연결 시 LS증권, 아니면 Yahoo Finance. ls=LS증권 강제. yfinance=Yahoo Finance 강제.",
     )
 
     _inputs: List[InputPort] = [
@@ -582,6 +595,29 @@ class ScreenerNode(BaseNode):
                 placeholder="예: 1000000 (100만주)",
                 expected_type="int",
             ),
+            # === PARAMETERS: 가격 필터 ===
+            "price_min": FieldSchema(
+                name="price_min",
+                type=FieldType.NUMBER,
+                description="최소 주가 (달러). 동전주 발굴이나 저가주 필터링에 사용하세요. 예: 1.0 = $1 이상.",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example=1.0,
+                placeholder="예: 1.0 ($1 이상)",
+                expected_type="float",
+            ),
+            "price_max": FieldSchema(
+                name="price_max",
+                type=FieldType.NUMBER,
+                description="최대 주가 (달러). 고가주 제외나 동전주 상한선 설정에 사용하세요. 예: 5.0 = $5 이하.",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example=5.0,
+                placeholder="예: 5.0 ($5 이하)",
+                expected_type="float",
+            ),
             # === PARAMETERS: 섹터/거래소 필터 ===
             "sector": FieldSchema(
                 name="sector",
@@ -623,6 +659,23 @@ class ScreenerNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 example="NASDAQ",
+                expected_type="str",
+            ),
+            # === PARAMETERS: 자료 가져올 곳 ===
+            "data_source": FieldSchema(
+                name="data_source",
+                type=FieldType.ENUM,
+                description="가격/시가총액/거래량 정보를 어디에서 받아올지 선택하세요. '자동'을 권장합니다.",
+                default="auto",
+                enum_values=["auto", "ls", "yfinance"],
+                enum_labels={
+                    "auto": "자동 (브로커 연결 시 LS증권 사용, 없으면 Yahoo Finance)",
+                    "ls": "LS증권 (빠름, 브로커 연결 필요)",
+                    "yfinance": "Yahoo Finance (외부 API)",
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="auto",
                 expected_type="str",
             ),
             # === SETTINGS: 결과 제한 ===

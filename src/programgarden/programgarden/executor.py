@@ -1443,33 +1443,209 @@ class ScreenerNodeExecutor(NodeExecutorBase):
         market_cap_min = config.get("market_cap_min")
         market_cap_max = config.get("market_cap_max")
         volume_min = config.get("volume_min")
+        price_min = config.get("price_min")
+        price_max = config.get("price_max")
         sector = config.get("sector")
         exchange = config.get("exchange")
         max_results = config.get("max_results", 100)
-        
+        data_source = config.get("data_source", "auto")
+
         # 입력으로 받은 종목 리스트 (선택사항)
         input_symbols = config.get("symbols", [])
-        
+
+        # 데이터 소스 결정: auto면 브로커 연결(overseas_stock) 여부로 분기
+        # ls 강제: 브로커 연결 필수
+        # yfinance 강제: 기존 로직
+        #
+        # ScreenerNode는 product_scope=ALL이라 _auto_inject_connection이 스킵함.
+        # 그래서 워크플로우 내에 overseas_stock BrokerNode가 있으면 그 출력을 직접 탐지한다.
+        connection = config.get("connection") or {}
+        if not connection:
+            workflow_nodes = getattr(context, 'workflow_nodes', None) or {}
+            for other_id, other_node in workflow_nodes.items():
+                if getattr(other_node, 'node_type', '') == "OverseasStockBrokerNode":
+                    out = context.get_all_outputs(other_id) or {}
+                    if "connection" in out:
+                        connection = out["connection"] or {}
+                        break
+        broker_available = (
+            connection.get("provider") == "ls-sec.co.kr"
+            and connection.get("product") == "overseas_stock"
+        )
+        if data_source == "auto":
+            use_ls = broker_available
+        elif data_source == "ls":
+            use_ls = True
+            if not broker_available:
+                context.log(
+                    "error",
+                    "data_source='ls' 인데 OverseasStockBrokerNode 연결이 없습니다. data_source를 'auto' 또는 'yfinance'로 바꾸거나 브로커를 연결하세요.",
+                    node_id,
+                )
+                return {"symbols": [], "count": 0, "error": "Missing OverseasStockBrokerNode for data_source='ls'"}
+        else:  # "yfinance"
+            use_ls = False
+
         try:
-            if input_symbols:
-                # 입력 종목에서 필터링
+            if use_ls and input_symbols:
+                symbols = await self._filter_via_ls(
+                    input_symbols, market_cap_min, market_cap_max,
+                    volume_min, price_min, price_max, sector, exchange, max_results,
+                    context, node_id,
+                )
+            elif input_symbols:
+                # 입력 종목에서 필터링 (yfinance)
                 symbols = await self._filter_symbols(
-                    input_symbols, market_cap_min, market_cap_max, 
-                    volume_min, sector, exchange, max_results, context, node_id
+                    input_symbols, market_cap_min, market_cap_max,
+                    volume_min, price_min, price_max, sector, exchange, max_results, context, node_id
                 )
             else:
-                # 전체 시장에서 검색
+                # 전체 시장에서 검색 (yfinance, SP500 기반)
                 symbols = await self._search_market(
                     market_cap_min, market_cap_max,
-                    volume_min, sector, exchange, max_results, context, node_id
+                    volume_min, price_min, price_max, sector, exchange, max_results, context, node_id
                 )
-            
-            context.log("info", f"Screener: {len(symbols)} symbols matched", node_id)
+
+            source_tag = "LS" if use_ls else "yfinance"
+            context.log("info", f"Screener[{source_tag}]: {len(symbols)} symbols matched", node_id)
             return {"symbols": symbols, "count": len(symbols)}
-            
+
         except Exception as e:
             context.log("error", f"Screener failed: {e}", node_id)
             return {"symbols": [], "count": 0, "error": str(e)}
+
+    async def _filter_via_ls(
+        self,
+        symbols: List[Dict],
+        market_cap_min: Optional[float],
+        market_cap_max: Optional[float],
+        volume_min: Optional[int],
+        price_min: Optional[float],
+        price_max: Optional[float],
+        sector: Optional[str],
+        exchange: Optional[str],
+        max_results: int,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, Any]]:
+        """LS API 분기 — SymbolQueryNode 출력에 들어있는 가격/시총 정보로 필터링.
+
+        Note:
+            - g3190 응답에는 거래량(volume)이 없음. volume_min 명시 시 g3101을 종목별로 호출하여 거래량 확인.
+            - sector 필터는 g3190에 산업코드(indusury)는 있으나 yfinance 식 sector 이름과 매핑되지 않아 현재 미지원.
+              명시되면 무시하고 경고만 출력.
+        """
+        if sector:
+            context.log(
+                "warning",
+                "ScreenerNode[LS]: sector 필터는 LS 모드에서 미지원입니다. 무시하고 진행합니다.",
+                node_id,
+            )
+
+        # 1단계: g3190 응답의 가격/시총 정보만으로 빠르게 필터
+        prefilter: List[Dict[str, Any]] = []
+        for sym in symbols:
+            if not isinstance(sym, dict):
+                continue
+            # 거래정지/매도전용 종목 자동 제외
+            if (sym.get("suspend") or "").upper() == "Y":
+                continue
+            if (sym.get("sellonly") or "").upper() == "Y":
+                continue
+
+            price = float(sym.get("price") or 0.0)
+            mcap = float(sym.get("market_cap") or 0)
+
+            if price_min is not None and price < price_min:
+                continue
+            if price_max is not None and price > price_max:
+                continue
+            if market_cap_min and mcap < market_cap_min:
+                continue
+            if market_cap_max and mcap > market_cap_max:
+                continue
+            if exchange and exchange.upper() not in (sym.get("exchange") or "").upper():
+                continue
+
+            prefilter.append({
+                "exchange": sym.get("exchange", ""),
+                "symbol": sym.get("symbol", ""),
+                "price": price,
+                "market_cap": mcap,
+                # volume은 g3190에 없음 → 다음 단계에서 채움
+                "volume": 0,
+            })
+
+        # 2단계: volume_min 명시 시 g3101로 거래량 확인
+        if volume_min and prefilter:
+            prefilter = await self._enrich_volume_via_g3101(
+                prefilter, volume_min, max_results, context, node_id,
+            )
+
+        # 시가총액 큰 순으로 정렬 + max_results 절단
+        prefilter.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
+        return prefilter[:max_results]
+
+    async def _enrich_volume_via_g3101(
+        self,
+        candidates: List[Dict[str, Any]],
+        volume_min: int,
+        max_results: int,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, Any]]:
+        """후보 종목별로 g3101(현재가 스냅샷)을 호출하여 거래량 필터 적용."""
+        try:
+            from programgarden_finance import LS, g3101
+        except ImportError:
+            context.log("warning", "programgarden_finance import 실패 — volume 필터 스킵", node_id)
+            return candidates
+
+        cred = context.get_credential("credential_id") or {}
+        appkey = cred.get("appkey")
+        appsecret = cred.get("appsecret")
+        if not appkey or not appsecret:
+            context.log(
+                "warning",
+                "ScreenerNode[LS]: g3101 호출에 필요한 credential 없음 — volume 필터 스킵",
+                node_id,
+            )
+            return candidates
+
+        ls, success, error = ensure_ls_login(
+            appkey, appsecret, False, context, node_id, "overseas_stock",
+        )
+        if not success:
+            context.log("warning", f"LS 로그인 실패 — volume 필터 스킵: {error}", node_id)
+            return candidates
+
+        # max_results의 2배까지만 검사 (속도 보호)
+        limit = max_results * 2
+        passed: List[Dict[str, Any]] = []
+
+        for sym in candidates[:limit]:
+            ticker = sym.get("symbol", "")
+            if not ticker:
+                continue
+            try:
+                query = ls.overseas_stock().시세().현재가조회(
+                    g3101.G3101InBlock(symbol=ticker)
+                )
+                result = await query.req_async()
+                vol = 0
+                if result and hasattr(result, 'block') and result.block:
+                    # g3101 OutBlock.volume = 누적 거래량
+                    vol = int(getattr(result.block, 'volume', 0) or 0)
+                if vol >= volume_min:
+                    sym["volume"] = vol
+                    passed.append(sym)
+                    if len(passed) >= max_results:
+                        break
+            except Exception as e:
+                context.log("debug", f"g3101 {ticker} 호출 실패: {e}", node_id)
+                continue
+
+        return passed
     
     async def _filter_symbols(
         self,
@@ -1477,6 +1653,8 @@ class ScreenerNodeExecutor(NodeExecutorBase):
         market_cap_min: Optional[float],
         market_cap_max: Optional[float],
         volume_min: Optional[int],
+        price_min: Optional[float],
+        price_max: Optional[float],
         sector: Optional[str],
         exchange: Optional[str],
         max_results: int,
@@ -1485,34 +1663,40 @@ class ScreenerNodeExecutor(NodeExecutorBase):
     ) -> List[Dict[str, str]]:
         """입력 종목 리스트에서 조건 필터링"""
         import asyncio
-        
+
         tickers = [s.get("symbol", s) if isinstance(s, dict) else s for s in symbols]
-        
+
         # yfinance 동기 호출을 thread pool에서 실행 (이벤트 루프 블로킹 방지)
         def _sync_filter():
             import yfinance as yf
             filtered = []
-            
+
             for ticker in tickers[:max_results * 2]:  # 여유분 확보
                 try:
                     stock = yf.Ticker(ticker)
                     info = stock.info
-                    
+
                     # 필터 조건 확인
                     mcap = info.get("marketCap", 0)
                     vol = info.get("averageVolume", 0)
+                    # 가격: 정규시장가 → 현재가 → 전일종가 순으로 가용한 값 사용
+                    price = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose") or 0
                     stock_sector = info.get("sector", "")
                     stock_exchange = info.get("exchange", "")
-                    
+
                     # 거래소 매핑 (yfinance 코드 → 표준 이름)
                     ex_map = {"NMS": "NASDAQ", "NGM": "NASDAQ", "NYQ": "NYSE", "ASE": "AMEX", "NCM": "NASDAQ"}
                     mapped_exchange = ex_map.get(stock_exchange, stock_exchange)
-                    
+
                     if market_cap_min and mcap < market_cap_min:
                         continue
                     if market_cap_max and mcap > market_cap_max:
                         continue
                     if volume_min and vol < volume_min:
+                        continue
+                    if price_min is not None and price < price_min:
+                        continue
+                    if price_max is not None and price > price_max:
                         continue
                     # sector 정규화 비교 (대소문자, 띄어쓰기 무시)
                     if sector:
@@ -1523,35 +1707,38 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                     # exchange 필터 (매핑된 값으로 비교)
                     if exchange and exchange.upper() not in mapped_exchange.upper():
                         continue
-                    
+
                     filtered.append({
                         "exchange": mapped_exchange,
                         "symbol": ticker,
                         "market_cap": mcap,
                         "volume": vol,
+                        "price": price,
                         "sector": stock_sector,
                     })
-                    
+
                     if len(filtered) >= max_results:
                         break
-                        
+
                 except Exception as e:
                     # 동기 함수에서는 context 사용 불가, 그냥 skip
                     continue
-            
+
             # 시가총액 내림차순 정렬
             filtered.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
             return filtered[:max_results]
-        
+
         # thread pool에서 실행하여 이벤트 루프 블로킹 방지
         result = await asyncio.to_thread(_sync_filter)
         return result
-    
+
     async def _search_market(
         self,
         market_cap_min: Optional[float],
         market_cap_max: Optional[float],
         volume_min: Optional[int],
+        price_min: Optional[float],
+        price_max: Optional[float],
         sector: Optional[str],
         exchange: Optional[str],
         max_results: int,
@@ -1567,12 +1754,12 @@ class ScreenerNodeExecutor(NodeExecutorBase):
             config={"universe": "SP500"},
             context=context,
         )
-        
+
         input_symbols = universe_result.get("symbols", [])
-        
+
         return await self._filter_symbols(
             input_symbols, market_cap_min, market_cap_max,
-            volume_min, sector, exchange, max_results, context, node_id
+            volume_min, price_min, price_max, sector, exchange, max_results, context, node_id
         )
 
 
@@ -1693,19 +1880,33 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
                         # 거래소 코드 → 이름 매핑
                         exchcd = getattr(item, 'exchcd', '')
                         exchange_name = self._stock_exchcd_to_name(exchcd)
-                        
+
+                        # pcls(전일종가)는 문자열로 옴 — 가능하면 float 변환
+                        pcls_raw = getattr(item, 'pcls', '') or ''
+                        try:
+                            price = float(pcls_raw) if pcls_raw else 0.0
+                        except (TypeError, ValueError):
+                            price = 0.0
+
                         all_symbols.append({
                             "exchange": exchange_name,
                             "exchange_code": exchcd,
                             "symbol": getattr(item, 'symbol', ''),
                             "name": getattr(item, 'korname', '') or getattr(item, 'engname', ''),
                             "isin": getattr(item, 'isin', ''),
+                            # g3190 응답에 포함된 부가 정보 (ScreenerNode LS 분기에서 활용)
+                            "price": price,
+                            "market_cap": getattr(item, 'marketcap', 0) or 0,
+                            "shares_outstanding": getattr(item, 'share', 0) or 0,
+                            "currency": getattr(item, 'currency', '') or '',
+                            "suspend": getattr(item, 'suspend', '') or '',
+                            "sellonly": getattr(item, 'sellonly', '') or '',
                         })
-                    
+
                     # 연속 조회
                     if hasattr(result, 'block') and result.block:
                         cts_value = getattr(result.block, 'cts_value', '')
-                    
+
                     if not cts_value or len(all_symbols) >= max_results:
                         break
                 else:
