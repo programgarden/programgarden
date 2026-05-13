@@ -63,14 +63,20 @@ src/
 
 ## 설치
 
+**워크플로우 엔진 전체** (노드 + 전략 플러그인 + finance + core 포함):
+
 ```bash
 pip install programgarden
+# 또는 Poetry
+poetry add programgarden
 ```
 
-또는 Poetry를 사용하는 경우:
+**LS증권 OpenAPI 만 단독 사용** (워크플로우 엔진 없이 TR 호출 스크립트만 필요할 때):
 
 ```bash
-poetry add programgarden
+pip install programgarden-finance
+# 또는 Poetry
+poetry add programgarden-finance
 ```
 
 ## AI 코딩 에이전트와 함께 사용하기 (Claude · Codex)
