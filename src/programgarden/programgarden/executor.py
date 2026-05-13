@@ -1458,16 +1458,12 @@ class ScreenerNodeExecutor(NodeExecutorBase):
         # yfinance 강제: 기존 로직
         #
         # ScreenerNode는 product_scope=ALL이라 _auto_inject_connection이 스킵함.
-        # 그래서 워크플로우 내에 overseas_stock BrokerNode가 있으면 그 출력을 직접 탐지한다.
+        # DAG 조상에서 OverseasStockBrokerNode를 직접 찾아 connection을 가져온다.
         connection = config.get("connection") or {}
         if not connection:
-            workflow_nodes = getattr(context, 'workflow_nodes', None) or {}
-            for other_id, other_node in workflow_nodes.items():
-                if getattr(other_node, 'node_type', '') == "OverseasStockBrokerNode":
-                    out = context.get_all_outputs(other_id) or {}
-                    if "connection" in out:
-                        connection = out["connection"] or {}
-                        break
+            broker_outputs = context.find_parent_output(node_id, "OverseasStockBrokerNode")
+            if broker_outputs:
+                connection = broker_outputs.get("connection") or {}
         broker_available = (
             connection.get("provider") == "ls-sec.co.kr"
             and connection.get("product") == "overseas_stock"
