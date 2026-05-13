@@ -1440,6 +1440,7 @@ class ScreenerNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
+        market_choice = config.get("market", "auto")
         market_cap_min = config.get("market_cap_min")
         market_cap_max = config.get("market_cap_max")
         volume_min = config.get("volume_min")
@@ -1453,38 +1454,139 @@ class ScreenerNodeExecutor(NodeExecutorBase):
         # 입력으로 받은 종목 리스트 (선택사항)
         input_symbols = config.get("symbols", [])
 
-        # 데이터 소스 결정: auto면 브로커 연결(overseas_stock) 여부로 분기
-        # ls 강제: 브로커 연결 필수
-        # yfinance 강제: 기존 로직
-        #
-        # ScreenerNode는 product_scope=ALL이라 _auto_inject_connection이 스킵함.
-        # DAG 조상에서 OverseasStockBrokerNode를 직접 찾아 connection을 가져온다.
-        connection = config.get("connection") or {}
+        # ScreenerNode는 product_scope=ALL이라 _auto_inject_connection이 스킵됨.
+        # DAG 조상에서 브로커 타입을 직접 찾아 connection을 가져온다.
+        # market='auto' → 3개 broker 순회 / market 명시 → 해당 broker만 검색.
+        BROKER_BY_PRODUCT = {
+            "overseas_stock": "OverseasStockBrokerNode",
+            "overseas_futures": "OverseasFuturesBrokerNode",
+            "korea_stock": "KoreaStockBrokerNode",
+        }
+
+        connection: Dict[str, Any] = config.get("connection") or {}
+        resolved_product: Optional[str] = None
+
         if not connection:
-            broker_outputs = context.find_parent_output(node_id, "OverseasStockBrokerNode")
-            if broker_outputs:
-                connection = broker_outputs.get("connection") or {}
+            if market_choice == "auto":
+                for product, broker_type in BROKER_BY_PRODUCT.items():
+                    parent = context.find_parent_output(node_id, broker_type)
+                    if parent and parent.get("connection"):
+                        connection = parent["connection"]
+                        resolved_product = connection.get("product") or product
+                        break
+            else:
+                broker_type = BROKER_BY_PRODUCT.get(market_choice)
+                if broker_type:
+                    parent = context.find_parent_output(node_id, broker_type)
+                    if parent and parent.get("connection"):
+                        connection = parent["connection"]
+                        resolved_product = connection.get("product") or market_choice
+        else:
+            resolved_product = connection.get("product")
+
+        # market='auto' + broker 못 찾음 → overseas_stock 가정 (기존 동작 호환)
+        effective_market = resolved_product or (
+            market_choice if market_choice != "auto" else "overseas_stock"
+        )
+
+        # market mismatch: 사용자가 market 명시했는데 broker product가 다름
+        if (
+            market_choice != "auto"
+            and resolved_product
+            and resolved_product != market_choice
+        ):
+            context.log(
+                "warning",
+                f"ScreenerNode: market='{market_choice}' 인데 upstream broker product='{resolved_product}'. "
+                f"사용자 지정 market 을 우선합니다.",
+                node_id,
+            )
+            effective_market = market_choice
+
         broker_available = (
             connection.get("provider") == "ls-sec.co.kr"
-            and connection.get("product") == "overseas_stock"
+            and connection.get("product") == effective_market
         )
-        if data_source == "auto":
-            use_ls = broker_available
+
+        # 라우팅: data_source + effective_market 별 분기
+        if data_source == "yfinance":
+            use_ls = False
         elif data_source == "ls":
-            use_ls = True
             if not broker_available:
+                broker_name = BROKER_BY_PRODUCT.get(effective_market, "broker")
                 context.log(
                     "error",
-                    "data_source='ls' 인데 OverseasStockBrokerNode 연결이 없습니다. data_source를 'auto' 또는 'yfinance'로 바꾸거나 브로커를 연결하세요.",
+                    f"data_source='ls' 인데 {broker_name} 연결이 없습니다. "
+                    f"data_source를 'auto' 또는 'yfinance'로 바꾸거나 브로커를 연결하세요.",
                     node_id,
                 )
-                return {"symbols": [], "count": 0, "error": "Missing OverseasStockBrokerNode for data_source='ls'"}
-        else:  # "yfinance"
-            use_ls = False
+                return {
+                    "symbols": [],
+                    "count": 0,
+                    "error": f"Missing broker for market='{effective_market}'",
+                }
+            # LS 분기는 현재 overseas_stock만 지원 → 그 외는 yfinance fallback
+            if effective_market != "overseas_stock":
+                context.log(
+                    "warning",
+                    f"ScreenerNode LS 분기는 현재 overseas_stock 만 지원합니다. "
+                    f"effective_market='{effective_market}' 은 yfinance fallback 으로 대체됩니다. "
+                    f"(data_source='yfinance' 명시를 권장)",
+                    node_id,
+                )
+                use_ls = False
+            else:
+                use_ls = True
+        else:  # "auto"
+            use_ls = broker_available and effective_market == "overseas_stock"
+
+        # 선물 시장: stock 전용 필드 무시 + warning
+        if effective_market == "overseas_futures":
+            ignored: List[str] = []
+            if market_cap_min is not None or market_cap_max is not None:
+                ignored.append("market_cap_min/max")
+                market_cap_min = None
+                market_cap_max = None
+            if sector:
+                ignored.append("sector")
+                sector = None
+            if ignored:
+                context.log(
+                    "warning",
+                    f"ScreenerNode[overseas_futures]: stock 전용 필드 무시됨 — {', '.join(ignored)}. "
+                    f"선물에는 적용되지 않습니다.",
+                    node_id,
+                )
+
+        # universe fallback 가드: 선물/국내주식은 SP500 universe(yfinance) 부적절
+        if not input_symbols and effective_market == "overseas_futures":
+            context.log(
+                "error",
+                "ScreenerNode[overseas_futures]: 입력 symbols 가 필요합니다. "
+                "선물 universe 는 WatchlistNode 또는 OverseasFuturesSymbolQueryNode 등으로 직접 지정해야 합니다.",
+                node_id,
+            )
+            return {
+                "symbols": [],
+                "count": 0,
+                "error": "futures requires input symbols",
+            }
+        if not input_symbols and effective_market == "korea_stock":
+            context.log(
+                "error",
+                "ScreenerNode[korea_stock]: 입력 symbols 가 필요합니다. "
+                "국내주식 universe 는 KoreaStockSymbolQueryNode 등으로 직접 지정해야 합니다.",
+                node_id,
+            )
+            return {
+                "symbols": [],
+                "count": 0,
+                "error": "korea_stock requires input symbols",
+            }
 
         try:
             if use_ls and input_symbols:
-                symbols = await self._filter_via_ls(
+                symbols = await self._filter_via_ls_overseas_stock(
                     input_symbols, market_cap_min, market_cap_max,
                     volume_min, price_min, price_max, sector, exchange, max_results,
                     context, node_id,
@@ -1502,7 +1604,7 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                     volume_min, price_min, price_max, sector, exchange, max_results, context, node_id
                 )
 
-            source_tag = "LS" if use_ls else "yfinance"
+            source_tag = f"LS:{effective_market}" if use_ls else f"yfinance:{effective_market}"
             context.log("info", f"Screener[{source_tag}]: {len(symbols)} symbols matched", node_id)
             return {"symbols": symbols, "count": len(symbols)}
 
@@ -1510,7 +1612,7 @@ class ScreenerNodeExecutor(NodeExecutorBase):
             context.log("error", f"Screener failed: {e}", node_id)
             return {"symbols": [], "count": 0, "error": str(e)}
 
-    async def _filter_via_ls(
+    async def _filter_via_ls_overseas_stock(
         self,
         symbols: List[Dict],
         market_cap_min: Optional[float],
@@ -1524,7 +1626,9 @@ class ScreenerNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> List[Dict[str, Any]]:
-        """LS API 분기 — SymbolQueryNode 출력에 들어있는 가격/시총 정보로 필터링.
+        """LS API 분기 — overseas_stock 전용 (g3190 + g3101).
+
+        향후 _filter_via_ls_overseas_futures / _filter_via_ls_korea_stock 추가 예정.
 
         Note:
             - g3190 응답에는 거래량(volume)이 없음. volume_min 명시 시 g3101을 종목별로 호출하여 거래량 확인.
