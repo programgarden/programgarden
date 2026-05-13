@@ -72,3 +72,159 @@ pip install programgarden
 ```bash
 poetry add programgarden
 ```
+
+## Using with AI Coding Agents (Claude · Codex)
+
+ProgramGarden ships two distinct surfaces. Pick the section that matches what you
+intend to ask the agent to do — feeding the right context up front massively
+improves output quality, since this is a domain-specific codebase (workflow DSL +
+LS Securities OpenAPI) that agents won't infer correctly from a cold read.
+
+<details>
+<summary><b>For Workflow Users (<code>programgarden</code> — node-based automation)</b></summary>
+
+Use this if you're building or debugging **workflow JSON** that runs through
+`WorkflowExecutor`.
+
+#### Context the agent should know
+
+- **Domain**: node-based automation DSL. A workflow is a JSON document with
+  `nodes`, `edges`, `credentials`, and `notes`.
+- **73 nodes across 12 categories**: `infra` / `account` / `market` / `condition`
+  / `order` / `risk` / `schedule` / `data` / `display` / `analysis` / `ai` /
+  `messaging`. Full schema and examples live in [`CLAUDE.md`](CLAUDE.md) and
+  `src/core/programgarden_core/nodes/`.
+- **77 community plugins**: referenced via the `plugin` field in `ConditionNode`,
+  `NewOrderNode`, etc. See `src/community/programgarden_community/plugins/`.
+- **Expression binding**: `{{ nodes.<id>.<port> }}` flows data between nodes.
+  Auto-iterate (`item` / `index` / `total`) when an upstream node emits an array.
+  Function namespaces: `date.*`, `finance.*`, `stats.*`, `format.*`, `lst.*`.
+- **Two execution entry points**:
+  (1) `WorkflowExecutor` — run an entire JSON workflow.
+  (2) `NodeRunner` — run a single node standalone.
+
+#### Prompt template — build a new workflow
+
+```
+This repo is the ProgramGarden automated-trading library.
+First read `CLAUDE.md` to learn the node / edge / expression rules, then look at
+one or two similar examples in `src/programgarden/examples/workflows/`.
+Then build the following workflow JSON:
+
+- Goal: buy at market for 5 NASDAQ tickers whose RSI is <= 30
+- Constraint: must pass `WorkflowExecutor.validate()`
+```
+
+#### Prompt template — debug a failing workflow
+
+```
+Running this workflow JSON raises `Node X failed: ...`.
+Use `WorkflowExecutor.dry_run()` to locate where it breaks and diagnose the
+root cause. Wire up an `ExecutionListener` to print node state transitions
+if it helps.
+```
+
+#### Prompt template — contribute a new plugin
+
+```
+I want to add a new strategy plugin `IchimokuCloud` to ProgramGarden.
+Mirror the structure of `src/community/programgarden_community/plugins/rsi/`
+(plugin.py, metadata.json, tests/). Write all i18n keys in English only.
+```
+
+#### Gotchas the agent often misses — call these out up front
+
+1. **Symbols are arrays, never dict keys**:
+   `[{"symbol": "AAPL", "exchange": "NASDAQ"}]`
+2. **Broker connection is auto-injected** by Executor via DAG traversal — never
+   bind `connection` manually.
+3. **Method chaining inside `{{ }}` is supported**:
+   `{{ nodes.account.filter('pnl > 0').count() }}`
+4. **Retry is disabled by default for order nodes** (`*NewOrderNode`,
+   `*ModifyOrderNode`, `*CancelOrderNode`) to prevent duplicate submissions.
+   Enabling `resilience.retry.enabled = True` needs explicit justification.
+5. **Auto-iterate**: when the upstream node emits an array, the downstream node
+   runs once per item — no explicit loop construct needed.
+
+#### Reference files for the agent to read
+
+- [`CLAUDE.md`](CLAUDE.md) — node catalog, architecture, examples (read first)
+- [`PROJECT_MAP.md`](PROJECT_MAP.md) — repo index
+- `src/programgarden/examples/workflows/` — 77 runnable workflow JSON files
+
+</details>
+
+<details>
+<summary><b>For Direct LS Securities API Users (<code>programgarden-finance</code> only)</b></summary>
+
+Use this if you only want the **LS Securities OpenAPI wrapper** — calling TRs
+(transaction codes) directly from your own scripts, without the workflow engine.
+
+#### Context the agent should know
+
+- **What it is**: a typed async wrapper over LS Securities OpenAPI. Each TR
+  (e.g. `t1410`, `t8407`) is a Pydantic `blocks.py` module exposing `InBlock` /
+  `OutBlock` types plus an async caller.
+- **Coverage**: ~150 TR blocks. Overseas Stock / Overseas Futures / Korea Stock
+  REST, plus 13 real-time WebSocket TRs.
+- **TR layout**:
+  `src/finance/programgarden_finance/ls/{market_segment}/{kind}/t####/` — every
+  TR has a folder, `blocks.py` contains all field definitions with
+  `Field(title=..., description=..., examples=[...])`.
+- **Authentication**: `appkey` + `appsecret` from the LS Securities developer
+  portal. Token refresh and rate-limit handling are built in.
+- **Source-of-truth rule**: the library never asserts LS-undocumented formulas,
+  sign conventions, units, or time-series ordering. If LS spec doesn't say it,
+  the field description says `"Not declared in available source."` Agents must
+  respect this.
+
+#### Prompt template — call a single TR
+
+```
+Using `programgarden_finance`, write a script that calls Korea Stock TR
+`t1410` (초저유동성조회 / ultra-low-liquidity query).
+See `src/finance/example/korea_stock/` for the calling convention.
+Read `appkey` / `appsecret` from env vars `LS_APPKEY` / `LS_APPSECRET`.
+```
+
+#### Prompt template — find the right TR
+
+```
+I need to fetch minute-bar OHLCV for a Korea stock. Browse
+`src/finance/programgarden_finance/ls/korea_stock/` to find the right TR,
+read its `blocks.py` to understand the InBlock fields, then write a runnable
+example modeled after the matching
+`src/finance/example/korea_stock/run_t####.py`.
+```
+
+#### Prompt template — real-time subscription
+
+```
+Subscribe to Korea Stock real-time price ticks using `programgarden_finance`.
+Use the singleton WebSocket pattern shown in
+`src/finance/programgarden_finance/ls/.../real_base.py`. Print each tick as it
+arrives and handle reconnect cleanly.
+```
+
+#### Gotchas the agent often misses — call these out up front
+
+1. **Don't invent field semantics**. If the description says
+   `"Not declared in available source"`, do not derive a formula or unit —
+   ask the user instead.
+2. **Rate limits are per-TR** and enforced by the library. Don't hand-roll your
+   own throttling on top.
+3. **WebSocket is a singleton per credential** — don't open multiple
+   connections; add subscriptions to the existing session.
+4. **Field `title` / `description` / `examples` are AI-chatbot ground truth**
+   for every TR. When editing `blocks.py`, preserve all three.
+5. **Korean stock uses `shcode` (6 digits); overseas stock uses
+   `symbol` + `exchange`**. They are not interchangeable.
+
+#### Reference files for the agent to read
+
+- `src/finance/example/` — runnable per-TR samples (overseas stock / futures /
+  Korea stock)
+- `src/finance/programgarden_finance/ls/` — all TR blocks
+- LS Securities OpenAPI portal: <https://openapi.ls-sec.co.kr/apiservice>
+
+</details>
