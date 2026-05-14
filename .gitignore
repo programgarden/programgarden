@@ -335,6 +335,8 @@ scripts/**/*.pyc
 scripts/**/*.pyo
 # 개발자 본인 운영 봇 — 공개 저장소 비포함 (로컬 전용)
 scripts/live_bot/
+# 위 운영 봇 전용 Mock 테스트 (scripts/live_bot 플러그인 import) — 로컬 전용
+src/programgarden/tests/test_live_bot_mock.py
 
 ### Windows ###
 # Windows thumbnail cache files

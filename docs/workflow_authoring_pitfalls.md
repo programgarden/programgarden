@@ -1,6 +1,6 @@
 # 워크플로우 JSON 작성 시 자주 놓치는 것
 
-실전 봇(`scripts/live_bot/`) 실행하면서 확인된 구성 실수와 해결책.
+실전 봇을 운영하면서 확인된 구성 실수와 해결책.
 새 워크플로우 작성 전 체크리스트로 사용 권장.
 
 ## 1. Edge 참조 노드가 실제로 정의되어 있는지
@@ -63,7 +63,7 @@
 
 ### 해결: Runner에서 직접 주입
 
-`scripts/live_bot/runner.py::_inject_credentials_into_workflow()` 참고:
+Runner 측에서 `credentials[].data[].value` 가 비어있으면 `secrets` 값을 주입:
 
 ```python
 def _inject_credentials_into_workflow(workflow: dict, secrets: dict) -> dict:
@@ -383,6 +383,5 @@ JIF 는 **해외주식(US/CN/HK/JP) + 국내주식/파생** 만 지원하며,
 
 - `/src/programgarden/programgarden/executor.py::_inject_credentials`
 - `/src/programgarden/programgarden/context.py::get_workflow_credential`
-- `/scripts/live_bot/runner.py::_inject_credentials_into_workflow`
 - `/docs/expression_guide.md` (표현식 문법)
 - `/docs/auto_iterate_guide.md` (auto-iterate 규칙)
