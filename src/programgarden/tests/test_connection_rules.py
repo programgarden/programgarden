@@ -39,7 +39,7 @@ class TestRealtimeToOrderConnectionBlocking:
         )
         result = self.resolver.validate(workflow)
         assert not result.is_valid
-        assert any("직접 연결이 차단" in e for e in result.errors)
+        assert any("Direct connection blocked" in e.message for e in result.errors)
 
     def test_realtime_account_to_order_direct_is_blocked(self):
         """실시간 계좌 → 주문 직결 시 validation error"""
@@ -58,7 +58,7 @@ class TestRealtimeToOrderConnectionBlocking:
         )
         result = self.resolver.validate(workflow)
         assert not result.is_valid
-        assert any("ThrottleNode" in e for e in result.errors)
+        assert any("ThrottleNode" in (e.message or "") + (e.suggestion or "") for e in result.errors)
 
     def test_realtime_order_event_to_order_direct_is_blocked(self):
         """실시간 주문이벤트 → 주문 직결 시 validation error (무한 루프 위험)"""
@@ -117,7 +117,7 @@ class TestRealtimeToOrderConnectionBlocking:
         )
         result = self.resolver.validate(workflow)
         # ConditionNode에서 OrderNode으로의 직접 연결은 허용
-        connection_rule_errors = [e for e in result.errors if "직접 연결이 차단" in e]
+        connection_rule_errors = [e for e in result.errors if "Direct connection blocked" in e]
         assert len(connection_rule_errors) == 0
 
 
@@ -146,7 +146,7 @@ class TestRealtimeToAIAgentConnectionBlocking:
         )
         result = self.resolver.validate(workflow)
         assert not result.is_valid
-        assert any("AIAgentNode" in e for e in result.errors)
+        assert any("AIAgentNode" in (e.message or "") for e in result.errors)
 
     def test_tool_edge_from_realtime_is_not_blocked(self):
         """tool 엣지는 검증 대상 아님 (실행 순서가 아닌 도구 등록)"""
@@ -167,7 +167,7 @@ class TestRealtimeToAIAgentConnectionBlocking:
         )
         result = self.resolver.validate(workflow)
         # tool 엣지는 connection_rules 검증 대상 아님
-        connection_rule_errors = [e for e in result.errors if "직접 연결이 차단" in e]
+        connection_rule_errors = [e for e in result.errors if "Direct connection blocked" in e]
         assert len(connection_rule_errors) == 0
 
 
@@ -194,7 +194,7 @@ class TestRealtimeToHTTPConnectionWarning:
         )
         result = self.resolver.validate(workflow)
         assert not result.is_valid, f"Expected invalid but got valid"
-        assert any("직접 연결이 차단" in e for e in result.errors)
+        assert any("Direct connection blocked" in e.message for e in result.errors)
 
 
 class TestNonRealtimeConnectionsAllowed:
@@ -237,7 +237,7 @@ class TestNonRealtimeConnectionsAllowed:
             ],
         )
         result = self.resolver.validate(workflow)
-        connection_rule_errors = [e for e in result.errors if "직접 연결이 차단" in e]
+        connection_rule_errors = [e for e in result.errors if "Direct connection blocked" in e]
         assert len(connection_rule_errors) == 0
 
 
@@ -264,7 +264,7 @@ class TestFuturesRealtimeConnectionBlocking:
         )
         result = self.resolver.validate(workflow)
         assert not result.is_valid
-        assert any("직접 연결이 차단" in e for e in result.errors)
+        assert any("Direct connection blocked" in e.message for e in result.errors)
 
     def test_futures_realtime_to_modify_order_is_blocked(self):
         """해외선물 실시간 → 정정 주문 직결 차단"""

@@ -242,7 +242,7 @@ class TestFundamentalNodeResolverValidation:
     """Resolver 검증: StockBroker + FundamentalNode"""
 
     def test_stock_broker_with_fundamental_valid(self):
-        """해외주식 브로커 + FundamentalNode → 검증 통과"""
+        """해외주식 broker + FundamentalNode → 검증 통과"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-fund-valid",
@@ -263,11 +263,11 @@ class TestFundamentalNodeResolverValidation:
         assert result.is_valid, f"검증 실패: {result.errors}"
 
     def test_missing_broker_for_fundamental_error(self):
-        """FundamentalNode 있는데 브로커 없음 → 에러"""
+        """FundamentalNode 있는데 broker 없음 → 에러"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-fund-no-broker",
-            "name": "브로커 누락 테스트",
+            "name": "broker 누락 테스트",
             "nodes": [
                 {"id": "start", "type": "StartNode"},
                 {"id": "fund", "type": "OverseasStockFundamentalNode",
@@ -280,14 +280,14 @@ class TestFundamentalNodeResolverValidation:
         }
         result = resolver.validate(workflow)
         assert not result.is_valid
-        assert any("브로커" in e or "BrokerNode" in e for e in result.errors)
+        assert any("broker" in e.message or "BrokerNode" in e.message for e in result.errors)
 
     def test_wrong_broker_for_fundamental_error(self):
-        """해외선물 브로커 + FundamentalNode(주식) → 에러"""
+        """해외선물 broker + FundamentalNode(주식) → 에러"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-fund-wrong-broker",
-            "name": "잘못된 브로커 테스트",
+            "name": "잘못된 broker 테스트",
             "nodes": [
                 {"id": "start", "type": "StartNode"},
                 {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "cred"},

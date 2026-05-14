@@ -2,7 +2,7 @@
 Phase 6.3: 노드 상품별 분리 검증 테스트
 
 테스트 항목:
-1. Resolver: 브로커 자동 매칭 검증
+1. Resolver: broker 자동 매칭 검증
 2. Executor: 분리된 노드 타입 executor 등록 검증
 3. 노드 스키마: product_scope, broker_provider 정상 출력
 
@@ -15,14 +15,14 @@ from programgarden.resolver import WorkflowResolver, ResolvedNode
 
 
 class TestResolverBrokerMatching:
-    """Resolver 자동 브로커 매칭 검증"""
+    """Resolver 자동 broker 매칭 검증"""
 
     def test_stock_broker_matching_valid(self):
-        """해외주식 브로커 + 해외주식 노드 → 검증 통과"""
+        """해외주식 broker + 해외주식 노드 → 검증 통과"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-stock-valid",
-            "name": "해외주식 브로커 매칭 테스트",
+            "name": "해외주식 broker 매칭 테스트",
             "nodes": [
                 {"id": "start", "type": "StartNode"},
                 {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "cred"},
@@ -39,11 +39,11 @@ class TestResolverBrokerMatching:
         assert result.is_valid, f"검증 실패: {result.errors}"
 
     def test_futures_broker_matching_valid(self):
-        """해외선물 브로커 + 해외선물 노드 → 검증 통과"""
+        """해외선물 broker + 해외선물 노드 → 검증 통과"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-futures-valid",
-            "name": "해외선물 브로커 매칭 테스트",
+            "name": "해외선물 broker 매칭 테스트",
             "nodes": [
                 {"id": "start", "type": "StartNode"},
                 {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "cred"},
@@ -60,11 +60,11 @@ class TestResolverBrokerMatching:
         assert result.is_valid, f"검증 실패: {result.errors}"
 
     def test_missing_stock_broker_error(self):
-        """해외주식 노드만 있고 브로커 없음 → 에러"""
+        """해외주식 노드만 있고 broker 없음 → 에러"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-missing-broker",
-            "name": "브로커 누락 테스트",
+            "name": "broker 누락 테스트",
             "nodes": [
                 {"id": "start", "type": "StartNode"},
                 {"id": "market", "type": "OverseasStockMarketDataNode",
@@ -77,14 +77,14 @@ class TestResolverBrokerMatching:
         }
         result = resolver.validate(workflow)
         assert not result.is_valid
-        assert any("브로커" in e or "BrokerNode" in e for e in result.errors)
+        assert any("broker" in e.message or "BrokerNode" in e.message for e in result.errors)
 
     def test_wrong_broker_scope_error(self):
-        """해외선물 브로커 + 해외주식 노드 → 에러"""
+        """해외선물 broker + 해외주식 노드 → 에러"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-wrong-scope",
-            "name": "잘못된 브로커 스코프 테스트",
+            "name": "잘못된 broker 스코프 테스트",
             "nodes": [
                 {"id": "start", "type": "StartNode"},
                 {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "cred"},
@@ -99,14 +99,14 @@ class TestResolverBrokerMatching:
         }
         result = resolver.validate(workflow)
         assert not result.is_valid
-        assert any("브로커" in e or "BrokerNode" in e for e in result.errors)
+        assert any("broker" in e.message or "BrokerNode" in e.message for e in result.errors)
 
     def test_duplicate_stock_broker_error(self):
-        """같은 상품 브로커 중복 → 에러"""
+        """같은 상품 broker 중복 → 에러"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-dup-broker",
-            "name": "중복 브로커 테스트",
+            "name": "중복 broker 테스트",
             "nodes": [
                 {"id": "start", "type": "StartNode"},
                 {"id": "broker1", "type": "OverseasStockBrokerNode", "credential_id": "cred"},
@@ -120,14 +120,14 @@ class TestResolverBrokerMatching:
         }
         result = resolver.validate(workflow)
         assert not result.is_valid
-        assert any("Duplicate" in e for e in result.errors)
+        assert any("Duplicate" in e.message for e in result.errors)
 
     def test_mixed_brokers_valid(self):
-        """해외주식 + 해외선물 브로커 공존 → 검증 통과"""
+        """해외주식 + 해외선물 broker 공존 → 검증 통과"""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-mixed-valid",
-            "name": "혼합 브로커 테스트",
+            "name": "혼합 broker 테스트",
             "nodes": [
                 {"id": "start", "type": "StartNode"},
                 {"id": "stock_broker", "type": "OverseasStockBrokerNode", "credential_id": "cred1"},
@@ -264,7 +264,7 @@ class TestNodeSchemaProductScope:
                 f"{node_type}의 product_scope가 {schema.product_scope} (expected: all)"
 
     def test_broker_nodes_have_ls_provider(self):
-        """브로커 노드들의 broker_provider가 ls-sec.co.kr인지 확인"""
+        """broker 노드들의 broker_provider가 ls-sec.co.kr인지 확인"""
         from programgarden_core.registry import NodeTypeRegistry
 
         registry = NodeTypeRegistry()

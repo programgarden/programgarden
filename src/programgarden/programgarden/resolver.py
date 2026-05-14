@@ -1,31 +1,22 @@
-"""
-ProgramGarden - WorkflowResolver
+"""ProgramGarden WorkflowResolver — structured-error validation.
 
-JSON Definition → Execution object conversion
-- Credential binding
-- Plugin registry-based instantiation
-- Edge connection validation
+Converts a JSON workflow definition into executable objects after running
+a battery of structural / topological / registry checks. Every emitted
+diagnostic is a `programgarden_core.ErrorInfo` so AI chatbots can do
+deterministic self-correction without parsing free-form strings.
 """
 
 from typing import Optional, List, Dict, Any, Tuple
-from dataclasses import dataclass, field
-from pydantic import BaseModel
 
-
-@dataclass
-class ValidationResult:
-    """Workflow validation result"""
-
-    is_valid: bool
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-
-    def add_error(self, message: str) -> None:
-        self.errors.append(message)
-        self.is_valid = False
-
-    def add_warning(self, message: str) -> None:
-        self.warnings.append(message)
+from programgarden_core import (
+    ErrorCode,
+    ErrorInfo,
+    ErrorLocation,
+    ValidationLimits,
+    ValidationResult,
+    build_error,
+    suggest_close_match,
+)
 
 
 class ResolvedNode:
@@ -125,88 +116,148 @@ class WorkflowResolver:
         # Lazy import to prevent circular references
         pass
 
-    def validate(self, definition: Dict[str, Any]) -> ValidationResult:
-        """
-        Validate workflow definition
+    def validate(
+        self,
+        definition: Dict[str, Any],
+        *,
+        limits: Optional[ValidationLimits] = None,
+        suppress_recommendations: Optional[List[str]] = None,
+        expand_cascade: bool = False,
+    ) -> ValidationResult:
+        """Validate a workflow definition and return a structured result.
 
         Args:
-            definition: Workflow definition (JSON dict)
-
-        Returns:
-            ValidationResult: Validation result
+            definition: The workflow JSON dict.
+            limits: Output volume caps (default: ValidationLimits()).
+            suppress_recommendations: rule_id list to skip when building
+                `static_recommendations`.
+            expand_cascade: When True, skip cascade suppression (debugging).
         """
         from programgarden_core import WorkflowDefinition, NodeTypeRegistry, PluginRegistry
+        from programgarden.validation_recommender import (
+            finalize_result,
+            run_static_recommendation_rules,
+        )
 
-        result = ValidationResult(is_valid=True)
+        result = ValidationResult()
 
-        # 1. Basic structure validation
+        # 1. Definition parsing (Pydantic schema check)
         try:
             workflow = WorkflowDefinition(**definition)
         except Exception as e:
-            result.add_error(f"Definition parsing error: {str(e)}")
+            result.add(
+                build_error(
+                    ErrorCode.DEFINITION_PARSE_ERROR,
+                    f"Workflow definition failed schema validation: {e}",
+                    suggestion="Inspect the offending field path and align it with WorkflowDefinition.",
+                    details={"raw_exception": str(e)},
+                )
+            )
+            # Even on parse failure run finalize so summary/limits stay populated.
+            finalize_result(result, limits=limits, expand_cascade=expand_cascade)
             return result
 
-        # 2. WorkflowDefinition built-in validation
-        structure_errors = workflow.validate_structure()
-        for error in structure_errors:
-            result.add_error(error)
+        # 2. Structural invariants (duplicates, edge refs, StartNode, cycles)
+        for info in workflow.validate_structure():
+            result.add(info)
 
-        # 3. Reserved node ID validation
+        # 3. Reserved node ids
         RESERVED_NODE_IDS = {"nodes", "input", "context"}
         for node in workflow.nodes:
             node_id = node.get("id")
             if node_id in RESERVED_NODE_IDS:
-                result.add_error(
-                    f"Node ID '{node_id}' is reserved. "
-                    f"Cannot use: {', '.join(sorted(RESERVED_NODE_IDS))}"
+                result.add(
+                    build_error(
+                        ErrorCode.RESERVED_NODE_ID,
+                        f"Node id '{node_id}' is reserved and cannot be used",
+                        location=ErrorLocation(node_id=node_id),
+                        available_values=sorted(RESERVED_NODE_IDS),
+                        suggestion="Rename the node to anything outside the reserved id set.",
+                    )
                 )
 
-        # 4. Node type validation (including dynamic nodes)
+        # 4. Node type validation (regular + dynamic registry)
         from programgarden_core.registry import DynamicNodeRegistry, is_dynamic_node_type
         registry = NodeTypeRegistry()
         dynamic_registry = DynamicNodeRegistry()
+        known_types: List[str] = sorted(registry.list_types() + dynamic_registry.list_schema_types())
 
         for node in workflow.nodes:
             node_type = node.get("type")
             node_id = node.get("id")
 
-            # 일반 노드 체크
             if registry.get(node_type):
                 continue
 
-            # 동적 노드 체크 (Dynamic_ prefix)
             if is_dynamic_node_type(node_type):
                 if not dynamic_registry.get_schema(node_type):
-                    result.add_error(
-                        f"Dynamic node schema not registered: {node_type}. "
-                        "Call register_dynamic_schemas() first."
+                    result.add(
+                        build_error(
+                            ErrorCode.UNKNOWN_DYNAMIC_NODE_SCHEMA,
+                            f"Dynamic node schema '{node_type}' is not registered",
+                            location=ErrorLocation(node_id=node_id, node_type=node_type),
+                            suggestion="Call executor.register_dynamic_schemas([...]) before validate().",
+                        )
                     )
                     continue
 
-                # 동적 노드의 credential_id 사용 차단
                 if node.get("credential_id"):
-                    result.add_error(
-                        f"Dynamic node '{node_id}' cannot use credential_id. "
-                        "Credential access is blocked for dynamic nodes for security."
+                    result.add(
+                        build_error(
+                            ErrorCode.DYNAMIC_NODE_CREDENTIAL_FORBIDDEN,
+                            f"Dynamic node '{node_id}' cannot reference a credential_id",
+                            location=ErrorLocation(
+                                node_id=node_id,
+                                node_type=node_type,
+                                credential_id=node.get("credential_id"),
+                            ),
+                            suggestion="Remove credential_id from the dynamic node — credential access is blocked for security.",
+                        )
                     )
                 continue
 
-            # 둘 다 없으면 에러
-            result.add_error(f"Unknown node type: {node_type}")
+            result.add(
+                build_error(
+                    ErrorCode.UNKNOWN_NODE_TYPE,
+                    f"Unknown node type '{node_type}'",
+                    location=ErrorLocation(node_id=node_id, node_type=node_type),
+                    available_values=suggest_close_match(node_type or "", known_types),
+                    suggestion="Pick a node type from the registered list, or register a Dynamic_ schema first.",
+                )
+            )
 
-        # 4. Plugin validation (for plugin-using nodes)
-        # 주문 노드는 orders 배열에 price가 포함되어 있어 plugin 선택사항
+        # 5. Plugin validation (ConditionNode etc.)
         plugin_registry = PluginRegistry()
         plugin_node_types = {"ConditionNode"}
+        all_plugin_ids: List[str] = sorted(
+            {getattr(s, "id", "") for s in plugin_registry.list_plugins() if getattr(s, "id", "")}
+        )
 
         for node in workflow.nodes:
             if node.get("type") in plugin_node_types:
                 plugin_id = node.get("plugin")
                 if not plugin_id:
-                    result.add_error(f"Node '{node.get('id')}' does not have a plugin specified")
+                    result.add(
+                        build_error(
+                            ErrorCode.MISSING_PLUGIN,
+                            f"Node '{node.get('id')}' must specify a 'plugin' id",
+                            location=ErrorLocation(node_id=node.get("id"), node_type=node.get("type")),
+                            suggestion="Set the 'plugin' field to a registered plugin id (e.g. 'RSI').",
+                        )
+                    )
                 elif not plugin_registry.get(plugin_id):
-                    result.add_warning(
-                        f"Plugin '{plugin_id}' not found in registry (community load required)"
+                    result.add(
+                        build_error(
+                            ErrorCode.UNKNOWN_PLUGIN,
+                            f"Plugin '{plugin_id}' is not registered (is programgarden-community installed?)",
+                            location=ErrorLocation(
+                                node_id=node.get("id"),
+                                node_type=node.get("type"),
+                                plugin_id=plugin_id,
+                            ),
+                            available_values=suggest_close_match(plugin_id, all_plugin_ids),
+                            suggestion="Install programgarden-community or register the plugin manually.",
+                        )
                     )
 
         # 5. 노드 연결 규칙 검증 (실시간 → 위험 노드 직결 차단)
@@ -227,7 +278,65 @@ class WorkflowResolver:
         # 10. credential_id 참조 검증
         self._validate_credential_references(workflow, result)
 
+        # 11. Static recommendations (topology analysis)
+        for rec in run_static_recommendation_rules(
+            workflow,
+            registry,
+            suppress=suppress_recommendations,
+        ):
+            result.add_static_recommendation(rec)
+
+        # 12. Inline error -> recommendation augmentation
+        self._attach_inline_recommendations(result, workflow)
+
+        # 13. Post-processing: cascade suppression + capping + summary
+        finalize_result(result, limits=limits, expand_cascade=expand_cascade)
+
         return result
+
+    def _attach_inline_recommendations(self, result: ValidationResult, workflow) -> None:
+        """Augment specific ErrorInfo entries with related Recommendation hints.
+
+        Plan §Phase 2.11: for a small set of error codes there's a natural
+        improvement worth attaching directly to the error object (rather
+        than the workflow-level channel) so the chatbot sees a fix path
+        alongside the diagnosis.
+        """
+        from programgarden.validation_recommender import (
+            make_expression_port_typo_rec,
+            make_broker_product_mismatch_rec,
+        )
+
+        node_ids = [n.get("id") for n in workflow.nodes if isinstance(n, dict) and n.get("id")]
+
+        for info in result.errors:
+            code = info.code.value if hasattr(info.code, "value") else info.code
+            if code == ErrorCode.INVALID_EXPRESSION_REF.value:
+                ref_id = None
+                expr = info.location.expression or ""
+                # extract `{{ nodes.X.Y }}` -> X
+                import re as _re
+                m = _re.search(r"nodes\.(\w+)", expr)
+                if m:
+                    ref_id = m.group(1)
+                if ref_id:
+                    info.recommendations.append(
+                        make_expression_port_typo_rec(
+                            ref_id=ref_id,
+                            candidates=node_ids,
+                            location=info.location,
+                        )
+                    )
+            elif code == ErrorCode.INCOMPATIBLE_BROKER_PROVIDER.value:
+                required = info.details.get("required_provider")
+                if required and info.location.node_id and info.location.node_type:
+                    info.recommendations.append(
+                        make_broker_product_mismatch_rec(
+                            node_id=info.location.node_id,
+                            node_type=info.location.node_type,
+                            required_provider=required,
+                        )
+                    )
 
     def _validate_connection_rules(
         self,
@@ -252,8 +361,15 @@ class WorkflowResolver:
             for node in workflow.nodes
         }
 
-        for edge in workflow.edges:
-            # main 엣지만 검증 (tool/ai_model은 실행 순서 아님)
+        from programgarden_core import ErrorSeverity
+        from programgarden_core.i18n.translator import t as _i18n_t
+
+        def _resolve_i18n(value):
+            if isinstance(value, str) and value.startswith("i18n:"):
+                return _i18n_t(value[len("i18n:"):], locale="en")
+            return value
+
+        for idx, edge in enumerate(workflow.edges):
             if edge.edge_type != EdgeType.MAIN:
                 continue
 
@@ -263,7 +379,6 @@ class WorkflowResolver:
             if not target_node_type or not source_node_type:
                 continue
 
-            # 타겟 노드 클래스에서 connection_rules 확인
             target_node_class = registry.get(target_node_type)
             if not target_node_class:
                 continue
@@ -271,22 +386,51 @@ class WorkflowResolver:
             connection_rules = getattr(target_node_class, '_connection_rules', [])
             for rule in connection_rules:
                 if source_node_type in rule.deny_direct_from:
-                    violation_message = (
-                        f"'{edge.from_node_id}' ({source_node_type}) → "
-                        f"'{edge.to_node_id}' ({target_node_type}) "
-                        f"직접 연결이 차단됩니다."
-                    )
-                    if rule.required_intermediate:
-                        violation_message += (
-                            f" '{rule.required_intermediate}'를 사이에 배치하세요."
-                        )
-                    if rule.reason:
-                        violation_message += f" 이유: {rule.reason}"
+                    resolved_reason = _resolve_i18n(rule.reason)
+                    resolved_rule_suggestion = _resolve_i18n(getattr(rule, "suggestion", None))
 
-                    if rule.severity == ConnectionSeverity.ERROR:
-                        result.add_error(violation_message)
-                    else:
-                        result.add_warning(violation_message)
+                    message_parts = [
+                        f"Direct connection blocked: '{edge.from_node_id}' "
+                        f"({source_node_type}) -> '{edge.to_node_id}' ({target_node_type})"
+                    ]
+                    if resolved_reason:
+                        message_parts.append(resolved_reason)
+
+                    # Prefer the rule's own i18n suggestion; otherwise synthesise
+                    # one from required_intermediate.
+                    suggestion: Optional[str] = resolved_rule_suggestion
+                    if not suggestion and rule.required_intermediate:
+                        suggestion = (
+                            f"Insert a {rule.required_intermediate} node between source and target."
+                        )
+
+                    severity = (
+                        ErrorSeverity.ERROR
+                        if rule.severity == ConnectionSeverity.ERROR
+                        else ErrorSeverity.WARNING
+                    )
+                    result.add(
+                        build_error(
+                            ErrorCode.CONNECTION_RULE_VIOLATION,
+                            ". ".join(message_parts),
+                            location=ErrorLocation(
+                                node_id=edge.to_node_id,
+                                node_type=target_node_type,
+                                edge_index=idx,
+                                edge_from=edge.from_node_id,
+                                edge_to=edge.to_node_id,
+                            ),
+                            suggestion=suggestion,
+                            severity=severity,
+                            details={
+                                "source_node_id": edge.from_node_id,
+                                "source_node_type": source_node_type,
+                                "target_node_type": target_node_type,
+                                "required_intermediate": rule.required_intermediate,
+                                "reason": resolved_reason,
+                            },
+                        )
+                    )
 
     @staticmethod
     def _is_broker_node(registry, node_type: str) -> bool:
@@ -305,27 +449,84 @@ class WorkflowResolver:
         workflow,
         result: ValidationResult,
     ) -> None:
-        """엣지가 참조하는 노드 ID가 실제 존재하는지 검증."""
-        node_ids = {n.get("id") for n in workflow.nodes}
+        """Verify each edge's from/to references an existing node.
 
-        for edge in workflow.edges:
+        Also catches `from_port` typos for nodes that declare multiple
+        output ports (`IfNode.true/false` etc.) via INVALID_EDGE_PORT.
+        """
+        from programgarden_core import NodeTypeRegistry
+
+        node_ids = {n.get("id") for n in workflow.nodes}
+        node_type_by_id = {n.get("id"): n.get("type") for n in workflow.nodes}
+        registry = NodeTypeRegistry()
+
+        for idx, edge in enumerate(workflow.edges):
             from_raw = getattr(edge, "from_node", "") or ""
             to_raw = getattr(edge, "to_node", "") or ""
 
-            # dot notation 지원: "if1.true" → node_id = "if1"
             from_id = from_raw.split(".")[0] if from_raw else ""
             to_id = to_raw.split(".")[0] if to_raw else ""
 
             if from_id and from_id not in node_ids:
-                result.add_error(
-                    f"Edge 'from' references non-existent node '{from_id}'. "
-                    f"Available nodes: [{', '.join(sorted(node_ids))}]"
+                result.add(
+                    build_error(
+                        ErrorCode.INVALID_EDGE_REF,
+                        f"Edge 'from' references non-existent node '{from_id}'",
+                        location=ErrorLocation(
+                            edge_index=idx,
+                            edge_from=from_raw,
+                            edge_to=to_raw,
+                        ),
+                        available_values=sorted(nid for nid in node_ids if nid),
+                        suggestion="Update edge.from to reference an existing node id.",
+                    )
                 )
             if to_id and to_id not in node_ids:
-                result.add_error(
-                    f"Edge 'to' references non-existent node '{to_id}'. "
-                    f"Available nodes: [{', '.join(sorted(node_ids))}]"
+                result.add(
+                    build_error(
+                        ErrorCode.INVALID_EDGE_REF,
+                        f"Edge 'to' references non-existent node '{to_id}'",
+                        location=ErrorLocation(
+                            edge_index=idx,
+                            edge_from=from_raw,
+                            edge_to=to_raw,
+                        ),
+                        available_values=sorted(nid for nid in node_ids if nid),
+                        suggestion="Update edge.to to reference an existing node id.",
+                    )
                 )
+
+            # INVALID_EDGE_PORT — explicit from_port that doesn't exist on source
+            from_port = getattr(edge, "from_port", None)
+            if from_id and from_id in node_ids and from_port:
+                source_type = node_type_by_id.get(from_id)
+                schema = registry.get_schema(source_type) if source_type else None
+                if schema:
+                    output_names: List[str] = []
+                    for out in (schema.outputs or []):
+                        if isinstance(out, dict):
+                            name = out.get("name")
+                        else:
+                            name = getattr(out, "name", None)
+                        if name:
+                            output_names.append(name)
+                    if output_names and from_port not in output_names:
+                        result.add(
+                            build_error(
+                                ErrorCode.INVALID_EDGE_PORT,
+                                f"Edge from_port '{from_port}' is not an output of node '{from_id}' ({source_type})",
+                                location=ErrorLocation(
+                                    node_id=from_id,
+                                    node_type=source_type,
+                                    edge_index=idx,
+                                    edge_from=from_raw,
+                                    edge_to=to_raw,
+                                    output_port=from_port,
+                                ),
+                                available_values=suggest_close_match(from_port, output_names) or sorted(output_names),
+                                suggestion="Pick an output port that exists on the source node.",
+                            )
+                        )
 
     def _validate_expression_references(
         self,
@@ -348,10 +549,19 @@ class WorkflowResolver:
                 for match in expr_pattern.finditer(value):
                     ref_id = match.group(1)
                     if ref_id not in node_ids:
-                        result.add_error(
-                            f"Node '{node_id}' field '{field_path}' references "
-                            f"non-existent node '{ref_id}'. "
-                            f"Available nodes: [{', '.join(sorted(node_ids))}]"
+                        result.add(
+                            build_error(
+                                ErrorCode.INVALID_EXPRESSION_REF,
+                                f"Expression references non-existent node '{ref_id}'",
+                                location=ErrorLocation(
+                                    node_id=node_id,
+                                    field_path=field_path,
+                                    expression=value,
+                                ),
+                                available_values=suggest_close_match(ref_id, sorted(nid for nid in node_ids if nid))
+                                or sorted(nid for nid in node_ids if nid),
+                                suggestion="Update the expression to reference an existing node id.",
+                            )
                         )
             elif isinstance(value, dict):
                 for k, v in value.items():
@@ -382,10 +592,18 @@ class WorkflowResolver:
         for node in workflow.nodes:
             cred_id = node.get("credential_id")
             if cred_id and cred_id not in defined_creds:
-                result.add_error(
-                    f"Node '{node.get('id')}' credential_id '{cred_id}' "
-                    f"is not defined in credentials. "
-                    f"Defined credentials: [{', '.join(sorted(defined_creds)) if defined_creds else 'none'}]"
+                result.add(
+                    build_error(
+                        ErrorCode.UNKNOWN_CREDENTIAL,
+                        f"Node '{node.get('id')}' references undefined credential '{cred_id}'",
+                        location=ErrorLocation(
+                            node_id=node.get("id"),
+                            node_type=node.get("type"),
+                            credential_id=cred_id,
+                        ),
+                        available_values=sorted(defined_creds) if defined_creds else None,
+                        suggestion="Add a matching credential entry under definition.credentials[] or fix the credential_id.",
+                    )
                 )
 
     def _validate_broker_nodes(
@@ -424,9 +642,18 @@ class WorkflowResolver:
             scope_value = scope.value
             if scope_value in broker_scopes:
                 product_label = "overseas_stock" if scope == ProductScope.STOCK else "overseas_futures"
-                result.add_error(
-                    f"Duplicate {product_label} broker node. "
-                    f"Only one allowed: '{broker_scopes[scope_value]}' and '{node_id}'. Remove one."
+                result.add(
+                    build_error(
+                        ErrorCode.DUPLICATE_BROKER_NODE,
+                        f"Duplicate {product_label} broker node: '{broker_scopes[scope_value]}' and '{node_id}'",
+                        location=ErrorLocation(node_id=node_id, node_type=node_type),
+                        suggestion="Keep only one broker node per product scope.",
+                        details={
+                            "product_scope": scope_value,
+                            "existing": broker_scopes[scope_value],
+                            "duplicate": node_id,
+                        },
+                    )
                 )
             else:
                 broker_scopes[scope_value] = node_id
@@ -483,24 +710,42 @@ class WorkflowResolver:
             if self._is_broker_node(registry, node_type):
                 continue
 
-            # product_scope 매칭 확인
+            # product_scope match
             if scope.value not in available_brokers:
                 product_label = "overseas_stock" if scope == ProductScope.STOCK else "overseas_futures"
                 broker_node = "OverseasStockBrokerNode" if scope == ProductScope.STOCK else "OverseasFuturesBrokerNode"
-                result.add_error(
-                    f"Node '{node.get('id')}' ({node_type}) requires {product_label} broker. "
-                    f"Add {broker_node} to the workflow."
+                result.add(
+                    build_error(
+                        ErrorCode.MISSING_REQUIRED_BROKER,
+                        f"Node '{node.get('id')}' ({node_type}) requires a {product_label} broker",
+                        location=ErrorLocation(node_id=node.get("id"), node_type=node_type),
+                        suggestion=f"Add {broker_node} to the workflow.",
+                        details={"product_scope": scope.value, "expected_broker_node": broker_node},
+                    )
                 )
                 continue
 
-            # broker_provider 매칭 확인 (ALL은 모든 것과 매칭)
+            # broker_provider match (ALL matches anything)
             if provider != BrokerProvider.ALL:
                 broker_provider_value = available_brokers[scope.value]
                 if broker_provider_value != BrokerProvider.ALL.value and broker_provider_value != provider.value:
-                    result.add_error(
-                        f"Node '{node.get('id')}' ({node_type}) requires "
-                        f"'{provider.value}' broker provider, but workflow has "
-                        f"'{broker_provider_value}' broker configured."
+                    result.add(
+                        build_error(
+                            ErrorCode.INCOMPATIBLE_BROKER_PROVIDER,
+                            (
+                                f"Node '{node.get('id')}' ({node_type}) requires "
+                                f"broker provider '{provider.value}', but the workflow has "
+                                f"'{broker_provider_value}' configured"
+                            ),
+                            location=ErrorLocation(node_id=node.get("id"), node_type=node_type),
+                            available_values=[provider.value, BrokerProvider.ALL.value],
+                            suggestion="Switch the broker node to one that matches this node's provider.",
+                            details={
+                                "required_provider": provider.value,
+                                "configured_provider": broker_provider_value,
+                                "product_scope": scope.value,
+                            },
+                        )
                     )
 
     def resolve(

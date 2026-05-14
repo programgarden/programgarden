@@ -15,6 +15,7 @@ import uuid
 import logging
 
 from programgarden.resolver import WorkflowResolver, ResolvedWorkflow, ValidationResult
+from programgarden_core import ValidationLimits
 from programgarden.context import ExecutionContext, WorkflowEvent
 from programgarden.reconnect_handler import ReconnectHandler
 from programgarden_core.expression import ExpressionEvaluator, ExpressionContext
@@ -14315,14 +14316,30 @@ class WorkflowExecutor:
             "AIAgentNode": AIAgentNodeExecutor(),
         }
 
-    def validate(self, definition: Dict[str, Any]) -> ValidationResult:
-        """
-        Validate workflow
+    def validate(
+        self,
+        definition: Dict[str, Any],
+        *,
+        limits: "Optional[ValidationLimits]" = None,
+        suppress_recommendations: "Optional[List[str]]" = None,
+        expand_cascade: bool = False,
+    ) -> ValidationResult:
+        """Validate a workflow definition.
 
         Args:
-            definition: Workflow definition (JSON dict)
+            definition: Workflow definition (JSON dict).
+            limits: Output volume caps (default ValidationLimits()).
+            suppress_recommendations: List of `rule_id`s to skip when
+                generating `static_recommendations`.
+            expand_cascade: When True, disable cascade suppression so every
+                cascade error appears in `result.errors` (debugging only).
         """
-        return self.resolver.validate(definition)
+        return self.resolver.validate(
+            definition,
+            limits=limits,
+            suppress_recommendations=suppress_recommendations,
+            expand_cascade=expand_cascade,
+        )
 
     def compile(
         self,
@@ -15016,6 +15033,11 @@ class WorkflowJob:
         self._node_errors: Dict[str, str] = {}              # node_id -> last error message
         self._node_durations: Dict[str, float] = {}         # node_id -> last duration_ms
         self._node_error_timestamps: Dict[str, str] = {}    # node_id -> ISO timestamp of last failure
+        # Structured ErrorInfo cache — populated whenever a node fails. dry_run failures
+        # use DRY_RUN_RUNTIME_ERROR; real-run failures use DRY_RUN_RUNTIME_ERROR's
+        # sibling form so chatbot consumers get the same shape regardless of mode.
+        from programgarden_core import ErrorInfo as _ErrorInfo  # type: ignore[import-not-found]
+        self._node_error_infos: Dict[str, _ErrorInfo] = {}  # node_id -> structured ErrorInfo
         self._restore_mode: bool = False
         self._restore_checkpoint: Optional[Dict[str, Any]] = None
         self._workflow_json_hash: Optional[str] = None  # 워크플로우 정의 해시
@@ -15547,6 +15569,25 @@ class WorkflowJob:
                 duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 error_msg = str(e)
                 error_ts = datetime.utcnow().isoformat()
+                # Capture a structured ErrorInfo so AI-chatbot consumers can read
+                # job.get_structured_errors() without parsing free-form strings.
+                from programgarden_core import (
+                    ErrorCode,
+                    ErrorLocation,
+                    build_error,
+                )
+                self._node_error_infos[node_id] = build_error(
+                    ErrorCode.DRY_RUN_RUNTIME_ERROR,
+                    f"Node '{node_id}' ({node.node_type}) raised during execution: {error_msg}",
+                    location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                    details={
+                        "exception_type": type(e).__name__,
+                        "raw_message": error_msg,
+                        "timestamp": error_ts,
+                        "duration_ms": duration_ms,
+                        "dry_run": bool(getattr(self.context, "is_dry_run", False)),
+                    },
+                )
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
@@ -16871,6 +16912,13 @@ class WorkflowJob:
         # without a timestamp fall to the end while preserving relative order.
         errors.sort(key=lambda x: (x["timestamp"] is None, x["timestamp"] or ""))
 
+        # Structured ErrorInfo snapshot — primary surface for chatbot
+        # consumers. Each entry serialises to the same shape as
+        # ValidationResult.errors[].
+        structured_errors = [
+            info.model_dump(mode="json") for info in self._node_error_infos.values()
+        ]
+
         return {
             "job_id": self.job_id,
             "workflow_id": self.workflow.workflow_id,
@@ -16883,7 +16931,16 @@ class WorkflowJob:
             "logs": self.context.get_logs(limit=50),
             "nodes": nodes_state,
             "errors": errors,
+            "structured_errors": structured_errors,
         }
+
+    def get_structured_errors(self) -> List[Any]:
+        """Return the structured ErrorInfo list captured during this run.
+
+        Empty when no node failed. Each entry is a `programgarden_core.ErrorInfo`
+        instance; consumers should treat the return type as `List[ErrorInfo]`.
+        """
+        return list(self._node_error_infos.values())
 
     # ============================================================
     # Checkpoint (Graceful Restart)

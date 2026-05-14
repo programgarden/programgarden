@@ -1,5 +1,82 @@
 ## [Unreleased]
 
+## [1.21.10] - 2026-05-14
+### Added
+- **Structured-validation pipeline** — `WorkflowExecutor.validate()`
+  now returns a fully structured `ValidationResult` (see
+  `programgarden_core.models.validation`) instead of a string-based
+  `is_valid + errors/warnings: List[str]` payload. The new payload
+  exposes:
+  - `errors` / `warnings` as `List[ErrorInfo]` with `code` (26 codes),
+    `location` (node/field/edge/expression anchors), `suggestion`,
+    `available_values` (difflib top-N), `details`, and an optional
+    inline `recommendations: List[Recommendation]`.
+  - `static_recommendations` — 8 deterministic topology-based rules
+    (REC_REALTIME_THROTTLE / REC_EXTERNAL_API_RESILIENCE /
+    REC_ORDER_RETRY_RISK / REC_POSITION_SIZING_MISSING /
+    REC_LARGE_SYMBOL_LIST_BATCH /
+    REC_AUTO_ITERATE_AGGREGATE_MISSING /
+    REC_EXPRESSION_PORT_TYPO / REC_BROKER_PRODUCT_MISMATCH).
+  - `runtime_recommendations` — 1 dry-run-output rule
+    (REC_EMPTY_SYMBOL_LIST), filled via the dry-run channel.
+  - `summary: ResultSummary` with `critical_codes`,
+    `root_cause_node_ids`, deterministic English `next_action_hint`,
+    and a `truncated` flag.
+  - `truncated: Dict[str, int]` — per-channel drop counters under
+    `ValidationLimits` capping.
+- `WorkflowExecutor.validate(definition, *, limits=None,
+  suppress_recommendations=None, expand_cascade=False)` new kwargs.
+- **Cascade suppression** — four root causes
+  (UNKNOWN_NODE_TYPE / MISSING_REQUIRED_BROKER / CYCLE_DETECTED /
+  DUPLICATE_NODE_ID) automatically fold cascade follow-ups into
+  `details.suppressed_count` / `details.suppressed_codes` so AI
+  consumers see one fix-it-first node rather than dozens of
+  symptomatic errors.
+- **`WorkflowJob` structured error capture** — node failures now
+  populate `_node_error_infos` (DRY_RUN_RUNTIME_ERROR) and surface
+  via the new `WorkflowJob.get_structured_errors()` accessor +
+  `get_state()["structured_errors"]` payload.
+- New module
+  `src/programgarden/programgarden/validation_recommender.py` —
+  static + runtime rule engines and the cascade / capping / summary
+  post-processors.
+
+### Fixed
+- `CONNECTION_RULE_VIOLATION` errors no longer leak raw i18n keys.
+  The resolver now passes `rule.reason` / `rule.suggestion` through
+  `programgarden_core.i18n.translator.t(..., locale="en")` before
+  emitting `ErrorInfo`, so `message` / `suggestion` /
+  `details.reason` are human-readable English sentences instead of
+  `"i18n:connection_rules.realtime_to_order.reason"` style tokens.
+  Also prefers the rule's own i18n `suggestion` over the generic
+  "Insert a X node between source and target." template when one is
+  defined.
+
+### Changed
+- `WorkflowResolver.validate()` (and `WorkflowExecutor.validate()`)
+  no longer return the legacy dataclass
+  `ValidationResult(is_valid, errors: List[str], warnings: List[str])`.
+  The dataclass has been removed; `ValidationResult` is now the
+  Pydantic model from `programgarden_core`. There is no
+  backwards-compat shim — `errors_as_strings`/`add_error`/
+  `add_warning` are gone. Migrate to `result.add(ErrorInfo(...))` and
+  read `result.errors[i].code` instead of substring-matching the
+  legacy strings. (Patch-level: the legacy shape was an internal
+  validator artefact, not a documented public API; the new
+  `ValidationResult` keeps `is_valid` / `errors` / `warnings`
+  attribute names so attribute-based access keeps working.)
+- All resolver-emitted error/warning strings are now English.
+
+### Tests
+- `tests/test_validation_errors_structured.py` (15) — error-code
+  emission, inline recommendations, cascade summary, suppression
+  filter, ValidationLimits capping, summary hint variants.
+- `tests/test_validation_output_volume.py` (77) — every shipped
+  example workflow stays within the default `ValidationLimits` after
+  finalize.
+- `tests/test_examples_validation.py` (235) — full validate +
+  dry_run cycle still green on the migrated pipeline.
+
 ## [1.21.9] - 2026-05-13
 ### Dependencies
 - programgarden-finance ^1.6.5 — picks up the AlphaWorks-reported
