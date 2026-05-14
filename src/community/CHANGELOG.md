@@ -1,3 +1,9 @@
+## [1.13.4] - 2026-05-14
+### Dependencies
+- `programgarden-core` ^1.12.2 → ^1.12.3 — picks up the structured
+  validation models (ErrorCode / ErrorInfo / Recommendation /
+  ValidationResult v2). No community plugin/node changes.
+
 ## [1.13.3] - 2026-05-12
 ### Internal
 - Batch release sync with finance 1.6.4 (11 Korea Stock Market TRs:

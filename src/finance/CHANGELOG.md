@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [1.6.6] - 2026-05-14
+### Dependencies
+- `programgarden-core` ^1.12.2 → ^1.12.3 — picks up the structured
+  validation models (ErrorCode / ErrorInfo / Recommendation /
+  ValidationResult v2) so downstream consumers that reach into core
+  via the finance package see the new shape. No finance code changes.
+
 ## [1.6.5] - 2026-05-13
 ### Fixed
 - **11 Korea Stock TR `rate_limit_key` 누락 정정** — `t1665` / `t8452` /
