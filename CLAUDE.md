@@ -417,6 +417,31 @@ async with NodeRunner(credentials=[
 | `get_node_schema(node_type)` | 노드 스키마 조회 |
 | `cleanup()` | 리소스 정리 (LS 세션 등) |
 
+### Structured Validation (ValidationResult v2)
+
+`WorkflowExecutor.validate()` 는 AI 챗봇이 결정적 자가 수정 가능한 구조화된 `ValidationResult` 를 반환합니다 (`programgarden_core.models.validation`).
+
+**채널**:
+- `errors` / `warnings` — `List[ErrorInfo]` (`code` 26종, `location` 앵커, `suggestion`, `available_values`, `recommendations` 동봉)
+- `static_recommendations` — 8개 토폴로지 규칙 (`REC_REALTIME_THROTTLE`, `REC_EXTERNAL_API_RESILIENCE`, `REC_ORDER_RETRY_RISK`, `REC_POSITION_SIZING_MISSING`, `REC_LARGE_SYMBOL_LIST_BATCH`, `REC_AUTO_ITERATE_AGGREGATE_MISSING`, `REC_EXPRESSION_PORT_TYPO`, `REC_BROKER_PRODUCT_MISMATCH`)
+- `runtime_recommendations` — dry_run 후 채워지는 1개 규칙 (`REC_EMPTY_SYMBOL_LIST`)
+- `summary: ResultSummary` — `critical_codes`, `root_cause_node_ids`, 영어 `next_action_hint`, `truncated`
+- `truncated` — 채널별 cap 초과 누적 카운터
+
+**Cascade Suppression**: `UNKNOWN_NODE_TYPE` / `MISSING_REQUIRED_BROKER` / `CYCLE_DETECTED` / `DUPLICATE_NODE_ID` 가 root cause 일 때, 그로 인한 후속 에러를 자동으로 `details.suppressed_count` 로 묶음. AI 챗봇은 root cause 1건만 보고 cascade 가 풀리도록 유도.
+
+**확장 인자**:
+```python
+result = executor.validate(
+    definition,
+    limits=ValidationLimits(max_errors=50),  # default: 20/10/10/3
+    suppress_recommendations=["REC_EXTERNAL_API_RESILIENCE"],  # rule_id 필터
+    expand_cascade=False,  # True: cascade 묶기 비활성 (디버깅)
+)
+```
+
+**dry_run 시 구조화 에러**: `WorkflowJob.get_structured_errors()` 또는 `get_state()["structured_errors"]` 에서 `DRY_RUN_RUNTIME_ERROR` ErrorInfo 캡처본 조회.
+
 ## Node Development
 
 ### Adding/Modifying Nodes

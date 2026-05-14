@@ -142,6 +142,7 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Node AI metadata: 5 ClassVars (_usage / _features / _anti_patterns / _examples / _node_guide) on all 73 nodes
 - [x] MarketStatusNode: JIF-based real-time market status (12 markets, broker-agnostic, AI-Tool enabled)
 - [x] get_state() diagnostic payload (1.21.5): per-node state cache via internal listener, stats.last_error setter, structured errors[] field with timestamp sort + (node_id) dedup
+- [x] Structured validation (core 1.12.3 / programgarden 1.21.10): ValidationResult v2 with ErrorCode (26 codes) / ErrorLocation / Recommendation (9 rules, 8 static + 1 runtime) / ValidationLimits (capping) / ResultSummary (cascade-aware next_action_hint). Cascade suppression for UNKNOWN_NODE_TYPE / MISSING_REQUIRED_BROKER / CYCLE_DETECTED / DUPLICATE_NODE_ID. WorkflowJob.get_structured_errors() for dry_run runtime captures.
 
 ## CONVENTIONS
 - language: Python 3.12+, docs/comments in Korean, code in English
