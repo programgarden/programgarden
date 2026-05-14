@@ -78,6 +78,21 @@ from programgarden_core.models.connection_rule import (
     ConnectionRule,
     RateLimitConfig,
 )
+from programgarden_core.models.validation import (
+    ErrorSeverity,
+    ErrorCode,
+    ErrorLocation,
+    ErrorInfo,
+    RecommendationCategory,
+    Recommendation,
+    ValidationLimits,
+    ResultSummary,
+    ValidationResult,
+    CASCADE_SUPPRESSION_RULES,
+    default_severity_for,
+    suggest_close_match,
+    build_error,
+)
 
 __all__ = [
     # Edge
@@ -150,4 +165,18 @@ __all__ = [
     "ConnectionSeverity",
     "ConnectionRule",
     "RateLimitConfig",
+    # Validation
+    "ErrorSeverity",
+    "ErrorCode",
+    "ErrorLocation",
+    "ErrorInfo",
+    "RecommendationCategory",
+    "Recommendation",
+    "ValidationLimits",
+    "ResultSummary",
+    "ValidationResult",
+    "CASCADE_SUPPRESSION_RULES",
+    "default_severity_for",
+    "suggest_close_match",
+    "build_error",
 ]

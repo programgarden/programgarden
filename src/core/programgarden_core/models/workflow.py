@@ -206,42 +206,109 @@ class WorkflowDefinition(BaseModel):
             if node.get("id") not in nodes_with_input
         ]
 
-    def validate_structure(self) -> List[str]:
-        """
-        워크플로우 구조 검증
+    def validate_structure(self) -> List["ErrorInfo"]:
+        """Validate the workflow's structural invariants.
 
-        Returns:
-            검증 오류 메시지 목록 (빈 리스트면 유효)
+        Returns a list of `ErrorInfo` objects. An empty list means no
+        structural problems were found. Callers should append the result
+        to a `ValidationResult` via `result.add(...)` for each entry.
         """
-        errors = []
+        from programgarden_core.models.validation import (
+            ErrorCode,
+            ErrorInfo,
+            ErrorLocation,
+            build_error,
+        )
 
-        # 1. Duplicate node ID check
+        errors: List[ErrorInfo] = []
+
+        # 1. Duplicate node IDs
         node_ids = self.get_node_ids()
         if len(node_ids) != len(set(node_ids)):
-            seen = set()
-            dupes = [nid for nid in node_ids if nid in seen or seen.add(nid)]
-            errors.append(f"Duplicate node IDs found: {', '.join(dupes)}")
+            seen: set = set()
+            dupes: List[str] = []
+            for nid in node_ids:
+                if nid in seen and nid not in dupes:
+                    dupes.append(nid)
+                seen.add(nid)
+            for dup_id in dupes:
+                errors.append(
+                    build_error(
+                        ErrorCode.DUPLICATE_NODE_ID,
+                        f"Duplicate node id '{dup_id}'",
+                        location=ErrorLocation(node_id=dup_id),
+                        suggestion="Rename one of the duplicated nodes so each id is unique.",
+                    )
+                )
 
-        # 2. Edge node reference check
+        # 2. Edge node references
         node_id_set = set(node_ids)
-        for edge in self.edges:
+        for idx, edge in enumerate(self.edges):
             if edge.from_node_id not in node_id_set:
-                errors.append(f"Edge 'from' references non-existent node: {edge.from_node_id}")
+                errors.append(
+                    build_error(
+                        ErrorCode.INVALID_EDGE_REF,
+                        f"Edge 'from' references non-existent node '{edge.from_node_id}'",
+                        location=ErrorLocation(
+                            edge_index=idx,
+                            edge_from=edge.from_node_id,
+                            edge_to=edge.to_node_id,
+                        ),
+                        available_values=sorted(node_id_set),
+                    )
+                )
             if edge.to_node_id not in node_id_set:
-                errors.append(f"Edge 'to' references non-existent node: {edge.to_node_id}")
+                errors.append(
+                    build_error(
+                        ErrorCode.INVALID_EDGE_REF,
+                        f"Edge 'to' references non-existent node '{edge.to_node_id}'",
+                        location=ErrorLocation(
+                            edge_index=idx,
+                            edge_from=edge.from_node_id,
+                            edge_to=edge.to_node_id,
+                        ),
+                        available_values=sorted(node_id_set),
+                    )
+                )
 
-        # 3. StartNode check
+        # 3. StartNode invariants
         start_nodes = [n for n in self.nodes if n.get("type") == "StartNode"]
         if not start_nodes:
-            errors.append("StartNode is required (exactly 1 per workflow)")
+            errors.append(
+                build_error(
+                    ErrorCode.MISSING_START_NODE,
+                    "Workflow must contain exactly one StartNode",
+                    suggestion="Add a StartNode at the entry of the main flow.",
+                )
+            )
         elif len(start_nodes) > 1:
-            errors.append("Multiple StartNodes found (only 1 allowed per workflow)")
+            offending_ids = [n.get("id") for n in start_nodes if n.get("id")]
+            errors.append(
+                build_error(
+                    ErrorCode.MULTIPLE_START_NODES,
+                    f"Workflow has {len(start_nodes)} StartNodes; only one is allowed",
+                    location=ErrorLocation(
+                        node_id=offending_ids[0] if offending_ids else None,
+                        node_type="StartNode",
+                    ),
+                    suggestion="Keep one StartNode and remove the others (use ScheduleNode for cron triggers).",
+                    details={"start_node_ids": offending_ids},
+                )
+            )
 
-        # 4. Cycle detection (DAG validation)
+        # 4. Cycle detection
         cycle = self._detect_cycle()
         if cycle:
             cycle_path = " -> ".join(cycle)
-            errors.append(f"Circular reference detected: {cycle_path}")
+            errors.append(
+                build_error(
+                    ErrorCode.CYCLE_DETECTED,
+                    f"Cycle detected in the workflow DAG: {cycle_path}",
+                    location=ErrorLocation(node_id=cycle[0] if cycle else None),
+                    suggestion="Remove one of the edges in the cycle so execution order can be resolved.",
+                    details={"cycle_path": cycle},
+                )
+            )
 
         return errors
 

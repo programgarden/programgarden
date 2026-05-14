@@ -24,7 +24,7 @@ from programgarden_core.exceptions import *
 from programgarden_core import korea_alias
 from programgarden_core import bases
 
-__version__ = "2.0.0"
+__version__ = "1.12.3"
 __all__ = [
     # Nodes - Base
     "BaseNode",
@@ -96,6 +96,20 @@ __all__ = [
     "JobState",
     "BrokerCredential",
     "Event",
+    # Validation (structured errors + recommendations)
+    "ErrorSeverity",
+    "ErrorCode",
+    "ErrorLocation",
+    "ErrorInfo",
+    "RecommendationCategory",
+    "Recommendation",
+    "ValidationLimits",
+    "ResultSummary",
+    "ValidationResult",
+    "CASCADE_SUPPRESSION_RULES",
+    "default_severity_for",
+    "suggest_close_match",
+    "build_error",
     # Registry
     "NodeTypeRegistry",
     "PluginRegistry",

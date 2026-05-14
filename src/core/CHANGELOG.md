@@ -1,5 +1,49 @@
 ## [Unreleased]
 
+## [1.12.3] - 2026-05-14
+### Added
+- **`programgarden_core.models.validation`** — structured workflow
+  validation surface for AI-chatbot consumers. New public types:
+  - `ErrorCode` (StrEnum, 26 codes covering definition / registry /
+    edges / expressions / credentials / brokers / connection-rules /
+    dry_run runtime failures).
+  - `ErrorSeverity`, `ErrorLocation`, `ErrorInfo` (with optional
+    inline `recommendations: List[Recommendation]`).
+  - `Recommendation` / `RecommendationCategory` — deterministic
+    non-blocking improvement hints. `example_snippet` is a partial
+    workflow fragment, not a full workflow JSON.
+  - `ValidationLimits` (max_errors / max_warnings /
+    max_recommendations_per_channel / max_per_node) and
+    `ResultSummary` (top-level triage object: critical_codes,
+    root_cause_node_ids, next_action_hint, truncated).
+  - `ValidationResult` v2 — `errors` + `warnings` +
+    **`static_recommendations`** + **`runtime_recommendations`** +
+    `summary` + `truncated` channels.
+  - `CASCADE_SUPPRESSION_RULES` data table for the four root codes
+    (UNKNOWN_NODE_TYPE / MISSING_REQUIRED_BROKER / CYCLE_DETECTED /
+    DUPLICATE_NODE_ID).
+  - Helpers: `build_error`, `suggest_close_match`,
+    `default_severity_for`.
+- `WorkflowDefinition.validate_structure()` now emits `ErrorInfo`
+  objects (English messages) for DUPLICATE_NODE_ID, INVALID_EDGE_REF,
+  MISSING_START_NODE, MULTIPLE_START_NODES, CYCLE_DETECTED.
+
+### Changed
+- `WorkflowDefinition.validate_structure()` return type flipped from
+  `List[str]` to `List[ErrorInfo]`. All validator output is now
+  English (no Korean i18n bridge for validator strings). Consumers
+  that previously regex-parsed strings must switch to
+  `ErrorInfo.code` / `ErrorInfo.location` / `ErrorInfo.suggestion`.
+  (Patch-level despite the API shape change — the legacy
+  `List[str]` was internal to the validator and not part of the
+  documented public surface.)
+
+### Tests
+- `tests/test_validation_models.py` — 23 cases covering ErrorInfo /
+  ErrorLocation / Recommendation / ValidationLimits / ResultSummary /
+  ValidationResult shape + `suggest_close_match` + the
+  `CASCADE_SUPPRESSION_RULES` table.
+
 ## [1.12.2] - 2026-05-04
 ### Internal
 - Batch release sync with finance 1.6.1 (CSPAQ12200/22200/CSPBQ00200

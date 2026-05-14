@@ -5,11 +5,27 @@ WorkflowDefinition DAG 순환 참조 검증 테스트
 import pytest
 from programgarden_core.models.workflow import WorkflowDefinition
 from programgarden_core.models.edge import Edge
+from programgarden_core import ErrorCode
 
 
 def make_edge(from_node: str, to_node: str) -> Edge:
     """테스트용 Edge 생성 헬퍼"""
     return Edge(**{"from": from_node, "to": to_node})
+
+
+def _cycle_errors(errors):
+    """validate_structure() now returns List[ErrorInfo]; filter to CYCLE_DETECTED.
+
+    Returns the cycle path message strings so existing `"node" in entry`
+    assertions keep working (the message embeds the cycle path).
+    """
+    out = []
+    for e in errors:
+        code = e.code if isinstance(e.code, str) else e.code.value
+        if code == ErrorCode.CYCLE_DETECTED.value:
+            path = " -> ".join(e.details.get("cycle_path") or [])
+            out.append(f"{e.message} [{path}]")
+    return out
 
 
 class TestDAGValidation:
@@ -34,7 +50,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         assert len(cycle_errors) == 0
 
     def test_direct_cycle_two_nodes(self):
@@ -55,7 +71,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         assert len(cycle_errors) == 1
         assert "a" in cycle_errors[0]
         assert "b" in cycle_errors[0]
@@ -80,7 +96,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         assert len(cycle_errors) == 1
         # 순환 경로에 a, b, c 모두 포함
         assert "a" in cycle_errors[0]
@@ -103,7 +119,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         assert len(cycle_errors) == 1
         assert "loop" in cycle_errors[0]
 
@@ -132,7 +148,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         assert len(cycle_errors) == 1
 
     def test_complex_graph_no_cycle(self):
@@ -159,7 +175,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         assert len(cycle_errors) == 0
 
     def test_disconnected_components_with_cycle(self):
@@ -183,7 +199,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         assert len(cycle_errors) == 1
         assert "x" in cycle_errors[0]
         assert "y" in cycle_errors[0]
@@ -254,7 +270,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         assert len(cycle_errors) == 1
         # 모든 순환 노드가 포함되어야 함
         assert "a" in cycle_errors[0]
@@ -308,7 +324,7 @@ class TestDAGValidation:
         )
 
         errors = workflow.validate_structure()
-        cycle_errors = [e for e in errors if "Circular reference" in e or "순환 참조" in e]
+        cycle_errors = _cycle_errors(errors)
         # 최소 하나의 순환이 탐지되어야 함
         assert len(cycle_errors) >= 1
 
