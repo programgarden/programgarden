@@ -293,3 +293,153 @@ def test_summary_hint_when_only_recommendations(executor: WorkflowExecutor) -> N
     assert result.summary is not None
     assert result.summary.next_action_hint is not None
     assert "improvement" in result.summary.next_action_hint.lower()
+
+
+# ---------------------------------------------------------------------------
+# AI Agent edge type semantics
+# ---------------------------------------------------------------------------
+
+
+def test_ai_model_edge_rejects_non_llm_source(executor: WorkflowExecutor) -> None:
+    """ai_model edge source must be LLMModelNode."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "agent", "type": "AIAgentNode"},
+        ],
+        edges=[
+            {"from": "s1", "to": "agent"},
+            {"from": "broker", "to": "agent", "type": "ai_model"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    result = executor.validate(workflow)
+    assert ErrorCode.INVALID_AI_MODEL_EDGE.value in _codes(result)
+
+
+def test_ai_model_edge_rejects_non_agent_target(executor: WorkflowExecutor) -> None:
+    """ai_model edge target must be AIAgentNode."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "llm", "type": "LLMModelNode", "credential_id": "c1"},
+            {"id": "throttle", "type": "ThrottleNode", "interval_seconds": 1.0},
+        ],
+        edges=[
+            {"from": "s1", "to": "throttle"},
+            {"from": "llm", "to": "throttle", "type": "ai_model"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "llm_anthropic", "data": []}]
+    result = executor.validate(workflow)
+    assert ErrorCode.INVALID_AI_MODEL_EDGE.value in _codes(result)
+
+
+def test_expression_port_typo_flagged(executor: WorkflowExecutor) -> None:
+    """Strict port validation catches typos like held_symbolls (correct: held_symbols)."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {
+                "id": "display",
+                "type": "TableDisplayNode",
+                "data": "{{ nodes.account.held_symbolls }}",  # typo
+                "columns": ["symbol"],
+            },
+        ],
+        edges=[
+            {"from": "s1", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "display"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    result = executor.validate(workflow)
+    invalid_refs = [e for e in result.errors if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_EXPRESSION_REF"]
+    assert any(e.location and e.location.output_port == "held_symbolls" for e in invalid_refs), (
+        "held_symbolls typo should be flagged by strict port validation"
+    )
+
+
+def test_expression_chain_method_not_flagged(executor: WorkflowExecutor) -> None:
+    """Chain methods like .filter()/.first() are not ports — must not be flagged."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {
+                "id": "display",
+                "type": "TableDisplayNode",
+                "data": "{{ nodes.account.filter('pnl > 0') }}",
+                "columns": ["symbol"],
+            },
+        ],
+        edges=[
+            {"from": "s1", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "display"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    result = executor.validate(workflow)
+    invalid_refs = [e for e in result.errors if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_EXPRESSION_REF"]
+    assert not any(e.location and e.location.output_port == "filter" for e in invalid_refs), (
+        "filter() is a chain method, not a port — must not be flagged"
+    )
+
+
+def test_dynamic_node_injection_readiness(executor: WorkflowExecutor) -> None:
+    """validate_dynamic_injection=True catches schema-registered-but-not-injected nodes."""
+    from programgarden_core.registry import DynamicNodeRegistry
+    from programgarden_core.registry.dynamic_node_registry import DynamicNodeSchema
+
+    schema = DynamicNodeSchema(
+        node_type="Dynamic_TestInjectionGate",
+        category="data",
+        outputs=[{"name": "out", "type": "number"}],
+    )
+    registry = DynamicNodeRegistry()
+    registry.register_schema(schema)
+    # Make sure the class isn't injected (clear if any).
+    registry._node_classes.pop("Dynamic_TestInjectionGate", None)
+
+    try:
+        workflow = _wrap(
+            [
+                {"id": "s1", "type": "StartNode"},
+                {"id": "dyn", "type": "Dynamic_TestInjectionGate"},
+            ],
+            edges=[{"from": "s1", "to": "dyn"}],
+        )
+
+        # Default validate() does NOT flag injection state.
+        default_result = executor.validate(workflow)
+        assert ErrorCode.DYNAMIC_NODE_CLASS_NOT_INJECTED.value not in _codes(default_result)
+
+        # validate_dynamic_injection=True surfaces the missing class.
+        strict_result = executor.validate(workflow, validate_dynamic_injection=True)
+        assert ErrorCode.DYNAMIC_NODE_CLASS_NOT_INJECTED.value in _codes(strict_result)
+    finally:
+        registry._schemas.pop("Dynamic_TestInjectionGate", None)
+
+
+def test_tool_edge_rejects_non_agent_target(executor: WorkflowExecutor) -> None:
+    """tool edge target must be AIAgentNode."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "throttle", "type": "ThrottleNode", "interval_seconds": 1.0},
+        ],
+        edges=[
+            {"from": "s1", "to": "throttle"},
+            {"from": "broker", "to": "throttle", "type": "tool"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    result = executor.validate(workflow)
+    assert ErrorCode.INVALID_TOOL_EDGE.value in _codes(result)

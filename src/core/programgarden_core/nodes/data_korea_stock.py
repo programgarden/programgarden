@@ -191,6 +191,7 @@ class KoreaStockMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="value", type="market_data", description="i18n:ports.market_data_value", fields=KOREA_STOCK_PRICE_DATA_FIELDS),
+        OutputPort(name="values", type="array", description="Array of per-symbol market quotes"),
     ]
 
     @classmethod

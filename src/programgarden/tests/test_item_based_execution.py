@@ -139,14 +139,19 @@ class TestItemBasedNodeSchemas:
         assert "symbol" in input_names
         assert "symbols" not in input_names
 
-    def test_market_data_node_single_value_output(self):
-        """MarketDataNode가 단일 value 출력을 하는지 확인"""
+    def test_market_data_node_value_output(self):
+        """MarketDataNode 가 단일 value + 배열 values 둘 다 노출하는지 확인.
+
+        v1.21.11+: strict port 검증을 위해 runtime 이 emit 하는 모든 키를 schema 에 선언.
+        - value: 단일 시세 (예전부터 선언)
+        - values: 배열 (runtime 의 실제 반환값, 워크플로우에서 직접 접근)
+        """
         from programgarden_core.nodes.data_stock import OverseasStockMarketDataNode
 
         node = OverseasStockMarketDataNode(id="test")
         output_names = [p.name for p in node._outputs]
         assert "value" in output_names
-        assert "values" not in output_names
+        assert "values" in output_names
 
     def test_historical_data_node_single_symbol_input(self):
         """HistoricalDataNode가 단일 symbol 입력을 받는지 확인"""
@@ -169,16 +174,18 @@ class TestItemBasedNodeSchemas:
         assert any(s.get("name") == "from" for s in items_schema.object_schema)
         assert any(s.get("name") == "extract" for s in items_schema.object_schema)
 
-    def test_condition_node_single_result_output(self):
-        """ConditionNode가 단일 result 출력을 하는지 확인"""
+    def test_condition_node_output_ports_match_runtime(self):
+        """ConditionNode schema 가 runtime emit 키 전부 선언하는지 확인.
+
+        v1.21.11+: strict port 검증을 위해 runtime 의 6 keys 전부 schema 화.
+        - result, is_condition_met (boolean), symbols (input echo)
+        - passed_symbols, failed_symbols, symbol_results, values
+        """
         from programgarden_core.nodes.condition import ConditionNode
 
         node = ConditionNode(id="test", plugin="RSI")
-        output_names = [p.name for p in node._outputs]
-        assert "result" in output_names
-        # 이전 배열 출력들이 제거되었는지 확인
-        assert "passed_symbols" not in output_names
-        assert "failed_symbols" not in output_names
+        output_names = {p.name for p in node._outputs}
+        assert {"result", "is_condition_met", "symbols", "passed_symbols", "failed_symbols", "symbol_results", "values"} <= output_names
 
     def test_new_order_node_single_order_input(self):
         """NewOrderNode가 단일 order 입력을 받는지 확인"""

@@ -221,6 +221,26 @@ class OverseasStockHistoricalDataNode(BaseNode):
                 },
             ],
         ),
+        OutputPort(
+            name="values",
+            type="array",
+            description="Array form of all fetched series — [{symbol, exchange, time_series: [...]}, ...]",
+        ),
+        OutputPort(
+            name="symbols",
+            type="array",
+            description="Flat list of fetched symbol strings",
+        ),
+        OutputPort(
+            name="period",
+            type="string",
+            description="Date range string formatted as 'YYYYMMDD~YYYYMMDD'",
+        ),
+        OutputPort(
+            name="interval",
+            type="string",
+            description="Candle interval (D / W / M)",
+        ),
     ]
 
     @classmethod

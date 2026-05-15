@@ -157,6 +157,12 @@ class PortfolioNode(BaseNode):
             description="i18n:ports.allocated_capital",
             fields=ALLOCATED_CAPITAL_FIELDS,
         ),
+        # 위험 감시 단축
+        OutputPort(
+            name="drawdown_percent",
+            type="number",
+            description="Current drawdown as percentage (shortcut to combined_metrics.max_drawdown for IfNode kill switches)",
+        ),
     ]
 
     _usage: ClassVar[Dict[str, Any]] = {

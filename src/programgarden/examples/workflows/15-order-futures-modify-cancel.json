@@ -23,7 +23,7 @@
     },
     {
       "id": "account",
-      "type": "OverseasFuturesAccountNode",
+      "type": "OverseasFuturesOpenOrdersNode",
       "position": {
         "x": 450,
         "y": 200

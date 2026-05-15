@@ -1197,6 +1197,11 @@ class FieldMappingNode(BaseNode):
             description="i18n:ports.mapped_data",
         ),
         OutputPort(
+            name="data",
+            type="any",
+            description="Alias of mapped_data — convenient when chaining into nodes that expect 'data'",
+        ),
+        OutputPort(
             name="original_fields",
             type="array",
             description="i18n:ports.original_fields",
@@ -1335,6 +1340,7 @@ class FieldMappingNode(BaseNode):
 
         return {
             "mapped_data": mapped_data,
+            "data": mapped_data,  # alias declared in _outputs — downstream nodes that expect 'data'
             "original_fields": sorted(list(original_fields)),
             "mapped_fields": sorted(list(mapped_fields)),
         }

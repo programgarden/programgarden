@@ -234,6 +234,10 @@ class ExecutionContext:
         # Reverse adjacency list: {to_node: [from_nodes]}
         self._reverse_adj: Dict[str, List[str]] = {}
 
+        # Resolved workflow nodes — feature-opt-in collectors (risk_tracker etc.)
+        # read this to inspect node classes and plugin names without re-resolving.
+        self._workflow_nodes_map: Dict[str, Any] = workflow_nodes or {}
+
         # === New: 반복 컨텍스트 ===
         # 자동 반복 실행 시 item, index, total 저장
         self._iteration_item: Optional[Any] = None

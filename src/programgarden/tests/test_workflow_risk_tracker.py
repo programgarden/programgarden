@@ -643,6 +643,74 @@ class TestContextIntegration:
         assert ctx.risk_tracker is None
 
 
+class TestCollectRiskFeatures:
+    """_collect_risk_features 회귀 테스트.
+
+    ExecutionContext._workflow_nodes_map 이 미설정이라 risk_tracker 가 silent disable 되던 회귀.
+    """
+
+    def test_workflow_nodes_map_stored_on_context(self):
+        """ExecutionContext 가 workflow_nodes 를 _workflow_nodes_map 에 저장한다."""
+        from programgarden.context import ExecutionContext
+        from programgarden.resolver import ResolvedNode
+
+        node = ResolvedNode(
+            node_id="portfolio",
+            node_type="PortfolioNode",
+            category="risk",
+            config={},
+        )
+        ctx = ExecutionContext(
+            job_id="t",
+            workflow_id="wf",
+            workflow_nodes={"portfolio": node},
+        )
+        assert "portfolio" in ctx._workflow_nodes_map
+        assert ctx._workflow_nodes_map["portfolio"].node_type == "PortfolioNode"
+
+    def test_collects_risk_features_from_node_class(self):
+        """노드 클래스의 _risk_features 가 수집된다 (PortfolioNode)."""
+        from programgarden import WorkflowExecutor
+        from programgarden.context import ExecutionContext
+        from programgarden.resolver import ResolvedNode
+
+        node = ResolvedNode(
+            node_id="portfolio",
+            node_type="PortfolioNode",
+            category="risk",
+            config={},
+        )
+        ctx = ExecutionContext(
+            job_id="t",
+            workflow_id="wf",
+            workflow_nodes={"portfolio": node},
+        )
+        from programgarden.executor import BrokerNodeExecutor
+        features = BrokerNodeExecutor()._collect_risk_features(ctx)
+        assert features, "PortfolioNode 가 있는데 risk_features 가 비어 있음 (silent disable 회귀)"
+        assert features <= {"hwm", "window", "events", "state"}
+
+    def test_no_features_when_no_risk_nodes(self):
+        """risk feature 선언 노드가 없으면 빈 set."""
+        from programgarden import WorkflowExecutor
+        from programgarden.context import ExecutionContext
+        from programgarden.resolver import ResolvedNode
+
+        node = ResolvedNode(
+            node_id="start",
+            node_type="StartNode",
+            category="infra",
+            config={},
+        )
+        ctx = ExecutionContext(
+            job_id="t",
+            workflow_id="wf",
+            workflow_nodes={"start": node},
+        )
+        from programgarden.executor import BrokerNodeExecutor
+        assert BrokerNodeExecutor()._collect_risk_features(ctx) == set()
+
+
 # ============================================================
 # 11. RiskEvent + Listener
 # ============================================================

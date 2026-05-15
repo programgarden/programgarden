@@ -86,18 +86,41 @@ class ConditionNode(PluginNode):
     _outputs: List[OutputPort] = [
         OutputPort(
             name="result",
-            type="condition_result",
-            description="i18n:ports.condition_result",
-            fields=CONDITION_RESULT_FIELDS,
-            example={
-                "is_condition_met": True,
-                "passed_symbols": [
-                    {"exchange": "NASDAQ", "symbol": "AAPL"},
-                ],
-                "details": [
-                    {"symbol": "AAPL", "exchange": "NASDAQ", "passed": True, "value": 28.5, "threshold": 30, "direction": "below"},
-                ],
-            },
+            type="boolean",
+            description="True if any symbol passed the condition (len(passed_symbols) > 0)",
+        ),
+        OutputPort(
+            name="is_condition_met",
+            type="boolean",
+            description="Alias of result — convenience for IfNode/LogicNode bindings",
+        ),
+        OutputPort(
+            name="symbols",
+            type="symbol_list",
+            description="Input symbols normalized to [{exchange, symbol}, ...]",
+            fields=SYMBOL_LIST_FIELDS,
+        ),
+        OutputPort(
+            name="passed_symbols",
+            type="symbol_list",
+            description="Symbols that satisfied the condition — [{exchange, symbol}, ...]",
+            fields=SYMBOL_LIST_FIELDS,
+        ),
+        OutputPort(
+            name="failed_symbols",
+            type="symbol_list",
+            description="Symbols that did not satisfy the condition — [{exchange, symbol}, ...]",
+            fields=SYMBOL_LIST_FIELDS,
+        ),
+        OutputPort(
+            name="symbol_results",
+            type="array",
+            description="Per-symbol breakdown — [{symbol, exchange, passed, value, ...plugin-specific fields}, ...]",
+        ),
+        OutputPort(
+            name="values",
+            type="array",
+            description="Per-symbol time series — [{symbol, exchange, time_series: [...]}, ...] (empty for position plugins)",
         ),
     ]
 
@@ -378,22 +401,19 @@ class LogicNode(BaseNode):
     _outputs: List[OutputPort] = [
         OutputPort(
             name="result",
-            type="condition_result",
-            description="i18n:ports.result",
-            fields=CONDITION_RESULT_FIELDS,
-            example={
-                "is_condition_met": True,
-                "passed_symbols": [{"exchange": "NASDAQ", "symbol": "AAPL"}],
-            },
+            type="boolean",
+            description="Combined boolean result (true when the configured operator is satisfied)",
         ),
         OutputPort(
             name="passed_symbols",
             type="symbol_list",
-            description="i18n:ports.passed_symbols",
+            description="Symbols satisfying the combined condition (intersection/union depending on operator)",
             fields=SYMBOL_LIST_FIELDS,
-            example=[
-                {"exchange": "NASDAQ", "symbol": "AAPL"},
-            ],
+        ),
+        OutputPort(
+            name="details",
+            type="array",
+            description="Per-condition breakdown — [{is_condition_met, passed_symbols, weight?, ...}, ...]",
         ),
     ]
 

@@ -35,10 +35,9 @@ from programgarden_core import (
 
 
 def test_error_code_count_matches_matrix() -> None:
-    # Plan §4 matrix: 19 static + 4 new + 3 runtime = 26 codes.
-    # (Plan §4 footer says "24개" but that's an arithmetic typo — the matrix
-    # itself lists 26 entries, which is what we ship.)
-    assert len(list(ErrorCode)) == 26
+    # 26 baseline + 3 AI/Dynamic edge codes (INVALID_AI_MODEL_EDGE,
+    # INVALID_TOOL_EDGE, DYNAMIC_NODE_CLASS_NOT_INJECTED) = 29 codes.
+    assert len(list(ErrorCode)) == 29
 
 
 def test_unknown_plugin_defaults_to_warning() -> None:

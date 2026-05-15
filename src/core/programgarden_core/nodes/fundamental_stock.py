@@ -187,6 +187,7 @@ class OverseasStockFundamentalNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="value", type="fundamental_data", description="i18n:ports.fundamental_data_value", fields=FUNDAMENTAL_DATA_FIELDS),
+        OutputPort(name="values", type="array", description="Array of per-symbol fundamental records"),
     ]
 
     @classmethod

@@ -6,7 +6,7 @@ diagnostic is a `programgarden_core.ErrorInfo` so AI chatbots can do
 deterministic self-correction without parsing free-form strings.
 """
 
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Set, Tuple
 
 from programgarden_core import (
     ErrorCode,
@@ -123,6 +123,7 @@ class WorkflowResolver:
         limits: Optional[ValidationLimits] = None,
         suppress_recommendations: Optional[List[str]] = None,
         expand_cascade: bool = False,
+        validate_dynamic_injection: bool = False,
     ) -> ValidationResult:
         """Validate a workflow definition and return a structured result.
 
@@ -132,6 +133,10 @@ class WorkflowResolver:
             suppress_recommendations: rule_id list to skip when building
                 `static_recommendations`.
             expand_cascade: When True, skip cascade suppression (debugging).
+            validate_dynamic_injection: When True, emit DYNAMIC_NODE_CLASS_NOT_INJECTED
+                for Dynamic_* nodes that have a registered schema but no injected
+                runtime class. Call right before `execute()` to catch missing
+                inject_node_classes() calls.
         """
         from programgarden_core import WorkflowDefinition, NodeTypeRegistry, PluginRegistry
         from programgarden.validation_recommender import (
@@ -212,6 +217,16 @@ class WorkflowResolver:
                                 credential_id=node.get("credential_id"),
                             ),
                             suggestion="Remove credential_id from the dynamic node — credential access is blocked for security.",
+                        )
+                    )
+
+                if validate_dynamic_injection and not dynamic_registry.get_node_class(node_type):
+                    result.add(
+                        build_error(
+                            ErrorCode.DYNAMIC_NODE_CLASS_NOT_INJECTED,
+                            f"Dynamic node '{node_type}' has a registered schema but no injected runtime class",
+                            location=ErrorLocation(node_id=node_id, node_type=node_type),
+                            suggestion="Call executor.inject_node_classes({...}) before execute(). Otherwise the node returns runtime errors as downstream data.",
                         )
                     )
                 continue
@@ -452,9 +467,11 @@ class WorkflowResolver:
         """Verify each edge's from/to references an existing node.
 
         Also catches `from_port` typos for nodes that declare multiple
-        output ports (`IfNode.true/false` etc.) via INVALID_EDGE_PORT.
+        output ports (`IfNode.true/false` etc.) via INVALID_EDGE_PORT,
+        and validates ai_model/tool edge type semantics for AI Agent flows.
         """
         from programgarden_core import NodeTypeRegistry
+        from programgarden_core.models.edge import EdgeType
 
         node_ids = {n.get("id") for n in workflow.nodes}
         node_type_by_id = {n.get("id"): n.get("type") for n in workflow.nodes}
@@ -528,26 +545,142 @@ class WorkflowResolver:
                             )
                         )
 
+            # AI edge semantic validation: ai_model / tool edges have strict source/target shape.
+            edge_type = getattr(edge, "edge_type", None)
+            edge_type_str = edge_type.value if hasattr(edge_type, "value") else str(edge_type) if edge_type else "main"
+
+            if edge_type_str == EdgeType.AI_MODEL.value:
+                source_type = node_type_by_id.get(from_id)
+                target_type = node_type_by_id.get(to_id)
+                if from_id and source_type and source_type != "LLMModelNode":
+                    result.add(
+                        build_error(
+                            ErrorCode.INVALID_AI_MODEL_EDGE,
+                            f"ai_model edge source must be LLMModelNode, got '{source_type}'",
+                            location=ErrorLocation(
+                                node_id=from_id,
+                                node_type=source_type,
+                                edge_index=idx,
+                                edge_from=from_raw,
+                                edge_to=to_raw,
+                            ),
+                            suggestion="Connect an LLMModelNode as the ai_model edge source.",
+                        )
+                    )
+                if to_id and target_type and target_type != "AIAgentNode":
+                    result.add(
+                        build_error(
+                            ErrorCode.INVALID_AI_MODEL_EDGE,
+                            f"ai_model edge target must be AIAgentNode, got '{target_type}'",
+                            location=ErrorLocation(
+                                node_id=to_id,
+                                node_type=target_type,
+                                edge_index=idx,
+                                edge_from=from_raw,
+                                edge_to=to_raw,
+                            ),
+                            suggestion="ai_model edges feed an AIAgentNode. Use edge_type='main' for other targets.",
+                        )
+                    )
+
+            elif edge_type_str == EdgeType.TOOL.value:
+                source_type = node_type_by_id.get(from_id)
+                target_type = node_type_by_id.get(to_id)
+                if from_id and source_type:
+                    source_cls = registry.get(source_type)
+                    is_tool = bool(source_cls and source_cls.is_tool_enabled()) if source_cls else False
+                    if not is_tool:
+                        result.add(
+                            build_error(
+                                ErrorCode.INVALID_TOOL_EDGE,
+                                f"tool edge source '{source_type}' is not tool-enabled (is_tool_enabled() returns False)",
+                                location=ErrorLocation(
+                                    node_id=from_id,
+                                    node_type=source_type,
+                                    edge_index=idx,
+                                    edge_from=from_raw,
+                                    edge_to=to_raw,
+                                ),
+                                suggestion="Only tool-enabled nodes (MarketDataNode, AccountNode, ConditionNode etc.) can be registered as AI Agent tools.",
+                            )
+                        )
+                if to_id and target_type and target_type != "AIAgentNode":
+                    result.add(
+                        build_error(
+                            ErrorCode.INVALID_TOOL_EDGE,
+                            f"tool edge target must be AIAgentNode, got '{target_type}'",
+                            location=ErrorLocation(
+                                node_id=to_id,
+                                node_type=target_type,
+                                edge_index=idx,
+                                edge_from=from_raw,
+                                edge_to=to_raw,
+                            ),
+                            suggestion="tool edges register a node as an AI Agent tool. The target must be an AIAgentNode.",
+                        )
+                    )
+
     def _validate_expression_references(
         self,
         workflow,
         result: ValidationResult,
     ) -> None:
         """
-        {{ nodes.xxx.yyy }} 표현식에서 참조하는 노드 ID가 실제 존재하는지 검증.
-        AI 워크플로우 빌더가 잘못된 노드 참조를 사전에 감지할 수 있도록 함.
+        {{ nodes.<id>(.<port>)? }} 표현식의 노드 ID + 출력 포트 존재 여부를 검증한다.
+
+        - node id 가 정의되지 않은 경우: INVALID_EXPRESSION_REF
+        - port 가 존재하지 않는 경우 (메서드 호출 / chain method 제외): INVALID_EXPRESSION_REF
         """
         import re
+        from programgarden_core import NodeTypeRegistry
+        from programgarden_core.registry import DynamicNodeRegistry
 
         node_ids = {n.get("id") for n in workflow.nodes}
-        # {{ nodes.xxx 또는 {{ nodes.xxx.yyy }} 패턴
-        expr_pattern = re.compile(r"\{\{\s*nodes\.(\w+)")
+        node_type_by_id = {n.get("id"): n.get("type") for n in workflow.nodes}
+        registry = NodeTypeRegistry()
+        dynamic_registry = DynamicNodeRegistry()
+
+        # NodeOutputProxy 체이닝 메서드 — port 가 아닌 호출. nodes.X.<method>(...) 일 때 검증 스킵.
+        chain_methods = {
+            "all", "first", "last", "count",
+            "filter", "map", "pluck", "flatten",
+            "sum", "avg", "mean", "median", "min", "max",
+            "stdev", "variance",
+            "unique", "sort_by", "sort", "limit", "offset",
+            "head", "tail",
+        }
+
+        def _port_names_for(node_type: str) -> Optional[List[str]]:
+            if not node_type:
+                return None
+            schema = registry.get_schema(node_type)
+            if schema:
+                names: Set[str] = set()
+                for out in (schema.outputs or []):
+                    if isinstance(out, dict):
+                        nm = out.get("name")
+                    else:
+                        nm = getattr(out, "name", None)
+                    if nm:
+                        names.add(nm)
+                names.discard("")
+                return sorted(names) if names else None
+            dyn_schema = dynamic_registry.get_schema(node_type)
+            if dyn_schema:
+                return [o.get("name") for o in (dyn_schema.outputs or []) if o.get("name")]
+            return None
+
+        # nodes.<id>(.<attr>)? — attr 다음 ( 면 method 호출이므로 port 검증 스킵.
+        expr_pattern = re.compile(r"\{\{\s*nodes\.(\w+)(?:\.(\w+))?\s*(\()?")
         skip_keys = {"id", "type", "category", "position"}
 
         def find_refs(value, node_id: str, field_path: str):
             if isinstance(value, str):
                 for match in expr_pattern.finditer(value):
                     ref_id = match.group(1)
+                    attr = match.group(2)
+                    is_call = match.group(3) == "("
+
                     if ref_id not in node_ids:
                         result.add(
                             build_error(
@@ -563,6 +696,27 @@ class WorkflowResolver:
                                 suggestion="Update the expression to reference an existing node id.",
                             )
                         )
+                        continue
+
+                    if attr and not is_call and attr not in chain_methods:
+                        source_type = node_type_by_id.get(ref_id)
+                        ports = _port_names_for(source_type)
+                        if ports is not None and attr not in ports:
+                            result.add(
+                                build_error(
+                                    ErrorCode.INVALID_EXPRESSION_REF,
+                                    f"Expression port '{attr}' is not an output of node '{ref_id}' ({source_type})",
+                                    location=ErrorLocation(
+                                        node_id=node_id,
+                                        node_type=node_type_by_id.get(node_id),
+                                        field_path=field_path,
+                                        expression=value,
+                                        output_port=attr,
+                                    ),
+                                    available_values=suggest_close_match(attr, ports) or sorted(ports),
+                                    suggestion="Pick an output port that exists on the source node (or use a chaining method like .filter()/.first()).",
+                                )
+                            )
             elif isinstance(value, dict):
                 for k, v in value.items():
                     find_refs(v, node_id, f"{field_path}.{k}")

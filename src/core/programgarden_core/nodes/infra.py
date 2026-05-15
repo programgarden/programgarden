@@ -414,6 +414,11 @@ class SplitNode(BaseNode):
             description="i18n:ports.split_total",
             example=3,
         ),
+        OutputPort(
+            name="items",
+            type="array",
+            description="Full input array (same as the upstream array) — convenient for downstream binding",
+        ),
     ]
 
     _usage: ClassVar[Dict[str, Any]] = {

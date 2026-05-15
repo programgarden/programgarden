@@ -206,6 +206,11 @@ class OverseasStockMarketDataNode(BaseNode):
                 "eps": 6.57,
             },
         ),
+        OutputPort(
+            name="values",
+            type="array",
+            description="Array of per-symbol market quotes — [{symbol, exchange, current_price, ...}, ...]",
+        ),
     ]
 
     @classmethod

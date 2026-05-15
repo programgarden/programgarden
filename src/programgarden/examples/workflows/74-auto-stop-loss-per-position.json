@@ -1,7 +1,7 @@
 {
   "id": "74-auto-stop-loss-per-position",
   "name": "포지션별 자동 손절 + 텔레그램 (선물 모의)",
-  "description": "보유 포지션 각각에 대해 손실률 -5% 이하면 자동 전량 매도 + 텔레그램 경고. 리스크 관리 자동화 튜토리얼.",
+  "description": "보유 포지션 중 손실률 -5% 이하인 종목만 골라서 시장가 청산 + 텔레그램 경고. StopLoss 플러그인 + SymbolFilterNode 패턴(per-position).",
   "nodes": [
     {
       "id": "start",
@@ -30,42 +30,51 @@
       "position": {"x": 650, "y": 300}
     },
     {
-      "id": "if_big_loss",
-      "type": "IfNode",
-      "left": "{{ item.pnl_rate }}",
-      "operator": "<=",
-      "right": -5,
+      "id": "stop_loss",
+      "type": "ConditionNode",
+      "plugin": "StopLoss",
+      "positions": "{{ nodes.account.positions }}",
+      "fields": {"stop_percent": -5.0},
       "position": {"x": 900, "y": 300}
+    },
+    {
+      "id": "triggered_symbols",
+      "type": "SymbolFilterNode",
+      "operation": "union",
+      "input_a": "{{ nodes.stop_loss.passed_symbols }}",
+      "input_b": [],
+      "position": {"x": 1150, "y": 300}
     },
     {
       "id": "sell_order",
       "type": "OverseasFuturesNewOrderNode",
-      "side": "{{ item.close_side }}",
-      "order_type": "market",
+      "side": "sell",
+      "order_type": "limit",
       "order": {
         "symbol": "{{ item.symbol }}",
         "exchange": "{{ item.exchange }}",
-        "quantity": "{{ item.quantity }}"
+        "quantity": 1
       },
       "resilience": {
         "fallback": {"mode": "skip"}
       },
-      "position": {"x": 1150, "y": 300}
+      "position": {"x": 1400, "y": 300}
     },
     {
       "id": "telegram_stop_loss",
       "type": "TelegramNode",
       "credential_id": "telegram_cred",
-      "template": "🛑 <b>손절 매도 체결!</b>\n\n📉 종목: {{ item.symbol }} ({{ item.exchange }})\n📊 수량: {{ item.quantity }}계약\n💸 손실률: {{ item.pnl_rate }}%\n⚠️ 손절 라인: -5%\n\n🛡️ 리스크 보호 작동: 추가 손실 방지",
-      "position": {"x": 1400, "y": 300}
+      "template": "🛑 <b>손절 매도!</b>\n\n📉 종목: {{ item.symbol }} ({{ item.exchange }})\n⚠️ 손절 라인: -5% 도달\n\n🛡️ 리스크 보호 작동",
+      "position": {"x": 1650, "y": 300}
     }
   ],
   "edges": [
     {"from": "start", "to": "broker"},
     {"from": "broker", "to": "schedule"},
     {"from": "schedule", "to": "account"},
-    {"from": "account", "to": "if_big_loss"},
-    {"from": "if_big_loss", "to": "sell_order", "from_port": "true"},
+    {"from": "account", "to": "stop_loss"},
+    {"from": "stop_loss", "to": "triggered_symbols"},
+    {"from": "triggered_symbols", "to": "sell_order"},
     {"from": "sell_order", "to": "telegram_stop_loss"}
   ],
   "credentials": [
@@ -89,10 +98,10 @@
   "notes": [
     {
       "id": "note_risk",
-      "content": "## 포지션별 자동 손절\n\n**트리거**: 5분마다 (cron */5)\n**조건**: 각 포지션의 pnl_rate <= -5%\n**액션**: 전량 시장가 매도 + 텔레그램\n\n**핵심 패턴: Per-position Auto-iterate**\n- Account → IfNode → Sell → Telegram\n- AccountNode의 positions 리스트가 각 노드에 auto-iterate\n- IfNode의 {{ item.pnl_rate }} 가 각 포지션에 개별 평가됨\n- 손절 조건 충족한 포지션만 sell_order 실행\n\n**close_side**: \n- 롱 포지션 보유 시 close_side='sell'\n- 숏 포지션 보유 시 close_side='buy'\n- AccountNode가 자동 계산\n\n**안전장치**:\n- paper_trading=true (모의)\n- resilience.fallback=skip (일부 실패 허용)\n- 조건 미충족 포지션은 IfNode false 분기에서 스킵",
+      "content": "## 포지션별 자동 손절 (StopLoss plugin)\n\n**트리거**: 5분마다 (cron */5)\n**조건**: 각 포지션의 pnl_rate <= -5%\n**액션**: 손절 조건 충족 포지션만 청산 + 텔레그램\n\n**핵심 패턴: Per-position via StopLoss plugin**\n- `ConditionNode(plugin='StopLoss')` 가 각 포지션의 pnl_rate 를 평가하여 `passed_symbols` 에 손절 대상만 담는다.\n- `SymbolFilterNode(operation='union', input_b=[])` 는 passed_symbols 를 `symbols` 포트로 노출시키는 어댑터 (auto-iterate 가 `symbols` 포트를 인식).\n- `sell_order` 는 triggered_symbols.symbols 의 각 항목마다 자동 반복 실행.\n\n**왜 IfNode 가 아닌가**\n- IfNode 는 단일값 비교 분기용 (auto-iterate 미지원). `{{ item.* }}` 을 IfNode.left 에 쓰면 item 컨텍스트가 비어 항상 false 가 됨.\n- 포지션별 조건 분기는 ConditionNode + 포지션 플러그인 (StopLoss / ProfitTarget / TrailingStop / Drawdown) 으로 구현하라.\n\n**제약**\n- quantity 는 1 로 고정 (futures 계약 1개씩 청산 데모). 전량 청산이 필요하면 StopLoss 플러그인의 `symbol_results` + 별도 lookup 필요.\n- 롱 포지션 전제 (side='sell'). 숏 청산은 별도 워크플로우 또는 양방향 분기.\n\n**안전장치**\n- paper_trading=true (모의)\n- resilience.fallback=skip (일부 실패 허용)",
       "color": 0,
       "width": 380,
-      "height": 380,
+      "height": 440,
       "position": {"x": 30, "y": 30}
     }
   ]

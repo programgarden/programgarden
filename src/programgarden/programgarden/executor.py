@@ -739,8 +739,9 @@ class SplitNodeExecutor(NodeExecutorBase):
             "item": split_context["item"],
             "index": split_context["index"],
             "total": split_context["total"],
-            # Also expose array for inspection
+            # Expose full array via both legacy name and the documented schema port.
             "_array": input_array,
+            "items": input_array,
         }
 
 
@@ -2364,40 +2365,28 @@ class BrokerNodeExecutor(NodeExecutorBase):
         }
 
     def _collect_risk_features(self, context: ExecutionContext) -> set:
-        """워크플로우 내 노드/플러그인의 risk feature 요구사항 수집"""
+        """워크플로우 내 노드/플러그인의 risk feature 요구사항 수집.
+
+        ResolvedNode 구조를 가정한다:
+        - node_type (str): registry lookup 키
+        - config (dict): plugin 노드는 config['plugin']에 plugin name 보관
+        """
         features = set()
         valid = {"hwm", "window", "events", "state"}
 
-        # workflow_nodes에서 노드 클래스의 _risk_features 수집
-        if hasattr(context, '_reverse_adj') and hasattr(context, '_outputs'):
-            # DAG 내 모든 노드의 resolved 정보 접근
-            workflow_nodes = getattr(context, '_workflow_nodes_map', None)
-            if workflow_nodes:
-                for node_id, resolved_node in workflow_nodes.items():
-                    node_cls = getattr(resolved_node, 'node_class', None) or getattr(resolved_node, '_node_class', None)
-                    if node_cls:
-                        features.update(getattr(node_cls, '_risk_features', set()))
+        workflow_nodes = getattr(context, '_workflow_nodes_map', None) or {}
+        for resolved_node in workflow_nodes.values():
+            node_type = getattr(resolved_node, 'node_type', None)
+            if node_type:
+                node_cls = self._resolve_node_class_for_risk(node_type)
+                if node_cls:
+                    features.update(getattr(node_cls, '_risk_features', set()) or set())
 
-                    # 플러그인의 risk_features
-                    plugin_name = getattr(resolved_node, 'plugin', None)
-                    if not plugin_name and hasattr(resolved_node, 'config'):
-                        plugin_name = resolved_node.config.get('plugin') if isinstance(resolved_node.config, dict) else None
-                    if plugin_name:
-                        features.update(self._get_plugin_risk_features(plugin_name))
-
-        # context에 workflow_nodes_map이 없으면 workflow_nodes dict에서 시도
-        if not features:
-            wf_nodes = getattr(context, '_workflow_nodes_dict', None)
-            if wf_nodes and isinstance(wf_nodes, dict):
-                for node_def in wf_nodes.values():
-                    node_type = node_def.get("type", "") if isinstance(node_def, dict) else getattr(node_def, "type", "")
-                    node_cls = self._resolve_node_class_for_risk(node_type)
-                    if node_cls:
-                        features.update(getattr(node_cls, '_risk_features', set()))
-
-                    plugin_name = node_def.get("plugin") if isinstance(node_def, dict) else getattr(node_def, "plugin", None)
-                    if plugin_name:
-                        features.update(self._get_plugin_risk_features(plugin_name))
+            # Plugin name 은 ResolvedNode.config['plugin'] 에 보관됨 (plugin callable 이 아님)
+            config = getattr(resolved_node, 'config', None)
+            plugin_name = config.get('plugin') if isinstance(config, dict) else None
+            if plugin_name:
+                features.update(self._get_plugin_risk_features(plugin_name))
 
         return features & valid
 
@@ -2443,8 +2432,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
     def _resolve_node_class_for_risk(self, node_type: str):
         """노드 타입에서 클래스 resolve (risk feature 수집용)"""
         try:
-            from programgarden_core.registry import NodeRegistry
-            registry = NodeRegistry()
+            from programgarden_core.registry import NodeTypeRegistry
+            registry = NodeTypeRegistry()
             return registry.get(node_type) if hasattr(registry, 'get') else None
         except Exception:
             return None
@@ -7746,6 +7735,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
         return {
             "symbols": normalized_symbols,  # 입력 symbols (거래소 포함)
             "result": len(passed_symbols) > 0,
+            "is_condition_met": len(passed_symbols) > 0,  # alias of result, documented in node examples
             "passed_symbols": passed_symbols,  # [{exchange, symbol}, ...]
             "failed_symbols": failed_symbols,  # [{exchange, symbol}, ...]
             "symbol_results": symbol_results,  # [{symbol, exchange, rsi, price, ...}, ...]
@@ -10064,6 +10054,8 @@ class PortfolioNodeExecutor(NodeExecutorBase):
             "rebalance_signal": rebalance_signal,
             "rebalance_orders": rebalance_orders,
             "allocated_capital": allocated_capital,
+            # Flat shortcut for IfNode kill switches — same value as combined_metrics.max_drawdown.
+            "drawdown_percent": combined_metrics.get("max_drawdown", 0) if isinstance(combined_metrics, dict) else 0,
         }
 
     def _collect_strategy_results(
@@ -14323,6 +14315,7 @@ class WorkflowExecutor:
         limits: "Optional[ValidationLimits]" = None,
         suppress_recommendations: "Optional[List[str]]" = None,
         expand_cascade: bool = False,
+        validate_dynamic_injection: bool = False,
     ) -> ValidationResult:
         """Validate a workflow definition.
 
@@ -14333,12 +14326,19 @@ class WorkflowExecutor:
                 generating `static_recommendations`.
             expand_cascade: When True, disable cascade suppression so every
                 cascade error appears in `result.errors` (debugging only).
+            validate_dynamic_injection: When True, emit
+                DYNAMIC_NODE_CLASS_NOT_INJECTED for any Dynamic_* node whose
+                schema is registered but whose runtime class has not been
+                injected via `inject_node_classes()`. Call before `execute()`
+                to catch missing injection up front instead of seeing the
+                error surface as downstream data at runtime.
         """
         return self.resolver.validate(
             definition,
             limits=limits,
             suppress_recommendations=suppress_recommendations,
             expand_cascade=expand_cascade,
+            validate_dynamic_injection=validate_dynamic_injection,
         )
 
     def compile(
