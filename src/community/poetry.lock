@@ -688,18 +688,23 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-core"
-version = "1.12.3"
+version = "1.12.4"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.12.3-py3-none-any.whl", hash = "sha256:2259b90d814019403f5b0c68056cc0eb8dbb78d67772dc9577eaf20a84841ee8"},
-    {file = "programgarden_core-1.12.3.tar.gz", hash = "sha256:1f10b8ea08ec2bb61c910cf21c8877025df9887193b92d4a9606d781a57b6335"},
+    {file = "programgarden_core-1.12.4-py3-none-any.whl", hash = "sha256:12c069d62d8786283bdc68d0cd7ccd9c7d01313d63bf397863ec74bd3e0580de"},
+    {file = "programgarden_core-1.12.4.tar.gz", hash = "sha256:a4aff7f19bcb1d1701cdb3c1043771f840a2035093f5d64423b73f1e7c61c5e2"},
 ]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
+
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
 
 [[package]]
 name = "pycparser"
@@ -1030,4 +1035,4 @@ xlsx = []
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "d25bb0cbd1ff82715e9745f3d12866d1fbcc0276fdc1733d4968143dddd3c982"
+content-hash = "30ba50ef111caf3e2635f05b34aaf3843a64329326c18e3cb87db43a25325bb9"

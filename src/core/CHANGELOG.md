@@ -1,5 +1,43 @@
 ## [Unreleased]
 
+## [1.12.4] - 2026-05-16
+### Added
+- `HISTORICAL_VALUE_FIELDS` constant in `nodes/base.py` — outer
+  payload shape for HistoricalDataNode `value` port (`symbol`,
+  `exchange`, `time_series`). `HISTORICAL_DATA_FIELDS` (`date`,
+  `open`, `high`, `low`, `close`, `volume`) stays as the inner
+  OHLCV bar shape.
+- 3 new `ErrorCode` entries (now 29 total):
+  - `INVALID_AI_MODEL_EDGE` — ai_model edge with non-LLM source or
+    non-AIAgent target.
+  - `INVALID_TOOL_EDGE` — tool edge from a non-tool node or to a
+    non-AIAgent target.
+  - `DYNAMIC_NODE_CLASS_NOT_INJECTED` — Dynamic_* node with a
+    registered schema but no injected class.
+
+### Changed
+- `OverseasStockHistoricalDataNode`, `KoreaStockHistoricalDataNode`,
+  `OverseasFuturesHistoricalDataNode` — `value` port now declares
+  `fields=HISTORICAL_VALUE_FIELDS` (outer payload) instead of
+  `HISTORICAL_DATA_FIELDS` (inner bar). Fixes schema vs. runtime
+  payload mismatch where `{{ nodes.historical.value.time_series }}`
+  was incorrectly flagged as a field typo once strict nested-field
+  validation was enabled in programgarden 1.21.11.
+- 10 node schemas declare missing output ports so strict expression
+  port validation no longer flags valid expressions as typos:
+  `ConditionNode` (7 outputs), `LogicNode` (`details`),
+  `OverseasStockHistoricalDataNode` (`values`/`symbols`/`period`/
+  `interval`), `OverseasStockMarketDataNode` (`values`),
+  `OverseasStockFundamentalNode` (`values`),
+  `KoreaStockMarketDataNode` (`values`),
+  `KoreaStockFundamentalNode` (`values`), `SplitNode` (`items`),
+  `FieldMappingNode` (`data` alias), `PortfolioNode`
+  (`drawdown_percent`).
+
+### Tests
+- `test_validation_models.py` ErrorCode count 26 → 29
+  (AI/Dynamic additions).
+
 ## [1.12.3] - 2026-05-14
 ### Added
 - **`programgarden_core.models.validation`** — structured workflow

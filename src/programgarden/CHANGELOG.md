@@ -1,5 +1,64 @@
 ## [Unreleased]
 
+## [1.21.11] - 2026-05-16
+### Added
+- **5 silent-failure gates** in `WorkflowExecutor` + `WorkflowResolver`:
+  - **Strict expression port validation** for `{{ nodes.<id>.<port> }}` —
+    catches `held_symbolls` typos and similar, surfaced as
+    `INVALID_EXPRESSION_REF` with `available_values` close matches.
+  - **Nested-field validation** for `{{ nodes.<id>.<port>.<field> }}` —
+    when the port declares `OutputPort.fields`, sub-field typos like
+    `balance.orderabl_amount` are blocked at validate() time. Free-form
+    ports (no `fields` schema) keep deep-access open. Static **and**
+    dynamic registry schemas are checked.
+  - **risk_tracker activation** — `_workflow_nodes_map` is now actually
+    populated, so `_collect_risk_features` returns the declared
+    `_risk_features` set instead of always empty. PortfolioNode HWM /
+    drawdown / trailing-stop protections now actually run on workflows
+    that opt in.
+  - **AI edge semantic validation** — `ai_model` edges must run
+    `LLMModelNode → AIAgentNode`; `tool` edges must originate from a
+    `is_tool_enabled` source and target an AIAgentNode. New ErrorCodes
+    `INVALID_AI_MODEL_EDGE` / `INVALID_TOOL_EDGE`.
+  - **Dynamic_* execution readiness** — `execute()` and `restore()`
+    now pass `validate_dynamic_injection=True` to `compile()`, blocking
+    `Dynamic_*` workflows whose class has not been
+    `inject_node_classes()`-d. `GenericNodeExecutor` also raises
+    `RuntimeError` instead of returning `{"error": ...}` for the same
+    case, so the error never surfaces as downstream data. New
+    `DYNAMIC_NODE_CLASS_NOT_INJECTED` ErrorCode.
+
+### Changed
+- `WorkflowResolver.resolve()` and `WorkflowExecutor.compile()` accept
+  `validate_dynamic_injection: bool = False` kwarg.
+- Runtime aliases added for 4 ports so consumers can use either the
+  legacy or canonical name:
+  - `ConditionNode.is_condition_met` (alias for `result`),
+  - `SplitNode.items` (alias for the full upstream array),
+  - `FieldMappingNode.data` (alias for `output`),
+  - `PortfolioNode.drawdown_percent` (alias for `drawdown`).
+- Example workflow fixes:
+  - `15-order-futures-modify-cancel.json` — `OverseasFuturesAccountNode`
+    swapped for `OverseasFuturesOpenOrdersNode` (the former does not
+    expose `open_orders`).
+  - `74-auto-stop-loss-per-position.json` — replaces IfNode
+    `{{ item.* }}` per-item branching (auto-iterate unsupported on
+    IfNode, always evaluated false) with the
+    `ConditionNode(plugin='StopLoss') + SymbolFilterNode(union)`
+    adapter pattern.
+  - 4 examples updated with correct balance field names:
+    `16-risk-position-sizing` / `28-strategy-rsi-full` —
+    `balance.available → balance.orderable_amount`;
+    `17-risk-portfolio` / `57-futures-paper-backtest-heavy` —
+    `balance.total → balance.total_eval_krw / balance.total_eval`.
+    Previously these silently evaluated to `None → 0.0`, so
+    `PositionSizingNode` / `PortfolioNode` / IfNode kill-switches were
+    silently misfiring.
+
+### Dependencies
+- `programgarden-core` ^1.12.3 → ^1.12.4 — picks up
+  `HISTORICAL_VALUE_FIELDS` and the 10 node-schema port alignments.
+
 ## [1.21.10] - 2026-05-14
 ### Added
 - **Structured-validation pipeline** — `WorkflowExecutor.validate()`

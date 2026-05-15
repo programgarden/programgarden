@@ -2690,58 +2690,73 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "1.13.4"
+version = "1.13.5"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_community-1.13.4-py3-none-any.whl", hash = "sha256:4adcd63d310dc31aaa06207166d2da2e3d1bf52c84ce8293d22315f445fb6ef0"},
-    {file = "programgarden_community-1.13.4.tar.gz", hash = "sha256:fab92a76a1bfc1ca26b7a0ca99794ce2cfd893febf9a27c14e2ed645bf338f4a"},
+    {file = "programgarden_community-1.13.5-py3-none-any.whl", hash = "sha256:a027b70638dea4ddbf935966102387ee17e59fc72415e3579ca5d1154659f430"},
+    {file = "programgarden_community-1.13.5.tar.gz", hash = "sha256:dc4fbae237d8cb18f88d9cdf601b2c507136e3824d2706cf55e3a2e122b77f10"},
 ]
 
 [package.dependencies]
-programgarden-core = ">=1.12.3,<2.0.0"
+programgarden-core = ">=1.12.4,<2.0.0"
 pypdf = ">=4.0.0"
+
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
 
 [[package]]
 name = "programgarden-core"
-version = "1.12.3"
+version = "1.12.4"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_core-1.12.3-py3-none-any.whl", hash = "sha256:2259b90d814019403f5b0c68056cc0eb8dbb78d67772dc9577eaf20a84841ee8"},
-    {file = "programgarden_core-1.12.3.tar.gz", hash = "sha256:1f10b8ea08ec2bb61c910cf21c8877025df9887193b92d4a9606d781a57b6335"},
+    {file = "programgarden_core-1.12.4-py3-none-any.whl", hash = "sha256:12c069d62d8786283bdc68d0cd7ccd9c7d01313d63bf397863ec74bd3e0580de"},
+    {file = "programgarden_core-1.12.4.tar.gz", hash = "sha256:a4aff7f19bcb1d1701cdb3c1043771f840a2035093f5d64423b73f1e7c61c5e2"},
 ]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
 
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
+
 [[package]]
 name = "programgarden-finance"
-version = "1.6.6"
+version = "1.6.7"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
-    {file = "programgarden_finance-1.6.6-py3-none-any.whl", hash = "sha256:86db0f5b29a23ce74229cf91bdf720becd0a940f14e32523102b52c99e40e5aa"},
-    {file = "programgarden_finance-1.6.6.tar.gz", hash = "sha256:51709cd9c9f96f32efcb26156740a1cc88a5059fb99d65584f42f4c77494eafd"},
+    {file = "programgarden_finance-1.6.7-py3-none-any.whl", hash = "sha256:9bf79fd6c4bb9d4148eeb2d629f8641eac6407f90ea6e174eab29cadff0ecf54"},
+    {file = "programgarden_finance-1.6.7.tar.gz", hash = "sha256:86086e4ec039059c6201721fa0b9ea22182209e7adee8e755d1efaf3c259c164"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.10.0,<4.0.0"
-programgarden-core = ">=1.12.3,<2.0.0"
+programgarden-core = ">=1.12.4,<2.0.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 redis = ">=6.4.0,<7.0.0"
 requests = ">=2.32.4,<3.0.0"
 websockets = ">=15.0.1,<16.0.0"
+
+[package.source]
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "testpypi"
 
 [[package]]
 name = "propcache"
@@ -4564,4 +4579,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "ff6a7bc00846208a8d87073ef6906873c7fc84e0321273768182b38364d49ba4"
+content-hash = "9cb7f7edccea3051d8592a8cfca50ed18316e33bc9add6eae01d2da26052cbcf"

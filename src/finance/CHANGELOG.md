@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [1.6.7] - 2026-05-16
+### Dependencies
+- `programgarden-core` ^1.12.3 → ^1.12.4 — picks up
+  `HISTORICAL_VALUE_FIELDS`, 10 node-schema port alignments and the
+  3 new validation ErrorCodes (AI/Dynamic). No finance code changes.
+
 ## [1.6.6] - 2026-05-14
 ### Dependencies
 - `programgarden-core` ^1.12.2 → ^1.12.3 — picks up the structured
