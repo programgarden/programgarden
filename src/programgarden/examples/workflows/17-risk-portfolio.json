@@ -31,7 +31,7 @@
     {
       "id": "portfolio",
       "type": "PortfolioNode",
-      "total_capital": "{{ nodes.account.balance.total }}",
+      "total_capital": "{{ nodes.account.balance.total_eval_krw }}",
       "allocation_method": "equal",
       "rebalance_rule": "drift",
       "drift_threshold": 5.0,

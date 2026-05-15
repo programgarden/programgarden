@@ -263,8 +263,10 @@ class TestGenericNodeExecutorDynamic:
         assert result["signal"] == "oversold"
 
     @pytest.mark.asyncio
-    async def test_execute_without_class_injection_fails(self, executor, sample_schemas):
-        """클래스 미주입 시 실행 실패"""
+    async def test_execute_without_class_injection_raises(self, executor, sample_schemas):
+        """Missing class injection raises RuntimeError instead of returning
+        {"error": ...} — the latter would let _execute_main_flow mark the
+        node completed and surface the error as downstream data."""
         executor.register_dynamic_schemas(sample_schemas)
         # 클래스 주입 안 함
 
@@ -274,34 +276,31 @@ class TestGenericNodeExecutorDynamic:
         )
 
         node_executor = GenericNodeExecutor()
-        result = await node_executor.execute(
-            node_id="custom",
-            node_type="Dynamic_RSI",
-            config={},
-            context=context,
-        )
-
-        assert "error" in result
-        assert "주입되지 않음" in result["error"]
+        with pytest.raises(RuntimeError, match="Dynamic node class not injected"):
+            await node_executor.execute(
+                node_id="custom",
+                node_type="Dynamic_RSI",
+                config={},
+                context=context,
+            )
 
     @pytest.mark.asyncio
-    async def test_execute_unknown_node_type_fails(self, executor):
-        """알 수 없는 노드 타입 실행 실패"""
+    async def test_execute_unknown_node_type_raises(self, executor):
+        """Unknown node type raises RuntimeError (validate should have
+        caught it earlier — reaching here means validate was bypassed)."""
         context = ExecutionContext(
             job_id="test-job",
             workflow_id="test-workflow",
         )
 
         node_executor = GenericNodeExecutor()
-        result = await node_executor.execute(
-            node_id="unknown",
-            node_type="Dynamic_Unknown",
-            config={},
-            context=context,
-        )
-
-        assert "error" in result
-        assert "Unknown node type" in result["error"]
+        with pytest.raises(RuntimeError, match="Unknown node type"):
+            await node_executor.execute(
+                node_id="unknown",
+                node_type="Dynamic_Unknown",
+                config={},
+                context=context,
+            )
 
 
 # ─────────────────────────────────────────────────
@@ -336,3 +335,22 @@ class TestFullWorkflowExecution:
         # 6. 정리
         await job.stop()
         executor.clear_injected_classes()
+
+    @pytest.mark.asyncio
+    async def test_execute_without_class_injection_raises_at_compile(
+        self, executor, sample_schemas, workflow_with_custom_node
+    ):
+        """WorkflowExecutor.execute() must raise ValueError when a
+        Dynamic_* node has a registered schema but no injected class.
+
+        Without `validate_dynamic_injection=True` propagated through
+        compile(), execute() would proceed and GenericNodeExecutor would
+        surface the missing class as downstream `{"error": ...}` data,
+        marking the node 'completed' instead of failing the workflow.
+        """
+        # Schema registered, but class never injected.
+        executor.register_dynamic_schemas(sample_schemas)
+        assert not executor.is_dynamic_node_ready("Dynamic_RSI")
+
+        with pytest.raises(ValueError, match="Workflow validation failed"):
+            await executor.execute(workflow_with_custom_node)

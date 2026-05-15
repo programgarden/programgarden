@@ -23,6 +23,7 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     HISTORICAL_DATA_FIELDS,
+    HISTORICAL_VALUE_FIELDS,
 )
 
 
@@ -203,7 +204,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
         InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="value", type="ohlcv_data", description="i18n:ports.ohlcv_value", fields=HISTORICAL_DATA_FIELDS),
+        OutputPort(name="value", type="ohlcv_data", description="i18n:ports.ohlcv_value", fields=HISTORICAL_VALUE_FIELDS),
     ]
 
     @classmethod

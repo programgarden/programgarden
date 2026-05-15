@@ -670,16 +670,51 @@ class WorkflowResolver:
                 return [o.get("name") for o in (dyn_schema.outputs or []) if o.get("name")]
             return None
 
-        # nodes.<id>(.<attr>)? — attr 다음 ( 면 method 호출이므로 port 검증 스킵.
-        expr_pattern = re.compile(r"\{\{\s*nodes\.(\w+)(?:\.(\w+))?\s*(\()?")
+        def _field_names_for(node_type: str, port_name: str) -> Optional[List[str]]:
+            """Return the field names declared on an OutputPort, or None
+            if the port has no `fields` schema. Returning None signals
+            "skip nested validation" — only validate when schema declares
+            fields, otherwise leave the port shape open."""
+            if not node_type or not port_name:
+                return None
+            schema = registry.get_schema(node_type)
+            if not schema:
+                return None
+            for out in (schema.outputs or []):
+                if isinstance(out, dict):
+                    nm = out.get("name")
+                    fields = out.get("fields")
+                else:
+                    nm = getattr(out, "name", None)
+                    fields = getattr(out, "fields", None)
+                if nm != port_name:
+                    continue
+                if not fields:
+                    return None
+                names: Set[str] = set()
+                for f in fields:
+                    if isinstance(f, dict):
+                        fn = f.get("name")
+                    else:
+                        fn = getattr(f, "name", None)
+                    if fn:
+                        names.add(fn)
+                return sorted(names) if names else None
+            return None
+
+        # nodes.<id>(.<attr>)* — capture the full dotted path so nested
+        # field typos (e.g. {{ nodes.account.balance.orderabl_amount }})
+        # are also caught when OutputPort.fields declares the shape.
+        expr_pattern = re.compile(r"\{\{\s*nodes\.(\w+)((?:\.\w+)*)\s*(\()?")
         skip_keys = {"id", "type", "category", "position"}
 
         def find_refs(value, node_id: str, field_path: str):
             if isinstance(value, str):
                 for match in expr_pattern.finditer(value):
                     ref_id = match.group(1)
-                    attr = match.group(2)
+                    path_str = match.group(2) or ""
                     is_call = match.group(3) == "("
+                    attrs = [a for a in path_str.split(".") if a]
 
                     if ref_id not in node_ids:
                         result.add(
@@ -698,25 +733,69 @@ class WorkflowResolver:
                         )
                         continue
 
-                    if attr and not is_call and attr not in chain_methods:
-                        source_type = node_type_by_id.get(ref_id)
-                        ports = _port_names_for(source_type)
-                        if ports is not None and attr not in ports:
-                            result.add(
-                                build_error(
-                                    ErrorCode.INVALID_EXPRESSION_REF,
-                                    f"Expression port '{attr}' is not an output of node '{ref_id}' ({source_type})",
-                                    location=ErrorLocation(
-                                        node_id=node_id,
-                                        node_type=node_type_by_id.get(node_id),
-                                        field_path=field_path,
-                                        expression=value,
-                                        output_port=attr,
-                                    ),
-                                    available_values=suggest_close_match(attr, ports) or sorted(ports),
-                                    suggestion="Pick an output port that exists on the source node (or use a chaining method like .filter()/.first()).",
-                                )
+                    if not attrs:
+                        continue
+
+                    # The trailing `(` binds to the last attr. So when the
+                    # path is single-attr and ends with `(`, that attr is a
+                    # method call (e.g. nodes.x.first()) and we skip both
+                    # port and nested checks.
+                    attr = attrs[0]
+                    is_port_method = is_call and len(attrs) == 1
+                    if attr in chain_methods or is_port_method:
+                        continue
+
+                    source_type = node_type_by_id.get(ref_id)
+                    ports = _port_names_for(source_type)
+                    if ports is not None and attr not in ports:
+                        result.add(
+                            build_error(
+                                ErrorCode.INVALID_EXPRESSION_REF,
+                                f"Expression port '{attr}' is not an output of node '{ref_id}' ({source_type})",
+                                location=ErrorLocation(
+                                    node_id=node_id,
+                                    node_type=node_type_by_id.get(node_id),
+                                    field_path=field_path,
+                                    expression=value,
+                                    output_port=attr,
+                                ),
+                                available_values=suggest_close_match(attr, ports) or sorted(ports),
+                                suggestion="Pick an output port that exists on the source node (or use a chaining method like .filter()/.first()).",
                             )
+                        )
+                        continue
+
+                    # Nested field validation: only when the port has a
+                    # declared `fields` schema. Skip when the trailing attr
+                    # is a method (e.g. nodes.x.port.something()).
+                    if len(attrs) < 2:
+                        continue
+                    is_nested_method = is_call and len(attrs) == 2
+                    if is_nested_method:
+                        continue
+                    nested = attrs[1]
+                    field_names = _field_names_for(source_type, attr)
+                    if field_names is None or nested in field_names:
+                        continue
+                    result.add(
+                        build_error(
+                            ErrorCode.INVALID_EXPRESSION_REF,
+                            f"Expression field '{nested}' is not a declared field of "
+                            f"port '{attr}' on node '{ref_id}' ({source_type})",
+                            location=ErrorLocation(
+                                node_id=node_id,
+                                node_type=node_type_by_id.get(node_id),
+                                field_path=field_path,
+                                expression=value,
+                                output_port=attr,
+                            ),
+                            available_values=suggest_close_match(nested, field_names) or sorted(field_names),
+                            suggestion=(
+                                f"Pick a field that exists on '{attr}' "
+                                "(see OutputPort.fields in the node schema)."
+                            ),
+                        )
+                    )
             elif isinstance(value, dict):
                 for k, v in value.items():
                     find_refs(v, node_id, f"{field_path}.{k}")
@@ -906,6 +985,8 @@ class WorkflowResolver:
         self,
         definition: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
+        *,
+        validate_dynamic_injection: bool = False,
     ) -> Tuple[ResolvedWorkflow, ValidationResult]:
         """
         Resolve workflow (convert to execution objects)
@@ -913,6 +994,12 @@ class WorkflowResolver:
         Args:
             definition: Workflow definition
             context: Execution context (credential_id, symbols, etc.)
+            validate_dynamic_injection: When True, validate() emits
+                DYNAMIC_NODE_CLASS_NOT_INJECTED for Dynamic_* nodes whose
+                class has not been injected. Pass True from execute()/
+                restore() so missing inject_node_classes() is blocked
+                before GenericNodeExecutor silently surfaces the error
+                as downstream data.
 
         Returns:
             (ResolvedWorkflow, ValidationResult)
@@ -920,7 +1007,10 @@ class WorkflowResolver:
         from programgarden_core import WorkflowDefinition, NodeTypeRegistry, PluginRegistry
 
         # Validate
-        validation = self.validate(definition)
+        validation = self.validate(
+            definition,
+            validate_dynamic_injection=validate_dynamic_injection,
+        )
         if not validation.is_valid:
             return None, validation
 

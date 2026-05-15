@@ -259,6 +259,18 @@ HISTORICAL_DATA_FIELDS: List[Dict[str, str]] = [
     {"name": "volume", "type": "number", "description": "거래량"},
 ]
 
+# Outer shape of HistoricalDataNode's `value` port. The runtime payload
+# is {symbol, exchange, time_series: [HISTORICAL_DATA_FIELDS, ...]}.
+# Previously the schema attached HISTORICAL_DATA_FIELDS directly to the
+# `value` port, which (correctly) declared the bar shape but (incorrectly)
+# made expressions like `{{ nodes.historical.value.time_series }}`
+# look like field typos against the schema.
+HISTORICAL_VALUE_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "time_series", "type": "array", "description": "OHLCV 바 배열"},
+]
+
 ORDER_LIST_FIELDS: List[Dict[str, str]] = [
     {"name": "order_id", "type": "string", "description": "주문번호"},
     {"name": "exchange", "type": "string", "description": "거래소 코드"},

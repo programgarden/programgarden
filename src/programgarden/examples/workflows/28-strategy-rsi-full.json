@@ -119,7 +119,7 @@
       "id": "sizing",
       "type": "PositionSizingNode",
       "symbol": "{{ nodes.logic.result }}",
-      "balance": "{{ nodes.account.balance.available }}",
+      "balance": "{{ nodes.account.balance.orderable_amount }}",
       "market_data": "{{ nodes.market.value }}",
       "method": "fixed_percent",
       "max_percent": 10.0,

@@ -451,7 +451,7 @@
     {
       "id": "if_balance",
       "type": "IfNode",
-      "left": "{{ nodes.account.balance.available }}",
+      "left": "{{ nodes.account.balance.orderable_amount }}",
       "operator": ">=",
       "right": 50000,
       "position": {
@@ -462,7 +462,7 @@
     {
       "id": "portfolio",
       "type": "PortfolioNode",
-      "total_capital": "{{ nodes.account.balance.total }}",
+      "total_capital": "{{ nodes.account.balance.total_eval }}",
       "allocation_method": "equal",
       "rebalance_rule": "drift",
       "drift_threshold": 5.0,

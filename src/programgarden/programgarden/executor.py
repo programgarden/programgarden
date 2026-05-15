@@ -320,21 +320,23 @@ class GenericNodeExecutor(NodeExecutorBase):
             node_class = dynamic_registry.get_node_class(node_type)
 
             if not node_class:
-                # 스키마는 있지만 클래스가 주입되지 않은 경우
+                # Schema registered but class not injected — raise so the
+                # node fails fast. Returning {"error": ...} would let
+                # _execute_main_flow treat it as a normal output and mark
+                # the node completed, surfacing the error as downstream
+                # data instead of a node failure.
                 if dynamic_registry.get_schema(node_type):
-                    context.log(
-                        "error",
-                        f"동적 노드 클래스가 주입되지 않음: {node_type}. "
-                        "inject_node_classes()를 먼저 호출하세요.",
-                        node_id
+                    msg = (
+                        f"Dynamic node class not injected: {node_type}. "
+                        "Call executor.inject_node_classes({...}) before execute()."
                     )
-                    return {
-                        "error": f"동적 노드 클래스가 주입되지 않음: {node_type}. "
-                                 "inject_node_classes()를 먼저 호출하세요."
-                    }
-                # 스키마도 없는 경우
-                context.log("error", f"Node class not found in registry: {node_type}", node_id)
-                return {"error": f"Unknown node type: {node_type}"}
+                    context.log("error", msg, node_id)
+                    raise RuntimeError(msg)
+                # No schema either — internal inconsistency (validate should
+                # have caught this); raise rather than swallow.
+                msg = f"Unknown node type: {node_type}"
+                context.log("error", msg, node_id)
+                raise RuntimeError(msg)
         
         # plugin과 fields가 별도로 전달되면 config에 추가 (PluginNode용)
         # 빈 딕셔너리 {}는 무시 - config에 이미 있는 fields를 덮어쓰지 않음
@@ -14345,6 +14347,8 @@ class WorkflowExecutor:
         self,
         definition: Dict[str, Any],
         context_params: Optional[Dict[str, Any]] = None,
+        *,
+        validate_dynamic_injection: bool = False,
     ) -> tuple[Optional[ResolvedWorkflow], ValidationResult]:
         """
         Compile workflow (convert to execution objects)
@@ -14352,8 +14356,14 @@ class WorkflowExecutor:
         Args:
             definition: Workflow definition
             context_params: Execution context parameters
+            validate_dynamic_injection: Forward to resolver.resolve() to
+                block missing-class Dynamic_* nodes before execute().
         """
-        return self.resolver.resolve(definition, context_params)
+        return self.resolver.resolve(
+            definition,
+            context_params,
+            validate_dynamic_injection=validate_dynamic_injection,
+        )
 
     async def execute(
         self,
@@ -14383,8 +14393,16 @@ class WorkflowExecutor:
             loaded = self.load_dynamic_nodes(dynamic_nodes)
             logger.info(f"Dynamic nodes auto-loaded from definition: {loaded}")
 
-        # Compile
-        resolved, validation = self.compile(definition, context_params)
+        # Compile — validate_dynamic_injection=True blocks Dynamic_* nodes
+        # whose schema is registered but whose runtime class has not been
+        # injected via inject_node_classes(). Without this, GenericNodeExecutor
+        # would surface the missing class as downstream {"error": ...} data
+        # instead of a node failure.
+        resolved, validation = self.compile(
+            definition,
+            context_params,
+            validate_dynamic_injection=True,
+        )
         if not validation.is_valid:
             raise ValueError(f"Workflow validation failed: {validation.errors}")
 
@@ -14506,8 +14524,13 @@ class WorkflowExecutor:
         from programgarden.database.checkpoint_manager import CheckpointManager
         from datetime import timezone as _tz
 
-        # 1. Compile
-        resolved, validation = self.compile(definition, context_params)
+        # 1. Compile — match execute() and block missing Dynamic_* injection
+        # before restoring runs.
+        resolved, validation = self.compile(
+            definition,
+            context_params,
+            validate_dynamic_injection=True,
+        )
         if not validation.is_valid:
             raise ValueError(f"Workflow validation failed: {validation.errors}")
 

@@ -23,6 +23,7 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     HISTORICAL_DATA_FIELDS,
+    HISTORICAL_VALUE_FIELDS,
 )
 
 
@@ -209,7 +210,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
             name="value",
             type="ohlcv_data",
             description="i18n:ports.ohlcv_value",
-            fields=HISTORICAL_DATA_FIELDS,
+            fields=HISTORICAL_VALUE_FIELDS,
             example=[
                 {
                     "symbol": "AAPL",

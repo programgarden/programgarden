@@ -443,3 +443,135 @@ def test_tool_edge_rejects_non_agent_target(executor: WorkflowExecutor) -> None:
     workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
     result = executor.validate(workflow)
     assert ErrorCode.INVALID_TOOL_EDGE.value in _codes(result)
+
+
+def test_expression_nested_field_typo_flagged(executor: WorkflowExecutor) -> None:
+    """Nested-field typos under a port with declared `fields` are flagged.
+
+    Example: `{{ nodes.account.balance.orderabl_amount }}` — balance is a
+    real port on OverseasStockAccountNode and its OutputPort declares
+    `orderable_amount`, so the typo should surface as INVALID_EXPRESSION_REF
+    rather than silently evaluating to None at runtime.
+    """
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {
+                "id": "display",
+                "type": "TableDisplayNode",
+                "data": "{{ nodes.account.balance.orderabl_amount }}",  # typo
+                "columns": ["value"],
+            },
+        ],
+        edges=[
+            {"from": "s1", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "display"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    result = executor.validate(workflow)
+    invalid_refs = [
+        e for e in result.errors
+        if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_EXPRESSION_REF"
+    ]
+    assert any("orderabl_amount" in (e.message or "") for e in invalid_refs), (
+        "Nested-field typo on balance.orderable_amount should be flagged"
+    )
+
+
+def test_expression_nested_field_valid_not_flagged(executor: WorkflowExecutor) -> None:
+    """Correct nested-field access does not produce a false positive."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {
+                "id": "display",
+                "type": "TableDisplayNode",
+                "data": "{{ nodes.account.balance.orderable_amount }}",
+                "columns": ["value"],
+            },
+        ],
+        edges=[
+            {"from": "s1", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "display"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    result = executor.validate(workflow)
+    invalid_refs = [
+        e for e in result.errors
+        if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_EXPRESSION_REF"
+    ]
+    assert not any("orderable_amount" in (e.message or "") for e in invalid_refs), (
+        "Valid nested field orderable_amount must not be flagged"
+    )
+
+
+def test_expression_nested_field_skipped_when_no_fields_schema(executor: WorkflowExecutor) -> None:
+    """Ports without a declared `fields` schema skip nested validation.
+
+    Many ports have free-form shape (signal payloads, raw event objects).
+    Their consumers should still be able to deep-access without validate()
+    second-guessing the shape.
+    """
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {
+                "id": "display",
+                "type": "TableDisplayNode",
+                # StartNode.start has no `fields` schema declared — nested
+                # access is left open.
+                "data": "{{ nodes.s1.start.anything_at_all }}",
+                "columns": ["value"],
+            },
+        ],
+        edges=[{"from": "s1", "to": "display"}],
+    )
+    result = executor.validate(workflow)
+    invalid_refs = [
+        e for e in result.errors
+        if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_EXPRESSION_REF"
+    ]
+    assert not any("anything_at_all" in (e.message or "") for e in invalid_refs), (
+        "Nested access on a port without `fields` schema must not be flagged"
+    )
+
+
+def test_expression_nested_method_call_not_flagged(executor: WorkflowExecutor) -> None:
+    """Method call after a port (e.g. .toString()) is not validated as a field."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {
+                "id": "display",
+                "type": "TableDisplayNode",
+                # `.something()` after balance is a method call on the
+                # value, not a nested field reference.
+                "data": "{{ nodes.account.balance.something() }}",
+                "columns": ["value"],
+            },
+        ],
+        edges=[
+            {"from": "s1", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "display"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    result = executor.validate(workflow)
+    invalid_refs = [
+        e for e in result.errors
+        if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_EXPRESSION_REF"
+    ]
+    assert not any("something" in (e.message or "") for e in invalid_refs), (
+        "Method call after a port must not be flagged as a nested-field typo"
+    )
