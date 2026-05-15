@@ -15,7 +15,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-programgarden-core = { version = "^1.12.4", source = "testpypi" }
+programgarden-core = "^1.12.4"
 pypdf = ">=4.0.0"
 
 [tool.poetry.extras]
