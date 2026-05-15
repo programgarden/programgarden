@@ -544,6 +544,110 @@ def test_expression_nested_field_skipped_when_no_fields_schema(executor: Workflo
     )
 
 
+def test_expression_dynamic_node_nested_field_typo_flagged(executor: WorkflowExecutor) -> None:
+    """Dynamic_* nodes that declare `fields` on an output port get the
+    same nested-field typo gate as static nodes — otherwise injected
+    schemas would silently let `{{ nodes.dyn.value.prcie }}` evaluate
+    to None at runtime."""
+    from programgarden_core.registry import DynamicNodeRegistry
+    from programgarden_core.registry.dynamic_node_registry import DynamicNodeSchema
+
+    schema = DynamicNodeSchema(
+        node_type="Dynamic_TestNestedField",
+        category="data",
+        outputs=[
+            {
+                "name": "value",
+                "type": "object",
+                "fields": [
+                    {"name": "price", "type": "number"},
+                    {"name": "volume", "type": "number"},
+                ],
+            },
+        ],
+    )
+    registry = DynamicNodeRegistry()
+    registry.register_schema(schema)
+
+    try:
+        workflow = _wrap(
+            [
+                {"id": "s1", "type": "StartNode"},
+                {"id": "dyn", "type": "Dynamic_TestNestedField"},
+                {
+                    "id": "display",
+                    "type": "TableDisplayNode",
+                    # Typo: should be `price` (declared in fields)
+                    "data": "{{ nodes.dyn.value.prcie }}",
+                    "columns": ["value"],
+                },
+            ],
+            edges=[
+                {"from": "s1", "to": "dyn"},
+                {"from": "dyn", "to": "display"},
+            ],
+        )
+        result = executor.validate(workflow)
+        invalid_refs = [
+            e for e in result.errors
+            if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_EXPRESSION_REF"
+        ]
+        assert any("prcie" in (e.message or "") for e in invalid_refs), (
+            "Dynamic node nested-field typo must be flagged the same as static nodes"
+        )
+    finally:
+        registry._schemas.pop("Dynamic_TestNestedField", None)
+
+
+def test_expression_dynamic_node_nested_field_valid_not_flagged(executor: WorkflowExecutor) -> None:
+    """Valid nested-field access on a Dynamic_* node does not produce
+    a false positive."""
+    from programgarden_core.registry import DynamicNodeRegistry
+    from programgarden_core.registry.dynamic_node_registry import DynamicNodeSchema
+
+    schema = DynamicNodeSchema(
+        node_type="Dynamic_TestNestedFieldValid",
+        category="data",
+        outputs=[
+            {
+                "name": "value",
+                "type": "object",
+                "fields": [{"name": "price", "type": "number"}],
+            },
+        ],
+    )
+    registry = DynamicNodeRegistry()
+    registry.register_schema(schema)
+
+    try:
+        workflow = _wrap(
+            [
+                {"id": "s1", "type": "StartNode"},
+                {"id": "dyn", "type": "Dynamic_TestNestedFieldValid"},
+                {
+                    "id": "display",
+                    "type": "TableDisplayNode",
+                    "data": "{{ nodes.dyn.value.price }}",
+                    "columns": ["value"],
+                },
+            ],
+            edges=[
+                {"from": "s1", "to": "dyn"},
+                {"from": "dyn", "to": "display"},
+            ],
+        )
+        result = executor.validate(workflow)
+        invalid_refs = [
+            e for e in result.errors
+            if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_EXPRESSION_REF"
+        ]
+        assert not any("price" in (e.message or "") for e in invalid_refs), (
+            "Valid dynamic nested field must not be flagged"
+        )
+    finally:
+        registry._schemas.pop("Dynamic_TestNestedFieldValid", None)
+
+
 def test_expression_nested_method_call_not_flagged(executor: WorkflowExecutor) -> None:
     """Method call after a port (e.g. .toString()) is not validated as a field."""
     workflow = _wrap(

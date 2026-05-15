@@ -670,17 +670,13 @@ class WorkflowResolver:
                 return [o.get("name") for o in (dyn_schema.outputs or []) if o.get("name")]
             return None
 
-        def _field_names_for(node_type: str, port_name: str) -> Optional[List[str]]:
-            """Return the field names declared on an OutputPort, or None
-            if the port has no `fields` schema. Returning None signals
+        def _extract_field_names(outputs: Any, port_name: str) -> Optional[List[str]]:
+            """Walk an outputs list (list of dicts or OutputPort instances)
+            and return the field names declared on the matching port, or
+            None if the port has no `fields` schema. Returning None signals
             "skip nested validation" — only validate when schema declares
             fields, otherwise leave the port shape open."""
-            if not node_type or not port_name:
-                return None
-            schema = registry.get_schema(node_type)
-            if not schema:
-                return None
-            for out in (schema.outputs or []):
+            for out in (outputs or []):
                 if isinstance(out, dict):
                     nm = out.get("name")
                     fields = out.get("fields")
@@ -700,6 +696,23 @@ class WorkflowResolver:
                     if fn:
                         names.add(fn)
                 return sorted(names) if names else None
+            return None
+
+        def _field_names_for(node_type: str, port_name: str) -> Optional[List[str]]:
+            """Resolve declared field names for an output port.
+
+            Mirrors `_port_names_for`: check the static NodeTypeRegistry
+            first, then fall back to DynamicNodeRegistry so user-injected
+            Dynamic_* nodes get the same nested-field typo gate as
+            built-in nodes when their schema declares `fields`."""
+            if not node_type or not port_name:
+                return None
+            schema = registry.get_schema(node_type)
+            if schema:
+                return _extract_field_names(schema.outputs, port_name)
+            dyn_schema = dynamic_registry.get_schema(node_type)
+            if dyn_schema:
+                return _extract_field_names(dyn_schema.outputs, port_name)
             return None
 
         # nodes.<id>(.<attr>)* — capture the full dotted path so nested
