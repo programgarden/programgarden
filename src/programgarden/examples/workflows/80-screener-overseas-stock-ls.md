@@ -1,6 +1,6 @@
-# Overseas Stock Screener (LS API direct)
+# Overseas Stock Screener (LS g3190 master + market-cap filter)
 
-OverseasStockBrokerNode → WatchlistNode → ScreenerNode(market='overseas_stock', data_source='ls'): screen overseas stocks using LS Securities g3190 (quote) + g3101 (volume) instead of yfinance. `data_source='auto'` with a broker connected behaves the same way.
+OverseasStockBrokerNode → OverseasStockSymbolQueryNode (g3190 master query, NASDAQ universe) → ScreenerNode(market='overseas_stock', data_source='ls'): screen overseas stocks using LS Securities g3190 master-quote response (price + market_cap). This is the canonical input pattern for `data_source='ls'`.
 
 ## Workflow Structure
 
@@ -9,15 +9,16 @@ graph LR
     start(["Start"])
     broker(["Broker
 (Overseas Stock)"])
-    watchlist["Watchlist
-(NASDAQ + NYSE blue-chip)"]
+    universe["SymbolQuery
+(NASDAQ master,
+ g3190)"]
     screener["Screener
 (market=overseas_stock
  data_source=ls)"]
     display[/"TableDisplay"/]
     start --> broker
-    broker --> watchlist
-    watchlist --> screener
+    broker --> universe
+    universe --> screener
     screener --> display
 ```
 
@@ -27,9 +28,9 @@ graph LR
 |----|------|------|
 | start | StartNode | Workflow start |
 | broker | OverseasStockBrokerNode | LS overseas stock broker |
-| watchlist | WatchlistNode | NASDAQ + NYSE blue-chip symbols (AAPL, MSFT, NVDA, TSLA, JPM, BAC) |
-| screener | ScreenerNode | LS-sourced screening with price_min=$50, volume_min=1M |
-| display | TableDisplayNode | Show screened stocks |
+| universe | OverseasStockSymbolQueryNode | NYSE/AMEX universe via g3190 (price + market_cap enriched, up to 500) |
+| screener | ScreenerNode | LS-sourced screening: market_cap >= $10B, price >= $50 |
+| display | TableDisplayNode | Show top 20 large-cap NYSE/AMEX stocks |
 
 ## Required Credentials
 
@@ -40,13 +41,14 @@ graph LR
 ## Data Flow
 
 1. **start** (StartNode) --> **broker** (OverseasStockBrokerNode)
-1. **broker** (OverseasStockBrokerNode) --> **watchlist** (WatchlistNode)
-1. **watchlist** (WatchlistNode) --> **screener** (ScreenerNode)
+1. **broker** (OverseasStockBrokerNode) --> **universe** (OverseasStockSymbolQueryNode)
+1. **universe** (OverseasStockSymbolQueryNode) --> **screener** (ScreenerNode)
 1. **screener** (ScreenerNode) --> **display** (TableDisplayNode)
 
 ## Notes
 
-- `data_source='ls'` forces the LS fast path (g3190 for quote/market-cap, g3101 for volume); without a connected `OverseasStockBrokerNode` the executor would raise an explicit error.
-- USD values are used for price/market-cap filters when `market='overseas_stock'`. `price_min=50.0` means $50 USD per share, `volume_min=1000000` means 1M average daily shares.
-- For workflows that need to avoid LS and use yfinance instead, set `data_source='yfinance'` explicitly — the screener will skip LS even with a broker connected.
+- The LS branch of ScreenerNode expects input symbols that already contain `price` and `market_cap` fields (the shape emitted by g3190). `OverseasStockSymbolQueryNode` is the canonical producer of that shape.
+- For workflows that start from a curated `WatchlistNode` (which only emits `{symbol, exchange}`), set `data_source='yfinance'` instead — the LS branch will try g3101 per-symbol enrichment as a last resort, but that path is rate-limited and depends on market hours.
+- USD values are used for price/market-cap filters when `market='overseas_stock'`. `market_cap_min=10_000_000_000` filters for stocks above $10B market cap (large-cap demo).
+- `stock_exchange='81'` queries the NYSE/AMEX universe (broader alphabet diversity for blue chips). Use `'82'` for NASDAQ. `country='US'` is the default for US exchanges.
 - LS is currently implemented only for `overseas_stock`; futures and Korea stocks fall back to yfinance regardless of `data_source`.

@@ -199,10 +199,12 @@ async def test_overseas_futures_drops_stock_only_fields():
     captured: Dict[str, Any] = {}
 
     async def capture(self, symbols, market_cap_min, market_cap_max, volume_min,
-                      price_min, price_max, sector, exchange, max_results, context, node_id):
+                      price_min, price_max, sector, exchange, max_results, context, node_id,
+                      effective_market="overseas_stock"):
         captured["market_cap_min"] = market_cap_min
         captured["market_cap_max"] = market_cap_max
         captured["sector"] = sector
+        captured["effective_market"] = effective_market
         return [{"symbol": "CL=F"}]
 
     with patch.object(ScreenerNodeExecutor, "_filter_symbols", new=capture):

@@ -1599,7 +1599,8 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                 # 입력 종목에서 필터링 (yfinance)
                 symbols = await self._filter_symbols(
                     input_symbols, market_cap_min, market_cap_max,
-                    volume_min, price_min, price_max, sector, exchange, max_results, context, node_id
+                    volume_min, price_min, price_max, sector, exchange, max_results, context, node_id,
+                    effective_market=effective_market,
                 )
             else:
                 # 전체 시장에서 검색 (yfinance, SP500 기반)
@@ -1634,6 +1635,20 @@ class ScreenerNodeExecutor(NodeExecutorBase):
 
         향후 _filter_via_ls_overseas_futures / _filter_via_ls_korea_stock 추가 예정.
 
+        입력 contract:
+            - 정석 경로: 상위 노드가 g3190 마스터 조회 결과를 그대로 전달
+              (symbol/exchange/price/market_cap/suspend/sellonly 포함).
+            - watchlist 경로: 상위 WatchlistNode 가 {symbol, exchange} 만 전달.
+              이 경우 g3101 (현재가 스냅샷) 으로 price/volume 을 종목별 enrich 한 뒤
+              필터링. market_cap_min/max 명시 시에는 watchlist 경로에서 충족 불가
+              (g3101 에 market_cap 없음) → 명시 경고 + market_cap 필터 무시.
+
+        silent failure 차단:
+            - 입력은 비어있지 않은데 enrich + 필터링 후 0건 + 실 운영 모드 →
+              RuntimeError raise.
+            - dry_run 모드에서는 raise 하지 않음 (mocked LS 환경에서 false positive
+              차단).
+
         Note:
             - g3190 응답에는 거래량(volume)이 없음. volume_min 명시 시 g3101을 종목별로 호출하여 거래량 확인.
             - sector 필터는 g3190에 산업코드(indusury)는 있으나 yfinance 식 sector 이름과 매핑되지 않아 현재 미지원.
@@ -1646,19 +1661,61 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                 node_id,
             )
 
-        # 1단계: g3190 응답의 가격/시총 정보만으로 빠르게 필터
+        # 0단계: 입력이 g3190-enriched 인지 감지. price 와 market_cap 이 모두 0/없음 이면
+        # watchlist 등에서 온 raw 입력 → g3101 로 price+volume enrich.
+        def _has_ls_enrichment(entry: Dict) -> bool:
+            if not isinstance(entry, dict):
+                return False
+            try:
+                if float(entry.get("price") or 0.0) > 0:
+                    return True
+                if float(entry.get("market_cap") or 0) > 0:
+                    return True
+            except (TypeError, ValueError):
+                return False
+            return False
+
+        non_dict_skipped = sum(1 for s in symbols if not isinstance(s, dict))
+        dict_inputs = [s for s in symbols if isinstance(s, dict)]
+        needs_g3101_enrichment = (
+            len(dict_inputs) > 0
+            and not any(_has_ls_enrichment(s) for s in dict_inputs)
+        )
+
+        working_symbols: List[Dict[str, Any]] = list(dict_inputs)
+
+        if needs_g3101_enrichment:
+            if market_cap_min is not None or market_cap_max is not None:
+                context.log(
+                    "warning",
+                    "ScreenerNode[LS]: 입력이 g3190 마스터 조회 결과가 아니라 "
+                    "market_cap 필터를 적용할 수 없습니다 (g3101 에는 시가총액 없음). "
+                    "market_cap_min/max 명시는 이번 실행에서 무시됩니다. "
+                    "상위에 OverseasStockSymbolQueryNode 를 두거나 data_source='yfinance' "
+                    "로 전환하세요.",
+                    node_id,
+                )
+                # mcap 필터 이 호출 한정 비활성
+                market_cap_min = None
+                market_cap_max = None
+            working_symbols = await self._enrich_price_volume_via_g3101(
+                working_symbols, max_results, context, node_id,
+            )
+
+        # 1단계: 가격/시총 정보로 빠르게 필터
         prefilter: List[Dict[str, Any]] = []
-        for sym in symbols:
-            if not isinstance(sym, dict):
-                continue
-            # 거래정지/매도전용 종목 자동 제외
+        for sym in working_symbols:
+            # 거래정지/매도전용 종목 자동 제외 (g3190 enriched 입력에만 존재)
             if (sym.get("suspend") or "").upper() == "Y":
                 continue
             if (sym.get("sellonly") or "").upper() == "Y":
                 continue
 
-            price = float(sym.get("price") or 0.0)
-            mcap = float(sym.get("market_cap") or 0)
+            try:
+                price = float(sym.get("price") or 0.0)
+                mcap = float(sym.get("market_cap") or 0)
+            except (TypeError, ValueError):
+                continue
 
             if price_min is not None and price < price_min:
                 continue
@@ -1676,19 +1733,137 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                 "symbol": sym.get("symbol", ""),
                 "price": price,
                 "market_cap": mcap,
-                # volume은 g3190에 없음 → 다음 단계에서 채움
-                "volume": 0,
+                # g3101 enrich 시 volume 이 채워졌을 수 있음
+                "volume": int(sym.get("volume") or 0),
             })
 
-        # 2단계: volume_min 명시 시 g3101로 거래량 확인
-        if volume_min and prefilter:
+        # 2단계: volume_min 명시 시 g3101로 거래량 확인 (이미 enrich 된 경우 skip)
+        if volume_min and prefilter and not needs_g3101_enrichment:
             prefilter = await self._enrich_volume_via_g3101(
                 prefilter, volume_min, max_results, context, node_id,
             )
+        elif volume_min and prefilter and needs_g3101_enrichment:
+            # 이미 g3101 enrich 한 결과에서 volume_min 적용
+            prefilter = [p for p in prefilter if p.get("volume", 0) >= volume_min]
 
         # 시가총액 큰 순으로 정렬 + max_results 절단
         prefilter.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
-        return prefilter[:max_results]
+        result = prefilter[:max_results]
+
+        # silent failure 차단: 입력은 있었는데 결과 0 + 실 운영 모드 → 명시 raise
+        if (
+            len(dict_inputs) > 0
+            and len(result) == 0
+            and not context.is_dry_run
+        ):
+            raise RuntimeError(
+                f"ScreenerNode[LS:overseas_stock]: input had {len(dict_inputs)} symbols "
+                f"({non_dict_skipped} non-dict entries skipped) but produced 0 results. "
+                f"Common causes: (1) input lacked g3190 price/market_cap and g3101 "
+                f"enrichment also failed (check LS credentials / market hours); "
+                f"(2) all symbols were filtered out by price_min/price_max/volume_min. "
+                f"Inspect node logs for per-symbol g3101 errors, or set "
+                f"data_source='yfinance' to bypass the LS branch."
+            )
+
+        return result
+
+    async def _enrich_price_volume_via_g3101(
+        self,
+        candidates: List[Dict[str, Any]],
+        max_results: int,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> List[Dict[str, Any]]:
+        """입력 종목 각각에 g3101 (현재가 스냅샷) 으로 price + volume 부착.
+
+        watchlist 등에서 온 raw {symbol, exchange} 입력을 LS 분기에서 처리하기 위한
+        on-the-fly enrichment. dry_run 모드에서는 LS 호출이 mocked 라 enrich 결과가
+        무효 — 그대로 통과 (호출자가 dry_run 분기에서 silent failure 안 잡도록).
+        """
+        try:
+            from programgarden_finance import LS, g3101  # noqa: F401
+        except ImportError:
+            context.log(
+                "warning",
+                "programgarden_finance import 실패 — g3101 price 부착 스킵",
+                node_id,
+            )
+            return candidates
+
+        cred = context.get_credential("credential_id") or {}
+        appkey = cred.get("appkey")
+        appsecret = cred.get("appsecret")
+        if not appkey or not appsecret:
+            context.log(
+                "warning",
+                "ScreenerNode[LS]: g3101 호출에 필요한 credential 없음 — price 부착 스킵",
+                node_id,
+            )
+            return candidates
+
+        ls, success, error = ensure_ls_login(
+            appkey, appsecret, False, context, node_id, "overseas_stock",
+        )
+        if not success:
+            context.log(
+                "warning",
+                f"LS 로그인 실패 — g3101 price 부착 스킵: {error}",
+                node_id,
+            )
+            return candidates
+
+        # max_results 의 2배까지만 enrich (속도 보호)
+        limit = max_results * 2
+        enriched: List[Dict[str, Any]] = []
+        enrich_failures = 0
+
+        for sym in candidates[:limit]:
+            ticker = sym.get("symbol", "")
+            if not ticker:
+                continue
+            try:
+                query = ls.overseas_stock().시세().현재가조회(
+                    g3101.G3101InBlock(symbol=ticker)
+                )
+                result = await query.req_async()
+                price_val = 0.0
+                vol_val = 0
+                if result and hasattr(result, "block") and result.block:
+                    block = result.block
+                    raw_price = getattr(block, "price", "") or ""
+                    try:
+                        price_val = float(raw_price) if raw_price else 0.0
+                    except (TypeError, ValueError):
+                        price_val = 0.0
+                    vol_val = int(getattr(block, "volume", 0) or 0)
+                if price_val > 0 or vol_val > 0:
+                    new_entry = dict(sym)
+                    new_entry["price"] = price_val
+                    new_entry["volume"] = vol_val
+                    new_entry.setdefault("market_cap", 0)
+                    enriched.append(new_entry)
+                else:
+                    enrich_failures += 1
+            except Exception as e:
+                enrich_failures += 1
+                context.log(
+                    "debug",
+                    f"g3101 enrich {ticker} 실패: {e}",
+                    node_id,
+                )
+                continue
+
+        if enrich_failures and not enriched:
+            context.log(
+                "warning",
+                f"ScreenerNode[LS]: g3101 enrich 가 모든 {enrich_failures} 종목에서 "
+                f"실패했습니다. 실 운영에서는 후속 silent-failure 가드가 RuntimeError "
+                f"로 raise 합니다.",
+                node_id,
+            )
+
+        return enriched
 
     async def _enrich_volume_via_g3101(
         self,
@@ -1764,32 +1939,83 @@ class ScreenerNodeExecutor(NodeExecutorBase):
         max_results: int,
         context: ExecutionContext,
         node_id: str,
+        effective_market: str = "overseas_stock",
     ) -> List[Dict[str, str]]:
-        """입력 종목 리스트에서 조건 필터링"""
+        """입력 종목 리스트에서 조건 필터링 (yfinance 분기)
+
+        korea_stock 시장에서는 KOSPI '000020' → '000020.KS', KOSDAQ '012345' → '012345.KQ'
+        형식으로 변환하여 yfinance 에 요청한다. suffix 변환 없이 호출하면 모든 종목이
+        404 로 silent skip 되어 빈 결과가 되는 사고를 차단.
+
+        반환된 출력의 ``symbol`` 필드는 변환 전 원본 코드를 유지 (downstream 노드와의
+        symbol_list 호환). yfinance suffix 는 lookup 용으로만 사용.
+
+        100% 종목이 yfinance 응답을 못 받으면 (info 가 빈 dict) RuntimeError 로 raise —
+        silent failure 차단. 단 dry_run 모드에서는 raise 하지 않고 빈 결과 반환
+        (mocked LS 환경에서 false positive 차단).
+        """
         import asyncio
 
-        tickers = [s.get("symbol", s) if isinstance(s, dict) else s for s in symbols]
+        def _to_yfinance_ticker(entry):
+            """yfinance lookup 용 ticker. korea_stock 만 suffix 부착."""
+            if isinstance(entry, dict):
+                sym = entry.get("symbol", "")
+            else:
+                sym = entry
+            if effective_market != "korea_stock":
+                return sym
+            if sym.endswith(".KS") or sym.endswith(".KQ"):
+                return sym
+            mkt = ""
+            if isinstance(entry, dict):
+                mkt = (entry.get("market") or "").upper()
+            if mkt == "KOSDAQ":
+                return f"{sym}.KQ"
+            # KOSPI 또는 미상 → KOSPI 가정 (.KS). 잘못 추정해도 404 면 raise 로 가시화됨.
+            return f"{sym}.KS"
+
+        def _original_symbol(entry):
+            if isinstance(entry, dict):
+                return entry.get("symbol", "")
+            return entry
+
+        lookup_pairs = [
+            (_original_symbol(s), _to_yfinance_ticker(s))
+            for s in symbols
+        ]
 
         # yfinance 동기 호출을 thread pool에서 실행 (이벤트 루프 블로킹 방지)
         def _sync_filter():
             import yfinance as yf
             filtered = []
+            attempted = 0
+            info_succeeded = 0
 
-            for ticker in tickers[:max_results * 2]:  # 여유분 확보
+            for original_sym, yf_ticker in lookup_pairs[:max_results * 2]:  # 여유분
+                if not yf_ticker:
+                    continue
+                attempted += 1
                 try:
-                    stock = yf.Ticker(ticker)
+                    stock = yf.Ticker(yf_ticker)
                     info = stock.info
 
-                    # 필터 조건 확인
-                    mcap = info.get("marketCap", 0)
-                    vol = info.get("averageVolume", 0)
-                    # 가격: 정규시장가 → 현재가 → 전일종가 순으로 가용한 값 사용
-                    price = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose") or 0
-                    stock_sector = info.get("sector", "")
-                    stock_exchange = info.get("exchange", "")
+                    # 가격: 정규시장가 → 현재가 → 전일종가. 셋 다 없으면 yfinance 응답 무효.
+                    price = (
+                        info.get("regularMarketPrice")
+                        or info.get("currentPrice")
+                        or info.get("previousClose")
+                    )
+                    if price is None:
+                        continue
+                    info_succeeded += 1
+
+                    mcap = info.get("marketCap", 0) or 0
+                    vol = info.get("averageVolume", 0) or 0
+                    stock_sector = info.get("sector", "") or ""
+                    stock_exchange = info.get("exchange", "") or ""
 
                     # 거래소 매핑 (yfinance 코드 → 표준 이름)
-                    ex_map = {"NMS": "NASDAQ", "NGM": "NASDAQ", "NYQ": "NYSE", "ASE": "AMEX", "NCM": "NASDAQ"}
+                    ex_map = {"NMS": "NASDAQ", "NGM": "NASDAQ", "NYQ": "NYSE", "ASE": "AMEX", "NCM": "NASDAQ", "KSC": "KOSPI", "KOE": "KOSDAQ"}
                     mapped_exchange = ex_map.get(stock_exchange, stock_exchange)
 
                     if market_cap_min and mcap < market_cap_min:
@@ -1814,7 +2040,7 @@ class ScreenerNodeExecutor(NodeExecutorBase):
 
                     filtered.append({
                         "exchange": mapped_exchange,
-                        "symbol": ticker,
+                        "symbol": original_sym,
                         "market_cap": mcap,
                         "volume": vol,
                         "price": price,
@@ -1824,16 +2050,27 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                     if len(filtered) >= max_results:
                         break
 
-                except Exception as e:
-                    # 동기 함수에서는 context 사용 불가, 그냥 skip
+                except Exception:
+                    # 동기 함수에서는 context 사용 불가, 집계만 하고 skip
                     continue
 
             # 시가총액 내림차순 정렬
             filtered.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
-            return filtered[:max_results]
+            return filtered[:max_results], attempted, info_succeeded
 
         # thread pool에서 실행하여 이벤트 루프 블로킹 방지
-        result = await asyncio.to_thread(_sync_filter)
+        result, attempted, info_succeeded = await asyncio.to_thread(_sync_filter)
+
+        # silent failure 차단: 시도한 종목 전체가 yfinance 응답 없음 + 실 운영 모드
+        if attempted > 0 and info_succeeded == 0 and not context.is_dry_run:
+            raise RuntimeError(
+                f"ScreenerNode[yfinance:{effective_market}]: yfinance lookup failed for "
+                f"all {attempted} input symbols (0 returned a usable price). "
+                f"For korea_stock this usually means the input symbols lack the .KS/.KQ "
+                f"suffix; for overseas_stock this usually means the tickers are invalid "
+                f"or yfinance is unreachable. Check the upstream symbol source."
+            )
+
         return result
 
     async def _search_market(
