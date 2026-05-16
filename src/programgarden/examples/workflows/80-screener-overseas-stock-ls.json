@@ -1,7 +1,7 @@
 {
   "id": "80-screener-overseas-stock-ls",
-  "name": "해외주식 스크리너 (LS API 직접 사용)",
-  "description": "OverseasStockBrokerNode → WatchlistNode → ScreenerNode(market='overseas_stock', data_source='ls'): LS g3190 (시세) + g3101 (거래량) 합성으로 해외주식 실 데이터 필터링. data_source='auto' 도 broker 연결 시 동일 동작.",
+  "name": "해외주식 스크리너 (LS g3190 마스터 + 시가총액 필터)",
+  "description": "OverseasStockBrokerNode → OverseasStockSymbolQueryNode (NASDAQ 마스터 g3190) → ScreenerNode(market='overseas_stock', data_source='ls'): LS g3190 응답의 가격/시가총액으로 빠르게 필터링. data_source='ls' 분기의 정석 입력 패턴 (WatchlistNode 단독은 price/market_cap 정보가 없어 권장하지 않음).",
   "nodes": [
     {
       "id": "start",
@@ -21,36 +21,13 @@
       }
     },
     {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {
-          "exchange": "NASDAQ",
-          "symbol": "AAPL"
-        },
-        {
-          "exchange": "NASDAQ",
-          "symbol": "MSFT"
-        },
-        {
-          "exchange": "NASDAQ",
-          "symbol": "NVDA"
-        },
-        {
-          "exchange": "NASDAQ",
-          "symbol": "TSLA"
-        },
-        {
-          "exchange": "NYSE",
-          "symbol": "JPM"
-        },
-        {
-          "exchange": "NYSE",
-          "symbol": "BAC"
-        }
-      ],
+      "id": "universe",
+      "type": "OverseasStockSymbolQueryNode",
+      "country": "US",
+      "stock_exchange": "81",
+      "max_results": 500,
       "position": {
-        "x": 450,
+        "x": 500,
         "y": 200
       }
     },
@@ -59,27 +36,28 @@
       "type": "ScreenerNode",
       "market": "overseas_stock",
       "data_source": "ls",
-      "symbols": "{{ nodes.watchlist.symbols }}",
+      "symbols": "{{ nodes.universe.symbols }}",
+      "market_cap_min": 10000000000,
       "price_min": 50.0,
-      "volume_min": 1000000,
-      "max_results": 10,
+      "max_results": 20,
       "position": {
-        "x": 700,
+        "x": 750,
         "y": 200
       }
     },
     {
       "id": "display",
       "type": "TableDisplayNode",
-      "title": "해외주식 스크리닝 결과 (LS 실시간 데이터)",
+      "title": "해외주식 스크리닝 결과 (LS 마스터 + 대형주 필터)",
       "columns": [
         "symbol",
         "exchange",
-        "name"
+        "price",
+        "market_cap"
       ],
       "data": "{{ nodes.screener.symbols }}",
       "position": {
-        "x": 950,
+        "x": 1000,
         "y": 200
       }
     }
@@ -91,10 +69,10 @@
     },
     {
       "from": "broker",
-      "to": "watchlist"
+      "to": "universe"
     },
     {
-      "from": "watchlist",
+      "from": "universe",
       "to": "screener"
     },
     {
