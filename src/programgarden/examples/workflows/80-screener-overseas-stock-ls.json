@@ -1,0 +1,125 @@
+{
+  "id": "80-screener-overseas-stock-ls",
+  "name": "해외주식 스크리너 (LS API 직접 사용)",
+  "description": "OverseasStockBrokerNode → WatchlistNode → ScreenerNode(market='overseas_stock', data_source='ls'): LS g3190 (시세) + g3101 (거래량) 합성으로 해외주식 실 데이터 필터링. data_source='auto' 도 broker 연결 시 동일 동작.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "exchange": "NASDAQ",
+          "symbol": "AAPL"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "MSFT"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "NVDA"
+        },
+        {
+          "exchange": "NASDAQ",
+          "symbol": "TSLA"
+        },
+        {
+          "exchange": "NYSE",
+          "symbol": "JPM"
+        },
+        {
+          "exchange": "NYSE",
+          "symbol": "BAC"
+        }
+      ],
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    },
+    {
+      "id": "screener",
+      "type": "ScreenerNode",
+      "market": "overseas_stock",
+      "data_source": "ls",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "price_min": 50.0,
+      "volume_min": 1000000,
+      "max_results": 10,
+      "position": {
+        "x": 700,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "해외주식 스크리닝 결과 (LS 실시간 데이터)",
+      "columns": [
+        "symbol",
+        "exchange",
+        "name"
+      ],
+      "data": "{{ nodes.screener.symbols }}",
+      "position": {
+        "x": 950,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "screener"
+    },
+    {
+      "from": "screener",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

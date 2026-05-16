@@ -26,7 +26,7 @@ src/
       database/ [5 .py] — checkpoint, position_tracker, risk_tracker, query_builder
       providers/ [3 .py] — LLM provider (litellm), errors
       tools/ [7 .py] — registry, sqlite, job, credential, event, definition tools
-    examples/workflows/ [77 .json + 77 .md + 00-workflow-guide.md] — runnable workflow demos (incl. 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures, 68-77 telegram-beginner)
+    examples/workflows/ [80 .json + 80 .md + 00-workflow-guide.md] — runnable workflow demos (incl. 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures, 68-77 telegram-beginner, 78-80 screener multi-market)
     examples/dynamic_plugins/ [11 .py] — user-contributed simple_* plugin examples
     examples/dynamic_nodes/ [1 .py] — Dynamic_* node definition example
     examples/programmer_example/ [3 .py] — live integration scripts (AI agent, quant)

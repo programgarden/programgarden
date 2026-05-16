@@ -34,6 +34,20 @@
 - New regression suite `tests/test_screener_node_routing.py` (10
   cases) covers the broker × market × data_source matrix plus the
   legacy-workflow compatibility path (no `market` key in JSON).
+- New example workflows for multi-market screening
+  (`examples/workflows/78~80`):
+  - `78-screener-overseas-futures` — OverseasFuturesBroker + Watchlist
+    + ScreenerNode(market='overseas_futures'): volume/price filter on
+    futures via yfinance fallback.
+  - `79-screener-korea-stock` — KoreaStockBroker +
+    KoreaStockSymbolQueryNode (KOSPI universe) +
+    ScreenerNode(market='korea_stock'): KRW price/volume filter on
+    Korean stocks via yfinance fallback.
+  - `80-screener-overseas-stock-ls` — OverseasStockBroker + Watchlist
+    + ScreenerNode(market='overseas_stock', data_source='ls'): LS
+    g3190 + g3101 fast path screening for blue-chip US stocks.
+- `tests/test_examples_validation.py` workflow count assertion
+  updated from 77 to 80.
 
 ## [1.21.9] - 2026-05-13
 ### Dependencies

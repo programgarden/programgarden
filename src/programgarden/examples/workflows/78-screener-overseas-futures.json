@@ -1,0 +1,117 @@
+{
+  "id": "78-screener-overseas-futures",
+  "name": "해외선물 스크리너 (yfinance fallback)",
+  "description": "OverseasFuturesBrokerNode → WatchlistNode → ScreenerNode(market='overseas_futures'): 거래량/가격 조건으로 해외선물 계약 필터링. data_source='auto' 면 자동으로 yfinance 사용 (선물용 LS 분기는 아직 미구현).",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "futures_cred",
+      "paper_trading": true,
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {
+          "exchange": "NYMEX",
+          "symbol": "CL=F"
+        },
+        {
+          "exchange": "COMEX",
+          "symbol": "GC=F"
+        },
+        {
+          "exchange": "CME",
+          "symbol": "ES=F"
+        },
+        {
+          "exchange": "CME",
+          "symbol": "NQ=F"
+        }
+      ],
+      "position": {
+        "x": 450,
+        "y": 200
+      }
+    },
+    {
+      "id": "screener",
+      "type": "ScreenerNode",
+      "market": "overseas_futures",
+      "symbols": "{{ nodes.watchlist.symbols }}",
+      "volume_min": 100000,
+      "price_min": 10.0,
+      "max_results": 10,
+      "position": {
+        "x": 700,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "해외선물 스크리닝 결과",
+      "columns": [
+        "symbol",
+        "exchange",
+        "name"
+      ],
+      "data": "{{ nodes.screener.symbols }}",
+      "position": {
+        "x": 950,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "screener"
+    },
+    {
+      "from": "screener",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "futures_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

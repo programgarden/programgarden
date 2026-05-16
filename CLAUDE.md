@@ -23,10 +23,12 @@ src/
 ├── programgarden/      # Main package (workflow execution engine) - for external users
 │   ├── programgarden/  # Core module: executor.py, context.py, resolver.py
 │   └── examples/       # Test/demo code for the package
-│       ├── workflows/           # 77 runnable workflow JSON + companion .md docs
+│       ├── workflows/           # 80 runnable workflow JSON + companion .md docs
 │       │                        #   including: 59-trend-trailing-bot (TSMOM),
 │       │                        #   60-bollinger-reversion-bot (mean-reversion),
-│       │                        #   61-hkex-futures-bot (paper-traded HKEX mini)
+│       │                        #   61-hkex-futures-bot (paper-traded HKEX mini),
+│       │                        #   78-80 screener multi-market (overseas_futures /
+│       │                        #   korea_stock / overseas_stock + LS data_source)
 │       ├── dynamic_plugins/     # 11 user-contributed plugin examples
 │       ├── dynamic_nodes/       # Dynamic node definition example (Dynamic_*)
 │       └── programmer_example/  # 3 live integration scripts (AI agent, quant)
@@ -477,8 +479,9 @@ Available through `.claude/commands/`:
 ### Integration Testing
 
 The `examples/` folder contains integration test code:
-- `workflows/` — 77 runnable workflow JSON files (includes trend-trailing,
-  Bollinger reversion, HKEX futures bot entries at 59/60/61)
+- `workflows/` — 80 runnable workflow JSON files (includes trend-trailing,
+  Bollinger reversion, HKEX futures bot entries at 59/60/61, and the
+  multi-market screener trio at 78/79/80)
 - `dynamic_plugins/` — 11 user-contributed plugin examples
 - `dynamic_nodes/` — `Dynamic_*` node definition example
 - `programmer_example/` — live scripts (AI agent, quant plugins)
