@@ -26,7 +26,7 @@ src/
       database/ [5 .py] — checkpoint, position_tracker, risk_tracker, query_builder
       providers/ [3 .py] — LLM provider (litellm), errors
       tools/ [7 .py] — registry, sqlite, job, credential, event, definition tools
-    examples/workflows/ [77 .json + 77 .md + 00-workflow-guide.md] — runnable workflow demos (incl. 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures, 68-77 telegram-beginner)
+    examples/workflows/ [80 .json + 80 .md + 00-workflow-guide.md] — runnable workflow demos (incl. 59 trend-trailing, 60 bollinger-reversion, 61 hkex-futures, 68-77 telegram-beginner, 78-80 screener multi-market)
     examples/dynamic_plugins/ [11 .py] — user-contributed simple_* plugin examples
     examples/dynamic_nodes/ [1 .py] — Dynamic_* node definition example
     examples/programmer_example/ [3 .py] — live integration scripts (AI agent, quant)
@@ -142,7 +142,8 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Node AI metadata: 5 ClassVars (_usage / _features / _anti_patterns / _examples / _node_guide) on all 73 nodes
 - [x] MarketStatusNode: JIF-based real-time market status (12 markets, broker-agnostic, AI-Tool enabled)
 - [x] get_state() diagnostic payload (1.21.5): per-node state cache via internal listener, stats.last_error setter, structured errors[] field with timestamp sort + (node_id) dedup
-- [x] Structured validation (core 1.12.3 / programgarden 1.21.10): ValidationResult v2 with ErrorCode (26 codes) / ErrorLocation / Recommendation (9 rules, 8 static + 1 runtime) / ValidationLimits (capping) / ResultSummary (cascade-aware next_action_hint). Cascade suppression for UNKNOWN_NODE_TYPE / MISSING_REQUIRED_BROKER / CYCLE_DETECTED / DUPLICATE_NODE_ID. WorkflowJob.get_structured_errors() for dry_run runtime captures.
+- [x] Structured validation (core 1.12.3 / programgarden 1.21.10): ValidationResult v2 with ErrorCode (29 codes) / ErrorLocation / Recommendation (9 rules, 8 static + 1 runtime) / ValidationLimits (capping) / ResultSummary (cascade-aware next_action_hint). Cascade suppression for UNKNOWN_NODE_TYPE / MISSING_REQUIRED_BROKER / CYCLE_DETECTED / DUPLICATE_NODE_ID. WorkflowJob.get_structured_errors() for dry_run runtime captures.
+- [x] ScreenerNode multi-market routing: `market` field (auto / overseas_stock / overseas_futures / korea_stock) + broker auto-detect via find_parent_output + LS overseas_stock fast path + yfinance fallback for futures/korea_stock + visible_when-based field hiding + universe-fallback guard. Example workflows 78-80 cover the trio.
 
 ## CONVENTIONS
 - language: Python 3.12+, docs/comments in Korean, code in English

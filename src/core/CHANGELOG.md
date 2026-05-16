@@ -1,4 +1,18 @@
 ## [Unreleased]
+### Added
+- **ScreenerNode multi-market schema** — new `market` field
+  (`auto` / `overseas_stock` / `overseas_futures` / `korea_stock`,
+  default `auto`) lets workflows target stocks vs futures vs Korea
+  stocks explicitly. Companion `visible_when` rules hide stock-only
+  filters (`market_cap_min/max`, `sector`) on `overseas_futures`. New
+  `price_min` / `price_max` / `data_source` field names registered in
+  i18n (ko/en) alongside the new `market` field. ScreenerNode
+  description rewritten to call out the multi-market routing matrix.
+- **ScreenerNode AI metadata refresh** — `_usage` / `_features` /
+  `_anti_patterns` / `_examples` / `_node_guide` updated for the new
+  market/data_source axis. A third executable example
+  (`Filter overseas futures contracts by volume and price`) is added
+  and validated through `WorkflowExecutor.validate()`.
 
 ## [1.12.4] - 2026-05-16
 ### Added

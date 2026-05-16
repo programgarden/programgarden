@@ -1,0 +1,100 @@
+{
+  "id": "79-screener-korea-stock",
+  "name": "국내주식 스크리너 (KOSPI universe + yfinance fallback)",
+  "description": "KoreaStockBrokerNode → KoreaStockSymbolQueryNode (KOSPI 전체) → ScreenerNode(market='korea_stock'): 가격/거래량 조건으로 국내주식 종목 필터링. 국내주식 시장은 LS 분기 미구현이라 yfinance fallback (data_source='auto' 권장).",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "symquery",
+      "type": "KoreaStockSymbolQueryNode",
+      "market": "KOSPI",
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "screener",
+      "type": "ScreenerNode",
+      "market": "korea_stock",
+      "symbols": "{{ nodes.symquery.symbols }}",
+      "price_min": 10000,
+      "volume_min": 100000,
+      "max_results": 20,
+      "position": {
+        "x": 750,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "title": "국내주식 스크리닝 결과",
+      "columns": [
+        "symbol",
+        "name",
+        "market",
+        "exchange"
+      ],
+      "data": "{{ nodes.screener.symbols }}",
+      "position": {
+        "x": 1000,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "symquery"
+    },
+    {
+      "from": "symquery",
+      "to": "screener"
+    },
+    {
+      "from": "screener",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}
