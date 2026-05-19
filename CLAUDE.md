@@ -314,6 +314,34 @@ class MyAPINode(BaseMessagingNode):
 
 **주문 노드 주의:** 주문 노드는 중복 주문 위험으로 기본적으로 재시도 비활성화됨.
 
+### Balance partial-failure (silent-failure 봉쇄)
+
+LS 의 잔고 조회 TR (`COSOQ02701` / `CIDBQ05300` / `CSPAQ22200`) 이 transient
+실패해도 AccountNode 는 `positions` 만 채워 정상 출력으로 마무리한다. 이 경우
+`balance` dict 에 다음 internal metadata 가 동봉되어 downstream silent 0 흡수를
+차단한다:
+
+| 키 | 타입 | 의미 |
+|----|------|------|
+| `_partial_failure` | bool | 부분 실패 발생 시 `True` |
+| `_failure_codes` | list[str] | 실패한 TR 코드 (예: `["COSOQ02701"]`) |
+| `_failure_reason` | str | 사람용 진단 메시지 |
+| `orderable_amount` | float \| None | 부분 실패 시 `None` (silent 0 흡수 차단) |
+
+`_` prefix 키는 표현식 검증의 nested-typo 가드에서 자동 통과 — 사용자가
+`{{ nodes.account.balance._partial_failure }}` 같은 표현식을 IfNode 등에 그대로
+사용해도 typo 로 잡히지 않는다.
+
+**Consumer 정책 (`programgarden_core.exceptions`)**:
+
+| 클래스 | 발생 시점 | 흡수 |
+|--------|----------|------|
+| `BalanceUnavailableError` | PositionSizingNode 가 `balance._partial_failure=True` 발견 (fixed_quantity / dry_run 면제) | resilience.fallback=skip 흡수 권장 |
+| `ConditionEvaluationError` | IfNode 가 `>=`/`>`/`<`/`<=` 비교에서 `None` operand 발견 (dry_run 시 silent False fallback) | 동일 |
+
+두 에러 모두 `ExecutionError` 상속. dry_run 모드에서는 mock 환경 호환을 위해
+silent 흡수 유지 (실 운영에서만 발동).
+
 ### Dynamic Node Injection (동적 노드 주입)
 
 외부 사용자가 community 패키지 기여 없이 런타임에 동적 노드를 주입하여 워크플로우에서 사용할 수 있습니다.

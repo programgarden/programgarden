@@ -790,6 +790,13 @@ class WorkflowResolver:
                     field_names = _field_names_for(source_type, attr)
                     if field_names is None or nested in field_names:
                         continue
+                    # Underscore-prefixed keys are reserved for internal
+                    # metadata (e.g. _partial_failure on balance dicts).
+                    # Treat them as known so consumers can branch on them
+                    # without forcing every metadata addition to update
+                    # BALANCE_FIELDS in lockstep.
+                    if nested.startswith("_"):
+                        continue
                     result.add(
                         build_error(
                             ErrorCode.INVALID_EXPRESSION_REF,

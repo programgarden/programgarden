@@ -140,12 +140,17 @@ async def test_stock_balance_cosoq02701_failure_graceful():
     # 기존 필드는 정상
     assert balance["total_pnl_rate"] == 3.0
     assert balance["cash_krw"] == 5000000
-    # 신규 필드는 없음 (graceful degradation)
-    assert "orderable_amount" not in balance
+    # orderable_amount 는 partial-failure 신호로 None 으로 명시 노출 —
+    # silent 0.0 흡수를 차단하기 위해 키 자체는 보존 (Phase 2)
+    assert balance["orderable_amount"] is None
     assert "foreign_cash" not in balance
     assert "exchange_rate" not in balance
+    # partial-failure flag (Phase 2): consumer 가 명시적 실패로 처리
+    assert balance["_partial_failure"] is True
+    assert balance["_failure_codes"] == ["COSOQ02701"]
+    assert "rate limit exceeded" in balance["_failure_reason"]
     # warning 로그 확인
-    ctx.log.assert_any_call("warning", "COSOQ02701 조회 실패 (무시): rate limit exceeded", "account1")
+    ctx.log.assert_any_call("warning", "COSOQ02701 조회 실패: rate limit exceeded", "account1")
 
 
 # ── 해외선물 테스트 ──
@@ -365,3 +370,184 @@ async def test_futures_cidbq05300_replaces_cidbq03000():
     assert balance["margin_call_rate"] == 150.0
     assert balance["total_eval"] == 120000.0
     assert balance["settlement_pnl"] == 8000.0
+
+
+# ── Phase 3: Consumer hardening ──
+
+
+def _make_sizing_context(dry_run: bool = False):
+    """PositionSizing 노드 통합용 mock ExecutionContext."""
+    ctx = MagicMock()
+    ctx.log = MagicMock()
+    ctx.job_id = "test-job"
+    ctx.is_running = True
+    ctx.is_dry_run = dry_run
+    expr_ctx = MagicMock()
+    ctx.get_expression_context = MagicMock(return_value=expr_ctx)
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_position_sizing_raises_on_partial_failure_balance():
+    """Phase 3.2: balance._partial_failure=True 시 BalanceUnavailableError raise."""
+    from programgarden.executor import PositionSizingNodeExecutor
+    from programgarden_core import BalanceUnavailableError
+
+    executor = PositionSizingNodeExecutor()
+    ctx = _make_sizing_context(dry_run=False)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": {
+            "_partial_failure": True,
+            "_failure_codes": ["COSOQ02701"],
+            "_failure_reason": "COSOQ02701 error: rate limit exceeded",
+            "orderable_amount": None,
+        },
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_percent",
+        "max_percent": 10.0,
+    }
+
+    with pytest.raises(BalanceUnavailableError) as exc_info:
+        await executor.execute("sizing1", "PositionSizingNode", config, ctx)
+
+    assert exc_info.value.failure_codes == ["COSOQ02701"]
+    assert "rate limit" in exc_info.value.failure_reason
+
+
+@pytest.mark.asyncio
+async def test_position_sizing_dry_run_absorbs_partial_failure():
+    """Phase 3.2: dry_run 모드에서는 _partial_failure 가드 비활성 (mock 환경 호환)."""
+    from programgarden.executor import PositionSizingNodeExecutor
+
+    executor = PositionSizingNodeExecutor()
+    ctx = _make_sizing_context(dry_run=True)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": {
+            "_partial_failure": True,
+            "_failure_codes": ["COSOQ02701"],
+            "_failure_reason": "rate limit",
+            "orderable_amount": None,
+        },
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_percent",
+        "max_percent": 10.0,
+    }
+
+    # raise 가 아니라 empty_result (orderable_amount=None → 0 → warning) 반환
+    result = await executor.execute("sizing1", "PositionSizingNode", config, ctx)
+    assert "orders" in result or "symbols" in result
+
+
+@pytest.mark.asyncio
+async def test_position_sizing_fixed_quantity_exempt_from_partial_failure_guard():
+    """Phase 3.2: fixed_quantity 모드는 balance 미사용이라 가드 면제."""
+    from programgarden.executor import PositionSizingNodeExecutor
+
+    executor = PositionSizingNodeExecutor()
+    ctx = _make_sizing_context(dry_run=False)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": {
+            "_partial_failure": True,
+            "_failure_codes": ["COSOQ02701"],
+            "_failure_reason": "rate limit",
+        },
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_quantity",
+        "fixed_quantity": 5,
+    }
+
+    # raise 없음 — fixed_quantity 는 balance 와 무관
+    result = await executor.execute("sizing1", "PositionSizingNode", config, ctx)
+    assert "orders" in result or "symbols" in result
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_partial_failure_balance_blocks_position_sizing():
+    """Phase 4 integration: AccountNode 의 mock COSOQ02701 실패가
+    그대로 PositionSizing 에 propagate 되어 silent sizing=0 을 차단함."""
+    from programgarden.executor import PositionSizingNodeExecutor
+    from programgarden_core import BalanceUnavailableError
+
+    # Step 1: AccountNode mock 잔고 (COSOQ02701 실패 시나리오 동일)
+    account_executor = _make_executor()
+    account_ctx = _make_mock_context()
+    ls = MagicMock()
+
+    mock_block2 = MagicMock()
+    mock_block2.ErnRat = 3.0
+    mock_block2.WonDpsBalAmt = 5000000
+    mock_block2.StkConvEvalAmt = 30000000
+    mock_block2.WonEvalSumAmt = 35000000
+    mock_block2.ConvEvalPnlAmt = 2000000
+
+    cosoq00201_response = MagicMock()
+    cosoq00201_response.error_msg = None
+    cosoq00201_response.block2 = mock_block2
+    cosoq00201_response.block4 = []
+    mock_cosoq00201 = MagicMock()
+    mock_cosoq00201.req_async = AsyncMock(return_value=cosoq00201_response)
+
+    cosoq02701_response = MagicMock()
+    cosoq02701_response.error_msg = "rate limit exceeded"
+    cosoq02701_response.block3 = []
+    cosoq02701_response.block4 = None
+    mock_cosoq02701 = MagicMock()
+    mock_cosoq02701.req_async = AsyncMock(return_value=cosoq02701_response)
+
+    mock_accno = MagicMock()
+    mock_accno.cosoq00201 = MagicMock(return_value=mock_cosoq00201)
+    mock_accno.cosoq02701 = MagicMock(return_value=mock_cosoq02701)
+    mock_overseas_stock = MagicMock()
+    mock_overseas_stock.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_stock = MagicMock(return_value=mock_overseas_stock)
+
+    account_result = await account_executor._ls_overseas_stock(ls, "account1", account_ctx)
+    # AccountNode 자체는 정상 완료, 단 balance 에 partial_failure 플래그
+    assert account_result["balance"]["_partial_failure"] is True
+
+    # Step 2: 그 balance 를 PositionSizing 에 그대로 넘김 → raise 차단
+    sizing_executor = PositionSizingNodeExecutor()
+    sizing_ctx = _make_sizing_context(dry_run=False)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": account_result["balance"],
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_percent",
+        "max_percent": 10.0,
+    }
+
+    with pytest.raises(BalanceUnavailableError) as exc_info:
+        await sizing_executor.execute("sizing1", "PositionSizingNode", config, sizing_ctx)
+
+    # Step 3: ExecutionError 상속 확인 (외부 try/except 흡수 가능)
+    from programgarden_core import ExecutionError
+    assert isinstance(exc_info.value, ExecutionError)
+    assert exc_info.value.failure_codes == ["COSOQ02701"]
+
+
+@pytest.mark.asyncio
+async def test_position_sizing_normal_balance_unaffected():
+    """Phase 3.2: 정상 balance 는 raise 없이 기존 동작 그대로."""
+    from programgarden.executor import PositionSizingNodeExecutor
+
+    executor = PositionSizingNodeExecutor()
+    ctx = _make_sizing_context(dry_run=False)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": {"orderable_amount": 10000.0},  # _partial_failure 키 없음
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_percent",
+        "max_percent": 10.0,
+    }
+
+    result = await executor.execute("sizing1", "PositionSizingNode", config, ctx)
+    # 정상 sizing 결과 반환
+    assert result is not None

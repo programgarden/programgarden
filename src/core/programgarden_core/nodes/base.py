@@ -117,6 +117,18 @@ SYMBOL_LIST_FIELDS: List[Dict[str, str]] = [
     {"name": "symbol", "type": "string", "description": "종목코드"},
 ]
 
+# ── Partial-failure metadata (internal) ──
+# Balance dicts may include these underscore-prefixed keys when the
+# upstream API call partially fails. Consumers (PositionSizingNode,
+# PortfolioNode, etc.) must check `_partial_failure` before treating
+# the balance as authoritative — a missing/None orderable_amount
+# must not be silently coerced to 0.0 when this flag is True.
+PARTIAL_FAILURE_FIELDS: List[Dict[str, str]] = [
+    {"name": "_partial_failure", "type": "boolean", "description": "True when one or more balance fields could not be fetched."},
+    {"name": "_failure_codes", "type": "list", "description": "TR codes that failed (e.g. ['COSOQ02701'])."},
+    {"name": "_failure_reason", "type": "string", "description": "Human-readable reason for the partial failure."},
+]
+
 # ── 해외주식 REST AccountNode 전용 ──
 OVERSEAS_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
     {"name": "total_pnl_rate", "type": "number", "description": "수익률 (%)"},
@@ -127,6 +139,7 @@ OVERSEAS_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
     {"name": "orderable_amount", "type": "number", "description": "외화주문가능금액 (USD)"},
     {"name": "foreign_cash", "type": "number", "description": "외화예수금 (USD)"},
     {"name": "exchange_rate", "type": "number", "description": "기준환율"},
+    *PARTIAL_FAILURE_FIELDS,
 ]
 
 # ── 해외선물 REST AccountNode 전용 ──
@@ -139,6 +152,7 @@ OVERSEAS_FUTURES_BALANCE_FIELDS: List[Dict[str, str]] = [
     {"name": "margin_call_rate", "type": "number", "description": "마진콜율 (%)"},
     {"name": "total_eval", "type": "number", "description": "평가예탁총금액"},
     {"name": "settlement_pnl", "type": "number", "description": "청산손익"},
+    *PARTIAL_FAILURE_FIELDS,
 ]
 
 # ── 해외주식 RealAccountNode 전용 ──
@@ -163,6 +177,7 @@ KOREA_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
     {"name": "total_pnl", "type": "number", "description": "평가손익합계"},
     {"name": "total_pnl_rate", "type": "number", "description": "수익률 (%)"},
     {"name": "orderable_amount", "type": "number", "description": "주문가능금액"},
+    *PARTIAL_FAILURE_FIELDS,
 ]
 
 # ── 국내주식 RealAccountNode 전용 ──

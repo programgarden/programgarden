@@ -77,6 +77,11 @@ class OverseasStockAccountNode(BaseNode):
             "reason": "The node requires an active LS-Sec session; without the broker in the DAG the executor cannot inject the connection and the call fails.",
             "alternative": "Always place OverseasStockBrokerNode upstream and connect it via a main edge before AccountNode.",
         },
+        {
+            "pattern": "Sizing orders directly from balance.orderable_amount without checking balance._partial_failure",
+            "reason": "When the auxiliary COSOQ02701 (orderable amount) TR fails, the executor flags balance with _partial_failure=True and leaves orderable_amount as None. Naive sizing then computes 0 and silently emits no orders — a transient API blip looks identical to a healthy zero-cash account.",
+            "alternative": "Consume balance via PositionSizingNode (which raises BalanceUnavailableError on partial failure) and pair AccountNode with resilience.fallback=skip, or branch with IfNode on {{ nodes.account.balance._partial_failure }} before placing orders.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {

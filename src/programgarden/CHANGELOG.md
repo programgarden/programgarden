@@ -1,5 +1,34 @@
 ## [Unreleased]
 ### Added
+- **Balance partial-failure silent-failure guard** — AccountNode
+  (overseas stock / futures / korea stock) now embeds three
+  underscore-prefixed metadata keys on the `balance` dict whenever
+  the auxiliary balance TR (`COSOQ02701` / `CIDBQ05300` /
+  `CSPAQ22200` / `CSPAQ12300`) fails partially:
+  - `_partial_failure: bool`
+  - `_failure_codes: list[str]`
+  - `_failure_reason: str`
+  `orderable_amount` is pre-seeded as `None` (instead of `0.0`) when
+  the relevant TR did not return, so downstream consumers cannot mask
+  a transient API blip as a healthy zero-cash account.
+- **Consumer hardening** — two new explicit exceptions in
+  `programgarden_core.exceptions`:
+  - `BalanceUnavailableError` — raised by `PositionSizingNode` when
+    `balance._partial_failure=True` (exempted in `fixed_quantity`
+    mode and during `dry_run`).
+  - `ConditionEvaluationError` — raised by `IfNode` when a numeric
+    comparison (`>=` / `>` / `<` / `<=`) receives a `None` operand
+    (silent `False` fallback preserved under `dry_run`).
+  Both inherit from `ExecutionError`; `resilience.fallback=skip` can
+  absorb the raise so a partial failure becomes an explicit skipped
+  node instead of a silent no-op completed run.
+- **Resolver underscore-prefix bypass** — nested-field typo
+  validation in `expression_resolver` now treats keys starting with
+  `_` as internal metadata and lets them through, so expressions like
+  `{{ nodes.account.balance._partial_failure }}` work without
+  registering each metadata key in `BALANCE_FIELDS`.
+
+### Added (continued)
 - **ScreenerNodeExecutor multi-market routing** — auto-detects the
   upstream broker (OverseasStockBrokerNode / OverseasFuturesBrokerNode
   / KoreaStockBrokerNode) via `context.find_parent_output` and routes

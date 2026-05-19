@@ -77,6 +77,11 @@ class OverseasFuturesAccountNode(BaseNode):
             "reason": "Product scope mismatch: the stock broker connection cannot serve futures account queries and the executor will fail to inject the correct session.",
             "alternative": "Always pair OverseasFuturesAccountNode with OverseasFuturesBrokerNode.",
         },
+        {
+            "pattern": "Sizing orders directly from balance.orderable_amount without checking balance._partial_failure",
+            "reason": "When CIDBQ05300 (deposit) returns no currency blocks or raises, the executor flags balance with _partial_failure=True and leaves orderable_amount as None. Naive sizing then resolves to 0 and silently emits no orders — masking a transient API failure as a healthy idle workflow.",
+            "alternative": "Route the balance through PositionSizingNode (raises BalanceUnavailableError on partial failure) and configure resilience.fallback=skip on AccountNode, or guard order placement with IfNode on {{ nodes.account.balance._partial_failure }}.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
