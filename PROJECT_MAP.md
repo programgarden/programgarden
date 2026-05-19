@@ -1,6 +1,6 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-05-13T01:00:00
+@updated: 2026-05-19T00:00:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
@@ -92,6 +92,7 @@ src/community/programgarden_community/plugins/__init__.py → 77 plugin registra
 - FIFO PnL Tracking: per-product position tracking with WorkflowPnLEvent
 - AI Agent Tool System: existing nodes as LLM function-calling tools via tool edges
 - Dynamic Node Injection: runtime Dynamic_ prefixed node class injection
+- Node Version Metadata: per-node `_version` (SemVer) + `_updated_at` (ISO 8601) + `_change_note` ClassVars surfaced on `NodeTypeSchema` for UI change detection
 - List-based Collections: symbol_list, order_list, ohlcv_data, position_data all use list[dict]
 - i18n: ko/en translations for all node fields, ports, enums
 - Poetry Monorepo: 4 packages with path-based develop dependencies
@@ -145,7 +146,8 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] Structured validation (core 1.12.3 / programgarden 1.21.10): ValidationResult v2 with ErrorCode (29 codes) / ErrorLocation / Recommendation (9 rules, 8 static + 1 runtime) / ValidationLimits (capping) / ResultSummary (cascade-aware next_action_hint). Cascade suppression for UNKNOWN_NODE_TYPE / MISSING_REQUIRED_BROKER / CYCLE_DETECTED / DUPLICATE_NODE_ID. WorkflowJob.get_structured_errors() for dry_run runtime captures.
 - [x] ScreenerNode multi-market routing: `market` field (auto / overseas_stock / overseas_futures / korea_stock) + broker auto-detect via find_parent_output + LS overseas_stock fast path + yfinance fallback for futures/korea_stock + visible_when-based field hiding + universe-fallback guard. Example workflows 78-80 cover the trio.
 - [x] Silent-failure hardening (1.21.11): yfinance korea suffix auto-conversion (.KS/.KQ) + LS g3101 per-symbol enrichment + RuntimeError raise on 100% empty result in production (dry_run bypassed).
-- [ ] Balance partial-failure guard (unreleased, feat/balance-partial-failure-guard branch): AccountNode (3 markets) flag `balance._partial_failure=True` + `_failure_codes` + `_failure_reason` when COSOQ02701/CIDBQ05300/CSPAQ22200 partially fail. orderable_amount preserved as None to block silent 0 coercion. PositionSizingNode raises BalanceUnavailableError; IfNode raises ConditionEvaluationError on None numeric comparison. Both ExecutionError subclasses, resilience.fallback=skip absorbs. dry_run preserves legacy silent fallback. Resolver `_` prefix bypass for internal metadata keys.
+- [x] Balance partial-failure guard (core 1.13.0 / programgarden 1.22.0): AccountNode (3 markets) flag `balance._partial_failure=True` + `_failure_codes` + `_failure_reason` when COSOQ02701/CIDBQ05300/CSPAQ22200 partially fail. orderable_amount preserved as None to block silent 0 coercion. PositionSizingNode raises BalanceUnavailableError; IfNode raises ConditionEvaluationError on None numeric comparison. Both ExecutionError subclasses, resilience.fallback=skip absorbs. dry_run preserves legacy silent fallback. Resolver `_` prefix bypass for internal metadata keys.
+- [ ] Node version metadata (unreleased, feat/node-version-metadata branch): 73 nodes (core 69 + community 4) declare `_version` (SemVer) / `_updated_at` (ISO 8601) / `_change_note` (≤120 chars) flat ClassVars. Exposed via `NodeTypeSchema.version` / `updated_at` / `change_note` for UI change detection without consulting CHANGELOG. Regression guards (`test_node_version_metadata.py`, 7 tests) enforce per-class declaration + format. DynamicNodeSchema also exposes the trio for dynamic-injected nodes.
 
 ## CONVENTIONS
 - language: Python 3.12+, docs/comments in Korean, code in English

@@ -289,6 +289,35 @@ class StartNode(BaseNode):
     }
 ```
 
+### Node Version Metadata (UI 변경 감지용)
+
+UI 개발자가 CHANGELOG/git log 추적 없이 "어떤 노드가 언제 어떻게 바뀌었는지" 즉시 식별할 수 있도록, 73개 모든 노드가 3개 플랫 `ClassVar` 를 노출합니다.
+
+| ClassVar | 타입 | 의미 |
+|----------|------|------|
+| `_version` | `ClassVar[str]` | SemVer (`major.minor.patch`) — major=breaking schema 변경 / minor=additive (포트·필드 추가) / patch=내부 동작·문서 변경 |
+| `_updated_at` | `ClassVar[str]` | ISO 8601 (`YYYY-MM-DD`) — 마지막 schema 변경일 |
+| `_change_note` | `ClassVar[Optional[str]]` | 한 줄 영어 요약 (≤120자), UI tooltip 용. 변경 사항 없으면 `None` |
+
+**원칙**:
+- **명시 선언 필수** — 각 노드 클래스 본문에 직접 선언 강제 (`test_node_version_metadata.py` 가 `__dict__` 검사로 상속 fallback 차단). 신규 노드 추가 시 누락 즉시 fail.
+- **포맷 가드** — SemVer regex (`^\d+\.\d+\.\d+$`) + ISO 8601 regex (`^\d{4}-\d{2}-\d{2}$`) 강제.
+- **Registry 노출** — `NodeTypeRegistry.get_schema()` / `list_schemas()` 응답에 `version` / `updated_at` / `change_note` 3 필드로 자동 직렬화.
+- **bump 규칙** (사람 판단):
+  - **major**: port 이름 변경/제거, 필수↔옵션 전환 등 breaking schema 변경
+  - **minor**: 새 optional 필드, 새 output port 추가 (additive)
+  - **patch**: 내부 동작·문서·타입 보정 (schema 동일)
+- **Dynamic 노드** — `DynamicNodeSchema` 도 동일 3 필드 노출. `register_dynamic_schemas([{..., "version": "1.2.0", "updated_at": "2026-05-19", "change_note": "..."}])` 옵션 키로 전달 가능. 미지정 시 기본값 부여.
+
+```python
+class StartNode(BaseNode):
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+```
+
+**UI 활용 예시**: 노드 카드/inspector 에 "v1.2.0 · 2026-05-19" 뱃지 노출 → 직전 빌드 대비 `updated_at` 이 바뀐 노드만 highlight → UI 개발자가 변경 노드만 검토.
+
 ### Resilience (Retry/Fallback)
 
 외부 API 호출 노드에서 `resilience` 필드로 재시도 및 실패 처리 설정:
