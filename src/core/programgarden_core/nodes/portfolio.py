@@ -311,6 +311,10 @@ class PortfolioNode(BaseNode):
         ],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 필드 스키마 (클라이언트 UI용)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

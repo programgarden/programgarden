@@ -5,7 +5,7 @@ ProgramGarden Core - Stock Account Node
 - OverseasStockAccountNode: 해외주식 계좌 잔고, 보유종목 조회 (REST API 1회성)
 """
 
-from typing import Any, List, Literal, Dict, ClassVar, TYPE_CHECKING
+from typing import Any, ClassVar, Dict, List, Literal, Optional, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -207,6 +207,10 @@ class OverseasStockAccountNode(BaseNode):
             ],
         ),
     ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

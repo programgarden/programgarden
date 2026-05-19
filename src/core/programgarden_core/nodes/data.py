@@ -341,6 +341,10 @@ class SQLiteNode(BaseNode):
         ),
     ]
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode, UIComponent
@@ -714,6 +718,10 @@ class HTTPRequestNode(BaseNode):
     ]
 
     _field_schema: ClassVar[Dict[str, "FieldSchema"]] = {}
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -1212,6 +1220,10 @@ class FieldMappingNode(BaseNode):
             description="i18n:ports.mapped_fields",
         ),
     ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

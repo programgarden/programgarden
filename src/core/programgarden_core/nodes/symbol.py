@@ -185,6 +185,10 @@ class WatchlistNode(BaseNode):
         ],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
@@ -342,6 +346,10 @@ class MarketUniverseNode(BaseNode):
             "MarketUniverseNode does not support overseas futures — use WatchlistNode for CME/HKEX symbols.",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -589,6 +597,10 @@ class ScreenerNode(BaseNode):
             "The sector filter uses Yahoo Finance sector names; ensure exact match (e.g. 'Financial Services' not 'Finance').",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -949,6 +961,10 @@ class ExclusionListNode(BaseNode):
         ],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
@@ -1192,6 +1208,10 @@ class SymbolFilterNode(BaseNode):
             "SymbolFilterNode does not track reasons for removal — use ExclusionListNode if audit trail is needed.",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

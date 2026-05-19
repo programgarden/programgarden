@@ -5,7 +5,7 @@ ProgramGarden Core - Futures Account Node
 - OverseasFuturesAccountNode: 해외선물 계좌 잔고, 보유종목 조회 (REST API 1회성)
 """
 
-from typing import Any, List, Literal, Dict, ClassVar, TYPE_CHECKING
+from typing import Any, ClassVar, Dict, List, Literal, Optional, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -173,6 +173,10 @@ class OverseasFuturesAccountNode(BaseNode):
         OutputPort(name="balance", type="balance_data", description="i18n:ports.balance", fields=OVERSEAS_FUTURES_BALANCE_FIELDS),
         OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=POSITION_FIELDS),
     ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

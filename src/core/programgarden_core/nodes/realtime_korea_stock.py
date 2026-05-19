@@ -193,6 +193,10 @@ class KoreaStockRealMarketDataNode(BaseNode):
         OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full", fields=MARKET_DATA_FULL_FIELDS),
     ]
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
@@ -383,6 +387,10 @@ class KoreaStockRealAccountNode(BaseNode):
         OutputPort(name="open_orders", type="order_list", description="i18n:ports.open_orders", fields=ORDER_LIST_FIELDS),
         OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=POSITION_FIELDS),
     ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -588,6 +596,10 @@ class KoreaStockRealOrderEventNode(BaseNode):
         OutputPort(name="cancelled", type="order_event", description="i18n:ports.cancelled", fields=ORDER_EVENT_FIELDS),
         OutputPort(name="rejected", type="order_event", description="i18n:ports.rejected", fields=ORDER_EVENT_FIELDS),
     ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

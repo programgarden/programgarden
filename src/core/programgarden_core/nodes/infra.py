@@ -160,6 +160,10 @@ class StartNode(BaseNode):
         ],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """StartNode has no configurable fields."""
@@ -311,6 +315,10 @@ class ThrottleNode(BaseNode):
             "pass_first=False combined with a long interval_sec delays the first emission by that interval, which can look like the workflow is frozen on startup",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -534,6 +542,10 @@ class SplitNode(BaseNode):
             "parallel=True ignores delay_ms — use one or the other depending on whether rate limits or latency matter more",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -779,6 +791,10 @@ class AggregateNode(BaseNode):
         ],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
@@ -990,6 +1006,10 @@ class IfNode(BaseNode):
             "IfNode runs once per cycle; for per-item boolean filtering use ConditionNode (plugin-backed)",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

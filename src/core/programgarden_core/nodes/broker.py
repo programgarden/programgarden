@@ -205,6 +205,10 @@ class OverseasStockBrokerNode(BaseBrokerNode):
         ],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
@@ -350,6 +354,10 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
             "Each workflow holds exactly one futures broker; if you also trade stocks, add OverseasStockBrokerNode in parallel",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -527,6 +535,10 @@ class KoreaStockBrokerNode(BaseBrokerNode):
             "Use `dry_run=True` in ExecutionContext for sandbox runs (paper trading is not available at the LS-Sec level)",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

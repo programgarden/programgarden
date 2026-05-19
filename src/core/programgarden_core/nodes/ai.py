@@ -217,6 +217,10 @@ class LLMModelNode(BaseNode):
         ),
     ]
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def is_tool_enabled(cls) -> bool:
         return False
@@ -575,6 +579,10 @@ class AIAgentNode(BaseNode):
             description="AI 응답 (output_format에 따라: text→string, json/structured→object)",
         ),
     ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def is_tool_enabled(cls) -> bool:

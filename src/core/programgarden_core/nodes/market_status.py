@@ -487,6 +487,10 @@ class MarketStatusNode(BaseNode):
         ],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     async def execute(self, context: Any) -> Dict[str, Any]:
         """Fallback execution — the programgarden executor injects a
         runtime-aware implementation that subscribes to the JIF stream.

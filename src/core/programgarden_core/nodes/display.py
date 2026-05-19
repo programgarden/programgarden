@@ -298,6 +298,10 @@ class TableDisplayNode(BaseDisplayNode):
         "options_fields": ["columns", "limit", "sort_by", "sort_order"],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     columns: Optional[List[str]] = Field(
         default=None,
         description="표시할 컬럼 목록 (미지정시 전체)",
@@ -517,6 +521,10 @@ class LineChartNode(BaseDisplayNode):
             "required": ["x", "y"],
         },
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     x_field: Optional[str] = Field(
         default=None,
@@ -748,6 +756,10 @@ class MultiLineChartNode(BaseDisplayNode):
         },
         "options_fields": ["limit", "sort_by", "sort_order"],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     x_field: Optional[str] = Field(
         default=None,
@@ -1073,6 +1085,10 @@ class CandlestickChartNode(BaseDisplayNode):
         },
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     date_field: Optional[str] = Field(
         default=None,
         description="날짜 필드명",
@@ -1352,6 +1368,10 @@ class BarChartNode(BaseDisplayNode):
         },
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     x_field: Optional[str] = Field(
         default=None,
         description="X축 필드명",
@@ -1522,6 +1542,10 @@ class SummaryDisplayNode(BaseDisplayNode):
         "type": "any",
         "description": "i18n:display_schema.summary.description",
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

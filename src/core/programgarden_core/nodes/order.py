@@ -501,6 +501,10 @@ class OverseasStockNewOrderNode(BaseOrderNode):
         ],
     }
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     # 해외주식 전용 필드
     price_type: Literal["limit", "market", "LOO", "LOC", "MOO", "MOC"] = Field(
         default="limit",
@@ -788,6 +792,10 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
         ),
     ]
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
@@ -1049,6 +1057,10 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
         ),
     ]
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
@@ -1266,6 +1278,10 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
             "paper_trading must be False on OverseasFuturesBrokerNode for real order execution",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     # 해외선물 전용 필드
     expiry_month: Optional[str] = Field(
@@ -1539,6 +1555,10 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
         ),
     ]
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
@@ -1784,6 +1804,10 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
         ),
     ]
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
@@ -2009,6 +2033,10 @@ class KoreaStockNewOrderNode(BaseOrderNode):
             "conditional_limit price_type requires a limit price even though it may execute as market under certain conditions",
         ],
     }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     # 국내주식 전용 필드
     price_type: Literal["limit", "market", "conditional_limit"] = Field(
@@ -2282,6 +2310,10 @@ class KoreaStockModifyOrderNode(BaseModifyOrderNode):
         ),
     ]
 
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import (
@@ -2515,6 +2547,10 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
             description="i18n:ports.cancelled_order_id",
         ),
     ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
