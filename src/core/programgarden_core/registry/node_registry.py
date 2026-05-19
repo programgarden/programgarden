@@ -99,6 +99,28 @@ class NodeTypeSchema(BaseModel):
         ),
     )
 
+    # === Version metadata (UI change detection) ===
+    version: str = Field(
+        default="1.0.0",
+        description=(
+            "Per-node SemVer (major.minor.patch). Bump on schema change so "
+            "UI clients can detect updated nodes without consulting CHANGELOG."
+        ),
+    )
+    updated_at: str = Field(
+        default="2026-05-19",
+        description=(
+            "ISO 8601 date (YYYY-MM-DD) of the latest schema change for this node."
+        ),
+    )
+    change_note: Optional[str] = Field(
+        default=None,
+        description=(
+            "One-line English summary (≤120 chars) of the latest change. "
+            "Null when no recent change worth surfacing. Intended for UI tooltips."
+        ),
+    )
+
 
 class NodeTypeRegistry:
     """
@@ -396,6 +418,9 @@ class NodeTypeRegistry:
             anti_patterns=getattr(node_class, "_anti_patterns", None),
             examples=getattr(node_class, "_examples", None),
             node_guide=getattr(node_class, "_node_guide", None),
+            version=getattr(node_class, "_version", "1.0.0"),
+            updated_at=getattr(node_class, "_updated_at", "2026-05-19"),
+            change_note=getattr(node_class, "_change_note", None),
         )
         self._schemas[type_name] = schema
 

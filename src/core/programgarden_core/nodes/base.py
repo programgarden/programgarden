@@ -426,6 +426,16 @@ class BaseNode(BaseModel):
     _rate_limit: ClassVar[Optional["RateLimitConfig"]] = None
     _risk_features: ClassVar[Set[str]] = set()  # {"hwm","window","events","state"}
 
+    # ── Version metadata (UI change detection, added 2026-05-19) ──
+    # Every concrete node MUST override these in its own class body
+    # (enforced by test_node_version_metadata.py). Bump rule:
+    #   - major: breaking schema change (port rename, required flip)
+    #   - minor: additive (new optional field, new output port)
+    #   - patch: docs / internal behavior, no schema change
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
     model_config = ConfigDict(use_enum_values=True, extra="allow")
 
     def get_inputs(self) -> List[InputPort]:

@@ -93,7 +93,18 @@ class DynamicNodeSchema(BaseModel):
     )
 
     # 메타데이터
-    version: str = Field(default="1.0.0", description="노드 버전")
+    version: str = Field(
+        default="1.0.0",
+        description="Per-node SemVer (major.minor.patch). Bump on schema change."
+    )
+    updated_at: str = Field(
+        default="2026-05-19",
+        description="ISO 8601 date (YYYY-MM-DD) of the latest schema change."
+    )
+    change_note: Optional[str] = Field(
+        default=None,
+        description="One-line English summary (≤120 chars) of the latest change."
+    )
     author: Optional[str] = Field(default=None, description="작성자")
 
 
