@@ -97,20 +97,20 @@ src/community/programgarden_community/plugins/__init__.py → 77 plugin registra
 - Poetry Monorepo: 4 packages with path-based develop dependencies
 
 ## DEPS
-### programgarden-core 1.12.2
+### programgarden-core 1.12.4
 pydantic>=2.0.0
 
-### programgarden 1.21.4
+### programgarden 1.21.11
 pydantic>=2.0.0 | croniter^6.0.0 | aiohttp^3.9.0 | aiosqlite^0.20.0
 litellm>=1.40.0 | yfinance^0.2.0 | psutil^6.0.0
 python-dotenv^1.1.0 | pytickersymbols>=1.17.5 | lxml^6.0.2
 dev: fastapi^0.128.0 | uvicorn^0.40.0 | pytest^8.0.0
 
-### programgarden-finance 1.6.3
+### programgarden-finance 1.6.7
 pydantic>=2.11.7 | requests^2.32.4 | aiohttp^3.10.0 | websockets^15.0.1
 redis^6.4.0 | python-dotenv^1.1.1
 
-### programgarden-community 1.13.2
+### programgarden-community 1.13.5
 pypdf>=4.0.0
 extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 
@@ -144,6 +144,8 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] get_state() diagnostic payload (1.21.5): per-node state cache via internal listener, stats.last_error setter, structured errors[] field with timestamp sort + (node_id) dedup
 - [x] Structured validation (core 1.12.3 / programgarden 1.21.10): ValidationResult v2 with ErrorCode (29 codes) / ErrorLocation / Recommendation (9 rules, 8 static + 1 runtime) / ValidationLimits (capping) / ResultSummary (cascade-aware next_action_hint). Cascade suppression for UNKNOWN_NODE_TYPE / MISSING_REQUIRED_BROKER / CYCLE_DETECTED / DUPLICATE_NODE_ID. WorkflowJob.get_structured_errors() for dry_run runtime captures.
 - [x] ScreenerNode multi-market routing: `market` field (auto / overseas_stock / overseas_futures / korea_stock) + broker auto-detect via find_parent_output + LS overseas_stock fast path + yfinance fallback for futures/korea_stock + visible_when-based field hiding + universe-fallback guard. Example workflows 78-80 cover the trio.
+- [x] Silent-failure hardening (1.21.11): yfinance korea suffix auto-conversion (.KS/.KQ) + LS g3101 per-symbol enrichment + RuntimeError raise on 100% empty result in production (dry_run bypassed).
+- [ ] Balance partial-failure guard (unreleased, feat/balance-partial-failure-guard branch): AccountNode (3 markets) flag `balance._partial_failure=True` + `_failure_codes` + `_failure_reason` when COSOQ02701/CIDBQ05300/CSPAQ22200 partially fail. orderable_amount preserved as None to block silent 0 coercion. PositionSizingNode raises BalanceUnavailableError; IfNode raises ConditionEvaluationError on None numeric comparison. Both ExecutionError subclasses, resilience.fallback=skip absorbs. dry_run preserves legacy silent fallback. Resolver `_` prefix bypass for internal metadata keys.
 
 ## CONVENTIONS
 - language: Python 3.12+, docs/comments in Korean, code in English

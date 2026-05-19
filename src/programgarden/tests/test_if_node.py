@@ -256,3 +256,25 @@ class TestIfNodeEvaluateStatic:
 
     def test_unknown_operator_returns_false(self):
         assert IfNodeExecutor._evaluate(1, "unknown", 1) is False
+
+    def test_numeric_comparison_with_none_raises(self):
+        """Phase 3: None numeric comparison no longer silently returns False."""
+        from programgarden_core import ConditionEvaluationError
+
+        ev = IfNodeExecutor._evaluate
+        for op in (">", ">=", "<", "<="):
+            with pytest.raises(ConditionEvaluationError):
+                ev(None, op, 10)
+            with pytest.raises(ConditionEvaluationError):
+                ev(10, op, None)
+            with pytest.raises(ConditionEvaluationError):
+                ev(None, op, None)
+
+    def test_non_numeric_operators_keep_lenient_none_handling(self):
+        """== / != / membership / emptiness accept None as a meaningful operand."""
+        ev = IfNodeExecutor._evaluate
+        assert ev(None, "==", None) is True
+        assert ev(None, "==", 0) is False
+        assert ev(None, "!=", 5) is True
+        assert ev(None, "is_empty", None) is True
+        assert ev(None, "is_not_empty", None) is False

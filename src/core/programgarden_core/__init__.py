@@ -117,6 +117,8 @@ __all__ = [
     "ProgramGardenError",
     "ValidationError",
     "ExecutionError",
+    "BalanceUnavailableError",
+    "ConditionEvaluationError",
     # Exceptions (Finance)
     "FinanceError",
     "AppKeyException",

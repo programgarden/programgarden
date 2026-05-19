@@ -360,6 +360,76 @@ JIF 는 **해외주식(US/CN/HK/JP) + 국내주식/파생** 만 지원하며,
 
 ---
 
+## 7. AccountNode 잔고 fetch 부분 실패 — 매수 신호가 silently 사라짐
+
+### 증상
+
+매수 신호가 떴고 잔고도 충분한데 주문이 안 나가고, 워크플로우는 `completed`
+상태로 끝남. 로그 깊이 들어가야 `COSOQ02701` / `CIDBQ05300` / `CSPAQ22200`
+중 하나가 transient 실패한 warning 만 발견.
+
+### 원인
+
+LS 의 잔고 조회 TR (외화예수금/예탁자산/예수금) 이 rate limit 등으로 일시적으로
+실패하면 AccountNode 가 `positions` 만 채워 정상 출력으로 마무리한다. 이전에는
+`balance.orderable_amount` 키 자체가 누락되거나 `0.0` 으로 fallback 되어,
+PositionSizingNode 가 `available_balance=0 → empty_result` 로 silent skip 했다.
+IfNode 의 `>=` / `>` / `<` / `<=` 비교에서도 `float(None)` TypeError 를
+catch 해 silent `False` 로 흡수 → 매수 신호가 잘못된 false 브랜치로 라우팅.
+
+### 해결: `_partial_failure` 메타데이터 + 명시적 raise
+
+AccountNode 가 partial 실패 시 `balance` dict 에 다음 키를 동봉한다:
+
+| 키 | 타입 | 의미 |
+|----|------|------|
+| `_partial_failure` | bool | `True` 면 부분 실패 |
+| `_failure_codes` | list[str] | 실패 TR 코드 (예: `["COSOQ02701"]`) |
+| `_failure_reason` | str | 진단 메시지 |
+| `orderable_amount` | float \| None | partial 시 `None` (silent 0 차단) |
+
+Consumer 정책:
+
+| 노드 | 발생 시점 | 흡수 |
+|------|----------|------|
+| `PositionSizingNode` | `balance._partial_failure=True` 감지 → `BalanceUnavailableError` raise (fixed_quantity / dry_run 면제) | `resilience.fallback=skip` |
+| `IfNode` | `>=`/`>`/`<`/`<=` 에서 `None` operand → `ConditionEvaluationError` raise (dry_run 시 silent False 유지) | 동일 |
+
+### 권장 패턴 — resilience + IfNode 가드 이중화
+
+```json
+{
+  "nodes": [
+    {"id": "account", "type": "OverseasStockAccountNode",
+     "resilience": {"fallback": {"mode": "skip"}}},
+    {"id": "if-balance-ok", "type": "IfNode",
+     "left": "{{ nodes.account.balance._partial_failure }}",
+     "operator": "==", "right": false},
+    {"id": "sizing", "type": "PositionSizingNode",
+     "balance": "{{ nodes.account.balance }}", "method": "fixed_percent"}
+  ],
+  "edges": [
+    {"from": "account", "to": "if-balance-ok"},
+    {"from": "if-balance-ok", "to": "sizing", "from_port": "true"}
+  ]
+}
+```
+
+- `resilience.fallback=skip`: AccountNode 가 raise 해도 워크플로우 멈추지 않음
+- `if-balance-ok`: balance fetch 가 partial 이면 `false` 브랜치로 분기 (예: 알림)
+- 두 가드 모두 `{{ nodes.account.balance._partial_failure }}` 표현식 사용 가능
+  — `_` prefix 키는 nested-typo 검증을 자동 통과
+
+### 예방 체크
+
+1. 모든 AccountNode 의 downstream PositionSizingNode/주문 노드 경로에
+   `resilience.fallback=skip` 또는 IfNode 가드 둘 중 하나 이상 적용
+2. `dry_run=True` 로 검증 시 silent fallback 유지 — 실 운영에서만 raise
+3. 워크플로우 로그에서 `BalanceUnavailableError` / `ConditionEvaluationError`
+   발생 빈도 모니터링 (transient API 장애의 조기 경보)
+
+---
+
 ## 실행 전 최종 체크리스트
 
 1. `pg.validate(workflow)` → `is_valid=True` 확인

@@ -1,5 +1,36 @@
 ## [Unreleased]
 ### Added
+- **Balance partial-failure exceptions** — two new `ExecutionError`
+  subclasses in `programgarden_core.exceptions`:
+  - `BalanceUnavailableError` — raised by consumers when an
+    AccountNode `balance` dict carries `_partial_failure=True`.
+    Carries `failure_codes` (list of TR codes) and `failure_reason`
+    so downstream resilience can surface the cause instead of
+    silently coercing the unavailable balance to 0.
+  - `ConditionEvaluationError` — raised by IfNode when a numeric
+    comparison (`>=` / `>` / `<` / `<=`) receives a `None` operand.
+    Replaces the previous silent `False` fallback that masked
+    partial balance failures by routing flow into the wrong branch.
+  Both are re-exported from `programgarden_core.__init__`.
+- **`PARTIAL_FAILURE_FIELDS` constant** in `nodes/base.py` —
+  three underscore-prefixed metadata fields
+  (`_partial_failure: bool`, `_failure_codes: list[str]`,
+  `_failure_reason: str`) spread into
+  `OVERSEAS_STOCK_BALANCE_FIELDS`, `OVERSEAS_FUTURES_BALANCE_FIELDS`,
+  and `KOREA_STOCK_BALANCE_FIELDS`. Lets AccountNode flag balance
+  dicts when a balance TR fails, and lets users branch on
+  `{{ nodes.account.balance._partial_failure }}` without tripping
+  the nested-field typo validator.
+
+### Changed
+- **AccountNode `_anti_patterns`** (overseas stock / overseas
+  futures / korea stock) — added a new anti-pattern entry warning
+  against sizing orders directly from `balance.orderable_amount`
+  without checking `balance._partial_failure`. The alternative
+  guidance points at `PositionSizingNode` + `resilience.fallback=skip`
+  or an IfNode gate on `{{ nodes.account.balance._partial_failure }}`.
+
+### Added (continued)
 - **ScreenerNode multi-market schema** — new `market` field
   (`auto` / `overseas_stock` / `overseas_futures` / `korea_stock`,
   default `auto`) lets workflows target stocks vs futures vs Korea

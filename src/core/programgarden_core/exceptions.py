@@ -100,6 +100,58 @@ class OrderError(ProgramGardenError):
         self.symbol = symbol
 
 
+class BalanceUnavailableError(ExecutionError):
+    """Account balance fetch returned a partial-failure signal.
+
+    Raised by PositionSizingNode/PortfolioNode (or any downstream
+    consumer) when the upstream AccountNode flagged its balance dict
+    with `_partial_failure=True`. Consumers must NOT silently coerce
+    the missing balance to 0.0 — that has historically caused
+    "주문 0건 = workflow completed" silent failures when the
+    LS balance TR (e.g. COSOQ02701, CIDBQ05300, CSPAQ22200) fails
+    transiently. Resilience config can absorb the raise via
+    `fallback=skip` or retry.
+    """
+
+    def __init__(
+        self,
+        message: str = "Account balance is unavailable (partial fetch failure).",
+        node_id: Optional[str] = None,
+        failure_codes: Optional[list] = None,
+        failure_reason: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        details = dict(details or {})
+        if failure_codes is not None:
+            details.setdefault("failure_codes", failure_codes)
+        if failure_reason is not None:
+            details.setdefault("failure_reason", failure_reason)
+        super().__init__(message, node_id=node_id, details=details)
+        self.failure_codes = failure_codes or []
+        self.failure_reason = failure_reason
+
+
+class ConditionEvaluationError(ExecutionError):
+    """IfNode/LogicNode received a None operand on a numeric comparison.
+
+    Raised by IfNode._evaluate when `>=` / `>` / `<` / `<=` is asked
+    to compare a None operand (typically an unbacked
+    `balance.orderable_amount` after a partial AccountNode failure).
+    Previously the evaluator caught the resulting TypeError and
+    silently returned False, routing flow into the `false` branch as
+    if the condition were intentionally rejected. Now consumers must
+    handle the failure explicitly (resilience can absorb the raise).
+    """
+
+    def __init__(
+        self,
+        message: str = "Condition operand is None on a numeric comparison.",
+        node_id: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        super().__init__(message, node_id=node_id, details=details)
+
+
 class DuplicateJobIdError(ProgramGardenError):
     """중복된 Job ID 오류
 

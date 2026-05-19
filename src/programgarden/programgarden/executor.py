@@ -15,7 +15,11 @@ import uuid
 import logging
 
 from programgarden.resolver import WorkflowResolver, ResolvedWorkflow, ValidationResult
-from programgarden_core import ValidationLimits
+from programgarden_core import (
+    BalanceUnavailableError,
+    ConditionEvaluationError,
+    ValidationLimits,
+)
 from programgarden.context import ExecutionContext, WorkflowEvent
 from programgarden.reconnect_handler import ReconnectHandler
 from programgarden_core.expression import ExpressionEvaluator, ExpressionContext
@@ -3831,8 +3835,15 @@ class AccountNodeExecutor(NodeExecutorBase):
 
         held_symbols = [p["symbol"] for p in positions]
         
-        # block2 = 전체 평가 요약
-        balance_info = {"cash": 0.0, "total_value": 0.0}
+        # block2 = 전체 평가 요약. `orderable_amount` is set later by
+        # COSOQ02701; pre-seed it as None so consumers can distinguish
+        # "fetched & zero" from "never fetched". The partial-failure
+        # flag is wired in alongside the COSOQ02701 fetch below.
+        balance_info: Dict[str, Any] = {
+            "cash": 0.0,
+            "total_value": 0.0,
+            "orderable_amount": None,
+        }
         if response.block2:
             balance_info = {
                 "total_pnl_rate": response.block2.ErnRat,
@@ -3840,9 +3851,13 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "stock_eval_krw": response.block2.StkConvEvalAmt,
                 "total_eval_krw": response.block2.WonEvalSumAmt,
                 "total_pnl_krw": response.block2.ConvEvalPnlAmt,
+                "orderable_amount": None,
             }
-        
-        # 2. COSOQ02701: 외화예수금/주문가능금액 조회 (graceful degradation)
+
+        # 2. COSOQ02701: 외화예수금/주문가능금액 조회 (graceful degradation
+        # with explicit partial-failure flag for downstream consumers).
+        cosoq02701_ok = False
+        cosoq02701_failure_reason: Optional[str] = None
         try:
             from programgarden_finance import COSOQ02701
 
@@ -3858,16 +3873,26 @@ class AccountNodeExecutor(NodeExecutorBase):
                         balance_info["orderable_amount"] = float(item.FcurrOrdAbleAmt) if item.FcurrOrdAbleAmt else 0.0
                         balance_info["foreign_cash"] = float(item.FcurrDps) if item.FcurrDps else 0.0
                         balance_info["exchange_rate"] = float(item.BaseXchrat) if item.BaseXchrat else 0.0
+                        cosoq02701_ok = True
                         break
+                if not cosoq02701_ok:
+                    cosoq02701_failure_reason = "COSOQ02701 returned no USD currency block"
 
                 # block4: 원화 출금/증거금
                 if cash_response.block4:
                     balance_info["withdrawable_krw"] = float(cash_response.block4.MnyoutAbleAmt) if cash_response.block4.MnyoutAbleAmt else 0.0
                     balance_info["overseas_margin"] = float(cash_response.block4.OvrsMgn) if cash_response.block4.OvrsMgn else 0.0
             else:
-                context.log("warning", f"COSOQ02701 조회 실패 (무시): {cash_response.error_msg}", node_id)
+                cosoq02701_failure_reason = f"COSOQ02701 error: {cash_response.error_msg}"
+                context.log("warning", f"COSOQ02701 조회 실패: {cash_response.error_msg}", node_id)
         except Exception as e:
-            context.log("warning", f"COSOQ02701 조회 실패 (무시): {e}", node_id)
+            cosoq02701_failure_reason = f"COSOQ02701 exception: {e}"
+            context.log("warning", f"COSOQ02701 조회 실패: {e}", node_id)
+
+        if not cosoq02701_ok:
+            balance_info["_partial_failure"] = True
+            balance_info["_failure_codes"] = ["COSOQ02701"]
+            balance_info["_failure_reason"] = cosoq02701_failure_reason or "COSOQ02701 fetch failed"
 
         context.log("info", f"AccountNode: {len(positions)} positions fetched", node_id)
         return {
@@ -3892,17 +3917,25 @@ class AccountNodeExecutor(NodeExecutorBase):
             ).req_async()
 
             positions = []
-            balance_info = {
-                "orderable_amount": 0.0,
+            # Pre-seed orderable_amount as None so a partial failure is
+            # observable downstream. The two TR fetches below clear the
+            # flag when they succeed; if either fails we set
+            # _partial_failure=True with the offending code.
+            balance_info: Dict[str, Any] = {
+                "orderable_amount": None,
                 "deposit": 0.0,
                 "total_eval": 0.0,
                 "purchase_amount": 0.0,
                 "eval_pnl": 0.0,
                 "pnl_rate": 0.0,
             }
+            failure_codes: List[str] = []
+            failure_reasons: List[str] = []
 
             if response.error_msg:
                 context.log("warning", f"CSPAQ12300 조회 실패: {response.error_msg}", node_id)
+                failure_codes.append("CSPAQ12300")
+                failure_reasons.append(f"CSPAQ12300 error: {response.error_msg}")
             else:
                 # block2: 잔고 요약
                 if response.block2:
@@ -3944,6 +3977,7 @@ class AccountNodeExecutor(NodeExecutorBase):
                     })
 
             # 2. CSPAQ22200: 예수금/주문가능금액
+            cspaq22200_ok = False
             try:
                 cash_response = await ls.korea_stock().accno().cspaq22200(
                     body=CSPAQ22200InBlock1()
@@ -3951,14 +3985,35 @@ class AccountNodeExecutor(NodeExecutorBase):
 
                 if not cash_response.error_msg and cash_response.block2:
                     b2 = cash_response.block2
-                    balance_info["orderable_amount"] = float(b2.MnyOrdAbleAmt) if b2.MnyOrdAbleAmt else balance_info["orderable_amount"]
+                    balance_info["orderable_amount"] = (
+                        float(b2.MnyOrdAbleAmt)
+                        if b2.MnyOrdAbleAmt
+                        else balance_info["orderable_amount"]
+                    )
                     balance_info["deposit"] = float(b2.Dps) if b2.Dps else balance_info["deposit"]
                     balance_info["d2_deposit"] = float(b2.D2Dps) if b2.D2Dps else 0.0
                     balance_info["margin_cash"] = float(b2.MgnMny) if b2.MgnMny else 0.0
+                    cspaq22200_ok = True
                 elif cash_response.error_msg:
-                    context.log("warning", f"CSPAQ22200 조회 실패 (무시): {cash_response.error_msg}", node_id)
+                    context.log("warning", f"CSPAQ22200 조회 실패: {cash_response.error_msg}", node_id)
+                    failure_reasons.append(f"CSPAQ22200 error: {cash_response.error_msg}")
             except Exception as e:
-                context.log("warning", f"CSPAQ22200 조회 실패 (무시): {e}", node_id)
+                context.log("warning", f"CSPAQ22200 조회 실패: {e}", node_id)
+                failure_reasons.append(f"CSPAQ22200 exception: {e}")
+
+            if not cspaq22200_ok:
+                failure_codes.append("CSPAQ22200")
+                # CSPAQ22200 owns the authoritative orderable_amount; without it
+                # any value inherited from CSPAQ12300 is stale-acceptable but
+                # must not be treated as fresh.
+                if balance_info["orderable_amount"] is None:
+                    pass  # already None
+                # leave the inherited value but mark partial failure below
+
+            if failure_codes:
+                balance_info["_partial_failure"] = True
+                balance_info["_failure_codes"] = failure_codes
+                balance_info["_failure_reason"] = "; ".join(failure_reasons) or "Balance fetch partial failure"
 
             context.log("info", f"AccountNode (korea_stock): {len(positions)} positions fetched", node_id)
             return {
@@ -4030,42 +4085,72 @@ class AccountNodeExecutor(NodeExecutorBase):
                 })
                 held_symbols.append(symbol)
 
-            # 2. CIDBQ05300: 예탁자산 조회 (CIDBQ03000 상위호환)
-            balance_response = await ls.overseas_futureoption().accno().CIDBQ05300(
-                body=CIDBQ05300InBlock1(
-                    RecCnt=1,
-                    OvrsAcntTpCode="1",
-                    CrcyCode="ALL"
-                )
-            ).req_async()
-
-            # block2: 통화별 예수금 정보
-            balance_by_currency = {}
+            # 2. CIDBQ05300: 예탁자산 조회 (CIDBQ03000 상위호환).
+            # Wrapped in its own try so a balance failure no longer drops
+            # the entire positions response — instead we flag
+            # _partial_failure on the balance dict.
+            balance_by_currency: Dict[str, Dict[str, float]] = {}
             total_orderable = 0.0
-            for item in (balance_response.block2 or []):
-                currency = item.CrcyCode.strip() if item.CrcyCode else "USD"
-                orderable = float(item.AbrdFutsOrdAbleAmt) if item.AbrdFutsOrdAbleAmt else 0.0
-                deposit = float(item.OvrsFutsDps) if item.OvrsFutsDps else 0.0
+            cidbq05300_ok = False
+            cidbq05300_failure_reason: Optional[str] = None
+            balance_response = None
+            try:
+                balance_response = await ls.overseas_futureoption().accno().CIDBQ05300(
+                    body=CIDBQ05300InBlock1(
+                        RecCnt=1,
+                        OvrsAcntTpCode="1",
+                        CrcyCode="ALL"
+                    )
+                ).req_async()
 
-                balance_by_currency[currency] = {
-                    "deposit": deposit,
-                    "orderable_amount": orderable,
-                    "withdrawable_amount": float(item.AbrdFutsWthdwAbleAmt) if item.AbrdFutsWthdwAbleAmt else 0.0,
-                    "eval_pnl": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
-                }
-                total_orderable += orderable
+                # Note: we deliberately do not gate on `error_msg` here.
+                # The LS finance client returns a real str for that field
+                # only on actual errors; checking it would also trip on
+                # MagicMock attribute auto-vivification in unit tests,
+                # which masks legitimate balance fetches.
+                # block2: 통화별 예수금 정보
+                for item in (balance_response.block2 or []):
+                    currency = item.CrcyCode.strip() if item.CrcyCode else "USD"
+                    orderable = float(item.AbrdFutsOrdAbleAmt) if item.AbrdFutsOrdAbleAmt else 0.0
+                    deposit = float(item.OvrsFutsDps) if item.OvrsFutsDps else 0.0
 
-            # balance 정보 구성 (PositionSizingNode 호환)
-            balance_info = {
+                    balance_by_currency[currency] = {
+                        "deposit": deposit,
+                        "orderable_amount": orderable,
+                        "withdrawable_amount": float(item.AbrdFutsWthdwAbleAmt) if item.AbrdFutsWthdwAbleAmt else 0.0,
+                        "eval_pnl": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
+                    }
+                    total_orderable += orderable
+
+                if balance_by_currency:
+                    cidbq05300_ok = True
+                else:
+                    err = getattr(balance_response, "error_msg", "") or ""
+                    cidbq05300_failure_reason = (
+                        f"CIDBQ05300 error: {err}" if isinstance(err, str) and err
+                        else "CIDBQ05300 returned no currency blocks"
+                    )
+                    context.log("warning", cidbq05300_failure_reason, node_id)
+            except Exception as e:
+                cidbq05300_failure_reason = f"CIDBQ05300 exception: {e}"
+                context.log("warning", cidbq05300_failure_reason, node_id)
+
+            # balance 정보 구성 (PositionSizingNode 호환). Pre-seed
+            # orderable_amount as None when the fetch failed entirely so
+            # consumers can branch on _partial_failure instead of
+            # treating a coerced 0.0 as authoritative.
+            balance_info: Dict[str, Any] = {
                 "by_currency": balance_by_currency,
-                "total_orderable": total_orderable,
+                "total_orderable": total_orderable if cidbq05300_ok else 0.0,
                 # 하위 호환성: 첫 번째 통화 또는 USD 기준
-                "orderable_amount": balance_by_currency.get("USD", {}).get("orderable_amount", 0.0) or total_orderable,
+                "orderable_amount": (
+                    balance_by_currency.get("USD", {}).get("orderable_amount", 0.0) or total_orderable
+                ) if cidbq05300_ok else None,
                 "deposit": sum(b.get("deposit", 0) for b in balance_by_currency.values()),
             }
 
             # block3: 전체 요약 (증거금/마진콜율 등)
-            if balance_response.block3:
+            if cidbq05300_ok and balance_response is not None and balance_response.block3:
                 b3 = balance_response.block3
                 balance_info["margin"] = float(b3.AbrdFutsCsgnMgn) if b3.AbrdFutsCsgnMgn else 0.0
                 balance_info["maintenance_margin"] = float(b3.OvrsFutsMaintMgn) if b3.OvrsFutsMaintMgn else 0.0
@@ -4073,21 +4158,38 @@ class AccountNodeExecutor(NodeExecutorBase):
                 balance_info["total_eval"] = float(b3.AbrdFutsEvalDpstgTotAmt) if b3.AbrdFutsEvalDpstgTotAmt else 0.0
                 balance_info["settlement_pnl"] = float(b3.AbrdFutsLqdtPnlAmt) if b3.AbrdFutsLqdtPnlAmt else 0.0
 
+            if not cidbq05300_ok:
+                balance_info["_partial_failure"] = True
+                balance_info["_failure_codes"] = ["CIDBQ05300"]
+                balance_info["_failure_reason"] = cidbq05300_failure_reason or "CIDBQ05300 fetch failed"
+
             context.log("info", f"AccountNode (futures): {len(positions)} positions, {len(balance_by_currency)} currencies", node_id)
             return {
                 "positions": positions,
                 "balance": balance_info,
             }
-            
+
         except Exception as e:
             context.log("error", f"Failed to fetch futures positions: {e}", node_id)
             return self._empty_result(str(e))
 
     def _empty_result(self, error: str = "") -> Dict[str, Any]:
-        """빈 결과 반환 (positions는 리스트 형태)"""
-        result = {
+        """빈 결과 반환 (positions는 리스트 형태).
+
+        When the account fetch fails entirely the balance dict is
+        flagged with `_partial_failure=True` so PositionSizingNode and
+        other consumers can refuse to coerce missing balances to 0.0.
+        """
+        result: Dict[str, Any] = {
             "positions": [],
-            "balance": {"cash": 0.0, "total_value": 0.0},
+            "balance": {
+                "cash": 0.0,
+                "total_value": 0.0,
+                "orderable_amount": None,
+                "_partial_failure": True,
+                "_failure_codes": [],
+                "_failure_reason": error or "Account fetch failed",
+            },
         }
         if error:
             result["error"] = error
@@ -5262,10 +5364,21 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             return self._get_overseas_stock_tracker_data(tracker)
 
     def _empty_result(self, error: str = "") -> Dict[str, Any]:
-        """빈 결과 반환"""
-        result = {
+        """빈 결과 반환.
+
+        Balance dict carries `_partial_failure=True` so downstream
+        consumers do not silently treat the unavailable balance as 0.
+        """
+        result: Dict[str, Any] = {
             "positions": [],
-            "balance": {"cash": 0.0, "total_value": 0.0},
+            "balance": {
+                "cash": 0.0,
+                "total_value": 0.0,
+                "orderable_amount": None,
+                "_partial_failure": True,
+                "_failure_codes": [],
+                "_failure_reason": error or "RealAccount fetch failed",
+            },
             "open_orders": {},
         }
         if error:
@@ -8380,7 +8493,28 @@ class IfNodeExecutor(NodeExecutorBase):
         operator = config.get("operator", "==")
         right = config.get("right")
 
-        result = self._evaluate(left, operator, right)
+        try:
+            result = self._evaluate(left, operator, right)
+        except ConditionEvaluationError as e:
+            # dry_run uses mocked broker output, where None operands are
+            # an expected artifact of incomplete fixtures rather than a
+            # real silent failure. Preserve the legacy "silent False"
+            # behavior in that mode so mocked workflow validation keeps
+            # working; production runs propagate the raise so resilience
+            # can absorb it explicitly.
+            if context.is_dry_run:
+                context.log(
+                    "warning",
+                    f"IfNode: {left!r} {operator} {right!r} → False (dry_run None fallback)",
+                    node_id,
+                )
+                result = False
+            else:
+                # Attach node_id so listeners/resilience can pinpoint the
+                # offending IfNode without parsing the message.
+                raise ConditionEvaluationError(
+                    str(e), node_id=node_id, details=e.details
+                ) from e
         context.log(
             "info",
             f"IfNode: {left!r} {operator} {right!r} → {result}",
@@ -8397,9 +8531,29 @@ class IfNodeExecutor(NodeExecutorBase):
             "_if_branch": "true" if result else "false",
         }
 
-    @staticmethod
-    def _evaluate(left: Any, operator: str, right: Any) -> bool:
-        """비교 연산 수행"""
+    _NUMERIC_OPS = {">", ">=", "<", "<="}
+
+    @classmethod
+    def _evaluate(cls, left: Any, operator: str, right: Any) -> bool:
+        """비교 연산 수행.
+
+        Numeric comparisons (>, >=, <, <=) refuse to coerce a None
+        operand to False — that historically masked partial balance
+        failures by silently routing the workflow into the else
+        branch. `==` / `!=` / membership / emptiness operators retain
+        their original lenient behavior because None is a meaningful
+        operand there.
+        """
+        if operator in cls._NUMERIC_OPS and (left is None or right is None):
+            raise ConditionEvaluationError(
+                f"IfNode received None operand on numeric comparison "
+                f"({left!r} {operator} {right!r}). "
+                "This usually indicates an upstream partial failure "
+                "(e.g. balance.orderable_amount is None after a "
+                "balance TR error). Configure resilience.fallback or "
+                "guard the upstream with an is_empty check.",
+                details={"left": left, "operator": operator, "right": right},
+            )
         try:
             if operator == "==":           return left == right
             if operator == "!=":           return left != right
@@ -10804,6 +10958,32 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
             context.log("warning", "No symbols provided for position sizing", node_id)
             return self._empty_result()
         
+        # Refuse to silently zero-out when the upstream AccountNode flagged
+        # a partial fetch. fixed_quantity ignores balance entirely, so it
+        # is exempt; every sizing method that consumes the balance must
+        # surface the failure (resilience config can absorb via fallback).
+        # dry_run uses mocked fixtures, so a partial_failure flag there is
+        # an artifact rather than a real production silent failure.
+        if (
+            method != "fixed_quantity"
+            and not context.is_dry_run
+            and isinstance(balance_data, dict)
+            and balance_data.get("_partial_failure") is True
+        ):
+            failure_codes = balance_data.get("_failure_codes") or []
+            failure_reason = balance_data.get("_failure_reason") or "Account balance fetch partially failed"
+            context.log(
+                "error",
+                f"Balance unavailable for sizing (codes={failure_codes}): {failure_reason}",
+                node_id,
+            )
+            raise BalanceUnavailableError(
+                f"Balance unavailable for position sizing: {failure_reason}",
+                node_id=node_id,
+                failure_codes=list(failure_codes) if isinstance(failure_codes, list) else [failure_codes],
+                failure_reason=str(failure_reason),
+            )
+
         # 예수금 추출 (해외주식/해외선물 공통)
         available_balance = self._extract_balance(balance_data)
 

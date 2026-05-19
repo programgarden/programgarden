@@ -76,6 +76,11 @@ class KoreaStockAccountNode(BaseNode):
             "reason": "Product scope mismatch: domestic stock queries require the korea_stock credential type and session from KoreaStockBrokerNode.",
             "alternative": "Always pair KoreaStockAccountNode with KoreaStockBrokerNode.",
         },
+        {
+            "pattern": "Sizing orders directly from balance.orderable_amount without checking balance._partial_failure",
+            "reason": "If CSPAQ22200 or CSPAQ12300 fails, the executor flags balance with _partial_failure=True and may leave orderable_amount stale or None. Naive sizing then computes 0 and silently emits no orders — a transient TR error masquerades as a normal completed run.",
+            "alternative": "Consume balance via PositionSizingNode (raises BalanceUnavailableError on partial failure) with resilience.fallback=skip on AccountNode, or gate downstream order nodes with IfNode on {{ nodes.account.balance._partial_failure }}.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
