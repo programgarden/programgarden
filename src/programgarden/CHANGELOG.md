@@ -1,4 +1,6 @@
 ## [Unreleased]
+
+## [1.22.0] - 2026-05-19
 ### Added
 - **Balance partial-failure silent-failure guard** — AccountNode
   (overseas stock / futures / korea stock) now embeds three
