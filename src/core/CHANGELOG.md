@@ -1,4 +1,6 @@
 ## [Unreleased]
+
+## [1.13.0] - 2026-05-19
 ### Added
 - **Balance partial-failure exceptions** — two new `ExecutionError`
   subclasses in `programgarden_core.exceptions`:
