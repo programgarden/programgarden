@@ -1,0 +1,90 @@
+{
+  "id": "ai_synth_sc3_rsi_buy_only",
+  "name": "[AI 합성 Sc3] RSI 진입 전용 — explicit full-params 2 turn",
+  "description": "programgarden_ai WORKFLOW_BUILD 멀티턴 smoke Round 3 Scenario 3 의 V4 Pro 합성 산출물. 사용자 first turn 에 풀 파라미터 명시 + second turn 에 저장 grant. nodes/edges 는 V4 Pro 의 build tool input 그대로. Sc1 과 비교해 보면 진입만 / 청산 누락 — 즉 자동매매로는 미완성. 이 자체가 V4 Pro 의 회귀 패턴 (full params 명시 turn 에 청산 분기 자동 생성 안 함).",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode"
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "credential_pending",
+      "provider": "ls-sec.co.kr"
+    },
+    {
+      "id": "split",
+      "type": "SplitNode",
+      "items": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        }
+      ]
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ nodes.split.item }}",
+      "interval": "1d",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "adjust": true
+    },
+    {
+      "id": "rsi_condition",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ nodes.historical.value.time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.split.item.symbol }}",
+          "exchange": "{{ nodes.split.item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "direction": "below",
+        "threshold": 30
+      }
+    },
+    {
+      "id": "buy_order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "market",
+      "order": {
+        "symbol": "AAPL",
+        "exchange": "NASDAQ",
+        "quantity": 10
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "split"
+    },
+    {
+      "from": "split",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "rsi_condition"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "buy_order"
+    }
+  ],
+  "credentials": [],
+  "notes": []
+}

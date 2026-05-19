@@ -1,0 +1,170 @@
+{
+  "id": "ai_synth_sc1_rsi_stop_profit",
+  "name": "[AI 합성 Sc1] RSI 진입 + 손절/익절 — multi-turn beginner persona",
+  "description": "programgarden_ai WORKFLOW_BUILD 멀티턴 smoke Round 3 Scenario 1 의 V4 Pro 합성 산출물. 초보 투자자 페르소나 4 turn (vague → trading intent grant → params → save). nodes/edges 는 V4 Pro 가 build_workflow_with_retry tool 에 보낸 input 그대로 (수정 없음). AI 가 만든 워크플로우가 WorkflowExecutor.validate() 를 통과하는지 회귀 검증용. credentials/notes 의 부재 여부 자체도 검증 대상.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode"
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "credential_pending",
+      "paper_trading": false
+    },
+    {
+      "id": "split",
+      "type": "SplitNode",
+      "items": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        }
+      ]
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ nodes.split.item }}",
+      "interval": "1d",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "adjust": true
+    },
+    {
+      "id": "rsi_condition",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ nodes.historical.value.time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.split.item.symbol }}",
+          "exchange": "{{ nodes.split.item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "direction": "below",
+        "threshold": 30
+      }
+    },
+    {
+      "id": "buy_order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "market",
+      "order": {
+        "symbol": "AAPL",
+        "exchange": "NASDAQ",
+        "quantity": 10
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode"
+    },
+    {
+      "id": "stop_loss",
+      "type": "ConditionNode",
+      "plugin": "StopLoss",
+      "positions": "{{ nodes.account.positions }}",
+      "fields": {
+        "stop_percent": -3.0
+      }
+    },
+    {
+      "id": "stop_loss_if",
+      "type": "IfNode",
+      "left": "{{ nodes.stop_loss.is_condition_met }}",
+      "right": true,
+      "operator": "=="
+    },
+    {
+      "id": "sell_stop",
+      "type": "OverseasStockNewOrderNode",
+      "side": "sell",
+      "order_type": "market",
+      "order": "{{ item }}"
+    },
+    {
+      "id": "profit_target",
+      "type": "ConditionNode",
+      "plugin": "ProfitTarget",
+      "positions": "{{ nodes.account.positions }}",
+      "fields": {
+        "target_percent": 5.0
+      }
+    },
+    {
+      "id": "profit_if",
+      "type": "IfNode",
+      "left": "{{ nodes.profit_target.is_condition_met }}",
+      "right": true,
+      "operator": "=="
+    },
+    {
+      "id": "sell_profit",
+      "type": "OverseasStockNewOrderNode",
+      "side": "sell",
+      "order_type": "market",
+      "order": "{{ item }}"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "split"
+    },
+    {
+      "from": "split",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "rsi_condition"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "buy_order"
+    },
+    {
+      "from": "buy_order",
+      "to": "account"
+    },
+    {
+      "from": "account",
+      "to": "stop_loss"
+    },
+    {
+      "from": "stop_loss",
+      "to": "stop_loss_if"
+    },
+    {
+      "from": "stop_loss_if",
+      "to": "sell_stop",
+      "from_port": "true"
+    },
+    {
+      "from": "account",
+      "to": "profit_target"
+    },
+    {
+      "from": "profit_target",
+      "to": "profit_if"
+    },
+    {
+      "from": "profit_if",
+      "to": "sell_profit",
+      "from_port": "true"
+    }
+  ],
+  "credentials": [],
+  "notes": []
+}
