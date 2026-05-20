@@ -39,11 +39,19 @@
       "id": "condition",
       "type": "ConditionNode",
       "plugin": "RSI",
-      "data": "{{ nodes.historical.values }}",
-      "params": {
+      "items": {
+        "from": "{{ nodes.historical.value.time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.historical.value.symbol }}",
+          "exchange": "{{ nodes.historical.value.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
         "period": 14,
-        "overbought": 70,
-        "oversold": 30
+        "threshold": 30,
+        "direction": "below"
       },
       "position": {
         "x": 600,

@@ -274,6 +274,74 @@ class WorkflowResolver:
                             suggestion="Install programgarden-community or register the plugin manually.",
                         )
                     )
+                else:
+                    # Plugin exists — verify the data binding shape matches the
+                    # plugin's contract. Mirrors the runtime branch in
+                    # executor (_execute_condition_node): position-management
+                    # plugins read `positions`, indicator plugins iterate
+                    # `items {from, extract}`. Without this static check the
+                    # wrong shape (legacy `data`/`params`) passes validate()
+                    # and only fails at dry_run, so the AI build self-correct
+                    # loop never sees it.
+                    plugin_schema = plugin_registry.get_schema(plugin_id)
+                    required_data = (
+                        plugin_schema.required_data if plugin_schema else ["data"]
+                    )
+                    is_positions_based = (
+                        "positions" in required_data and "data" not in required_data
+                    )
+                    if is_positions_based:
+                        if not node.get("positions"):
+                            result.add(
+                                build_error(
+                                    ErrorCode.MISSING_REQUIRED_FIELD,
+                                    f"ConditionNode '{node.get('id')}' uses position "
+                                    f"plugin '{plugin_id}' but has no 'positions' binding",
+                                    location=ErrorLocation(
+                                        node_id=node.get("id"),
+                                        node_type=node.get("type"),
+                                        plugin_id=plugin_id,
+                                        field_path="positions",
+                                    ),
+                                    suggestion=(
+                                        "Position-management plugins (StopLoss / "
+                                        "ProfitTarget / TrailingStop) read holdings from "
+                                        "'positions'. Bind it to an account node's "
+                                        "positions output, e.g. positions: "
+                                        "'{{ nodes.account.positions }}'. The 'data' / "
+                                        "'params' fields are not used here."
+                                    ),
+                                )
+                            )
+                    else:
+                        items = node.get("items")
+                        if (
+                            not isinstance(items, dict)
+                            or not items.get("from")
+                            or not items.get("extract")
+                        ):
+                            result.add(
+                                build_error(
+                                    ErrorCode.MISSING_REQUIRED_FIELD,
+                                    f"ConditionNode '{node.get('id')}' uses indicator "
+                                    f"plugin '{plugin_id}' but has no valid 'items' "
+                                    f"binding (items.from + items.extract)",
+                                    location=ErrorLocation(
+                                        node_id=node.get("id"),
+                                        node_type=node.get("type"),
+                                        plugin_id=plugin_id,
+                                        field_path="items",
+                                    ),
+                                    suggestion=(
+                                        "Indicator plugins iterate OHLCV through 'items'. "
+                                        "Add items with 'from' (the source array) and "
+                                        "'extract' (per-row field map), e.g. items: "
+                                        "{from: '{{ item.time_series }}', extract: "
+                                        "{symbol, exchange, date, close}}. The legacy "
+                                        "'data' / 'params' fields are not used."
+                                    ),
+                                )
+                            )
 
         # 5. 노드 연결 규칙 검증 (실시간 → 위험 노드 직결 차단)
         self._validate_connection_rules(workflow, registry, result)
