@@ -1,12 +1,12 @@
 # PROJECT_MAP
 @generated: 2026-03-09T00:00:00
-@updated: 2026-05-19T00:00:00
+@updated: 2026-05-20T00:00:00
 @type: python-monorepo
 @stack: Python 3.12 | Poetry | Pydantic 2 | asyncio | WebSocket
 
 ## TREE
 src/
-  core/ [72 .py] — programgarden-core 1.12.2
+  core/ [73 .py] — programgarden-core 1.14.0
     programgarden_core/
       nodes/ [38 .py] — 73 node classes (12 categories)
       models/ [12 .py] — edge, workflow, credential, resilience, connection_rule, event, exchange, job, plugin_resource, resource
@@ -15,7 +15,7 @@ src/
       expression/ [2 .py] — template evaluator ({{ nodes.x.y }})
       i18n/ [2 .py + 2 .json] — translator, ko.json, en.json
       presets/ [1 .py + 4 .json] — AI agent presets
-  programgarden/ [30 .py] — programgarden 1.21.4
+  programgarden/ [31 .py] — programgarden 1.22.0
     programgarden/
       executor.py — WorkflowExecutor, NodeExecutors, WorkflowJob
       context.py — ExecutionContext, state, events
@@ -30,7 +30,7 @@ src/
     examples/dynamic_plugins/ [11 .py] — user-contributed simple_* plugin examples
     examples/dynamic_nodes/ [1 .py] — Dynamic_* node definition example
     examples/programmer_example/ [3 .py] — live integration scripts (AI agent, quant)
-  finance/ [383 .py] — programgarden-finance 1.6.5 (AI metadata coverage 100% on 150 TR blocks.py)
+  finance/ [384 .py] — programgarden-finance 1.6.7 (AI metadata coverage 100% on 150 TR blocks.py)
     programgarden_finance/
       ls/ — LS Securities API wrapper
         overseas_stock/ — REST 17 TR + Real 7 TR + extension (tracker)
@@ -40,7 +40,7 @@ src/
         oauth/ — token management (generate/revoke)
         real_base.py — WebSocket singleton, subscription, reconnect
         config.py — API URLs, rate limits
-  community/ [89 .py] — programgarden-community 1.13.2
+  community/ [89 .py] — programgarden-community 1.13.6
     programgarden_community/
       plugins/ [78 dirs] — 77 strategy plugins (TECHNICAL 59, POSITION 18)
       nodes/ — 4 community nodes
@@ -98,10 +98,10 @@ src/community/programgarden_community/plugins/__init__.py → 77 plugin registra
 - Poetry Monorepo: 4 packages with path-based develop dependencies
 
 ## DEPS
-### programgarden-core 1.12.4
+### programgarden-core 1.14.0
 pydantic>=2.0.0
 
-### programgarden 1.21.11
+### programgarden 1.22.0
 pydantic>=2.0.0 | croniter^6.0.0 | aiohttp^3.9.0 | aiosqlite^0.20.0
 litellm>=1.40.0 | yfinance^0.2.0 | psutil^6.0.0
 python-dotenv^1.1.0 | pytickersymbols>=1.17.5 | lxml^6.0.2
@@ -111,7 +111,7 @@ dev: fastapi^0.128.0 | uvicorn^0.40.0 | pytest^8.0.0
 pydantic>=2.11.7 | requests^2.32.4 | aiohttp^3.10.0 | websockets^15.0.1
 redis^6.4.0 | python-dotenv^1.1.1
 
-### programgarden-community 1.13.5
+### programgarden-community 1.13.6
 pypdf>=4.0.0
 extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 
@@ -147,7 +147,7 @@ extras: python-docx (docx) | openpyxl (xlsx) | pdfplumber (pdf-tables)
 - [x] ScreenerNode multi-market routing: `market` field (auto / overseas_stock / overseas_futures / korea_stock) + broker auto-detect via find_parent_output + LS overseas_stock fast path + yfinance fallback for futures/korea_stock + visible_when-based field hiding + universe-fallback guard. Example workflows 78-80 cover the trio.
 - [x] Silent-failure hardening (1.21.11): yfinance korea suffix auto-conversion (.KS/.KQ) + LS g3101 per-symbol enrichment + RuntimeError raise on 100% empty result in production (dry_run bypassed).
 - [x] Balance partial-failure guard (core 1.13.0 / programgarden 1.22.0): AccountNode (3 markets) flag `balance._partial_failure=True` + `_failure_codes` + `_failure_reason` when COSOQ02701/CIDBQ05300/CSPAQ22200 partially fail. orderable_amount preserved as None to block silent 0 coercion. PositionSizingNode raises BalanceUnavailableError; IfNode raises ConditionEvaluationError on None numeric comparison. Both ExecutionError subclasses, resilience.fallback=skip absorbs. dry_run preserves legacy silent fallback. Resolver `_` prefix bypass for internal metadata keys.
-- [ ] Node version metadata (unreleased, feat/node-version-metadata branch): 73 nodes (core 69 + community 4) declare `_version` (SemVer) / `_updated_at` (ISO 8601) / `_change_note` (≤120 chars) flat ClassVars. Exposed via `NodeTypeSchema.version` / `updated_at` / `change_note` for UI change detection without consulting CHANGELOG. Regression guards (`test_node_version_metadata.py`, 7 tests) enforce per-class declaration + format. DynamicNodeSchema also exposes the trio for dynamic-injected nodes.
+- [x] Node version metadata (released — core 1.14.0 / community 1.13.6): 73 nodes (core 69 + community 4) declare `_version` (SemVer) / `_updated_at` (ISO 8601) / `_change_note` (≤120 chars) flat ClassVars. Exposed via `NodeTypeSchema.version` / `updated_at` / `change_note` for UI change detection without consulting CHANGELOG. Regression guards (`test_node_version_metadata.py`, 7 tests) enforce per-class declaration + format. DynamicNodeSchema also exposes the trio for dynamic-injected nodes.
 
 ## CONVENTIONS
 - language: Python 3.12+, docs/comments in Korean, code in English
