@@ -1,3 +1,16 @@
+## [1.13.6] - 2026-05-20
+### Added
+- **Per-node version metadata** on all 4 community nodes
+  (`TelegramNode`, `FearGreedIndexNode`, `FundamentalDataNode`,
+  `FileReaderNode`) — each declares the `_version` / `_updated_at` /
+  `_change_note` ClassVar trio (uniform `1.0.0` / `2026-05-19` /
+  `None` baseline), surfaced through `NodeTypeSchema` for UI change
+  detection. See programgarden-core 1.14.0.
+### Dependencies
+- `programgarden-core` ^1.12.4 → ^1.14.0 — requires the per-node
+  version-metadata infrastructure (`NodeTypeSchema.version` /
+  `updated_at` / `change_note`, `DynamicNodeSchema` parity).
+
 ## [1.13.5] - 2026-05-16
 ### Dependencies
 - `programgarden-core` ^1.12.3 → ^1.12.4 — picks up

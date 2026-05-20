@@ -1,5 +1,27 @@
 ## [Unreleased]
 
+## [1.14.0] - 2026-05-20
+### Added
+- **Per-node version metadata** — three flat `ClassVar`s on every
+  registered node (73 total) for UI change detection:
+  - `_version` (SemVer `major.minor.patch`)
+  - `_updated_at` (ISO 8601 `YYYY-MM-DD`)
+  - `_change_note` (`Optional[str]`, ≤120 chars, one-line English summary)
+  `NodeTypeRegistry` auto-extracts them via `getattr`; `NodeTypeSchema`
+  exposes them as `version` / `updated_at` / `change_note`, surfaced by
+  both `get_schema()` and `list_schemas()`. Lets UI consumers detect
+  which nodes changed between releases without consulting CHANGELOG /
+  git log. Initial baseline is uniform (`1.0.0` / `2026-05-19` / `None`);
+  from the next change forward each node bumps its own SemVer + date.
+- **`DynamicNodeSchema` parity** — gains `updated_at` / `change_note`
+  fields (`version` already existed). `register_dynamic_schemas()`
+  accepts the optional keys via dict expansion; defaults applied when
+  omitted.
+- **Regression guards** (`tests/test_node_version_metadata.py`, 7 tests)
+  — `__dict__` checks reject inherited base defaults (forcing explicit
+  per-class declaration on new nodes), SemVer + ISO-date format guards,
+  `_change_note` type/length guard, and schema-exposure assertions.
+
 ## [1.13.0] - 2026-05-19
 ### Added
 - **Balance partial-failure exceptions** — two new `ExecutionError`
