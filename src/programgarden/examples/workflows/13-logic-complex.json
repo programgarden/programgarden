@@ -66,7 +66,15 @@
       "id": "rsi_condition",
       "type": "ConditionNode",
       "plugin": "RSI",
-      "data": "{{ nodes.historical.values }}",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
       "fields": {
         "period": 14,
         "threshold": 30,
@@ -81,7 +89,15 @@
       "id": "macd_condition",
       "type": "ConditionNode",
       "plugin": "MACD",
-      "data": "{{ nodes.historical.values }}",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
       "fields": {
         "fast_period": 12,
         "slow_period": 26,
