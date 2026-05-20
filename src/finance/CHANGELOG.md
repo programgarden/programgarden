@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+## [1.6.8] - 2026-05-20
+### Changed
+- Maintenance release — version bump for cross-package alignment. No finance code changes since 1.6.7.
+
 ## [1.6.7] - 2026-05-16
 ### Dependencies
 - `programgarden-core` ^1.12.3 → ^1.12.4 — picks up

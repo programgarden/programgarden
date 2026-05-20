@@ -1,3 +1,7 @@
+## [1.13.7] - 2026-05-20
+### Changed
+- Maintenance release — version bump for cross-package alignment. No community code changes since 1.13.6.
+
 ## [1.13.6] - 2026-05-20
 ### Added
 - **Per-node version metadata** on all 4 community nodes

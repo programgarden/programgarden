@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [1.22.1] - 2026-05-20
+### Added
+- **ConditionNode data-binding static validation** in `resolver.validate()` — indicator plugins (RSI/MACD/…) require `items {from, extract}`, position plugins (StopLoss/ProfitTarget/TrailingStop) require `positions`. Mirrors the executor runtime branch so the legacy `data`/`params` shape now raises `MISSING_REQUIRED_FIELD` at build time instead of only at dry_run.
+### Fixed
+- 4 example workflows (`13-logic-complex`, `23-display-line-chart`, `24-display-multi-line`, `58-notification-rsi-test`) whose dead `data` bindings meant RSI/MACD never evaluated — corrected to `items {from, extract}` with auto-iterate topology fixes.
+
 ## [1.22.0] - 2026-05-19
 ### Added
 - **Balance partial-failure silent-failure guard** — AccountNode

@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+## [1.14.1] - 2026-05-20
+### Changed
+- Maintenance release — version bump for cross-package alignment. No functional or schema changes since 1.14.0.
+
 ## [1.14.0] - 2026-05-20
 ### Added
 - **Per-node version metadata** — three flat `ClassVar`s on every
