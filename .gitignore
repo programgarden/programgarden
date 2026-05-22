@@ -392,3 +392,5 @@ scripts/**/*.log
 
 # 핸드오버 가이드 (클라이언트/서버 개발자 인수인계용, gitignored)
 .handover/
+# Serena MCP
+.serena/
