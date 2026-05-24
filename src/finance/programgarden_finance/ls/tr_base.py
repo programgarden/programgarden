@@ -26,6 +26,85 @@ logger = logging.getLogger("programgarden.ls.tr_base")
 TRresponse = TypeVar("TRresponse")
 
 
+# Shared registry for the optional account-level cumulative rate-limit gate.
+# LS enforces ONE request budget per account across ALL TRs (not per TR code),
+# so every request for a given account must also pass through a single shared
+# bucket keyed by an account identifier. Keyed separately from the per-TR
+# ``_shared_rate_data`` so the two gates never collide.
+_ACCOUNT_RATE_REGISTRY: Dict[str, dict] = {}
+
+
+class _RateBucket:
+    """Sliding-window rate-limit bucket shared across instances by key.
+
+    Mirrors the per-TR sliding-window logic in :class:`TRRequestAbstract`, but is
+    used for the account-level cumulative gate. A request must acquire a slot
+    here *in addition to* its per-TR bucket, so mixing different TRs on one
+    account can no longer exceed the account budget.
+    """
+
+    def __init__(self, count: int, seconds: int, key: str):
+        self.count = count
+        self.seconds = seconds
+        shared = _ACCOUNT_RATE_REGISTRY.get(key)
+        if shared is None:
+            lock = threading.RLock()
+            shared = {"lock": lock, "cond": threading.Condition(lock), "timestamps": []}
+            _ACCOUNT_RATE_REGISTRY[key] = shared
+        self._lock = shared["lock"]
+        self._cond = shared["cond"]
+        # share the same list object so mutations are visible across instances
+        self.timestamps: list[float] = shared["timestamps"]
+
+    def _cleanup(self) -> None:
+        now = time.time()
+        with self._lock:
+            self.timestamps[:] = [
+                ts for ts in self.timestamps
+                if math.ceil((now - ts) * 100) / 100 < self.seconds
+            ]
+            try:
+                self._cond.notify_all()
+            except Exception:
+                pass
+
+    def acquire(self) -> None:
+        """Block (sync) until a cumulative slot is free, then record the request."""
+        with self._cond:
+            while True:
+                self._cleanup()
+                if len(self.timestamps) < self.count:
+                    self.timestamps.append(time.time())
+                    try:
+                        self._cond.notify_all()
+                    except Exception:
+                        pass
+                    return
+                oldest = min(self.timestamps)
+                wait_time = self.seconds - (time.time() - oldest)
+                if wait_time <= 0:
+                    continue
+                self._cond.wait(wait_time)
+
+    async def acquire_async(self) -> None:
+        """Await (async) until a cumulative slot is free, then record the request."""
+        while True:
+            await asyncio.to_thread(self._cleanup)
+            with self._lock:
+                if len(self.timestamps) < self.count:
+                    self.timestamps.append(time.time())
+                    try:
+                        self._cond.notify_all()
+                    except Exception:
+                        pass
+                    return
+                oldest = min(self.timestamps)
+                wait_time = self.seconds - (time.time() - oldest)
+                if wait_time <= 0:
+                    continue
+            await asyncio.sleep(wait_time)
+
+
 class TRRequestAbstract(ABC):
     """TR 코드 추상 클래스 (in_block 타입을 제너릭으로)"""
 
@@ -38,6 +117,9 @@ class TRRequestAbstract(ABC):
         rate_limit_seconds: int,
         on_rate_limit: Literal["stop", "wait"] = "wait",
         rate_limit_key: Optional[str] = None,
+        account_rate_limit_count: Optional[int] = None,
+        account_rate_limit_seconds: Optional[int] = None,
+        account_rate_limit_key: Optional[str] = None,
     ):
         """
         TR 요청을 초기화합니다.
@@ -47,6 +129,9 @@ class TRRequestAbstract(ABC):
             rate_limit_seconds (int): 요청 속도 제한 시간 (초)
             on_rate_limit (Literal["stop", "wait"]): 속도 제한 초과 시 동작 방식, stop은 요청 안함, wait는 대기 후 재시도
             rate_limit_key (Optional[str]): 속도 제한 상태를 공유할 키 (기본: None, 인스턴스별로 별도 관리)
+            account_rate_limit_count (Optional[int]): 계정 단위 누적 제한 횟수 (LS 는 계정 단위로 모든 TR 합산 제한)
+            account_rate_limit_seconds (Optional[int]): 계정 단위 누적 제한 기간(초)
+            account_rate_limit_key (Optional[str]): 계정 식별 키. 셋 모두 지정 시 per-TR 게이트에 더해 계정 누적 게이트가 활성화됨 (기본 None = 비활성, 동작 불변)
         """
         super().__init__()
 
@@ -80,6 +165,17 @@ class TRRequestAbstract(ABC):
         if on_rate_limit not in ("stop", "wait"):
             raise ValueError("on_rate_limit must be 'stop' or 'wait'")
         self.on_rate_limit = on_rate_limit
+
+        # 계정 단위 누적 게이트 (opt-in). 셋 모두 주어질 때만 활성화하며, 그렇지
+        # 않으면 None 으로 두어 기존 동작을 100% 보존한다. 활성화되면 wait 경로의
+        # 요청이 per-TR 게이트에 더해 계정 공유 버킷도 통과해야 한다.
+        self._account_bucket: Optional[_RateBucket] = None
+        if account_rate_limit_key and account_rate_limit_count and account_rate_limit_seconds:
+            self._account_bucket = _RateBucket(
+                count=account_rate_limit_count,
+                seconds=account_rate_limit_seconds,
+                key=account_rate_limit_key,
+            )
 
     def _build_json_body(self, request_data):
         """
@@ -259,6 +355,11 @@ class TRRequestAbstract(ABC):
         동작 모드가 'wait'일 때 사용됩니다.
         """
 
+        # 계정 누적 게이트 우선 통과 (활성화된 경우). 계정 한도를 모든 TR 합산으로
+        # 강제하므로, 이후 per-TR 게이트와 함께 두 단계를 모두 지나야 한다.
+        if self._account_bucket is not None:
+            self._account_bucket.acquire()
+
         with self._sync_cond:
             while True:
                 # cleanup & check
@@ -290,6 +391,11 @@ class TRRequestAbstract(ABC):
         동작 모드가 'wait'일 때 사용됩니다.
         (간단한 폴링 기반으로 구현하여 이벤트 루프를 블로킹하지 않음)
         """
+        # 계정 누적 게이트 우선 통과 (활성화된 경우). 계정 한도를 모든 TR 합산으로
+        # 강제하므로, 이후 per-TR 게이트와 함께 두 단계를 모두 지나야 한다.
+        if self._account_bucket is not None:
+            await self._account_bucket.acquire_async()
+
         while True:
             # cleanup in thread to avoid blocking loop
             await asyncio.to_thread(self.cleanup_timestamps)

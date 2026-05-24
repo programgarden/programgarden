@@ -45,6 +45,25 @@ class SetupOptions(BaseModel):
 
     여러 인스턴스 간 rate limit 상태를 공유하기 위한 키입니다. (기본값: None)"""
 
+    account_rate_limit_count: Optional[int] = Field(
+        default=None,
+        title="계정 누적 Rate Limit 횟수",
+        description="계정 단위 누적 제한 횟수. LS 는 모든 TR 을 계정 단위로 합산 제한하므로, 셋(count/seconds/key)을 모두 지정하면 per-TR 게이트에 더해 계정 누적 게이트가 활성화됩니다.",
+    )
+    """Cumulative request count allowed per account across all TRs (opt-in)."""
+    account_rate_limit_seconds: Optional[int] = Field(
+        default=None,
+        title="계정 누적 Rate Limit 기간(초)",
+        description="account_rate_limit_count 가 적용되는 기간(초).",
+    )
+    """Sliding window length in seconds for the account-cumulative gate (opt-in)."""
+    account_rate_limit_key: Optional[str] = Field(
+        default=None,
+        title="계정 Rate Limit 키",
+        description="계정 식별 키(예: account_no). 지정 시 같은 계정의 모든 TR 요청이 하나의 누적 버킷을 공유합니다. (기본값: None = 비활성)",
+    )
+    """Account identifier key that all TRs of one account share for cumulative limiting."""
+
     # 내부 실행 컨텍스트에서만 참조하는 객체이므로 검증/직렬화와 분리
     token_manager: Optional[TokenManager] = Field(
         default=None,

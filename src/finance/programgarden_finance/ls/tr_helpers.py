@@ -39,6 +39,9 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
             rate_limit_seconds=request_data.options.rate_limit_seconds,
             on_rate_limit=request_data.options.on_rate_limit,
             rate_limit_key=request_data.options.rate_limit_key,
+            account_rate_limit_count=getattr(request_data.options, "account_rate_limit_count", None),
+            account_rate_limit_seconds=getattr(request_data.options, "account_rate_limit_seconds", None),
+            account_rate_limit_key=getattr(request_data.options, "account_rate_limit_key", None),
         )
         self.request_data = request_data
         self._response_builder = response_builder
