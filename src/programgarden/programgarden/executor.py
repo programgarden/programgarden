@@ -15152,7 +15152,14 @@ class WorkflowExecutor:
 
         # stats/workflow_start_datetime/risk_halt 복원
         if checkpoint.get("stats"):
-            job.stats.update(checkpoint["stats"])
+            # A-4: 동봉된 ordering 세대(_order_cycle)를 분리해 속성으로 복원.
+            # stats 사전에는 노출하지 않는다(런타임 stats 오염 방지).
+            _saved_stats = dict(checkpoint["stats"])
+            try:
+                job._order_cycle = int(_saved_stats.pop("_order_cycle", 0) or 0)
+            except (TypeError, ValueError):
+                job._order_cycle = 0
+            job.stats.update(_saved_stats)
         if checkpoint.get("workflow_start_datetime"):
             try:
                 wsd = datetime.fromisoformat(checkpoint["workflow_start_datetime"])
@@ -15606,6 +15613,17 @@ class WorkflowJob:
         self._restore_checkpoint: Optional[Dict[str, Any]] = None
         self._workflow_json_hash: Optional[str] = None  # 워크플로우 정의 해시
 
+        # A-4: 주문 idempotency 의 "ordering 세대(generation)" 카운터.
+        # 절대 stats["flow_executions"] 를 cycle 로 쓰지 말 것 — flow_executions 는
+        # 초기 main flow 직후 +1 되고(executor.py 의 flow 종료부) 복구 시 그 증가된
+        # 값으로 복원되므로, realtime 복구의 main flow "전체 재실행"이 원본(0)과 다른
+        # cycle(≥1)로 동일 주문을 기록 → 키 불일치 → 중복 차단 실패(realtime 이중주문).
+        # _order_cycle 은 "현재 실행 중인 main flow 의 세대"만 의미한다:
+        #   - 초기 main flow / 복구 시 entry 재실행 → 항상 0 (동일 키 보장)
+        #   - schedule_tick 재실행 → +1 (정당한 신규 주문 세대)
+        # 이벤트 루프 재개를 위해 복구 시 entry 재실행 동안만 0 으로 고정 후 원복.
+        self._order_cycle: int = 0
+
         # Precompute node categories for optimization
         self._has_schedule_node = self._check_has_schedule_node()
         self._stay_connected_nodes = self._find_stay_connected_nodes()
@@ -15763,8 +15781,18 @@ class WorkflowJob:
                 if checkpoint.get("workflow_type") == "oneshot":
                     await self._execute_main_flow(skip_nodes=set(skipped))
                 else:
-                    # 실시간: Main Flow 전체 재실행
-                    await self._execute_main_flow()
+                    # 실시간: Main Flow 전체 재실행.
+                    # A-4: entry 재실행은 원본 초기 main flow(세대 0)와 동일한 주문
+                    # 의도를 재생성하므로 _order_cycle 을 0 으로 고정해야 원본 기록과
+                    # 키가 일치해 중복 주문이 차단된다(복원된 세대값을 쓰면 드리프트).
+                    # 이벤트 루프 재개 시 후속 schedule_tick 이 pre-crash 세대와
+                    # 충돌하지 않도록 복원된 세대값으로 원복한다.
+                    _resume_cycle = self._order_cycle
+                    self._order_cycle = 0
+                    try:
+                        await self._execute_main_flow()
+                    finally:
+                        self._order_cycle = _resume_cycle
                 self._restore_mode = False
                 self._restore_checkpoint = None
             else:
@@ -16904,6 +16932,9 @@ class WorkflowJob:
 
             elif event.type == "schedule_tick":
                 self.stats["flow_executions"] += 1
+                # A-4: schedule_tick 은 정당한 신규 ordering 세대 → cycle +1.
+                # (entry 세대 0 과 분리되어 동일 주문이 매 tick 차단되지 않음)
+                self._order_cycle += 1
                 await self._execute_main_flow()
                 await self.context.notify_job_state("cycle_completed", self.stats)
         
@@ -17711,13 +17742,18 @@ class WorkflowJob:
                     port: output.value for port, output in ports.items()
                 }
 
+            # A-4: ordering 세대를 stats 사본에 동봉(스키마 변경 없이 영속화).
+            # 복구 시 schedule_tick 세대가 pre-crash 세대와 충돌하지 않게 한다.
+            stats_to_save = dict(self.stats)
+            stats_to_save["_order_cycle"] = self._order_cycle
+
             mgr.save_checkpoint(
                 job_id=self.job_id,
                 workflow_id=self.workflow.workflow_id,
                 status=self.status,
                 workflow_type="realtime" if self._stay_connected_nodes else "oneshot",
                 completed_nodes=list(self._completed_node_ids),
-                stats=self.stats,
+                stats=stats_to_save,
                 node_outputs=node_outputs,
                 workflow_json_hash=self._workflow_json_hash,
                 workflow_start_datetime=self.workflow_start_datetime.isoformat() if self.workflow_start_datetime else None,

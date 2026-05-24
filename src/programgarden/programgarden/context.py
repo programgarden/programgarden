@@ -1351,7 +1351,10 @@ class ExecutionContext:
         check_fn = getattr(job, 'check_order_already_submitted', None)
         if check_fn is None:
             return None
-        cycle = job.stats.get('flow_executions', 0) if hasattr(job, 'stats') else 0
+        # A-4: ordering 세대(_order_cycle) 사용. flow_executions 는 복구 시 드리프트
+        # 하므로 cycle 로 쓰면 realtime 복구가 동일 주문을 다른 키로 기록해 중복 차단
+        # 실패. _order_cycle 은 entry main flow(초기/복구 재실행) 에서 항상 0.
+        cycle = getattr(job, '_order_cycle', 0)
         try:
             return check_fn(node_id=node_id, cycle=cycle, item=item)
         except Exception:
@@ -1378,7 +1381,8 @@ class ExecutionContext:
         record_fn = getattr(job, 'record_order_submitted', None)
         if record_fn is None:
             return
-        cycle = job.stats.get('flow_executions', 0) if hasattr(job, 'stats') else 0
+        # A-4: check 와 동일한 _order_cycle 사용 (드리프트 방지 — 위 check 주석 참조).
+        cycle = getattr(job, '_order_cycle', 0)
         try:
             record_fn(node_id=node_id, cycle=cycle, item=item, order_result=order_result)
         except Exception:

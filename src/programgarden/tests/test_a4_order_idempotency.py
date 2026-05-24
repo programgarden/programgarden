@@ -615,3 +615,188 @@ class TestA4IdempotencyGuard:
         k0 = WorkflowJob._build_order_idempotency_key("wf", "order1", 0, {"symbol": "AAPL"})
         k1 = WorkflowJob._build_order_idempotency_key("wf", "order1", 1, {"symbol": "AAPL"})
         assert k0 != k1, "다른 사이클은 다른 key여야 함 (realtime 재주문 허용)"
+
+
+# ---------------------------------------------------------------------------
+# A-4-5: 실시간(realtime) 복구 중복 주문 — 키 사이클 드리프트 재현 + 수정 검증
+# ---------------------------------------------------------------------------
+#
+# Finding (A-4 잔여): oneshot 복구는 cycle=0 ↔ cycle=0 으로 idempotency 키가
+# 일치해 중복이 차단된다. 그러나 realtime 워크플로우는:
+#   1) 초기 main flow 가 flow_executions=0 에서 주문 → 키 cycle=0 으로 기록
+#   2) main flow 완료 직후 flow_executions += 1 (executor.py:15772), 이어서
+#      checkpoint loop 시작 → 저장되는 checkpoint 의 flow_executions 는 ≥1
+#   3) 복구 시 realtime 은 main flow "전체 재실행"(skip 없음, executor.py:15767)
+#      이 재실행은 복원된 flow_executions(≥1)을 cycle 로 사용 → 키 cycle=1
+#   → cycle 0(기록) ≠ 1(복구 재실행) → idempotency 가 차단하지 못하고 재주문.
+#
+# 아래 테스트는 이 시나리오를 mocked dispatch 카운트로 증명한다(장 마감 주말,
+# 실 API 불필요). 수정 후에는 복구 후 dispatch 가 추가되지 않아야 한다.
+
+
+class TestA4RealtimeRecoveryDuplicateProof:
+    """realtime 워크플로우 복구 시 cycle 드리프트로 인한 중복 주문 재현/차단 증명."""
+
+    def _minimal_workflow(self) -> dict:
+        return {
+            "id": "wf-a4-rt",
+            "name": "A-4 Realtime Recovery Proof",
+            "nodes": [
+                {"id": "start", "type": "StartNode"},
+                {
+                    "id": "broker",
+                    "type": "OverseasStockBrokerNode",
+                    "credential_id": "broker-cred",
+                },
+                {
+                    "id": "order1",
+                    "type": "OverseasStockNewOrderNode",
+                    "side": "buy",
+                    "order_type": "limit",
+                    "order": {
+                        "symbol": "AAPL",
+                        "exchange": "NASDAQ",
+                        "quantity": 10,
+                        "price": 150.0,
+                    },
+                },
+            ],
+            "edges": [
+                {"from": "start", "to": "broker"},
+                {"from": "broker", "to": "order1"},
+            ],
+            "credentials": [
+                {
+                    "credential_id": "broker-cred",
+                    "type": "broker_ls_overseas_stock",
+                    "data": [
+                        {"key": "appkey", "value": "test-appkey"},
+                        {"key": "appsecret", "value": "test-appsecret"},
+                    ],
+                }
+            ],
+        }
+
+    def _mock_order_result(self, log: list) -> dict:
+        log.append("order_submitted")
+        return {
+            "success": True,
+            "order_no": "ORD-MOCK-RT-001",
+            "symbol": "AAPL",
+            "exchange": "NASDAQ",
+            "side": "buy",
+            "quantity": 10,
+            "price": 150.0,
+            "status": "submitted",
+        }
+
+    @pytest.mark.asyncio
+    async def test_realtime_recovery_fires_once_with_idempotency(self):
+        """
+        realtime 복구 시 idempotency 활성이면 dispatch 가 1회로 유지되어야 한다.
+
+        시나리오:
+        1. enable_order_idempotency=True 로 초기 실행 → order1 이 cycle=0 으로 기록.
+        2. realtime 크래시 시뮬레이션: workflow_type="realtime",
+           flow_executions=1, completed_nodes 에 order1 포함(완료된 상태)인
+           checkpoint 저장. (realtime 은 복구 시 완료 노드도 재실행)
+        3. restore() → 복구 main flow 전체 재실행.
+
+        기대(수정 후): cycle 안정화로 복구 재실행이 동일 키를 만들어 차단 →
+        dispatch 추가 없음.
+        버그(수정 전): 복구 재실행이 cycle=1 키를 만들어 차단 실패 →
+        dispatch += 1 (= 중복 주문).
+        """
+        from programgarden import WorkflowExecutor
+        from programgarden.database.checkpoint_manager import CheckpointManager
+        from programgarden.executor import NewOrderNodeExecutor, WorkflowJob
+
+        workflow = self._minimal_workflow()
+        dispatch_log: list = []
+
+        async def fake_execute_overseas_stock(self_ex, ls, order, side, order_type, config, context, node_id):
+            return self._mock_order_result(dispatch_log)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = WorkflowExecutor()
+
+            with patch.object(
+                NewOrderNodeExecutor,
+                "_execute_overseas_stock",
+                new=fake_execute_overseas_stock,
+            ), patch("programgarden.executor.ensure_ls_login") as login_mock:
+                login_mock.return_value = (MagicMock(), True, None)
+                job1 = await asyncio.wait_for(
+                    executor.execute(
+                        workflow,
+                        context_params={"enable_order_idempotency": True},
+                        storage_dir=tmpdir,
+                    ),
+                    timeout=15.0,
+                )
+                await asyncio.wait_for(job1._task, timeout=15.0)
+
+            calls_after_first_run = len(dispatch_log)
+            assert calls_after_first_run >= 1, "첫 실행에서 dispatch 없음"
+
+            db_path = os.path.join(tmpdir, "wf-a4-rt_workflow.db")
+            assert os.path.exists(db_path), "DB가 생성되지 않음"
+
+            mgr = CheckpointManager(db_path)
+            broker_outputs = job1.context.get_all_outputs("broker")
+
+            # 첫 실행 정상 완료 시 _delete_checkpoint 가 order_idempotency 도 함께
+            # 삭제하므로(checkpoint_manager 정책), 크래시 직전 "기록된 주문" 상태를
+            # 재현하기 위해 entry 세대(cycle=0)로 주문 기록을 수동 삽입한다.
+            normalized_order = {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 10, "price": 150.0}
+            idem_key = WorkflowJob._build_order_idempotency_key(
+                workflow_id="wf-a4-rt", node_id="order1", cycle=0, item=normalized_order,
+            )
+            mgr.record_order_submission(
+                job_id=job1.job_id,
+                idempotency_key=idem_key,
+                order_result={"success": True, "order_no": "ORD-MOCK-RT-001"},
+            )
+
+            # realtime 크래시 상태: flow_executions=1, order1 완료 포함.
+            # (realtime 복구는 completed_nodes 를 skip 하지 않고 전부 재실행)
+            mgr.save_checkpoint(
+                job_id=job1.job_id,
+                workflow_id="wf-a4-rt",
+                status="running",
+                workflow_type="realtime",
+                completed_nodes=["start", "broker", "order1"],
+                stats={"flow_executions": 1, "errors_count": 0, "last_error": None},
+                node_outputs={"broker": broker_outputs},
+                workflow_json_hash=None,
+            )
+
+            with patch.object(
+                NewOrderNodeExecutor,
+                "_execute_overseas_stock",
+                new=fake_execute_overseas_stock,
+            ), patch("programgarden.executor.ensure_ls_login") as login_mock2:
+                login_mock2.return_value = (MagicMock(), True, None)
+                job2 = await asyncio.wait_for(
+                    executor.restore(
+                        workflow,
+                        job_id=job1.job_id,
+                        storage_dir=tmpdir,
+                        context_params={"enable_order_idempotency": True},
+                        secrets={"credential_id": {"appkey": "test-appkey", "appsecret": "test-appsecret"}},
+                    ),
+                    timeout=15.0,
+                )
+                await asyncio.wait_for(job2._task, timeout=15.0)
+
+            calls_after_recovery = len(dispatch_log)
+
+            assert calls_after_recovery == calls_after_first_run, (
+                f"realtime 복구 중복 주문! "
+                f"복구 전={calls_after_first_run}, 복구 후={calls_after_recovery}. "
+                "cycle 드리프트로 idempotency 키가 어긋나 재주문이 차단되지 않음."
+            )
+            print(
+                f"\n  [A-4 realtime] idempotency 활성: "
+                f"dispatch {calls_after_recovery}회 (복구 전={calls_after_first_run}) — realtime 복구 중복 차단"
+            )
