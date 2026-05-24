@@ -548,3 +548,14 @@ def set_tr_header_options(
         req_options = request_data.options
 
     req_options.token_manager = token_manager
+
+    # 계정 단위 rate-limit 스코프 (A-1): per-TR 슬라이딩 윈도우 버킷의 공유 키를
+    # 로그인 계정(appkey)으로 네임스페이스한다. 같은 계정의 동시 연결(LS 계정당
+    # 최대 3 연결)은 하나의 버킷을 공유해 계정 한도를 함께 지키고, 한 프로세스에서
+    # 여러 계정을 운용해도 서로 다른 계정은 버킷이 분리되어 간섭하지 않는다.
+    # per-TR 의 rate_limit_count/seconds 수치는 그대로 두고 버킷 "키"만 바꾸므로,
+    # 단일 계정 배포는 동작이 100% 불변(appkey 1개 → 동일 버킷)이다.
+    appkey = getattr(token_manager, "appkey", None)
+    base_key = getattr(req_options, "rate_limit_key", None)
+    if appkey and base_key and not str(base_key).startswith(f"{appkey}:"):
+        req_options.rate_limit_key = f"{appkey}:{base_key}"
