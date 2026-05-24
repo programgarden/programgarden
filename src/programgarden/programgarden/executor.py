@@ -12085,6 +12085,22 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     f"Drawdown exceeds {drawdown_threshold}% threshold"
                 )
 
+        # === 3.7. A-4: idempotency 체크 (opt-in: enable_order_idempotency=True) ===
+        # 주문이 이미 제출된 경우 (체크포인트 복구 후 재실행 등) LS 재전송 없이
+        # 저장된 결과를 반환한다. dry_run / paper_trading은 자동 우회.
+        existing_order = context.check_order_already_submitted(
+            node_id=node_id,
+            item=normalized_order,
+        )
+        if existing_order is not None:
+            context.log(
+                "info",
+                f"{node_type}: 중복 주문 차단 — idempotency 레지스트리에서 기존 결과 반환 "
+                f"(order_no={existing_order.get('order_no', '?')})",
+                node_id,
+            )
+            return existing_order
+
         # === 4. LS 로그인 ===
         credential = context.get_credential()
         if not credential:
@@ -12109,20 +12125,28 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
             # === 5. 상품별 주문 실행 ===
             if product == "overseas_stock":
-                return await self._execute_overseas_stock(
+                order_result = await self._execute_overseas_stock(
                     ls, normalized_order, side, order_type, config, context, node_id
                 )
             elif product in ("overseas_futures", "overseas_futureoption"):
-                return await self._execute_overseas_futures(
+                order_result = await self._execute_overseas_futures(
                     ls, normalized_order, side, order_type, config, context, node_id
                 )
             elif product == "korea_stock":
-                return await self._execute_korea_stock(
+                order_result = await self._execute_korea_stock(
                     ls, normalized_order, side, order_type, config, context, node_id
                 )
             else:
                 context.log("error", f"{node_type}: Unsupported product: {product}", node_id)
                 return self._error_result(f"Unsupported product: {product}")
+
+            # === 5.5. A-4: 성공 주문 idempotency 레지스트리에 기록 ===
+            context.record_order_submitted(
+                node_id=node_id,
+                order_result=order_result,
+                item=normalized_order,
+            )
+            return order_result
 
         except Exception as e:
             context.log("error", f"{node_type}: Unexpected error: {e}", node_id)
@@ -16229,6 +16253,12 @@ class WorkflowJob:
             print(f"    [{idx+1}/{total}] Processing: {item_label}")
             self.context.log("debug", f"Auto-iterate [{idx+1}/{total}]: {item_label}", node_id)
 
+            # A-3: per-item spacing for order / external-API nodes
+            # _rate_limit ClassVar가 있는 노드(주문, HTTP 등)에 한해 min_interval_sec
+            # 만큼 간격을 보장한다. skip이 아니라 sleep → 모든 N 아이템이 실행됨.
+            # rate-limit이 없는 순수 데이터/계산 노드는 영향 없음 (하위 호환).
+            await self._auto_iterate_pacing_sleep(node_id, node.node_type)
+
             try:
                 outputs = await self.executor.execute_node(
                     node_id=node_id,
@@ -16244,6 +16274,9 @@ class WorkflowJob:
                 self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
                 # continue_on_error: 기본적으로 계속 진행
                 all_results.append({"error": str(e), "item": current_item})
+            finally:
+                # per-item 실행 완료 후 spacing 타임스탬프 갱신
+                self._auto_iterate_mark_executed(node_id)
 
         # === 반복 종료 후 컨텍스트 정리 ===
         self.context.clear_iteration_context()
@@ -16876,6 +16909,56 @@ class WorkflowJob:
         
         logger.info("Event loop ended")
 
+    # ============================================================
+    # A-3: auto-iterate per-item pacing (spacing, NOT skipping)
+    # ============================================================
+
+    async def _auto_iterate_pacing_sleep(self, node_id: str, node_type: str) -> None:
+        """auto-iterate 루프에서 per-item 간격을 보장하는 sleep.
+
+        노드의 _rate_limit.min_interval_sec를 읽어 직전 아이템 실행으로부터
+        충분한 시간이 지나지 않았으면 잔여 시간만큼 sleep 후 실행.
+        모든 N 아이템이 반드시 실행된다 (skip 없음).
+
+        rate-limit이 없는 노드(ConditionNode 등)는 즉시 통과 — 하위 호환.
+        """
+        from programgarden_core.registry import NodeTypeRegistry
+        import time as _time
+
+        registry = NodeTypeRegistry()
+        node_class = registry.get(node_type)
+        if not node_class:
+            return
+
+        class_rate_limit = getattr(node_class, '_rate_limit', None)
+        if not class_rate_limit:
+            return
+
+        min_interval_sec = class_rate_limit.min_interval_sec
+        if min_interval_sec <= 0:
+            return
+
+        # 직전 아이템 실행 타임스탬프 조회
+        pacing_key = "_auto_iterate_last_executed_at"
+        last_ts = self.context.get_node_state(node_id, pacing_key)
+        if last_ts is not None:
+            elapsed = _time.monotonic() - last_ts
+            remaining = min_interval_sec - elapsed
+            if remaining > 0:
+                self.context.log(
+                    "info",
+                    f"Auto-iterate pacing: {node_id} — {remaining:.2f}s 대기 "
+                    f"(min_interval_sec={min_interval_sec})",
+                    node_id,
+                )
+                await asyncio.sleep(remaining)
+
+    def _auto_iterate_mark_executed(self, node_id: str) -> None:
+        """auto-iterate 아이템 실행 완료 시 타임스탬프 갱신."""
+        import time as _time
+        pacing_key = "_auto_iterate_last_executed_at"
+        self.context.set_node_state(node_id, pacing_key, _time.monotonic())
+
     async def _apply_rate_limit_guard(
         self,
         node_id: str,
@@ -17494,6 +17577,128 @@ class WorkflowJob:
             db_path = self.context._resolve_db_path(db_filename)
             self._checkpoint_mgr = CheckpointManager(db_path)
         return self._checkpoint_mgr
+
+    # ============================================================
+    # A-4: 주문 idempotency 로컬 레지스트리
+    # LS는 신규주문 client-order-id를 미지원하므로 로컬 레지스트리가 유일 경로.
+    # enable_order_idempotency=True context_param이 있을 때만 활성화 (opt-in).
+    # dry_run / paper_trading 경로는 건너뜀.
+    # ============================================================
+
+    @staticmethod
+    def _build_order_idempotency_key(
+        workflow_id: str,
+        node_id: str,
+        cycle: int,
+        item: Any,
+    ) -> str:
+        """결정적 주문 idempotency 키 생성.
+
+        workflow_id + node_id + cycle + item_hash 조합으로
+        동일 주문을 유일하게 식별한다. 워크플로우 재시작 / 체크포인트 복구 후
+        같은 주문 의도가 동일 키를 생성한다.
+
+        Args:
+            workflow_id: 워크플로우 ID
+            node_id: 주문 노드 ID
+            cycle: 실행 사이클 번호 (realtime 워크플로우에서 사이클별로 독립)
+            item: 주문 정보 dict (symbol, exchange, quantity, price 등)
+
+        Returns:
+            "{workflow_id}:{node_id}:{cycle}:{item_hash8}" 형식의 키
+        """
+        import hashlib, json
+        item_str = json.dumps(item, sort_keys=True, default=str) if item else "{}"
+        item_hash = hashlib.sha256(item_str.encode()).hexdigest()[:8]
+        return f"{workflow_id}:{node_id}:{cycle}:{item_hash}"
+
+    def _is_order_idempotency_enabled(self) -> bool:
+        """opt-in idempotency 가드 활성 여부 확인.
+
+        조건:
+        - context_params['enable_order_idempotency'] == True
+        - dry_run이 아님 (dry_run은 실제 주문 없으므로 체크 불필요)
+        - paper_trading이 아님 (모의투자는 중복 위험 없음)
+        """
+        if getattr(self.context, 'is_dry_run', False):
+            return False
+        ctx_params = getattr(self.context, 'context_params', {}) or {}
+        if ctx_params.get('paper_trading'):
+            return False
+        return bool(ctx_params.get('enable_order_idempotency', False))
+
+    def check_order_already_submitted(
+        self,
+        node_id: str,
+        cycle: int,
+        item: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """이미 제출된 주문인지 확인.
+
+        enable_order_idempotency=True 일 때만 작동.
+        이미 제출된 주문이면 저장된 결과를 반환하고, 미제출이면 None.
+
+        Args:
+            node_id: 주문 노드 ID
+            cycle: 현재 사이클 번호
+            item: 주문 정보 dict
+
+        Returns:
+            저장된 주문 결과 dict 또는 None (미제출 / 기능 비활성)
+        """
+        if not self._is_order_idempotency_enabled():
+            return None
+        try:
+            key = self._build_order_idempotency_key(
+                workflow_id=self.workflow.workflow_id,
+                node_id=node_id,
+                cycle=cycle,
+                item=item,
+            )
+            mgr = self._get_checkpoint_mgr()
+            return mgr.get_submitted_order(job_id=self.job_id, idempotency_key=key)
+        except Exception as e:
+            logger.warning(f"Order idempotency 체크 실패 (무시): {e}")
+            return None
+
+    def record_order_submitted(
+        self,
+        node_id: str,
+        cycle: int,
+        item: Any,
+        order_result: Dict[str, Any],
+    ) -> None:
+        """주문 제출 결과를 idempotency 레지스트리에 기록.
+
+        enable_order_idempotency=True 이고 주문이 성공한 경우에만 기록.
+        실패한 주문은 기록하지 않음 (재시도 허용).
+
+        Args:
+            node_id: 주문 노드 ID
+            cycle: 현재 사이클 번호
+            item: 주문 정보 dict
+            order_result: 주문 결과 dict (success, order_no 포함)
+        """
+        if not self._is_order_idempotency_enabled():
+            return
+        # 실패한 주문은 기록하지 않음 (재시도 가능해야 함)
+        if not order_result.get('success'):
+            return
+        try:
+            key = self._build_order_idempotency_key(
+                workflow_id=self.workflow.workflow_id,
+                node_id=node_id,
+                cycle=cycle,
+                item=item,
+            )
+            mgr = self._get_checkpoint_mgr()
+            mgr.record_order_submission(
+                job_id=self.job_id,
+                idempotency_key=key,
+                order_result=order_result,
+            )
+        except Exception as e:
+            logger.warning(f"Order idempotency 기록 실패 (무시): {e}")
 
     async def _save_checkpoint(self) -> None:
         """현재 상태를 DB에 저장."""

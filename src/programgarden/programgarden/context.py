@@ -1315,14 +1315,74 @@ class ExecutionContext:
     def set_workflow_job(self, job: Any) -> None:
         """
         Set workflow job reference for start datetime access.
-        
+
         This enables notify_workflow_pnl to include workflow_start_datetime
         and workflow_elapsed_days in events.
-        
+
         Args:
             job: WorkflowJob instance
         """
         self._workflow_job = job
+
+    # ============================================================
+    # A-4: 주문 idempotency 위임 (WorkflowJob → ExecutionContext)
+    # 주문 executor가 context만 받으므로 context를 통해 job 메서드에 접근.
+    # ============================================================
+
+    def check_order_already_submitted(
+        self,
+        node_id: str,
+        item: Optional[Any] = None,
+    ) -> Optional[Any]:
+        """이미 제출된 주문인지 확인 (WorkflowJob.check_order_already_submitted 위임).
+
+        WorkflowJob이 없거나 idempotency가 비활성화된 경우 None 반환.
+
+        Args:
+            node_id: 주문 노드 ID
+            item: 주문 정보 dict (symbol, exchange, quantity, price 등)
+
+        Returns:
+            이미 제출된 경우 주문 결과 dict, 미제출/비활성이면 None
+        """
+        job = self._workflow_job
+        if job is None:
+            return None
+        check_fn = getattr(job, 'check_order_already_submitted', None)
+        if check_fn is None:
+            return None
+        cycle = job.stats.get('flow_executions', 0) if hasattr(job, 'stats') else 0
+        try:
+            return check_fn(node_id=node_id, cycle=cycle, item=item)
+        except Exception:
+            return None
+
+    def record_order_submitted(
+        self,
+        node_id: str,
+        order_result: Any,
+        item: Optional[Any] = None,
+    ) -> None:
+        """주문 제출 성공 후 idempotency 레지스트리에 기록 (WorkflowJob 위임).
+
+        WorkflowJob이 없거나 idempotency가 비활성화된 경우 무시.
+
+        Args:
+            node_id: 주문 노드 ID
+            order_result: 주문 결과 dict (success, order_no 포함)
+            item: 주문 정보 dict
+        """
+        job = self._workflow_job
+        if job is None:
+            return
+        record_fn = getattr(job, 'record_order_submitted', None)
+        if record_fn is None:
+            return
+        cycle = job.stats.get('flow_executions', 0) if hasattr(job, 'stats') else 0
+        try:
+            record_fn(node_id=node_id, cycle=cycle, item=item, order_result=order_result)
+        except Exception:
+            pass
 
     async def notify_node_state(
         self,

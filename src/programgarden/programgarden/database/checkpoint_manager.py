@@ -63,6 +63,18 @@ class CheckpointManager:
                     PRIMARY KEY (job_id, node_id, port_name)
                 )
             """)
+            # A-4: 주문 idempotency 레지스트리
+            # enable_order_idempotency=True 일 때 주문 중복 방지에 사용.
+            # idempotency_key = workflow_id:node_id:cycle:item_hash
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS order_idempotency (
+                    job_id TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    order_result_json TEXT NOT NULL,
+                    submitted_at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, idempotency_key)
+                )
+            """)
             conn.commit()
 
     # ============================================================
@@ -240,8 +252,64 @@ class CheckpointManager:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM checkpoint_meta WHERE job_id = ?", (job_id,))
             conn.execute("DELETE FROM checkpoint_outputs WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM order_idempotency WHERE job_id = ?", (job_id,))
             conn.commit()
         logger.debug(f"Checkpoint 삭제: job={job_id}")
+
+    # ============================================================
+    # A-4: 주문 idempotency 레지스트리
+    # ============================================================
+
+    def record_order_submission(
+        self,
+        job_id: str,
+        idempotency_key: str,
+        order_result: Dict[str, Any],
+    ) -> None:
+        """주문 제출 결과를 idempotency 레지스트리에 기록.
+
+        enable_order_idempotency=True 인 워크플로우에서 주문 노드가 LS에
+        주문을 제출한 직후 호출됩니다. 동일 idempotency_key가 존재하면
+        IGNORE (멱등, 이미 기록된 것을 덮어쓰지 않음).
+
+        Args:
+            job_id: 워크플로우 job ID
+            idempotency_key: 결정적 키 (workflow_id:node_id:cycle:item_hash)
+            order_result: 주문 결과 dict (order_no 포함)
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        result_json = json.dumps(order_result, default=str)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT OR IGNORE INTO order_idempotency
+                    (job_id, idempotency_key, order_result_json, submitted_at)
+                VALUES (?, ?, ?, ?)
+            """, (job_id, idempotency_key, result_json, now))
+            conn.commit()
+        logger.debug(
+            f"Order idempotency 기록: job={job_id}, key={idempotency_key}, "
+            f"order_no={order_result.get('order_no', '?')}"
+        )
+
+    def get_submitted_order(
+        self,
+        job_id: str,
+        idempotency_key: str,
+    ) -> Optional[Dict[str, Any]]:
+        """idempotency_key로 이미 제출된 주문 결과를 조회.
+
+        Returns:
+            주문 결과 dict (order_no 포함) 또는 None (미제출)
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT order_result_json FROM order_idempotency "
+                "WHERE job_id = ? AND idempotency_key = ?",
+                (job_id, idempotency_key),
+            ).fetchone()
+        if row is None:
+            return None
+        return json.loads(row[0])
 
     def has_checkpoint(self, job_id: str) -> bool:
         """체크포인트 존재 여부."""
