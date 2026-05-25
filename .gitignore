@@ -394,3 +394,6 @@ scripts/**/*.log
 .handover/
 # Serena MCP
 .serena/
+
+# 로컬 전용 격리 Docker 환경 (claude --dangerously-skip-permissions). 커밋 금지
+/sandbox/
