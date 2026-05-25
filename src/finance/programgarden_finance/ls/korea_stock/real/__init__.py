@@ -14,7 +14,7 @@ KO:
 """
 
 from programgarden_core.bases import BaseReal
-from programgarden_finance.ls.real_base import RealRequestAbstract
+from programgarden_finance.ls.real_base import RealRequestAbstract, DEFAULT_MAX_SUBSCRIBE_SYMBOLS
 from programgarden_finance.ls.token_manager import TokenManager
 
 # ─── 시세 TR imports ───
@@ -117,7 +117,8 @@ class Real(RealRequestAbstract, BaseReal):
         recv_timeout=5.0,
         ping_interval=30.0,
         ping_timeout=5.0,
-        max_backoff=60.0
+        max_backoff=60.0,
+        max_subscribe_symbols: int = DEFAULT_MAX_SUBSCRIBE_SYMBOLS,
     ):
         super().__init__(
             reconnect=reconnect,
@@ -125,7 +126,8 @@ class Real(RealRequestAbstract, BaseReal):
             ping_interval=ping_interval,
             ping_timeout=ping_timeout,
             max_backoff=max_backoff,
-            token_manager=token_manager
+            token_manager=token_manager,
+            max_subscribe_symbols=max_subscribe_symbols,
         )
         if not token_manager:
             raise ValueError("token_manager is required")

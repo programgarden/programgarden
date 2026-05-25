@@ -39,6 +39,30 @@ _RESPONSE_MODULE_BASES = [
     "programgarden_finance.ls.common.real",
 ]
 
+# A-6: per-connection real-time subscription cap.
+# EN: LS allows up to 3 concurrent connections per account and limits the number
+#     of real-time registrations per connection. We default to a conservative 100
+#     symbols per connection (sum across all TR codes) and reject overflow with an
+#     explicit error instead of silently flooding the websocket.
+# KO: LS는 계정당 최대 3개 동시연결을 허용하며 연결당 실시간 등록 수에 제한이 있습니다.
+#     연결당(모든 TR 코드 합산) 기본 100종목으로 보수적으로 cap 을 두고, 초과 시
+#     웹소켓을 조용히 폭주시키는 대신 명시적 에러로 거부합니다.
+DEFAULT_MAX_SUBSCRIBE_SYMBOLS = 100
+
+
+class SubscriptionLimitExceeded(RuntimeError):
+    """Raised when a real-time subscription would exceed the per-connection cap.
+
+    EN:
+        Subclasses ``RuntimeError`` so existing real-time error handling keeps
+        working, while callers that want to react specifically (e.g. trim the
+        symbol list or open another connection) can catch this type.
+
+    KO:
+        ``RuntimeError`` 를 상속하여 기존 실시간 에러 처리와 호환되며, 종목 수를
+        줄이거나 다른 연결을 열어 대응하려는 호출자는 이 타입만 잡을 수 있습니다.
+    """
+
 
 class RealRequestAbstract(ABC):
     """Reconnect-capable abstract base for LS real-time requests.
@@ -60,6 +84,7 @@ class RealRequestAbstract(ABC):
         ping_timeout=5.0,
         max_backoff=60.0,
         token_manager: Optional[TokenManager] = None,
+        max_subscribe_symbols: int = DEFAULT_MAX_SUBSCRIBE_SYMBOLS,
     ):
         super().__init__()
 
@@ -69,6 +94,8 @@ class RealRequestAbstract(ABC):
         self._ping_timeout = ping_timeout
         self._max_backoff = max_backoff
         self._token_manager = token_manager
+        # A-6: 연결당 실시간 구독 종목 수 cap. <=0 이면 무제한(가드 비활성).
+        self._max_subscribe_symbols = max_subscribe_symbols
 
         # Event that is set when a websocket connection is successfully opened
         self._connected_event = asyncio.Event()
@@ -101,6 +128,25 @@ class RealRequestAbstract(ABC):
     def get_subscribed_symbols(self) -> Dict[str, List[str]]:
         """현재 구독 중인 심볼 목록 (tr_cd -> symbols)."""
         return dict(self._subscribed_symbols)
+
+    def get_subscription_count(self) -> int:
+        """현재 연결의 실시간 등록 총 수 (모든 TR 코드 합산).
+
+        EN: Total real-time registrations across all TR codes on this connection.
+        KO: 이 연결의 모든 TR 코드에 걸친 실시간 등록 총 개수.
+        """
+        return sum(len(syms) for syms in self._subscribed_symbols.values())
+
+    def get_subscription_capacity(self) -> Optional[int]:
+        """남은 구독 여유분 (cap 비활성 시 None).
+
+        EN: Remaining subscription slots before the per-connection cap, or
+            ``None`` when the cap is disabled (``max_subscribe_symbols <= 0``).
+        KO: 연결당 cap 까지 남은 구독 가능 수. cap 비활성 시 ``None``.
+        """
+        if self._max_subscribe_symbols <= 0:
+            return None
+        return max(0, self._max_subscribe_symbols - self.get_subscription_count())
 
     def get_staleness_sec(self) -> float:
         """M-13: 마지막 메시지 수신 이후 경과 시간 (초). 0이면 아직 메시지 없음."""
@@ -519,6 +565,27 @@ class RealRequestAbstract(ABC):
 
         if self._ws is None:
             raise RuntimeError("WebSocket is not connected")
+
+        # A-6: 연결당 구독 종목 수 cap 검사 (mutate 전에 거부).
+        # 이미 구독 중인 심볼은 재구독(재연결 자동 재구독 포함)에서 카운트 0이므로
+        # current_total 을 넘기지 않는다. 신규 unique 만 cap 에 더해 검사한다.
+        if self._max_subscribe_symbols > 0:
+            existing_for_tr = self._subscribed_symbols.get(tr_cd, [])
+            # 배치 내 중복 제거(순서 보존) 후 기존 미구독 심볼만 신규로 집계
+            new_unique = [
+                sym for sym in dict.fromkeys(symbols)
+                if sym not in existing_for_tr
+            ]
+            current_total = self.get_subscription_count()
+            projected = current_total + len(new_unique)
+            if projected > self._max_subscribe_symbols:
+                raise SubscriptionLimitExceeded(
+                    f"실시간 구독 종목 수가 연결당 상한({self._max_subscribe_symbols})을 "
+                    f"초과합니다: 현재 {current_total}개 구독 + 신규 {len(new_unique)}개 "
+                    f"= {projected}개 요청 (tr_cd={tr_cd}). LS는 계정당 최대 3개 "
+                    f"동시연결을 허용하며 연결당 실시간 등록 수에 제한이 있습니다. "
+                    f"종목 수를 줄이거나 max_subscribe_symbols 를 조정하세요."
+                )
 
         # 구독 심볼 추적 (재연결 시 자동 재구독용)
         if tr_cd not in self._subscribed_symbols:
