@@ -693,19 +693,28 @@ class TestA4RealtimeRecoveryDuplicateProof:
     @pytest.mark.asyncio
     async def test_realtime_recovery_fires_once_with_idempotency(self):
         """
-        realtime 복구 시 idempotency 활성이면 dispatch 가 1회로 유지되어야 한다.
+        A-4 cycle stability: an in-flight order (recorded in the registry but the
+        node NOT yet checkpointed as completed) must be blocked by idempotency on the
+        realtime recovery re-run, keeping dispatch at 1.
 
-        시나리오:
-        1. enable_order_idempotency=True 로 초기 실행 → order1 이 cycle=0 으로 기록.
-        2. realtime 크래시 시뮬레이션: workflow_type="realtime",
-           flow_executions=1, completed_nodes 에 order1 포함(완료된 상태)인
-           checkpoint 저장. (realtime 은 복구 시 완료 노드도 재실행)
-        3. restore() → 복구 main flow 전체 재실행.
+        This is the path where A-4b's structural skip does NOT apply: order1 is absent
+        from completed_nodes (the crash hit just before the node-completion
+        checkpoint), so it is not a skip target and only cycle stabilization
+        (idempotency) can stop the re-fire. (The structural skip of *completed* orders
+        is proven separately in test_realtime_recovery_skips_completed_*.)
 
-        기대(수정 후): cycle 안정화로 복구 재실행이 동일 키를 만들어 차단 →
-        dispatch 추가 없음.
-        버그(수정 전): 복구 재실행이 cycle=1 키를 만들어 차단 실패 →
-        dispatch += 1 (= 중복 주문).
+        Scenario:
+        1. Initial run with enable_order_idempotency=True → order1 recorded at cycle=0.
+        2. Simulated realtime crash: workflow_type="realtime", flow_executions=1,
+           completed_nodes WITHOUT order1 (crash just before completion), registry
+           still holds the cycle=0 record. Realtime re-executes the whole main flow.
+        3. restore() → order1 re-executes → idempotency check blocks it via the same
+           cycle=0 key.
+
+        Expected (after fix): cycle stays stable → same key → blocked → no extra
+        dispatch.
+        Bug (before fix): the recovery re-run builds a cycle=1 key → block misses →
+        dispatch += 1 (= duplicate order).
         """
         from programgarden import WorkflowExecutor
         from programgarden.database.checkpoint_manager import CheckpointManager
@@ -758,14 +767,17 @@ class TestA4RealtimeRecoveryDuplicateProof:
                 order_result={"success": True, "order_no": "ORD-MOCK-RT-001"},
             )
 
-            # realtime 크래시 상태: flow_executions=1, order1 완료 포함.
-            # (realtime 복구는 completed_nodes 를 skip 하지 않고 전부 재실행)
+            # Realtime crash state (in-flight): flow_executions=1, order1 NOT completed
+            # (crash hit after LS send + registry record but before the node-completion
+            # checkpoint). Because order1 is absent from completed_nodes it is not an
+            # A-4b skip target, so on re-execution only cycle stability (idempotency)
+            # can block the re-fire.
             mgr.save_checkpoint(
                 job_id=job1.job_id,
                 workflow_id="wf-a4-rt",
                 status="running",
                 workflow_type="realtime",
-                completed_nodes=["start", "broker", "order1"],
+                completed_nodes=["start", "broker"],
                 stats={"flow_executions": 1, "errors_count": 0, "last_error": None},
                 node_outputs={"broker": broker_outputs},
                 workflow_json_hash=None,
@@ -792,11 +804,117 @@ class TestA4RealtimeRecoveryDuplicateProof:
             calls_after_recovery = len(dispatch_log)
 
             assert calls_after_recovery == calls_after_first_run, (
-                f"realtime 복구 중복 주문! "
-                f"복구 전={calls_after_first_run}, 복구 후={calls_after_recovery}. "
-                "cycle 드리프트로 idempotency 키가 어긋나 재주문이 차단되지 않음."
+                f"Duplicate order on realtime recovery! "
+                f"before={calls_after_first_run}, after={calls_after_recovery}. "
+                "Cycle drift misaligned the idempotency key, so the re-order was not "
+                "blocked."
             )
             print(
-                f"\n  [A-4 realtime] idempotency 활성: "
-                f"dispatch {calls_after_recovery}회 (복구 전={calls_after_first_run}) — realtime 복구 중복 차단"
+                f"\n  [A-4 realtime] idempotency ON: "
+                f"dispatch={calls_after_recovery} (before={calls_after_first_run}) — "
+                "in-flight re-order blocked on recovery"
+            )
+
+    @pytest.mark.asyncio
+    async def test_realtime_recovery_skips_completed_order_without_idempotency(self):
+        """
+        A-4b structural skip: a COMPLETED new-order node must NOT re-fire on realtime
+        recovery even when idempotency is OFF (the default).
+
+        This is the opt-in-independent safety net. Without the structural skip, the
+        realtime full re-run would re-execute the completed order node and — because
+        idempotency is disabled — re-fire the order (duplicate). The skip removes the
+        completed new-order node from the re-execution entirely.
+
+        Scenario:
+        1. Initial run with idempotency OFF → order1 dispatched once.
+        2. Simulated realtime crash: workflow_type="realtime", flow_executions=1,
+           completed_nodes INCLUDING order1 (completed + checkpointed), order1 output
+           preserved in node_outputs. No idempotency record (feature disabled).
+        3. restore() with idempotency OFF → order1 is structurally skipped.
+
+        Expected (with A-4b): dispatch unchanged (skip prevents re-fire).
+        Without A-4b: dispatch += 1 (idempotency OFF cannot block) → duplicate order.
+        """
+        from programgarden import WorkflowExecutor
+        from programgarden.database.checkpoint_manager import CheckpointManager
+        from programgarden.executor import NewOrderNodeExecutor
+
+        workflow = self._minimal_workflow()
+        dispatch_log: list = []
+
+        async def fake_execute_overseas_stock(self_ex, ls, order, side, order_type, config, context, node_id):
+            return self._mock_order_result(dispatch_log)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = WorkflowExecutor()
+
+            # 1) Initial run, idempotency OFF (default).
+            with patch.object(
+                NewOrderNodeExecutor,
+                "_execute_overseas_stock",
+                new=fake_execute_overseas_stock,
+            ), patch("programgarden.executor.ensure_ls_login") as login_mock:
+                login_mock.return_value = (MagicMock(), True, None)
+                job1 = await asyncio.wait_for(
+                    executor.execute(workflow, storage_dir=tmpdir),
+                    timeout=15.0,
+                )
+                await asyncio.wait_for(job1._task, timeout=15.0)
+
+            calls_after_first_run = len(dispatch_log)
+            assert calls_after_first_run >= 1, "no dispatch on first run"
+
+            db_path = os.path.join(tmpdir, "wf-a4-rt_workflow.db")
+            assert os.path.exists(db_path), "DB was not created"
+
+            mgr = CheckpointManager(db_path)
+            broker_outputs = job1.context.get_all_outputs("broker")
+            order_outputs = job1.context.get_all_outputs("order1")
+
+            # 2) Realtime crash state: order1 COMPLETED + checkpointed (its output is
+            # preserved so downstream consumers read the original result after skip).
+            # No idempotency record — the feature is OFF; only the structural skip
+            # can prevent a re-fire here.
+            mgr.save_checkpoint(
+                job_id=job1.job_id,
+                workflow_id="wf-a4-rt",
+                status="running",
+                workflow_type="realtime",
+                completed_nodes=["start", "broker", "order1"],
+                stats={"flow_executions": 1, "errors_count": 0, "last_error": None},
+                node_outputs={"broker": broker_outputs, "order1": order_outputs},
+                workflow_json_hash=None,
+            )
+
+            # 3) Recovery, idempotency still OFF.
+            with patch.object(
+                NewOrderNodeExecutor,
+                "_execute_overseas_stock",
+                new=fake_execute_overseas_stock,
+            ), patch("programgarden.executor.ensure_ls_login") as login_mock2:
+                login_mock2.return_value = (MagicMock(), True, None)
+                job2 = await asyncio.wait_for(
+                    executor.restore(
+                        workflow,
+                        job_id=job1.job_id,
+                        storage_dir=tmpdir,
+                        secrets={"credential_id": {"appkey": "test-appkey", "appsecret": "test-appsecret"}},
+                    ),
+                    timeout=15.0,
+                )
+                await asyncio.wait_for(job2._task, timeout=15.0)
+
+            calls_after_recovery = len(dispatch_log)
+
+            assert calls_after_recovery == calls_after_first_run, (
+                f"Duplicate order on realtime recovery WITHOUT idempotency! "
+                f"before={calls_after_first_run}, after={calls_after_recovery}. "
+                "A-4b structural skip should remove the completed new-order node from "
+                "the realtime re-execution regardless of the opt-in flag."
+            )
+            print(
+                f"\n  [A-4b realtime] idempotency OFF: "
+                f"dispatch={calls_after_recovery} (before={calls_after_first_run}) — "
+                "completed order structurally skipped on recovery"
             )

@@ -15781,16 +15781,38 @@ class WorkflowJob:
                 if checkpoint.get("workflow_type") == "oneshot":
                     await self._execute_main_flow(skip_nodes=set(skipped))
                 else:
-                    # 실시간: Main Flow 전체 재실행.
-                    # A-4: entry 재실행은 원본 초기 main flow(세대 0)와 동일한 주문
-                    # 의도를 재생성하므로 _order_cycle 을 0 으로 고정해야 원본 기록과
-                    # 키가 일치해 중복 주문이 차단된다(복원된 세대값을 쓰면 드리프트).
-                    # 이벤트 루프 재개 시 후속 schedule_tick 이 pre-crash 세대와
-                    # 충돌하지 않도록 복원된 세대값으로 원복한다.
+                    # Realtime: re-execute the entire main flow (to rebuild live
+                    # subscriptions and condition state after a crash).
+                    # A-4: the entry re-execution recreates the same order intent as
+                    # the original initial main flow (generation 0), so _order_cycle
+                    # must be pinned to 0 — that keeps the idempotency key aligned with
+                    # the original record and blocks duplicates (using the restored
+                    # generation value would drift). After the entry re-run we restore
+                    # the saved generation so later schedule_tick cycles do not collide
+                    # with the pre-crash generation.
+                    #
+                    # A-4b: new-order nodes that already completed (= sent to LS and
+                    # checkpointed) are skipped structurally — a safety net independent
+                    # of the opt-in idempotency flag. Cycle stabilization (A-4) only
+                    # blocks when opt-in is enabled; removing a completed order node
+                    # from the re-execution makes re-firing impossible regardless of the
+                    # flag. The restored output (checkpoint node_outputs, applied at
+                    # restore step 7 via set_output) is still handed to downstream nodes,
+                    # so they read the original order result. Data/market/realtime/
+                    # condition nodes are NOT skipped — they re-execute to rebuild
+                    # subscriptions/state (the whole point of the realtime full re-run).
+                    completed_order_nodes = self._completed_new_order_node_ids(skipped)
+                    if completed_order_nodes:
+                        self.context.log(
+                            "info",
+                            f"A-4b: realtime recovery — structurally skipping "
+                            f"{len(completed_order_nodes)} completed new-order node(s) "
+                            f"to prevent re-firing: {sorted(completed_order_nodes)}",
+                        )
                     _resume_cycle = self._order_cycle
                     self._order_cycle = 0
                     try:
-                        await self._execute_main_flow()
+                        await self._execute_main_flow(skip_nodes=completed_order_nodes)
                     finally:
                         self._order_cycle = _resume_cycle
                 self._restore_mode = False
@@ -15912,6 +15934,45 @@ class WorkflowJob:
             await self.context.cleanup_persistent_nodes()
             # Cleanup listeners
             await self.context.cleanup_listeners()
+
+    def _completed_new_order_node_ids(self, completed_nodes) -> Set[str]:
+        """A-4b: the subset of completed nodes that are 'new-order' nodes.
+
+        A realtime workflow re-executes the entire main flow on recovery (to rebuild
+        live subscriptions/state). But re-executing a new-order node that already
+        completed (= sent to LS and checkpointed) re-fires the same order. Users who
+        did not enable the opt-in ``enable_order_idempotency`` (the default) are
+        exposed because the idempotency block does not run for them.
+
+        Passing this set to ``_execute_main_flow(skip_nodes=...)`` removes completed
+        new-order nodes from the re-execution itself, structurally preventing re-firing
+        regardless of the flag. The restored output (checkpoint node_outputs) is still
+        provided to downstream nodes, so they read the original order result unchanged.
+
+        Only new-order (``NewOrderNodeExecutor``) nodes are targeted — modify/cancel are
+        excluded to match the A-4 idempotency scope exactly (a duplicate *new* order is
+        the only catastrophic case).
+        """
+        try:
+            order_types = {
+                nt
+                for nt, ex in self.executor._executors.items()
+                if isinstance(ex, NewOrderNodeExecutor)
+            }
+        except Exception:
+            # Fall back to the known new-order node types if registry access fails
+            # (behavior-preserving).
+            order_types = {
+                "OverseasStockNewOrderNode",
+                "OverseasFuturesNewOrderNode",
+                "KoreaStockNewOrderNode",
+            }
+        result: Set[str] = set()
+        for node_id in completed_nodes or ():
+            node = self.workflow.nodes.get(node_id)
+            if node is not None and node.node_type in order_types:
+                result.add(node_id)
+        return result
 
     async def _execute_main_flow(self, skip_nodes: Optional[Set[str]] = None) -> None:
         """Execute all nodes in topological order with state notifications
