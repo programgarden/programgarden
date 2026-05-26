@@ -44,6 +44,28 @@ class LS(SingletonClientMixin, BaseClient):
             self.token = block
             self.token_manager.update_from_block(block)
 
+    def set_token_provider(
+        self,
+        provider=None,
+        *,
+        async_provider=None,
+    ) -> None:
+        """Opt-in: route token issuance through server-provided callbacks.
+
+        Verified League §3.2.3. When set, login()/refresh fetch the token from
+        the provider instead of self-issuing via GenerateToken, so a remote
+        server is the single token issuer and this client is a pure consumer
+        (no appsecret needed). Each callback returns
+        (access_token, expires_at_epoch_seconds); async_provider is awaited.
+        Pass both as None to clear and revert to the default self-issue path.
+
+        Intentionally NOT decorated with @require_korean_alias: this is an
+        integration hook, not part of the user-facing trading DSL surface.
+        """
+        with self._sync_lock:
+            self.token_manager.token_provider = provider
+            self.token_manager.async_token_provider = async_provider
+
     @require_korean_alias
     def login(
         self,
@@ -66,6 +88,16 @@ class LS(SingletonClientMixin, BaseClient):
             AppKeyException: 앱 키 또는 시크릿 키가 제공되지 않은 경우.
             LoginException: 로그인 과정에서 오류가 발생한 경우.
         """
+
+        # Provider/consumer mode (Verified League §3.2.3): when a token provider
+        # is configured, a remote server issues the token and this client does
+        # not hold the appsecret. Route through the provider (no appsecret req).
+        if self.token_manager.has_provider():
+            with self._sync_lock:
+                if appkey:
+                    self.token_manager.appkey = appkey
+                self.token_manager.configure_trading_mode(paper_trading)
+            return self.token_manager.ensure_fresh_token(force_refresh=True)
 
         if not appkey or not appsecretkey:
             raise AppKeyException()
@@ -113,6 +145,19 @@ class LS(SingletonClientMixin, BaseClient):
             AppKeyException: 앱 키 또는 시크릿 키가 제공되지 않은 경우.
             LoginException: 로그인 과정에서 오류가 발생한 경우.
         """
+
+        # Provider/consumer mode (Verified League §3.2.3): server-issued token,
+        # no appsecret required.
+        if self.token_manager.has_provider():
+            if self._async_lock is None:
+                with self._sync_lock:
+                    if self._async_lock is None:
+                        self._async_lock = asyncio.Lock()
+            async with self._async_lock:
+                if appkey:
+                    self.token_manager.appkey = appkey
+                self.token_manager.configure_trading_mode(paper_trading)
+            return await self.token_manager.ensure_fresh_token_async(force_refresh=True)
 
         if not appkey or not appsecretkey:
             raise AppKeyException()
