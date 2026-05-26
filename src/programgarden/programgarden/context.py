@@ -150,11 +150,16 @@ class ExecutionContext:
         workflow_edges: Optional[List[Any]] = None,  # List[ResolvedEdge]
         workflow_nodes: Optional[Dict[str, Any]] = None,  # Dict[str, ResolvedNode]
         storage_dir: Optional[str] = None,
+        ls_token_provider: Optional[Any] = None,  # sync (appkey, product, paper_trading) -> (token, expires_at_epoch)
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id
         self._storage_dir = storage_dir
         self.context_params = context_params or {}
+
+        # Opt-in LS token provider (Verified League §3.2.3). When set, broker
+        # logins consume a server-issued token instead of self-issuing.
+        self.ls_token_provider = ls_token_provider
 
         # Secrets storage (never logged, separate from context_params)
         self._secrets: Dict[str, Any] = secrets or {}
