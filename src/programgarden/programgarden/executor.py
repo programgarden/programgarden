@@ -277,7 +277,23 @@ class LSClientManager:
         # 새 인스턴스 생성 (싱글톤 우회)
         ls = object.__new__(LS)
         ls.__init__()
-        
+
+        # Verified League §3.2.3: when a token provider is configured, route this
+        # LS instance through it (server = single issuer) so login consumes a
+        # server-issued token instead of self-issuing via GenerateToken. login()
+        # is synchronous, so we register a sync provider (it is also reused by the
+        # async refresh path as a fallback). Bound to this instance's
+        # appkey/product/paper_trading; returns (access_token, expires_at_epoch).
+        token_provider = getattr(context, "ls_token_provider", None)
+        if token_provider is not None:
+            def _sync_token_provider(
+                _appkey=appkey, _product=product, _paper=paper_trading,
+            ):
+                return token_provider(_appkey, _product, _paper)
+
+            ls.set_token_provider(provider=_sync_token_provider)
+            context.log("info", f"LS token provider attached for {product}", node_id)
+
         # 로그인
         login_result = ls.login(
             appkey=appkey,
@@ -14976,6 +14992,21 @@ class WorkflowExecutor:
         self._executors: Dict[str, NodeExecutorBase] = self._init_executors()
         # 동적 노드 레지스트리 (지연 임포트로 순환 참조 방지)
         self._dynamic_registry = None
+        # Opt-in LS token provider (Verified League §3.2.3). When set, broker
+        # logins fetch the token from this callback (a remote server) instead of
+        # self-issuing via GenerateToken, so the platform server is the single
+        # token issuer and this executor is a pure consumer. login() is sync, so
+        # the provider is a sync callable:
+        #   (appkey: str, product: str, paper_trading: bool) -> (access_token, expires_at_epoch)
+        # Left None for standalone/public usage (unchanged self-issue path).
+        self.ls_token_provider = None
+
+    def set_ls_token_provider(self, provider) -> None:
+        """Configure the opt-in LS token provider (Verified League §3.2.3).
+
+        Pass None to clear and revert to the default self-issue path.
+        """
+        self.ls_token_provider = provider
 
     def _get_dynamic_registry(self):
         """DynamicNodeRegistry 싱글톤 반환 (지연 로딩)"""
@@ -15231,8 +15262,9 @@ class WorkflowExecutor:
             workflow_edges=resolved.edges,
             workflow_nodes=resolved.nodes,
             storage_dir=storage_dir,
+            ls_token_provider=self.ls_token_provider,
         )
-        
+
         # Set listeners (Option A: inject at creation)
         if listeners:
             context.set_listeners(listeners)
@@ -15355,6 +15387,7 @@ class WorkflowExecutor:
             workflow_edges=resolved.edges,
             workflow_nodes=resolved.nodes,
             storage_dir=storage_dir,
+            ls_token_provider=self.ls_token_provider,
         )
 
         if listeners:
