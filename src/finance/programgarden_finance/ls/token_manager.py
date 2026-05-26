@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import asyncio
 import threading
 import time
-from typing import Awaitable, Callable, Optional, ClassVar
+from typing import Awaitable, Callable, Optional, ClassVar, Tuple
 
 from .config import URLS
 import logging
@@ -25,6 +25,18 @@ class TokenManager:
     acquired_at: ClassVar[float] = None  # epoch seconds
     paper_trading: bool = False
     wss_url: Optional[str] = None
+    # Opt-in token provider callbacks (Verified League §3.2.3). When set, the
+    # token is fetched from this callback (a server endpoint) instead of being
+    # self-issued via GenerateToken — making a remote server the single token
+    # issuer and this client a pure consumer (no appsecret required). Each
+    # callback returns (access_token, expires_at_epoch_seconds). Left as None for
+    # standalone/public usage, which keeps the original self-issue behaviour.
+    token_provider: Optional[Callable[[], Tuple[str, float]]] = field(
+        default=None, compare=False, repr=False
+    )
+    async_token_provider: Optional[Callable[[], Awaitable[Tuple[str, float]]]] = field(
+        default=None, compare=False, repr=False
+    )
 
     def __post_init__(self):
         # 동시 갱신 방지 Lock
@@ -75,6 +87,22 @@ class TokenManager:
         self.paper_trading = mode
         self.wss_url = URLS.get_wss_url(mode)
 
+    def has_provider(self) -> bool:
+        """True if a token provider callback is configured (consumer mode)."""
+        return self.token_provider is not None or self.async_token_provider is not None
+
+    def apply_token(self, access_token: str, expires_at: float) -> None:
+        """Inject a server-issued token directly (provider/consumer mode).
+
+        expires_at is an absolute epoch-seconds expiry. We store acquired_at=now
+        and derive expires_in so is_expired()/expires_at keep working unchanged.
+        """
+        self.access_token = access_token
+        self.token_type = self.token_type or "Bearer"
+        now = time.time()
+        self.acquired_at = now
+        self.expires_in = max(0, int(expires_at - now))
+
     def update_from_block(self, block) -> None:
         """토큰 응답 블록으로부터 상태를 갱신합니다."""
         if not block:
@@ -87,6 +115,28 @@ class TokenManager:
 
     def _refresh_token(self) -> bool:
         """내부적으로 토큰을 동기 갱신합니다 (중복 갱신 방지 Lock 적용)."""
+        # Provider/consumer mode: a remote server is the single token issuer, so
+        # never self-issue here. appsecret is not required in this mode.
+        if self.token_provider is not None:
+            if not self._refresh_lock.acquire(timeout=10):
+                logger.warning("Token refresh lock timeout - another refresh in progress")
+                return self.is_token_available()
+            try:
+                if not self.is_expired():
+                    return True
+                access_token, expires_at = self.token_provider()
+                if access_token:
+                    self.apply_token(access_token, expires_at)
+                    logger.info("Token refreshed via token_provider (sync)")
+                    return True
+                logger.error("token_provider returned an empty access_token (sync)")
+                return False
+            except Exception as e:
+                logger.error(f"token_provider refresh failed (sync): {e}")
+                return False
+            finally:
+                self._refresh_lock.release()
+
         if not self.appkey or not self.appsecretkey:
             return False
 
@@ -129,6 +179,29 @@ class TokenManager:
 
     async def _async_refresh_token(self) -> bool:
         """내부적으로 토큰을 비동기 갱신합니다 (중복 갱신 방지 Lock 적용)."""
+        # Provider/consumer mode: prefer the async callback; fall back to the
+        # sync one. A remote server issues the token, so never self-issue.
+        if self.has_provider():
+            if self._async_refresh_lock is None:
+                self._async_refresh_lock = asyncio.Lock()
+            async with self._async_refresh_lock:
+                if not self.is_expired():
+                    return True
+                try:
+                    if self.async_token_provider is not None:
+                        access_token, expires_at = await self.async_token_provider()
+                    else:
+                        access_token, expires_at = self.token_provider()
+                    if access_token:
+                        self.apply_token(access_token, expires_at)
+                        logger.info("Token refreshed via token_provider (async)")
+                        return True
+                    logger.error("token_provider returned an empty access_token (async)")
+                    return False
+                except Exception as e:
+                    logger.error(f"token_provider refresh failed (async): {e}")
+                    return False
+
         if not self.appkey or not self.appsecretkey:
             return False
 
