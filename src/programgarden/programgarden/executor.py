@@ -58,7 +58,16 @@ def _build_reconnect_hooks(
     get_positions() / refresh_now().
     """
 
+    # Map notification severity → on_log level so connection events also land in
+    # the event-log channel, not just on_notification (C-8).
+    _level_by_severity = {
+        NotificationSeverity.INFO: "info",
+        NotificationSeverity.WARNING: "warning",
+        NotificationSeverity.CRITICAL: "error",
+    }
+
     async def notify(category, severity, title, message, data):
+        # 1. Investor notification (on_notification → telegram/UI/AI).
         await context.send_notification(
             category=category,
             severity=severity,
@@ -67,6 +76,14 @@ def _build_reconnect_hooks(
             node_id=node_id,
             node_type=node_type,
             data=data,
+        )
+        # 2. Event log (context._logs + on_log listeners → recorded and shown to
+        #    the user). Connection lifecycle must surface in both channels.
+        context.log(
+            _level_by_severity.get(severity, "info"),
+            f"{title}: {message}",
+            node_id,
+            data,
         )
 
     def _position_quantities(positions: Dict[str, Any]) -> Dict[str, Any]:

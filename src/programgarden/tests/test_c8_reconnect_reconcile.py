@@ -216,9 +216,13 @@ class FakeTracker:
 class FakeContext:
     def __init__(self):
         self.notifications: List[Dict[str, Any]] = []
+        self.logs: List[Dict[str, Any]] = []
 
     async def send_notification(self, **kwargs):
         self.notifications.append(kwargs)
+
+    def log(self, level, message, node_id=None, data=None):
+        self.logs.append({"level": level, "message": message, "node_id": node_id, "data": data})
 
 
 def _pos(qty):
@@ -288,6 +292,40 @@ class TestBuildReconnectHooks:
         assert n["node_id"] == "acc-7"
         assert n["node_type"] == "KoreaStockRealAccountNode"
         assert n["data"] == {"k": "v"}
+
+    @pytest.mark.asyncio
+    async def test_notify_also_emits_to_on_log(self):
+        # Connection events must surface in BOTH channels: on_notification AND
+        # on_log (recorded + shown to the user). Severity maps to log level.
+        ctx = FakeContext()
+        notify, _ = _build_reconnect_hooks(FakeTracker({}, {}, {}, {}), ctx, "acc-9", "OverseasStockRealAccountNode")
+
+        await notify(
+            NotificationCategory.CONNECTION_FAILED,
+            NotificationSeverity.CRITICAL,
+            "재연결 실패",
+            "최대 재시도 소진",
+            {"total_disconnection_sec": 31.0},
+        )
+        assert len(ctx.notifications) == 1            # on_notification
+        assert len(ctx.logs) == 1                     # on_log
+        log = ctx.logs[0]
+        assert log["level"] == "error"               # CRITICAL → error
+        assert "재연결 실패" in log["message"] and "최대 재시도 소진" in log["message"]
+        assert log["node_id"] == "acc-9"
+        assert log["data"] == {"total_disconnection_sec": 31.0}
+
+    @pytest.mark.asyncio
+    async def test_severity_to_log_level_mapping(self):
+        ctx = FakeContext()
+        notify, _ = _build_reconnect_hooks(FakeTracker({}, {}, {}, {}), ctx, "acc", "KoreaStockRealAccountNode")
+        for sev, expected in [
+            (NotificationSeverity.INFO, "info"),
+            (NotificationSeverity.WARNING, "warning"),
+            (NotificationSeverity.CRITICAL, "error"),
+        ]:
+            await notify(NotificationCategory.CONNECTION_RESTORED, sev, "t", "m", {})
+        assert [l["level"] for l in ctx.logs] == ["info", "warning", "error"]
 
     @pytest.mark.asyncio
     async def test_end_to_end_handler_with_executor_hooks(self):
