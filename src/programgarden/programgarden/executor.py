@@ -37,6 +37,95 @@ from programgarden_core.nodes.base import BaseMessagingNode
 logger = logging.getLogger("programgarden.executor")
 
 
+def _build_reconnect_hooks(
+    tracker: Any,
+    context: "ExecutionContext",
+    node_id: str,
+    node_type: str,
+):
+    """Build (notify, reconcile) hooks for a realtime account tracker's
+    ReconnectHandler (C-8).
+
+    - notify: forwards connection lost/restored/failed events to
+      context.send_notification so investors (UI/telegram) see them.
+    - reconcile: on reconnect, snapshots the tracker's last-known open-orders /
+      positions, forces a fresh re-query (tracker.refresh_now), and diffs them to
+      surface fills/cancels/position drift that happened during the gap. It is
+      notify-only — it never re-triggers downstream nodes or places orders.
+
+    Works uniformly across the three product trackers (overseas_stock /
+    overseas_futureoption / korea_stock), which share get_open_orders() /
+    get_positions() / refresh_now().
+    """
+
+    async def notify(category, severity, title, message, data):
+        await context.send_notification(
+            category=category,
+            severity=severity,
+            title=title,
+            message=message,
+            node_id=node_id,
+            node_type=node_type,
+            data=data,
+        )
+
+    def _position_quantities(positions: Dict[str, Any]) -> Dict[str, Any]:
+        """Map symbol -> quantity for a position snapshot (qty access is uniform)."""
+        out: Dict[str, Any] = {}
+        for sym, pos in (positions or {}).items():
+            qty = getattr(pos, "quantity", None)
+            out[str(sym)] = qty
+        return out
+
+    async def reconcile() -> Optional[Dict[str, Any]]:
+        # 1. Snapshot last-known state (the websocket was down, so the tracker
+        #    still holds the pre-gap view).
+        try:
+            before_orders = set(tracker.get_open_orders().keys())
+            before_positions = _position_quantities(tracker.get_positions())
+        except Exception as e:
+            logger.warning(f"[{node_id}] reconcile snapshot failed: {e}")
+            before_orders, before_positions = set(), {}
+
+        # 2. Force a fresh re-query over the restored connection.
+        await tracker.refresh_now()
+
+        # 3. Diff against the fresh state.
+        after_orders = set(tracker.get_open_orders().keys())
+        after_positions = _position_quantities(tracker.get_positions())
+
+        # Orders that disappeared during the gap = filled or cancelled.
+        closed_orders = [str(o) for o in (before_orders - after_orders)]
+        # Orders that appeared during the gap = placed elsewhere / fills awaited.
+        new_orders = [str(o) for o in (after_orders - before_orders)]
+        # Position quantity changes (added, removed, or resized).
+        position_changes = []
+        for sym in set(before_positions) | set(after_positions):
+            b = before_positions.get(sym)
+            a = after_positions.get(sym)
+            if b != a:
+                position_changes.append({"symbol": sym, "before": b, "after": a})
+
+        drift = bool(closed_orders or new_orders or position_changes)
+        summary = {
+            "drift": drift,
+            "closed_or_filled_orders": closed_orders,
+            "new_orders": new_orders,
+            "position_changes": position_changes,
+            "open_orders_count": len(after_orders),
+            "positions_count": len(after_positions),
+        }
+        if drift:
+            logger.warning(
+                f"[{node_id}] reconnect reconcile detected drift: "
+                f"closed/filled={closed_orders} new={new_orders} "
+                f"positions_changed={[c['symbol'] for c in position_changes]}"
+            )
+        return summary
+
+    return notify, reconcile
+
+
 class NodeExecutorBase:
     """Node executor base class"""
 
@@ -4661,9 +4750,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 tax_rates={"DEFAULT": tax_rate},
             )
             
-            # ReconnectHandler 설정 (토큰 갱신 포함)
+            # ReconnectHandler 설정 (토큰 갱신 포함) + C-8 연결 알림/reconcile 훅
             token_manager = ls._token_manager if hasattr(ls, '_token_manager') else None
-            reconnect_handler = ReconnectHandler(token_manager)
+            reconnect_notify, reconnect_reconcile = _build_reconnect_hooks(
+                tracker, context, node_id, "OverseasStockRealAccountNode"
+            )
+            reconnect_handler = ReconnectHandler(
+                token_manager, notify=reconnect_notify, reconcile=reconnect_reconcile
+            )
             
             # 연결 끊김 콜백 등록
             async def on_disconnect():
@@ -4847,9 +4941,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 commission_rate=futures_fee_per_contract,  # 계약당 수수료
             )
             
-            # ReconnectHandler 설정
+            # ReconnectHandler 설정 + C-8 연결 알림/reconcile 훅
             token_manager = ls._token_manager if hasattr(ls, '_token_manager') else None
-            reconnect_handler = ReconnectHandler(token_manager)
+            reconnect_notify, reconnect_reconcile = _build_reconnect_hooks(
+                tracker, context, node_id, "OverseasFuturesRealAccountNode"
+            )
+            reconnect_handler = ReconnectHandler(
+                token_manager, notify=reconnect_notify, reconcile=reconnect_reconcile
+            )
             
             # 연결 끊김 콜백
             async def on_disconnect():
@@ -5047,7 +5146,12 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             )
 
             token_manager = ls._token_manager if hasattr(ls, '_token_manager') else None
-            reconnect_handler = ReconnectHandler(token_manager)
+            reconnect_notify, reconnect_reconcile = _build_reconnect_hooks(
+                tracker, context, node_id, "KoreaStockRealAccountNode"
+            )
+            reconnect_handler = ReconnectHandler(
+                token_manager, notify=reconnect_notify, reconcile=reconnect_reconcile
+            )
 
             async def on_disconnect():
                 can_retry = await reconnect_handler.handle_disconnect()

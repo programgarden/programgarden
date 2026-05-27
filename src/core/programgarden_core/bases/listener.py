@@ -507,6 +507,9 @@ class NotificationCategory(str, Enum):
     WORKFLOW_FAILED = "workflow_failed"          # 워크플로우 실패
     RETRY_EXHAUSTED = "retry_exhausted"         # 재시도 모두 소진 (최종 실패)
     SCHEDULE_STARTED = "schedule_started"       # 스케줄 사이클 시작
+    CONNECTION_LOST = "connection_lost"         # 실시간 WebSocket 끊김, 재연결 시도 중
+    CONNECTION_RESTORED = "connection_restored"  # 재연결 성공 (끊김 시간 + reconcile 결과 동봉)
+    CONNECTION_FAILED = "connection_failed"     # 재연결 최종 실패 (최대 시도 소진)
 
 
 class NotificationSeverity(str, Enum):

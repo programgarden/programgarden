@@ -26,13 +26,13 @@ class TestNotificationCategory:
         from programgarden_core.bases import NotificationCategory
         assert NotificationCategory is not None
 
-    def test_has_eight_values(self):
-        """정확히 8개의 카테고리 값을 가짐"""
+    def test_has_eleven_values(self):
+        """정확히 11개의 카테고리 값을 가짐 (C-8 connection_* 3종 추가)"""
         from programgarden_core.bases.listener import NotificationCategory
-        assert len(NotificationCategory) == 8
+        assert len(NotificationCategory) == 11
 
     def test_all_expected_values(self):
-        """8개 카테고리 값 모두 존재"""
+        """11개 카테고리 값 모두 존재"""
         from programgarden_core.bases.listener import NotificationCategory
 
         expected = {
@@ -44,6 +44,9 @@ class TestNotificationCategory:
             "workflow_failed",
             "retry_exhausted",
             "schedule_started",
+            "connection_lost",       # C-8
+            "connection_restored",   # C-8
+            "connection_failed",     # C-8
         }
         actual = {c.value for c in NotificationCategory}
         assert actual == expected
