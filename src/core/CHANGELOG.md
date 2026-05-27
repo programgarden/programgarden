@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+## [1.14.2] - 2026-05-27
+### Added
+- **C-8: 3 connection-lifecycle `NotificationCategory` values** (additive)
+  — `connection_lost` / `connection_restored` / `connection_failed`, so
+  the reconnect path can surface websocket disconnect / recovery /
+  final-failure to investors via `on_notification`. Category set extended
+  8 → 11. No schema or node changes.
+
 ## [1.14.1] - 2026-05-20
 ### Changed
 - Maintenance release — version bump for cross-package alignment. No functional or schema changes since 1.14.0.

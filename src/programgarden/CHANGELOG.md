@@ -1,5 +1,31 @@
 ## [Unreleased]
 
+## [1.22.2] - 2026-05-27
+### Added
+- **A-4: order idempotency (opt-in)** — checkpoint DB `order_idempotency`
+  table + deterministic key (`wf:node:cycle:item_hash`) blocks duplicate
+  order submissions on checkpoint recovery, returning the stored order_no
+  instead of re-sending to LS. Opt-in via `enable_order_idempotency`;
+  dry_run / paper auto-bypass; failed orders are not recorded (retry
+  allowed).
+- **C-8: reconnect notification + reconcile** — `ReconnectHandler` gains a
+  `notify` sink (CONNECTION_LOST / RESTORED / FAILED, dual-channel fan-out
+  to `on_notification` + `on_log`) and a read-only `reconcile` hook that
+  diffs open-orders / positions across the disconnect gap (notify-only —
+  never triggers downstream or auto-orders). Wired into all 3 RealAccount
+  trackers (overseas stock / futures / korea).
+### Changed
+- **A-3: auto-iterate order spacing** — `_execute_with_auto_iterate` spaces
+  per-item execution by the node's `_rate_limit.min_interval_sec` (sleep,
+  not skip — all N items still execute). Pure data / compute nodes are
+  unaffected.
+### Fixed
+- **A-4b: structural skip of completed new-order nodes on realtime
+  recovery** — realtime recovery now re-runs the main flow with completed
+  NewOrderNode ids excluded, blocking structural re-fire regardless of the
+  idempotency opt-in flag. Restored node_outputs still feed downstream
+  consumers.
+
 ## [1.22.1] - 2026-05-20
 ### Added
 - **ConditionNode data-binding static validation** in `resolver.validate()` — indicator plugins (RSI/MACD/…) require `items {from, extract}`, position plugins (StopLoss/ProfitTarget/TrailingStop) require `positions`. Mirrors the executor runtime branch so the legacy `data`/`params` shape now raises `MISSING_REQUIRED_FIELD` at build time instead of only at dry_run.

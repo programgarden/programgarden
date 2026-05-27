@@ -1,5 +1,25 @@
 ## [Unreleased]
 
+## [1.6.9] - 2026-05-27
+### Added
+- **A-6: per-connection real-time subscription cap** —
+  `RealRequestAbstract._add_message_symbols` rejects subscriptions beyond
+  `max_subscribe_symbols` (default `DEFAULT_MAX_SUBSCRIBE_SYMBOLS`=100,
+  summed across all TR codes, constructor-configurable, `<=0` disables)
+  with a new `SubscriptionLimitExceeded` (RuntimeError subclass). Checked
+  before mutation so a rejection leaves subscription state clean; only new
+  unique symbols count toward the cap, so reconnect auto-resubscribe never
+  trips it. Wired into all 4 product subclasses; adds
+  `get_subscription_count()` / `get_subscription_capacity()` helpers.
+### Changed
+- **A-1: account-scoped rate-limit key composition** —
+  `set_tr_header_options()` now namespaces each TR's `rate_limit_key` with
+  the logged-in account (`f"{appkey}:{tr_cd}"`), so the same account's
+  concurrent connections share a bucket while different accounts in one
+  process stay isolated. Single-account deployments are 100%
+  behavior-preserving (one appkey → same bucket). The dormant
+  `_RateBucket` account-total gate remains opt-in (off by default).
+
 ## [1.6.8] - 2026-05-20
 ### Changed
 - Maintenance release — version bump for cross-package alignment. No finance code changes since 1.6.7.
