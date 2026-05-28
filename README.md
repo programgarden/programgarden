@@ -176,8 +176,6 @@ keys in English only.
 
 ## Reference files to read before answering
 
-- `CLAUDE.md` — node catalog, architecture, examples (read first)
-- `PROJECT_MAP.md` — repo index
 - `src/programgarden/programgarden/executor.py` — `WorkflowExecutor`,
   `execute()`, `validate()`, dry-run behavior
 - `src/core/programgarden_core/bases/listener.py` — `ExecutionListener`

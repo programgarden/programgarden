@@ -397,3 +397,6 @@ scripts/**/*.log
 
 # 로컬 전용 격리 Docker 환경 (claude --dangerously-skip-permissions). 커밋 금지
 /sandbox/
+
+# 로컬 전용 AI 도구 cache (PROJECT_MAP 등). /pg-gen-map 으로 누구나 재생성. 커밋 금지
+/.spec/
