@@ -738,3 +738,70 @@ LLMModelNode provides LLM connection. Other nodes registered as tools via `tool`
 - Be descriptive: `filter_buy` not `f1`, `if_stop_loss` not `if1`
 - Prefix with purpose when using duplicate types: `account_buy`, `account_sell` (two AccountNodes)
 - Never use hyphens, spaces, or special characters
+
+---
+
+## 13. HKEX Paper Trading (LS 모의투자)
+
+LS Securities (LS증권) 모의투자는 HKEX 한 거래소만 지원합니다. CME / EUREX 등 다른
+거래소는 모의투자 불가 (실거래만 가능). HKEX 미니선물 (Mini Hang Seng / Mini HSCEI) 위주.
+
+### 13.1 핵심 제약
+
+| 제약 | 영향 | 권장 패턴 |
+|------|------|-----------|
+| 모의투자: **HKEX 한 거래소** | 모든 broker `paper_trading=true` 필수 | broker 노드 `paper_trading: true` |
+| **시장가 주문 불가** | 청산도 limit | NewOrderNode `order_type: "limit"` + `price` 명시 |
+| 통화: **HKD** | balance / fill 가격 | KRW 환산 시 별도 환율 노드 |
+| 거래시간 (KST 기준) | 데이세션 + T+1 야간세션 | 아래 13.2 참조 |
+
+### 13.2 HKEX 거래시간 (KST 환산)
+
+```
+데이 1부:  KST 10:15-13:00 (HKT 09:15-12:00)
+점심 휴장: KST 13:00-14:00 (HKT 12:00-13:00)
+데이 2부:  KST 14:00-17:30 (HKT 13:00-16:30)
+저녁 휴장: KST 17:30-18:15 (HKT 16:30-17:15)
+T+1 야간:  KST 18:15-04:00(+1) (HKT 17:15-03:00+1)
+```
+
+거의 24시간 거래 + 세 휴장 구간. **`TradingHoursFilterNode` 는 현재 단일 윈도우만 지원**
+(multi-window / wrap-around 미지원) 이므로, HKEX 세션 표현에 다음 옵션 중 선택:
+
+| 패턴 | 사용 시점 | 예제 |
+|------|----------|------|
+| 단일 데이 윈도우 `10:15-17:30 KST` | 룰베이스 cron 진입 (점심 휴장 시 cron 자연 skip) | 81, 83, 85 |
+| TradingHoursFilter **제거** | realtime 노드 — tick 자체가 휴장 시 안 옴 | 82 (realtime 손절) |
+| Schedule 만 (TradingHoursFilter 없음) | 거래 불필요 (백테스트, 리포트) | 84 |
+| LogicNode + 3개 TradingHoursFilter OR | 세 세션 모두 정확히 표현 필요 시 | (예제 없음, future work) |
+
+### 13.3 월물 명명 규칙
+
+```
+HM[CE] + 월코드 + 연도2자리
+  │      │       │
+  │      │       └─ 26 = 2026
+  │      └─ F=1월, G=2월, H=3월, J=4월, K=5월, M=6월,
+  │         N=7월, Q=8월, U=9월, V=10월, X=11월, Z=12월
+  └─ HMH = Mini Hang Seng, HMCE = Mini HSCEI
+```
+
+**예**: `HMHJ26` = Mini Hang Seng **2026년 4월물**
+
+**틱 가치**: HMH/HMCE 미니선물 모두 약 10 HKD/tick (~1.3 USD).
+
+**Roll-over**: 분기물(H/M/U/Z)이 가장 유동성 풍부. 만기 임박 시 다음 월물로 교체. 자동화는
+ExclusionListNode 정적 블랙리스트 (예제 85) 또는 향후 LS 캘린더 연동.
+
+### 13.4 신규 예제 81-85 (HKEX 풀세트)
+
+| 예제 | 시나리오 | 학습 포인트 |
+|------|---------|-----------|
+| 81 | 다종목 RSI+Bollinger Logic AND 진입 | auto-iterate + LogicNode 결합 + ATR 사이징 |
+| 82 | 실시간 → IfNode 손절 자동매도 | Connection Rule A-2 + ThrottleNode + balance partial-failure |
+| 83 | AI Agent 리스크 매니저 일일 리포트 | LLMModelNode + AIAgentNode + Tool 엣지 + structured output |
+| 84 | 백테스트 + Schedule 아침 리포트 | BacktestEngineNode + BenchmarkCompareNode + Telegram |
+| 85 | 월물 스크리너 + 조건 진입 + roll-over mock | ExclusionListNode + ATR + IfNode is_not_empty 분기 |
+
+기존 HKEX 예제: `39-realtime-futures-tick`, `57-futures-paper-backtest-heavy`,
+`61-hkex-futures-bot`, `62-rsi-futures-bot` 도 참조.

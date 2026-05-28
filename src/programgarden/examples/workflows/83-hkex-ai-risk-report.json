@@ -1,0 +1,163 @@
+{
+  "id": "83-hkex-ai-risk-report",
+  "name": "HKEX AI 리스크 매니저 일일 리포트 (모의투자)",
+  "description": "매 거래일 KST 18:30 (HKEX 데이세션 마감 직후) AIAgentNode 가 risk_manager 프리셋으로 HMHJ26 / HMCEJ26 두 종목의 60일 historical + 계좌 포지션을 Tool 로 조회하여 종목별 리스크 레벨과 추천 stop_loss 를 structured JSON 으로 생성. Telegram 으로 발송.",
+  "nodes": [
+    {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 320}},
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true,
+      "position": {"x": 220, "y": 320}
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "30 18 * * 1-5",
+      "timezone": "Asia/Seoul",
+      "enabled": true,
+      "max_duration_hours": 720,
+      "position": {"x": 400, "y": 320}
+    },
+
+    {
+      "id": "llm",
+      "type": "LLMModelNode",
+      "credential_id": "llm_cred",
+      "model": "gpt-4o",
+      "temperature": 0.3,
+      "max_tokens": 1200,
+      "position": {"x": 220, "y": 120}
+    },
+
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "HMHJ26", "exchange": "HKEX"},
+        {"symbol": "HMCEJ26", "exchange": "HKEX"}
+      ],
+      "position": {"x": 600, "y": 140}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasFuturesHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 820, "y": 140}
+    },
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 600, "y": 320}
+    },
+
+    {
+      "id": "risk_agent",
+      "type": "AIAgentNode",
+      "preset": "risk_manager",
+      "user_prompt": "Today is {{ date.today() }}. Analyze the current HKEX futures portfolio (HMHJ26 Mini Hang Seng, HMCEJ26 Mini HSCEI). Call the account and historical data tools to gather positions, average prices, and the last 60 trading days. For each held symbol, output a structured assessment: current risk_level (low/medium/high), volatility-based suggested_stop_loss in HKD, and one-sentence reasoning. Limit response to 300 words total.",
+      "output_format": "structured",
+      "output_schema": {
+        "positions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "symbol": {"type": "string"},
+              "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+              "suggested_stop_loss": {"type": "number"},
+              "reasoning": {"type": "string"}
+            }
+          }
+        },
+        "summary": {"type": "string"}
+      },
+      "max_tool_calls": 6,
+      "cooldown_sec": 60,
+      "max_total_tokens": 40000,
+      "position": {"x": 1080, "y": 320}
+    },
+
+    {
+      "id": "report_table",
+      "type": "TableDisplayNode",
+      "title": "HKEX 리스크 리포트 — {{ date.today() }}",
+      "data": "{{ nodes.risk_agent.response.positions }}",
+      "position": {"x": 1340, "y": 220}
+    },
+    {
+      "id": "report_telegram",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🤖 HKEX AI 리스크 리포트 [{{ date.today() }}]\n\n{{ nodes.risk_agent.response.summary }}\n\n포지션별 상세는 워크플로우 콘솔 참조.",
+      "position": {"x": 1340, "y": 420}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "start", "to": "llm"},
+    {"from": "broker", "to": "schedule"},
+
+    {"from": "schedule", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+
+    {"from": "schedule", "to": "account"},
+
+    {"from": "llm", "to": "risk_agent", "type": "ai_model"},
+    {"from": "account", "to": "risk_agent", "type": "tool"},
+    {"from": "historical", "to": "risk_agent", "type": "tool"},
+
+    {"from": "risk_agent", "to": "report_table"},
+    {"from": "risk_agent", "to": "report_telegram"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "llm_cred",
+      "type": "llm_openai",
+      "data": [
+        {"key": "api_key", "value": "", "type": "password", "label": "OpenAI API Key"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_strategy",
+      "content": "## HKEX AI 리스크 매니저 일일 리포트\n\n**시나리오**: 매 거래일 KST 18:30 (HKEX 데이세션 마감 직후) AIAgentNode 가 risk_manager 프리셋으로 portfolio 리스크 평가.\n\n**도구**: AccountNode + HistoricalDataNode 두 개를 tool 엣지로 연결 — agent 가 직접 호출.\n\n**구조화 출력**: output_format=structured + output_schema 로 종목별 risk_level / suggested_stop_loss / reasoning 강제. Pydantic 검증.\n\n**보호**: cooldown_sec=60 + max_total_tokens=40000 — 토큰 폭주 방지.\n\n**Stateless**: 매 실행 독립. 대화 기억 없음 (Tool 로 매번 최신 데이터 조회).",
+      "color": 5,
+      "width": 400,
+      "height": 300,
+      "position": {"x": 30, "y": 30}
+    },
+    {
+      "id": "note_realtime_rule",
+      "content": "## ⚠️ realtime → AIAgent 직결 금지\n\nAIAgentNode 의 `_connection_rules` 가 RealMarketDataNode 등 realtime 노드 → AIAgent 직결을 ERROR 로 차단 (ThrottleNode 필수). 본 예제는 Schedule 트리거 + Historical/Account 만 사용 → 안전.\n\n**비용 가이드**:\n- gpt-4o 60일 historical × 2종목 = ~5K input tokens 예상\n- max_total_tokens=40000 으로 폭주 차단\n- daily 실행 시 월 ~22회 (한도 내)",
+      "color": 1,
+      "width": 380,
+      "height": 280,
+      "position": {"x": 450, "y": 30}
+    }
+  ]
+}
