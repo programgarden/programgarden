@@ -1,0 +1,154 @@
+{
+  "id": "82-hkex-realtime-stop-loss",
+  "name": "HKEX 실시간 손절 자동매매 (모의투자)",
+  "description": "HKEX 미니선물 단일 보유 포지션의 실시간 가격을 구독하고, ThrottleNode 로 tick rate 를 5초 단위로 안정화한 뒤 IfNode 로 stop_price 이하 도달 시 limit 매도. HKEX 모의투자 시장가 불가 / Connection Rule A-2 (realtime→order 직결 금지 / ThrottleNode 필수) / balance partial-failure 폴백을 모두 회귀 가드.",
+  "nodes": [
+    {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 320}},
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true,
+      "position": {"x": 220, "y": 320}
+    },
+
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "HMHJ26", "exchange": "HKEX"}
+      ],
+      "position": {"x": 420, "y": 200}
+    },
+    {
+      "id": "realtime",
+      "type": "OverseasFuturesRealMarketDataNode",
+      "symbol": "{{ item }}",
+      "stay_connected": true,
+      "position": {"x": 640, "y": 200}
+    },
+    {
+      "id": "throttle",
+      "type": "ThrottleNode",
+      "mode": "latest",
+      "interval_sec": 5.0,
+      "pass_first": true,
+      "position": {"x": 860, "y": 200}
+    },
+    {
+      "id": "if_stop",
+      "type": "IfNode",
+      "left": "{{ nodes.throttle.data.current_price }}",
+      "operator": "<=",
+      "right": 20000.0,
+      "position": {"x": 1080, "y": 200}
+    },
+
+    {
+      "id": "account",
+      "type": "OverseasFuturesAccountNode",
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 420, "y": 440}
+    },
+    {
+      "id": "balance_summary",
+      "type": "SummaryDisplayNode",
+      "title": "현재 잔고",
+      "data": {
+        "orderable_amount": "{{ nodes.account.balance.orderable_amount }}",
+        "partial_failure": "{{ nodes.account.balance._partial_failure }}"
+      },
+      "position": {"x": 640, "y": 440}
+    },
+
+    {
+      "id": "close_order",
+      "type": "OverseasFuturesNewOrderNode",
+      "side": "sell",
+      "order_type": "limit",
+      "order": {
+        "symbol": "{{ nodes.throttle.data.symbol }}",
+        "exchange": "{{ nodes.throttle.data.exchange }}",
+        "quantity": 1,
+        "price": "{{ nodes.throttle.data.current_price }}"
+      },
+      "resilience": {
+        "fallback": {"mode": "skip"}
+      },
+      "position": {"x": 1300, "y": 120}
+    },
+    {
+      "id": "telegram_stop",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🛑 HKEX 손절 발사: {{ nodes.throttle.data.symbol }} @ {{ nodes.throttle.data.current_price }} HKD (stop=20000)",
+      "position": {"x": 1520, "y": 120}
+    },
+
+    {
+      "id": "hold_notice",
+      "type": "SummaryDisplayNode",
+      "title": "보유 유지",
+      "data": {
+        "current_price": "{{ nodes.throttle.data.current_price }}",
+        "stop_price": 20000.0,
+        "status": "above_stop"
+      },
+      "position": {"x": 1300, "y": 320}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+
+    {"from": "broker", "to": "watchlist"},
+    {"from": "watchlist", "to": "realtime"},
+    {"from": "realtime", "to": "throttle"},
+    {"from": "throttle", "to": "if_stop"},
+
+    {"from": "broker", "to": "account"},
+    {"from": "account", "to": "balance_summary"},
+
+    {"from": "if_stop", "to": "close_order", "from_port": "true"},
+    {"from": "close_order", "to": "telegram_stop"},
+
+    {"from": "if_stop", "to": "hold_notice", "from_port": "false"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_strategy",
+      "content": "## HKEX 실시간 손절 자동매매 (모의투자)\n\n**시나리오**: 단일 보유 포지션 HMHJ26 (Mini Hang Seng 4월). 실시간 tick 을 ThrottleNode (5초) 로 안정화하고, current_price ≤ 20000 HKD 도달 시 즉시 limit 매도로 청산.\n\n**주문 유형**: limit (HKEX 모의투자 시장가 불가). price 는 현재 tick price 그대로 사용 → 빠른 체결.\n\n**가동 시간**: 24시간 연속 (T+1 야간세션 포함). 데이세션 휴장 시 tick 자체가 안 오므로 자연 일시정지.\n\n**balance partial-failure 폴백**: AccountNode 에 `resilience.fallback.mode=skip` 설정 — TR 일부 실패해도 워크플로우 중단되지 않고 다음 사이클에 복구 시도.",
+      "color": 5,
+      "width": 400,
+      "height": 280,
+      "position": {"x": 30, "y": 30}
+    },
+    {
+      "id": "note_a2_rule",
+      "content": "## Connection Rule A-2 ⚠️\n\nrealtime→order 직결은 **금지** (tick storm = 주문 폭주). 본 예제는 ThrottleNode 를 강제로 거쳐 5초 단위 cadence 로 안정화.\n\n**확인**: ThrottleNode 제거 시 `validate()` 의 static_recommendations 에 `REC_REALTIME_THROTTLE` 가 발화. 본 예제는 ThrottleNode 포함 → 해당 권고 없음.",
+      "color": 1,
+      "width": 380,
+      "height": 220,
+      "position": {"x": 450, "y": 30}
+    }
+  ]
+}

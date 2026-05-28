@@ -1,0 +1,234 @@
+{
+  "id": "84-hkex-backtest-schedule-report",
+  "name": "HKEX 백테스트 아침 일일 리포트 (모의투자)",
+  "description": "매 거래일 KST 08:00 (HKEX 데이세션 시작 전) BacktestEngine 으로 HMHJ26 / HMCEJ26 두 종목의 180일 RSI / Bollinger 두 전략 백테스트 → BenchmarkCompareNode 로 Sharpe / MDD 비교 → SummaryDisplay 콘솔 + Telegram 아침 알림.",
+  "nodes": [
+    {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 380}},
+    {
+      "id": "broker",
+      "type": "OverseasFuturesBrokerNode",
+      "credential_id": "broker_cred",
+      "paper_trading": true,
+      "position": {"x": 220, "y": 380}
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "0 8 * * 1-5",
+      "timezone": "Asia/Seoul",
+      "enabled": true,
+      "max_duration_hours": 720,
+      "position": {"x": 400, "y": 380}
+    },
+
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"symbol": "HMHJ26", "exchange": "HKEX"},
+        {"symbol": "HMCEJ26", "exchange": "HKEX"}
+      ],
+      "position": {"x": 600, "y": 380}
+    },
+    {
+      "id": "historical",
+      "type": "OverseasFuturesHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(180, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {"x": 820, "y": 380}
+    },
+
+    {
+      "id": "rsi_cond",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": {"x": 1080, "y": 200}
+    },
+    {
+      "id": "boll_cond",
+      "type": "ConditionNode",
+      "plugin": "BollingerBands",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 20,
+        "std_dev": 2.0,
+        "position": "below_lower"
+      },
+      "position": {"x": 1080, "y": 560}
+    },
+
+    {
+      "id": "backtest_rsi",
+      "type": "BacktestEngineNode",
+      "strategy_name": "HKEX RSI Mean Reversion",
+      "items": {
+        "from": "{{ nodes.historical.value.time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.historical.value.symbol }}",
+          "exchange": "{{ nodes.historical.value.exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ nodes.rsi_cond.result.signal }}",
+          "side": "{{ nodes.rsi_cond.result.side }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "fixed_percent",
+      "fixed_percent": 10.0,
+      "max_position_percent": 25.0,
+      "stop_loss_percent": 3.0,
+      "take_profit_percent": 8.0,
+      "time_stop_days": 10,
+      "allow_short": false,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {"x": 1380, "y": 200}
+    },
+    {
+      "id": "backtest_boll",
+      "type": "BacktestEngineNode",
+      "strategy_name": "HKEX Bollinger Reversion",
+      "items": {
+        "from": "{{ nodes.historical.value.time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.historical.value.symbol }}",
+          "exchange": "{{ nodes.historical.value.exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ nodes.boll_cond.result.signal }}",
+          "side": "{{ nodes.boll_cond.result.side }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "fixed_percent",
+      "fixed_percent": 10.0,
+      "max_position_percent": 25.0,
+      "stop_loss_percent": 4.0,
+      "take_profit_percent": 10.0,
+      "time_stop_days": 14,
+      "allow_short": false,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {"x": 1380, "y": 560}
+    },
+
+    {
+      "id": "benchmark",
+      "type": "BenchmarkCompareNode",
+      "strategies": [
+        "{{ nodes.backtest_rsi.equity_curve }}",
+        "{{ nodes.backtest_boll.equity_curve }}"
+      ],
+      "ranking_metric": "sharpe",
+      "position": {"x": 1680, "y": 380}
+    },
+
+    {
+      "id": "summary_display",
+      "type": "SummaryDisplayNode",
+      "title": "HKEX 백테스트 일일 리포트 — {{ date.today() }}",
+      "data": "{{ nodes.benchmark.ranking }}",
+      "position": {"x": 1980, "y": 240}
+    },
+    {
+      "id": "telegram_morning",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "☀️ HKEX 백테스트 리포트 [{{ date.today() }}]\n\n전략 비교 (180일):\n1) RSI Mean Reversion — Sharpe / MDD / Total Return\n2) Bollinger Reversion — Sharpe / MDD / Total Return\n\n순위: {{ nodes.benchmark.ranking }}\n\n상세는 SummaryDisplay 콘솔 참조.",
+      "position": {"x": 1980, "y": 520}
+    }
+  ],
+  "edges": [
+    {"from": "start", "to": "broker"},
+    {"from": "broker", "to": "schedule"},
+    {"from": "schedule", "to": "watchlist"},
+    {"from": "watchlist", "to": "historical"},
+
+    {"from": "historical", "to": "rsi_cond"},
+    {"from": "historical", "to": "boll_cond"},
+
+    {"from": "historical", "to": "backtest_rsi"},
+    {"from": "rsi_cond", "to": "backtest_rsi"},
+
+    {"from": "historical", "to": "backtest_boll"},
+    {"from": "boll_cond", "to": "backtest_boll"},
+
+    {"from": "backtest_rsi", "to": "benchmark"},
+    {"from": "backtest_boll", "to": "benchmark"},
+
+    {"from": "benchmark", "to": "summary_display"},
+    {"from": "benchmark", "to": "telegram_morning"}
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_futures",
+      "data": [
+        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
+        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_strategy",
+      "content": "## HKEX 백테스트 아침 일일 리포트\n\n**시나리오**: 매 평일 KST 08:00 (HKEX 데이세션 시작 전, KST 10:15 진입까지 ~2시간 여유) 자동 백테스트 → 어떤 전략이 최근 6개월간 더 우수한지 매일 점검.\n\n**전략**: RSI Mean Reversion vs Bollinger Reversion (180일 일봉)\n\n**사이징**: fixed_percent 10% × 최대 25%\n\n**비용**: commission 0.05% + slippage 0.1% (현실 비용 모델링)\n\n**Exit**: stop_loss / take_profit / time_stop 강제 (curve-fitting 회피)\n\n**비교**: BenchmarkCompareNode 가 Sharpe 기준 ranking + comparison_metrics 산출.\n\n주문 발생 X — daily report 전용 워크플로우.",
+      "color": 5,
+      "width": 400,
+      "height": 360,
+      "position": {"x": 30, "y": 30}
+    },
+    {
+      "id": "note_constraints",
+      "content": "## HKEX 백테스트 주의 ⚠️\n\n1. 일봉 180개 ≈ 6개월. **장기 전략 검증엔 부족** — 1년+ 권장 (anti_pattern).\n2. Schedule 이 KST 08:00 → HKEX 데이세션(KST 10:15-) 전 시간 여유. 결과 확인 후 진입 결정.\n3. BacktestEngine 은 동기 실행. 종목·기간 늘리면 cycle latency 증가.\n4. 본 예제는 **주문 노드 없음** → 백테스트 + report 전용. 진입은 81 예제 별도 워크플로우에서.",
+      "color": 1,
+      "width": 380,
+      "height": 260,
+      "position": {"x": 450, "y": 30}
+    }
+  ]
+}

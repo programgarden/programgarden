@@ -1,4 +1,27 @@
 ## [Unreleased]
+### Added
+- **HKEX 해외선물 모의투자 예제 5종 (81-85)** — `examples/workflows/`:
+  - `81-hkex-multi-symbol-rsi-bollinger`: HMHJ26 / HMCEJ26 다종목 RSI(14,<30)
+    AND Bollinger(20,2,below_lower) 복합 진입. LogicNode `all` + ATR
+    사이징 + SymbolFilter difference. KST 데이세션 단일 윈도우.
+  - `82-hkex-realtime-stop-loss`: 단일 보유 포지션 실시간 tick →
+    ThrottleNode(5초) → IfNode(`<=` static stop) → limit 매도 청산.
+    Connection Rule A-2 + balance partial-failure 폴백 회귀 가드.
+  - `83-hkex-ai-risk-report`: LLMModel(gpt-4o) + AIAgent(`risk_manager`
+    preset) + Account / Historical tool 엣지 + structured output schema
+    (positions[] + summary). 매 평일 KST 18:30 Telegram 발송.
+  - `84-hkex-backtest-schedule-report`: BacktestEngine × 2전략(RSI / Bollinger)
+    + BenchmarkCompare(`ranking=sharpe`) + SummaryDisplay + Telegram
+    아침 리포트 (KST 08:00). Report-only — 주문 노드 없음.
+  - `85-hkex-screener-conditional-entry`: 4월물 후보풀 → ExclusionListNode
+    정적 블랙리스트(mock roll-over) → ATR(14, breakout_up) → SymbolFilter
+    difference → IfNode `is_not_empty` → limit 진입. HKEX 월물 명명 규칙
+    + roll-over mock 시뮬레이션.
+- **00-workflow-guide.md** §13 HKEX Paper Trading 섹션 신설:
+  거래시간 (KST 환산 5구간) / 월물 명명 규칙 / 단일 윈도우 한계 + 4가지
+  처리 패턴 / 신규 81-85 학습 인덱스.
+### Changed
+- `test_examples_validation.py`: `WORKFLOW_FILES` 카운트 80 → 85.
 
 ## [1.22.2] - 2026-05-27
 ### Added
