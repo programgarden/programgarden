@@ -1,7 +1,7 @@
 {
   "id": "84-hkex-backtest-schedule-report",
   "name": "HKEX 백테스트 아침 일일 리포트 (모의투자)",
-  "description": "매 거래일 KST 08:00 (HKEX 데이세션 시작 전) BacktestEngine 으로 HMHJ26 / HMCEJ26 두 종목의 180일 RSI / Bollinger 두 전략 백테스트 → BenchmarkCompareNode 로 Sharpe / MDD 비교 → SummaryDisplay 콘솔 + Telegram 아침 알림.",
+  "description": "매 거래일 KST 08:00 (HKEX 데이세션 시작 전) BacktestEngine 으로 HMHM26 / HMCEM26 두 종목의 180일 RSI / Bollinger 두 전략 백테스트 → BenchmarkCompareNode 로 Sharpe / MDD 비교 → SummaryDisplay 콘솔 + Telegram 아침 알림.",
   "nodes": [
     {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 380}},
     {
@@ -25,8 +25,8 @@
       "id": "watchlist",
       "type": "WatchlistNode",
       "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX"}
+        {"symbol": "HMHM26", "exchange": "HKEX"},
+        {"symbol": "HMCEM26", "exchange": "HKEX"}
       ],
       "position": {"x": 600, "y": 380}
     },

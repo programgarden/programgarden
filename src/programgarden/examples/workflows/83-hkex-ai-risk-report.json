@@ -1,7 +1,7 @@
 {
   "id": "83-hkex-ai-risk-report",
   "name": "HKEX AI 리스크 매니저 일일 리포트 (모의투자)",
-  "description": "매 거래일 KST 18:30 (HKEX 데이세션 마감 직후) AIAgentNode 가 risk_manager 프리셋으로 HMHJ26 / HMCEJ26 두 종목의 60일 historical + 계좌 포지션을 Tool 로 조회하여 종목별 리스크 레벨과 추천 stop_loss 를 structured JSON 으로 생성. Telegram 으로 발송.",
+  "description": "매 거래일 KST 18:30 (HKEX 데이세션 마감 직후) AIAgentNode 가 risk_manager 프리셋으로 HMHM26 / HMCEM26 두 종목의 60일 historical + 계좌 포지션을 Tool 로 조회하여 종목별 리스크 레벨과 추천 stop_loss 를 structured JSON 으로 생성. Telegram 으로 발송.",
   "nodes": [
     {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 320}},
     {
@@ -35,8 +35,8 @@
       "id": "watchlist",
       "type": "WatchlistNode",
       "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX"}
+        {"symbol": "HMHM26", "exchange": "HKEX"},
+        {"symbol": "HMCEM26", "exchange": "HKEX"}
       ],
       "position": {"x": 600, "y": 140}
     },
@@ -62,7 +62,7 @@
       "id": "risk_agent",
       "type": "AIAgentNode",
       "preset": "risk_manager",
-      "user_prompt": "Today is {{ date.today() }}. Analyze the current HKEX futures portfolio (HMHJ26 Mini Hang Seng, HMCEJ26 Mini HSCEI). Call the account and historical data tools to gather positions, average prices, and the last 60 trading days. For each held symbol, output a structured assessment: current risk_level (low/medium/high), volatility-based suggested_stop_loss in HKD, and one-sentence reasoning. Limit response to 300 words total.",
+      "user_prompt": "Today is {{ date.today() }}. Analyze the current HKEX futures portfolio (HMHM26 Mini Hang Seng, HMCEM26 Mini HSCEI). Call the account and historical data tools to gather positions, average prices, and the last 60 trading days. For each held symbol, output a structured assessment: current risk_level (low/medium/high), volatility-based suggested_stop_loss in HKD, and one-sentence reasoning. Limit response to 300 words total.",
       "output_format": "structured",
       "output_schema": {
         "positions": {

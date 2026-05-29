@@ -45,6 +45,8 @@
       "id": "exclusion",
       "type": "ExclusionListNode",
       "symbols": [
+        {"symbol": "HMHJ26", "exchange": "HKEX", "reason": "2026/04 만기 경과 — roll-over 대상 (historical 빈 응답)"},
+        {"symbol": "HMCEJ26", "exchange": "HKEX", "reason": "2026/04 만기 경과 — roll-over 대상 (historical 빈 응답)"},
         {"symbol": "HMHG26", "exchange": "HKEX", "reason": "이미 만기된 2월물 (mock — 본 예제 후보풀엔 없지만 가드용)"},
         {"symbol": "HMCEG26", "exchange": "HKEX", "reason": "이미 만기된 2월물 (mock)"}
       ],
@@ -200,7 +202,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX 월물 스크리너 + ATR 조건 진입\n\n**시나리오**: 평일 KST 11:00 (HKEX 데이세션 진입 후 45분 — 초반 변동성 안정화 후) 4개 월물 후보풀 스크리닝.\n\n**후보풀**: HMH (Mini Hang Seng) J(4월) + M(6월), HMCE (Mini HSCEI) J(4월) + M(6월)\n\n**필터링 파이프라인**:\n1. ExclusionListNode — 만기 임박/만료 월물 정적 블랙리스트\n2. ATR ConditionNode — 14일 ATR 기반 breakout_up 시그널\n3. SymbolFilterNode (difference) — 이미 보유 월물 제외\n4. IfNode — 후보 ≥ 1 일 때만 진입 (`is_not_empty`)\n\n**사이징**: ATR 기반 (계좌 5%, 종목당 1.5% 위험)\n\n**주문**: limit (HKEX 모의투자 제약)",
+      "content": "## HKEX 월물 스크리너 + ATR 조건 진입\n\n**시나리오**: 평일 KST 11:00 (HKEX 데이세션 진입 후 45분 — 초반 변동성 안정화 후) 4개 월물 후보풀 스크리닝.\n\n**후보풀**: HMH (Mini Hang Seng) J(4월) + M(6월), HMCE (Mini HSCEI) J(4월) + M(6월)\n\n4월물(J)은 이미 만기 경과(historical 빈 응답) → ExclusionList 로 제외 → 생존 후보는 live 6월물(M)뿐. 이것이 roll-over 의 실제 동작입니다.\n\n**필터링 파이프라인**:\n1. ExclusionListNode — 만기 경과/임박 월물 정적 블랙리스트 (J월물 제외)\n2. ATR ConditionNode — 14일 ATR 기반 breakout_up 시그널\n3. SymbolFilterNode (difference) — 이미 보유 월물 제외\n4. IfNode — 후보 ≥ 1 일 때만 진입 (`is_not_empty`)\n\n**사이징**: ATR 기반 (계좌 5%, 종목당 1.5% 위험)\n\n**주문**: limit (HKEX 모의투자 제약)",
       "color": 5,
       "width": 400,
       "height": 340,
@@ -208,7 +210,7 @@
     },
     {
       "id": "note_rollover",
-      "content": "## HKEX 월물 명명 규칙\n\n```\nHM[CE] + 월코드 + 연도2자리\n  │      │       │\n  │      │       └─ 26 = 2026\n  │      └─ F=1월, G=2월, H=3월, J=4월, K=5월, M=6월,\n  │         N=7월, Q=8월, U=9월, V=10월, X=11월, Z=12월\n  └─ HMH = Mini Hang Seng, HMCE = Mini HSCEI\n```\n\n**예**: HMHJ26 = Mini Hang Seng 2026년 4월물\n\n**Roll-over mock**: 만기 임박 월물(예: 다음 주 만기) 을 ExclusionListNode 의 정적 `symbols` 에 추가하면 후보풀에서 자동 제외. 실 운영 시엔 LS 캘린더 API 연동 또는 `dynamic_symbols` 바인딩으로 자동화.",
+      "content": "## HKEX 월물 명명 규칙\n\n```\nHM[CE] + 월코드 + 연도2자리\n  │      │       │\n  │      │       └─ 26 = 2026\n  │      └─ F=1월, G=2월, H=3월, J=4월, K=5월, M=6월,\n  │         N=7월, Q=8월, U=9월, V=10월, X=11월, Z=12월\n  └─ HMH = Mini Hang Seng, HMCE = Mini HSCEI\n```\n\n**예**: HMHJ26 = Mini Hang Seng 2026년 4월물\n\n**Roll-over mock**: 만기 경과/임박 월물(본 예제는 2026/04 J월물) 을 ExclusionListNode 의 정적 `symbols` 에 추가하면 후보풀에서 자동 제외 → live 월물만 통과. 실 운영 시엔 LS 캘린더 API 연동 또는 `dynamic_symbols` 바인딩으로 자동화.",
       "color": 1,
       "width": 420,
       "height": 360,

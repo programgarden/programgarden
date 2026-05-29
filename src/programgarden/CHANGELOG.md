@@ -1,9 +1,10 @@
 ## [Unreleased]
 ### Added
 - **HKEX 해외선물 모의투자 예제 5종 (81-85)** — `examples/workflows/`:
-  - `81-hkex-multi-symbol-rsi-bollinger`: HMHJ26 / HMCEJ26 다종목 RSI(14,<30)
+  - `81-hkex-multi-symbol-rsi-bollinger`: HMHM26 / HMCEM26 다종목 RSI(14,<30)
     AND Bollinger(20,2,below_lower) 복합 진입. LogicNode `all` + ATR
-    사이징 + SymbolFilter difference. KST 데이세션 단일 윈도우.
+    사이징 + SymbolFilter difference + IfNode `is_not_empty` 무진입 게이트.
+    KST 데이세션 단일 윈도우.
   - `82-hkex-realtime-stop-loss`: 단일 보유 포지션 실시간 tick →
     ThrottleNode(5초) → IfNode(`<=` static stop) → limit 매도 청산.
     Connection Rule A-2 + balance partial-failure 폴백 회귀 가드.
@@ -22,6 +23,15 @@
   처리 패턴 / 신규 81-85 학습 인덱스.
 ### Changed
 - `test_examples_validation.py`: `WORKFLOW_FILES` 카운트 80 → 85.
+
+### Fixed
+- HKEX 예제 81-85: L3 호스트 검증 중 발견한 **만기 경과 월물 silent failure** 수정.
+  4월물(`HMHJ26`/`HMCEJ26`)이 2026-05-29 시점 만료 → `OverseasFuturesHistoricalDataNode`
+  가 에러 없이 빈 `time_series` 반환 → 무진입 silent 흡수. live 6월물(`HMHM26`/`HMCEM26`)
+  로 roll-forward. 81/82/83/84 는 6월물 사용, 85 는 4월물을 블랙리스트(roll-over 시연)에 추가.
+- 예제 81: 무진입(후보 0)일 때 `market_data` 가 빈 입력으로 hard error 를 로깅하던 문제 →
+  `if_candidates` IfNode(`is_not_empty`) + `no_entry_notice` SummaryDisplay 게이트 추가 (예제 85 패턴 일치).
+- `00-workflow-guide.md` §13.3: 선물 예제 월물 만기 경고 + front month 갱신 가이드 추가.
 
 ## [1.22.2] - 2026-05-27
 ### Added
