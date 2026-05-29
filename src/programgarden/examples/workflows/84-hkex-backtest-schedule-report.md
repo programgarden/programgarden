@@ -39,7 +39,7 @@
 flowchart LR
     start([StartNode]) --> broker[OverseasFuturesBrokerNode<br/>paper_trading=true]
     broker --> schedule[ScheduleNode<br/>0 8 * * 1-5 KST]
-    schedule --> watchlist[WatchlistNode<br/>HMHJ26, HMCEJ26]
+    schedule --> watchlist[WatchlistNode<br/>HMHM26, HMCEM26]
     watchlist --> historical[HistoricalDataNode<br/>180d 1d auto-iterate]
 
     historical --> rsi[ConditionNode RSI]

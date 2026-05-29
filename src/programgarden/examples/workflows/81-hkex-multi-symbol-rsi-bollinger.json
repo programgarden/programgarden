@@ -34,8 +34,8 @@
       "id": "watchlist",
       "type": "WatchlistNode",
       "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX"}
+        {"symbol": "HMHM26", "exchange": "HKEX"},
+        {"symbol": "HMCEM26", "exchange": "HKEX"}
       ],
       "position": {"x": 820, "y": 120}
     },
@@ -119,10 +119,30 @@
       "position": {"x": 1780, "y": 320}
     },
     {
+      "id": "if_candidates",
+      "type": "IfNode",
+      "left": "{{ nodes.filter_buy.symbols }}",
+      "operator": "is_not_empty",
+      "right": null,
+      "position": {"x": 2000, "y": 320}
+    },
+    {
+      "id": "no_entry_notice",
+      "type": "SummaryDisplayNode",
+      "title": "진입 후보 없음",
+      "data": {
+        "rsi_passed": "{{ nodes.rsi_condition.passed_symbols }}",
+        "bollinger_passed": "{{ nodes.bollinger_condition.passed_symbols }}",
+        "held": "{{ nodes.account.held_symbols }}",
+        "status": "no_entry"
+      },
+      "position": {"x": 2220, "y": 520}
+    },
+    {
       "id": "market_data",
       "type": "OverseasFuturesMarketDataNode",
       "symbol": "{{ item }}",
-      "position": {"x": 2000, "y": 320}
+      "position": {"x": 2220, "y": 200}
     },
     {
       "id": "sizing",
@@ -169,7 +189,9 @@
     {"from": "trading_hours", "to": "account"},
     {"from": "logic", "to": "filter_buy"},
     {"from": "account", "to": "filter_buy"},
-    {"from": "filter_buy", "to": "market_data"},
+    {"from": "filter_buy", "to": "if_candidates"},
+    {"from": "if_candidates", "to": "market_data", "from_port": "true"},
+    {"from": "if_candidates", "to": "no_entry_notice", "from_port": "false"},
     {"from": "market_data", "to": "sizing"},
     {"from": "account", "to": "sizing"},
     {"from": "sizing", "to": "buy_order"},
@@ -196,7 +218,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX 다종목 RSI+Bollinger 복합 진입 (모의투자)\n\n**전략**: RSI(14,30) 과매도 AND Bollinger(20,2) 하단 터치\n\n**종목**: HMHJ26 (Mini Hang Seng 4월), HMCEJ26 (Mini HSCEI 4월)\n\n**주문 유형**: limit (HKEX 모의투자는 시장가 불가)\n\n**거래시간**: 평일 KST 10:15-17:30 (HKEX 데이세션). T+1 야간 / 점심 휴장은 본 예제 미포함.\n\n**사이징**: ATR 기반 (계좌 최대 5% / 종목당 1% 위험)\n\n**필터**: 이미 보유 중인 월물은 SymbolFilter difference 로 제외",
+      "content": "## HKEX 다종목 RSI+Bollinger 복합 진입 (모의투자)\n\n**전략**: RSI(14,30) 과매도 AND Bollinger(20,2) 하단 터치\n\n**종목**: HMHM26 (Mini Hang Seng 6월), HMCEM26 (Mini HSCEI 6월)\n\n**주문 유형**: limit (HKEX 모의투자는 시장가 불가)\n\n**거래시간**: 평일 KST 10:15-17:30 (HKEX 데이세션). T+1 야간 / 점심 휴장은 본 예제 미포함.\n\n**사이징**: ATR 기반 (계좌 최대 5% / 종목당 1% 위험)\n\n**필터**: 이미 보유 중인 월물은 SymbolFilter difference 로 제외",
       "color": 5,
       "width": 380,
       "height": 320,

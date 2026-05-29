@@ -14,8 +14,9 @@
 종목만 통과 → 이미 보유 중인 월물 제외 (SymbolFilter difference) → **IfNode** 가 후보 ≥ 1
 일 때만 NewOrderNode 발사.
 
-- **후보풀**: HMHJ26 (4월), HMHM26 (6월), HMCEJ26 (4월), HMCEM26 (6월)
-- **블랙리스트 (mock roll-over)**: HMHG26 / HMCEG26 (이미 만기된 2월물)
+- **후보풀**: HMHJ26 (4월, 만기 경과), HMHM26 (6월, live), HMCEJ26 (4월, 만기 경과), HMCEM26 (6월, live)
+- **블랙리스트 (roll-over)**: HMHJ26 / HMCEJ26 (2026/04 만기 경과 — historical 빈 응답) + HMHG26 / HMCEG26 (2월물 mock 가드)
+- **생존 후보**: 블랙리스트 제외 후 live 6월물(HMHM26 / HMCEM26)만 통과 → ATR 조건 평가
 - **시그널**: ATR(period=14, multiplier=2.0, direction=breakout_up)
 - **사이징**: ATR 기반 (계좌 5%, 종목당 1.5% 위험)
 - **주문**: limit (HKEX 모의투자 제약)
@@ -29,7 +30,7 @@
 
 | 단계 | 본 예제 (mock) | 실 운영 (future work) |
 |------|---------------|------------------|
-| 만기 캘린더 | 정적 hard-coded (HMHG26 / HMCEG26) | LS HKEX 캘린더 API 연동 또는 calendar.json |
+| 만기 캘린더 | 정적 hard-coded (HMHJ26 / HMCEJ26 / HMHG26 / HMCEG26) | LS HKEX 캘린더 API 연동 또는 calendar.json |
 | 동적 갱신 | 없음 (코드 수정) | `dynamic_symbols` 바인딩으로 매일 자동 갱신 |
 | 만기 임박 판단 | hard-coded | `expiry - today() <= 7d` 같은 표현식 |
 

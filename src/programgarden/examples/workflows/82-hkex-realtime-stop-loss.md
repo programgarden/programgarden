@@ -13,7 +13,7 @@
 5초 단위로 안정화한 뒤, **IfNode** 가 `current_price <= stop_price` 도달 시
 **limit 매도**로 청산.
 
-- **종목**: HMHJ26 (Mini Hang Seng 4월) — 단일 시범 보유
+- **종목**: HMHM26 (Mini Hang Seng 6월) — 단일 시범 보유
 - **stop_price**: 20,000 HKD (정적 상수, 데모용)
 - **주문**: `side=sell`, `order_type=limit`, `price={{ throttle.data.current_price }}`
 - **체결 후**: Telegram 즉시 알림
@@ -42,7 +42,7 @@
 flowchart LR
     start([StartNode]) --> broker[OverseasFuturesBrokerNode<br/>paper_trading=true]
 
-    broker --> watchlist[WatchlistNode<br/>HMHJ26]
+    broker --> watchlist[WatchlistNode<br/>HMHM26]
     watchlist --> realtime[OverseasFuturesRealMarketData<br/>stay_connected=true]
     realtime --> throttle[ThrottleNode<br/>mode=latest interval=5s]
     throttle --> ifstop{IfNode<br/>current_price <= 20000?}
@@ -63,7 +63,7 @@ flowchart LR
 | 노드 | 역할 | 핵심 설정 |
 |------|------|-----------|
 | `start` / `broker` | 진입 + 모의 브로커 | `paper_trading=true` |
-| `watchlist` | 보유 종목 1개 | HMHJ26 |
+| `watchlist` | 보유 종목 1개 | HMHM26 |
 | `realtime` | tick 구독 | `symbol={{ item }}`, `stay_connected=true` |
 | `throttle` | tick rate 안정화 | `mode=latest, interval_sec=5.0, pass_first=true` |
 | `if_stop` | stop 조건 분기 | `left={{ throttle.data.current_price }}, operator=<=, right=20000.0` |

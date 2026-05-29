@@ -16,7 +16,7 @@
       "id": "watchlist",
       "type": "WatchlistNode",
       "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"}
+        {"symbol": "HMHM26", "exchange": "HKEX"}
       ],
       "position": {"x": 420, "y": 200}
     },
@@ -136,7 +136,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX 실시간 손절 자동매매 (모의투자)\n\n**시나리오**: 단일 보유 포지션 HMHJ26 (Mini Hang Seng 4월). 실시간 tick 을 ThrottleNode (5초) 로 안정화하고, current_price ≤ 20000 HKD 도달 시 즉시 limit 매도로 청산.\n\n**주문 유형**: limit (HKEX 모의투자 시장가 불가). price 는 현재 tick price 그대로 사용 → 빠른 체결.\n\n**가동 시간**: 24시간 연속 (T+1 야간세션 포함). 데이세션 휴장 시 tick 자체가 안 오므로 자연 일시정지.\n\n**balance partial-failure 폴백**: AccountNode 에 `resilience.fallback.mode=skip` 설정 — TR 일부 실패해도 워크플로우 중단되지 않고 다음 사이클에 복구 시도.",
+      "content": "## HKEX 실시간 손절 자동매매 (모의투자)\n\n**시나리오**: 단일 보유 포지션 HMHM26 (Mini Hang Seng 6월). 실시간 tick 을 ThrottleNode (5초) 로 안정화하고, current_price ≤ 20000 HKD 도달 시 즉시 limit 매도로 청산.\n\n**주문 유형**: limit (HKEX 모의투자 시장가 불가). price 는 현재 tick price 그대로 사용 → 빠른 체결.\n\n**가동 시간**: 24시간 연속 (T+1 야간세션 포함). 데이세션 휴장 시 tick 자체가 안 오므로 자연 일시정지.\n\n**balance partial-failure 폴백**: AccountNode 에 `resilience.fallback.mode=skip` 설정 — TR 일부 실패해도 워크플로우 중단되지 않고 다음 사이클에 복구 시도.",
       "color": 5,
       "width": 400,
       "height": 280,

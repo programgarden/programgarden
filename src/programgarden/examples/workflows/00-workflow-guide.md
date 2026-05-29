@@ -793,6 +793,12 @@ HM[CE] + 월코드 + 연도2자리
 **Roll-over**: 분기물(H/M/U/Z)이 가장 유동성 풍부. 만기 임박 시 다음 월물로 교체. 자동화는
 ExclusionListNode 정적 블랙리스트 (예제 85) 또는 향후 LS 캘린더 연동.
 
+> ⚠️ **예제 월물은 시간이 지나면 만료됩니다.** 만기 경과 월물은 `OverseasFuturesHistoricalDataNode`
+> 가 **에러 없이 빈 `time_series`** 를 반환 → 다운스트림 condition/sizing 이 silent 하게 무진입.
+> 예제 81-85 는 작성 시점 기준 live 월물(2026 기준 `HMHM26`/`HMCEM26`, 6월물 M)을 사용하며,
+> 실행 시점이 만기를 지났다면 `OverseasFuturesSymbolQueryNode` 로 현재 front month 를 확인해
+> Watchlist 심볼을 갱신하세요. (2026-05-29 검증: J월물 만료 → M월물 roll-forward)
+
 ### 13.4 신규 예제 81-85 (HKEX 풀세트)
 
 | 예제 | 시나리오 | 학습 포인트 |

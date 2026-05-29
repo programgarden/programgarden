@@ -10,7 +10,7 @@
 ## 🎯 시나리오 요약
 
 매 거래일 HKEX 데이세션 마감 직후 (KST 18:30), **AIAgentNode** 가 `risk_manager` 프리셋으로
-HMHJ26 / HMCEJ26 두 종목의 60일 historical 캔들 + 현재 계좌 포지션을 **Tool 엣지**로 조회하여
+HMHM26 / HMCEM26 두 종목의 60일 historical 캔들 + 현재 계좌 포지션을 **Tool 엣지**로 조회하여
 종목별 `risk_level` (low/medium/high) + 변동성 기반 `suggested_stop_loss` + 한 줄 reasoning 을
 **structured JSON** 으로 생성. Telegram 으로 요약 발송 + TableDisplayNode 콘솔 렌더링.
 
@@ -43,7 +43,7 @@ flowchart LR
     start --> llm[LLMModelNode<br/>gpt-4o T=0.3]
 
     broker --> schedule[ScheduleNode<br/>30 18 * * 1-5 KST]
-    schedule --> watchlist[WatchlistNode<br/>HMHJ26, HMCEJ26]
+    schedule --> watchlist[WatchlistNode<br/>HMHM26, HMCEM26]
     watchlist --> historical[HistoricalDataNode<br/>60d 1d auto-iterate]
 
     schedule --> account[OverseasFuturesAccountNode<br/>resilience.skip]
@@ -65,7 +65,7 @@ flowchart LR
 | `start` / `broker` | 진입 + 모의 브로커 | `paper_trading=true` |
 | `schedule` | daily 트리거 | `cron=30 18 * * 1-5, timezone=Asia/Seoul` |
 | `llm` | LLM 연결 | `model=gpt-4o, temperature=0.3, max_tokens=1200` |
-| `watchlist` | 분석 후보 종목 | HMHJ26, HMCEJ26 |
+| `watchlist` | 분석 후보 종목 | HMHM26, HMCEM26 |
 | `historical` | 60일 일봉 (auto-iterate per symbol) | `interval=1d` |
 | `account` | 현재 포지션 + balance | `resilience.fallback.mode=skip` |
 | `risk_agent` | AI 리스크 매니저 | `preset=risk_manager, output_format=structured, output_schema={positions,summary}, max_tool_calls=6, cooldown_sec=60, max_total_tokens=40000` |
