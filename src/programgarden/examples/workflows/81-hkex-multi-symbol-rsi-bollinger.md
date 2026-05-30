@@ -131,20 +131,24 @@ poetry run pytest tests/test_examples_validation.py::TestWorkflowDryRunCycle::te
 
 → `status: completed, errors_count: 0`. Auto-iterate (Watchlist → Historical → RSI → Bollinger → Logic) 전 체인 정상.
 
-### L3 — 실 모의계좌 시세 read (2026-05-29 호스트 실행 ✅)
+### L3 — 실 모의계좌 시세 read (2026-05-29 최초 ✅ / 2026-05-30 deb80456 재검증 ✅)
 
-`examples/programmer_example/test_hkex_81_l3_read.py` (NewOrder/Telegram strip 한
-read-only 변환) 로 실 LS 해외선물 모의 appkey (`APPKEY_FUTURE_FAKE`) 실행 결과:
+`examples/programmer_example/test_hkex_read_all.py` (NewOrder/Telegram/TradingHours
+strip 한 read-only 변환) 로 실 LS 해외선물 모의 appkey (`APPKEY_FUTURE_FAKE`) 실행 결과:
 
 | 노드 | 결과 |
 |------|------|
 | `account.balance` | ✅ 통화별 잔고 수신 (HKD 1,000,130 등) |
 | `account.positions` | `[]` (무포지션, 정상) |
-| `historical.value` | ✅ HMHM26 / HMCEM26 60일 일봉 time_series 정상 수신 |
-| `rsi_condition.passed_symbols` | ✅ `[HMHM26, HMCEM26]` (둘 다 RSI<30 과매도 통과) |
+| `historical.value` | ✅ HMHM26 / HMCEM26 실 OHLC(20260331~) time_series 정상 수신 |
+| `rsi_condition.passed_symbols` | ✅ 과매도 통과 (2026-05-30 재검: HMCEM26 RSI 20.87 / price 8363) |
 | `bollinger_condition.passed_symbols` | `[]` (현 시점 하단 미터치 — 실 시장 상태, 정상) |
 | `logic` (AND) | 교집합 없음 → 무진입 → `no_entry_notice` 분기 |
-| **errors** | **0** |
+| **errors** | **0** (양 실행 모두) |
+
+> 2026-05-30 23:10 호스트 재검증(commit `deb80456` 이후): 전 체인 historical→RSI→
+> Bollinger→Logic→account→filter→sizing 까지 `errors=0`. warn 4건(logic
+> `is_condition_met`×2 + 무진입 path `{{ item }}` sizing×2)은 **동작 무영향**(pickup 3 확인).
 
 > ⚠️ **월물 만기 주의**: 최초 작성 시 4월물(`HMHJ26`/`HMCEJ26`) 사용 → 2026-05-29 시점
 > 이미 만기 경과로 historical 이 **빈 배열**(silent) 반환. live 6월물(`HMHM26`/`HMCEM26`)

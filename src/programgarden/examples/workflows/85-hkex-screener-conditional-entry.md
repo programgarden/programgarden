@@ -126,10 +126,19 @@ HM[CE] + 월코드 + 연도2자리
 historical / atr_cond auto-iterate, filter_candidates 가 빈 결과 → IfNode 가 false 분기 →
 no_candidate_notice 실행 (mock 환경 정상). 실 데이터에선 true 분기 진입 가능.
 
-### L3-L4 — 실 모의 검증 (사용자 트리거)
+### L3 — 실 모의 검증 (2026-05-30 호스트 실행 ✅ — from_port:"filtered" 라이브 확증)
 
-L3: 실 모의 appkey 로 historical → ATR 계산 → passed_symbols 확인.
-L4: 후보가 잡힐 때 NewOrder 1건 모의계좌 발사 → 체결 확인 → cancel.
+`examples/programmer_example/test_hkex_read_all.py` 로 실 모의 appkey 실행:
+
+- **exclusion → historical 엣지 `from_port:"filtered"` 확증**: ExclusionListNode 가 만기
+  4월물/2월물 4종(`HMHJ26`/`HMCEJ26`/`HMHG26`/`HMCEG26`)을 `excluded` 포트로 격리하고,
+  historical 은 생존 월물 `HMHM26`/`HMCEM26` 만 순회 (스크리너가 "걸러낸 종목"을
+  분석하던 자기모순 봉쇄 — deb80456).
+- ATR 계산 정상 (`atr` 158.64), **errors=0**.
+
+### L4 — mock 주문 (사용자 트리거)
+
+후보가 잡힐 때 NewOrder 1건 모의계좌 발사 → 체결 확인 → cancel (사용자 직접 발사).
 
 ---
 
