@@ -164,7 +164,7 @@
 
     {"from": "trading_hours", "to": "watchlist"},
     {"from": "watchlist", "to": "exclusion"},
-    {"from": "exclusion", "to": "historical"},
+    {"from": "exclusion", "to": "historical", "from_port": "filtered"},
     {"from": "historical", "to": "atr_cond"},
 
     {"from": "trading_hours", "to": "account"},
