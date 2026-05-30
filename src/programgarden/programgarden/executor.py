@@ -9968,11 +9968,18 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                     context.log("warning", f"External binding evaluation failed for {target_field}: {e}", node_id)
                     external_values[target_field] = source_expr
 
+        # 기본 컨텍스트 dict (row 제외) — ExpressionContext 는 mapping 이 아니므로
+        # 반드시 to_dict() 로 평탄화해야 한다. 이전엔 {**expr_context} 로 객체를
+        # 직접 언팩하려다 비어있지 않은 from_data 의 첫 row 에서 TypeError 로
+        # 크래시했다 (dry_run 은 mock 이 빈 time_series 를 줘 루프가 안 돌아 은폐됨).
+        base_dict = expr_context.to_dict()
+
         # 각 row 처리
         for row in from_data:
             record = {}
-            row_context = {**expr_context, "row": row}
-            row_evaluator = ExpressionEvaluator(row_context)
+            row_ctx = ExpressionContext()
+            row_ctx.variables = {**base_dict, "row": row}
+            row_evaluator = ExpressionEvaluator(row_ctx)
 
             for target_field, source_expr in extract.items():
                 if target_field in external_values:
@@ -16264,6 +16271,23 @@ class WorkflowJob:
                 input_data = None
                 for edge in self.workflow.edges:
                     if edge.to_node_id == node_id:
+                        # 명시적 from_port 우선 (예: ExclusionListNode.filtered).
+                        # 이를 지정하지 않으면 auto-iterate 는 소스 노드의 첫 출력
+                        # 포트를 집어버린다 — ExclusionListNode 는 첫 포트가
+                        # `excluded`(블랙리스트)라서, from_port 없이는 제외 종목을
+                        # 순회하게 되는 silent 버그가 생긴다. IfNode 분기 포트
+                        # (true/false/result)는 별도 라우팅 의미라 여기서 제외.
+                        explicit_port = getattr(edge, "from_port", None)
+                        if explicit_port and explicit_port not in (
+                            "output", "true", "false", "result",
+                        ):
+                            port_data = self.context.get_output(
+                                edge.from_node_id, explicit_port
+                            )
+                            if port_data is not None:
+                                input_data = port_data
+                                break
+
                         # symbols 포트 우선 확인 (WatchlistNode 출력)
                         input_data = self.context.get_output(edge.from_node_id, "symbols")
 

@@ -1,7 +1,7 @@
 {
   "id": "57-futures-paper-backtest-heavy",
-  "name": "해외선물 모의투자 멀티 전략 백테스트 (메모리 스트레스)",
-  "description": "HKEX 해외선물 4종목 × 6개월 데이터 × 3전략(TSMOM/RSI/TurtleBreakout) 백테스트 + 벤치마크 비교 + 조건부 주문. 28노드 메모리 부하 테스트용.",
+  "name": "해외선물 모의투자 멀티 전략 종목별 백테스트 (메모리 스트레스)",
+  "description": "HKEX 해외선물 4종목 × 6개월 데이터 × 3전략(TSMOM/RSI/TurtleBreakout)을 종목별로 분리하여 12개 백테스트(4종목×3전략) + 벤치마크 비교 + 조건부 주문. 37노드 메모리 부하 테스트용.",
   "nodes": [
     {
       "id": "start",
@@ -112,7 +112,7 @@
     {
       "id": "tsmom_cond",
       "type": "ConditionNode",
-      "plugin": "TSMOM",
+      "plugin": "TimeSeriesMomentum",
       "items": {
         "from": "{{ item.time_series }}",
         "extract": {
@@ -127,11 +127,10 @@
         }
       },
       "fields": {
-        "lookback": 60,
-        "volatility_lookback": 20,
-        "threshold": 0.0,
-        "volatility_target": 0.15,
-        "direction": "long"
+        "lookback_days": 60,
+        "signal_mode": "binary",
+        "volatility_adjust": true,
+        "vol_target": 0.15
       },
       "position": {
         "x": 1500,
@@ -189,22 +188,21 @@
       }
     },
     {
-      "id": "backtest_tsmom",
+      "id": "backtest_tsmom_s0",
       "type": "BacktestEngineNode",
-      "strategy_name": "TSMOM Momentum",
+      "strategy_name": "TSMOM Momentum — HMCEM26",
       "items": {
-        "from": "{{ nodes.historical.value.time_series }}",
+        "from": "{{ nodes.tsmom_cond.values[0].time_series }}",
         "extract": {
-          "symbol": "{{ nodes.historical.value.symbol }}",
-          "exchange": "{{ nodes.historical.value.exchange }}",
+          "symbol": "{{ nodes.tsmom_cond.values[0].symbol }}",
+          "exchange": "{{ nodes.tsmom_cond.values[0].exchange }}",
           "date": "{{ row.date }}",
           "open": "{{ row.open }}",
           "high": "{{ row.high }}",
           "low": "{{ row.low }}",
           "close": "{{ row.close }}",
           "volume": "{{ row.volume }}",
-          "signal": "{{ nodes.tsmom_cond.result.signal }}",
-          "side": "{{ nodes.tsmom_cond.result.side }}"
+          "signal": "{{ 'buy' if row.signal == 'long' else ('sell' if row.signal == 'short' else None) }}"
         }
       },
       "initial_capital": 100000,
@@ -226,22 +224,130 @@
       }
     },
     {
-      "id": "backtest_rsi",
+      "id": "backtest_tsmom_s1",
       "type": "BacktestEngineNode",
-      "strategy_name": "RSI Mean Reversion",
+      "strategy_name": "TSMOM Momentum — MHIM26",
       "items": {
-        "from": "{{ nodes.historical.value.time_series }}",
+        "from": "{{ nodes.tsmom_cond.values[1].time_series }}",
         "extract": {
-          "symbol": "{{ nodes.historical.value.symbol }}",
-          "exchange": "{{ nodes.historical.value.exchange }}",
+          "symbol": "{{ nodes.tsmom_cond.values[1].symbol }}",
+          "exchange": "{{ nodes.tsmom_cond.values[1].exchange }}",
           "date": "{{ row.date }}",
           "open": "{{ row.open }}",
           "high": "{{ row.high }}",
           "low": "{{ row.low }}",
           "close": "{{ row.close }}",
           "volume": "{{ row.volume }}",
-          "signal": "{{ nodes.rsi_cond.result.signal }}",
-          "side": "{{ nodes.rsi_cond.result.side }}"
+          "signal": "{{ 'buy' if row.signal == 'long' else ('sell' if row.signal == 'short' else None) }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "atr_based",
+      "atr_risk_percent": 1.5,
+      "atr_period": 14,
+      "max_position_percent": 20.0,
+      "stop_loss_percent": 5.0,
+      "trailing_stop_percent": 3.0,
+      "max_holding_days": 60,
+      "allow_short": true,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 1850,
+        "y": 270
+      }
+    },
+    {
+      "id": "backtest_tsmom_s2",
+      "type": "BacktestEngineNode",
+      "strategy_name": "TSMOM Momentum — HTIM26",
+      "items": {
+        "from": "{{ nodes.tsmom_cond.values[2].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.tsmom_cond.values[2].symbol }}",
+          "exchange": "{{ nodes.tsmom_cond.values[2].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ 'buy' if row.signal == 'long' else ('sell' if row.signal == 'short' else None) }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "atr_based",
+      "atr_risk_percent": 1.5,
+      "atr_period": 14,
+      "max_position_percent": 20.0,
+      "stop_loss_percent": 5.0,
+      "trailing_stop_percent": 3.0,
+      "max_holding_days": 60,
+      "allow_short": true,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 1850,
+        "y": 390
+      }
+    },
+    {
+      "id": "backtest_tsmom_s3",
+      "type": "BacktestEngineNode",
+      "strategy_name": "TSMOM Momentum — HCEM26",
+      "items": {
+        "from": "{{ nodes.tsmom_cond.values[3].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.tsmom_cond.values[3].symbol }}",
+          "exchange": "{{ nodes.tsmom_cond.values[3].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ 'buy' if row.signal == 'long' else ('sell' if row.signal == 'short' else None) }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "atr_based",
+      "atr_risk_percent": 1.5,
+      "atr_period": 14,
+      "max_position_percent": 20.0,
+      "stop_loss_percent": 5.0,
+      "trailing_stop_percent": 3.0,
+      "max_holding_days": 60,
+      "allow_short": true,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 1850,
+        "y": 510
+      }
+    },
+    {
+      "id": "backtest_rsi_s0",
+      "type": "BacktestEngineNode",
+      "strategy_name": "RSI Mean Reversion — HMCEM26",
+      "items": {
+        "from": "{{ nodes.rsi_cond.values[0].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.rsi_cond.values[0].symbol }}",
+          "exchange": "{{ nodes.rsi_cond.values[0].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ row.signal }}",
+          "side": "{{ row.side }}"
         }
       },
       "initial_capital": 100000,
@@ -257,27 +363,134 @@
       "allow_fractional": true,
       "risk_free_rate": 0.04,
       "position": {
-        "x": 1850,
-        "y": 400
+        "x": 2050,
+        "y": 150
       }
     },
     {
-      "id": "backtest_turtle",
+      "id": "backtest_rsi_s1",
       "type": "BacktestEngineNode",
-      "strategy_name": "Turtle Breakout",
+      "strategy_name": "RSI Mean Reversion — MHIM26",
       "items": {
-        "from": "{{ nodes.historical.value.time_series }}",
+        "from": "{{ nodes.rsi_cond.values[1].time_series }}",
         "extract": {
-          "symbol": "{{ nodes.historical.value.symbol }}",
-          "exchange": "{{ nodes.historical.value.exchange }}",
+          "symbol": "{{ nodes.rsi_cond.values[1].symbol }}",
+          "exchange": "{{ nodes.rsi_cond.values[1].exchange }}",
           "date": "{{ row.date }}",
           "open": "{{ row.open }}",
           "high": "{{ row.high }}",
           "low": "{{ row.low }}",
           "close": "{{ row.close }}",
           "volume": "{{ row.volume }}",
-          "signal": "{{ nodes.turtle_cond.result.signal }}",
-          "side": "{{ nodes.turtle_cond.result.side }}"
+          "signal": "{{ row.signal }}",
+          "side": "{{ row.side }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "fixed_percent",
+      "fixed_percent": 10.0,
+      "max_position_percent": 25.0,
+      "stop_loss_percent": 3.0,
+      "take_profit_percent": 10.0,
+      "time_stop_days": 14,
+      "allow_short": false,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 2050,
+        "y": 270
+      }
+    },
+    {
+      "id": "backtest_rsi_s2",
+      "type": "BacktestEngineNode",
+      "strategy_name": "RSI Mean Reversion — HTIM26",
+      "items": {
+        "from": "{{ nodes.rsi_cond.values[2].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.rsi_cond.values[2].symbol }}",
+          "exchange": "{{ nodes.rsi_cond.values[2].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ row.signal }}",
+          "side": "{{ row.side }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "fixed_percent",
+      "fixed_percent": 10.0,
+      "max_position_percent": 25.0,
+      "stop_loss_percent": 3.0,
+      "take_profit_percent": 10.0,
+      "time_stop_days": 14,
+      "allow_short": false,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 2050,
+        "y": 390
+      }
+    },
+    {
+      "id": "backtest_rsi_s3",
+      "type": "BacktestEngineNode",
+      "strategy_name": "RSI Mean Reversion — HCEM26",
+      "items": {
+        "from": "{{ nodes.rsi_cond.values[3].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.rsi_cond.values[3].symbol }}",
+          "exchange": "{{ nodes.rsi_cond.values[3].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ row.signal }}",
+          "side": "{{ row.side }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "fixed_percent",
+      "fixed_percent": 10.0,
+      "max_position_percent": 25.0,
+      "stop_loss_percent": 3.0,
+      "take_profit_percent": 10.0,
+      "time_stop_days": 14,
+      "allow_short": false,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 2050,
+        "y": 510
+      }
+    },
+    {
+      "id": "backtest_turtle_s0",
+      "type": "BacktestEngineNode",
+      "strategy_name": "Turtle Breakout — HMCEM26",
+      "items": {
+        "from": "{{ nodes.turtle_cond.values[0].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.turtle_cond.values[0].symbol }}",
+          "exchange": "{{ nodes.turtle_cond.values[0].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ 'buy' if row.entry_signal == 'long_entry' else ('sell' if row.exit_signal == 'long_exit' else None) }}"
         }
       },
       "initial_capital": 100000,
@@ -294,17 +507,134 @@
       "allow_fractional": true,
       "risk_free_rate": 0.04,
       "position": {
-        "x": 1850,
-        "y": 650
+        "x": 2250,
+        "y": 150
+      }
+    },
+    {
+      "id": "backtest_turtle_s1",
+      "type": "BacktestEngineNode",
+      "strategy_name": "Turtle Breakout — MHIM26",
+      "items": {
+        "from": "{{ nodes.turtle_cond.values[1].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.turtle_cond.values[1].symbol }}",
+          "exchange": "{{ nodes.turtle_cond.values[1].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ 'buy' if row.entry_signal == 'long_entry' else ('sell' if row.exit_signal == 'long_exit' else None) }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "atr_based",
+      "atr_risk_percent": 2.0,
+      "atr_period": 20,
+      "max_position_percent": 15.0,
+      "stop_loss_percent": 8.0,
+      "trailing_stop_percent": 5.0,
+      "max_holding_days": 90,
+      "allow_short": true,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 2250,
+        "y": 270
+      }
+    },
+    {
+      "id": "backtest_turtle_s2",
+      "type": "BacktestEngineNode",
+      "strategy_name": "Turtle Breakout — HTIM26",
+      "items": {
+        "from": "{{ nodes.turtle_cond.values[2].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.turtle_cond.values[2].symbol }}",
+          "exchange": "{{ nodes.turtle_cond.values[2].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ 'buy' if row.entry_signal == 'long_entry' else ('sell' if row.exit_signal == 'long_exit' else None) }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "atr_based",
+      "atr_risk_percent": 2.0,
+      "atr_period": 20,
+      "max_position_percent": 15.0,
+      "stop_loss_percent": 8.0,
+      "trailing_stop_percent": 5.0,
+      "max_holding_days": 90,
+      "allow_short": true,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 2250,
+        "y": 390
+      }
+    },
+    {
+      "id": "backtest_turtle_s3",
+      "type": "BacktestEngineNode",
+      "strategy_name": "Turtle Breakout — HCEM26",
+      "items": {
+        "from": "{{ nodes.turtle_cond.values[3].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.turtle_cond.values[3].symbol }}",
+          "exchange": "{{ nodes.turtle_cond.values[3].exchange }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ 'buy' if row.entry_signal == 'long_entry' else ('sell' if row.exit_signal == 'long_exit' else None) }}"
+        }
+      },
+      "initial_capital": 100000,
+      "commission_rate": 0.0005,
+      "slippage": 0.001,
+      "position_sizing": "atr_based",
+      "atr_risk_percent": 2.0,
+      "atr_period": 20,
+      "max_position_percent": 15.0,
+      "stop_loss_percent": 8.0,
+      "trailing_stop_percent": 5.0,
+      "max_holding_days": 90,
+      "allow_short": true,
+      "allow_fractional": true,
+      "risk_free_rate": 0.04,
+      "position": {
+        "x": 2250,
+        "y": 510
       }
     },
     {
       "id": "benchmark",
       "type": "BenchmarkCompareNode",
       "strategies": [
-        "{{ nodes.backtest_tsmom.equity_curve }}",
-        "{{ nodes.backtest_rsi.equity_curve }}",
-        "{{ nodes.backtest_turtle.equity_curve }}"
+        "{{ nodes.backtest_tsmom_s0.equity_curve }}",
+        "{{ nodes.backtest_tsmom_s1.equity_curve }}",
+        "{{ nodes.backtest_tsmom_s2.equity_curve }}",
+        "{{ nodes.backtest_tsmom_s3.equity_curve }}",
+        "{{ nodes.backtest_rsi_s0.equity_curve }}",
+        "{{ nodes.backtest_rsi_s1.equity_curve }}",
+        "{{ nodes.backtest_rsi_s2.equity_curve }}",
+        "{{ nodes.backtest_rsi_s3.equity_curve }}",
+        "{{ nodes.backtest_turtle_s0.equity_curve }}",
+        "{{ nodes.backtest_turtle_s1.equity_curve }}",
+        "{{ nodes.backtest_turtle_s2.equity_curve }}",
+        "{{ nodes.backtest_turtle_s3.equity_curve }}"
       ],
       "ranking_metric": "sharpe",
       "position": {
@@ -559,42 +889,6 @@
       "to": "turtle_cond"
     },
     {
-      "from": "historical",
-      "to": "backtest_tsmom"
-    },
-    {
-      "from": "tsmom_cond",
-      "to": "backtest_tsmom"
-    },
-    {
-      "from": "historical",
-      "to": "backtest_rsi"
-    },
-    {
-      "from": "rsi_cond",
-      "to": "backtest_rsi"
-    },
-    {
-      "from": "historical",
-      "to": "backtest_turtle"
-    },
-    {
-      "from": "turtle_cond",
-      "to": "backtest_turtle"
-    },
-    {
-      "from": "backtest_tsmom",
-      "to": "benchmark"
-    },
-    {
-      "from": "backtest_rsi",
-      "to": "benchmark"
-    },
-    {
-      "from": "backtest_turtle",
-      "to": "benchmark"
-    },
-    {
       "from": "tsmom_cond",
       "to": "tsmom_table"
     },
@@ -662,6 +956,102 @@
     {
       "from": "new_order",
       "to": "order_table"
+    },
+    {
+      "from": "tsmom_cond",
+      "to": "backtest_tsmom_s0"
+    },
+    {
+      "from": "backtest_tsmom_s0",
+      "to": "benchmark"
+    },
+    {
+      "from": "tsmom_cond",
+      "to": "backtest_tsmom_s1"
+    },
+    {
+      "from": "backtest_tsmom_s1",
+      "to": "benchmark"
+    },
+    {
+      "from": "tsmom_cond",
+      "to": "backtest_tsmom_s2"
+    },
+    {
+      "from": "backtest_tsmom_s2",
+      "to": "benchmark"
+    },
+    {
+      "from": "tsmom_cond",
+      "to": "backtest_tsmom_s3"
+    },
+    {
+      "from": "backtest_tsmom_s3",
+      "to": "benchmark"
+    },
+    {
+      "from": "rsi_cond",
+      "to": "backtest_rsi_s0"
+    },
+    {
+      "from": "backtest_rsi_s0",
+      "to": "benchmark"
+    },
+    {
+      "from": "rsi_cond",
+      "to": "backtest_rsi_s1"
+    },
+    {
+      "from": "backtest_rsi_s1",
+      "to": "benchmark"
+    },
+    {
+      "from": "rsi_cond",
+      "to": "backtest_rsi_s2"
+    },
+    {
+      "from": "backtest_rsi_s2",
+      "to": "benchmark"
+    },
+    {
+      "from": "rsi_cond",
+      "to": "backtest_rsi_s3"
+    },
+    {
+      "from": "backtest_rsi_s3",
+      "to": "benchmark"
+    },
+    {
+      "from": "turtle_cond",
+      "to": "backtest_turtle_s0"
+    },
+    {
+      "from": "backtest_turtle_s0",
+      "to": "benchmark"
+    },
+    {
+      "from": "turtle_cond",
+      "to": "backtest_turtle_s1"
+    },
+    {
+      "from": "backtest_turtle_s1",
+      "to": "benchmark"
+    },
+    {
+      "from": "turtle_cond",
+      "to": "backtest_turtle_s2"
+    },
+    {
+      "from": "backtest_turtle_s2",
+      "to": "benchmark"
+    },
+    {
+      "from": "turtle_cond",
+      "to": "backtest_turtle_s3"
+    },
+    {
+      "from": "backtest_turtle_s3",
+      "to": "benchmark"
     }
   ],
   "credentials": [
@@ -687,7 +1077,7 @@
   "notes": [
     {
       "id": "note_overview",
-      "content": "## 해외선물 멀티 전략 백테스트 워크플로우\n\nHKEX 선물 4종목 × 6개월 일봉 × 3전략 병렬 백테스트.\n메모리 스트레스 테스트용 (28노드, 36엣지).\n\n**대상**: HMCE, MHI, HTI, HCE (HKEX 선물)\n**모드**: 모의투자 (paper_trading=true)\n**데이터**: 180일 일봉 OHLCV\n**전략**: TSMOM / RSI / TurtleBreakout\n\n> 해외선물 모의투자는 HKEX만 지원 (CME 불가)",
+      "content": "## 해외선물 멀티 전략 종목별 백테스트 워크플로우\n\nHKEX 선물 4종목 × 6개월 일봉 × 3전략을 종목별로 분리한 12개(4×3) 백테스트.\n메모리 스트레스 테스트용 (37노드, 51엣지).\n\n**대상**: HMCEM26, MHIM26, HTIM26, HCEM26 (HKEX 선물)\n**모드**: 모의투자 (paper_trading=true)\n**데이터**: 180일 일봉 OHLCV\n**전략**: TSMOM / RSI / TurtleBreakout (각 종목별 독립 백테스트)\n\n> 해외선물 모의투자는 HKEX만 지원 (CME 불가)",
       "color": 1,
       "width": 380,
       "height": 260,
@@ -698,7 +1088,7 @@
     },
     {
       "id": "note_strategies",
-      "content": "## 3전략 상세\n\n### TSMOM (Time Series Momentum)\n- lookback=60, vol_lookback=20\n- ATR 기반 포지션 사이징\n- 숏 허용, trailing stop 3%\n\n### RSI Mean Reversion\n- period=14, threshold=30 이하\n- 고정비율 10% 사이징\n- take profit 10%, time stop 14일\n\n### Turtle Breakout\n- entry=20일, exit=10일\n- ATR 2% 리스크 기반 사이징\n- 숏 허용, trailing stop 5%",
+      "content": "## 3전략 상세 (per-candle 시그널 매핑)\n\n각 백테스트는 ConditionNode 가 종목별로 주석을 단 per-candle time_series\n(`nodes.<cond>.values[i].time_series`)를 소비하며, 플러그인별 시그널 필드를\nBacktestEngine 의 buy/sell 로 매핑한다.\n\n### TSMOM (Time Series Momentum)\n- lookback=60, vol_lookback=20\n- 매핑: signal=='long'→buy, 'short'→sell (side 미바인딩, 기본 long)\n\n### RSI Mean Reversion\n- period=14, threshold=30 이하\n- 매핑: row.signal (buy/sell) + row.side 직접 사용\n\n### Turtle Breakout\n- entry=20일, exit=10일\n- 매핑: entry_signal=='long_entry'→buy, exit_signal=='long_exit'→sell (side 미바인딩)",
       "color": 3,
       "width": 360,
       "height": 340,
@@ -709,7 +1099,7 @@
     },
     {
       "id": "note_memory",
-      "content": "## 메모리 부하 포인트\n\n| 구분 | 수량 |\n|------|------|\n| 종목 | 4 HKEX |\n| 일봉 | ~180일/종목 |\n| OHLCV 레코드 | ~720 |\n| 조건 평가 | 4×3=12회 |\n| 백테스트 | 4×3=12회 |\n| 거래 기록 | ~수백 건 |\n| 차트 렌더링 | 5개 |\n| 테이블 렌더링 | 4개 |\n\n총 예상 피크: historical 데이터 + backtest trades + equity curves",
+      "content": "## 메모리 부하 포인트\n\n| 구분 | 수량 |\n|------|------|\n| 종목 | 4 HKEX |\n| 일봉 | ~180일/종목 |\n| OHLCV 레코드 | ~720 |\n| 조건 평가 | 4×3=12회 |\n| 백테스트 노드 | 4×3=12개 |\n| 거래 기록 | ~수백 건 |\n| 차트 렌더링 | 5개 |\n| 테이블 렌더링 | 4개 |\n\n총 예상 피크: historical 데이터 + 12개 backtest trades + 12개 equity curves",
       "color": 5,
       "width": 340,
       "height": 280,
@@ -720,7 +1110,7 @@
     },
     {
       "id": "note_dag",
-      "content": "## DAG 실행 흐름\n\n```\nStart → Schedule → TradingHours → Broker\n  ├→ Account ─────────────┐\n  ├→ ExclusionList         │\n  └→ Watchlist (4종목)     │\n      └→ Historical (×4)  │\n          ├→ TSMOM ──→ BT │\n          ├→ RSI ────→ BT │\n          └→ Turtle ─→ BT │\n              └→ Benchmark │\n                  ├→ Charts│\n                  └→ Summary\n          └→ Logic → If(잔고)\n              └→ Portfolio\n                  └→ Sizing → Order\n```",
+      "content": "## DAG 실행 흐름\n\n```\nStart → Schedule → TradingHours → Broker\n  ├→ Account ─────────────┐\n  ├→ ExclusionList         │\n  └→ Watchlist (4종목)     │\n      └→ Historical (×4)  │\n          ├→ TSMOM ──→ BT×4 ┐\n          ├→ RSI ────→ BT×4 ┤\n          └→ Turtle ─→ BT×4 ┘\n              └→ Benchmark (12 전략 랭킹)\n                  ├→ Charts\n                  └→ Summary\n          └→ Logic → If(잔고)\n              └→ Portfolio\n                  └→ Sizing → Order\n```",
       "color": 7,
       "width": 340,
       "height": 320,
