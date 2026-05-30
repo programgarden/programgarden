@@ -66,10 +66,15 @@ WORKFLOW_DIR = project_root / "src" / "programgarden" / "examples" / "workflows"
 TIMEOUT_SEC = 90
 
 # 워크플로우별 read-only strip 대상 (node id)
+#
+# trading_hours (TradingHoursFilterNode) 는 캘린더 게이트일 뿐 read/분석 체인의
+# 일부가 아니다. 장 마감(주말/공휴일)에는 이 게이트가 job 을 cancel 시켜
+# historical→지표→로직 체인이 아예 실행되지 않으므로, order/messaging/AI 와
+# 동일한 논리로 strip 하여 **언제든** read 경로를 검증할 수 있게 한다.
 TARGETS = {
-    "81": {"glob": "81-*.json", "strip": {"buy_order", "telegram"}},
+    "81": {"glob": "81-*.json", "strip": {"buy_order", "telegram", "trading_hours"}},
     "84": {"glob": "84-*.json", "strip": {"telegram_morning"}},
-    "85": {"glob": "85-*.json", "strip": {"buy_order", "telegram_entry"}},
+    "85": {"glob": "85-*.json", "strip": {"buy_order", "telegram_entry", "trading_hours"}},
     "83": {"glob": "83-*.json",
            "strip": {"llm", "risk_agent", "report_table", "report_telegram"}},
 }
@@ -100,7 +105,10 @@ class ReadListener(BaseExecutionListener):
             print(f"  ⚠️  [warn ] {event.message}")
 
     async def on_notification(self, event):
-        print(f"  🔔 {event.kind}: {event.message}")
+        # NotificationEvent fields: job_id/category/severity/title/message/node_id/node_type/data/timestamp
+        cat = getattr(event.category, "value", event.category)
+        sev = getattr(event.severity, "value", event.severity)
+        print(f"  🔔 [{cat}/{sev}] {event.title}: {event.message}")
 
 
 def _strip_ids(workflow: dict, strip: set) -> dict:
