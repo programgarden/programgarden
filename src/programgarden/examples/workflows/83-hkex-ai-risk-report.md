@@ -98,7 +98,14 @@ informational 권고 1건. Connection Rule (realtime → AIAgent) 위반 없음.
 historical auto-iterate (2종목), account, llm, risk_agent (mock structured response),
 report_table, report_telegram 전 체인 정상.
 
-### L3-L4 — 실 검증 (사용자 트리거)
+### L3 — read-only feed 검증 (2026-05-30 호스트 실행 ✅)
+
+`examples/programmer_example/test_hkex_read_all.py` (LLM/AI/Telegram strip) 로 AI 에
+공급되는 read-only feed(historical + account)만 실 모의 appkey 로 실행 → feed clean,
+5노드 completed 후 자연 cancel, **300s hang 재발 없음, errors=0**. (LLM 응답 자체 검증은
+아래 사용자 트리거 단계.)
+
+### L3(LLM)-L4 — 실 LLM 검증 (사용자 트리거)
 
 L3: 사용자가 `llm_cred.api_key` 에 실제 OpenAI 키 설정 후 1회 수동 실행 → 실제 LLM 응답 + Telegram 발송 확인.
 콜백 노출 검증:

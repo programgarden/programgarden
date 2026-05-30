@@ -94,12 +94,12 @@
       "operator": "all",
       "conditions": [
         {
-          "is_condition_met": "{{ nodes.rsi_condition.result.passed }}",
-          "passed_symbols": "{{ nodes.rsi_condition.result }}"
+          "is_condition_met": "{{ nodes.rsi_condition.result }}",
+          "passed_symbols": "{{ nodes.rsi_condition.passed_symbols }}"
         },
         {
-          "is_condition_met": "{{ nodes.bollinger_condition.result.passed }}",
-          "passed_symbols": "{{ nodes.bollinger_condition.result }}"
+          "is_condition_met": "{{ nodes.bollinger_condition.result }}",
+          "passed_symbols": "{{ nodes.bollinger_condition.passed_symbols }}"
         }
       ],
       "position": {"x": 1550, "y": 120}

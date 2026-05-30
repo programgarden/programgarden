@@ -114,10 +114,21 @@ mock 환경에서는 BenchmarkCompareNode 가 빈 ranking `[]` 반환 — 정상
 signals=8 (buy 4 + sell 4, 전부 `row.signal` 기반 — buy-and-hold fallback 아님),
 equity_curve 40포인트, trades=8. per-candle 시그널이 정상 인식됨을 확인.
 
-### L3 — 실 모의 데이터 검증 (사용자 트리거)
+### L3 — 실 모의 데이터 검증 (2026-05-30 호스트 실행 ✅ — deb80456 라이브 확증)
 
-L3: 실 모의 appkey 로 historical 수신 후 backtest 결과 확인. SummaryDisplay 콘솔에서
-sharpe / mdd / total_return 확인.
+`examples/programmer_example/test_hkex_read_all.py` 로 실 모의 appkey (`APPKEY_FUTURE_FAKE`)
+실행. **deb80456 per-symbol 백테스트 분리가 실 candle 로 비어있지 않은 equity curve 4건을
+산출함을 라이브로 확증** (이전 단일/merged 바인딩의 빈 백테스트 회귀 봉쇄):
+
+| 백테스트 노드 | sharpe | trades | final equity |
+|--------------|:------:|:------:|:------------:|
+| `backtest_rsi_hmhm` | -0.04 | 4 | 99,970.35 |
+| `backtest_rsi_hmce` | -0.48 | 9 | 98,498.64 |
+| `backtest_boll_hmhm` | +0.78 | 7 | 101,624.27 |
+| `backtest_boll_hmce` | +0.68 | 9 | 101,528.85 |
+
+- `benchmark.ranking`: 4전략 차별화 ranking 정상 산출 (mock 의 빈 `[]` 와 달리 실 데이터로 채워짐).
+- **errors=0 / warnings=0**.
 
 L4: 본 예제는 주문 노드 없음 — 별도 트리거 불필요.
 
