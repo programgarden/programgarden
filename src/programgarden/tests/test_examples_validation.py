@@ -1,6 +1,6 @@
 """Phase 5/8/9: example workflow JSON validation tests.
 
-Keeps the 67 shipped example workflows + programmer_example scripts healthy
+Keeps the 85 shipped example workflows + programmer_example scripts healthy
 as the codebase evolves.
 
 Class breakdown:

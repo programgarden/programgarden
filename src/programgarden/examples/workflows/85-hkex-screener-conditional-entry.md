@@ -77,7 +77,7 @@ flowchart LR
 | `schedule` | `cron=0 11 * * 1-5, timezone=Asia/Seoul` |
 | `trading_hours` | KST 10:15-17:30 (HKEX 데이세션) |
 | `watchlist` | HMHJ26, HMHM26, HMCEJ26, HMCEM26 |
-| `exclusion` | `symbols=[HMHG26, HMCEG26]` (만료 mock), `input_symbols={{ watchlist.symbols }}`, `default_reason=만기/유동성 부족` |
+| `exclusion` | `symbols=[HMHJ26, HMCEJ26, HMHG26, HMCEG26]` (4월물 roll-over 대상 + 2월물 만기 가드, 총 4건), `input_symbols={{ watchlist.symbols }}`, `default_reason=만기/유동성 부족` |
 | `historical` | 180d 1d auto-iterate per 필터링된 symbol |
 | `atr_cond` | plugin=ATR, `period=14, multiplier=2.0, direction=breakout_up` |
 | `account` | resilience skip (balance partial-failure 폴백) |
