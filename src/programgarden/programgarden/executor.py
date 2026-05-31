@@ -8364,39 +8364,48 @@ class LogicNodeExecutor(NodeExecutorBase):
         condition_results: List[Dict[str, Any]] = []
         all_passed_symbols: List[List[str]] = []
         weights: Dict[int, float] = {}  # index -> weight
-        
+
         for idx, cond in enumerate(conditions):
             # 조건 객체 검증
             if not isinstance(cond, dict):
                 context.log("warning", f"Condition at index {idx} is not a dict, skipping", node_id)
                 continue
-            
+
             # is_condition_met 필수
+            # 다종목 auto-iterate 시 is_condition_met 바인딩이 병합 리스트
+            # ([False, False, ...]) 로 해석될 수 있다. 리스트는 "통과 여부"가
+            # 아니라 "실행 여부"를 뜻하게 되므로, any() 로 스칼라화해 per-condition
+            # 통과 여부로 환원한다. (None 은 미제공 → 기존처럼 False + 경고)
             is_met = cond.get("is_condition_met")
             if is_met is None:
                 context.log("warning", f"Condition at index {idx} missing 'is_condition_met', treating as False", node_id)
-                is_met = False
-            
-            # passed_symbols 필수
-            passed_symbols = cond.get("passed_symbols")
-            if passed_symbols is None:
-                passed_symbols = []
-            if not isinstance(passed_symbols, list):
-                passed_symbols = []
-            
+                is_met_scalar = False
+            elif isinstance(is_met, list):
+                is_met_scalar = any(bool(x) for x in is_met)
+            else:
+                is_met_scalar = bool(is_met)
+
+            # passed_symbols: None(미제공) 과 [](명시 빈 리스트) 를 구분한다.
+            #   - 명시 리스트(빈 리스트 포함) → "symbol-bearing" 조건 (교집합 참여)
+            #   - 미제공/None/비리스트 → "boolean-gate" 조건 (bool 게이팅만)
+            raw_passed = cond.get("passed_symbols")
+            symbols_provided = isinstance(raw_passed, list)
+            passed_symbols = raw_passed if symbols_provided else []
+
             # weight (optional, default 1.0)
             weight = cond.get("weight", 1.0)
             if not isinstance(weight, (int, float)):
                 weight = 1.0
             weights[idx] = float(weight)
-            
+
             condition_results.append({
                 "index": idx,
-                "result": bool(is_met),
+                "result": is_met_scalar,
                 "passed_symbols": passed_symbols,
+                "symbols_provided": symbols_provided,
                 "weight": weight,
             })
-            all_passed_symbols.append(passed_symbols if isinstance(passed_symbols, list) else [])
+            all_passed_symbols.append(passed_symbols)
         
         if not condition_results:
             context.log("warning", "No valid condition results to combine", node_id)
@@ -8486,8 +8495,16 @@ class LogicNodeExecutor(NodeExecutorBase):
                     elif isinstance(s, str):
                         codes.add(s)
                 return codes
-            
-            sets = [extract_codes(s) for s in all_passed_symbols if s]
+
+            # symbol-bearing 조건(passed_symbols 명시 제공)만 교집합에 참여한다.
+            # 빈 리스트도 명시 제공이면 포함 → AND 교집합을 [] 로 영점화한다.
+            # boolean-gate 조건(미제공)은 심볼 의미가 없으므로 교집합에서 제외하고
+            # bool(result) 로만 게이팅된다.
+            sets = [
+                extract_codes(r["passed_symbols"])
+                for r in results
+                if r.get("symbols_provided")
+            ]
             if not sets:
                 return []
             common = sets[0]

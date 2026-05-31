@@ -115,12 +115,12 @@
       "operator": "all",
       "conditions": [
         {
-          "is_condition_met": "{{ nodes.rsi_condition.result.passed }}",
-          "passed_symbols": "{{ nodes.rsi_condition.result }}"
+          "is_condition_met": "{{ nodes.rsi_condition.result }}",
+          "passed_symbols": "{{ nodes.rsi_condition.passed_symbols }}"
         },
         {
-          "is_condition_met": "{{ nodes.macd_condition.result.passed }}",
-          "passed_symbols": "{{ nodes.macd_condition.result }}"
+          "is_condition_met": "{{ nodes.macd_condition.result }}",
+          "passed_symbols": "{{ nodes.macd_condition.passed_symbols }}"
         }
       ],
       "position": {
