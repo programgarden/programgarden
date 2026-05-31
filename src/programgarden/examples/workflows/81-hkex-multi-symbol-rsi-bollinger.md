@@ -147,8 +147,11 @@ strip 한 read-only 변환) 로 실 LS 해외선물 모의 appkey (`APPKEY_FUTUR
 | **errors** | **0** (양 실행 모두) |
 
 > 2026-05-30 23:10 호스트 재검증(commit `deb80456` 이후): 전 체인 historical→RSI→
-> Bollinger→Logic→account→filter→sizing 까지 `errors=0`. warn 4건(logic
-> `is_condition_met`×2 + 무진입 path `{{ item }}` sizing×2)은 **동작 무영향**(pickup 3 확인).
+> Bollinger→Logic→account→filter→sizing 까지 `errors=0`. 이때 관측된 logic
+> `is_condition_met`×2 warn 은 **cosmetic 이 아니라 진입 게이트 silent 봉쇄 버그**로 확인돼
+> LogicNode 바인딩을 교정(commit `1b615da5`)했고, 바인딩-only 로는 못 잡던 다종목 AND 교집합
+> 코어 버그까지 수정(commit `3bb5d284`)했다. 현재 `validate()` = **errors 0 / warn 0**.
+> (무진입 path `{{ item }}` sizing 경로는 후보 0 일 때만 도는 정상 분기.)
 
 > ⚠️ **월물 만기 주의**: 최초 작성 시 4월물(`HMHJ26`/`HMCEJ26`) 사용 → 2026-05-29 시점
 > 이미 만기 경과로 historical 이 **빈 배열**(silent) 반환. live 6월물(`HMHM26`/`HMCEM26`)
@@ -215,3 +218,7 @@ poetry run python examples/programmer_example/test_hkex_81_l4_order.py --confirm
 - 2026-05-29: L3 호스트 검증 — 만기 경과 4월물 → live 6월물(HMHM26/HMCEM26) roll-forward,
   무진입 경로에 `if_candidates` IfNode(is_not_empty) + `no_entry_notice` 게이트 추가
   (market_data 빈입력 hard error 제거)
+- 2026-05-30: 호스트 라이브 재검증 전 체인 errors=0; logic `is_condition_met` warn 이 진입
+  게이트 silent 봉쇄 버그로 확인 → LogicNode 바인딩 올바른 관례로 교정 (commit `1b615da5`)
+- 2026-05-31: LogicNode 다종목 auto-iterate AND 교집합 코어 버그 수정 (executor.py, commit
+  `3bb5d284`) — 바인딩-only 수정이 못 잡던 더 깊은 결함. `validate()` errors 0 / warn 0.

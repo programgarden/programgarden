@@ -1,7 +1,7 @@
 {
   "id": "82-hkex-realtime-stop-loss",
   "name": "HKEX 실시간 손절 자동매매 (모의투자)",
-  "description": "HKEX 미니선물 단일 보유 포지션의 실시간 가격을 구독하고, ThrottleNode 로 tick rate 를 5초 단위로 안정화한 뒤 IfNode 로 stop_price 이하 도달 시 limit 매도. HKEX 모의투자 시장가 불가 / Connection Rule A-2 (realtime→order 직결 금지 / ThrottleNode 필수) / balance partial-failure 폴백을 모두 회귀 가드.",
+  "description": "HKEX 미니선물 단일 보유 포지션의 실시간 가격을 구독하고, ThrottleNode 로 tick rate 를 5초 단위로 안정화한 뒤 IfNode 로 stop_price 이하 도달 시 limit 매도. HKEX 모의투자 시장가 불가 / Connection Rule A-2 (realtime→order 직결 금지 / ThrottleNode 필수) / balance partial-failure 메타데이터 처리를 모두 회귀 가드.",
   "nodes": [
     {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 320}},
     {
@@ -136,7 +136,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX 실시간 손절 자동매매 (모의투자)\n\n**시나리오**: 단일 보유 포지션 HMHM26 (Mini Hang Seng 6월). 실시간 tick 을 ThrottleNode (5초) 로 안정화하고, current_price ≤ 20000 HKD 도달 시 즉시 limit 매도로 청산.\n\n**주문 유형**: limit (HKEX 모의투자 시장가 불가). price 는 현재 tick price 그대로 사용 → 빠른 체결.\n\n**가동 시간**: 24시간 연속 (T+1 야간세션 포함). 데이세션 휴장 시 tick 자체가 안 오므로 자연 일시정지.\n\n**balance partial-failure 폴백**: AccountNode 에 `resilience.fallback.mode=skip` 설정 — TR 일부 실패해도 워크플로우 중단되지 않고 다음 사이클에 복구 시도.",
+      "content": "## HKEX 실시간 손절 자동매매 (모의투자)\n\n**시나리오**: 단일 보유 포지션 HMHM26 (Mini Hang Seng 6월). 실시간 tick 을 ThrottleNode (5초) 로 안정화하고, current_price ≤ 20000 HKD 도달 시 즉시 limit 매도로 청산.\n\n**주문 유형**: limit (HKEX 모의투자 시장가 불가). price 는 현재 tick price 그대로 사용 → 빠른 체결.\n\n**가동 시간**: 24시간 연속 (T+1 야간세션 포함). 데이세션 휴장 시 tick 자체가 안 오므로 자연 일시정지.\n\n**balance partial-failure 처리**: AccountNode 는 잔고 TR 이 일부 실패해도 raise 하지 않고 positions 만 채워 `balance._partial_failure`/`orderable_amount=None` 메타데이터로 완료한다(silent 0 흡수 차단). 따라서 이 노드의 `resilience.fallback.mode=skip` 자체는 발동되지 않으며(중단이 없으므로), 부분 실패 인지·대응은 다운스트림 소비자(PositionSizingNode→`BalanceUnavailableError` / IfNode→`ConditionEvaluationError`)의 몫이다. 본 예제는 static stop 만 사용하므로 실질 영향은 없다.",
       "color": 5,
       "width": 400,
       "height": 280,

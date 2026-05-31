@@ -32,6 +32,25 @@
 - 예제 81: 무진입(후보 0)일 때 `market_data` 가 빈 입력으로 hard error 를 로깅하던 문제 →
   `if_candidates` IfNode(`is_not_empty`) + `no_entry_notice` SummaryDisplay 게이트 추가 (예제 85 패턴 일치).
 - `00-workflow-guide.md` §13.3: 선물 예제 월물 만기 경고 + front month 갱신 가이드 추가.
+- **LogicNode 다종목 auto-iterate AND 교집합 코어 버그** (`executor.py` `LogicNodeExecutor`):
+  auto-iterate 시 `is_condition_met` 가 병합 리스트로 해석돼 `bool(list)`=True (통과 여부가
+  아니라 실행 여부) + `intersection_symbols()` 가 빈 피연산자를 드롭해 AND 가 union 처럼
+  동작(0종목 통과인데 AND 통과)하는 silent failure. `is_met` 스칼라 정규화(list→`any`) +
+  `passed_symbols` None/[] 구분(`symbols_provided`)으로 명시 빈 리스트가 교집합을 영점화하도록
+  수정. 예제 13/81 + 48/57 등 다종목 LogicNode AND 전부 정상화. dry_run mock(빈 time_series)이
+  은폐하던 시점 의존 버그 — 신규 `test_logic_node_intersection.py` 11 테스트로 가드.
+- **예제 13/81 LogicNode 바인딩 교정**: 잘못된 `.passed` 패턴
+  (`is_condition_met={{ ...result.passed }}` / `passed_symbols={{ ...result }}`)이
+  ConditionNode.result(boolean) 에 `.passed` 접근 → None → 항상 False → 진입 게이트 silent
+  봉쇄. 올바른 관례(`{{ ...result }}` / `{{ ...passed_symbols }}`, 48/57 일치)로 교정.
+- **BacktestEngineNodeExecutor row-context**: `{**expr_context}` 가 ExpressionContext
+  (비-mapping) 를 언팩하려다 비어있지 않은 `from_data` 첫 row 에서 TypeError 크래시(dry_run 은
+  mock 이 빈 `time_series` 를 줘 루프 미진입으로 은폐). `expr_context.to_dict()` 평탄화로 수정
+  → 예제 84/85 백테스트 silent failure 해소.
+- **WorkflowJob auto-iterate 명시 `from_port` 우선**: ExclusionListNode 처럼 첫 출력 포트가
+  `excluded`(블랙리스트)인 노드에서 `from_port` 미지정 시 제외 종목을 순회하던 silent 버그 →
+  `filtered` 등 명시 포트(`output`/`true`/`false`/`result` 제외) 우선 바인딩. 예제 85 생존
+  종목 순회 정상화.
 
 ## [1.22.2] - 2026-05-27
 ### Added
