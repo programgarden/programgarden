@@ -25,6 +25,16 @@
 - `test_examples_validation.py`: `WORKFLOW_FILES` 카운트 80 → 85.
 
 ### Fixed
+- **정정주문(ModifyOrder) silent-success 코어 버그** (`executor.py` `ModifyOrderNodeExecutor`):
+  LS 정정주문 TR 이 휴장(거래시간 외, 예: HKEX 데이세션 16:30~야간 17:15 HKT) 시
+  `error_msg` 없이 빈 주문번호를 반환 → executor 가 `success=True, new_order_id=""` 로
+  정정 no-op 을 성공으로 오인하던 문제. 신규주문의 빈-주문번호 가드(`Empty OrderNo:`)를
+  3개 modify 경로(`_modify_overseas_stock` / `_modify_overseas_futures` / `_modify_korea_stock`)에
+  미러링 — 빈 주문번호 시 `modify_result.success=False` + `error: "Empty modify order number:
+  ... (거래시간 외/정정 불가 상태 가능)"` + `modified_order: None` 반환. 취소주문은
+  자동 사후검증 대신 `CancelOrderNodeExecutor` docstring 에 OpenOrders 재조회 권장 명시.
+  `00-workflow-guide.md` §13 에 해외선물 일반(CME/EUREX/SGX/HKEX) 거래시간 외 정정
+  silent no-op caveat 추가. 신규 `test_modify_order_empty_guard.py` 6 테스트로 가드.
 - HKEX 예제 81-85: L3 호스트 검증 중 발견한 **만기 경과 월물 silent failure** 수정.
   4월물(`HMHJ26`/`HMCEJ26`)이 2026-05-29 시점 만료 → `OverseasFuturesHistoricalDataNode`
   가 에러 없이 빈 `time_series` 반환 → 무진입 silent 흡수. live 6월물(`HMHM26`/`HMCEM26`)
