@@ -755,6 +755,13 @@ LS Securities (LS증권) 모의투자는 HKEX 한 거래소만 지원합니다. 
 | 통화: **HKD** | balance / fill 가격 | KRW 환산 시 별도 환율 노드 |
 | 거래시간 (KST 기준) | 데이세션 + T+1 야간세션 | 아래 13.2 참조 |
 
+> ⚠️ **거래시간 외 정정 silent no-op (해외선물 일반: CME/EUREX/SGX/HKEX)**: 휴장
+> 시간(예: HKEX 데이세션 16:30~야간 17:15 HKT)에 정정주문(ModifyOrderNode)을 호출하면
+> LS 가 `error_msg` 없이 빈 주문번호를 반환할 수 있습니다. executor 가 이제 이를
+> `modify_result.success=False` (`error: "Empty modify order number: ..."`)로 차단하므로,
+> 다운스트림에서 반드시 `modify_result.success` 를 확인하세요. (취소주문은 사후 OpenOrders
+> 재조회로 반영 여부 확인 권장.)
+
 ### 13.2 HKEX 거래시간 (KST 환산)
 
 ```

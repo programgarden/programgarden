@@ -652,6 +652,11 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
             "reason": "Every tick would fire a modify request, hitting rate limits immediately and causing order rejections.",
             "alternative": "Insert a ThrottleNode between the realtime source and the modify node.",
         },
+        {
+            "pattern": "Submitting a modify outside trading hours and assuming it succeeded",
+            "reason": "LS may accept an out-of-hours modify without an error_msg yet never apply it (silent no-op); an empty modified_order_id is the tell.",
+            "alternative": "Confirm modify_result.success is True and modified_order_id is populated; only submit modifications inside the symbol's trading hours.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
@@ -747,6 +752,7 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
             "Cannot modify a fully filled order — query OpenOrdersNode first to verify the order is still open",
             "Omitting both new_price and new_quantity makes the call a no-op (the broker may return an error)",
             "The 5-second rate-limit guard applies — rapid sequential modifications will be silently skipped",
+            "Out-of-hours modifications can silent no-op (LS returns no error but applies nothing); the executor now reports success=False, so always check modify_result.success and modified_order_id",
         ],
     }
 
@@ -792,9 +798,9 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-06-01"
+    _change_note: ClassVar[Optional[str]] = "Document out-of-hours modify silent no-op risk in AI metadata."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -932,6 +938,11 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
             "reason": "Each tick would fire a cancel request and exhaust rate limits immediately.",
             "alternative": "Use ThrottleNode or IfNode to gate the cancel trigger.",
         },
+        {
+            "pattern": "Treating a cancel response with no error as a confirmed cancellation",
+            "reason": "LS may return no error while not actually cancelling the order (e.g. out-of-hours); the absence of an error is not proof of cancellation.",
+            "alternative": "Re-query OverseasStockOpenOrdersNode after the cancel to confirm the order is gone before acting on it.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
@@ -1028,6 +1039,7 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
             "Cancelling an already-filled order returns a broker error; check order status via OpenOrdersNode before cancelling",
             "fallback.mode='error' (default) will halt the workflow on a failed cancel — set to 'skip' for best-effort cancel-all patterns",
             "The 5-second rate-limit guard means large cancel batches take at minimum 5s per order",
+            "LS can return no error while leaving the order uncancelled (e.g. out-of-hours), so do not trust a clean response alone — confirm cancellation by re-querying OpenOrdersNode afterward",
         ],
     }
 
@@ -1057,9 +1069,9 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-06-01"
+    _change_note: ClassVar[Optional[str]] = "Document out-of-hours cancel silent no-op risk in AI metadata."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -1421,6 +1433,11 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
             "reason": "Each tick fires a modify attempt, saturating the rate limit and causing cascading rejections.",
             "alternative": "Insert ThrottleNode between realtime source and modify node.",
         },
+        {
+            "pattern": "Submitting a modify outside the contract's trading hours and assuming it succeeded",
+            "reason": "LS may accept an out-of-hours futures modify without an error_msg yet never apply it (silent no-op); an empty modified_order_id is the tell. Futures trading hours differ per exchange (CME/EUREX/SGX/HKEX).",
+            "alternative": "Confirm modify_result.success is True and modified_order_id is populated; only modify within the exchange's trading hours.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
@@ -1516,6 +1533,7 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
             "Cannot modify a fully filled futures order — verify order status first via OpenOrdersNode",
             "Omitting both new_price and new_quantity sends a no-op that the broker may reject with an error",
             "Futures contract codes include expiry month (e.g. NQM25) — make sure symbol matches the exact open order",
+            "Out-of-hours modifications can silent no-op (LS returns no error but applies nothing); the executor now reports success=False, so always check modify_result.success / modified_order_id (futures trading hours vary by exchange: CME/EUREX/SGX/HKEX)",
         ],
     }
 
@@ -1555,9 +1573,9 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-06-01"
+    _change_note: ClassVar[Optional[str]] = "Document out-of-hours modify silent no-op risk in AI metadata."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -1679,6 +1697,11 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
             "reason": "Every tick fires a cancel attempt, exhausting rate limits and generating spurious rejections.",
             "alternative": "Use ThrottleNode or IfNode to gate the cancel trigger.",
         },
+        {
+            "pattern": "Treating a cancel response with no error as a confirmed cancellation",
+            "reason": "LS may return no error while not actually cancelling the futures order (e.g. out-of-hours); the absence of an error is not proof of cancellation. Futures trading hours differ per exchange (CME/EUREX/SGX/HKEX).",
+            "alternative": "Re-query OverseasFuturesOpenOrdersNode after the cancel to confirm the order is gone before acting on it.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
@@ -1775,6 +1798,7 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
             "Cancelling an already-filled futures order returns a broker error — check order status first via OpenOrdersNode",
             "fallback.mode='error' (default) halts workflow on cancel failure — use 'skip' for best-effort cancel-all loops",
             "The 5-second rate-limit guard means a 10-order cancel batch takes at least 50 seconds",
+            "LS can return no error while leaving the futures order uncancelled (e.g. out-of-hours; trading hours vary by exchange CME/EUREX/SGX/HKEX), so confirm cancellation by re-querying OpenOrdersNode afterward rather than trusting a clean response",
         ],
     }
 
@@ -1804,9 +1828,9 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-06-01"
+    _change_note: ClassVar[Optional[str]] = "Document out-of-hours cancel silent no-op risk in AI metadata."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -2177,6 +2201,11 @@ class KoreaStockModifyOrderNode(BaseModifyOrderNode):
             "reason": "Each tick fires a modify request, exhausting rate limits and causing rejection cascades.",
             "alternative": "Insert ThrottleNode between the realtime source and the modify node.",
         },
+        {
+            "pattern": "Submitting a modify outside KRX trading hours and assuming it succeeded",
+            "reason": "LS may accept an out-of-hours modify without an error_msg yet never apply it (silent no-op); an empty modified_order_id is the tell.",
+            "alternative": "Confirm modify_result.success is True and modified_order_id is populated; only modify during KRX regular hours (09:00-15:30 KST).",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
@@ -2271,6 +2300,7 @@ class KoreaStockModifyOrderNode(BaseModifyOrderNode):
             "Cannot modify a fully filled Korean stock order — verify status via KoreaStockOpenOrdersNode first",
             "KRW prices must be valid tick sizes for the stock; invalid tick sizes will be rejected by KRX",
             "Paper trading is NOT supported for Korean stocks — the broker node enforces real-market mode only",
+            "Out-of-hours modifications can silent no-op (LS returns no error but applies nothing); the executor now reports success=False, so always check modify_result.success / modified_order_id (KRX regular hours 09:00-15:30 KST)",
         ],
     }
 
@@ -2310,9 +2340,9 @@ class KoreaStockModifyOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-06-01"
+    _change_note: ClassVar[Optional[str]] = "Document out-of-hours modify silent no-op risk in AI metadata."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -2424,6 +2454,11 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
             "reason": "Every tick would fire a cancel request, exhausting the rate limit and generating spurious rejections.",
             "alternative": "Use ThrottleNode or IfNode to gate the cancel trigger.",
         },
+        {
+            "pattern": "Treating a cancel response with no error as a confirmed cancellation",
+            "reason": "LS may return no error while not actually cancelling the order (e.g. outside KRX trading hours); the absence of an error is not proof of cancellation.",
+            "alternative": "Re-query KoreaStockOpenOrdersNode after the cancel to confirm the order is gone before acting on it.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
@@ -2519,6 +2554,7 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
             "Cancelling an already-filled Korean stock order returns a KRX error — check status via OpenOrdersNode first",
             "Paper trading is NOT supported for Korean domestic stocks — do not configure KoreaStockBrokerNode in paper mode",
             "fallback.mode='error' (default) halts workflow on cancel failure — use 'skip' for best-effort cancel-all loops",
+            "LS can return no error while leaving the order uncancelled (e.g. outside KRX trading hours 09:00-15:30 KST), so confirm cancellation by re-querying OpenOrdersNode afterward rather than trusting a clean response",
         ],
     }
 
@@ -2548,9 +2584,9 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-06-01"
+    _change_note: ClassVar[Optional[str]] = "Document out-of-hours cancel silent no-op risk in AI metadata."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

@@ -12915,6 +12915,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             )
             return {
                 "order_id": order_id,
+                "modified_order_id": order_id,
                 "status": "simulated",
                 "dry_run": True,
                 "requested": config,
@@ -13062,13 +13063,33 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                         "original_order_id": original_order_id,
                         "product": "overseas_stock",
                     },
+                    "modified_order_id": "",
                     "modified_order": None,
                 }
             
             new_order_no = ""
             if response.block2:
                 new_order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
-            
+
+            # 정정 빈-주문번호 가드 (거래시간 외/정정 불가 상태 silent no-op 차단)
+            if not new_order_no:
+                msg = response.rsp_msg or "정정 미반영"
+                context.log(
+                    "warning",
+                    f"Modify order returned no OrderNo: {symbol} - {msg}",
+                    node_id,
+                )
+                return {
+                    "modify_result": {
+                        "success": False,
+                        "error": f"Empty modify order number: {msg} (거래시간 외/정정 불가 상태 가능)",
+                        "original_order_id": original_order_id,
+                        "product": "overseas_stock",
+                    },
+                    "modified_order_id": "",
+                    "modified_order": None,
+                }
+
             context.log(
                 "info",
                 f"Order modified: {symbol} original={original_order_id} → new={new_order_no}",
@@ -13082,6 +13103,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     "new_order_id": new_order_no,
                     "product": "overseas_stock",
                 },
+                "modified_order_id": new_order_no,
                 "modified_order": {
                     "symbol": symbol,
                     "exchange": exchange,
@@ -13161,13 +13183,33 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                         "original_order_id": original_order_id,
                         "product": "overseas_futures",
                     },
+                    "modified_order_id": "",
                     "modified_order": None,
                 }
-            
+
             new_order_no = ""
             if response.block2:
                 # 해외선물 정정 주문번호 필드: OvrsFutsOrdNo
                 new_order_no = str(response.block2.OvrsFutsOrdNo) if hasattr(response.block2, "OvrsFutsOrdNo") and response.block2.OvrsFutsOrdNo else ""
+
+            # 정정 빈-주문번호 가드 (거래시간 외/정정 불가 상태 silent no-op 차단)
+            if not new_order_no:
+                msg = response.rsp_msg or "정정 미반영"
+                context.log(
+                    "warning",
+                    f"Modify futures order returned no OrderNo: {symbol} - {msg}",
+                    node_id,
+                )
+                return {
+                    "modify_result": {
+                        "success": False,
+                        "error": f"Empty modify order number: {msg} (거래시간 외/정정 불가 상태 가능)",
+                        "original_order_id": original_order_id,
+                        "product": "overseas_futures",
+                    },
+                    "modified_order_id": "",
+                    "modified_order": None,
+                }
 
             context.log(
                 "info",
@@ -13182,6 +13224,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     "new_order_id": new_order_no,
                     "product": "overseas_futures",
                 },
+                "modified_order_id": new_order_no,
                 "modified_order": {
                     "symbol": symbol,
                     "exchange": exchange_code,
@@ -13244,12 +13287,32 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                         "original_order_id": original_order_id,
                         "product": "korea_stock",
                     },
+                    "modified_order_id": "",
                     "modified_order": None,
                 }
 
             new_order_no = ""
             if response.block2:
                 new_order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
+
+            # 정정 빈-주문번호 가드 (거래시간 외/정정 불가 상태 silent no-op 차단)
+            if not new_order_no:
+                msg = response.rsp_msg or "정정 미반영"
+                context.log(
+                    "warning",
+                    f"Korea stock modify order returned no OrderNo: {symbol} - {msg}",
+                    node_id,
+                )
+                return {
+                    "modify_result": {
+                        "success": False,
+                        "error": f"Empty modify order number: {msg} (거래시간 외/정정 불가 상태 가능)",
+                        "original_order_id": original_order_id,
+                        "product": "korea_stock",
+                    },
+                    "modified_order_id": "",
+                    "modified_order": None,
+                }
 
             context.log(
                 "info",
@@ -13264,6 +13327,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     "new_order_id": new_order_no,
                     "product": "korea_stock",
                 },
+                "modified_order_id": new_order_no,
                 "modified_order": {
                     "symbol": symbol,
                     "exchange": "KRX",
@@ -13294,6 +13358,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                 "success": False,
                 "error": error_msg,
             },
+            "modified_order_id": "",
             "modified_order": None,
         }
 
@@ -13310,6 +13375,8 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     - original_order_id: 취소할 주문번호 (필수)
     - symbol: 종목코드
     - exchange: 거래소
+
+    주의: LS 가 error_msg 없이 취소 미반영(거래시간 외 등)을 반환할 수 있다. 취소 성공은 사후 OpenOrders 재조회로 확인 권장.
     """
 
     # 해외주식 시장 코드 매핑
@@ -13340,6 +13407,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             )
             return {
                 "order_id": order_id,
+                "cancelled_order_id": order_id,
                 "status": "simulated",
                 "dry_run": True,
                 "requested": config,
@@ -13473,9 +13541,10 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                         "order_id": order_id,
                         "product": "overseas_stock",
                     },
+                    "cancelled_order_id": "",
                     "cancelled_order": None,
                 }
-            
+
             context.log(
                 "info",
                 f"Order cancelled: {symbol} order_id={order_id}",
@@ -13488,6 +13557,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "order_id": order_id,
                     "product": "overseas_stock",
                 },
+                "cancelled_order_id": order_id,
                 "cancelled_order": {
                     "symbol": symbol,
                     "exchange": exchange,
@@ -13505,6 +13575,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "order_id": order_id,
                     "product": "overseas_stock",
                 },
+                "cancelled_order_id": "",
                 "cancelled_order": None,
             }
 
@@ -13551,6 +13622,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                         "order_id": order_id,
                         "product": "overseas_futures",
                     },
+                    "cancelled_order_id": "",
                     "cancelled_order": None,
                 }
             
@@ -13566,6 +13638,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "order_id": order_id,
                     "product": "overseas_futures",
                 },
+                "cancelled_order_id": order_id,
                 "cancelled_order": {
                     "symbol": symbol,
                     "exchange": exchange_code,
@@ -13583,6 +13656,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "order_id": order_id,
                     "product": "overseas_futures",
                 },
+                "cancelled_order_id": "",
                 "cancelled_order": None,
             }
 
@@ -13624,6 +13698,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                         "order_id": order_id,
                         "product": "korea_stock",
                     },
+                    "cancelled_order_id": "",
                     "cancelled_order": None,
                 }
 
@@ -13639,6 +13714,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "order_id": order_id,
                     "product": "korea_stock",
                 },
+                "cancelled_order_id": order_id,
                 "cancelled_order": {
                     "symbol": symbol,
                     "exchange": "KRX",
@@ -13656,6 +13732,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "order_id": order_id,
                     "product": "korea_stock",
                 },
+                "cancelled_order_id": "",
                 "cancelled_order": None,
             }
 
@@ -13666,6 +13743,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                 "success": False,
                 "error": error_msg,
             },
+            "cancelled_order_id": "",
             "cancelled_order": None,
         }
 
