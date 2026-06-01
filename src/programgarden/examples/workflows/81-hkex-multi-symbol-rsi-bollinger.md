@@ -158,7 +158,7 @@ strip 한 read-only 변환) 로 실 LS 해외선물 모의 appkey (`APPKEY_FUTUR
 > 로 roll-forward 하여 해결. 선물 예제는 만기마다 월물 갱신 필요 — `00-workflow-guide.md`
 > HKEX 섹션 참조.
 
-### L4 — mock 주문 1건 (트리거 스크립트 준비 완료 — 실행 pending)
+### L4 — mock 주문 1건 (✅ 라이브 PASS, 2026-06-01)
 
 트리거 스크립트: `examples/programmer_example/test_hkex_81_l4_order.py`.
 NodeRunner 로 다음 라이프사이클을 실 모의계좌에 **1건만** 검증한다:
@@ -185,7 +185,22 @@ poetry run python examples/programmer_example/test_hkex_81_l4_order.py --confirm
 > 시연할 수 없다.** 라이브는 submit→cancel 라이프사이클만 검증하고, A-4 는
 > `enable_order_idempotency=True` + `paper_trading=False` 단위/통합 테스트 영역이다.
 
-> 실행 결과 표는 L4 트리거 후 채운다.
+**라이브 실행 결과** (2026-06-01 장중, host-Claude 직접 발사 + 사용자 승인 override):
+명령 `poetry run python examples/programmer_example/test_hkex_81_l4_order.py --confirm`,
+대상 HMHM26 (Mini Hang Seng 2026.06), qty 1.
+
+| 단계 | 노드 | 결과 |
+|------|------|------|
+| [1] | `market_data` | HMHM26 현재가 **25,297** → BUY limit **24,032** (-5%, 미체결 유도) |
+| [2] | `new_order` | `order_result.success=true`, status=`submitted`, **order_id=1076** |
+| [3] | `open_orders` | 미체결 **1건** (order_id 1076, filled_quantity=0, remaining_quantity=1) → 미체결 확인 OK |
+| [4] | `cancel_order` | `cancel_result.success=true` (order_id 1076 cancelled) |
+| [5] | `open_orders` 재확인 | **0건** (잔존 주문 없음) |
+| **최종** | — | **✅ L4 PASS — 제출→미체결→취소→확인 라이프사이클 정상** (EXIT=0) |
+
+> 참고: 첫 시도는 `.env` 의 만료된(stale) 모의 키 탓에 LS 가 `모의투자 주문이 불가한
+> 계좌입니다` 로 거부 → 사용자가 키 갱신 후 재시도하여 PASS (계좌 권한이 아니라 키 문제).
+> A-4 idempotency 는 paper 우회라 미검증(위 노트 유지) — submit→cancel 라이프사이클만 라이브 확증.
 
 ---
 
