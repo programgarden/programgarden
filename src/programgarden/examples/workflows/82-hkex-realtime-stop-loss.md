@@ -112,7 +112,14 @@ poetry run pytest tests/test_examples_validation.py::TestWorkflowDryRunCycle::te
 
 → `status: completed, errors_count: 0`. IfNode `branch=false` (mock current_price=None), `close_order`/`telegram_stop` cascading skip, `hold_notice` 실행. balance_summary 가 `_partial_failure=true` + `orderable_amount=None` 정상 노출.
 
-### L3-L4 — 실 모의계좌 검증 (사용자 트리거)
+### L3-L4 — 실 모의계좌 검증 (남은 수동 절차 / 미실행)
+
+**라이브 상태 (이번 배포 / PR #13): 미관측.** L1 정적 validate + L2 dry_run cycle 만 통과.
+실시간 손절(realtime tick → IfNode → close order) 라이브 경로는 손절 트리거(보유 종목 가격이
+stop 아래로 급락) 조건에 의존하므로 본 배포 시점에는 관측되지 않았습니다. 82 는 read-all 라이브
+트리거(`test_hkex_read_all.py`)에서도 제외된 유일한 예제입니다.
+
+아래는 추후 라이브로 직접 관측하려는 사용자가 실행할 **남은(미실행) 수동 검증 절차** 입니다:
 
 L3: 실 모의 appkey 로 실제 tick 수신 + IfNode 가 false 분기로 동작 확인 (stop_price 충분히 낮게 설정).
 L4: stop_price 를 의도적으로 시장가 위로 설정해 매도 1건 트리거 → 체결 확인 → cancel.
