@@ -1,4 +1,6 @@
 ## [Unreleased]
+
+## [1.22.3] - 2026-06-01
 ### Added
 - **HKEX 해외선물 모의투자 예제 5종 (81-85)** — `examples/workflows/`:
   - `81-hkex-multi-symbol-rsi-bollinger`: HMHM26 / HMCEM26 다종목 RSI(14,<30)

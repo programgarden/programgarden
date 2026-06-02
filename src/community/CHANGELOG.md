@@ -1,3 +1,7 @@
+## [1.13.8] - 2026-06-01
+### Fixed
+- **TurtleBreakout 플러그인 docstring 교정** (`plugins/turtle_breakout/__init__.py`) — `entry_signal` / `exit_signal` 등 출력 설명을 실제 동작값과 일치하도록 수정. 플러그인 로직·스키마 불변.
+
 ## [1.13.7] - 2026-05-20
 ### Changed
 - Maintenance release — version bump for cross-package alignment. No community code changes since 1.13.6.
