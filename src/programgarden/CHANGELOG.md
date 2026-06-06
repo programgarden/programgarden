@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+## [1.22.4] - 2026-06-06
+### Added
+- **Opt-in LS `ls_token_provider` wiring in executor** (Verified League §3.2.3) —
+  `executor.set_ls_token_provider(provider)` routes the workflow's LS broker login
+  through a server-issued token (provider: `(appkey, product, paper_trading) ->
+  (token, expires_at)`) instead of credential login. Opt-in; no provider = unchanged.
+
+### Changed
+- deps: `programgarden-finance ^1.6.10` (token_provider callback)
+
 ## [1.22.3] - 2026-06-01
 ### Added
 - **HKEX 해외선물 모의투자 예제 5종 (81-85)** — `examples/workflows/`:

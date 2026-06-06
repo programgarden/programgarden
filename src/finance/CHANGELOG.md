@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [1.6.10] - 2026-06-06
+### Added
+- **Opt-in `token_provider` callback for server-issued tokens** (Verified League §3.2.3) —
+  `LS` accepts a sync/async `token_provider` via `set_token_provider()`; when set,
+  the token manager refreshes its access token through the provider instead of
+  logging in with credentials. Backward compatible (no provider = unchanged login).
+
 ## [1.6.9] - 2026-05-27
 ### Added
 - **A-6: per-connection real-time subscription cap** —
