@@ -17876,8 +17876,22 @@ class WorkflowJob:
                 # A-4: schedule_tick 은 정당한 신규 ordering 세대 → cycle +1.
                 # (entry 세대 0 과 분리되어 동일 주문이 매 tick 차단되지 않음)
                 self._order_cycle += 1
-                await self._execute_main_flow()
-                await self.context.notify_job_state("cycle_completed", self.stats)
+                # 사이클 격리: 단일 사이클의 노드 예외(잔고 부분실패의
+                # ConditionEvaluationError, ScreenerNode silent-failure 가드의
+                # RuntimeError 등)가 스케줄 잡 전체를 종료시키지 않도록 한다.
+                # 실패 사이클은 silent 하지 않게 'cycle_failed' 로 통지하고
+                # 다음 tick 에서 재시도한다 (24시간 무인 운영 보호).
+                try:
+                    await self._execute_main_flow()
+                except Exception as cycle_err:
+                    self.stats["errors_count"] = self.stats.get("errors_count", 0) + 1
+                    self.context.log(
+                        "error",
+                        f"Schedule cycle failed (job continues to next tick): {cycle_err}",
+                    )
+                    await self.context.notify_job_state("cycle_failed", self.stats)
+                else:
+                    await self.context.notify_job_state("cycle_completed", self.stats)
         
         logger.info("Event loop ended")
 
