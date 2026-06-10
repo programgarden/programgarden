@@ -67,10 +67,12 @@ if env_file.exists():
 from programgarden import WorkflowExecutor  # noqa: E402
 from programgarden_core.bases.listener import BaseExecutionListener  # noqa: E402
 
-WORKFLOW_PATH = (
+WORKFLOWS_DIR = (
     project_root / "src" / "programgarden" / "examples" / "workflows"
-    / "86-trend-trailing-live.json"
 )
+DEFAULT_WORKFLOW = "86-trend-trailing-live.json"
+# main()에서 --workflow 인자로 재지정 가능 (변종 86b-penny-live 등)
+WORKFLOW_PATH = WORKFLOWS_DIR / DEFAULT_WORKFLOW
 STORAGE_DIR = Path(__file__).parent / ".runtime_data_86"
 
 TELEGRAM_NODE_IDS = {"tg_buy_a", "tg_buy_b", "tg_sell"}
@@ -226,7 +228,7 @@ async def run_job(workflow: dict, *, dry_run: bool, max_cycles: int, max_minutes
         print(line)
 
     print("\n=== 주요 출력 ===")
-    for nid in ("account", "top2", "trailing", "sell_pick"):
+    for nid in ("account", "screener1", "top2", "market_a", "sizing_a", "market_b", "sizing_b", "order_a", "order_b", "trailing", "sell_pick"):
         outputs = job.context.get_all_outputs(nid) or {}
         for port, value in outputs.items():
             if port.startswith("_"):
@@ -251,7 +253,22 @@ async def main() -> int:
     parser.add_argument("--confirm", action="store_true", help="실주문 발사 확인")
     parser.add_argument("--cycles", type=int, default=3)
     parser.add_argument("--minutes", type=float, default=30.0)
+    parser.add_argument(
+        "--workflow",
+        type=str,
+        default=DEFAULT_WORKFLOW,
+        help="실행할 워크플로우 JSON 파일명 (기본: 86-trend-trailing-live.json, 변종: 86b-penny-live.json)",
+    )
     args = parser.parse_args()
+
+    # --workflow 로 워크플로우/HWM 저장경로 재지정 (변종별 HWM DB 분리)
+    global WORKFLOW_PATH, STORAGE_DIR
+    WORKFLOW_PATH = WORKFLOWS_DIR / args.workflow
+    if not WORKFLOW_PATH.exists():
+        print(f"⛔ 워크플로우 파일이 없습니다: {WORKFLOW_PATH}")
+        return 4
+    STORAGE_DIR = Path(__file__).parent / f".runtime_data_{Path(args.workflow).stem}"
+    print(f"📄 워크플로우: {args.workflow}  | HWM 저장: {STORAGE_DIR.name}")
 
     workflow = load_workflow()
     inject_credentials(workflow)
