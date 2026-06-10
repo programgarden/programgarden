@@ -1264,8 +1264,12 @@ class WatchlistNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
+        # config 내 {{ }} 표현식 평가 (list-of-dict 중첩 포함 — MarketDataNode
+        # 와 동일 사유. evaluate_fields 는 리스트 항목 dict 를 재귀하지 않음).
+        config = evaluate_all_bindings(config, context, node_id)
+
         symbols_raw = config.get("symbols", [])
-        
+
         # symbols 처리: [{exchange, symbol}, ...] 형태로 정규화
         processed_symbols = []
         for entry in symbols_raw:
@@ -8976,6 +8980,13 @@ class MarketDataNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """현재가 조회"""
 
+        # config 내 {{ }} 표현식 평가 (list-of-dict 중첩 포함).
+        # 메인 루프의 _resolve_config_expressions(evaluate_fields)는 리스트
+        # 항목이 dict 이면 재귀하지 않아 [{"symbol": "{{ ... }}"}] 형태의
+        # 중첩 표현식이 literal 로 남는다. 전용 executor 는 evaluate_all_bindings
+        # (dict/list 완전 재귀)를 직접 호출해야 한다. (형제 executor 패턴과 동일)
+        config = evaluate_all_bindings(config, context, node_id)
+
         # 입력 symbols 가져오기 (포트 또는 config에서 명시적 입력 필수)
         input_symbols = context.get_output(f"_input_{node_id}", "symbols")
         config_symbols = config.get("symbols")
@@ -9318,6 +9329,10 @@ class FundamentalNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         """종목정보(펀더멘털) 조회"""
+
+        # config 내 {{ }} 표현식 평가 (list-of-dict 중첩 포함 — MarketDataNode
+        # 와 동일 사유. evaluate_fields 는 리스트 항목 dict 를 재귀하지 않음).
+        config = evaluate_all_bindings(config, context, node_id)
 
         # symbols 획득: input port → config.symbols → config.symbol (단일→배열 변환)
         input_symbols = context.get_output(f"_input_{node_id}", "symbols")
