@@ -1425,6 +1425,10 @@ class ExclusionListNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
+        # config 내 {{ }} 표현식 평가 (list-of-dict 중첩 포함 — MarketDataNode
+        # 와 동일 사유. evaluate_fields 는 리스트 항목 dict 를 재귀하지 않음).
+        config = evaluate_all_bindings(config, context, node_id)
+
         default_reason = config.get("default_reason", "")
 
         # 1. 수동 입력 종목 (각 항목에 reason 포함 가능)
