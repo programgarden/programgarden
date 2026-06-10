@@ -1,0 +1,688 @@
+{
+  "id": "86-trend-trailing-live",
+  "name": "추세 상위 매수 + 고정 5% 트레일링스탑 (NASDAQ, 주간거래)",
+  "description": "NASDAQ 대형주 유니버스에서 TSMOM 60일 상승추세 종목을 선별해 예수금 한도 내 최대 2종목 매수, 보유 포지션은 고점(HWM) 대비 -5% 고정 트레일링스탑으로 시장가 청산. 매수/매도 시 텔레그램 알림.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 400
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 200,
+        "y": 400
+      }
+    },
+    {
+      "id": "schedule",
+      "type": "ScheduleNode",
+      "cron": "*/5 * * * 1-5",
+      "timezone": "Asia/Seoul",
+      "enabled": true,
+      "max_duration_hours": 720,
+      "position": {
+        "x": 350,
+        "y": 400
+      }
+    },
+    {
+      "id": "hours",
+      "type": "TradingHoursFilterNode",
+      "start": "09:30",
+      "end": "16:30",
+      "timezone": "Asia/Seoul",
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+      ],
+      "position": {
+        "x": 500,
+        "y": 400
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "open_orders",
+      "type": "OverseasStockOpenOrdersNode",
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "pf_guard",
+      "type": "IfNode",
+      "left": "{{ nodes.account.balance._partial_failure }}",
+      "operator": "!=",
+      "right": true,
+      "position": {
+        "x": 800,
+        "y": 250
+      }
+    },
+    {
+      "id": "cash_guard",
+      "type": "IfNode",
+      "left": "{{ nodes.account.balance.orderable_amount }}",
+      "operator": ">=",
+      "right": 100,
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {
+        "x": 900,
+        "y": 250
+      }
+    },
+    {
+      "id": "universe",
+      "type": "OverseasStockSymbolQueryNode",
+      "country": "US",
+      "stock_exchange": "82",
+      "max_results": 500,
+      "position": {
+        "x": 1100,
+        "y": 250
+      }
+    },
+    {
+      "id": "screener1",
+      "type": "ScreenerNode",
+      "market": "overseas_stock",
+      "data_source": "ls",
+      "symbols": "{{ nodes.universe.symbols }}",
+      "market_cap_min": 10000000000,
+      "price_min": 20.0,
+      "max_results": 10,
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "start_date": "{{ date.ago(120, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "position": {
+        "x": 1500,
+        "y": 250
+      }
+    },
+    {
+      "id": "tsmom",
+      "type": "ConditionNode",
+      "plugin": "TimeSeriesMomentum",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "exchange": "{{ item.exchange }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "lookback_days": 60,
+        "signal_mode": "binary",
+        "volatility_adjust": false
+      },
+      "position": {
+        "x": 1700,
+        "y": 250
+      }
+    },
+    {
+      "id": "trend_pick",
+      "type": "SymbolFilterNode",
+      "operation": "intersection",
+      "input_a": "{{ nodes.screener1.symbols }}",
+      "input_b": "{{ nodes.tsmom.passed_symbols }}",
+      "position": {
+        "x": 1900,
+        "y": 250
+      }
+    },
+    {
+      "id": "dedup_held",
+      "type": "SymbolFilterNode",
+      "operation": "difference",
+      "input_a": "{{ nodes.trend_pick.symbols }}",
+      "input_b": "{{ nodes.account.positions }}",
+      "position": {
+        "x": 2100,
+        "y": 250
+      }
+    },
+    {
+      "id": "dedup_open",
+      "type": "SymbolFilterNode",
+      "operation": "difference",
+      "input_a": "{{ nodes.dedup_held.symbols }}",
+      "input_b": "{{ nodes.open_orders.open_orders }}",
+      "position": {
+        "x": 2300,
+        "y": 250
+      }
+    },
+    {
+      "id": "top2",
+      "type": "ScreenerNode",
+      "market": "overseas_stock",
+      "data_source": "ls",
+      "symbols": "{{ nodes.dedup_open.symbols }}",
+      "max_results": 2,
+      "position": {
+        "x": 2500,
+        "y": 250
+      }
+    },
+    {
+      "id": "candidates_view",
+      "type": "TableDisplayNode",
+      "title": "추세 매수 후보 (최대 2종목)",
+      "columns": [
+        "symbol",
+        "exchange",
+        "price",
+        "market_cap"
+      ],
+      "data": "{{ nodes.top2.symbols }}",
+      "position": {
+        "x": 2700,
+        "y": 100
+      }
+    },
+    {
+      "id": "if_slot1",
+      "type": "IfNode",
+      "left": "{{ nodes.account.positions.count() }}",
+      "operator": "<=",
+      "right": 1,
+      "position": {
+        "x": 2700,
+        "y": 250
+      }
+    },
+    {
+      "id": "if_cand1",
+      "type": "IfNode",
+      "left": "{{ nodes.top2.symbols.count() }}",
+      "operator": ">=",
+      "right": 1,
+      "position": {
+        "x": 2900,
+        "y": 250
+      }
+    },
+    {
+      "id": "market_a",
+      "type": "OverseasStockMarketDataNode",
+      "symbols": [
+        {
+          "symbol": "{{ nodes.top2.symbols[0].symbol }}",
+          "exchange": "{{ nodes.top2.symbols[0].exchange }}"
+        }
+      ],
+      "fields": [
+        "price"
+      ],
+      "position": {
+        "x": 3100,
+        "y": 250
+      }
+    },
+    {
+      "id": "sizing_a",
+      "type": "PositionSizingNode",
+      "method": "fixed_percent",
+      "max_percent": 45.0,
+      "symbol": "{{ nodes.top2.symbols[0] }}",
+      "symbols": [
+        {
+          "symbol": "{{ nodes.top2.symbols[0].symbol }}",
+          "exchange": "{{ nodes.top2.symbols[0].exchange }}"
+        }
+      ],
+      "balance": "{{ nodes.account.balance }}",
+      "market_data": "{{ nodes.market_a.values }}",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {
+        "x": 3300,
+        "y": 250
+      }
+    },
+    {
+      "id": "order_a",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "limit",
+      "order": "{{ nodes.sizing_a[\"orders\"][0] }}",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {
+        "x": 3500,
+        "y": 250
+      }
+    },
+    {
+      "id": "tg_buy_a",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🟢 [추세매수 1] {{ nodes.order_a.result.symbol }} x{{ nodes.order_a.result.quantity }} @ ${{ nodes.order_a.result.price }} (order_id: {{ nodes.order_a.result.order_id }})",
+      "position": {
+        "x": 3700,
+        "y": 250
+      },
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "if_slot2",
+      "type": "IfNode",
+      "left": "{{ nodes.account.positions.count() }}",
+      "operator": "==",
+      "right": 0,
+      "position": {
+        "x": 2700,
+        "y": 450
+      }
+    },
+    {
+      "id": "if_cand2",
+      "type": "IfNode",
+      "left": "{{ nodes.top2.symbols.count() }}",
+      "operator": ">=",
+      "right": 2,
+      "position": {
+        "x": 2900,
+        "y": 450
+      }
+    },
+    {
+      "id": "market_b",
+      "type": "OverseasStockMarketDataNode",
+      "symbols": [
+        {
+          "symbol": "{{ nodes.top2.symbols[1].symbol }}",
+          "exchange": "{{ nodes.top2.symbols[1].exchange }}"
+        }
+      ],
+      "fields": [
+        "price"
+      ],
+      "position": {
+        "x": 3100,
+        "y": 450
+      }
+    },
+    {
+      "id": "sizing_b",
+      "type": "PositionSizingNode",
+      "method": "fixed_percent",
+      "max_percent": 45.0,
+      "symbol": "{{ nodes.top2.symbols[1] }}",
+      "symbols": [
+        {
+          "symbol": "{{ nodes.top2.symbols[1].symbol }}",
+          "exchange": "{{ nodes.top2.symbols[1].exchange }}"
+        }
+      ],
+      "balance": "{{ nodes.account.balance }}",
+      "market_data": "{{ nodes.market_b.values }}",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {
+        "x": 3300,
+        "y": 450
+      }
+    },
+    {
+      "id": "order_b",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "limit",
+      "order": "{{ nodes.sizing_b[\"orders\"][0] }}",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {
+        "x": 3500,
+        "y": 450
+      }
+    },
+    {
+      "id": "tg_buy_b",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🟢 [추세매수 2] {{ nodes.order_b.result.symbol }} x{{ nodes.order_b.result.quantity }} @ ${{ nodes.order_b.result.price }} (order_id: {{ nodes.order_b.result.order_id }})",
+      "position": {
+        "x": 3700,
+        "y": 450
+      },
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "account_sell",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 700,
+        "y": 650
+      }
+    },
+    {
+      "id": "if_has_pos",
+      "type": "IfNode",
+      "left": "{{ nodes.account_sell.positions.count() }}",
+      "operator": ">",
+      "right": 0,
+      "position": {
+        "x": 800,
+        "y": 650
+      }
+    },
+    {
+      "id": "trailing",
+      "type": "ConditionNode",
+      "plugin": "TrailingStop",
+      "items": {
+        "from": "{{ nodes.account_sell.positions }}",
+        "extract": {
+          "symbol": "{{ row.symbol }}",
+          "exchange": "{{ row.exchange }}",
+          "date": "{{ date.today(format='yyyymmdd') }}",
+          "close": "{{ row.current_price }}"
+        }
+      },
+      "fields": {
+        "trail_percent": 5.0
+      },
+      "position": {
+        "x": 900,
+        "y": 650
+      }
+    },
+    {
+      "id": "sell_pick",
+      "type": "SymbolFilterNode",
+      "operation": "intersection",
+      "input_a": "{{ nodes.account_sell.positions }}",
+      "input_b": "{{ nodes.trailing.passed_symbols }}",
+      "position": {
+        "x": 1100,
+        "y": 650
+      }
+    },
+    {
+      "id": "sell_order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "sell",
+      "order_type": "market",
+      "order": "{{ item }}",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {
+        "x": 1300,
+        "y": 650
+      }
+    },
+    {
+      "id": "tg_sell",
+      "type": "TelegramNode",
+      "credential_id": "telegram_cred",
+      "template": "🔴 [트레일링스탑 -5%] 시장가 매도: {{ nodes.trailing.passed_symbols.map('symbol') }}",
+      "position": {
+        "x": 1500,
+        "y": 650
+      },
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "schedule"
+    },
+    {
+      "from": "schedule",
+      "to": "hours"
+    },
+    {
+      "from": "hours",
+      "to": "account"
+    },
+    {
+      "from": "hours",
+      "to": "open_orders"
+    },
+    {
+      "from": "hours",
+      "to": "account_sell"
+    },
+    {
+      "from": "account",
+      "to": "pf_guard"
+    },
+    {
+      "from": "pf_guard",
+      "to": "cash_guard",
+      "from_port": "true"
+    },
+    {
+      "from": "cash_guard",
+      "to": "universe",
+      "from_port": "true"
+    },
+    {
+      "from": "universe",
+      "to": "screener1"
+    },
+    {
+      "from": "screener1",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "tsmom"
+    },
+    {
+      "from": "tsmom",
+      "to": "trend_pick"
+    },
+    {
+      "from": "trend_pick",
+      "to": "dedup_held"
+    },
+    {
+      "from": "dedup_held",
+      "to": "dedup_open"
+    },
+    {
+      "from": "open_orders",
+      "to": "dedup_open"
+    },
+    {
+      "from": "dedup_open",
+      "to": "top2"
+    },
+    {
+      "from": "top2",
+      "to": "candidates_view"
+    },
+    {
+      "from": "top2",
+      "to": "if_slot1"
+    },
+    {
+      "from": "if_slot1",
+      "to": "if_cand1",
+      "from_port": "true"
+    },
+    {
+      "from": "if_cand1",
+      "to": "market_a",
+      "from_port": "true"
+    },
+    {
+      "from": "market_a",
+      "to": "sizing_a"
+    },
+    {
+      "from": "sizing_a",
+      "to": "order_a"
+    },
+    {
+      "from": "order_a",
+      "to": "tg_buy_a"
+    },
+    {
+      "from": "top2",
+      "to": "if_slot2"
+    },
+    {
+      "from": "if_slot2",
+      "to": "if_cand2",
+      "from_port": "true"
+    },
+    {
+      "from": "if_cand2",
+      "to": "market_b",
+      "from_port": "true"
+    },
+    {
+      "from": "market_b",
+      "to": "sizing_b"
+    },
+    {
+      "from": "sizing_b",
+      "to": "order_b"
+    },
+    {
+      "from": "order_b",
+      "to": "tg_buy_b"
+    },
+    {
+      "from": "account_sell",
+      "to": "if_has_pos"
+    },
+    {
+      "from": "if_has_pos",
+      "to": "trailing",
+      "from_port": "true"
+    },
+    {
+      "from": "trailing",
+      "to": "sell_pick"
+    },
+    {
+      "from": "sell_pick",
+      "to": "sell_order"
+    },
+    {
+      "from": "sell_order",
+      "to": "tg_sell"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    },
+    {
+      "credential_id": "telegram_cred",
+      "type": "telegram",
+      "data": [
+        {
+          "key": "bot_token",
+          "value": "",
+          "type": "password",
+          "label": "Bot Token"
+        },
+        {
+          "key": "chat_id",
+          "value": "",
+          "type": "text",
+          "label": "Chat ID"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_strategy",
+      "content": "## 추세매수 + 고정 5% 트레일링스탑\n\n**매수 (5분 주기)**\n1. NASDAQ g3190 마스터 → 시총 $10B+ / $20+ 대형주 10종목\n2. 120일 일봉 → TSMOM 60일 상승추세 필터\n3. 보유종목·미체결 제외 → 시총순 상위 최대 2종목\n4. 슬롯 가드: 보유 0→2종목, 보유 1→1종목 추가 (합계 ≤2)\n5. 종목당 예수금(orderable_amount)의 45% 지정가 매수\n\n**매도 (5분 주기 폴링)**\n- TrailingStop 플러그인 v2.1 `trail_percent: 5.0`\n- 이 워크플로우가 매수한 포지션만 HWM 추적 (외부 보유분 미간섭)\n- 고점 대비 -5% 도달 시 전량 시장가 매도\n\n**알림**: 매수/매도 주문 시 텔레그램\n\n**주의**\n- 해외주식은 LS 모의투자 미지원 → 실계좌 주문\n- NASDAQ 전용 (NYSE/AMEX 포지션 exchange 매핑 이슈 회피)\n- 주간거래 세션(09:30-16:30 KST) 게이트 — LS 공지 시간과 대조 필요",
+      "color": 1,
+      "width": 420,
+      "height": 360,
+      "position": {
+        "x": 30,
+        "y": 30
+      }
+    }
+  ]
+}
