@@ -400,3 +400,5 @@ scripts/**/*.log
 
 # 로컬 전용 AI 도구 cache (PROJECT_MAP 등). /pg-gen-map 으로 누구나 재생성. 커밋 금지
 /.spec/
+# ProgramGarden 라이브 러너 HWM/런타임 DB (artifact)
+src/programgarden/examples/programmer_example/.runtime_data_*/

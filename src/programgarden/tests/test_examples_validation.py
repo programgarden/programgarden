@@ -1,6 +1,6 @@
 """Phase 5/8/9: example workflow JSON validation tests.
 
-Keeps the 86 shipped example workflows + programmer_example scripts healthy
+Keeps the 87 shipped example workflows + programmer_example scripts healthy
 as the codebase evolves.
 
 Class breakdown:
@@ -75,9 +75,9 @@ class TestWorkflowStaticValidation:
     """Every bundled example workflow must pass WorkflowExecutor.validate()."""
 
     def test_workflow_files_discovered(self):
-        """Sanity: repo ships with 86 example workflows."""
-        assert len(WORKFLOW_FILES) == 86, (
-            f"expected 86 workflow JSON files, found {len(WORKFLOW_FILES)}"
+        """Sanity: repo ships with 87 example workflows."""
+        assert len(WORKFLOW_FILES) == 87, (
+            f"expected 87 workflow JSON files, found {len(WORKFLOW_FILES)}"
         )
 
     @pytest.mark.parametrize("wf_path", WORKFLOW_FILES, ids=_ids(WORKFLOW_FILES))
