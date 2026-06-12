@@ -437,6 +437,34 @@ def test_client_validate_deep_sync_wrapper():
     assert result.is_valid, [e.short() for e in result.errors]
 
 
+def test_sync_wrapper_does_not_pollute_main_thread_event_loop():
+    """Regression guard (test isolation): the synchronous ``validate_deep`` /
+    ``run`` wrappers must NOT leave the main thread without a current event loop.
+
+    ``asyncio.run`` clears the thread's loop on exit; if the wrappers used it
+    directly, a later ``asyncio.get_event_loop()`` (in legacy tests / sync user
+    code running in the same process) would raise "There is no current event
+    loop". The wrappers run their coroutine in a dedicated worker thread, so the
+    main thread's loop state is untouched. Verified inline (before the autouse
+    loop-restore fixture in conftest runs).
+    """
+    import asyncio
+
+    loop_before = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop_before)
+    try:
+        pg = ProgramGarden()
+        pg.validate_deep(order_workflow(), timeout=12.0)
+        # The current loop must be unchanged (same object, still open) — the sync
+        # wrapper neither closed it nor cleared it to None.
+        loop_after = asyncio.get_event_loop()
+        assert loop_after is loop_before, "sync wrapper replaced the main-thread loop"
+        assert not loop_after.is_closed(), "sync wrapper closed the main-thread loop"
+    finally:
+        asyncio.set_event_loop(loop_before)
+        loop_before.close()
+
+
 # ============================================================
 # 9. Phase 1.5 — faithful fixtures (schema-mirrored, sufficient OHLCV)
 # ============================================================

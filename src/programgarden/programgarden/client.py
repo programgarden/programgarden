@@ -4,13 +4,37 @@ ProgramGarden - Main Client
 Provides user-friendly API
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Awaitable, TypeVar
 import asyncio
+import concurrent.futures
 
 from programgarden.resolver import WorkflowResolver, ValidationResult
 from programgarden.executor import WorkflowExecutor
 from programgarden_core.bases.listener import ExecutionListener
 from programgarden_core.models.resource import ResourceLimits
+
+_T = TypeVar("_T")
+
+
+def _run_coro_sync(coro: Awaitable[_T]) -> _T:
+    """Run an awaitable to completion from synchronous code without disturbing
+    the caller thread's event-loop state.
+
+    ``asyncio.run()`` creates a fresh loop and, on exit, calls
+    ``asyncio.set_event_loop(None)`` — leaving the *main thread* with no current
+    loop. Any later ``asyncio.get_event_loop()`` in the same process then raises
+    "There is no current event loop", which leaks across test boundaries as a
+    spurious failure (global-state pollution).
+
+    Running the coroutine inside a dedicated worker thread keeps that loop
+    lifecycle entirely off the caller thread, so the caller's loop state is
+    untouched. It also makes the sync wrappers safe to call from within an
+    already-running loop (where a direct ``asyncio.run`` would raise). The
+    coroutine itself still enforces its own timeout, so this adds no unbounded
+    wait.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(lambda: asyncio.run(coro)).result()
 
 
 class ProgramGarden:
@@ -84,7 +108,7 @@ class ProgramGarden:
             ...     for err in result.errors:
             ...         print(err.short())
         """
-        return asyncio.run(
+        return _run_coro_sync(
             self.executor.deep_validate(definition, fixtures=fixtures, timeout=timeout)
         )
 
@@ -143,19 +167,21 @@ class ProgramGarden:
                 resource_limits=limits,
                 storage_dir=storage_dir,
             )
-            
+
             if wait:
-                # Wait for completion
-                import asyncio
-                start_time = asyncio.get_event_loop().time() if timeout else None
+                # Wait for completion. Use the running loop's clock (get_running_loop
+                # is always valid here — we are inside the coroutine) rather than
+                # get_event_loop, which is deprecated and loop-state sensitive.
+                loop = asyncio.get_running_loop()
+                start_time = loop.time() if timeout else None
                 while job.status in ("pending", "running"):
                     await asyncio.sleep(0.1)
-                    if timeout and asyncio.get_event_loop().time() - start_time > timeout:
+                    if timeout and loop.time() - start_time > timeout:
                         break
-            
+
             return job.get_state()
 
-        return asyncio.run(_run())
+        return _run_coro_sync(_run())
 
     async def run_async(
         self,
