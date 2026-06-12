@@ -435,3 +435,291 @@ def test_client_validate_deep_sync_wrapper():
     pg = ProgramGarden()
     result = pg.validate_deep(order_workflow(), timeout=12.0)
     assert result.is_valid, [e.short() for e in result.errors]
+
+
+# ============================================================
+# 9. Phase 1.5 — faithful fixtures (schema-mirrored, sufficient OHLCV)
+# ============================================================
+
+def test_historical_fixture_mirrors_real_output_schema():
+    """HistoricalDataNode real output is {value, values, symbols} where each
+    entry is {symbol, exchange, time_series:[bars]} — NOT an ohlcv_data map.
+    A faithful fixture must mirror that so the downstream ConditionNode (which
+    auto-iterates `values` and reads `item.time_series`) sees the runtime shape.
+    """
+    from programgarden import deep_fixtures as df
+
+    fx = df.historical_data_fixture(
+        {"period": "1d"}, [{"symbol": "AAPL", "exchange": "NASDAQ"}]
+    )
+    assert set(fx) >= {"value", "values", "symbols"}
+    assert fx["value"] is not None  # single symbol → populated value port
+    assert isinstance(fx["values"], list) and fx["values"]
+    entry = fx["values"][0]
+    assert set(entry) >= {"symbol", "exchange", "time_series"}
+    assert entry["symbol"] == "AAPL"
+    bars = entry["time_series"]
+    assert all(k in bars[0] for k in ("date", "open", "high", "low", "close", "volume"))
+
+
+def test_historical_fixture_has_enough_bars_for_rsi():
+    """The series must be long enough that RSI(14)/Bollinger(20) compute a real
+    value rather than a 'data too short' sentinel (Phase 1 false-positive root)."""
+    from programgarden import deep_fixtures as df
+
+    fx = df.historical_data_fixture({}, [{"symbol": "AAPL", "exchange": "NASDAQ"}])
+    bars = fx["values"][0]["time_series"]
+    assert len(bars) >= 30, f"need >=30 bars for indicator computation, got {len(bars)}"
+
+
+def test_account_fixture_has_a_losing_position():
+    """At least one held position must be underwater so per-position stop-loss
+    conditions actually trigger during a deep run (else the risk branch is never
+    exercised — a false negative)."""
+    from programgarden import deep_fixtures as df
+
+    positions = df._fixture_positions(
+        {}, [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "TSLA", "exchange": "NASDAQ"}]
+    )
+    assert any(p["pnl_rate"] < 0 for p in positions), "expected a losing position"
+
+
+# ============================================================
+# 10. Phase 1.5 — ConditionNode / SymbolFilter deep flow guarantee
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_condition_node_passes_input_symbols_in_deep_mode():
+    """A signal gate in deep mode must let at least its input symbols through so
+    the downstream sizing/order/notify branch (and its {{ item.* }} bindings) is
+    exercised regardless of whether the fixture series fires the indicator."""
+    from programgarden.executor import ConditionNodeExecutor
+
+    ctx = make_deep_context()
+    # Seed a historical-shaped input the ConditionNode RSI plugin can read.
+    from programgarden import deep_fixtures as df
+    hist = df.historical_data_fixture({}, [{"symbol": "AAPL", "exchange": "NASDAQ"}])
+    ctx.set_output("hist", "values", hist["values"])
+    ctx.set_iteration_context(hist["values"][0], 0, 1)
+
+    ex = ConditionNodeExecutor()
+    out = await ex.execute(
+        node_id="rsi",
+        node_type="ConditionNode",
+        config={
+            "plugin": "RSI",
+            "items": {
+                "from": "{{ item.time_series }}",
+                "extract": {
+                    "symbol": "{{ item.symbol }}",
+                    "exchange": "{{ item.exchange }}",
+                    "date": "{{ row.date }}",
+                    "close": "{{ row.close }}",
+                },
+            },
+            "fields": {"period": 14, "threshold": 30, "direction": "above"},
+        },
+        context=ctx,
+        fields={"period": 14, "threshold": 30, "direction": "above"},
+    )
+    # direction=above on a declining-tail series would normally fail; deep mode
+    # guarantees the input symbols flow through anyway.
+    assert out.get("passed_symbols"), "deep mode should pass input symbols through"
+    assert out.get("result") is True
+
+
+@pytest.mark.asyncio
+async def test_symbol_filter_falls_back_to_input_a_in_deep_mode():
+    """A difference that empties out (all candidates already held) must not gate
+    the downstream branch in deep mode — fall back to input_a."""
+    from programgarden.executor import SymbolFilterNodeExecutor
+
+    ctx = make_deep_context()
+    ex = SymbolFilterNodeExecutor()
+    held = [{"symbol": "AAPL", "exchange": "NASDAQ"}]
+    out = await ex.execute(
+        node_id="filter",
+        node_type="SymbolFilterNode",
+        config={"operation": "difference", "input_a": held, "input_b": held},
+        context=ctx,
+    )
+    assert out["symbols"], "deep mode should not leave the filter empty"
+    assert out["symbols"][0]["symbol"] == "AAPL"
+
+
+@pytest.mark.asyncio
+async def test_symbol_filter_keeps_real_result_in_dry_run():
+    """The fallback is deep-only — plain dry_run keeps the exact set-op result."""
+    from programgarden.executor import SymbolFilterNodeExecutor
+
+    ctx = ExecutionContext(job_id="x", workflow_id="w", context_params={"dry_run": True})
+    ctx._is_running = True
+    ex = SymbolFilterNodeExecutor()
+    held = [{"symbol": "AAPL", "exchange": "NASDAQ"}]
+    out = await ex.execute(
+        node_id="filter",
+        node_type="SymbolFilterNode",
+        config={"operation": "difference", "input_a": held, "input_b": held},
+        context=ctx,
+    )
+    assert out["symbols"] == [], "dry_run must keep the empty difference result"
+
+
+# ============================================================
+# 11. Phase 1.5 — unresolved binding promotion
+# ============================================================
+
+def test_unresolved_binding_recorded_only_in_deep_mode():
+    deep = make_deep_context()
+    deep.record_deep_unresolved_binding("n", "{{ item.x }}", "undefined")
+    assert deep.get_deep_unresolved_bindings() == [
+        {"node_id": "n", "expression": "{{ item.x }}", "reason": "undefined"}
+    ]
+    # dedup on (node, expression)
+    deep.record_deep_unresolved_binding("n", "{{ item.x }}", "undefined again")
+    assert len(deep.get_deep_unresolved_bindings()) == 1
+
+    dry = ExecutionContext(job_id="x", workflow_id="w", context_params={"dry_run": True})
+    dry.record_deep_unresolved_binding("n", "{{ item.x }}", "undefined")
+    assert dry.get_deep_unresolved_bindings() == [], "no-op outside deep mode"
+
+
+@pytest.mark.asyncio
+async def test_unresolved_item_binding_blocks_deep_validate():
+    """An IfNode using `{{ item.pnl_rate }}` (which never resolves at runtime —
+    IfNode has no iteration context) must be flagged as a blocking
+    DEEP_VALIDATION_BINDING_UNRESOLVED error, not silently pass."""
+    pg = ProgramGarden()
+    wf = {
+        "id": "wf-deep-item-bug",
+        "name": "if-node item anti-pattern",
+        "nodes": [
+            {"id": "start", "type": "StartNode"},
+            _broker_node(),
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {"id": "gate", "type": "IfNode", "left": "{{ item.pnl_rate }}", "operator": "<=", "right": -5},
+        ],
+        "edges": [
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "gate"},
+        ],
+        "credentials": _credentials(),
+    }
+    result = await asyncio.wait_for(pg.executor.deep_validate(wf, timeout=12.0), timeout=20.0)
+    assert not result.is_valid
+    binding_errs = [e for e in result.errors if e.code == "DEEP_VALIDATION_BINDING_UNRESOLVED"]
+    assert binding_errs, [e.short() for e in result.errors]
+    assert "item" in binding_errs[0].message
+
+
+@pytest.mark.asyncio
+async def test_faithful_workflow_passes_deep_validate():
+    """A correctly-wired multi-symbol workflow (watchlist → market → sizing with
+    sizing auto-iterating) passes deep_validate with the faithful fixtures."""
+    pg = ProgramGarden()
+    wf = {
+        "id": "wf-deep-faithful",
+        "name": "faithful sizing",
+        "nodes": [
+            {"id": "start", "type": "StartNode"},
+            _broker_node(),
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {"id": "watchlist", "type": "WatchlistNode", "config": {"symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}]}},
+            {"id": "market", "type": "OverseasStockMarketDataNode"},
+            {
+                "id": "sizing",
+                "type": "PositionSizingNode",
+                "symbol": "{{ item }}",
+                "balance": "{{ nodes.account.balance.orderable_amount }}",
+                "market_data": "{{ nodes.market.value }}",
+                "method": "fixed_percent",
+                "max_percent": 10.0,
+            },
+        ],
+        "edges": [
+            {"from": "start", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "watchlist", "to": "market"},
+            {"from": "account", "to": "sizing"},
+            {"from": "market", "to": "sizing"},
+        ],
+        "credentials": _credentials(),
+    }
+    result = await asyncio.wait_for(pg.executor.deep_validate(wf, timeout=12.0), timeout=20.0)
+    assert result.is_valid, [e.short() for e in result.errors]
+
+
+# ============================================================
+# 12. Phase 1.5 — auto-iterate pacing skipped in deep mode (timebox)
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_auto_iterate_pacing_skipped_in_deep_mode():
+    """The per-item rate-limit pacing models a real broker API limit; in deep
+    mode (no real calls) it must be skipped so a wide watchlist does not blow the
+    timebox."""
+    ctx = make_deep_context()
+    ex = WorkflowExecutor()
+    job = WorkflowExecutor.__new__(WorkflowExecutor)  # not needed; use a job-bound sleep check
+
+    # Build a minimal job that carries the deep context and call the pacing helper.
+    from programgarden.executor import WorkflowJob
+    job = WorkflowJob.__new__(WorkflowJob)
+    job.context = ctx
+    slept = []
+
+    import programgarden.executor as exmod
+    orig_sleep = asyncio.sleep
+
+    async def spy_sleep(d, *a, **k):
+        slept.append(d)
+        return await orig_sleep(0)
+
+    with patch.object(exmod.asyncio, "sleep", spy_sleep):
+        # Even a node type that has a rate limit must not sleep in deep mode.
+        await WorkflowJob._auto_iterate_pacing_sleep(job, "new_order", "OverseasStockNewOrderNode")
+    assert slept == [], "deep mode must not pace-sleep"
+
+
+# ============================================================
+# 13. Phase 1.5 — Pydantic field/type error promotion (deep only)
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_generic_node_invalid_config_raises_in_deep_mode():
+    """GenericNodeExecutor: a Pydantic construction failure (bad/extra field)
+    must RAISE in deep mode so the main loop captures a blocking node error,
+    rather than returning a silent {"error": ...} output that marks the node
+    completed and hides the defect from deep_validate."""
+    from programgarden.executor import GenericNodeExecutor
+
+    ctx = make_deep_context()
+    ex = GenericNodeExecutor()
+    # SQLiteNode.query expects a string; an int fails Pydantic construction.
+    with pytest.raises(Exception):
+        await ex.execute(
+            node_id="sql",
+            node_type="SQLiteNode",
+            config={"query": 123},
+            context=ctx,
+        )
+
+
+@pytest.mark.asyncio
+async def test_generic_node_invalid_config_lenient_in_dry_run():
+    """The raise is deep-only — plain dry_run keeps the lenient {"error": ...}
+    output so existing mocked validation flows are unaffected."""
+    from programgarden.executor import GenericNodeExecutor
+
+    ctx = ExecutionContext(job_id="x", workflow_id="w", context_params={"dry_run": True})
+    ctx._is_running = True
+    ex = GenericNodeExecutor()
+    out = await ex.execute(
+        node_id="sql",
+        node_type="SQLiteNode",
+        config={"query": 123},
+        context=ctx,
+    )
+    assert isinstance(out, dict)
+    assert "error" in out, "dry_run must keep lenient error output"

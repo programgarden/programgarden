@@ -392,6 +392,14 @@ def evaluate_all_bindings(
                 return result
             except Exception as e:
                 context.log("warning", f"Expression evaluation failed: {value} - {e}", node_id)
+                # deep_validate: a binding that never resolves is a real defect
+                # (wrong field path, undefined var, missing iteration context).
+                # Record it so deep_validate can block; runtime/dry_run keep the
+                # legacy warn-and-keep-literal behaviour.
+                try:
+                    context.record_deep_unresolved_binding(node_id, value, str(e))
+                except Exception:
+                    pass
                 return value
         elif isinstance(value, dict):
             return {k: evaluate_value(v) for k, v in value.items()}
@@ -492,6 +500,14 @@ class GenericNodeExecutor(NodeExecutorBase):
             node_instance = node_class(id=node_id, **config)
         except Exception as e:
             context.log("error", f"Failed to create node instance: {e}", node_id)
+            # deep_validate: a Pydantic field-type / required-field error here is a
+            # real definition defect. Returning {"error": ...} as node output would
+            # mark the node COMPLETED and surface the error as downstream *data*,
+            # which deep_validate cannot see. Raise instead so the main loop
+            # captures it as a DEEP_VALIDATION_NODE_ERROR and blocks. dry_run /
+            # runtime keep the lenient {"error": ...} output for backward compat.
+            if getattr(context, "is_deep_validate", False):
+                raise RuntimeError(f"Invalid node config for '{node_id}' ({node_type}): {e}") from e
             return {"error": str(e)}
 
         # deep_validate 가드: external-network nodes (HTTP-style — identified by a
@@ -1315,6 +1331,22 @@ class SymbolFilterNodeExecutor(NodeExecutorBase):
                 output_symbols.append({"symbol": symbol, "exchange": ""})
         
         context.log("info", f"SymbolFilter ({operation}): {len(set_a)} - {len(set_b)} = {len(output_symbols)} symbols", node_id)
+
+        # deep_validate: a set op (e.g. difference = "candidates minus already-held")
+        # can legitimately empty out on fixture data, which would unreachably gate
+        # the downstream order/notify branch. Fall back to input_a so the flow is
+        # still exercised. Runtime / dry_run keep the exact set-op result.
+        if getattr(context, "is_deep_validate", False) and not output_symbols and input_a:
+            output_symbols = [s for s in input_a if isinstance(s, dict)] or [
+                {"symbol": s, "exchange": ""} for s in input_a if isinstance(s, str)
+            ]
+            context.log(
+                "info",
+                "[deep_validate] SymbolFilter empty result → falling back to input_a "
+                "(flow exercise)",
+                node_id,
+            )
+
         return {
             "symbols": output_symbols,
             "count": len(output_symbols),
@@ -2698,6 +2730,10 @@ class BrokerNodeExecutor(NodeExecutorBase):
         # in deep mode, so the placeholder credentials are never used.
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
+            # See account_fixture branch: evaluate own config bindings first so a
+            # wrong binding in a data-node config is not bypassed by the fixture
+            # short-circuit.
+            config = evaluate_all_bindings(config, context, node_id)
             fixture = _df.broker_connection_fixture(node_type, config)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
@@ -3876,6 +3912,11 @@ class AccountNodeExecutor(NodeExecutorBase):
         # completes without any network call.
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
+            # Evaluate this node's OWN config bindings before short-circuiting to a
+            # fixture, so a wrong/unresolvable binding inside a data-node config is
+            # still surfaced (the fixture branch returns before the normal
+            # evaluate_all_bindings pass, which would otherwise bypass it).
+            config = evaluate_all_bindings(config, context, node_id)
             fixture = _df.account_fixture(config)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
@@ -4391,6 +4432,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         # without a network call.
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
+            config = evaluate_all_bindings(config, context, node_id)
             fixture = _df.open_orders_fixture(config)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
@@ -4673,6 +4715,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         # flow completes without a WebSocket/REST call.
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
+            config = evaluate_all_bindings(config, context, node_id)
             fixture = _df.real_account_fixture(config)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
@@ -5605,6 +5648,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         # schema-shaped data instead of an empty skip payload.
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
+            config = evaluate_all_bindings(config, context, node_id)
             try:
                 watchlist_output = context.find_parent_output(node_id, "WatchlistNode")
                 symbols_raw = self._resolve_symbols(node_id, config, context, watchlist_output)
@@ -6287,6 +6331,7 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         # completes without waiting for a real fill push (no WebSocket).
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
+            config = evaluate_all_bindings(config, context, node_id)
             fixture = _df.real_order_event_fixture(config)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
@@ -7086,6 +7131,7 @@ class MarketStatusNodeExecutor(NodeExecutorBase):
         # flow keeps flowing instead of skipping (no WebSocket/JIF subscription).
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
+            config = evaluate_all_bindings(config, context, node_id)
             fixture = _df.market_status_fixture(config)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
@@ -8118,11 +8164,27 @@ class ConditionNodeExecutor(NodeExecutorBase):
                             node_id,
                         )
 
+                        _passed = result.get("passed_symbols", [])
+                        # deep_validate: see the items-based branch below — a
+                        # positions-based gate (StopLoss/TrailingStop) may not fire
+                        # on the fixture book; pass the held positions through so
+                        # the risk → order → notify branch is exercised.
+                        if getattr(context, "is_deep_validate", False) and positions and not _passed:
+                            _passed = [
+                                {"symbol": p.get("symbol"), "exchange": p.get("exchange", "UNKNOWN")}
+                                for p in positions if isinstance(p, dict) and p.get("symbol")
+                            ]
+                            context.log(
+                                "info",
+                                "[deep_validate] ConditionNode (positions) passing all held "
+                                "positions (signal-independent flow exercise)",
+                                node_id,
+                            )
                         return {
                             "symbols": [p.get("symbol") for p in positions if isinstance(p, dict)],
-                            "result": result.get("result", False),
-                            "passed_symbols": result.get("passed_symbols", []),
-                            "failed_symbols": result.get("failed_symbols", []),
+                            "result": True if (getattr(context, "is_deep_validate", False) and _passed) else result.get("result", False),
+                            "passed_symbols": _passed,
+                            "failed_symbols": [] if (getattr(context, "is_deep_validate", False) and _passed) else result.get("failed_symbols", []),
                             "symbol_results": result.get("symbol_results", []),
                             "values": result.get("values", []),
                         }
@@ -8381,6 +8443,25 @@ class ConditionNodeExecutor(NodeExecutorBase):
             f"Condition evaluated: {len(passed_symbols)}/{len(normalized_symbols)} passed",
             node_id,
         )
+
+        # deep_validate: a ConditionNode is a *signal gate* — at runtime it lets a
+        # symbol through only when the live market actually fires the indicator. A
+        # deep run feeds a single schema-shaped fixture series, so most directions
+        # legitimately produce zero passing symbols, which would starve every
+        # downstream sizing/order/notify node and leave their `{{ item.* }}`
+        # bindings unreached (a false negative — the flow is fine, there was just
+        # "no signal this pass"). Deep validation's job is flow/field/type
+        # integrity, not reproducing a market signal, so guarantee at least the
+        # input symbols flow through. Runtime / dry_run are untouched.
+        if getattr(context, "is_deep_validate", False) and normalized_symbols and not passed_symbols:
+            passed_symbols = list(normalized_symbols)
+            failed_symbols = []
+            context.log(
+                "info",
+                "[deep_validate] ConditionNode passing all input symbols "
+                "(signal-independent flow exercise)",
+                node_id,
+            )
 
         # SIGNAL_TRIGGERED notification (변화가 있을 때만: passed_symbols 존재)
         if passed_symbols:
@@ -8859,7 +8940,11 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         # network call, derived from the requested symbols.
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
-            fixture = _df.market_data_fixture(config, symbols)
+            # Evaluate own config bindings (e.g. symbols/symbol) before the fixture
+            # short-circuit so a wrong binding here is still surfaced.
+            config = evaluate_all_bindings(config, context, node_id)
+            _deep_symbols = input_symbols or config.get("symbols") or config.get("symbol")
+            fixture = _df.market_data_fixture(config, _deep_symbols)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
 
@@ -9419,6 +9504,10 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         # time series so the flow completes without a network call.
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
+            # Evaluate own config bindings (symbol / start_date / end_date, often
+            # {{ item }} / {{ date.ago(..) }}) before the fixture short-circuit so a
+            # wrong binding here is surfaced rather than bypassed.
+            config = evaluate_all_bindings(config, context, node_id)
             try:
                 _cfg_sym = config.get("symbol")
                 _in_sym = context.get_output(f"_input_{node_id}", "symbol")
@@ -11958,6 +12047,10 @@ class BenchmarkCompareNodeExecutor(NodeExecutorBase):
                     return evaluator.evaluate(value)
                 except Exception as e:
                     context.log("warning", f"Expression evaluation failed: {value} - {e}", node_id)
+                    try:
+                        context.record_deep_unresolved_binding(node_id, value, str(e))
+                    except Exception:
+                        pass
                     return value
             elif isinstance(value, dict):
                 return {k: evaluate_recursive(v) for k, v in value.items()}
@@ -15515,6 +15608,41 @@ class WorkflowExecutor:
         except Exception:  # pragma: no cover - defensive
             pass
 
+        # 3b) Promote unresolved `{{ }}` bindings to blocking errors. A binding the
+        # engine could not evaluate (undefined variable, wrong field path, missing
+        # iteration context) keeps its literal at runtime and silently misbehaves —
+        # deep_validate exists to catch exactly that. Capped to keep the LLM
+        # context bounded; entries are already deduped per (node, expression).
+        try:
+            unresolved = job.context.get_deep_unresolved_bindings()
+            _binding_cap = 20
+            for entry in unresolved[:_binding_cap]:
+                _expr = entry.get("expression", "")
+                _nid = entry.get("node_id") or None
+                _reason = entry.get("reason", "")
+                result.add(
+                    build_error(
+                        ErrorCode.DEEP_VALIDATION_BINDING_UNRESOLVED,
+                        f"Unresolved binding {_expr!r} on node '{_nid}' could not be "
+                        f"evaluated during the virtual run ({_reason}); it would keep "
+                        f"its literal text at runtime.",
+                        location=ErrorLocation(node_id=_nid, expression=_expr),
+                        suggestion=(
+                            "Check the field path / variable. `{{ item.* }}` only "
+                            "resolves inside an auto-iterated node (a node fed a list "
+                            "on its symbols/value port); IfNode and nodes fed a scalar "
+                            "do not provide `item`."
+                        ),
+                        details={
+                            "stage": "binding_resolution",
+                            "expression": _expr,
+                            "reason": _reason,
+                        },
+                    )
+                )
+        except Exception:  # pragma: no cover - defensive
+            pass
+
         # 4) Flow-completion check: every node should have been reached. A node
         # still PENDING after the pass means the flow did not run to completion
         # (broken edge / unreachable node / stuck branch). RUNNING is NOT a
@@ -17587,6 +17715,15 @@ class WorkflowJob:
         """
         from programgarden_core.registry import NodeTypeRegistry
         import time as _time
+
+        # deep_validate: the per-item pacing models a *real broker API* rate limit,
+        # but a deep run never calls the broker (orders are simulated), so the
+        # spacing only burns wall-clock against the 15 s timebox — a wide
+        # watchlist × an order node's min_interval_sec would blow the budget and
+        # surface as a spurious FLOW_BROKEN timeout. Skip it in deep mode only;
+        # dry_run / runtime keep their real pacing.
+        if getattr(self.context, "is_deep_validate", False):
+            return
 
         registry = NodeTypeRegistry()
         node_class = registry.get(node_type)

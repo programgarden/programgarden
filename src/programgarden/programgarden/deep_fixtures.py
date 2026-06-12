@@ -62,12 +62,37 @@ def _config_symbols(config: Dict[str, Any]) -> Any:
     return None
 
 
-def _ohlcv_series(symbol: str, *, n: int = 5, base: float = 100.0) -> List[Dict[str, Any]]:
-    """Build a small deterministic OHLCV series for one symbol."""
+# Number of OHLCV bars every fixture time-series carries. Must comfortably
+# exceed the lookback of common indicators (RSI(14), Bollinger(20), SR windows,
+# ATR(14), TSMOM(60)) so a deep run computes a *real* (non-None / non-neutral)
+# indicator value instead of a "data too short" sentinel — a thin series was the
+# Phase 1 source of deep-validate false positives. Capped to keep the single
+# deep pass fast (it runs every condition plugin over every symbol within a hard
+# 15 s box); a handful of corpus indicators use a longer lookback (e.g. calmar
+# 252) and legitimately fall back to a neutral value — that does not break flow.
+_FIXTURE_BARS = 64
+
+
+def _ohlcv_series(symbol: str, *, n: int = _FIXTURE_BARS, base: float = 100.0) -> List[Dict[str, Any]]:
+    """Build a deterministic OHLCV series for one symbol (oldest bar first).
+
+    The close path rises for the first ~⅔ of the window then declines into the
+    final bar. That gives indicators something non-trivial to chew on (a real RSI
+    in the 25–75 band, a real Bollinger position, a real ATR) rather than a
+    perfectly monotonic ramp that pins RSI to 0/100. The shape is *deterministic*
+    (no randomness) so deep runs stay reproducible.
+    """
     bars: List[Dict[str, Any]] = []
+    peak = int(n * 0.65)
+    price = base
     for i in range(n):
         day = _FIXTURE_ANCHOR + timedelta(days=i)
-        price = base + i
+        # Rise toward the peak, then ease back down — a gentle mean-reverting arc.
+        if i <= peak:
+            price = base + i * 0.8
+        else:
+            price = base + peak * 0.8 - (i - peak) * 1.1
+        price = max(price, base * 0.5)
         bars.append(
             {
                 "date": day.strftime("%Y%m%d"),
@@ -79,6 +104,25 @@ def _ohlcv_series(symbol: str, *, n: int = 5, base: float = 100.0) -> List[Dict[
             }
         )
     return bars
+
+
+def _time_series_entries(config: Dict[str, Any], symbols_raw: Any = None) -> List[Dict[str, Any]]:
+    """Build the per-symbol ``{symbol, exchange, time_series:[bars]}`` list that
+    HistoricalDataNode emits at runtime. Downstream ConditionNode auto-iterates
+    this list, so each entry must carry the keys its ``items.extract`` reads
+    (``symbol``/``exchange``) plus a ``time_series`` of OHLCV bars.
+    """
+    syms = _norm_symbols(symbols_raw if symbols_raw is not None else _config_symbols(config))
+    entries: List[Dict[str, Any]] = []
+    for idx, entry in enumerate(syms):
+        entries.append(
+            {
+                "symbol": entry["symbol"],
+                "exchange": entry["exchange"],
+                "time_series": _ohlcv_series(entry["symbol"], base=100.0 + idx * 10),
+            }
+        )
+    return entries
 
 
 def real_market_data_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> Dict[str, Any]:
@@ -129,22 +173,38 @@ def market_data_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> Dict
 def historical_data_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> Dict[str, Any]:
     """HistoricalDataNode deep fixture.
 
-    Real shape: ``{"ohlcv_data": {SYM: [bars]}, "symbols": [...]}``. The historical
-    node takes a single ``symbol`` (item-based); fall back to that, then symbols.
+    Real shape (executor.py ``HistoricalDataNodeExecutor.execute`` return):
+    ``{"value": {symbol, exchange, time_series:[bars]} | None,
+        "values": [{symbol, exchange, time_series:[bars]}, ...],
+        "symbols": [str, ...], "period": str, "interval": str}``.
+
+    Each ``time_series`` bar is ``{date, open, high, low, close, volume}``.
+    Downstream ConditionNode auto-iterates ``values`` and reads
+    ``item.time_series`` / ``item.symbol``, so this shape must mirror the runtime
+    output exactly (the prior ``ohlcv_data`` map shape silently starved the
+    ConditionNode and produced deep false positives).
     """
     if symbols_raw is None:
         symbols_raw = config.get("symbol") or _config_symbols(config)
-    syms = _norm_symbols(symbols_raw)
-    ohlcv: Dict[str, List[Dict[str, Any]]] = {}
-    for idx, entry in enumerate(syms):
-        ohlcv[entry["symbol"]] = _ohlcv_series(entry["symbol"], n=20, base=100.0 + idx * 10)
+    entries = _time_series_entries(config, symbols_raw)
+    single = entries[0] if len(entries) == 1 else None
     return {
-        "ohlcv_data": ohlcv,
-        "symbols": [s["symbol"] for s in syms],
+        "value": single,
+        "values": entries,
+        "symbols": [e["symbol"] for e in entries],
+        "period": str(config.get("period", "1d")),
+        "interval": str(config.get("interval", config.get("period", "1d"))),
     }
 
 
 def _fixture_balance(currency: str = "USD") -> Dict[str, Any]:
+    """Per-currency balance map (RealAccountNode shape) + flat convenience keys.
+
+    Mirrors the real RealAccountNode balance: a currency-keyed map plus a
+    ``_summary``. Also carries flat keys (``orderable_amount``, ``total_pnl_rate``)
+    that PositionSizingNode / IfNode aggregate checks read directly, so neither
+    consumer shape sees a missing field in deep mode.
+    """
     return {
         currency: {
             "deposit": 100000.0,
@@ -153,29 +213,55 @@ def _fixture_balance(currency: str = "USD") -> Dict[str, Any]:
             "pnl_amount": 5000.0,
             "pnl_rate": 5.0,
         },
-        # Flat convenience keys some consumers read directly.
+        "_summary": {
+            "total_deposit": 100000.0,
+            "total_eval_amount": 105000.0,
+            "total_pnl_amount": 5000.0,
+        },
+        # Flat convenience keys some consumers (PositionSizing, aggregate IfNode)
+        # read directly.
         "cash": 100000.0,
         "total_value": 105000.0,
         "orderable_amount": 100000.0,
+        "total_pnl_rate": 5.0,
     }
 
 
 def _fixture_positions(config: Dict[str, Any], symbols_raw: Any = None) -> List[Dict[str, Any]]:
+    """Held positions fixture mirroring the real Account/RealAccount position dict.
+
+    The FIRST position is deliberately *losing* (negative pnl_rate) so per-position
+    risk conditions (StopLoss / TrailingStop) trigger during a deep run — a flat
+    "everything is +5%" book would never exercise the stop-loss → order → notify
+    branch, leaving its ``{{ item.* }}`` bindings unreached (a false negative).
+    """
     syms = _norm_symbols(symbols_raw if symbols_raw is not None else _config_symbols(config))
     positions: List[Dict[str, Any]] = []
     for idx, entry in enumerate(syms):
         avg = round(100.0 + idx * 10, 2)
-        cur = round(avg + 5.0, 2)
+        # First holding is underwater (-8%), the rest are in profit (+5%).
+        cur = round(avg * 0.92, 2) if idx == 0 else round(avg * 1.05, 2)
+        qty = 10
         positions.append(
             {
                 "symbol": entry["symbol"],
                 "exchange": entry["exchange"],
-                "qty": 10,
+                "name": entry["symbol"],
+                "qty": qty,
+                "quantity": qty,  # NewOrderNode compat key
+                "direction": "long",
+                "close_side": "sell",
                 "avg_price": avg,
+                "entry_price": avg,
                 "current_price": cur,
+                "price": cur,
                 "pnl_rate": round((cur - avg) / avg * 100, 2),
-                "pnl_amount": round((cur - avg) * 10, 2),
+                "pnl_amount": round((cur - avg) * qty, 2),
+                "eval_amount": round(cur * qty, 2),
+                "purchase_amount": round(avg * qty, 2),
                 "currency": "USD",
+                "market": entry["exchange"],
+                "market_code": "82",
             }
         )
     return positions

@@ -257,6 +257,13 @@ class ExecutionContext:
         # Shutdown flag: cleanup 진행 중/완료 시 실시간 콜백 차단
         self._shutdown: bool = False
 
+        # deep_validate: unresolved {{ }} bindings collected during the virtual
+        # full-execution pass. Each entry: {"node_id", "expression", "reason"}.
+        # Drained by `executor.deep_validate` into DEEP_VALIDATION_BINDING_UNRESOLVED
+        # errors. Only populated in deep mode (runtime/dry_run keep the old
+        # warn-and-continue behaviour untouched).
+        self._deep_unresolved_bindings: List[Dict[str, str]] = []
+
         self._build_dag_index(workflow_edges, workflow_nodes)
 
     # === Storage Directory ===
@@ -338,6 +345,25 @@ class ExecutionContext:
         if override is None:
             override = fixtures.get(node_type)
         return override if isinstance(override, dict) else None
+
+    def record_deep_unresolved_binding(self, node_id: str, expression: str, reason: str) -> None:
+        """Record a ``{{ }}`` binding that could not be evaluated during a
+        deep_validate pass. No-op outside deep mode so runtime/dry_run are
+        unaffected. Deduplicated on (node_id, expression) so an auto-iterate that
+        re-evaluates the same literal N times yields a single entry.
+        """
+        if not self.is_deep_validate:
+            return
+        for entry in self._deep_unresolved_bindings:
+            if entry.get("node_id") == node_id and entry.get("expression") == expression:
+                return
+        self._deep_unresolved_bindings.append(
+            {"node_id": node_id, "expression": expression, "reason": reason}
+        )
+
+    def get_deep_unresolved_bindings(self) -> List[Dict[str, str]]:
+        """Return the deduplicated unresolved-binding records gathered in deep mode."""
+        return list(self._deep_unresolved_bindings)
 
     # === DAG Index Building ===
 
