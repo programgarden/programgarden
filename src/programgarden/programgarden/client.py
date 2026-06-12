@@ -50,6 +50,44 @@ class ProgramGarden:
         """
         return self.resolver.validate(definition)
 
+    def validate_deep(
+        self,
+        definition: Dict[str, Any],
+        *,
+        fixtures: Optional[Dict[str, Any]] = None,
+        timeout: float = 15.0,
+    ) -> ValidationResult:
+        """Deep-validate a workflow via virtual full-execution (never raises).
+
+        Runs the workflow once, end-to-end, in ``deep_validate`` mode (a strict
+        superset of ``dry_run``): no real order is ever placed, no notification is
+        dispatched, realtime/data nodes return schema-shaped fixtures so the flow
+        completes without waiting for live events or hitting the broker network,
+        and node failures are accumulated rather than aborting on the first one.
+        The result blocks (``is_valid=False``) if any node errors or the flow
+        does not run to completion.
+
+        Args:
+            definition: Workflow definition (JSON dict).
+            fixtures: Optional per-node fixture overrides, keyed by node id or
+                node type (merged shallowly on top of the default fixture).
+            timeout: Hard timeout (seconds) for the single validation pass.
+
+        Returns:
+            ValidationResult — ``errors`` carry structured per-node ErrorInfo;
+            ``is_valid`` is True only when nothing failed and the flow completed.
+
+        Example:
+            >>> pg = ProgramGarden()
+            >>> result = pg.validate_deep(workflow)
+            >>> if not result.is_valid:
+            ...     for err in result.errors:
+            ...         print(err.short())
+        """
+        return asyncio.run(
+            self.executor.deep_validate(definition, fixtures=fixtures, timeout=timeout)
+        )
+
     def run(
         self,
         definition: Dict[str, Any],

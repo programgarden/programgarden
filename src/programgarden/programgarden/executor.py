@@ -494,6 +494,24 @@ class GenericNodeExecutor(NodeExecutorBase):
             context.log("error", f"Failed to create node instance: {e}", node_id)
             return {"error": str(e)}
 
+        # deep_validate 가드: external-network nodes (HTTP-style — identified by a
+        # truthy `url` attribute) must not make a real outbound call during a
+        # virtual validation run. dry_run keeps its prior behaviour (the node
+        # still calls out); only deep mode short-circuits with a fixture so the
+        # "zero external call" invariant holds and the flow keeps flowing.
+        if context.is_deep_validate:
+            node_url = getattr(node_instance, "url", None)
+            if node_url:
+                context.log(
+                    "info",
+                    f"[deep_validate] {node_type} external request simulated (no network)",
+                    node_id,
+                )
+                fixture = {"status": "simulated", "deep_validate": True, "data": {}, "body": {}}
+                override = context.get_deep_fixture(node_id, node_type)
+                from programgarden import deep_fixtures as _df
+                return _df.apply_override(fixture, override)
+
         # dry_run 가드: Messaging/Notification 노드는 no-op 반환
         if context.is_dry_run:
             try:
@@ -627,11 +645,11 @@ class ThrottleNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         from programgarden_core.bases.listener import NodeState
-        
+
         mode = config.get("mode", "latest")
         interval_sec = config.get("interval_sec", 5.0)
         pass_first = config.get("pass_first", True)
-        
+
         # State key for this node
         state_key = "_throttle_state"
         throttle_state = context.get_node_state(node_id, state_key) or {
@@ -639,6 +657,16 @@ class ThrottleNodeExecutor(NodeExecutorBase):
             "skipped_count": 0,
             "pending_data": None,
         }
+
+        # dry_run/deep_validate: ThrottleNode is a time-based gate, but a
+        # validation pass runs the flow once — gating would swallow the data and
+        # break the downstream flow. Pass input straight through so integrity can
+        # be checked end-to-end.
+        if context.is_dry_run:
+            input_data = self._collect_input_data(node_id, config, context)
+            return await self._pass_through(
+                node_id, node_type, context, input_data, throttle_state, state_key
+            )
         
         now = datetime.now()
         last_passed = throttle_state.get("last_passed_at")
@@ -2663,7 +2691,17 @@ class BrokerNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         import os
-        
+
+        # deep_validate: return a fixture connection WITHOUT credential
+        # injection (KMS), LS login, or _sync_fill_prices_from_history (real
+        # network). Downstream broker-bound nodes are themselves short-circuited
+        # in deep mode, so the placeholder credentials are never used.
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            fixture = _df.broker_connection_fixture(node_type, config)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
+
         provider = config.get("provider", "ls-sec.co.kr")
         company = config.get("company", "ls")
         # node_type에 따라 product 기본값 결정
@@ -3833,9 +3871,18 @@ class AccountNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
+        # deep_validate: AccountNode (REST) has no dry_run guard and would
+        # ensure_ls_login unconditionally. Inject a fixture account so the flow
+        # completes without any network call.
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            fixture = _df.account_fixture(config)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
+
         # config에서 connection 확인 (자동 주입 또는 명시적 바인딩)
         broker_connection = config.get("connection")
-        
+
         # connection 없으면 에러 - 자동 주입 또는 명시적 바인딩 필요
         if not broker_connection:
             context.log("error", "AccountNode: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
@@ -4339,6 +4386,15 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
+        # deep_validate: OpenOrdersNode has no dry_run guard and would query the
+        # real LS API. Inject an empty (no-pending) fixture so the flow completes
+        # without a network call.
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            fixture = _df.open_orders_fixture(config)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
+
         # config에서 connection 확인 (자동 주입)
         broker_connection = config.get("connection")
 
@@ -4612,6 +4668,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         import sys
+
+        # deep_validate: inject a fixture account (positions + balance) so the
+        # flow completes without a WebSocket/REST call.
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            fixture = _df.real_account_fixture(config)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
 
         # dry_run: WebSocket 미개방, skip 반환
         if context.is_dry_run:
@@ -5536,6 +5600,20 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         from programgarden_core.exceptions import ValidationError, ConnectionError
 
+        # deep_validate: inject a fixture so the realtime branch completes the
+        # flow (no WebSocket, no event wait) and downstream nodes receive
+        # schema-shaped data instead of an empty skip payload.
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            try:
+                watchlist_output = context.find_parent_output(node_id, "WatchlistNode")
+                symbols_raw = self._resolve_symbols(node_id, config, context, watchlist_output)
+            except Exception:
+                symbols_raw = None
+            fixture = _df.real_market_data_fixture(config, symbols_raw)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
+
         # dry_run: WebSocket 미개방, skip 반환
         if context.is_dry_run:
             context.log(
@@ -6205,6 +6283,14 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
+        # deep_validate: inject a simulated fill so the order-event branch
+        # completes without waiting for a real fill push (no WebSocket).
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            fixture = _df.real_order_event_fixture(config)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
+
         # dry_run: WebSocket 미개방, skip 반환
         if context.is_dry_run:
             context.log(
@@ -6995,6 +7081,14 @@ class MarketStatusNodeExecutor(NodeExecutorBase):
         from datetime import datetime
 
         from programgarden_core.exceptions import ConnectionError, ValidationError
+
+        # deep_validate: return a fixture market-status (markets open) so the
+        # flow keeps flowing instead of skipping (no WebSocket/JIF subscription).
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            fixture = _df.market_status_fixture(config)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
 
         # dry_run skip — WebSocket 불가
         if context.is_dry_run:
@@ -8760,6 +8854,15 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         config_symbols = config.get("symbols")
         symbols = input_symbols or config_symbols
 
+        # deep_validate: MarketDataNode (REST current-price) would ensure_ls_login
+        # unconditionally. Inject a fixture so the flow completes without a
+        # network call, derived from the requested symbols.
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            fixture = _df.market_data_fixture(config, symbols)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
+
         if not symbols:
             error_msg = "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요."
             context.log("error", error_msg, node_id)
@@ -9311,6 +9414,20 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         """과거 데이터 조회"""
+
+        # deep_validate: HistoricalDataNode hits the real LS API. Inject a fixture
+        # time series so the flow completes without a network call.
+        if context.is_deep_validate:
+            from programgarden import deep_fixtures as _df
+            try:
+                _cfg_sym = config.get("symbol")
+                _in_sym = context.get_output(f"_input_{node_id}", "symbol")
+                _seed = _cfg_sym or _in_sym
+            except Exception:
+                _seed = None
+            fixture = _df.historical_data_fixture(config, _seed)
+            override = context.get_deep_fixture(node_id, node_type)
+            return _df.apply_override(fixture, override)
 
         # symbol 획득 (config 필드 우선, input port 폴백)
         # Item-based execution: symbol (단수) - 노드 스키마와 일치
@@ -15290,6 +15407,171 @@ class WorkflowExecutor:
 
         return job
 
+    async def deep_validate(
+        self,
+        definition: Dict[str, Any],
+        *,
+        fixtures: Optional[Dict[str, Any]] = None,
+        timeout: float = 15.0,
+    ) -> ValidationResult:
+        """Deep-validate a workflow via virtual full-execution (never raises).
+
+        Runs the workflow once, end-to-end, in ``deep_validate`` mode — a strict
+        superset of ``dry_run``. Orders are simulated (no real order ever placed),
+        notifications are suppressed, realtime/data nodes return schema-shaped
+        fixtures (so the flow completes without waiting for live events or hitting
+        the broker network), and node failures are accumulated instead of
+        aborting on the first one. The result blocks (``passed=False``) if *any*
+        node errors or the flow does not run to completion.
+
+        Args:
+            definition: Workflow definition (JSON dict).
+            fixtures: Optional per-node fixture overrides, keyed by node id or
+                node type, e.g. ``{"market_data_1": {"values": [...]}}``. Merged
+                shallowly on top of the schema-based default fixture.
+            timeout: Hard timeout (seconds) for the single validation pass. On
+                timeout the partial result so far is returned with a flow-broken
+                error appended.
+
+        Returns:
+            ValidationResult — ``errors`` carry structured per-node ErrorInfo
+            (codes ``DEEP_VALIDATION_*`` / ``DRY_RUN_*``); ``is_valid`` is True
+            only when no node failed and the flow completed.
+        """
+        from programgarden_core import (
+            ErrorCode,
+            ErrorLocation,
+            build_error,
+        )
+
+        result = ValidationResult()
+
+        # 1) Static validation first — compile() raises on invalid definitions,
+        # so surface structure errors as ValidationResult (never raise) and stop.
+        try:
+            static = self.validate(definition)
+        except Exception as e:  # pragma: no cover - defensive
+            result.add(
+                build_error(
+                    ErrorCode.DEFINITION_PARSE_ERROR,
+                    f"Workflow could not be validated: {e}",
+                    details={"stage": "static_validation", "exception_type": type(e).__name__},
+                )
+            )
+            return result
+        if not static.is_valid:
+            # Hand back the structure errors verbatim (same ErrorInfo shape).
+            for err in static.errors:
+                result.add(err)
+            for warn in static.warnings:
+                result.warnings.append(warn)
+            return result
+
+        # 2) Virtual full-execution pass.
+        context_params: Dict[str, Any] = {"deep_validate": True}
+        if fixtures:
+            context_params["deep_fixtures"] = fixtures
+
+        job = None
+        try:
+            job = await self.execute(definition, context_params=context_params)
+
+            async def _wait_done() -> None:
+                while job.status in ("pending", "running"):
+                    await asyncio.sleep(0.05)
+
+            try:
+                await asyncio.wait_for(_wait_done(), timeout=timeout)
+            except asyncio.TimeoutError:
+                # Stop the run and report a flow-broken timeout, keeping whatever
+                # node errors were already collected.
+                try:
+                    await job.cancel()
+                except Exception:
+                    pass
+                result.add(
+                    build_error(
+                        ErrorCode.DEEP_VALIDATION_FLOW_BROKEN,
+                        f"Deep validation did not complete within {timeout:.1f}s "
+                        f"(workflow may hang on an event/loop that never resolves).",
+                        details={"stage": "timeout", "timeout_sec": timeout},
+                    )
+                )
+        except Exception as e:
+            # never-raise: any internal error becomes a structured ErrorInfo.
+            result.add(
+                build_error(
+                    ErrorCode.DEEP_VALIDATION_FLOW_BROKEN,
+                    f"Deep validation failed to run: {e}",
+                    details={"stage": "execute", "exception_type": type(e).__name__},
+                )
+            )
+            return result
+
+        # 3) Collect structured per-node errors captured during the pass.
+        try:
+            for info in job.get_structured_errors():
+                result.add(info)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+        # 4) Flow-completion check: every node should have been reached. A node
+        # still PENDING after the pass means the flow did not run to completion
+        # (broken edge / unreachable node / stuck branch). RUNNING is NOT a
+        # failure here: stay_connected realtime nodes legitimately stay RUNNING
+        # after emitting their (deep fixture) output — they were reached and
+        # produced data, the event loop is just skipped in dry_run/deep mode.
+        try:
+            state = job.get_state()
+            nodes_state = state.get("nodes", {}) if isinstance(state, dict) else {}
+            # Control-flow nodes legitimately leave nodes PENDING without it
+            # meaning "never reached":
+            #   - IfNode: the inactive branch stays PENDING.
+            #   - SplitNode: runs its branch nodes directly (item-based), so the
+            #     SplitNode itself never publishes outputs / a COMPLETED state.
+            #   - AggregateNode: paired with SplitNode in the same branch model.
+            # When any of these is present, the per-node PENDING signal is no
+            # longer a reliable "flow broken" indicator, so we rely on per-node
+            # structured errors (already collected above) instead of the
+            # completion sweep. Without control-flow nodes, a PENDING node
+            # unambiguously means it was never reached.
+            _control_flow_types = {"IfNode", "SplitNode", "AggregateNode"}
+            has_control_flow = any(
+                getattr(n, "node_type", None) in _control_flow_types
+                for n in job.workflow.nodes.values()
+            )
+            unreached = (
+                []
+                if has_control_flow
+                else [
+                    nid
+                    for nid, ns in nodes_state.items()
+                    if isinstance(ns, dict) and ns.get("state") == "pending"
+                ]
+            )
+            if unreached:
+                result.add(
+                    build_error(
+                        ErrorCode.DEEP_VALIDATION_FLOW_BROKEN,
+                        f"{len(unreached)} node(s) were never reached during the "
+                        f"virtual run: {sorted(unreached)[:10]}",
+                        location=ErrorLocation(node_id=sorted(unreached)[0]),
+                        details={"stage": "flow_completion", "unreached_node_ids": sorted(unreached)},
+                    )
+                )
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+        # Cleanup: drop the throwaway job so repeated deep_validate calls do not
+        # leak job ids / state.
+        try:
+            if job is not None:
+                self._jobs.pop(job.job_id, None)
+        except Exception:
+            pass
+
+        return result
+
     async def restore(
         self,
         definition: Dict[str, Any],
@@ -16502,8 +16784,17 @@ class WorkflowJob:
                     ErrorLocation,
                     build_error,
                 )
+                _is_deep = bool(getattr(self.context, "is_deep_validate", False))
+                # deep_validate uses a dedicated error code so chatbot consumers
+                # can tell virtual-full-execution failures apart from a plain
+                # dry_run runtime error; details carries the stage for triage.
+                _err_code = (
+                    ErrorCode.DEEP_VALIDATION_NODE_ERROR
+                    if _is_deep
+                    else ErrorCode.DRY_RUN_RUNTIME_ERROR
+                )
                 self._node_error_infos[node_id] = build_error(
-                    ErrorCode.DRY_RUN_RUNTIME_ERROR,
+                    _err_code,
                     f"Node '{node_id}' ({node.node_type}) raised during execution: {error_msg}",
                     location=ErrorLocation(node_id=node_id, node_type=node.node_type),
                     details={
@@ -16512,6 +16803,8 @@ class WorkflowJob:
                         "timestamp": error_ts,
                         "duration_ms": duration_ms,
                         "dry_run": bool(getattr(self.context, "is_dry_run", False)),
+                        "deep_validate": _is_deep,
+                        "stage": "node_execution",
                     },
                 )
                 await self.context.notify_node_state(
@@ -16530,7 +16823,12 @@ class WorkflowJob:
                     "timestamp": error_ts,
                 }
                 self.context.log("error", f"Node {node_id} failed: {e}", node_id)
-                raise
+                # deep_validate: do NOT abort on the first node failure — keep
+                # going so a single pass collects as many node errors as
+                # possible (strict "fix everything at once" model). All other
+                # modes preserve the original fail-fast behaviour.
+                if not _is_deep:
+                    raise
 
     # === Item-based Execution Helpers (자동 반복 실행) ===
 

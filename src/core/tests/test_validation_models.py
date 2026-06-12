@@ -36,8 +36,10 @@ from programgarden_core import (
 
 def test_error_code_count_matches_matrix() -> None:
     # 26 baseline + 3 AI/Dynamic edge codes (INVALID_AI_MODEL_EDGE,
-    # INVALID_TOOL_EDGE, DYNAMIC_NODE_CLASS_NOT_INJECTED) = 29 codes.
-    assert len(list(ErrorCode)) == 29
+    # INVALID_TOOL_EDGE, DYNAMIC_NODE_CLASS_NOT_INJECTED) = 29 codes,
+    # + 3 deep_validate codes (DEEP_VALIDATION_NODE_ERROR,
+    # DEEP_VALIDATION_FLOW_BROKEN, DEEP_VALIDATION_BINDING_UNRESOLVED) = 32.
+    assert len(list(ErrorCode)) == 32
 
 
 def test_unknown_plugin_defaults_to_warning() -> None:

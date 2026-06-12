@@ -289,14 +289,55 @@ class ExecutionContext:
 
     @property
     def is_dry_run(self) -> bool:
-        """Workflow is running in dry_run mode.
+        """Workflow is running in dry_run mode (deep_validate is a superset).
 
         When True, side-effectful nodes (주문/Realtime/알림) skip external calls
         and return simulated responses. Query/백테스트 nodes still execute normally.
 
-        Enable via ``context_params={"dry_run": True}`` in ``pg.run_async``.
+        deep_validate is a strict superset of dry_run: enabling ``deep_validate``
+        turns this True so every existing dry_run guard (order simulation, event
+        loop skip, position/risk tracker skip, MESSAGING simulation, SQL write
+        block) fires automatically — there is no order/notify path that reaches a
+        real broker call in deep mode.
+
+        Enable via ``context_params={"dry_run": True}`` (or
+        ``{"deep_validate": True}``) in ``pg.run_async``.
         """
-        return bool(self.context_params.get("dry_run", False))
+        return bool(
+            self.context_params.get("dry_run", False)
+            or self.context_params.get("deep_validate", False)
+        )
+
+    @property
+    def is_deep_validate(self) -> bool:
+        """Workflow is running in deep_validate (virtual full-execution) mode.
+
+        Deep validate is the strict-blocking ``deep_validate`` superset of
+        dry_run. This property is True ONLY for deep mode (not plain dry_run), so
+        executors can take the deep-only branch: inject fixture data for
+        realtime/data nodes (so the flow completes without waiting for events
+        that never arrive) and accumulate per-node errors instead of aborting on
+        the first failure.
+
+        Enable via ``context_params={"deep_validate": True}``.
+        """
+        return bool(self.context_params.get("deep_validate", False))
+
+    def get_deep_fixture(self, node_id: str, node_type: str) -> Optional[Dict[str, Any]]:
+        """Return a caller-supplied deep-validate fixture override, if any.
+
+        Callers may pass ``context_params={"deep_fixtures": {key: {...}}}`` where
+        ``key`` is either a node id or a node type. Node id takes precedence over
+        node type. Returns None when no override exists (executor then uses its
+        own schema-based default fixture).
+        """
+        fixtures = self.context_params.get("deep_fixtures")
+        if not isinstance(fixtures, dict):
+            return None
+        override = fixtures.get(node_id)
+        if override is None:
+            override = fixtures.get(node_type)
+        return override if isinstance(override, dict) else None
 
     # === DAG Index Building ===
 
@@ -1567,6 +1608,10 @@ class ExecutionContext:
         data_schema: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Notify all listeners about display data from DisplayNode."""
+        # dry_run/deep_validate: suppress outbound display notifications centrally
+        # (no listener side-effects during virtual validation runs).
+        if self.is_dry_run:
+            return
         logger.debug(f"📡 notify_display_data: {node_id} ({chart_type})")
 
         if not self._listeners:
@@ -1612,6 +1657,9 @@ class ExecutionContext:
 
     async def notify_llm_stream(self, event: LLMStreamEvent) -> None:
         """LLM 토큰 스트리밍 이벤트 전파. UI 실시간 타이핑 효과용."""
+        # dry_run/deep_validate: suppress outbound stream notifications centrally.
+        if self.is_dry_run:
+            return
         if not self._listeners:
             return
         for listener in self._listeners:
@@ -1623,6 +1671,9 @@ class ExecutionContext:
 
     async def notify_token_usage(self, event: TokenUsageEvent) -> None:
         """토큰 사용량 이벤트 전파. 비용 추적 및 모니터링용."""
+        # dry_run/deep_validate: suppress outbound token-usage notifications.
+        if self.is_dry_run:
+            return
         if not self._listeners:
             return
         for listener in self._listeners:
@@ -1634,6 +1685,9 @@ class ExecutionContext:
 
     async def notify_ai_tool_call(self, event: AIToolCallEvent) -> None:
         """AI Tool 호출 이벤트 전파. UI에서 Tool 호출 상태 표시용."""
+        # dry_run/deep_validate: suppress outbound tool-call notifications.
+        if self.is_dry_run:
+            return
         if not self._listeners:
             return
         for listener in self._listeners:
@@ -1727,6 +1781,12 @@ class ExecutionContext:
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
         """편의 메서드: NotificationEvent 생성 및 전파."""
+        # dry_run/deep_validate: suppress outbound notifications centrally so no
+        # external messaging (telegram/kakao/AI) is dispatched during a virtual
+        # validation run. Covers workflow lifecycle (started/completed/failed) and
+        # all convenience-method emitters in one place.
+        if self.is_dry_run:
+            return
         event = NotificationEvent(
             job_id=self.job_id,
             category=category,
