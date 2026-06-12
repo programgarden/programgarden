@@ -1,0 +1,220 @@
+{
+  "id": "86-ai-news-sentiment-auto-trade",
+  "name": "AI 뉴스감성 자동매매",
+  "description": "AIAgentNode가 시세를 분석해 매수/홀드/매도 신호를 내고, 매수 신호일 때만 PositionSizingNode가 계좌·리스크 기준으로 수량을 산출해 주문",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 300
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred",
+      "position": {
+        "x": 250,
+        "y": 400
+      }
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode",
+      "position": {
+        "x": 450,
+        "y": 480
+      }
+    },
+    {
+      "id": "llm",
+      "type": "LLMModelNode",
+      "credential_id": "llm_cred",
+      "model": "claude-haiku-4-5-20251001",
+      "temperature": 0.3,
+      "max_tokens": 1500,
+      "position": {
+        "x": 250,
+        "y": 150
+      }
+    },
+    {
+      "id": "market",
+      "type": "OverseasStockMarketDataNode",
+      "symbol": {
+        "symbol": "AAPL",
+        "exchange": "NASDAQ"
+      },
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "id": "sentiment_agent",
+      "type": "AIAgentNode",
+      "system_prompt": "당신은 단기 시장 심리 분석가입니다. 제공된 시세 데이터를 바탕으로 해당 종목의 단기 매매 심리를 buy/hold/sell 중 하나로 판단하고 확신도를 0~1로 제시하세요. 수량이나 금액은 절대 결정하지 마세요.",
+      "user_prompt": "AAPL 의 현재 시세를 분석해 단기 매매 신호(buy/hold/sell)와 확신도를 판단해주세요.",
+      "output_format": "structured",
+      "output_schema": {
+        "signal": {
+          "type": "string",
+          "enum": [
+            "buy",
+            "hold",
+            "sell"
+          ],
+          "description": "단기 매매 신호"
+        },
+        "confidence": {
+          "type": "number",
+          "description": "확신도 0~1"
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "판단 근거 한 줄 요약"
+        }
+      },
+      "max_tool_calls": 0,
+      "timeout_seconds": 60,
+      "cooldown_sec": 300,
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "if_buy",
+      "type": "IfNode",
+      "left": "{{ nodes.sentiment_agent.response.signal }}",
+      "operator": "==",
+      "right": "buy",
+      "position": {
+        "x": 950,
+        "y": 250
+      }
+    },
+    {
+      "id": "sizing",
+      "type": "PositionSizingNode",
+      "symbol": "AAPL",
+      "balance": "{{ nodes.account.balance.orderable_amount }}",
+      "market_data": "{{ nodes.market.value }}",
+      "method": "fixed_percent",
+      "max_percent": 10.0,
+      "position": {
+        "x": 1150,
+        "y": 180
+      }
+    },
+    {
+      "id": "buy_order",
+      "type": "OverseasStockNewOrderNode",
+      "side": "buy",
+      "order_type": "limit",
+      "order": "{{ nodes.sizing.order }}",
+      "position": {
+        "x": 1350,
+        "y": 180
+      }
+    },
+    {
+      "id": "no_trade",
+      "type": "SummaryDisplayNode",
+      "title": "신호 미발생 - 매매 보류",
+      "data": "{{ nodes.sentiment_agent.response }}",
+      "position": {
+        "x": 1150,
+        "y": 380
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "account"
+    },
+    {
+      "from": "broker",
+      "to": "market"
+    },
+    {
+      "from": "start",
+      "to": "llm"
+    },
+    {
+      "from": "llm",
+      "to": "sentiment_agent",
+      "type": "ai_model"
+    },
+    {
+      "from": "market",
+      "to": "sentiment_agent",
+      "type": "tool"
+    },
+    {
+      "from": "sentiment_agent",
+      "to": "if_buy"
+    },
+    {
+      "from": "account",
+      "to": "sizing"
+    },
+    {
+      "from": "market",
+      "to": "sizing"
+    },
+    {
+      "from": "if_buy",
+      "to": "sizing",
+      "from_port": "true"
+    },
+    {
+      "from": "sizing",
+      "to": "buy_order"
+    },
+    {
+      "from": "if_buy",
+      "to": "no_trade",
+      "from_port": "false"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    },
+    {
+      "credential_id": "llm_cred",
+      "type": "llm_anthropic",
+      "data": [
+        {
+          "key": "api_key",
+          "value": "",
+          "type": "password",
+          "label": "API Key"
+        }
+      ]
+    }
+  ]
+}
