@@ -105,10 +105,12 @@
     {
       "id": "logic",
       "type": "LogicNode",
-      "operator": "AND",
+      "operator": "all",
       "conditions": [
-        "{{ nodes.rsi_condition.result != null }}",
-        "{{ nodes.rsi_condition.result.rsi < 30 }}"
+        {
+          "is_condition_met": "{{ nodes.rsi_condition.result }}",
+          "passed_symbols": "{{ nodes.rsi_condition.passed_symbols }}"
+        }
       ],
       "position": {
         "x": 950,
@@ -118,7 +120,7 @@
     {
       "id": "sizing",
       "type": "PositionSizingNode",
-      "symbol": "{{ nodes.logic.result }}",
+      "symbol": "{{ item }}",
       "balance": "{{ nodes.account.balance.orderable_amount }}",
       "market_data": "{{ nodes.market.value }}",
       "method": "fixed_percent",
@@ -193,7 +195,7 @@
       "to": "sizing"
     },
     {
-      "from": "logic",
+      "from": "logic.passed_symbols",
       "to": "sizing"
     },
     {

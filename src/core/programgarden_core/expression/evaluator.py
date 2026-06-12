@@ -787,6 +787,14 @@ class SafeEvaluator:
         "True": True,
         "False": False,
         "None": None,
+        # JSON-style literal aliases. Workflow definitions are authored as JSON
+        # (and frequently AI-generated), where the null/boolean literals are
+        # `null`/`true`/`false`, not Python's `None`/`True`/`False`. Accepting
+        # both spellings avoids an "undefined variable: null" failure on an
+        # otherwise valid `{{ x != null }}` expression.
+        "null": None,
+        "true": True,
+        "false": False,
     }
 
     def __init__(self, context: Dict[str, Any]):

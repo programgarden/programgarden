@@ -140,7 +140,7 @@
       "id": "telegram_entry",
       "type": "TelegramNode",
       "credential_id": "telegram_cred",
-      "template": "🆕 HKEX 스크리너 진입: {{ item.symbol }} x {{ item.quantity }} @ {{ item.price }} HKD (ATR breakout)",
+      "template": "🆕 HKEX 스크리너 진입 ({{ nodes.filter_candidates.count }}종목): {{ nodes.filter_candidates.symbols }} (ATR breakout, limit 매수)",
       "position": {"x": 2880, "y": 280}
     },
 
@@ -173,7 +173,7 @@
     {"from": "account", "to": "filter_candidates"},
     {"from": "filter_candidates", "to": "if_has_candidate"},
 
-    {"from": "if_has_candidate", "to": "market_data", "from_port": "true"},
+    {"from": "filter_candidates", "to": "market_data"},
     {"from": "market_data", "to": "sizing"},
     {"from": "account", "to": "sizing"},
     {"from": "sizing", "to": "buy_order"},

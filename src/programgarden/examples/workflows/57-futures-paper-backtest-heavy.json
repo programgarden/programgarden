@@ -804,6 +804,17 @@
       }
     },
     {
+      "id": "signal_symbols",
+      "type": "SymbolFilterNode",
+      "operation": "union",
+      "input_a": "{{ nodes.logic.passed_symbols }}",
+      "input_b": [],
+      "position": {
+        "x": 2250,
+        "y": 990
+      }
+    },
+    {
       "id": "sizing",
       "type": "PositionSizingNode",
       "method": "fixed_quantity",
@@ -946,7 +957,15 @@
       "to": "portfolio"
     },
     {
-      "from": "portfolio",
+      "from": "logic",
+      "to": "signal_symbols"
+    },
+    {
+      "from": "signal_symbols",
+      "to": "sizing"
+    },
+    {
+      "from": "account",
       "to": "sizing"
     },
     {

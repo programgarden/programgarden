@@ -31,12 +31,20 @@
     },
 
     {
-      "id": "if_stop_loss",
-      "type": "IfNode",
-      "left": "{{ item.pnl_rate }}",
-      "operator": "<=",
-      "right": -5,
+      "id": "stop_loss",
+      "type": "ConditionNode",
+      "plugin": "StopLoss",
+      "positions": "{{ nodes.account.positions }}",
+      "fields": {"stop_percent": -5.0},
       "position": {"x": 900, "y": 150}
+    },
+    {
+      "id": "stop_loss_symbols",
+      "type": "SymbolFilterNode",
+      "operation": "union",
+      "input_a": "{{ nodes.stop_loss.passed_symbols }}",
+      "input_b": [],
+      "position": {"x": 1075, "y": 150}
     },
     {
       "id": "sell_stop_loss",
@@ -51,23 +59,31 @@
       "resilience": {
         "fallback": {"mode": "skip"}
       },
-      "position": {"x": 1150, "y": 150}
+      "position": {"x": 1250, "y": 150}
     },
     {
       "id": "telegram_stop_loss",
       "type": "TelegramNode",
       "credential_id": "telegram_cred",
-      "template": "🛑 <b>손절 체결 (-5% 라인)</b>\n\n📉 {{ item.symbol }}: {{ item.pnl_rate }}%\n📊 수량: {{ item.quantity }}\n🛡️ 추가 손실 방지",
-      "position": {"x": 1400, "y": 150}
+      "template": "🛑 <b>손절 체결 (-5% 라인)</b>\n\n📉 {{ item.symbol }} ({{ item.exchange }})\n📊 수량: {{ item.quantity }}\n🛡️ 추가 손실 방지",
+      "position": {"x": 1450, "y": 150}
     },
 
     {
-      "id": "if_take_profit",
-      "type": "IfNode",
-      "left": "{{ item.pnl_rate }}",
-      "operator": ">=",
-      "right": 10,
+      "id": "take_profit",
+      "type": "ConditionNode",
+      "plugin": "ProfitTarget",
+      "positions": "{{ nodes.account.positions }}",
+      "fields": {"target_percent": 10.0},
       "position": {"x": 900, "y": 400}
+    },
+    {
+      "id": "take_profit_symbols",
+      "type": "SymbolFilterNode",
+      "operation": "union",
+      "input_a": "{{ nodes.take_profit.passed_symbols }}",
+      "input_b": [],
+      "position": {"x": 1075, "y": 400}
     },
     {
       "id": "sell_take_profit",
@@ -82,14 +98,14 @@
       "resilience": {
         "fallback": {"mode": "skip"}
       },
-      "position": {"x": 1150, "y": 400}
+      "position": {"x": 1250, "y": 400}
     },
     {
       "id": "telegram_take_profit",
       "type": "TelegramNode",
       "credential_id": "telegram_cred",
-      "template": "🎯 <b>익절 체결 (+10% 도달)</b>\n\n📈 {{ item.symbol }}: +{{ item.pnl_rate }}%\n📊 수량: {{ item.quantity }}\n💰 수익 확정",
-      "position": {"x": 1400, "y": 400}
+      "template": "🎯 <b>익절 체결 (+10% 도달)</b>\n\n📈 {{ item.symbol }} ({{ item.exchange }})\n📊 수량: {{ item.quantity }}\n💰 수익 확정",
+      "position": {"x": 1450, "y": 400}
     },
 
     {
@@ -119,13 +135,15 @@
     {"from": "broker", "to": "schedule"},
     {"from": "schedule", "to": "account"},
 
-    {"from": "account", "to": "if_stop_loss"},
-    {"from": "if_stop_loss", "to": "sell_stop_loss", "from_port": "true"},
-    {"from": "sell_stop_loss", "to": "telegram_stop_loss"},
+    {"from": "account", "to": "stop_loss"},
+    {"from": "stop_loss", "to": "stop_loss_symbols"},
+    {"from": "stop_loss_symbols", "to": "sell_stop_loss"},
+    {"from": "stop_loss_symbols", "to": "telegram_stop_loss"},
 
-    {"from": "account", "to": "if_take_profit"},
-    {"from": "if_take_profit", "to": "sell_take_profit", "from_port": "true"},
-    {"from": "sell_take_profit", "to": "telegram_take_profit"},
+    {"from": "account", "to": "take_profit"},
+    {"from": "take_profit", "to": "take_profit_symbols"},
+    {"from": "take_profit_symbols", "to": "sell_take_profit"},
+    {"from": "take_profit_symbols", "to": "telegram_take_profit"},
 
     {"from": "account", "to": "portfolio_risk"},
     {"from": "portfolio_risk", "to": "if_portfolio_alert"},
@@ -152,7 +170,7 @@
   "notes": [
     {
       "id": "note_risk_mgmt",
-      "content": "## 통합 리스크 관리 봇\n\n**3중 안전장치**:\n1. **손절 (-5%)**: 포지션별 즉시 컷\n2. **익절 (+10%)**: 포지션별 수익 확정\n3. **포트폴리오 경고 (drawdown 10%)**: 계좌 전체 낙폭 감지\n\n**병렬 게이트 패턴**:\nAccountNode 에서 3개의 병렬 엣지로 분기\n- 손절 게이트 (per-position auto-iterate)\n- 익절 게이트 (per-position auto-iterate)\n- 포트폴리오 게이트 (집계 단일 평가)\n\n**PortfolioNode**:\n- max_drawdown_percent=15 → 15% 도달 시 자동 킬스위치\n- drawdown_percent 출력을 IfNode 로 감시 (10% 경고선)\n- risk_tracker 연동 HWM 자동 추적\n\n**주기**: 3분마다 (짧은 주기 = 빠른 반응)",
+      "content": "## 통합 리스크 관리 봇\n\n**3중 안전장치**:\n1. **손절 (-5%)**: StopLoss 플러그인으로 포지션별 즉시 컷\n2. **익절 (+10%)**: ProfitTarget 플러그인으로 포지션별 수익 확정\n3. **포트폴리오 경고 (drawdown 10%)**: 계좌 전체 낙폭 감지\n\n**병렬 게이트 패턴**:\nAccountNode 에서 3개의 병렬 엣지로 분기\n- 손절 게이트: ConditionNode(plugin='StopLoss') → SymbolFilter → 주문/알림 (per-position auto-iterate)\n- 익절 게이트: ConditionNode(plugin='ProfitTarget') → SymbolFilter → 주문/알림 (per-position auto-iterate)\n- 포트폴리오 게이트: PortfolioNode.drawdown_percent + IfNode (집계 단일 평가)\n\n**왜 IfNode 가 아닌가 (손절/익절)**\n- IfNode 는 auto-iterate 미지원이라 `{{ item.pnl_rate }}` 가 항상 미해석 → 포지션별 손절/익절이 동작하지 않음.\n- 포지션별 조건 분기는 ConditionNode + 포지션 플러그인(StopLoss/ProfitTarget)으로 구현.\n- SymbolFilter(union, input_b=[]) 가 passed_symbols 를 symbols 포트로 노출해 주문/텔레그램이 손절·익절 대상만 auto-iterate.\n\n**PortfolioNode**:\n- max_drawdown_percent=15 → 15% 도달 시 자동 킬스위치\n- drawdown_percent 출력을 IfNode 로 감시 (10% 경고선, 집계 스칼라라 IfNode 적합)\n- risk_tracker 연동 HWM 자동 추적\n\n**주기**: 3분마다 (짧은 주기 = 빠른 반응)",
       "color": 0,
       "width": 380,
       "height": 400,

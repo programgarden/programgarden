@@ -170,7 +170,7 @@
       "id": "telegram",
       "type": "TelegramNode",
       "credential_id": "telegram_cred",
-      "template": "🎯 HKEX 진입: {{ item.symbol }} x {{ item.quantity }} @ {{ item.price }} HKD (RSI<30 AND Bollinger 하단)",
+      "template": "🎯 HKEX 진입 ({{ nodes.filter_buy.count }}종목): {{ nodes.filter_buy.symbols }} (RSI<30 AND Bollinger 하단, limit 매수)",
       "position": {"x": 2680, "y": 320}
     }
   ],
@@ -190,8 +190,8 @@
     {"from": "logic", "to": "filter_buy"},
     {"from": "account", "to": "filter_buy"},
     {"from": "filter_buy", "to": "if_candidates"},
-    {"from": "if_candidates", "to": "market_data", "from_port": "true"},
     {"from": "if_candidates", "to": "no_entry_notice", "from_port": "false"},
+    {"from": "filter_buy", "to": "market_data"},
     {"from": "market_data", "to": "sizing"},
     {"from": "account", "to": "sizing"},
     {"from": "sizing", "to": "buy_order"},

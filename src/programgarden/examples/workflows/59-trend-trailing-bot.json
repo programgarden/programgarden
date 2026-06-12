@@ -110,12 +110,20 @@
       "position": {"x": 800, "y": 500}
     },
     {
-      "id": "if_stop_loss",
-      "type": "IfNode",
-      "left": "{{ item.pnl_rate }}",
-      "operator": "<=",
-      "right": -5,
+      "id": "stop_loss",
+      "type": "ConditionNode",
+      "plugin": "StopLoss",
+      "positions": "{{ nodes.account_sell.positions }}",
+      "fields": {"stop_percent": -5.0},
       "position": {"x": 1050, "y": 500}
+    },
+    {
+      "id": "stop_symbols",
+      "type": "SymbolFilterNode",
+      "operation": "union",
+      "input_a": "{{ nodes.stop_loss.passed_symbols }}",
+      "input_b": [],
+      "position": {"x": 1300, "y": 500}
     },
     {
       "id": "sell_order",
@@ -130,7 +138,7 @@
       "resilience": {
         "fallback": {"mode": "skip"}
       },
-      "position": {"x": 1300, "y": 500}
+      "position": {"x": 1550, "y": 500}
     }
   ],
   "edges": [
@@ -150,8 +158,9 @@
     {"from": "buy_order", "to": "telegram_buy"},
 
     {"from": "trading_hours", "to": "account_sell"},
-    {"from": "account_sell", "to": "if_stop_loss"},
-    {"from": "if_stop_loss", "to": "sell_order", "from_port": "true"}
+    {"from": "account_sell", "to": "stop_loss"},
+    {"from": "stop_loss", "to": "stop_symbols"},
+    {"from": "stop_symbols", "to": "sell_order"}
   ],
   "credentials": [
     {
@@ -174,7 +183,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## 추세추종 자동매매\n\n**매수**: watchlist 3종목 TSMOM 60일 추세 평가\n  → 보유종목 제외 → 모멘텀 양수면 1주 매수\n\n**매도**: IfNode로 per-item pnl_rate <= -5% 검사\n  → 손절 조건 충족 시 전량 시장가 매도\n\n**주기**: 5분 (평일 24시간, KST)\n**위험관리**: -5% 스탑로스",
+      "content": "## 추세추종 자동매매\n\n**매수**: watchlist 3종목 TSMOM 60일 추세 평가\n  → 보유종목 제외 → 모멘텀 양수면 1주 매수\n\n**매도**: StopLoss 플러그인(ConditionNode)으로 포지션별 pnl_rate <= -5% 검사\n  → SymbolFilter 어댑터로 passed_symbols 를 symbols 포트에 노출\n  → 손절 대상만 auto-iterate 하여 전량 시장가 매도\n\n**주기**: 5분 (평일 24시간, KST)\n**위험관리**: -5% 스탑로스 (per-position, IfNode 아님)",
       "color": 1,
       "width": 360,
       "height": 260,

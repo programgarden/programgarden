@@ -365,3 +365,32 @@ class TestNamespaceInExpression:
             "{{ format.pct(finance.pct_change(100, 125)) }}"
         )
         assert result == "25.00%"
+
+
+class TestJsonLiteralAliases:
+    """JSON-style literal aliases (null/true/false) — workflow defs are JSON."""
+
+    def test_null_alias_resolves_to_none(self):
+        ctx = ExpressionContext()
+        evaluator = ExpressionEvaluator(ctx)
+        assert evaluator.evaluate("{{ null }}") is None
+
+    def test_true_false_lowercase_aliases(self):
+        ctx = ExpressionContext()
+        evaluator = ExpressionEvaluator(ctx)
+        assert evaluator.evaluate("{{ true }}") is True
+        assert evaluator.evaluate("{{ false }}") is False
+
+    def test_not_equal_null_on_present_value(self):
+        ctx = ExpressionContext()
+        ctx.set_node_output("cond", "result", True)
+        evaluator = ExpressionEvaluator(ctx)
+        # `{{ x != null }}` must no longer raise "undefined variable: null".
+        assert evaluator.evaluate("{{ nodes.cond.result != null }}") is True
+
+    def test_python_literals_still_work(self):
+        ctx = ExpressionContext()
+        evaluator = ExpressionEvaluator(ctx)
+        assert evaluator.evaluate("{{ None }}") is None
+        assert evaluator.evaluate("{{ True }}") is True
+        assert evaluator.evaluate("{{ False }}") is False

@@ -75,7 +75,7 @@
     {"from": "account", "to": "stop_loss"},
     {"from": "stop_loss", "to": "triggered_symbols"},
     {"from": "triggered_symbols", "to": "sell_order"},
-    {"from": "sell_order", "to": "telegram_stop_loss"}
+    {"from": "triggered_symbols", "to": "telegram_stop_loss"}
   ],
   "credentials": [
     {
