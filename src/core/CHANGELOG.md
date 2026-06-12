@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+## [1.14.4] - 2026-06-13
+### Added
+- **Deep-validation error codes** (3 additive `ErrorCode` enum values) — surfaced by
+  `programgarden`'s virtual full-execution deep validation (`ProgramGarden.validate_deep`):
+  - `DEEP_VALIDATION_NODE_ERROR` — a node raised/failed during the offline validation pass.
+  - `DEEP_VALIDATION_FLOW_BROKEN` — the workflow did not run end-to-end to completion.
+  - `DEEP_VALIDATION_BINDING_UNRESOLVED` — an unresolved `{{ }}` template binding was detected.
+
+### Changed
+- **Expression evaluator accepts JSON-style literals** — `SafeEvaluator` now resolves the
+  bare names `null` / `true` / `false` (aliases of `None` / `True` / `False`) in addition to
+  the Python spellings. Workflow definitions are authored as JSON (and frequently AI-generated),
+  so an otherwise valid `{{ x != null }}` expression no longer fails with
+  "undefined variable: null". Python `None`/`True`/`False` continue to work unchanged.
+
 ## [1.14.3] - 2026-06-01
 ### Changed
 - **6 modify/cancel 노드 메타데이터 보강** (`OverseasStock`/`OverseasFutures`/`KoreaStock` 의 `ModifyOrderNode`·`CancelOrderNode`) — `_anti_patterns` / `_node_guide.pitfalls` 에 "거래시간 외 정정/취소는 거래소가 거짓 `success` 를 줄 수 있어 silent no-op 가능 → `modified_order_id` / `cancelled_order_id` 가 비었는지 확인" caveat 추가 (해외선물 거래시간은 거래소별 상이함을 명시). 6개 노드 `_version` 1.0.0 → 1.0.1 + `_updated_at` 2026-06-01 + `_change_note`. 스키마·포트 불변.

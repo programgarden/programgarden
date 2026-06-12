@@ -1,5 +1,29 @@
 ## [Unreleased]
 
+## [1.23.0] - 2026-06-13
+### Added
+- **`ProgramGarden.validate_deep(definition, *, fixtures=None, timeout=15.0) -> ValidationResult`** —
+  가상 풀-실행(virtual full-execution) 깊은검증. 워크플로우를 오프라인에서 한 번 end-to-end 완주시켜
+  실제 실행 직전에야 드러나는 결함을 미리 수집한다 (`dry_run` 의 strict superset):
+  - 실주문 0 — 주문 노드는 시뮬레이션, 알림 디스패치 없음.
+  - 데이터/실시간(realtime) 노드는 스키마-shaped fixture 를 반환 → 라이브 이벤트나 브로커 네트워크
+    없이 흐름이 완주. `fixtures` 인자로 node id / node type 별 fixture 오버라이드 주입 가능
+    (default fixture 위에 shallow merge).
+  - 미해결 `{{ }}` 템플릿 바인딩 / 필드·타입 결함 / 흐름(flow) 단절을 구조화(`ErrorInfo`)해 수집.
+  - never-raise — 노드 실패를 첫 실패에서 abort 하지 않고 누적. 15초 타임박스. 어떤 노드든 에러거나
+    흐름이 완주하지 못하면 `is_valid=False`.
+- **`deep_fixtures.py`** — 깊은검증용 스키마-shaped 기본 fixture 라이브러리.
+
+### Fixed
+- **예제 8종 런타임 정합 재작성** — `examples/workflows/` 의 8개 코퍼스 워크플로우를 런타임-correct
+  패턴으로 재작성 (86/86 deep-valid, 미해결 바인딩 0). JSON-style `null` 리터럴 사용 포함.
+- **sync 래퍼가 호출자 이벤트루프를 파괴하던 회귀** — `validate_deep` / `run` 등 동기 래퍼가
+  `asyncio.run` 으로 호출 스레드의 이벤트루프 상태를 오염시켜(테스트 경계 누수) spurious 실패를
+  유발하던 문제 수정. 코루틴을 전용 워커 스레드에서 실행해 호출 스레드의 루프 라이프사이클을 격리.
+
+### Changed
+- deps: `programgarden-core ^1.14.4` (deep-validation error codes + JSON-style literal evaluator)
+
 ## [1.22.4] - 2026-06-06
 ### Added
 - **Opt-in LS `ls_token_provider` wiring in executor** (Verified League §3.2.3) —
