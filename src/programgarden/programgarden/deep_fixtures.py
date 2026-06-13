@@ -361,6 +361,77 @@ def broker_connection_fixture(
     }
 
 
+def _schema_default_value(schema: Any) -> Any:
+    """Best-effort default value for one ``output_schema`` entry.
+
+    An entry is either a bare type string (``"number"``) or a JSON-schema-ish
+    dict (``{"type": "...", "enum": [...], "items": {...}, "properties": {...}}``)
+    — the two shapes ``AIAgentNodeExecutor._build_output_instruction`` /
+    ``_validate_structured`` already accept. Returns a type-correct placeholder
+    so a downstream ``{{ nodes.<agent>.response.<field> }}`` binding resolves to a
+    real value (an enum field resolves to its first allowed value, an object to
+    its declared properties, an array to a single shaped element).
+    """
+    if isinstance(schema, str):
+        type_name, spec = schema, {}
+    elif isinstance(schema, dict):
+        type_name, spec = str(schema.get("type", "string")), schema
+    else:
+        return "deep_validate"
+
+    enum_vals = spec.get("enum") if isinstance(spec, dict) else None
+    if enum_vals:
+        return enum_vals[0]
+
+    if type_name in ("string", "str"):
+        return "deep_validate"
+    if type_name in ("number", "float"):
+        return 1.0
+    if type_name in ("integer", "int"):
+        return 1
+    if type_name in ("boolean", "bool"):
+        return True
+    if type_name == "array":
+        items = spec.get("items") if isinstance(spec, dict) else None
+        if isinstance(items, (dict, str)):
+            return [_schema_default_value(items)]
+        return []
+    if type_name in ("object", "dict"):
+        props = spec.get("properties") if isinstance(spec, dict) else None
+        if isinstance(props, dict):
+            return {key: _schema_default_value(sub) for key, sub in props.items()}
+        return {}
+    return "deep_validate"
+
+
+def ai_agent_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
+    """AIAgentNode deep fixture — schema-shaped ``{"response": ...}``, no LLM call.
+
+    A deep run must never hit a live LLM (cost, non-determinism, network) nor
+    silently swallow a failed model call. This builds the ``response`` output
+    port directly from the node's declared ``output_format`` / ``output_schema``
+    so downstream consumers see the same shape they would at runtime:
+
+    - ``"structured"`` + ``output_schema`` → a dict with every declared field
+      populated by a type-correct placeholder (enum → first value, nested
+      object/array shaped recursively). This is what makes
+      ``{{ nodes.<agent>.response.<field> }}`` bindings resolve in deep mode.
+    - ``"json"`` → an empty dict (no schema to shape it).
+    - ``"text"`` / anything else → a placeholder string.
+    """
+    output_format = config.get("output_format", "text")
+    output_schema = config.get("output_schema")
+    if output_format == "structured" and isinstance(output_schema, dict) and output_schema:
+        response: Any = {
+            key: _schema_default_value(spec) for key, spec in output_schema.items()
+        }
+    elif output_format == "json":
+        response = {}
+    else:  # "text" or unknown → raw string
+        response = "deep_validate: AIAgentNode response (virtual run, no live LLM call)"
+    return {"response": response}
+
+
 def apply_override(default: Dict[str, Any], override: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Shallow-merge a caller override on top of a default fixture.
 

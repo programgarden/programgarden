@@ -68,6 +68,10 @@ def _make_context(
     ctx.log = MagicMock()
     ctx.job_id = "test-job-1"
     ctx.is_running = True
+    # These tests exercise the real LLM/ReAct path; pin the deep-validate flag to
+    # False so AIAgentNodeExecutor does not take its deep fixture short-circuit
+    # (a bare MagicMock attribute is truthy and would otherwise trigger it).
+    ctx.is_deep_validate = False
     ctx.get_workflow_credential = MagicMock(return_value=credential_data)
 
     # set_output / get_output / get_all_outputs

@@ -14570,6 +14570,31 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         import json as json_module
         from programgarden.providers import LLMProvider
 
+        # === 0. deep_validate: 실 LLM/ReAct 루프를 절대 돌리지 않는다 ===
+        # 가짜(스키마-shaped) response 를 주입해 다운스트림 {{ nodes.X.response[.field] }}
+        # 바인딩이 풀리고 flow 무결성이 검증되도록 한다(네트워크·모델비용 0). 실 LLM
+        # 호출 실패를 {"error":...} 로 삼키던 silent-fail 경로 자체를 제거한다.
+        # preset 을 먼저 적용해 output_format/output_schema 가 런타임과 동일하게 반영되도록 함.
+        if getattr(context, "is_deep_validate", False):
+            from programgarden import deep_fixtures as _df
+            _deep_config = config
+            _preset_id = config.get("preset")
+            if _preset_id and _preset_id != "custom":
+                try:
+                    from programgarden_core.presets import PresetLoader
+                    _deep_config = PresetLoader.apply_preset(_preset_id, config)
+                except Exception:
+                    _deep_config = config
+            fixture = _df.ai_agent_fixture(_deep_config)
+            override = context.get_deep_fixture(node_id, node_type)
+            fixture = _df.apply_override(fixture, override)
+            context.log(
+                "info",
+                "[deep_validate] AIAgentNode response simulated (no live LLM call)",
+                node_id,
+            )
+            return fixture
+
         # === 1. ai_model 엣지에서 LLM connection 주입 ===
         workflow = kwargs.get("workflow")
         if not workflow:
@@ -16922,6 +16947,43 @@ class WorkflowJob:
                     if_skipped_nodes.update(new_skips)
                     if new_skips:
                         print(f"  🔀 IfNode {node_id}: branch={taken}, skipping {new_skips}")
+
+                # deep_validate: a node that *returns* a sole-`error` dict (rather
+                # than raising) would otherwise be stored as a COMPLETED output and
+                # silently swallowed — its downstream consumers then read a node
+                # with no real output port. Promote it to a blocking structured
+                # error so the chatbot learns why/where instead of looping on a
+                # validation that wrongly passed (feedback_chatbot_error_clarity).
+                # Scoped to a *sole* `error` key so nodes that legitimately return
+                # `{"...": [], "error": ...}` partial payloads keep flowing as before.
+                if (
+                    getattr(self.context, "is_deep_validate", False)
+                    and isinstance(outputs, dict)
+                    and set(outputs.keys()) == {"error"}
+                    and isinstance(outputs.get("error"), str)
+                    and node_id not in self._node_error_infos
+                ):
+                    from programgarden_core import (
+                        ErrorCode,
+                        ErrorLocation,
+                        build_error,
+                    )
+                    _emsg = outputs["error"]
+                    self._node_error_infos[node_id] = build_error(
+                        ErrorCode.DEEP_VALIDATION_NODE_ERROR,
+                        f"Node '{node_id}' ({node.node_type}) returned an error "
+                        f"instead of producing output: {_emsg}",
+                        location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                        suggestion=(
+                            "이 노드가 정상 출력 대신 오류를 돌려줬습니다. 위 사유를 보고 "
+                            "노드 설정(연결된 입력·자격증명·필수 필드)을 점검하세요."
+                        ),
+                        details={
+                            "raw_message": _emsg,
+                            "deep_validate": True,
+                            "stage": "node_error_return",
+                        },
+                    )
 
                 # Store outputs
                 for out_port_name, value in outputs.items():

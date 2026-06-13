@@ -37,6 +37,9 @@ def _make_context(outputs: Dict[str, Dict[str, Any]] | None = None) -> MagicMock
     ctx.log = MagicMock()
     ctx.job_id = "test-job-ms"
     ctx.is_running = True
+    # Real LLM/tool-loop path: keep the deep-validate short-circuit off (a bare
+    # MagicMock attribute is truthy and would otherwise skip the live loop).
+    ctx.is_deep_validate = False
     ctx.get_workflow_credential = MagicMock(return_value=None)
 
     _store: Dict[str, Dict[str, Any]] = outputs or {}
