@@ -71,8 +71,11 @@ def _free_root_names(text: str) -> Set[str]:
     for match in _INLINE_EXPR_PATTERN.findall(text):
         try:
             tree = ast.parse(match, mode="eval")
-        except SyntaxError:
-            # syntax error is a genuine defect → ensure it is recorded
+        except (SyntaxError, ValueError):
+            # SyntaxError = genuine malformed expression.
+            # ValueError (incl. UnicodeEncodeError on surrogate chars) = the
+            # source cannot even be parsed/encoded — treat the same way so the
+            # expression is recorded (not dropped → no false-negative).
             return roots | {"__syntax_error__"}
         for node in ast.walk(tree):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):

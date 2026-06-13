@@ -845,3 +845,18 @@ async def test_c1_guard_nested_item_binding_not_false_rejected():
         + str([e.short() for e in binding_errs])
     )
     assert result.is_valid, [e.short() for e in result.errors]
+
+
+def test_free_root_names_does_not_raise_on_unparseable_source():
+    """_free_root_names must not raise on a value `ast.parse` can't even
+    encode (e.g. a lone surrogate char) — that would drop the whole node's
+    binding scan (false-negative). It must return the `__syntax_error__`
+    sentinel so the expression is still recorded as a real defect.
+
+    `ast.parse` raises ValueError (incl. UnicodeEncodeError) on surrogate
+    chars, not SyntaxError, so the guard must catch (SyntaxError, ValueError).
+    """
+    from programgarden.executor import _free_root_names
+
+    roots = _free_root_names("{{ \udcff }}")
+    assert "__syntax_error__" in roots

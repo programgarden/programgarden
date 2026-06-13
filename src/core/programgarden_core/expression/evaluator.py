@@ -1040,17 +1040,35 @@ class ExpressionEvaluator:
         value: Any,
         on_error: Optional[Callable[[str, Exception], None]],
     ) -> Any:
-        """evaluate_fields 의 단일 값 평가 (dict/list 재귀, leaf 단위 on_error)."""
+        """evaluate_fields 의 단일 값 평가.
+
+        재귀 깊이는 정상 모드(``on_error is None``)와 deep 모드(콜백 주어짐)에서
+        **동일**하다 — 기존 ``evaluate_fields`` 시맨틱과 100% 일치시킨다:
+
+        - dict 값 → ``evaluate_fields`` 재귀 (콜백 전파)
+        - list 값 → ``[self.evaluate(item) for item in value]`` (각 item 을
+          ``self.evaluate`` 로만 평가; **list 내부 dict/nested list 는 재귀하지
+          않는다** — 기존 동작). deep 모드면 item 단위 on_error try/except 적용.
+        - 그 외(leaf) → ``self.evaluate(value)`` (deep 모드면 leaf 단위 on_error)
+
+        ``on_error`` 가 주어진 경우(deep 모드)에만 평가 실패를 raise 하지 않고
+        콜백을 호출한 뒤 원본 값을 유지한다.
+        """
         if isinstance(value, dict):
-            # 중첩 딕셔너리 재귀 처리 — 콜백 전파
-            return {
-                k: self._evaluate_field_value(v, on_error)
-                for k, v in value.items()
-            }
+            # 중첩 딕셔너리 재귀 처리 — 콜백 전파 (기존 동작)
+            return self.evaluate_fields(value, on_error)
         if isinstance(value, list):
-            # 리스트 내 표현식 처리 — 콜백 전파
-            return [self._evaluate_field_value(item, on_error) for item in value]
+            # 리스트는 각 item 을 self.evaluate 로만 평가 (기존 동작 — dict 재귀 안 함)
+            return [self._evaluate_leaf(item, on_error) for item in value]
         # leaf 값
+        return self._evaluate_leaf(value, on_error)
+
+    def _evaluate_leaf(
+        self,
+        value: Any,
+        on_error: Optional[Callable[[str, Exception], None]],
+    ) -> Any:
+        """단일 leaf 값 평가 (dict/list 재귀 없음). deep 모드면 leaf 단위 on_error."""
         if on_error is None or not self.is_expression(value):
             # 기존 경로: on_error 없으면 실패 시 raise (동작 불변),
             # 표현식이 아니면 그대로 반환.

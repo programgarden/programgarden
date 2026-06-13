@@ -394,3 +394,52 @@ class TestJsonLiteralAliases:
         assert evaluator.evaluate("{{ None }}") is None
         assert evaluator.evaluate("{{ True }}") is True
         assert evaluator.evaluate("{{ False }}") is False
+
+
+class TestEvaluateFieldsListSemantics:
+    """evaluate_fields 의 list/dict 재귀 깊이 불변 (runtime semantics).
+
+    정상 모드(on_error=None)는 기존 동작과 100% 동일해야 한다:
+    - dict 값 → evaluate_fields 재귀
+    - list 값 → 각 item 을 self.evaluate 로만 평가 (list 내부 dict 는 재귀 안 함)
+    deep 모드(on_error 콜백)도 재귀 깊이는 동일하다.
+    """
+
+    def _make_evaluator(self):
+        ctx = ExpressionContext()
+        ctx.set_node_output("mkt", "price", 123.45)
+        return ExpressionEvaluator(ctx)
+
+    def test_list_of_dict_inner_expression_not_evaluated_runtime(self):
+        """on_error=None: list 내부 dict 의 표현식은 평가되지 않고 리터럴 유지."""
+        evaluator = self._make_evaluator()
+        fields = {"orders": [{"p": "{{ nodes.mkt.price }}"}]}
+        out = evaluator.evaluate_fields(fields)
+        # 기존 [self.evaluate(item) ...] 시맨틱: dict item 은 self.evaluate 에
+        # 그대로 들어가고 dict 는 표현식이 아니므로 미평가 → 리터럴 유지.
+        assert out == {"orders": [{"p": "{{ nodes.mkt.price }}"}]}
+
+    def test_list_direct_expression_item_is_evaluated_runtime(self):
+        """on_error=None: list 의 직접 표현식 item 은 평가, dict 값은 재귀 평가."""
+        evaluator = self._make_evaluator()
+        fields = {
+            "a": ["{{ nodes.mkt.price }}", "lit"],
+            "b": {"c": "{{ nodes.mkt.price }}"},
+        }
+        out = evaluator.evaluate_fields(fields)
+        assert out == {"a": [123.45, "lit"], "b": {"c": 123.45}}
+
+    def test_deep_mode_same_recursion_depth_as_runtime(self):
+        """deep 모드(on_error 콜백)도 list 내부 dict 를 더 깊이 파지 않는다."""
+        evaluator = self._make_evaluator()
+        recorded = []
+
+        def on_error(expr, exc):
+            recorded.append((expr, type(exc).__name__))
+
+        fields = {"orders": [{"p": "{{ nodes.mkt.price }}"}]}
+        out = evaluator.evaluate_fields(fields, on_error)
+        # 정상 모드와 동일하게 list-of-dict 내부는 미평가 → 리터럴 유지.
+        assert out == {"orders": [{"p": "{{ nodes.mkt.price }}"}]}
+        # dict item 은 표현식이 아니므로 on_error 도 호출되지 않는다.
+        assert recorded == []
