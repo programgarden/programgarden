@@ -1,5 +1,28 @@
 ## [Unreleased]
 
+## [1.23.1] - 2026-06-13
+### Fixed
+- **deep_validate 정적 바인딩 스캔 갭 근본수정** — 깊은검증(`validate_deep`)이 각 노드의 executor 를
+  실행하긴 했지만, `evaluate_all_bindings` 를 호출하는 노드만 `{{ }}` config 표현식이 평가되고 미해결
+  바인딩이 기록됐다. `DisplayNode`/`TableDisplayNode`·`Fundamental`·`Backtest`·`Portfolio`·`LLM`·
+  `AIAgent`·`SQLite` 등은 그 함수를 호출하지 않아, 이 노드들의 config 필드(`data`/`title`/`limit`)에
+  지원하지 않는 파이프 필터(`{{ x | length }}`)나 미정의 변수가 들어가도 깊은검증을 그대로 통과
+  (`is_valid=True`)하고 런타임에서야 리터럴 텍스트로 남았다.
+  - 근본원인: 메인 루프의 `_resolve_config_expressions` 가 `evaluate_fields` 를 하나의 넓은
+    try/except 로 감싸 단일 필드 실패가 통째로 삼켜져(warn-only) `record_deep_unresolved_binding`
+    에 도달하지 못했다. 수정 = **모든 노드의 `{{ }}` config 필드를 정적평가**(deep 모드 + node_id 일 때
+    per-leaf `on_error` 레코더로)해 미해결 바인딩을 `DEEP_VALIDATION_BINDING_UNRESOLVED` 로 승격.
+    비-deep / node_id 없는 경로는 기존 동작 그대로(런타임 불변).
+  - 반복(iteration) 컨텍스트가 없을 때 예약된 반복 루트(`item`/`row`)를 참조하는 표현식은 기록하지
+    않는 가드(C1) — `{{ item.symbol }}`(auto-iterate)/`{{ row.* }}`(items.extract)는 반복 중에만
+    해결되므로, AST 자유변수 루트로 구조적으로 식별해 정상 예제의 false-reject 를 막는다(키워드 매칭 X).
+  - 검증: 86개 예제 워크플로우 deep_validate before/after 회귀 0 (valid→invalid 0) + 갭 케이스
+    (`22-display-table` 의 `{{ ...|length }}` / 미정의 변수) 이제 `is_valid=False` 로 포착.
+
+### Changed
+- deps: `programgarden-core ^1.14.5` — `evaluate_fields(on_error=...)` 신 시그니처(정적 바인딩
+  스캔 레코더 콜백) + AST 스캔 `ValueError` 가드 확대에 의존.
+
 ## [1.23.0] - 2026-06-13
 ### Added
 - **`ProgramGarden.validate_deep(definition, *, fixtures=None, timeout=15.0) -> ValidationResult`** —

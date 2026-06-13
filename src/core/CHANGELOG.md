@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+## [1.14.5] - 2026-06-13
+### Changed
+- **`ExpressionEvaluator.evaluate_fields(..., on_error=None)`** gains an optional
+  `on_error(expr, exc)` callback so a caller can record per-leaf evaluation failures
+  instead of aborting the whole field set. With `on_error=None` (the default) the
+  raise-on-error semantics are **unchanged** — runtime / `dry_run` output is byte-for-byte
+  identical. `programgarden`'s deep validation passes a recorder callback so an
+  unsupported pipe filter or undefined variable in *any* node's `{{ }}` config field
+  (`data` / `title` / `limit`, …) is surfaced as `DEEP_VALIDATION_BINDING_UNRESOLVED`
+  instead of slipping through. List-of-dict / nested-list recursion depth matches the
+  original evaluator in both modes (no runtime drift).
+- **Free-variable AST scan widened** — the binding scan's `ast.parse` guard now also
+  catches `ValueError` (e.g. a lone surrogate / un-encodable source, `UnicodeEncodeError`)
+  in addition to `SyntaxError`, returning the sentinel root so a malformed expression is
+  still recorded rather than silently dropping the whole node's scan.
+
 ## [1.14.4] - 2026-06-13
 ### Added
 - **Deep-validation error codes** (3 additive `ErrorCode` enum values) — surfaced by
