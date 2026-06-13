@@ -14,6 +14,17 @@ from programgarden.executor import WorkflowExecutor
 from programgarden.context import ExecutionContext
 from programgarden.client import ProgramGarden
 from programgarden.node_runner import NodeRunner
+from programgarden.semantic_rules import (
+    analyze_workflow_semantics,
+    normalize_severities,
+    DEFAULT_SEMANTIC_SEVERITIES,
+    STRICT_SEMANTIC_SEVERITIES,
+    ALL_RULES,
+    RULE_ORDER_QTY_FROM_AI,
+    RULE_STRUCTURED_OUTPUT_NO_SCHEMA,
+    RULE_HARDCODED_ORDER_QTY,
+    RULE_ORDER_IGNORED_FIELD,
+)
 from programgarden_core.bases.listener import (
     NodeState,
     EdgeState,
@@ -140,4 +151,14 @@ __all__ = [
     "get_events",
     "get_job_summary",
     "analyze_performance",
+    # Semantic / safety layer (deep_validate R1~R4)
+    "analyze_workflow_semantics",
+    "normalize_severities",
+    "DEFAULT_SEMANTIC_SEVERITIES",
+    "STRICT_SEMANTIC_SEVERITIES",
+    "ALL_RULES",
+    "RULE_ORDER_QTY_FROM_AI",
+    "RULE_STRUCTURED_OUTPUT_NO_SCHEMA",
+    "RULE_HARDCODED_ORDER_QTY",
+    "RULE_ORDER_IGNORED_FIELD",
 ]

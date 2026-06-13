@@ -38,17 +38,36 @@ def test_error_code_count_matches_matrix() -> None:
     # 26 baseline + 3 AI/Dynamic edge codes (INVALID_AI_MODEL_EDGE,
     # INVALID_TOOL_EDGE, DYNAMIC_NODE_CLASS_NOT_INJECTED) = 29 codes,
     # + 3 deep_validate codes (DEEP_VALIDATION_NODE_ERROR,
-    # DEEP_VALIDATION_FLOW_BROKEN, DEEP_VALIDATION_BINDING_UNRESOLVED) = 32.
-    assert len(list(ErrorCode)) == 32
+    # DEEP_VALIDATION_FLOW_BROKEN, DEEP_VALIDATION_BINDING_UNRESOLVED) = 32,
+    # + 4 semantic/safety layer codes (SEMANTIC_ORDER_QTY_FROM_AI,
+    # SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA, SEMANTIC_HARDCODED_ORDER_QTY,
+    # SEMANTIC_ORDER_IGNORED_FIELD) = 36.
+    assert len(list(ErrorCode)) == 36
 
 
 def test_unknown_plugin_defaults_to_warning() -> None:
     assert default_severity_for(ErrorCode.UNKNOWN_PLUGIN) == ErrorSeverity.WARNING
 
 
+# Codes whose default severity is WARNING (advisory), not ERROR.
+_WARNING_DEFAULT_CODES = {
+    ErrorCode.UNKNOWN_PLUGIN,
+    ErrorCode.SEMANTIC_HARDCODED_ORDER_QTY,   # R3 — advisory
+    ErrorCode.SEMANTIC_ORDER_IGNORED_FIELD,   # R4 — advisory
+}
+
+
+def test_semantic_default_severities() -> None:
+    # R1/R2 are blocking anti-patterns; R3/R4 are advisory.
+    assert default_severity_for(ErrorCode.SEMANTIC_ORDER_QTY_FROM_AI) == ErrorSeverity.ERROR
+    assert default_severity_for(ErrorCode.SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA) == ErrorSeverity.ERROR
+    assert default_severity_for(ErrorCode.SEMANTIC_HARDCODED_ORDER_QTY) == ErrorSeverity.WARNING
+    assert default_severity_for(ErrorCode.SEMANTIC_ORDER_IGNORED_FIELD) == ErrorSeverity.WARNING
+
+
 def test_other_codes_default_to_error() -> None:
     for code in ErrorCode:
-        if code == ErrorCode.UNKNOWN_PLUGIN:
+        if code in _WARNING_DEFAULT_CODES:
             continue
         assert default_severity_for(code) == ErrorSeverity.ERROR
 

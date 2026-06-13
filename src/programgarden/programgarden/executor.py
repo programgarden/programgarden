@@ -15577,6 +15577,7 @@ class WorkflowExecutor:
         *,
         fixtures: Optional[Dict[str, Any]] = None,
         timeout: float = 15.0,
+        semantic_rules: Optional[Dict[str, Any]] = None,
     ) -> ValidationResult:
         """Deep-validate a workflow via virtual full-execution (never raises).
 
@@ -15596,6 +15597,15 @@ class WorkflowExecutor:
             timeout: Hard timeout (seconds) for the single validation pass. On
                 timeout the partial result so far is returned with a flow-broken
                 error appended.
+            semantic_rules: Optional per-rule severity config for the configurable
+                semantic/safety layer (R1~R4 — order-quantity-from-AI, schema-less
+                structured output, hardcoded quantity, ignored broker field). A
+                ``{rule_id: "error"|"warning"|"off"}`` dict; only named rules are
+                overridden, the rest stay off. ``None`` (default) skips the layer
+                entirely, so the default deep_validate pass is unchanged. Pass
+                ``programgarden.semantic_rules.STRICT_SEMANTIC_SEVERITIES`` to opt
+                into the chatbot anti-pattern checks. Findings carry ``SEMANTIC_*``
+                codes with the same ErrorInfo shape as every other error.
 
         Returns:
             ValidationResult — ``errors`` carry structured per-node ErrorInfo
@@ -15623,6 +15633,19 @@ class WorkflowExecutor:
                 )
             )
             return result
+
+        # 1b) Configurable semantic/safety layer (R1~R4) — off unless the caller
+        # opts in. Added before the static-validity gate so its findings ride
+        # along with structure errors too (the chatbot cascade combined both).
+        # Pure / never-raising, so a failure here never breaks deep_validate.
+        if semantic_rules:
+            try:
+                from .semantic_rules import analyze_workflow_semantics
+                for info in analyze_workflow_semantics(definition, semantic_rules):
+                    result.add(info)
+            except Exception:  # pragma: no cover - defensive
+                pass
+
         if not static.is_valid:
             # Hand back the structure errors verbatim (same ErrorInfo shape).
             for err in static.errors:

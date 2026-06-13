@@ -80,6 +80,7 @@ class ProgramGarden:
         *,
         fixtures: Optional[Dict[str, Any]] = None,
         timeout: float = 15.0,
+        semantic_rules: Optional[Dict[str, Any]] = None,
     ) -> ValidationResult:
         """Deep-validate a workflow via virtual full-execution (never raises).
 
@@ -96,6 +97,11 @@ class ProgramGarden:
             fixtures: Optional per-node fixture overrides, keyed by node id or
                 node type (merged shallowly on top of the default fixture).
             timeout: Hard timeout (seconds) for the single validation pass.
+            semantic_rules: Optional per-rule severity config for the configurable
+                semantic/safety layer (R1~R4). ``None`` (default) skips the layer;
+                pass ``programgarden.semantic_rules.STRICT_SEMANTIC_SEVERITIES`` (or
+                a ``{rule_id: "error"|"warning"|"off"}`` dict) to opt in. See
+                ``WorkflowExecutor.deep_validate`` for details.
 
         Returns:
             ValidationResult — ``errors`` carry structured per-node ErrorInfo;
@@ -109,7 +115,12 @@ class ProgramGarden:
             ...         print(err.short())
         """
         return _run_coro_sync(
-            self.executor.deep_validate(definition, fixtures=fixtures, timeout=timeout)
+            self.executor.deep_validate(
+                definition,
+                fixtures=fixtures,
+                timeout=timeout,
+                semantic_rules=semantic_rules,
+            )
         )
 
     def run(

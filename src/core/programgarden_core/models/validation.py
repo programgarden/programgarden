@@ -69,9 +69,24 @@ class ErrorCode(str, Enum):
     DEEP_VALIDATION_FLOW_BROKEN = "DEEP_VALIDATION_FLOW_BROKEN"
     DEEP_VALIDATION_BINDING_UNRESOLVED = "DEEP_VALIDATION_BINDING_UNRESOLVED"
 
+    # Semantic / safety layer (deep_validate configurable rules — R1~R4).
+    # These are intent/safety checks that structure + dry_run + type validation
+    # cannot express; they are OFF by default and opted into per-rule severity by
+    # the caller (e.g. the chatbot save chokepoint). See programgarden.semantic_rules.
+    SEMANTIC_ORDER_QTY_FROM_AI = "SEMANTIC_ORDER_QTY_FROM_AI"                    # R1
+    SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA = "SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA"  # R2
+    SEMANTIC_HARDCODED_ORDER_QTY = "SEMANTIC_HARDCODED_ORDER_QTY"                # R3
+    SEMANTIC_ORDER_IGNORED_FIELD = "SEMANTIC_ORDER_IGNORED_FIELD"               # R4
+
 
 _DEFAULT_SEVERITY: Dict[ErrorCode, ErrorSeverity] = {
     ErrorCode.UNKNOWN_PLUGIN: ErrorSeverity.WARNING,
+    # Semantic layer default severities (when a rule is enabled without an
+    # explicit severity). R1/R2 are blocking anti-patterns; R3/R4 are advisory.
+    ErrorCode.SEMANTIC_ORDER_QTY_FROM_AI: ErrorSeverity.ERROR,
+    ErrorCode.SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA: ErrorSeverity.ERROR,
+    ErrorCode.SEMANTIC_HARDCODED_ORDER_QTY: ErrorSeverity.WARNING,
+    ErrorCode.SEMANTIC_ORDER_IGNORED_FIELD: ErrorSeverity.WARNING,
 }
 
 
