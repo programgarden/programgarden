@@ -24,7 +24,7 @@ Jinja2 스타일 {{ }} 표현식 평가기
 - 파일/네트워크 접근 차단
 """
 
-from typing import Any, Dict, Optional, List, Set
+from typing import Any, Callable, Dict, Optional, List, Set
 import re
 import ast
 import operator
@@ -1004,27 +1004,63 @@ class ExpressionEvaluator:
 
         return self.EXPRESSION_PATTERN.sub(replace_expr, value)
 
-    def evaluate_fields(self, fields: Dict[str, Any]) -> Dict[str, Any]:
+    def evaluate_fields(
+        self,
+        fields: Dict[str, Any],
+        on_error: Optional[Callable[[str, Exception], None]] = None,
+    ) -> Dict[str, Any]:
         """
         필드 딕셔너리의 모든 값 평가
 
         Args:
             fields: 노드의 fields 딕셔너리
+            on_error: (선택) leaf 표현식 평가 실패 시 호출되는 콜백
+                ``(expression_text, exception)``. 기본값 None.
+
+                - None 이면 leaf 실패 시 **기존대로 예외를 raise** 한다
+                  (정상 runtime/dry_run 동작 불변 — 이 메서드의 default 시맨틱).
+                - 콜백이 주어지면 raise 하지 않고 ``on_error(value, exc)`` 를
+                  호출한 뒤 **원본 leaf 값을 그대로 유지**한다. 이는
+                  ``evaluate_all_bindings`` 와 동일한 leaf 단위(per-leaf)
+                  try/except 시맨틱으로, deep_validate 가 미해결 binding 을
+                  leaf 단위로 수집할 수 있게 한다.
+
+                dict/list 재귀 시 콜백은 그대로 전파된다.
 
         Returns:
             평가된 필드 딕셔너리
         """
         result = {}
         for key, value in fields.items():
-            if isinstance(value, dict):
-                # 중첩 딕셔너리 재귀 처리
-                result[key] = self.evaluate_fields(value)
-            elif isinstance(value, list):
-                # 리스트 내 표현식 처리
-                result[key] = [self.evaluate(item) for item in value]
-            else:
-                result[key] = self.evaluate(value)
+            result[key] = self._evaluate_field_value(value, on_error)
         return result
+
+    def _evaluate_field_value(
+        self,
+        value: Any,
+        on_error: Optional[Callable[[str, Exception], None]],
+    ) -> Any:
+        """evaluate_fields 의 단일 값 평가 (dict/list 재귀, leaf 단위 on_error)."""
+        if isinstance(value, dict):
+            # 중첩 딕셔너리 재귀 처리 — 콜백 전파
+            return {
+                k: self._evaluate_field_value(v, on_error)
+                for k, v in value.items()
+            }
+        if isinstance(value, list):
+            # 리스트 내 표현식 처리 — 콜백 전파
+            return [self._evaluate_field_value(item, on_error) for item in value]
+        # leaf 값
+        if on_error is None or not self.is_expression(value):
+            # 기존 경로: on_error 없으면 실패 시 raise (동작 불변),
+            # 표현식이 아니면 그대로 반환.
+            return self.evaluate(value)
+        # on_error 모드 + 표현식 leaf: leaf 단위 try/except (evaluate_all_bindings 시맨틱)
+        try:
+            return self.evaluate(value)
+        except Exception as exc:  # noqa: BLE001 - leaf 단위로 사유를 콜백에 전달
+            on_error(value, exc)
+            return value
 
     def _eval_expression(self, expression: str) -> Any:
         """단일 표현식 평가"""

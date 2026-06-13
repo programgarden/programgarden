@@ -16,6 +16,8 @@ All tests run with a hard timeout to guarantee no test hangs.
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -751,3 +753,95 @@ async def test_generic_node_invalid_config_lenient_in_dry_run():
     )
     assert isinstance(out, dict)
     assert "error" in out, "dry_run must keep lenient error output"
+
+
+# ============================================================
+# 14. Static binding scan — display/non-evaluate_all_bindings executors
+#
+# Some executors (DisplayNode / TableDisplayNode / Fundamental / Backtest /
+# Portfolio / LLM / AIAgent / SQLite ...) never call evaluate_all_bindings, so a
+# `{{ }}` expression in their config fields (data / title / limit ...) used to
+# slip past deep_validate entirely. The static binding scan in
+# `_resolve_config_expressions` (deep mode) now evaluates those leaves per-field
+# and records unresolved ones as DEEP_VALIDATION_BINDING_UNRESOLVED, while a C1
+# guard keeps mid-iteration `{{ item.* }}` / `{{ row.* }}` from false-rejecting
+# correct examples.
+# ============================================================
+
+_EXAMPLES_DIR = (
+    Path(__file__).resolve().parent / ".." / "examples" / "workflows"
+).resolve()
+
+
+def _load_example(name: str) -> dict:
+    """Load an examples/workflows/<name>.json workflow definition."""
+    return json.loads((_EXAMPLES_DIR / f"{name}.json").read_text())
+
+
+@pytest.mark.asyncio
+async def test_display_node_unsupported_filter_binding_is_caught():
+    """A TableDisplayNode `data` field using an unsupported pipe filter
+    (`{{ ... | length }}`) — which never resolves at runtime — must now be
+    flagged as a blocking DEEP_VALIDATION_BINDING_UNRESOLVED, not silently pass.
+
+    TableDisplayNode does not call evaluate_all_bindings, so before the static
+    binding scan this slipped through deep_validate (is_valid=True)."""
+    pg = ProgramGarden()
+    wf = _load_example("22-display-table")
+    for node in wf["nodes"]:
+        if node["id"] == "table":
+            node["data"] = "{{ nodes.account.positions | length }}"
+    result = await asyncio.wait_for(pg.executor.deep_validate(wf, timeout=12.0), timeout=20.0)
+    assert not result.is_valid, [e.short() for e in result.errors]
+    binding_errs = [e for e in result.errors if e.code == "DEEP_VALIDATION_BINDING_UNRESOLVED"]
+    assert binding_errs, [e.short() for e in result.errors]
+    assert "length" in binding_errs[0].message or "| length" in binding_errs[0].message
+
+
+@pytest.mark.asyncio
+async def test_display_node_undefined_variable_binding_is_caught():
+    """A DisplayNode `title` referencing an undefined variable must be flagged as
+    DEEP_VALIDATION_BINDING_UNRESOLVED (would keep its literal text at runtime)."""
+    pg = ProgramGarden()
+    wf = _load_example("22-display-table")
+    for node in wf["nodes"]:
+        if node["id"] == "table":
+            node["title"] = "{{ bogus_undefined_var }}"
+    result = await asyncio.wait_for(pg.executor.deep_validate(wf, timeout=12.0), timeout=20.0)
+    assert not result.is_valid, [e.short() for e in result.errors]
+    binding_errs = [e for e in result.errors if e.code == "DEEP_VALIDATION_BINDING_UNRESOLVED"]
+    assert binding_errs, [e.short() for e in result.errors]
+    assert "bogus_undefined_var" in binding_errs[0].message
+
+
+@pytest.mark.asyncio
+async def test_unmodified_display_table_example_still_passes():
+    """The pristine 22-display-table example (data = `{{ nodes.account.positions }}`,
+    a fully-resolvable binding) must remain valid with zero errors — the scan must
+    not introduce a false positive on a correct DisplayNode."""
+    pg = ProgramGarden()
+    wf = _load_example("22-display-table")
+    result = await asyncio.wait_for(pg.executor.deep_validate(wf, timeout=12.0), timeout=20.0)
+    assert result.is_valid, [e.short() for e in result.errors]
+    binding_errs = [e for e in result.errors if e.code == "DEEP_VALIDATION_BINDING_UNRESOLVED"]
+    assert not binding_errs, [e.short() for e in result.errors]
+
+
+@pytest.mark.asyncio
+async def test_c1_guard_nested_item_binding_not_false_rejected():
+    """C1 guard: the 30-liquidate-futures example wires nested `{{ item.symbol }}`
+    / `{{ item.quantity }}` etc. inside the order node's `order` dict. These are
+    auto-iterate bindings that only resolve mid-iteration; the static scan must
+    NOT record them as unresolved (would false-reject a correct example).
+
+    Proves the C1 reserved-iteration-root guard is load-bearing: the example must
+    have zero DEEP_VALIDATION_BINDING_UNRESOLVED errors and stay valid."""
+    pg = ProgramGarden()
+    wf = _load_example("30-liquidate-futures-positions")
+    result = await asyncio.wait_for(pg.executor.deep_validate(wf, timeout=12.0), timeout=20.0)
+    binding_errs = [e for e in result.errors if e.code == "DEEP_VALIDATION_BINDING_UNRESOLVED"]
+    assert not binding_errs, (
+        "nested {{ item.* }} must not be false-rejected: "
+        + str([e.short() for e in binding_errs])
+    )
+    assert result.is_valid, [e.short() for e in result.errors]

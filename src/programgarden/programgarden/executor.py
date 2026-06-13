@@ -11,6 +11,8 @@ Workflow execution engine
 from typing import Optional, Dict, Any, List, Callable, Awaitable, Set, Tuple
 from datetime import datetime
 import asyncio
+import ast
+import re
 import uuid
 import logging
 
@@ -35,6 +37,47 @@ from programgarden_core.retry_executor import RetryExecutor
 from programgarden_core.nodes.base import BaseMessagingNode
 
 logger = logging.getLogger("programgarden.executor")
+
+
+# lib reserved iteration variable roots — valid ONLY mid-iteration.
+# `{{ item.* }}` (auto-iterate per-item) and `{{ row.* }}` (ConditionNode
+# items.extract) only resolve while the executor has an iteration context set;
+# before auto-iterate they legitimately fail to evaluate. These are lib
+# *identifiers* (single source of the engine's iteration binding), NOT
+# language keywords — the deep-validate recorder uses them as a structural
+# signal (AST free-variable roots) to avoid false-rejecting correct examples
+# whose nested config holds `{{ item.symbol }}` etc.
+_RESERVED_ITERATION_ROOTS: frozenset = frozenset({"item", "row"})
+
+_INLINE_EXPR_PATTERN = re.compile(r"\{\{\s*(.+?)\s*\}\}")
+
+
+def _free_root_names(text: str) -> Set[str]:
+    """Return the set of free-variable root identifiers referenced (ctx=Load) by
+    every ``{{ ... }}`` expression embedded in ``text``.
+
+    Used by the deep-validate binding recorder to decide whether an unresolved
+    expression is iteration-scoped (root in :data:`_RESERVED_ITERATION_ROOTS`)
+    and therefore expected to be deferred — not a real defect.
+
+    - ``{{ nodes.split.item }}`` → root ``nodes`` (``item`` is an attribute,
+      not a root) → NOT iteration-scoped.
+    - ``{{ x | length }}`` (unsupported pipe filter) → roots ``{x, length}``
+      → NOT iteration-scoped → recorded (desired).
+    - A genuinely malformed expression (SyntaxError) yields a sentinel
+      ``__syntax_error__`` root so the recorder treats it as a real defect.
+    """
+    roots: Set[str] = set()
+    for match in _INLINE_EXPR_PATTERN.findall(text):
+        try:
+            tree = ast.parse(match, mode="eval")
+        except SyntaxError:
+            # syntax error is a genuine defect → ensure it is recorded
+            return roots | {"__syntax_error__"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                roots.add(node.id)
+    return roots
 
 
 def _build_reconnect_hooks(
@@ -16749,7 +16792,7 @@ class WorkflowJob:
                     break  # 첫 번째 상위 노드만 사용
             
             # Resolve expressions in config ({{ input.xxx }}, {{ nodeId.port }})
-            config = self._resolve_config_expressions(config)
+            config = self._resolve_config_expressions(config, node_id)
 
             # Auto-inject connection from matching BrokerNode (Phase 5)
             config = self._auto_inject_connection(node_id, node, config)
@@ -17034,7 +17077,7 @@ class WorkflowJob:
             self.context.set_iteration_context(current_item, idx, total)
 
             # config 내 표현식 평가 ({{ item.xxx }}, {{ index }} 등)
-            item_config = self._resolve_config_expressions(config)
+            item_config = self._resolve_config_expressions(config, node_id)
 
             # 진행 상황 로그
             item_label = current_item.get("symbol", str(current_item)) if isinstance(current_item, dict) else str(current_item)
@@ -17428,7 +17471,7 @@ class WorkflowJob:
 
             # Prepare config
             config = dict(node.config)
-            config = self._resolve_config_expressions(config)
+            config = self._resolve_config_expressions(config, node_id)
             config = self._auto_inject_connection(node_id, node, config)
 
             # Connect inputs from upstream
@@ -17481,7 +17524,7 @@ class WorkflowJob:
         )
 
         config = dict(node.config)
-        config = self._resolve_config_expressions(config)
+        config = self._resolve_config_expressions(config, aggregate_id)
 
         try:
             outputs = await self.executor.execute_node(
@@ -17606,7 +17649,11 @@ class WorkflowJob:
         # 매칭 실패 시 원본 반환 (노드 executor에서 에러 처리)
         return config
 
-    def _resolve_config_expressions(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _resolve_config_expressions(
+        self,
+        config: Dict[str, Any],
+        node_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Config 내의 {{ }} 표현식을 resolve.
 
@@ -17619,6 +17666,17 @@ class WorkflowJob:
 
         Note: items 키는 제외 (ConditionNode의 _process_items_with_extract에서 별도 처리).
               items 내부에 {{ row.xxx }} 같은 지연 평가 표현식이 있어 여기서 평가하면 실패함.
+
+        Deep-validate 동작 (node_id 가 주어졌을 때만):
+            정상(runtime/dry_run) 모드는 한 필드라도 실패하면 전체 try/except 로
+            삼키고 원본을 유지한다(동작 불변). deep_validate 모드에서는 이 전체삼킴
+            경로가 미해결 ``{{ }}`` 표현식(잘못된 필드 경로·미정의 변수·미지원 pipe
+            filter 등)을 검증에서 그대로 통과시킨다 — 일부 executor 가
+            evaluate_all_bindings 를 부르지 않아 그 노드 표현식이 여기서만 평가되기
+            때문이다. 그래서 deep 모드 + node_id 가 있으면 leaf 단위 on_error
+            콜백으로 평가해 실패 leaf 를 record_deep_unresolved_binding 에 기록한다
+            (C1 가드 통과 시에만). 비-deep 모드 또는 node_id 가 없으면 기존
+            전체삼킴 경로 그대로다.
         """
         from programgarden_core.expression import ExpressionEvaluator
 
@@ -17634,13 +17692,48 @@ class WorkflowJob:
                 if isinstance(v, str) and "{{ item" in v:
                     deferred[k] = config_copy.pop(k)
 
-        try:
-            expr_context = self.context.get_expression_context()
-            evaluator = ExpressionEvaluator(expr_context)
-            resolved = evaluator.evaluate_fields(config_copy)
-        except Exception as e:
-            self.context.log("warning", f"Expression resolve failed: {e}")
-            resolved = config_copy
+        deep_mode = bool(getattr(self.context, "is_deep_validate", False))
+        if deep_mode and node_id is not None:
+            # deep_validate: leaf 단위로 평가하고 미해결 binding 을 기록.
+            def _recorder(expr: str, exc: Exception) -> None:
+                # C1 가드 — iteration 컨텍스트가 없을 때, 표현식이 lib 예약
+                # iteration 변수(item/row)를 자유변수 루트로 참조하면 기록 제외.
+                # `{{ item.* }}`(auto-iterate)·`{{ row.* }}`(items.extract)는
+                # iteration 시점에만 유효하고, top-level `{{ item`은 위에서 이미
+                # deferred 되지만 nested dict/list 안의 `{{ item.symbol }}`은
+                # deferred 를 빠져나가 auto-iterate 전 여기서 실패한다. 기록하면
+                # 정답 예제(30/31-liquidate-* 등)가 false-reject 된다.
+                if self.context._iteration_item is None:
+                    roots = _free_root_names(expr)
+                    if roots & _RESERVED_ITERATION_ROOTS:
+                        return
+                try:
+                    self.context.record_deep_unresolved_binding(
+                        node_id, expr, str(exc)
+                    )
+                except Exception:  # pragma: no cover - defensive
+                    pass
+
+            # NOTE: evaluator 구성(get_expression_context / ExpressionEvaluator
+            # → to_dict)도 try 안에 둔다 — 컨텍스트 자체가 손상돼 raise 하면 leaf
+            # on_error 가 아니라 여기서 터지므로, 기존 전체삼킴 경로와 동일하게
+            # 원본 config 를 유지해야 한다(동작 불변).
+            try:
+                expr_context = self.context.get_expression_context()
+                evaluator = ExpressionEvaluator(expr_context)
+                resolved = evaluator.evaluate_fields(config_copy, on_error=_recorder)
+            except Exception as e:  # pragma: no cover - on_error 가 leaf 에서 흡수
+                self.context.log("warning", f"Expression resolve failed: {e}")
+                resolved = config_copy
+        else:
+            # 정상 모드(또는 node_id 없음): 기존 전체삼킴 경로 (동작 불변).
+            try:
+                expr_context = self.context.get_expression_context()
+                evaluator = ExpressionEvaluator(expr_context)
+                resolved = evaluator.evaluate_fields(config_copy)
+            except Exception as e:
+                self.context.log("warning", f"Expression resolve failed: {e}")
+                resolved = config_copy
 
         # 지연 평가 필드 복원
         resolved.update(deferred)
@@ -17942,7 +18035,7 @@ class WorkflowJob:
                                 )
                 
                 # Resolve expressions in config
-                config_with_source = self._resolve_config_expressions(config_with_source)
+                config_with_source = self._resolve_config_expressions(config_with_source, node_id)
 
                 # Auto-inject connection from matching BrokerNode (Phase 5)
                 config_with_source = self._auto_inject_connection(node_id, node, config_with_source)
