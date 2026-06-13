@@ -1,5 +1,47 @@
 ## [Unreleased]
 
+## [1.24.0] - 2026-06-13
+### Added
+- **deep 타입인지 검증 (Phase 2)** — 포트 스키마 기반 정적 타입검증을 `validate_deep` 에 추가.
+  노드 출력→입력 바인딩(`{{ nodes.X.port.field }}`)에서 **존재하는 필드의 타입 비호환**을
+  `INVALID_FIELD_TYPE` 로 surface 한다(미존재 필드는 기존 `_validate_expression_references` 가
+  이미 검출하므로, 그 valid-field 경로 위에 타입 호환 검사만 추가). `resolver.py` 에 포트 출력/소비
+  스칼라 클래스 추정기(`_output_field_type`/`_consuming_scalar_class` 등)를 두어 호환 불가 시
+  진단에 `available_values`(해당 포트의 실제 필드 목록)를 함께 제시한다. 키워드 매칭 없이
+  포트 스키마·바인딩 그래프 구조만 사용.
+- **의미·안전 설정형 레이어 R1~R4 (Phase 3)** — `programgarden/semantic_rules.py`(신규)를 추가.
+  `validate_deep(semantic_rules=...)` 로 **opt-in** 하는 설정형 레이어로, 구조 + `dry_run` +
+  타입검증이 표현하지 못하는 의도·안전 안티패턴을 검사한다:
+  - R1 `order_qty_from_ai_response` — AI 노드의 자유형 응답을 주문 수량에 직결(차단).
+  - R2 `structured_output_missing_schema` — structured AI output 을 출력 스키마 선언 없이 소비.
+  - R3 `hardcoded_order_quantity` — 주문 수량이 하드코딩 리터럴.
+  - R4 `order_ignored_field` — 주문 노드가 필수 브로커 필드를 무시.
+  `STRICT_SEMANTIC_SEVERITIES` 프리셋 제공(R1/R2 = `error`, R3/R4 = `warning`). 기본은 off
+  (`semantic_rules=None` → 레이어 전체 skip, `DEFAULT_SEMANTIC_SEVERITIES` = 전 룰 off), 호출자가
+  `{rule_id: "error"|"warning"|"off"}` 로 per-rule severity 를 opt-in 한다. 출처분석은 구조 신호
+  (노드 타입·바인딩 그래프)만 사용하며 언어별 키워드 하드코딩 없음. 발견 사항은 `SEMANTIC_*`
+  코드로 다른 에러와 동일한 `ErrorInfo` 형태를 갖는다. 레이어는 순수(pure)·never-raise 라
+  내부 예외가 deep_validate 자체를 깨뜨리지 않는다.
+- **AI 노드 deep fixture (Phase 0/1)** — `programgarden/deep_fixtures.py`(신규). deep_validate 시
+  AI/LLM 계열 노드(`AIAgentNodeExecutor`)를 **실 LLM 호출·ReAct 루프 없이** 스키마-shaped fixture
+  로 오프라인 실행(네트워크·모델비용 0)하여 다운스트림 `{{ nodes.X.response[.field] }}` 바인딩과
+  flow 무결성이 검증되도록 한다. preset 을 먼저 적용해 `output_format`/`output_schema` 가 런타임과
+  동일하게 반영된다. 아울러 노드가 **raise 하지 않고** sole-`error` dict 를 반환해 COMPLETED 출력으로
+  조용히 삼켜지던 silent-fail 경로를 제거 — `DEEP_VALIDATION_NODE_ERROR` 구조화 에러로 승격해
+  실패 사유·위치를 챗봇에 전달한다(feedback_chatbot_error_clarity).
+
+### Changed
+- **`validate_deep` / `WorkflowExecutor.deep_validate` 시그니처에 `semantic_rules: dict|None` 추가**
+  (`ProgramGarden.validate_deep` 도 전달). 기본 `None` = 의미·안전 레이어 전체 skip 이라 기존
+  deep_validate 패스는 **불변**(런타임/`dry_run` 무영향). 의미 레이어는 정적-유효성 게이트 앞에서
+  돌려 구조 에러와 함께 findings 가 함께 실리도록 한다.
+- **`__init__.py` export 확대** — `STRICT_SEMANTIC_SEVERITIES`, `DEFAULT_SEMANTIC_SEVERITIES`,
+  `analyze_workflow_semantics`, `normalize_severities`, `ALL_RULES`, `RULE_*`(4종)을 공개 API 로 노출.
+
+### Dependencies
+- `programgarden-core ^1.15.0` — 의미·안전 레이어가 사용하는 신규 `SEMANTIC_*` ErrorCode 4종
+  (및 기본 severity 매핑)에 의존.
+
 ## [1.23.1] - 2026-06-13
 ### Fixed
 - **deep_validate 정적 바인딩 스캔 갭 근본수정** — 깊은검증(`validate_deep`)이 각 노드의 executor 를

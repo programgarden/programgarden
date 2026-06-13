@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+## [1.15.0] - 2026-06-13
+### Added
+- **Semantic / safety layer `ErrorCode` values** (4 additive enum members) — surfaced by
+  the configurable semantic/safety layer (R1~R4) that `programgarden.validate_deep(semantic_rules=...)`
+  opts into. These express intent/safety anti-patterns that structure + `dry_run` + type
+  validation cannot, are **OFF by default**, and are opted into per-rule severity by the caller:
+  - `SEMANTIC_ORDER_QTY_FROM_AI` (R1) — an order node's quantity is wired straight from an AI
+    node's free-form response. Default severity **error**.
+  - `SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA` (R2) — structured AI output is consumed without a
+    declared output schema. Default severity **error**.
+  - `SEMANTIC_HARDCODED_ORDER_QTY` (R3) — an order quantity is a hardcoded literal. Default
+    severity **warning**.
+  - `SEMANTIC_ORDER_IGNORED_FIELD` (R4) — an order node ignores a required broker field.
+    Default severity **warning**.
+  - Each value is registered in `_DEFAULT_SEVERITY` (R1/R2 = `ERROR`, R3/R4 = `WARNING`) so a
+    rule enabled without an explicit severity falls back to its blocking/advisory default.
+
 ## [1.14.5] - 2026-06-13
 ### Changed
 - **`ExpressionEvaluator.evaluate_fields(..., on_error=None)`** gains an optional
