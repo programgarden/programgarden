@@ -679,3 +679,91 @@ def test_expression_nested_method_call_not_flagged(executor: WorkflowExecutor) -
     assert not any("something" in (e.message or "") for e in invalid_refs), (
         "Method call after a port must not be flagged as a nested-field typo"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — cross-port TYPE compatibility (INVALID_FIELD_TYPE)
+# ---------------------------------------------------------------------------
+
+
+def _sizing_wf(balance_expr: str) -> Dict[str, Any]:
+    """start → broker → account → sizing, binding `balance` to `balance_expr`.
+    `PositionSizingNode.balance` is a numeric field — the type-compat gate."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {
+                "id": "sizing",
+                "type": "PositionSizingNode",
+                "symbol": "{{ item }}",
+                "balance": balance_expr,
+                "market_data": "{{ nodes.market.value }}",
+                "method": "fixed_percent",
+                "max_percent": 10.0,
+            },
+        ],
+        edges=[
+            {"from": "s1", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "sizing"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    return workflow
+
+
+def test_type_mismatch_number_field_reads_string_output(executor: WorkflowExecutor) -> None:
+    # balance (number) <- held_symbols.symbol (string) → INVALID_FIELD_TYPE
+    result = executor.validate(_sizing_wf("{{ nodes.account.held_symbols.symbol }}"))
+    type_errs = [
+        e for e in result.errors
+        if (e.code if isinstance(e.code, str) else e.code.value) == "INVALID_FIELD_TYPE"
+    ]
+    assert type_errs, "feeding a string output field into a numeric config field must be flagged"
+    err = type_errs[0]
+    assert err.location.node_id == "sizing"
+    assert err.location.field_path == "balance"
+    assert err.details.get("ref_field") == "symbol"
+
+
+def test_type_match_number_field_reads_number_output(executor: WorkflowExecutor) -> None:
+    # balance (number) <- balance.orderable_amount (number) → no type error
+    result = executor.validate(_sizing_wf("{{ nodes.account.balance.orderable_amount }}"))
+    codes = _codes(result)
+    assert ErrorCode.INVALID_FIELD_TYPE.value not in codes
+
+
+def test_type_check_skips_any_typed_consumer(executor: WorkflowExecutor) -> None:
+    # IfNode.left/right are `expected_type='any'` — must never be type-checked,
+    # even when reading a string output field.
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "c1"},
+            {"id": "account", "type": "OverseasStockAccountNode"},
+            {
+                "id": "gate",
+                "type": "IfNode",
+                "left": "{{ nodes.account.held_symbols.symbol }}",
+                "operator": "==",
+                "right": "AAPL",
+            },
+        ],
+        edges=[
+            {"from": "s1", "to": "broker"},
+            {"from": "broker", "to": "account"},
+            {"from": "account", "to": "gate"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "broker_ls_overseas_stock", "data": []}]
+    result = executor.validate(workflow)
+    assert ErrorCode.INVALID_FIELD_TYPE.value not in _codes(result)
+
+
+def test_type_check_skips_method_chain(executor: WorkflowExecutor) -> None:
+    # A chaining method (.first()) yields a value the static gate cannot type —
+    # it must not be flagged as a mismatch.
+    result = executor.validate(_sizing_wf("{{ nodes.account.positions.first() }}"))
+    assert ErrorCode.INVALID_FIELD_TYPE.value not in _codes(result)

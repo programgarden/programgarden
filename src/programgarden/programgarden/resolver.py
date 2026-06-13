@@ -783,6 +783,90 @@ class WorkflowResolver:
                 return _extract_field_names(dyn_schema.outputs, port_name)
             return None
 
+        # ── Phase 2: cross-port TYPE compatibility ──────────────────────────
+        # Field *existence* is handled above. This adds a conservative type
+        # check: a binding that is the WHOLE value of a numeric/boolean-typed
+        # consuming field must not read an output sub-field of a *different*
+        # concrete scalar type (e.g. feeding a `string` symbol into a `number`
+        # balance field). Only strong scalar classes are compared; object /
+        # array / enum / json / `any` and string-consuming fields (freely
+        # coercible) are left open to keep false-rejects at zero.
+        _SCALAR_CLASS = {
+            "number": "num", "integer": "num", "int": "num",
+            "float": "num", "decimal": "num",
+            "string": "str", "str": "str",
+            "boolean": "bool", "bool": "bool",
+        }
+
+        def _scalar_class(type_str: Any) -> Optional[str]:
+            if not type_str:
+                return None
+            return _SCALAR_CLASS.get(str(type_str).strip().lower())
+
+        def _extract_field_type(outputs: Any, port_name: str, field_name: str) -> Optional[str]:
+            for out in (outputs or []):
+                if isinstance(out, dict):
+                    nm = out.get("name")
+                    fields = out.get("fields")
+                else:
+                    nm = getattr(out, "name", None)
+                    fields = getattr(out, "fields", None)
+                if nm != port_name:
+                    continue
+                for f in (fields or []):
+                    if isinstance(f, dict):
+                        fn, ft = f.get("name"), f.get("type")
+                    else:
+                        fn, ft = getattr(f, "name", None), getattr(f, "type", None)
+                    if fn == field_name:
+                        return ft
+            return None
+
+        def _output_field_type(node_type: str, port_name: str, field_name: str) -> Optional[str]:
+            if not node_type:
+                return None
+            schema = registry.get_schema(node_type)
+            if schema:
+                return _extract_field_type(schema.outputs, port_name, field_name)
+            dyn_schema = dynamic_registry.get_schema(node_type)
+            if dyn_schema:
+                return _extract_field_type(dyn_schema.outputs, port_name, field_name)
+            return None
+
+        def _consuming_scalar_class(node_type: str, field_key: str) -> Optional[str]:
+            """Strong scalar class expected by a consuming node's top-level
+            config field, or None when the field is open/structured (skip).
+
+            `expected_type == 'any'` (e.g. IfNode.left/right) is explicitly open
+            and must never be type-checked; struct-shaped `expected_type`
+            (``{...}``) is object-like → skip; a concrete scalar `expected_type`
+            wins, otherwise fall back to the FieldType enum.
+            """
+            node_class = registry.get(node_type) if node_type else None
+            if node_class is None:
+                return None
+            try:
+                fs = node_class.get_field_schema()
+            except Exception:
+                return None
+            sch = fs.get(field_key) if isinstance(fs, dict) else None
+            if sch is None:
+                return None
+            expected = getattr(sch, "expected_type", None)
+            if expected is not None:
+                exp_s = str(expected).strip().lower()
+                if exp_s in ("any", ""):
+                    return None
+                cls = _scalar_class(exp_s)
+                # Concrete scalar expected_type → use it; struct/other → skip.
+                return cls
+            ftype = getattr(sch, "type", None)
+            ftype = getattr(ftype, "value", ftype)
+            return _scalar_class(ftype)
+
+        # Whole-value single-expression matcher (no surrounding text / arithmetic).
+        _whole_expr = re.compile(r"^\s*\{\{\s*nodes\.[\w.]+\s*\}\}\s*$")
+
         # nodes.<id>(.<attr>)* — capture the full dotted path so nested
         # field typos (e.g. {{ nodes.account.balance.orderabl_amount }})
         # are also caught when OutputPort.fields declares the shape.
@@ -856,34 +940,87 @@ class WorkflowResolver:
                         continue
                     nested = attrs[1]
                     field_names = _field_names_for(source_type, attr)
-                    if field_names is None or nested in field_names:
-                        continue
-                    # Underscore-prefixed keys are reserved for internal
-                    # metadata (e.g. _partial_failure on balance dicts).
-                    # Treat them as known so consumers can branch on them
-                    # without forcing every metadata addition to update
-                    # BALANCE_FIELDS in lockstep.
-                    if nested.startswith("_"):
-                        continue
-                    result.add(
-                        build_error(
-                            ErrorCode.INVALID_EXPRESSION_REF,
-                            f"Expression field '{nested}' is not a declared field of "
-                            f"port '{attr}' on node '{ref_id}' ({source_type})",
-                            location=ErrorLocation(
-                                node_id=node_id,
-                                node_type=node_type_by_id.get(node_id),
-                                field_path=field_path,
-                                expression=value,
-                                output_port=attr,
-                            ),
-                            available_values=suggest_close_match(nested, field_names) or sorted(field_names),
-                            suggestion=(
-                                f"Pick a field that exists on '{attr}' "
-                                "(see OutputPort.fields in the node schema)."
-                            ),
-                        )
+                    field_exists = (
+                        field_names is None
+                        or nested in field_names
+                        # Underscore-prefixed keys are reserved for internal
+                        # metadata (e.g. _partial_failure on balance dicts).
+                        # Treat them as known so consumers can branch on them
+                        # without forcing every metadata addition to update
+                        # BALANCE_FIELDS in lockstep.
+                        or nested.startswith("_")
                     )
+                    if not field_exists:
+                        result.add(
+                            build_error(
+                                ErrorCode.INVALID_EXPRESSION_REF,
+                                f"Expression field '{nested}' is not a declared field of "
+                                f"port '{attr}' on node '{ref_id}' ({source_type})",
+                                location=ErrorLocation(
+                                    node_id=node_id,
+                                    node_type=node_type_by_id.get(node_id),
+                                    field_path=field_path,
+                                    expression=value,
+                                    output_port=attr,
+                                ),
+                                available_values=suggest_close_match(nested, field_names) or sorted(field_names),
+                                suggestion=(
+                                    f"Pick a field that exists on '{attr}' "
+                                    "(see OutputPort.fields in the node schema)."
+                                ),
+                            )
+                        )
+                        continue
+
+                    # ── Phase 2: type compatibility on the valid-field path ──
+                    # Only when this binding is the WHOLE value of a TOP-LEVEL
+                    # config field and the field shape is known. Nested consumer
+                    # paths (field_path with '.'/'[' → object-typed parent) and
+                    # interpolated strings are intentionally skipped (ceiling).
+                    if (
+                        field_names is not None
+                        and not is_call
+                        and len(attrs) == 2
+                        and "." not in field_path
+                        and "[" not in field_path
+                        and _whole_expr.match(value)
+                    ):
+                        consumer_type = node_type_by_id.get(node_id)
+                        cin = _consuming_scalar_class(consumer_type, field_path)
+                        if cin in ("num", "bool"):
+                            out_type = _output_field_type(source_type, attr, nested)
+                            cout = _scalar_class(out_type)
+                            if cout is not None and cout != cin:
+                                result.add(
+                                    build_error(
+                                        ErrorCode.INVALID_FIELD_TYPE,
+                                        f"Field '{field_path}' on node '{node_id}' "
+                                        f"({consumer_type}) expects a {cin} value, but "
+                                        f"the expression reads '{attr}.{nested}' from "
+                                        f"'{ref_id}' ({source_type}) which is declared "
+                                        f"{out_type}.",
+                                        location=ErrorLocation(
+                                            node_id=node_id,
+                                            node_type=consumer_type,
+                                            field_path=field_path,
+                                            expression=value,
+                                            output_port=attr,
+                                        ),
+                                        suggestion=(
+                                            f"'{field_path}' 필드에는 {cin} 타입 값이 필요합니다. "
+                                            f"'{ref_id}' 노드의 '{attr}.{nested}' 출력은 타입이 달라 "
+                                            f"맞지 않습니다 — 타입이 호환되는 출력 필드로 바꾸세요."
+                                        ),
+                                        details={
+                                            "consumer_field": field_path,
+                                            "consumer_class": cin,
+                                            "ref_node_id": ref_id,
+                                            "ref_port": attr,
+                                            "ref_field": nested,
+                                            "ref_field_type": out_type,
+                                        },
+                                    )
+                                )
             elif isinstance(value, dict):
                 for k, v in value.items():
                     find_refs(v, node_id, f"{field_path}.{k}")
