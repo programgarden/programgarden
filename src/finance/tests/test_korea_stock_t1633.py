@@ -774,3 +774,39 @@ class TestInBlockCharLengthConsistency:
             f"T1633InBlock.{field_name} must document 'Length 1' "
             f"(xingAPI FUNCTION_MAP: char,1)."
         )
+
+
+# ===========================================================================
+# LS 2026-06-13 scale expansion — jisu / change 6.2 → 10.2
+# ===========================================================================
+
+
+class TestT1633ScaleUpdate2026_06_13:
+    """LS 2026-06-13: jisu / change 6.2 → 10.2 (field-width expansion).
+
+    Metadata-only change — the fields stay ``float``. The description must
+    declare the new 10.2 scale and carry the audit note, and the stale 6.2
+    scale must not survive (drift guard).
+    """
+
+    @pytest.mark.parametrize("field_name", ["jisu", "change"])
+    def test_scale_declared_10_2(self, field_name):
+        desc = T1633OutBlock1.model_fields[field_name].description or ""
+        assert "10.2" in desc, f"{field_name} must declare Length 10.2"
+
+    @pytest.mark.parametrize("field_name", ["jisu", "change"])
+    def test_old_6_2_scale_removed(self, field_name):
+        """기존 'Length 6.2' scale 선언이 잔존하면 안 된다(drift 방지).
+
+        audit note 의 transition 표기 ``(field width 6.2→10.2)`` 는 의도된
+        정당한 잔존이므로, scale **선언** 형태(``Length 6.2``)만 차단한다.
+        """
+        desc = T1633OutBlock1.model_fields[field_name].description or ""
+        assert "Length 6.2" not in desc, (
+            f"{field_name} must not retain stale 'Length 6.2' scale declaration"
+        )
+
+    @pytest.mark.parametrize("field_name", ["jisu", "change"])
+    def test_audit_note_present(self, field_name):
+        desc = T1633OutBlock1.model_fields[field_name].description or ""
+        assert "Changed by LS Securities on 2026-06-13" in desc

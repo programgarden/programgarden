@@ -19,9 +19,11 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
       neighbouring TRs (1=상한 / 2=상승 / 3=보합 / 4=하한 / 5=하락); not
       re-asserted per-field here when delegated to ``firsign`` / ``secsign``
       / ``thrsign`` / ``forsign`` (sub-index direction codes).
-    - Decimal scale of ``pricejisu`` / ``jniljisu`` / sub-index values and
-      currency unit of ``value`` / ``valuechange`` / ``jnilvalue`` are NOT
-      declared in the available source — consume as returned by LS.
+    - Decimal scale of ``pricejisu`` / ``jniljisu`` / sub-index values is
+      10.2 (LS scale), declared by LS Securities on 2026-06-13 (field width
+      7.2→10.2). The currency unit of ``value`` / ``valuechange`` /
+      ``jnilvalue`` is still NOT declared in the available source — consume
+      as returned by LS.
     - ``opentime`` / ``hightime`` / ``lowtime`` are HHMMSS-style timestamps
       per LS convention; format not asserted beyond what source declares.
     - Constituent-count fields (``highjo`` / ``upjo`` / ``unchgjo`` /
@@ -102,13 +104,13 @@ class T1511OutBlock(BaseModel):
     pricejisu: float = Field(
         default=0.0,
         title="현재지수 (Current index value)",
-        description="Current index level. Decimal scale not declared in the available source; consume as returned by LS.",
+        description="Current index level. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2650.50],
     )
     jniljisu: float = Field(
         default=0.0,
         title="전일지수 (Previous-day index value)",
-        description="Previous-day close index level.",
+        description="Previous-day close index level. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2640.10],
     )
     sign: str = Field(
@@ -120,7 +122,7 @@ class T1511OutBlock(BaseModel):
     change: float = Field(
         default=0.0,
         title="전일대비 (Previous-day delta)",
-        description="Magnitude of index change versus previous close. Pair with ``sign`` for direction.",
+        description="Magnitude of index change versus previous close. Pair with ``sign`` for direction. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[10.40, 0.0],
     )
     diffjisu: float = Field(
@@ -180,7 +182,7 @@ class T1511OutBlock(BaseModel):
     openjisu: float = Field(
         default=0.0,
         title="시가지수 (Open index value)",
-        description="Index level at session open.",
+        description="Index level at session open. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2641.20],
     )
     opendiff: float = Field(
@@ -198,7 +200,7 @@ class T1511OutBlock(BaseModel):
     highjisu: float = Field(
         default=0.0,
         title="고가지수 (Intraday high index value)",
-        description="Intraday high index level.",
+        description="Intraday high index level. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2655.80],
     )
     highdiff: float = Field(
@@ -216,7 +218,7 @@ class T1511OutBlock(BaseModel):
     lowjisu: float = Field(
         default=0.0,
         title="저가지수 (Intraday low index value)",
-        description="Intraday low index level.",
+        description="Intraday low index level. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2638.20],
     )
     lowdiff: float = Field(
@@ -234,7 +236,7 @@ class T1511OutBlock(BaseModel):
     whjisu: float = Field(
         default=0.0,
         title="52주최고지수 (52-week high index value)",
-        description="52-week high index level.",
+        description="52-week high index level. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2700.00],
     )
     whchange: float = Field(
@@ -270,7 +272,7 @@ class T1511OutBlock(BaseModel):
     yhjisu: float = Field(
         default=0.0,
         title="연중최고지수 (Year-to-date high index value)",
-        description="Year-to-date high index level.",
+        description="Year-to-date high index level. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2700.00],
     )
     yhchange: float = Field(
@@ -288,7 +290,7 @@ class T1511OutBlock(BaseModel):
     yljisu: float = Field(
         default=0.0,
         title="연중최저지수 (Year-to-date low index value)",
-        description="Year-to-date low index level.",
+        description="Year-to-date low index level. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2500.00],
     )
     ylchange: float = Field(
@@ -318,7 +320,7 @@ class T1511OutBlock(BaseModel):
     firstjisu: float = Field(
         default=0.0,
         title="첫번째지수 (First sub-index value)",
-        description="Current value of the first leading sub-index.",
+        description="Current value of the first leading sub-index. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2700.50],
     )
     firsign: str = Field(
@@ -330,7 +332,7 @@ class T1511OutBlock(BaseModel):
     firchange: float = Field(
         default=0.0,
         title="첫번째전일대비 (First sub-index delta)",
-        description="Magnitude of change vs previous close for the first sub-index.",
+        description="Magnitude of change vs previous close for the first sub-index. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[10.20, 0.0],
     )
     firdiff: float = Field(
@@ -354,7 +356,7 @@ class T1511OutBlock(BaseModel):
     secondjisu: float = Field(
         default=0.0,
         title="두번째지수 (Second sub-index value)",
-        description="Current value of the second leading sub-index.",
+        description="Current value of the second leading sub-index. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2400.00],
     )
     secsign: str = Field(
@@ -366,7 +368,7 @@ class T1511OutBlock(BaseModel):
     secchange: float = Field(
         default=0.0,
         title="두번째전일대비 (Second sub-index delta)",
-        description="Magnitude of change vs previous close for the second sub-index.",
+        description="Magnitude of change vs previous close for the second sub-index. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[5.10, -3.20],
     )
     secdiff: float = Field(
@@ -390,7 +392,7 @@ class T1511OutBlock(BaseModel):
     thirdjisu: float = Field(
         default=0.0,
         title="세번째지수 (Third sub-index value)",
-        description="Current value of the third leading sub-index.",
+        description="Current value of the third leading sub-index. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[2200.00],
     )
     thrsign: str = Field(
@@ -402,7 +404,7 @@ class T1511OutBlock(BaseModel):
     thrchange: float = Field(
         default=0.0,
         title="세번째전일대비 (Third sub-index delta)",
-        description="Magnitude of change vs previous close for the third sub-index.",
+        description="Magnitude of change vs previous close for the third sub-index. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[0.0, 1.50],
     )
     thrdiff: float = Field(
@@ -426,7 +428,7 @@ class T1511OutBlock(BaseModel):
     fourthjisu: float = Field(
         default=0.0,
         title="네번째지수 (Fourth sub-index value)",
-        description="Current value of the fourth leading sub-index.",
+        description="Current value of the fourth leading sub-index. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[350.50],
     )
     forsign: str = Field(
@@ -438,7 +440,7 @@ class T1511OutBlock(BaseModel):
     forchange: float = Field(
         default=0.0,
         title="네번째전일대비 (Fourth sub-index delta)",
-        description="Magnitude of change vs previous close for the fourth sub-index.",
+        description="Magnitude of change vs previous close for the fourth sub-index. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 7.2→10.2).",
         examples=[1.50, -0.80],
     )
     fordiff: float = Field(

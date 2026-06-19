@@ -1,4 +1,23 @@
 ## [Unreleased]
+### Changed
+- **LS증권 2026-06-13 공지(업종TR 필드 자릿수 확대) 반영** — 코드에 실존하는
+  TR 2개의 OutBlock 필드 메타데이터(description)만 갱신. 필드 타입은 `float`
+  그대로이며 LS size 변경은 직렬화 폭 확대일 뿐이라 런타임/타입 영향 없음(메타데이터-only):
+  - `t1511`(업종현재가) `T1511OutBlock` 17개 지수/대비 필드 description 에
+    `Length 10.2 (LS scale)` 선언 + audit note 추가(기존 7.2 → 10.2). 대상:
+    pricejisu, jniljisu, change, openjisu, highjisu, lowjisu, whjisu, yhjisu,
+    yljisu, firstjisu, firchange, secondjisu, secchange, thirdjisu, thrchange,
+    fourthjisu, forchange. 모듈 docstring 의 sub-index scale "NOT declared" →
+    "10.2 declared" 로 갱신(`value`/`valuechange`/`jnilvalue` 통화단위 미선언 절은 유지).
+  - `t1633`(기간별프로그램매매추이) `T1633OutBlock1` `jisu` / `change`
+    description 을 `Length 6.2` → `Length 10.2 (LS scale)` 로 갱신 + audit note(6.2 → 10.2).
+  - **no-inference**: LS 공지가 `wljisu`(52주최저)를 나열하지 않아 의도적으로 미변경
+    (whjisu/yhjisu/yljisu 와 비대칭) — 회귀 가드로 잠금.
+  - 회귀 가드: 신규 `tests/test_korea_stock_t1511.py`(61) + 기존
+    `tests/test_korea_stock_t1633.py` 에 scale 갱신 가드 클래스 추가(6).
+  - **범위 외(미구현)**: t8402(주식선물현재가) 및 업종차트 리네임/삭제
+    (t8417/t8418/t8419/t4203→t8408/t8409/t8429)은 finance 패키지에 미구현이라
+    이번 변경에 미포함 — 별도 신규 TR 구현 작업으로 분리.
 
 ## [1.6.10] - 2026-06-06
 ### Added

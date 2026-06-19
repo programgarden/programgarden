@@ -262,7 +262,7 @@ class T1633OutBlock1(BaseModel):
     jisu: float = Field(
         default=0.0,
         title="KP200 (KP200 index value)",
-        description="KP200 index value for this period bucket. Length 6.2 (LS scale).",
+        description="KP200 index value for this period bucket. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 6.2→10.2).",
         examples=[329.85, 345.17, 1006.59],
     )
     sign: str = Field(
@@ -278,7 +278,7 @@ class T1633OutBlock1(BaseModel):
     change: float = Field(
         default=0.0,
         title="대비 (Change from prior)",
-        description="Change from the prior period. Length 6.2 (LS scale).",
+        description="Change from the prior period. Length 10.2 (LS scale). Changed by LS Securities on 2026-06-13 (field width 6.2→10.2).",
         examples=[16.32, 1.98, 0.0, -2.30],
     )
     tot3: int = Field(
