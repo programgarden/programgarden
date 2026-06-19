@@ -1,4 +1,15 @@
 ## [Unreleased]
+### Added
+- **주문 거부 진단 + 빈주문 사유 구분** (order-error-mapping) — 라이브 런타임 주문 실패
+  콜백 보강(core `order_diagnostics` 소비).
+  - `NewOrderNodeExecutor` — 거부/빈OrderNo/예외 3분기에서 `map_reject_code` 로
+    `order_result.diagnostics`(`OrderRejectInfo`) 동봉 + `on_notification(ORDER_REJECTED)`
+    1건 발행. 거래시간 밖 빈 OrderNo 는 전용 진단(`known=True`, "market closed / broker delay")
+    으로 silent no-op 차단. 기존 `error` 키 하위호환 유지.
+  - `PositionSizingNodeExecutor` — `_empty_result` 에 `EmptyOrderReason`
+    (`no_signal`/`fetch_failed`/`no_symbol`)을 상류 출력(`context.get_all_outputs`) 조회로
+    판정해 부여. 불확실 시 `fetch_failed` over-report 로 silent 미탐 방지.
+  - 적용 마켓: 해외주식(COSAT00301) / 해외선물(CIDBT00100) / 국내주식(CSPAT00601).
 
 ## [1.24.0] - 2026-06-13
 ### Added

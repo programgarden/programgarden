@@ -1,4 +1,16 @@
 ## [Unreleased]
+### Added
+- **Order reject diagnostics + empty-order reason 모델** (`programgarden_core.models.order_diagnostics`)
+  — 라이브 런타임 주문 실패 콜백을 AI 챗봇 소비자가 파싱 없이 읽도록 구조화.
+  - `OrderRejectInfo`(`rsp_cd`/`cause`/`tip`/`raw_msg`/`known`) — 영어 전용(cause/tip),
+    `ErrorInfo` message/suggestion 컨벤션 일치.
+  - `EmptyOrderReason`(`no_signal`/`fetch_failed`/`no_symbol`) — "신호없음(정상)" vs
+    "조회실패(이상)"를 결정적으로 구분(no silent failure 정책).
+  - `map_reject_code(market, rsp_cd, raw_msg)` + 마켓별 테이블
+    (`OVERSEAS_STOCK_REJECT_CODES`/`OVERSEAS_FUTURES_REJECT_CODES`/`KOREA_STOCK_REJECT_CODES`).
+    **현재 빈 테이블 → 모든 코드 `known=False` raw 폴백**, 라이브 수집 후 점진 등재(추측 등재 금지).
+- **`NotificationCategory.ORDER_REJECTED`** — 주문 거부 전용 알림 카테고리(drawdown용
+  `RISK_ALERT` 와 분리). 카테고리 11→12종.
 
 ## [1.15.0] - 2026-06-13
 ### Added
