@@ -510,6 +510,7 @@ class NotificationCategory(str, Enum):
     CONNECTION_LOST = "connection_lost"         # 실시간 WebSocket 끊김, 재연결 시도 중
     CONNECTION_RESTORED = "connection_restored"  # 재연결 성공 (끊김 시간 + reconcile 결과 동봉)
     CONNECTION_FAILED = "connection_failed"     # 재연결 최종 실패 (최대 시도 소진)
+    ORDER_REJECTED = "order_rejected"           # 주문 거부 (브로커 reject, rsp_cd + 진단 동봉)
 
 
 class NotificationSeverity(str, Enum):

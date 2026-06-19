@@ -20,7 +20,10 @@ from programgarden.resolver import WorkflowResolver, ResolvedWorkflow, Validatio
 from programgarden_core import (
     BalanceUnavailableError,
     ConditionEvaluationError,
+    EmptyOrderReason,
+    OrderRejectInfo,
     ValidationLimits,
+    map_reject_code,
 )
 from programgarden.context import ExecutionContext, WorkflowEvent
 from programgarden.reconnect_handler import ReconnectHandler
@@ -11388,7 +11391,13 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         
         if not symbols:
             context.log("warning", "No symbols provided for position sizing", node_id)
-            return self._empty_result()
+            # 상류가 빈 리스트에 error 신호를 동봉했으면 fetch_failed, 아니면 종목 미지정.
+            err = None
+            if isinstance(symbols_input, dict) and symbols_input.get("error"):
+                err = str(symbols_input.get("error"))
+            if err:
+                return self._empty_result(EmptyOrderReason.FETCH_FAILED, err)
+            return self._empty_result(EmptyOrderReason.NO_SYMBOL, "")
         
         # Refuse to silently zero-out when the upstream AccountNode flagged
         # a partial fetch. fixed_quantity ignores balance entirely, so it
@@ -11422,7 +11431,20 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         # fixed_quantity 메서드는 balance 없이도 동작 (테스트용)
         if available_balance <= 0 and method != "fixed_quantity":
             context.log("warning", f"No available balance: {available_balance}", node_id)
-            return self._empty_result()
+            # A zero balance caused by a partial fetch failure is a pipeline
+            # error (fetch_failed), not a normal "no signal" no-op. The hard
+            # _partial_failure raise above already covers non-dry-run; in
+            # dry_run (exempt) still surface the failure reason in the result.
+            if isinstance(balance_data, dict) and balance_data.get("_partial_failure") is True:
+                detail = str(
+                    balance_data.get("_failure_reason")
+                    or "balance fetch partially failed"
+                )
+                return self._empty_result(EmptyOrderReason.FETCH_FAILED, detail)
+            return self._empty_result(
+                EmptyOrderReason.NO_SIGNAL,
+                "No available balance for position sizing",
+            )
         
         context.log(
             "info",
@@ -11454,12 +11476,18 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                 price_data, context, node_id
             )
         else:
+            # Unknown sizing method is a configuration error, not a missing
+            # signal — classify as NO_SYMBOL (config) so the consumer sees a
+            # deterministic config-fix cue rather than a bare no_signal.
             context.log("error", f"Unknown sizing method: {method}", node_id)
-            return self._empty_result()
-        
+            return self._empty_result(
+                EmptyOrderReason.NO_SYMBOL,
+                f"Unknown sizing method '{method}'",
+            )
+
         # 결과에 원본 symbols 추가
         result["symbols"] = symbols_input
-        
+
         return result
 
     def _normalize_symbols(self, symbols_input: Any) -> List[Dict[str, Any]]:
@@ -12000,14 +12028,43 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         
         return None
 
-    def _empty_result(self) -> Dict[str, Any]:
-        """빈 결과 반환"""
+    # Human/AI-facing English explanations keyed by EmptyOrderReason.
+    _EMPTY_SIZING_MESSAGES: Dict[str, str] = {
+        EmptyOrderReason.NO_SIGNAL.value: (
+            "No trading signal today (upstream produced an empty result normally)."
+        ),
+        EmptyOrderReason.FETCH_FAILED.value: (
+            "Upstream data fetch failed; no order placed (pipeline error)."
+        ),
+        EmptyOrderReason.NO_SYMBOL.value: (
+            "No symbol provided to the order node (configuration missing)."
+        ),
+    }
+
+    def _empty_result(
+        self,
+        reason: EmptyOrderReason = EmptyOrderReason.NO_SIGNAL,
+        detail: str = "",
+    ) -> Dict[str, Any]:
+        """빈 포지션 사이징 결과 반환.
+
+        주문 노드 ``_empty_result`` 와 동일하게 ``reason`` (no_signal / fetch_failed /
+        no_symbol) 으로 "신호 없음" 과 "파이프라인 고장" 을 구분한다. 기존 키
+        (orders/total_amount/symbols/method/config) 는 하위호환을 위해 그대로 두고
+        ``reason`` / ``message`` / ``detail`` 만 추가한다.
+        """
+        message = self._EMPTY_SIZING_MESSAGES.get(
+            reason.value, self._EMPTY_SIZING_MESSAGES[EmptyOrderReason.NO_SIGNAL.value]
+        )
         return {
             "orders": [],
             "total_amount": 0.0,
             "symbols": [],
             "method": None,
             "config": {},
+            "reason": reason.value,
+            "message": message,
+            "detail": detail,
         }
 
 
@@ -12467,6 +12524,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         paper_trading = broker_connection.get("paper_trading", False) if product != "korea_stock" else False
 
         # === 2. 바인딩 표현식 평가 ===
+        # Capture the RAW (pre-evaluation) order binding expression BEFORE
+        # evaluate_all_bindings rebinds config. A missing upstream port (e.g.
+        # '{{ nodes.sizing.order }}' where sizing only emits 'orders') resolves
+        # to None and the expression text is lost after evaluation — so the
+        # upstream node reference needed for empty-order diagnosis must be read
+        # from the raw config here.
+        raw_order_expr = config.get("order")
         config = evaluate_all_bindings(config, context, node_id)
 
         # === 3. 주문 정보 추출 (order 단일 객체) ===
@@ -12479,7 +12543,10 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         if not normalized_order:
             context.log("warning", f"{node_type}: 주문할 종목이 없습니다", node_id)
-            return self._empty_result()
+            reason, detail = self._diagnose_empty_reason(
+                order, config, raw_order_expr, context
+            )
+            return self._empty_result(reason, detail)
 
         context.log(
             "info",
@@ -12640,6 +12707,155 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             "price": float(price) if price else 0.0,
         }
 
+    def _diagnose_empty_reason(
+        self,
+        order: Any,
+        config: Dict[str, Any],
+        raw_order_expr: Any = None,
+        context: Optional[ExecutionContext] = None,
+    ) -> tuple:
+        """빈 주문 결과의 reason 을 상류 신호로 판정.
+
+        no_signal(정상 빈 결과) vs fetch_failed(상류 파이프라인 고장) vs
+        no_symbol(설정 누락) 을 결정적으로 구분한다. 메모리 정책(no silent
+        failure)상 fetch_failed 미탐을 최소화하기 위해, 상류 노드의 FULL 구조화
+        출력(``error`` / ``reason='fetch_failed'`` / ``_partial_failure``) +
+        balance ``_partial_failure`` + 미해석 바인딩 리터럴 같은 확실한 실패
+        신호를 우선 사용한다. 불확실하면 보수적으로 FETCH_FAILED 쪽으로 기운다.
+
+        ``raw_order_expr`` 는 evaluate_all_bindings 가 config 를 덮어쓰기 전에
+        캡처한 원본 ``order`` 바인딩 표현식이다. ``'{{ nodes.sizing.order }}'``
+        처럼 상류의 누락 포트를 가리켜 None 으로 해석된 경우, 그 표현식에서 상류
+        노드 id 를 뽑아 ``context.get_all_outputs`` 로 FULL 출력을 조회한다.
+
+        Args:
+            order: evaluate 된 order 값(보통 None / dict / list).
+            config: evaluate 된 노드 config.
+            raw_order_expr: evaluate 이전 원본 order 표현식(없으면 None).
+            context: 상류 출력 조회용 ExecutionContext(없으면 생략).
+
+        Returns:
+            (EmptyOrderReason, detail) 튜플.
+        """
+        # 1) balance dict 의 부분 실패 → 상류 조회 실패.
+        balance = config.get("balance")
+        if isinstance(balance, dict) and balance.get("_partial_failure") is True:
+            detail = str(balance.get("_failure_reason") or "balance fetch partially failed")
+            return EmptyOrderReason.FETCH_FAILED, detail
+
+        # 2) order 바인딩이 미해석 리터럴('{{ ... }}') 로 그대로 넘어온 경우 —
+        #    표현식이 평가되지 못했다(주로 상류 노드 미실행/오류). 보수적으로
+        #    FETCH_FAILED 로 본다(silent no-op 차단).
+        if isinstance(order, str) and "{{" in order and "}}" in order:
+            return (
+                EmptyOrderReason.FETCH_FAILED,
+                f"Order binding was not resolved (unresolved expression: {order})",
+            )
+
+        # 3) 원본 order 표현식이 상류 노드를 가리키는데 None 으로 해석됐다면,
+        #    그 상류 노드의 FULL 구조화 출력을 직접 조회해 실패 신호를 본다.
+        #    핵심 케이스: '{{ nodes.sizing.order }}' 인데 sizing 이 'orders'(복수)
+        #    만 내보내 'order' 포트가 없어 None 으로 swallow 된 경우 — 상류가
+        #    fetch_failed/_partial_failure 면 NO_SIGNAL 로 오분류하지 않는다.
+        upstream = self._lookup_upstream_output(raw_order_expr, context)
+        if upstream is not None:
+            err = self._extract_upstream_error(upstream)
+            if err is not None:
+                return EmptyOrderReason.FETCH_FAILED, err
+
+        # 4) 상류가 낸 빈 리스트에 실패 신호 동봉 → 조회 실패(파이프라인 고장).
+        #    order/symbols 바인딩 결과가 dict 이면서 error/_partial_failure/
+        #    reason='fetch_failed' 를 들고 있는 경우를 본다.
+        for candidate in (order, config.get("symbols"), config.get("order")):
+            err = self._extract_upstream_error(candidate)
+            if err is not None:
+                return EmptyOrderReason.FETCH_FAILED, err
+
+        # 5) 주문 대상 자체가 비었으면(종목 미지정) → 설정 누락.
+        #    order 가 명시적으로 비어있고(빈 리스트/빈 dict/None) 상류 실패 신호도
+        #    없는 경우는 "종목 미지정"으로 본다.
+        if self._is_empty_order_payload(order):
+            return EmptyOrderReason.NO_SYMBOL, ""
+
+        # 6) 그 외 → 정상 빈 결과(오늘 신호 없음).
+        return EmptyOrderReason.NO_SIGNAL, ""
+
+    @staticmethod
+    def _lookup_upstream_output(
+        raw_order_expr: Any,
+        context: Optional[ExecutionContext],
+    ) -> Optional[Dict[str, Any]]:
+        """원본 order 표현식이 '{{ nodes.<id>.<port> }}' 형태면 그 상류 노드의
+        FULL 출력 dict 를 반환한다. 못 찾으면(미해석/auto-iterate item/노드 미실행)
+        None.
+
+        Auto-iterate 의 ``{{ item.xxx }}`` 처럼 nodes.<id> 패턴이 없으면 None 으로
+        graceful fallback 한다(기존 동작 유지).
+        """
+        if not isinstance(raw_order_expr, str) or context is None:
+            return None
+        import re
+
+        match = re.search(r"nodes\.(\w+)", raw_order_expr)
+        if not match:
+            return None
+        node_id = match.group(1)
+        try:
+            outputs = context.get_all_outputs(node_id)
+        except Exception:
+            return None
+        # 미실행/미지 노드 → {} → 빈 상류는 FETCH_FAILED 오판하지 않도록 None.
+        if not outputs:
+            return None
+        return outputs
+
+    @staticmethod
+    def _extract_upstream_error(candidate: Any) -> Optional[str]:
+        """상류 출력(dict)에서 실패 신호를 추출. 없으면 None.
+
+        인식하는 실패 신호(확장됨): ``error`` 키, ``reason == 'fetch_failed'``,
+        ``_partial_failure is True``. 진단 텍스트는 detail/message/_failure_reason
+        /error 순으로 골라 반환한다. 정상 결과 오탐을 막기 위해, ``symbols`` 가
+        채워져 있는데 단지 ``error`` 만 있는 경우(부분 경고)는 실패로 보지 않는다.
+        """
+        if not isinstance(candidate, dict):
+            return None
+
+        # symbols 가 채워져 있으면 정상 결과로 본다(test_normal_nonempty_symbols).
+        symbols = candidate.get("symbols")
+        symbols_non_empty = bool(symbols) and symbols not in (None, [], ())
+
+        def _detail_text() -> str:
+            for key in ("detail", "message", "_failure_reason", "error"):
+                val = candidate.get(key)
+                if val:
+                    return str(val)
+            return "upstream fetch failed"
+
+        # (a) _partial_failure / reason=='fetch_failed' 는 명시적 실패 마커 —
+        #     symbols 유무와 무관하게 실패로 본다(silent no-op 차단 우선).
+        if candidate.get("_partial_failure") is True:
+            return _detail_text()
+        if candidate.get("reason") == EmptyOrderReason.FETCH_FAILED.value:
+            return _detail_text()
+
+        # (b) error 키 — symbols 가 비었을 때만 fetch_failed 로 본다(정상 오탐 방지).
+        err = candidate.get("error")
+        if err and not symbols_non_empty:
+            # symbols 키가 아예 없거나 비어있는 경우만 실패로 본다.
+            if symbols in (None, [], ()) or "symbols" not in candidate:
+                return str(err)
+        return None
+
+    @staticmethod
+    def _is_empty_order_payload(order: Any) -> bool:
+        """주문 페이로드가 '종목 미지정' 으로 볼 만큼 비었는지 판정."""
+        if order is None:
+            return True
+        if isinstance(order, (list, tuple, dict, str)) and len(order) == 0:
+            return True
+        return False
+
     async def _execute_overseas_stock(
         self,
         ls,
@@ -12717,8 +12933,19 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             context.log("debug", f"COSAT00301 response: rsp_cd={response.rsp_cd}, rsp_msg={response.rsp_msg}", node_id)
 
             if response.error_msg:
-                context.log("warning", f"Order failed: {symbol} - {response.error_msg}", node_id)
-                return self._order_result(False, symbol, exchange, side, qty, price, response.error_msg)
+                reject = map_reject_code(
+                    "overseas_stock", response.rsp_cd or "", response.error_msg
+                )
+                context.log(
+                    "warning",
+                    f"Order failed: {symbol} - {response.error_msg} ({reject.cause})",
+                    node_id,
+                )
+                await self._notify_order_reject(context, node_id, symbol, reject)
+                return self._order_result(
+                    False, symbol, exchange, side, qty, price,
+                    response.error_msg, reject_info=reject,
+                )
 
             order_no = ""
             if response.block2:
@@ -12728,7 +12955,20 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if not order_no:
                 msg = response.rsp_msg or "주문번호 없음"
                 context.log("warning", f"Order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
-                return self._order_result(False, symbol, exchange, side, qty, price, f"Empty OrderNo: {msg}")
+                # rsp_cd 가 성공("00000")인데 OrderNo 가 안 온 케이스 — rsp_cd 매핑이
+                # 아니라 전용 진단을 동봉한다(장 마감 / 브로커 지연 등).
+                reject = OrderRejectInfo(
+                    rsp_cd=response.rsp_cd or "",
+                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
+                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
+                    raw_msg=msg,
+                    known=True,
+                )
+                await self._notify_order_reject(context, node_id, symbol, reject)
+                return self._order_result(
+                    False, symbol, exchange, side, qty, price,
+                    f"Empty OrderNo: {msg}", reject_info=reject,
+                )
 
             context.log("info", f"Order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
 
@@ -12748,7 +12988,11 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         except Exception as e:
             context.log("warning", f"Order exception: {symbol} - {e}", node_id)
-            return self._order_result(False, symbol, exchange, side, qty, price, str(e))
+            # 예외는 rsp_cd 가 없으므로 known=False 폴백으로 동봉(일관성).
+            reject = map_reject_code("overseas_stock", "", str(e))
+            return self._order_result(
+                False, symbol, exchange, side, qty, price, str(e), reject_info=reject,
+            )
 
         return {
             "order_result": {
@@ -12981,19 +13225,49 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             context.log("debug", f"CIDBT00100 response: rsp_cd={response.rsp_cd}, rsp_msg={response.rsp_msg}", node_id)
 
             if response.error_msg:
-                context.log("warning", f"Order failed: {symbol} - {response.error_msg}", node_id)
-                return self._order_result(False, symbol, exchange, side, qty, price, response.error_msg)
+                reject = map_reject_code(
+                    "overseas_futures", response.rsp_cd or "", response.error_msg
+                )
+                context.log(
+                    "warning",
+                    f"Order failed: {symbol} - {response.error_msg} ({reject.cause})",
+                    node_id,
+                )
+                await self._notify_order_reject(
+                    context, node_id, symbol, reject,
+                    node_type="OverseasFuturesNewOrderNode",
+                )
+                return self._order_result(
+                    False, symbol, exchange, side, qty, price,
+                    response.error_msg, reject_info=reject,
+                )
 
             order_no = ""
             if response.block2:
-                # 해외선물 주문번호 필드: OvrsFutsOrdNo
+                # 해외선물 주문번호 필드: OvrsFutsOrdNo (str, default "")
                 order_no = str(response.block2.OvrsFutsOrdNo) if hasattr(response.block2, "OvrsFutsOrdNo") and response.block2.OvrsFutsOrdNo else ""
 
             # 주문번호가 없으면 경고 + 기록 거부
             if not order_no:
                 msg = response.rsp_msg or "주문번호 없음"
                 context.log("warning", f"Futures order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
-                return self._order_result(False, symbol, exchange, side, qty, price, f"Empty OrderNo: {msg}")
+                # rsp_cd 성공인데 OrderNo 가 안 온 케이스 — 전용 lifecycle 진단 동봉
+                # (장 마감 / 브로커 지연 등). stock 경로와 동일 구조.
+                reject = OrderRejectInfo(
+                    rsp_cd=response.rsp_cd or "",
+                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
+                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
+                    raw_msg=msg,
+                    known=True,
+                )
+                await self._notify_order_reject(
+                    context, node_id, symbol, reject,
+                    node_type="OverseasFuturesNewOrderNode",
+                )
+                return self._order_result(
+                    False, symbol, exchange, side, qty, price,
+                    f"Empty OrderNo: {msg}", reject_info=reject,
+                )
 
             context.log("info", f"Futures order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
 
@@ -13013,7 +13287,11 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         except Exception as e:
             context.log("warning", f"Futures order exception: {symbol} - {e}", node_id)
-            return self._order_result(False, symbol, exchange, side, qty, price, str(e))
+            # 예외는 rsp_cd 가 없으므로 known=False 폴백으로 동봉(stock 경로와 일관).
+            reject = map_reject_code("overseas_futures", "", str(e))
+            return self._order_result(
+                False, symbol, exchange, side, qty, price, str(e), reject_info=reject,
+            )
 
     def _check_exclusion_list(
         self,
@@ -13086,15 +13364,47 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             response = await order_api.req_async()
 
             if response.error_msg:
-                context.log("warning", f"Korea stock order failed: {response.error_msg}", node_id)
+                reject = map_reject_code(
+                    "korea_stock", response.rsp_cd or "", response.error_msg
+                )
+                context.log(
+                    "warning",
+                    f"Korea stock order failed: {response.error_msg} ({reject.cause})",
+                    node_id,
+                )
+                await self._notify_order_reject(
+                    context, node_id, symbol, reject,
+                    node_type="KoreaStockNewOrderNode",
+                )
                 return self._order_result(
                     False, symbol, "KRX", side, qty, price,
-                    response.error_msg
+                    response.error_msg, reject_info=reject,
                 )
 
-            order_no = ""
-            if response.block2:
-                order_no = str(response.block2.OrdNo) if response.block2.OrdNo else ""
+            # CSPAT00601 OrdNo 는 int(default 0). str(0)=='0' 은 truthy 라서
+            # OrdNo 가 0/garbage 면 성공으로 silently 기록되는 위험이 있다.
+            # stock 경로와 동일하게 빈/0 OrderNo 를 명시 거부로 본다.
+            ord_no_raw = response.block2.OrdNo if response.block2 else None
+            order_no = str(ord_no_raw) if ord_no_raw else ""
+
+            if not order_no:
+                msg = response.rsp_msg or "주문번호 없음"
+                context.log("warning", f"Korea stock order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
+                reject = OrderRejectInfo(
+                    rsp_cd=response.rsp_cd or "",
+                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
+                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
+                    raw_msg=msg,
+                    known=True,
+                )
+                await self._notify_order_reject(
+                    context, node_id, symbol, reject,
+                    node_type="KoreaStockNewOrderNode",
+                )
+                return self._order_result(
+                    False, symbol, "KRX", side, qty, price,
+                    f"Empty OrderNo: {msg}", reject_info=reject,
+                )
 
             context.log(
                 "info",
@@ -13111,9 +13421,47 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         except Exception as e:
             context.log("warning", f"Korea stock order exception: {e}", node_id)
+            reject = map_reject_code("korea_stock", "", str(e))
             return self._order_result(
-                False, symbol, "KRX", side, qty, price, str(e)
+                False, symbol, "KRX", side, qty, price, str(e), reject_info=reject,
             )
+
+    async def _notify_order_reject(
+        self,
+        context: ExecutionContext,
+        node_id: str,
+        symbol: str,
+        reject: OrderRejectInfo,
+        node_type: str = "OverseasStockNewOrderNode",
+    ) -> None:
+        """주문 거부 시 투자자 알림 1건 발행(on_notification).
+
+        on_log warning 과 별개로, AI/UI/텔레그램 소비자가 거부 사유(cause)와 대응
+        팁(tip)을 구조화 payload 로 받도록 한다. ``node_type`` 은 시장별 주문 노드
+        이름(해외주식/해외선물/국내주식)을 정확히 라벨링하기 위해 호출자가 전달한다.
+        """
+        try:
+            await context.send_notification(
+                # ORDER_REJECTED is the semantically correct category for a
+                # broker reject (RISK_ALERT means drawdown/risk-halt).
+                category=NotificationCategory.ORDER_REJECTED,
+                severity=NotificationSeverity.WARNING,
+                title=f"Order rejected: {symbol}",
+                message=f"{symbol} order rejected — {reject.cause}",
+                node_id=node_id,
+                node_type=node_type,
+                data={
+                    "symbol": symbol,
+                    "rsp_cd": reject.rsp_cd,
+                    "cause": reject.cause,
+                    "tip": reject.tip,
+                    "raw_msg": reject.raw_msg,
+                    "known": reject.known,
+                },
+            )
+        except Exception:
+            # 알림 전파 실패가 주문 결과 반환을 막아서는 안 된다.
+            pass
 
     def _order_result(
         self,
@@ -13125,8 +13473,15 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         price: float,
         error: Optional[str] = None,
         order_id: str = "",
+        reject_info: Optional[OrderRejectInfo] = None,
     ) -> Dict[str, Any]:
-        """단일 주문 결과 반환"""
+        """단일 주문 결과 반환.
+
+        ``error`` (기존 LS 원문 단일 문자열) 은 하위호환을 위해 그대로 유지하고,
+        구조화된 거부 진단(``rsp_cd`` / ``cause`` / ``tip`` / ``raw_msg`` / ``known``)
+        은 ``order_result.diagnostics`` 로 추가 동봉한다. AI 챗봇 소비자는
+        ``diagnostics`` 로 자가수정/안내를 결정적으로 분기할 수 있다.
+        """
         return {
             "order_result": {
                 "success": success,
@@ -13137,16 +13492,46 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 "price": price,
                 "status": "submitted" if success else "failed",
                 "error": error,
+                "diagnostics": reject_info.model_dump() if reject_info else None,
             },
             "order_id": order_id,
         }
 
-    def _empty_result(self) -> Dict[str, Any]:
-        """빈 결과 반환"""
+    # Human/AI-facing English explanations keyed by EmptyOrderReason.
+    _EMPTY_ORDER_MESSAGES: Dict[str, str] = {
+        EmptyOrderReason.NO_SIGNAL.value: (
+            "No trading signal today (upstream produced an empty result normally)."
+        ),
+        EmptyOrderReason.FETCH_FAILED.value: (
+            "Upstream data fetch failed; no order placed (pipeline error)."
+        ),
+        EmptyOrderReason.NO_SYMBOL.value: (
+            "No symbol provided to the order node (configuration missing)."
+        ),
+    }
+
+    def _empty_result(
+        self,
+        reason: EmptyOrderReason = EmptyOrderReason.NO_SIGNAL,
+        detail: str = "",
+    ) -> Dict[str, Any]:
+        """빈 주문 결과 반환.
+
+        ``reason`` (no_signal / fetch_failed / no_symbol) 로 "오늘 신호 없음(정상)"
+        과 "상류 파이프라인 고장(이상)" 을 결정적으로 구분한다. 기존 ``error`` 키는
+        하위호환을 위해 보존하되, reason 기반 영어 설명(``message``)을 추가한다.
+        ``detail`` 은 상류 error 원문 등 진단 부가정보(없으면 빈 문자열).
+        """
+        message = self._EMPTY_ORDER_MESSAGES.get(
+            reason.value, self._EMPTY_ORDER_MESSAGES[EmptyOrderReason.NO_SIGNAL.value]
+        )
         return {
             "order_result": {
                 "success": False,
                 "error": "No order to submit",
+                "reason": reason.value,
+                "message": message,
+                "detail": detail,
             },
             "order_id": "",
         }
