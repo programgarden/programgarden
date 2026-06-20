@@ -1,4 +1,6 @@
 ## [Unreleased]
+
+## [1.24.1] - 2026-06-20
 ### Added
 - **주문 거부 진단 + 빈주문 사유 구분** (order-error-mapping) — 라이브 런타임 주문 실패
   콜백 보강(core `order_diagnostics` 소비).
@@ -10,6 +12,28 @@
     (`no_signal`/`fetch_failed`/`no_symbol`)을 상류 출력(`context.get_all_outputs`) 조회로
     판정해 부여. 불확실 시 `fetch_failed` over-report 로 silent 미탐 방지.
   - 적용 마켓: 해외주식(COSAT00301) / 해외선물(CIDBT00100) / 국내주식(CSPAT00601).
+- **예제 86 / 86b — NASDAQ 추세매수 + 고정 5% HWM 트레일링스탑 라이브 워크플로우**
+  (`examples/workflows/`) — community TrailingStop v2.1.0 `trail_percent` 고정 % 모드를
+  실계좌 경로로 검증하는 변종(86b: 동전주 $1~2 라이브 매수경로). 러너 `--workflow` 파라미터화.
+
+### Fixed
+- **MarketData / Fundamental / Watchlist executor — list-of-dict symbol 바인딩 미해석 수정**
+  (`executor.py`) — 호스트 실키 라이브에서 확정된 버그: 메인 루프의 `_resolve_config_expressions`
+  가 쓰는 `evaluate_fields` 는 list 항목이 dict 이면 재귀하지 않아
+  `symbols=[{"symbol": "{{ ... }}"}]` 의 중첩 표현식이 literal 문자열로 남아 LS g3101 에
+  literal `{{ ... }}` 가 전달돼 HTTP 500 으로 실패(예제 86 매수경로 차단). 세 executor
+  진입부에 `evaluate_all_bindings`(dict/list 완전 재귀, 멱등) 추가. 형제 일관성 차원에서
+  **ExclusionListNodeExecutor** 의 manual `symbols` 바인딩 사각지대도 동일하게 닫음.
+- **`schedule_tick` 사이클 격리** (`executor.py`) — ScheduleNode 잡의 단일 사이클 노드 예외
+  (잔고 부분실패 `ConditionEvaluationError`, ScreenerNode silent-failure 가드 등)가
+  `_execute_main_flow` 밖으로 전파되어 `status=failed` 로 스케줄러가 통째로 종료되던 문제 수정
+  (무인 봇이 일시적 TR 오류 1번에 정지). 실패 사이클은 `errors_count` 증가 + error 로그 +
+  `cycle_failed` 잡 상태 통지(silent failure 금지) 후 다음 tick 재시도, 성공 사이클은 기존대로
+  `cycle_completed` 통지.
+
+### Dependencies
+- `programgarden-core` ^1.15.0 → ^1.15.1, `programgarden-finance` ^1.6.10 → ^1.6.11,
+  `programgarden-community` ^1.13.8 → ^1.13.9 — cross-package patch alignment bump.
 
 ## [1.24.0] - 2026-06-13
 ### Added

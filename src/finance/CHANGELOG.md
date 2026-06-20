@@ -1,4 +1,6 @@
 ## [Unreleased]
+
+## [1.6.11] - 2026-06-20
 ### Changed
 - **LS증권 2026-06-13 공지(업종TR 필드 자릿수 확대) 반영** — 코드에 실존하는
   TR 2개의 OutBlock 필드 메타데이터(description)만 갱신. 필드 타입은 `float`
@@ -18,6 +20,9 @@
   - **범위 외(미구현)**: t8402(주식선물현재가) 및 업종차트 리네임/삭제
     (t8417/t8418/t8419/t4203→t8408/t8409/t8429)은 finance 패키지에 미구현이라
     이번 변경에 미포함 — 별도 신규 TR 구현 작업으로 분리.
+### Dependencies
+- `programgarden-core` ^1.14.2 → ^1.15.1 — cross-package alignment (order reject
+  diagnostics / empty-order reason 모델, `NotificationCategory.ORDER_REJECTED`).
 
 ## [1.6.10] - 2026-06-06
 ### Added

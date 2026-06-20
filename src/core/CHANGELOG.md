@@ -1,4 +1,6 @@
 ## [Unreleased]
+
+## [1.15.1] - 2026-06-20
 ### Added
 - **Order reject diagnostics + empty-order reason 모델** (`programgarden_core.models.order_diagnostics`)
   — 라이브 런타임 주문 실패 콜백을 AI 챗봇 소비자가 파싱 없이 읽도록 구조화.

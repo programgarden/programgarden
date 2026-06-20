@@ -1,3 +1,17 @@
+## [1.13.9] - 2026-06-20
+### Added
+- **TrailingStop v2.1.0 — `trail_percent` 고정 % 모드 + HWM 자가 갱신**
+  (`plugins/trailing_stop/__init__.py`) — `trail_percent`(기본 `0.0`) 필드 추가:
+  `>0` 이면 고점(HWM) 대비 고정 % 하락 시 매도 신호(`drawdown >= trail_percent`).
+  `0` 이면 기존 `trail_ratio` 스케일링 동작 불변(`drawdown > threshold`, 최소 1% 바닥 유지).
+  플러그인이 `data` 행의 `close` 로 `risk_tracker.update_price` 를 직접 호출해 HWM 을
+  자가 갱신 — P&L 틱 리스너가 없는 스케줄 폴링 구성에서도 트레일링이 동작한다. 등록된
+  심볼만 `update_price` 를 호출해 미등록 외부 보유 종목의 HWM/price-window 오염을 차단.
+  단위 테스트 15건 신규(고정 모드 경계 / 자가 갱신 / 미등록 hold / 스케일링 회귀).
+### Dependencies
+- `programgarden-core` ^1.14.3 → ^1.15.1 — cross-package alignment (order reject
+  diagnostics / empty-order reason 모델, `NotificationCategory.ORDER_REJECTED`).
+
 ## [1.13.8] - 2026-06-01
 ### Fixed
 - **TurtleBreakout 플러그인 docstring 교정** (`plugins/turtle_breakout/__init__.py`) — `entry_signal` / `exit_signal` 등 출력 설명을 실제 동작값과 일치하도록 수정. 플러그인 로직·스키마 불변.
