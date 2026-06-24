@@ -6,6 +6,9 @@ from programgarden_finance.ls.token_manager import TokenManager
 from . import t1511
 from .t1511 import TrT1511
 from .t1511.blocks import T1511InBlock, T1511Request, T1511RequestHeader
+from . import t1514
+from .t1514 import TrT1514
+from .t1514.blocks import T1514InBlock, T1514Request, T1514RequestHeader
 from . import t1516
 from .t1516 import TrT1516
 from .t1516.blocks import T1516InBlock, T1516Request, T1516RequestHeader
@@ -71,6 +74,50 @@ class Sector:
 
     업종현재가 = t1511
     업종현재가.__doc__ = "업종코드로 업종 지수, 등락률, 거래량, 52주 고저가를 조회합니다."
+
+    @require_korean_alias
+    def t1514(
+        self,
+        body: T1514InBlock,
+        header: Optional[T1514RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1514:
+        """
+        업종기간별추이를 조회합니다.
+
+        업종코드로 해당 업종 지수의 기간별(일/주/월) 추이 시계열을 조회합니다.
+        각 기간 행은 지수 OHLC(jisu/openjisu/highjisu/lowjisu), 전일대비/등락률,
+        거래량/거래대금, 시장폭(상승/보합/하락/상한/하한 **종목수**), 외인·기관
+        순매수, 거래비중, 업종배당수익률을 포함합니다.
+
+        cts_date 기반 연속조회를 지원합니다(.req() 단건, .occurs_req() 전체).
+
+        Args:
+            body (T1514InBlock): upcode(업종코드), gubun2(주기 1일/2주/3월),
+                cnt(조회건수), rate_gbn(비중구분) 입력
+            header (Optional[T1514RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1514: 업종기간별추이 조회 인스턴스
+        """
+
+        request_data = T1514Request(
+            body={
+                "t1514InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1514(request_data)
+
+    업종기간별추이 = t1514
+    업종기간별추이.__doc__ = "업종코드로 업종 지수의 기간별(일/주/월) 추이(OHLC·등락률·거래량·시장폭·외인기관순매수)를 조회합니다."
 
     @require_korean_alias
     def t1516(
@@ -229,6 +276,7 @@ class Sector:
 __all__ = [
     Sector,
     t1511,
+    t1514,
     t1516,
     t1531,
     t1532,

@@ -1,5 +1,30 @@
 ## [Unreleased]
 
+## [1.6.12] - 2026-06-24
+### Added
+- **t1514 (업종기간별추이 / sector period trend)** — 신규 국내주식 업종 TR.
+  업종코드로 해당 업종 지수의 기간별(일/주/월) 추이 시계열을 조회한다. REST
+  엔드포인트는 다른 업종 TR(t1511/t1516)과 동일한 `POST /indtp/market-data`
+  (`KOREA_STOCK_INDTP_URL`). 응답 봉투는 t8451 차트 패턴과 동형:
+  `block`(=`t1514OutBlock`, `cts_date` 연속커서) + `block1`(=`t1514OutBlock1`,
+  기간 행 24필드). `cts_date` 기반 `.req()` 단건 / `.occurs_req()` 전체
+  연속조회 지원. 한글 별칭 경로 `LS().국내주식().업종테마().업종기간별추이(...)`.
+  - **챗봇 대비 필드 명료화(핵심)** — Korean 라벨이 가격처럼 보이지만 실제로는
+    업종 내 **종목 수(breadth count)** 인 필드를 description 에서 "NOT a price"
+    로 명시: `high`(상승)/`unchg`(보합)/`low`(하락)/`up`(상한)/`down`(하한)/
+    `totjo`(종목수). 업종 지수 OHLC 는 `jisu`/`openjisu`/`highjisu`/`lowjisu`
+    (`...jisu` 접미사)로 분리. 모든 필드 `Field(title 한영병기, description,
+    examples)` — OutBlock1 examples 는 LS 공식 샘플 응답(upcode 001, 20230605) 값.
+  - **에러 명료화** — `_build_response` 가 HTTP≥400(`error_msg="HTTP {status}: {rsp_msg}"`)
+    및 예외(`error_msg=str(exc)`) 시 명확한 사유를 채움(silent 실패 없음).
+  - **no-inference**: `gubun2` 의 '분'(분기?) 코드 / `value1`·`value2` 구분 /
+    통화단위 / `frgs`·`orgs` 부호 컨벤션 등 소스 미선언 항목은 추측하지 않고
+    "not declared in the available source" 로 명시.
+  - 패키지 export(`from programgarden_finance import t1514`) + `Sector` 메서드 +
+    예제 `example/korea_stock/run_t1514.py`(단건+연속) + 회귀 가드
+    `tests/test_korea_stock_t1514.py`(필드셋/examples/breadth-vs-OHLC/URL/에러/연속/
+    string→float 강제변환/종단페이지 block=None/연속 updater raise — 36 케이스).
+
 ## [1.6.11] - 2026-06-20
 ### Changed
 - **LS증권 2026-06-13 공지(업종TR 필드 자릿수 확대) 반영** — 코드에 실존하는

@@ -102,6 +102,7 @@ from .ls.korea_stock.program import t1637
 from .ls.korea_stock.program import t1640
 from .ls.korea_stock.program import t1662
 from .ls.korea_stock.sector import t1511
+from .ls.korea_stock.sector import t1514
 from .ls.korea_stock.sector import t1516
 from .ls.korea_stock.sector import t1531
 from .ls.korea_stock.sector import t1532
