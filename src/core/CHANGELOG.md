@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+## [1.15.2] - 2026-06-28
+### Changed
+- 배포 메타데이터: `pyproject` `license = "AGPL-3.0-or-later"`(PEP 639, 저장소 LICENSE 일치)를 PyPI 공개 메타데이터에 노출. 코드/동작 변경 없음 (metadata-only patch).
+
 ## [1.15.1] - 2026-06-20
 ### Added
 - **Order reject diagnostics + empty-order reason 모델** (`programgarden_core.models.order_diagnostics`)

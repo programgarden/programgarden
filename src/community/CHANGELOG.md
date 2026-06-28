@@ -1,3 +1,7 @@
+## [1.13.10] - 2026-06-28
+### Changed
+- 배포 메타데이터: `pyproject` `license = "AGPL-3.0-or-later"`(PEP 639, 저장소 LICENSE 일치)를 PyPI 공개 메타데이터에 노출. 코드/동작 변경 없음 (metadata-only patch).
+
 ## [1.13.9] - 2026-06-20
 ### Added
 - **TrailingStop v2.1.0 — `trail_percent` 고정 % 모드 + HWM 자가 갱신**
