@@ -7,7 +7,7 @@ authors = [
 ]
 homepage = "https://programgarden.com"
 readme = "README.md"
-license = { text = "MIT" }
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
 keywords = ["LS증권", "finance", "trading", "programgarden"]
 
