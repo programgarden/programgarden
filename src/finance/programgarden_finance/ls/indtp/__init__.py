@@ -12,6 +12,9 @@ from .t1514.blocks import T1514InBlock, T1514Request, T1514RequestHeader
 from . import t1516
 from .t1516 import TrT1516
 from .t1516.blocks import T1516InBlock, T1516Request, T1516RequestHeader
+from . import t8408
+from .t8408 import TrT8408
+from .t8408.blocks import T8408InBlock, T8408Request, T8408RequestHeader
 
 from programgarden_core.korea_alias import require_korean_alias
 
@@ -149,10 +152,57 @@ class Indtp:
     업종별종목시세 = t1516
     업종별종목시세.__doc__ = "업종코드로 해당 업종의 종목별 시세(현재가, 등락률, PER 등)를 조회합니다."
 
+    @require_korean_alias
+    def t8408(
+        self,
+        body: T8408InBlock,
+        header: Optional[T8408RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT8408:
+        """
+        업종차트(틱/n틱)를 조회합니다.
+
+        업종코드로 해당 업종 지수의 틱/N틱 차트를 조회합니다. 응답은 메타/커서
+        블록(cont_block = 전일·당일 지수 OHLC, 거래량, 연속커서, 장 시작/종료
+        시간, 레코드카운트)과 틱 행 리스트(block = 각 봉의 날짜/시간/지수
+        OHLC/거래량)로 구성됩니다.
+
+        주의: 모든 OHLC 값은 업종 지수(index points)이며 KRW 가격이 아닙니다.
+
+        cts_date/cts_time 기반 연속조회를 지원합니다(.req() 단건, .occurs_req() 전체).
+
+        Args:
+            body (T8408InBlock): shcode(업종코드), ncnt(N틱 단위), qrycnt(요청건수),
+                nday(조회영업일수), sdate/edate(조회기간), comp_yn(압축여부) 입력
+            header (Optional[T8408RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT8408: 업종차트(틱/n틱) 조회 인스턴스
+        """
+
+        request_data = T8408Request(
+            body={
+                "t8408InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT8408(request_data)
+
+    업종차트틱 = t8408
+    업종차트틱.__doc__ = "업종코드로 업종 지수의 틱/N틱 차트(지수 OHLC·거래량)를 조회합니다."
+
 
 __all__ = [
     Indtp,
     t1511,
     t1514,
     t1516,
+    t8408,
 ]

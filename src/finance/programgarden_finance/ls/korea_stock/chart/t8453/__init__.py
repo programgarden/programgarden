@@ -92,69 +92,31 @@ class TrT8453(TRRequestAbstract, OccursReqAbstract):
         return await self._generic.req_async()
 
     def occurs_req(self, callback: Optional[Callable[[Optional[T8453Response], RequestStatus], None]] = None, delay: int = 1) -> list[T8453Response]:
-        """동기 방식으로 (통합)주식챠트(틱/N틱) API용 전체를 연속조회합니다."""
+        """동기 방식으로 (통합)주식챠트(틱/N틱) API용 전체를 연속조회합니다.
+
+        cts_date / cts_time 커서 기반으로 자동 페이징하여 모든 페이지를 수집합니다.
+        """
         def _updater(req_data, resp: T8453Response):
             if resp.header is None or resp.cont_block is None:
                 raise ValueError("t8453 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
-            req_data.body["t8453InBlock"].shcode = resp.cont_block.shcode
-            req_data.body["t8453InBlock"].jisiga = resp.cont_block.jisiga
-            req_data.body["t8453InBlock"].jihigh = resp.cont_block.jihigh
-            req_data.body["t8453InBlock"].jilow = resp.cont_block.jilow
-            req_data.body["t8453InBlock"].jicloseㅍ = resp.cont_block.jicloseㅍ
-            req_data.body["t8453InBlock"].jivolume = resp.cont_block.jivolume
-            req_data.body["t8453InBlock"].disiga = resp.cont_block.disiga
-            req_data.body["t8453InBlock"].dihigh = resp.cont_block.dihigh
-            req_data.body["t8453InBlock"].dilow = resp.cont_block.dilow
-            req_data.body["t8453InBlock"].diclose = resp.cont_block.diclose
-            req_data.body["t8453InBlock"].highend = resp.cont_block.highend
-            req_data.body["t8453InBlock"].lowend = resp.cont_block.lowend
             req_data.body["t8453InBlock"].cts_date = resp.cont_block.cts_date
             req_data.body["t8453InBlock"].cts_time = resp.cont_block.cts_time
-            req_data.body["t8453InBlock"].s_time = resp.cont_block.s_time
-            req_data.body["t8453InBlock"].e_time = resp.cont_block.e_time
-            req_data.body["t8453InBlock"].dshmin = resp.cont_block.dshmin
-            req_data.body["t8453InBlock"].rec_count = resp.cont_block.rec_count
-            req_data.body["t8453InBlock"].nxt_fm_s_time = resp.cont_block.nxt_fm_s_time
-            req_data.body["t8453InBlock"].nxt_fm_e_time = resp.cont_block.nxt_fm_e_time
-            req_data.body["t8453InBlock"].nxt_fm_dshmin = resp.cont_block.nxt_fm_dshmin
-            req_data.body["t8453InBlock"].nxt_am_s_time = resp.cont_block.nxt_am_s_time
-            req_data.body["t8453InBlock"].nxt_am_e_time = resp.cont_block.nxt_am_e_time
-            req_data.body["t8453InBlock"].nxt_am_dshmin = resp.cont_block.nxt_am_dshmin
         return self._generic.occurs_req(_updater, callback=callback, delay=delay)
 
     async def occurs_req_async(self, callback: Optional[Callable[[Optional[T8453Response], RequestStatus], None]] = None, delay: int = 1) -> list[T8453Response]:
-        """비동기 방식으로 (통합)주식챠트(틱/N틱) API용 전체를 연속조회합니다."""
+        """비동기 방식으로 (통합)주식챠트(틱/N틱) API용 전체를 연속조회합니다.
+
+        cts_date / cts_time 커서 기반으로 자동 페이징하여 모든 페이지를 수집합니다.
+        """
         def _updater(req_data, resp: T8453Response):
             if resp.header is None or resp.cont_block is None:
                 raise ValueError("t8453 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
-            req_data.body["t8453InBlock"].shcode = resp.cont_block.shcode
-            req_data.body["t8453InBlock"].jisiga = resp.cont_block.jisiga
-            req_data.body["t8453InBlock"].jihigh = resp.cont_block.jihigh
-            req_data.body["t8453InBlock"].jilow = resp.cont_block.jilow
-            req_data.body["t8453InBlock"].jicloseㅍ = resp.cont_block.jicloseㅍ
-            req_data.body["t8453InBlock"].jivolume = resp.cont_block.jivolume
-            req_data.body["t8453InBlock"].disiga = resp.cont_block.disiga
-            req_data.body["t8453InBlock"].dihigh = resp.cont_block.dihigh
-            req_data.body["t8453InBlock"].dilow = resp.cont_block.dilow
-            req_data.body["t8453InBlock"].diclose = resp.cont_block.diclose
-            req_data.body["t8453InBlock"].highend = resp.cont_block.highend
-            req_data.body["t8453InBlock"].lowend = resp.cont_block.lowend
             req_data.body["t8453InBlock"].cts_date = resp.cont_block.cts_date
             req_data.body["t8453InBlock"].cts_time = resp.cont_block.cts_time
-            req_data.body["t8453InBlock"].s_time = resp.cont_block.s_time
-            req_data.body["t8453InBlock"].e_time = resp.cont_block.e_time
-            req_data.body["t8453InBlock"].dshmin = resp.cont_block.dshmin
-            req_data.body["t8453InBlock"].rec_count = resp.cont_block.rec_count
-            req_data.body["t8453InBlock"].nxt_fm_s_time = resp.cont_block.nxt_fm_s_time
-            req_data.body["t8453InBlock"].nxt_fm_e_time = resp.cont_block.nxt_fm_e_time
-            req_data.body["t8453InBlock"].nxt_fm_dshmin = resp.cont_block.nxt_fm_dshmin
-            req_data.body["t8453InBlock"].nxt_am_s_time = resp.cont_block.nxt_am_s_time
-            req_data.body["t8453InBlock"].nxt_am_e_time = resp.cont_block.nxt_am_e_time
-            req_data.body["t8453InBlock"].nxt_am_dshmin = resp.cont_block.nxt_am_dshmin
         return await self._generic.occurs_req_async(_updater, callback=callback, delay=delay)
 
 
