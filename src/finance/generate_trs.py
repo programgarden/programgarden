@@ -12,8 +12,8 @@ BASE_DIR = Path("programgarden_finance/ls/korea_stock")
 # TR → (category, url_const, rate_limit_count, rate_limit_seconds)
 TR_CONFIG = {
     "t1482": ("ranking", "KOREA_STOCK_HIGH_ITEM_URL", 1, 1),
-    "t1511": ("market", "KOREA_STOCK_MARKET_URL", 10, 1),
-    "t1516": ("market", "KOREA_STOCK_MARKET_URL", 1, 1),
+    # t1511/t1514/t1516 업종(indtp) TR 은 ls/indtp/ 신규 최상위 도메인으로 이전됨
+    # (korea_stock 스코프 생성기에서 재생성하면 deprecation shim 을 덮어쓰므로 제외).
     "t1531": ("market", "KOREA_STOCK_MARKET_URL", 1, 1),
     "t1532": ("market", "KOREA_STOCK_MARKET_URL", 1, 1),
     "t1537": ("market", "KOREA_STOCK_MARKET_URL", 1, 1),

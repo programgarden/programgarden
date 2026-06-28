@@ -37,7 +37,7 @@ from typing import Dict, Literal, Optional
 from pydantic import BaseModel, PrivateAttr, Field
 from requests import Response
 
-from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
+from ...models import BlockRequestHeader, BlockResponseHeader, SetupOptions
 
 
 class T1511RequestHeader(BlockRequestHeader):

@@ -1,4 +1,14 @@
 ## [Unreleased]
+### Changed
+- **업종(indtp) TR t1511/t1514/t1516 을 `ls.indtp()`/`ls.업종()` 신규 최상위
+  도메인으로 이전** — LS 게이트웨이가 이미 `/indtp/` 를 `/stock/` 의 형제 최상위
+  URL 네임스페이스로 분리해 둔 것에 맞춰, 업종 3 TR 을 `korea_stock/sector/` 에서
+  신규 `ls/indtp/` 패키지로 이동하고 `Indtp` 클래스(`ls.indtp()`/`ls.업종()`)로
+  승격. URL 라우팅(`KOREA_STOCK_INDTP_URL`, `/indtp/market-data`)·블록 스키마는
+  불변. 테마(t1531/t1532/t1537)는 `/stock/sector` 의 `Sector` 클래스에 그대로 잔류.
+  - **하위호환(clean break 아님)**: 기존 `ls.국내주식().업종테마().업종현재가()`
+    등 fluent 경로 및 최상위 `from programgarden_finance import t1511` 경로는
+    DeprecationWarning 위임 shim 으로 동일 객체를 반환(finance 2.0 에서 제거 예정).
 
 ## [1.6.12] - 2026-06-24
 ### Added

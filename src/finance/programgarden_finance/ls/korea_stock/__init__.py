@@ -88,7 +88,7 @@ class KoreaStock:
         return Sector(token_manager=self.token_manager)
 
     업종테마 = sector
-    업종테마.__doc__ = "업종/테마 현재가, 종목시세, 테마별종목을 조회합니다."
+    업종테마.__doc__ = "테마(테마별종목/종목별테마/테마종목별시세) 및 deprecated 업종 경유 조회. 업종은 ls.업종() 로 이전됨."
 
     @require_korean_alias
     def investor(self) -> Investor:

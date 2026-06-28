@@ -25,6 +25,8 @@ def test_req_t1511():
         return
 
     # 코스피(001) 업종현재가 조회
+    # 신경로: ls.업종().업종현재가(...) (= ls.indtp().t1511(...)) 로 이전됨.
+    # 아래 ls.국내주식().업종테마() 경유는 deprecation shim 으로 동작하며 finance 2.0 에서 제거 예정.
     m = ls.국내주식().업종테마().업종현재가(
         t1511.T1511InBlock(upcode="001")
     )
