@@ -1,4 +1,31 @@
-## [Unreleased]
+## [1.6.13] - 2026-06-28
+### Added
+- **t8408 업종차트(틱/n틱) TR 추가 (sector index tick/N-tick chart)** — 신규
+  국내주식 업종(indtp) TR. 업종코드로 해당 업종 지수의 틱/n틱 차트 시계열을
+  조회한다. REST 엔드포인트는 시세계열 업종 TR(t1511/t1514/t1516)의
+  `/indtp/market-data`(`KOREA_STOCK_INDTP_URL`)와 **다른** 차트 전용
+  `POST /indtp/chart`(`KOREA_STOCK_INDTP_CHART_URL`). 응답 봉투는 t8453 차트
+  패턴과 동형: `cont_block`(=`t8408OutBlock`, `cts_date`/`cts_time` 연속커서) +
+  `block`(=`t8408OutBlock1`, 틱 행). `.req()` 단건 / `.occurs_req()` 전체
+  연속조회 지원. 노출 경로 `ls.indtp().업종차트틱(...)` / `ls.업종().업종차트틱(...)`
+  및 최상위 `from programgarden_finance import t8408`(import-only).
+  - **챗봇 대비 필드 명료화(핵심)** — OHLC 는 업종 **지수(index points)** 이며
+    KRW 가격이 아님을 description 에서 명시("NOT a price"). LS 가 지수 OHLC 를
+    JSON string 으로 직렬화하는 값은 Pydantic v2 가 `float` 로 auto-coerce.
+  - 회귀 가드 `tests/test_korea_stock_t8408.py`(필드셋/examples/URL=`/indtp/chart`/
+    string→float 강제변환/연속조회 updater) + 예제 `example/korea_stock/run_t8408.py`
+    (단건+연속).
+
+### Changed
+- **업종(indtp) TR t1511/t1514/t1516 을 `ls.indtp()`/`ls.업종()` 신규 최상위
+  도메인으로 이전** — LS 게이트웨이가 이미 `/indtp/` 를 `/stock/` 의 형제 최상위
+  URL 네임스페이스로 분리해 둔 것에 맞춰, 업종 3 TR 을 `korea_stock/sector/` 에서
+  신규 `ls/indtp/` 패키지로 이동하고 `Indtp` 클래스(`ls.indtp()`/`ls.업종()`)로
+  승격. URL 라우팅(`KOREA_STOCK_INDTP_URL`, `/indtp/market-data`)·블록 스키마는
+  불변. 테마(t1531/t1532/t1537)는 `/stock/sector` 의 `Sector` 클래스에 그대로 잔류.
+  - **하위호환(clean break 아님)**: 기존 `ls.국내주식().업종테마().업종현재가()`
+    등 fluent 경로 및 최상위 `from programgarden_finance import t1511` 경로는
+    DeprecationWarning 위임 shim 으로 동일 객체를 반환(finance 2.0 에서 제거 예정).
 
 ## [1.6.12] - 2026-06-24
 ### Added

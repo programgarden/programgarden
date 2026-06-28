@@ -29,8 +29,8 @@ import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from programgarden_finance.ls.config import URLS
-from programgarden_finance.ls.korea_stock.sector.t1514 import TrT1514
-from programgarden_finance.ls.korea_stock.sector.t1514.blocks import (
+from programgarden_finance.ls.indtp.t1514 import TrT1514
+from programgarden_finance.ls.indtp.t1514.blocks import (
     T1514InBlock,
     T1514OutBlock,
     T1514OutBlock1,

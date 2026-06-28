@@ -45,6 +45,7 @@ class URLS:
     KOREA_STOCK_FRGR_ITT_URL = f"{LS_URL}/stock/frgr-itt"
     KOREA_STOCK_SECTOR_URL = f"{LS_URL}/stock/sector"
     KOREA_STOCK_INDTP_URL = f"{LS_URL}/indtp/market-data"
+    KOREA_STOCK_INDTP_CHART_URL = f"{LS_URL}/indtp/chart"
     KOREA_STOCK_INVESTOR_URL = f"{LS_URL}/stock/investor"
     KOREA_STOCK_PROGRAM_URL = f"{LS_URL}/stock/program"
 

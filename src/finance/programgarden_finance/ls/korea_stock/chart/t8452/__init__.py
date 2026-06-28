@@ -98,30 +98,8 @@ class TrT8452(TRRequestAbstract, OccursReqAbstract):
                 raise ValueError("t8452 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
-            req_data.body["t8452InBlock"].shcode = resp.cont_block.shcode
-            req_data.body["t8452InBlock"].jisiga = resp.cont_block.jisiga
-            req_data.body["t8452InBlock"].jihigh = resp.cont_block.jihigh
-            req_data.body["t8452InBlock"].jilow = resp.cont_block.jilow
-            req_data.body["t8452InBlock"].jiclosev = resp.cont_block.jiclosev
-            req_data.body["t8452InBlock"].jivolume = resp.cont_block.jivolume
-            req_data.body["t8452InBlock"].disiga = resp.cont_block.disiga
-            req_data.body["t8452InBlock"].dihigh = resp.cont_block.dihigh
-            req_data.body["t8452InBlock"].dilow = resp.cont_block.dilow
-            req_data.body["t8452InBlock"].diclose = resp.cont_block.diclose
-            req_data.body["t8452InBlock"].highend = resp.cont_block.highend
-            req_data.body["t8452InBlock"].lowend = resp.cont_block.lowend
             req_data.body["t8452InBlock"].cts_date = resp.cont_block.cts_date
             req_data.body["t8452InBlock"].cts_time = resp.cont_block.cts_time
-            req_data.body["t8452InBlock"].s_time = resp.cont_block.s_time
-            req_data.body["t8452InBlock"].e_time = resp.cont_block.e_time
-            req_data.body["t8452InBlock"].dshmin = resp.cont_block.dshmin
-            req_data.body["t8452InBlock"].rec_count = resp.cont_block.rec_count
-            req_data.body["t8452InBlock"].nxt_fm_s_time = resp.cont_block.nxt_fm_s_time
-            req_data.body["t8452InBlock"].nxt_fm_e_time = resp.cont_block.nxt_fm_e_time
-            req_data.body["t8452InBlock"].nxt_fm_dshmin = resp.cont_block.nxt_fm_dshmin
-            req_data.body["t8452InBlock"].nxt_am_s_time = resp.cont_block.nxt_am_s_time
-            req_data.body["t8452InBlock"].nxt_am_e_time = resp.cont_block.nxt_am_e_time
-            req_data.body["t8452InBlock"].nxt_am_dshmin = resp.cont_block.nxt_am_dshmin
         return self._generic.occurs_req(_updater, callback=callback, delay=delay)
 
     async def occurs_req_async(self, callback: Optional[Callable[[Optional[T8452Response], RequestStatus], None]] = None, delay: int = 1) -> list[T8452Response]:
@@ -131,30 +109,8 @@ class TrT8452(TRRequestAbstract, OccursReqAbstract):
                 raise ValueError("t8452 response missing continuation data")
             req_data.header.tr_cont_key = resp.header.tr_cont_key
             req_data.header.tr_cont = resp.header.tr_cont
-            req_data.body["t8452InBlock"].shcode = resp.cont_block.shcode
-            req_data.body["t8452InBlock"].jisiga = resp.cont_block.jisiga
-            req_data.body["t8452InBlock"].jihigh = resp.cont_block.jihigh
-            req_data.body["t8452InBlock"].jilow = resp.cont_block.jilow
-            req_data.body["t8452InBlock"].jiclosev = resp.cont_block.jiclosev
-            req_data.body["t8452InBlock"].jivolume = resp.cont_block.jivolume
-            req_data.body["t8452InBlock"].disiga = resp.cont_block.disiga
-            req_data.body["t8452InBlock"].dihigh = resp.cont_block.dihigh
-            req_data.body["t8452InBlock"].dilow = resp.cont_block.dilow
-            req_data.body["t8452InBlock"].diclose = resp.cont_block.diclose
-            req_data.body["t8452InBlock"].highend = resp.cont_block.highend
-            req_data.body["t8452InBlock"].lowend = resp.cont_block.lowend
             req_data.body["t8452InBlock"].cts_date = resp.cont_block.cts_date
             req_data.body["t8452InBlock"].cts_time = resp.cont_block.cts_time
-            req_data.body["t8452InBlock"].s_time = resp.cont_block.s_time
-            req_data.body["t8452InBlock"].e_time = resp.cont_block.e_time
-            req_data.body["t8452InBlock"].dshmin = resp.cont_block.dshmin
-            req_data.body["t8452InBlock"].rec_count = resp.cont_block.rec_count
-            req_data.body["t8452InBlock"].nxt_fm_s_time = resp.cont_block.nxt_fm_s_time
-            req_data.body["t8452InBlock"].nxt_fm_e_time = resp.cont_block.nxt_fm_e_time
-            req_data.body["t8452InBlock"].nxt_fm_dshmin = resp.cont_block.nxt_fm_dshmin
-            req_data.body["t8452InBlock"].nxt_am_s_time = resp.cont_block.nxt_am_s_time
-            req_data.body["t8452InBlock"].nxt_am_e_time = resp.cont_block.nxt_am_e_time
-            req_data.body["t8452InBlock"].nxt_am_dshmin = resp.cont_block.nxt_am_dshmin
         return await self._generic.occurs_req_async(_updater, callback=callback, delay=delay)
 
 

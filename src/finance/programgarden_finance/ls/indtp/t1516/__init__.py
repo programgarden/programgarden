@@ -5,7 +5,7 @@ import aiohttp
 from programgarden_core.exceptions import TrRequestDataNotFoundException
 import logging
 
-logger = logging.getLogger("programgarden.ls.korea_stock.sector.t1516")
+logger = logging.getLogger("programgarden.ls.indtp.t1516")
 from .blocks import (
     T1516InBlock,
     T1516OutBlock,
@@ -14,8 +14,8 @@ from .blocks import (
     T1516Response,
     T1516ResponseHeader,
 )
-from ....tr_base import OccursReqAbstract, TRRequestAbstract
-from ....tr_helpers import GenericTR
+from ...tr_base import OccursReqAbstract, TRRequestAbstract
+from ...tr_helpers import GenericTR
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.status import RequestStatus
 

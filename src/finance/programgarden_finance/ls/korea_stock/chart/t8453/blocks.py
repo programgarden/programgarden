@@ -160,7 +160,7 @@ class T8453OutBlock(BaseModel):
         description="Previous trading day's low price.",
         examples=[77800],
     )
-    jiclosev: int = Field(
+    jiclose: int = Field(
         default=0,
         title="전일종가 (Previous-day close)",
         description="Previous trading day's closing price.",

@@ -25,7 +25,7 @@ from typing import Type
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from programgarden_finance.ls.korea_stock.sector.t1511.blocks import (
+from programgarden_finance.ls.indtp.t1511.blocks import (
     T1511InBlock,
     T1511OutBlock,
     T1511Request,
@@ -150,7 +150,7 @@ def test_t1511_module_docstring_reflects_declared_scale():
 
     LS 2026-06-13 공지로 10.2 가 선언되었음을 반영해야 한다.
     """
-    import programgarden_finance.ls.korea_stock.sector.t1511.blocks as m
+    import programgarden_finance.ls.indtp.t1511.blocks as m
 
     doc = m.__doc__ or ""
     assert "10.2" in doc, "module docstring must declare the 10.2 scale"
