@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+## [1.24.2] - 2026-06-28
+### Changed
+- 배포 메타데이터: `pyproject` `license = "AGPL-3.0-or-later"`(PEP 639, 저장소 LICENSE 일치)를 PyPI 공개 메타데이터에 노출. 코드/동작 변경 없음 (metadata-only patch). 루트 `pyproject.toml` 버전도 1.24.2 동기화.
+
 ## [1.24.1] - 2026-06-20
 ### Added
 - **주문 거부 진단 + 빈주문 사유 구분** (order-error-mapping) — 라이브 런타임 주문 실패
