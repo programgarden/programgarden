@@ -40,7 +40,7 @@ class ExchangeRegistry:
         
         # 기본 LS증권 거래소 로드
         self._load_ls_exchanges()
-    
+
     def _load_ls_exchanges(self):
         """LS증권 기본 거래소 매핑 로드"""
         
@@ -138,7 +138,7 @@ class ExchangeRegistry:
         
         self.register_exchanges("ls", ProductType.OVERSEAS_STOCK, ls_overseas_stock)
         self.register_exchanges("ls", ProductType.OVERSEAS_FUTURES, ls_overseas_futures)
-    
+
     def register_exchanges(
         self, 
         broker: str, 
@@ -209,7 +209,7 @@ class ExchangeRegistry:
         # 해외선물: CME 기본
         if product == ProductType.OVERSEAS_FUTURES:
             return "CME" if "CME" in exchanges else exchanges[0]
-        
+
         return exchanges[0]
 
 
@@ -236,7 +236,7 @@ class SymbolEntry(BaseModel):
         # 해외주식: 코드+심볼 (예: 82AAPL)
         if product == ProductType.OVERSEAS_STOCK:
             return f"{code}{self.symbol}"
-        
+
         # 해외선물: 심볼만 (거래소는 별도 필드)
         return self.symbol
     
