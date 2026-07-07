@@ -15660,6 +15660,153 @@ class SQLiteNodeExecutor(NodeExecutorBase):
             }
 
 
+class CodeNodeError(Exception):
+    """Raised by CodeNodeExecutor so the main loop records a structured
+    CODE_NODE_* ErrorInfo (chatbot consumer contract — no silent failure).
+
+    Carries the specific ErrorCode plus an actionable English suggestion and
+    diagnostics (line/traceback) drawn from the compile/screen/exec pipeline.
+    """
+
+    def __init__(self, error_code, message: str, *, suggestion: Optional[str] = None,
+                 line: Optional[int] = None, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.error_code = error_code
+        self.suggestion = suggestion
+        self.line = line
+        self.details = details or {}
+
+
+class CodeNodeExecutor(NodeExecutorBase):
+    """Executor for CodeNode — always runs the user code in a credential-free
+    subprocess (see `programgarden.code_worker`).
+
+    Pipeline: gate check → evaluate data/params bindings → build a scrubbed
+    context snapshot → dispatch to the worker pool → map the return dict onto
+    the declared output ports (missing declared port → warn + None; no declared
+    outputs → whole value on `result`). Any failure raises CodeNodeError with a
+    structured CODE_NODE_* code.
+    """
+
+    @staticmethod
+    def _build_ctx_snapshot(context: ExecutionContext) -> Dict[str, Any]:
+        """Credential-free, JSON-safe snapshot handed to the child (Contract 1).
+
+        Contains ONLY safe workflow meta + a risk-tracker read snapshot. No app
+        keys, broker, session, or executor references are ever included.
+        """
+        snap: Dict[str, Any] = {
+            "job_id": getattr(context, "job_id", None),
+            "dry_run": bool(getattr(context, "is_dry_run", False)),
+            "iteration_index": int(getattr(context, "_iteration_index", 0) or 0),
+            "iteration_total": int(getattr(context, "_iteration_total", 0) or 0),
+            "risk": {},
+        }
+        try:
+            rt = context.risk_tracker
+            if rt is not None and hasattr(rt, "get_all_hwm"):
+                hwm: Dict[str, Any] = {}
+                for sym, st in (rt.get_all_hwm() or {}).items():
+                    hwm[sym] = {
+                        "hwm_price": float(getattr(st, "hwm_price", 0) or 0),
+                        "current_price": float(getattr(st, "current_price", 0) or 0),
+                        "drawdown_pct": float(getattr(st, "drawdown_pct", 0) or 0),
+                    }
+                snap["risk"] = {"hwm": hwm}
+        except Exception:
+            pass
+        return snap
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        from programgarden_core.models.validation import ErrorCode
+        from programgarden.code_worker import run_code_node_sandboxed
+
+        # Gate (opt-out only). Default ON.
+        if not getattr(context, "allow_code_node", True):
+            raise CodeNodeError(
+                ErrorCode.CODE_NODE_DISABLED,
+                f"CodeNode '{node_id}' cannot run: code nodes are disabled in this environment.",
+                suggestion="Construct WorkflowExecutor(allow_code_node=True) to enable CodeNode, or remove the node.",
+            )
+
+        code = config.get("code") or ""
+
+        # Evaluate ONLY data/params bindings — never touch `code` (it is
+        # FIXED_ONLY Python source that may contain brace-like text).
+        bindables = {"data": config.get("data"), "params": config.get("params") or {}}
+        evaluated = evaluate_all_bindings(bindables, context, node_id)
+        data = evaluated.get("data")
+        params = evaluated.get("params") or {}
+
+        declared = [
+            o["name"] for o in (config.get("outputs") or [])
+            if isinstance(o, dict) and o.get("name")
+        ]
+
+        ctx_snapshot = self._build_ctx_snapshot(context)
+
+        # Dispatch to the (blocking) worker pool off the event loop.
+        env = await asyncio.to_thread(
+            run_code_node_sandboxed,
+            code=code,
+            node_id=node_id,
+            data=data,
+            params=params,
+            ctx_snapshot=ctx_snapshot,
+            allowed_imports=None,
+        )
+
+        if not env.get("ok"):
+            code_str = env.get("error_code") or "CODE_NODE_EXEC_ERROR"
+            try:
+                err_code = ErrorCode(code_str)
+            except ValueError:
+                err_code = ErrorCode.CODE_NODE_EXEC_ERROR
+            raise CodeNodeError(
+                err_code,
+                env.get("message") or "CodeNode failed.",
+                suggestion=env.get("suggestion"),
+                line=env.get("line"),
+                details={"traceback": env.get("traceback")} if env.get("traceback") else {},
+            )
+
+        value = env.get("value")
+
+        # Map return → declared ports. No declared ports → whole value on result.
+        if not declared:
+            return {"result": value}
+
+        out: Dict[str, Any] = {}
+        if isinstance(value, dict):
+            for name in declared:
+                if name in value:
+                    out[name] = value[name]
+                else:
+                    context.log(
+                        "warning",
+                        f"CodeNode '{node_id}' declared output '{name}' is missing from the return dict (→ None).",
+                        node_id,
+                    )
+                    out[name] = None
+        else:
+            context.log(
+                "warning",
+                f"CodeNode '{node_id}' returned a non-dict value; mapping it to the first declared port '{declared[0]}'.",
+                node_id,
+            )
+            out[declared[0]] = value
+            for name in declared[1:]:
+                out[name] = None
+        return out
+
+
 class WorkflowExecutor:
     """
     Workflow execution engine
@@ -15671,10 +15818,14 @@ class WorkflowExecutor:
     - Dynamic node injection support (Dynamic_ prefix nodes)
     """
 
-    def __init__(self):
+    def __init__(self, allow_code_node: bool = True):
         self.resolver = WorkflowResolver()
         self._jobs: Dict[str, "WorkflowJob"] = {}
         self._executors: Dict[str, NodeExecutorBase] = self._init_executors()
+        # CodeNode gate — opt-out only (default ON). When False, a workflow that
+        # contains a CodeNode is rejected at execute() with CODE_NODE_DISABLED
+        # (for validation-only services that must never run user code).
+        self.allow_code_node = allow_code_node
         # 동적 노드 레지스트리 (지연 임포트로 순환 참조 방지)
         self._dynamic_registry = None
         # Opt-in LS token provider (Verified League §3.2.3). When set, broker
@@ -15781,6 +15932,7 @@ class WorkflowExecutor:
             "KoreaStockRealOrderEventNode": RealOrderEventNodeExecutor(),
             # Data nodes
             "SQLiteNode": SQLiteNodeExecutor(),
+            "CodeNode": CodeNodeExecutor(),  # custom Python code (subprocess-isolated)
             # External market data nodes (credential 불필요, 외부 API)
             "CurrencyRateNode": GenericNodeExecutor(),
             # Market Status (JIF, broker credential type 무관)
@@ -15949,6 +16101,8 @@ class WorkflowExecutor:
             storage_dir=storage_dir,
             ls_token_provider=self.ls_token_provider,
         )
+        # Propagate the CodeNode gate to the context so CodeNodeExecutor can read it.
+        context.allow_code_node = self.allow_code_node
 
         # Set listeners (Option A: inject at creation)
         if listeners:
@@ -17451,25 +17605,47 @@ class WorkflowJob:
                 # deep_validate uses a dedicated error code so chatbot consumers
                 # can tell virtual-full-execution failures apart from a plain
                 # dry_run runtime error; details carries the stage for triage.
-                _err_code = (
-                    ErrorCode.DEEP_VALIDATION_NODE_ERROR
-                    if _is_deep
-                    else ErrorCode.DRY_RUN_RUNTIME_ERROR
-                )
-                self._node_error_infos[node_id] = build_error(
-                    _err_code,
-                    f"Node '{node_id}' ({node.node_type}) raised during execution: {error_msg}",
-                    location=ErrorLocation(node_id=node_id, node_type=node.node_type),
-                    details={
-                        "exception_type": type(e).__name__,
-                        "raw_message": error_msg,
-                        "timestamp": error_ts,
-                        "duration_ms": duration_ms,
-                        "dry_run": bool(getattr(self.context, "is_dry_run", False)),
-                        "deep_validate": _is_deep,
-                        "stage": "node_execution",
-                    },
-                )
+                # CodeNodeError carries its own specific CODE_NODE_* code (syntax
+                # / forbidden / no-execute / exec / disabled) — surface that
+                # verbatim so the chatbot self-corrects the actual cause.
+                if isinstance(e, CodeNodeError):
+                    self._node_error_infos[node_id] = build_error(
+                        e.error_code,
+                        f"CodeNode '{node_id}' failed: {error_msg}",
+                        location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                        suggestion=e.suggestion,
+                        details={
+                            "exception_type": "CodeNodeError",
+                            "raw_message": error_msg,
+                            "timestamp": error_ts,
+                            "duration_ms": duration_ms,
+                            "dry_run": bool(getattr(self.context, "is_dry_run", False)),
+                            "deep_validate": _is_deep,
+                            "line": e.line,
+                            "stage": "code_node_execution",
+                            **(e.details or {}),
+                        },
+                    )
+                else:
+                    _err_code = (
+                        ErrorCode.DEEP_VALIDATION_NODE_ERROR
+                        if _is_deep
+                        else ErrorCode.DRY_RUN_RUNTIME_ERROR
+                    )
+                    self._node_error_infos[node_id] = build_error(
+                        _err_code,
+                        f"Node '{node_id}' ({node.node_type}) raised during execution: {error_msg}",
+                        location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                        details={
+                            "exception_type": type(e).__name__,
+                            "raw_message": error_msg,
+                            "timestamp": error_ts,
+                            "duration_ms": duration_ms,
+                            "dry_run": bool(getattr(self.context, "is_dry_run", False)),
+                            "deep_validate": _is_deep,
+                            "stage": "node_execution",
+                        },
+                    )
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
@@ -17507,6 +17683,7 @@ class WorkflowJob:
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
         "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
+        "CodeNode",  # custom code: receives the whole array in `data`, loops in-code (one subprocess call)
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
     }
 

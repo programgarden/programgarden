@@ -33,7 +33,7 @@ except ImportError:
     _COMMUNITY_AVAILABLE = False
 
 
-TARGET_NODE_COUNT = 73
+TARGET_NODE_COUNT = 74
 
 
 def _all_types() -> List[str]:

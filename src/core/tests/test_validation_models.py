@@ -41,8 +41,12 @@ def test_error_code_count_matches_matrix() -> None:
     # DEEP_VALIDATION_FLOW_BROKEN, DEEP_VALIDATION_BINDING_UNRESOLVED) = 32,
     # + 4 semantic/safety layer codes (SEMANTIC_ORDER_QTY_FROM_AI,
     # SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA, SEMANTIC_HARDCODED_ORDER_QTY,
-    # SEMANTIC_ORDER_IGNORED_FIELD) = 36.
-    assert len(list(ErrorCode)) == 36
+    # SEMANTIC_ORDER_IGNORED_FIELD) = 36,
+    # + 5 CodeNode codes (CODE_NODE_SYNTAX_ERROR, CODE_NODE_FORBIDDEN,
+    # CODE_NODE_NO_EXECUTE, CODE_NODE_EXEC_ERROR, CODE_NODE_DISABLED) = 41.
+    # NOTE: the 3 legacy DYNAMIC_NODE_* codes are still present in this
+    # (additive) commit and are removed with the Dynamic mechanism (→ 38).
+    assert len(list(ErrorCode)) == 41
 
 
 def test_unknown_plugin_defaults_to_warning() -> None:

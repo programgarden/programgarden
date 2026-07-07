@@ -98,11 +98,13 @@ class NodeRunner:
         credentials: Optional[List[Dict[str, Any]]] = None,
         context_params: Optional[Dict[str, Any]] = None,
         raise_on_error: bool = True,
+        allow_code_node: bool = True,
     ):
         self._credentials = credentials or []
         self._context_params = context_params or {}
         self._raise_on_error = raise_on_error
-        self._workflow_executor = WorkflowExecutor()
+        self._allow_code_node = allow_code_node
+        self._workflow_executor = WorkflowExecutor(allow_code_node=allow_code_node)
         # 브로커 로그인 완료 여부 (product별 추적)
         self._broker_logged_in: Dict[str, bool] = {}
         # 실행 컨텍스트 (브로커 세션 재사용을 위해 유지)
@@ -117,6 +119,8 @@ class NodeRunner:
                 context_params=self._context_params,
                 workflow_credentials=self._credentials,
             )
+            # Propagate the CodeNode gate to the standalone context.
+            self._context.allow_code_node = self._allow_code_node
         return self._context
 
     def _parse_broker_credential(self, credential_id: str) -> Optional[Dict[str, Any]]:

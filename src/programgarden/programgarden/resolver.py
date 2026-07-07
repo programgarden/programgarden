@@ -361,6 +361,9 @@ class WorkflowResolver:
         # 10. credential_id 참조 검증
         self._validate_credential_references(workflow, result)
 
+        # 10.5 CodeNode 정적 검증 (compile/screen 사전검증 + credential 봉쇄)
+        self._validate_code_nodes(workflow, result)
+
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
             workflow,
@@ -708,6 +711,16 @@ class WorkflowResolver:
         registry = NodeTypeRegistry()
         dynamic_registry = DynamicNodeRegistry()
 
+        # CodeNode declares its output ports per-instance (config `outputs`), not
+        # in the static registry schema. Build an id→ports map so the typo guard
+        # validates {{ nodes.<code_id>.<port> }} against the instance's ports.
+        code_node_ports_by_id: Dict[str, List[str]] = {}
+        for n in workflow.nodes:
+            if n.get("type") == "CodeNode":
+                outs = n.get("outputs") or []
+                names = [o.get("name") for o in outs if isinstance(o, dict) and o.get("name")]
+                code_node_ports_by_id[n.get("id")] = names or ["result"]
+
         # NodeOutputProxy 체이닝 메서드 — port 가 아닌 호출. nodes.X.<method>(...) 일 때 검증 스킵.
         chain_methods = {
             "all", "first", "last", "count",
@@ -718,7 +731,10 @@ class WorkflowResolver:
             "head", "tail",
         }
 
-        def _port_names_for(node_type: str) -> Optional[List[str]]:
+        def _port_names_for(node_type: str, ref_id: Optional[str] = None) -> Optional[List[str]]:
+            # CodeNode: use the per-instance declared ports (or ['result']).
+            if ref_id is not None and ref_id in code_node_ports_by_id:
+                return code_node_ports_by_id[ref_id]
             if not node_type:
                 return None
             schema = registry.get_schema(node_type)
@@ -911,7 +927,7 @@ class WorkflowResolver:
                         continue
 
                     source_type = node_type_by_id.get(ref_id)
-                    ports = _port_names_for(source_type)
+                    ports = _port_names_for(source_type, ref_id)
                     if ports is not None and attr not in ports:
                         result.add(
                             build_error(
@@ -1034,6 +1050,99 @@ class WorkflowResolver:
                 if key in skip_keys:
                     continue
                 find_refs(value, node_id, key)
+
+    # Credential-like binding keywords that must never feed a CodeNode input
+    # (Layer 3 seal). Exact-token match against the binding path components.
+    _CODE_NODE_CRED_KEYWORDS = frozenset({
+        "appkey", "appsecret", "secret", "secretkey", "password", "passwd",
+        "token", "credential", "credentials", "apikey", "api_key", "privatekey",
+    })
+
+    def _iter_binding_exprs(self, value):
+        """Yield the inner text of every {{ ... }} expression found in a
+        (possibly nested) config value."""
+        import re
+        _pat = re.compile(r"\{\{\s*(.+?)\s*\}\}")
+        if isinstance(value, str):
+            for m in _pat.finditer(value):
+                yield m.group(1)
+        elif isinstance(value, dict):
+            for v in value.values():
+                yield from self._iter_binding_exprs(v)
+        elif isinstance(value, list):
+            for v in value:
+                yield from self._iter_binding_exprs(v)
+
+    def _validate_code_nodes(self, workflow, result: ValidationResult) -> None:
+        """Static CodeNode validation (before any execution):
+
+        1. `credential_id` is forbidden (CodeNode has no credential access).
+        2. Compile/screen pre-check → CODE_NODE_SYNTAX_ERROR / CODE_NODE_FORBIDDEN
+           / CODE_NODE_NO_EXECUTE (line/offset), so the chatbot self-corrects
+           statically instead of learning at runtime.
+        3. Binding seal (Layer 3): `data`/`params` must not reference a
+           credential-like source (e.g. {{ nodes.broker.appkey }}).
+        """
+        import re
+        from programgarden_core.code_node import compile_code_node
+
+        for node in workflow.nodes:
+            if node.get("type") != "CodeNode":
+                continue
+            node_id = node.get("id")
+
+            # 1. credential_id ban
+            if node.get("credential_id"):
+                result.add(
+                    build_error(
+                        ErrorCode.CODE_NODE_FORBIDDEN,
+                        f"CodeNode '{node_id}' must not reference a credential_id.",
+                        location=ErrorLocation(
+                            node_id=node_id, node_type="CodeNode",
+                            credential_id=node.get("credential_id"),
+                        ),
+                        suggestion="Remove credential_id — CodeNode has no credential or broker access by design.",
+                    )
+                )
+
+            # 2. compile / screen pre-check
+            screen = compile_code_node(node.get("code", "") or "", node_id or "code", screen=True)
+            if not screen.ok:
+                try:
+                    code_enum = ErrorCode(screen.error_code)
+                except ValueError:
+                    code_enum = ErrorCode.CODE_NODE_SYNTAX_ERROR
+                result.add(
+                    build_error(
+                        code_enum,
+                        screen.message or "CodeNode failed static validation.",
+                        location=ErrorLocation(
+                            node_id=node_id, node_type="CodeNode", field_path="code",
+                        ),
+                        suggestion=screen.suggestion,
+                        details=screen.details or {},
+                    )
+                )
+
+            # 3. credential-like binding seal on data/params
+            for field_key in ("data", "params"):
+                for expr in self._iter_binding_exprs(node.get(field_key)):
+                    tokens = {t for t in re.split(r"[^A-Za-z0-9_]+", expr.lower()) if t}
+                    hit = tokens & self._CODE_NODE_CRED_KEYWORDS
+                    if hit:
+                        result.add(
+                            build_error(
+                                ErrorCode.CODE_NODE_FORBIDDEN,
+                                f"CodeNode '{node_id}' input '{field_key}' references a "
+                                f"credential-like binding ('{expr}').",
+                                location=ErrorLocation(
+                                    node_id=node_id, node_type="CodeNode",
+                                    field_path=field_key, expression="{{ " + expr + " }}",
+                                ),
+                                suggestion="Do not feed credentials/secrets into CodeNode — it has no credential access; pass only computed data.",
+                                details={"credential_tokens": sorted(hit)},
+                            )
+                        )
 
     def _validate_credential_references(
         self,
