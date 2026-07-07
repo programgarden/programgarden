@@ -20,6 +20,15 @@ app keys, broker sessions, or token cache. Design constraints (plan §2 Layer 4)
   * auto-iterate is batched: CodeNode receives the whole upstream array in
     `data` and loops in-code, so N items = one IPC round-trip, not N.
 
+⚠️ Residual risk (be honest): the child is a plain spawn subprocess. It does not
+inherit the parent's memory (app keys live only in the parent), and this module
+scrubs secret-looking env vars from the child. But a Python-level sandbox escape
+that reaches the OS could still read world-readable files (mount a per-user pod
+and keep secrets like `sandbox/secret.env` out of it / restrict file perms) or
+open the network (apply a no-egress NetworkPolicy). True containment of hostile
+code is an OS/infra concern (namespaces, seccomp, egress policy), not something
+this pool guarantees. The AST screen (core) is hardened defense-in-depth.
+
 All user-facing error envelopes are English (chatbot consumer contract).
 """
 from __future__ import annotations
@@ -116,10 +125,13 @@ def _run_one(task: Dict[str, Any], compile_cache: Dict[int, Any]) -> str:
 
     from programgarden_core.code_node import compile_code_node, build_restricted_builtins
 
-    # Compile (cached per worker by code identity). Screen again here — the
-    # worker is the last line before exec, and the share-gate reuses the same
-    # scanner, so double-screening is cheap and defensive.
-    key = hash(code)
+    # Compile (cached per worker by the FULL source string — never hash(code),
+    # which can collide and return a wrong, never-re-screened code object).
+    # Screen again here — the worker is the last line before exec, and the
+    # share-gate reuses the same scanner, so double-screening is cheap.
+    if len(compile_cache) > 256:
+        compile_cache.clear()  # bound memory across many distinct sources
+    key = code
     code_object = compile_cache.get(key)
     if code_object is None:
         screen = compile_code_node(code, node_id, screen=True,
@@ -177,16 +189,17 @@ def _run_one(task: Dict[str, Any], compile_cache: Dict[int, Any]) -> str:
             tb=_short_tb(),
         ))
 
-    # Contract 2: serialize the raw return to JSON here. If it is not
-    # JSON-serializable it cannot cross the process boundary — surface a clear
-    # structured error rather than silently coercing.
+    # Contract 2: serialize the raw return to JSON here. `allow_nan=False`
+    # rejects NaN/Infinity (which json.dumps would otherwise emit as invalid
+    # `NaN`/`Infinity` tokens that quietly round-trip) — surface a clear
+    # structured error rather than silently passing a bad value.
     try:
-        return json.dumps({"ok": True, "value": result})
+        return json.dumps({"ok": True, "value": result}, allow_nan=False)
     except (TypeError, ValueError):
         return json.dumps(_error_envelope(
             "CODE_NODE_EXEC_ERROR",
-            "CodeNode return value is not JSON-serializable.",
-            suggestion="Return only JSON-safe data (dict/list/str/number/bool/None) — no custom objects, sets, or datetimes.",
+            "CodeNode return value is not JSON-serializable (custom object, set, datetime, or NaN/Infinity).",
+            suggestion="Return only finite JSON-safe data (dict/list/str/number/bool/None).",
         ))
 
 
@@ -199,9 +212,33 @@ def _short_tb(limit: int = 6) -> str:
     return "\n".join(lines)
 
 
+# Env var name fragments that likely carry secrets. Scrubbed from the child's
+# environment at startup so an in-child escape cannot read app keys / tokens
+# from os.environ (blast-radius reduction — NOT a containment guarantee; file
+# and network access still require OS-level isolation at the infra layer).
+_SECRET_ENV_FRAGMENTS = (
+    "SECRET", "TOKEN", "PASSWORD", "PASSWD", "APPKEY", "APPSECRET",
+    "APP_KEY", "APP_SECRET", "PYPI", "CREDENTIAL", "PRIVATE", "API_KEY",
+    "APIKEY", "ACCESS_KEY", "AUTH", "SESSION", "COOKIE", "AWS_", "GCP_",
+    "AZURE_", "LS_",
+)
+
+
+def _scrub_child_env() -> None:
+    """Delete secret-looking env vars in this (child) process. Best-effort."""
+    for k in list(os.environ.keys()):
+        ku = k.upper()
+        if any(frag in ku for frag in _SECRET_ENV_FRAGMENTS):
+            try:
+                del os.environ[k]
+            except Exception:
+                pass
+
+
 def _worker_main(conn, ready_evt=None) -> None:
     """Child entry point: loop reading tasks, exec, send back a JSON string."""
-    compile_cache: Dict[int, Any] = {}
+    _scrub_child_env()
+    compile_cache: Dict[str, Any] = {}
     try:
         while True:
             try:
@@ -321,7 +358,18 @@ class CodeWorkerPool:
                 "CodeNode worker pool is not usable in this environment.",
                 suggestion="Run in an environment that supports process spawning.",
             )
-        worker = self._free.get()  # block for a free worker
+        # Acquire an idle worker with a bounded wait. A plain blocking get()
+        # would deadlock a caller forever if a respawn failure has permanently
+        # drained the free-list; time out into a structured error instead.
+        acquire_timeout = timeout * 2 + 30
+        try:
+            worker = self._free.get(timeout=acquire_timeout)
+        except queue.Empty:
+            return _error_envelope(
+                "CODE_NODE_EXEC_ERROR",
+                "CodeNode worker pool is saturated or drained (no worker available).",
+                suggestion="Reduce concurrent CodeNode load; a worker may have failed to respawn.",
+            )
         try:
             worker.conn.send(task)
             if not worker.conn.poll(timeout):

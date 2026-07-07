@@ -37,18 +37,33 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 # Name of the entry-point coroutine the code text must define.
 EXECUTE_FN_NAME = "execute"
 
+# ⚠️ SECURITY POSTURE — READ THIS.
+# AST screening + restricted builtins CANNOT be a sound sandbox for CPython.
+# A determined attacker who can run Python can, in the general case, escape any
+# in-process denylist (this is a well-known result; see the pysandbox author's
+# own withdrawal). An adversarial audit of an earlier version of this file
+# reproduced RCE via `operator.attrgetter`, `random._os`, and string-obfuscated
+# dunders. The rules below are HARDENED defense-in-depth that close every
+# demonstrated vector and raise the bar substantially — but they are NOT a
+# containment guarantee. TRUE containment of untrusted code is the runtime's
+# job (subprocess with no in-memory keys) + the operator's job (per-user pod
+# isolation, no-egress NetworkPolicy, restricted file perms, scrubbed env).
+# Treat CodeNode as "run trusted code, defense-in-depth against mistakes and
+# opportunistic abuse", not "safe to run arbitrary hostile code".
+
 # ── Whitelist: modules importable from CodeNode code ────────────────────────
-# Pure-computation stdlib only. Everything else is rejected at screen time
-# (AST) and at runtime (safe __import__). The embedding application may EXTEND
-# this via `compile_code_node(..., allowed_imports=...)` / the worker config
-# (e.g. to allow `numpy`), but the library default is secure-by-default.
+# Pure-computation stdlib only. `operator` is deliberately EXCLUDED — its
+# attrgetter/methodcaller are getattr/dispatch substitutes. Modules that
+# re-export os/sys as public attributes (e.g. random._os, uuid.os) are still
+# covered by the attribute screen below, not by this set. The embedding app may
+# EXTEND this via `allowed_imports=` (e.g. numpy) but the default is minimal.
 DEFAULT_ALLOWED_IMPORTS: frozenset = frozenset({
     "math", "cmath", "statistics", "decimal", "fractions", "numbers",
     "random", "json", "re", "datetime", "time", "calendar",
-    "collections", "itertools", "functools", "operator",
+    "collections", "itertools", "functools",
     "string", "textwrap", "unicodedata",
     "heapq", "bisect", "array", "copy",
-    "dataclasses", "enum", "typing", "uuid",
+    "dataclasses", "enum", "typing",
     "hashlib", "hmac", "base64", "binascii", "zlib",
 })
 
@@ -59,10 +74,10 @@ FORBIDDEN_MODULES: frozenset = frozenset({
     "os", "sys", "subprocess", "socket", "shutil", "importlib", "imp",
     "ctypes", "cffi", "gc", "inspect", "pathlib", "glob", "tempfile", "io",
     "urllib", "http", "requests", "ftplib", "smtplib", "asyncio",
-    "multiprocessing", "threading", "concurrent", "_thread",
+    "multiprocessing", "threading", "concurrent", "_thread", "operator",
     "builtins", "marshal", "pickle", "shelve", "dbm", "sqlite3",
     "code", "codeop", "pty", "resource", "signal", "mmap", "fcntl",
-    "platform", "webbrowser", "ssl", "select", "selectors",
+    "platform", "webbrowser", "ssl", "select", "selectors", "uuid",
 })
 
 # ── Denylist: builtin names that must never be called or aliased ────────────
@@ -74,9 +89,24 @@ FORBIDDEN_BUILTINS: frozenset = frozenset({
     "exit", "quit", "__build_class__",
 })
 
+# ── Denylist: dangerous PUBLIC attribute names (module re-exports & escapes) ──
+# Many stdlib modules re-export `os`/`sys` as public attributes (statistics.sys,
+# uuid.os, ...) — walking those reaches os.system. `mro`/`modules`/`system`/etc.
+# are the follow-on hops. Blocking these attribute NAMES (in addition to the
+# blanket underscore rule below) severs the module-attribute escape path.
+FORBIDDEN_ATTR_NAMES: frozenset = frozenset({
+    "os", "sys", "subprocess", "socket", "builtins", "importlib",
+    "modules", "system", "popen", "spawn", "spawnl", "spawnv", "spawnve",
+    "fork", "forkpty", "execv", "execve", "execl", "execlp", "execvp",
+    "mro", "import_module", "load_module", "reload", "getattr", "setattr",
+    "delattr", "globals", "environ", "getenv", "putenv", "connect",
+    "urlopen", "call", "run", "check_output", "Popen", "loader", "spec",
+})
+
 # ── Denylist: introspection-escape / exfiltration dunders & frame attrs ──────
-# Blocking these severs the object-graph walk that would otherwise reach the
-# process globals (and, without subprocess isolation, credentials).
+# NOTE: enforcement is the BLANKET underscore rule in _scan_ast (any attribute
+# or string beginning with '_' is rejected), which subsumes every dunder. This
+# explicit set is retained for documentation / message clarity.
 FORBIDDEN_DUNDERS: frozenset = frozenset({
     "__class__", "__bases__", "__base__", "__subclasses__", "__mro__",
     "__globals__", "__code__", "__closure__", "__func__", "__self__",
@@ -87,6 +117,12 @@ FORBIDDEN_DUNDERS: frozenset = frozenset({
     "gi_frame", "gi_code", "cr_frame", "cr_code", "ag_frame",
     "f_back", "f_globals", "f_locals", "f_builtins", "tb_frame",
 })
+
+# Format replacement-field that performs attribute access, e.g. "{0.__class__}"
+# or "{x.sys}" — used to walk attributes via str.format without an AST Attribute
+# node. Rejected wholesale in string constants.
+import re as _re
+_FORMAT_ATTR_RE = _re.compile(r"\{[^{}]*\.[^{}]*\}")
 
 
 @dataclass
@@ -160,23 +196,47 @@ def _scan_ast(tree: ast.AST, allowed_imports: Set[str]) -> List[Dict[str, Any]]:
                     "reason": f"use of '{node.id}' is not allowed",
                 })
 
-        # ── Introspection-escape dunders / frame attrs ──
+        # ── Attribute access screen ──
+        # (1) BLANKET: any attribute beginning with '_' is rejected — this
+        #     subsumes every dunder (__class__/__globals__/__subclasses__/...)
+        #     AND private module re-exports (random._os, random._urandom, ...).
+        # (2) A denylist of dangerous PUBLIC names (module re-exports & shell
+        #     hops): statistics.sys, uuid.os, x.system, x.modules, type().mro().
         elif isinstance(node, ast.Attribute):
-            if node.attr in FORBIDDEN_DUNDERS:
+            if node.attr.startswith("_"):
                 violations.append({
                     "kind": "dunder", "name": node.attr,
                     "line": node.lineno, "col": node.col_offset,
-                    "reason": f"attribute '{node.attr}' access is not allowed (introspection escape)",
+                    "reason": f"access to underscore attribute '{node.attr}' is not allowed (introspection escape)",
+                })
+            elif node.attr in FORBIDDEN_ATTR_NAMES:
+                violations.append({
+                    "kind": "attr", "name": node.attr,
+                    "line": node.lineno, "col": node.col_offset,
+                    "reason": f"attribute '{node.attr}' access is not allowed (module/escape re-export)",
                 })
 
-        # ── String-literal dunder access via subscript, e.g. x['__class__'] ──
-        # (only flag when the constant string is a forbidden dunder)
+        # ── String-constant screen ──
+        # Defeats attribute-walk via strings: getattr/attrgetter args, str.format
+        # attribute fields, subscript-string dunder access. Reject strings that
+        # start with '_', contain a dunder, name a dangerous attribute, or embed
+        # a format field with attribute access.
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if node.value in FORBIDDEN_DUNDERS:
+            v = node.value
+            bad = None
+            if v.startswith("_"):
+                bad = f"string literal '{v}' begins with '_' (introspection escape)"
+            elif "__" in v:
+                bad = f"string literal contains a dunder (introspection escape)"
+            elif v in FORBIDDEN_ATTR_NAMES:
+                bad = f"string literal '{v}' names a blocked attribute"
+            elif _FORMAT_ATTR_RE.search(v):
+                bad = "format string performs attribute access (introspection escape)"
+            if bad:
                 violations.append({
-                    "kind": "dunder", "name": node.value,
+                    "kind": "string", "name": v[:40],
                     "line": node.lineno, "col": node.col_offset,
-                    "reason": f"reference to '{node.value}' is not allowed (introspection escape)",
+                    "reason": bad,
                 })
 
     return violations

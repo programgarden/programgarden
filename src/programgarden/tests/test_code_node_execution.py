@@ -141,13 +141,15 @@ async def test_infinite_loop_times_out(monkeypatch):
 @pytest.mark.asyncio
 async def test_context_has_no_credential_accessors():
     # The sandboxed context must not expose credential access — the code path
-    # simply does not exist (AttributeError), and there are no keys anyway.
+    # simply does not exist (hasattr is False), and there are no keys anyway.
+    # (Underscore names like _secrets can't even be *written* in CodeNode code —
+    # the screener rejects underscore string literals — so we probe only the
+    # public accessor names here; the underscore path is covered by the screen.)
     out = await _run_code(
         code=(
             "async def execute(data, params, context):\n"
             "    found = []\n"
-            "    for name in ('get_credential', 'get_workflow_credential', '_secrets', "
-            "'_workflow_credentials', 'broker', 'executor'):\n"
+            "    for name in ('get_credential', 'get_workflow_credential', 'broker', 'executor'):\n"
             "        if hasattr(context, name):\n"
             "            found.append(name)\n"
             "    return {'exposed': found}"
@@ -155,6 +157,19 @@ async def test_context_has_no_credential_accessors():
         outputs=[{"name": "exposed", "type": "array"}],
     )
     assert out == {"exposed": []}
+
+
+@pytest.mark.asyncio
+async def test_underscore_credential_probe_is_screened_out():
+    # Even *attempting* to reference a private/credential attr by string is
+    # blocked at the screen — a defense-in-depth reinforcement of the scrub.
+    from programgarden.executor import CodeNodeError
+    with pytest.raises(CodeNodeError) as ei:
+        await _run_code(
+            code="async def execute(data, params, context):\n    return {'x': hasattr(context, '_secrets')}",
+            outputs=[{"name": "x", "type": "boolean"}],
+        )
+    assert ei.value.error_code.value == "CODE_NODE_FORBIDDEN"
 
 
 def test_ctx_snapshot_excludes_secrets():
