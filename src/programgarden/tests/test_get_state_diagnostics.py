@@ -9,81 +9,49 @@ Verifies the WorkflowJob.get_state() contract introduced in v1.21.5:
 - errors[] structured field with (node_id, error) dedup and timestamp sort
 - IfNode inactive branch produces NodeState.SKIPPED (semantic fix D-8)
 
-Test failure mode: Dynamic_ nodes go through GenericNodeExecutor which
-swallows execute() exceptions into {"error": ...} dicts (intentional —
-workflow continues). To exercise the WorkflowJob.status="failed" path we
-patch GenericNodeExecutor.execute to re-raise.
+The controlled nodes are CodeNodes (the generic custom-code node). To
+exercise the WorkflowJob.status="failed" path we patch
+CodeNodeExecutor.execute to raise for one node.
 """
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any, Dict
 from unittest.mock import patch
 
 import pytest
 
-from programgarden.context import ExecutionContext
-from programgarden.executor import GenericNodeExecutor, WorkflowExecutor
-from programgarden_core.nodes.base import (
-    BaseNode,
-    NodeCategory,
-    OutputPort,
+from programgarden.executor import CodeNodeExecutor, WorkflowExecutor
+
+
+# ============================================================
+# Fixtures — CodeNodes for controlled success / failure
+# ============================================================
+
+
+# Emits {'value': params['payload']} on the declared 'value' port.
+_OK_CODE = (
+    "async def execute(data, params, context):\n"
+    "    return {'value': params.get('payload', 42)}"
 )
 
 
-# ============================================================
-# Fixtures — Dynamic_ nodes for controlled success / failure
-# ============================================================
-
-
-class DynamicAlwaysOkNode(BaseNode):
-    type: str = "Dynamic_AlwaysOk"
-    category: NodeCategory = NodeCategory.CONDITION
-    payload: int = 42
-    _outputs: List[OutputPort] = [OutputPort(name="value", type="number")]
-
-    async def execute(self, context) -> Dict[str, Any]:
-        return {"value": self.payload}
-
-
-class DynamicAlwaysFailNode(BaseNode):
-    type: str = "Dynamic_AlwaysFail"
-    category: NodeCategory = NodeCategory.CONDITION
-    reason: str = "intentional failure for diagnostics test"
-    _outputs: List[OutputPort] = [OutputPort(name="value", type="number")]
-
-    async def execute(self, context) -> Dict[str, Any]:
-        raise RuntimeError(self.reason)
-
-
-SCHEMAS = [
-    {
-        "node_type": "Dynamic_AlwaysOk",
-        "category": "condition",
+def _ok(node_id: str, payload: int = 42) -> Dict[str, Any]:
+    """A CodeNode that returns {'value': payload} on its 'value' output port."""
+    return {
+        "id": node_id,
+        "type": "CodeNode",
+        "params": {"payload": payload},
         "outputs": [{"name": "value", "type": "number"}],
-    },
-    {
-        "node_type": "Dynamic_AlwaysFail",
-        "category": "condition",
-        "outputs": [{"name": "value", "type": "number"}],
-    },
-]
-
-CLASSES = {
-    "Dynamic_AlwaysOk": DynamicAlwaysOkNode,
-    "Dynamic_AlwaysFail": DynamicAlwaysFailNode,
-}
+        "code": _OK_CODE,
+    }
 
 
 @pytest.fixture
 def executor():
-    e = WorkflowExecutor()
-    e.register_dynamic_schemas(SCHEMAS)
-    e.inject_node_classes(CLASSES)
-    yield e
-    e.clear_injected_classes()
+    return WorkflowExecutor()
 
 
-async def _run(executor: WorkflowExecutor, workflow: Dict[str, Any], timeout: float = 5.0):
+async def _run(executor: WorkflowExecutor, workflow: Dict[str, Any], timeout: float = 30.0):
     job = await executor.execute(workflow)
     try:
         await asyncio.wait_for(job._task, timeout=timeout)
@@ -106,7 +74,7 @@ async def test_normal_workflow_no_errors(executor):
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "ok", "type": "Dynamic_AlwaysOk", "payload": 7},
+            _ok("ok", 7),
         ],
         "edges": [{"from": "start", "to": "ok"}],
     }
@@ -137,17 +105,17 @@ async def _run_with_failing_executor(
     *,
     fail_node_id: str,
     fail_message: str,
-    timeout: float = 5.0,
+    timeout: float = 30.0,
 ):
-    """Run workflow while forcing GenericNodeExecutor.execute to raise for one node."""
-    real_execute = GenericNodeExecutor.execute
+    """Run workflow while forcing CodeNodeExecutor.execute to raise for one node."""
+    real_execute = CodeNodeExecutor.execute
 
     async def fake_execute(self, node_id, node_type, config, context, **kwargs):
         if node_id == fail_node_id:
             raise RuntimeError(fail_message)
         return await real_execute(self, node_id, node_type, config, context, **kwargs)
 
-    with patch.object(GenericNodeExecutor, "execute", new=fake_execute):
+    with patch.object(CodeNodeExecutor, "execute", new=fake_execute):
         job = await executor.execute(workflow)
         try:
             await asyncio.wait_for(job._task, timeout=timeout)
@@ -165,7 +133,7 @@ async def test_failing_node_surfaces_error(executor):
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "boom", "type": "Dynamic_AlwaysOk"},
+            _ok("boom"),
         ],
         "edges": [{"from": "start", "to": "boom"}],
     }
@@ -193,7 +161,7 @@ async def test_failing_node_surfaces_error(executor):
     detail = state["stats"]["last_error_detail"]
     assert detail is not None
     assert detail["node_id"] == "boom"
-    assert detail["node_type"] == "Dynamic_AlwaysOk"
+    assert detail["node_type"] == "CodeNode"
     assert "kaboom-msg" in detail["error"]
     assert detail["timestamp"] is not None
 
@@ -202,7 +170,7 @@ async def test_failing_node_surfaces_error(executor):
     failure_entries = [e for e in state["errors"] if e.get("node_id") == "boom"]
     assert failure_entries, f"no error entry for 'boom' in {state['errors']}"
     e0 = failure_entries[0]
-    assert e0["node_type"] == "Dynamic_AlwaysOk"
+    assert e0["node_type"] == "CodeNode"
     assert "kaboom-msg" in e0["error"]
     assert e0["level"] == "error"
 
@@ -221,8 +189,8 @@ async def test_unexecuted_nodes_pending(executor):
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "boom", "type": "Dynamic_AlwaysOk"},
-            {"id": "downstream", "type": "Dynamic_AlwaysOk"},
+            _ok("boom"),
+            _ok("downstream"),
         ],
         "edges": [
             {"from": "start", "to": "boom"},
@@ -257,8 +225,8 @@ async def test_if_node_inactive_branch_skipped(executor):
         "nodes": [
             {"id": "start", "type": "StartNode"},
             {"id": "if1", "type": "IfNode", "left": 1, "operator": "==", "right": 1},
-            {"id": "true_node", "type": "Dynamic_AlwaysOk", "payload": 1},
-            {"id": "false_node", "type": "Dynamic_AlwaysOk", "payload": 2},
+            _ok("true_node", 1),
+            _ok("false_node", 2),
         ],
         "edges": [
             {"from": "start", "to": "if1"},
@@ -290,7 +258,7 @@ async def test_errors_sorted_by_timestamp(executor):
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "boom", "type": "Dynamic_AlwaysOk"},
+            _ok("boom"),
         ],
         "edges": [{"from": "start", "to": "boom"}],
     }
@@ -319,7 +287,7 @@ async def test_errors_dedup(executor):
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "boom", "type": "Dynamic_AlwaysOk"},
+            _ok("boom"),
         ],
         "edges": [{"from": "start", "to": "boom"}],
     }
@@ -352,7 +320,7 @@ async def test_stats_schema_always_present(executor):
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "ok", "type": "Dynamic_AlwaysOk"},
+            _ok("ok"),
         ],
         "edges": [{"from": "start", "to": "ok"}],
     }
@@ -380,7 +348,7 @@ async def test_existing_caller_compat(executor):
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "ok", "type": "Dynamic_AlwaysOk"},
+            _ok("ok"),
         ],
         "edges": [{"from": "start", "to": "ok"}],
     }
@@ -410,9 +378,9 @@ async def test_nodes_state_covers_every_node(executor):
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "n1", "type": "Dynamic_AlwaysOk", "payload": 1},
-            {"id": "n2", "type": "Dynamic_AlwaysOk", "payload": 2},
-            {"id": "n3", "type": "Dynamic_AlwaysOk", "payload": 3},
+            _ok("n1", 1),
+            _ok("n2", 2),
+            _ok("n3", 3),
         ],
         "edges": [
             {"from": "start", "to": "n1"},

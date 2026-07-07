@@ -370,7 +370,6 @@ $RECYCLE.BIN/
 .vscode/
 */.vscode/
 .github/
-src/programgarden/tests/test_dynamic_node_examples.py
 src/programgarden/tests/test_dynamic_plugin_examples.py
 .env*
 

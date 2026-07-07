@@ -123,7 +123,6 @@ class WorkflowResolver:
         limits: Optional[ValidationLimits] = None,
         suppress_recommendations: Optional[List[str]] = None,
         expand_cascade: bool = False,
-        validate_dynamic_injection: bool = False,
     ) -> ValidationResult:
         """Validate a workflow definition and return a structured result.
 
@@ -133,10 +132,6 @@ class WorkflowResolver:
             suppress_recommendations: rule_id list to skip when building
                 `static_recommendations`.
             expand_cascade: When True, skip cascade suppression (debugging).
-            validate_dynamic_injection: When True, emit DYNAMIC_NODE_CLASS_NOT_INJECTED
-                for Dynamic_* nodes that have a registered schema but no injected
-                runtime class. Call right before `execute()` to catch missing
-                inject_node_classes() calls.
         """
         from programgarden_core import WorkflowDefinition, NodeTypeRegistry, PluginRegistry
         from programgarden.validation_recommender import (
@@ -181,11 +176,9 @@ class WorkflowResolver:
                     )
                 )
 
-        # 4. Node type validation (regular + dynamic registry)
-        from programgarden_core.registry import DynamicNodeRegistry, is_dynamic_node_type
+        # 4. Node type validation (registry)
         registry = NodeTypeRegistry()
-        dynamic_registry = DynamicNodeRegistry()
-        known_types: List[str] = sorted(registry.list_types() + dynamic_registry.list_schema_types())
+        known_types: List[str] = sorted(registry.list_types())
 
         for node in workflow.nodes:
             node_type = node.get("type")
@@ -194,50 +187,13 @@ class WorkflowResolver:
             if registry.get(node_type):
                 continue
 
-            if is_dynamic_node_type(node_type):
-                if not dynamic_registry.get_schema(node_type):
-                    result.add(
-                        build_error(
-                            ErrorCode.UNKNOWN_DYNAMIC_NODE_SCHEMA,
-                            f"Dynamic node schema '{node_type}' is not registered",
-                            location=ErrorLocation(node_id=node_id, node_type=node_type),
-                            suggestion="Call executor.register_dynamic_schemas([...]) before validate().",
-                        )
-                    )
-                    continue
-
-                if node.get("credential_id"):
-                    result.add(
-                        build_error(
-                            ErrorCode.DYNAMIC_NODE_CREDENTIAL_FORBIDDEN,
-                            f"Dynamic node '{node_id}' cannot reference a credential_id",
-                            location=ErrorLocation(
-                                node_id=node_id,
-                                node_type=node_type,
-                                credential_id=node.get("credential_id"),
-                            ),
-                            suggestion="Remove credential_id from the dynamic node — credential access is blocked for security.",
-                        )
-                    )
-
-                if validate_dynamic_injection and not dynamic_registry.get_node_class(node_type):
-                    result.add(
-                        build_error(
-                            ErrorCode.DYNAMIC_NODE_CLASS_NOT_INJECTED,
-                            f"Dynamic node '{node_type}' has a registered schema but no injected runtime class",
-                            location=ErrorLocation(node_id=node_id, node_type=node_type),
-                            suggestion="Call executor.inject_node_classes({...}) before execute(). Otherwise the node returns runtime errors as downstream data.",
-                        )
-                    )
-                continue
-
             result.add(
                 build_error(
                     ErrorCode.UNKNOWN_NODE_TYPE,
                     f"Unknown node type '{node_type}'",
                     location=ErrorLocation(node_id=node_id, node_type=node_type),
                     available_values=suggest_close_match(node_type or "", known_types),
-                    suggestion="Pick a node type from the registered list, or register a Dynamic_ schema first.",
+                    suggestion="Pick a node type from the registered list.",
                 )
             )
 
@@ -704,12 +660,10 @@ class WorkflowResolver:
         """
         import re
         from programgarden_core import NodeTypeRegistry
-        from programgarden_core.registry import DynamicNodeRegistry
 
         node_ids = {n.get("id") for n in workflow.nodes}
         node_type_by_id = {n.get("id"): n.get("type") for n in workflow.nodes}
         registry = NodeTypeRegistry()
-        dynamic_registry = DynamicNodeRegistry()
 
         # CodeNode declares its output ports per-instance (config `outputs`), not
         # in the static registry schema. Build an id→ports map so the typo guard
@@ -749,9 +703,6 @@ class WorkflowResolver:
                         names.add(nm)
                 names.discard("")
                 return sorted(names) if names else None
-            dyn_schema = dynamic_registry.get_schema(node_type)
-            if dyn_schema:
-                return [o.get("name") for o in (dyn_schema.outputs or []) if o.get("name")]
             return None
 
         def _extract_field_names(outputs: Any, port_name: str) -> Optional[List[str]]:
@@ -783,20 +734,13 @@ class WorkflowResolver:
             return None
 
         def _field_names_for(node_type: str, port_name: str) -> Optional[List[str]]:
-            """Resolve declared field names for an output port.
-
-            Mirrors `_port_names_for`: check the static NodeTypeRegistry
-            first, then fall back to DynamicNodeRegistry so user-injected
-            Dynamic_* nodes get the same nested-field typo gate as
-            built-in nodes when their schema declares `fields`."""
+            """Resolve declared field names for an output port from the
+            static NodeTypeRegistry schema (when the port declares `fields`)."""
             if not node_type or not port_name:
                 return None
             schema = registry.get_schema(node_type)
             if schema:
                 return _extract_field_names(schema.outputs, port_name)
-            dyn_schema = dynamic_registry.get_schema(node_type)
-            if dyn_schema:
-                return _extract_field_names(dyn_schema.outputs, port_name)
             return None
 
         # ── Phase 2: cross-port TYPE compatibility ──────────────────────────
@@ -844,9 +788,6 @@ class WorkflowResolver:
             schema = registry.get_schema(node_type)
             if schema:
                 return _extract_field_type(schema.outputs, port_name, field_name)
-            dyn_schema = dynamic_registry.get_schema(node_type)
-            if dyn_schema:
-                return _extract_field_type(dyn_schema.outputs, port_name, field_name)
             return None
 
         def _consuming_scalar_class(node_type: str, field_key: str) -> Optional[str]:
@@ -1319,8 +1260,6 @@ class WorkflowResolver:
         self,
         definition: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
-        *,
-        validate_dynamic_injection: bool = False,
     ) -> Tuple[ResolvedWorkflow, ValidationResult]:
         """
         Resolve workflow (convert to execution objects)
@@ -1328,12 +1267,6 @@ class WorkflowResolver:
         Args:
             definition: Workflow definition
             context: Execution context (credential_id, symbols, etc.)
-            validate_dynamic_injection: When True, validate() emits
-                DYNAMIC_NODE_CLASS_NOT_INJECTED for Dynamic_* nodes whose
-                class has not been injected. Pass True from execute()/
-                restore() so missing inject_node_classes() is blocked
-                before GenericNodeExecutor silently surfaces the error
-                as downstream data.
 
         Returns:
             (ResolvedWorkflow, ValidationResult)
@@ -1341,10 +1274,7 @@ class WorkflowResolver:
         from programgarden_core import WorkflowDefinition, NodeTypeRegistry, PluginRegistry
 
         # Validate
-        validation = self.validate(
-            definition,
-            validate_dynamic_injection=validate_dynamic_injection,
-        )
+        validation = self.validate(definition)
         if not validation.is_valid:
             return None, validation
 
@@ -1356,19 +1286,10 @@ class WorkflowResolver:
         node_registry = NodeTypeRegistry()
         plugin_registry = PluginRegistry()
 
-        from programgarden_core.registry import DynamicNodeRegistry, is_dynamic_node_type
-        dynamic_registry = DynamicNodeRegistry()
-
         for node_def in workflow.nodes:
             node_id = node_def.get("id")
             node_type = node_def.get("type")
             category = node_def.get("category", "")
-
-            # 동적 노드면 스키마에서 category 가져오기
-            if is_dynamic_node_type(node_type):
-                dynamic_schema = dynamic_registry.get_schema(node_type)
-                if dynamic_schema and not category:
-                    category = dynamic_schema.category
 
             # Plugin node types where fields should be extracted separately
             # 주문 노드는 plugin 선택사항 (orders에 price 포함)

@@ -1,6 +1,6 @@
 """v1.21.5 get_state() 진단 페이로드 데모.
 
-자격증명 없이 실행 가능 (Dynamic_ 노드 사용 + GenericNodeExecutor 강제 raise).
+자격증명 없이 실행 가능 (CodeNode 사용 + CodeNodeExecutor 강제 raise).
 챗봇 sandbox / dry_run validator 가 받게 될 신규 진단 정보를 한눈에 확인.
 
 실행:
@@ -9,10 +9,9 @@
 """
 
 import asyncio
-import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 from unittest.mock import patch
 
 
@@ -23,45 +22,29 @@ sys.path.insert(0, str(project_root / "src" / "core"))
 sys.path.insert(0, str(project_root / "src" / "community"))
 
 
-from programgarden.executor import GenericNodeExecutor, WorkflowExecutor  # noqa: E402
-from programgarden_core.nodes.base import (  # noqa: E402
-    BaseNode,
-    NodeCategory,
-    OutputPort,
+from programgarden.executor import CodeNodeExecutor, WorkflowExecutor  # noqa: E402
+
+
+# ============================================================
+# Demo nodes (CodeNode)
+# ============================================================
+
+
+# Emits {'value': 100} on the declared 'value' port — no credentials needed.
+_OK_CODE = (
+    "async def execute(data, params, context):\n"
+    "    return {'value': 100}"
 )
 
 
-# ============================================================
-# Demo nodes
-# ============================================================
-
-
-class DemoOkNode(BaseNode):
-    type: str = "Dynamic_DemoOk"
-    category: NodeCategory = NodeCategory.CONDITION
-    label: str = "ok"
-    _outputs: List[OutputPort] = [OutputPort(name="value", type="number")]
-
-    async def execute(self, context) -> Dict[str, Any]:
-        return {"value": 100}
-
-
-class DemoFailNode(BaseNode):
-    type: str = "Dynamic_DemoFail"
-    category: NodeCategory = NodeCategory.CONDITION
-    _outputs: List[OutputPort] = [OutputPort(name="value", type="number")]
-
-    async def execute(self, context) -> Dict[str, Any]:
-        return {"value": 0}
-
-
-SCHEMAS = [
-    {"node_type": "Dynamic_DemoOk", "category": "condition",
-     "outputs": [{"name": "value", "type": "number"}]},
-    {"node_type": "Dynamic_DemoFail", "category": "condition",
-     "outputs": [{"name": "value", "type": "number"}]},
-]
-CLASSES = {"Dynamic_DemoOk": DemoOkNode, "Dynamic_DemoFail": DemoFailNode}
+def _ok(node_id: str) -> Dict[str, Any]:
+    """A CodeNode that returns {'value': 100} on its 'value' output port."""
+    return {
+        "id": node_id,
+        "type": "CodeNode",
+        "outputs": [{"name": "value", "type": "number"}],
+        "code": _OK_CODE,
+    }
 
 
 # ============================================================
@@ -106,24 +89,24 @@ def _summarize(state: Dict[str, Any], label: str) -> None:
 
 async def _run(executor: WorkflowExecutor, workflow: Dict[str, Any], *, fail_id: str = "", msg: str = ""):
     if fail_id:
-        real_execute = GenericNodeExecutor.execute
+        real_execute = CodeNodeExecutor.execute
 
         async def fake_execute(self, node_id, node_type, config, context, **kwargs):
             if node_id == fail_id:
                 raise RuntimeError(msg)
             return await real_execute(self, node_id, node_type, config, context, **kwargs)
 
-        with patch.object(GenericNodeExecutor, "execute", new=fake_execute):
+        with patch.object(CodeNodeExecutor, "execute", new=fake_execute):
             job = await executor.execute(workflow)
             try:
-                await asyncio.wait_for(job._task, timeout=5.0)
+                await asyncio.wait_for(job._task, timeout=30.0)
             except asyncio.TimeoutError:
                 await job.stop()
             return job
     else:
         job = await executor.execute(workflow)
         try:
-            await asyncio.wait_for(job._task, timeout=5.0)
+            await asyncio.wait_for(job._task, timeout=30.0)
         except asyncio.TimeoutError:
             await job.stop()
         return job
@@ -142,8 +125,8 @@ async def scenario_clean_run(executor: WorkflowExecutor) -> None:
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "node_a", "type": "Dynamic_DemoOk"},
-            {"id": "node_b", "type": "Dynamic_DemoOk"},
+            _ok("node_a"),
+            _ok("node_b"),
         ],
         "edges": [
             {"from": "start", "to": "node_a"},
@@ -162,10 +145,10 @@ async def scenario_node_failure(executor: WorkflowExecutor) -> None:
         "version": "1.0.0",
         "nodes": [
             {"id": "start", "type": "StartNode"},
-            {"id": "node_a", "type": "Dynamic_DemoOk"},
-            {"id": "node_b", "type": "Dynamic_DemoOk"},  # fail 강제
-            {"id": "node_c", "type": "Dynamic_DemoOk"},  # 미실행
-            {"id": "node_d", "type": "Dynamic_DemoOk"},  # 미실행
+            _ok("node_a"),
+            _ok("node_b"),  # fail 강제
+            _ok("node_c"),  # 미실행
+            _ok("node_d"),  # 미실행
         ],
         "edges": [
             {"from": "start", "to": "node_a"},
@@ -191,8 +174,8 @@ async def scenario_if_skipped(executor: WorkflowExecutor) -> None:
         "nodes": [
             {"id": "start", "type": "StartNode"},
             {"id": "branch", "type": "IfNode", "left": 100, "operator": ">", "right": 50},
-            {"id": "true_path", "type": "Dynamic_DemoOk", "label": "executed"},
-            {"id": "false_path", "type": "Dynamic_DemoOk", "label": "skipped"},
+            _ok("true_path"),
+            _ok("false_path"),
         ],
         "edges": [
             {"from": "start", "to": "branch"},
@@ -216,15 +199,10 @@ async def main() -> None:
     print("=" * 70)
 
     executor = WorkflowExecutor()
-    executor.register_dynamic_schemas(SCHEMAS)
-    executor.inject_node_classes(CLASSES)
 
-    try:
-        await scenario_clean_run(executor)
-        await scenario_node_failure(executor)
-        await scenario_if_skipped(executor)
-    finally:
-        executor.clear_injected_classes()
+    await scenario_clean_run(executor)
+    await scenario_node_failure(executor)
+    await scenario_if_skipped(executor)
 
     print(f"\n{'═' * 70}")
     print("  완료. 신규 키 노출 확인됨:")

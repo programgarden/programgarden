@@ -35,18 +35,18 @@ from programgarden_core import (
 
 
 def test_error_code_count_matches_matrix() -> None:
-    # 26 baseline + 3 AI/Dynamic edge codes (INVALID_AI_MODEL_EDGE,
-    # INVALID_TOOL_EDGE, DYNAMIC_NODE_CLASS_NOT_INJECTED) = 29 codes,
+    # 24 baseline + 2 AI edge codes (INVALID_AI_MODEL_EDGE,
+    # INVALID_TOOL_EDGE) = 26 codes,
     # + 3 deep_validate codes (DEEP_VALIDATION_NODE_ERROR,
-    # DEEP_VALIDATION_FLOW_BROKEN, DEEP_VALIDATION_BINDING_UNRESOLVED) = 32,
+    # DEEP_VALIDATION_FLOW_BROKEN, DEEP_VALIDATION_BINDING_UNRESOLVED) = 29,
     # + 4 semantic/safety layer codes (SEMANTIC_ORDER_QTY_FROM_AI,
     # SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA, SEMANTIC_HARDCODED_ORDER_QTY,
-    # SEMANTIC_ORDER_IGNORED_FIELD) = 36,
+    # SEMANTIC_ORDER_IGNORED_FIELD) = 33,
     # + 5 CodeNode codes (CODE_NODE_SYNTAX_ERROR, CODE_NODE_FORBIDDEN,
-    # CODE_NODE_NO_EXECUTE, CODE_NODE_EXEC_ERROR, CODE_NODE_DISABLED) = 41.
-    # NOTE: the 3 legacy DYNAMIC_NODE_* codes are still present in this
-    # (additive) commit and are removed with the Dynamic mechanism (→ 38).
-    assert len(list(ErrorCode)) == 41
+    # CODE_NODE_NO_EXECUTE, CODE_NODE_EXEC_ERROR, CODE_NODE_DISABLED) = 38.
+    # The 3 legacy dynamic-injection error codes were removed together with
+    # that mechanism (41 − 3 = 38).
+    assert len(list(ErrorCode)) == 38
 
 
 def test_unknown_plugin_defaults_to_warning() -> None:
