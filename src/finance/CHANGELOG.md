@@ -1,3 +1,35 @@
+## [1.6.14] - 2026-07-07
+### Added
+- **t8409 업종차트(N분) TR 추가 (sector index N-minute chart)** — 신규 국내주식
+  업종(indtp) TR. 업종코드로 해당 업종 지수의 N분(`ncnt` 0=30초 / 1=1분 / n=n분)
+  차트 시계열을 조회한다. REST 엔드포인트는 t8408 과 **동일**한 차트 전용
+  `POST /indtp/chart`(`KOREA_STOCK_INDTP_CHART_URL`). 응답 봉투는 t8408 과 동형:
+  `cont_block`(=`t8409OutBlock`, 17필드 — t8408 대비 당일거래대금 `disvalue` 추가) +
+  `block`(=`t8409OutBlock1`, 8필드 — t8408 대비 봉 거래대금 `value` 추가). `.req()`
+  단건 / `.occurs_req()` 전체 연속조회(`cts_date`/`cts_time`) 지원. 노출 경로
+  `ls.indtp().업종차트분(...)` / `ls.업종().업종차트분(...)` 및 최상위
+  `from programgarden_finance import t8409`.
+  - **챗봇 대비 필드 명료화(핵심)** — OHLC 는 업종 **지수(index points)** 이며 KRW
+    가격이 아님을 description 에서 명시("NOT a price"). LS 가 지수 OHLC 를 JSON
+    string 으로 직렬화하는 값은 Pydantic v2 가 `float` 로 auto-coerce.
+  - **거래대금/거래량 단위 교차검증(정직성)** — LS 명세가 `disvalue`/`value`(거래대금)·
+    `jivolume`/`jdiff_vol`(거래량) 단위를 **공식 선언하지 않음**. 샘플 응답 정합성
+    교차검증(value÷volume ⇒ ~1만~1.4만 KRW/주 가중평균, 일 거래대금 ~7.5조)으로
+    거래대금=**백만원(million KRW)**, 거래량=**천주(thousand shares)** 으로 확정하고,
+    description 에 "cross-checked … not formally declared by LS" 병기.
+  - 회귀 가드 `tests/test_korea_stock_t8409.py`(필드셋 11/17/8·examples·URL=
+    `/indtp/chart`·string→float 강제변환·연속조회 updater·단위 표기) + 예제
+    `example/indtp/run_t8409.py`(단건+연속).
+- **최상위 `__all__` indtp 노출 보정** — import 만 되고 `__all__` 에서 누락됐던
+  `t1511`/`t1514`/`t1516`/`t8408` 를 t8409 와 함께 `__all__` 에 정식 등재
+  (`from programgarden_finance import *` 회귀 방지).
+
+### Changed
+- **업종(indtp) 예제 폴더 재정리** — `example/korea_stock/run_t1511|run_t1514|
+  run_t1516|run_t8408.py` 4건을 `example/indtp/` 로 이동(git mv, 히스토리 보존)하고
+  t8409 예제를 같은 폴더에 신설. 실행 코드는 `from programgarden_finance import LS`
+  절대 import 라 경로 변경 영향 없음.
+
 ## [1.6.13] - 2026-06-28
 ### Added
 - **t8408 업종차트(틱/n틱) TR 추가 (sector index tick/N-tick chart)** — 신규
