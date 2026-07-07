@@ -1,4 +1,26 @@
 ## [Unreleased]
+### Added
+- **CodeNode 실행** — `CodeNodeExecutor` 가 CodeNode 코드를 고정 spawn 워커풀
+  (`code_worker.py`)에서 **항상 앱키 없는 자식 프로세스**로 실행(Layer 4). 스크럽 읽기전용
+  컨텍스트(헬퍼 + risk 스냅샷 + 메타; credential/broker 미노출). `WorkflowExecutor(allow_code_node=True)`
+  기본 ON opt-out 게이트 → `False` 시 `CODE_NODE_DISABLED`. `NodeRunner(allow_code_node=...)`.
+  resolver 정적검증: `compile_code_node` 사전검증 + `credential_id` 금지 + credential 유사
+  바인딩 봉쇄 + CodeNode 인스턴스 출력 포트 타이포 가드. auto-iterate 는 배열 전체를 자식 1회 호출로 배치.
+  예제 `87-code-node-momentum` 추가.
+
+### Removed (breaking)
+- **Dynamic_* 노드 API 전면 제거**: `WorkflowExecutor` 의 `register_dynamic_schemas` /
+  `get_required_dynamic_types` / `inject_node_classes` / `clear_injected_classes` /
+  `load_dynamic_nodes` / `list_dynamic_node_types` / `is_dynamic_node_ready`,
+  `validate_dynamic_injection` 파라미터(validate/compile/execute), `dynamic_nodes` 워크플로우
+  payload auto-load, resolver Dynamic_* 분기, `registry_tools`/`client` 의 `include_dynamic` 파라미터.
+  **외부 `dynamic_nodes` payload 사용처는 CodeNode JSON 으로 마이그레이션 필요.**
+
+### Security
+- CodeNode 코드는 항상 credential-free 자식 프로세스에서 실행. 자식 입력=스크럽 스냅샷(계약1),
+  결과=JSON 문자열만 왕복(계약2, 임의 unpickle 없음). 자식 env 시크릿 스크럽. AST 스크린은 core.
+  ⚠️ **완전 샌드박스 아님** — 강화된 defense-in-depth 이며 적대적/공유 코드의 진짜 격리는
+  OS 계층(pod + no-egress + 파일권한) 책임. CLAUDE.md "CodeNode" 참조.
 
 ## [1.24.2] - 2026-06-28
 ### Changed
