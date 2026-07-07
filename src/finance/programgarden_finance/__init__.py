@@ -105,6 +105,7 @@ from .ls.indtp import t1511
 from .ls.indtp import t1514
 from .ls.indtp import t1516
 from .ls.indtp import t8408
+from .ls.indtp import t8409
 from .ls.korea_stock.sector import t1531
 from .ls.korea_stock.sector import t1532
 from .ls.korea_stock.sector import t1537
@@ -223,6 +224,12 @@ __all__ = [
     t1637,
     t1640,
     t1662,
+
+    t1511,
+    t1514,
+    t1516,
+    t8408,
+    t8409,
 
     COSAQ00102,
     COSAQ01400,
