@@ -31,11 +31,15 @@ class ErrorCode(str, Enum):
 
     # Node / plugin registry
     UNKNOWN_NODE_TYPE = "UNKNOWN_NODE_TYPE"
-    UNKNOWN_DYNAMIC_NODE_SCHEMA = "UNKNOWN_DYNAMIC_NODE_SCHEMA"
-    DYNAMIC_NODE_CREDENTIAL_FORBIDDEN = "DYNAMIC_NODE_CREDENTIAL_FORBIDDEN"
-    DYNAMIC_NODE_CLASS_NOT_INJECTED = "DYNAMIC_NODE_CLASS_NOT_INJECTED"
     MISSING_PLUGIN = "MISSING_PLUGIN"
     UNKNOWN_PLUGIN = "UNKNOWN_PLUGIN"
+
+    # CodeNode (custom Python code node)
+    CODE_NODE_SYNTAX_ERROR = "CODE_NODE_SYNTAX_ERROR"        # ast.parse / compile failed (line/offset)
+    CODE_NODE_FORBIDDEN = "CODE_NODE_FORBIDDEN"              # AST denylist violation (blocked import/builtin/dunder)
+    CODE_NODE_NO_EXECUTE = "CODE_NODE_NO_EXECUTE"           # code does not define execute()
+    CODE_NODE_EXEC_ERROR = "CODE_NODE_EXEC_ERROR"          # runtime exception / worker crash / timeout / bad serialization
+    CODE_NODE_DISABLED = "CODE_NODE_DISABLED"              # allow_code_node=False environment
 
     # Edges
     INVALID_EDGE_REF = "INVALID_EDGE_REF"

@@ -172,7 +172,7 @@ class NodeTypeRegistry:
             KoreaStockRealMarketDataNode, KoreaStockRealAccountNode, KoreaStockRealOrderEventNode,
             KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode,
             # Data (상품 무관)
-            SQLiteNode, HTTPRequestNode, FieldMappingNode,
+            SQLiteNode, HTTPRequestNode, FieldMappingNode, CodeNode,
             # Market External (credential 불필요)
             CurrencyRateNode,
             # Market Status (JIF 장운영정보 — credential agnostic)
@@ -219,7 +219,7 @@ class NodeTypeRegistry:
             KoreaStockRealMarketDataNode, KoreaStockRealAccountNode, KoreaStockRealOrderEventNode,
             KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode,
             # Data (상품 무관)
-            SQLiteNode, HTTPRequestNode, FieldMappingNode,
+            SQLiteNode, HTTPRequestNode, FieldMappingNode, CodeNode,
             # Market External (credential 불필요)
             CurrencyRateNode,
             # Market Status (JIF 장운영정보 — credential agnostic)

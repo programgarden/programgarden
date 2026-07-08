@@ -1,0 +1,64 @@
+{
+  "id": "87-code-node-momentum",
+  "name": "CodeNode 커스텀 모멘텀 스코어 (NASDAQ)",
+  "description": "OverseasStockBrokerNode → OverseasStockHistoricalDataNode(AAPL/MSFT/NVDA, 1d) → CodeNode(종가 배열로 커스텀 모멘텀 % 계산 + 매수/매도 시그널, 선언 outputs ranked/count) → TableDisplayNode. CodeNode 는 앱키 없는 자식 프로세스에서 컴파일·실행되고 반환 dict 가 선언 포트로 매핑된다. 빈 데이터에 방어적(빈 결과 반환)이라 dry_run 에서도 안전.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": { "x": 50, "y": 200 }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "stock_cred",
+      "position": { "x": 250, "y": 200 }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbols": [
+        { "symbol": "AAPL", "exchange": "NASDAQ" },
+        { "symbol": "MSFT", "exchange": "NASDAQ" },
+        { "symbol": "NVDA", "exchange": "NASDAQ" }
+      ],
+      "period": "1d",
+      "count": 30,
+      "position": { "x": 500, "y": 200 }
+    },
+    {
+      "id": "momentum",
+      "type": "CodeNode",
+      "data": "{{ nodes.historical.values }}",
+      "params": { "lookback": 20 },
+      "outputs": [
+        { "name": "ranked", "type": "array" },
+        { "name": "count", "type": "number" }
+      ],
+      "code": "async def execute(data, params, context):\n    lookback = int(params.get('lookback', 20))\n    results = []\n    for row in (data or []):\n        ts = row.get('time_series') or []\n        closes = [b.get('close') for b in ts if isinstance(b, dict) and b.get('close') is not None]\n        if len(closes) < 2:\n            continue\n        window = closes[-lookback:] if len(closes) >= lookback else closes\n        base = window[0]\n        momentum = ((window[-1] - base) / base * 100.0) if base else 0.0\n        results.append({\n            'symbol': row.get('symbol'),\n            'exchange': row.get('exchange'),\n            'momentum_pct': round(momentum, 2),\n            'signal': 'buy' if momentum > 0 else 'sell',\n        })\n    ranked = sorted(results, key=lambda r: r['momentum_pct'], reverse=True)\n    return {'ranked': ranked, 'count': len(ranked)}",
+      "position": { "x": 800, "y": 200 }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "data": "{{ nodes.momentum.ranked }}",
+      "position": { "x": 1080, "y": 200 }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "broker" },
+    { "from": "broker", "to": "historical" },
+    { "from": "historical", "to": "momentum" },
+    { "from": "momentum", "to": "display" }
+  ],
+  "credentials": [
+    {
+      "credential_id": "stock_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        { "key": "appkey", "value": "", "type": "password", "label": "App Key" },
+        { "key": "appsecret", "value": "", "type": "password", "label": "App Secret" }
+      ]
+    }
+  ]
+}

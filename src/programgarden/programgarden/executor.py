@@ -492,35 +492,19 @@ class GenericNodeExecutor(NodeExecutorBase):
         fields: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        from programgarden_core.registry import NodeTypeRegistry, DynamicNodeRegistry
+        from programgarden_core.registry import NodeTypeRegistry
 
         registry = NodeTypeRegistry()
         node_class = registry.get(node_type)
 
-        # 동적 노드 레지스트리에서 fallback 조회
         if not node_class:
-            dynamic_registry = DynamicNodeRegistry()
-            node_class = dynamic_registry.get_node_class(node_type)
+            # Unknown node type — validate() should have caught this; raise
+            # rather than swallow so the node fails fast instead of surfacing
+            # the error as downstream data.
+            msg = f"Unknown node type: {node_type}"
+            context.log("error", msg, node_id)
+            raise RuntimeError(msg)
 
-            if not node_class:
-                # Schema registered but class not injected — raise so the
-                # node fails fast. Returning {"error": ...} would let
-                # _execute_main_flow treat it as a normal output and mark
-                # the node completed, surfacing the error as downstream
-                # data instead of a node failure.
-                if dynamic_registry.get_schema(node_type):
-                    msg = (
-                        f"Dynamic node class not injected: {node_type}. "
-                        "Call executor.inject_node_classes({...}) before execute()."
-                    )
-                    context.log("error", msg, node_id)
-                    raise RuntimeError(msg)
-                # No schema either — internal inconsistency (validate should
-                # have caught this); raise rather than swallow.
-                msg = f"Unknown node type: {node_type}"
-                context.log("error", msg, node_id)
-                raise RuntimeError(msg)
-        
         # plugin과 fields가 별도로 전달되면 config에 추가 (PluginNode용)
         # 빈 딕셔너리 {}는 무시 - config에 이미 있는 fields를 덮어쓰지 않음
         if plugin is not None:
@@ -15660,6 +15644,153 @@ class SQLiteNodeExecutor(NodeExecutorBase):
             }
 
 
+class CodeNodeError(Exception):
+    """Raised by CodeNodeExecutor so the main loop records a structured
+    CODE_NODE_* ErrorInfo (chatbot consumer contract — no silent failure).
+
+    Carries the specific ErrorCode plus an actionable English suggestion and
+    diagnostics (line/traceback) drawn from the compile/screen/exec pipeline.
+    """
+
+    def __init__(self, error_code, message: str, *, suggestion: Optional[str] = None,
+                 line: Optional[int] = None, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.error_code = error_code
+        self.suggestion = suggestion
+        self.line = line
+        self.details = details or {}
+
+
+class CodeNodeExecutor(NodeExecutorBase):
+    """Executor for CodeNode — always runs the user code in a credential-free
+    subprocess (see `programgarden.code_worker`).
+
+    Pipeline: gate check → evaluate data/params bindings → build a scrubbed
+    context snapshot → dispatch to the worker pool → map the return dict onto
+    the declared output ports (missing declared port → warn + None; no declared
+    outputs → whole value on `result`). Any failure raises CodeNodeError with a
+    structured CODE_NODE_* code.
+    """
+
+    @staticmethod
+    def _build_ctx_snapshot(context: ExecutionContext) -> Dict[str, Any]:
+        """Credential-free, JSON-safe snapshot handed to the child (Contract 1).
+
+        Contains ONLY safe workflow meta + a risk-tracker read snapshot. No app
+        keys, broker, session, or executor references are ever included.
+        """
+        snap: Dict[str, Any] = {
+            "job_id": getattr(context, "job_id", None),
+            "dry_run": bool(getattr(context, "is_dry_run", False)),
+            "iteration_index": int(getattr(context, "_iteration_index", 0) or 0),
+            "iteration_total": int(getattr(context, "_iteration_total", 0) or 0),
+            "risk": {},
+        }
+        try:
+            rt = context.risk_tracker
+            if rt is not None and hasattr(rt, "get_all_hwm"):
+                hwm: Dict[str, Any] = {}
+                for sym, st in (rt.get_all_hwm() or {}).items():
+                    hwm[sym] = {
+                        "hwm_price": float(getattr(st, "hwm_price", 0) or 0),
+                        "current_price": float(getattr(st, "current_price", 0) or 0),
+                        "drawdown_pct": float(getattr(st, "drawdown_pct", 0) or 0),
+                    }
+                snap["risk"] = {"hwm": hwm}
+        except Exception:
+            pass
+        return snap
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        from programgarden_core.models.validation import ErrorCode
+        from programgarden.code_worker import run_code_node_sandboxed
+
+        # Gate (opt-out only). Default ON.
+        if not getattr(context, "allow_code_node", True):
+            raise CodeNodeError(
+                ErrorCode.CODE_NODE_DISABLED,
+                f"CodeNode '{node_id}' cannot run: code nodes are disabled in this environment.",
+                suggestion="Construct WorkflowExecutor(allow_code_node=True) to enable CodeNode, or remove the node.",
+            )
+
+        code = config.get("code") or ""
+
+        # Evaluate ONLY data/params bindings — never touch `code` (it is
+        # FIXED_ONLY Python source that may contain brace-like text).
+        bindables = {"data": config.get("data"), "params": config.get("params") or {}}
+        evaluated = evaluate_all_bindings(bindables, context, node_id)
+        data = evaluated.get("data")
+        params = evaluated.get("params") or {}
+
+        declared = [
+            o["name"] for o in (config.get("outputs") or [])
+            if isinstance(o, dict) and o.get("name")
+        ]
+
+        ctx_snapshot = self._build_ctx_snapshot(context)
+
+        # Dispatch to the (blocking) worker pool off the event loop.
+        env = await asyncio.to_thread(
+            run_code_node_sandboxed,
+            code=code,
+            node_id=node_id,
+            data=data,
+            params=params,
+            ctx_snapshot=ctx_snapshot,
+            allowed_imports=None,
+        )
+
+        if not env.get("ok"):
+            code_str = env.get("error_code") or "CODE_NODE_EXEC_ERROR"
+            try:
+                err_code = ErrorCode(code_str)
+            except ValueError:
+                err_code = ErrorCode.CODE_NODE_EXEC_ERROR
+            raise CodeNodeError(
+                err_code,
+                env.get("message") or "CodeNode failed.",
+                suggestion=env.get("suggestion"),
+                line=env.get("line"),
+                details={"traceback": env.get("traceback")} if env.get("traceback") else {},
+            )
+
+        value = env.get("value")
+
+        # Map return → declared ports. No declared ports → whole value on result.
+        if not declared:
+            return {"result": value}
+
+        out: Dict[str, Any] = {}
+        if isinstance(value, dict):
+            for name in declared:
+                if name in value:
+                    out[name] = value[name]
+                else:
+                    context.log(
+                        "warning",
+                        f"CodeNode '{node_id}' declared output '{name}' is missing from the return dict (→ None).",
+                        node_id,
+                    )
+                    out[name] = None
+        else:
+            context.log(
+                "warning",
+                f"CodeNode '{node_id}' returned a non-dict value; mapping it to the first declared port '{declared[0]}'.",
+                node_id,
+            )
+            out[declared[0]] = value
+            for name in declared[1:]:
+                out[name] = None
+        return out
+
+
 class WorkflowExecutor:
     """
     Workflow execution engine
@@ -15668,15 +15799,16 @@ class WorkflowExecutor:
     - 24-hour continuous execution support
     - Position/balance state persistence
     - Graceful Restart support
-    - Dynamic node injection support (Dynamic_ prefix nodes)
     """
 
-    def __init__(self):
+    def __init__(self, allow_code_node: bool = True):
         self.resolver = WorkflowResolver()
         self._jobs: Dict[str, "WorkflowJob"] = {}
         self._executors: Dict[str, NodeExecutorBase] = self._init_executors()
-        # 동적 노드 레지스트리 (지연 임포트로 순환 참조 방지)
-        self._dynamic_registry = None
+        # CodeNode gate — opt-out only (default ON). When False, a workflow that
+        # contains a CodeNode is rejected at execute() with CODE_NODE_DISABLED
+        # (for validation-only services that must never run user code).
+        self.allow_code_node = allow_code_node
         # Opt-in LS token provider (Verified League §3.2.3). When set, broker
         # logins fetch the token from this callback (a remote server) instead of
         # self-issuing via GenerateToken, so the platform server is the single
@@ -15692,13 +15824,6 @@ class WorkflowExecutor:
         Pass None to clear and revert to the default self-issue path.
         """
         self.ls_token_provider = provider
-
-    def _get_dynamic_registry(self):
-        """DynamicNodeRegistry 싱글톤 반환 (지연 로딩)"""
-        if self._dynamic_registry is None:
-            from programgarden_core.registry import DynamicNodeRegistry
-            self._dynamic_registry = DynamicNodeRegistry()
-        return self._dynamic_registry
 
     def _init_executors(self) -> Dict[str, NodeExecutorBase]:
         """Initialize per-node-type executors"""
@@ -15781,6 +15906,7 @@ class WorkflowExecutor:
             "KoreaStockRealOrderEventNode": RealOrderEventNodeExecutor(),
             # Data nodes
             "SQLiteNode": SQLiteNodeExecutor(),
+            "CodeNode": CodeNodeExecutor(),  # custom Python code (subprocess-isolated)
             # External market data nodes (credential 불필요, 외부 API)
             "CurrencyRateNode": GenericNodeExecutor(),
             # Market Status (JIF, broker credential type 무관)
@@ -15797,7 +15923,6 @@ class WorkflowExecutor:
         limits: "Optional[ValidationLimits]" = None,
         suppress_recommendations: "Optional[List[str]]" = None,
         expand_cascade: bool = False,
-        validate_dynamic_injection: bool = False,
     ) -> ValidationResult:
         """Validate a workflow definition.
 
@@ -15808,27 +15933,18 @@ class WorkflowExecutor:
                 generating `static_recommendations`.
             expand_cascade: When True, disable cascade suppression so every
                 cascade error appears in `result.errors` (debugging only).
-            validate_dynamic_injection: When True, emit
-                DYNAMIC_NODE_CLASS_NOT_INJECTED for any Dynamic_* node whose
-                schema is registered but whose runtime class has not been
-                injected via `inject_node_classes()`. Call before `execute()`
-                to catch missing injection up front instead of seeing the
-                error surface as downstream data at runtime.
         """
         return self.resolver.validate(
             definition,
             limits=limits,
             suppress_recommendations=suppress_recommendations,
             expand_cascade=expand_cascade,
-            validate_dynamic_injection=validate_dynamic_injection,
         )
 
     def compile(
         self,
         definition: Dict[str, Any],
         context_params: Optional[Dict[str, Any]] = None,
-        *,
-        validate_dynamic_injection: bool = False,
     ) -> tuple[Optional[ResolvedWorkflow], ValidationResult]:
         """
         Compile workflow (convert to execution objects)
@@ -15836,13 +15952,10 @@ class WorkflowExecutor:
         Args:
             definition: Workflow definition
             context_params: Execution context parameters
-            validate_dynamic_injection: Forward to resolver.resolve() to
-                block missing-class Dynamic_* nodes before execute().
         """
         return self.resolver.resolve(
             definition,
             context_params,
-            validate_dynamic_injection=validate_dynamic_injection,
         )
 
     async def execute(
@@ -15867,21 +15980,10 @@ class WorkflowExecutor:
             resource_limits: Resource limits (CPU, RAM, workers). None = auto-detect
             storage_dir: DB/파일 저장 디렉토리. None = /app/data 기본값 (로컬에서 권한 없으면 ./app/data 로 폴백)
         """
-        # Dynamic_ 노드 자동 로드 (definition에 dynamic_nodes가 있으면)
-        dynamic_nodes = definition.get("dynamic_nodes")
-        if dynamic_nodes:
-            loaded = self.load_dynamic_nodes(dynamic_nodes)
-            logger.info(f"Dynamic nodes auto-loaded from definition: {loaded}")
-
-        # Compile — validate_dynamic_injection=True blocks Dynamic_* nodes
-        # whose schema is registered but whose runtime class has not been
-        # injected via inject_node_classes(). Without this, GenericNodeExecutor
-        # would surface the missing class as downstream {"error": ...} data
-        # instead of a node failure.
+        # Compile (structural + registry validation).
         resolved, validation = self.compile(
             definition,
             context_params,
-            validate_dynamic_injection=True,
         )
         if not validation.is_valid:
             raise ValueError(f"Workflow validation failed: {validation.errors}")
@@ -15949,6 +16051,8 @@ class WorkflowExecutor:
             storage_dir=storage_dir,
             ls_token_provider=self.ls_token_provider,
         )
+        # Propagate the CodeNode gate to the context so CodeNodeExecutor can read it.
+        context.allow_code_node = self.allow_code_node
 
         # Set listeners (Option A: inject at creation)
         if listeners:
@@ -16228,12 +16332,10 @@ class WorkflowExecutor:
         from programgarden.database.checkpoint_manager import CheckpointManager
         from datetime import timezone as _tz
 
-        # 1. Compile — match execute() and block missing Dynamic_* injection
-        # before restoring runs.
+        # 1. Compile — match execute() before restoring runs.
         resolved, validation = self.compile(
             definition,
             context_params,
-            validate_dynamic_injection=True,
         )
         if not validation.is_valid:
             raise ValueError(f"Workflow validation failed: {validation.errors}")
@@ -16486,227 +16588,6 @@ class WorkflowExecutor:
             "stopped_jobs": results,
             "total_pending_orders": total_pending,
         }
-
-    # ─────────────────────────────────────────────────
-    # Dynamic Node API (Lazy Loading 지원)
-    # ─────────────────────────────────────────────────
-
-    def register_dynamic_schemas(self, schemas: List[Dict[str, Any]]) -> None:
-        """
-        동적 노드 스키마 등록 (UI 표시용)
-
-        사용자가 DB에서 로드한 스키마를 등록합니다.
-        이 시점에는 클래스 없이 스키마만 저장됩니다.
-
-        Args:
-            schemas: 스키마 딕셔너리 목록
-                [{"node_type": "Dynamic_MyRSI", "category": "condition", ...}, ...]
-
-        Raises:
-            ValueError: Dynamic_ prefix가 없는 경우
-
-        Example:
-            executor = WorkflowExecutor()
-            schemas = db.get_all_dynamic_node_schemas()
-            executor.register_dynamic_schemas(schemas)
-        """
-        from programgarden_core.registry import DynamicNodeSchema
-        registry = self._get_dynamic_registry()
-        for schema_dict in schemas:
-            schema = DynamicNodeSchema(**schema_dict)
-            registry.register_schema(schema)
-
-    def get_required_dynamic_types(self, workflow: Dict[str, Any]) -> List[str]:
-        """
-        워크플로우에서 사용되는 동적 노드 타입 목록 반환
-
-        사용자는 이 목록을 받아서 해당 타입들의 .py 파일만
-        Cloud Storage에서 다운로드하면 됩니다.
-
-        Args:
-            workflow: 워크플로우 정의 (JSON dict)
-
-        Returns:
-            동적 노드 타입명 목록 (예: ["Dynamic_MyRSI", "Dynamic_MyMACD"])
-
-        Example:
-            required = executor.get_required_dynamic_types(workflow)
-            for node_type in required:
-                code = await cloud.download(f"nodes/{node_type}.py")
-                # ... 동적 import 후 inject_node_classes() 호출
-        """
-        from programgarden_core.registry import DYNAMIC_NODE_PREFIX
-        dynamic_types = []
-        for node in workflow.get("nodes", []):
-            node_type = node.get("type", "")
-            if node_type.startswith(DYNAMIC_NODE_PREFIX):
-                if node_type not in dynamic_types:
-                    dynamic_types.append(node_type)
-        return dynamic_types
-
-    def inject_node_classes(self, node_classes: Dict[str, type]) -> None:
-        """
-        동적 노드 클래스 주입
-
-        사용자가 Cloud Storage에서 다운로드 → 동적 import한 클래스들을 주입합니다.
-
-        검증 항목:
-        1. 스키마 등록 여부
-        2. BaseNode 상속 여부
-        3. execute() 메서드 존재 여부
-        4. 스키마와 클래스의 출력 포트 일치 여부
-
-        Args:
-            node_classes: {node_type: node_class} 딕셔너리
-                {"Dynamic_MyRSI": MyRSINode, "Dynamic_MyMACD": MyMACDNode}
-
-        Raises:
-            ValueError: 스키마 미등록, 포트 불일치
-            TypeError: BaseNode 미상속, execute() 미구현
-
-        Example:
-            executor.inject_node_classes({
-                "Dynamic_MyRSI": MyRSINode,
-                "Dynamic_MyMACD": MyMACDNode,
-            })
-        """
-        registry = self._get_dynamic_registry()
-        registry.inject_node_classes(node_classes)
-
-    def clear_injected_classes(self) -> None:
-        """
-        주입된 클래스 초기화 (실행 후 메모리 정리)
-
-        스키마는 유지되고 클래스만 제거됩니다.
-        워크플로우 실행 후 메모리 정리 용도로 사용합니다.
-
-        Example:
-            result = await executor.execute(workflow)
-            executor.clear_injected_classes()  # 메모리 정리
-        """
-        registry = self._get_dynamic_registry()
-        registry.clear_injected_classes()
-
-    def load_dynamic_nodes(self, dynamic_nodes: List[Dict[str, Any]]) -> int:
-        """
-        동적 노드 코드 문자열로부터 스키마 등록 + 클래스 주입을 한 번에 처리
-
-        서버에서 받은 dynamic_nodes payload를 직접 전달하면
-        내부에서 exec() → BaseNode 서브클래스 추출 → 스키마 등록 + 클래스 주입.
-
-        register_dynamic_schemas() + inject_node_classes()의 편의 메서드.
-
-        Args:
-            dynamic_nodes: 동적 노드 payload 목록
-                [{
-                    "dynamic_type": "Dynamic_MyRSI",
-                    "dynamic_node_code": "import ...\nclass MyRSINode(BaseNode):\n  ...",
-                    "category": "condition",
-                    "inputs": [...],
-                    "outputs": [...],
-                    "config_schema": {...},
-                }]
-
-        Returns:
-            성공적으로 로드된 노드 수
-
-        Raises:
-            ValueError: dynamic_type 또는 dynamic_node_code가 없는 경우
-
-        Example:
-            executor = WorkflowExecutor()
-            loaded = executor.load_dynamic_nodes(payload["dynamic_nodes"])
-            print(f"{loaded}개 동적 노드 로드 완료")
-            job = await executor.execute(workflow)
-            executor.clear_injected_classes()
-        """
-        if not dynamic_nodes:
-            return 0
-
-        from programgarden_core.nodes.base import BaseNode
-
-        schemas = []
-        classes = {}
-
-        for dn in dynamic_nodes:
-            dynamic_type = dn.get("dynamic_type")
-            code = dn.get("dynamic_node_code")
-
-            if not dynamic_type or not code:
-                raise ValueError(
-                    f"dynamic_type과 dynamic_node_code는 필수: "
-                    f"dynamic_type={dynamic_type!r}"
-                )
-
-            # exec()로 코드 실행 → namespace에서 클래스 추출
-            namespace: Dict[str, Any] = {}
-            exec(code, namespace)
-
-            # BaseNode 서브클래스 중 type이 일치하는 클래스 탐색
-            # Pydantic 모델에서 type은 클래스 속성이 아니라 model_fields의 default 값임
-            node_class = None
-            for obj in namespace.values():
-                if (
-                    isinstance(obj, type)
-                    and issubclass(obj, BaseNode)
-                    and obj is not BaseNode
-                ):
-                    # model_fields에서 type 기본값 확인 (Pydantic v2)
-                    type_field = obj.model_fields.get("type")
-                    node_type_val = type_field.default if type_field else None
-                    if node_type_val == dynamic_type:
-                        node_class = obj
-                        break
-
-            if node_class is None:
-                raise ValueError(
-                    f"코드에서 type='{dynamic_type}'인 "
-                    f"BaseNode 서브클래스를 찾을 수 없음"
-                )
-
-            schemas.append({
-                "node_type": dynamic_type,
-                "category": dn.get("category", "data"),
-                "inputs": dn.get("inputs", []),
-                "outputs": dn.get("outputs", []),
-                "config_schema": dn.get("config_schema", {}),
-                "version": dn.get("version", "1.0.0"),
-            })
-            classes[dynamic_type] = node_class
-
-        if schemas:
-            self.register_dynamic_schemas(schemas)
-            self.inject_node_classes(classes)
-
-        return len(classes)
-
-    def list_dynamic_node_types(self) -> List[str]:
-        """
-        등록된 동적 노드 타입 목록 반환
-
-        Returns:
-            노드 타입명 목록 (예: ["Dynamic_MyRSI", "Dynamic_MyMACD"])
-        """
-        registry = self._get_dynamic_registry()
-        return registry.list_schema_types()
-
-    def is_dynamic_node_ready(self, node_type: str) -> bool:
-        """
-        동적 노드가 실행 준비 완료되었는지 확인
-
-        스키마 등록 + 클래스 주입 여부 확인.
-
-        Args:
-            node_type: 노드 타입명 (예: Dynamic_MyRSI)
-
-        Returns:
-            실행 준비 완료 여부
-        """
-        registry = self._get_dynamic_registry()
-        return (
-            registry.is_schema_registered(node_type)
-            and registry.is_class_injected(node_type)
-        )
 
 
 class WorkflowJob:
@@ -17451,25 +17332,47 @@ class WorkflowJob:
                 # deep_validate uses a dedicated error code so chatbot consumers
                 # can tell virtual-full-execution failures apart from a plain
                 # dry_run runtime error; details carries the stage for triage.
-                _err_code = (
-                    ErrorCode.DEEP_VALIDATION_NODE_ERROR
-                    if _is_deep
-                    else ErrorCode.DRY_RUN_RUNTIME_ERROR
-                )
-                self._node_error_infos[node_id] = build_error(
-                    _err_code,
-                    f"Node '{node_id}' ({node.node_type}) raised during execution: {error_msg}",
-                    location=ErrorLocation(node_id=node_id, node_type=node.node_type),
-                    details={
-                        "exception_type": type(e).__name__,
-                        "raw_message": error_msg,
-                        "timestamp": error_ts,
-                        "duration_ms": duration_ms,
-                        "dry_run": bool(getattr(self.context, "is_dry_run", False)),
-                        "deep_validate": _is_deep,
-                        "stage": "node_execution",
-                    },
-                )
+                # CodeNodeError carries its own specific CODE_NODE_* code (syntax
+                # / forbidden / no-execute / exec / disabled) — surface that
+                # verbatim so the chatbot self-corrects the actual cause.
+                if isinstance(e, CodeNodeError):
+                    self._node_error_infos[node_id] = build_error(
+                        e.error_code,
+                        f"CodeNode '{node_id}' failed: {error_msg}",
+                        location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                        suggestion=e.suggestion,
+                        details={
+                            "exception_type": "CodeNodeError",
+                            "raw_message": error_msg,
+                            "timestamp": error_ts,
+                            "duration_ms": duration_ms,
+                            "dry_run": bool(getattr(self.context, "is_dry_run", False)),
+                            "deep_validate": _is_deep,
+                            "line": e.line,
+                            "stage": "code_node_execution",
+                            **(e.details or {}),
+                        },
+                    )
+                else:
+                    _err_code = (
+                        ErrorCode.DEEP_VALIDATION_NODE_ERROR
+                        if _is_deep
+                        else ErrorCode.DRY_RUN_RUNTIME_ERROR
+                    )
+                    self._node_error_infos[node_id] = build_error(
+                        _err_code,
+                        f"Node '{node_id}' ({node.node_type}) raised during execution: {error_msg}",
+                        location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                        details={
+                            "exception_type": type(e).__name__,
+                            "raw_message": error_msg,
+                            "timestamp": error_ts,
+                            "duration_ms": duration_ms,
+                            "dry_run": bool(getattr(self.context, "is_dry_run", False)),
+                            "deep_validate": _is_deep,
+                            "stage": "node_execution",
+                        },
+                    )
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
@@ -17507,6 +17410,7 @@ class WorkflowJob:
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
         "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
+        "CodeNode",  # custom code: receives the whole array in `data`, loops in-code (one subprocess call)
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
     }
 

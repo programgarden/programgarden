@@ -15,25 +15,16 @@ from programgarden.node_runner import (
     _BROKER_NODE_TYPES,
     _BROKER_DEPENDENT_NODE_TYPES,
 )
-from programgarden_core.nodes.base import BaseNode, NodeCategory, OutputPort
 
 
 # ─────────────────────────────────────────────────
-# 테스트용 노드 클래스
+# CodeNode source used by the standalone-run tests
 # ─────────────────────────────────────────────────
 
-class DummyNode(BaseNode):
-    """단순 테스트 노드 (외부 의존 없음)"""
-    type: str = "Dynamic_Dummy"
-    category: NodeCategory = NodeCategory.DATA
-    message: str = "hello"
-
-    _outputs: List[OutputPort] = [
-        OutputPort(name="result", type="string"),
-    ]
-
-    async def execute(self, context) -> Dict[str, Any]:
-        return {"result": f"echo: {self.message}"}
+_ECHO_CODE = (
+    "async def execute(data, params, context):\n"
+    "    return {'result': f\"echo: {params['message']}\"}"
+)
 
 
 # ─────────────────────────────────────────────────
@@ -45,43 +36,32 @@ class TestNodeRunnerBasic:
 
     @pytest.mark.asyncio
     async def test_run_simple_node(self):
-        """동적 노드를 NodeRunner로 단독 실행"""
-        from programgarden.executor import WorkflowExecutor
-
-        executor = WorkflowExecutor()
-        executor.register_dynamic_schemas([{
-            "node_type": "Dynamic_Dummy",
-            "category": "data",
-            "outputs": [{"name": "result", "type": "string"}],
-        }])
-        executor.inject_node_classes({"Dynamic_Dummy": DummyNode})
-
+        """CodeNode를 NodeRunner로 단독 실행"""
         runner = NodeRunner()
-        result = await runner.run("Dynamic_Dummy", message="world")
+        result = await runner.run(
+            "CodeNode",
+            code=_ECHO_CODE,
+            outputs=[{"name": "result", "type": "string"}],
+            params={"message": "world"},
+        )
 
         assert result["result"] == "echo: world"
         await runner.cleanup()
-        executor.clear_injected_classes()
 
     @pytest.mark.asyncio
     async def test_run_with_custom_node_id(self):
         """커스텀 node_id 지정"""
-        from programgarden.executor import WorkflowExecutor
-
-        executor = WorkflowExecutor()
-        executor.register_dynamic_schemas([{
-            "node_type": "Dynamic_Dummy",
-            "category": "data",
-            "outputs": [{"name": "result", "type": "string"}],
-        }])
-        executor.inject_node_classes({"Dynamic_Dummy": DummyNode})
-
         runner = NodeRunner()
-        result = await runner.run("Dynamic_Dummy", node_id="my-node-1", message="test")
+        result = await runner.run(
+            "CodeNode",
+            node_id="my-node-1",
+            code=_ECHO_CODE,
+            outputs=[{"name": "result", "type": "string"}],
+            params={"message": "test"},
+        )
 
         assert result["result"] == "echo: test"
         await runner.cleanup()
-        executor.clear_injected_classes()
 
     @pytest.mark.asyncio
     async def test_run_unknown_node_type(self):
@@ -306,23 +286,17 @@ class TestNodeRunnerConvenience:
     @pytest.mark.asyncio
     async def test_async_context_manager(self):
         """async with 패턴"""
-        from programgarden.executor import WorkflowExecutor
-
-        executor = WorkflowExecutor()
-        executor.register_dynamic_schemas([{
-            "node_type": "Dynamic_Dummy",
-            "category": "data",
-            "outputs": [{"name": "result", "type": "string"}],
-        }])
-        executor.inject_node_classes({"Dynamic_Dummy": DummyNode})
-
         async with NodeRunner() as runner:
-            result = await runner.run("Dynamic_Dummy", message="ctx_mgr")
+            result = await runner.run(
+                "CodeNode",
+                code=_ECHO_CODE,
+                outputs=[{"name": "result", "type": "string"}],
+                params={"message": "ctx_mgr"},
+            )
             assert result["result"] == "echo: ctx_mgr"
 
         # cleanup 호출 확인 (context가 None으로 정리됨)
         assert runner._context is None
-        executor.clear_injected_classes()
 
     @pytest.mark.asyncio
     async def test_raise_on_error_true(self):

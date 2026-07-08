@@ -1,4 +1,28 @@
 ## [Unreleased]
+### Added
+- **CodeNode** (`nodes/code.py`, category=data) — 커스텀 파이썬 코드 노드. config `code` 에
+  `async def execute(data, params, context)` 정의, 반환 dict → 선언 `outputs` 포트 매핑
+  (미선언 시 단일 `result`). 인스턴스별 출력 포트로 `{{ nodes.<id>.<port> }}` 타이포 가드 유지.
+  AI 메타 5종 + 버전 메타 3종 + i18n(ko/en). Node categories 73→74.
+- **`programgarden_core.code_node`** — public compile/AST-screen 유틸:
+  `compile_code_node(code, node_id, screen=True, allowed_imports=None)`
+  (ast.parse → 하드닝 AST denylist → execute 존재확인 → compile; exec 안 함) +
+  `build_restricted_builtins()`(축소 builtins + 화이트리스트 `__import__`). 웹 공유 게이트 재사용용.
+- ErrorCode 5종: `CODE_NODE_SYNTAX_ERROR` / `CODE_NODE_FORBIDDEN` / `CODE_NODE_NO_EXECUTE` /
+  `CODE_NODE_EXEC_ERROR` / `CODE_NODE_DISABLED`.
+
+### Removed (breaking)
+- **Dynamic_* 노드 주입 메커니즘 전면 제거**: `registry/dynamic_node_registry.py`
+  (`DynamicNodeRegistry`/`DynamicNodeSchema`/`DYNAMIC_NODE_PREFIX`/`is_dynamic_node_type`) +
+  ErrorCode 3종(`UNKNOWN_DYNAMIC_NODE_SCHEMA`/`DYNAMIC_NODE_CREDENTIAL_FORBIDDEN`/
+  `DYNAMIC_NODE_CLASS_NOT_INJECTED`). CodeNode 로 대체. (플러그인 `register_dynamic` 은 별개 — 유지)
+
+### Security
+- ⚠️ CodeNode 는 강화된 **defense-in-depth**(subprocess 격리[programgarden] + 제한 builtins +
+  하드닝 AST 스크린 + 스크럽 컨텍스트)이며 **완전 샌드박스 보장 아님** — 순수 파이썬 AST
+  스크린은 적대적 CPython 코드를 sound 하게 격리할 수 없음. 적대적 코드의 진짜 격리는
+  OS/인프라(사용자별 pod + no-egress + 파일/env 스크럽) 책임. 적대적 감사가 초기 스크리너
+  우회(operator·모듈 재노출·문자열 dunder RCE)를 실증 → 하드닝으로 차단.
 
 ## [1.15.2] - 2026-06-28
 ### Changed

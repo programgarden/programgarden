@@ -48,6 +48,7 @@ from programgarden_core.nodes.symbol_stock import OverseasStockSymbolQueryNode
 from programgarden_core.nodes.symbol_futures import OverseasFuturesSymbolQueryNode
 # Data (상품 무관)
 from programgarden_core.nodes.data import SQLiteNode, HTTPRequestNode, FieldMappingNode
+from programgarden_core.nodes.code import CodeNode
 # Market External (credential 불필요, 무료 외부 API)
 from programgarden_core.nodes.market_external import CurrencyRateNode
 # Market Status (JIF 장운영정보 — broker credential agnostic)
@@ -146,6 +147,7 @@ __all__ = [
     "SQLiteNode",
     "HTTPRequestNode",
     "FieldMappingNode",
+    "CodeNode",
     # Market External (credential 불필요)
     "CurrencyRateNode",
     # Market Status (JIF 장운영정보)
