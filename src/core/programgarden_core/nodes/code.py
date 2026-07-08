@@ -88,7 +88,11 @@ class CodeNode(BaseNode):
     # Per-instance output port declarations. Empty → single 'result' port.
     outputs: List[Dict[str, str]] = Field(
         default_factory=list,
-        description="Output port declarations [{name, type}]. Empty → single 'result' port.",
+        description=(
+            "Output port declarations [{name, type}]. Empty → single 'result' port. "
+            "Declared ports are consumed downstream by {{ nodes.<id>.<port> }} expressions, "
+            "not by typed-port matching; declaring them enables static typo-guarding."
+        ),
     )
 
     # Parameters passed to execute() as `params` (expression-bindable).
@@ -117,9 +121,10 @@ class CodeNode(BaseNode):
             "For simple field renames — FieldMappingNode is declarative and safer",
         ],
         "typical_scenarios": [
-            "OverseasStockHistoricalDataNode → CodeNode (custom momentum score) → IfNode",
-            "HTTPRequestNode → CodeNode (parse + normalize custom JSON) → TableDisplayNode",
-            "OverseasStockMarketDataNode → CodeNode (weighted composite of several fields) → ConditionNode",
+            "Display/sink: HTTPRequestNode → CodeNode (parse + normalize custom JSON) → TableDisplayNode — any return shape works for a sink",
+            "Typed node: ScreenerNode → CodeNode (custom rank/filter returning a [{symbol, exchange, ...}] list) → OverseasStockNewOrderNode — return the standard Symbol Data Format so the typed node reads it correctly",
+            "Branch/condition: OverseasStockHistoricalDataNode → CodeNode (custom momentum score returning a scalar) → IfNode — bind the scalar to IfNode.left/right",
+            "Terminal compute: OverseasStockMarketDataNode → CodeNode (weighted composite logged/stored) — no downstream consumer",
         ],
     }
     _features: ClassVar[List[str]] = [
@@ -144,6 +149,11 @@ class CodeNode(BaseNode):
             "pattern": "Declaring 'outputs' ports whose names the return dict never sets",
             "reason": "A declared port missing from the return maps to None with a warning — a silent-looking gap downstream.",
             "alternative": "Return a dict whose keys exactly match every declared output port name.",
+        },
+        {
+            "pattern": "Feeding a CodeNode return of non-standard shape into a typed node (order node, ConditionNode)",
+            "reason": "The binding layer checks port existence but never coerces shape; a wrong shape does not fail at the CodeNode — it fails downstream where the typed node reads it (e.g. order nodes expect the Symbol Data Format array of {symbol, exchange, ...}).",
+            "alternative": "When feeding a typed market/order/condition node, return the standard shape: a list of {symbol, exchange, ...} dicts. When feeding a display/sink or If/Condition scalar, any shape works.",
         },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
@@ -216,11 +226,12 @@ class CodeNode(BaseNode):
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": "Bind the whole upstream value to 'data' (e.g. \"{{ nodes.hist.values }}\") and loop over it inside execute() — CodeNode is not per-item auto-iterated. Pass fixed knobs via 'params'. Declare 'outputs' when you want named ports; omit it to use the single 'result' port.",
-        "output_consumption": "With declared outputs, read {{ nodes.<id>.<port> }} for each declared port. With no outputs declared, read {{ nodes.<id>.result }} (the whole return value). A declared port absent from the return dict resolves to None with a warning.",
+        "output_consumption": "Downstream nodes do NOT need a matching typed port. They consume a CodeNode output by writing a {{ nodes.<id>.<port> }} expression into their own generic input field (e.g. TableDisplayNode.data, IfNode.left/right, FieldMappingNode.data) — the binding layer resolves the dict key by name, it does not type-match ports. With no outputs declared, read {{ nodes.<id>.result }} (the whole return value). A declared output port that no node references is fine; a declared port absent from the return dict resolves to None with a warning. Because ports are declared, validate() typo-guards these references.",
         "common_combinations": [
-            "OverseasStockHistoricalDataNode → CodeNode → IfNode",
-            "HTTPRequestNode → CodeNode → TableDisplayNode",
-            "OverseasStockMarketDataNode → CodeNode → ConditionNode",
+            "CodeNode → TableDisplayNode / LineChartNode / TelegramNode (display or sink — any return shape works)",
+            "CodeNode → OverseasStockNewOrderNode / ConditionNode (typed node — return the standard [{symbol, exchange, ...}] shape)",
+            "CodeNode → IfNode / ConditionNode (return a scalar count/bool/ratio and bind it to left/right)",
+            "OverseasStockHistoricalDataNode → CodeNode (terminal compute — no downstream consumer)",
         ],
         "pitfalls": [
             "execute() must be defined exactly with that name; a missing/renamed function is rejected before run (CODE_NODE_NO_EXECUTE).",
