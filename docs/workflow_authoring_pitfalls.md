@@ -122,7 +122,7 @@ workflow = _inject_credentials_into_workflow(workflow, secrets)
 {
   "id": "scalable_trailing_stop",
   "type": "ConditionNode",
-  "plugin": "Dynamic_ScalableTrailingStop",
+  "plugin": "ScalableTrailingStop",
   "items": {
     "from": "real_account",
     "extract": "positions"
@@ -295,7 +295,7 @@ MarketStatusNode 를 쓰세요.
     {"id": "market_status", "type": "MarketStatusNode",
      "markets": ["US"], "stay_connected": true},
     {"id": "scalable_trailing_stop", "type": "ConditionNode",
-     "plugin": "Dynamic_ScalableTrailingStop",
+     "plugin": "ScalableTrailingStop",
      "positions": "{{ nodes.real_account.positions }}"},
     {"id": "if_trigger", "type": "IfNode",
      "left": "{{ nodes.scalable_trailing_stop.passed_symbols }}",

@@ -33,4 +33,4 @@
 
 * [노드 단독 실행 (NodeRunner)](node_runner_guide.md)
 * [플러그인 개발](custom_dsl.md)
-* [동적 노드 주입](dynamic_node_guide.md)
+* [CodeNode (커스텀 파이썬 코드)](code_node_guide.md)

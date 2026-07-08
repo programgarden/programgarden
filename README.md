@@ -33,12 +33,12 @@
 
 ## 주요 기능
 
-* **노드 기반 워크플로우** — 73개 노드를 조합하여 코딩 없이 전략 구성
+* **노드 기반 워크플로우** — 74개 노드를 조합하여 코딩 없이 전략 구성
 * **해외주식 · 해외선물 · 국내주식** — LS증권 OpenAPI 기반 실시간 시세 조회 및 자동 주문
 * **AI Agent** — LLM 기반 분석 및 의사결정을 워크플로우에 통합
 * **전략 플러그인** — RSI, MACD 등 커뮤니티 기여 전략을 조합하여 활용
 * **위험 관리** — 포트폴리오 추적, HWM/Drawdown, 위험 이벤트 감사 기록
-* **동적 노드 주입** — 외부 개발자가 런타임에 커스텀 노드를 추가 가능
+* **CodeNode (커스텀 파이썬 코드)** — 기존 노드로 표현 못 하는 로직을 샌드박스 subprocess 에서 실행
 
 ## 패키지 구조
 
@@ -56,7 +56,7 @@ src/
 
 - **워크플로우(자동매매)**: [`src/programgarden/examples/`](src/programgarden/examples/)
   - `workflows/` — 77개 실행 가능한 워크플로우 JSON + 동반 `.md` 문서
-  - `dynamic_plugins/`, `dynamic_nodes/` — 런타임 동적 주입 예시
+  - `dynamic_plugins/` — 커뮤니티 전략 플러그인 예시
   - `programmer_example/` — AI Agent · quant 통합 스크립트
 - **LS증권 데이터 API**: [`src/finance/example/`](src/finance/example/)
   - 해외주식 · 해외선물 · 국내주식 TR 호출 샘플
@@ -99,7 +99,7 @@ workflow JSON that runs through `WorkflowExecutor`. Follow this context strictly
 
 - Node-based automation DSL. A workflow is a JSON document with `nodes`,
   `edges`, `credentials`, and `notes`.
-- 73 nodes across 12 categories: `infra` / `account` / `market` / `condition` /
+- 74 nodes across 12 categories: `infra` / `account` / `market` / `condition` /
   `order` / `risk` / `schedule` / `data` / `display` / `analysis` / `ai` /
   `messaging`. Full schema lives in `CLAUDE.md` and
   `src/core/programgarden_core/nodes/`.
