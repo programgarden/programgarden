@@ -1,4 +1,9 @@
 ## [Unreleased]
+### Fixed
+- **PositionSizingNodeExecutor D-1 정합** — 입력 `symbols` 없으면 `symbol`(단수) 폴백
+  (`symbols or [symbol]`), 출력에 `order = orders[0]` 단수 deprecated alias 이중 방출. core
+  스키마(orders/order · symbols/symbol)와 정합 → 단수 `.order` 바인딩 예제들의 silent no-op 소생.
+
 ### Added
 - **CodeNode 실행** — `CodeNodeExecutor` 가 CodeNode 코드를 고정 spawn 워커풀
   (`code_worker.py`)에서 **항상 앱키 없는 자식 프로세스**로 실행(Layer 4). 스크럽 읽기전용

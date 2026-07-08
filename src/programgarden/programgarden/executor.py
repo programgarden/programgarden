@@ -11357,7 +11357,12 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         evaluated = evaluate_all_bindings(config, context, node_id)
         
         # 필수 입력 추출
-        symbols_input = evaluated.get("symbols", [])
+        # D-1: `symbols` (plural) is the canonical input; `symbol` (singular) is
+        # kept as a deprecated alias so single-symbol bindings still resolve.
+        symbols_input = evaluated.get("symbols")
+        if not symbols_input:
+            _single = evaluated.get("symbol")
+            symbols_input = [_single] if _single else []
         balance_data = evaluated.get("balance", {})
         # price_data, prices, market_data 순서로 확인 (하위 호환성)
         price_data = evaluated.get("price_data") or evaluated.get("prices") or evaluated.get("market_data") or {}
@@ -11471,6 +11476,10 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
 
         # 결과에 원본 symbols 추가
         result["symbols"] = symbols_input
+        # D-1: emit the singular `order` deprecated alias (= orders[0]) alongside
+        # the canonical `orders` list so both bindings resolve at runtime.
+        _orders = result.get("orders") or []
+        result["order"] = _orders[0] if _orders else None
 
         return result
 
@@ -12042,6 +12051,7 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         )
         return {
             "orders": [],
+            "order": None,  # D-1 singular deprecated alias (= orders[0])
             "total_amount": 0.0,
             "symbols": [],
             "method": None,

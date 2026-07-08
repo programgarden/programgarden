@@ -1,4 +1,11 @@
 ## [Unreleased]
+### Changed
+- **PositionSizingNode D-1 정합** (`nodes/risk.py`, minor `1.0.0`→`1.1.0`, 비파괴 additive) —
+  복수 canonical 포트 추가: 입력 `symbols`(정본) + `symbol`(deprecated alias), 출력
+  `orders`(정본, NewOrderNode auto-iterate) + `order`(= orders[0], deprecated alias). 스키마-런타임
+  불일치(감사 H-28) 해소 → `.orders`/`.order` 양쪽 바인딩 해석, 기존 단수 바인딩 silent no-op 소생.
+  `_examples` 복수 정본 패턴으로 갱신.
+
 ### Added
 - **CodeNode** (`nodes/code.py`, category=data) — 커스텀 파이썬 코드 노드. config `code` 에
   `async def execute(data, params, context)` 정의, 반환 dict → 선언 `outputs` 포트 매핑
