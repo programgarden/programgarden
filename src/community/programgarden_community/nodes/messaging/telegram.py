@@ -104,12 +104,12 @@ class TelegramNode(BaseMessagingNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 20},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}", "period": 14, "oversold": 30, "overbought": 70},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "oversold": 30, "overbought": 70}},
                     {
                         "id": "notify",
                         "type": "TelegramNode",
                         "credential_id": "tg_cred",
-                        "template": "Buy signal: {{ nodes.condition.symbol }} RSI={{ nodes.condition.rsi }}",
+                        "template": "Buy signal — oversold symbols: {{ nodes.condition.passed_symbols }} (met={{ nodes.condition.is_condition_met }})",
                     },
                 ],
                 "edges": [
@@ -148,19 +148,19 @@ class TelegramNode(BaseMessagingNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "account", "type": "OverseasStockAccountNode"},
-                    {"id": "risk", "type": "ConditionNode", "plugin": "TrailingStop", "data": "{{ nodes.account.positions }}", "trail_pct": 5.0},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 30},
+                    {"id": "risk", "type": "ConditionNode", "plugin": "TrailingStop", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"trail_pct": 5.0}},
                     {
                         "id": "alert",
                         "type": "TelegramNode",
                         "credential_id": "tg_cred",
-                        "template": "Trailing stop hit: {{ nodes.risk.symbol }} drawdown={{ nodes.risk.drawdown_pct }}%",
+                        "template": "Trailing stop hit for {{ nodes.risk.passed_symbols }} (triggered={{ nodes.risk.is_condition_met }})",
                     },
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "account"},
-                    {"from": "account", "to": "risk"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "risk"},
                     {"from": "risk", "to": "alert"},
                 ],
                 "credentials": [

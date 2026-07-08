@@ -155,7 +155,7 @@ class FearGreedIndexNode(BaseNode):
                         "prompt": "Market sentiment is {{ nodes.fgi.label }} (score={{ nodes.fgi.value }}). Should we buy AAPL today?",
                         "output_format": "text",
                     },
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.agent.text }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.agent.response }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "fgi"},

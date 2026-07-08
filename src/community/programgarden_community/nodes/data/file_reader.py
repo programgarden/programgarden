@@ -131,7 +131,7 @@ class FileReaderNode(BaseNode):
                         "prompt": "Summarize the following earnings report: {{ nodes.reader.texts[0] }}",
                         "output_format": "text",
                     },
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.agent.text }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.agent.response }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "reader"},
