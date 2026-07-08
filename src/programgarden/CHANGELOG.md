@@ -1,4 +1,8 @@
-## [Unreleased]
+## [1.25.0] - 2026-07-08
+> ⚠️ **[BREAKING] — shipped as minor.** Dynamic_* 노드 API(`register_dynamic_schemas` 등)가
+> 제거되었습니다(아래 `Removed (BREAKING)`). 외부 사용처 부재로 major 대신 **minor(1.25.0)**
+> 로 릴리스합니다. `dynamic_nodes` payload 사용처는 CodeNode JSON 으로 마이그레이션이 필요합니다.
+
 ### Fixed
 - **PositionSizingNodeExecutor D-1 정합** — 입력 `symbols` 없으면 `symbol`(단수) 폴백
   (`symbols or [symbol]`), 출력에 `order = orders[0]` 단수 deprecated alias 이중 방출. core
@@ -13,7 +17,7 @@
   바인딩 봉쇄 + CodeNode 인스턴스 출력 포트 타이포 가드. auto-iterate 는 배열 전체를 자식 1회 호출로 배치.
   예제 `87-code-node-momentum` 추가.
 
-### Removed (breaking)
+### Removed (BREAKING)
 - **Dynamic_* 노드 API 전면 제거**: `WorkflowExecutor` 의 `register_dynamic_schemas` /
   `get_required_dynamic_types` / `inject_node_classes` / `clear_injected_classes` /
   `load_dynamic_nodes` / `list_dynamic_node_types` / `is_dynamic_node_ready`,

@@ -1,4 +1,9 @@
-## [Unreleased]
+## [1.16.0] - 2026-07-08
+> ⚠️ **[BREAKING] — shipped as minor.** Dynamic_* 노드 주입 메커니즘이 제거되었습니다(아래
+> `Removed (BREAKING)`). 외부에 Dynamic 주입 API 사용처가 없다고 판단해 major 대신
+> **minor(1.16.0)** 로 릴리스합니다. `Dynamic_*` 타입/주입 API 를 쓰던 코드는 CodeNode JSON
+> 으로 마이그레이션이 필요합니다.
+
 ### Changed
 - **PositionSizingNode D-1 정합** (`nodes/risk.py`, minor `1.0.0`→`1.1.0`, 비파괴 additive) —
   복수 canonical 포트 추가: 입력 `symbols`(정본) + `symbol`(deprecated alias), 출력
@@ -18,7 +23,7 @@
 - ErrorCode 5종: `CODE_NODE_SYNTAX_ERROR` / `CODE_NODE_FORBIDDEN` / `CODE_NODE_NO_EXECUTE` /
   `CODE_NODE_EXEC_ERROR` / `CODE_NODE_DISABLED`.
 
-### Removed (breaking)
+### Removed (BREAKING)
 - **Dynamic_* 노드 주입 메커니즘 전면 제거**: `registry/dynamic_node_registry.py`
   (`DynamicNodeRegistry`/`DynamicNodeSchema`/`DYNAMIC_NODE_PREFIX`/`is_dynamic_node_type`) +
   ErrorCode 3종(`UNKNOWN_DYNAMIC_NODE_SCHEMA`/`DYNAMIC_NODE_CREDENTIAL_FORBIDDEN`/

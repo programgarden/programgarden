@@ -1,3 +1,11 @@
+## [1.13.11] - 2026-07-08
+### Fixed
+- **커뮤니티 노드 `_examples` AI 메타데이터 스니펫 교정** (`nodes/messaging/telegram.py`,
+  `nodes/market/fear_greed.py`, `nodes/data/file_reader.py`) — `_examples[].workflow_snippet`
+  이 `WorkflowExecutor.validate()` 를 통과하도록 재배선(TelegramNode notify(RSI)/risk
+  (TrailingStop) 데이터 공급, FearGreed/FileReader 의 AIAgent `agent.text` → `agent.response`
+  포트 교정). 노드 로직·스키마 불변(AI 메타데이터 전용).
+
 ## [1.13.10] - 2026-06-28
 ### Changed
 - 배포 메타데이터: `pyproject` `license = "AGPL-3.0-or-later"`(PEP 639, 저장소 LICENSE 일치)를 PyPI 공개 메타데이터에 노출. 코드/동작 변경 없음 (metadata-only patch).
