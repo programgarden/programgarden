@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue?logo=python\&logoColor=white)](https://www.python.org/) [![Release](https://img.shields.io/github/v/tag/programgarden/programgarden?label=release\&sort=semver\&logo=github)](https://github.com/programgarden/programgarden/releases) [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE/) [![Company: LS](https://img.shields.io/badge/%EC%A7%80%EC%9B%90%EB%90%98%EB%8A%94_%EC%A6%9D%EA%B6%8C%EC%82%AC-LS%EC%A6%9D%EA%B6%8C-008FC7.svg)](https://ls-sec.co.kr) [![Product: OverseasStock](https://img.shields.io/badge/%EC%A7%80%EC%9B%90%EB%90%98%EB%8A%94_%EC%9E%90%EB%8F%99%EB%A7%A4%EB%A7%A4-%ED%95%B4%EC%99%B8%EC%A3%BC%EC%8B%9D,%ED%95%B4%EC%99%B8%EC%84%A0%EB%AC%BC,%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D-purple.svg)](https://programgarden.gitbook.io/docs)
 
-![programgarden 그리고 ls](docs/images/programgarden_ls.png)
+![programgarden 그리고 ls](<.gitbook/assets/programgarden_ls (1).png>)
 
 > **⚠️ 주의**: 오픈소스 사용 시 발생하는 문제에 대한 책임은 사용자에게 있으며, 라이선스를 반드시 확인해 주세요. [라이선스 보기](https://github.com/programgarden/programgarden?tab=AGPL-3.0-1-ov-file#readme)
 
@@ -54,12 +54,12 @@ src/
 
 ## 예제
 
-- **워크플로우(자동매매)**: [`src/programgarden/examples/`](src/programgarden/examples/)
-  - `workflows/` — 77개 실행 가능한 워크플로우 JSON + 동반 `.md` 문서
-  - `dynamic_plugins/` — 커뮤니티 전략 플러그인 예시
-  - `programmer_example/` — AI Agent · quant 통합 스크립트
-- **LS증권 데이터 API**: [`src/finance/example/`](src/finance/example/)
-  - 해외주식 · 해외선물 · 국내주식 TR 호출 샘플
+* **워크플로우(자동매매)**: [`src/programgarden/examples/`](src/programgarden/examples/)
+  * `workflows/` — 77개 실행 가능한 워크플로우 JSON + 동반 `.md` 문서
+  * `dynamic_plugins/` — 커뮤니티 전략 플러그인 예시
+  * `programmer_example/` — AI Agent · quant 통합 스크립트
+* **LS증권 데이터 API**: [`src/finance/example/`](src/finance/example/)
+  * 해외주식 · 해외선물 · 국내주식 TR 호출 샘플
 
 ## 설치
 
@@ -84,7 +84,8 @@ poetry add programgarden-finance
 ProgramGarden 은 두 종류의 사용 인터페이스를 제공합니다. 자신이 하려는 작업에 해당하는 섹션을 펼친 뒤, 안쪽 코드 블록(우상단 복사 버튼)을 통째로 복사해 AI 에이전트의 시스템 프롬프트 또는 첫 메시지에 붙여 넣으세요. 도메인 특화 코드베이스(워크플로우 DSL + LS증권 OpenAPI)라 콜드 리딩만으로는 정확한 추론이 어렵기 때문에, 앞단에 컨텍스트를 주는 것이 출력 품질을 크게 좌우합니다.
 
 <details>
-<summary><b>워크플로우 사용자용 (<code>programgarden</code> — 노드 기반 자동화)</b></summary>
+
+<summary>워크플로우 사용자용 (<code>programgarden</code> — 노드 기반 자동화)</summary>
 
 `WorkflowExecutor` 로 실행할 워크플로우 JSON 을 작성하거나 디버깅할 때 사용합니다. 아래 블록을 통째로 복사해 에이전트에게 붙여 넣으세요.
 
@@ -189,7 +190,8 @@ keys in English only.
 </details>
 
 <details>
-<summary><b>LS증권 API 직접 사용자용 (<code>programgarden-finance</code> 단독)</b></summary>
+
+<summary>LS증권 API 직접 사용자용 (<code>programgarden-finance</code> 단독)</summary>
 
 워크플로우 엔진 없이 LS증권 OpenAPI 래퍼만 사용해 자신의 스크립트에서 TR(거래코드)을 직접 호출할 때 사용합니다. 아래 블록을 통째로 복사해 에이전트에게 붙여 넣으세요.
 
