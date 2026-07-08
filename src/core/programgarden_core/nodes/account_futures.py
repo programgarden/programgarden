@@ -124,7 +124,7 @@ class OverseasFuturesAccountNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "futures_cred", "paper_trading": True},
                     {"id": "account", "type": "OverseasFuturesAccountNode"},
-                    {"id": "if_margin", "type": "IfNode", "left": "{{ nodes.account.balance.orderable_margin }}", "operator": ">=", "right": 10000},
+                    {"id": "if_margin", "type": "IfNode", "left": "{{ nodes.account.balance.orderable_amount }}", "operator": ">=", "right": 10000},
                     {"id": "order", "type": "OverseasFuturesNewOrderNode", "symbol": "ESH26", "exchange": "CME", "side": "buy", "order_type": "limit", "quantity": 1, "price": 5200.0},
                 ],
                 "edges": [
@@ -144,7 +144,7 @@ class OverseasFuturesAccountNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "When orderable_margin >= 10000: NewOrderNode places a buy limit order. Otherwise the order branch is skipped.",
+            "expected_output": "When orderable_amount >= 10000: NewOrderNode places a buy limit order. Otherwise the order branch is skipped.",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {

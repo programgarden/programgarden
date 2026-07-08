@@ -95,7 +95,23 @@ class KoreaStockRealMarketDataNode(BaseNode):
                     {"id": "split", "type": "SplitNode", "items": [{"symbol": "005930"}]},
                     {"id": "real", "type": "KoreaStockRealMarketDataNode", "symbol": "{{ nodes.split.item }}", "stay_connected": True},
                     {"id": "throttle", "type": "ThrottleNode", "interval_seconds": 60},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.real.ohlcv_data }}"},
+                    {"id": "historical", "type": "KoreaStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "period": "1d", "start_date": "20260301", "end_date": "20260401"},
+                    {
+                        "id": "condition",
+                        "type": "ConditionNode",
+                        "plugin": "RSI",
+                        "items": {
+                            "from": "{{ nodes.historical.value.time_series }}",
+                            "extract": {
+                                "symbol": "{{ nodes.historical.value.symbol }}",
+                                "exchange": "{{ nodes.historical.value.exchange }}",
+                                "date": "{{ row.date }}",
+                                "close": "{{ row.close }}",
+                            },
+                        },
+                        "fields": {"period": 14, "threshold": 30, "direction": "below"},
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "title": "RSI oversold", "data": "{{ nodes.condition.passed_symbols }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
@@ -103,7 +119,10 @@ class KoreaStockRealMarketDataNode(BaseNode):
                     {"from": "split", "to": "real"},
                     {"from": "broker", "to": "real"},
                     {"from": "real", "to": "throttle"},
+                    {"from": "split", "to": "historical"},
                     {"from": "throttle", "to": "condition"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "display"},
                 ],
                 "credentials": [
                     {
@@ -116,7 +135,7 @@ class KoreaStockRealMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "ohlcv_data port: {symbol, open, high, low, close, volume} aggregated candle per tick batch. Throttled to once per 60 seconds downstream.",
+            "expected_output": "Live 005930 ticks are throttled to at most once per 60s; each throttled tick re-triggers the RSI(14) condition over the historical daily bars. condition.passed_symbols lists 005930 when its latest RSI < 30, rendered by the table.",
         },
         {
             "title": "Live candlestick chart for KOSDAQ stock",
@@ -326,7 +345,7 @@ class KoreaStockRealAccountNode(BaseNode):
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
                     {"id": "real_account", "type": "KoreaStockRealAccountNode", "stay_connected": True, "market": "KOSPI"},
                     {"id": "throttle", "type": "ThrottleNode", "mode": "latest", "interval_sec": 5, "pass_first": True},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "StopLoss", "data": "{{ nodes.throttle.data }}"},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "StopLoss", "positions": "{{ nodes.real_account.positions }}", "fields": {"threshold_pct": -3.0}},
                     {"id": "order", "type": "KoreaStockNewOrderNode", "symbol": "{{ item.symbol }}", "side": "sell", "order_type": "market", "quantity": "{{ item.quantity }}"},
                 ],
                 "edges": [

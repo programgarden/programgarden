@@ -203,7 +203,7 @@ class BacktestEngineNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 252},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}", "period": 14, "oversold": 30, "overbought": 70},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
                     {
                         "id": "backtest",
                         "type": "BacktestEngineNode",
@@ -261,7 +261,7 @@ class BacktestEngineNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "SPY", "exchange": "NYSE"}], "period": "1d", "count": 504},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.historical.values }}"},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"}},
                     {
                         "id": "backtest",
                         "type": "BacktestEngineNode",
@@ -748,8 +748,8 @@ class BenchmarkCompareNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "SPY", "exchange": "NYSE"}], "period": "1d", "count": 252},
-                    {"id": "rsi_cond", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.values }}", "period": 14, "oversold": 30, "overbought": 70},
-                    {"id": "macd_cond", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.historical.values }}"},
+                    {"id": "rsi_cond", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
+                    {"id": "macd_cond", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"}},
                     {
                         "id": "backtest_rsi",
                         "type": "BacktestEngineNode",
@@ -807,7 +807,7 @@ class BenchmarkCompareNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "QQQ", "exchange": "NASDAQ"}], "period": "1d", "count": 252},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.historical.values }}"},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"}},
                     {
                         "id": "backtest",
                         "type": "BacktestEngineNode",

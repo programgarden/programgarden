@@ -121,7 +121,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "split", "type": "SplitNode", "items": [{"symbol": "AAPL", "exchange": "NASDAQ"}]},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(30, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1d", "adjust": False},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.value.time_series }}", "period": 14, "oversold_threshold": 30},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
@@ -154,7 +154,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "split", "type": "SplitNode", "items": [{"symbol": "MSFT", "exchange": "NASDAQ"}]},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(5, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "5m", "adjust": False},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.historical.value.time_series }}"},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

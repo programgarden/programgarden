@@ -1,0 +1,56 @@
+{
+  "id": "88-code-node-symbol-passthrough",
+  "name": "CodeNode 표준 심볼 배열 → 타입드 노드 패스스루",
+  "description": "CodeNode 가 표준 Symbol Data Format [{symbol, exchange, ...}] 을 반환해 다운스트림 typed 노드(PositionSizingNode)로 흘리는 pattern-2 시연. PositionSizing 은 fixed_quantity 로 각 심볼 사이즈만 계산(주문 미발사) → TableDisplay. 무인 실행 안전(실주문 없음).",
+  "nodes": [
+    { "id": "start", "type": "StartNode", "position": { "x": 50, "y": 200 } },
+    { "id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "stock_cred", "position": { "x": 250, "y": 200 } },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbols": [
+        { "symbol": "AAPL", "exchange": "NASDAQ" },
+        { "symbol": "MSFT", "exchange": "NASDAQ" },
+        { "symbol": "NVDA", "exchange": "NASDAQ" }
+      ],
+      "period": "1d",
+      "count": 30,
+      "position": { "x": 500, "y": 200 }
+    },
+    {
+      "id": "rank",
+      "type": "CodeNode",
+      "data": "{{ nodes.historical.values }}",
+      "params": { "top_n": 2 },
+      "outputs": [ { "name": "ranked", "type": "array" } ],
+      "code": "async def execute(data, params, context):\n    top_n = int(params.get('top_n', 2))\n    ranked = []\n    for row in (data or []):\n        ts = row.get('time_series') or []\n        closes = [b.get('close') for b in ts if isinstance(b, dict) and b.get('close') is not None]\n        if len(closes) < 2:\n            continue\n        base = closes[0]\n        momentum = ((closes[-1] - base) / base * 100.0) if base else 0.0\n        ranked.append({'symbol': row.get('symbol'), 'exchange': row.get('exchange'), 'momentum_pct': round(momentum, 2)})\n    ranked.sort(key=lambda r: r['momentum_pct'], reverse=True)\n    return {'ranked': ranked[:top_n]}",
+      "position": { "x": 780, "y": 200 }
+    },
+    {
+      "id": "sizing",
+      "type": "PositionSizingNode",
+      "symbol": "{{ item }}",
+      "method": "fixed_quantity",
+      "fixed_quantity": 10,
+      "position": { "x": 1050, "y": 120 }
+    },
+    { "id": "display", "type": "TableDisplayNode", "data": "{{ nodes.rank.ranked }}", "position": { "x": 1050, "y": 300 } }
+  ],
+  "edges": [
+    { "from": "start", "to": "broker" },
+    { "from": "broker", "to": "historical" },
+    { "from": "historical", "to": "rank" },
+    { "from": "rank", "to": "sizing" },
+    { "from": "rank", "to": "display" }
+  ],
+  "credentials": [
+    {
+      "credential_id": "stock_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        { "key": "appkey", "value": "", "type": "password", "label": "App Key" },
+        { "key": "appsecret", "value": "", "type": "password", "label": "App Secret" }
+      ]
+    }
+  ]
+}

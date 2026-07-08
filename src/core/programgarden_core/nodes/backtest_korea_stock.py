@@ -121,7 +121,7 @@ class KoreaStockHistoricalDataNode(BaseNode):
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
                     {"id": "split", "type": "SplitNode", "items": [{"symbol": "005930"}]},
                     {"id": "historical", "type": "KoreaStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(60, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1d", "adjust": True},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "data": "{{ nodes.historical.value.time_series }}", "period": 14, "oversold_threshold": 30},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
@@ -154,7 +154,7 @@ class KoreaStockHistoricalDataNode(BaseNode):
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
                     {"id": "split", "type": "SplitNode", "items": [{"symbol": "247540"}]},
                     {"id": "historical", "type": "KoreaStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(365, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1w", "adjust": True},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "BollingerBands", "data": "{{ nodes.historical.value.time_series }}"},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "BollingerBands", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 20, "std": 2.0, "direction": "below_lower"}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

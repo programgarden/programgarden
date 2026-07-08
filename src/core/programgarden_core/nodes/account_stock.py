@@ -125,7 +125,7 @@ class OverseasStockAccountNode(BaseNode):
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "account", "type": "OverseasStockAccountNode"},
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "title": "Live Prices", "data": "{{ nodes.market.data }}"},
+                    {"id": "display", "type": "TableDisplayNode", "title": "Live Prices", "data": "{{ nodes.market.values }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

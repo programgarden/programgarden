@@ -96,7 +96,23 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
                     {"id": "split", "type": "SplitNode", "items": [{"symbol": "ESH26", "exchange": "CME"}]},
                     {"id": "real", "type": "OverseasFuturesRealMarketDataNode", "symbol": "{{ nodes.split.item }}", "stay_connected": True},
                     {"id": "throttle", "type": "ThrottleNode", "interval_seconds": 60},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "data": "{{ nodes.real.ohlcv_data }}"},
+                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "period": "1d", "start_date": "20260101", "end_date": "20260301"},
+                    {
+                        "id": "condition",
+                        "type": "ConditionNode",
+                        "plugin": "MACD",
+                        "items": {
+                            "from": "{{ nodes.historical.value.time_series }}",
+                            "extract": {
+                                "symbol": "{{ nodes.historical.value.symbol }}",
+                                "exchange": "{{ nodes.historical.value.exchange }}",
+                                "date": "{{ row.date }}",
+                                "close": "{{ row.close }}",
+                            },
+                        },
+                        "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"},
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "title": "MACD bullish cross", "data": "{{ nodes.condition.passed_symbols }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
@@ -104,7 +120,10 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
                     {"from": "split", "to": "real"},
                     {"from": "broker", "to": "real"},
                     {"from": "real", "to": "throttle"},
+                    {"from": "split", "to": "historical"},
                     {"from": "throttle", "to": "condition"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "display"},
                 ],
                 "credentials": [
                     {
@@ -117,7 +136,7 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "ohlcv_data port: {symbol, exchange, open, high, low, close, volume} aggregated candle. Throttled to once per 60 seconds downstream.",
+            "expected_output": "Live ESH26 ticks are throttled to at most once per 60s; each throttled tick re-triggers the MACD condition over the historical daily bars. condition.passed_symbols lists ESH26 on a bullish MACD cross, rendered by the table.",
         },
         {
             "title": "HKEX mini-futures live chart",
@@ -327,7 +346,7 @@ class OverseasFuturesRealAccountNode(BaseNode):
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "futures_cred", "paper_trading": True},
                     {"id": "real_account", "type": "OverseasFuturesRealAccountNode", "stay_connected": True},
                     {"id": "throttle", "type": "ThrottleNode", "mode": "latest", "interval_sec": 5, "pass_first": True},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "StopLoss", "data": "{{ nodes.throttle.data }}"},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "StopLoss", "positions": "{{ nodes.real_account.positions }}", "fields": {"threshold_pct": -3.0}},
                     {"id": "order", "type": "OverseasFuturesNewOrderNode", "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "side": "sell", "order_type": "market", "quantity": "{{ item.quantity }}"},
                 ],
                 "edges": [
