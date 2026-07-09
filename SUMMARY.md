@@ -28,5 +28,5 @@
 ## 개발자 가이드 <a href="#develop" id="develop"></a>
 
 * [파이썬으로 DSL 커스텀하기](docs/custom_dsl.md)
-* [커스텀 노드 주입하기 (Dynamic Node)](develop/dynamic-node.md)
+* [CodeNode (커스텀 파이썬 코드)](docs/code_node_guide.md)
 * [LS증권 코드 사용하기](docs/finance_guide.md)
