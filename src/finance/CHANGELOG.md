@@ -1,3 +1,15 @@
+## [1.6.15] - 2026-07-10
+### Fixed
+- **README 해외주식 계좌 TR 라벨 정정 (docs-only)** — `README.md` "해외 주식 › 계좌"
+  줄의 TR 4종 설명이 서로 어긋나 있던 것을 소스(각 TR `blocks.py` / `accno` 메서드
+  docstring) 및 `docs/finance_guide.md` 기준으로 정정. 라이브러리 코드·동작 변경 없음.
+  - `COSAQ00102`: 예수금 → **주문체결내역** (Account Order History)
+  - `COSAQ01400`: 해외잔고 → **예약주문 처리결과** (Reservation-Order History)
+  - `COSOQ00201`: 체결내역 → **해외주식 종합잔고평가** (Balance Evaluation)
+  - `COSOQ02701`: 미체결 → **외화예수금/주문가능금액**
+  - 해외주식 잔고 조회는 `COSOQ00201` 이 맞으며 `COSAQ01400` 은 예약주문 처리결과
+    TR 임을 명확히 함(사용자 제보 반영). 코드블록 예시의 계좌 TR 주석도 동일 정정.
+
 ## [1.6.14] - 2026-07-07
 ### Added
 - **t8409 업종차트(N분) TR 추가 (sector index N-minute chart)** — 신규 국내주식
