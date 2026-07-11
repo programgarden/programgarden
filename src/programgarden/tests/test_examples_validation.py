@@ -75,9 +75,9 @@ class TestWorkflowStaticValidation:
     """Every bundled example workflow must pass WorkflowExecutor.validate()."""
 
     def test_workflow_files_discovered(self):
-        """Sanity: repo ships with 90 example workflows."""
-        assert len(WORKFLOW_FILES) == 90, (
-            f"expected 90 workflow JSON files, found {len(WORKFLOW_FILES)}"
+        """Sanity: repo ships with 95 example workflows."""
+        assert len(WORKFLOW_FILES) == 95, (
+            f"expected 95 workflow JSON files, found {len(WORKFLOW_FILES)}"
         )
 
     @pytest.mark.parametrize("wf_path", WORKFLOW_FILES, ids=_ids(WORKFLOW_FILES))

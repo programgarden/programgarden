@@ -1,0 +1,118 @@
+{
+  "id": "91-code-node-kelly",
+  "name": "CodeNode Kelly-fraction sizing (NASDAQ)",
+  "description": "StartNode -> OverseasStockBrokerNode -> OverseasStockHistoricalDataNode(3 NASDAQ names, 1d) -> CodeNode(hand-rolled Kelly fraction from historical win-rate/payoff, capped, stdlib only) -> TableDisplayNode. Educational hand-roll reference for the KellyCriterion plugin (no PositionSizingNode wired, unlike example 88). Symbols without both wins and losses get a None-filled entry (capped_fraction=0.0), never silently dropped. dry_run-safe.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "stock_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "MSFT",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "period": "1d",
+      "count": 60,
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "kelly",
+      "type": "CodeNode",
+      "data": "{{ nodes.historical.values }}",
+      "params": {
+        "cap": 0.1
+      },
+      "outputs": [
+        {
+          "name": "kelly",
+          "type": "array"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "code": "async def execute(data, params, context):\n    import statistics\n    cap = float(params.get('cap', 0.10))\n    rows = [r for r in (data or []) if isinstance(r, dict)]\n    if not rows:\n        return {'kelly': [], 'status': 'no_data'}\n    out = []\n    for row in rows:\n        ts = row.get('time_series') or []\n        closes = [b.get('close') for b in ts if isinstance(b, dict) and b.get('close') is not None]\n        entry = {'symbol': row.get('symbol'), 'exchange': row.get('exchange'),\n                 'win_rate': None, 'payoff': None, 'kelly_fraction': None, 'capped_fraction': 0.0}\n        if len(closes) < 3:\n            out.append(entry)\n            continue\n        rets = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1]]\n        wins = [r for r in rets if r > 0]\n        losses = [r for r in rets if r < 0]\n        if not rets or not wins or not losses:\n            out.append(entry)\n            continue\n        p = len(wins) / len(rets)\n        avg_win = statistics.fmean(wins)\n        avg_loss = abs(statistics.fmean(losses))\n        if avg_loss == 0:\n            out.append(entry)\n            continue\n        payoff = avg_win / avg_loss\n        kelly = p - (1.0 - p) / payoff if payoff else None\n        capped = max(0.0, min(kelly, cap)) if kelly is not None else 0.0\n        out.append({'symbol': row.get('symbol'), 'exchange': row.get('exchange'),\n                    'win_rate': round(p, 3), 'payoff': round(payoff, 3),\n                    'kelly_fraction': round(kelly, 4) if kelly is not None else None,\n                    'capped_fraction': round(capped, 4)})\n    out.sort(key=lambda r: -(r['capped_fraction'] or 0.0))\n    return {'kelly': out, 'status': 'ok' if out else 'insufficient_data'}",
+      "position": {
+        "x": 820,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "data": "{{ nodes.kelly.kelly }}",
+      "position": {
+        "x": 1120,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "kelly"
+    },
+    {
+      "from": "kelly",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "stock_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "id": "92-code-node-perf-metrics",
+  "name": "CodeNode performance & risk metrics (single symbol)",
+  "description": "StartNode -> OverseasStockBrokerNode -> OverseasStockHistoricalDataNode(AAPL, 1d, 120 bars) -> CodeNode(hand-rolled Sharpe/Sortino/max-drawdown/Calmar/volatility from a close series, stdlib only) -> SummaryDisplayNode. Educational hand-roll reference for the SharpeRatioMonitor/SortinoRatio/CalmarRatio plugins. sd==0 or no-downside cases return None (not NaN); status is carried inside 'metrics'. dry_run-safe.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "stock_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "period": "1d",
+      "count": 120,
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "perf",
+      "type": "CodeNode",
+      "data": "{{ nodes.historical.values }}",
+      "params": {
+        "periods_per_year": 252,
+        "rf": 0.0
+      },
+      "outputs": [
+        {
+          "name": "metrics",
+          "type": "object"
+        }
+      ],
+      "code": "async def execute(data, params, context):\n    import statistics, math\n    ppy = float(params.get('periods_per_year', 252))\n    rf = float(params.get('rf', 0.0))\n    rows = [r for r in (data or []) if isinstance(r, dict)]\n    if not rows:\n        return {'metrics': {'status': 'no_data'}}\n    row = rows[0]\n    ts = row.get('time_series') or []\n    closes = [b.get('close') for b in ts if isinstance(b, dict) and b.get('close') is not None]\n    if len(closes) < 3 or closes[0] <= 0:\n        return {'metrics': {'status': 'insufficient_data', 'symbol': row.get('symbol')}}\n    rets = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1]]\n    if len(rets) < 2:\n        return {'metrics': {'status': 'insufficient_data', 'symbol': row.get('symbol')}}\n    mean_r = statistics.fmean(rets)\n    sd = statistics.pstdev(rets)\n    sharpe = ((mean_r - rf / ppy) / sd * math.sqrt(ppy)) if sd else None\n    downside = [r for r in rets if r < 0]\n    if len(downside) >= 2:\n        dd_dev = statistics.pstdev(downside)\n    elif downside:\n        dd_dev = abs(downside[0])\n    else:\n        dd_dev = 0.0\n    sortino = ((mean_r - rf / ppy) / dd_dev * math.sqrt(ppy)) if dd_dev else None\n    peak = closes[0]\n    max_dd = 0.0\n    for c in closes:\n        if c > peak:\n            peak = c\n        dd = (c / peak - 1.0) if peak else 0.0\n        if dd < max_dd:\n            max_dd = dd\n    total_return_pct = (closes[-1] / closes[0] - 1.0) * 100.0\n    growth = closes[-1] / closes[0]\n    annual_return = growth ** (ppy / len(rets)) - 1.0 if growth > 0 else None\n    calmar = (annual_return / abs(max_dd)) if (annual_return is not None and max_dd != 0) else None\n    metrics = {'symbol': row.get('symbol'), 'exchange': row.get('exchange'),\n               'sharpe': round(sharpe, 3) if sharpe is not None else None,\n               'sortino': round(sortino, 3) if sortino is not None else None,\n               'max_drawdown_pct': round(max_dd * 100.0, 2),\n               'calmar': round(calmar, 3) if calmar is not None else None,\n               'volatility_pct': round(sd * math.sqrt(ppy) * 100.0, 2),\n               'total_return_pct': round(total_return_pct, 2), 'status': 'ok'}\n    return {'metrics': metrics}",
+      "position": {
+        "x": 820,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "SummaryDisplayNode",
+      "data": "{{ nodes.perf.metrics }}",
+      "position": {
+        "x": 1120,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "perf"
+    },
+    {
+      "from": "perf",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "stock_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}
