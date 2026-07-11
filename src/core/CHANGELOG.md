@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.17.0] - 2026-07-11
 ### Added
 - `MissingDependencyError` (subclass of `ExecutionError`) in `exceptions.py` — a
   structured error for a missing or partially-installed optional heavy dependency
