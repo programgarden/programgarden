@@ -18,12 +18,22 @@ packages = [
 [tool.poetry.dependencies]
 programgarden-core = ">=1.15.1,<3.0.0"
 pypdf = ">=4.0.0"
+# Optional heavy quant deps (extras). 3.14 wheels validated (plan §1.3).
+# Only pyportfolioopt carries a python<3.15 marker to fence scikit-base (hard-capped
+# <3.15) for poetry's whole-range resolver; quantstats/packaging/setuptools need none.
+pyportfolioopt = { version = ">=1.6,<2", optional = true, python = "<3.15" }  # cvxpy+scikit-learn+scipy (cp314 wheels); python<3.15 fences scikit-base for poetry whole-range resolver
+packaging      = { version = ">=23", optional = true }          # pyportfolioopt→skbase top-level import (explicit)
+quantstats     = { version = ">=0.0.81,<0.1", optional = true } # matplotlib+seaborn+scipy+yfinance (cp314 wheels)
+setuptools     = { version = ">=68", optional = true }          # quantstats pkg_resources import guard
 
 [tool.poetry.extras]
 docx = ["python-docx"]
 xlsx = ["openpyxl"]
 pdf-tables = ["pdfplumber"]
 all-parsers = ["python-docx", "openpyxl", "pdfplumber"]
+portfolio = ["pyportfolioopt", "packaging"]
+perf = ["quantstats", "setuptools"]
+quant-all = ["pyportfolioopt", "packaging", "quantstats", "setuptools"]
 
 
 [tool.poetry.group.dev.dependencies]
@@ -32,6 +42,10 @@ pytest-asyncio = "^0.21.0"
 python-docx = "^1.2.0"
 openpyxl = "^3.1.5"
 pdfplumber = "^0.11.9"
+pyportfolioopt = { version = ">=1.6,<2", python = "<3.15" }
+packaging = ">=23"
+quantstats = ">=0.0.81,<0.1"
+setuptools = ">=68"
 
 
 [[tool.poetry.source]]

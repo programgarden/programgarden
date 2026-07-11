@@ -126,6 +126,7 @@ __all__ = [
     "ExecutionError",
     "BalanceUnavailableError",
     "ConditionEvaluationError",
+    "MissingDependencyError",
     # Exceptions (Finance)
     "FinanceError",
     "AppKeyException",

@@ -1,5 +1,5 @@
 """
-85개 플러그인 output_fields 일괄 검증 테스트
+86개 플러그인 output_fields 일괄 검증 테스트
 
 - 모든 플러그인에 output_fields 존재
 - output_fields 내 type/description 필수값 검증
@@ -32,11 +32,11 @@ def all_schemas():
 
 
 class TestAllPluginsHaveOutputFields:
-    """85개 플러그인 output_fields 존재 일괄 검증"""
+    """86개 플러그인 output_fields 존재 일괄 검증"""
 
     def test_plugin_count(self, all_schemas):
-        """85개 플러그인이 등록되어 있음"""
-        assert len(all_schemas) == 85, f"Expected 85, got {len(all_schemas)}"
+        """86개 플러그인이 등록되어 있음"""
+        assert len(all_schemas) == 86, f"Expected 86, got {len(all_schemas)}"
 
     def test_all_plugins_have_output_fields(self, all_schemas):
         """모든 플러그인에 output_fields 속성 존재"""

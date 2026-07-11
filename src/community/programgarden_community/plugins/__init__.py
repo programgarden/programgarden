@@ -189,6 +189,7 @@ def register_all_plugins() -> None:
     from .sharpe_ratio_monitor import SHARPE_RATIO_MONITOR_SCHEMA, sharpe_ratio_monitor_condition
     from .sortino_ratio import SORTINO_RATIO_SCHEMA, sortino_ratio_condition
     from .calmar_ratio import CALMAR_RATIO_SCHEMA, calmar_ratio_condition
+    from .portfolio_optimizer import PORTFOLIO_OPTIMIZER_SCHEMA, portfolio_optimizer_condition
 
     # TECHNICAL 등록
     technical_plugins = [
@@ -283,6 +284,7 @@ def register_all_plugins() -> None:
         ("SharpeRatioMonitor", sharpe_ratio_monitor_condition, SHARPE_RATIO_MONITOR_SCHEMA),
         ("SortinoRatio", sortino_ratio_condition, SORTINO_RATIO_SCHEMA),
         ("CalmarRatio", calmar_ratio_condition, CALMAR_RATIO_SCHEMA),
+        ("PortfolioOptimizer", portfolio_optimizer_condition, PORTFOLIO_OPTIMIZER_SCHEMA),
     ]
 
     for plugin_id, plugin_callable, schema in technical_plugins + position_plugins:

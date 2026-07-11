@@ -81,6 +81,23 @@ def register_all_nodes() -> None:
         except ValueError as e:
             pass
 
+    # === Analysis Nodes ===
+    from programgarden_community.nodes.analysis import PerformanceReportNode
+
+    analysis_nodes = [
+        PerformanceReportNode,
+    ]
+
+    for node_class in analysis_nodes:
+        try:
+            registry.register_community(
+                node_class,
+                source="community",
+                trust_level="community",
+            )
+        except ValueError as e:
+            pass
+
 
 def get_community_node_list() -> list:
     """
@@ -109,6 +126,12 @@ def get_community_node_list() -> list:
             "type": "FileReaderNode",
             "category": "data",
             "description": "Read and parse files (PDF, TXT, CSV, JSON, MD)",
+            "requires_credential": False,
+        },
+        {
+            "type": "PerformanceReportNode",
+            "category": "analysis",
+            "description": "Performance/risk report (Sharpe, Sortino, drawdown, CAGR, beta) via quantstats. Requires the 'perf' extra.",
             "requires_credential": False,
         },
         # 향후 추가될 노드들: SlackNode, DiscordNode, etc.
