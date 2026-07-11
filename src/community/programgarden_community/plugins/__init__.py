@@ -160,6 +160,16 @@ def register_all_plugins() -> None:
     from .vortex_indicator import VORTEX_INDICATOR_SCHEMA, vortex_indicator_condition
     from .hurst_exponent import HURST_EXPONENT_SCHEMA, hurst_exponent_condition
 
+    # === 신규(2026-07): TECHNICAL 지표 4 + VALUE 밸류 스크리너 4 (모두 순수 stdlib, TECHNICAL 카테고리) ===
+    from .fisher_transform import FISHER_TRANSFORM_SCHEMA, fisher_transform_condition
+    from .cmo import CMO_SCHEMA, cmo_condition
+    from .schaff_trend_cycle import SCHAFF_TREND_CYCLE_SCHEMA, schaff_trend_cycle_condition
+    from .qqe import QQE_SCHEMA, qqe_condition
+    from .piotroski_f_score import PIOTROSKI_SCHEMA, piotroski_f_score_condition
+    from .graham_number import GRAHAM_SCHEMA, graham_number_condition
+    from .dcf_fair_value import DCF_SCHEMA, dcf_fair_value_condition
+    from .ev_ebitda_screen import EV_EBITDA_SCHEMA, ev_ebitda_screen_condition
+
     # === POSITION 플러그인 ===
     from .stop_loss import STOP_LOSS_SCHEMA, stop_loss_condition
     from .profit_target import PROFIT_TARGET_SCHEMA, profit_target_condition
@@ -241,6 +251,16 @@ def register_all_plugins() -> None:
         ("HeikinAshi", heikin_ashi_condition, HEIKIN_ASHI_SCHEMA),
         ("VortexIndicator", vortex_indicator_condition, VORTEX_INDICATOR_SCHEMA),
         ("HurstExponent", hurst_exponent_condition, HURST_EXPONENT_SCHEMA),
+        # 신규(2026-07): 기술지표 4 (순수 파이썬, dual-use — CodeNode 샌드박스 인라인 가능)
+        ("FisherTransform", fisher_transform_condition, FISHER_TRANSFORM_SCHEMA),
+        ("CMO", cmo_condition, CMO_SCHEMA),
+        ("SchaffTrendCycle", schaff_trend_cycle_condition, SCHAFF_TREND_CYCLE_SCHEMA),
+        ("QQE", qqe_condition, QQE_SCHEMA),
+        # 신규(2026-07): 밸류 스크리너 4 (fundamental, TECHNICAL 카테고리로 등록)
+        ("PiotroskiFScore", piotroski_f_score_condition, PIOTROSKI_SCHEMA),
+        ("GrahamNumber", graham_number_condition, GRAHAM_SCHEMA),
+        ("DCFFairValue", dcf_fair_value_condition, DCF_SCHEMA),
+        ("EVEBITDAScreen", ev_ebitda_screen_condition, EV_EBITDA_SCHEMA),
     ]
 
     # POSITION 등록
