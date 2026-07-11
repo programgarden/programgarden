@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.14.0] - 2026-07-11
 ### Added
 - **9 new strategy plugins (77 → 86).** VALUE 4 (`PiotroskiFScore`, `GrahamNumber`,
   `DCFFairValue`, `EVEBITDAScreen` — pure stdlib), TECHNICAL 4 (`FisherTransform`,
@@ -14,6 +14,11 @@
   marker to fence `scikit-base` (hard-capped `<3.15`) for poetry's whole-range resolver.
 - Enforcement test `test_community_node_metadata.py` — every registered community node
   must declare the 3 version + 5 AI-metadata ClassVars.
+
+### Dependencies
+- `programgarden-core` floor raised `>=1.15.1` → `>=1.17.0` — the new
+  `PortfolioOptimizer` plugin and `PerformanceReportNode` import
+  `MissingDependencyError`, first shipped in core 1.17.0.
 
 ### Notes
 - Base `pip install programgarden-community` stays pure-python; the heavy libraries load
