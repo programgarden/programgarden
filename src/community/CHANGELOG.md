@@ -1,3 +1,25 @@
+## [Unreleased]
+### Added
+- **9 new strategy plugins (77 → 86).** VALUE 4 (`PiotroskiFScore`, `GrahamNumber`,
+  `DCFFairValue`, `EVEBITDAScreen` — pure stdlib), TECHNICAL 4 (`FisherTransform`,
+  `CMO`, `SchaffTrendCycle`, `QQE` — pure stdlib, since pandas-ta is uninstallable on
+  3.14), PORTFOLIO 1 (`PortfolioOptimizer` — PyPortfolioOpt Efficient Frontier with
+  `max_sharpe` / `min_volatility` / `efficient_risk`; HRP excluded due to scipy 1.18).
+- **`PerformanceReportNode`** (analysis category; community nodes 4 → 5) — quantstats
+  Sharpe / Sortino / max-drawdown / CAGR / volatility / Calmar plus benchmark
+  beta/alpha, headless matplotlib Agg, heavy import kept lazy so the base install stays
+  pure-python.
+- **Optional extras** `portfolio` (pyportfolioopt + packaging), `perf`
+  (quantstats + setuptools), `quant-all`. `pyportfolioopt` carries a `python < 3.15`
+  marker to fence `scikit-base` (hard-capped `<3.15`) for poetry's whole-range resolver.
+- Enforcement test `test_community_node_metadata.py` — every registered community node
+  must declare the 3 version + 5 AI-metadata ClassVars.
+
+### Notes
+- Base `pip install programgarden-community` stays pure-python; the heavy libraries load
+  only when the matching extra is installed and the plugin/node is actually used. A
+  missing/partial extra raises a structured `MissingDependencyError` (no silent no-op).
+
 ## [1.13.11] - 2026-07-08
 ### Fixed
 - **커뮤니티 노드 `_examples` AI 메타데이터 스니펫 교정** (`nodes/messaging/telegram.py`,

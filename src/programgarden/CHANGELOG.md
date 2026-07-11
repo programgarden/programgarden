@@ -1,3 +1,13 @@
+## [Unreleased]
+### Added
+- **CodeNode example workflows 89–93** (json + md; example files 90 → 95) — stdlib-only
+  quant hand-roll references: RSI + z-score composite, return-correlation matrix, Kelly
+  sizing, performance/risk metrics, and pairs spread & z-score. Each is an educational
+  reimplementation of an existing community plugin (not a new capability), passes the
+  sandbox AST screen, and is dry_run-safe. `test_examples_validation` count 90 → 95.
+- `test_community_node_snippets.py` — validates every registered community node's
+  `_examples[].workflow_snippet` through `WorkflowExecutor.validate()`.
+
 ## [1.25.0] - 2026-07-08
 > ⚠️ **[BREAKING] — shipped as minor.** Dynamic_* 노드 API(`register_dynamic_schemas` 등)가
 > 제거되었습니다(아래 `Removed (BREAKING)`). 외부 사용처 부재로 major 대신 **minor(1.25.0)**
