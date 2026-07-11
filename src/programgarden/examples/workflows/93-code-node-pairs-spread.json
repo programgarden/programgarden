@@ -1,0 +1,110 @@
+{
+  "id": "93-code-node-pairs-spread",
+  "name": "CodeNode pairs spread & z-score (KO/PEP)",
+  "description": "StartNode -> OverseasStockBrokerNode -> OverseasStockHistoricalDataNode(KO@NYSE, PEP@NASDAQ, 1d) -> CodeNode(hand-rolled log-price hedge ratio via statistics.linear_regression + spread z-score entry signal, stdlib only) -> SummaryDisplayNode. Educational hand-roll reference for the PairTrading/ZScore plugins. Constant/degenerate series or <3 aligned points return status='degenerate'/'insufficient_data' with signal='flat'. dry_run-safe.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "stock_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbols": [
+        {
+          "symbol": "KO",
+          "exchange": "NYSE"
+        },
+        {
+          "symbol": "PEP",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "period": "1d",
+      "count": 90,
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "pairs",
+      "type": "CodeNode",
+      "data": "{{ nodes.historical.values }}",
+      "params": {
+        "entry_z": 2.0
+      },
+      "outputs": [
+        {
+          "name": "pair",
+          "type": "object"
+        }
+      ],
+      "code": "async def execute(data, params, context):\n    import statistics, math\n    entry_z = float(params.get('entry_z', 2.0))\n    rows = [r for r in (data or []) if isinstance(r, dict)]\n    if len(rows) < 2:\n        return {'pair': {'status': 'insufficient_symbols', 'signal': 'flat', 'spread_z': None}}\n    a_row, b_row = rows[0], rows[1]\n\n    def closes_of(row):\n        ts = row.get('time_series') or []\n        return [b.get('close') for b in ts\n                if isinstance(b, dict) and b.get('close') is not None and b.get('close') > 0]\n\n    ca = closes_of(a_row)\n    cb = closes_of(b_row)\n    base = {'a': a_row.get('symbol'), 'b': b_row.get('symbol')}\n    n = min(len(ca), len(cb))\n    if n < 3:\n        return {'pair': {**base, 'status': 'insufficient_data', 'signal': 'flat', 'spread_z': None}}\n    la = [math.log(x) for x in ca[-n:]]\n    lb = [math.log(x) for x in cb[-n:]]\n    try:\n        beta = statistics.linear_regression(lb, la).slope\n    except statistics.StatisticsError:\n        beta = None\n    if beta is None:\n        return {'pair': {**base, 'status': 'degenerate', 'signal': 'flat', 'spread_z': None}}\n    spread = [la[i] - beta * lb[i] for i in range(n)]\n    mean_s = statistics.fmean(spread)\n    sd_s = statistics.pstdev(spread)\n    if sd_s == 0:\n        return {'pair': {**base, 'hedge_ratio': round(beta, 3),\n                         'status': 'degenerate', 'signal': 'flat', 'spread_z': None}}\n    z = (spread[-1] - mean_s) / sd_s\n    if z > entry_z:\n        sig = 'short_a_long_b'\n    elif z < -entry_z:\n        sig = 'long_a_short_b'\n    else:\n        sig = 'flat'\n    return {'pair': {**base, 'hedge_ratio': round(beta, 3),\n                     'spread': round(spread[-1], 4), 'spread_z': round(z, 3),\n                     'signal': sig, 'status': 'ok'}}",
+      "position": {
+        "x": 820,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "SummaryDisplayNode",
+      "data": "{{ nodes.pairs.pair }}",
+      "position": {
+        "x": 1120,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "pairs"
+    },
+    {
+      "from": "pairs",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "stock_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

@@ -152,6 +152,45 @@ class ConditionEvaluationError(ExecutionError):
         super().__init__(message, node_id=node_id, details=details)
 
 
+class MissingDependencyError(ExecutionError):
+    """선택적 heavy 의존성(extra) 미설치/부분설치 — silent no-op 금지, 명시 에러.
+
+    Raised by community plugins/nodes that lazily import an optional heavy
+    dependency shipped behind a pyproject extra (e.g. ``portfolio`` →
+    pyportfolioopt, ``perf`` → quantstats). Importing must fail loud with a
+    concrete install hint instead of silently no-op'ing.
+
+    ``transitive=True`` distinguishes the case where the extra itself is
+    installed but one of its transitive dependencies is missing/broken
+    (e.g. quantstats present but ``pkg_resources``/matplotlib absent) from
+    the plain "extra not installed at all" case (``transitive=False``).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        extra: Optional[str] = None,
+        package: Optional[str] = None,
+        install_hint: Optional[str] = None,
+        transitive: bool = False,
+        node_id: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
+        d = {
+            "code": "MISSING_OPTIONAL_DEPENDENCY",
+            "extra": extra,
+            "package": package,
+            "install_hint": install_hint,
+            "transitive": transitive,
+        }
+        d.update(details or {})
+        super().__init__(message, node_id=node_id, details=d)
+        self.extra = extra
+        self.package = package
+        self.install_hint = install_hint
+        self.transitive = transitive
+
+
 class DuplicateJobIdError(ProgramGardenError):
     """중복된 Job ID 오류
 

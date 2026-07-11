@@ -1,0 +1,134 @@
+{
+  "id": "90-code-node-correlation",
+  "name": "CodeNode return-correlation matrix (NASDAQ)",
+  "description": "StartNode -> OverseasStockBrokerNode -> OverseasStockHistoricalDataNode(5 NASDAQ names, 1d) -> CodeNode(hand-rolled pairwise return correlation matrix + per-symbol average correlation via statistics.correlation, stdlib only) -> TableDisplayNode. Educational hand-roll reference for the CorrelationAnalysis plugin. Symbols with fewer than 3 closes are emitted in 'skipped'; degenerate (constant) series yield corr=None, not a crash. dry_run-safe.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 200
+      }
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "stock_cred",
+      "position": {
+        "x": 250,
+        "y": 200
+      }
+    },
+    {
+      "id": "historical",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbols": [
+        {
+          "symbol": "AAPL",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "MSFT",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "NVDA",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "AMZN",
+          "exchange": "NASDAQ"
+        },
+        {
+          "symbol": "GOOGL",
+          "exchange": "NASDAQ"
+        }
+      ],
+      "period": "1d",
+      "count": 60,
+      "position": {
+        "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "corr",
+      "type": "CodeNode",
+      "data": "{{ nodes.historical.values }}",
+      "params": {
+        "lookback": 40
+      },
+      "outputs": [
+        {
+          "name": "matrix",
+          "type": "array"
+        },
+        {
+          "name": "avg_corr",
+          "type": "array"
+        },
+        {
+          "name": "skipped",
+          "type": "array"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "code": "async def execute(data, params, context):\n    import statistics\n    lookback = int(params.get('lookback', 40))\n    rows = [r for r in (data or []) if isinstance(r, dict)]\n    if len(rows) < 2:\n        return {'matrix': [], 'avg_corr': [], 'skipped': [], 'status': 'insufficient_symbols'}\n    series = {}\n    order = []\n    skipped = []\n    for row in rows:\n        ts = row.get('time_series') or []\n        closes = [b.get('close') for b in ts if isinstance(b, dict) and b.get('close') is not None]\n        if len(closes) > lookback + 1:\n            closes = closes[-(lookback + 1):]\n        if len(closes) < 3:\n            skipped.append({'symbol': row.get('symbol'), 'exchange': row.get('exchange'),\n                            'reason': 'insufficient_data'})\n            continue\n        rets = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1]]\n        key = (row.get('symbol'), row.get('exchange'))\n        series[key] = rets\n        order.append(key)\n    if len(order) < 2:\n        return {'matrix': [], 'avg_corr': [], 'skipped': skipped, 'status': 'insufficient_data'}\n    matrix = []\n    by_symbol = {k: [] for k in order}\n    for i in range(len(order)):\n        for j in range(i + 1, len(order)):\n            a = series[order[i]]\n            b = series[order[j]]\n            n = min(len(a), len(b))\n            corr = None\n            if n >= 3:\n                try:\n                    corr = statistics.correlation(a[-n:], b[-n:])\n                except statistics.StatisticsError:\n                    corr = None\n            matrix.append({'a': order[i][0], 'b': order[j][0],\n                           'corr': round(corr, 3) if corr is not None else None})\n            if corr is not None:\n                by_symbol[order[i]].append(corr)\n                by_symbol[order[j]].append(corr)\n    avg_corr = []\n    for k in order:\n        vals = by_symbol[k]\n        avg_corr.append({'symbol': k[0], 'exchange': k[1],\n                         'avg_corr': round(statistics.fmean(vals), 3) if vals else None})\n    avg_corr.sort(key=lambda r: (r['avg_corr'] is None, r['avg_corr'] if r['avg_corr'] is not None else 0.0))\n    return {'matrix': matrix, 'avg_corr': avg_corr, 'skipped': skipped, 'status': 'ok'}",
+      "position": {
+        "x": 820,
+        "y": 200
+      }
+    },
+    {
+      "id": "display",
+      "type": "TableDisplayNode",
+      "data": "{{ nodes.corr.avg_corr }}",
+      "position": {
+        "x": 1120,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "corr"
+    },
+    {
+      "from": "corr",
+      "to": "display"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "stock_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
+      ]
+    }
+  ]
+}

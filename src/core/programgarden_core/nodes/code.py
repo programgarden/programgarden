@@ -30,6 +30,22 @@ from programgarden_core.nodes.base import (
     OutputPort,
 )
 
+# ── Single source of truth for the sandbox import whitelist ─────────────────
+# The CodeNode sandbox's allowed-import set is owned by
+# programgarden_core.code_node.DEFAULT_ALLOWED_IMPORTS. Every AI-facing rendering
+# below (the `code` field help_text, _node_guide, _anti_patterns) is DERIVED from
+# it here — never hand-copied — so the schema surface can never drift from the
+# enforced whitelist. Guarded by test_codenode_allowed_imports_surface_no_drift.
+# code_node.py is stdlib-only, so this top-level import introduces no cycle.
+# NOTE: this reflects the SHIPPED default. An embedding host MAY widen the
+# whitelist at call time via `allowed_imports=`; this static surface does not
+# attempt to mirror host extensions (the shipped WorkflowExecutor pins the
+# default, so it is authoritative for chatbot-generated workflows).
+from programgarden_core.code_node import DEFAULT_ALLOWED_IMPORTS
+
+_ALLOWED_IMPORTS_SORTED: List[str] = sorted(DEFAULT_ALLOWED_IMPORTS)
+_ALLOWED_IMPORTS_CSV: str = ", ".join(_ALLOWED_IMPORTS_SORTED)
+
 
 class CodeNode(BaseNode):
     """
@@ -155,6 +171,11 @@ class CodeNode(BaseNode):
             "reason": "The binding layer checks port existence but never coerces shape; a wrong shape does not fail at the CodeNode — it fails downstream where the typed node reads it (e.g. order nodes expect the Symbol Data Format array of {symbol, exchange, ...}).",
             "alternative": "When feeding a typed market/order/condition node, return the standard shape: a list of {symbol, exchange, ...} dicts. When feeding a display/sink or If/Condition scalar, any shape works.",
         },
+        {
+            "pattern": "Importing a third-party numeric/data library — numpy, pandas, scipy, pandas-ta, TA-Lib, scikit-learn — inside execute()",
+            "reason": f"The sandbox enforces an import whitelist of pure-computation stdlib only ({_ALLOWED_IMPORTS_CSV}); any other import is rejected before the code runs with CODE_NODE_FORBIDDEN, and these libraries are not available in the sandbox.",
+            "alternative": "Hand-roll the calculation in pure Python using the allowed stdlib (math, statistics, collections, itertools, functools). E.g. a rolling mean via sum()/len over a slice, an RSI via a manual gain/loss loop, a covariance via statistics — no numpy/pandas needed.",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
@@ -235,10 +256,27 @@ class CodeNode(BaseNode):
         ],
         "pitfalls": [
             "execute() must be defined exactly with that name; a missing/renamed function is rejected before run (CODE_NODE_NO_EXECUTE).",
-            "Only pure-computation stdlib imports are allowed (math, statistics, json, datetime, ...); os/socket/urllib/subprocess/open and introspection dunders are blocked (CODE_NODE_FORBIDDEN).",
+            f"Imports are whitelisted to pure-computation stdlib only — exactly: {_ALLOWED_IMPORTS_CSV}. "
+            "ANY other import is rejected before run with CODE_NODE_FORBIDDEN: third-party numeric/data "
+            "libraries (numpy, pandas, scipy, pandas-ta, TA-Lib, scikit-learn) are NOT available in the "
+            "sandbox, and I/O/system stdlib (os, sys, socket, subprocess, urllib, http, requests, open) is "
+            "blocked. Re-implement such functionality by hand in pure Python using the allowed stdlib.",
             "No credential/broker/network access — CodeNode cannot place orders or fetch data itself; feed it data from typed nodes.",
             "Declared output ports must all appear as keys in the returned dict, or they resolve to None.",
         ],
+        # Structured, machine-consumable whitelist for the AI chatbot — DERIVED
+        # from DEFAULT_ALLOWED_IMPORTS (single source of truth), never hand-listed.
+        "allowed_imports": list(_ALLOWED_IMPORTS_SORTED),
+        "import_policy": (
+            "The sandbox enforces an import WHITELIST. Only the modules in 'allowed_imports' "
+            "(pure-computation stdlib, shipped default) may be imported. Every non-stdlib "
+            "library — numpy, pandas, scipy, pandas-ta, TA-Lib, scikit-learn, etc. — and "
+            "every I/O/system stdlib module (os, sys, socket, subprocess, urllib, http, "
+            "requests, open) is rejected before execution with CODE_NODE_FORBIDDEN. If you "
+            "need such functionality, HAND-ROLL it in pure Python using only the allowed "
+            "modules (e.g. compute an SMA/RSI/z-score with math + statistics + collections "
+            "instead of importing pandas/numpy)."
+        ),
     }
 
     _inputs: ClassVar[List[InputPort]] = [
@@ -250,9 +288,9 @@ class CodeNode(BaseNode):
         OutputPort(name="result", type="any", description="i18n:outputs.CodeNode.result"),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-07-08"
-    _change_note: ClassVar[Optional[str]] = "Initial CodeNode (replaces the removed Dynamic_* injection mechanism)."
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-07-11"
+    _change_note: ClassVar[Optional[str]] = "Surface sandbox import whitelist (from DEFAULT_ALLOWED_IMPORTS) in help_text/node_guide + numpy/pandas anti-pattern."
 
     def get_outputs(self) -> List[OutputPort]:
         """Build output ports from the per-instance `outputs` declaration.
@@ -296,7 +334,14 @@ class CodeNode(BaseNode):
                 ui_component=UIComponent.CUSTOM_CODE_EDITOR,
                 example="async def execute(data, params, context):\n    return {'result': data}",
                 expected_type="str",
-                help_text="Define async def execute(data, params, context). Sandboxed: no credentials/network/filesystem.",
+                help_text=(
+                    "Define async def execute(data, params, context). Sandboxed: no "
+                    "credentials/network/filesystem. Imports are whitelisted to pure-"
+                    f"computation stdlib only (shipped default): {_ALLOWED_IMPORTS_CSV}. "
+                    "Any other import — numpy, pandas, scipy, pandas-ta, TA-Lib, os, sys, "
+                    "socket, subprocess, urllib, requests, open — is rejected with "
+                    "CODE_NODE_FORBIDDEN; hand-roll such logic in pure Python."
+                ),
             ),
             "outputs": FieldSchema(
                 name="outputs",

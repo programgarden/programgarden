@@ -181,3 +181,36 @@ def test_code_node_registered_category_data():
     assert schema is not None
     assert schema.category == "data"
     assert not schema.display_name.startswith("i18n:")
+
+
+def test_codenode_allowed_imports_surface_no_drift():
+    """AI 챗봇에 노출되는 샌드박스 화이트리스트는 DEFAULT_ALLOWED_IMPORTS 에서
+    파생돼야 하며(손 복사 금지), 상수가 바뀌었는데 스키마 표면이 stale 리터럴을
+    하드코딩하면 이 테스트가 실패한다(단일 진실원천 가드).
+    """
+    from programgarden_core.code_node import DEFAULT_ALLOWED_IMPORTS
+
+    expected_sorted = sorted(DEFAULT_ALLOWED_IMPORTS)
+    expected_csv = ", ".join(expected_sorted)
+
+    schema = NodeTypeRegistry().get_schema("CodeNode")
+    assert schema is not None
+
+    # 1. PRIMARY: 구조화 화이트리스트가 상수와 정확히 일치(원소 + 정렬순서).
+    assert schema.node_guide["allowed_imports"] == expected_sorted
+    # import_policy 프로즈에 hand-roll 계약 명시.
+    assert "CODE_NODE_FORBIDDEN" in schema.node_guide["import_policy"]
+
+    # 2. 'code' 필드 help_text 가 부분 목록이 아니라 전체 파생 목록을 담는다.
+    assert expected_csv in schema.config_schema["code"]["help_text"]
+
+    # 3. pitfalls 중 최소 하나가 전체 파생 목록을 담는다(프로즈 드리프트 가드).
+    assert any(expected_csv in p for p in schema.node_guide["pitfalls"])
+
+    # 4. 비-stdlib → 직접구현 계약이 대표 라이브러리에 대해 명시적.
+    anti_blob = " ".join(
+        ap["pattern"] + ap["reason"] + ap["alternative"]
+        for ap in (schema.anti_patterns or [])
+    )
+    for lib in ("numpy", "pandas", "scipy", "pandas-ta", "TA-Lib"):
+        assert lib in anti_blob, f"missing '{lib}' hand-roll guidance"

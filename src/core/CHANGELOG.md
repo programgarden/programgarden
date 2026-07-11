@@ -1,3 +1,22 @@
+## [1.17.0] - 2026-07-11
+### Added
+- `MissingDependencyError` (subclass of `ExecutionError`) in `exceptions.py` — a
+  structured error for a missing or partially-installed optional heavy dependency
+  (extra), carrying `extra` / `package` / `install_hint` / `transitive`. Re-exported
+  from `programgarden_core`. Prevents a silent no-op when an extra is absent.
+- i18n keys (en/ko) for the community `PerformanceReportNode` — 18 keys across
+  nodes/fields/fieldNames/outputs (community-node i18n is loaded from the core locales).
+- `test_i18n_locale_parity.py` — asserts full en⇔ko key parity plus the new
+  PerformanceReportNode keys and the absence of empty values.
+
+### Changed
+- `CodeNode` schema now surfaces the sandbox import whitelist to AI consumers,
+  **derived from `DEFAULT_ALLOWED_IMPORTS`** (single source of truth, no drift):
+  structured `node_guide.allowed_imports` + `import_policy`, the `code` field
+  `help_text`, and a numpy/pandas "hand-roll in pure Python" anti-pattern.
+  `CodeNode._version` 1.0.0 → 1.0.1. Guarded by
+  `test_codenode_allowed_imports_surface_no_drift`.
+
 ## [1.16.0] - 2026-07-08
 > ⚠️ **[BREAKING] — shipped as minor.** Dynamic_* 노드 주입 메커니즘이 제거되었습니다(아래
 > `Removed (BREAKING)`). 외부에 Dynamic 주입 API 사용처가 없다고 판단해 major 대신
