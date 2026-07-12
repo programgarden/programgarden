@@ -15,6 +15,7 @@ class ProductType(str, Enum):
     """상품 타입"""
     OVERSEAS_STOCK = "overseas_stock"
     OVERSEAS_FUTURES = "overseas_futures"
+    KOREA_STOCK = "korea_stock"        # 국내주식 (KOSPI/KOSDAQ, KRX 단일)
 
 
 class ExchangeInfo(BaseModel):
@@ -136,8 +137,20 @@ class ExchangeRegistry:
             ),
         }
         
+        # 국내주식 거래소 (KRX 단일 — KOSPI/KOSDAQ 통합)
+        ls_korea_stock = {
+            "KRX": ExchangeInfo(
+                code="KRX",
+                name="KRX",
+                full_name="Korea Exchange",
+                country="KR",
+                currency="KRW",
+            ),
+        }
+
         self.register_exchanges("ls", ProductType.OVERSEAS_STOCK, ls_overseas_stock)
         self.register_exchanges("ls", ProductType.OVERSEAS_FUTURES, ls_overseas_futures)
+        self.register_exchanges("ls", ProductType.KOREA_STOCK, ls_korea_stock)
     
     def register_exchanges(
         self, 
@@ -209,7 +222,11 @@ class ExchangeRegistry:
         # 해외선물: CME 기본
         if product == ProductType.OVERSEAS_FUTURES:
             return "CME" if "CME" in exchanges else exchanges[0]
-        
+
+        # 국내주식: KRX 단일
+        if product == ProductType.KOREA_STOCK:
+            return "KRX" if "KRX" in exchanges else exchanges[0]
+
         return exchanges[0]
 
 
@@ -229,6 +246,10 @@ class SymbolEntry(BaseModel):
     
     def to_api_symbol(self, broker: str, product: ProductType) -> str:
         """API용 종목코드 생성 (예: 82AAPL)"""
+        # 국내주식: 6자리 KRX 종목코드를 그대로 사용 (거래소 접두어 없음)
+        if product == ProductType.KOREA_STOCK:
+            return self.symbol
+
         code = exchange_registry.name_to_code(broker, product, self.exchange)
         if code is None:
             raise ValueError(f"Unknown exchange: {self.exchange}")
