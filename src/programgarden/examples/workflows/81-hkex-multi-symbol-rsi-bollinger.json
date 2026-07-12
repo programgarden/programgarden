@@ -149,7 +149,7 @@
       "type": "PositionSizingNode",
       "symbol": "{{ item }}",
       "balance": "{{ nodes.account.balance }}",
-      "market_data": "{{ nodes.market_data.value }}",
+      "market_data": "{{ nodes.market_data.values }}",
       "method": "atr_based",
       "max_percent": 5.0,
       "atr_risk_percent": 1.0,

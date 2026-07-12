@@ -102,14 +102,11 @@ class KoreaStockMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "005930"}, {"symbol": "000660"}]},
-                    {"id": "market", "type": "KoreaStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
+                    {"id": "market", "type": "KoreaStockMarketDataNode", "symbols": [{"symbol": "005930"}, {"symbol": "000660"}]},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "split"},
-                    {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "display"},
                 ],
@@ -124,7 +121,7 @@ class KoreaStockMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "value port: {symbol, current_price, volume, change_percent, bid, ask, per, eps} per domestic stock.",
+            "expected_output": "values port: array of {symbol, current_price, volume, change_percent, bid, ask, per, eps} per domestic stock.",
         },
         {
             "title": "Price lookup for domestic PositionSizingNode",
@@ -136,15 +133,12 @@ class KoreaStockMarketDataNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
                     {"id": "account", "type": "KoreaStockAccountNode"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "005930"}]},
-                    {"id": "market", "type": "KoreaStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": "{{ nodes.market.value.current_price }}", "symbol": "{{ nodes.split.item }}"},
+                    {"id": "market", "type": "KoreaStockMarketDataNode", "symbols": [{"symbol": "005930"}]},
+                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance.orderable_amount }}", "market_data": "{{ nodes.market.values }}", "symbols": "{{ nodes.market.values }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "account"},
-                    {"from": "broker", "to": "split"},
-                    {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "sizing"},
                     {"from": "account", "to": "sizing"},
@@ -160,7 +154,7 @@ class KoreaStockMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "market.value.current_price is fed into PositionSizingNode to compute risk-adjusted domestic stock order quantity.",
+            "expected_output": "market.values (per-symbol price array) + account.balance.orderable_amount feed PositionSizingNode to compute risk-adjusted domestic stock order quantity (orders port).",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
@@ -170,13 +164,17 @@ class KoreaStockMarketDataNode(BaseNode):
             "Broker connection is auto-injected from KoreaStockBrokerNode."
         ),
         "output_consumption": (
-            "The `value` port emits: {symbol, current_price, volume, change_percent, bid, ask, per, eps, 52w_high, 52w_low}. "
-            "Access via `{{ nodes.market.value.current_price }}`."
+            "Consume the `values` port ONLY — an array of per-symbol snapshots "
+            "[{symbol, current_price, volume, change_percent, bid, ask, per, eps, 52w_high, 52w_low}, ...]. "
+            "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
+            "binding `{{ nodes.market.value }}` (or `.value.current_price`) silently resolves to None. "
+            "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}` "
+            "(the array carries each symbol's current_price, which PositionSizingNode resolves internally)."
         ),
         "common_combinations": [
-            "SplitNode.item → KoreaStockMarketDataNode → ConditionNode (domestic price-based signal)",
-            "KoreaStockMarketDataNode.value.current_price → PositionSizingNode.price",
-            "KoreaStockMarketDataNode.value → TableDisplayNode (KRX price monitor)",
+            "KoreaStockMarketDataNode.values → TableDisplayNode.data (KRX price monitor)",
+            "KoreaStockMarketDataNode.values → PositionSizingNode.market_data (with symbols + balance=KoreaStockAccountNode.balance.orderable_amount)",
+            "KoreaStockSymbolQueryNode/ConditionNode.passed_symbols → PositionSizingNode.symbols (canonical symbol list)",
         ],
         "pitfalls": [
             "KoreaStock does not support paper trading — KoreaStockBrokerNode always uses a live session",

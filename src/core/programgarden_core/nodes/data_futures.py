@@ -102,14 +102,11 @@ class OverseasFuturesMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "ESH26", "exchange": "CME"}]},
-                    {"id": "market", "type": "OverseasFuturesMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
+                    {"id": "market", "type": "OverseasFuturesMarketDataNode", "symbols": [{"symbol": "ESH26", "exchange": "CME"}]},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "split"},
-                    {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "display"},
                 ],
@@ -124,7 +121,7 @@ class OverseasFuturesMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "value port: {symbol, exchange, current_price, volume, open_interest, change_percent, bid, ask}.",
+            "expected_output": "values port: array of {symbol, exchange, current_price, volume, open_interest, change_percent, bid, ask}.",
         },
         {
             "title": "Multi-contract scan — compare HKEX futures prices",
@@ -135,14 +132,11 @@ class OverseasFuturesMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "MHIH26", "exchange": "HKEX"}, {"symbol": "MHIK26", "exchange": "HKEX"}]},
-                    {"id": "market", "type": "OverseasFuturesMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
+                    {"id": "market", "type": "OverseasFuturesMarketDataNode", "symbols": [{"symbol": "MHIH26", "exchange": "HKEX"}, {"symbol": "MHIK26", "exchange": "HKEX"}]},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "split"},
-                    {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "display"},
                 ],
@@ -157,23 +151,25 @@ class OverseasFuturesMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "market.value emitted once per contract with price/volume data for each HKEX mini-futures contract.",
+            "expected_output": "market.values — array with one {price, volume, ...} entry per HKEX mini-futures contract.",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": (
-            "The `symbol` field takes a single {exchange, symbol} dict. "
+            "The `symbols` field takes an array of {exchange, symbol} dicts — or bind a list source. "
             "Exchange values: CME, EUREX, SGX, HKEX. Symbol includes contract month code (e.g., ESH26 for March 2026). "
             "Broker connection auto-injected from OverseasFuturesBrokerNode."
         ),
         "output_consumption": (
-            "The `value` port emits: {symbol, exchange, current_price, volume, open_interest, change_percent, bid, ask}. "
-            "Access individual fields via `{{ nodes.market.value.current_price }}`."
+            "Consume the `values` port ONLY — an array of {symbol, exchange, current_price, volume, open_interest, change_percent, bid, ask}. "
+            "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
+            "binding `{{ nodes.market.value }}` (or `.value.current_price`) silently resolves to None. "
+            "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}`."
         ),
         "common_combinations": [
-            "SplitNode.item → OverseasFuturesMarketDataNode → ConditionNode (per-contract signal)",
-            "OverseasFuturesMarketDataNode.value.current_price → PositionSizingNode.price",
-            "OverseasFuturesMarketDataNode.value → TableDisplayNode (futures monitor)",
+            "OverseasFuturesSymbolQueryNode → OverseasFuturesMarketDataNode.symbols (multi-contract fetch)",
+            "OverseasFuturesMarketDataNode.values → TableDisplayNode.data (futures monitor)",
+            "OverseasFuturesMarketDataNode.values → PositionSizingNode.market_data (with symbols + balance)",
         ],
         "pitfalls": [
             "Symbol must include contract month code (e.g., ESH26 not ES) — check OverseasFuturesSymbolQueryNode for valid codes",
@@ -188,6 +184,11 @@ class OverseasFuturesMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="value", type="market_data", description="i18n:ports.market_data_value", fields=PRICE_DATA_FIELDS),
+        OutputPort(
+            name="values",
+            type="array",
+            description="Array of per-contract market quotes — [{symbol, exchange, current_price, ...}, ...]",
+        ),
     ]
 
     _version: ClassVar[str] = "1.0.0"

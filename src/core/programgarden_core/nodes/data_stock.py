@@ -102,14 +102,11 @@ class OverseasStockMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}]},
-                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}]},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "split"},
-                    {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "display"},
                 ],
@@ -124,7 +121,7 @@ class OverseasStockMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "value port: {symbol, exchange, current_price, volume, change_percent, bid, ask, per, eps} for each symbol.",
+            "expected_output": "values port: array of {symbol, exchange, current_price, volume, change_percent, bid, ask, per, eps} for each symbol.",
         },
         {
             "title": "Price lookup feeding PositionSizingNode",
@@ -136,15 +133,12 @@ class OverseasStockMarketDataNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "account", "type": "OverseasStockAccountNode"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "NVDA", "exchange": "NASDAQ"}]},
-                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": "{{ nodes.market.value.current_price }}", "symbol": "{{ nodes.split.item }}"},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "NVDA", "exchange": "NASDAQ"}]},
+                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "market_data": "{{ nodes.market.values }}", "symbols": "{{ nodes.market.values }}"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "account"},
-                    {"from": "broker", "to": "split"},
-                    {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "sizing"},
                     {"from": "account", "to": "sizing"},
@@ -160,24 +154,27 @@ class OverseasStockMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "market.value.current_price fed into PositionSizingNode to compute risk-adjusted order quantity.",
+            "expected_output": "market.values (per-symbol price array) fed into PositionSizingNode.market_data to compute risk-adjusted order quantity (orders port).",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": (
-            "The `symbol` field takes a single {exchange, symbol} dict — always bind it to `{{ nodes.split.item }}` "
-            "when iterating over a list. Exchange codes: NASDAQ, NYSE, AMEX. "
+            "The `symbols` field takes an array of {exchange, symbol} dicts (e.g. [{\"symbol\": \"AAPL\", \"exchange\": \"NASDAQ\"}]) "
+            "— or bind a list source `{{ nodes.watchlist.symbols }}` / `{{ nodes.split_symbol.items }}`. Exchange codes: NASDAQ, NYSE, AMEX. "
             "The node auto-receives the broker connection via DAG traversal from OverseasStockBrokerNode."
         ),
         "output_consumption": (
-            "The `value` port emits a flat dict with fields: symbol, exchange, current_price, volume, change_percent, "
-            "bid, ask, per, eps, 52w_high, 52w_low. Access individual fields via `{{ nodes.market.value.current_price }}`."
+            "Consume the `values` port ONLY — an array of {symbol, exchange, current_price, volume, change_percent, "
+            "bid, ask, per, eps, 52w_high, 52w_low}. "
+            "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
+            "binding `{{ nodes.market.value }}` (or `.value.current_price`) silently resolves to None. "
+            "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}` "
+            "(the array carries each symbol's current_price, resolved internally)."
         ),
         "common_combinations": [
-            "SplitNode.item → OverseasStockMarketDataNode (per-symbol price fetch in iteration)",
-            "OverseasStockMarketDataNode.value → ConditionNode (price-based signal trigger)",
-            "OverseasStockMarketDataNode.value.current_price → PositionSizingNode.price",
-            "OverseasStockMarketDataNode.value → TableDisplayNode (price monitoring display)",
+            "WatchlistNode/SymbolQueryNode → OverseasStockMarketDataNode.symbols (multi-symbol price fetch)",
+            "OverseasStockMarketDataNode.values → TableDisplayNode.data (price monitoring display)",
+            "OverseasStockMarketDataNode.values → PositionSizingNode.market_data (with symbols + balance)",
         ],
         "pitfalls": [
             "The symbol field must be a single dict — not a list. Use SplitNode for multi-symbol scenarios",
