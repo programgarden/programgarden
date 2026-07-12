@@ -1,5 +1,22 @@
 ## [Unreleased]
+
+## [1.26.0] - 2026-07-13
+> Korea (KRX) stock support — released lockstep with `programgarden-core` 1.18.0.
+### Changed
+- **Bumped `programgarden-core` dependency `^1.16.0` → `^1.18.0`** — pulls in the
+  `OverseasFuturesMarketDataNode.values` OutputPort fix. The deployed core 1.17.0 exposed
+  only the singular futures `value` port, so a futures workflow binding
+  `{{ nodes.<market>.values }}` failed static validation with `INVALID_EXPRESSION_REF`
+  (full-suite validate went from 2 REJECT — examples 81, 85 — to **0 REJECT** under core
+  1.18.0). ⚠️ core is a caret dependency, so consumers must ALSO pin
+  `programgarden-core==1.18.0` (an unpinned consumer can float to an old core that lacks
+  the port). Consumer requirements pin `programgarden==1.26.0` + `programgarden-core==1.18.0`.
 ### Added
+- **Korea (KRX) stock example workflows 94–97** (json + md) — order (RSI→sizing→limit buy,
+  real-account warning), strategy (multi-symbol RSI ∧ Bollinger), backtest (RSI + Bollinger),
+  and CodeNode composite. `examples/workflows` total → 99; full-suite validate → 0 REJECT
+  under core 1.18.0. KRX is a single exchange (no `exchange` param); Korea orders are
+  real-account (no paper-trading path).
 - **CodeNode example workflows 89–93** (json + md; example files 90 → 95) — stdlib-only
   quant hand-roll references: RSI + z-score composite, return-correlation matrix, Kelly
   sizing, performance/risk metrics, and pairs spread & z-score. Each is an educational

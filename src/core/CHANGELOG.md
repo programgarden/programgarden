@@ -1,3 +1,15 @@
+## [1.18.0] - 2026-07-13
+### Fixed
+- **`OverseasFuturesMarketDataNode` now declares a `values` OutputPort** (list of
+  market-data rows), matching `OverseasStockMarketDataNode` / `KoreaStockMarketDataNode`.
+  The deployed 1.17.0 exposed only the singular `value` port for futures, so a workflow
+  binding `{{ nodes.<market>.values }}` on a futures market-data node failed static
+  validation with `INVALID_EXPRESSION_REF` ("port 'values' is not an output of node ...").
+  Verified against `programgarden` examples/workflows: full-suite validate → **0 REJECT**
+  (was 2 — examples 81, 85) under this build; control group (port-name mutation → REJECT)
+  confirms the check is live. Overseas-stock and Korea stock were unaffected (already had
+  `values`). Released lockstep with Korea-stock support (see `programgarden` 1.26.0).
+
 ## [1.17.0] - 2026-07-11
 ### Added
 - `MissingDependencyError` (subclass of `ExecutionError`) in `exceptions.py` — a
