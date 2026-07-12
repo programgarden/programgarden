@@ -1,0 +1,135 @@
+{
+  "id": "94-korea-stock-order-rsi-buy",
+  "name": "국내주식 RSI 과매도 매수 주문",
+  "description": "삼성전자(005930) 일봉 RSI(14) 과매도 신호(passed_symbols) → KoreaStockMarketDataNode 현재가 → PositionSizing(주문가능금액 5%) → KoreaStockNewOrderNode 지정가 매수. 국내주식은 모의투자 미지원 — 실계좌 즉시체결.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": { "x": 50, "y": 250 }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "kr_broker_cred",
+      "position": { "x": 220, "y": 250 }
+    },
+    {
+      "id": "account",
+      "type": "KoreaStockAccountNode",
+      "position": { "x": 420, "y": 380 }
+    },
+    {
+      "id": "split",
+      "type": "SplitNode",
+      "items": [
+        { "symbol": "005930" }
+      ],
+      "position": { "x": 420, "y": 120 }
+    },
+    {
+      "id": "historical",
+      "type": "KoreaStockHistoricalDataNode",
+      "symbol": "{{ nodes.split.item }}",
+      "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "adjust": true,
+      "position": { "x": 640, "y": 120 }
+    },
+    {
+      "id": "rsi_cond",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": { "x": 860, "y": 120 }
+    },
+    {
+      "id": "market",
+      "type": "KoreaStockMarketDataNode",
+      "symbol": "{{ nodes.split.item }}",
+      "position": { "x": 860, "y": 320 }
+    },
+    {
+      "id": "sizing",
+      "type": "PositionSizingNode",
+      "method": "fixed_percent",
+      "max_percent": 5.0,
+      "balance": "{{ nodes.account.balance.orderable_amount }}",
+      "market_data": "{{ nodes.market.values }}",
+      "symbols": "{{ nodes.rsi_cond.passed_symbols }}",
+      "position": { "x": 1080, "y": 250 }
+    },
+    {
+      "id": "order",
+      "type": "KoreaStockNewOrderNode",
+      "side": "buy",
+      "order_type": "limit",
+      "order": "{{ nodes.sizing.order }}",
+      "position": { "x": 1300, "y": 250 }
+    },
+    {
+      "id": "order_table",
+      "type": "TableDisplayNode",
+      "title": "국내주식 주문 실행 내역",
+      "data": "{{ nodes.order.result }}",
+      "columns": [
+        "symbol",
+        "side",
+        "quantity",
+        "price",
+        "status"
+      ],
+      "limit": 10,
+      "position": { "x": 1520, "y": 250 }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "broker" },
+    { "from": "broker", "to": "account" },
+    { "from": "broker", "to": "split" },
+    { "from": "split", "to": "historical" },
+    { "from": "broker", "to": "historical" },
+    { "from": "historical", "to": "rsi_cond" },
+    { "from": "split", "to": "market" },
+    { "from": "broker", "to": "market" },
+    { "from": "rsi_cond", "to": "sizing" },
+    { "from": "market", "to": "sizing" },
+    { "from": "account", "to": "sizing" },
+    { "from": "sizing", "to": "order" },
+    { "from": "broker", "to": "order" },
+    { "from": "order", "to": "order_table" }
+  ],
+  "credentials": [
+    {
+      "credential_id": "kr_broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        { "key": "appkey", "value": "", "type": "password", "label": "App Key" },
+        { "key": "appsecret", "value": "", "type": "password", "label": "App Secret" }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_real",
+      "content": "## 국내주식 실주문 경고\n\nKoreaStockBrokerNode 는 모의투자(paper_trading)를 지원하지 않는다.\n국내주식 주문은 **실계좌 즉시체결**이며 되돌릴 수 없다.\n\n- 검증/학습 목적이면 주문 노드(order)를 제거하고 rsi_cond → TableDisplayNode 로 신호만 확인한다.\n- 실행 전 주문가능금액(KoreaStockAccountNode.balance.orderable_amount)과 KoreaStockMarketDataNode 현재가를 반드시 확인한다 — 지정가는 현재가 기준으로 산출된다.\n- retry 는 중복주문 방지를 위해 기본 비활성 — 켜지 말 것.",
+      "color": 1,
+      "width": 360,
+      "height": 200,
+      "position": { "x": 50, "y": 40 }
+    }
+  ]
+}

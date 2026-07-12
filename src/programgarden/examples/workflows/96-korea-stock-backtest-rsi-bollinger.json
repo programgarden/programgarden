@@ -1,0 +1,208 @@
+{
+  "id": "96-korea-stock-backtest-rsi-bollinger",
+  "name": "국내주식 백테스트 (삼성 RSI + KOSDAQ 볼린저)",
+  "description": "삼성전자(005930, KOSPI) RSI 평균회귀 전략과 에코프로비엠(247540, KOSDAQ) 볼린저 하단 반등 전략을 1년 일봉으로 각각 백테스트한 뒤 BenchmarkCompareNode로 샤프비율 비교. 국내 수수료/현금주식 설정(allow_fractional=false).",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": { "x": 50, "y": 350 }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "kr_broker_cred",
+      "position": { "x": 220, "y": 350 }
+    },
+    {
+      "id": "split",
+      "type": "SplitNode",
+      "items": [
+        { "symbol": "005930" },
+        { "symbol": "247540" }
+      ],
+      "position": { "x": 420, "y": 350 }
+    },
+    {
+      "id": "historical",
+      "type": "KoreaStockHistoricalDataNode",
+      "symbol": "{{ nodes.split.item }}",
+      "start_date": "{{ date.ago(365, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "adjust": true,
+      "position": { "x": 640, "y": 350 }
+    },
+    {
+      "id": "rsi_cond",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": { "x": 880, "y": 180 }
+    },
+    {
+      "id": "boll_cond",
+      "type": "ConditionNode",
+      "plugin": "BollingerBands",
+      "items": {
+        "from": "{{ item.time_series }}",
+        "extract": {
+          "symbol": "{{ item.symbol }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}"
+        }
+      },
+      "fields": {
+        "period": 20,
+        "std_dev": 2.0,
+        "position": "below_lower"
+      },
+      "position": { "x": 880, "y": 520 }
+    },
+    {
+      "id": "backtest_samsung_rsi",
+      "type": "BacktestEngineNode",
+      "strategy_name": "Samsung RSI Mean Reversion (005930)",
+      "items": {
+        "from": "{{ nodes.rsi_cond.values[0].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.rsi_cond.values[0].symbol }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ row.signal }}",
+          "side": "{{ row.side }}"
+        }
+      },
+      "initial_capital": 10000000,
+      "commission_rate": 0.00015,
+      "slippage": 0.001,
+      "position_sizing": "fixed_percent",
+      "fixed_percent": 20.0,
+      "max_position_percent": 40.0,
+      "stop_loss_percent": 5.0,
+      "take_profit_percent": 12.0,
+      "time_stop_days": 20,
+      "allow_short": false,
+      "allow_fractional": false,
+      "risk_free_rate": 0.03,
+      "position": { "x": 1140, "y": 180 }
+    },
+    {
+      "id": "backtest_kosdaq_bollinger",
+      "type": "BacktestEngineNode",
+      "strategy_name": "KOSDAQ Bollinger Reversion (247540)",
+      "items": {
+        "from": "{{ nodes.boll_cond.values[1].time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.boll_cond.values[1].symbol }}",
+          "date": "{{ row.date }}",
+          "open": "{{ row.open }}",
+          "high": "{{ row.high }}",
+          "low": "{{ row.low }}",
+          "close": "{{ row.close }}",
+          "volume": "{{ row.volume }}",
+          "signal": "{{ row.signal }}",
+          "side": "{{ row.side }}"
+        }
+      },
+      "initial_capital": 10000000,
+      "commission_rate": 0.00015,
+      "slippage": 0.0015,
+      "position_sizing": "fixed_percent",
+      "fixed_percent": 20.0,
+      "max_position_percent": 40.0,
+      "stop_loss_percent": 6.0,
+      "take_profit_percent": 15.0,
+      "time_stop_days": 15,
+      "allow_short": false,
+      "allow_fractional": false,
+      "risk_free_rate": 0.03,
+      "position": { "x": 1140, "y": 520 }
+    },
+    {
+      "id": "benchmark",
+      "type": "BenchmarkCompareNode",
+      "strategies": [
+        "{{ nodes.backtest_samsung_rsi.equity_curve }}",
+        "{{ nodes.backtest_kosdaq_bollinger.equity_curve }}"
+      ],
+      "ranking_metric": "sharpe",
+      "position": { "x": 1420, "y": 350 }
+    },
+    {
+      "id": "summary",
+      "type": "SummaryDisplayNode",
+      "title": "국내주식 전략 벤치마크 요약",
+      "data": "{{ nodes.benchmark.ranking }}",
+      "position": { "x": 1660, "y": 220 }
+    },
+    {
+      "id": "equity_chart",
+      "type": "MultiLineChartNode",
+      "title": "전략별 자산 곡선 비교",
+      "data": "{{ nodes.benchmark.combined_curve }}",
+      "x_field": "date",
+      "y_field": "equity",
+      "series_key": "strategy_name",
+      "position": { "x": 1660, "y": 480 }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "broker" },
+    { "from": "broker", "to": "split" },
+    { "from": "split", "to": "historical" },
+    { "from": "broker", "to": "historical" },
+    { "from": "historical", "to": "rsi_cond" },
+    { "from": "historical", "to": "boll_cond" },
+    { "from": "rsi_cond", "to": "backtest_samsung_rsi" },
+    { "from": "boll_cond", "to": "backtest_kosdaq_bollinger" },
+    { "from": "backtest_samsung_rsi", "to": "benchmark" },
+    { "from": "backtest_kosdaq_bollinger", "to": "benchmark" },
+    { "from": "benchmark", "to": "summary" },
+    { "from": "benchmark", "to": "equity_chart" }
+  ],
+  "credentials": [
+    {
+      "credential_id": "kr_broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        { "key": "appkey", "value": "", "type": "password", "label": "App Key" },
+        { "key": "appsecret", "value": "", "type": "password", "label": "App Secret" }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_fees",
+      "content": "## 국내주식 백테스트 설정 메모\n\n- **allow_fractional=false**: 국내주식은 소수점 매매 불가(정수 주식수).\n- **commission_rate 0.00015**: 위탁수수료 근사치. 매도 시 증권거래세(약 0.18%)는 별도 —\n  보수적 백테스트라면 commission_rate 를 왕복 비용으로 상향해 반영한다.\n- **수정주가**: KoreaStockHistoricalDataNode.adjust=true 로 액면분할/배당을 반영해 장기 수익률 왜곡을 방지.\n- 신호 매핑: ConditionNode 가 붙인 per-candle row.signal(buy/sell) + row.side 를 BacktestEngine 이 그대로 소비.",
+      "color": 3,
+      "width": 380,
+      "height": 240,
+      "position": { "x": 420, "y": 40 }
+    }
+  ]
+}
