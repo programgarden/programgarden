@@ -25,6 +25,7 @@ class ProductType(str, Enum):
 
     OVERSEAS_STOCK = "overseas_stock"
     OVERSEAS_FUTURES = "overseas_futures"
+    KOREA_STOCK = "korea_stock"  # 국내(KOSPI/KOSDAQ) 주식
 
 
 class PluginSchema(BaseModel):
