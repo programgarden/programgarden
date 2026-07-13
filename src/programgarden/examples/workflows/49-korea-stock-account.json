@@ -39,7 +39,7 @@
         "avg_price",
         "current_price",
         "eval_amount",
-        "pnl",
+        "pnl_amount",
         "pnl_rate"
       ],
       "data": "{{ nodes.account.positions }}",

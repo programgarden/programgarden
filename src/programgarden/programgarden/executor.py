@@ -373,6 +373,43 @@ class LSClientManager:
         cls._credentials.clear()
 
 
+def broker_credential_key(product: Optional[str]) -> str:
+    """BrokerNode 자격증명의 시크릿 저장소 키 (product 별 분리).
+
+    단일 슬롯이면 한 워크플로우에 브로커가 둘 이상일 때(해외주식 + 국내주식) 뒤에 실행된
+    BrokerNode 가 앞의 자격증명을 덮어써, 하류가 **다른 계좌의 앱키**로 로그인하게 된다.
+    """
+    return f"broker_credentials:{product or 'unknown'}"
+
+
+def _resolve_broker_credentials(
+    broker_connection: Optional[Dict[str, Any]],
+    context: "ExecutionContext",
+) -> tuple:
+    """브로커 자격증명 조회 → ``(appkey, appsecret, paper_trading)``.
+
+    정본은 **시크릿 저장소**다 — 자격증명은 노드 출력에 실리지 않는다(평문 유출 방지).
+    조회 순서:
+      1. product 별 슬롯 (정확 — 다중 브로커 워크플로우에서도 안 섞인다)
+      2. 레거시 단일 슬롯 (product 를 모를 때)
+      3. ``connection`` 안의 평문 키 — **레거시 폴백**. 옛 워크플로우/외부 호출자와
+         deep_validate 픽스처가 아직 이 모양을 쓴다.
+    """
+    conn = broker_connection or {}
+    product = conn.get("product")
+
+    cred: Dict[str, Any] = {}
+    if product:
+        cred = context.get_credential(broker_credential_key(product)) or {}
+    if not cred:
+        cred = context.get_credential() or {}
+
+    appkey = cred.get("appkey") or conn.get("appkey", "")
+    appsecret = cred.get("appsecret") or conn.get("appsecret", "")
+    paper_trading = cred.get("paper_trading", conn.get("paper_trading", False))
+    return appkey, appsecret, paper_trading
+
+
 def ensure_ls_login(
     appkey: str,
     appsecret: str,
@@ -1974,6 +2011,12 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                 "market_cap": mcap,
                 # g3101 enrich 시 volume 이 채워졌을 수 있음
                 "volume": int(sym.get("volume") or 0),
+                # 상류가 준 값 통과 (없으면 빈 문자열). LS 마스터에는 섹터가 없다.
+                # 그래도 키는 내보낸다 — yfinance 분기와 키 집합이 다르면 같은 포트가
+                # 분기마다 다른 모양이 되고, 선언이 어느 쪽을 적든 반대 분기에서 거짓말이 된다.
+                "name": sym.get("name", "") or "",
+                "market": sym.get("market", "") or "",
+                "sector": sym.get("sector", "") or "",
             })
 
         # 2단계: volume_min 명시 시 g3101로 거래량 확인 (이미 enrich 된 경우 skip)
@@ -2218,8 +2261,11 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                 return entry.get("symbol", "")
             return entry
 
+        # 상류(SymbolQueryNode 등)가 준 name / market 을 그대로 통과시키려면 원본 dict 이 필요하다.
+        # 예전엔 (원본코드, yf티커) 두 개만 들고 다녀서 종목명이 **여기서 소실**됐다 —
+        # 표에 종목명 열을 넣은 예제가 조용히 '-' 만 찍고 있었다.
         lookup_pairs = [
-            (_original_symbol(s), _to_yfinance_ticker(s))
+            (_original_symbol(s), _to_yfinance_ticker(s), s if isinstance(s, dict) else {})
             for s in symbols
         ]
 
@@ -2230,7 +2276,7 @@ class ScreenerNodeExecutor(NodeExecutorBase):
             attempted = 0
             info_succeeded = 0
 
-            for original_sym, yf_ticker in lookup_pairs[:max_results * 2]:  # 여유분
+            for original_sym, yf_ticker, src in lookup_pairs[:max_results * 2]:  # 여유분
                 if not yf_ticker:
                     continue
                 attempted += 1
@@ -2280,6 +2326,8 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                     filtered.append({
                         "exchange": mapped_exchange,
                         "symbol": original_sym,
+                        "name": src.get("name") or info.get("shortName") or info.get("longName") or "",
+                        "market": src.get("market", "") or "",
                         "market_cap": mcap,
                         "volume": vol,
                         "price": price,
@@ -3156,11 +3204,17 @@ class BrokerNodeExecutor(NodeExecutorBase):
             paper_trading = config.get("paper_trading", paper_trading)
         
         if appkey and appsecret:
-            context.set_secret("credential_id", {
+            cred_payload = {
                 "appkey": appkey,
                 "appsecret": appsecret,
                 "paper_trading": paper_trading,
-            })
+            }
+            # 자격증명은 **시크릿 저장소에만** 둔다 — 노드 출력(`connection`)에 실으면
+            # 리스너(SSE) · get_state · 체크포인트로 평문이 새어 나간다.
+            # product 별 슬롯: 한 워크플로우에 브로커가 둘 이상이면(해외+국내) 단일 슬롯은 덮어써진다.
+            context.set_secret(broker_credential_key(product), cred_payload)
+            # 레거시 단일 슬롯 — 아직 product 별 조회로 이관되지 않은 소비처를 위해 유지한다.
+            context.set_secret("credential_id", cred_payload)
             context.log("info", f"Broker credentials stored (paper_trading={paper_trading})", node_id)
         else:
             context.log("warning", "No credentials found - some features may not work", node_id)
@@ -3255,14 +3309,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 context=context,
             )
         
+        # 🔐 `connection` 은 노드 출력이라 리스너(SSE) · get_state · 체크포인트로 외부에 나간다.
+        # 자격증명은 싣지 않는다 — 하류는 `product` 로 시크릿 저장소에서 꺼낸다
+        # (`_resolve_broker_credentials`). 여기 있던 평문 appkey/appsecret 이 실제로 새고 있었다.
         return {
             "connected": True,
             "connection": {
                 "provider": provider,
                 "product": product,
                 "paper_trading": paper_trading,
-                "appkey": appkey,
-                "appsecret": appsecret,
             }
         }
 
@@ -4406,7 +4461,11 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "purchase_amount": item.FcurrBuyAmt,
             })
 
-        held_symbols = [p["symbol"] for p in positions]
+        # held_symbols 는 선언된 출력 포트다. 예전엔 여기서 계산만 하고 **반환 dict 에 싣지
+        # 않아** 늘 비어 있었다 — 바인딩하면 정적 검증은 통과하고 런타임엔 None 이었다.
+        held_symbols = [
+            {"exchange": p.get("exchange", ""), "symbol": p["symbol"]} for p in positions
+        ]
         
         # block2 = 전체 평가 요약. `orderable_amount` is set later by
         # COSOQ02701; pre-seed it as None so consumers can distinguish
@@ -4469,6 +4528,7 @@ class AccountNodeExecutor(NodeExecutorBase):
 
         context.log("info", f"AccountNode: {len(positions)} positions fetched", node_id)
         return {
+            "held_symbols": held_symbols,
             "positions": positions,
             "balance": balance_info,
         }
@@ -4590,6 +4650,10 @@ class AccountNodeExecutor(NodeExecutorBase):
 
             context.log("info", f"AccountNode (korea_stock): {len(positions)} positions fetched", node_id)
             return {
+                "held_symbols": [
+                    {"exchange": p.get("exchange", "KRX"), "symbol": p["symbol"]}
+                    for p in positions
+                ],
                 "positions": positions,
                 "balance": balance_info,
             }
@@ -4656,7 +4720,7 @@ class AccountNodeExecutor(NodeExecutorBase):
                     "pnl_amount": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
                     "currency": item.CrcyCodeVal.strip() if item.CrcyCodeVal else "USD",
                 })
-                held_symbols.append(symbol)
+                held_symbols.append({"exchange": "HKEX", "symbol": symbol})
 
             # 2. CIDBQ05300: 예탁자산 조회 (CIDBQ03000 상위호환).
             # Wrapped in its own try so a balance failure no longer drops
@@ -4738,6 +4802,7 @@ class AccountNodeExecutor(NodeExecutorBase):
 
             context.log("info", f"AccountNode (futures): {len(positions)} positions, {len(balance_by_currency)} currencies", node_id)
             return {
+                "held_symbols": held_symbols,
                 "positions": positions,
                 "balance": balance_info,
             }
@@ -4754,6 +4819,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         other consumers can refuse to coerce missing balances to 0.0.
         """
         result: Dict[str, Any] = {
+            "held_symbols": [],
             "positions": [],
             "balance": {
                 "cash": 0.0,
@@ -5297,7 +5363,9 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     serialized_positions.append({
                         "symbol": sym,
                         "exchange": getattr(pos, 'market_code', 'NASDAQ'),
+                        "market_code": getattr(pos, 'market_code', ''),
                         "name": getattr(pos, 'symbol_name', sym),
+                        "qty": quantity,
                         "quantity": quantity,  # NewOrderNode 호환
                         "price": current_price,  # NewOrderNode 호환
                         "avg_price": float(pos.buy_price),
@@ -5305,6 +5373,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                         "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
                         "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
                         "currency": getattr(pos, 'currency_code', 'USD'),
+                        "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
                         "product": "overseas_stock",  # 상품 유형
                     })
 
@@ -5683,13 +5752,17 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     serialized_positions.append({
                         "symbol": sym,
                         "exchange": "KRX",
+                        "market_code": getattr(pos, 'market', ''),
                         "name": getattr(pos, 'symbol_name', sym),
+                        "qty": quantity,
                         "quantity": quantity,
                         "price": current_price,
                         "avg_price": float(pos.buy_price),
                         "current_price": current_price,
                         "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
                         "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
+                        "currency": "KRW",
+                        "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
                         "product": "korea_stock",
                     })
 
@@ -5753,20 +5826,31 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         """해외주식 Tracker에서 현재 데이터 추출 (리스트 형태로 반환)"""
         positions = []
         for symbol, pos in tracker.get_positions().items():
+            quantity = pos.quantity
+            current_price = float(pos.current_price)
             positions.append({
                 "symbol": symbol,
                 "name": getattr(pos, 'name', getattr(pos, 'symbol_name', symbol)),
-                "qty": pos.quantity,
+                # REST 스냅샷 갈래(_ls_stock_with_tracker)와 **같은 키 집합**이어야 한다.
+                # 안 그러면 같은 포트가 스냅샷일 땐 exchange/quantity 를 주고 실시간 틱일 땐
+                # 안 주는, 시점마다 모양이 바뀌는 출력이 된다 (주문 노드가 조용히 깨진다).
+                "exchange": getattr(pos, 'market_code', 'NASDAQ'),
+                "market_code": getattr(pos, 'market_code', ''),
+                "qty": quantity,
+                "quantity": quantity,  # NewOrderNode 호환
+                "price": current_price,  # NewOrderNode 호환
                 "avg_price": float(pos.buy_price),
-                "current_price": float(pos.current_price),
+                "current_price": current_price,
                 "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
                 "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
                 "currency": getattr(pos, 'currency_code', 'USD'),
                 "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
-                "market_code": getattr(pos, 'market_code', ''),
+                "product": "overseas_stock",
             })
 
-        symbols = [p["symbol"] for p in positions]
+        held_symbols = [
+            {"exchange": p["exchange"], "symbol": p["symbol"]} for p in positions
+        ]
         
         # balance를 JSON 직렬화 가능한 형태로 변환
         # get_balances()는 Dict[str, StockBalanceInfo]를 반환 (통화별)
@@ -5823,6 +5907,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 }
         
         return {
+            "held_symbols": held_symbols,
             "positions": positions,
             "balance": balance,
             "open_orders": open_orders,
@@ -5856,8 +5941,11 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 "name": getattr(pos, 'symbol_name', symbol),
                 "direction": "long" if is_long else "short",
                 "close_side": "sell" if is_long else "buy",
+                # REST 스냅샷 갈래(_ls_futureoption_with_tracker)와 같은 키 집합
+                "qty": quantity,
                 "quantity": quantity,  # qty → quantity (NewOrderNode 호환)
                 "price": current_price,  # current_price → price (NewOrderNode 호환)
+                "product": "overseas_futures",
                 "entry_price": float(getattr(pos, 'entry_price', 0)),
                 "current_price": current_price,
                 "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
@@ -5900,6 +5988,10 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 }
         
         return {
+            "held_symbols": [
+                {"exchange": pos.get("exchange", ""), "symbol": pos["symbol"]}
+                for pos in positions
+            ],
             "positions": positions,
             "balance": balance,
             "open_orders": open_orders,
@@ -5909,17 +6001,24 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         """국내주식 KrStockAccountTracker에서 현재 데이터 추출"""
         positions = []
         for symbol, pos in tracker.get_positions().items():
+            quantity = pos.quantity
+            current_price = float(pos.current_price)
             positions.append({
                 "symbol": symbol,
                 "name": getattr(pos, 'symbol_name', symbol),
-                "qty": pos.quantity,
+                # REST 스냅샷 갈래(_ls_korea_stock_with_tracker)와 같은 키 집합
+                "exchange": "KRX",
+                "market_code": getattr(pos, 'market', ''),
+                "qty": quantity,
+                "quantity": quantity,  # NewOrderNode 호환
+                "price": current_price,  # NewOrderNode 호환
                 "avg_price": float(pos.buy_price),
-                "current_price": float(pos.current_price),
+                "current_price": current_price,
                 "pnl_rate": pos.pnl_rate,
                 "pnl_amount": float(pos.pnl_amount),
                 "currency": "KRW",
                 "eval_amount": float(pos.eval_amount),
-                "market_code": getattr(pos, 'market', ''),
+                "product": "korea_stock",
             })
 
         # KrStockAccountTracker.get_balance() → KrStockBalanceInfo (단일 객체)
@@ -5954,6 +6053,10 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 }
 
         return {
+            "held_symbols": [
+                {"exchange": pos.get("exchange", ""), "symbol": pos["symbol"]}
+                for pos in positions
+            ],
             "positions": positions,
             "balance": balance,
             "open_orders": open_orders,
@@ -5977,6 +6080,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         consumers do not silently treat the unavailable balance as 0.
         """
         result: Dict[str, Any] = {
+            "held_symbols": [],
             "positions": [],
             "balance": {
                 "cash": 0.0,
@@ -6122,9 +6226,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         import asyncio
         from datetime import datetime
         
-        appkey = broker_connection.get("appkey", "")
-        appsecret = broker_connection.get("appsecret", "")
-        paper_trading = broker_connection.get("paper_trading", False)
+        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
+        appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
         
         # 현재 이벤트 루프 캡처 (콜백에서 사용)
         loop = asyncio.get_running_loop()
@@ -6290,9 +6393,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         import asyncio
         from datetime import datetime
         
-        appkey = broker_connection.get("appkey", "")
-        appsecret = broker_connection.get("appsecret", "")
-        paper_trading = broker_connection.get("paper_trading", False)
+        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
+        appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
         
         # 현재 이벤트 루프 캡처 (콜백에서 사용)
         loop = asyncio.get_running_loop()
@@ -6465,8 +6567,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         import asyncio
         from datetime import datetime
 
-        appkey = broker_connection.get("appkey", "")
-        appsecret = broker_connection.get("appsecret", "")
+        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
+        appkey, appsecret, _paper = _resolve_broker_credentials(broker_connection, context)
 
         loop = asyncio.get_running_loop()
 
@@ -6629,43 +6731,6 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         
         return []
     
-    def _build_full_data(
-        self,
-        symbols_raw: List[Dict[str, str]],
-        prices: Dict[str, float],
-        volumes: Dict[str, int],
-        bids: Dict[str, float],
-        asks: Dict[str, float],
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        종목별 전체 시세 데이터 구조 생성
-        
-        Returns:
-            {
-                "AAPL": {"symbol": "AAPL", "exchange": "NASDAQ", "price": 192.30, ...},
-                "TSLA": {...},
-            }
-        """
-        data = {}
-        for entry in symbols_raw:
-            if isinstance(entry, dict):
-                symbol = entry.get("symbol", "")
-                exchange = entry.get("exchange", "")
-            else:
-                symbol = entry
-                exchange = ""
-            
-            if symbol:
-                data[symbol] = {
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "price": prices.get(symbol),
-                    "volume": volumes.get(symbol),
-                    "bid": bids.get(symbol),
-                    "ask": asks.get(symbol),
-                }
-        return data
-
 
 class RealOrderEventNodeExecutor(NodeExecutorBase):
     """
@@ -7539,9 +7604,9 @@ class MarketStatusNodeExecutor(NodeExecutorBase):
             )
 
         # 2. LS 로그인 (broker 와 동일 instance 재사용)
-        appkey = broker_connection.get("appkey", "")
-        appsecret = broker_connection.get("appsecret", "")
-        paper_trading = bool(broker_connection.get("paper_trading", False))
+        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
+        appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
+        paper_trading = bool(paper_trading)
         broker_product = broker_connection.get("product", "overseas_stock")
 
         ls, success, error = ensure_ls_login(
@@ -9297,6 +9362,36 @@ class IfNodeExecutor(NodeExecutorBase):
         return False
 
 
+# 전일대비(delta)의 부호 규칙은 LS TR 마다 다르다 — 실측으로만 확정된다 (2026-07-13):
+#   g3101 (해외주식) : diff   = 절댓값,   부호는 sign 에 별도    → NVDA sign='5' diff='2.41'  rate=-1.14
+#   t1102 (국내주식) : change = 절댓값,   부호는 sign 에 별도    → 삼성 sign='5' change=30500 diff=-10.70
+#   o3105 (해외선물) : YdiffP = 이미 부호 포함(문서의 "Absolute" 는 오기) → HBIN26 sign='5' YdiffP=-105.0
+# 등락률(%)은 세 TR 모두 부호를 갖는다.
+#
+# 그래서 "무조건 abs() 후 sign 적용"은 위험하다 — o3105 처럼 이미 음수인 값을 양수로 뒤집는다.
+# 방향 코드가 명확할 때만 크기를 그 방향으로 맞추고, 불명이면 원값의 부호를 신뢰한다.
+_LS_DOWN_SIGNS = ("4", "5", "-")  # 4=하한, 5=하락
+_LS_UP_SIGNS = ("1", "2", "+")    # 1=상한, 2=상승  (3=보합 → 값이 0 이라 통과시켜도 무해)
+
+
+def _ls_signed_change(magnitude: Any, sign: Any) -> float:
+    """LS 전일대비(delta)를 방향 코드에 맞춰 부호 있는 값으로 정규화한다.
+
+    멱등하다 — 이미 부호가 실려 온 값(o3105)에 다시 적용해도 결과가 바뀌지 않는다.
+    방향 코드가 비었거나 알 수 없으면 **원값을 그대로** 둔다(멋대로 양수로 만들지 않는다).
+    """
+    try:
+        v = float(magnitude or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    s = str(sign or "").strip()
+    if s in _LS_DOWN_SIGNS:
+        return -abs(v)
+    if s in _LS_UP_SIGNS:
+        return abs(v)
+    return v
+
+
 class MarketDataNodeExecutor(NodeExecutorBase):
     """
     MarketDataNode executor - REST API 현재가 조회 (당일 데이터만)
@@ -9509,7 +9604,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                             "symbol": symbol,
                             "exchange": resolved_exchange,
                             "price": float(out_block.price or 0),
-                            "change": float(out_block.diff or 0),
+                            # g3101 `diff` 는 절댓값 — 부호는 `sign` 에 따로 온다.
+                            "change": _ls_signed_change(out_block.diff, getattr(out_block, "sign", "")),
                             "change_pct": float(out_block.rate or 0),
                             "volume": int(out_block.volume or 0),
                             "open": float(out_block.open or 0),
@@ -9594,7 +9690,9 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                             "exchange": exchange,
                             "symbol_name": out_block.SymbolNm or symbol,
                             "price": float(out_block.TrdP or 0),
-                            "change": float(out_block.YdiffP or 0),
+                            # o3105 `YdiffP` 는 이미 부호를 포함한다(실측). 헬퍼는 멱등이라 값이 안 바뀌며,
+                            # LS 가 언젠가 절댓값으로 바꿔 보내도 `YdiffSign` 으로 방어된다.
+                            "change": _ls_signed_change(out_block.YdiffP, getattr(out_block, "YdiffSign", "")),
                             "change_pct": float(out_block.Diff or 0),
                             "volume": int(out_block.TotQ or 0),
                             "open": float(out_block.OpenP or 0),
@@ -9667,9 +9765,9 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                         blk = response.block
 
                         # sign: 1=상한/2=상승 → 양수, 4=하한/5=하락 → 음수
-                        change_val = int(blk.change or 0)
-                        if blk.sign in ("4", "5"):
-                            change_val = -change_val
+                        # 국내 현재가 `change` 도 절댓값 — 부호는 `sign` 에 따로 온다 (해외와 동일 규칙).
+                        # 국내 호가는 원 단위 정수라 기존 int 출력 타입을 유지한다.
+                        change_val = int(_ls_signed_change(blk.change, getattr(blk, "sign", "")))
 
                         values.append({
                             "symbol": symbol,
@@ -19279,7 +19377,9 @@ class WorkflowJob:
             entry: Dict[str, Any] = {
                 "state": cached_state.value,
                 "node_type": node.node_type,
-                "outputs": self.context.get_all_outputs(node_id),
+                # 🔐 외부 노출면 — BrokerNode 는 하류 전송용으로 connection.appkey/appsecret 을
+                # 출력에 싣는다. 리스너 경로는 이미 가리는데 여기만 raw 로 새고 있었다.
+                "outputs": self.context.get_all_outputs_sanitized(node_id),
             }
             if node_id in self._node_errors:
                 entry["error"] = self._node_errors[node_id]

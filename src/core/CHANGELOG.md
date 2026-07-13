@@ -1,3 +1,22 @@
+## [1.20.0] - 2026-07-14
+### Fixed
+- **Output-port declarations now match what the runtime actually emits.** The resolver validates
+  field existence *from these declarations*, so a drifted declaration breaks validation in both
+  directions: it rejects fields that do exist, and accepts fields that don't (which then silently
+  resolve to None at runtime). Corrected across account, screener, symbol-query, market-universe
+  and realtime nodes — most notably `positions`, which declared `pnl` / `pnl_percent` while the
+  runtime has emitted `pnl_amount` / `pnl_rate` all along.
+- Realtime market-data `data` port: dropped the `current_price` / `bid_price` / `ask_price` /
+  `change_percent` fields it never emitted. `data` is an **alias of `ohlcv_data`** — a
+  `{symbol: [bar]}` dict; the code that would have produced full tick data was dead.
+
+### Changed
+- Split the shared field constants (`SYMBOL_LIST_FIELDS`, `POSITION_FIELDS`,
+  `MARKET_DATA_FULL_FIELDS`) into **per-node constants**. Sharing a constant across nodes whose
+  runtimes differ is what caused the drift: widening it for one node makes every other node lie.
+  Ships together with the `programgarden` 1.28.0 runtime (which now actually emits `held_symbols`
+  and keeps a port's key set identical across its REST and WebSocket branches).
+
 ## [1.19.0] - 2026-07-13
 ### Changed
 - Node output-schema conformance (`ai.py` / `display.py` / `infra.py`): a node returns its declared

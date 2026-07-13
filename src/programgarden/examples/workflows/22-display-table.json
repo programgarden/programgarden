@@ -37,10 +37,10 @@
         "symbol",
         "exchange",
         "quantity",
-        "pnl"
+        "pnl_amount"
       ],
       "limit": 10,
-      "sort_by": "pnl",
+      "sort_by": "pnl_amount",
       "sort_order": "desc",
       "position": {
         "x": 600,
