@@ -10,7 +10,7 @@ ProgramGarden Core - Display Nodes
 - SummaryDisplayNode: JSON/요약 데이터 표시
 """
 
-from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, Union, ClassVar, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -304,9 +304,16 @@ class TableDisplayNode(BaseDisplayNode):
     _updated_at: ClassVar[str] = "2026-05-19"
     _change_note: ClassVar[Optional[str]] = None
 
-    columns: Optional[List[str]] = Field(
+    # columns 는 두 형태를 모두 받는다(스키마=코드=카탈로그 정합; 렌더러 _normalize_columns):
+    #   1) 필드명 문자열 리스트 — ["symbol", "close"]
+    #   2) {key, label} 객체 리스트 — [{"key": "close", "label": "종가"}] (현지화 헤더용)
+    # 옛 선언은 List[str] 뿐이라 객체형을 코드만 몰래 허용하는 드리프트였다.
+    columns: Optional[List[Union[str, Dict[str, Any]]]] = Field(
         default=None,
-        description="표시할 컬럼 목록 (미지정시 전체)",
+        description=(
+            "표시할 컬럼 (미지정시 전체). 필드명 문자열 리스트 [\"symbol\",\"close\"] 또는 "
+            "현지화 헤더용 객체 리스트 [{\"key\":\"close\",\"label\":\"종가\"}] 둘 다 허용."
+        ),
     )
 
     limit: Optional[int] = Field(
@@ -336,7 +343,10 @@ class TableDisplayNode(BaseDisplayNode):
             "columns": FieldSchema(
                 name="columns",
                 type=FieldType.ARRAY,
-                description="표시할 컬럼 목록",
+                description=(
+                    "표시할 컬럼. 필드명 문자열 리스트 [\"symbol\",\"close\"] 또는 "
+                    "{key,label} 객체 리스트 [{\"key\":\"close\",\"label\":\"종가\"}](현지화 헤더) 허용"
+                ),
                 category=FieldCategory.SETTINGS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_options={"multiple": True},
