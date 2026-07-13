@@ -320,6 +320,9 @@ class WorkflowResolver:
         # 10.5 CodeNode 정적 검증 (compile/screen 사전검증 + credential 봉쇄)
         self._validate_code_nodes(workflow, result)
 
+        # 10.6 SplitNode 소스 검증 (분리할 배열이 실제로 배선됐는지)
+        self._validate_split_nodes(workflow, registry, result)
+
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
             workflow,
@@ -1084,6 +1087,86 @@ class WorkflowResolver:
                                 details={"credential_tokens": sorted(hit)},
                             )
                         )
+
+    # SplitNode 가 분리할 배열을 실제로 못 받는데도 런타임엔 조용히 0개 아이템을
+    # 방출한다(executor: config `array` 없고 상류 출력에도 리스트 없음 → input_array=[]).
+    # 그러면 하류 `{{ nodes.<split>.item }}` 이 조용히 비어 워크플로우가 count:0 쓰레기
+    # 결과를 낸다(단일 심볼에 SplitNode 를 잘못 붙이는 것이 전형적 저작 결함). 정적으로
+    # 잡아 AI self-correct 루프가 dry_run 전에 보게 한다.
+    # 오탐(최대 리스크) 최소화: 상류 중 하나라도 리스트를 낼 "가능성"이 있으면 통과한다.
+    #   가능성 = (a) `array` config 가 배선됨, (b) 상류가 CodeNode(동적 출력),
+    #            (c) 상류 스키마 미상(커뮤니티/제네릭), (d) 상류 출력 포트 타입 중 하나라도
+    #                확정 스칼라/시그널이 아님. 모든 상류가 확정 스칼라일 때만 flag.
+    _SPLIT_SCALAR_OUTPUT_TYPES = frozenset({
+        "signal", "boolean", "integer", "number", "float", "string",
+        "broker_connection",
+    })
+
+    def _validate_split_nodes(self, workflow, registry, result: ValidationResult) -> None:
+        """SplitNode 의 분리 대상 배열이 배선됐는지 정적 검증(오탐 보수적)."""
+        split_nodes = [
+            n for n in workflow.nodes
+            if isinstance(n, dict) and n.get("type") == "SplitNode"
+        ]
+        if not split_nodes:
+            return
+        node_type_by_id = {
+            n.get("id"): n.get("type") for n in workflow.nodes if isinstance(n, dict)
+        }
+        # split_id -> [upstream source ids]
+        incoming: Dict[str, List[str]] = {}
+        for edge in workflow.edges:
+            to_raw = getattr(edge, "to_node", "") or ""
+            from_raw = getattr(edge, "from_node", "") or ""
+            to_id = to_raw.split(".")[0] if to_raw else ""
+            from_id = from_raw.split(".")[0] if from_raw else ""
+            if to_id:
+                incoming.setdefault(to_id, []).append(from_id)
+
+        def _may_produce_list(src_type: Optional[str]) -> bool:
+            # 동적/미상 출력은 리스트 가능 → 보수적으로 통과.
+            if not src_type or src_type == "CodeNode":
+                return True
+            schema = registry.get_schema(src_type)
+            if schema is None:
+                return True
+            ports = list(schema.outputs or [])
+            if not ports:
+                return True  # 출력 미선언 → 알 수 없음 → 통과
+            for out in ports:
+                ptype = out.get("type") if isinstance(out, dict) else getattr(out, "type", None)
+                if ptype not in self._SPLIT_SCALAR_OUTPUT_TYPES:
+                    return True  # 배열/오브젝트 등 비스칼라 포트 존재 → 가능성 있음
+            return False  # 모든 포트가 확정 스칼라 → 리스트 생산 불가
+
+        for node in split_nodes:
+            sid = node.get("id")
+            # (a) `array` config 가 배선돼 있으면 소스 존재로 본다(빈 리터럴 포함 — 의도된 것).
+            if node.get("array") is not None:
+                continue
+            srcs = incoming.get(sid, [])
+            if srcs and any(_may_produce_list(node_type_by_id.get(s)) for s in srcs):
+                continue
+            result.add(
+                build_error(
+                    ErrorCode.MISSING_REQUIRED_FIELD,
+                    (
+                        f"SplitNode '{sid}' has no array source to split — no `array` "
+                        f"config binding and no upstream node that outputs a list. It will "
+                        f"emit zero items and every downstream `{{{{ nodes.{sid}.item }}}}` "
+                        f"resolves empty (silent count:0 result)."
+                    ),
+                    location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path="array"),
+                    suggestion=(
+                        "Wire the array: either add an edge from an upstream node that "
+                        "outputs a list (WatchlistNode/MarketUniverseNode → symbols, "
+                        "AccountNode → positions, ConditionNode → values), or set the `array` "
+                        "field to a whole-value expression / literal list. For a single known "
+                        "symbol, DELETE SplitNode and bind that symbol directly on the "
+                        "downstream node."
+                    ),
+                )
+            )
 
     def _validate_credential_references(
         self,

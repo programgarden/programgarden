@@ -18,7 +18,7 @@
     {
       "id": "split_symbol",
       "type": "SplitNode",
-      "items": [
+      "array": [
         {"symbol": "NVDA", "exchange": "NASDAQ"}
       ],
       "position": {"x": 450, "y": 200}
