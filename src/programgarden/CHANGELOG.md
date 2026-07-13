@@ -1,4 +1,30 @@
 ## [Unreleased]
+
+## [1.25.1] - 2026-07-13
+> 라이브 E2E(pg-test-9)가 잡은 노드 출력-스키마 정합 결함 묶음. 관통 불변식:
+> **노드는 어떤 실행 경로에서도 자기 선언 출력 스키마를 반환한다.** 옛 호환 형태는
+> 삭제하고, 에러/빈-결과 경로도 스키마를 지킨다(에러는 error 필드로 명시, 위장 금지).
+
+### Fixed
+- **HistoricalDataNode no-symbol 스키마 정합 (A′)** — 심볼 부재 early-return 이 정상반환
+  (`value/values/symbols/period/interval`)과 전혀 다른 `{ohlcv_data, symbols}` 를 뱉어
+  하류 `{{ nodes.x.value.time_series }}` 바인딩이 조용히 None → `data or []` 가 삼켜
+  count:0 쓰레기 결과를 냈다. 이제 이 노드는 어떤 경로로도 다른 스키마를 반환하지 않는다.
+- **TableDisplayNode 객체형 columns 크래시 (C′)** — `columns=[{key,label}]`(현지화 헤더)에서
+  렌더러가 `f"{c:<12}"`(c=dict) 로 `dict.__format__` 크래시. `_normalize_columns` 로 문자열/
+  객체 양형 수용(라벨로 헤더). 스키마도 `List[str] → List[str | {key,label}]` union 으로 정합
+  (코드만 관대하던 드리프트 해소).
+- **노드 7종 에러/early-return 스키마 정합 (sweep)** — 발산 경로가 정상반환 키를 누락해
+  하류 포트 바인딩이 silent None 이 되던 결함: AIAgentNode(`response`), ConditionNode
+  (`symbols/is_condition_met/symbol_results`), BacktestEngineNode(`signals/values`),
+  ModifyOrderNode(`modified_order_id`), BrokerNode(`connected`), CancelOrderNode
+  (`cancel_result/cancelled_order`), PortfolioNode(`drawdown_percent`). 값 의미·제어흐름 불변.
+- **SplitNode 배열 소스 정적 검증 (B′)** — array config 바인딩도 없고 리스트 생산 상류도
+  없는 SplitNode 는 0개 아이템을 방출해 하류가 조용히 빈다. resolver 가 빌드타임에
+  `MISSING_REQUIRED_FIELD` 로 flag(오탐 보수적: 모든 상류가 확정 스칼라일 때만). 스키마
+  설명에 array 필수·단일심볼이면 불필요를 명시. 예제 `69-telegram-price-alert` 의
+  무효 `items`(executor 미사용)→`array` 수정.
+
 ### Added
 - **CodeNode example workflows 89–93** (json + md; example files 90 → 95) — stdlib-only
   quant hand-roll references: RSI + z-score composite, return-correlation matrix, Kelly

@@ -91,7 +91,7 @@ except ImportError:
     # Community package not installed
     pass
 
-__version__ = "1.18.0"
+__version__ = "1.25.1"
 __all__ = [
     # Core
     "ProgramGarden",
