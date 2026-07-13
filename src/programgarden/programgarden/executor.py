@@ -9297,6 +9297,36 @@ class IfNodeExecutor(NodeExecutorBase):
         return False
 
 
+# 전일대비(delta)의 부호 규칙은 LS TR 마다 다르다 — 실측으로만 확정된다 (2026-07-13):
+#   g3101 (해외주식) : diff   = 절댓값,   부호는 sign 에 별도    → NVDA sign='5' diff='2.41'  rate=-1.14
+#   t1102 (국내주식) : change = 절댓값,   부호는 sign 에 별도    → 삼성 sign='5' change=30500 diff=-10.70
+#   o3105 (해외선물) : YdiffP = 이미 부호 포함(문서의 "Absolute" 는 오기) → HBIN26 sign='5' YdiffP=-105.0
+# 등락률(%)은 세 TR 모두 부호를 갖는다.
+#
+# 그래서 "무조건 abs() 후 sign 적용"은 위험하다 — o3105 처럼 이미 음수인 값을 양수로 뒤집는다.
+# 방향 코드가 명확할 때만 크기를 그 방향으로 맞추고, 불명이면 원값의 부호를 신뢰한다.
+_LS_DOWN_SIGNS = ("4", "5", "-")  # 4=하한, 5=하락
+_LS_UP_SIGNS = ("1", "2", "+")    # 1=상한, 2=상승  (3=보합 → 값이 0 이라 통과시켜도 무해)
+
+
+def _ls_signed_change(magnitude: Any, sign: Any) -> float:
+    """LS 전일대비(delta)를 방향 코드에 맞춰 부호 있는 값으로 정규화한다.
+
+    멱등하다 — 이미 부호가 실려 온 값(o3105)에 다시 적용해도 결과가 바뀌지 않는다.
+    방향 코드가 비었거나 알 수 없으면 **원값을 그대로** 둔다(멋대로 양수로 만들지 않는다).
+    """
+    try:
+        v = float(magnitude or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    s = str(sign or "").strip()
+    if s in _LS_DOWN_SIGNS:
+        return -abs(v)
+    if s in _LS_UP_SIGNS:
+        return abs(v)
+    return v
+
+
 class MarketDataNodeExecutor(NodeExecutorBase):
     """
     MarketDataNode executor - REST API 현재가 조회 (당일 데이터만)
@@ -9509,7 +9539,8 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                             "symbol": symbol,
                             "exchange": resolved_exchange,
                             "price": float(out_block.price or 0),
-                            "change": float(out_block.diff or 0),
+                            # g3101 `diff` 는 절댓값 — 부호는 `sign` 에 따로 온다.
+                            "change": _ls_signed_change(out_block.diff, getattr(out_block, "sign", "")),
                             "change_pct": float(out_block.rate or 0),
                             "volume": int(out_block.volume or 0),
                             "open": float(out_block.open or 0),
@@ -9594,7 +9625,9 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                             "exchange": exchange,
                             "symbol_name": out_block.SymbolNm or symbol,
                             "price": float(out_block.TrdP or 0),
-                            "change": float(out_block.YdiffP or 0),
+                            # o3105 `YdiffP` 는 이미 부호를 포함한다(실측). 헬퍼는 멱등이라 값이 안 바뀌며,
+                            # LS 가 언젠가 절댓값으로 바꿔 보내도 `YdiffSign` 으로 방어된다.
+                            "change": _ls_signed_change(out_block.YdiffP, getattr(out_block, "YdiffSign", "")),
                             "change_pct": float(out_block.Diff or 0),
                             "volume": int(out_block.TotQ or 0),
                             "open": float(out_block.OpenP or 0),
@@ -9667,9 +9700,9 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                         blk = response.block
 
                         # sign: 1=상한/2=상승 → 양수, 4=하한/5=하락 → 음수
-                        change_val = int(blk.change or 0)
-                        if blk.sign in ("4", "5"):
-                            change_val = -change_val
+                        # 국내 현재가 `change` 도 절댓값 — 부호는 `sign` 에 따로 온다 (해외와 동일 규칙).
+                        # 국내 호가는 원 단위 정수라 기존 int 출력 타입을 유지한다.
+                        change_val = int(_ls_signed_change(blk.change, getattr(blk, "sign", "")))
 
                         values.append({
                             "symbol": symbol,
