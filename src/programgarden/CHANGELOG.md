@@ -34,6 +34,13 @@
   `MISSING_REQUIRED_FIELD` 로 flag(오탐 보수적: 모든 상류가 확정 스칼라일 때만). 스키마
   설명에 array 필수·단일심볼이면 불필요를 명시. 예제 `69-telegram-price-alert` 의
   무효 `items`(executor 미사용)→`array` 수정.
+- **AIAgentNode `ai_model` 엣지 필수 정적 검증** — LLMModelNode 가 `ai_model` 엣지로
+  연결되지 않은 AIAgentNode 는 LLM 없이 애초에 동작 불가(런타임 raise)인데, 예전엔
+  static validate·deep_validate 를 둘 다 통과해 저장됐다(deep_validate 는 인프라 오류 시
+  검증을 건너뛰고 '성공'으로 저장할 수 있어 못 믿는다). resolver `_validate_ai_agent_nodes`
+  가 빌드타임에 `MISSING_REQUIRED_FIELD` 로 막는다(LLM 없이는 못 도는 필수 연결이라 오탐
+  위험 0). 노드 스키마 안티패턴에도 필수 연결임을 명시. (edge 형태 오류는 기존
+  `INVALID_AI_MODEL_EDGE` 가 별도 담당 — 여기선 '연결 자체 부재' 만 본다.)
 
 ### Added
 - **CodeNode example workflows 89–93** (json + md; example files 90 → 95) — stdlib-only

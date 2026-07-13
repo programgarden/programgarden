@@ -323,6 +323,9 @@ class WorkflowResolver:
         # 10.6 SplitNode 소스 검증 (분리할 배열이 실제로 배선됐는지)
         self._validate_split_nodes(workflow, registry, result)
 
+        # 10.7 AIAgentNode ai_model 엣지 필수 검증 (LLM 없이는 애초에 동작 불가)
+        self._validate_ai_agent_nodes(workflow, result)
+
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
             workflow,
@@ -1164,6 +1167,55 @@ class WorkflowResolver:
                         "field to a whole-value expression / literal list. For a single known "
                         "symbol, DELETE SplitNode and bind that symbol directly on the "
                         "downstream node."
+                    ),
+                )
+            )
+
+    def _validate_ai_agent_nodes(self, workflow, result: ValidationResult) -> None:
+        """AIAgentNode 는 ai_model 엣지로 LLMModelNode 가 연결돼야 한다.
+
+        LLM 이 없으면 이 노드는 **애초에 동작 불가**(런타임에 raise)이므로 오탐 위험이
+        0이다. static validate 에서 잡아 챗봇이 저장 전에 고치게 한다 — deep_validate 는
+        인프라 오류 시 검증을 건너뛰고 '성공'으로 저장할 수 있어 못 믿는다(soft-skip).
+        ai_model 엣지의 source/target **형태** 오류는 _validate_edge_references 가
+        (INVALID_AI_MODEL_EDGE) 별도로 잡으므로, 여기선 '연결 자체가 없는' 구멍만 본다.
+        """
+        from programgarden_core.models.edge import EdgeType
+
+        agent_ids = [
+            n.get("id")
+            for n in workflow.nodes
+            if isinstance(n, dict) and n.get("type") == "AIAgentNode"
+        ]
+        if not agent_ids:
+            return
+        # ai_model 엣지가 타깃으로 삼는 AIAgentNode id 집합
+        ai_model_targets: Set[str] = set()
+        for edge in workflow.edges:
+            edge_type = getattr(edge, "edge_type", None)
+            et = (
+                edge_type.value if hasattr(edge_type, "value")
+                else (str(edge_type) if edge_type else "main")
+            )
+            if et != EdgeType.AI_MODEL.value:
+                continue
+            to_raw = getattr(edge, "to_node", "") or ""
+            to_id = to_raw.split(".")[0] if to_raw else ""
+            if to_id:
+                ai_model_targets.add(to_id)
+
+        for aid in agent_ids:
+            if aid in ai_model_targets:
+                continue
+            result.add(
+                build_error(
+                    ErrorCode.MISSING_REQUIRED_FIELD,
+                    f"AIAgentNode '{aid}' has no LLM model connected — it cannot run without "
+                    f"one. Connect an LLMModelNode to '{aid}' via an \"ai_model\" edge.",
+                    location=ErrorLocation(node_id=aid, node_type="AIAgentNode", field_path="ai_model"),
+                    suggestion=(
+                        "Add an LLMModelNode and wire it with an ai_model edge, e.g. "
+                        f'{{"from": "<llm_node_id>", "to": "{aid}", "edge_type": "ai_model"}}.'
                     ),
                 )
             )

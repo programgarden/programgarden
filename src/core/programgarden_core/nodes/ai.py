@@ -361,6 +361,11 @@ class AIAgentNode(BaseNode):
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
+            "pattern": "Adding an AIAgentNode without connecting an LLMModelNode via an 'ai_model' edge",
+            "reason": "AIAgentNode CANNOT run without an LLM — the ai_model edge injects the LLM connection. With no LLMModelNode wired via an ai_model edge, the node fails at runtime (raises). The workflow validator now blocks this with an ERROR at save time.",
+            "alternative": "Always add an LLMModelNode and wire it to the AIAgentNode with an ai_model edge: {\"from\": \"<llm_node_id>\", \"to\": \"<agent_id>\", \"type\": \"ai_model\"}. A plain 'main' edge does NOT inject the LLM.",
+        },
+        {
             "pattern": "Connecting a real-time node (RealMarketDataNode) directly to AIAgentNode without ThrottleNode",
             "reason": "Real-time nodes fire on every tick. Without throttling, AIAgentNode would call the LLM API thousands of times per minute, causing massive cost and rate limit errors. The workflow validator blocks this with an ERROR.",
             "alternative": "Insert ThrottleNode between the real-time source and AIAgentNode. Set ThrottleNode interval to match your intended analysis frequency (e.g. 60s).",
