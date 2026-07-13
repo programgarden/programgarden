@@ -37,9 +37,11 @@ def _make_context(outputs: Dict[str, Dict[str, Any]] | None = None) -> MagicMock
     ctx.log = MagicMock()
     ctx.job_id = "test-job-ms"
     ctx.is_running = True
-    # Real LLM/tool-loop path: keep the deep-validate short-circuit off (a bare
-    # MagicMock attribute is truthy and would otherwise skip the live loop).
+    # Real LLM/tool-loop path: keep the deep-validate AND dry-run short-circuits
+    # off (a bare MagicMock attribute is truthy and would otherwise skip the live
+    # loop via the AIAgent simulation fixture).
     ctx.is_deep_validate = False
+    ctx.is_dry_run = False
     ctx.get_workflow_credential = MagicMock(return_value=None)
 
     _store: Dict[str, Dict[str, Any]] = outputs or {}

@@ -14,11 +14,21 @@
   렌더러가 `f"{c:<12}"`(c=dict) 로 `dict.__format__` 크래시. `_normalize_columns` 로 문자열/
   객체 양형 수용(라벨로 헤더). 스키마도 `List[str] → List[str | {key,label}]` union 으로 정합
   (코드만 관대하던 드리프트 해소).
-- **노드 7종 에러/early-return 스키마 정합 (sweep)** — 발산 경로가 정상반환 키를 누락해
-  하류 포트 바인딩이 silent None 이 되던 결함: AIAgentNode(`response`), ConditionNode
-  (`symbols/is_condition_met/symbol_results`), BacktestEngineNode(`signals/values`),
-  ModifyOrderNode(`modified_order_id`), BrokerNode(`connected`), CancelOrderNode
-  (`cancel_result/cancelled_order`), PortfolioNode(`drawdown_percent`). 값 의미·제어흐름 불변.
+- **노드 실패 시맨틱 3-버킷 정리 (sweep)** — 노드가 하드 실패를 `{"...port": None, "error": …}`
+  에러-dict 로 돌려주면 하류가 침묵의 None 을 먹고 워크플로우가 `completed` 로 굴러
+  silent garbage 를 냈다(deep_validate 의 sole-error 승격 안전망도 키가 여럿이면 발동 안 함).
+  이제 경로마다 세 버킷으로 정리한다:
+  - **진짜 실패 → raise**(node/job failed + 사유; deep_validate blocking): AIAgentNode
+    (LLM 미연결·연결 실패·LLM 호출 실패·tool abort), ModifyOrderNode(수정 예외 3),
+    ConditionNode(resource/plugin-timeout/plugin-exc·items 미배선·required_fields 누락),
+    BrokerNode(overseas_stock+paper_trading 미지원), BacktestEngineNode(리소스 고갈).
+  - **정상 0건 → 선언 스키마 그대로 빈 값, error 키 없음**: ConditionNode(빈 positions=무보유·
+    빈 items 결과), PortfolioNode(전략 입력 0). (positions/items 바인딩 자체 부재는 static
+    validate 가 잡는다.)
+  - **부분 성공/모드 → 기존 유지**: CancelOrderNode dry_run(시뮬레이션), Condition 성공 경로.
+  AIAgentNode 는 dry_run 도 시뮬레이션 모드로 취급해 fixture 로 단락(주문 노드가 dry_run 에서
+  시뮬레이션하는 것과 동일) — 실 LLM 실패 raise 는 실 런타임에서만 시끄럽다. RealMarketData
+  (`ohlcv_data` 는 그 노드 정상 스키마)는 불변.
 - **SplitNode 배열 소스 정적 검증 (B′)** — array config 바인딩도 없고 리스트 생산 상류도
   없는 SplitNode 는 0개 아이템을 방출해 하류가 조용히 빈다. resolver 가 빌드타임에
   `MISSING_REQUIRED_FIELD` 로 flag(오탐 보수적: 모든 상류가 확정 스칼라일 때만). 스키마
