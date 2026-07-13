@@ -9107,11 +9107,19 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                         continue
                     
                     # 거래소 코드 변환 (81: NYSE/AMEX, 82: NASDAQ)
-                    # 라벨이 EXCHANGE_CODES 에 없을 때 조용히 82 로 떨어뜨리면 NYSE 종목이
-                    # "No data" 로 무음 유실된다(실측: 예제 08 이 30종목 중 8건만 수신).
-                    # 미지 라벨은 두 원장을 순서대로 시도하고, 성공한 쪽을 실제 거래소로 기록한다.
+                    # 라벨을 조용히 82 로 떨어뜨리면 NYSE 종목이 "No data" 로 무음 유실된다
+                    # (실측: 예제 08 이 30종목 중 8건만 수신).
+                    #
+                    # 라벨이 정확해도 첫 시도가 실패하면 다른 원장을 재시도한다 — LS 의 거래소
+                    # 코드는 실제 상장 거래소와 항상 일치하지 않는다(실측: WMT 는 NYSE 상장인데
+                    # 81 로는 응답이 없고 82 로만 조회된다). 성공한 코드를 실제 거래소로 기록한다.
                     known_code = self.EXCHANGE_CODES.get(exchange.upper())
-                    candidate_codes = [known_code] if known_code else ["82", "81"]
+                    if known_code:
+                        candidate_codes = [known_code] + [
+                            c for c in ("82", "81") if c != known_code
+                        ]
+                    else:
+                        candidate_codes = ["82", "81"]
 
                     response = None
                     used_code = None
@@ -9135,11 +9143,13 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                         out_block = response.block
                         from datetime import datetime
 
-                        # 라벨이 미지였다면 실제로 응답한 원장으로 정정해 하류(주문 노드 등)가
-                        # 같은 거래소를 쓰게 한다.
-                        resolved_exchange = exchange if known_code else self.CODE_EXCHANGES.get(
-                            used_code, exchange
-                        )
+                        # 라벨대로 조회에 성공했으면 그대로 둔다(AMEX 처럼 81 을 공유하는 라벨이
+                        # NYSE 로 덮이지 않게). 다른 원장으로 성공했을 때만 실제 응답한 거래소로
+                        # 정정해 하류(주문 노드 등)가 같은 거래소를 쓰게 한다.
+                        if known_code and used_code == known_code:
+                            resolved_exchange = exchange
+                        else:
+                            resolved_exchange = self.CODE_EXCHANGES.get(used_code, exchange)
 
                         # values 배열에 단일 항목 추가
                         values.append({
