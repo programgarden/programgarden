@@ -74,7 +74,7 @@ class OverseasStockMarketDataNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Returns a single symbol's snapshot: current_price, volume, change_percent, bid, ask, per, eps, 52w_high, 52w_low",
+        "Returns a single symbol's snapshot: symbol, exchange, price, change, change_pct, volume, open, high, low, close, per, eps",
         "Item-based execution: receives one {exchange, symbol} dict per call and emits one value dict — pair with SplitNode for multi-symbol queries",
         "is_tool_enabled=True — AI Agent can call this node to look up live prices autonomously",
         "Broker connection is auto-injected via DAG traversal — no explicit binding needed",
@@ -121,7 +121,7 @@ class OverseasStockMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "values port: array of {symbol, exchange, current_price, volume, change_percent, bid, ask, per, eps} for each symbol.",
+            "expected_output": "values port: array of {symbol, exchange, price, change, change_pct, volume, open, high, low, close, per, eps} for each symbol.",
         },
         {
             "title": "Price lookup feeding PositionSizingNode",
@@ -164,12 +164,11 @@ class OverseasStockMarketDataNode(BaseNode):
             "The node auto-receives the broker connection via DAG traversal from OverseasStockBrokerNode."
         ),
         "output_consumption": (
-            "Consume the `values` port ONLY — an array of {symbol, exchange, current_price, volume, change_percent, "
-            "bid, ask, per, eps, 52w_high, 52w_low}. "
+            "Consume the `values` port ONLY — an array of {symbol, exchange, price, change, change_pct, volume, open, high, low, close, per, eps}. "
             "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
-            "binding `{{ nodes.market.value }}` (or `.value.current_price`) silently resolves to None. "
+            "binding `{{ nodes.market.value }}` (or `.value.price`) silently resolves to None. "
             "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}` "
-            "(the array carries each symbol's current_price, resolved internally)."
+            "(the array carries each symbol's price, resolved internally)."
         ),
         "common_combinations": [
             "WatchlistNode/SymbolQueryNode → OverseasStockMarketDataNode.symbols (multi-symbol price fetch)",
@@ -194,11 +193,16 @@ class OverseasStockMarketDataNode(BaseNode):
             description="i18n:ports.market_data_value",
             fields=PRICE_DATA_FIELDS,
             example={
-                "exchange": "NASDAQ",
                 "symbol": "AAPL",
-                "current_price": 187.45,
+                "exchange": "NASDAQ",
+                "price": 187.45,
+                "change": -2.34,
+                "change_pct": -1.23,
                 "volume": 12_345_678,
-                "change_percent": -1.23,
+                "open": 189.10,
+                "high": 190.02,
+                "low": 186.90,
+                "close": 187.45,
                 "per": 28.5,
                 "eps": 6.57,
             },
@@ -206,7 +210,8 @@ class OverseasStockMarketDataNode(BaseNode):
         OutputPort(
             name="values",
             type="array",
-            description="Array of per-symbol market quotes — [{symbol, exchange, current_price, ...}, ...]",
+            description="Array of per-symbol market quotes — [{symbol, exchange, price, change, change_pct, ...}, ...]",
+            fields=PRICE_DATA_FIELDS,
         ),
     ]
 

@@ -326,6 +326,9 @@ class WorkflowResolver:
         # 10.7 AIAgentNode ai_model 엣지 필수 검증 (LLM 없이는 애초에 동작 불가)
         self._validate_ai_agent_nodes(workflow, result)
 
+        # 10.8 Display 노드 columns 키가 상류 출력 스키마에 실재하는지 (없는 키는 표에 '-' 만 찍힌다)
+        self._validate_display_columns(workflow, registry, result)
+
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
             workflow,
@@ -1278,6 +1281,100 @@ class WorkflowResolver:
                     ),
                 )
             )
+
+    def _validate_display_columns(self, workflow, registry, result: ValidationResult) -> None:
+        """Display 노드의 `columns` 키가 상류 출력 스키마에 실재하는지 검증한다.
+
+        `columns` 는 `{{ }}` 바인딩이 아니라 **평범한 문자열 목록**이라 표현식 검증
+        (`_validate_expression_references`)의 사정권 밖이었다. 그래서 상류가 내보내지 않는
+        이름을 적어도 아무도 막지 않았고, 표는 그 칸에 조용히 `-` 만 찍은 채 워크플로우는
+        `completed / errors=0` 으로 보고했다.
+        (실측 2026-07-13: 챗봇이 `current_price`/`change_percent` 로 저작 → 시세 노드는
+        `price`/`change_pct` 를 내보냄 → 사용자가 요청한 '현재가'가 표에서 사라졌다.)
+
+        🔴 **오탐 0 원칙 — 검증된 포트에만 건다.**
+        `fields` 를 선언했다는 것만으로는 부족하다. 라이브러리 곳곳의 선언이 런타임보다
+        **불완전**하다(예: `ScreenerNode.symbols` 런타임은 price/market_cap/volume/sector 를
+        담는데 `SYMBOL_LIST_FIELDS` 는 exchange/symbol 둘만 선언). 그런 포트에 이 가드를 걸면
+        **정상 워크플로우를 대량 오탐**한다(동봉 예제 7건이 실제로 걸렸다).
+
+        그래서 `tests/test_output_schema_contract.py` 로 **선언 == 런타임** 이 증명된 포트만
+        여기 등록한다. 다른 포트의 선언을 바로잡을 때마다 계약 검사에 추가하고 이 목록을 넓힌다.
+        """
+        import re as _re
+
+        # (node_type, port) — 계약 검사로 선언 == 런타임 이 증명된 포트만.
+        VERIFIED_PORTS = {
+            ("OverseasStockMarketDataNode", "value"),
+            ("OverseasStockMarketDataNode", "values"),
+            ("OverseasFuturesMarketDataNode", "value"),
+            ("OverseasFuturesMarketDataNode", "values"),
+            ("KoreaStockMarketDataNode", "value"),
+            ("KoreaStockMarketDataNode", "values"),
+        }
+
+        DISPLAY_TYPES = {"TableDisplayNode", "ChartDisplayNode"}
+        nodes_by_id = {
+            n.get("id"): n for n in workflow.nodes
+            if isinstance(n, dict) and n.get("id")
+        }
+
+        for node in workflow.nodes:
+            if not isinstance(node, dict) or node.get("type") not in DISPLAY_TYPES:
+                continue
+            columns = node.get("columns")
+            data_expr = node.get("data")
+            if not columns or not isinstance(columns, list) or not isinstance(data_expr, str):
+                continue
+
+            m = _re.search(r"nodes\.([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)", data_expr)
+            if not m:
+                continue
+            src_id, port = m.group(1), m.group(2)
+            src_node = nodes_by_id.get(src_id)
+            if not src_node:
+                continue  # 노드 부재는 _validate_expression_references 가 잡는다
+            if (src_node.get("type"), port) not in VERIFIED_PORTS:
+                continue  # 선언이 런타임과 일치한다고 증명되지 않은 포트 → 검사하지 않는다
+
+            schema = registry.get_schema(src_node.get("type"))
+            if not schema:
+                continue
+            declared: Set[str] = set()
+            for out in (getattr(schema, "outputs", None) or []):
+                nm = out.get("name") if isinstance(out, dict) else getattr(out, "name", None)
+                if nm != port:
+                    continue
+                fields = out.get("fields") if isinstance(out, dict) else getattr(out, "fields", None)
+                for f in (fields or []):
+                    fn = f.get("name") if isinstance(f, dict) else getattr(f, "name", None)
+                    if fn:
+                        declared.add(fn)
+                break
+            if not declared:
+                continue  # 출력 모양이 열려 있음 → 검사 근거 없음 (오탐 방지)
+
+            for col in columns:
+                key = col.get("key") if isinstance(col, dict) else col
+                if not isinstance(key, str) or not key or key in declared:
+                    continue
+                result.add(
+                    build_error(
+                        ErrorCode.INVALID_EXPRESSION_REF,
+                        f"{node.get('type')} '{node.get('id')}' lists column '{key}', but node "
+                        f"'{src_id}' does not output a field with that name on port '{port}'. "
+                        f"The column would render as '-' while the workflow still reports success.",
+                        location=ErrorLocation(
+                            node_id=node.get("id"),
+                            node_type=node.get("type"),
+                            field_path="columns",
+                        ),
+                        suggestion=(
+                            f"Use one of the fields '{src_id}.{port}' actually outputs: "
+                            f"{', '.join(sorted(declared))}."
+                        ),
+                    )
+                )
 
     def _validate_credential_references(
         self,

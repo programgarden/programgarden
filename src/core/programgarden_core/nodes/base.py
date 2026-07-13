@@ -187,16 +187,22 @@ KOREA_STOCK_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
 ]
 
 # ── 국내주식 시세 전용 (t1102 기반) ──
+# 런타임 정본: executor.py `MarketDataNodeExecutor._fetch_korea_stock`
+# (해외와 같은 이름 규칙을 쓴다 — 예전 선언의 current_price/open_price/market_cap 은 런타임에 없었다.)
 KOREA_STOCK_PRICE_DATA_FIELDS: List[Dict[str, str]] = [
     {"name": "symbol", "type": "string", "description": "종목코드 (6자리)"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드 (KRX)"},
     {"name": "name", "type": "string", "description": "종목명"},
-    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "price", "type": "number", "description": "현재가 (원)"},
+    {"name": "change", "type": "number", "description": "전일대비 (하락이면 음수)"},
+    {"name": "change_pct", "type": "number", "description": "등락률 (%)"},
     {"name": "volume", "type": "number", "description": "거래량"},
-    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
-    {"name": "open_price", "type": "number", "description": "시가"},
-    {"name": "high_price", "type": "number", "description": "고가"},
-    {"name": "low_price", "type": "number", "description": "저가"},
-    {"name": "market_cap", "type": "number", "description": "시가총액 (억원)"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가 (현재가와 동일)"},
+    {"name": "per", "type": "number", "description": "PER"},
+    {"name": "pbr", "type": "number", "description": "PBR"},
 ]
 
 # ── 국내주식 펀더멘털 전용 ──
@@ -236,14 +242,42 @@ ORDER_RESULT_FIELDS: List[Dict[str, str]] = [
     {"name": "status", "type": "string", "description": "주문 상태"},
 ]
 
+# ⚠️ 이 선언은 **런타임이 실제로 내보내는 키와 정확히 같아야 한다.**
+# resolver 가 이 이름들로 필드 존재를 정적 검증하므로, 어긋나면 두 방향으로 다 틀린다:
+#   실제 있는 필드를 바인딩 → INVALID_EXPRESSION_REF 로 **거부**
+#   실제 없는 필드를 바인딩 → **통과**시킨 뒤 런타임에 조용히 None
+# (2026-07-13 실측: 선언이 current_price/change_percent 였으나 런타임은 price/change_pct 였다.)
+# 런타임 정본: executor.py `MarketDataNodeExecutor._fetch_overseas_stock`
 PRICE_DATA_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
     {"name": "symbol", "type": "string", "description": "종목코드"},
-    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "price", "type": "number", "description": "현재가"},
+    {"name": "change", "type": "number", "description": "전일대비 (하락이면 음수)"},
+    {"name": "change_pct", "type": "number", "description": "등락률 (%)"},
     {"name": "volume", "type": "number", "description": "거래량"},
-    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가 (현재가와 동일)"},
     {"name": "per", "type": "number", "description": "PER (주가수익비율)"},
     {"name": "eps", "type": "number", "description": "EPS (주당순이익)"},
+]
+
+# ── 해외선물 시세 전용 (o3105 기반) ──
+# 해외주식과 모양이 다르다(symbol_name 있음 / per·eps 없음). 상수를 공유하면 드리프트가 난다.
+# 런타임 정본: executor.py `MarketDataNodeExecutor._fetch_overseas_futures`
+OVERSEAS_FUTURES_PRICE_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드 (월물 심볼)"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol_name", "type": "string", "description": "종목명"},
+    {"name": "price", "type": "number", "description": "현재가"},
+    {"name": "change", "type": "number", "description": "전일대비 (하락이면 음수)"},
+    {"name": "change_pct", "type": "number", "description": "등락률 (%)"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가 (현재가와 동일)"},
 ]
 
 FUNDAMENTAL_DATA_FIELDS: List[Dict[str, str]] = [

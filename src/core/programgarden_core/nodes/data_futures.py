@@ -22,7 +22,7 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
     BrokerProvider,
-    PRICE_DATA_FIELDS,
+    OVERSEAS_FUTURES_PRICE_DATA_FIELDS,
 )
 
 
@@ -74,7 +74,7 @@ class OverseasFuturesMarketDataNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Returns a single futures contract's snapshot: current_price, volume, open_interest, change_percent, bid, ask",
+        "Returns a single futures contract's snapshot: symbol, exchange, symbol_name, price, change, change_pct, volume, open, high, low, close",
         "Item-based execution: pair with SplitNode to query multiple contracts in sequence",
         "is_tool_enabled=True — AI Agent can call this node to look up live futures prices autonomously",
         "Supported exchanges: CME, EUREX, SGX, HKEX — symbol format includes contract month code (e.g., ESH26)",
@@ -121,7 +121,7 @@ class OverseasFuturesMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "values port: array of {symbol, exchange, current_price, volume, open_interest, change_percent, bid, ask}.",
+            "expected_output": "values port: array of {symbol, exchange, symbol_name, price, change, change_pct, volume, open, high, low, close}.",
         },
         {
             "title": "Multi-contract scan — compare HKEX futures prices",
@@ -161,9 +161,9 @@ class OverseasFuturesMarketDataNode(BaseNode):
             "Broker connection auto-injected from OverseasFuturesBrokerNode."
         ),
         "output_consumption": (
-            "Consume the `values` port ONLY — an array of {symbol, exchange, current_price, volume, open_interest, change_percent, bid, ask}. "
+            "Consume the `values` port ONLY — an array of {symbol, exchange, symbol_name, price, change, change_pct, volume, open, high, low, close}. "
             "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
-            "binding `{{ nodes.market.value }}` (or `.value.current_price`) silently resolves to None. "
+            "binding `{{ nodes.market.value }}` (or `.value.price`) silently resolves to None. "
             "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}`."
         ),
         "common_combinations": [
@@ -183,11 +183,13 @@ class OverseasFuturesMarketDataNode(BaseNode):
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="value", type="market_data", description="i18n:ports.market_data_value", fields=PRICE_DATA_FIELDS),
+        OutputPort(name="value", type="market_data", description="i18n:ports.market_data_value",
+                   fields=OVERSEAS_FUTURES_PRICE_DATA_FIELDS),
         OutputPort(
             name="values",
             type="array",
-            description="Array of per-contract market quotes — [{symbol, exchange, current_price, ...}, ...]",
+            description="Array of per-contract market quotes — [{symbol, exchange, price, change, change_pct, ...}, ...]",
+            fields=OVERSEAS_FUTURES_PRICE_DATA_FIELDS,
         ),
     ]
 

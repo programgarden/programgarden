@@ -74,7 +74,7 @@ class KoreaStockMarketDataNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Returns a single domestic stock's snapshot: current_price, volume, change_percent, bid, ask, per, eps, 52w_high, 52w_low",
+        "Returns a single domestic stock's snapshot: symbol, exchange, name, price, change, change_pct, volume, open, high, low, close, per, pbr",
         "Symbol format is a 6-digit KRX code (e.g., '005930') — no exchange field required (domestic market only)",
         "Item-based execution: pair with SplitNode to query multiple domestic stocks in sequence",
         "is_tool_enabled=True — AI Agent can call this node to look up KRX stock prices autonomously",
@@ -121,7 +121,7 @@ class KoreaStockMarketDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "values port: array of {symbol, current_price, volume, change_percent, bid, ask, per, eps} per domestic stock.",
+            "expected_output": "values port: array of {symbol, exchange, name, price, change, change_pct, volume, open, high, low, close, per, pbr} per domestic stock.",
         },
         {
             "title": "Price lookup for domestic PositionSizingNode",
@@ -165,11 +165,11 @@ class KoreaStockMarketDataNode(BaseNode):
         ),
         "output_consumption": (
             "Consume the `values` port ONLY — an array of per-symbol snapshots "
-            "[{symbol, current_price, volume, change_percent, bid, ask, per, eps, 52w_high, 52w_low}, ...]. "
+            "[{symbol, exchange, name, price, change, change_pct, volume, open, high, low, close, per, pbr}, ...]. "
             "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
-            "binding `{{ nodes.market.value }}` (or `.value.current_price`) silently resolves to None. "
+            "binding `{{ nodes.market.value }}` (or `.value.price`) silently resolves to None. "
             "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}` "
-            "(the array carries each symbol's current_price, which PositionSizingNode resolves internally)."
+            "(the array carries each symbol's price, which PositionSizingNode resolves internally)."
         ),
         "common_combinations": [
             "KoreaStockMarketDataNode.values → TableDisplayNode.data (KRX price monitor)",
@@ -189,7 +189,12 @@ class KoreaStockMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="value", type="market_data", description="i18n:ports.market_data_value", fields=KOREA_STOCK_PRICE_DATA_FIELDS),
-        OutputPort(name="values", type="array", description="Array of per-symbol market quotes"),
+        OutputPort(
+            name="values",
+            type="array",
+            description="Array of per-symbol market quotes — [{symbol, exchange, name, price, change, change_pct, ...}, ...]",
+            fields=KOREA_STOCK_PRICE_DATA_FIELDS,
+        ),
     ]
 
     _version: ClassVar[str] = "1.0.0"
