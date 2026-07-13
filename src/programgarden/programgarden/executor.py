@@ -3129,11 +3129,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "paper_trading=False로 설정하거나, 해외선물(overseas_futures)을 사용하세요.",
                 node_id,
             )
-            return {
-                "connection": None,
-                "error": "overseas_stock does not support paper_trading. Set paper_trading=False to use real mode.",
-            }
-        
+            # 하드 실패(지원하지 않는 설정 조합) → raise. 에러-dict 로 굴러가면 하류가
+            # connected/connection 을 침묵의 False/None 으로 먹고 워크플로우가 완주한다.
+            from programgarden_core.exceptions import ValidationError
+            raise ValidationError(
+                "overseas_stock does not support paper_trading (LS-Sec limitation). Set "
+                "paper_trading=False, or use overseas_futures for paper trading.",
+                node_id=node_id,
+            )
+
         # ========================================
         # Credential 자동 주입 (GenericNodeExecutor와 동일 패턴)
         # credential_id가 있으면 appkey, appsecret이 config에 주입됨
@@ -7789,6 +7793,26 @@ class DisplayNodeExecutor(NodeExecutorBase):
             return str(value)[:15] + "..." if len(str(value)) > 15 else str(value)
         return str(value)[:20]
 
+    def _normalize_columns(self, columns: Any) -> Optional[List[tuple]]:
+        """`columns` 설정을 [(key, label), ...] 로 정규화.
+
+        스키마 정본은 `List[str]`(예: ["symbol","close"])이지만, LLM 이 리치 객체형
+        [{"key":"date","label":"날짜"}] 을 뱉는 경우가 있다. 이때 옛 렌더러는
+        `f"{c:<12}"`(c=dict)에서 `unsupported format string passed to dict.__format__`
+        로 크래시했다. 양형을 모두 받아 (조회 key, 표시 label)로 환원한다."""
+        if not columns:
+            return None
+        norm: List[tuple] = []
+        for c in columns:
+            if isinstance(c, dict):
+                key = c.get("key") or c.get("name") or c.get("field") or c.get("label")
+                label = c.get("label") or c.get("title") or key
+                if key:
+                    norm.append((str(key), str(label)))
+            elif c is not None:
+                norm.append((str(c), str(c)))
+        return norm or None
+
     def _get_data(self, config: Dict[str, Any], context: ExecutionContext, node_id: str) -> Any:
         """data 필드 또는 엣지에서 데이터 가져오기"""
         # 1. config의 data 필드가 바인딩 표현식인 경우 이미 평가됨
@@ -7899,12 +7923,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
                     rows = sorted(rows, key=lambda x: x.get(sort_by, 0), reverse=(sort_order == "desc"))
                 rows = rows[:limit]
                 
-                cols = columns or list(rows[0].keys())[:8]
-                header = " | ".join(f"{c:<12}" for c in cols)
+                cols = self._normalize_columns(columns) or [
+                    (k, k) for k in list(rows[0].keys())[:8]
+                ]
+                header = " | ".join(f"{label:<12}" for _, label in cols)
                 print(header)
                 print("-" * 80)
                 for row in rows:
-                    values = " | ".join(f"{self._format_value(row.get(c)):<12}" for c in cols)
+                    values = " | ".join(
+                        f"{self._format_value(row.get(key)):<12}" for key, _ in cols
+                    )
                     print(values)
                     
             elif isinstance(data, dict):
@@ -7917,12 +7945,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
                     items = items[:limit]
                     
                     if items:
-                        cols = columns or list(items[0][1].keys())[:6]
-                        header = f"{'Key':<12} | " + " | ".join(f"{c:<12}" for c in cols)
+                        cols = self._normalize_columns(columns) or [
+                            (k, k) for k in list(items[0][1].keys())[:6]
+                        ]
+                        header = f"{'Key':<12} | " + " | ".join(f"{label:<12}" for _, label in cols)
                         print(header)
                         print("-" * 80)
                         for key, val in items:
-                            values = f"{key:<12} | " + " | ".join(f"{self._format_value(val.get(c)):<12}" for c in cols)
+                            values = f"{key:<12} | " + " | ".join(
+                                f"{self._format_value(val.get(col_key)):<12}" for col_key, _ in cols
+                            )
                             print(values)
                 else:
                     # flat dict
@@ -8416,6 +8448,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         from programgarden.plugin import PluginSandbox, PluginTimeoutError
         from programgarden_core.models import get_plugin_hints
+        from programgarden_core.exceptions import ValidationError, ExecutionError
 
         # 플러그인 ID 추출
         plugin_id = config.get("plugin", "Unknown")
@@ -8430,15 +8463,14 @@ class ConditionNodeExecutor(NodeExecutorBase):
         )
         
         if not resource_check["can_proceed"]:
-            context.log("warning", f"Resource limit reached: {resource_check['reason']}", node_id)
-            # 리소스 부족 시 빈 결과 반환 (안전 모드)
-            return {
-                "result": False,
-                "passed_symbols": [],
-                "failed_symbols": [],
-                "values": {},
-                "error": "resource_limit",
-            }
+            # 하드 실패(리소스 고갈로 실행 불가) → raise. 빈 결과를 성공으로 위장하면
+            # 하류 IfNode 가 is_condition_met=False 를 조용히 먹어 잘못된 분기를 탄다.
+            context.log("error", f"Resource limit reached: {resource_check['reason']}", node_id)
+            raise ExecutionError(
+                f"ConditionNode cannot run — resource limit reached: "
+                f"{resource_check['reason']}",
+                node_id=node_id,
+            )
         
         # 권장 배치 크기 저장 (백테스트 모드에서 사용)
         recommended_batch_size = resource_check.get("recommended_batch_size", 10)
@@ -8482,18 +8514,22 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 context.log("debug", f"positions 평가 후: {type(positions).__name__}, {len(positions) if isinstance(positions, (list, dict)) else 0} items", node_id)
 
                 if not positions or not isinstance(positions, list):
-                    context.log("error", 
-                        f"ConditionNode '{node_id}': positions가 설정되지 않았습니다. "
-                        f"config에 positions: {{{{ nodes.realAccount.positions }}}} 형태로 추가하세요.",
+                    # 정상 0건: 보유 포지션이 없으면(빈 리스트) 검사할 대상이 없어 신호 0건.
+                    # `positions` 바인딩이 아예 없는 config 오류는 static validate 가
+                    # (resolver._validate: position-plugin ↔ positions) 이미 잡으므로,
+                    # 런타임 빈/미해결은 하드 실패로 죽이지 않고 정상 빈 값으로 흘린다.
+                    context.log("info",
+                        f"ConditionNode '{node_id}': positions 비어있음 → 통과 종목 없음(정상 0건).",
                         node_id
                     )
                     return {
+                        "symbols": [],
                         "result": False,
+                        "is_condition_met": False,
                         "passed_symbols": [],
                         "failed_symbols": [],
+                        "symbol_results": [],
                         "values": [],
-                        "error": "missing_positions",
-                        "error_message": "positions가 설정되지 않았습니다. 예: {{ nodes.realAccount.positions }}",
                     }
                 
                 # fields 표현식 평가
@@ -8542,28 +8578,28 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         return {
                             "symbols": [p.get("symbol") for p in positions if isinstance(p, dict)],
                             "result": True if (getattr(context, "is_deep_validate", False) and _passed) else result.get("result", False),
+                            "is_condition_met": True if (getattr(context, "is_deep_validate", False) and _passed) else result.get("result", False),
                             "passed_symbols": _passed,
                             "failed_symbols": [] if (getattr(context, "is_deep_validate", False) and _passed) else result.get("failed_symbols", []),
                             "symbol_results": result.get("symbol_results", []),
                             "values": result.get("values", []),
                         }
                     except Exception as e:
+                        # 하드 실패(플러그인 실행 예외) → raise.
                         context.log("error", f"Plugin error: {e}", node_id)
                         import traceback
                         context.log("debug", f"Plugin traceback: {traceback.format_exc()}", node_id)
-                        return {
-                            "result": False,
-                            "passed_symbols": [],
-                            "failed_symbols": [],
-                            "values": [],
-                            "error": str(e),
-                        }
+                        raise ExecutionError(
+                            f"ConditionNode plugin execution failed: {e}",
+                            node_id=node_id,
+                        ) from e
                 else:
                     # 플러그인 없으면 모두 통과
                     passed_symbols = [{"symbol": s, "exchange": "UNKNOWN"} for s in positions.keys()]
                     return {
                         "symbols": list(positions.keys()),
                         "result": True,
+                        "is_condition_met": True,
                         "passed_symbols": passed_symbols,
                         "failed_symbols": [],
                         "symbol_results": [],
@@ -8580,14 +8616,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     f"items {{ from, extract }} 형태로 추가하세요.",
                     node_id
                 )
-                return {
-                    "result": False,
-                    "passed_symbols": [],
-                    "failed_symbols": [],
-                    "values": [],
-                    "error": "missing_items",
-                    "error_message": "items가 설정되지 않았습니다. items { from, extract } 형태로 추가하세요.",
-                }
+                # 하드 실패(필수입력 부재) → raise.
+                raise ValidationError(
+                    "ConditionNode uses an indicator plugin but has no `items` binding. Add "
+                    "items { from, extract } — e.g. items: { from: '{{ nodes.hist.values }}', "
+                    "extract: { symbol: '{{ item.symbol }}', close: '{{ row.close }}' } }.",
+                    node_id=node_id,
+                )
 
             # === 플러그인 required_fields 검증 ===
             if plugin_schema and hasattr(plugin_schema, 'required_fields'):
@@ -8600,30 +8635,33 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         f"플러그인 {plugin_id}는 {required_fields} 필드가 필요합니다.",
                         node_id
                     )
-                    return {
-                        "result": False,
-                        "passed_symbols": [],
-                        "failed_symbols": [],
-                        "values": [],
-                        "error": "missing_required_fields",
-                        "error_message": f"extract에 필수 필드 누락: {missing}",
-                    }
+                    # 하드 실패(필수입력 부재 — 플러그인 required_fields 누락) → raise.
+                    raise ValidationError(
+                        f"ConditionNode plugin '{plugin_id}' requires extract fields "
+                        f"{required_fields}, but these are missing: {missing}. Add them to "
+                        f"items.extract.",
+                        node_id=node_id,
+                    )
 
             # items 처리 (from 배열을 순회하며 extract 적용)
             data = self._process_items_with_extract(items_config, context, node_id)
 
             if not data:
-                context.log("error",
-                    f"ConditionNode '{node_id}': items 처리 결과가 비어있습니다.",
+                # 정상 0건(런타임에 from 배열이 비어 평가할 항목 없음 — 예: 장 마감/무거래).
+                # 하드 실패가 아니므로 선언 스키마 그대로 빈 값(no signal). error 키 없음.
+                # 구조적 미배선은 B′ SplitNode/도달성 가드·deep_validate 가 별도로 잡는다.
+                context.log("info",
+                    f"ConditionNode '{node_id}': items 처리 결과가 비어있어 통과 종목 없음(정상 0건).",
                     node_id
                 )
                 return {
+                    "symbols": [],
                     "result": False,
+                    "is_condition_met": False,
                     "passed_symbols": [],
                     "failed_symbols": [],
+                    "symbol_results": [],
                     "values": [],
-                    "error": "empty_items_result",
-                    "error_message": "items 처리 결과가 비어있습니다. from 배열을 확인하세요.",
                 }
 
             # symbols 자동 추출 (data에서)
@@ -8674,14 +8712,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 field_mapping=field_mapping,
             )
         except PluginTimeoutError as e:
+            # 하드 실패(플러그인 타임아웃) → raise.
+            from programgarden_core.exceptions import ExecutionError
             context.log("error", f"Plugin timeout: {e}", node_id)
-            return {
-                "result": False,
-                "passed_symbols": [],
-                "failed_symbols": symbols if 'symbols' in locals() else [],
-                "values": {},
-                "error": "plugin_timeout",
-            }
+            raise ExecutionError(
+                f"ConditionNode plugin timed out: {e}",
+                node_id=node_id,
+            ) from e
         finally:
             # 리소스 반환
             await context.release_resources_after_task(
@@ -10019,8 +10056,20 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                         symbol_exchange_map[sym] = mc
         
         if not symbols:
+            # NOTE: 정상 return(아래 9690)과 **동일 스키마**로 반환해야 한다. 옛
+            # `{"ohlcv_data": {}, "symbols": []}` 는 정상 형태(value/values/period/
+            # interval)와 완전히 달라, 하류의 정상 바인딩(`{{ nodes.x.value.time_series }}`
+            # / ConditionNode 의 `item.time_series`)이 조용히 None 이 되고 방어적
+            # `data or []` 가 그걸 삼켜 에러 없이 빈 결과(count:0)를 낸다.
+            # (deep_fixtures.historical_data_fixture 도 이 스키마를 못박는다.)
             context.log("warning", "No symbols provided", node_id)
-            return {"ohlcv_data": {}, "symbols": []}
+            return {
+                "value": None,
+                "values": [],
+                "symbols": [],
+                "period": "",
+                "interval": config.get("interval", "1d"),
+            }
         
         # 기간 설정 ({{ today_yyyymmdd() }}, {{ days_ago_yyyymmdd(100) }} 바인딩 사용)
         start_date = config.get("start_date", "")
@@ -10685,14 +10734,15 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
         )
         
         if not resource_check["can_proceed"]:
+            # 하드 실패(리소스 고갈로 실행 불가) → raise(빈 결과를 성공으로 위장하지 않음).
+            from programgarden_core.exceptions import ExecutionError
             context.log("error", f"Cannot run backtest: {resource_check['reason']}", node_id)
-            return {
-                "equity_curve": [],
-                "trades": [],
-                "metrics": {},
-                "summary": {"error": resource_check["reason"]},
-            }
-        
+            raise ExecutionError(
+                f"BacktestEngineNode cannot run — resource limit reached: "
+                f"{resource_check['reason']}",
+                node_id=node_id,
+            )
+
         try:
             # === items { from, extract } 방식으로 입력 데이터 가져오기 ===
             items_config = config.get("items")
@@ -10709,6 +10759,8 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                     return {
                         "equity_curve": [],
                         "trades": [],
+                        "signals": [],
+                        "values": [],
                         "metrics": {},
                         "summary": {"error": "items 처리 결과가 비어있습니다."},
                     }
@@ -11695,6 +11747,7 @@ class PortfolioNodeExecutor(NodeExecutorBase):
             "rebalance_signal": False,
             "rebalance_orders": [],
             "allocated_capital": {},
+            "drawdown_percent": 0,
         }
 
 
@@ -14165,16 +14218,14 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             }
             
         except Exception as e:
-            context.log("warning", f"Modify order exception: {e}", node_id)
-            return {
-                "modify_result": {
-                    "success": False,
-                    "error": str(e),
-                    "original_order_id": original_order_id,
-                    "product": "overseas_stock",
-                },
-                "modified_order": None,
-            }
+            # 하드 실패 → raise(에러-dict 로 삼키면 하류가 침묵의 None → silent garbage).
+            from programgarden_core.exceptions import ExecutionError
+            context.log("error", f"Modify order exception (overseas_stock): {e}", node_id)
+            raise ExecutionError(
+                f"ModifyOrderNode failed to modify overseas_stock order "
+                f"'{original_order_id}': {e}",
+                node_id=node_id,
+            ) from e
 
     async def _modify_overseas_futures(
         self,
@@ -14287,16 +14338,13 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             }
             
         except Exception as e:
-            context.log("warning", f"Modify futures order exception: {e}", node_id)
-            return {
-                "modify_result": {
-                    "success": False,
-                    "error": str(e),
-                    "original_order_id": original_order_id,
-                    "product": "overseas_futures",
-                },
-                "modified_order": None,
-            }
+            from programgarden_core.exceptions import ExecutionError
+            context.log("error", f"Modify futures order exception: {e}", node_id)
+            raise ExecutionError(
+                f"ModifyOrderNode failed to modify overseas_futures order "
+                f"'{original_order_id}': {e}",
+                node_id=node_id,
+            ) from e
 
     async def _modify_korea_stock(
         self,
@@ -14389,16 +14437,13 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             }
 
         except Exception as e:
-            context.log("warning", f"Korea stock modify order exception: {e}", node_id)
-            return {
-                "modify_result": {
-                    "success": False,
-                    "error": str(e),
-                    "original_order_id": original_order_id,
-                    "product": "korea_stock",
-                },
-                "modified_order": None,
-            }
+            from programgarden_core.exceptions import ExecutionError
+            context.log("error", f"Korea stock modify order exception: {e}", node_id)
+            raise ExecutionError(
+                f"ModifyOrderNode failed to modify korea_stock order "
+                f"'{original_order_id}': {e}",
+                node_id=node_id,
+            ) from e
 
     def _error_result(self, error_msg: str) -> Dict[str, Any]:
         """에러 결과 반환"""
@@ -14456,7 +14501,9 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             )
             return {
                 "order_id": order_id,
+                "cancel_result": None,
                 "cancelled_order_id": order_id,
+                "cancelled_order": None,
                 "status": "simulated",
                 "dry_run": True,
                 "requested": config,
@@ -15346,13 +15393,16 @@ class AIAgentNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         import json as json_module
         from programgarden.providers import LLMProvider
+        from programgarden_core.exceptions import ValidationError, ExecutionError
 
-        # === 0. deep_validate: 실 LLM/ReAct 루프를 절대 돌리지 않는다 ===
+        # === 0. deep_validate / dry_run: 실 LLM/ReAct 루프를 절대 돌리지 않는다 ===
         # 가짜(스키마-shaped) response 를 주입해 다운스트림 {{ nodes.X.response[.field] }}
-        # 바인딩이 풀리고 flow 무결성이 검증되도록 한다(네트워크·모델비용 0). 실 LLM
-        # 호출 실패를 {"error":...} 로 삼키던 silent-fail 경로 자체를 제거한다.
+        # 바인딩이 풀리고 flow 무결성이 검증되도록 한다(네트워크·모델비용 0).
+        # dry_run 도 시뮬레이션 모드다(주문 노드가 dry_run 에서 시뮬레이션하는 것과 동일).
+        # 실 LLM 호출 실패는 아래 실경로에서 **raise** 로 시끄럽게 처리하고(silent None 금지),
+        # 시뮬레이션 모드에선 실 호출 자체를 안 하므로 여기서 fixture 로 단락한다.
         # preset 을 먼저 적용해 output_format/output_schema 가 런타임과 동일하게 반영되도록 함.
-        if getattr(context, "is_deep_validate", False):
+        if getattr(context, "is_deep_validate", False) or getattr(context, "is_dry_run", False):
             from programgarden import deep_fixtures as _df
             _deep_config = config
             _preset_id = config.get("preset")
@@ -15376,12 +15426,21 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         workflow = kwargs.get("workflow")
         if not workflow:
             context.log("error", "AIAgentNode requires workflow context", node_id)
-            return {"error": "Workflow context not provided"}
+            # 하드 실패(설정 오류) → raise. 에러-dict 로 굴러가면 하류가 침묵의 None 을
+            # 먹고 워크플로우가 완주해 silent garbage 가 된다(§sweep 리워크).
+            raise ValidationError(
+                "AIAgentNode requires workflow context but none was provided.",
+                node_id=node_id,
+            )
 
         ai_model_node_id = workflow.get_ai_model_node_id(node_id)
         if not ai_model_node_id:
             context.log("error", "No LLMModelNode connected via ai_model edge", node_id)
-            return {"error": "No LLM model connected. Connect a LLMModelNode via ai_model edge."}
+            raise ValidationError(
+                "No LLM model connected. Connect a LLMModelNode to this AIAgentNode via an "
+                "ai_model edge.",
+                node_id=node_id,
+            )
 
         # LLMModelNode의 출력에서 connection 가져오기
         llm_connection = context.get_output(ai_model_node_id, "connection")
@@ -15401,7 +15460,11 @@ class AIAgentNodeExecutor(NodeExecutorBase):
 
         if not llm_connection:
             context.log("error", "Failed to get LLM connection", node_id)
-            return {"error": "Failed to get LLM connection from LLMModelNode."}
+            raise ValidationError(
+                "Failed to get LLM connection from the connected LLMModelNode "
+                "(check the model node's config/credentials).",
+                node_id=node_id,
+            )
 
         # secrets에서 API 키 복원 (H-8: 평문 노출 방지)
         llm_node_ref = llm_connection.get("_llm_node_id", ai_model_node_id)
@@ -15508,7 +15571,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                     )
             except Exception as e:
                 context.log("error", f"LLM call failed: {e}", node_id)
-                return {"error": f"LLM call failed: {e}"}
+                raise ExecutionError(f"AIAgentNode LLM call failed: {e}", node_id=node_id) from e
 
             # 토큰 사용량 이벤트
             from programgarden_core.bases.listener import TokenUsageEvent
@@ -15629,7 +15692,11 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                     ))
 
                     if tool_error_strategy == "abort":
-                        return {"error": f"Tool '{tool_name}' failed: {e}"}
+                        raise ExecutionError(
+                            f"AIAgentNode tool '{tool_name}' failed and tool_error_strategy="
+                            f"'abort': {e}",
+                            node_id=node_id,
+                        ) from e
                     elif tool_error_strategy == "skip":
                         messages.append({
                             "role": "tool",
