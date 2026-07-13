@@ -191,6 +191,10 @@ _NODE_META_KEYS = {"id", "type", "position", "description", "name"}
 #: executor actually reads it.
 _ALLOWED_NODE_EXTRAS = {
     "SplitNode": {"items"},  # executor iterates config['items']; see 69-* legacy
+    # MarketDataNodeExecutor reads config['symbols'] (plural array) at runtime
+    # (executor.py ~8983); the node field schema only declares singular 'symbol'.
+    # Live-confirmed: examples 50/94 return per-symbol `values` from `symbols`.
+    "KoreaStockMarketDataNode": {"symbols"},
 }
 
 

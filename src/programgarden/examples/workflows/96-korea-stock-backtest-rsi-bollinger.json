@@ -1,7 +1,7 @@
 {
   "id": "96-korea-stock-backtest-rsi-bollinger",
-  "name": "국내주식 백테스트 (삼성 RSI + KOSDAQ 볼린저)",
-  "description": "삼성전자(005930, KOSPI) RSI 평균회귀 전략과 에코프로비엠(247540, KOSDAQ) 볼린저 하단 반등 전략을 1년 일봉으로 각각 백테스트한 뒤 BenchmarkCompareNode로 샤프비율 비교. 국내 수수료/현금주식 설정(allow_fractional=false).",
+  "name": "국내주식 백테스트 (삼성전자 RSI vs 볼린저 비교)",
+  "description": "삼성전자(005930) 1년 일봉 하나로 RSI(14) 평균회귀 전략과 볼린저(20,2) 하단 반등 전략을 각각 백테스트한 뒤 BenchmarkCompareNode로 샤프비율을 비교한다. 두 전략이 같은 시세를 공유하므로 KoreaStockHistoricalDataNode 는 하나만 둔다.",
   "nodes": [
     {
       "id": "start",
@@ -15,32 +15,24 @@
       "position": { "x": 220, "y": 350 }
     },
     {
-      "id": "split",
-      "type": "SplitNode",
-      "items": [
-        { "symbol": "005930" },
-        { "symbol": "247540" }
-      ],
-      "position": { "x": 420, "y": 350 }
-    },
-    {
       "id": "historical",
       "type": "KoreaStockHistoricalDataNode",
-      "symbol": "{{ nodes.split.item }}",
+      "symbol": { "symbol": "005930", "exchange": "KRX" },
       "start_date": "{{ date.ago(365, format='yyyymmdd') }}",
       "end_date": "{{ date.today(format='yyyymmdd') }}",
       "interval": "1d",
       "adjust": true,
-      "position": { "x": 640, "y": 350 }
+      "position": { "x": 440, "y": 350 }
     },
     {
       "id": "rsi_cond",
       "type": "ConditionNode",
       "plugin": "RSI",
       "items": {
-        "from": "{{ item.time_series }}",
+        "from": "{{ nodes.historical.value.time_series }}",
         "extract": {
-          "symbol": "{{ item.symbol }}",
+          "symbol": "{{ nodes.historical.value.symbol }}",
+          "exchange": "KRX",
           "date": "{{ row.date }}",
           "open": "{{ row.open }}",
           "high": "{{ row.high }}",
@@ -51,19 +43,20 @@
       },
       "fields": {
         "period": 14,
-        "threshold": 30,
+        "threshold": 35,
         "direction": "below"
       },
-      "position": { "x": 880, "y": 180 }
+      "position": { "x": 700, "y": 180 }
     },
     {
       "id": "boll_cond",
       "type": "ConditionNode",
       "plugin": "BollingerBands",
       "items": {
-        "from": "{{ item.time_series }}",
+        "from": "{{ nodes.historical.value.time_series }}",
         "extract": {
-          "symbol": "{{ item.symbol }}",
+          "symbol": "{{ nodes.historical.value.symbol }}",
+          "exchange": "KRX",
           "date": "{{ row.date }}",
           "open": "{{ row.open }}",
           "high": "{{ row.high }}",
@@ -77,12 +70,12 @@
         "std_dev": 2.0,
         "position": "below_lower"
       },
-      "position": { "x": 880, "y": 520 }
+      "position": { "x": 700, "y": 520 }
     },
     {
-      "id": "backtest_samsung_rsi",
+      "id": "backtest_rsi",
       "type": "BacktestEngineNode",
-      "strategy_name": "Samsung RSI Mean Reversion (005930)",
+      "strategy_name": "Samsung RSI Mean Reversion",
       "items": {
         "from": "{{ nodes.rsi_cond.values[0].time_series }}",
         "extract": {
@@ -100,25 +93,17 @@
       "initial_capital": 10000000,
       "commission_rate": 0.00015,
       "slippage": 0.001,
-      "position_sizing": "fixed_percent",
-      "fixed_percent": 20.0,
-      "max_position_percent": 40.0,
-      "stop_loss_percent": 5.0,
-      "take_profit_percent": 12.0,
-      "time_stop_days": 20,
       "allow_short": false,
-      "allow_fractional": false,
-      "risk_free_rate": 0.03,
-      "position": { "x": 1140, "y": 180 }
+      "position": { "x": 960, "y": 180 }
     },
     {
-      "id": "backtest_kosdaq_bollinger",
+      "id": "backtest_bollinger",
       "type": "BacktestEngineNode",
-      "strategy_name": "KOSDAQ Bollinger Reversion (247540)",
+      "strategy_name": "Samsung Bollinger Reversion",
       "items": {
-        "from": "{{ nodes.boll_cond.values[1].time_series }}",
+        "from": "{{ nodes.boll_cond.values[0].time_series }}",
         "extract": {
-          "symbol": "{{ nodes.boll_cond.values[1].symbol }}",
+          "symbol": "{{ nodes.boll_cond.values[0].symbol }}",
           "date": "{{ row.date }}",
           "open": "{{ row.open }}",
           "high": "{{ row.high }}",
@@ -131,59 +116,38 @@
       },
       "initial_capital": 10000000,
       "commission_rate": 0.00015,
-      "slippage": 0.0015,
-      "position_sizing": "fixed_percent",
-      "fixed_percent": 20.0,
-      "max_position_percent": 40.0,
-      "stop_loss_percent": 6.0,
-      "take_profit_percent": 15.0,
-      "time_stop_days": 15,
+      "slippage": 0.001,
       "allow_short": false,
-      "allow_fractional": false,
-      "risk_free_rate": 0.03,
-      "position": { "x": 1140, "y": 520 }
+      "position": { "x": 960, "y": 520 }
     },
     {
       "id": "benchmark",
       "type": "BenchmarkCompareNode",
       "strategies": [
-        "{{ nodes.backtest_samsung_rsi.equity_curve }}",
-        "{{ nodes.backtest_kosdaq_bollinger.equity_curve }}"
+        "{{ nodes.backtest_rsi.equity_curve }}",
+        "{{ nodes.backtest_bollinger.equity_curve }}"
       ],
       "ranking_metric": "sharpe",
-      "position": { "x": 1420, "y": 350 }
+      "position": { "x": 1240, "y": 350 }
     },
     {
       "id": "summary",
       "type": "SummaryDisplayNode",
-      "title": "국내주식 전략 벤치마크 요약",
+      "title": "삼성전자 RSI vs 볼린저 전략 벤치마크 (샤프비율 순위)",
       "data": "{{ nodes.benchmark.ranking }}",
-      "position": { "x": 1660, "y": 220 }
-    },
-    {
-      "id": "equity_chart",
-      "type": "MultiLineChartNode",
-      "title": "전략별 자산 곡선 비교",
-      "data": "{{ nodes.benchmark.combined_curve }}",
-      "x_field": "date",
-      "y_field": "equity",
-      "series_key": "strategy_name",
-      "position": { "x": 1660, "y": 480 }
+      "position": { "x": 1500, "y": 350 }
     }
   ],
   "edges": [
     { "from": "start", "to": "broker" },
-    { "from": "broker", "to": "split" },
-    { "from": "split", "to": "historical" },
     { "from": "broker", "to": "historical" },
     { "from": "historical", "to": "rsi_cond" },
     { "from": "historical", "to": "boll_cond" },
-    { "from": "rsi_cond", "to": "backtest_samsung_rsi" },
-    { "from": "boll_cond", "to": "backtest_kosdaq_bollinger" },
-    { "from": "backtest_samsung_rsi", "to": "benchmark" },
-    { "from": "backtest_kosdaq_bollinger", "to": "benchmark" },
-    { "from": "benchmark", "to": "summary" },
-    { "from": "benchmark", "to": "equity_chart" }
+    { "from": "rsi_cond", "to": "backtest_rsi" },
+    { "from": "boll_cond", "to": "backtest_bollinger" },
+    { "from": "backtest_rsi", "to": "benchmark" },
+    { "from": "backtest_bollinger", "to": "benchmark" },
+    { "from": "benchmark", "to": "summary" }
   ],
   "credentials": [
     {
@@ -198,10 +162,10 @@
   "notes": [
     {
       "id": "note_fees",
-      "content": "## 국내주식 백테스트 설정 메모\n\n- **allow_fractional=false**: 국내주식은 소수점 매매 불가(정수 주식수).\n- **commission_rate 0.00015**: 위탁수수료 근사치. 매도 시 증권거래세(약 0.18%)는 별도 —\n  보수적 백테스트라면 commission_rate 를 왕복 비용으로 상향해 반영한다.\n- **수정주가**: KoreaStockHistoricalDataNode.adjust=true 로 액면분할/배당을 반영해 장기 수익률 왜곡을 방지.\n- 신호 매핑: ConditionNode 가 붙인 per-candle row.signal(buy/sell) + row.side 를 BacktestEngine 이 그대로 소비.",
+      "content": "## 국내주식 백테스트 설정 메모\n\n- **KoreaStockHistoricalDataNode 는 하나만** 두고 두 전략(rsi_cond·boll_cond)이 같은 시세를 공유한다. 서로 다른 종목을 비교하려면 종목마다 이 노드를 복제해야 하는데, **국내 차트 연속조회는 rate-limit 대기를 우회**해 한 세션에서 무거운 연속조회를 연달아 하면 두 번째가 조용히 0봉이 될 수 있다(라이브 실측). 종목별 비교가 필요하면 스케줄을 나누거나 조회 구간을 줄인다.\n- KoreaStockHistoricalDataNode 는 **단일 symbol 만** 받는다 — 배열/SplitNode 로 여러 종목을 순회할 수 없다.\n- **BacktestEngineNode 가 실제로 읽는 파라미터는 initial_capital · commission_rate · slippage · allow_short 4개뿐**이다. position_sizing/stop_loss/take_profit/time_stop/allow_fractional 등은 엔진이 소비하지 않으므로 넣지 않았다(넣어도 무시된다).\n- 체결 수량은 자본 대비 비율로 산출되며 **소수점 주식수**가 나온다(엔진은 정수 라운딩을 하지 않는다).\n- **commission_rate 0.00015**: 위탁수수료 근사치. 매도 시 증권거래세(약 0.18%)는 미반영.\n- **수정주가**: adjust=true 로 액면분할/배당 반영.\n- 신호 매핑: ConditionNode 가 붙인 per-candle row.signal(buy/sell)+row.side 를 BacktestEngine 이 그대로 소비한다. 전략별 자산곡선은 각 BacktestEngineNode 의 equity_curve 출력에 있다.",
       "color": 3,
-      "width": 380,
-      "height": 240,
+      "width": 400,
+      "height": 320,
       "position": { "x": 420, "y": 40 }
     }
   ]

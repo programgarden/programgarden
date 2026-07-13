@@ -11,7 +11,6 @@ graph LR
 (Korea Stock)"])
     account["Account
 (Korea Stock)"]
-    split["Split"]
     historical["Historical
 (Korea Stock)"]
     rsi_cond{"Condition
@@ -24,11 +23,8 @@ graph LR
     order_table[/"TableDisplay"/]
     start --> broker
     broker --> account
-    broker --> split
-    split --> historical
     broker --> historical
     historical --> rsi_cond
-    split --> market
     broker --> market
     rsi_cond --> sizing
     market --> sizing
@@ -45,10 +41,9 @@ graph LR
 | start | StartNode | Workflow start |
 | broker | KoreaStockBrokerNode | Korea stock broker connection (real account only) |
 | account | KoreaStockAccountNode | Orderable cash / positions |
-| split | SplitNode | Emit single symbol item {symbol: 005930} |
-| historical | KoreaStockHistoricalDataNode | 60-day adjusted daily OHLCV |
+| historical | KoreaStockHistoricalDataNode | 60-day adjusted daily OHLCV for 005930 (single `symbol` object) |
 | rsi_cond | ConditionNode (RSI) | RSI(14) < 30 oversold filter → passed_symbols |
-| market | KoreaStockMarketDataNode | Live KRX quote (current price) for sizing |
+| market | KoreaStockMarketDataNode | Live KRX quote (`symbols` array → `values`) for sizing |
 | sizing | PositionSizingNode | fixed_percent 5% of orderable cash → order dict |
 | order | KoreaStockNewOrderNode | Limit buy (side=buy, order_type=limit) |
 | order_table | TableDisplayNode | Order execution audit log |
@@ -61,6 +56,8 @@ graph LR
 
 ## Notes
 
-- **No paper trading**: KoreaStockBrokerNode is real-market only. To study the flow without executing, drop the `order` node and inspect `rsi_cond` via a display node.
+- **No paper trading**: KoreaStockBrokerNode is real-market only. To study the flow without executing, drop the `order` node and inspect `sizing.orders` via a display node (live-verified: sizing emits `orders`/`order` when a symbol passes and the account can afford ≥1 share).
+- **Single-symbol pipeline**: `historical` takes a single `symbol` object (`{symbol, exchange}`) and emits `value.time_series`; `rsi_cond` reads `{{ nodes.historical.value.time_series }}`. `market` uses a `symbols` **array** and emits `values` — sizing binds `market_data = {{ nodes.market.values }}`. To widen to several tickers, replicate the `historical + rsi_cond` chain per symbol (the historical node accepts only one symbol — an array or SplitNode silently yields 0 bars live).
+- Sizing wiring (all live-verified): `symbols = {{ nodes.rsi_cond.passed_symbols }}`, `market_data = {{ nodes.market.values }}` (plural — never `.value`), `balance = {{ nodes.account.balance.orderable_amount }}` (the scalar field, not the raw dict).
 - The `order` dict for Korea stocks uses `{symbol, quantity, price?}` — no exchange field.
 - Retry stays disabled by default to prevent duplicate KRW-denominated orders.

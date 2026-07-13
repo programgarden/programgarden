@@ -20,31 +20,24 @@
       "position": { "x": 420, "y": 380 }
     },
     {
-      "id": "split",
-      "type": "SplitNode",
-      "items": [
-        { "symbol": "005930" }
-      ],
-      "position": { "x": 420, "y": 120 }
-    },
-    {
       "id": "historical",
       "type": "KoreaStockHistoricalDataNode",
-      "symbol": "{{ nodes.split.item }}",
+      "symbol": { "symbol": "005930", "exchange": "KRX" },
       "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
       "end_date": "{{ date.today(format='yyyymmdd') }}",
       "interval": "1d",
       "adjust": true,
-      "position": { "x": 640, "y": 120 }
+      "position": { "x": 420, "y": 120 }
     },
     {
       "id": "rsi_cond",
       "type": "ConditionNode",
       "plugin": "RSI",
       "items": {
-        "from": "{{ item.time_series }}",
+        "from": "{{ nodes.historical.value.time_series }}",
         "extract": {
-          "symbol": "{{ item.symbol }}",
+          "symbol": "{{ nodes.historical.value.symbol }}",
+          "exchange": "KRX",
           "date": "{{ row.date }}",
           "close": "{{ row.close }}"
         }
@@ -54,13 +47,15 @@
         "threshold": 30,
         "direction": "below"
       },
-      "position": { "x": 860, "y": 120 }
+      "position": { "x": 640, "y": 120 }
     },
     {
       "id": "market",
       "type": "KoreaStockMarketDataNode",
-      "symbol": "{{ nodes.split.item }}",
-      "position": { "x": 860, "y": 320 }
+      "symbols": [
+        { "symbol": "005930", "exchange": "KRX" }
+      ],
+      "position": { "x": 640, "y": 320 }
     },
     {
       "id": "sizing",
@@ -70,7 +65,7 @@
       "balance": "{{ nodes.account.balance.orderable_amount }}",
       "market_data": "{{ nodes.market.values }}",
       "symbols": "{{ nodes.rsi_cond.passed_symbols }}",
-      "position": { "x": 1080, "y": 250 }
+      "position": { "x": 860, "y": 250 }
     },
     {
       "id": "order",
@@ -78,7 +73,7 @@
       "side": "buy",
       "order_type": "limit",
       "order": "{{ nodes.sizing.order }}",
-      "position": { "x": 1300, "y": 250 }
+      "position": { "x": 1080, "y": 250 }
     },
     {
       "id": "order_table",
@@ -93,17 +88,14 @@
         "status"
       ],
       "limit": 10,
-      "position": { "x": 1520, "y": 250 }
+      "position": { "x": 1300, "y": 250 }
     }
   ],
   "edges": [
     { "from": "start", "to": "broker" },
     { "from": "broker", "to": "account" },
-    { "from": "broker", "to": "split" },
-    { "from": "split", "to": "historical" },
     { "from": "broker", "to": "historical" },
     { "from": "historical", "to": "rsi_cond" },
-    { "from": "split", "to": "market" },
     { "from": "broker", "to": "market" },
     { "from": "rsi_cond", "to": "sizing" },
     { "from": "market", "to": "sizing" },
@@ -125,10 +117,10 @@
   "notes": [
     {
       "id": "note_real",
-      "content": "## 국내주식 실주문 경고\n\nKoreaStockBrokerNode 는 모의투자(paper_trading)를 지원하지 않는다.\n국내주식 주문은 **실계좌 즉시체결**이며 되돌릴 수 없다.\n\n- 검증/학습 목적이면 주문 노드(order)를 제거하고 rsi_cond → TableDisplayNode 로 신호만 확인한다.\n- 실행 전 주문가능금액(KoreaStockAccountNode.balance.orderable_amount)과 KoreaStockMarketDataNode 현재가를 반드시 확인한다 — 지정가는 현재가 기준으로 산출된다.\n- retry 는 중복주문 방지를 위해 기본 비활성 — 켜지 말 것.",
+      "content": "## 국내주식 실주문 경고\n\nKoreaStockBrokerNode 는 모의투자(paper_trading)를 지원하지 않는다.\n국내주식 주문은 **실계좌 즉시체결**이며 되돌릴 수 없다.\n\n- 검증/학습 목적이면 주문 노드(order)를 제거하고 rsi_cond → TableDisplayNode 로 신호만 확인한다.\n- 실행 전 주문가능금액(KoreaStockAccountNode.balance.orderable_amount)과 KoreaStockMarketDataNode 현재가를 반드시 확인한다 — 지정가는 현재가 기준으로 산출된다.\n- retry 는 중복주문 방지를 위해 기본 비활성 — 켜지 말 것.\n- 다종목으로 넓히려면 종목마다 KoreaStockHistoricalDataNode+ConditionNode 체인을 복제한다(historical 은 단일 symbol 만 받는다 — 배열/Split 로는 동작하지 않는다).",
       "color": 1,
       "width": 360,
-      "height": 200,
+      "height": 220,
       "position": { "x": 50, "y": 40 }
     }
   ]
