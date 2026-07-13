@@ -1,5 +1,55 @@
 ## [Unreleased]
 
+## [1.28.0] - 2026-07-14
+> 라이브 E2E(pg-test-9)가 잡은 결함 3건 + **선언 드리프트 후속**.
+> 관통 불변식: **노드가 선언한 출력 포트는 런타임이 실제로, 어느 갈래에서든 같은 키로 내보낸다.**
+> resolver 는 선언으로 필드 존재를 정적 검증하므로, 선언이 런타임과 어긋나면 검증이 양방향으로
+> 다 틀린다 — 있는 필드는 부당 거부하고, 없는 필드는 통과시킨 뒤 런타임에 조용히 None 이 된다.
+
+### Fixed
+- **해외주식 전일대비(`change`) 부호 유실** — 하락장에서 등락폭이 **항상 양수**로 나왔다.
+  g3101 의 `diff` 는 절댓값이고 부호는 `sign`(2=상승, 5=하락)에 따로 온다(실 TR 16종목 실측).
+  해외선물 o3105 는 반대로 `YdiffP` 가 이미 부호를 포함한다(LS 문서의 "Absolute" 표기가 오기).
+  멱등 헬퍼 `_ls_signed_change` 로 통일 — 국내(t1102)도 같은 규칙.
+- **브로커 자격증명이 노드 출력으로 새어 나갔다** — `connection` 출력에 appkey/appsecret 이 실려
+  SSE·`get_state` 로 외부에 노출됐다. 출력에서 제거하고 시크릿 저장소 조회로 이관.
+  동반: 다중 브로커 슬롯 충돌(단일 리터럴 슬롯 → product 별 슬롯 분리).
+- **시세 노드 선언이 런타임과 달랐다** — 선언은 `current_price`/`change_percent`, 런타임은
+  `price`/`change_pct`. "엔비디아 현재가 보여줘" 표의 현재가 칸이 `-` 로 비었는데 워크플로우는
+  `completed / errors=0` 이었다. 선언 정정 + Display 컬럼 가드 + AST 계약 검사 신설.
+- **`held_symbols` 를 아무도 내보내지 않았다** — 계좌 노드 6종(REST 3 + 실시간 3)이 전부 이 출력
+  포트를 선언하는데, executor 는 값을 계산만 하고 **반환 dict 에 싣지 않았다**(죽은 지역변수).
+  국내주식 분기는 계산조차 없었다. 그래서 `nodes.account.held_symbols` 바인딩은 정적 검증을 통과한 뒤
+  런타임엔 늘 비었고, RealMarketDataNode 의 "보유 종목 자동 구독" 경로가 **항상 아무것도 구독하지
+  않으면서** 워크플로우는 `completed / errors=0` 으로 보고했다. 이제 6종 모두 `[{exchange, symbol}]`
+  로 실제 반환한다(실패 경로 `_empty_result` 포함).
+- **실시간 계좌 `positions` 가 시점마다 다른 모양이었다** — REST 스냅샷 갈래는 `exchange`/`quantity`/
+  `price` 를, WebSocket tracker 갈래는 `qty`/`market_code` 를 내보냈다. 주문 노드는 `exchange`/
+  `quantity` 를 읽으므로 **실시간 틱이 오는 순간 조용히 깨졌다.** 상품별로 두 갈래의 키 집합을 통일.
+- **계좌 `positions` 선언이 `pnl` / `pnl_percent` 를 약속했지만 런타임에 그런 키는 없다**
+  (실제는 `pnl_amount` / `pnl_rate`). 챗봇은 카탈로그를 보고 저작하므로 라이브러리가 **없는 이름을
+  쓰도록 강제**하고 있었다. 동봉 예제 2건이 실제로 그 열을 `-` 로 찍고 있었다(22, 49 → 수정).
+- **실시간 `data` 포트가 약속하던 `current_price`/`bid_price`/`ask_price`/`change_percent` 는
+  런타임에 없다.** `data` 는 `ohlcv_data` 의 **별칭**이고 값은 `{종목: [봉]}` dict 이다. 그 값을
+  만든다던 `_build_full_data` 는 **아무도 호출하지 않는 죽은 코드**였다 → 제거. 실시간 노드의
+  `symbols` 출력은 선언조차 없어 바인딩하면 부당 거부됐다 → 선언 추가.
+- **ScreenerNode 가 상류의 종목명을 버렸다** — SymbolQueryNode 가 준 `name`/`market` 을 중간에서
+  떨어뜨려, 종목명 열을 넣은 예제(78/79)가 `-` 만 찍었다. 이제 통과시킨다.
+
+### Changed
+- 공유 상수 `SYMBOL_LIST_FIELDS`(11파일 20포트) / `POSITION_FIELDS`(6노드) / `MARKET_DATA_FULL_FIELDS`
+  를 **노드별 상수로 분리**. 상수를 공유하면 한 노드를 맞추는 순간 다른 노드가 반대로 거짓말한다
+  (Screener 를 맞추려 `price` 를 넣으면 Watchlist 가 안 내보내는 필드를 선언하게 된다).
+- resolver 의 Display 컬럼 가드(`VERIFIED_PORTS`) 6 → 24 포트. **계약 검사로 선언 == 런타임 이
+  증명된 포트만** 등록한다(오탐 0 원칙). 실시간 `ohlcv_data`/`data` 는 값이 dict-of-bars 라
+  열의 의미가 정해져 있지 않아 일부러 제외.
+
+### Added
+- `tests/test_output_schema_contract.py` 확대 (47 passed) — executor 의 런타임 dict 리터럴을 AST 로
+  뽑아 선언과 대조한다. 신규 검사 2종:
+  - `test_declared_ports_are_actually_returned` — 선언한 포트를 **반환에 싣는지** (위 held_symbols 결함).
+  - `test_producers_of_one_port_agree` — 한 포트를 만드는 갈래가 여럿이면 키 집합이 같아야 한다.
+
 ## [1.27.0] - 2026-07-13
 > 두 갈래 작업이 한 릴리스로 합쳐졌다: ① 선물 월물 자동 해소(FuturesContractNode)
 > ② 노드 출력-스키마 정합 + 하드실패 raise + SplitNode 정적 가드.
