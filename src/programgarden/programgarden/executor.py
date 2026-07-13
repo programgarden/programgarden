@@ -2594,28 +2594,43 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         if not success:
             return {"symbols": [], "count": 0, "error": error}
         
-        futures_exchange = config.get("futures_exchange", "1")  # 1: 전체
+        futures_exchange = str(config.get("futures_exchange", "1") or "1")  # 1: 전체
         futures_contract_month = config.get("futures_contract_month", "")  # 월물 필터
-        
+
         all_symbols = []
-        
+
         try:
+            # gubun 은 거래소 필터가 **아니다** — 실측: 0/1/2/6 어느 값이든 같은 전체 목록을 준다.
+            # 거래소 좁히기는 응답의 ExchCd 로 클라이언트에서 한다(아래). gubun 은 "0" 고정.
             query = ls.overseas_futureoption().market().해외선물마스터조회(
-                body=o3101.O3101InBlock(gubun=futures_exchange)
+                body=o3101.O3101InBlock(gubun="0")
             )
-            
+
             result = await query.req_async()
-            
+
+            wanted_exchange = self.FUTURES_EXCHANGE_CODES.get(futures_exchange, futures_exchange)
+            if wanted_exchange in ("1", "", "ALL"):
+                wanted_exchange = ""  # 전체
+
             if result and hasattr(result, 'block') and result.block:
                 for item in result.block:
-                    # 거래소 코드 → 이름 매핑
-                    exchcd = getattr(item, 'ExchCd', '')
-                    exchange_name = getattr(item, 'ExchNm', '') or self._futures_exchcd_to_name(exchcd)
+                    exchcd = (getattr(item, 'ExchCd', '') or '').strip().upper()
+                    if wanted_exchange and exchcd != wanted_exchange:
+                        continue
+
                     contract_month = f"{getattr(item, 'LstngYr', '')}{getattr(item, 'LstngM', '')}"
-                    
+                    # 만기 경과 월물 제외 — LS 는 만기 지난 종목에 시세도 과거봉도 주지 않고
+                    # 에러도 내지 않는다(빈 배열). 그런 종목이 하류로 새면 워크플로우가 조용히 죽는다.
+                    if self._is_expired_contract(getattr(item, 'LstngYr', ''), getattr(item, 'LstngM', '')):
+                        continue
+
                     all_symbols.append({
-                        "exchange": exchange_name,
+                        # exchange 는 **레지스트리 거래소 코드**(HKEX 등)여야 한다. LS 의 ExchNm 은
+                        # 한글 거래소명('홍콩거래소')이라, 그대로 실으면 주문 노드가 그 한글을
+                        # ExchCode 파라미터로 전송해 주문이 깨진다. 한글명은 exchange_name 으로 분리.
+                        "exchange": exchcd,
                         "exchange_code": exchcd,
+                        "exchange_name": getattr(item, 'ExchNm', '') or self._futures_exchcd_to_name(exchcd),
                         "symbol": getattr(item, 'Symbol', ''),
                         "name": getattr(item, 'SymbolNm', ''),
                         "base_product": getattr(item, 'BscGdsCd', ''),
@@ -2623,11 +2638,11 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
                         "currency": getattr(item, 'CrncyCd', ''),
                         "contract_month": contract_month,
                     })
-            
+
             # 월물 필터링 적용
             if futures_contract_month:
                 all_symbols = self._filter_by_contract_month(all_symbols, futures_contract_month)
-                    
+
         except Exception as e:
             context.log("error", f"o3101 API error: {str(e)}", node_id)
             return {"symbols": [], "count": 0, "error": str(e)}
@@ -2655,6 +2670,36 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         }
         return mapping.get(exchcd, exchcd)
     
+    # 노드 스키마의 거래소 enum(1~7) → o3101 응답의 ExchCd.
+    # o3101 의 gubun 입력은 거래소 필터가 아니므로(실측), 좁히기는 이 표로 클라이언트에서 한다.
+    FUTURES_EXCHANGE_CODES = {
+        "1": "",        # 전체
+        "2": "CME",
+        "3": "SGX",
+        "4": "EUREX",
+        "5": "ICE",
+        "6": "HKEX",
+        "7": "OSE",
+    }
+
+    def _is_expired_contract(self, year_raw: str, month_raw: str) -> bool:
+        """만기가 지난 월물인가 (현재 연-월보다 이른가)."""
+        year_raw = (year_raw or "").strip()
+        month_raw = (month_raw or "").strip().upper()
+        if not year_raw or not month_raw:
+            return False  # 판정 불가 — 버리지 않는다
+        month = FUTURES_MONTH_CODES.get(month_raw)
+        if month is None and month_raw.isdigit():
+            month = int(month_raw)
+        try:
+            year = int(year_raw)
+        except ValueError:
+            return False
+        if not month or not 1 <= month <= 12:
+            return False
+        now = datetime.now()
+        return (year, month) < (now.year, now.month)
+
     def _futures_exchcd_to_name(self, exchcd: str) -> str:
         """해외선물 거래소 코드 → 이름"""
         mapping = {
@@ -2715,9 +2760,227 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         # 월 코드만 (예: "F", "G")
         if len(month_filter) == 1:
             return [s for s in symbols if s.get("contract_month", "").endswith(month_filter)]
-        
+
         # 연도+월 코드 (예: "2026F")
         return [s for s in symbols if s.get("contract_month", "") == month_filter]
+
+
+# 선물 월물 코드 (거래소 공통) — LS o3101 의 LstngM 이 이 문자를 그대로 준다.
+FUTURES_MONTH_CODES: Dict[str, int] = {
+    "F": 1, "G": 2, "H": 3, "J": 4, "K": 5, "M": 6,
+    "N": 7, "Q": 8, "U": 9, "V": 10, "X": 11, "Z": 12,
+}
+# 분기 월물 (3/6/9/12월) — 지수선물의 유동성이 몰리는 월물.
+QUARTERLY_MONTHS = (3, 6, 9, 12)
+
+
+class FuturesContractNodeExecutor(NodeExecutorBase):
+    """FuturesContractNode executor — 기초자산 → **현재 상장 월물** 해소 (o3101).
+
+    워크플로우가 월물 종목코드(HMHU26)를 하드코딩하면 만기가 지나는 순간 조용히 죽는다.
+    LS 는 만기 경과 종목에 과거봉도 현재가도 주지 않고 **에러도 내지 않기** 때문이다(빈 배열).
+    이 노드는 저작 시점이 아니라 실행 시점에 o3101 마스터를 조회해 살아있는 월물만 고른다.
+
+    출력 `symbols` 는 WatchlistNode 와 동일한 [{exchange, symbol}] 계약이라
+    하류(historical/market/condition/order) 배선이 그대로 유지된다.
+    """
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        from programgarden_finance import LS, o3101  # noqa: F401  (LS 는 ensure_ls_login 이 사용)
+
+        base_products = config.get("base_products") or []
+        if isinstance(base_products, str):
+            # LLM Tool 경로에서 JSON 문자열/콤마 문자열로 오는 경우 방어
+            import json as _json
+            try:
+                parsed = _json.loads(base_products)
+                base_products = parsed if isinstance(parsed, list) else [base_products]
+            except (ValueError, _json.JSONDecodeError):
+                base_products = [p.strip() for p in base_products.split(",") if p.strip()]
+        base_products = [str(p).strip().upper() for p in base_products if str(p).strip()]
+
+        selection = str(config.get("contract_selection") or "front").strip().lower()
+        exchange_filter = (config.get("futures_exchange") or "").strip().upper()
+
+        if not base_products:
+            raise RuntimeError(
+                f"FuturesContractNode[{node_id}]: `base_products` is empty. Give at least one "
+                f"underlying code (e.g. ['HMH'] = Mini Hang Seng, ['HMCE'] = Mini H-Shares)."
+            )
+
+        # deep_validate / dry_run: 브로커를 건드리지 않는다. 스키마 형태의 fixture 로
+        # 하류를 흐르게 해서 배선·타입 검증이 끝까지 진행되게 한다.
+        if context.is_deep_validate or context.is_dry_run:
+            from programgarden import deep_fixtures as _df
+            fixture = _df.futures_contract_fixture(config)
+            override = context.get_deep_fixture(node_id, node_type)
+            if context.is_dry_run and not context.is_deep_validate:
+                context.log(
+                    "info",
+                    f"[dry_run] {node_type} simulated (no o3101 contract-master query)",
+                    node_id,
+                )
+            return _df.apply_override(fixture, override)
+
+        cred = context.get_credential("credential_id")
+        appkey = (cred or {}).get("appkey", "")
+        appsecret = (cred or {}).get("appsecret", "")
+        paper_trading = (cred or {}).get("paper_trading", False)
+        if not appkey or not appsecret:
+            raise RuntimeError(
+                f"FuturesContractNode[{node_id}]: no broker credential. This node resolves the live "
+                f"contract month through the LS contract-master query (o3101), which needs a broker "
+                f"session — wire an OverseasFuturesBrokerNode upstream."
+            )
+
+        ls, success, error = ensure_ls_login(
+            appkey, appsecret, paper_trading, context, node_id, "overseas_futures"
+        )
+        if not success:
+            raise RuntimeError(f"FuturesContractNode[{node_id}]: LS login failed: {error}")
+
+        # LS 는 같은 앱키로 요청이 몰리면 o3101 에 **빈 블록**을 돌려준다(에러가 아니라 빈 배열).
+        # 그 한 번에 워크플로우를 죽이면, 실제로는 멀쩡한 전략이 스케줄 한 틱을 통째로 날린다.
+        # 짧게 몇 번 다시 물어보고, 그래도 비어 있을 때만 (진짜 권한/장애로 보고) 크게 실패한다.
+        rows: List[Any] = []
+        last_error: Optional[Exception] = None
+        for attempt in range(3):
+            if attempt:
+                await asyncio.sleep(1.5 * attempt)
+            try:
+                query = ls.overseas_futureoption().market().해외선물마스터조회(
+                    body=o3101.O3101InBlock(gubun="0")
+                )
+                result = await query.req_async()
+            except Exception as e:  # noqa: BLE001 — 원인을 그대로 사용자에게 전달한다
+                last_error = e
+                context.log("warning", f"o3101 조회 실패 (시도 {attempt + 1}/3): {e}", node_id)
+                continue
+            rows = getattr(result, "block", None) or []
+            if rows:
+                break
+            context.log("warning", f"o3101 이 빈 마스터를 반환 (시도 {attempt + 1}/3)", node_id)
+
+        if not rows:
+            if last_error is not None:
+                raise RuntimeError(
+                    f"FuturesContractNode[{node_id}]: LS contract-master query (o3101) failed "
+                    f"after 3 attempts: {last_error}"
+                ) from last_error
+            raise RuntimeError(
+                f"FuturesContractNode[{node_id}]: LS returned an empty contract master (o3101) "
+                f"on 3 attempts. The broker session may lack overseas-futures entitlement, or too "
+                f"many requests are sharing this app key at once."
+            )
+
+        listed = self._parse_master(rows, exchange_filter)
+
+        available = sorted({c["base_product"] for c in listed})
+        contracts: List[Dict[str, Any]] = []
+        for product in base_products:
+            candidates = sorted(
+                (c for c in listed if c["base_product"] == product),
+                key=lambda c: (c["year"], c["month"]),
+            )
+            if not candidates:
+                raise RuntimeError(
+                    f"FuturesContractNode[{node_id}]: no listed contract for underlying "
+                    f"'{product}'"
+                    + (f" on exchange '{exchange_filter}'" if exchange_filter else "")
+                    + f". LS currently lists: {', '.join(available) or '(none)'}."
+                )
+            picked = self._select(candidates, selection)
+            if picked is None:
+                months = ", ".join(c["contract_month"] for c in candidates)
+                raise RuntimeError(
+                    f"FuturesContractNode[{node_id}]: contract_selection='{selection}' has no match "
+                    f"for '{product}'. LS lists these months: {months}."
+                )
+            contracts.append(picked)
+
+        symbols = [{"exchange": c["exchange"], "symbol": c["symbol"]} for c in contracts]
+        detail = [
+            {
+                "symbol": c["symbol"],
+                "exchange": c["exchange"],
+                "base_product": c["base_product"],
+                "base_product_name": c["base_product_name"],
+                "name": c["name"],
+                "contract_month": c["contract_month"],
+            }
+            for c in contracts
+        ]
+        context.log(
+            "info",
+            f"월물 해소 ({selection}): "
+            + ", ".join(f"{c['base_product']}→{c['symbol']}({c['contract_month']})" for c in contracts),
+            node_id,
+        )
+        return {"symbols": symbols, "contracts": detail, "count": len(symbols)}
+
+    def _parse_master(self, rows: Any, exchange_filter: str) -> List[Dict[str, Any]]:
+        """o3101 응답을 파싱하고 **만기 경과 월물을 제거**한다.
+
+        LS 마스터는 만기가 지난 월물을 이미 빼주지만, 그것에만 의존하지 않는다 —
+        마스터에 죽은 월물이 하루라도 남아 있으면 그게 '근월물'로 뽑혀 워크플로우가
+        조용히 죽기 때문이다. 현재 연-월보다 이른 월물은 여기서 잘라낸다.
+        """
+        now = datetime.now()
+        cur = (now.year, now.month)
+
+        parsed: List[Dict[str, Any]] = []
+        for item in rows:
+            symbol = getattr(item, "Symbol", "") or ""
+            base_product = (getattr(item, "BscGdsCd", "") or "").strip().upper()
+            exchange = (getattr(item, "ExchCd", "") or "").strip().upper()
+            year_raw = (getattr(item, "LstngYr", "") or "").strip()
+            month_raw = (getattr(item, "LstngM", "") or "").strip().upper()
+            if not symbol or not base_product or not year_raw or not month_raw:
+                continue
+            if exchange_filter and exchange != exchange_filter:
+                continue
+
+            month = FUTURES_MONTH_CODES.get(month_raw)
+            if month is None and month_raw.isdigit():
+                month = int(month_raw)  # LS 가 숫자 월을 주는 경우 대비
+            try:
+                year = int(year_raw)
+            except ValueError:
+                continue
+            if not month or not 1 <= month <= 12:
+                continue
+            if (year, month) < cur:
+                continue  # 만기 경과 — 이 종목은 시세도 과거봉도 오지 않는다
+
+            parsed.append({
+                "symbol": symbol,
+                "exchange": exchange,
+                "base_product": base_product,
+                "base_product_name": getattr(item, "BscGdsNm", "") or "",
+                "name": getattr(item, "SymbolNm", "") or "",
+                "contract_month": f"{year:04d}-{month:02d}",
+                "year": year,
+                "month": month,
+            })
+        return parsed
+
+    def _select(self, candidates: List[Dict[str, Any]], selection: str) -> Optional[Dict[str, Any]]:
+        """만기 오름차순 candidates 에서 월물 1건을 고른다."""
+        if selection == "next":
+            return candidates[1] if len(candidates) > 1 else None
+        if selection == "quarterly":
+            for c in candidates:
+                if c["month"] in QUARTERLY_MONTHS:
+                    return c
+            return None
+        return candidates[0]  # front (기본)
 
 
 class BrokerNodeExecutor(NodeExecutorBase):
@@ -15920,6 +16183,7 @@ class WorkflowExecutor:
             "SymbolQueryNode": SymbolQueryNodeExecutor(),
             "OverseasStockSymbolQueryNode": SymbolQueryNodeExecutor(),
             "OverseasFuturesSymbolQueryNode": SymbolQueryNodeExecutor(),
+            "FuturesContractNode": FuturesContractNodeExecutor(),
             "SymbolFilterNode": SymbolFilterNodeExecutor(),
             "ExclusionListNode": ExclusionListNodeExecutor(),
             "MarketUniverseNode": MarketUniverseNodeExecutor(),
@@ -17511,6 +17775,10 @@ class WorkflowJob:
         "CandlestickChartNode", "BarChartNode", "SummaryDisplayNode",
         "WatchlistNode", "MarketUniverseNode", "ScreenerNode",  # 배열 생성 노드
         "ExclusionListNode",  # 제외 종목 관리 노드 (배열 생성)
+        # 종목 마스터 조회 노드 — 배열을 **생성**하는 쪽이다. 상류에 배열이 붙었다고
+        # 아이템 수만큼 마스터 조회를 반복하면 같은 전체 목록을 N 번 받아온다.
+        "FuturesContractNode",
+        "OverseasFuturesSymbolQueryNode", "OverseasStockSymbolQueryNode", "KoreaStockSymbolQueryNode",
         "SymbolFilterNode",  # 집합 연산 노드 (배열 입력/출력)
         # LogicNode 도 집합 연산 노드다 — 상류 조건 결과 **배열 전체**를 AND/OR 해야 한다.
         # 종목별로 쪼개 N회 돌면 매 회가 전체 passed_symbols 를 다시 내보내 병합 시 N² 가 된다

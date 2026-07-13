@@ -21,12 +21,11 @@
       "position": {"x": 450, "y": 500}
     },
     {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX"}
-      ],
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": ["HMH", "HMCE"],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {"x": 450, "y": 100}
     },
     {
@@ -92,8 +91,8 @@
   "edges": [
     {"from": "start", "to": "broker"},
     {"from": "broker", "to": "account"},
-    {"from": "broker", "to": "watchlist"},
-    {"from": "watchlist", "to": "historical"},
+    {"from": "broker", "to": "contract"},
+    {"from": "contract", "to": "historical"},
     {"from": "historical", "to": "bollinger"},
     {"from": "bollinger", "to": "filter_not_held"},
     {"from": "account", "to": "filter_not_held"},
@@ -121,7 +120,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## 볼린저 하단 자동 매수\n\n**전략**: 볼린저밴드(20,2) 평균회귀\n**진입**: 하단 터치 → 롱 1계약\n**거래소**: HKEX 미니선물 (모의)\n\n**파이프라인**:\n1. Watchlist → 감시 종목 2개\n2. Historical → 60일 일봉 auto-iterate\n3. BollingerBands → below_lower 필터\n4. SymbolFilter → 기보유 제외 (중복 매수 방지)\n5. NewOrder(market, qty=1) → auto-iterate 매수\n6. Telegram → 체결 건별 알림\n\n**안전장치**:\n- paper_trading=true (모의투자)\n- resilience.fallback=skip (주문 실패시 다음 종목)\n- SymbolFilter로 중복 매수 차단",
+      "content": "## 볼린저 하단 자동 매수\n\n**전략**: 볼린저밴드(20,2) 평균회귀\n**진입**: 하단 터치 → 롱 1계약\n**거래소**: HKEX 미니선물 (모의)\n\n**파이프라인**:\n1. FuturesContract → 미니 항셍(HMH) · 미니 H주(HMCE) 근월물 자동 해소\n2. Historical → 60일 일봉 auto-iterate\n3. BollingerBands → below_lower 필터\n4. SymbolFilter → 기보유 제외 (중복 매수 방지)\n5. NewOrder(market, qty=1) → auto-iterate 매수\n6. Telegram → 체결 건별 알림\n\n**안전장치**:\n- paper_trading=true (모의투자)\n- resilience.fallback=skip (주문 실패시 다음 종목)\n- SymbolFilter로 중복 매수 차단\n- 월물 코드 하드코딩 없음 → 만기가 지나도 예제가 죽지 않음",
       "color": 3,
       "width": 360,
       "height": 320,

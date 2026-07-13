@@ -318,6 +318,47 @@ def real_order_event_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def futures_contract_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
+    """FuturesContractNode deep fixture (no o3101 master query).
+
+    Real shape: ``{"symbols": [{exchange, symbol}], "contracts": [...], "count": int}``.
+
+    The month code is derived from the fixture anchor, not the wall clock, so a deep
+    run is reproducible. The *symbol string* is therefore not a real listed contract —
+    that is fine and deliberate: deep_validate checks field/type/flow integrity, and
+    downstream fixtures key off the symbol string only as an opaque identifier.
+    """
+    raw = config.get("base_products") or []
+    if isinstance(raw, str):
+        raw = [p.strip() for p in raw.split(",") if p.strip()]
+    products = [str(p).strip().upper() for p in raw if str(p).strip()] or ["HMH"]
+    exchange = str(config.get("futures_exchange") or "HKEX").strip().upper() or "HKEX"
+
+    # 월물 문자 코드 (F=1월 … Z=12월) — 실제 노드와 같은 표기를 쓴다.
+    month_letters = "FGHJKMNQUVXZ"
+    month = _FIXTURE_ANCHOR.month
+    letter = month_letters[month - 1]
+    yy = _FIXTURE_ANCHOR.strftime("%y")
+
+    contracts: List[Dict[str, Any]] = []
+    for product in products:
+        contracts.append(
+            {
+                "symbol": f"{product}{letter}{yy}",
+                "exchange": exchange,
+                "base_product": product,
+                "base_product_name": product,
+                "name": f"{product}({_FIXTURE_ANCHOR.year}.{month:02d})",
+                "contract_month": f"{_FIXTURE_ANCHOR.year:04d}-{month:02d}",
+            }
+        )
+    return {
+        "symbols": [{"exchange": c["exchange"], "symbol": c["symbol"]} for c in contracts],
+        "contracts": contracts,
+        "count": len(contracts),
+    }
+
+
 def market_status_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
     """MarketStatusNode deep fixture (markets open).
 

@@ -1,7 +1,7 @@
 {
   "id": "75-day-trading-bot",
   "name": "데이트레이딩 자동화: 장시작 매수 + 장마감 청산 (선물 모의)",
-  "description": "2중 스케줄로 장 시작 시 자동 진입 + 장 마감 전 전량 청산. HKEX 미니선물 모의 데이트레이딩 봇.",
+  "description": "2중 스케줄로 장 시작 시 자동 진입 + 장 마감 전 전량 청산. HKEX 미니항셍 모의 데이트레이딩 봇 (월물은 실행 시점에 근월물로 자동 해소).",
   "nodes": [
     {
       "id": "start",
@@ -26,11 +26,11 @@
       "position": {"x": 450, "y": 200}
     },
     {
-      "id": "entry_watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"}
-      ],
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": ["HMH"],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {"x": 650, "y": 200}
     },
     {
@@ -126,8 +126,9 @@
     {"from": "start", "to": "broker"},
 
     {"from": "broker", "to": "schedule_entry"},
-    {"from": "schedule_entry", "to": "entry_watchlist"},
-    {"from": "entry_watchlist", "to": "entry_historical"},
+    {"from": "schedule_entry", "to": "contract"},
+    {"from": "broker", "to": "contract"},
+    {"from": "contract", "to": "entry_historical"},
     {"from": "entry_historical", "to": "entry_momentum"},
     {"from": "entry_momentum", "to": "entry_buy_order"},
     {"from": "entry_buy_order", "to": "telegram_entry"},
@@ -158,10 +159,10 @@
   "notes": [
     {
       "id": "note_daytrading",
-      "content": "## 데이트레이딩 자동화\n\n**원칙**: 오버나이트 리스크 제거 (당일 진입/당일 청산)\n\n**2중 스케줄**:\n1. schedule_entry: 평일 09:30 HKT (장 시작)\n   → 모멘텀 양수인 종목 매수\n2. schedule_exit: 평일 15:55 HKT (장 마감 5분 전)\n   → 보유 포지션 전량 청산\n\n**DAG 구조**:\n- broker → schedule_entry → 매수 파이프라인\n- broker → schedule_exit → 청산 파이프라인\n- 두 스케줄이 독립 병렬 실행\n\n**진입 필터**: TimeSeriesMomentum(10일)\n- 단기 추세 양수면 매수\n- 추세 음수면 매수 스킵 (빈 passed_symbols)",
+      "content": "## 데이트레이딩 자동화\n\n**원칙**: 오버나이트 리스크 제거 (당일 진입/당일 청산)\n\n**2중 스케줄**:\n1. schedule_entry: 평일 09:30 HKT (장 시작)\n   → 모멘텀 양수인 종목 매수\n2. schedule_exit: 평일 15:55 HKT (장 마감 5분 전)\n   → 보유 포지션 전량 청산\n\n**DAG 구조**:\n- broker → schedule_entry → 매수 파이프라인\n- broker → schedule_exit → 청산 파이프라인\n- 두 스케줄이 독립 병렬 실행\n\n**종목**: 미니항셍(HMH)\n- contract 노드가 실행 시점에 근월물로 자동 해소 (만기 무관)\n\n**진입 필터**: TimeSeriesMomentum(10일)\n- 단기 추세 양수면 매수\n- 추세 음수면 매수 스킵 (빈 passed_symbols)",
       "color": 5,
       "width": 380,
-      "height": 360,
+      "height": 410,
       "position": {"x": 30, "y": 30}
     }
   ]

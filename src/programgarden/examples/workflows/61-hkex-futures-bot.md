@@ -14,7 +14,8 @@ Mini Hang Seng / Mini H-Shares 2-symbol Bollinger Band mean reversion. Long entr
 
 **Interval**: 30 min (weekdays 09:15-16:30 HKT)
 
-**Symbols**: HMHJ26 (Mini Hang Seng Apr), H
+**Symbols**: Mini Hang Seng (HMH), Mini H-Shares (HMCE)
+  → 월물(계약월)은 실행 시점에 근월물로 자동 해소된다 — 만기가 지나도 워크플로우가 죽지 않는다
 
 ## Workflow Structure
 
@@ -27,7 +28,8 @@ graph LR
     trading_hours{{"TradingHours"}}
     account["Account
 (Overseas Futures)"]
-    watchlist["Watchlist"]
+    contract["FuturesContract
+(front month)"]
     historical["Historical
 (Overseas Futures)"]
     bollinger{"Condition
@@ -44,8 +46,9 @@ graph LR
     broker --> schedule
     schedule --> trading_hours
     trading_hours --> account
-    trading_hours --> watchlist
-    watchlist --> historical
+    trading_hours --> contract
+    broker --> contract
+    contract --> historical
     historical --> bollinger
     bollinger --> filter_buy
     account --> filter_buy
@@ -64,7 +67,7 @@ graph LR
 | schedule | ScheduleNode | Schedule trigger (cron) |
 | trading_hours | TradingHoursFilterNode | Trading hours filter |
 | account | OverseasFuturesAccountNode | Overseas futures account balance/position query |
-| watchlist | WatchlistNode | Define watchlist symbols |
+| contract | FuturesContractNode | Resolve base products (HMH, HMCE) to the currently listed front-month contracts at run time |
 | historical | OverseasFuturesHistoricalDataNode | Overseas futures historical data query |
 | bollinger | ConditionNode | Condition check (plugin-based) |
 | filter_buy | SymbolFilterNode | Symbol filter (intersection/difference/union) |
@@ -78,7 +81,7 @@ graph LR
 - **broker**: Paper trading mode
 - **schedule**: cron `*/30 * * * 1-5` (timezone: Asia/Hong_Kong)
 - **trading_hours**: 09:15~16:30 (Asia/Hong_Kong)
-- **watchlist**: HMHJ26, HMCEJ26
+- **contract**: base_products=`["HMH", "HMCE"]` (미니항셍/미니H주), contract_selection=`front`, futures_exchange=`HKEX` — 월물은 실행 시점에 근월물로 자동 해소된다(하드코딩 없음)
 - **bollinger**: Plugin `BollingerBands`
 - **bollinger**: period=20, std_dev=2.0, position=below_lower
 - **buy_order**: side=`buy`
@@ -97,8 +100,9 @@ graph LR
 1. **broker** (OverseasFuturesBrokerNode) --> **schedule** (ScheduleNode)
 1. **schedule** (ScheduleNode) --> **trading_hours** (TradingHoursFilterNode)
 1. **trading_hours** (TradingHoursFilterNode) --> **account** (OverseasFuturesAccountNode)
-1. **trading_hours** (TradingHoursFilterNode) --> **watchlist** (WatchlistNode)
-1. **watchlist** (WatchlistNode) --> **historical** (OverseasFuturesHistoricalDataNode)
+1. **trading_hours** (TradingHoursFilterNode) --> **contract** (FuturesContractNode)
+1. **broker** (OverseasFuturesBrokerNode) --> **contract** (FuturesContractNode)
+1. **contract** (FuturesContractNode) --> **historical** (OverseasFuturesHistoricalDataNode)
 1. **historical** (OverseasFuturesHistoricalDataNode) --> **bollinger** (ConditionNode)
 1. **bollinger** (ConditionNode) --> **filter_buy** (SymbolFilterNode)
 1. **account** (OverseasFuturesAccountNode) --> **filter_buy** (SymbolFilterNode)

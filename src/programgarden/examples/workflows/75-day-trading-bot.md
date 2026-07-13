@@ -5,16 +5,18 @@
 ## 아키텍처: 2중 스케줄 병렬
 
 ```
-                     ┌── schedule_entry(09:30) → Watchlist → Historical → TSMOM → Buy → Telegram
-Start → Broker ──────┤
+                     ┌── schedule_entry(09:30) → Contract → Historical → TSMOM → Buy → Telegram
+Start → Broker ──────┤                             ↑ (broker 세션 필요)
                      └── schedule_exit(15:55) → Account → Sell(전량) → Telegram
 ```
 
 하나의 BrokerNode 에서 두 개의 독립된 ScheduleNode 로 분기 → **병렬 실행**.
 
+`contract`(FuturesContractNode)는 실행 시점에 LS 종목마스터를 조회해 **현재 상장된 근월물로 자동 해소**한다 — 월물 코드를 예제에 적어두지 않으므로 만기가 지나도 봇이 조용히 죽지 않는다. (종목마스터 조회에 LS 세션이 필요해 `broker → contract` 엣지를 함께 연결한다.)
+
 ## 진입 로직 (09:30 HKT)
 
-1. 감시 종목 1개 (`HMHJ26`)
+1. 기초자산 1종 — 미니항셍(`HMH`) → 근월물 자동 해소
 2. 최근 20일 일봉 조회
 3. **TimeSeriesMomentum(10일)** — 10일 수익률 양수면 binary signal=1
 4. 신호 양수 시 시장가 1계약 매수
@@ -42,7 +44,8 @@ Start → Broker ──────┤
 
 ## 확장 아이디어
 
-- **여러 종목**: entry_watchlist 에 종목 추가 → 각 종목별 독립 진입
+- **여러 종목**: contract 의 `base_products` 에 기초자산 추가(예: `["HMH", "HMCE"]`) → 각 종목별 독립 진입
+- **차월물/분기물**: contract 의 `contract_selection` 을 `next` / `quarterly` 로 변경
 - **부분 청산**: 장 마감 대신 일부만 청산, 일부는 홀드
 - **진입 지연**: 09:30 대신 10:00 → 장 시작 변동성 회피
 - **TradingHoursFilter 추가**: 휴장일 자동 스킵

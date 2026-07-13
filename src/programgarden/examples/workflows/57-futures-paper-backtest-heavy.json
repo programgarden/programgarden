@@ -1,7 +1,7 @@
 {
   "id": "57-futures-paper-backtest-heavy",
   "name": "해외선물 모의투자 멀티 전략 종목별 백테스트 (메모리 스트레스)",
-  "description": "HKEX 해외선물 4종목 × 6개월 데이터 × 3전략(TSMOM/RSI/TurtleBreakout)을 종목별로 분리하여 12개 백테스트(4종목×3전략) + 벤치마크 비교 + 조건부 주문. 37노드 메모리 부하 테스트용.",
+  "description": "HKEX 해외선물 4개 기초자산(미니 H주/미니 항셍/항셍테크/H주) × 6개월 데이터 × 3전략(TSMOM/RSI/TurtleBreakout)을 종목별로 분리하여 12개 백테스트(4종목×3전략) + 벤치마크 비교 + 조건부 주문. 월물은 FuturesContractNode 가 실행 시점에 근월물로 자동 해소한다. 메모리 부하 테스트용.",
   "nodes": [
     {
       "id": "start",
@@ -51,47 +51,51 @@
       }
     },
     {
-      "id": "exclusion",
-      "type": "ExclusionListNode",
-      "symbols": [
-        {
-          "exchange": "HKEX",
-          "symbol": "HSIM26",
-          "reason": "유동성 부족 월물"
-        },
-        {
-          "exchange": "HKEX",
-          "symbol": "HHIM26",
-          "reason": "변동성 과다"
-        }
+      "id": "excl_contract",
+      "type": "FuturesContractNode",
+      "base_products": [
+        "HSI",
+        "HCEI"
       ],
-      "default_reason": "리스크 관리",
+      "contract_selection": "next",
+      "futures_exchange": "HKEX",
       "position": {
         "x": 750,
         "y": 250
       }
     },
     {
-      "id": "watchlist",
-      "type": "WatchlistNode",
+      "id": "exclusion",
+      "type": "ExclusionListNode",
       "symbols": [
         {
-          "symbol": "HMCEM26",
-          "exchange": "HKEX"
+          "exchange": "{{ nodes.excl_contract.symbols[0].exchange }}",
+          "symbol": "{{ nodes.excl_contract.symbols[0].symbol }}",
+          "reason": "유동성 부족 월물 (항셍 차월물)"
         },
         {
-          "symbol": "MHIM26",
-          "exchange": "HKEX"
-        },
-        {
-          "symbol": "HTIM26",
-          "exchange": "HKEX"
-        },
-        {
-          "symbol": "HCEM26",
-          "exchange": "HKEX"
+          "exchange": "{{ nodes.excl_contract.symbols[1].exchange }}",
+          "symbol": "{{ nodes.excl_contract.symbols[1].symbol }}",
+          "reason": "변동성 과다 (H주 차월물)"
         }
       ],
+      "default_reason": "리스크 관리",
+      "position": {
+        "x": 950,
+        "y": 220
+      }
+    },
+    {
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": [
+        "HMCE",
+        "HMH",
+        "HTI",
+        "HCEI"
+      ],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {
         "x": 950,
         "y": 400
@@ -190,7 +194,7 @@
     {
       "id": "backtest_tsmom_s0",
       "type": "BacktestEngineNode",
-      "strategy_name": "TSMOM Momentum — HMCEM26",
+      "strategy_name": "TSMOM Momentum — {{ nodes.contract.symbols[0].symbol }}",
       "items": {
         "from": "{{ nodes.tsmom_cond.values[0].time_series }}",
         "extract": {
@@ -226,7 +230,7 @@
     {
       "id": "backtest_tsmom_s1",
       "type": "BacktestEngineNode",
-      "strategy_name": "TSMOM Momentum — MHIM26",
+      "strategy_name": "TSMOM Momentum — {{ nodes.contract.symbols[1].symbol }}",
       "items": {
         "from": "{{ nodes.tsmom_cond.values[1].time_series }}",
         "extract": {
@@ -262,7 +266,7 @@
     {
       "id": "backtest_tsmom_s2",
       "type": "BacktestEngineNode",
-      "strategy_name": "TSMOM Momentum — HTIM26",
+      "strategy_name": "TSMOM Momentum — {{ nodes.contract.symbols[2].symbol }}",
       "items": {
         "from": "{{ nodes.tsmom_cond.values[2].time_series }}",
         "extract": {
@@ -298,7 +302,7 @@
     {
       "id": "backtest_tsmom_s3",
       "type": "BacktestEngineNode",
-      "strategy_name": "TSMOM Momentum — HCEM26",
+      "strategy_name": "TSMOM Momentum — {{ nodes.contract.symbols[3].symbol }}",
       "items": {
         "from": "{{ nodes.tsmom_cond.values[3].time_series }}",
         "extract": {
@@ -334,7 +338,7 @@
     {
       "id": "backtest_rsi_s0",
       "type": "BacktestEngineNode",
-      "strategy_name": "RSI Mean Reversion — HMCEM26",
+      "strategy_name": "RSI Mean Reversion — {{ nodes.contract.symbols[0].symbol }}",
       "items": {
         "from": "{{ nodes.rsi_cond.values[0].time_series }}",
         "extract": {
@@ -370,7 +374,7 @@
     {
       "id": "backtest_rsi_s1",
       "type": "BacktestEngineNode",
-      "strategy_name": "RSI Mean Reversion — MHIM26",
+      "strategy_name": "RSI Mean Reversion — {{ nodes.contract.symbols[1].symbol }}",
       "items": {
         "from": "{{ nodes.rsi_cond.values[1].time_series }}",
         "extract": {
@@ -406,7 +410,7 @@
     {
       "id": "backtest_rsi_s2",
       "type": "BacktestEngineNode",
-      "strategy_name": "RSI Mean Reversion — HTIM26",
+      "strategy_name": "RSI Mean Reversion — {{ nodes.contract.symbols[2].symbol }}",
       "items": {
         "from": "{{ nodes.rsi_cond.values[2].time_series }}",
         "extract": {
@@ -442,7 +446,7 @@
     {
       "id": "backtest_rsi_s3",
       "type": "BacktestEngineNode",
-      "strategy_name": "RSI Mean Reversion — HCEM26",
+      "strategy_name": "RSI Mean Reversion — {{ nodes.contract.symbols[3].symbol }}",
       "items": {
         "from": "{{ nodes.rsi_cond.values[3].time_series }}",
         "extract": {
@@ -478,7 +482,7 @@
     {
       "id": "backtest_turtle_s0",
       "type": "BacktestEngineNode",
-      "strategy_name": "Turtle Breakout — HMCEM26",
+      "strategy_name": "Turtle Breakout — {{ nodes.contract.symbols[0].symbol }}",
       "items": {
         "from": "{{ nodes.turtle_cond.values[0].time_series }}",
         "extract": {
@@ -514,7 +518,7 @@
     {
       "id": "backtest_turtle_s1",
       "type": "BacktestEngineNode",
-      "strategy_name": "Turtle Breakout — MHIM26",
+      "strategy_name": "Turtle Breakout — {{ nodes.contract.symbols[1].symbol }}",
       "items": {
         "from": "{{ nodes.turtle_cond.values[1].time_series }}",
         "extract": {
@@ -550,7 +554,7 @@
     {
       "id": "backtest_turtle_s2",
       "type": "BacktestEngineNode",
-      "strategy_name": "Turtle Breakout — HTIM26",
+      "strategy_name": "Turtle Breakout — {{ nodes.contract.symbols[2].symbol }}",
       "items": {
         "from": "{{ nodes.turtle_cond.values[2].time_series }}",
         "extract": {
@@ -586,7 +590,7 @@
     {
       "id": "backtest_turtle_s3",
       "type": "BacktestEngineNode",
-      "strategy_name": "Turtle Breakout — HCEM26",
+      "strategy_name": "Turtle Breakout — {{ nodes.contract.symbols[3].symbol }}",
       "items": {
         "from": "{{ nodes.turtle_cond.values[3].time_series }}",
         "extract": {
@@ -877,14 +881,18 @@
     },
     {
       "from": "broker",
+      "to": "excl_contract"
+    },
+    {
+      "from": "excl_contract",
       "to": "exclusion"
     },
     {
       "from": "broker",
-      "to": "watchlist"
+      "to": "contract"
     },
     {
-      "from": "watchlist",
+      "from": "contract",
       "to": "historical"
     },
     {
@@ -1096,7 +1104,7 @@
   "notes": [
     {
       "id": "note_overview",
-      "content": "## 해외선물 멀티 전략 종목별 백테스트 워크플로우\n\nHKEX 선물 4종목 × 6개월 일봉 × 3전략을 종목별로 분리한 12개(4×3) 백테스트.\n메모리 스트레스 테스트용 (37노드, 51엣지).\n\n**대상**: HMCEM26, MHIM26, HTIM26, HCEM26 (HKEX 선물)\n**모드**: 모의투자 (paper_trading=true)\n**데이터**: 180일 일봉 OHLCV\n**전략**: TSMOM / RSI / TurtleBreakout (각 종목별 독립 백테스트)\n\n> 해외선물 모의투자는 HKEX만 지원 (CME 불가)",
+      "content": "## 해외선물 멀티 전략 종목별 백테스트 워크플로우\n\nHKEX 선물 4종목 × 6개월 일봉 × 3전략을 종목별로 분리한 12개(4×3) 백테스트.\n메모리 스트레스 테스트용 (39노드, 54엣지).\n\n**대상 기초자산**: HMCE(미니 H주) / HMH(미니 항셍) / HTI(항셍테크) / HCEI(H주)\n**월물**: 하드코딩하지 않는다. `contract`(FuturesContractNode) 가 실행 시점에 LS 종목마스터를 조회해 **현재 상장된 근월물**로 자동 해소하므로 만기가 지나도 예제가 죽지 않는다.\n**모드**: 모의투자 (paper_trading=true)\n**데이터**: 180일 일봉 OHLCV\n**전략**: TSMOM / RSI / TurtleBreakout (각 종목별 독립 백테스트)\n\n> 해외선물 모의투자는 HKEX만 지원 (CME 불가)",
       "color": 1,
       "width": 380,
       "height": 260,
@@ -1129,7 +1137,7 @@
     },
     {
       "id": "note_dag",
-      "content": "## DAG 실행 흐름\n\n```\nStart → Schedule → TradingHours → Broker\n  ├→ Account ─────────────┐\n  ├→ ExclusionList         │\n  └→ Watchlist (4종목)     │\n      └→ Historical (×4)  │\n          ├→ TSMOM ──→ BT×4 ┐\n          ├→ RSI ────→ BT×4 ┤\n          └→ Turtle ─→ BT×4 ┘\n              └→ Benchmark (12 전략 랭킹)\n                  ├→ Charts\n                  └→ Summary\n          └→ Logic → If(잔고)\n              └→ Portfolio\n                  └→ Sizing → Order\n```",
+      "content": "## DAG 실행 흐름\n\n```\nStart → Schedule → TradingHours → Broker\n  ├→ Account\n  ├→ ExclContract (차월물) → ExclusionList\n  └→ Contract (기초자산 4 → 근월물 4)\n      └→ Historical (×4)\n          ├→ TSMOM ──→ BT×4 ┐\n          ├→ RSI ────→ BT×4 ┤\n          └→ Turtle ─→ BT×4 ┘\n              └→ Benchmark (12 전략 랭킹)\n                  ├→ Charts\n                  └→ Summary\n          └→ Logic → If(잔고)\n              └→ Portfolio\n                  └→ Sizing → Order\n```\n\n월물 코드는 어디에도 하드코딩되지 않는다 — Contract/ExclContract 가 실행 시점에 해소한다.",
       "color": 7,
       "width": 340,
       "height": 320,

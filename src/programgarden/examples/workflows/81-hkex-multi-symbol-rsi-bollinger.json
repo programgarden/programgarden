@@ -52,18 +52,14 @@
       }
     },
     {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {
-          "symbol": "HMHU26",
-          "exchange": "HKEX"
-        },
-        {
-          "symbol": "HMCEU26",
-          "exchange": "HKEX"
-        }
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": [
+        "HMH",
+        "HMCE"
       ],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {
         "x": 820,
         "y": 120
@@ -256,10 +252,14 @@
     },
     {
       "from": "trading_hours",
-      "to": "watchlist"
+      "to": "contract"
     },
     {
-      "from": "watchlist",
+      "from": "broker",
+      "to": "contract"
+    },
+    {
+      "from": "contract",
       "to": "historical"
     },
     {
@@ -361,7 +361,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX 다종목 RSI+Bollinger 복합 진입 (모의투자)\n\n**전략**: RSI(14,30) 과매도 AND Bollinger(20,2) 하단 터치\n\n**종목**: HMHM26 (Mini Hang Seng 6월), HMCEM26 (Mini HSCEI 6월)\n\n**주문 유형**: limit (HKEX 모의투자는 시장가 불가)\n\n**거래시간**: 평일 KST 10:15-17:30 (HKEX 데이세션). T+1 야간 / 점심 휴장은 본 예제 미포함.\n\n**사이징**: ATR 기반 (계좌 최대 5% / 종목당 1% 위험)\n\n**필터**: 이미 보유 중인 월물은 SymbolFilter difference 로 제외",
+      "content": "## HKEX 다종목 RSI+Bollinger 복합 진입 (모의투자)\n\n**전략**: RSI(14,30) 과매도 AND Bollinger(20,2) 하단 터치\n\n**종목**: 미니 항셍(HMH), 미니 H주(HMCE) — `FuturesContractNode` 가 실행 시점에 **근월물로 자동 해소**합니다 (월물 코드 하드코딩 없음).\n\n**주문 유형**: limit (HKEX 모의투자는 시장가 불가)\n\n**거래시간**: 평일 KST 10:15-17:30 (HKEX 데이세션). T+1 야간 / 점심 휴장은 본 예제 미포함.\n\n**사이징**: ATR 기반 (계좌 최대 5% / 종목당 1% 위험)\n\n**필터**: 이미 보유 중인 월물은 SymbolFilter difference 로 제외",
       "color": 5,
       "width": 380,
       "height": 320,
@@ -372,7 +372,7 @@
     },
     {
       "id": "note_constraints",
-      "content": "## HKEX 모의투자 제약 ⚠️\n\n1. **시장가 불가** → 모든 주문 `order_type=limit` + price 필수\n2. **거래소**: HKEX 만 지원 (LS 모의)\n3. **통화**: HKD (KRW 환산은 별도)\n4. **거래시간 (KST)**:\n   - 데이 1부: 10:15-13:00\n   - 점심 휴장: 13:00-14:00\n   - 데이 2부: 14:00-17:30\n   - 저녁 휴장: 17:30-18:15\n   - T+1 야간: 18:15-04:00(+1)\n5. **월물**: 분기물 H/M/U/Z, 만기 임박 시 다음 월물로 roll-over 필요 (예제 85 참조)\n\n자세히는 `00-workflow-guide.md` HKEX 섹션.",
+      "content": "## HKEX 모의투자 제약 ⚠️\n\n1. **시장가 불가** → 모든 주문 `order_type=limit` + price 필수\n2. **거래소**: HKEX 만 지원 (LS 모의)\n3. **통화**: HKD (KRW 환산은 별도)\n4. **거래시간 (KST)**:\n   - 데이 1부: 10:15-13:00\n   - 점심 휴장: 13:00-14:00\n   - 데이 2부: 14:00-17:30\n   - 저녁 휴장: 17:30-18:15\n   - T+1 야간: 18:15-04:00(+1)\n5. **월물**: `FuturesContractNode` 가 실행 시점에 상장 월물을 조회해 근월물을 고르므로 만기가 지나도 자동으로 다음 월물로 넘어갑니다 (월물 하드코딩 금지 — 만기 경과 종목은 LS 가 에러 없이 빈 배열만 반환)\n\n자세히는 `00-workflow-guide.md` HKEX 섹션.",
       "color": 1,
       "width": 380,
       "height": 360,

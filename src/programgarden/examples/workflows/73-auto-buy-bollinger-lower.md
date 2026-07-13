@@ -2,21 +2,25 @@
 
 > **시나리오**: "볼린저밴드 하단에 닿은 선물 종목 있으면 알아서 매수하고, 체결되면 텔레그램으로 알려줘."
 
+**대상**: 미니 항셍(HMH), 미니 H주(HMCE)
+  → 월물(계약월)은 실행 시점에 근월물로 자동 해소된다 — 만기가 지나도 워크플로우가 죽지 않는다
+
 ## 흐름
 
 ```
-Start → Broker(paper) ─┬─► Watchlist → Historical → BollingerBands(below_lower) ─┐
-                       │                                                          ▼
-                       └─► Account ─────────────────────────────► SymbolFilter (차집합)
-                                                                        │
-                                                              buy_order → Telegram
+Start → Broker(paper) ─┬─► FuturesContract → Historical → BollingerBands(below_lower) ─┐
+                       │                                                                ▼
+                       └─► Account ───────────────────────────────────► SymbolFilter (차집합)
+                                                                              │
+                                                                    buy_order → Telegram
 ```
 
 ## 핵심 자동화 패턴
 
 | 단계 | 목적 |
 |------|------|
-| **WatchlistNode → HistoricalData** | 종목별 auto-iterate (2종목 → 2번 실행) |
+| **FuturesContractNode** | `base_products: ["HMH", "HMCE"]` → 실행 시점에 LS 종목마스터를 조회해 현재 상장된 근월물로 해소 (`contract_selection: "front"`) |
+| **FuturesContract → HistoricalData** | 종목별 auto-iterate (2종목 → 2번 실행, `symbol: "{{ item }}"`) |
 | **ConditionNode(BollingerBands)** | `below_lower` 포지션의 종목만 `passed_symbols` 으로 통과 |
 | **SymbolFilterNode(difference)** | `passed_symbols - held_symbols` 로 미보유 신규 종목만 |
 | **NewOrderNode(auto-iterate)** | 필터링된 각 종목마다 시장가 1계약 매수 |
@@ -47,6 +51,8 @@ Start → Broker(paper) ─┬─► Watchlist → Historical → BollingerBands
 
 ## 주의사항
 
-- HKEX 미니선물 심볼 `HMHJ26` 은 **2026년 4월 만기** → 다음 달 계약(`HMHK26` 5월)으로 업데이트 필요
+- 월물 종목코드를 워크플로우에 적어두지 않는다 — `contract` 노드가 만기를 알아서 따라가므로 계약 갱신 작업이 필요 없다
+  (차월물을 쓰려면 `contract_selection: "next"`, 분기물이면 `"quarterly"`)
+- `contract` 노드는 LS 세션이 필요하므로 **브로커 → contract 엣지가 반드시 있어야 한다**
 - 주말/휴장일에는 체결 0건 (정상 동작)
 - 첫 실행 시 텔레그램 0 건일 수 있음 (BB 하단 터치 종목이 없는 경우)

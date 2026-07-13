@@ -13,7 +13,7 @@
 5초 단위로 안정화한 뒤, **IfNode** 가 `current_price <= stop_price` 도달 시
 **limit 매도**로 청산.
 
-- **종목**: HMHM26 (Mini Hang Seng 6월) — 단일 시범 보유
+- **종목**: 미니 항셍(Mini Hang Seng) 선물 — 단일 시범 보유. 월물 코드를 적어두지 않고 **FuturesContractNode** 가 실행 시점에 LS 종목마스터를 조회해 **현재 상장된 근월물**로 자동 해소한다(만기가 지나도 예제가 조용히 죽지 않음)
 - **stop_price**: 20,000 HKD (정적 상수, 데모용)
 - **주문**: `side=sell`, `order_type=limit`, `price={{ throttle.data.current_price }}`
 - **체결 후**: Telegram 즉시 알림
@@ -42,8 +42,8 @@
 flowchart LR
     start([StartNode]) --> broker[OverseasFuturesBrokerNode<br/>paper_trading=true]
 
-    broker --> watchlist[WatchlistNode<br/>HMHM26]
-    watchlist --> realtime[OverseasFuturesRealMarketData<br/>stay_connected=true]
+    broker --> contract[FuturesContractNode<br/>base_products=HMH<br/>contract_selection=front]
+    contract --> realtime[OverseasFuturesRealMarketData<br/>symbol={{ item }}<br/>stay_connected=true]
     realtime --> throttle[ThrottleNode<br/>mode=latest interval=5s]
     throttle --> ifstop{IfNode<br/>current_price <= 20000?}
 
@@ -63,7 +63,7 @@ flowchart LR
 | 노드 | 역할 | 핵심 설정 |
 |------|------|-----------|
 | `start` / `broker` | 진입 + 모의 브로커 | `paper_trading=true` |
-| `watchlist` | 보유 종목 1개 | HMHM26 |
+| `contract` | 보유 종목 1개 (근월물 자동 해소) | `base_products=["HMH"]` (미니 항셍), `contract_selection=front`, `futures_exchange=HKEX` |
 | `realtime` | tick 구독 | `symbol={{ item }}`, `stay_connected=true` |
 | `throttle` | tick rate 안정화 | `mode=latest, interval_sec=5.0, pass_first=true` |
 | `if_stop` | stop 조건 분기 | `left={{ throttle.data.current_price }}, operator=<=, right=20000.0` |
@@ -133,6 +133,7 @@ L4: stop_price 를 의도적으로 시장가 위로 설정해 매도 1건 트리
 3. **balance partial-failure**: AccountNode 의 `_partial_failure` flag + `orderable_amount=None` 가 silent 0 흡수를 차단. resilience skip 으로 워크플로우 중단 없이 다음 사이클 복구.
 4. **HKEX limit-only**: realtime tick price 를 그대로 limit price 로 사용 — 빠른 체결.
 5. **24시간 가동**: TradingHoursFilter 제거. tick 자체가 휴장 시 안 오므로 자연 idle. ThrottleNode `mode=latest` 가 stale tick 발사 방지.
+6. **월물 하드코딩 금지**: 선물 종목코드를 예제에 박아두면 만기 후 LS 가 빈 데이터를 에러 없이 돌려줘 워크플로우가 조용히 죽는다. `FuturesContractNode` 가 기초자산 코드(`HMH`)만 받아 실행 시점의 근월물로 해소하고, `symbols` 출력이 WatchlistNode 와 동일 계약이라 하류는 `{{ item }}` 그대로 auto-iterate 로 소비한다.
 
 ---
 
@@ -148,3 +149,4 @@ L4: stop_price 를 의도적으로 시장가 위로 설정해 매도 1건 트리
 ## 📝 변경 이력
 
 - 2026-05-28: 신규 추가 (`feat/hkex-futures-examples`)
+- 2026-07-13: `watchlist`(WatchlistNode — 미니 항셍 월물 코드 하드코딩) → `contract`(FuturesContractNode, `base_products=["HMH"]`) 교체. 만기 종속성 제거 — 실행 시점에 근월물로 자동 해소.

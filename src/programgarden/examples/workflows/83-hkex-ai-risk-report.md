@@ -1,7 +1,7 @@
 # 83. HKEX AI 리스크 매니저 일일 리포트 (모의투자)
 
 > **카테고리**: HKEX 해외선물 모의투자 / AI Agent / Schedule + Tool 엣지 + structured output
-> **시장**: HKEX (Mini Hang Seng + Mini HSCEI)
+> **시장**: HKEX (미니 항셍 HMH + 미니 H주 HMCE — 근월물 자동 해소)
 > **모드**: 모의투자 (`paper_trading=true`)
 > **주기**: 평일 KST 18:30 (HKEX 데이세션 마감 직후) 1회
 
@@ -10,10 +10,11 @@
 ## 🎯 시나리오 요약
 
 매 거래일 HKEX 데이세션 마감 직후 (KST 18:30), **AIAgentNode** 가 `risk_manager` 프리셋으로
-HMHM26 / HMCEM26 두 종목의 60일 historical 캔들 + 현재 계좌 포지션을 **Tool 엣지**로 조회하여
+미니 항셍(HMH) / 미니 H주(HMCE) 두 종목의 60일 historical 캔들 + 현재 계좌 포지션을 **Tool 엣지**로 조회하여
 종목별 `risk_level` (low/medium/high) + 변동성 기반 `suggested_stop_loss` + 한 줄 reasoning 을
 **structured JSON** 으로 생성. Telegram 으로 요약 발송 + TableDisplayNode 콘솔 렌더링.
 
+- **종목**: `FuturesContractNode` 가 실행 시점에 LS 종목마스터를 조회해 **근월물로 자동 해소** (월물 코드 하드코딩 없음 → 만기가 지나도 죽지 않음)
 - **LLM**: gpt-4o, temperature=0.3 (저변동), max_tokens=1200
 - **Tools (tool 엣지)**: AccountNode, HistoricalDataNode
 - **Output**: `output_format=structured` + `output_schema` (positions[] + summary)
@@ -43,8 +44,9 @@ flowchart LR
     start --> llm[LLMModelNode<br/>gpt-4o T=0.3]
 
     broker --> schedule[ScheduleNode<br/>30 18 * * 1-5 KST]
-    schedule --> watchlist[WatchlistNode<br/>HMHM26, HMCEM26]
-    watchlist --> historical[HistoricalDataNode<br/>60d 1d auto-iterate]
+    schedule --> contract[FuturesContractNode<br/>base_products=HMH, HMCE<br/>front 근월물 자동 해소]
+    broker --> contract
+    contract --> historical[HistoricalDataNode<br/>60d 1d auto-iterate]
 
     schedule --> account[OverseasFuturesAccountNode<br/>resilience.skip]
 
@@ -65,8 +67,8 @@ flowchart LR
 | `start` / `broker` | 진입 + 모의 브로커 | `paper_trading=true` |
 | `schedule` | daily 트리거 | `cron=30 18 * * 1-5, timezone=Asia/Seoul` |
 | `llm` | LLM 연결 | `model=gpt-4o, temperature=0.3, max_tokens=1200` |
-| `watchlist` | 분석 후보 종목 | HMHM26, HMCEM26 |
-| `historical` | 60일 일봉 (auto-iterate per symbol) | `interval=1d` |
+| `contract` | 분석 후보 종목 (근월물 자동 해소) | `base_products=["HMH","HMCE"], contract_selection=front, futures_exchange=HKEX` — 브로커 → contract 엣지 필수 (LS 세션 필요) |
+| `historical` | 60일 일봉 (auto-iterate per symbol) | `symbol={{ item }}, interval=1d` |
 | `account` | 현재 포지션 + balance | `resilience.fallback.mode=skip` |
 | `risk_agent` | AI 리스크 매니저 | `preset=risk_manager, output_format=structured, output_schema={positions,summary}, max_tool_calls=6, cooldown_sec=60, max_total_tokens=40000` |
 | `report_table` | positions 표 출력 | `data={{ risk_agent.response.positions }}` |
@@ -124,6 +126,7 @@ L4: 본 예제는 주문 노드 없음. 별도 트리거 불필요.
 3. **structured output**: `output_format=structured` + `output_schema` 로 Pydantic 검증. response 는 dict — `{{ nodes.agent.response.positions }}` / `{{ nodes.agent.response.summary }}` dot notation 으로 downstream 분기.
 4. **realtime → AIAgent 차단**: AIAgentNode `_connection_rules` 가 RealMarketData 등 직결을 ERROR 로 차단. 본 예제는 Schedule + Historical/Account 만 → 안전.
 5. **비용 가드**: `max_total_tokens=40000` + `cooldown_sec=60` 으로 silent 토큰 폭주 차단.
+6. **월물 하드코딩 금지**: `FuturesContractNode` 가 실행 시점에 종목마스터를 조회해 기초자산(HMH/HMCE)의 근월물을 해소 → 만기가 지나도 예제가 조용히 죽지 않음. auto-iterate 소비자(`historical`)는 `symbol={{ item }}` 로 받고, auto-iterate 대상이 아닌 `risk_agent` 의 프롬프트는 `{{ nodes.contract.symbols[0].symbol }}` 인덱스 표현식으로 해소된 종목을 주입한다.
 
 ---
 
@@ -138,3 +141,4 @@ L4: 본 예제는 주문 노드 없음. 별도 트리거 불필요.
 ## 📝 변경 이력
 
 - 2026-05-28: 신규 추가 (`feat/hkex-futures-examples`)
+- 2026-07-13: `WatchlistNode`(월물 코드 하드코딩) → `FuturesContractNode`(`base_products=["HMH","HMCE"]`, front) 로 교체. 만기 경과 월물로 인한 무증상 실패(빈 데이터) 제거.

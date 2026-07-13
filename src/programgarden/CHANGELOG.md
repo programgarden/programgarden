@@ -1,6 +1,27 @@
 ## [Unreleased]
 
 ## [1.26.0] - 2026-07-13
+### Added
+- **`FuturesContractNode` executor** — queries the LS futures contract master (o3101) at run time
+  and emits the live contract symbol for each requested underlying. Expired months are filtered out
+  explicitly (never trusted to be absent from the master), an unknown underlying raises with the list
+  of codes LS actually lists (no silent empty list), and the node is registered in
+  `NO_AUTO_ITERATE_NODE_TYPES` (it *produces* the array). A `deep_validate` fixture lets it pass the
+  gate with no network. All 16 futures examples were converted off hardcoded months onto this node.
+
+### Fixed
+- **`OverseasFuturesSymbolQueryNode` emitted the Korean exchange name in `exchange`.** LS returns
+  `ExchNm='홍콩거래소'`; that value flowed into the order path as the `ExchCode` parameter. `exchange`
+  now carries the registry code (`HKEX`) and the Korean label moved to `exchange_name`.
+- **`futures_exchange` was a no-op.** It was passed to o3101 as `gubun`, which does not filter by
+  exchange (measured: gubun 0/1/2/6 all return the same 89 rows). The exchange is now matched
+  client-side against `ExchCd`.
+- **Expired contracts were passed downstream.** The futures master branch now drops any contract
+  month earlier than the current one.
+- `OverseasFuturesSymbolQueryNode` / `OverseasStockSymbolQueryNode` / `KoreaStockSymbolQueryNode`
+  added to `NO_AUTO_ITERATE_NODE_TYPES` — with an upstream array they re-ran the whole master query
+  once per item.
+
 > Korea (KRX) stock support — released lockstep with `programgarden-core` 1.18.0.
 ### Fixed
 - **auto-iterate 가 종목 순회를 망가뜨리던 결함 4건** (`executor.py`). validate/deep_validate/

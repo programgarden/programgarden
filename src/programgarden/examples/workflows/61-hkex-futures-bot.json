@@ -37,12 +37,11 @@
     },
 
     {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX"}
-      ],
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": ["HMH", "HMCE"],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {"x": 800, "y": 100}
     },
     {
@@ -130,9 +129,10 @@
     {"from": "schedule", "to": "trading_hours"},
 
     {"from": "trading_hours", "to": "account"},
-    {"from": "trading_hours", "to": "watchlist"},
+    {"from": "trading_hours", "to": "contract"},
+    {"from": "broker", "to": "contract"},
 
-    {"from": "watchlist", "to": "historical"},
+    {"from": "contract", "to": "historical"},
     {"from": "historical", "to": "bollinger"},
 
     {"from": "bollinger", "to": "filter_buy"},
@@ -164,7 +164,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX 미니선물 역추세 봇 (모의투자)\n\n**전략**: 볼린저밴드(20,2) 평균회귀\n\n**매수(롱)**: 미니항셍·미니H주 볼린저 하단 터치\n  → 과매도 = 롱 1계약\n  → 보유 포지션 제외\n\n**청산**: 보유 포지션 전량 반대매매\n\n**주기**: 30분 (평일 09:15-16:30 HKT)\n\n**종목**: HMHJ26 (미니항셍 4월), HMCEJ26 (미니H주 4월)\n**틱가치**: 10 HKD (~$1.3)",
+      "content": "## HKEX 미니선물 역추세 봇 (모의투자)\n\n**전략**: 볼린저밴드(20,2) 평균회귀\n\n**매수(롱)**: 미니항셍·미니H주 볼린저 하단 터치\n  → 과매도 = 롱 1계약\n  → 보유 포지션 제외\n\n**청산**: 보유 포지션 전량 반대매매\n\n**주기**: 30분 (평일 09:15-16:30 HKT)\n\n**종목**: 미니항셍(HMH), 미니H주(HMCE)\n  → 월물은 실행 시점에 근월물로 자동 해소 (만기 무관)\n**틱가치**: 10 HKD (~$1.3)",
       "color": 5,
       "width": 360,
       "height": 300,

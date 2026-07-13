@@ -5,12 +5,29 @@
 ## 흐름
 
 ```
-Schedule(일 1회) ─┬─► Watchlist → Historical → MACross(golden) ─┐
-                  │                                              ▼
-                  └─► Account ─────────────────► SymbolFilter (미보유만)
-                                                        │
-                                                   Buy → Telegram
+Schedule(일 1회) ─┬─► FuturesContract → Historical → MACross(golden) ─┐
+                  │   (Broker → contract 도 연결)                      ▼
+                  └─► Account ─────────────────────► SymbolFilter (미보유만)
+                                                            │
+                                                       Buy → Telegram
 ```
+
+## 대상 종목
+
+**미니 항셍(HMH), 미니 H주(HMCE)** — `FuturesContractNode` 가 실행 시점에 LS 종목마스터를 조회해 **근월물로 자동 해소**한다. 월물 코드를 하드코딩하지 않으므로 만기가 지나도 워크플로우가 죽지 않는다.
+
+```json
+{
+  "id": "contract",
+  "type": "FuturesContractNode",
+  "base_products": ["HMH", "HMCE"],
+  "contract_selection": "front",
+  "futures_exchange": "HKEX"
+}
+```
+
+`contract` 는 `symbols` 를 내보내고, 하류의 `historical` 이 `"symbol": "{{ item }}"` 로 종목별 자동 반복 조회한다.
+종목마스터 조회(o3101)에는 LS 세션이 필요하므로 **Broker → contract** 엣지가 반드시 있어야 한다.
 
 ## 골든크로스란?
 

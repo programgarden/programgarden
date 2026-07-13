@@ -1,4 +1,15 @@
 ## [1.18.0] - 2026-07-13
+### Added
+- **`FuturesContractNode`** — resolves an underlying futures product (`base_products`, e.g.
+  `HMH` = Mini Hang Seng) to its **currently listed contract symbol at execution time**, via the
+  LS contract-master query (o3101). Futures workflows previously hardcoded a month-coded symbol
+  (`HMHU26`), which dies **silently** the moment that month expires — LS returns empty bars and
+  no error, so the strategy just stops trading (14 of the 16 shipped futures examples were dead
+  this way). `contract_selection` picks `front` / `next` / `quarterly`. The `symbols` output has
+  the same `[{exchange, symbol}]` shape as `WatchlistNode`, so downstream futures nodes wire
+  unchanged. Requires an upstream `OverseasFuturesBrokerNode` (the master query needs a session).
+  i18n keys (en/ko) included.
+
 ### Fixed
 - **`OverseasFuturesMarketDataNode` now declares a `values` OutputPort** (list of
   market-data rows), matching `OverseasStockMarketDataNode` / `KoreaStockMarketDataNode`.

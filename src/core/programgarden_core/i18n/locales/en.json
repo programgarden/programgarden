@@ -1277,7 +1277,6 @@
   "ui.no_tables_create_first": "Create a table first",
   "ui.no_tables_found": "No tables found",
   "ui.select_table_first": "Select a table first",
-
   "connection_rules.realtime_to_order.reason": "Direct connection from realtime node to order node is blocked. Each tick would trigger an order, potentially causing unintended mass orders.",
   "connection_rules.realtime_to_order.suggestion": "Place a ThrottleNode between the realtime node and order node to control execution frequency.",
   "connection_rules.realtime_to_ai_agent.reason": "Direct connection from realtime node to AIAgentNode is blocked. Each tick would trigger an LLM call, potentially causing excessive costs.",
@@ -1286,12 +1285,10 @@
   "connection_rules.realtime_to_external_api.suggestion": "Place a ThrottleNode between the realtime node and external API node to control request frequency.",
   "connection_rules.realtime_to_http.reason": "Direct connection from realtime node to HTTPRequestNode is not recommended. Each tick would trigger an HTTP request, potentially hitting external API rate limits.",
   "connection_rules.realtime_to_http.suggestion": "Place a ThrottleNode between the realtime node and HTTP request node to control request frequency.",
-
   "fields.BaseOrderNode.rate_limit_interval": "Minimum order interval (seconds). Default 5 seconds. The next order will only execute after this time has elapsed since the last order.",
   "fields.BaseOrderNode.rate_limit_action": "Action when order interval is not met. skip: silently skip, error: raise error",
   "enums.rate_limit_action.skip": "Skip (default)",
   "enums.rate_limit_action.error": "Raise error",
-
   "plugins.TimeSeriesMomentum.name": "Time Series Momentum",
   "plugins.TimeSeriesMomentum.description": "Determines trading direction based on past returns of individual assets (Moskowitz et al. 2012)",
   "plugins.ConnorsRSI.name": "Connors RSI",
@@ -1321,5 +1318,13 @@
   "events.restart.data_gap_warning": "Data gap warning during restore: data may be missing for {gap_sec} seconds since checkpoint",
   "events.restart.skipped_nodes": "Restore: skipping {count} completed nodes",
   "events.restart.checkpoint_expired": "Checkpoint expired ({age_sec}s > 600s limit)",
-  "events.restart.workflow_changed": "Workflow definition changed, cannot restore (hash mismatch)"
+  "events.restart.workflow_changed": "Workflow definition changed, cannot restore (hash mismatch)",
+  "nodes.FuturesContractNode.name": "Futures Contract",
+  "nodes.FuturesContractNode.description": "Resolves an underlying futures product (e.g. Mini Hang Seng) to its currently listed contract symbol at execution time, so the workflow never breaks when a contract expires. Pick the front month, the next month (roll target), or the nearest quarterly. Outputs a symbol list identical in shape to WatchlistNode, so downstream futures nodes wire unchanged. Requires an upstream OverseasFuturesBrokerNode. Typical connection: FuturesContractNode → OverseasFuturesHistoricalDataNode / OverseasFuturesMarketDataNode.",
+  "fieldNames.FuturesContractNode.base_products": "Underlying Products",
+  "fieldNames.FuturesContractNode.contract_selection": "Contract Selection",
+  "fieldNames.FuturesContractNode.futures_exchange": "Exchange",
+  "enums.contract_selection.front": "Front month (nearest expiry)",
+  "enums.contract_selection.next": "Next month (roll target)",
+  "enums.contract_selection.quarterly": "Quarterly (Mar/Jun/Sep/Dec)"
 }

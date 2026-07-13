@@ -1,7 +1,7 @@
 {
   "id": "83-hkex-ai-risk-report",
   "name": "HKEX AI 리스크 매니저 일일 리포트 (모의투자)",
-  "description": "매 거래일 KST 18:30 (HKEX 데이세션 마감 직후) AIAgentNode 가 risk_manager 프리셋으로 HMHM26 / HMCEM26 두 종목의 60일 historical + 계좌 포지션을 Tool 로 조회하여 종목별 리스크 레벨과 추천 stop_loss 를 structured JSON 으로 생성. Telegram 으로 발송.",
+  "description": "매 거래일 KST 18:30 (HKEX 데이세션 마감 직후) AIAgentNode 가 risk_manager 프리셋으로 미니 항셍(HMH) / 미니 H주(HMCE) 두 종목의 60일 historical + 계좌 포지션을 Tool 로 조회하여 종목별 리스크 레벨과 추천 stop_loss 를 structured JSON 으로 생성. Telegram 으로 발송. 월물은 FuturesContractNode 가 실행 시점에 근월물로 자동 해소.",
   "nodes": [
     {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 320}},
     {
@@ -32,12 +32,11 @@
     },
 
     {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {"symbol": "HMHM26", "exchange": "HKEX"},
-        {"symbol": "HMCEM26", "exchange": "HKEX"}
-      ],
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": ["HMH", "HMCE"],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {"x": 600, "y": 140}
     },
     {
@@ -62,7 +61,7 @@
       "id": "risk_agent",
       "type": "AIAgentNode",
       "preset": "risk_manager",
-      "user_prompt": "Today is {{ date.today() }}. Analyze the current HKEX futures portfolio (HMHM26 Mini Hang Seng, HMCEM26 Mini HSCEI). Call the account and historical data tools to gather positions, average prices, and the last 60 trading days. For each held symbol, output a structured assessment: current risk_level (low/medium/high), volatility-based suggested_stop_loss in HKD, and one-sentence reasoning. Limit response to 300 words total.",
+      "user_prompt": "Today is {{ date.today() }}. Analyze the current HKEX futures portfolio: Mini Hang Seng front-month ({{ nodes.contract.symbols[0].symbol }}) and Mini H-Shares front-month ({{ nodes.contract.symbols[1].symbol }}), both on exchange HKEX. Call the account and historical data tools to gather positions, average prices, and the last 60 trading days. For each held symbol, output a structured assessment: current risk_level (low/medium/high), volatility-based suggested_stop_loss in HKD, and one-sentence reasoning. Limit response to 300 words total.",
       "output_format": "structured",
       "output_schema": {
         "positions": {
@@ -105,8 +104,9 @@
     {"from": "start", "to": "llm"},
     {"from": "broker", "to": "schedule"},
 
-    {"from": "schedule", "to": "watchlist"},
-    {"from": "watchlist", "to": "historical"},
+    {"from": "schedule", "to": "contract"},
+    {"from": "broker", "to": "contract"},
+    {"from": "contract", "to": "historical"},
 
     {"from": "schedule", "to": "account"},
 
@@ -145,7 +145,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX AI 리스크 매니저 일일 리포트\n\n**시나리오**: 매 거래일 KST 18:30 (HKEX 데이세션 마감 직후) AIAgentNode 가 risk_manager 프리셋으로 portfolio 리스크 평가.\n\n**도구**: AccountNode + HistoricalDataNode 두 개를 tool 엣지로 연결 — agent 가 직접 호출.\n\n**구조화 출력**: output_format=structured + output_schema 로 종목별 risk_level / suggested_stop_loss / reasoning 강제. Pydantic 검증.\n\n**보호**: cooldown_sec=60 + max_total_tokens=40000 — 토큰 폭주 방지.\n\n**Stateless**: 매 실행 독립. 대화 기억 없음 (Tool 로 매번 최신 데이터 조회).",
+      "content": "## HKEX AI 리스크 매니저 일일 리포트\n\n**시나리오**: 매 거래일 KST 18:30 (HKEX 데이세션 마감 직후) AIAgentNode 가 risk_manager 프리셋으로 portfolio 리스크 평가.\n\n**종목**: 미니 항셍(HMH) + 미니 H주(HMCE)\n  -> FuturesContractNode 가 실행 시점에 근월물로 자동 해소 (월물 하드코딩 없음 = 만기가 지나도 안 죽는다)\n\n**도구**: AccountNode + HistoricalDataNode 두 개를 tool 엣지로 연결 — agent 가 직접 호출.\n\n**구조화 출력**: output_format=structured + output_schema 로 종목별 risk_level / suggested_stop_loss / reasoning 강제. Pydantic 검증.\n\n**보호**: cooldown_sec=60 + max_total_tokens=40000 — 토큰 폭주 방지.\n\n**Stateless**: 매 실행 독립. 대화 기억 없음 (Tool 로 매번 최신 데이터 조회).",
       "color": 5,
       "width": 400,
       "height": 300,

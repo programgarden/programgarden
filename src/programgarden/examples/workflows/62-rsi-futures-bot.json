@@ -28,12 +28,11 @@
     },
 
     {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX"}
-      ],
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": ["HMH", "HMCE"],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {"x": 600, "y": 100}
     },
     {
@@ -116,9 +115,10 @@
     {"from": "broker", "to": "schedule"},
 
     {"from": "schedule", "to": "account"},
-    {"from": "schedule", "to": "watchlist"},
+    {"from": "schedule", "to": "contract"},
+    {"from": "broker", "to": "contract"},
 
-    {"from": "watchlist", "to": "historical"},
+    {"from": "contract", "to": "historical"},
     {"from": "historical", "to": "rsi"},
 
     {"from": "rsi", "to": "filter_buy"},
@@ -141,7 +141,7 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## RSI 과매도 해외선물 봇 (모의투자)\n\n**전략**: RSI(14) 과매도 역추세\n\n**매수(롱)**: RSI < 30 과매도 종목\n  -> 미보유 종목만 롱 1계약\n\n**청산**: 보유 포지션 전량 반대매매\n\n**주기**: 1분마다 (TradingHoursFilter 없음)\n\n**종목**: HMHJ26 (미니항셍 4월), HMCEJ26 (미니H주 4월)",
+      "content": "## RSI 과매도 해외선물 봇 (모의투자)\n\n**전략**: RSI(14) 과매도 역추세\n\n**매수(롱)**: RSI < 30 과매도 종목\n  -> 미보유 종목만 롱 1계약\n\n**청산**: 보유 포지션 전량 반대매매\n\n**주기**: 1분마다 (TradingHoursFilter 없음)\n\n**종목**: 미니 항셍(HMH), 미니 H주(HMCE)\n  -> FuturesContractNode 가 실행 시점에 근월물로 자동 해소 (월물 하드코딩 없음 = 만기가 지나도 안 죽는다)",
       "color": 3,
       "width": 340,
       "height": 260,
