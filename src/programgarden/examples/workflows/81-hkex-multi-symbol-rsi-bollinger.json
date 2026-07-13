@@ -3,13 +3,23 @@
   "name": "HKEX 다종목 RSI+Bollinger 복합 진입 (모의투자)",
   "description": "Mini Hang Seng + Mini HSCEI 두 종목을 30분 간격으로 평일 KST 데이세션 동안 스캔. RSI 과매도 AND Bollinger 하단 터치 두 조건이 모두 충족된 종목에 한해 ATR 기반 사이징으로 limit 매수. HKEX 모의투자(시장가 불가) 제약 + A-3 auto-iterate spacing 회귀 가드.",
   "nodes": [
-    {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 320}},
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 320
+      }
+    },
     {
       "id": "broker",
       "type": "OverseasFuturesBrokerNode",
       "credential_id": "broker_cred",
       "paper_trading": true,
-      "position": {"x": 220, "y": 320}
+      "position": {
+        "x": 220,
+        "y": 320
+      }
     },
     {
       "id": "schedule",
@@ -18,7 +28,10 @@
       "timezone": "Asia/Seoul",
       "enabled": true,
       "max_duration_hours": 720,
-      "position": {"x": 400, "y": 320}
+      "position": {
+        "x": 400,
+        "y": 320
+      }
     },
     {
       "id": "trading_hours",
@@ -26,18 +39,31 @@
       "start": "10:15",
       "end": "17:30",
       "timezone": "Asia/Seoul",
-      "days": ["mon", "tue", "wed", "thu", "fri"],
-      "position": {"x": 600, "y": 320}
-    },
-
-    {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {"symbol": "HMHM26", "exchange": "HKEX"},
-        {"symbol": "HMCEM26", "exchange": "HKEX"}
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
       ],
-      "position": {"x": 820, "y": 120}
+      "position": {
+        "x": 600,
+        "y": 320
+      }
+    },
+    {
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": [
+        "HMH",
+        "HMCE"
+      ],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
+      "position": {
+        "x": 820,
+        "y": 120
+      }
     },
     {
       "id": "historical",
@@ -46,7 +72,10 @@
       "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
       "end_date": "{{ date.today(format='yyyymmdd') }}",
       "interval": "1d",
-      "position": {"x": 1050, "y": 120}
+      "position": {
+        "x": 1050,
+        "y": 120
+      }
     },
     {
       "id": "rsi_condition",
@@ -66,7 +95,10 @@
         "threshold": 30,
         "direction": "below"
       },
-      "position": {"x": 1300, "y": 40}
+      "position": {
+        "x": 1300,
+        "y": 40
+      }
     },
     {
       "id": "bollinger_condition",
@@ -86,7 +118,10 @@
         "std_dev": 2.0,
         "position": "below_lower"
       },
-      "position": {"x": 1300, "y": 200}
+      "position": {
+        "x": 1300,
+        "y": 200
+      }
     },
     {
       "id": "logic",
@@ -102,13 +137,18 @@
           "passed_symbols": "{{ nodes.bollinger_condition.passed_symbols }}"
         }
       ],
-      "position": {"x": 1550, "y": 120}
+      "position": {
+        "x": 1550,
+        "y": 120
+      }
     },
-
     {
       "id": "account",
       "type": "OverseasFuturesAccountNode",
-      "position": {"x": 820, "y": 520}
+      "position": {
+        "x": 820,
+        "y": 520
+      }
     },
     {
       "id": "filter_buy",
@@ -116,7 +156,10 @@
       "operation": "difference",
       "input_a": "{{ nodes.logic.passed_symbols }}",
       "input_b": "{{ nodes.account.held_symbols }}",
-      "position": {"x": 1780, "y": 320}
+      "position": {
+        "x": 1780,
+        "y": 320
+      }
     },
     {
       "id": "if_candidates",
@@ -124,7 +167,10 @@
       "left": "{{ nodes.filter_buy.symbols }}",
       "operator": "is_not_empty",
       "right": null,
-      "position": {"x": 2000, "y": 320}
+      "position": {
+        "x": 2000,
+        "y": 320
+      }
     },
     {
       "id": "no_entry_notice",
@@ -136,24 +182,33 @@
         "held": "{{ nodes.account.held_symbols }}",
         "status": "no_entry"
       },
-      "position": {"x": 2220, "y": 520}
+      "position": {
+        "x": 2220,
+        "y": 520
+      }
     },
     {
       "id": "market_data",
       "type": "OverseasFuturesMarketDataNode",
       "symbol": "{{ item }}",
-      "position": {"x": 2220, "y": 200}
+      "position": {
+        "x": 2220,
+        "y": 200
+      }
     },
     {
       "id": "sizing",
       "type": "PositionSizingNode",
       "symbol": "{{ item }}",
       "balance": "{{ nodes.account.balance }}",
-      "market_data": "{{ nodes.market_data.value }}",
+      "market_data": "{{ nodes.market_data.values }}",
       "method": "atr_based",
       "max_percent": 5.0,
       "atr_risk_percent": 1.0,
-      "position": {"x": 2220, "y": 320}
+      "position": {
+        "x": 2220,
+        "y": 320
+      }
     },
     {
       "id": "buy_order",
@@ -162,75 +217,169 @@
       "order_type": "limit",
       "order": "{{ nodes.sizing.order }}",
       "resilience": {
-        "fallback": {"mode": "skip"}
+        "fallback": {
+          "mode": "skip"
+        }
       },
-      "position": {"x": 2450, "y": 320}
+      "position": {
+        "x": 2450,
+        "y": 320
+      }
     },
     {
       "id": "telegram",
       "type": "TelegramNode",
       "credential_id": "telegram_cred",
       "template": "🎯 HKEX 진입 ({{ nodes.filter_buy.count }}종목): {{ nodes.filter_buy.symbols }} (RSI<30 AND Bollinger 하단, limit 매수)",
-      "position": {"x": 2680, "y": 320}
+      "position": {
+        "x": 2680,
+        "y": 320
+      }
     }
   ],
   "edges": [
-    {"from": "start", "to": "broker"},
-    {"from": "broker", "to": "schedule"},
-    {"from": "schedule", "to": "trading_hours"},
-
-    {"from": "trading_hours", "to": "watchlist"},
-    {"from": "watchlist", "to": "historical"},
-    {"from": "historical", "to": "rsi_condition"},
-    {"from": "historical", "to": "bollinger_condition"},
-    {"from": "rsi_condition", "to": "logic"},
-    {"from": "bollinger_condition", "to": "logic"},
-
-    {"from": "trading_hours", "to": "account"},
-    {"from": "logic", "to": "filter_buy"},
-    {"from": "account", "to": "filter_buy"},
-    {"from": "filter_buy", "to": "if_candidates"},
-    {"from": "if_candidates", "to": "no_entry_notice", "from_port": "false"},
-    {"from": "filter_buy", "to": "market_data"},
-    {"from": "market_data", "to": "sizing"},
-    {"from": "account", "to": "sizing"},
-    {"from": "sizing", "to": "buy_order"},
-    {"from": "buy_order", "to": "telegram"}
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "schedule"
+    },
+    {
+      "from": "schedule",
+      "to": "trading_hours"
+    },
+    {
+      "from": "trading_hours",
+      "to": "contract"
+    },
+    {
+      "from": "broker",
+      "to": "contract"
+    },
+    {
+      "from": "contract",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "rsi_condition"
+    },
+    {
+      "from": "historical",
+      "to": "bollinger_condition"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "logic"
+    },
+    {
+      "from": "bollinger_condition",
+      "to": "logic"
+    },
+    {
+      "from": "trading_hours",
+      "to": "account"
+    },
+    {
+      "from": "logic",
+      "to": "filter_buy"
+    },
+    {
+      "from": "account",
+      "to": "filter_buy"
+    },
+    {
+      "from": "filter_buy",
+      "to": "if_candidates"
+    },
+    {
+      "from": "if_candidates",
+      "to": "no_entry_notice",
+      "from_port": "false"
+    },
+    {
+      "from": "filter_buy",
+      "to": "market_data"
+    },
+    {
+      "from": "market_data",
+      "to": "sizing"
+    },
+    {
+      "from": "account",
+      "to": "sizing"
+    },
+    {
+      "from": "sizing",
+      "to": "buy_order"
+    },
+    {
+      "from": "buy_order",
+      "to": "telegram"
+    }
   ],
   "credentials": [
     {
       "credential_id": "broker_cred",
       "type": "broker_ls_overseas_futures",
       "data": [
-        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
-        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
       ]
     },
     {
       "credential_id": "telegram_cred",
       "type": "telegram",
       "data": [
-        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
-        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+        {
+          "key": "bot_token",
+          "value": "",
+          "type": "password",
+          "label": "Bot Token"
+        },
+        {
+          "key": "chat_id",
+          "value": "",
+          "type": "text",
+          "label": "Chat ID"
+        }
       ]
     }
   ],
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX 다종목 RSI+Bollinger 복합 진입 (모의투자)\n\n**전략**: RSI(14,30) 과매도 AND Bollinger(20,2) 하단 터치\n\n**종목**: HMHM26 (Mini Hang Seng 6월), HMCEM26 (Mini HSCEI 6월)\n\n**주문 유형**: limit (HKEX 모의투자는 시장가 불가)\n\n**거래시간**: 평일 KST 10:15-17:30 (HKEX 데이세션). T+1 야간 / 점심 휴장은 본 예제 미포함.\n\n**사이징**: ATR 기반 (계좌 최대 5% / 종목당 1% 위험)\n\n**필터**: 이미 보유 중인 월물은 SymbolFilter difference 로 제외",
+      "content": "## HKEX 다종목 RSI+Bollinger 복합 진입 (모의투자)\n\n**전략**: RSI(14,30) 과매도 AND Bollinger(20,2) 하단 터치\n\n**종목**: 미니 항셍(HMH), 미니 H주(HMCE) — `FuturesContractNode` 가 실행 시점에 **근월물로 자동 해소**합니다 (월물 코드 하드코딩 없음).\n\n**주문 유형**: limit (HKEX 모의투자는 시장가 불가)\n\n**거래시간**: 평일 KST 10:15-17:30 (HKEX 데이세션). T+1 야간 / 점심 휴장은 본 예제 미포함.\n\n**사이징**: ATR 기반 (계좌 최대 5% / 종목당 1% 위험)\n\n**필터**: 이미 보유 중인 월물은 SymbolFilter difference 로 제외",
       "color": 5,
       "width": 380,
       "height": 320,
-      "position": {"x": 30, "y": 30}
+      "position": {
+        "x": 30,
+        "y": 30
+      }
     },
     {
       "id": "note_constraints",
-      "content": "## HKEX 모의투자 제약 ⚠️\n\n1. **시장가 불가** → 모든 주문 `order_type=limit` + price 필수\n2. **거래소**: HKEX 만 지원 (LS 모의)\n3. **통화**: HKD (KRW 환산은 별도)\n4. **거래시간 (KST)**:\n   - 데이 1부: 10:15-13:00\n   - 점심 휴장: 13:00-14:00\n   - 데이 2부: 14:00-17:30\n   - 저녁 휴장: 17:30-18:15\n   - T+1 야간: 18:15-04:00(+1)\n5. **월물**: 분기물 H/M/U/Z, 만기 임박 시 다음 월물로 roll-over 필요 (예제 85 참조)\n\n자세히는 `00-workflow-guide.md` HKEX 섹션.",
+      "content": "## HKEX 모의투자 제약 ⚠️\n\n1. **시장가 불가** → 모든 주문 `order_type=limit` + price 필수\n2. **거래소**: HKEX 만 지원 (LS 모의)\n3. **통화**: HKD (KRW 환산은 별도)\n4. **거래시간 (KST)**:\n   - 데이 1부: 10:15-13:00\n   - 점심 휴장: 13:00-14:00\n   - 데이 2부: 14:00-17:30\n   - 저녁 휴장: 17:30-18:15\n   - T+1 야간: 18:15-04:00(+1)\n5. **월물**: `FuturesContractNode` 가 실행 시점에 상장 월물을 조회해 근월물을 고르므로 만기가 지나도 자동으로 다음 월물로 넘어갑니다 (월물 하드코딩 금지 — 만기 경과 종목은 LS 가 에러 없이 빈 배열만 반환)\n\n자세히는 `00-workflow-guide.md` HKEX 섹션.",
       "color": 1,
       "width": 380,
       "height": 360,
-      "position": {"x": 440, "y": 30}
+      "position": {
+        "x": 440,
+        "y": 30
+      }
     }
   ]
 }

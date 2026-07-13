@@ -1,0 +1,125 @@
+{
+  "id": "95-korea-stock-strategy-condition-logic",
+  "name": "국내주식 복합조건 전략 (RSI + 볼린저 AND)",
+  "description": "삼성전자(005930) 일봉에 RSI(14) 과매도 조건과 볼린저(20,2) 하단 이탈 조건을 병렬 평가한 뒤 LogicNode(all)로 AND 결합해 두 지표가 동시에 과매도일 때만 진입 후보로 남긴다. 조회·전략 전용(주문 없음).",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": { "x": 50, "y": 250 }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "kr_broker_cred",
+      "position": { "x": 220, "y": 250 }
+    },
+    {
+      "id": "historical",
+      "type": "KoreaStockHistoricalDataNode",
+      "symbol": { "symbol": "005930", "exchange": "KRX" },
+      "start_date": "{{ date.ago(120, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "adjust": true,
+      "position": { "x": 420, "y": 250 }
+    },
+    {
+      "id": "rsi_cond",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "items": {
+        "from": "{{ nodes.historical.value.time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.historical.value.symbol }}",
+          "exchange": "KRX",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 14,
+        "threshold": 30,
+        "direction": "below"
+      },
+      "position": { "x": 680, "y": 140 }
+    },
+    {
+      "id": "boll_cond",
+      "type": "ConditionNode",
+      "plugin": "BollingerBands",
+      "items": {
+        "from": "{{ nodes.historical.value.time_series }}",
+        "extract": {
+          "symbol": "{{ nodes.historical.value.symbol }}",
+          "exchange": "KRX",
+          "date": "{{ row.date }}",
+          "close": "{{ row.close }}"
+        }
+      },
+      "fields": {
+        "period": 20,
+        "std_dev": 2.0,
+        "position": "below_lower"
+      },
+      "position": { "x": 680, "y": 360 }
+    },
+    {
+      "id": "logic",
+      "type": "LogicNode",
+      "operator": "all",
+      "conditions": [
+        {
+          "is_condition_met": "{{ nodes.rsi_cond.result }}",
+          "passed_symbols": "{{ nodes.rsi_cond.passed_symbols }}"
+        },
+        {
+          "is_condition_met": "{{ nodes.boll_cond.result }}",
+          "passed_symbols": "{{ nodes.boll_cond.passed_symbols }}"
+        }
+      ],
+      "position": { "x": 940, "y": 250 }
+    },
+    {
+      "id": "table",
+      "type": "TableDisplayNode",
+      "title": "RSI 과매도 + 볼린저 하단 이탈 종목",
+      "data": "{{ nodes.logic.passed_symbols }}",
+      "columns": [
+        "symbol",
+        "exchange"
+      ],
+      "limit": 10,
+      "position": { "x": 1180, "y": 250 }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "broker" },
+    { "from": "broker", "to": "historical" },
+    { "from": "historical", "to": "rsi_cond" },
+    { "from": "historical", "to": "boll_cond" },
+    { "from": "rsi_cond", "to": "logic" },
+    { "from": "boll_cond", "to": "logic" },
+    { "from": "logic", "to": "table" }
+  ],
+  "credentials": [
+    {
+      "credential_id": "kr_broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        { "key": "appkey", "value": "", "type": "password", "label": "App Key" },
+        { "key": "appsecret", "value": "", "type": "password", "label": "App Secret" }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_strategy",
+      "content": "## 복합조건 전략 메모\n\n- RSI(과매도)와 볼린저(하단 이탈) 두 지표가 **동시에** 참일 때만 LogicNode(all)이 종목을 통과시킨다(AND).\n- 한 종목에 대해 여러 지표를 결합하는 패턴이다. **여러 종목을 스크리닝**하려면 종목마다 KoreaStockHistoricalDataNode 를 복제해야 한다 — KoreaStockHistoricalDataNode 는 단일 symbol 만 받으므로 한 노드에 배열을 넣거나 SplitNode 로 순회할 수 없다(라이브에서 조용히 0건이 된다).\n- 조회·전략 전용 — 주문 노드가 없어 실행해도 체결되지 않는다.",
+      "color": 2,
+      "width": 380,
+      "height": 200,
+      "position": { "x": 420, "y": 40 }
+    }
+  ]
+}

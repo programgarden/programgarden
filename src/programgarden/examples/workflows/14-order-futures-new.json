@@ -22,6 +22,19 @@
       }
     },
     {
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": [
+        "HMCE"
+      ],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
+      "position": {
+        "x": 450,
+        "y": 60
+      }
+    },
+    {
       "id": "account",
       "type": "OverseasFuturesAccountNode",
       "position": {
@@ -35,8 +48,8 @@
       "side": "buy",
       "order_type": "limit",
       "order": {
-        "symbol": "HMCEG26",
-        "exchange": "HKEX",
+        "symbol": "{{ nodes.contract.symbols[0].symbol }}",
+        "exchange": "{{ nodes.contract.symbols[0].exchange }}",
         "quantity": 1,
         "price": 9500.0
       },
@@ -53,10 +66,18 @@
     },
     {
       "from": "broker",
+      "to": "contract"
+    },
+    {
+      "from": "broker",
       "to": "account"
     },
     {
       "from": "account",
+      "to": "new_order"
+    },
+    {
+      "from": "contract",
       "to": "new_order"
     }
   ],

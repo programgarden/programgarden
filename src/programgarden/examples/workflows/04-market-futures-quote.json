@@ -1,7 +1,7 @@
 {
   "id": "04-market-futures-quote",
   "name": "해외선물 시세 조회",
-  "description": "해외선물 현재 시세 조회 (Mini Hang Seng, Mini H-Shares)",
+  "description": "해외선물 현재 시세 조회 (미니 H주 — 실행 시점에 근월물로 자동 해소)",
   "nodes": [
     {
       "id": "start",
@@ -22,16 +22,24 @@
       }
     },
     {
-      "id": "market",
-      "type": "OverseasFuturesMarketDataNode",
-      "symbols": [
-        {
-          "symbol": "HMCEG26",
-          "exchange": "HKEX"
-        }
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": [
+        "HMCE"
       ],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {
         "x": 500,
+        "y": 200
+      }
+    },
+    {
+      "id": "market",
+      "type": "OverseasFuturesMarketDataNode",
+      "symbol": "{{ item }}",
+      "position": {
+        "x": 750,
         "y": 200
       }
     }
@@ -40,6 +48,14 @@
     {
       "from": "start",
       "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "contract"
+    },
+    {
+      "from": "contract",
+      "to": "market"
     },
     {
       "from": "broker",

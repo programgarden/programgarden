@@ -1318,5 +1318,13 @@
   "events.restart.data_gap_warning": "복구 중 데이터 갭 경고: 체크포인트 이후 {gap_sec}초 동안의 데이터가 누락될 수 있습니다",
   "events.restart.skipped_nodes": "복구: {count}개 완료 노드 스킵",
   "events.restart.checkpoint_expired": "체크포인트가 만료됨 ({age_sec}초 > 600초 제한)",
-  "events.restart.workflow_changed": "워크플로우 정의가 변경되어 복구 불가 (해시 불일치)"
+  "events.restart.workflow_changed": "워크플로우 정의가 변경되어 복구 불가 (해시 불일치)",
+  "nodes.FuturesContractNode.name": "선물 월물 선택",
+  "nodes.FuturesContractNode.description": "기초자산(예: 미니 항셍)을 실행 시점에 **현재 상장된 월물 종목코드**로 바꿔줍니다. 월물을 직접 적어두면 만기가 지나는 순간 시세가 조용히 끊기는데, 이 노드를 쓰면 시간이 지나도 자동으로 다음 월물로 넘어갑니다. 근월물/차월물/분기월물 중에서 고를 수 있습니다. 출력 형식이 관심종목 노드와 같아서 아래쪽 배선을 그대로 두면 됩니다. 위쪽에 해외선물 브로커 노드가 필요합니다.",
+  "fieldNames.FuturesContractNode.base_products": "기초자산",
+  "fieldNames.FuturesContractNode.contract_selection": "월물 선택",
+  "fieldNames.FuturesContractNode.futures_exchange": "거래소",
+  "enums.contract_selection.front": "근월물 (만기 가장 가까움)",
+  "enums.contract_selection.next": "차월물 (롤오버 대상)",
+  "enums.contract_selection.quarterly": "분기월물 (3·6·9·12월)"
 }

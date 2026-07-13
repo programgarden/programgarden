@@ -782,29 +782,37 @@ T+1 야간:  KST 18:15-04:00(+1) (HKT 17:15-03:00+1)
 | Schedule 만 (TradingHoursFilter 없음) | 거래 불필요 (백테스트, 리포트) | 84 |
 | LogicNode + 3개 TradingHoursFilter OR | 세 세션 모두 정확히 표현 필요 시 | (예제 없음, future work) |
 
-### 13.3 월물 명명 규칙
+### 13.3 월물은 **절대 하드코딩하지 않는다** — `FuturesContractNode`
 
-```
-HM[CE] + 월코드 + 연도2자리
-  │      │       │
-  │      │       └─ 26 = 2026
-  │      └─ F=1월, G=2월, H=3월, J=4월, K=5월, M=6월,
-  │         N=7월, Q=8월, U=9월, V=10월, X=11월, Z=12월
-  └─ HMH = Mini Hang Seng, HMCE = Mini HSCEI
+🔴 **선물 워크플로우에 월물 종목코드를 직접 적으면 만기가 지나는 순간 조용히 죽는다.**
+LS 는 만기 경과 종목에 과거봉도 현재가도 주지 않고 **에러도 내지 않는다** — 그냥 빈 배열이다.
+그래서 condition/sizing 이 아무 말 없이 무진입 상태가 되고, 사용자는 전략이 멈춘 줄도 모른다.
+(실제로 이 저장소의 선물 예제 16개 중 14개가 이렇게 죽어 있었다.)
+
+**정답은 실행 시점에 월물을 해소하는 것이다.** `FuturesContractNode` 가 그 일을 한다 —
+LS 종목마스터(o3101)를 조회해 **지금 상장된 월물**을 골라준다. 시간이 지나면 다음 월물로 자동으로 넘어간다.
+
+```json
+{ "id": "contract", "type": "FuturesContractNode",
+  "base_products": ["HMH", "HMCE"], "contract_selection": "front", "futures_exchange": "HKEX" }
 ```
 
-**예**: `HMHJ26` = Mini Hang Seng **2026년 4월물**
+- `base_products` — **기초자산 코드**(월물 코드가 아니다):
+  `HMH`=미니 항셍, `HMCE`=미니 H주(HSCEI), `HSI`=항셍, `HTI`=항셍테크, `HCEI`=H주, `MCA`=MSCI 중국A50
+- `contract_selection` — `front`(근월물·기본) / `next`(차월물, 롤오버 대상) / `quarterly`(3·6·9·12월 중 최근접)
+- 출력 `symbols` 는 **WatchlistNode 와 똑같은** `[{exchange, symbol}]` 이라 하류 배선이 그대로다:
+  `contract → OverseasFuturesHistoricalDataNode(symbol: "{{ item }}")` 처럼 auto-iterate 로 받는다.
+  백테스트/AI 노드처럼 auto-iterate 대상이 아닌 곳은 `{{ nodes.contract.symbols[0].symbol }}` 로 받는다.
+- 상류에 **선물 브로커 노드**가 있어야 한다 (o3101 은 LS 세션이 필요하다).
+
+참고 — 월물 코드 표기(LS 가 알려주므로 직접 조립할 일은 없다):
+`HMH`/`HMCE` + 월코드(F=1월 G=2월 H=3월 J=4월 K=5월 M=6월 N=7월 Q=8월 U=9월 V=10월 X=11월 Z=12월) + 연도 2자리.
+예: `HMHN26` = 미니 항셍 2026년 **7월물**.
 
 **틱 가치**: HMH/HMCE 미니선물 모두 약 10 HKD/tick (~1.3 USD).
 
-**Roll-over**: 분기물(H/M/U/Z)이 가장 유동성 풍부. 만기 임박 시 다음 월물로 교체. 자동화는
-ExclusionListNode 정적 블랙리스트 (예제 85) 또는 향후 LS 캘린더 연동.
-
-> ⚠️ **예제 월물은 시간이 지나면 만료됩니다.** 만기 경과 월물은 `OverseasFuturesHistoricalDataNode`
-> 가 **에러 없이 빈 `time_series`** 를 반환 → 다운스트림 condition/sizing 이 silent 하게 무진입.
-> 예제 81-85 는 작성 시점 기준 live 월물(2026 기준 `HMHM26`/`HMCEM26`, 6월물 M)을 사용하며,
-> 실행 시점이 만기를 지났다면 `OverseasFuturesSymbolQueryNode` 로 현재 front month 를 확인해
-> Watchlist 심볼을 갱신하세요. (2026-05-29 검증: J월물 만료 → M월물 roll-forward)
+**Roll-over**: 분기물(H/M/U/Z)이 가장 유동성이 풍부하다 — `contract_selection: "quarterly"` 로 고르면 된다.
+근월물을 쓰다가 만기 직전에 차월물로 갈아타려면 `next` 를 쓴 노드를 하나 더 두면 된다.
 
 ### 13.4 신규 예제 81-85 (HKEX 풀세트)
 

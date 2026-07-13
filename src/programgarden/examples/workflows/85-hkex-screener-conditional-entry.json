@@ -1,15 +1,25 @@
 {
   "id": "85-hkex-screener-conditional-entry",
-  "name": "HKEX 월물 스크리너 + ATR 조건 진입 (모의투자, mock roll-over)",
-  "description": "HMHJ26 / HMHM26 / HMCEJ26 / HMCEM26 4개 월물 후보풀에서 만기 임박 월물(블랙리스트)을 ExclusionListNode 로 제외 → 180일 ATR breakout 조건 충족 종목만 필터 → 이미 보유 종목 제외 → IfNode 후보 ≥1 일 때 NewOrderNode 발사. HKEX 월물 명명 + roll-over mock 시뮬레이션 회귀 가드.",
+  "name": "HKEX 근월물 스크리너 + ATR 조건 진입 (모의투자, 월물 자동 해소)",
+  "description": "FuturesContractNode 가 실행 시점에 미니 항셍(HMH) / 미니 H주(HMCE) 의 현재 상장 근월물을 해소 → ExclusionListNode 운영 블랙리스트 통과 → 180일 ATR breakout 조건 충족 종목만 필터 → 이미 보유 종목 제외 → IfNode 후보 ≥1 일 때 NewOrderNode 발사. 월물 코드를 하드코딩하지 않으므로 만기가 지나도 다음 월물로 자동 롤오버된다.",
   "nodes": [
-    {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 380}},
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 380
+      }
+    },
     {
       "id": "broker",
       "type": "OverseasFuturesBrokerNode",
       "credential_id": "broker_cred",
       "paper_trading": true,
-      "position": {"x": 220, "y": 380}
+      "position": {
+        "x": 220,
+        "y": 380
+      }
     },
     {
       "id": "schedule",
@@ -18,7 +28,10 @@
       "timezone": "Asia/Seoul",
       "enabled": true,
       "max_duration_hours": 720,
-      "position": {"x": 400, "y": 380}
+      "position": {
+        "x": 400,
+        "y": 380
+      }
     },
     {
       "id": "trading_hours",
@@ -26,35 +39,43 @@
       "start": "10:15",
       "end": "17:30",
       "timezone": "Asia/Seoul",
-      "days": ["mon", "tue", "wed", "thu", "fri"],
-      "position": {"x": 600, "y": 380}
-    },
-
-    {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"},
-        {"symbol": "HMHM26", "exchange": "HKEX"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX"},
-        {"symbol": "HMCEM26", "exchange": "HKEX"}
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
       ],
-      "position": {"x": 820, "y": 200}
+      "position": {
+        "x": 600,
+        "y": 380
+      }
+    },
+    {
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": [
+        "HMH",
+        "HMCE"
+      ],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
+      "position": {
+        "x": 820,
+        "y": 200
+      }
     },
     {
       "id": "exclusion",
       "type": "ExclusionListNode",
-      "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX", "reason": "2026/04 만기 경과 — roll-over 대상 (historical 빈 응답)"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX", "reason": "2026/04 만기 경과 — roll-over 대상 (historical 빈 응답)"},
-        {"symbol": "HMHG26", "exchange": "HKEX", "reason": "이미 만기된 2월물 (mock — 본 예제 후보풀엔 없지만 가드용)"},
-        {"symbol": "HMCEG26", "exchange": "HKEX", "reason": "이미 만기된 2월물 (mock)"}
-      ],
-      "input_symbols": "{{ nodes.watchlist.symbols }}",
+      "symbols": [],
+      "input_symbols": "{{ nodes.contract.symbols }}",
       "default_reason": "만기/유동성 부족",
-      "position": {"x": 1080, "y": 200}
+      "position": {
+        "x": 1080,
+        "y": 200
+      }
     },
-
     {
       "id": "historical",
       "type": "OverseasFuturesHistoricalDataNode",
@@ -62,7 +83,10 @@
       "start_date": "{{ date.ago(180, format='yyyymmdd') }}",
       "end_date": "{{ date.today(format='yyyymmdd') }}",
       "interval": "1d",
-      "position": {"x": 1340, "y": 200}
+      "position": {
+        "x": 1340,
+        "y": 200
+      }
     },
     {
       "id": "atr_cond",
@@ -84,14 +108,23 @@
         "multiplier": 2.0,
         "direction": "breakout_up"
       },
-      "position": {"x": 1600, "y": 200}
+      "position": {
+        "x": 1600,
+        "y": 200
+      }
     },
-
     {
       "id": "account",
       "type": "OverseasFuturesAccountNode",
-      "resilience": {"fallback": {"mode": "skip"}},
-      "position": {"x": 820, "y": 580}
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {
+        "x": 820,
+        "y": 580
+      }
     },
     {
       "id": "filter_candidates",
@@ -99,7 +132,10 @@
       "operation": "difference",
       "input_a": "{{ nodes.atr_cond.passed_symbols }}",
       "input_b": "{{ nodes.account.held_symbols }}",
-      "position": {"x": 1860, "y": 380}
+      "position": {
+        "x": 1860,
+        "y": 380
+      }
     },
     {
       "id": "if_has_candidate",
@@ -107,25 +143,33 @@
       "left": "{{ nodes.filter_candidates.symbols }}",
       "operator": "is_not_empty",
       "right": null,
-      "position": {"x": 2080, "y": 380}
+      "position": {
+        "x": 2080,
+        "y": 380
+      }
     },
-
     {
       "id": "market_data",
       "type": "OverseasFuturesMarketDataNode",
       "symbol": "{{ item }}",
-      "position": {"x": 2280, "y": 280}
+      "position": {
+        "x": 2280,
+        "y": 280
+      }
     },
     {
       "id": "sizing",
       "type": "PositionSizingNode",
       "symbol": "{{ item }}",
       "balance": "{{ nodes.account.balance }}",
-      "market_data": "{{ nodes.market_data.value }}",
+      "market_data": "{{ nodes.market_data.values }}",
       "method": "atr_based",
       "max_percent": 5.0,
       "atr_risk_percent": 1.5,
-      "position": {"x": 2480, "y": 280}
+      "position": {
+        "x": 2480,
+        "y": 280
+      }
     },
     {
       "id": "buy_order",
@@ -133,17 +177,26 @@
       "side": "buy",
       "order_type": "limit",
       "order": "{{ nodes.sizing.order }}",
-      "resilience": {"fallback": {"mode": "skip"}},
-      "position": {"x": 2680, "y": 280}
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "position": {
+        "x": 2680,
+        "y": 280
+      }
     },
     {
       "id": "telegram_entry",
       "type": "TelegramNode",
       "credential_id": "telegram_cred",
       "template": "🆕 HKEX 스크리너 진입 ({{ nodes.filter_candidates.count }}종목): {{ nodes.filter_candidates.symbols }} (ATR breakout, limit 매수)",
-      "position": {"x": 2880, "y": 280}
+      "position": {
+        "x": 2880,
+        "y": 280
+      }
     },
-
     {
       "id": "no_candidate_notice",
       "type": "SummaryDisplayNode",
@@ -154,67 +207,148 @@
         "excluded": "{{ nodes.exclusion.excluded }}",
         "status": "no_entry"
       },
-      "position": {"x": 2280, "y": 520}
+      "position": {
+        "x": 2280,
+        "y": 520
+      }
     }
   ],
   "edges": [
-    {"from": "start", "to": "broker"},
-    {"from": "broker", "to": "schedule"},
-    {"from": "schedule", "to": "trading_hours"},
-
-    {"from": "trading_hours", "to": "watchlist"},
-    {"from": "watchlist", "to": "exclusion"},
-    {"from": "exclusion", "to": "historical", "from_port": "filtered"},
-    {"from": "historical", "to": "atr_cond"},
-
-    {"from": "trading_hours", "to": "account"},
-
-    {"from": "atr_cond", "to": "filter_candidates"},
-    {"from": "account", "to": "filter_candidates"},
-    {"from": "filter_candidates", "to": "if_has_candidate"},
-
-    {"from": "filter_candidates", "to": "market_data"},
-    {"from": "market_data", "to": "sizing"},
-    {"from": "account", "to": "sizing"},
-    {"from": "sizing", "to": "buy_order"},
-    {"from": "buy_order", "to": "telegram_entry"},
-
-    {"from": "if_has_candidate", "to": "no_candidate_notice", "from_port": "false"}
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "schedule"
+    },
+    {
+      "from": "schedule",
+      "to": "trading_hours"
+    },
+    {
+      "from": "trading_hours",
+      "to": "contract"
+    },
+    {
+      "from": "broker",
+      "to": "contract"
+    },
+    {
+      "from": "contract",
+      "to": "exclusion"
+    },
+    {
+      "from": "exclusion",
+      "to": "historical",
+      "from_port": "filtered"
+    },
+    {
+      "from": "historical",
+      "to": "atr_cond"
+    },
+    {
+      "from": "trading_hours",
+      "to": "account"
+    },
+    {
+      "from": "atr_cond",
+      "to": "filter_candidates"
+    },
+    {
+      "from": "account",
+      "to": "filter_candidates"
+    },
+    {
+      "from": "filter_candidates",
+      "to": "if_has_candidate"
+    },
+    {
+      "from": "filter_candidates",
+      "to": "market_data"
+    },
+    {
+      "from": "market_data",
+      "to": "sizing"
+    },
+    {
+      "from": "account",
+      "to": "sizing"
+    },
+    {
+      "from": "sizing",
+      "to": "buy_order"
+    },
+    {
+      "from": "buy_order",
+      "to": "telegram_entry"
+    },
+    {
+      "from": "if_has_candidate",
+      "to": "no_candidate_notice",
+      "from_port": "false"
+    }
   ],
   "credentials": [
     {
       "credential_id": "broker_cred",
       "type": "broker_ls_overseas_futures",
       "data": [
-        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
-        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
       ]
     },
     {
       "credential_id": "telegram_cred",
       "type": "telegram",
       "data": [
-        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
-        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+        {
+          "key": "bot_token",
+          "value": "",
+          "type": "password",
+          "label": "Bot Token"
+        },
+        {
+          "key": "chat_id",
+          "value": "",
+          "type": "text",
+          "label": "Chat ID"
+        }
       ]
     }
   ],
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## HKEX 월물 스크리너 + ATR 조건 진입\n\n**시나리오**: 평일 KST 11:00 (HKEX 데이세션 진입 후 45분 — 초반 변동성 안정화 후) 4개 월물 후보풀 스크리닝.\n\n**후보풀**: HMH (Mini Hang Seng) J(4월) + M(6월), HMCE (Mini HSCEI) J(4월) + M(6월)\n\n4월물(J)은 이미 만기 경과(historical 빈 응답) → ExclusionList 로 제외 → 생존 후보는 live 6월물(M)뿐. 이것이 roll-over 의 실제 동작입니다.\n\n**필터링 파이프라인**:\n1. ExclusionListNode — 만기 경과/임박 월물 정적 블랙리스트 (J월물 제외)\n2. ATR ConditionNode — 14일 ATR 기반 breakout_up 시그널\n3. SymbolFilterNode (difference) — 이미 보유 월물 제외\n4. IfNode — 후보 ≥ 1 일 때만 진입 (`is_not_empty`)\n\n**사이징**: ATR 기반 (계좌 5%, 종목당 1.5% 위험)\n\n**주문**: limit (HKEX 모의투자 제약)",
+      "content": "## HKEX 근월물 스크리너 + ATR 조건 진입\n\n**시나리오**: 평일 KST 11:00 (HKEX 데이세션 진입 후 45분 — 초반 변동성 안정화 후) 미니 선물 2종 스크리닝.\n\n**후보풀**: FuturesContractNode 가 실행 시점에 해소한 **근월물** — HMH (미니 항셍), HMCE (미니 H주) 각 1건.\n\n월물 코드는 워크플로우 어디에도 적혀 있지 않습니다. 실행할 때마다 LS 종목마스터(o3101)에서 **지금 상장된 월물**을 골라오므로, 만기가 지나면 자동으로 다음 월물로 넘어갑니다.\n\n**필터링 파이프라인**:\n1. FuturesContractNode — 기초자산 → 현재 상장 근월물 해소 (만기 경과분은 애초에 나오지 않음)\n2. ExclusionListNode — 운영 블랙리스트 훅 (리스크/유동성 사유로 뺄 종목. 기본은 비어 있음)\n3. ATR ConditionNode — 14일 ATR 기반 breakout_up 시그널\n4. SymbolFilterNode (difference) — 이미 보유 월물 제외\n5. IfNode — 후보 ≥ 1 일 때만 진입 (`is_not_empty`)\n\n**사이징**: ATR 기반 (계좌 5%, 종목당 1.5% 위험)\n\n**주문**: limit (HKEX 모의투자 제약)",
       "color": 5,
       "width": 400,
       "height": 340,
-      "position": {"x": 30, "y": 30}
+      "position": {
+        "x": 30,
+        "y": 30
+      }
     },
     {
       "id": "note_rollover",
-      "content": "## HKEX 월물 명명 규칙\n\n```\nHM[CE] + 월코드 + 연도2자리\n  │      │       │\n  │      │       └─ 26 = 2026\n  │      └─ F=1월, G=2월, H=3월, J=4월, K=5월, M=6월,\n  │         N=7월, Q=8월, U=9월, V=10월, X=11월, Z=12월\n  └─ HMH = Mini Hang Seng, HMCE = Mini HSCEI\n```\n\n**예**: HMHJ26 = Mini Hang Seng 2026년 4월물\n\n**Roll-over mock**: 만기 경과/임박 월물(본 예제는 2026/04 J월물) 을 ExclusionListNode 의 정적 `symbols` 에 추가하면 후보풀에서 자동 제외 → live 월물만 통과. 실 운영 시엔 LS 캘린더 API 연동 또는 `dynamic_symbols` 바인딩으로 자동화.",
+      "content": "## 월물 만기는 노드가 처리한다\n\n선물 종목코드에 월물을 하드코딩하면 **만기가 지나는 순간 워크플로우가 조용히 죽습니다** — LS 는 만기 경과 종목에 과거봉도 현재가도 주지 않고, 에러조차 내지 않습니다(빈 배열).\n\n**FuturesContractNode** 는 저작 시점이 아니라 **실행 시점**에 월물을 고릅니다.\n\n- `base_products`: 기초자산 코드 — HMH(미니 항셍), HMCE(미니 H주)\n- `contract_selection`: `front`(근월물·유동성 최대) / `next`(롤오버 대상) / `quarterly`(3·6·9·12월)\n- `symbols` 출력: `[{exchange, symbol}]` — WatchlistNode 와 동일한 계약이라 하류 배선은 그대로\n\n**ExclusionListNode 의 역할 변경**: 만기 차단은 이제 contract 노드가 구조적으로 해결하므로, 이 노드는 **운영 블랙리스트 훅**으로 남습니다. 종목을 넣으면 후보풀에서 빠지고, 주문 노드도 그 종목을 차단합니다.",
       "color": 1,
       "width": 420,
       "height": 360,
-      "position": {"x": 460, "y": 30}
+      "position": {
+        "x": 460,
+        "y": 30
+      }
     }
   ]
 }

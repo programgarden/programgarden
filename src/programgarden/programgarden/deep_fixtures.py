@@ -318,6 +318,63 @@ def real_order_event_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def futures_contract_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
+    """FuturesContractNode deep fixture (no o3101 master query).
+
+    Real shape: ``{"symbols": [{exchange, symbol}], "contracts": [...], "count": int}``.
+
+    The month code is derived from the fixture anchor, not the wall clock, so a deep
+    run is reproducible. The *symbol string* is therefore not a real listed contract —
+    that is fine and deliberate: deep_validate checks field/type/flow integrity, and
+    downstream fixtures key off the symbol string only as an opaque identifier.
+    """
+    raw = config.get("base_products") or []
+    if isinstance(raw, str):
+        raw = [p.strip() for p in raw.split(",") if p.strip()]
+    products = [str(p).strip().upper() for p in raw if str(p).strip()] or ["HMH"]
+
+    # 거래소는 ExchCd 로 정규화한다. config 값을 그대로 되뱉으면, 형제 노드의 enum('6')을
+    # 넣은 워크플로우가 게이트를 통과한 뒤 첫 라이브 실행에서만 죽는다 — 게이트의 존재 이유가 없어진다.
+    _ENUM_TO_EXCHCD = {"1": "", "2": "CME", "3": "SGX", "4": "EUREX", "5": "ICE", "6": "HKEX", "7": "OSE"}
+    exchange = str(config.get("futures_exchange") or "").strip().upper()
+    exchange = _ENUM_TO_EXCHCD.get(exchange, exchange) or "HKEX"
+
+    # 월물 문자 코드 (F=1월 … Z=12월) — 실제 노드와 같은 표기를 쓴다.
+    # contract_selection 을 실제 노드와 같은 규칙으로 반영한다(front=당월, next=익월,
+    # quarterly=3·6·9·12월 중 최근접). fixture 가 이걸 무시하면 세 설정이 같은 심볼을 내
+    # 배선 검증이 selection 오류를 못 잡는다.
+    month_letters = "FGHJKMNQUVXZ"
+    selection = str(config.get("contract_selection") or "front").strip().lower()
+    month = _FIXTURE_ANCHOR.month
+    if selection == "next":
+        month += 1
+    elif selection == "quarterly":
+        while month % 3:
+            month += 1
+    year = _FIXTURE_ANCHOR.year + (month - 1) // 12
+    month = (month - 1) % 12 + 1
+    letter = month_letters[month - 1]
+    yy = f"{year % 100:02d}"
+
+    contracts: List[Dict[str, Any]] = []
+    for product in products:
+        contracts.append(
+            {
+                "symbol": f"{product}{letter}{yy}",
+                "exchange": exchange,
+                "base_product": product,
+                "base_product_name": product,
+                "name": f"{product}({year}.{month:02d})",
+                "contract_month": f"{year:04d}-{month:02d}",
+            }
+        )
+    return {
+        "symbols": [{"exchange": c["exchange"], "symbol": c["symbol"]} for c in contracts],
+        "contracts": contracts,
+        "count": len(contracts),
+    }
+
+
 def market_status_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
     """MarketStatusNode deep fixture (markets open).
 

@@ -1,0 +1,71 @@
+{
+  "id": "97-korea-stock-code-node-composite",
+  "name": "국내주식 CodeNode 복합 지표 (RSI+볼린저%b+ATR)",
+  "description": "StartNode -> KoreaStockBrokerNode -> KoreaStockHistoricalDataNode(삼성전자 005930, 1d) -> CodeNode(stdlib만으로 Wilder RSI + Bollinger %b + ATR 손절/목표가를 손수 계산해 복합 매수 신호 산출) -> SummaryDisplayNode. RSI/Bollinger 플러그인 hand-roll 교육용 레퍼런스. 데이터 부족 시 status='insufficient_data', action='flat'. dry_run-safe.",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": { "x": 50, "y": 200 }
+    },
+    {
+      "id": "broker",
+      "type": "KoreaStockBrokerNode",
+      "credential_id": "kr_broker_cred",
+      "position": { "x": 250, "y": 200 }
+    },
+    {
+      "id": "historical",
+      "type": "KoreaStockHistoricalDataNode",
+      "symbol": { "symbol": "005930" },
+      "start_date": "{{ date.ago(120, format='yyyymmdd') }}",
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "adjust": true,
+      "position": { "x": 500, "y": 200 }
+    },
+    {
+      "id": "composite",
+      "type": "CodeNode",
+      "data": "{{ nodes.historical.value }}",
+      "params": {
+        "rsi_period": 14,
+        "bb_period": 20,
+        "atr_period": 14,
+        "rsi_oversold": 30,
+        "pctb_threshold": 0.1
+      },
+      "outputs": [
+        {
+          "name": "signal",
+          "type": "object"
+        }
+      ],
+      "code": "async def execute(data, params, context):\n    import statistics\n    rsi_p = int(params.get('rsi_period', 14))\n    bb_p = int(params.get('bb_period', 20))\n    atr_p = int(params.get('atr_period', 14))\n    rsi_os = float(params.get('rsi_oversold', 30))\n    pctb_th = float(params.get('pctb_threshold', 0.1))\n    payload = data if isinstance(data, dict) else {}\n    sym = payload.get('symbol')\n    if isinstance(sym, dict):\n        sym = sym.get('symbol')\n    rows = [r for r in (payload.get('time_series') or []) if isinstance(r, dict)]\n    closes = [r.get('close') for r in rows if r.get('close') is not None]\n    need = max(rsi_p, bb_p, atr_p) + 1\n    if len(closes) < need:\n        return {'signal': {'symbol': sym, 'status': 'insufficient_data', 'action': 'flat'}}\n    gains, losses = [], []\n    for i in range(1, len(closes)):\n        chg = closes[i] - closes[i - 1]\n        gains.append(max(chg, 0.0))\n        losses.append(max(-chg, 0.0))\n    avg_gain = statistics.fmean(gains[:rsi_p])\n    avg_loss = statistics.fmean(losses[:rsi_p])\n    for i in range(rsi_p, len(gains)):\n        avg_gain = (avg_gain * (rsi_p - 1) + gains[i]) / rsi_p\n        avg_loss = (avg_loss * (rsi_p - 1) + losses[i]) / rsi_p\n    rsi = 100.0 if avg_loss == 0 else 100.0 - 100.0 / (1.0 + avg_gain / avg_loss)\n    window = closes[-bb_p:]\n    mid = statistics.fmean(window)\n    sd = statistics.pstdev(window)\n    upper = mid + 2.0 * sd\n    lower = mid - 2.0 * sd\n    last = closes[-1]\n    pct_b = None if upper == lower else (last - lower) / (upper - lower)\n    trs = []\n    for i in range(1, len(rows)):\n        h = rows[i].get('high')\n        low = rows[i].get('low')\n        pc = rows[i - 1].get('close')\n        if h is None or low is None or pc is None:\n            continue\n        trs.append(max(h - low, abs(h - pc), abs(low - pc)))\n    atr = statistics.fmean(trs[-atr_p:]) if len(trs) >= atr_p else (statistics.fmean(trs) if trs else 0.0)\n    oversold = rsi < rsi_os and pct_b is not None and pct_b < pctb_th\n    action = 'buy' if oversold else 'flat'\n    stop = round(last - 2.0 * atr) if action == 'buy' else None\n    target = round(last + 3.0 * atr) if action == 'buy' else None\n    return {'signal': {\n        'symbol': sym,\n        'close': last,\n        'rsi': round(rsi, 2),\n        'percent_b': None if pct_b is None else round(pct_b, 3),\n        'atr': round(atr, 1),\n        'action': action,\n        'stop_price': stop,\n        'target_price': target,\n        'status': 'ok',\n    }}",
+      "position": { "x": 800, "y": 200 }
+    },
+    {
+      "id": "display",
+      "type": "SummaryDisplayNode",
+      "title": "삼성전자 복합 지표 신호",
+      "data": "{{ nodes.composite.signal }}",
+      "position": { "x": 1100, "y": 200 }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "broker" },
+    { "from": "broker", "to": "historical" },
+    { "from": "historical", "to": "composite" },
+    { "from": "composite", "to": "display" }
+  ],
+  "credentials": [
+    {
+      "credential_id": "kr_broker_cred",
+      "type": "broker_ls_korea_stock",
+      "data": [
+        { "key": "appkey", "value": "", "type": "password", "label": "App Key" },
+        { "key": "appsecret", "value": "", "type": "password", "label": "App Secret" }
+      ]
+    }
+  ]
+}

@@ -30,12 +30,11 @@
       "position": {"x": 650, "y": 500}
     },
     {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": [
-        {"symbol": "HMHJ26", "exchange": "HKEX"},
-        {"symbol": "HMCEJ26", "exchange": "HKEX"}
-      ],
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": ["HMH", "HMCE"],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX",
       "position": {"x": 650, "y": 100}
     },
     {
@@ -102,8 +101,9 @@
     {"from": "start", "to": "broker"},
     {"from": "broker", "to": "schedule"},
     {"from": "schedule", "to": "account"},
-    {"from": "schedule", "to": "watchlist"},
-    {"from": "watchlist", "to": "historical"},
+    {"from": "schedule", "to": "contract"},
+    {"from": "broker", "to": "contract"},
+    {"from": "contract", "to": "historical"},
     {"from": "historical", "to": "ma_cross"},
     {"from": "ma_cross", "to": "filter_not_held"},
     {"from": "account", "to": "filter_not_held"},
@@ -131,10 +131,10 @@
   "notes": [
     {
       "id": "note_strategy",
-      "content": "## 골든크로스 자동 매수\n\n**전략**: 추세 추종 (MA5 x MA20)\n**시그널**:\n- 골든크로스 (golden): MA5 가 MA20 을 상향 돌파 → 매수\n- 데드크로스 (dead): MA5 가 MA20 을 하향 돌파 → 매도 (별도 워크플로우)\n\n**스케줄**: 평일 10:00 HKT 일일 체크\n- 전일 종가 기준 크로스 감지\n- 장 시작 후 30분 뒤 진입 (변동성 안정화)\n\n**MA 기간 조정**:\n- 초단기: MA3/MA10 (더 민감, 더 많은 신호)\n- 단기 (기본): MA5/MA20\n- 중기: MA10/MA50\n- 장기: MA50/MA200 (황금교차)\n\n**주의**:\n- MA 크로스는 후행 지표 → 추세 전환을 지연 반영\n- 횡보장에선 잦은 가짜 신호\n- 강한 추세장에서 가장 효과적",
+      "content": "## 골든크로스 자동 매수\n\n**전략**: 추세 추종 (MA5 x MA20)\n**시그널**:\n- 골든크로스 (golden): MA5 가 MA20 을 상향 돌파 → 매수\n- 데드크로스 (dead): MA5 가 MA20 을 하향 돌파 → 매도 (별도 워크플로우)\n\n**스케줄**: 평일 10:00 HKT 일일 체크\n- 전일 종가 기준 크로스 감지\n- 장 시작 후 30분 뒤 진입 (변동성 안정화)\n\n**종목**: 미니 항셍(HMH), 미니 H주(HMCE)\n  -> FuturesContractNode 가 실행 시점에 근월물로 자동 해소 (월물 하드코딩 없음 = 만기가 지나도 안 죽는다)\n\n**MA 기간 조정**:\n- 초단기: MA3/MA10 (더 민감, 더 많은 신호)\n- 단기 (기본): MA5/MA20\n- 중기: MA10/MA50\n- 장기: MA50/MA200 (황금교차)\n\n**주의**:\n- MA 크로스는 후행 지표 → 추세 전환을 지연 반영\n- 횡보장에선 잦은 가짜 신호\n- 강한 추세장에서 가장 효과적",
       "color": 6,
       "width": 380,
-      "height": 380,
+      "height": 440,
       "position": {"x": 30, "y": 30}
     }
   ]

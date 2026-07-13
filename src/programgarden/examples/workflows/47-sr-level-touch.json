@@ -1,7 +1,7 @@
 {
   "id": "47-sr-level-touch",
   "name": "S/R 레벨 감지 + 터치 판별 (해외선물 모의투자)",
-  "description": "SupportResistanceLevels로 과거 데이터에서 지지/저항 레벨 감지 후, LevelTouch로 레벨 터치/돌파 판별. 단일 종목(Mini Hang Seng).",
+  "description": "SupportResistanceLevels로 과거 데이터에서 지지/저항 레벨 감지 후, LevelTouch로 레벨 터치/돌파 판별. 단일 기초자산(미니 H주). 월물은 실행 시점에 근월물로 자동 해소됩니다.",
   "nodes": [
     {
       "id": "start",
@@ -14,12 +14,18 @@
       "paper_trading": true
     },
     {
+      "id": "contract",
+      "type": "FuturesContractNode",
+      "base_products": [
+        "HMCE"
+      ],
+      "contract_selection": "front",
+      "futures_exchange": "HKEX"
+    },
+    {
       "id": "hist",
       "type": "OverseasFuturesHistoricalDataNode",
-      "symbol": {
-        "symbol": "HMCEH26",
-        "exchange": "HKEX"
-      },
+      "symbol": "{{ item }}",
       "start_date": "{{ date.ago(120, format='yyyymmdd') }}",
       "end_date": "{{ date.today(format='yyyymmdd') }}",
       "interval": "1d"
@@ -99,6 +105,14 @@
     {
       "from": "start",
       "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "contract"
+    },
+    {
+      "from": "contract",
+      "to": "hist"
     },
     {
       "from": "broker",

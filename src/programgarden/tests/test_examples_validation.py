@@ -75,9 +75,9 @@ class TestWorkflowStaticValidation:
     """Every bundled example workflow must pass WorkflowExecutor.validate()."""
 
     def test_workflow_files_discovered(self):
-        """Sanity: repo ships with 95 example workflows."""
-        assert len(WORKFLOW_FILES) == 95, (
-            f"expected 95 workflow JSON files, found {len(WORKFLOW_FILES)}"
+        """Sanity: repo ships with 99 example workflows."""
+        assert len(WORKFLOW_FILES) == 99, (
+            f"expected 99 workflow JSON files, found {len(WORKFLOW_FILES)}"
         )
 
     @pytest.mark.parametrize("wf_path", WORKFLOW_FILES, ids=_ids(WORKFLOW_FILES))
@@ -161,6 +161,88 @@ class TestWorkflowDryRunCycle:
                     if log.get("level") == "error"
                 )[:5]
             )
+
+
+#: Phase 5.2 domestic-stock (Korea) examples. Unlike the legacy corpus —
+#: which carries some historical unknown fields that BaseNode's
+#: ``extra="allow"`` silently tolerates — these must be schema-exact: every
+#: node key must be a declared model field (or an intentional executor-read
+#: extra, see ``_ALLOWED_NODE_EXTRAS``). Few-shot generation copies these
+#: verbatim, so a phantom field here (e.g. a ``price`` that
+#: PositionSizingNode never reads) propagates into every generated workflow.
+#: Scoped to 94-97 only — earlier Korea examples (50/53/55) predate this gate.
+_KOREA_GATE_STEMS = {
+    "94-korea-stock-order-rsi-buy",
+    "95-korea-stock-strategy-condition-logic",
+    "96-korea-stock-backtest-rsi-bollinger",
+    "97-korea-stock-code-node-composite",
+}
+KOREA_EXAMPLE_FILES: List[Path] = sorted(
+    p for p in EXAMPLES_DIR.glob("*-korea-*.json") if p.stem in _KOREA_GATE_STEMS
+)
+
+#: Node-level keys that are structural/presentational, not schema fields.
+_NODE_META_KEYS = {"id", "type", "position", "description", "name"}
+
+#: Per-node-type keys the executor intentionally reads via ``extra="allow"``
+#: even though they are not declared Pydantic fields. These are functional
+#: (the executor consumes them), unlike phantom fields that are silently
+#: dropped. Keep this list tight — only add a key after confirming the
+#: executor actually reads it.
+_ALLOWED_NODE_EXTRAS = {
+    "SplitNode": {"items"},  # executor iterates config['items']; see 69-* legacy
+    # MarketDataNodeExecutor reads config['symbols'] (plural array) at runtime
+    # (executor.py ~8983); the node field schema only declares singular 'symbol'.
+    # Live-confirmed: examples 50/94 return per-symbol `values` from `symbols`.
+    "KoreaStockMarketDataNode": {"symbols"},
+}
+
+
+class TestKoreaExampleSchemaFields:
+    """Gate: the domestic-stock examples must use only declared node fields.
+
+    ``WorkflowExecutor.validate()`` and the dry-run cycle both pass despite
+    unknown fields because ``BaseNode(model_config=extra="allow")`` swallows
+    them. This class closes that gap — but only for the new Korea corpus, so
+    legacy examples with historical drift are unaffected.
+    """
+
+    def test_korea_examples_present(self):
+        assert len(KOREA_EXAMPLE_FILES) == 4, (
+            f"expected 4 *-korea-*.json examples, found {len(KOREA_EXAMPLE_FILES)}: "
+            f"{[p.name for p in KOREA_EXAMPLE_FILES]}"
+        )
+
+    @pytest.mark.parametrize(
+        "wf_path", KOREA_EXAMPLE_FILES, ids=_ids(KOREA_EXAMPLE_FILES)
+    )
+    def test_korea_nodes_have_no_unknown_fields(self, wf_path: Path):
+        import programgarden_core
+
+        with open(wf_path, encoding="utf-8") as f:
+            workflow = json.load(f)
+
+        offenders: list[str] = []
+        for node in workflow.get("nodes", []):
+            node_type = node.get("type")
+            cls = getattr(programgarden_core, node_type, None)
+            assert cls is not None, (
+                f"{wf_path.name}: node '{node.get('id')}' type "
+                f"{node_type!r} not exported from programgarden_core"
+            )
+            model_fields = set(getattr(cls, "model_fields", {}))
+            allowed_extras = _ALLOWED_NODE_EXTRAS.get(node_type, set())
+            unknown = set(node) - _NODE_META_KEYS - model_fields - allowed_extras
+            if unknown:
+                offenders.append(
+                    f"{node.get('id')} ({node_type}): {sorted(unknown)}"
+                )
+
+        assert not offenders, (
+            f"{wf_path.name}: nodes reference fields absent from the node "
+            f"schema (extra=\"allow\" hides these at runtime):\n"
+            + "\n".join(f"  - {o}" for o in offenders)
+        )
 
 
 class TestProgrammerExamples:

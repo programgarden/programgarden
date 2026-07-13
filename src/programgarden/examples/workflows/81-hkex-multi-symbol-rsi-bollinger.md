@@ -12,6 +12,9 @@
 미니항셍·미니H주 두 종목을 30분마다 스캔. **RSI 과매도 AND Bollinger 하단 터치**
 두 조건이 동시에 충족된 종목에 한해 ATR 기반 사이징으로 **limit 매수**.
 
+- **종목 지정**: `FuturesContractNode` 에 **기초자산 코드**(`HMH`=미니 항셍, `HMCE`=미니 H주)만 적습니다.
+  실제 월물 종목코드는 **실행 시점에 LS 종목마스터(o3101)를 조회해 근월물로 자동 해소**되므로,
+  만기가 지나도 워크플로우가 조용히 죽지 않고 자동으로 다음 월물을 따라갑니다.
 - **RSI**: period=14, threshold=30, direction=below (과매도)
 - **Bollinger**: period=20, std_dev=2.0, position=below_lower (하단 이탈)
 - **Logic**: `operator: all` — 두 조건 모두 통과한 종목만 진입
@@ -26,12 +29,12 @@
 | 제약 | 본 예제 반영 |
 |------|-------------|
 | 시장가 주문 불가 | 모든 NewOrderNode `order_type: "limit"` 강제 |
-| 거래소: HKEX 만 | Watchlist 두 종목 모두 `exchange: HKEX` |
+| 거래소: HKEX 만 | `FuturesContractNode.futures_exchange: "HKEX"` — 해소되는 월물 모두 HKEX |
 | 통화: HKD | balance/price 는 HKD 단위 (KRW 환산 시 별도 환율 노드 필요) |
 | 거래시간 (KST) | TradingHoursFilter `10:15-17:30 Asia/Seoul` (데이세션만) |
 | 점심 휴장 13:00-14:00 KST | 본 예제 단일 윈도우 — 점심 시 cron 발사도 다음 사이클에서 자연 진입 |
 | T+1 야간 18:15-04:00(+1) | 본 예제 미포함 — 보유 포지션 모니터링은 예제 82 참조 |
-| 월물 만기 / Roll-over | 본 예제 분기물 M(6월) 사용. 만기 임박 roll-over 자동화는 예제 85 참조 |
+| 월물 만기 / Roll-over | `FuturesContractNode` (`contract_selection: "front"`) 가 실행 시점마다 근월물을 다시 고름 — 별도 roll-over 불필요 |
 
 > `TradingHoursFilterNode` 는 현재 단일 윈도우만 지원합니다 (multi-window / wrap-around 미지원).
 > HKEX 야간세션·점심 휴장까지 정확히 표현하려면 LogicNode 3개 OR 패턴 또는 노드 확장이 필요합니다.
@@ -46,8 +49,9 @@ flowchart LR
     start([StartNode]) --> broker[OverseasFuturesBrokerNode<br/>paper_trading=true]
     broker --> schedule[ScheduleNode<br/>*/30 * * * 1-5 KST]
     schedule --> hours[TradingHoursFilterNode<br/>10:15-17:30 KST]
-    hours --> watchlist[WatchlistNode<br/>HMHM26, HMCEM26]
-    watchlist --> historical[HistoricalDataNode<br/>60d 1d auto-iterate]
+    hours --> contract[FuturesContractNode<br/>HMH, HMCE / front]
+    broker --> contract
+    contract --> historical[HistoricalDataNode<br/>60d 1d auto-iterate]
     historical --> rsi[ConditionNode RSI<br/>period=14 threshold=30]
     historical --> boll[ConditionNode Bollinger<br/>period=20 std_dev=2.0]
     rsi --> logic[LogicNode<br/>operator=all]
@@ -73,8 +77,8 @@ flowchart LR
 | `start` / `broker` | 진입점 + 모의 브로커 | `paper_trading=true` |
 | `schedule` | 30분 간격 cron | `*/30 * * * 1-5`, `timezone=Asia/Seoul` |
 | `trading_hours` | KST 데이세션 게이트 | `10:15-17:30`, mon-fri |
-| `watchlist` | 후보 종목 | HMHM26, HMCEM26 |
-| `historical` | 60일 일봉 (auto-iterate per symbol) | `interval=1d` |
+| `contract` | 후보 종목 (기초자산 → 근월물 자동 해소) | `base_products=["HMH","HMCE"]`, `contract_selection=front`, `futures_exchange=HKEX` — 브로커 엣지 필수 (o3101 은 LS 세션 사용) |
+| `historical` | 60일 일봉 (auto-iterate per symbol) | `interval=1d`, `symbol={{ item }}` |
 | `rsi_condition` | RSI 과매도 | `period=14, threshold=30, direction=below` |
 | `bollinger_condition` | 볼린저 하단 | `period=20, std_dev=2.0, position=below_lower` |
 | `logic` | AND 결합 | `operator=all` — RSI 와 Bollinger 모두 통과한 symbol 만 출력 |
@@ -129,7 +133,7 @@ print('recs:', [x.rule_id for x in r.static_recommendations])
 poetry run pytest tests/test_examples_validation.py::TestWorkflowDryRunCycle::test_workflow_dry_run_cycle[81-hkex-multi-symbol-rsi-bollinger] -v
 ```
 
-→ `status: completed, errors_count: 0`. Auto-iterate (Watchlist → Historical → RSI → Bollinger → Logic) 전 체인 정상.
+→ `status: completed, errors_count: 0`. Auto-iterate (contract → Historical → RSI → Bollinger → Logic) 전 체인 정상.
 
 ### L3 — 실 모의계좌 시세 read (2026-05-29 최초 ✅ / 2026-05-30 deb80456 재검증 ✅)
 
@@ -140,8 +144,8 @@ strip 한 read-only 변환) 로 실 LS 해외선물 모의 appkey (`APPKEY_FUTUR
 |------|------|
 | `account.balance` | ✅ 통화별 잔고 수신 (HKD 1,000,130 등) |
 | `account.positions` | `[]` (무포지션, 정상) |
-| `historical.value` | ✅ HMHM26 / HMCEM26 실 OHLC(20260331~) time_series 정상 수신 |
-| `rsi_condition.passed_symbols` | ✅ 과매도 통과 (2026-05-30 재검: HMCEM26 RSI 20.87 / price 8363) |
+| `historical.value` | ✅ 미니 항셍 / 미니 H주 (당시 근월물) 실 OHLC time_series 정상 수신 |
+| `rsi_condition.passed_symbols` | ✅ 과매도 통과 (2026-05-30 재검: 미니 H주 RSI 20.87 / price 8363) |
 | `bollinger_condition.passed_symbols` | `[]` (현 시점 하단 미터치 — 실 시장 상태, 정상) |
 | `logic` (AND) | 교집합 없음 → 무진입 → `no_entry_notice` 분기 |
 | **errors** | **0** (양 실행 모두) |
@@ -153,10 +157,12 @@ strip 한 read-only 변환) 로 실 LS 해외선물 모의 appkey (`APPKEY_FUTUR
 > 코어 버그까지 수정(commit `3bb5d284`)했다. 현재 `validate()` = **errors 0 / warn 0**.
 > (무진입 path `{{ item }}` sizing 경로는 후보 0 일 때만 도는 정상 분기.)
 
-> ⚠️ **월물 만기 주의**: 최초 작성 시 4월물(`HMHJ26`/`HMCEJ26`) 사용 → 2026-05-29 시점
-> 이미 만기 경과로 historical 이 **빈 배열**(silent) 반환. live 6월물(`HMHM26`/`HMCEM26`)
-> 로 roll-forward 하여 해결. 선물 예제는 만기마다 월물 갱신 필요 — `00-workflow-guide.md`
-> HKEX 섹션 참조.
+> ✅ **월물 만기 — 근본 해결됨 (2026-07-13)**: 이 예제는 과거 월물 코드를 하드코딩했다가
+> 만기가 지날 때마다 두 번 조용히 죽었다 (4월물 → 2026-05-29 빈 배열, 6월물 → 2026-07-13 빈 배열).
+> LS 는 만기 경과 종목에 과거봉도 현재가도 주지 않으면서 **에러조차 내지 않기** 때문에
+> 워크플로우가 실패하지 않고 그냥 아무 것도 하지 않는 상태가 된다 — 가장 위험한 실패 방식이다.
+> 이제 `FuturesContractNode` 가 **실행할 때마다** LS 종목마스터(o3101)에서 상장 월물을 조회해
+> 근월물을 고르므로, 월물 갱신이 더 이상 필요 없다. 예제에는 기초자산 코드(`HMH`/`HMCE`)만 남는다.
 
 ### L4 — mock 주문 1건 (✅ 라이브 PASS, 2026-06-01)
 
@@ -187,11 +193,11 @@ poetry run python examples/programmer_example/test_hkex_81_l4_order.py --confirm
 
 **라이브 실행 결과** (2026-06-01 장중, host-Claude 직접 발사 + 사용자 승인 override):
 명령 `poetry run python examples/programmer_example/test_hkex_81_l4_order.py --confirm`,
-대상 HMHM26 (Mini Hang Seng 2026.06), qty 1.
+대상 미니 항셍 (Mini Hang Seng, 당시 근월물), qty 1.
 
 | 단계 | 노드 | 결과 |
 |------|------|------|
-| [1] | `market_data` | HMHM26 현재가 **25,297** → BUY limit **24,032** (-5%, 미체결 유도) |
+| [1] | `market_data` | 현재가 **25,297** → BUY limit **24,032** (-5%, 미체결 유도) |
 | [2] | `new_order` | `order_result.success=true`, status=`submitted`, **order_id=1076** |
 | [3] | `open_orders` | 미체결 **1건** (order_id 1076, filled_quantity=0, remaining_quantity=1) → 미체결 확인 OK |
 | [4] | `cancel_order` | `cancel_result.success=true` (order_id 1076 cancelled) |
@@ -206,14 +212,18 @@ poetry run python examples/programmer_example/test_hkex_81_l4_order.py --confirm
 
 ## 🔍 학습 포인트
 
-1. **다종목 auto-iterate**: Watchlist (2개) → Historical 이 자동으로 종목당 1회 실행.
+1. **만기에 강한 선물 종목 지정**: 월물 코드를 적지 않고 기초자산 코드만 적으면
+   `FuturesContractNode` 가 실행 시점에 근월물로 해소한다. 출력 `symbols` 는
+   WatchlistNode 와 동일한 `[{exchange, symbol}]` 계약이라 하류 배선은 그대로다.
+   단, o3101 조회에 LS 세션이 필요하므로 **브로커 → contract 엣지가 반드시 있어야 한다.**
+2. **다종목 auto-iterate**: contract (2종목) → Historical 이 자동으로 종목당 1회 실행.
    ConditionNode 도 동일하게 종목당 평가 → LogicNode 가 교집합 산출.
-2. **복합 조건**: RSI + Bollinger 같은 momentum/volatility 결합으로 false positive 감소.
-3. **HKEX limit-only 패턴**: NewOrderNode `order_type=limit` + `order={{ nodes.sizing.order }}`
+3. **복합 조건**: RSI + Bollinger 같은 momentum/volatility 결합으로 false positive 감소.
+4. **HKEX limit-only 패턴**: NewOrderNode `order_type=limit` + `order={{ nodes.sizing.order }}`
    (sizing 출력에 price 포함).
-4. **A-3 회귀 가드**: 다종목 NewOrderNode auto-iterate 시 per-item spacing 이 자동 적용
+5. **A-3 회귀 가드**: 다종목 NewOrderNode auto-iterate 시 per-item spacing 이 자동 적용
    (`_rate_limit.min_interval_sec`).
-5. **resilience skip**: 사이징 결과가 비어있거나 API 일시 오류 시 주문 skip — 다음 사이클에 재시도.
+6. **resilience skip**: 사이징 결과가 비어있거나 API 일시 오류 시 주문 skip — 다음 사이클에 재시도.
 
 ---
 
@@ -230,10 +240,19 @@ poetry run python examples/programmer_example/test_hkex_81_l4_order.py --confirm
 ## 📝 변경 이력
 
 - 2026-05-28: 신규 추가 (`feat/hkex-futures-examples`)
-- 2026-05-29: L3 호스트 검증 — 만기 경과 4월물 → live 6월물(HMHM26/HMCEM26) roll-forward,
+- 2026-05-29: L3 호스트 검증 — 만기 경과 4월물 → live 6월물로 roll-forward,
   무진입 경로에 `if_candidates` IfNode(is_not_empty) + `no_entry_notice` 게이트 추가
   (market_data 빈입력 hard error 제거)
 - 2026-05-30: 호스트 라이브 재검증 전 체인 errors=0; logic `is_condition_met` warn 이 진입
   게이트 silent 봉쇄 버그로 확인 → LogicNode 바인딩 올바른 관례로 교정 (commit `1b615da5`)
 - 2026-05-31: LogicNode 다종목 auto-iterate AND 교집합 코어 버그 수정 (executor.py, commit
   `3bb5d284`) — 바인딩-only 수정이 못 잡던 더 깊은 결함. `validate()` errors 0 / warn 0.
+- 2026-07-13: 6월물 만기 경과로 historical 이 다시 빈 배열 → 9월물로 roll-forward
+  (실전 키로 월물 유효성 실측: 6월물 0봉 / 9월물 21봉). 아울러 실행기의
+  auto-iterate 결함 4건을 수정 — `LogicNode` 가 auto-iterate 대상이라 `passed_symbols` 가
+  N² 로 부풀던 것 포함(이 예제도 영향). 상세는 `CHANGELOG.md` 1.26.0 Fixed 참조.
+- 2026-07-13: **월물 하드코딩 근본 제거** — `WatchlistNode`(HMH·HMCE 9월물 고정)를
+  `FuturesContractNode`(`base_products=["HMH","HMCE"]`, `contract_selection=front`,
+  `futures_exchange=HKEX`)로 교체하고 `broker → contract` 엣지 추가(o3101 이 LS 세션 사용).
+  이제 만기가 지나도 실행 시점에 근월물이 자동 선택되므로 roll-forward 작업이 사라진다.
+  전략·조건·스케줄·노드 수는 그대로 (심볼 출처만 교체). `validate()` errors 0 / warnings 0.

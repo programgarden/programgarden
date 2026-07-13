@@ -160,6 +160,40 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
         }
     ),
     # ============================================================
+    # LS증권 국내주식 (korea_stock) - 모의투자 미지원 (실전 전용)
+    # ============================================================
+    "broker_ls_korea_stock": CredentialTypeSchema(
+        type_id="broker_ls_korea_stock",
+        name="LS증권 국내주식",
+        description="국내주식 OpenAPI 인증 정보 (실전 전용 — 모의투자 미지원)",
+        widget_schema={
+            "fields": [
+                {
+                    "key": "name",
+                    "type": "text",
+                    "label": "Credential 이름",
+                    "hint": "my-ls-korea-cred",
+                    "description": "이 인증 정보를 식별할 이름",
+                    "required": True
+                },
+                {
+                    "key": "appkey",
+                    "type": "password",
+                    "label": "App Key",
+                    "description": "LS증권에서 발급받은 App Key",
+                    "required": True
+                },
+                {
+                    "key": "appsecret",
+                    "type": "password",
+                    "label": "App Secret",
+                    "description": "LS증권에서 발급받은 App Secret",
+                    "required": True
+                }
+            ]
+        }
+    ),
+    # ============================================================
     # Telegram Bot
     # ============================================================
     "telegram": CredentialTypeSchema(
