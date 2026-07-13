@@ -1091,22 +1091,35 @@ class WorkflowResolver:
                             )
                         )
 
-    # SplitNode 가 분리할 배열을 실제로 못 받는데도 런타임엔 조용히 0개 아이템을
-    # 방출한다(executor: config `array` 없고 상류 출력에도 리스트 없음 → input_array=[]).
-    # 그러면 하류 `{{ nodes.<split>.item }}` 이 조용히 비어 워크플로우가 count:0 쓰레기
-    # 결과를 낸다(단일 심볼에 SplitNode 를 잘못 붙이는 것이 전형적 저작 결함). 정적으로
+    # SplitNode 는 실 엔진에서 두 조건이 **모두** 충족돼야만 동작한다(6변형 dry_run
+    # 프로브로 확정, executor._execute_split_branch / _execute_main_flow):
+    #   (1) 짝 AggregateNode 가 그래프상 도달 가능해야 한다. 없으면 _execute_split_branch
+    #       가 aggregate_id=None 에서 즉시 return → branch 자체가 실행 안 됨(노드 pending
+    #       유지, 하류 item 전부 공백). engine._find_split_aggregate_pairs 참조.
+    #   (2) split 로 들어오는 상류 노드가 리스트를 출력해야 한다. 엔진은 분리 대상 배열을
+    #       **오직 상류 노드 출력**(포트 symbols/values/array/data/items)에서만 읽는다.
+    #       config `array` 필드는 **어느 경로에서도 읽히지 않는다**(SplitNodeExecutor.execute
+    #       의 config.get("array") 는 죽은 코드 — 실행 엔진이 그 executor 를 거치지 않고
+    #       상류 출력에서 배열을 직접 가져와 item 을 set). 따라서 `array`/`items` 를 config
+    #       리터럴로 넣는 저작 패턴은 검증만 통과하고 런타임엔 0개를 낸다.
+    # 둘 중 하나라도 빠지면 하류 `{{ nodes.<split>.item }}` 이 조용히 비어 count:0 쓰레기
+    # 결과가 된다(단일 심볼에 SplitNode 를 잘못 붙이는 것이 전형적 저작 결함). 정적으로
     # 잡아 AI self-correct 루프가 dry_run 전에 보게 한다.
-    # 오탐(최대 리스크) 최소화: 상류 중 하나라도 리스트를 낼 "가능성"이 있으면 통과한다.
-    #   가능성 = (a) `array` config 가 배선됨, (b) 상류가 CodeNode(동적 출력),
-    #            (c) 상류 스키마 미상(커뮤니티/제네릭), (d) 상류 출력 포트 타입 중 하나라도
-    #                확정 스칼라/시그널이 아님. 모든 상류가 확정 스칼라일 때만 flag.
+    # 오탐(최대 리스크) 최소화: (2)는 상류 중 하나라도 리스트를 낼 "가능성"이 있으면 통과.
+    #   가능성 = (a) 상류가 CodeNode(동적 출력), (b) 상류 스키마 미상(커뮤니티/제네릭),
+    #            (c) 상류 출력 포트 타입 중 하나라도 확정 스칼라/시그널이 아님.
+    #            모든 상류가 확정 스칼라일 때만 flag.
     _SPLIT_SCALAR_OUTPUT_TYPES = frozenset({
         "signal", "boolean", "integer", "number", "float", "string",
         "broker_connection",
     })
 
     def _validate_split_nodes(self, workflow, registry, result: ValidationResult) -> None:
-        """SplitNode 의 분리 대상 배열이 배선됐는지 정적 검증(오탐 보수적)."""
+        """SplitNode 가 실 엔진에서 동작 가능하게 배선됐는지 정적 검증(오탐 보수적).
+
+        엔진 동작(프로브 확정): SplitNode 는 (1) 짝 AggregateNode 가 도달 가능하고
+        (2) 상류가 리스트를 출력해야만 branch 를 실행한다. config `array` 는 안 읽힌다.
+        """
         split_nodes = [
             n for n in workflow.nodes
             if isinstance(n, dict) and n.get("type") == "SplitNode"
@@ -1116,7 +1129,12 @@ class WorkflowResolver:
         node_type_by_id = {
             n.get("id"): n.get("type") for n in workflow.nodes if isinstance(n, dict)
         }
-        # split_id -> [upstream source ids]
+        aggregate_ids: Set[str] = {
+            n.get("id") for n in workflow.nodes
+            if isinstance(n, dict) and n.get("type") == "AggregateNode"
+        }
+        # adjacency(from_id -> [to_id]) + incoming(to_id -> [from_id])
+        adjacency: Dict[str, List[str]] = {}
         incoming: Dict[str, List[str]] = {}
         for edge in workflow.edges:
             to_raw = getattr(edge, "to_node", "") or ""
@@ -1125,6 +1143,25 @@ class WorkflowResolver:
             from_id = from_raw.split(".")[0] if from_raw else ""
             if to_id:
                 incoming.setdefault(to_id, []).append(from_id)
+            if from_id and to_id:
+                adjacency.setdefault(from_id, []).append(to_id)
+
+        def _reaches_aggregate(start: Optional[str]) -> bool:
+            # 엔진 _find_split_aggregate_pairs 와 동일하게 그래프 도달성으로 짝을 판정.
+            if not start:
+                return False
+            seen: Set[str] = set()
+            queue: List[str] = [start]
+            while queue:
+                cur = queue.pop(0)
+                if cur in seen:
+                    continue
+                seen.add(cur)
+                for nxt in adjacency.get(cur, []):
+                    if nxt in aggregate_ids:
+                        return True
+                    queue.append(nxt)
+            return False
 
         def _may_produce_list(src_type: Optional[str]) -> bool:
             # 동적/미상 출력은 리스트 가능 → 보수적으로 통과.
@@ -1144,9 +1181,29 @@ class WorkflowResolver:
 
         for node in split_nodes:
             sid = node.get("id")
-            # (a) `array` config 가 배선돼 있으면 소스 존재로 본다(빈 리터럴 포함 — 의도된 것).
-            if node.get("array") is not None:
+            # (1) 짝 AggregateNode 도달성 — 없으면 엔진이 branch 를 실행조차 안 한다.
+            if not _reaches_aggregate(sid):
+                result.add(
+                    build_error(
+                        ErrorCode.MISSING_REQUIRED_FIELD,
+                        (
+                            f"SplitNode '{sid}' has no reachable AggregateNode. The engine "
+                            f"only runs a SplitNode's per-item branch when a paired "
+                            f"AggregateNode is reachable from it — without one the branch "
+                            f"never executes (the node stays pending) and every downstream "
+                            f"`{{{{ nodes.{sid}.item }}}}` resolves empty (silent count:0)."
+                        ),
+                        location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path=None),
+                        suggestion=(
+                            "Add an AggregateNode downstream of this split's branch (so it is "
+                            "reachable from the SplitNode), which recollects the per-item "
+                            "results. If you only ever have a single value, DELETE the "
+                            "SplitNode and bind that value directly on the downstream node."
+                        ),
+                    )
+                )
                 continue
+            # (2) 상류 리스트 소스 — config `array` 는 엔진이 안 읽으므로 소스로 인정 안 함.
             srcs = incoming.get(sid, [])
             if srcs and any(_may_produce_list(node_type_by_id.get(s)) for s in srcs):
                 continue
@@ -1154,19 +1211,21 @@ class WorkflowResolver:
                 build_error(
                     ErrorCode.MISSING_REQUIRED_FIELD,
                     (
-                        f"SplitNode '{sid}' has no array source to split — no `array` "
-                        f"config binding and no upstream node that outputs a list. It will "
-                        f"emit zero items and every downstream `{{{{ nodes.{sid}.item }}}}` "
-                        f"resolves empty (silent count:0 result)."
+                        f"SplitNode '{sid}' has no upstream node that outputs a list. The "
+                        f"engine reads the array to split ONLY from an upstream node's list "
+                        f"output (ports symbols/values/array/data/items) — the `array` "
+                        f"config field is NOT read at runtime. It will emit zero items and "
+                        f"every downstream `{{{{ nodes.{sid}.item }}}}` resolves empty "
+                        f"(silent count:0 result)."
                     ),
                     location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path="array"),
                     suggestion=(
-                        "Wire the array: either add an edge from an upstream node that "
-                        "outputs a list (WatchlistNode/MarketUniverseNode → symbols, "
-                        "AccountNode → positions, ConditionNode → values), or set the `array` "
-                        "field to a whole-value expression / literal list. For a single known "
-                        "symbol, DELETE SplitNode and bind that symbol directly on the "
-                        "downstream node."
+                        "Connect an edge from an upstream node that OUTPUTS a list "
+                        "(WatchlistNode/MarketUniverseNode → symbols, AccountNode → "
+                        "positions, ConditionNode → values, or a CodeNode returning a list). "
+                        "Do NOT put the list in an `array`/`items` config field — the engine "
+                        "ignores it. For a single known symbol, DELETE SplitNode and bind "
+                        "that symbol directly on the downstream node."
                     ),
                 )
             )

@@ -56,6 +56,14 @@
       }
     },
     {
+      "id": "aggregate",
+      "type": "AggregateNode",
+      "position": {
+        "x": 800,
+        "y": 250
+      }
+    },
+    {
       "id": "display",
       "type": "TableDisplayNode",
       "title": "펀더멘털 데이터",
@@ -68,9 +76,9 @@
         "high_52w",
         "low_52w"
       ],
-      "data": "{{ nodes.fundamental.values }}",
+      "data": "{{ nodes.aggregate.array }}",
       "position": {
-        "x": 800,
+        "x": 1000,
         "y": 250
       }
     }
@@ -94,6 +102,10 @@
     },
     {
       "from": "fundamental",
+      "to": "aggregate"
+    },
+    {
+      "from": "aggregate",
       "to": "display"
     }
   ],
