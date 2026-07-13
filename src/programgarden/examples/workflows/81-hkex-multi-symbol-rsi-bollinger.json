@@ -3,13 +3,23 @@
   "name": "HKEX 다종목 RSI+Bollinger 복합 진입 (모의투자)",
   "description": "Mini Hang Seng + Mini HSCEI 두 종목을 30분 간격으로 평일 KST 데이세션 동안 스캔. RSI 과매도 AND Bollinger 하단 터치 두 조건이 모두 충족된 종목에 한해 ATR 기반 사이징으로 limit 매수. HKEX 모의투자(시장가 불가) 제약 + A-3 auto-iterate spacing 회귀 가드.",
   "nodes": [
-    {"id": "start", "type": "StartNode", "position": {"x": 50, "y": 320}},
+    {
+      "id": "start",
+      "type": "StartNode",
+      "position": {
+        "x": 50,
+        "y": 320
+      }
+    },
     {
       "id": "broker",
       "type": "OverseasFuturesBrokerNode",
       "credential_id": "broker_cred",
       "paper_trading": true,
-      "position": {"x": 220, "y": 320}
+      "position": {
+        "x": 220,
+        "y": 320
+      }
     },
     {
       "id": "schedule",
@@ -18,7 +28,10 @@
       "timezone": "Asia/Seoul",
       "enabled": true,
       "max_duration_hours": 720,
-      "position": {"x": 400, "y": 320}
+      "position": {
+        "x": 400,
+        "y": 320
+      }
     },
     {
       "id": "trading_hours",
@@ -26,18 +39,35 @@
       "start": "10:15",
       "end": "17:30",
       "timezone": "Asia/Seoul",
-      "days": ["mon", "tue", "wed", "thu", "fri"],
-      "position": {"x": 600, "y": 320}
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+      ],
+      "position": {
+        "x": 600,
+        "y": 320
+      }
     },
-
     {
       "id": "watchlist",
       "type": "WatchlistNode",
       "symbols": [
-        {"symbol": "HMHM26", "exchange": "HKEX"},
-        {"symbol": "HMCEM26", "exchange": "HKEX"}
+        {
+          "symbol": "HMHU26",
+          "exchange": "HKEX"
+        },
+        {
+          "symbol": "HMCEU26",
+          "exchange": "HKEX"
+        }
       ],
-      "position": {"x": 820, "y": 120}
+      "position": {
+        "x": 820,
+        "y": 120
+      }
     },
     {
       "id": "historical",
@@ -46,7 +76,10 @@
       "start_date": "{{ date.ago(60, format='yyyymmdd') }}",
       "end_date": "{{ date.today(format='yyyymmdd') }}",
       "interval": "1d",
-      "position": {"x": 1050, "y": 120}
+      "position": {
+        "x": 1050,
+        "y": 120
+      }
     },
     {
       "id": "rsi_condition",
@@ -66,7 +99,10 @@
         "threshold": 30,
         "direction": "below"
       },
-      "position": {"x": 1300, "y": 40}
+      "position": {
+        "x": 1300,
+        "y": 40
+      }
     },
     {
       "id": "bollinger_condition",
@@ -86,7 +122,10 @@
         "std_dev": 2.0,
         "position": "below_lower"
       },
-      "position": {"x": 1300, "y": 200}
+      "position": {
+        "x": 1300,
+        "y": 200
+      }
     },
     {
       "id": "logic",
@@ -102,13 +141,18 @@
           "passed_symbols": "{{ nodes.bollinger_condition.passed_symbols }}"
         }
       ],
-      "position": {"x": 1550, "y": 120}
+      "position": {
+        "x": 1550,
+        "y": 120
+      }
     },
-
     {
       "id": "account",
       "type": "OverseasFuturesAccountNode",
-      "position": {"x": 820, "y": 520}
+      "position": {
+        "x": 820,
+        "y": 520
+      }
     },
     {
       "id": "filter_buy",
@@ -116,7 +160,10 @@
       "operation": "difference",
       "input_a": "{{ nodes.logic.passed_symbols }}",
       "input_b": "{{ nodes.account.held_symbols }}",
-      "position": {"x": 1780, "y": 320}
+      "position": {
+        "x": 1780,
+        "y": 320
+      }
     },
     {
       "id": "if_candidates",
@@ -124,7 +171,10 @@
       "left": "{{ nodes.filter_buy.symbols }}",
       "operator": "is_not_empty",
       "right": null,
-      "position": {"x": 2000, "y": 320}
+      "position": {
+        "x": 2000,
+        "y": 320
+      }
     },
     {
       "id": "no_entry_notice",
@@ -136,13 +186,19 @@
         "held": "{{ nodes.account.held_symbols }}",
         "status": "no_entry"
       },
-      "position": {"x": 2220, "y": 520}
+      "position": {
+        "x": 2220,
+        "y": 520
+      }
     },
     {
       "id": "market_data",
       "type": "OverseasFuturesMarketDataNode",
       "symbol": "{{ item }}",
-      "position": {"x": 2220, "y": 200}
+      "position": {
+        "x": 2220,
+        "y": 200
+      }
     },
     {
       "id": "sizing",
@@ -153,7 +209,10 @@
       "method": "atr_based",
       "max_percent": 5.0,
       "atr_risk_percent": 1.0,
-      "position": {"x": 2220, "y": 320}
+      "position": {
+        "x": 2220,
+        "y": 320
+      }
     },
     {
       "id": "buy_order",
@@ -162,56 +221,140 @@
       "order_type": "limit",
       "order": "{{ nodes.sizing.order }}",
       "resilience": {
-        "fallback": {"mode": "skip"}
+        "fallback": {
+          "mode": "skip"
+        }
       },
-      "position": {"x": 2450, "y": 320}
+      "position": {
+        "x": 2450,
+        "y": 320
+      }
     },
     {
       "id": "telegram",
       "type": "TelegramNode",
       "credential_id": "telegram_cred",
       "template": "🎯 HKEX 진입 ({{ nodes.filter_buy.count }}종목): {{ nodes.filter_buy.symbols }} (RSI<30 AND Bollinger 하단, limit 매수)",
-      "position": {"x": 2680, "y": 320}
+      "position": {
+        "x": 2680,
+        "y": 320
+      }
     }
   ],
   "edges": [
-    {"from": "start", "to": "broker"},
-    {"from": "broker", "to": "schedule"},
-    {"from": "schedule", "to": "trading_hours"},
-
-    {"from": "trading_hours", "to": "watchlist"},
-    {"from": "watchlist", "to": "historical"},
-    {"from": "historical", "to": "rsi_condition"},
-    {"from": "historical", "to": "bollinger_condition"},
-    {"from": "rsi_condition", "to": "logic"},
-    {"from": "bollinger_condition", "to": "logic"},
-
-    {"from": "trading_hours", "to": "account"},
-    {"from": "logic", "to": "filter_buy"},
-    {"from": "account", "to": "filter_buy"},
-    {"from": "filter_buy", "to": "if_candidates"},
-    {"from": "if_candidates", "to": "no_entry_notice", "from_port": "false"},
-    {"from": "filter_buy", "to": "market_data"},
-    {"from": "market_data", "to": "sizing"},
-    {"from": "account", "to": "sizing"},
-    {"from": "sizing", "to": "buy_order"},
-    {"from": "buy_order", "to": "telegram"}
+    {
+      "from": "start",
+      "to": "broker"
+    },
+    {
+      "from": "broker",
+      "to": "schedule"
+    },
+    {
+      "from": "schedule",
+      "to": "trading_hours"
+    },
+    {
+      "from": "trading_hours",
+      "to": "watchlist"
+    },
+    {
+      "from": "watchlist",
+      "to": "historical"
+    },
+    {
+      "from": "historical",
+      "to": "rsi_condition"
+    },
+    {
+      "from": "historical",
+      "to": "bollinger_condition"
+    },
+    {
+      "from": "rsi_condition",
+      "to": "logic"
+    },
+    {
+      "from": "bollinger_condition",
+      "to": "logic"
+    },
+    {
+      "from": "trading_hours",
+      "to": "account"
+    },
+    {
+      "from": "logic",
+      "to": "filter_buy"
+    },
+    {
+      "from": "account",
+      "to": "filter_buy"
+    },
+    {
+      "from": "filter_buy",
+      "to": "if_candidates"
+    },
+    {
+      "from": "if_candidates",
+      "to": "no_entry_notice",
+      "from_port": "false"
+    },
+    {
+      "from": "filter_buy",
+      "to": "market_data"
+    },
+    {
+      "from": "market_data",
+      "to": "sizing"
+    },
+    {
+      "from": "account",
+      "to": "sizing"
+    },
+    {
+      "from": "sizing",
+      "to": "buy_order"
+    },
+    {
+      "from": "buy_order",
+      "to": "telegram"
+    }
   ],
   "credentials": [
     {
       "credential_id": "broker_cred",
       "type": "broker_ls_overseas_futures",
       "data": [
-        {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
-        {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+        {
+          "key": "appkey",
+          "value": "",
+          "type": "password",
+          "label": "App Key"
+        },
+        {
+          "key": "appsecret",
+          "value": "",
+          "type": "password",
+          "label": "App Secret"
+        }
       ]
     },
     {
       "credential_id": "telegram_cred",
       "type": "telegram",
       "data": [
-        {"key": "bot_token", "value": "", "type": "password", "label": "Bot Token"},
-        {"key": "chat_id", "value": "", "type": "text", "label": "Chat ID"}
+        {
+          "key": "bot_token",
+          "value": "",
+          "type": "password",
+          "label": "Bot Token"
+        },
+        {
+          "key": "chat_id",
+          "value": "",
+          "type": "text",
+          "label": "Chat ID"
+        }
       ]
     }
   ],
@@ -222,7 +365,10 @@
       "color": 5,
       "width": 380,
       "height": 320,
-      "position": {"x": 30, "y": 30}
+      "position": {
+        "x": 30,
+        "y": 30
+      }
     },
     {
       "id": "note_constraints",
@@ -230,7 +376,10 @@
       "color": 1,
       "width": 380,
       "height": 360,
-      "position": {"x": 440, "y": 30}
+      "position": {
+        "x": 440,
+        "y": 30
+      }
     }
   ]
 }

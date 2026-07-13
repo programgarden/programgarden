@@ -1509,20 +1509,27 @@ class MarketUniverseNodeExecutor(NodeExecutorBase):
     MarketUniverseNode executor - 대표지수 종목
 
     ⚠️ 해외주식(overseas_stock) 전용 노드입니다. 해외선물은 지원하지 않습니다.
-    
+
+    거래소 라벨은 반드시 LS 가 아는 미국 원장(NASDAQ/NYSE/AMEX)이어야 한다 —
+    하류 MarketData/주문 노드의 EXCHANGE_CODES 가 이 라벨로 거래소 코드를 정하고,
+    모르는 라벨은 조용히 NASDAQ(82)으로 폴백해 종목을 무음 유실시키기 때문이다.
+
     pytickersymbols 라이브러리를 활용하여 미국 대표지수 구성종목을 조회합니다.
     Broker 연결 없이 독립적으로 실행됩니다.
-    
+
     지원 인덱스 (LS증권 거래 가능 거래소):
     - NASDAQ 100 (~101개)
     - S&P 500 (~503개)
     - S&P 100
     - DOW JONES (다우존스 30)
-    
+
     Note: pytickersymbols는 유럽/아시아 인덱스도 지원하지만,
           LS증권에서 거래 가능한 미국 인덱스만 권장합니다.
     """
-    
+
+    # LS 가 조회/주문할 수 있는 미국 원장. google 접두사가 이 안에 있어야 채택한다.
+    US_EXCHANGES = {"NASDAQ", "NYSE", "AMEX"}
+
     # 인덱스별 심볼 캐시 (앱 실행 중 재사용)
     _cache: Dict[str, List[Dict[str, str]]] = {}
     _cache_time: Dict[str, float] = {}
@@ -1623,26 +1630,31 @@ class MarketUniverseNodeExecutor(NodeExecutorBase):
                 if not symbol:
                     continue
                 
-                # 거래소 정보 추출 (있으면 사용, 없으면 기본값)
+                # 거래소 결정 — `google` 접두사가 실제 상장 거래소다 ("NASDAQ:AMGN", "NYSE:MMM").
+                #
+                # 예전엔 symbols 배열의 **첫 항목**만 보고 yahoo 접미사로 힌트를 뽑은 뒤 break 했다.
+                # pytickersymbols 는 해외 상장분을 첫 자리에 두는 경우가 많아(AMGN → "AMG.F"),
+                # DOW30 30종목 중 29개가 FRA(프랑크푸르트)로 오염됐다. 그리고 하류
+                # EXCHANGE_CODES 는 FRA 를 몰라 조용히 82(NASDAQ)로 폴백 → 진짜 NYSE 종목이
+                # 무음 유실됐다(실측: 예제 08 이 회당 30종목 중 8건만 수신).
                 exchange = default_exchange
-                stock_symbols = stock.get("symbols", [])
-                for sym_info in stock_symbols:
-                    if sym_info.get("yahoo"):
-                        # yahoo 심볼에서 거래소 힌트 추출 가능
-                        yahoo_sym = sym_info.get("yahoo", "")
-                        if "." in yahoo_sym:
-                            # 예: "7203.T" → 도쿄 거래소
-                            suffix = yahoo_sym.split(".")[-1]
-                            exchange_hints = {
-                                "T": "TSE",  # Tokyo
-                                "L": "LSE",  # London
-                                "PA": "EPA",  # Paris
-                                "DE": "FRA",  # Frankfurt
-                                "F": "FRA",
-                            }
-                            exchange = exchange_hints.get(suffix, exchange)
+                resolved_exchange = ""
+                for sym_info in (stock.get("symbols") or []):
+                    google_sym = (sym_info.get("google") or "").strip()
+                    if ":" not in google_sym:
+                        continue
+                    prefix = google_sym.split(":", 1)[0].strip().upper()
+                    if prefix not in self.US_EXCHANGES:
+                        continue
+                    # USD 상장분이 곧 LS 가 조회할 미국 원장이다 — 있으면 최우선.
+                    if (sym_info.get("currency") or "").strip().upper() == "USD":
+                        resolved_exchange = prefix
                         break
-                
+                    resolved_exchange = resolved_exchange or prefix
+
+                if resolved_exchange:
+                    exchange = resolved_exchange
+
                 symbols.append({
                     "exchange": exchange,
                     "symbol": symbol,
@@ -8961,6 +8973,12 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         "AMEX": "81",
     }
 
+    # 거래소 라벨이 미지일 때 두 원장을 시도한 뒤, 응답한 코드를 라벨로 되돌리는 역매핑.
+    CODE_EXCHANGES = {
+        "82": "NASDAQ",
+        "81": "NYSE",
+    }
+
     async def execute(
         self,
         node_id: str,
@@ -8978,21 +8996,40 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         # (dict/list 완전 재귀)를 직접 호출해야 한다. (형제 executor 패턴과 동일)
         config = evaluate_all_bindings(config, context, node_id)
 
-        # 입력 symbols 가져오기 (포트 또는 config에서 명시적 입력 필수)
+        # symbols 획득 — 우선순위: config.symbol(단수) > input.symbols > config.symbols
+        #
+        # 단수 config.symbol 을 먼저 보는 이유: 상류 배열 입력이 있으면 메인 루프가 이 노드를
+        # auto-iterate 로 종목당 1회씩 돌리며 {{ item }} 을 해당 종목으로 해소한다
+        # (_execute_with_auto_iterate). 그런데 여기서 input.symbols(=전체 배열)를 먼저 읽으면
+        # 매 iteration 이 다시 전 종목을 조회해 N종목 × N회 = N² 중복이 된다
+        # (실측: 예제 07 4종목→16건 / 10 5종목→25건 / 08 30종목→LS 폭주 후 job cancelled).
+        # HistoricalDataNodeExecutor 는 이미 단수 우선이라 정상이었다(~9575) — 그 패턴에 맞춘다.
+        config_symbol = config.get("symbol")
+        if isinstance(config_symbol, str):
+            # LLM Tool 경로에서 JSON 문자열로 오는 경우 (형제 executor 와 동일 방어)
+            import json as _json
+            try:
+                _parsed = _json.loads(config_symbol)
+                config_symbol = _parsed if isinstance(_parsed, dict) else None
+            except (ValueError, _json.JSONDecodeError):
+                config_symbol = None
+
         input_symbols = context.get_output(f"_input_{node_id}", "symbols")
         config_symbols = config.get("symbols")
-        symbols = input_symbols or config_symbols
+
+        if isinstance(config_symbol, dict) and config_symbol.get("symbol"):
+            symbols = [config_symbol]
+        else:
+            symbols = input_symbols or config_symbols
 
         # deep_validate: MarketDataNode (REST current-price) would ensure_ls_login
         # unconditionally. Inject a fixture so the flow completes without a
         # network call, derived from the requested symbols.
         if context.is_deep_validate:
             from programgarden import deep_fixtures as _df
-            # Evaluate own config bindings (e.g. symbols/symbol) before the fixture
-            # short-circuit so a wrong binding here is still surfaced.
-            config = evaluate_all_bindings(config, context, node_id)
-            _deep_symbols = input_symbols or config.get("symbols") or config.get("symbol")
-            fixture = _df.market_data_fixture(config, _deep_symbols)
+            # 실경로와 **같은** symbols 를 쓴다. 예전엔 여기만 단수 symbol 폴백을 갖고 있어
+            # deep_validate 는 초록인데 라이브만 다르게 도는 상태였다(게이트가 거짓말함).
+            fixture = _df.market_data_fixture(config, symbols)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
 
@@ -9070,28 +9107,44 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                         continue
                     
                     # 거래소 코드 변환 (81: NYSE/AMEX, 82: NASDAQ)
-                    exchange_code = self.EXCHANGE_CODES.get(exchange.upper(), "82")
-                    
-                    # KEY종목코드 생성 (거래소코드 + 심볼, 예: "82AAPL")
-                    keysymbol = f"{exchange_code}{symbol}"
-                    
-                    # g3101 현재가 조회
-                    body = G3101InBlock(
-                        keysymbol=keysymbol,
-                        exchcd=exchange_code,
-                        symbol=symbol,
-                    )
-                    
-                    response = api.market().g3101(body=body).req()
-                    
+                    # 라벨이 EXCHANGE_CODES 에 없을 때 조용히 82 로 떨어뜨리면 NYSE 종목이
+                    # "No data" 로 무음 유실된다(실측: 예제 08 이 30종목 중 8건만 수신).
+                    # 미지 라벨은 두 원장을 순서대로 시도하고, 성공한 쪽을 실제 거래소로 기록한다.
+                    known_code = self.EXCHANGE_CODES.get(exchange.upper())
+                    candidate_codes = [known_code] if known_code else ["82", "81"]
+
+                    response = None
+                    used_code = None
+                    for exchange_code in candidate_codes:
+                        # KEY종목코드 생성 (거래소코드 + 심볼, 예: "82AAPL")
+                        keysymbol = f"{exchange_code}{symbol}"
+
+                        # g3101 현재가 조회
+                        body = G3101InBlock(
+                            keysymbol=keysymbol,
+                            exchcd=exchange_code,
+                            symbol=symbol,
+                        )
+
+                        response = api.market().g3101(body=body).req()
+                        if response and response.block:
+                            used_code = exchange_code
+                            break
+
                     if response and response.block:
                         out_block = response.block
                         from datetime import datetime
-                        
+
+                        # 라벨이 미지였다면 실제로 응답한 원장으로 정정해 하류(주문 노드 등)가
+                        # 같은 거래소를 쓰게 한다.
+                        resolved_exchange = exchange if known_code else self.CODE_EXCHANGES.get(
+                            used_code, exchange
+                        )
+
                         # values 배열에 단일 항목 추가
                         values.append({
                             "symbol": symbol,
-                            "exchange": exchange,
+                            "exchange": resolved_exchange,
                             "price": float(out_block.price or 0),
                             "change": float(out_block.diff or 0),
                             "change_pct": float(out_block.rate or 0),
@@ -17196,44 +17249,66 @@ class WorkflowJob:
                 # === 자동 iterate 체크 ===
                 # 입력 데이터가 배열이고, 노드가 단일 아이템을 기대하면 자동으로 각 아이템마다 실행
                 input_data = None
+                # auto-iterate 소스 선택 — incoming 엣지를 **전부** 훑어 우선순위로 고른다.
+                # 예전엔 첫 매칭 엣지에서 무조건 break 해서 **엣지 선언 순서가 소스를 결정**했다:
+                #  - 예제 16/28 은 account 엣지가 먼저라 sizing 이 **계좌 보유종목**을 순회했다
+                #    (실측: 워크플로우 어디에도 없는 AUID 를 매수 후보로 처리 — 잔고가 충분했다면
+                #     보유종목에 실제 주문이 나갔다).
+                #  - 예제 28 은 `logic.passed_symbols` 를 올바로 명시했는데도 앞선 account 엣지의
+                #    break 에 가려 아래 explicit 분기까지 도달조차 못 했다.
+                # 우선순위: 명시 from_port > symbols 포트 > 소스 노드 첫 출력.
+                explicit_data = None
+                symbols_data = None
+                fallback_data = None
+
                 for edge in self.workflow.edges:
-                    if edge.to_node_id == node_id:
-                        # 명시적 from_port 우선 (예: ExclusionListNode.filtered).
-                        # 이를 지정하지 않으면 auto-iterate 는 소스 노드의 첫 출력
-                        # 포트를 집어버린다 — ExclusionListNode 는 첫 포트가
-                        # `excluded`(블랙리스트)라서, from_port 없이는 제외 종목을
-                        # 순회하게 되는 silent 버그가 생긴다. IfNode 분기 포트
-                        # (true/false/result)는 별도 라우팅 의미라 여기서 제외.
-                        explicit_port = getattr(edge, "from_port", None)
-                        if explicit_port and explicit_port not in (
-                            "output", "true", "false", "result",
-                        ):
-                            port_data = self.context.get_output(
-                                edge.from_node_id, explicit_port
-                            )
-                            if port_data is not None:
-                                input_data = port_data
-                                break
+                    if edge.to_node_id != node_id:
+                        continue
 
-                        # symbols 포트 우선 확인 (WatchlistNode 출력)
-                        input_data = self.context.get_output(edge.from_node_id, "symbols")
+                    # 1순위: 명시적 from_port (예: ExclusionListNode.filtered,
+                    # LogicNode.passed_symbols). IfNode 분기 포트(true/false/result)는
+                    # 라우팅 의미라 소스에서 제외.
+                    explicit_port = getattr(edge, "from_port", None)
+                    if explicit_port and explicit_port not in (
+                        "output", "true", "false", "result",
+                    ):
+                        port_data = self.context.get_output(
+                            edge.from_node_id, explicit_port
+                        )
+                        if port_data is not None and explicit_data is None:
+                            explicit_data = port_data
 
+                    # 2순위: symbols 포트 (Watchlist/MarketUniverse/SymbolFilter 등 배열 생성 노드)
+                    if symbols_data is None:
+                        port_symbols = self.context.get_output(edge.from_node_id, "symbols")
                         # symbols가 문자열 배열이면 (merge 후) value 포트로 폴백
                         # - WatchlistNode symbols: [{exchange, symbol}, ...] → dict 배열 → 그대로 사용
                         # - HistoricalDataNode merged symbols: ["TSLA"] → string 배열 → value 포트로 전환
-                        if (isinstance(input_data, list) and input_data
-                                and not isinstance(input_data[0], dict)):
+                        if (isinstance(port_symbols, list) and port_symbols
+                                and not isinstance(port_symbols[0], dict)):
                             value_data = self.context.get_output(edge.from_node_id, "value")
                             if value_data is not None:
                                 if isinstance(value_data, list):
-                                    input_data = value_data
+                                    port_symbols = value_data
                                 elif isinstance(value_data, dict):
-                                    input_data = [value_data]
+                                    port_symbols = [value_data]
+                        if port_symbols is not None:
+                            symbols_data = port_symbols
 
-                        if input_data is None:
-                            # 기본 출력 확인
-                            input_data = self.context.get_output(edge.from_node_id, None)
-                        break
+                    # 3순위: 소스 노드의 첫 출력. 단 계좌 노드는 제외한다 —
+                    # 첫 포트가 `positions`(보유잔고)라 매수 후보로 오인된다.
+                    if fallback_data is None:
+                        from_node = self.workflow.nodes.get(edge.from_node_id)
+                        from_type = getattr(from_node, "node_type", None) if from_node else None
+                        if from_type not in self.NO_ITERATE_SOURCE_NODE_TYPES:
+                            fallback_data = self.context.get_output(edge.from_node_id, None)
+
+                if explicit_data is not None:
+                    input_data = explicit_data
+                elif symbols_data is not None:
+                    input_data = symbols_data
+                else:
+                    input_data = fallback_data
 
                 should_iterate, port_name, items = self._should_auto_iterate(node.node_type, input_data)
 
@@ -17417,11 +17492,26 @@ class WorkflowJob:
         "WatchlistNode", "MarketUniverseNode", "ScreenerNode",  # 배열 생성 노드
         "ExclusionListNode",  # 제외 종목 관리 노드 (배열 생성)
         "SymbolFilterNode",  # 집합 연산 노드 (배열 입력/출력)
+        # LogicNode 도 집합 연산 노드다 — 상류 조건 결과 **배열 전체**를 AND/OR 해야 한다.
+        # 종목별로 쪼개 N회 돌면 매 회가 전체 passed_symbols 를 다시 내보내 병합 시 N² 가 된다
+        # (실측: 28 이 5종목인데 logic.passed_symbols 25건 → sizing 이 중복 25건을 순회).
+        "LogicNode",
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
+        "KoreaStockAccountNode", "KoreaStockRealAccountNode",
         "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
         "CodeNode",  # custom code: receives the whole array in `data`, loops in-code (one subprocess call)
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
+    }
+
+    # auto-iterate 의 **소스**가 되어선 안 되는 노드 (그 노드 자신의 iterate 여부와 무관).
+    # 계좌 노드의 첫 출력 포트는 `positions`(보유잔고)다. 이게 폴백 소스로 잡히면
+    # 하류가 **보유종목을 신규 매수 후보로 순회**한다 — 실주문 위험. 종목 후보는
+    # Watchlist/Universe/SymbolFilter/Condition 같은 배열 생성 노드에서만 와야 한다.
+    NO_ITERATE_SOURCE_NODE_TYPES = {
+        "AccountNode", "RealAccountNode",
+        "OverseasStockAccountNode", "OverseasFuturesAccountNode", "KoreaStockAccountNode",
+        "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode", "KoreaStockRealAccountNode",
     }
 
     def _should_auto_iterate(self, node_type: str, input_data: Any) -> tuple:
@@ -17535,7 +17625,12 @@ class WorkflowJob:
             return {}
 
         merged = {}
-        array_fields = {"value", "values", "items", "data", "result", "results", "passed_symbols", "failed_symbols"}
+        # 배열로 병합할 포트. `symbols`/`symbol_results` 가 빠져 있어 auto-iterate N회 중
+        # **마지막 1회만 살아남았다**(실측: 28 의 logic 이 5종목 중 1건만 받음).
+        array_fields = {
+            "value", "values", "items", "data", "result", "results",
+            "passed_symbols", "failed_symbols", "symbols", "symbol_results",
+        }
 
         for key in results[0].keys():
             if key in array_fields:
