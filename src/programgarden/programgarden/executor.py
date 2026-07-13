@@ -7471,6 +7471,26 @@ class DisplayNodeExecutor(NodeExecutorBase):
             return str(value)[:15] + "..." if len(str(value)) > 15 else str(value)
         return str(value)[:20]
 
+    def _normalize_columns(self, columns: Any) -> Optional[List[tuple]]:
+        """`columns` 설정을 [(key, label), ...] 로 정규화.
+
+        스키마 정본은 `List[str]`(예: ["symbol","close"])이지만, LLM 이 리치 객체형
+        [{"key":"date","label":"날짜"}] 을 뱉는 경우가 있다. 이때 옛 렌더러는
+        `f"{c:<12}"`(c=dict)에서 `unsupported format string passed to dict.__format__`
+        로 크래시했다. 양형을 모두 받아 (조회 key, 표시 label)로 환원한다."""
+        if not columns:
+            return None
+        norm: List[tuple] = []
+        for c in columns:
+            if isinstance(c, dict):
+                key = c.get("key") or c.get("name") or c.get("field") or c.get("label")
+                label = c.get("label") or c.get("title") or key
+                if key:
+                    norm.append((str(key), str(label)))
+            elif c is not None:
+                norm.append((str(c), str(c)))
+        return norm or None
+
     def _get_data(self, config: Dict[str, Any], context: ExecutionContext, node_id: str) -> Any:
         """data 필드 또는 엣지에서 데이터 가져오기"""
         # 1. config의 data 필드가 바인딩 표현식인 경우 이미 평가됨
@@ -7581,12 +7601,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
                     rows = sorted(rows, key=lambda x: x.get(sort_by, 0), reverse=(sort_order == "desc"))
                 rows = rows[:limit]
                 
-                cols = columns or list(rows[0].keys())[:8]
-                header = " | ".join(f"{c:<12}" for c in cols)
+                cols = self._normalize_columns(columns) or [
+                    (k, k) for k in list(rows[0].keys())[:8]
+                ]
+                header = " | ".join(f"{label:<12}" for _, label in cols)
                 print(header)
                 print("-" * 80)
                 for row in rows:
-                    values = " | ".join(f"{self._format_value(row.get(c)):<12}" for c in cols)
+                    values = " | ".join(
+                        f"{self._format_value(row.get(key)):<12}" for key, _ in cols
+                    )
                     print(values)
                     
             elif isinstance(data, dict):
@@ -7599,12 +7623,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
                     items = items[:limit]
                     
                     if items:
-                        cols = columns or list(items[0][1].keys())[:6]
-                        header = f"{'Key':<12} | " + " | ".join(f"{c:<12}" for c in cols)
+                        cols = self._normalize_columns(columns) or [
+                            (k, k) for k in list(items[0][1].keys())[:6]
+                        ]
+                        header = f"{'Key':<12} | " + " | ".join(f"{label:<12}" for _, label in cols)
                         print(header)
                         print("-" * 80)
                         for key, val in items:
-                            values = f"{key:<12} | " + " | ".join(f"{self._format_value(val.get(c)):<12}" for c in cols)
+                            values = f"{key:<12} | " + " | ".join(
+                                f"{self._format_value(val.get(col_key)):<12}" for col_key, _ in cols
+                            )
                             print(values)
                 else:
                     # flat dict
