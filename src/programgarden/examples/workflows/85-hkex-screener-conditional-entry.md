@@ -9,14 +9,14 @@
 
 ## 🎯 시나리오 요약
 
-후보풀 4개 월물(HMHJ26 / HMHM26 / HMCEJ26 / HMCEM26)에서 만기 임박 / 만료된 월물을
+후보풀 4개 월물(HMHJ26 / HMHU26 / HMCEJ26 / HMCEU26)에서 만기 임박 / 만료된 월물을
 **ExclusionListNode** 정적 블랙리스트로 제외 → 180일 **ATR(14) breakout_up** 조건 충족
 종목만 통과 → 이미 보유 중인 월물 제외 (SymbolFilter difference) → **IfNode** 가 후보 ≥ 1
 일 때만 NewOrderNode 발사.
 
-- **후보풀**: HMHJ26 (4월, 만기 경과), HMHM26 (6월, live), HMCEJ26 (4월, 만기 경과), HMCEM26 (6월, live)
+- **후보풀**: HMHJ26 (4월, 만기 경과), HMHU26 (9월, live), HMCEJ26 (4월, 만기 경과), HMCEU26 (9월, live)
 - **블랙리스트 (roll-over)**: HMHJ26 / HMCEJ26 (2026/04 만기 경과 — historical 빈 응답) + HMHG26 / HMCEG26 (2월물 mock 가드)
-- **생존 후보**: 블랙리스트 제외 후 live 6월물(HMHM26 / HMCEM26)만 통과 → ATR 조건 평가
+- **생존 후보**: 블랙리스트 제외 후 live 9월물(HMHU26 / HMCEU26)만 통과 → ATR 조건 평가
 - **시그널**: ATR(period=14, multiplier=2.0, direction=breakout_up)
 - **사이징**: ATR 기반 (계좌 5%, 종목당 1.5% 위험)
 - **주문**: limit (HKEX 모의투자 제약)
@@ -76,7 +76,7 @@ flowchart LR
 |------|-----------|
 | `schedule` | `cron=0 11 * * 1-5, timezone=Asia/Seoul` |
 | `trading_hours` | KST 10:15-17:30 (HKEX 데이세션) |
-| `watchlist` | HMHJ26, HMHM26, HMCEJ26, HMCEM26 |
+| `watchlist` | HMHJ26, HMHU26, HMCEJ26, HMCEU26 (9월물이 live) |
 | `exclusion` | `symbols=[HMHJ26, HMCEJ26, HMHG26, HMCEG26]` (4월물 roll-over 대상 + 2월물 만기 가드, 총 4건), `input_symbols={{ watchlist.symbols }}`, `default_reason=만기/유동성 부족` |
 | `historical` | 180d 1d auto-iterate per 필터링된 symbol |
 | `atr_cond` | plugin=ATR, `period=14, multiplier=2.0, direction=breakout_up` |
@@ -132,7 +132,7 @@ no_candidate_notice 실행 (mock 환경 정상). 실 데이터에선 true 분기
 
 - **exclusion → historical 엣지 `from_port:"filtered"` 확증**: ExclusionListNode 가 만기
   4월물/2월물 4종(`HMHJ26`/`HMCEJ26`/`HMHG26`/`HMCEG26`)을 `excluded` 포트로 격리하고,
-  historical 은 생존 월물 `HMHM26`/`HMCEM26` 만 순회 (스크리너가 "걸러낸 종목"을
+  historical 은 생존 월물 `HMHU26`/`HMCEU26` 만 순회 (스크리너가 "걸러낸 종목"을
   분석하던 자기모순 봉쇄 — deb80456).
 - ATR 계산 정상 (`atr` 158.64), **errors=0**.
 
@@ -164,3 +164,7 @@ no_candidate_notice 실행 (mock 환경 정상). 실 데이터에선 true 분기
 ## 📝 변경 이력
 
 - 2026-05-28: 신규 추가 (`feat/hkex-futures-examples`)
+- 2026-07-13: 6월물 만기 경과로 historical 이 빈 배열 → 후보풀을 **9월물(HMHU26/HMCEU26)**
+  로 roll-forward (실전 키로 월물 유효성 실측: 6월물 0봉 / 9월물 21봉). 만기 경과분을
+  ExclusionListNode 로 거른다는 예제의 교육 포인트는 그대로 유지(블랙리스트 4건 불변).
+  아울러 실행기 auto-iterate 결함 4건 수정 — 상세는 `CHANGELOG.md` 1.26.0 Fixed 참조.

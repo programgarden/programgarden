@@ -90,6 +90,16 @@
           "symbol": "HMCEJ26",
           "exchange": "HKEX",
           "reason": "2026/04 만기 경과 — roll-over 대상 (historical 빈 응답)"
+        },
+        {
+          "symbol": "HMHG26",
+          "exchange": "HKEX",
+          "reason": "이미 만기된 2월물 (mock — 본 예제 후보풀엔 없지만 가드용)"
+        },
+        {
+          "symbol": "HMCEG26",
+          "exchange": "HKEX",
+          "reason": "이미 만기된 2월물 (mock)"
         }
       ],
       "input_symbols": "{{ nodes.watchlist.symbols }}",

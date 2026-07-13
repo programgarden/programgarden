@@ -46,7 +46,7 @@ flowchart LR
     start([StartNode]) --> broker[OverseasFuturesBrokerNode<br/>paper_trading=true]
     broker --> schedule[ScheduleNode<br/>*/30 * * * 1-5 KST]
     schedule --> hours[TradingHoursFilterNode<br/>10:15-17:30 KST]
-    hours --> watchlist[WatchlistNode<br/>HMHM26, HMCEM26]
+    hours --> watchlist[WatchlistNode<br/>HMHU26, HMCEU26]
     watchlist --> historical[HistoricalDataNode<br/>60d 1d auto-iterate]
     historical --> rsi[ConditionNode RSI<br/>period=14 threshold=30]
     historical --> boll[ConditionNode Bollinger<br/>period=20 std_dev=2.0]
@@ -73,7 +73,7 @@ flowchart LR
 | `start` / `broker` | 진입점 + 모의 브로커 | `paper_trading=true` |
 | `schedule` | 30분 간격 cron | `*/30 * * * 1-5`, `timezone=Asia/Seoul` |
 | `trading_hours` | KST 데이세션 게이트 | `10:15-17:30`, mon-fri |
-| `watchlist` | 후보 종목 | HMHM26, HMCEM26 |
+| `watchlist` | 후보 종목 | HMHU26, HMCEU26 (2026/09물) |
 | `historical` | 60일 일봉 (auto-iterate per symbol) | `interval=1d` |
 | `rsi_condition` | RSI 과매도 | `period=14, threshold=30, direction=below` |
 | `bollinger_condition` | 볼린저 하단 | `period=20, std_dev=2.0, position=below_lower` |
@@ -155,8 +155,10 @@ strip 한 read-only 변환) 로 실 LS 해외선물 모의 appkey (`APPKEY_FUTUR
 
 > ⚠️ **월물 만기 주의**: 최초 작성 시 4월물(`HMHJ26`/`HMCEJ26`) 사용 → 2026-05-29 시점
 > 이미 만기 경과로 historical 이 **빈 배열**(silent) 반환. live 6월물(`HMHM26`/`HMCEM26`)
-> 로 roll-forward 하여 해결. 선물 예제는 만기마다 월물 갱신 필요 — `00-workflow-guide.md`
-> HKEX 섹션 참조.
+> 로 roll-forward 하여 해결. **2026-07-13 재발** — 6월물도 만기 경과로 다시 빈 배열이 되어
+> 9월물(`HMHU26`/`HMCEU26`, 실측 21봉)로 roll-forward 했다.
+> 선물 예제는 만기마다 월물 갱신 필요 — `00-workflow-guide.md` HKEX 섹션 참조.
+> (근본 해결은 근월물 자동 선택이나, 현재 SDK 에 해당 기능이 없어 하드코딩이 불가피하다.)
 
 ### L4 — mock 주문 1건 (✅ 라이브 PASS, 2026-06-01)
 
@@ -237,3 +239,7 @@ poetry run python examples/programmer_example/test_hkex_81_l4_order.py --confirm
   게이트 silent 봉쇄 버그로 확인 → LogicNode 바인딩 올바른 관례로 교정 (commit `1b615da5`)
 - 2026-05-31: LogicNode 다종목 auto-iterate AND 교집합 코어 버그 수정 (executor.py, commit
   `3bb5d284`) — 바인딩-only 수정이 못 잡던 더 깊은 결함. `validate()` errors 0 / warn 0.
+- 2026-07-13: 6월물 만기 경과로 historical 이 다시 빈 배열 → **9월물(HMHU26/HMCEU26)**
+  roll-forward (실전 키로 월물 유효성 실측: 6월물 0봉 / 9월물 21봉). 아울러 실행기의
+  auto-iterate 결함 4건을 수정 — `LogicNode` 가 auto-iterate 대상이라 `passed_symbols` 가
+  N² 로 부풀던 것 포함(이 예제도 영향). 상세는 `CHANGELOG.md` 1.26.0 Fixed 참조.

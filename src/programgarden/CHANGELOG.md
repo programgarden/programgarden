@@ -5,11 +5,14 @@
 ### Fixed
 - **auto-iterate 가 종목 순회를 망가뜨리던 결함 4건** (`executor.py`). validate/deep_validate/
   dry-run 은 전부 초록이라 게이트로는 잡히지 않았고, 실 LS 실행으로만 확인됐다.
-  - **`MarketDataNode` 의 N² 중복 조회** — auto-iterate 는 `{{ item }}` 을 종목당 1건으로
-    해소하는데, 실행기가 단수 `config.symbol` 을 보지 않고 `_input_<id>.symbols`(전체 배열)를
-    먼저 읽어 iteration 마다 전 종목을 재조회했다. 실측: 예제 07 4종목→16건 / 10 5→25 /
-    28 5→25 / 08 30종목→LS 폭주 후 job cancelled. `HistoricalDataNode` 는 이미 단수 우선이라
-    정상이었고, 그 패턴에 맞췄다.
+  - **`MarketDataNode` 의 N² 중복 조회** — auto-iterate 는 종목당 1회씩 노드를 돌리는데,
+    실행기가 `_input_<id>.symbols`(=상류가 넘긴 **전체 배열**)를 읽어 iteration 마다 전 종목을
+    재조회했다. 실측: 예제 07 4종목→16건 / 10 5→25 / 28 5→25 / 08 30종목→LS 폭주 후 job
+    cancelled. `HistoricalDataNode` 는 이미 단수 우선이라 정상이었고, 그 패턴에 맞췄다.
+    → **iteration 컨텍스트로 막는다**: auto-iterate 중이면 이번 아이템 1건만 조회한다.
+    `{{ item }}` 리터럴 유무와 무관하다 — 노드 가이드가 권장하는 "Watchlist → MarketData"
+    배선(리터럴 없이 엣지만, **곧 챗봇 산출물**)에는 `config.symbol` 이 없어서, 리터럴에만
+    의존하면 그 모양이 그대로 N² 로 남기 때문이다(실측: 리터럴 없는 3종목 배선 → values 9건 = 3²).
   - **auto-iterate 소스가 엣지 선언 순서로 정해짐** (무조건 `break`) — 계좌 엣지가 먼저 선언된
     워크플로우에서 `PositionSizingNode` 가 **계좌 보유종목을 신규 매수 후보로 순회**했다
     (실측: 예제 16/28 이 워크플로우에 없는 보유종목을 처리 — 잔고가 충분했다면 실주문).

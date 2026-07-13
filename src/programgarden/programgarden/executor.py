@@ -9017,8 +9017,18 @@ class MarketDataNodeExecutor(NodeExecutorBase):
         input_symbols = context.get_output(f"_input_{node_id}", "symbols")
         config_symbols = config.get("symbols")
 
+        # auto-iterate 중이라면 **이번 아이템 1건만** 조회한다. 여기서 _input_.symbols(=상류가
+        # 넘긴 전체 배열)를 읽으면 iteration 마다 전 종목을 재조회해 N² 가 된다.
+        # `{{ item }}` 리터럴이 있으면 config.symbol 로 들어오지만, 노드 가이드가 권장하는
+        # "Watchlist → MarketData" 배선(리터럴 없이 엣지만)에는 config.symbol 이 없다 —
+        # 그 모양이 곧 챗봇 산출물이라 리터럴 유무와 무관하게 iteration 컨텍스트로 막는다.
+        # (실측: 리터럴 없는 3종목 배선이 values 9건 = 3²)
+        iteration_item = getattr(context, "_iteration_item", None)
+
         if isinstance(config_symbol, dict) and config_symbol.get("symbol"):
             symbols = [config_symbol]
+        elif isinstance(iteration_item, dict) and iteration_item.get("symbol"):
+            symbols = [iteration_item]
         else:
             symbols = input_symbols or config_symbols
 
