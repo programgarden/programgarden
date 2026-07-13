@@ -1,3 +1,14 @@
+## [1.19.0] - 2026-07-13
+### Changed
+- Node output-schema conformance (`ai.py` / `display.py` / `infra.py`): a node returns its declared
+  output schema on **every** execution path — error and empty-result paths included (the error is
+  stated in an `error` field, never disguised as a normal result). Ships together with the
+  `programgarden` 1.27.0 runtime, which raises on hard-failure paths instead of swallowing them into
+  an error dict, and statically validates that `SplitNode` has a wired array source and that
+  `AIAgentNode` is connected to an LLM through an `ai_model` edge.
+- Released as 1.19.0 (not 1.18.1) because 1.18.0 was already published to PyPI carrying only the
+  futures-contract work; this version is the union of both branches.
+
 ## [1.18.0] - 2026-07-13
 ### Added
 - **`FuturesContractNode`** — resolves an underlying futures product (`base_products`, e.g.

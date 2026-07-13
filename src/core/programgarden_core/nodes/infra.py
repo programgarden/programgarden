@@ -458,6 +458,11 @@ class SplitNode(BaseNode):
             "alternative": "Bind `{{ item }}` directly on the downstream node and delete SplitNode.",
         },
         {
+            "pattern": "Adding SplitNode without wiring its `array` input to an upstream list producer",
+            "reason": "SplitNode with no array source (no WatchlistNode/MarketUniverseNode/AccountNode/ConditionNode feeding a list, and no `array` binding) emits zero items — downstream `{{ nodes.split.item }}` resolves empty and the workflow produces silent empty results.",
+            "alternative": "Wire an upstream node that outputs an array into SplitNode, or — for a single known symbol — delete SplitNode and bind that symbol directly on the downstream node.",
+        },
+        {
             "pattern": "parallel=True for order-placement loops",
             "reason": "Placing orders concurrently without delay_ms will trip LS-Sec TR rate limits and cause spurious cancellations.",
             "alternative": "Use sequential mode with delay_ms >= 500ms for order-sensitive loops.",
@@ -530,7 +535,7 @@ class SplitNode(BaseNode):
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
-        "input_handling": "`array` input — typically bound implicitly by the upstream array output. No explicit config needed; SplitNode infers the iteration from the DAG.",
+        "input_handling": "`array` input is REQUIRED and MUST have a source: either an incoming edge from an upstream node that outputs an ARRAY (WatchlistNode/MarketUniverseNode → symbols, AccountNode → positions/held_symbols, ConditionNode → values, etc.), or an explicit `array` config binding. SplitNode has NOTHING to split if no upstream produces a list — it emits zero items and every downstream `{{ nodes.split.item }}` silently resolves empty. If you already know a single concrete symbol (e.g. 'AAPL'), do NOT add SplitNode — bind that one symbol directly on the downstream node.",
         "output_consumption": "Downstream binds `{{ nodes.split.item }}` for the current element, `{{ nodes.split.index }}` for the 0-based position, and `{{ nodes.split.total }}` for the count.",
         "common_combinations": [
             "WatchlistNode → SplitNode → OverseasStockFundamentalNode",

@@ -1,6 +1,51 @@
 ## [Unreleased]
 
-## [1.26.0] - 2026-07-13
+## [1.27.0] - 2026-07-13
+> 두 갈래 작업이 한 릴리스로 합쳐졌다: ① 선물 월물 자동 해소(FuturesContractNode)
+> ② 노드 출력-스키마 정합 + 하드실패 raise + SplitNode 정적 가드.
+> (1.26.0 은 ①만 담아 PyPI 에 먼저 올라갔고, 1.25.1 은 발행되지 않았다 — 이 버전이 둘의 합집합이다.)
+
+> 라이브 E2E(pg-test-9)가 잡은 노드 출력-스키마 정합 결함 묶음. 관통 불변식:
+> **노드는 어떤 실행 경로에서도 자기 선언 출력 스키마를 반환한다.** 옛 호환 형태는
+> 삭제하고, 에러/빈-결과 경로도 스키마를 지킨다(에러는 error 필드로 명시, 위장 금지).
+
+### Fixed
+- **HistoricalDataNode no-symbol 스키마 정합 (A′)** — 심볼 부재 early-return 이 정상반환
+  (`value/values/symbols/period/interval`)과 전혀 다른 `{ohlcv_data, symbols}` 를 뱉어
+  하류 `{{ nodes.x.value.time_series }}` 바인딩이 조용히 None → `data or []` 가 삼켜
+  count:0 쓰레기 결과를 냈다. 이제 이 노드는 어떤 경로로도 다른 스키마를 반환하지 않는다.
+- **TableDisplayNode 객체형 columns 크래시 (C′)** — `columns=[{key,label}]`(현지화 헤더)에서
+  렌더러가 `f"{c:<12}"`(c=dict) 로 `dict.__format__` 크래시. `_normalize_columns` 로 문자열/
+  객체 양형 수용(라벨로 헤더). 스키마도 `List[str] → List[str | {key,label}]` union 으로 정합
+  (코드만 관대하던 드리프트 해소).
+- **노드 실패 시맨틱 3-버킷 정리 (sweep)** — 노드가 하드 실패를 `{"...port": None, "error": …}`
+  에러-dict 로 돌려주면 하류가 침묵의 None 을 먹고 워크플로우가 `completed` 로 굴러
+  silent garbage 를 냈다(deep_validate 의 sole-error 승격 안전망도 키가 여럿이면 발동 안 함).
+  이제 경로마다 세 버킷으로 정리한다:
+  - **진짜 실패 → raise**(node/job failed + 사유; deep_validate blocking): AIAgentNode
+    (LLM 미연결·연결 실패·LLM 호출 실패·tool abort), ModifyOrderNode(수정 예외 3),
+    ConditionNode(resource/plugin-timeout/plugin-exc·items 미배선·required_fields 누락),
+    BrokerNode(overseas_stock+paper_trading 미지원), BacktestEngineNode(리소스 고갈).
+  - **정상 0건 → 선언 스키마 그대로 빈 값, error 키 없음**: ConditionNode(빈 positions=무보유·
+    빈 items 결과), PortfolioNode(전략 입력 0). (positions/items 바인딩 자체 부재는 static
+    validate 가 잡는다.)
+  - **부분 성공/모드 → 기존 유지**: CancelOrderNode dry_run(시뮬레이션), Condition 성공 경로.
+  AIAgentNode 는 dry_run 도 시뮬레이션 모드로 취급해 fixture 로 단락(주문 노드가 dry_run 에서
+  시뮬레이션하는 것과 동일) — 실 LLM 실패 raise 는 실 런타임에서만 시끄럽다. RealMarketData
+  (`ohlcv_data` 는 그 노드 정상 스키마)는 불변.
+- **SplitNode 배열 소스 정적 검증 (B′)** — array config 바인딩도 없고 리스트 생산 상류도
+  없는 SplitNode 는 0개 아이템을 방출해 하류가 조용히 빈다. resolver 가 빌드타임에
+  `MISSING_REQUIRED_FIELD` 로 flag(오탐 보수적: 모든 상류가 확정 스칼라일 때만). 스키마
+  설명에 array 필수·단일심볼이면 불필요를 명시. 예제 `69-telegram-price-alert` 의
+  무효 `items`(executor 미사용)→`array` 수정.
+- **AIAgentNode `ai_model` 엣지 필수 정적 검증** — LLMModelNode 가 `ai_model` 엣지로
+  연결되지 않은 AIAgentNode 는 LLM 없이 애초에 동작 불가(런타임 raise)인데, 예전엔
+  static validate·deep_validate 를 둘 다 통과해 저장됐다(deep_validate 는 인프라 오류 시
+  검증을 건너뛰고 '성공'으로 저장할 수 있어 못 믿는다). resolver `_validate_ai_agent_nodes`
+  가 빌드타임에 `MISSING_REQUIRED_FIELD` 로 막는다(LLM 없이는 못 도는 필수 연결이라 오탐
+  위험 0). 노드 스키마 안티패턴에도 필수 연결임을 명시. (edge 형태 오류는 기존
+  `INVALID_AI_MODEL_EDGE` 가 별도 담당 — 여기선 '연결 자체 부재' 만 본다.)
+
 ### Added
 - **`FuturesContractNode` executor** — queries the LS futures contract master (o3101) at run time
   and emits the live contract symbol for each requested underlying. Expired months are filtered out

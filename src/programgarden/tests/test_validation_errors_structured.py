@@ -628,3 +628,51 @@ def test_type_check_skips_method_chain(executor: WorkflowExecutor) -> None:
     # it must not be flagged as a mismatch.
     result = executor.validate(_sizing_wf("{{ nodes.account.positions.first() }}"))
     assert ErrorCode.INVALID_FIELD_TYPE.value not in _codes(result)
+
+
+# ── AIAgentNode 는 ai_model 엣지로 LLMModelNode 가 연결돼야 한다 (1.25.1) ─────────
+
+def test_ai_agent_without_ai_model_edge_is_flagged(executor: WorkflowExecutor) -> None:
+    """LLM 미연결 AIAgentNode → static validate 가 MISSING_REQUIRED_FIELD 로 막는다.
+
+    (선존재 구멍: 예전엔 validate/deep_validate 둘 다 통과해 저장됐고 실행 시에만 죽었다.)
+    """
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "agent", "type": "AIAgentNode", "user_prompt": "hi"},
+        ],
+        edges=[{"from": "s1", "to": "agent"}],
+    )
+    result = executor.validate(workflow)
+    assert result.summary.is_valid is False
+    assert ErrorCode.MISSING_REQUIRED_FIELD.value in _codes(result)
+    err = next(
+        e for e in result.errors
+        if getattr(getattr(e, "location", None), "node_type", None) == "AIAgentNode"
+    )
+    assert "ai_model" in err.message or "LLM model" in err.message
+
+
+def test_ai_agent_with_ai_model_edge_passes(executor: WorkflowExecutor) -> None:
+    """LLMModelNode 를 ai_model 엣지로 연결하면 규칙에 걸리지 않는다(오탐 0)."""
+    workflow = _wrap(
+        [
+            {"id": "s1", "type": "StartNode"},
+            {"id": "llm", "type": "LLMModelNode", "model": "gpt-4o", "credential_id": "c1"},
+            {"id": "agent", "type": "AIAgentNode", "user_prompt": "hi"},
+        ],
+        edges=[
+            {"from": "s1", "to": "agent"},
+            {"from": "llm", "to": "agent", "type": "ai_model"},
+        ],
+    )
+    workflow["credentials"] = [{"credential_id": "c1", "type": "llm_openai", "data": []}]
+    result = executor.validate(workflow)
+    # AIAgentNode 에 대한 ai_model MISSING_REQUIRED_FIELD 가 없어야 한다
+    ai_missing = [
+        e for e in result.errors
+        if getattr(getattr(e, "location", None), "node_type", None) == "AIAgentNode"
+        and getattr(getattr(e, "location", None), "field_path", None) == "ai_model"
+    ]
+    assert ai_missing == []

@@ -320,6 +320,12 @@ class WorkflowResolver:
         # 10.5 CodeNode 정적 검증 (compile/screen 사전검증 + credential 봉쇄)
         self._validate_code_nodes(workflow, result)
 
+        # 10.6 SplitNode 소스 검증 (분리할 배열이 실제로 배선됐는지)
+        self._validate_split_nodes(workflow, registry, result)
+
+        # 10.7 AIAgentNode ai_model 엣지 필수 검증 (LLM 없이는 애초에 동작 불가)
+        self._validate_ai_agent_nodes(workflow, result)
+
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
             workflow,
@@ -1084,6 +1090,194 @@ class WorkflowResolver:
                                 details={"credential_tokens": sorted(hit)},
                             )
                         )
+
+    # SplitNode 는 실 엔진에서 두 조건이 **모두** 충족돼야만 동작한다(6변형 dry_run
+    # 프로브로 확정, executor._execute_split_branch / _execute_main_flow):
+    #   (1) 짝 AggregateNode 가 그래프상 도달 가능해야 한다. 없으면 _execute_split_branch
+    #       가 aggregate_id=None 에서 즉시 return → branch 자체가 실행 안 됨(노드 pending
+    #       유지, 하류 item 전부 공백). engine._find_split_aggregate_pairs 참조.
+    #   (2) split 로 들어오는 상류 노드가 리스트를 출력해야 한다. 엔진은 분리 대상 배열을
+    #       **오직 상류 노드 출력**(포트 symbols/values/array/data/items)에서만 읽는다.
+    #       config `array` 필드는 **어느 경로에서도 읽히지 않는다**(SplitNodeExecutor.execute
+    #       의 config.get("array") 는 죽은 코드 — 실행 엔진이 그 executor 를 거치지 않고
+    #       상류 출력에서 배열을 직접 가져와 item 을 set). 따라서 `array`/`items` 를 config
+    #       리터럴로 넣는 저작 패턴은 검증만 통과하고 런타임엔 0개를 낸다.
+    # 둘 중 하나라도 빠지면 하류 `{{ nodes.<split>.item }}` 이 조용히 비어 count:0 쓰레기
+    # 결과가 된다(단일 심볼에 SplitNode 를 잘못 붙이는 것이 전형적 저작 결함). 정적으로
+    # 잡아 AI self-correct 루프가 dry_run 전에 보게 한다.
+    # 오탐(최대 리스크) 최소화: (2)는 상류 중 하나라도 리스트를 낼 "가능성"이 있으면 통과.
+    #   가능성 = (a) 상류가 CodeNode(동적 출력), (b) 상류 스키마 미상(커뮤니티/제네릭),
+    #            (c) 상류 출력 포트 타입 중 하나라도 확정 스칼라/시그널이 아님.
+    #            모든 상류가 확정 스칼라일 때만 flag.
+    _SPLIT_SCALAR_OUTPUT_TYPES = frozenset({
+        "signal", "boolean", "integer", "number", "float", "string",
+        "broker_connection",
+    })
+
+    def _validate_split_nodes(self, workflow, registry, result: ValidationResult) -> None:
+        """SplitNode 가 실 엔진에서 동작 가능하게 배선됐는지 정적 검증(오탐 보수적).
+
+        엔진 동작(프로브 확정): SplitNode 는 (1) 짝 AggregateNode 가 도달 가능하고
+        (2) 상류가 리스트를 출력해야만 branch 를 실행한다. config `array` 는 안 읽힌다.
+        """
+        split_nodes = [
+            n for n in workflow.nodes
+            if isinstance(n, dict) and n.get("type") == "SplitNode"
+        ]
+        if not split_nodes:
+            return
+        node_type_by_id = {
+            n.get("id"): n.get("type") for n in workflow.nodes if isinstance(n, dict)
+        }
+        aggregate_ids: Set[str] = {
+            n.get("id") for n in workflow.nodes
+            if isinstance(n, dict) and n.get("type") == "AggregateNode"
+        }
+        # adjacency(from_id -> [to_id]) + incoming(to_id -> [from_id])
+        adjacency: Dict[str, List[str]] = {}
+        incoming: Dict[str, List[str]] = {}
+        for edge in workflow.edges:
+            to_raw = getattr(edge, "to_node", "") or ""
+            from_raw = getattr(edge, "from_node", "") or ""
+            to_id = to_raw.split(".")[0] if to_raw else ""
+            from_id = from_raw.split(".")[0] if from_raw else ""
+            if to_id:
+                incoming.setdefault(to_id, []).append(from_id)
+            if from_id and to_id:
+                adjacency.setdefault(from_id, []).append(to_id)
+
+        def _reaches_aggregate(start: Optional[str]) -> bool:
+            # 엔진 _find_split_aggregate_pairs 와 동일하게 그래프 도달성으로 짝을 판정.
+            if not start:
+                return False
+            seen: Set[str] = set()
+            queue: List[str] = [start]
+            while queue:
+                cur = queue.pop(0)
+                if cur in seen:
+                    continue
+                seen.add(cur)
+                for nxt in adjacency.get(cur, []):
+                    if nxt in aggregate_ids:
+                        return True
+                    queue.append(nxt)
+            return False
+
+        def _may_produce_list(src_type: Optional[str]) -> bool:
+            # 동적/미상 출력은 리스트 가능 → 보수적으로 통과.
+            if not src_type or src_type == "CodeNode":
+                return True
+            schema = registry.get_schema(src_type)
+            if schema is None:
+                return True
+            ports = list(schema.outputs or [])
+            if not ports:
+                return True  # 출력 미선언 → 알 수 없음 → 통과
+            for out in ports:
+                ptype = out.get("type") if isinstance(out, dict) else getattr(out, "type", None)
+                if ptype not in self._SPLIT_SCALAR_OUTPUT_TYPES:
+                    return True  # 배열/오브젝트 등 비스칼라 포트 존재 → 가능성 있음
+            return False  # 모든 포트가 확정 스칼라 → 리스트 생산 불가
+
+        for node in split_nodes:
+            sid = node.get("id")
+            # (1) 짝 AggregateNode 도달성 — 없으면 엔진이 branch 를 실행조차 안 한다.
+            if not _reaches_aggregate(sid):
+                result.add(
+                    build_error(
+                        ErrorCode.MISSING_REQUIRED_FIELD,
+                        (
+                            f"SplitNode '{sid}' has no reachable AggregateNode. The engine "
+                            f"only runs a SplitNode's per-item branch when a paired "
+                            f"AggregateNode is reachable from it — without one the branch "
+                            f"never executes (the node stays pending) and every downstream "
+                            f"`{{{{ nodes.{sid}.item }}}}` resolves empty (silent count:0)."
+                        ),
+                        location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path=None),
+                        suggestion=(
+                            "Add an AggregateNode downstream of this split's branch (so it is "
+                            "reachable from the SplitNode), which recollects the per-item "
+                            "results. If you only ever have a single value, DELETE the "
+                            "SplitNode and bind that value directly on the downstream node."
+                        ),
+                    )
+                )
+                continue
+            # (2) 상류 리스트 소스 — config `array` 는 엔진이 안 읽으므로 소스로 인정 안 함.
+            srcs = incoming.get(sid, [])
+            if srcs and any(_may_produce_list(node_type_by_id.get(s)) for s in srcs):
+                continue
+            result.add(
+                build_error(
+                    ErrorCode.MISSING_REQUIRED_FIELD,
+                    (
+                        f"SplitNode '{sid}' has no upstream node that outputs a list. The "
+                        f"engine reads the array to split ONLY from an upstream node's list "
+                        f"output (ports symbols/values/array/data/items) — the `array` "
+                        f"config field is NOT read at runtime. It will emit zero items and "
+                        f"every downstream `{{{{ nodes.{sid}.item }}}}` resolves empty "
+                        f"(silent count:0 result)."
+                    ),
+                    location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path="array"),
+                    suggestion=(
+                        "Connect an edge from an upstream node that OUTPUTS a list "
+                        "(WatchlistNode/MarketUniverseNode → symbols, AccountNode → "
+                        "positions, ConditionNode → values, or a CodeNode returning a list). "
+                        "Do NOT put the list in an `array`/`items` config field — the engine "
+                        "ignores it. For a single known symbol, DELETE SplitNode and bind "
+                        "that symbol directly on the downstream node."
+                    ),
+                )
+            )
+
+    def _validate_ai_agent_nodes(self, workflow, result: ValidationResult) -> None:
+        """AIAgentNode 는 ai_model 엣지로 LLMModelNode 가 연결돼야 한다.
+
+        LLM 이 없으면 이 노드는 **애초에 동작 불가**(런타임에 raise)이므로 오탐 위험이
+        0이다. static validate 에서 잡아 챗봇이 저장 전에 고치게 한다 — deep_validate 는
+        인프라 오류 시 검증을 건너뛰고 '성공'으로 저장할 수 있어 못 믿는다(soft-skip).
+        ai_model 엣지의 source/target **형태** 오류는 _validate_edge_references 가
+        (INVALID_AI_MODEL_EDGE) 별도로 잡으므로, 여기선 '연결 자체가 없는' 구멍만 본다.
+        """
+        from programgarden_core.models.edge import EdgeType
+
+        agent_ids = [
+            n.get("id")
+            for n in workflow.nodes
+            if isinstance(n, dict) and n.get("type") == "AIAgentNode"
+        ]
+        if not agent_ids:
+            return
+        # ai_model 엣지가 타깃으로 삼는 AIAgentNode id 집합
+        ai_model_targets: Set[str] = set()
+        for edge in workflow.edges:
+            edge_type = getattr(edge, "edge_type", None)
+            et = (
+                edge_type.value if hasattr(edge_type, "value")
+                else (str(edge_type) if edge_type else "main")
+            )
+            if et != EdgeType.AI_MODEL.value:
+                continue
+            to_raw = getattr(edge, "to_node", "") or ""
+            to_id = to_raw.split(".")[0] if to_raw else ""
+            if to_id:
+                ai_model_targets.add(to_id)
+
+        for aid in agent_ids:
+            if aid in ai_model_targets:
+                continue
+            result.add(
+                build_error(
+                    ErrorCode.MISSING_REQUIRED_FIELD,
+                    f"AIAgentNode '{aid}' has no LLM model connected — it cannot run without "
+                    f"one. Connect an LLMModelNode to '{aid}' via an \"ai_model\" edge.",
+                    location=ErrorLocation(node_id=aid, node_type="AIAgentNode", field_path="ai_model"),
+                    suggestion=(
+                        "Add an LLMModelNode and wire it with an ai_model edge, e.g. "
+                        f'{{"from": "<llm_node_id>", "to": "{aid}", "edge_type": "ai_model"}}.'
+                    ),
+                )
+            )
 
     def _validate_credential_references(
         self,

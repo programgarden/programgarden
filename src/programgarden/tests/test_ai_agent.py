@@ -68,10 +68,12 @@ def _make_context(
     ctx.log = MagicMock()
     ctx.job_id = "test-job-1"
     ctx.is_running = True
-    # These tests exercise the real LLM/ReAct path; pin the deep-validate flag to
-    # False so AIAgentNodeExecutor does not take its deep fixture short-circuit
-    # (a bare MagicMock attribute is truthy and would otherwise trigger it).
+    # These tests exercise the real LLM/ReAct path; pin the deep-validate AND
+    # dry-run flags to False so AIAgentNodeExecutor does not take its simulation
+    # fixture short-circuit (a bare MagicMock attribute is truthy and would
+    # otherwise trigger it).
     ctx.is_deep_validate = False
+    ctx.is_dry_run = False
     ctx.get_workflow_credential = MagicMock(return_value=credential_data)
 
     # set_output / get_output / get_all_outputs
@@ -399,12 +401,14 @@ class TestAIAgentNodeExecutor:
 
         config = {"user_prompt": "Hello"}
 
-        result = await executor.execute(
-            node_id="agent", node_type="AIAgentNode",
-            config=config, context=ctx, workflow=wf,
-        )
-
-        assert "error" in result
+        # 하드 실패(LLM 미연결) → raise (에러-dict 를 하류가 침묵의 None 으로 먹지 않도록).
+        from programgarden_core.exceptions import ValidationError
+        with pytest.raises(ValidationError) as ei:
+            await executor.execute(
+                node_id="agent", node_type="AIAgentNode",
+                config=config, context=ctx, workflow=wf,
+            )
+        assert "LLM model" in str(ei.value)
 
     @pytest.mark.asyncio
     async def test_tool_call_loop(self):
@@ -844,19 +848,21 @@ class TestToolErrorStrategy:
             call_count += 1
             return tool_call_response if call_count == 1 else final_response
 
+        # 하드 실패(tool abort) → raise.
+        from programgarden_core.exceptions import ExecutionError
         with patch("programgarden.providers.LLMProvider.chat", side_effect=mock_chat):
             with patch(
                 "programgarden.executor.AIAgentToolExecutor.call_tool",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("API connection failed"),
             ):
-                result = await executor.execute(
-                    node_id="agent", node_type="AIAgentNode",
-                    config=config, context=ctx, workflow=wf,
-                )
+                with pytest.raises(ExecutionError) as ei:
+                    await executor.execute(
+                        node_id="agent", node_type="AIAgentNode",
+                        config=config, context=ctx, workflow=wf,
+                    )
 
-        assert "error" in result
-        assert "API connection failed" in result["error"]
+        assert "API connection failed" in str(ei.value)
 
     @pytest.mark.asyncio
     async def test_skip_continues_with_error_message(self):
@@ -1038,13 +1044,14 @@ class TestLLMErrorHandling:
             new_callable=AsyncMock,
             side_effect=LLMAuthError("Invalid API key", provider="openai", model="gpt-4o"),
         ):
-            result = await executor.execute(
-                node_id="agent", node_type="AIAgentNode",
-                config=config, context=ctx, workflow=wf,
-            )
+            from programgarden_core.exceptions import ExecutionError
+            with pytest.raises(ExecutionError) as ei:
+                await executor.execute(
+                    node_id="agent", node_type="AIAgentNode",
+                    config=config, context=ctx, workflow=wf,
+                )
 
-        assert "error" in result
-        assert "Invalid API key" in result["error"]
+        assert "Invalid API key" in str(ei.value)
 
     @pytest.mark.asyncio
     async def test_rate_limit_error(self):
@@ -1061,13 +1068,14 @@ class TestLLMErrorHandling:
                 "Rate limit exceeded", provider="openai", model="gpt-4o", retry_after=30.0,
             ),
         ):
-            result = await executor.execute(
-                node_id="agent", node_type="AIAgentNode",
-                config=config, context=ctx, workflow=wf,
-            )
+            from programgarden_core.exceptions import ExecutionError
+            with pytest.raises(ExecutionError) as ei:
+                await executor.execute(
+                    node_id="agent", node_type="AIAgentNode",
+                    config=config, context=ctx, workflow=wf,
+                )
 
-        assert "error" in result
-        assert "Rate limit" in result["error"]
+        assert "Rate limit" in str(ei.value)
 
     @pytest.mark.asyncio
     async def test_timeout_error(self):
@@ -1082,13 +1090,14 @@ class TestLLMErrorHandling:
             new_callable=AsyncMock,
             side_effect=LLMTimeoutError("Request timed out", provider="openai", model="gpt-4o"),
         ):
-            result = await executor.execute(
-                node_id="agent", node_type="AIAgentNode",
-                config=config, context=ctx, workflow=wf,
-            )
+            from programgarden_core.exceptions import ExecutionError
+            with pytest.raises(ExecutionError) as ei:
+                await executor.execute(
+                    node_id="agent", node_type="AIAgentNode",
+                    config=config, context=ctx, workflow=wf,
+                )
 
-        assert "error" in result
-        assert "timed out" in result["error"]
+        assert "timed out" in str(ei.value)
 
     @pytest.mark.asyncio
     async def test_token_limit_error(self):
@@ -1103,13 +1112,14 @@ class TestLLMErrorHandling:
             new_callable=AsyncMock,
             side_effect=LLMTokenLimitError("Context window exceeded", provider="openai", model="gpt-4o"),
         ):
-            result = await executor.execute(
-                node_id="agent", node_type="AIAgentNode",
-                config=config, context=ctx, workflow=wf,
-            )
+            from programgarden_core.exceptions import ExecutionError
+            with pytest.raises(ExecutionError) as ei:
+                await executor.execute(
+                    node_id="agent", node_type="AIAgentNode",
+                    config=config, context=ctx, workflow=wf,
+                )
 
-        assert "error" in result
-        assert "Context window" in result["error"]
+        assert "Context window" in str(ei.value)
 
 
 class TestStreamingResponse:
