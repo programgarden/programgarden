@@ -373,6 +373,43 @@ class LSClientManager:
         cls._credentials.clear()
 
 
+def broker_credential_key(product: Optional[str]) -> str:
+    """BrokerNode 자격증명의 시크릿 저장소 키 (product 별 분리).
+
+    단일 슬롯이면 한 워크플로우에 브로커가 둘 이상일 때(해외주식 + 국내주식) 뒤에 실행된
+    BrokerNode 가 앞의 자격증명을 덮어써, 하류가 **다른 계좌의 앱키**로 로그인하게 된다.
+    """
+    return f"broker_credentials:{product or 'unknown'}"
+
+
+def _resolve_broker_credentials(
+    broker_connection: Optional[Dict[str, Any]],
+    context: "ExecutionContext",
+) -> tuple:
+    """브로커 자격증명 조회 → ``(appkey, appsecret, paper_trading)``.
+
+    정본은 **시크릿 저장소**다 — 자격증명은 노드 출력에 실리지 않는다(평문 유출 방지).
+    조회 순서:
+      1. product 별 슬롯 (정확 — 다중 브로커 워크플로우에서도 안 섞인다)
+      2. 레거시 단일 슬롯 (product 를 모를 때)
+      3. ``connection`` 안의 평문 키 — **레거시 폴백**. 옛 워크플로우/외부 호출자와
+         deep_validate 픽스처가 아직 이 모양을 쓴다.
+    """
+    conn = broker_connection or {}
+    product = conn.get("product")
+
+    cred: Dict[str, Any] = {}
+    if product:
+        cred = context.get_credential(broker_credential_key(product)) or {}
+    if not cred:
+        cred = context.get_credential() or {}
+
+    appkey = cred.get("appkey") or conn.get("appkey", "")
+    appsecret = cred.get("appsecret") or conn.get("appsecret", "")
+    paper_trading = cred.get("paper_trading", conn.get("paper_trading", False))
+    return appkey, appsecret, paper_trading
+
+
 def ensure_ls_login(
     appkey: str,
     appsecret: str,
@@ -3156,11 +3193,17 @@ class BrokerNodeExecutor(NodeExecutorBase):
             paper_trading = config.get("paper_trading", paper_trading)
         
         if appkey and appsecret:
-            context.set_secret("credential_id", {
+            cred_payload = {
                 "appkey": appkey,
                 "appsecret": appsecret,
                 "paper_trading": paper_trading,
-            })
+            }
+            # 자격증명은 **시크릿 저장소에만** 둔다 — 노드 출력(`connection`)에 실으면
+            # 리스너(SSE) · get_state · 체크포인트로 평문이 새어 나간다.
+            # product 별 슬롯: 한 워크플로우에 브로커가 둘 이상이면(해외+국내) 단일 슬롯은 덮어써진다.
+            context.set_secret(broker_credential_key(product), cred_payload)
+            # 레거시 단일 슬롯 — 아직 product 별 조회로 이관되지 않은 소비처를 위해 유지한다.
+            context.set_secret("credential_id", cred_payload)
             context.log("info", f"Broker credentials stored (paper_trading={paper_trading})", node_id)
         else:
             context.log("warning", "No credentials found - some features may not work", node_id)
@@ -3255,14 +3298,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 context=context,
             )
         
+        # 🔐 `connection` 은 노드 출력이라 리스너(SSE) · get_state · 체크포인트로 외부에 나간다.
+        # 자격증명은 싣지 않는다 — 하류는 `product` 로 시크릿 저장소에서 꺼낸다
+        # (`_resolve_broker_credentials`). 여기 있던 평문 appkey/appsecret 이 실제로 새고 있었다.
         return {
             "connected": True,
             "connection": {
                 "provider": provider,
                 "product": product,
                 "paper_trading": paper_trading,
-                "appkey": appkey,
-                "appsecret": appsecret,
             }
         }
 
@@ -6122,9 +6166,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         import asyncio
         from datetime import datetime
         
-        appkey = broker_connection.get("appkey", "")
-        appsecret = broker_connection.get("appsecret", "")
-        paper_trading = broker_connection.get("paper_trading", False)
+        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
+        appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
         
         # 현재 이벤트 루프 캡처 (콜백에서 사용)
         loop = asyncio.get_running_loop()
@@ -6290,9 +6333,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         import asyncio
         from datetime import datetime
         
-        appkey = broker_connection.get("appkey", "")
-        appsecret = broker_connection.get("appsecret", "")
-        paper_trading = broker_connection.get("paper_trading", False)
+        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
+        appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
         
         # 현재 이벤트 루프 캡처 (콜백에서 사용)
         loop = asyncio.get_running_loop()
@@ -6465,8 +6507,8 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         import asyncio
         from datetime import datetime
 
-        appkey = broker_connection.get("appkey", "")
-        appsecret = broker_connection.get("appsecret", "")
+        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
+        appkey, appsecret, _paper = _resolve_broker_credentials(broker_connection, context)
 
         loop = asyncio.get_running_loop()
 
@@ -7539,9 +7581,9 @@ class MarketStatusNodeExecutor(NodeExecutorBase):
             )
 
         # 2. LS 로그인 (broker 와 동일 instance 재사용)
-        appkey = broker_connection.get("appkey", "")
-        appsecret = broker_connection.get("appsecret", "")
-        paper_trading = bool(broker_connection.get("paper_trading", False))
+        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
+        appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
+        paper_trading = bool(paper_trading)
         broker_product = broker_connection.get("product", "overseas_stock")
 
         ls, success, error = ensure_ls_login(
@@ -19312,7 +19354,9 @@ class WorkflowJob:
             entry: Dict[str, Any] = {
                 "state": cached_state.value,
                 "node_type": node.node_type,
-                "outputs": self.context.get_all_outputs(node_id),
+                # 🔐 외부 노출면 — BrokerNode 는 하류 전송용으로 connection.appkey/appsecret 을
+                # 출력에 싣는다. 리스너 경로는 이미 가리는데 여기만 raw 로 새고 있었다.
+                "outputs": self.context.get_all_outputs_sanitized(node_id),
             }
             if node_id in self._node_errors:
                 entry["error"] = self._node_errors[node_id]

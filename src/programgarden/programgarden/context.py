@@ -2626,25 +2626,45 @@ class ExecutionContext:
             logger.warning(f"Failed to sync fills from history: {e}")
             return 0
 
+    # 노드 출력에 실려 외부로 나가면 안 되는 키 (부분일치, 소문자 비교).
+    # BrokerNode 는 `connection.appkey/appsecret` 을 하류 노드에 넘기기 위해 **출력에 싣는다**
+    # (내부 전송 경로라 지울 수 없다). 따라서 외부로 나가는 모든 경계에서 가려야 한다.
+    SENSITIVE_OUTPUT_KEYS = frozenset(
+        {"appkey", "appsecret", "secret", "password", "token", "api_key", "apikey", "private_key"}
+    )
+
+    def _sanitize_value(self, value: Any) -> Any:
+        """dict/list 를 재귀적으로 훑어 민감 키를 가린다."""
+        if isinstance(value, dict):
+            return self._sanitize_outputs(value)
+        if isinstance(value, (list, tuple)):
+            # 리스트 안의 dict 도 가려야 한다 (예: credentials[] 배열).
+            sanitized_items = [self._sanitize_value(item) for item in value]
+            return type(value)(sanitized_items) if isinstance(value, tuple) else sanitized_items
+        return value
+
     def _sanitize_outputs(self, outputs: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Remove sensitive information from outputs."""
         # None은 None으로 반환, 빈 딕셔너리 {}는 그대로 유지
         if outputs is None:
             return None
-        
-        # Filter sensitive keywords
-        sensitive_keys = {"appkey", "appsecret", "secret", "password", "token", "api_key"}
+
         sanitized = {}
-        
         for k, v in outputs.items():
-            if any(sk in k.lower() for sk in sensitive_keys):
+            if any(sk in str(k).lower() for sk in self.SENSITIVE_OUTPUT_KEYS):
                 sanitized[k] = "[REDACTED]"
-            elif isinstance(v, dict):
-                sanitized[k] = self._sanitize_outputs(v)
             else:
-                sanitized[k] = v
-        
+                sanitized[k] = self._sanitize_value(v)
+
         return sanitized
+
+    def get_all_outputs_sanitized(self, node_id: str) -> Dict[str, Any]:
+        """외부로 내보낼 노드 출력 — 민감 키가 가려진 사본.
+
+        내부 전송(바인딩 해석 · broker connection auto-inject)은 `get_all_outputs()` 의
+        raw 값을 그대로 쓰고, **외부 노출면**(리스너 이벤트 · `get_state()`)만 이걸 쓴다.
+        """
+        return self._sanitize_outputs(self.get_all_outputs(node_id)) or {}
 
     # === Logging ===
 
