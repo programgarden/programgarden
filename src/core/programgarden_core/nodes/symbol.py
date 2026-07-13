@@ -24,6 +24,8 @@ from programgarden_core.nodes.base import (
     InputPort,
     OutputPort,
     SYMBOL_LIST_FIELDS,
+    SCREENER_SYMBOL_FIELDS,
+    MARKET_UNIVERSE_SYMBOL_FIELDS,
 )
 from programgarden_core.models.exchange import SymbolEntry, ProductType
 
@@ -251,7 +253,7 @@ class MarketUniverseNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=MARKET_UNIVERSE_SYMBOL_FIELDS),
         OutputPort(name="count", type="integer", description="종목 수"),
     ]
 
@@ -453,7 +455,7 @@ class ScreenerNode(BaseNode):
         ),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SCREENER_SYMBOL_FIELDS),
         OutputPort(name="count", type="integer", description="결과 종목 수"),
     ]
 

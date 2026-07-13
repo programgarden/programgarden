@@ -21,11 +21,10 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     OVERSEAS_FUTURES_REAL_BALANCE_FIELDS,
-    MARKET_DATA_FULL_FIELDS,
     OHLCV_DATA_FIELDS,
     ORDER_EVENT_FIELDS,
     ORDER_LIST_FIELDS,
-    POSITION_FIELDS,
+    OVERSEAS_FUTURES_REAL_POSITION_FIELDS,
     SYMBOL_LIST_FIELDS,
     PRICE_DATA_FIELDS,
 )
@@ -65,7 +64,7 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Streams real-time trade events from LS Securities WebSocket — ohlcv_data port emits aggregated candles; data port emits raw tick dicts",
+        "Streams real-time trade events from LS Securities WebSocket — ohlcv_data 포트가 집계된 봉을 내보낸다 (data 포트는 같은 객체의 별칭)",
         "stay_connected=True keeps the WebSocket subscription live between cycles (recommended for realtime strategies)",
         "Supports CME, EUREX, SGX, HKEX contracts — symbol must include contract month code (e.g., ESH26)",
         "Item-based execution: one subscription per node; use multiple nodes to watch multiple contracts",
@@ -179,8 +178,11 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
             "Use OverseasFuturesBrokerNode as the upstream broker."
         ),
         "output_consumption": (
-            "The `ohlcv_data` port emits aggregated candle dicts: {symbol, exchange, open, high, low, close, volume}. "
-            "The `data` port emits the raw full tick dict. "
+            "`ohlcv_data` 와 `data` 는 **같은 객체**다 — `data` 는 별칭이다. "
+            "(예전 문서는 `data` 가 bid/ask 를 담은 raw tick dict 이라고 했지만, 그 값을 만드는 코드는 "
+            "아무도 호출하지 않는 죽은 코드였다. 런타임에 bid/ask/current_price/change_percent 는 없다.) "
+            "값의 모양: {\"AAPL\": [{date, open, high, low, close, volume}, ...]} — 종목코드로 키를 잡은 dict 이고, "
+            "봉 한 줄에는 exchange/symbol/timestamp 가 없다. "
             "ALWAYS insert ThrottleNode before any order or AI node downstream."
         ),
         "common_combinations": [
@@ -210,7 +212,8 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="ohlcv_data", type="ohlcv_data", description="i18n:ports.ohlcv_data", fields=OHLCV_DATA_FIELDS),
-        OutputPort(name="data", type="market_data_full", description="i18n:ports.market_data_full", fields=MARKET_DATA_FULL_FIELDS),
+        OutputPort(name="data", type="ohlcv_data", description="i18n:ports.market_data_full", fields=OHLCV_DATA_FIELDS),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
     ]
 
     _version: ClassVar[str] = "1.0.0"
@@ -401,7 +404,7 @@ class OverseasFuturesRealAccountNode(BaseNode):
         OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols", fields=SYMBOL_LIST_FIELDS),
         OutputPort(name="balance", type="balance_data", description="i18n:ports.balance", fields=OVERSEAS_FUTURES_REAL_BALANCE_FIELDS),
         OutputPort(name="open_orders", type="order_list", description="i18n:ports.open_orders", fields=ORDER_LIST_FIELDS),
-        OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=POSITION_FIELDS),
+        OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=OVERSEAS_FUTURES_REAL_POSITION_FIELDS),
     ]
 
     _version: ClassVar[str] = "1.0.0"

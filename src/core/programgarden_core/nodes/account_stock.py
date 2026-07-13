@@ -19,7 +19,7 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     OVERSEAS_STOCK_BALANCE_FIELDS,
-    POSITION_FIELDS,
+    OVERSEAS_STOCK_POSITION_FIELDS,
     SYMBOL_LIST_FIELDS,
 )
 
@@ -200,7 +200,7 @@ class OverseasStockAccountNode(BaseNode):
             name="positions",
             type="position_data",
             description="i18n:ports.positions",
-            fields=POSITION_FIELDS,
+            fields=OVERSEAS_STOCK_POSITION_FIELDS,
             example=[
                 {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 10, "avg_price": 175.20, "pnl_rate": 6.99},
                 {"symbol": "TSLA", "exchange": "NASDAQ", "quantity": 5, "avg_price": 240.00, "pnl_rate": -2.50},

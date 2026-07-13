@@ -24,7 +24,9 @@ except ImportError:
     _COMMUNITY_AVAILABLE = False
 
 
-CORE_NODE_COUNT = 70
+# 1.27.0 에서 FuturesContractNode 가 추가됐는데 이 수를 안 올려서 가드가 계속 빨간 상태였다
+# (빨간 가드는 새 노드가 실수로 끼어드는 것도 못 잡는다).
+CORE_NODE_COUNT = 71
 COMMUNITY_NODE_COUNT = 4
 EXPECTED_TOTAL = CORE_NODE_COUNT + (COMMUNITY_NODE_COUNT if _COMMUNITY_AVAILABLE else 0)
 

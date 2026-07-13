@@ -2011,6 +2011,12 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                 "market_cap": mcap,
                 # g3101 enrich 시 volume 이 채워졌을 수 있음
                 "volume": int(sym.get("volume") or 0),
+                # 상류가 준 값 통과 (없으면 빈 문자열). LS 마스터에는 섹터가 없다.
+                # 그래도 키는 내보낸다 — yfinance 분기와 키 집합이 다르면 같은 포트가
+                # 분기마다 다른 모양이 되고, 선언이 어느 쪽을 적든 반대 분기에서 거짓말이 된다.
+                "name": sym.get("name", "") or "",
+                "market": sym.get("market", "") or "",
+                "sector": sym.get("sector", "") or "",
             })
 
         # 2단계: volume_min 명시 시 g3101로 거래량 확인 (이미 enrich 된 경우 skip)
@@ -2255,8 +2261,11 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                 return entry.get("symbol", "")
             return entry
 
+        # 상류(SymbolQueryNode 등)가 준 name / market 을 그대로 통과시키려면 원본 dict 이 필요하다.
+        # 예전엔 (원본코드, yf티커) 두 개만 들고 다녀서 종목명이 **여기서 소실**됐다 —
+        # 표에 종목명 열을 넣은 예제가 조용히 '-' 만 찍고 있었다.
         lookup_pairs = [
-            (_original_symbol(s), _to_yfinance_ticker(s))
+            (_original_symbol(s), _to_yfinance_ticker(s), s if isinstance(s, dict) else {})
             for s in symbols
         ]
 
@@ -2267,7 +2276,7 @@ class ScreenerNodeExecutor(NodeExecutorBase):
             attempted = 0
             info_succeeded = 0
 
-            for original_sym, yf_ticker in lookup_pairs[:max_results * 2]:  # 여유분
+            for original_sym, yf_ticker, src in lookup_pairs[:max_results * 2]:  # 여유분
                 if not yf_ticker:
                     continue
                 attempted += 1
@@ -2317,6 +2326,8 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                     filtered.append({
                         "exchange": mapped_exchange,
                         "symbol": original_sym,
+                        "name": src.get("name") or info.get("shortName") or info.get("longName") or "",
+                        "market": src.get("market", "") or "",
                         "market_cap": mcap,
                         "volume": vol,
                         "price": price,
@@ -4450,7 +4461,11 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "purchase_amount": item.FcurrBuyAmt,
             })
 
-        held_symbols = [p["symbol"] for p in positions]
+        # held_symbols 는 선언된 출력 포트다. 예전엔 여기서 계산만 하고 **반환 dict 에 싣지
+        # 않아** 늘 비어 있었다 — 바인딩하면 정적 검증은 통과하고 런타임엔 None 이었다.
+        held_symbols = [
+            {"exchange": p.get("exchange", ""), "symbol": p["symbol"]} for p in positions
+        ]
         
         # block2 = 전체 평가 요약. `orderable_amount` is set later by
         # COSOQ02701; pre-seed it as None so consumers can distinguish
@@ -4513,6 +4528,7 @@ class AccountNodeExecutor(NodeExecutorBase):
 
         context.log("info", f"AccountNode: {len(positions)} positions fetched", node_id)
         return {
+            "held_symbols": held_symbols,
             "positions": positions,
             "balance": balance_info,
         }
@@ -4634,6 +4650,10 @@ class AccountNodeExecutor(NodeExecutorBase):
 
             context.log("info", f"AccountNode (korea_stock): {len(positions)} positions fetched", node_id)
             return {
+                "held_symbols": [
+                    {"exchange": p.get("exchange", "KRX"), "symbol": p["symbol"]}
+                    for p in positions
+                ],
                 "positions": positions,
                 "balance": balance_info,
             }
@@ -4700,7 +4720,7 @@ class AccountNodeExecutor(NodeExecutorBase):
                     "pnl_amount": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
                     "currency": item.CrcyCodeVal.strip() if item.CrcyCodeVal else "USD",
                 })
-                held_symbols.append(symbol)
+                held_symbols.append({"exchange": "HKEX", "symbol": symbol})
 
             # 2. CIDBQ05300: 예탁자산 조회 (CIDBQ03000 상위호환).
             # Wrapped in its own try so a balance failure no longer drops
@@ -4782,6 +4802,7 @@ class AccountNodeExecutor(NodeExecutorBase):
 
             context.log("info", f"AccountNode (futures): {len(positions)} positions, {len(balance_by_currency)} currencies", node_id)
             return {
+                "held_symbols": held_symbols,
                 "positions": positions,
                 "balance": balance_info,
             }
@@ -4798,6 +4819,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         other consumers can refuse to coerce missing balances to 0.0.
         """
         result: Dict[str, Any] = {
+            "held_symbols": [],
             "positions": [],
             "balance": {
                 "cash": 0.0,
@@ -5341,7 +5363,9 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     serialized_positions.append({
                         "symbol": sym,
                         "exchange": getattr(pos, 'market_code', 'NASDAQ'),
+                        "market_code": getattr(pos, 'market_code', ''),
                         "name": getattr(pos, 'symbol_name', sym),
+                        "qty": quantity,
                         "quantity": quantity,  # NewOrderNode 호환
                         "price": current_price,  # NewOrderNode 호환
                         "avg_price": float(pos.buy_price),
@@ -5349,6 +5373,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                         "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
                         "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
                         "currency": getattr(pos, 'currency_code', 'USD'),
+                        "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
                         "product": "overseas_stock",  # 상품 유형
                     })
 
@@ -5727,13 +5752,17 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     serialized_positions.append({
                         "symbol": sym,
                         "exchange": "KRX",
+                        "market_code": getattr(pos, 'market', ''),
                         "name": getattr(pos, 'symbol_name', sym),
+                        "qty": quantity,
                         "quantity": quantity,
                         "price": current_price,
                         "avg_price": float(pos.buy_price),
                         "current_price": current_price,
                         "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
                         "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
+                        "currency": "KRW",
+                        "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
                         "product": "korea_stock",
                     })
 
@@ -5797,20 +5826,31 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         """해외주식 Tracker에서 현재 데이터 추출 (리스트 형태로 반환)"""
         positions = []
         for symbol, pos in tracker.get_positions().items():
+            quantity = pos.quantity
+            current_price = float(pos.current_price)
             positions.append({
                 "symbol": symbol,
                 "name": getattr(pos, 'name', getattr(pos, 'symbol_name', symbol)),
-                "qty": pos.quantity,
+                # REST 스냅샷 갈래(_ls_stock_with_tracker)와 **같은 키 집합**이어야 한다.
+                # 안 그러면 같은 포트가 스냅샷일 땐 exchange/quantity 를 주고 실시간 틱일 땐
+                # 안 주는, 시점마다 모양이 바뀌는 출력이 된다 (주문 노드가 조용히 깨진다).
+                "exchange": getattr(pos, 'market_code', 'NASDAQ'),
+                "market_code": getattr(pos, 'market_code', ''),
+                "qty": quantity,
+                "quantity": quantity,  # NewOrderNode 호환
+                "price": current_price,  # NewOrderNode 호환
                 "avg_price": float(pos.buy_price),
-                "current_price": float(pos.current_price),
+                "current_price": current_price,
                 "pnl_rate": float(pos.pnl_rate) if pos.pnl_rate else 0,
                 "pnl_amount": float(pos.pnl_amount) if pos.pnl_amount else 0,
                 "currency": getattr(pos, 'currency_code', 'USD'),
                 "eval_amount": float(pos.eval_amount) if pos.eval_amount else 0,
-                "market_code": getattr(pos, 'market_code', ''),
+                "product": "overseas_stock",
             })
 
-        symbols = [p["symbol"] for p in positions]
+        held_symbols = [
+            {"exchange": p["exchange"], "symbol": p["symbol"]} for p in positions
+        ]
         
         # balance를 JSON 직렬화 가능한 형태로 변환
         # get_balances()는 Dict[str, StockBalanceInfo]를 반환 (통화별)
@@ -5867,6 +5907,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 }
         
         return {
+            "held_symbols": held_symbols,
             "positions": positions,
             "balance": balance,
             "open_orders": open_orders,
@@ -5900,8 +5941,11 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 "name": getattr(pos, 'symbol_name', symbol),
                 "direction": "long" if is_long else "short",
                 "close_side": "sell" if is_long else "buy",
+                # REST 스냅샷 갈래(_ls_futureoption_with_tracker)와 같은 키 집합
+                "qty": quantity,
                 "quantity": quantity,  # qty → quantity (NewOrderNode 호환)
                 "price": current_price,  # current_price → price (NewOrderNode 호환)
+                "product": "overseas_futures",
                 "entry_price": float(getattr(pos, 'entry_price', 0)),
                 "current_price": current_price,
                 "pnl_amount": float(getattr(pos, 'pnl_amount', 0) or 0),
@@ -5944,6 +5988,10 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 }
         
         return {
+            "held_symbols": [
+                {"exchange": pos.get("exchange", ""), "symbol": pos["symbol"]}
+                for pos in positions
+            ],
             "positions": positions,
             "balance": balance,
             "open_orders": open_orders,
@@ -5953,17 +6001,24 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         """국내주식 KrStockAccountTracker에서 현재 데이터 추출"""
         positions = []
         for symbol, pos in tracker.get_positions().items():
+            quantity = pos.quantity
+            current_price = float(pos.current_price)
             positions.append({
                 "symbol": symbol,
                 "name": getattr(pos, 'symbol_name', symbol),
-                "qty": pos.quantity,
+                # REST 스냅샷 갈래(_ls_korea_stock_with_tracker)와 같은 키 집합
+                "exchange": "KRX",
+                "market_code": getattr(pos, 'market', ''),
+                "qty": quantity,
+                "quantity": quantity,  # NewOrderNode 호환
+                "price": current_price,  # NewOrderNode 호환
                 "avg_price": float(pos.buy_price),
-                "current_price": float(pos.current_price),
+                "current_price": current_price,
                 "pnl_rate": pos.pnl_rate,
                 "pnl_amount": float(pos.pnl_amount),
                 "currency": "KRW",
                 "eval_amount": float(pos.eval_amount),
-                "market_code": getattr(pos, 'market', ''),
+                "product": "korea_stock",
             })
 
         # KrStockAccountTracker.get_balance() → KrStockBalanceInfo (단일 객체)
@@ -5998,6 +6053,10 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 }
 
         return {
+            "held_symbols": [
+                {"exchange": pos.get("exchange", ""), "symbol": pos["symbol"]}
+                for pos in positions
+            ],
             "positions": positions,
             "balance": balance,
             "open_orders": open_orders,
@@ -6021,6 +6080,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         consumers do not silently treat the unavailable balance as 0.
         """
         result: Dict[str, Any] = {
+            "held_symbols": [],
             "positions": [],
             "balance": {
                 "cash": 0.0,
@@ -6671,43 +6731,6 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         
         return []
     
-    def _build_full_data(
-        self,
-        symbols_raw: List[Dict[str, str]],
-        prices: Dict[str, float],
-        volumes: Dict[str, int],
-        bids: Dict[str, float],
-        asks: Dict[str, float],
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        종목별 전체 시세 데이터 구조 생성
-        
-        Returns:
-            {
-                "AAPL": {"symbol": "AAPL", "exchange": "NASDAQ", "price": 192.30, ...},
-                "TSLA": {...},
-            }
-        """
-        data = {}
-        for entry in symbols_raw:
-            if isinstance(entry, dict):
-                symbol = entry.get("symbol", "")
-                exchange = entry.get("exchange", "")
-            else:
-                symbol = entry
-                exchange = ""
-            
-            if symbol:
-                data[symbol] = {
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "price": prices.get(symbol),
-                    "volume": volumes.get(symbol),
-                    "bid": bids.get(symbol),
-                    "ask": asks.get(symbol),
-                }
-        return data
-
 
 class RealOrderEventNodeExecutor(NodeExecutorBase):
     """

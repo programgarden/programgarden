@@ -20,6 +20,7 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     SYMBOL_LIST_FIELDS,
+    OVERSEAS_FUTURES_SYMBOL_QUERY_FIELDS,
 )
 
 
@@ -182,7 +183,7 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="symbols", type="symbol_list", description="i18n:ports.symbols", fields=OVERSEAS_FUTURES_SYMBOL_QUERY_FIELDS),
         OutputPort(name="count", type="integer", description="Total symbol count"),
     ]
 

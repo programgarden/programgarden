@@ -1293,10 +1293,10 @@ class WorkflowResolver:
         `price`/`change_pct` 를 내보냄 → 사용자가 요청한 '현재가'가 표에서 사라졌다.)
 
         🔴 **오탐 0 원칙 — 검증된 포트에만 건다.**
-        `fields` 를 선언했다는 것만으로는 부족하다. 라이브러리 곳곳의 선언이 런타임보다
-        **불완전**하다(예: `ScreenerNode.symbols` 런타임은 price/market_cap/volume/sector 를
-        담는데 `SYMBOL_LIST_FIELDS` 는 exchange/symbol 둘만 선언). 그런 포트에 이 가드를 걸면
-        **정상 워크플로우를 대량 오탐**한다(동봉 예제 7건이 실제로 걸렸다).
+        `fields` 를 선언했다는 것만으로는 부족하다. 예전엔 라이브러리 곳곳의 선언이 런타임보다
+        **불완전**했다(예: `ScreenerNode.symbols` 런타임은 price/market_cap/volume/sector 를
+        담는데 공유 상수 `SYMBOL_LIST_FIELDS` 는 exchange/symbol 둘만 선언 — 2026-07-14 노드별
+        상수로 쪼개서 해소). 증명 안 된 포트에 이 가드를 걸면 **정상 워크플로우를 대량 오탐**한다.
 
         그래서 `tests/test_output_schema_contract.py` 로 **선언 == 런타임** 이 증명된 포트만
         여기 등록한다. 다른 포트의 선언을 바로잡을 때마다 계약 검사에 추가하고 이 목록을 넓힌다.
@@ -1304,6 +1304,9 @@ class WorkflowResolver:
         import re as _re
 
         # (node_type, port) — 계약 검사로 선언 == 런타임 이 증명된 포트만.
+        # 증명 위치: `tests/test_output_schema_contract.py::CASES`
+        # 🔴 실시간 시세의 `ohlcv_data` / `data` 는 **일부러 뺐다** — 값이 `{종목: [봉]}` dict 라
+        #    표의 열(column)이 봉 필드인지 종목코드인지 정해져 있지 않다. 근거 없이 걸면 오탐이다.
         VERIFIED_PORTS = {
             ("OverseasStockMarketDataNode", "value"),
             ("OverseasStockMarketDataNode", "values"),
@@ -1311,6 +1314,27 @@ class WorkflowResolver:
             ("OverseasFuturesMarketDataNode", "values"),
             ("KoreaStockMarketDataNode", "value"),
             ("KoreaStockMarketDataNode", "values"),
+            # 종목 리스트
+            ("WatchlistNode", "symbols"),
+            ("MarketUniverseNode", "symbols"),
+            ("ScreenerNode", "symbols"),
+            ("OverseasStockSymbolQueryNode", "symbols"),
+            ("KoreaStockSymbolQueryNode", "symbols"),
+            ("OverseasFuturesSymbolQueryNode", "symbols"),
+            # 계좌 (REST)
+            ("OverseasStockAccountNode", "positions"),
+            ("KoreaStockAccountNode", "positions"),
+            ("OverseasFuturesAccountNode", "positions"),
+            ("OverseasStockAccountNode", "held_symbols"),
+            ("KoreaStockAccountNode", "held_symbols"),
+            ("OverseasFuturesAccountNode", "held_symbols"),
+            # 계좌 (실시간)
+            ("OverseasStockRealAccountNode", "positions"),
+            ("KoreaStockRealAccountNode", "positions"),
+            ("OverseasFuturesRealAccountNode", "positions"),
+            ("OverseasStockRealAccountNode", "held_symbols"),
+            ("KoreaStockRealAccountNode", "held_symbols"),
+            ("OverseasFuturesRealAccountNode", "held_symbols"),
         }
 
         DISPLAY_TYPES = {"TableDisplayNode", "ChartDisplayNode"}
