@@ -2,6 +2,43 @@
 
 ## [1.26.0] - 2026-07-13
 > Korea (KRX) stock support — released lockstep with `programgarden-core` 1.18.0.
+### Fixed
+- **auto-iterate 가 종목 순회를 망가뜨리던 결함 4건** (`executor.py`). validate/deep_validate/
+  dry-run 은 전부 초록이라 게이트로는 잡히지 않았고, 실 LS 실행으로만 확인됐다.
+  - **`MarketDataNode` 의 N² 중복 조회** — auto-iterate 는 `{{ item }}` 을 종목당 1건으로
+    해소하는데, 실행기가 단수 `config.symbol` 을 보지 않고 `_input_<id>.symbols`(전체 배열)를
+    먼저 읽어 iteration 마다 전 종목을 재조회했다. 실측: 예제 07 4종목→16건 / 10 5→25 /
+    28 5→25 / 08 30종목→LS 폭주 후 job cancelled. `HistoricalDataNode` 는 이미 단수 우선이라
+    정상이었고, 그 패턴에 맞췄다.
+  - **auto-iterate 소스가 엣지 선언 순서로 정해짐** (무조건 `break`) — 계좌 엣지가 먼저 선언된
+    워크플로우에서 `PositionSizingNode` 가 **계좌 보유종목을 신규 매수 후보로 순회**했다
+    (실측: 예제 16/28 이 워크플로우에 없는 보유종목을 처리 — 잔고가 충분했다면 실주문).
+    명시한 `from_port`(예: `logic.passed_symbols`)조차 앞선 엣지에 가려 무시됐다.
+    → 모든 incoming 엣지를 훑어 [명시 `from_port` > `symbols` 포트 > 첫 출력] 우선순위로 고르고,
+      계좌 노드는 순회 소스에서 배제(`NO_ITERATE_SOURCE_NODE_TYPES`).
+  - **`LogicNode` 가 auto-iterate 대상이었음** — 집합 연산 노드인데 종목별로 N회 돌며 매 회
+    전체 `passed_symbols` 를 내보내 병합 시 N². 실측: 28 이 5종목인데 25건 → 하류가 중복 순회.
+    `SymbolFilterNode` 와 같은 이유로 `NO_AUTO_ITERATE_NODE_TYPES` 에 추가.
+  - **`MarketUniverseNode` 의 거래소 오염 → 무음 유실** — pytickersymbols 의 첫 항목만 보고
+    yahoo 접미사로 거래소를 정해 DOW30 30종목 중 29개가 `FRA`(프랑크푸르트)가 됐고, 하류
+    `EXCHANGE_CODES` 가 이를 조용히 82(NASDAQ)로 폴백해 NYSE 종목이 "No data" 로 사라졌다
+    (실측: 예제 08 이 회당 30종목 중 8건만 수신). → `google` 접두사(`"NYSE:MMM"`)로 실제 상장
+    거래소를 확정한다.
+- **거래소 라벨이 정확해도 조회 실패 시 다른 원장을 재시도** (`MarketDataNodeExecutor`).
+  LS 의 거래소 코드는 실제 상장 거래소와 항상 일치하지 않는다 — WMT 는 NYSE 상장인데 81 로는
+  응답이 없고 82 로만 조회된다. 위 거래소 수정만으로는 WMT 가 오히려 유실됐다(08 이 29/30).
+  성공한 코드를 실제 거래소로 기록하며, 라벨대로 성공하면 그대로 둔다(AMEX 가 NYSE 로 덮이지 않게).
+- **`_merge_iterate_results` 의 `array_fields` 에 `symbols`/`symbol_results` 누락** — auto-iterate
+  N회 중 마지막 1회만 살아남았다.
+- **`deep_validate` fixture 가 실경로와 다른 symbols 를 사용** — 게이트가 라이브와 갈라지던 지점.
+- **예제 81/85 의 HKEX 선물이 만기 경과 월물** (`HMHM26`=6월물, `HMHJ26`=4월물) — `historical` 이
+  빈 응답이라 전략 전체가 무신호였다. 실전 키로 월물 유효성을 실측해 9월물(`HMHU26`/`HMCEU26`,
+  21봉)로 교체. 85 는 "만기 경과분을 `ExclusionListNode` 로 거른다"는 교육 포인트를 유지.
+
+  실 LS 실증 (주문 노드 제거 사본): 07 `values` 16→**4** / 10 25→**5** / 28 25→**5** /
+  08 240건·`cancelled` → **30건·`completed`**(거래소 `FRA`→`NYSE`, 유실 0) /
+  16 `sizing` 이 계좌 보유종목→**워치리스트** 순회 / 86 0건(`symbols` 필수 에러)→**1건** /
+  81·85 `historical` 빈 응답→**실제 봉 데이터**.
 ### Changed
 - **Bumped `programgarden-core` dependency `^1.16.0` → `^1.18.0`** — pulls in the
   `OverseasFuturesMarketDataNode.values` OutputPort fix. The deployed core 1.17.0 exposed
