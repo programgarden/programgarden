@@ -9640,8 +9640,20 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                         symbol_exchange_map[sym] = mc
         
         if not symbols:
+            # NOTE: 정상 return(아래 9690)과 **동일 스키마**로 반환해야 한다. 옛
+            # `{"ohlcv_data": {}, "symbols": []}` 는 정상 형태(value/values/period/
+            # interval)와 완전히 달라, 하류의 정상 바인딩(`{{ nodes.x.value.time_series }}`
+            # / ConditionNode 의 `item.time_series`)이 조용히 None 이 되고 방어적
+            # `data or []` 가 그걸 삼켜 에러 없이 빈 결과(count:0)를 낸다.
+            # (deep_fixtures.historical_data_fixture 도 이 스키마를 못박는다.)
             context.log("warning", "No symbols provided", node_id)
-            return {"ohlcv_data": {}, "symbols": []}
+            return {
+                "value": None,
+                "values": [],
+                "symbols": [],
+                "period": "",
+                "interval": config.get("interval", "1d"),
+            }
         
         # 기간 설정 ({{ today_yyyymmdd() }}, {{ days_ago_yyyymmdd(100) }} 바인딩 사용)
         start_date = config.get("start_date", "")
