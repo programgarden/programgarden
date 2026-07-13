@@ -2812,6 +2812,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 node_id,
             )
             return {
+                "connected": False,
                 "connection": None,
                 "error": "overseas_stock does not support paper_trading. Set paper_trading=False to use real mode.",
             }
@@ -8143,9 +8144,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
             context.log("warning", f"Resource limit reached: {resource_check['reason']}", node_id)
             # 리소스 부족 시 빈 결과 반환 (안전 모드)
             return {
+                "symbols": [],
                 "result": False,
+                "is_condition_met": False,
                 "passed_symbols": [],
                 "failed_symbols": [],
+                "symbol_results": [],
                 "values": {},
                 "error": "resource_limit",
             }
@@ -8198,9 +8202,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         node_id
                     )
                     return {
+                        "symbols": [],
                         "result": False,
+                        "is_condition_met": False,
                         "passed_symbols": [],
                         "failed_symbols": [],
+                        "symbol_results": [],
                         "values": [],
                         "error": "missing_positions",
                         "error_message": "positions가 설정되지 않았습니다. 예: {{ nodes.realAccount.positions }}",
@@ -8252,6 +8259,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         return {
                             "symbols": [p.get("symbol") for p in positions if isinstance(p, dict)],
                             "result": True if (getattr(context, "is_deep_validate", False) and _passed) else result.get("result", False),
+                            "is_condition_met": True if (getattr(context, "is_deep_validate", False) and _passed) else result.get("result", False),
                             "passed_symbols": _passed,
                             "failed_symbols": [] if (getattr(context, "is_deep_validate", False) and _passed) else result.get("failed_symbols", []),
                             "symbol_results": result.get("symbol_results", []),
@@ -8262,9 +8270,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         import traceback
                         context.log("debug", f"Plugin traceback: {traceback.format_exc()}", node_id)
                         return {
+                            "symbols": [],
                             "result": False,
+                            "is_condition_met": False,
                             "passed_symbols": [],
                             "failed_symbols": [],
+                            "symbol_results": [],
                             "values": [],
                             "error": str(e),
                         }
@@ -8274,6 +8285,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     return {
                         "symbols": list(positions.keys()),
                         "result": True,
+                        "is_condition_met": True,
                         "passed_symbols": passed_symbols,
                         "failed_symbols": [],
                         "symbol_results": [],
@@ -8291,9 +8303,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     node_id
                 )
                 return {
+                    "symbols": [],
                     "result": False,
+                    "is_condition_met": False,
                     "passed_symbols": [],
                     "failed_symbols": [],
+                    "symbol_results": [],
                     "values": [],
                     "error": "missing_items",
                     "error_message": "items가 설정되지 않았습니다. items { from, extract } 형태로 추가하세요.",
@@ -8311,9 +8326,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         node_id
                     )
                     return {
+                        "symbols": [],
                         "result": False,
+                        "is_condition_met": False,
                         "passed_symbols": [],
                         "failed_symbols": [],
+                        "symbol_results": [],
                         "values": [],
                         "error": "missing_required_fields",
                         "error_message": f"extract에 필수 필드 누락: {missing}",
@@ -8328,9 +8346,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     node_id
                 )
                 return {
+                    "symbols": [],
                     "result": False,
+                    "is_condition_met": False,
                     "passed_symbols": [],
                     "failed_symbols": [],
+                    "symbol_results": [],
                     "values": [],
                     "error": "empty_items_result",
                     "error_message": "items 처리 결과가 비어있습니다. from 배열을 확인하세요.",
@@ -8386,9 +8407,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
         except PluginTimeoutError as e:
             context.log("error", f"Plugin timeout: {e}", node_id)
             return {
+                "symbols": [],
                 "result": False,
+                "is_condition_met": False,
                 "passed_symbols": [],
                 "failed_symbols": symbols if 'symbols' in locals() else [],
+                "symbol_results": [],
                 "values": {},
                 "error": "plugin_timeout",
             }
@@ -10350,6 +10374,8 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             return {
                 "equity_curve": [],
                 "trades": [],
+                "signals": [],
+                "values": [],
                 "metrics": {},
                 "summary": {"error": resource_check["reason"]},
             }
@@ -10370,6 +10396,8 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
                     return {
                         "equity_curve": [],
                         "trades": [],
+                        "signals": [],
+                        "values": [],
                         "metrics": {},
                         "summary": {"error": "items 처리 결과가 비어있습니다."},
                     }
@@ -11356,6 +11384,7 @@ class PortfolioNodeExecutor(NodeExecutorBase):
             "rebalance_signal": False,
             "rebalance_orders": [],
             "allocated_capital": {},
+            "drawdown_percent": 0,
         }
 
 
@@ -13834,6 +13863,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     "original_order_id": original_order_id,
                     "product": "overseas_stock",
                 },
+                "modified_order_id": None,
                 "modified_order": None,
             }
 
@@ -13956,6 +13986,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     "original_order_id": original_order_id,
                     "product": "overseas_futures",
                 },
+                "modified_order_id": None,
                 "modified_order": None,
             }
 
@@ -14058,6 +14089,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     "original_order_id": original_order_id,
                     "product": "korea_stock",
                 },
+                "modified_order_id": None,
                 "modified_order": None,
             }
 
@@ -14117,7 +14149,9 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             )
             return {
                 "order_id": order_id,
+                "cancel_result": None,
                 "cancelled_order_id": order_id,
+                "cancelled_order": None,
                 "status": "simulated",
                 "dry_run": True,
                 "requested": config,
@@ -15037,12 +15071,12 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         workflow = kwargs.get("workflow")
         if not workflow:
             context.log("error", "AIAgentNode requires workflow context", node_id)
-            return {"error": "Workflow context not provided"}
+            return {"response": None, "error": "Workflow context not provided"}
 
         ai_model_node_id = workflow.get_ai_model_node_id(node_id)
         if not ai_model_node_id:
             context.log("error", "No LLMModelNode connected via ai_model edge", node_id)
-            return {"error": "No LLM model connected. Connect a LLMModelNode via ai_model edge."}
+            return {"response": None, "error": "No LLM model connected. Connect a LLMModelNode via ai_model edge."}
 
         # LLMModelNode의 출력에서 connection 가져오기
         llm_connection = context.get_output(ai_model_node_id, "connection")
@@ -15062,7 +15096,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
 
         if not llm_connection:
             context.log("error", "Failed to get LLM connection", node_id)
-            return {"error": "Failed to get LLM connection from LLMModelNode."}
+            return {"response": None, "error": "Failed to get LLM connection from LLMModelNode."}
 
         # secrets에서 API 키 복원 (H-8: 평문 노출 방지)
         llm_node_ref = llm_connection.get("_llm_node_id", ai_model_node_id)
@@ -15169,7 +15203,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                     )
             except Exception as e:
                 context.log("error", f"LLM call failed: {e}", node_id)
-                return {"error": f"LLM call failed: {e}"}
+                return {"response": None, "error": f"LLM call failed: {e}"}
 
             # 토큰 사용량 이벤트
             from programgarden_core.bases.listener import TokenUsageEvent
@@ -15290,7 +15324,7 @@ class AIAgentNodeExecutor(NodeExecutorBase):
                     ))
 
                     if tool_error_strategy == "abort":
-                        return {"error": f"Tool '{tool_name}' failed: {e}"}
+                        return {"response": None, "error": f"Tool '{tool_name}' failed: {e}"}
                     elif tool_error_strategy == "skip":
                         messages.append({
                             "role": "tool",
