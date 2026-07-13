@@ -285,3 +285,81 @@ def test_array_producing_nodes_are_not_auto_iterated():
     assert "OverseasFuturesSymbolQueryNode" in no_iter
     assert "OverseasStockSymbolQueryNode" in no_iter
     assert "KoreaStockSymbolQueryNode" in no_iter
+
+
+# ---------------------------------------------------------------------------
+# 6. 거래소 필터 — 무음 빈 배열 금지 (적대검증이 잡은 회귀)
+# ---------------------------------------------------------------------------
+
+def _symbol_query_context():
+    ctx = _make_context()
+    ctx.is_deep_validate = False
+    ctx.is_dry_run = False
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_symbol_query_unavailable_exchange_raises_not_empty():
+    """해외선물 권한은 **거래소별**이다. 계좌에 없는 거래소를 고르면 마스터에 그 거래소 행이
+    아예 없다. 그때 조용히 빈 배열을 주면 하류가 전부 no-op 하고 워크플로우는 '성공'한 척
+    아무것도 안 한다 — 이 저장소가 없애려는 바로 그 무음 실패다."""
+    from programgarden.executor import SymbolQueryNodeExecutor
+
+    ex = SymbolQueryNodeExecutor()
+    with _patched_master(LISTED_ROWS):  # HKEX + LME 뿐 (실측과 동일)
+        with pytest.raises(RuntimeError) as e:
+            await ex.execute(
+                "q", "OverseasFuturesSymbolQueryNode",
+                {"futures_exchange": "2"},  # CME — 이 계좌에 없다
+                _symbol_query_context(),
+            )
+    msg = str(e.value)
+    assert "CME" in msg
+    assert "HKEX" in msg and "LME" in msg  # 무엇을 쓸 수 있는지 알려준다
+
+
+@pytest.mark.asyncio
+async def test_symbol_query_available_exchange_filters():
+    from programgarden.executor import SymbolQueryNodeExecutor
+
+    ex = SymbolQueryNodeExecutor()
+    with _patched_master(LISTED_ROWS):
+        out = await ex.execute(
+            "q", "OverseasFuturesSymbolQueryNode",
+            {"futures_exchange": "6"},  # HKEX
+            _symbol_query_context(),
+        )
+    assert out["count"] == 7  # LME 1건 제외
+    assert {s["exchange"] for s in out["symbols"]} == {"HKEX"}
+    # exchange 는 레지스트리 코드여야 한다 — LS 의 한글명이 주문 TR 로 새면 주문이 깨진다.
+    assert all(s["exchange_name"] == "홍콩거래소" for s in out["symbols"])
+
+
+@pytest.mark.asyncio
+async def test_contract_node_accepts_sibling_enum_exchange_value():
+    """형제 노드는 같은 이름의 필드를 enum('6'=HKEX)으로 쓴다. 챗봇이 그 값을 그대로
+    넣어도 죽지 않아야 한다."""
+    out = await _run({"base_products": ["HMH"], "futures_exchange": "6"})
+    assert out["symbols"] == [{"exchange": "HKEX", "symbol": "HMHN26"}]
+
+
+@pytest.mark.asyncio
+async def test_contract_node_wrong_exchange_names_the_real_cause():
+    """거래소를 잘못 고른 게 원인일 때, 메시지가 '상장 계약이 하나도 없다'로 읽히면
+    자동수정 루프가 진짜 원인을 못 찾는다."""
+    with pytest.raises(RuntimeError, match="LS currently lists: HKEX, LME"):
+        await _run({"base_products": ["HMH"], "futures_exchange": "CME"})
+
+
+def test_deep_fixture_honors_contract_selection():
+    """fixture 가 selection 을 무시하면 세 설정이 같은 심볼을 내 게이트가 오배선을 못 잡는다."""
+    front = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "front"})
+    nxt = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "next"})
+    qtr = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "quarterly"})
+    syms = {front["symbols"][0]["symbol"], nxt["symbols"][0]["symbol"], qtr["symbols"][0]["symbol"]}
+    assert len(syms) == 3
+
+
+def test_deep_fixture_normalizes_sibling_enum_exchange():
+    fx = _df.futures_contract_fixture({"base_products": ["HMH"], "futures_exchange": "6"})
+    assert fx["symbols"][0]["exchange"] == "HKEX"

@@ -18,6 +18,11 @@
   client-side against `ExchCd`.
 - **Expired contracts were passed downstream.** The futures master branch now drops any contract
   month earlier than the current one.
+- **An unavailable exchange returned a silent empty universe.** Overseas-futures entitlement is
+  per exchange, so a `futures_exchange` the account does not carry has no rows in the master. That
+  now raises with the exchanges LS actually returned, instead of an empty list that makes every
+  downstream node a no-op while the workflow reports success. `FuturesContractNode` also accepts the
+  sibling node's enum form (`"6"` = HKEX) and names the exchange as the cause when it is the cause.
 - `OverseasFuturesSymbolQueryNode` / `OverseasStockSymbolQueryNode` / `KoreaStockSymbolQueryNode`
   added to `NO_AUTO_ITERATE_NODE_TYPES` — with an upstream array they re-ran the whole master query
   once per item.

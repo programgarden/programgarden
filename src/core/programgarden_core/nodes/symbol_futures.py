@@ -71,6 +71,8 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
     _features: ClassVar[List[str]] = [
         "Queries o3101 API (overseas futures master) — returns [{symbol, exchange, name, contract_month, currency, ...}] list",
         "Filter by futures_exchange (1=all, 2=CME, 3=SGX, 4=EUREX, 5=ICE, 6=HKEX, 7=OSE) and futures_contract_month (front/next/F/2026F)",
+        "Overseas-futures entitlement is per exchange — a test account typically only carries HKEX and LME. Picking an exchange the account does not carry fails loudly with the list LS actually returns (never a silent empty universe)",
+        "Expired contract months are dropped — LS serves neither bars nor quotes for them, and reports no error",
         "Contract month codes: F=Jan, G=Feb, H=Mar, J=Apr, K=May, M=Jun, N=Jul, Q=Aug, U=Sep, V=Oct, X=Nov, Z=Dec",
         "max_results cap (100–10000) prevents runaway API calls; uses continuation query under the hood",
         "Outputs `symbols` (list) and `count` (int) ports",
@@ -89,15 +91,15 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
-            "title": "List all front-month CME contracts",
-            "description": "Fetch near-month CME futures contracts and display the full list.",
+            "title": "List every front-month contract the account can trade",
+            "description": "Fetch the near-month contract of each listed product and display the full list.",
             "workflow_snippet": {
-                "id": "overseas_futures_symbol_query_cme",
-                "name": "CME Front Month Contracts",
+                "id": "overseas_futures_symbol_query_all",
+                "name": "Front Month Contracts",
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "symbols", "type": "OverseasFuturesSymbolQueryNode", "futures_exchange": "2", "futures_contract_month": "front", "max_results": 100},
+                    {"id": "symbols", "type": "OverseasFuturesSymbolQueryNode", "futures_exchange": "1", "futures_contract_month": "front", "max_results": 100},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.symbols.symbols }}"},
                 ],
                 "edges": [
@@ -172,7 +174,8 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
         ],
         "pitfalls": [
             "Omitting futures_contract_month returns all contract months — filter to 'front'/'next' for most strategies",
-            "Contract symbols expire — update futures_contract_month monthly or use 'front'/'next' to auto-select near-month",
+            "To trade one known underlying (Mini Hang Seng, …), use FuturesContractNode instead — this node browses the whole universe",
+            "futures_exchange is limited by the account's per-exchange entitlement; an exchange the account does not carry fails loudly (it is not silently empty)",
             "Use OverseasFuturesBrokerNode (not OverseasStockBrokerNode) as the upstream broker",
         ],
     }

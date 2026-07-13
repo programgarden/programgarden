@@ -2607,13 +2607,36 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
             )
 
             result = await query.req_async()
+            rows = list(getattr(result, 'block', None) or [])
 
-            wanted_exchange = self.FUTURES_EXCHANGE_CODES.get(futures_exchange, futures_exchange)
-            if wanted_exchange in ("1", "", "ALL"):
-                wanted_exchange = ""  # 전체
+        except Exception as e:
+            context.log("error", f"o3101 API error: {str(e)}", node_id)
+            return {"symbols": [], "count": 0, "error": str(e)}
 
-            if result and hasattr(result, 'block') and result.block:
-                for item in result.block:
+        wanted_exchange = self.FUTURES_EXCHANGE_CODES.get(futures_exchange, futures_exchange)
+        if wanted_exchange in ("1", "", "ALL"):
+            wanted_exchange = ""  # 전체
+
+        listed_exchanges = sorted({
+            (getattr(item, 'ExchCd', '') or '').strip().upper() for item in rows
+        } - {""})
+
+        # 요청한 거래소가 이 계좌의 마스터에 아예 없으면 **조용히 빈 배열을 주지 않는다**.
+        # 빈 유니버스는 하류를 전부 no-op 시키고 워크플로우는 '성공'한 척 아무것도 안 한다 —
+        # 이 저장소가 없애려는 바로 그 무음 실패다. 무엇을 쓸 수 있는지 알려주고 실패한다.
+        # (해외선물 권한은 거래소별이라, 이 계좌에 없는 거래소를 고르면 여기서 걸린다.)
+        if wanted_exchange and rows and wanted_exchange not in listed_exchanges:
+            raise RuntimeError(
+                f"OverseasFuturesSymbolQueryNode[{node_id}]: exchange '{wanted_exchange}' "
+                f"(futures_exchange={futures_exchange!r}) has no contracts in this account's LS "
+                f"master. LS currently lists: {', '.join(listed_exchanges) or '(none)'}. "
+                f"Overseas-futures entitlement is per exchange — check the account, or use "
+                f"futures_exchange='1' for all exchanges."
+            )
+
+        try:
+            if rows:
+                for item in rows:
                     exchcd = (getattr(item, 'ExchCd', '') or '').strip().upper()
                     if wanted_exchange and exchcd != wanted_exchange:
                         continue
@@ -2807,7 +2830,15 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
         base_products = [str(p).strip().upper() for p in base_products if str(p).strip()]
 
         selection = str(config.get("contract_selection") or "front").strip().lower()
+        # 거래소는 ExchCd('HKEX')로 받는다. 다만 형제 노드(OverseasFuturesSymbolQueryNode)는
+        # 같은 이름의 필드를 enum('6'=HKEX)으로 쓴다 — LLM/사용자가 그 값을 그대로 넣어도
+        # 죽지 않도록 여기서 흡수한다.
         exchange_filter = (config.get("futures_exchange") or "").strip().upper()
+        exchange_filter = SymbolQueryNodeExecutor.FUTURES_EXCHANGE_CODES.get(
+            exchange_filter, exchange_filter
+        )
+        if exchange_filter in ("1", "ALL"):
+            exchange_filter = ""  # 전체
 
         if not base_products:
             raise RuntimeError(
@@ -2880,7 +2911,19 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
                 f"many requests are sharing this app key at once."
             )
 
-        listed = self._parse_master(rows, exchange_filter)
+        # 거래소 필터를 걸기 **전** 목록도 들고 있는다 — 실패 메시지의 "쓸 수 있는 코드" 를
+        # 필터 뒤 목록에서 뽑으면, 거래소를 잘못 골랐을 때 "LS 에 아무것도 없다" 로 읽혀
+        # 진짜 원인(거래소 오지정)을 가린다.
+        unfiltered = self._parse_master(rows, "")
+        listed = [c for c in unfiltered if not exchange_filter or c["exchange"] == exchange_filter]
+
+        if exchange_filter and not listed and unfiltered:
+            raise RuntimeError(
+                f"FuturesContractNode[{node_id}]: exchange '{exchange_filter}' has no listed "
+                f"contracts in this account's LS master. LS currently lists: "
+                f"{', '.join(sorted({c['exchange'] for c in unfiltered}))}. "
+                f"Leave futures_exchange empty to search every exchange."
+            )
 
         available = sorted({c["base_product"] for c in listed})
         contracts: List[Dict[str, Any]] = []
