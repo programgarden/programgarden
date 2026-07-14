@@ -1167,6 +1167,27 @@ class WorkflowResolver:
                     queue.append(nxt)
             return False
 
+        # 엔진 _pick_split_array 가 상류 dict 에서 배열로 인정하는 KNOWN 포트 이름. 상류가
+        # 이 중 **2개 이상**을 출력으로 선언하면(계좌: held_symbols/positions/open_orders)
+        # 엔진은 array 바인딩 없이는 모호하다며 런타임 raise 한다 → 정적으로 미리 막는다.
+        _known_array_ports = {
+            "array", "symbols", "values", "data", "items",
+            "held_symbols", "positions", "open_orders",
+        }
+
+        def _count_array_ports(src_type: Optional[str]) -> int:
+            if not src_type:
+                return 0
+            schema = registry.get_schema(src_type)
+            if schema is None:
+                return 0
+            n = 0
+            for out in (schema.outputs or []):
+                name = out.get("name") if isinstance(out, dict) else getattr(out, "name", None)
+                if name in _known_array_ports:
+                    n += 1
+            return n
+
         def _may_produce_list(src_type: Optional[str]) -> bool:
             # 동적/미상 출력은 리스트 가능 → 보수적으로 통과.
             if not src_type or src_type == "CodeNode":
@@ -1221,6 +1242,32 @@ class WorkflowResolver:
             if has_array_binding:
                 continue
             srcs = incoming.get(sid, [])
+            # (2') 다중 배열 상류(계좌 등) — 바인딩이 없으면 엔진이 어느 배열을 분리할지
+            # 모호하다며 런타임 raise 한다. 그 raise 를 **빌드 시점 error 로 승격**해 챗봇
+            # self-correct 루프가 실행 전에 잡게 한다. (silent misroute 방지 규율.)
+            ambiguous = [
+                s for s in srcs if _count_array_ports(node_type_by_id.get(s)) >= 2
+            ]
+            if ambiguous:
+                amb_type = node_type_by_id.get(ambiguous[0]) or "?"
+                result.add(
+                    build_error(
+                        ErrorCode.MISSING_REQUIRED_FIELD,
+                        (
+                            f"SplitNode '{sid}' 의 상류 '{ambiguous[0]}'({amb_type})는 여러 배열을 "
+                            f"출력한다(held_symbols/positions/open_orders 등). 엔진은 어느 배열을 "
+                            f"분리할지 몰라 런타임에 실패한다 — `array` 를 명시 바인딩해 하나를 "
+                            f"골라야 한다."
+                        ),
+                        location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path="array"),
+                        suggestion=(
+                            "Bind `array` explicitly to the array you want to split, e.g. "
+                            "array: '{{ nodes." + str(ambiguous[0]) + ".held_symbols }}' "
+                            "(보유종목) 또는 '{{ nodes." + str(ambiguous[0]) + ".positions }}' (포지션)."
+                        ),
+                    )
+                )
+                continue
             if srcs and any(_may_produce_list(node_type_by_id.get(s)) for s in srcs):
                 continue
             result.add(
