@@ -352,3 +352,73 @@ class TestSplitBranchArrayResolution:
         await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm"})
         assert cap["total"] == 2
         assert cap["items"] == syms
+
+
+class TestThrottleMetaDoesNotLeakAsData:
+    """ThrottleNode 내부 메타(_throttle_stats)가 데이터로 새지 않는다 —
+    2026-07-14 런타임 배선 결함2 회귀 테스트 (생산자+소비자 양쪽)."""
+
+    @staticmethod
+    def _ctx():
+        from programgarden.context import ExecutionContext
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+
+        async def _noop(**k):
+            return None
+
+        ctx.notify_node_state = _noop
+        return ctx
+
+    @pytest.mark.asyncio
+    async def test_pending_throttle_emits_no_public_data(self):
+        """상류 데이터가 없으면(pending) throttle 은 공개 데이터 포트를 내지 않는다.
+
+        예전엔 outputs={} 에 _throttle_stats 만 실어 방출했다(passed:True 껍데기)."""
+        from programgarden.executor import ThrottleNodeExecutor, _public_outputs
+
+        out = await ThrottleNodeExecutor().execute(
+            "throttle", "ThrottleNode",
+            {"mode": "latest", "interval_sec": 5.0, "pass_first": True},
+            self._ctx(),
+        )
+        assert _public_outputs(out) == {}, "pending 시 공개 포트가 없어야 한다"
+        assert out["_throttle_stats"]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_real_data_passes_through_without_stats_as_public(self):
+        """실데이터가 있으면 그대로 통과하되 _throttle_stats 는 공개 데이터가 아니다."""
+        from programgarden.executor import ThrottleNodeExecutor, _public_outputs
+
+        out = await ThrottleNodeExecutor().execute(
+            "throttle", "ThrottleNode",
+            {"mode": "latest", "interval_sec": 5.0, "pass_first": True,
+             "_realtime_data": {"price": 123.45, "symbol": "AUID"}},
+            self._ctx(),
+        )
+        public = _public_outputs(out)
+        assert public == {"price": 123.45, "symbol": "AUID"}
+        assert "_throttle_stats" not in public
+
+    def test_public_outputs_strips_underscore_ports(self):
+        from programgarden.executor import _public_outputs
+
+        assert _public_outputs(
+            {"price": 1, "_throttle_stats": {"passed": True}, "_throttled": True}
+        ) == {"price": 1}
+
+    def test_branch_result_selection_ignores_meta_only_outputs(self):
+        """branch 결과 선택은 공개 포트만 본다 — 메타만 있으면 item 으로 폴백."""
+        from programgarden.executor import _public_outputs
+
+        def pick(outputs, item):
+            public = _public_outputs(outputs) if outputs else {}
+            if public:
+                return public.get("result") or public.get("value") or next(iter(public.values()), item)
+            return item
+
+        item = {"symbol": "AUID"}
+        # 메타만 → item 폴백 (통계 아님)
+        assert pick({"_throttle_stats": {"passed": True}}, item) == item
+        # 실데이터 → 실데이터
+        assert pick({"price": 99.0, "_throttle_stats": {}}, item) == 99.0

@@ -850,16 +850,37 @@ class ThrottleNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """Process data pass-through"""
         from programgarden_core.bases.listener import NodeState
-        
+
         now = datetime.now()
+
+        # 상류에 흘릴 실데이터가 없으면(예: 실시간 시세 노드가 아직 틱 대기) '통과했다'고
+        # data-형 output 을 내지 않는다. 예전엔 여기서 outputs={} 에 _throttle_stats 만
+        # 실어 방출했고, 하류 collector 가 그 내부 통계를 데이터로 오인했다(passed:True
+        # 껍데기가 표에 렌더). pending 이면 내부 메타만 돌려주고 cooldown 도 리셋 안 한다
+        # (실제로 통과한 게 없으므로). — 2026-07-14 runtime-wiring fix (생산자 측).
+        if not input_data:
+            context.log(
+                "debug",
+                "Throttle pass-through skipped: no upstream data yet (pending)",
+                node_id,
+            )
+            return {
+                "_throttled": True,
+                "_throttle_stats": {
+                    "skipped_count": throttle_state.get("skipped_count", 0),
+                    "passed": False,
+                    "reason": "no upstream data yet",
+                },
+            }
+
         throttle_state["last_passed_at"] = now.isoformat()
         throttle_state["pending_data"] = None
         # Keep skipped_count for cumulative stats
-        
+
         context.set_node_state(node_id, state_key, throttle_state)
-        
+
         # Pass input data as output (transparent proxy)
-        outputs = dict(input_data) if input_data else {}
+        outputs = dict(input_data)
         outputs["_throttle_stats"] = {
             "skipped_count": throttle_state.get("skipped_count", 0),
             "last_passed_at": now.isoformat(),
@@ -948,6 +969,24 @@ def _pick_split_array(upstream: Dict[str, Any], *, source: str) -> List[Any]:
         f"multiple candidate arrays {candidates}. Bind split.array explicitly to "
         f"pick one (e.g. array: '{{{{ nodes.<id>.{candidates[0]} }}}}')."
     )
+
+
+def _public_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop internal/meta ports (``_``-prefixed, e.g. ``_throttle_stats`` /
+    ``_throttled``) so they never leak downstream as data.
+
+    The ``_`` prefix is the repo-wide convention for internal port metadata
+    (see NodeExecutorBase._collect_input_data, which already filters inputs this
+    way). This centralizes the same filter for the *output* side so ANY node's
+    meta — not just ThrottleNode's stats — is excluded consistently. Without it,
+    a ThrottleNode that has nothing to pass (upstream still pending) returns
+    only ``_throttle_stats`` and a downstream collector grabs that stats dict as
+    if it were the payload (2026-07-14 runtime-wiring fix).
+    """
+    return {
+        k: v for k, v in outputs.items()
+        if not (isinstance(k, str) and k.startswith("_"))
+    }
 
 
 class SplitNodeExecutor(NodeExecutorBase):
@@ -18571,9 +18610,13 @@ class WorkflowJob:
             for port_name, value in outputs.items():
                 self.context.set_output(node_id, port_name, value)
 
-            # Track last result
-            if outputs:
-                result = outputs.get("result") or outputs.get("value") or next(iter(outputs.values()), item)
+            # Track last result — only from PUBLIC ports. Internal meta
+            # (_throttle_stats 등)이 유일 출력일 때 그걸 결과로 집으면 Aggregate/Display
+            # 가 내부 통계를 데이터로 렌더한다. 공개 포트가 없으면(예: 시세 노드가 아직
+            # 틱 대기라 throttle 이 흘릴 실데이터가 없음) 이 아이템의 결과는 item 으로 둔다.
+            public = _public_outputs(outputs) if outputs else {}
+            if public:
+                result = public.get("result") or public.get("value") or next(iter(public.values()), item)
 
         return result
 
