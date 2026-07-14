@@ -38,6 +38,7 @@ class Capture(BaseExecutionListener):
         self.node_outputs = {}      # node_id -> last completed outputs
         self.split_items = []       # every value split emitted as item
         self.display_events = []    # DisplayNode payloads
+        self.first_held = None      # first NON-EMPTY real_account.held_symbols snapshot
 
     async def on_node_state_change(self, event):
         if getattr(event, "outputs", None) is not None:
@@ -46,6 +47,14 @@ class Capture(BaseExecutionListener):
                 item = event.outputs.get("item")
                 if item is not None:
                     self.split_items.append(item)
+            elif event.node_id == "real_account":
+                # The realtime account re-syncs (stay_connected) and a later
+                # snapshot can carry null/empty held_symbols, clobbering the
+                # good first value. Preserve the FIRST non-empty snapshot so
+                # [3] reads the real emitted value, not a re-exec artifact.
+                hs = event.outputs.get("held_symbols")
+                if hs and self.first_held is None:
+                    self.first_held = hs
 
     async def on_display(self, event):  # DisplayEvent (if emitted)
         self.display_events.append(getattr(event, "payload", None) or getattr(event, "data", None))
@@ -73,8 +82,11 @@ async def main():
         return 3
 
     definition = json.loads(DSL_PATH.read_text())
+    # get_credential() defaults to the LITERAL key "credential_id" (context.py:537),
+    # NOT the DSL's credential_id value. Keying by the DSL name silently yields
+    # "Missing credentials" -> empty account -> a vacuous [2] PASS.
     secrets = {
-        "broker_ls_overseas_stock_cred": {
+        "credential_id": {
             "appkey": os.environ["APPKEY"],
             "appsecret": os.environ["APPSECRET"],
         }
@@ -109,10 +121,19 @@ async def main():
     print("STAGE A — ACCEPTANCE CHECKS")
     print("=" * 72)
 
+    # Source of truth for held-symbol dicts = the items Split ACTUALLY fanned out
+    # (array={{held_symbols}} => each split item IS a held_symbols dict). Fall back
+    # to the first non-empty real_account snapshot. Do NOT read the last snapshot —
+    # the realtime re-sync nulls it (that was the [3] "inconclusive" reporting bug).
     acct = cap.node_outputs.get("real_account", {})
-    held = acct.get("held_symbols") if isinstance(acct, dict) else None
+    last_snap = acct.get("held_symbols") if isinstance(acct, dict) else None
+    split_dicts = [it for it in cap.split_items if isinstance(it, dict)]
+    held = split_dicts or cap.first_held or (last_snap if last_snap else None)
     print("\n[real_account.held_symbols]")
-    print("  ", _fmt(held))
+    print("   source        :", "split-items" if split_dicts else ("first-snapshot" if cap.first_held else "last-snapshot"))
+    print("   first snapshot :", _fmt(cap.first_held))
+    print("   last snapshot  :", _fmt(last_snap), "  <- realtime re-sync may null this")
+    print("   split items    :", _fmt(cap.split_items))
 
     # [3] exchange normalization
     ex_ok = False
@@ -126,19 +147,22 @@ async def main():
         print(f"\n[3] exchange normalization: exchange&exchange_code both present on all = {ex_ok}")
         print(f"    NASDAQ present={has_nasdaq}  exchange_code=82 present={has_82}")
     else:
-        print("\n[3] exchange normalization: NO held_symbols (empty account?) — inconclusive")
+        print("\n[3] exchange normalization: NO held_symbols observed (empty account?) — inconclusive")
 
     # [1] split iteration
     print(f"\n[1] Split emitted {len(cap.split_items)} item(s):")
     for it in cap.split_items:
         print("    ", _fmt(it, 200))
     split_ok = len(cap.split_items) > 0
-    if isinstance(held, list):
-        held_syms = {h.get("symbol") for h in held if isinstance(h, dict)}
+    # Compare split fan-out against the ACCOUNT snapshot (independent source) to
+    # prove Split iterated the real held_symbols and not some fallback list.
+    acct_ref = cap.first_held or (last_snap if isinstance(last_snap, list) else None)
+    if isinstance(acct_ref, list):
+        acct_syms = {h.get("symbol") for h in acct_ref if isinstance(h, dict)}
         split_syms = {
             (it.get("symbol") if isinstance(it, dict) else it) for it in cap.split_items
         }
-        print(f"    held symbols={held_syms}  split symbols={split_syms}  match={held_syms == split_syms if held_syms else 'n/a'}")
+        print(f"    account held symbols={acct_syms}  split symbols={split_syms}  match={acct_syms == split_syms if acct_syms else 'n/a'}")
 
     # [2] table honesty
     disp = cap.node_outputs.get("display", {})
