@@ -300,14 +300,16 @@ class TestSplitBranchArrayResolution:
     async def test_declared_items_port_is_actually_emitted(self):
         """선언한 `items` 출력 포트가 branch flow 에서 실제로 채워진다.
 
-        이전엔 SplitNodeExecutor.execute 가 호출 안 돼 items/_array 가 늘 비어 있었고,
+        이전엔 SplitNodeExecutor.execute 가 호출 안 돼 items 가 늘 비어 있었고,
         `{{ nodes.split.items }}` 를 바인딩한 하류는 조용히 빈 데이터를 받았다.
+        선언되지 않은 legacy `_array` 별칭은 방출하지 않는다(선언==런타임).
         """
         held = [{"exchange": "82", "symbol": "AUID"}, {"exchange": "82", "symbol": "TSLA"}]
         job, ctx, split_node, _ = self._mk_job({"symbols": held}, {})
         await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm"})
         assert ctx.get_output("split", "items") == held
-        assert ctx.get_output("split", "_array") == held
+        # 미선언 내부 별칭 _array 는 더 이상 방출하지 않는다.
+        assert ctx.get_output("split", "_array") is None
 
     @pytest.mark.asyncio
     async def test_explicit_array_binding_is_honored_over_upstream(self):

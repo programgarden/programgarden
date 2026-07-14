@@ -1067,8 +1067,10 @@ class SplitNodeExecutor(NodeExecutorBase):
             "item": split_context["item"],
             "index": split_context["index"],
             "total": split_context["total"],
-            # Expose full array via both legacy name and the documented schema port.
-            "_array": input_array,
+            # Full input array via the documented schema port. (The undeclared
+            # legacy `_array` alias was dropped — it had no reader and its `_`
+            # prefix collided with the internal-meta filter; only declared ports
+            # are emitted so declaration == runtime.)
             "items": input_array,
         }
 
@@ -18456,11 +18458,10 @@ class WorkflowJob:
                 source=f"node '{upstream_id}'" if upstream_id else "no upstream edge",
             )
 
-        # 선언한 items/_array 출력 포트를 실제로 채운다(선언==런타임). 값은 모든
-        # 아이템 공통이라 루프 전에 한 번만 세팅한다. 예전엔 branch flow 에서
-        # SplitNodeExecutor.execute 가 아예 호출되지 않아 items/_array 가 늘 비었다.
+        # 선언한 items 출력 포트를 실제로 채운다(선언==런타임). 값은 모든 아이템
+        # 공통이라 루프 전에 한 번만 세팅한다. 예전엔 branch flow 에서
+        # SplitNodeExecutor.execute 가 아예 호출되지 않아 items 가 늘 비었다.
         self.context.set_output(split_id, "items", input_array)
-        self.context.set_output(split_id, "_array", input_array)
 
         if not input_array:
             self.context.log("info", f"SplitNode {split_id}: empty array, skipping branch", split_id)
