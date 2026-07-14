@@ -77,6 +77,41 @@ REALTIME_NODE_TYPES: frozenset = frozenset({
 })
 
 
+def _order_failure_from_outputs(outputs: Any) -> Optional[str]:
+    """Return a human-readable reason if an order node *failed without raising*.
+
+    Order nodes never raise on failure — they return ``order_result.success=False``
+    with an :class:`EmptyOrderReason`. A node that returns normally is reported as
+    COMPLETED with ``errors_count=0`` and ``last_error=None``, so "the order never
+    went out" leaves **no trace on any observable surface**: the dashboard, the
+    monitoring page and the user all see a clean run. In automated trading that is
+    the single most dangerous failure mode.
+
+    ``no_signal`` ("no trading signal today") is a legitimate no-op and is NOT a
+    failure. Every other reason (``fetch_failed``, ``no_symbol``, or an explicit
+    ``error`` with no reason at all) means an order was supposed to go out and
+    didn't — surface it.
+
+    Returns None when there is nothing wrong.
+    """
+    if not isinstance(outputs, dict):
+        return None
+    result = outputs.get("order_result")
+    if not isinstance(result, dict) or result.get("success") is not False:
+        return None
+
+    reason = result.get("reason")
+    if reason == EmptyOrderReason.NO_SIGNAL.value:
+        return None
+
+    parts = [
+        str(p) for p in (result.get("message"), result.get("detail"), result.get("error"))
+        if p
+    ]
+    label = reason or "order_failed"
+    return f"{label}: {' — '.join(parts)}" if parts else str(label)
+
+
 def _free_root_names(text: str) -> Set[str]:
     """Return the set of free-variable root identifiers referenced (ctx=Load) by
     every ``{{ ... }}`` expression embedded in ``text``.
@@ -18225,6 +18260,44 @@ class WorkflowJob:
                         },
                     )
 
+                # An order node that failed did NOT raise — it returned
+                # order_result.success=False. Reporting that as COMPLETED leaves
+                # errors_count=0 / last_error=None, i.e. every observable surface
+                # says the run succeeded while no order actually went out. Surface
+                # it: FAILED node state + job stats + an error log line. no_signal
+                # ("no trading signal today") is a normal no-op and is excluded.
+                order_failure = _order_failure_from_outputs(outputs)
+
+                # deep_validate: promote it to a blocking structured error so the
+                # chatbot learns its order wiring is broken at *build* time instead
+                # of shipping a workflow whose order silently never fires.
+                if (
+                    order_failure
+                    and getattr(self.context, "is_deep_validate", False)
+                    and node_id not in self._node_error_infos
+                ):
+                    from programgarden_core import (
+                        ErrorCode,
+                        ErrorLocation,
+                        build_error,
+                    )
+                    self._node_error_infos[node_id] = build_error(
+                        ErrorCode.DEEP_VALIDATION_NODE_ERROR,
+                        f"Node '{node_id}' ({node.node_type}) placed no order: "
+                        f"{order_failure}",
+                        location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                        suggestion=(
+                            "주문 노드가 주문을 내지 못했습니다. 상류 노드의 출력이 이 노드의 "
+                            "주문 입력(order/orders)에 실제로 연결되어 있는지, 표현식이 "
+                            "해소되는지, 수량·종목이 채워지는지 확인하세요."
+                        ),
+                        details={
+                            "raw_message": order_failure,
+                            "deep_validate": True,
+                            "stage": "order_not_placed",
+                        },
+                    )
+
                 # Store outputs
                 for out_port_name, value in outputs.items():
                     self.context.set_output(node_id, out_port_name, value)
@@ -18233,16 +18306,39 @@ class WorkflowJob:
                 # stay_connected 노드는 RUNNING 상태 유지 (계속 실시간 업데이트)
                 duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 is_stay_connected = node_id in self._stay_connected_nodes
-                
-                await self.context.notify_node_state(
-                    node_id=node_id,
-                    node_type=node.node_type,
-                    state=NodeState.RUNNING if is_stay_connected else NodeState.COMPLETED,
-                    outputs=outputs,
-                    duration_ms=duration_ms,
-                )
+
+                if order_failure:
+                    await self.context.notify_node_state(
+                        node_id=node_id,
+                        node_type=node.node_type,
+                        state=NodeState.FAILED,
+                        outputs=outputs,
+                        error=order_failure,
+                        duration_ms=duration_ms,
+                    )
+                    self.stats["errors_count"] += 1
+                    self.stats["last_error"] = f"{node_id}: {order_failure}"
+                    self.stats["last_error_detail"] = {
+                        "node_id": node_id,
+                        "node_type": node.node_type,
+                        "error": order_failure,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                    self.context.log(
+                        "error", f"Order not placed by {node_id}: {order_failure}", node_id
+                    )
+                else:
+                    await self.context.notify_node_state(
+                        node_id=node_id,
+                        node_type=node.node_type,
+                        state=NodeState.RUNNING if is_stay_connected else NodeState.COMPLETED,
+                        outputs=outputs,
+                        duration_ms=duration_ms,
+                    )
 
                 # Checkpoint: 노드 완료 추적 + 일회성 워크플로우 노드 완료마다 저장
+                # (실패해도 흐름은 계속한다 — 스케줄 잡이 한 사이클의 주문 실패로
+                #  통째로 죽지 않도록. 관측 표면에는 위에서 이미 실패로 남았다.)
                 self._completed_node_ids.add(node_id)
                 if not self._stay_connected_nodes:
                     await self._save_checkpoint()
