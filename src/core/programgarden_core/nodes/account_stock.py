@@ -19,6 +19,7 @@ from programgarden_core.nodes.base import (
     ProductScope,
     BrokerProvider,
     OVERSEAS_STOCK_BALANCE_FIELDS,
+    OVERSEAS_STOCK_HELD_SYMBOL_FIELDS,
     OVERSEAS_STOCK_POSITION_FIELDS,
     SYMBOL_LIST_FIELDS,
 )
@@ -174,10 +175,10 @@ class OverseasStockAccountNode(BaseNode):
             name="held_symbols",
             type="symbol_list",
             description="i18n:ports.held_symbols",
-            fields=SYMBOL_LIST_FIELDS,
+            fields=OVERSEAS_STOCK_HELD_SYMBOL_FIELDS,
             example=[
-                {"exchange": "NASDAQ", "symbol": "AAPL"},
-                {"exchange": "NASDAQ", "symbol": "TSLA"},
+                {"exchange": "NASDAQ", "exchange_code": "82", "symbol": "AAPL"},
+                {"exchange": "NASDAQ", "exchange_code": "82", "symbol": "TSLA"},
             ],
         ),
         OutputPort(

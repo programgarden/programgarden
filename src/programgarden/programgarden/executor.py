@@ -989,6 +989,65 @@ def _public_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# ── 해외주식 거래소 표기 정규화 (2026-07-14 결함3) ────────────────────────────
+# LS 는 거래소를 갈래마다 다른 표현으로 준다: REST balance(COSOQ00201) MktTpNm 은
+# 한글 표시명('뉴욕'/'나스닥'), FcurrMktCode 는 LS 코드('81'/'82'/'83'), screener/
+# universe 갈래는 yfinance 접미사(NMS/NYQ/…). 같은 종목인데 시점마다 값이 갈려
+# 표·비교·구독이 조용히 깨진다. producer 경계에서 (표시명, LS코드) 두 표현을 **둘 다**
+# 확정하고, 구독·주문 소비자는 어느 쪽을 받든 코드로 환원한다(미매핑은 raise).
+#
+# ⚠️ 국내/선물은 이번 릴리스에서 건드리지 않는다(정상 동작 중). 전역 네이밍 통일
+# (market_code→exchange_code)은 계획서 후속 항목이다.
+# ⚠️ LS 에서 **AMEX 의 코드는 81** 이다 (주문 OrdMktCode=Literal["81","82"], GSC "81=
+# NYSE/AMEX, 82=NASDAQ"). '83' 은 LS 가 반환/수용하지 않는 **유령 코드**라 제거했다.
+# - 이름→코드는 many-to-one(NYSE→81, AMEX→81, NASDAQ→82) — 무손실(기계 경로엔 코드만 필요).
+# - 코드→이름은 1:1 아님(81=NYSE 이자 AMEX). **표시명을 코드에서 역산하면 AMEX 가 NYSE 로
+#   보일 수 있다**(한계 — 계획서에 명시). 정확한 표시명이 필요하면 이름 소스(MktTpNm 정규화)
+#   를 쓰되, REST↔tracker 값 일치를 위해 producer 는 공통 소스(코드)에서 파생한다.
+_OVERSEAS_STOCK_EXCHANGE = {
+    # LS 코드 → (표시명, 코드). 81 은 NYSE 로 표시(AMEX 도 81이나 코드만으론 구분 불가).
+    "81": ("NYSE", "81"), "82": ("NASDAQ", "82"),
+    # 영문 표시명 → 코드 (이름 소스는 AMEX 를 정확히 구분)
+    "NYSE": ("NYSE", "81"), "AMEX": ("AMEX", "81"), "NASDAQ": ("NASDAQ", "82"),
+    # 한글 표시명 (MktTpNm) → 영문명+코드
+    "뉴욕": ("NYSE", "81"), "아멕스": ("AMEX", "81"), "나스닥": ("NASDAQ", "82"),
+    # yfinance 접미사 (screener/universe 갈래)
+    "NMS": ("NASDAQ", "82"), "NGM": ("NASDAQ", "82"), "NCM": ("NASDAQ", "82"),
+    "NYQ": ("NYSE", "81"), "ASE": ("AMEX", "81"),
+}
+
+
+def normalize_overseas_stock_exchange(raw: Any) -> "tuple[Optional[str], Optional[str]]":
+    """해외주식 거래소 원시값 → (표시명, LS코드). 매핑 불가면 (None, None).
+
+    코드('82')·영문('NASDAQ')·한글('나스닥')·yfinance('NMS')를 모두 받아 정규화한다.
+    """
+    if raw is None:
+        return (None, None)
+    s = str(raw).strip()
+    hit = _OVERSEAS_STOCK_EXCHANGE.get(s) or _OVERSEAS_STOCK_EXCHANGE.get(s.upper())
+    return hit if hit else (None, None)
+
+
+def overseas_stock_exchange_pair(raw: Any) -> "tuple[str, str]":
+    """producer 경계용: (영문 표시명, LS코드) 를 확정해 둘 다 반환.
+
+    소스는 FcurrMktCode(코드 캐리어)를 권장한다. 매핑 불가한 값은:
+    - 한글/미지 **표시명을 데이터에 박지 않는다**(i18n 부채 방지 — 코드·데이터=영어 규율).
+    - raw 가 LS 코드(숫자)면 코드를 그대로 보존(권한 있는 코드 캐리어), 표시명은 코드
+      문자열로 둔다(영어/숫자, 한글 아님). 이름형 미지 값이면 빈 값.
+    코드가 필요한 소비자(구독/주문)는 미매핑 코드에서 raise 한다 — 조용히 틀린 코드로
+    대체하지 않는다.
+    """
+    name, code = normalize_overseas_stock_exchange(raw)
+    if name is not None:
+        return (name, code)
+    raw_s = str(raw).strip() if raw is not None else ""
+    if raw_s.isdigit():
+        return (raw_s, raw_s)  # 미지 LS 코드 — 코드 보존, 한글 아님
+    return ("", "")  # 이름형 미지 표기 → 데이터에 안 박음(빈 값)
+
+
 # Sentinel: a split branch item that produced no real (public) data this cycle
 # and must NOT contribute a row to the AggregateNode/Display. Used when the
 # terminal branch node emits only internal meta (e.g. ThrottleNode is throttling
@@ -4539,6 +4598,10 @@ class AccountNodeExecutor(NodeExecutorBase):
             if not symbol:
                 continue
 
+            # 거래소 표기: FcurrMktCode(코드 캐리어) → (영문 표시명, LS 코드). 예전엔
+            # exchange 에 MktTpNm(한글 '나스닥')을 실어 RealAccount 갈래(코드/영문)와
+            # 갈렸고 한글이 엔진 데이터에 박혔다. market 필드는 종전 표기 유지(별도 필드).
+            _ex_name, _ex_code = overseas_stock_exchange_pair(getattr(item, 'FcurrMktCode', ''))
             positions.append({
                 "symbol": symbol,
                 "name": item.JpnMktHanglIsuNm.strip() if item.JpnMktHanglIsuNm else symbol,
@@ -4552,7 +4615,8 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "pnl_amount": item.FcurrEvalPnlAmt,
                 "currency": item.CrcyCode,
                 "market": item.MktTpNm.strip() if item.MktTpNm else "",
-                "exchange": item.MktTpNm.strip() if item.MktTpNm else "NASDAQ",  # NewOrderNode 호환
+                "exchange": _ex_name,          # 영문 표시명 (NASDAQ)
+                "exchange_code": _ex_code,     # LS 코드 (82)
                 "eval_amount": item.FcurrEvalAmt,
                 "purchase_amount": item.FcurrBuyAmt,
             })
@@ -4560,7 +4624,8 @@ class AccountNodeExecutor(NodeExecutorBase):
         # held_symbols 는 선언된 출력 포트다. 예전엔 여기서 계산만 하고 **반환 dict 에 싣지
         # 않아** 늘 비어 있었다 — 바인딩하면 정적 검증은 통과하고 런타임엔 None 이었다.
         held_symbols = [
-            {"exchange": p.get("exchange", ""), "symbol": p["symbol"]} for p in positions
+            {"exchange": p.get("exchange", ""), "exchange_code": p.get("exchange_code", ""), "symbol": p["symbol"]}
+            for p in positions
         ]
         
         # block2 = 전체 평가 요약. `orderable_amount` is set later by
@@ -5456,10 +5521,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 for sym, pos in positions.items():
                     quantity = pos.quantity
                     current_price = float(pos.current_price)
+                    # tracker 갈래(_get_overseas_stock_tracker_data)와 **같은 소스(market_code)
+                    # 에서 같은 값 표현**을 낸다 — exchange=영문 표시명, exchange_code=LS 코드.
+                    _ex_name, _ex_code = overseas_stock_exchange_pair(getattr(pos, 'market_code', ''))
                     serialized_positions.append({
                         "symbol": sym,
-                        "exchange": getattr(pos, 'market_code', 'NASDAQ'),
-                        "market_code": getattr(pos, 'market_code', ''),
+                        "exchange": _ex_name,          # 영문 표시명
+                        "exchange_code": _ex_code,     # LS 코드
+                        "market_code": getattr(pos, 'market_code', ''),  # 후속: exchange_code 로 수렴/제거
                         "name": getattr(pos, 'symbol_name', sym),
                         "qty": quantity,
                         "quantity": quantity,  # NewOrderNode 호환
@@ -5924,14 +5993,17 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         for symbol, pos in tracker.get_positions().items():
             quantity = pos.quantity
             current_price = float(pos.current_price)
+            # 거래소 표기 정규화: FcurrMktCode(코드 캐리어) → (영문 표시명, LS 코드).
+            # REST 스냅샷 갈래(_ls_stock_with_tracker)와 **같은 키 + 같은 값 표현**이어야
+            # 한다. 예전엔 exchange 에 raw market_code 를 실어, 스냅샷(이름)과 틱(코드)이
+            # 시점마다 갈렸다(주문/표가 조용히 깨짐).
+            _ex_name, _ex_code = overseas_stock_exchange_pair(getattr(pos, 'market_code', ''))
             positions.append({
                 "symbol": symbol,
                 "name": getattr(pos, 'name', getattr(pos, 'symbol_name', symbol)),
-                # REST 스냅샷 갈래(_ls_stock_with_tracker)와 **같은 키 집합**이어야 한다.
-                # 안 그러면 같은 포트가 스냅샷일 땐 exchange/quantity 를 주고 실시간 틱일 땐
-                # 안 주는, 시점마다 모양이 바뀌는 출력이 된다 (주문 노드가 조용히 깨진다).
-                "exchange": getattr(pos, 'market_code', 'NASDAQ'),
-                "market_code": getattr(pos, 'market_code', ''),
+                "exchange": _ex_name,          # 영문 표시명 (NASDAQ)
+                "exchange_code": _ex_code,     # LS 코드 (82)
+                "market_code": getattr(pos, 'market_code', ''),  # 후속: exchange_code 로 수렴/제거
                 "qty": quantity,
                 "quantity": quantity,  # NewOrderNode 호환
                 "price": current_price,  # NewOrderNode 호환
@@ -5945,7 +6017,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             })
 
         held_symbols = [
-            {"exchange": p["exchange"], "symbol": p["symbol"]} for p in positions
+            {"exchange": p["exchange"], "exchange_code": p["exchange_code"], "symbol": p["symbol"]}
+            for p in positions
         ]
         
         # balance를 JSON 직렬화 가능한 형태로 변환
@@ -6269,10 +6342,15 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                 symbol = entry.get("symbol", "")
                 exchange = entry.get("exchange", "")
                 symbols.append(symbol)
-                symbols_with_exchange.append({"symbol": symbol, "exchange": exchange})
+                # exchange_code(있으면 권한 있는 LS 코드)를 함께 통과시켜 하류 구독이
+                # 이름 역매핑 없이도 정확한 코드를 쓰게 한다.
+                symbols_with_exchange.append({
+                    "symbol": symbol, "exchange": exchange,
+                    "exchange_code": entry.get("exchange_code", ""),
+                })
             elif isinstance(entry, str):
                 symbols.append(entry)
-                symbols_with_exchange.append({"symbol": entry, "exchange": ""})
+                symbols_with_exchange.append({"symbol": entry, "exchange": "", "exchange_code": ""})
         
         # ========================================
         # 3. stay_connected 설정
@@ -6346,9 +6424,11 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         subscribe_symbols = []
         for entry in symbols_with_exchange:
             symbol = entry.get("symbol", "")
-            exchange = entry.get("exchange", "")
-            # 거래소 코드 매핑: NASDAQ=82, NYSE=81, AMEX=83
-            exchange_code = self._get_stock_exchange_code(exchange)
+            # exchange_code(우선) 또는 exchange(이름/코드) → LS 코드(81/82). 미매핑은
+            # 조용히 기본값으로 바꾸지 않고 raise(종목·거래소 명시).
+            exchange_code = self._get_stock_exchange_code(
+                entry.get("exchange", ""), entry.get("exchange_code", ""), symbol
+            )
             subscribe_symbols.append(f"{exchange_code}{symbol}")
         
         # M-11: OHLCV 데이터를 context.node_state에 저장 (클로저 메모리 관리)
@@ -6637,17 +6717,32 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             "data": {},
         }
     
-    def _get_stock_exchange_code(self, exchange: str) -> str:
-        """거래소명을 LS증권 거래소 코드로 변환"""
-        exchange_map = {
-            "NASDAQ": "82",
-            "NYSE": "81",
-            "AMEX": "83",
-            "82": "82",
-            "81": "81",
-            "83": "83",
-        }
-        return exchange_map.get(exchange.upper(), "82")  # 기본값 NASDAQ
+    def _get_stock_exchange_code(self, exchange: str, exchange_code: str = "", symbol: str = "") -> str:
+        """구독/주문용 LS 거래소 코드(81/82)로 환원.
+
+        exchange_code(있으면 권한 있는 코드) → exchange(이름/코드) 순으로 시도한다.
+        비어 있으면(미지정) 관례상 NASDAQ(82). **비어 있지 않은데 매핑 불가하면 조용히
+        기본값으로 바꾸지 않고 raise** — 종목·거래소를 명시해 사용자가 무엇을 고칠지 알게
+        한다. (예전엔 미매핑을 조용히 '82' 로 떨궈 NYSE/AMEX 종목이 NASDAQ 로 잘못 구독됐다.)
+
+        판단(전체 실패 vs 종목 제외): 미지원 거래소(도쿄 등) 1종목 때문에 **하드 실패**한다.
+        '내 보유종목 실시간 감시' 워크플로우에서 조용히/부분적으로 일부만 감시하면 사용자는
+        감시되는 줄 알지만 아니다 — 그 침묵이 더 위험하다. 에러가 어느 종목·거래소인지
+        명시하므로 사용자가 그 종목을 빼거나 거래소를 고치면 된다.
+        """
+        for cand in (exchange_code, exchange):
+            if cand is None or str(cand).strip() == "":
+                continue
+            _name, code = normalize_overseas_stock_exchange(cand)
+            if code:
+                return code
+            raise RuntimeError(
+                f"해외주식 실시간 구독/주문 거래소를 LS 코드로 환원할 수 없습니다: "
+                f"symbol={symbol or '?'!r} exchange={cand!r}. LS 해외주식은 "
+                f"NYSE/NASDAQ/AMEX(코드 81/82)만 지원합니다 — 이 종목의 거래소를 확인하거나 "
+                f"워크플로우에서 제외하세요."
+            )
+        return "82"  # 미지정(빈 값) → 관례상 NASDAQ
 
     async def _execute_korea_stock(
         self,

@@ -129,6 +129,17 @@ SYMBOL_LIST_FIELDS: List[Dict[str, str]] = [
     {"name": "symbol", "type": "string", "description": "종목코드"},
 ]
 
+# ── 해외주식 계좌 held_symbols (2026-07-14 결함3) ──
+# 공유 SYMBOL_LIST_FIELDS 와 달리 exchange=영문 표시명, exchange_code=LS 코드 를 **둘 다**
+# 실어 표시(이름)와 구독·주문(코드) 소비자를 동시에 정확히 먹인다. 해외주식 계좌 노드
+# (OverseasStockAccountNode / OverseasStockRealAccountNode) 전용 — 국내/선물은 종전대로
+# SYMBOL_LIST_FIELDS 를 쓴다(전역 네이밍 통일은 후속).
+OVERSEAS_STOCK_HELD_SYMBOL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 영문 표시명 (NASDAQ/NYSE/AMEX)"},
+    {"name": "exchange_code", "type": "string", "description": "LS 거래소 코드 (81=NYSE/AMEX, 82=NASDAQ) — 구독·주문용"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+]
+
 # ── ScreenerNode.symbols (조건 검색 결과) ──
 # LS(g3101 enrich) 분기와 yfinance 분기가 **같은 키 집합**을 내보낸다.
 SCREENER_SYMBOL_FIELDS: List[Dict[str, str]] = [
@@ -299,7 +310,8 @@ KOREA_STOCK_FUNDAMENTAL_FIELDS: List[Dict[str, str]] = [
 
 # 해외주식 REST 계좌 (COSOQ00201 block4)
 OVERSEAS_STOCK_POSITION_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "exchange", "type": "string", "description": "거래소 영문 표시명 (NASDAQ/NYSE/AMEX)"},
+    {"name": "exchange_code", "type": "string", "description": "LS 거래소 코드 (81/82) — 구독·주문용"},
     {"name": "symbol", "type": "string", "description": "종목코드"},
     {"name": "name", "type": "string", "description": "종목명"},
     {"name": "qty", "type": "number", "description": "보유 수량"},
@@ -352,8 +364,9 @@ OVERSEAS_FUTURES_POSITION_FIELDS: List[Dict[str, str]] = [
 # 실시간 노드는 두 갈래로 positions 를 내보낸다: ① REST 스냅샷 직렬화 ② WebSocket tracker.
 # 둘의 키가 다르면 **같은 포트인데 순간마다 다른 필드**가 나온다 → 두 갈래를 같은 키로 통일했다.
 OVERSEAS_STOCK_REAL_POSITION_FIELDS: List[Dict[str, str]] = [
-    {"name": "exchange", "type": "string", "description": "거래소 코드"},
-    {"name": "market_code", "type": "string", "description": "LS 시장 코드"},
+    {"name": "exchange", "type": "string", "description": "거래소 영문 표시명 (NASDAQ/NYSE/AMEX)"},
+    {"name": "exchange_code", "type": "string", "description": "LS 거래소 코드 (81/82) — 구독·주문용"},
+    {"name": "market_code", "type": "string", "description": "LS 시장 코드 (후속: exchange_code 로 수렴/제거)"},
     {"name": "symbol", "type": "string", "description": "종목코드"},
     {"name": "name", "type": "string", "description": "종목명"},
     {"name": "qty", "type": "number", "description": "보유 수량"},

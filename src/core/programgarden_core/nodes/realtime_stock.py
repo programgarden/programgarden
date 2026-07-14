@@ -24,6 +24,7 @@ from programgarden_core.nodes.base import (
     OHLCV_DATA_FIELDS,
     ORDER_EVENT_FIELDS,
     ORDER_LIST_FIELDS,
+    OVERSEAS_STOCK_HELD_SYMBOL_FIELDS,
     OVERSEAS_STOCK_REAL_POSITION_FIELDS,
     SYMBOL_LIST_FIELDS,
     PRICE_DATA_FIELDS,
@@ -406,7 +407,7 @@ class OverseasStockRealAccountNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
-        OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols", fields=SYMBOL_LIST_FIELDS),
+        OutputPort(name="held_symbols", type="symbol_list", description="i18n:ports.held_symbols", fields=OVERSEAS_STOCK_HELD_SYMBOL_FIELDS),
         OutputPort(name="balance", type="balance_data", description="i18n:ports.balance", fields=OVERSEAS_STOCK_REAL_BALANCE_FIELDS),
         OutputPort(name="open_orders", type="order_list", description="i18n:ports.open_orders", fields=ORDER_LIST_FIELDS),
         OutputPort(name="positions", type="position_data", description="i18n:ports.positions", fields=OVERSEAS_STOCK_REAL_POSITION_FIELDS),
