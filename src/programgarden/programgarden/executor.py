@@ -1040,6 +1040,10 @@ _SYMBOL_ITEM_KEYS = ("symbol", "shcode", "code")
 # 가격 대신 종목코드 목록이 표에 실렸다(비결정 + 잘못된 데이터).
 _BRANCH_PAYLOAD_PORTS = ("result", "value", "data", "ohlcv_data")
 
+# 실시간 노드가 어떤 분기 스코프(종목)까지 구독을 걸었는지 기록하는 node_state 키.
+# 종목마다 최초 1회만 실행하고, 틱마다의 분기 재구동에선 건너뛴다(재구독 폭주 방지).
+_SUBSCRIBED_SCOPES_KEY = "_subscribed_branch_scopes"
+
 
 def _item_symbol(item: Any) -> Optional[str]:
     """Split 아이템에서 종목코드를 뽑는다 ('005930' 또는 {'symbol': '005930'})."""
@@ -1053,21 +1057,50 @@ def _item_symbol(item: Any) -> Optional[str]:
     return None
 
 
+def _is_symbol_keyed_payload(value: Any) -> bool:
+    """`{"005930": [bar], "000660": [bar]}` 처럼 종목코드로 키가 잡힌 시세 payload 인가."""
+    return (
+        isinstance(value, dict)
+        and bool(value)
+        and all(isinstance(v, list) for v in value.values())
+    )
+
+
 def _slice_realtime_outputs(outputs: Dict[str, Any], symbol: str) -> Dict[str, Any]:
-    """실시간 시세 노드의 합쳐진 출력을 한 종목 몫으로 자른다."""
-    sliced: Dict[str, Any] = {}
+    """실시간 시세 노드의 합쳐진 출력을 한 종목 몫으로 자른다.
+
+    **이 종목의 틱이 아직 없으면 공개 포트를 하나도 내지 않는다**(내부 `_` 포트만 남긴다).
+    빈 값이나 `symbols` 목록만 내보내면 Throttle 이 "흘릴 데이터가 있다"고 착각해 통과시키고,
+    표에 **가격 없는 행**이 낀다. 실제로 HKEX 라이브에서 아직 체결이 없던 2번째 종목이
+    합쳐진 덩어리를 그대로 행으로 실어 이 결함이 드러났다(2026-07-14).
+    """
+    meta = {
+        k: v for k, v in outputs.items()
+        if isinstance(k, str) and k.startswith("_")
+    }
+    payload: Dict[str, Any] = {}
+    has_payload = False
+
     for port, value in outputs.items():
+        if isinstance(port, str) and port.startswith("_"):
+            continue
+        if _is_symbol_keyed_payload(value):
+            if symbol in value:
+                payload[port] = value[symbol]
+                has_payload = True
+            # 이 종목 몫이 없으면 그 포트는 **아예 내지 않는다** (덩어리 통과 금지)
+            continue
         if port == "symbol":
-            sliced[port] = symbol
-        elif isinstance(value, dict) and symbol in value:
-            # symbol-keyed dict (ohlcv_data / data) → 이 종목의 값만
-            sliced[port] = value[symbol]
-        elif port == "symbols" and isinstance(value, list):
-            kept = [s for s in value if _item_symbol(s) == symbol]
-            sliced[port] = kept or value
-        else:
-            sliced[port] = value
-    return sliced
+            payload[port] = symbol
+            continue
+        if port == "symbols" and isinstance(value, list):
+            payload[port] = [s for s in value if _item_symbol(s) == symbol]
+            continue
+        payload[port] = value
+
+    if not has_payload:
+        return meta
+    return {**meta, **payload}
 
 
 def _realtime_branch_row(public: Dict[str, Any], symbol: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -18857,12 +18890,22 @@ class WorkflowJob:
             if not node:
                 continue
 
-            # 이미 구독을 건 실시간 노드는 분기 재구동 때 다시 실행하지 않는다.
-            # 재실행하면 틱마다 재구독이 걸려 소켓이 폭주한다. 최신 시세는 틱 콜백이
-            # 이 노드의 context 출력에 계속 갱신해 두므로, 하류는 그걸 그대로 읽으면 된다.
-            # (최초 실행 때는 출력이 없으므로 정상적으로 실행돼 구독이 걸린다.)
-            if node.node_type in REALTIME_NODE_TYPES and self.context.get_all_outputs(node_id):
-                continue
+            is_realtime = node.node_type in REALTIME_NODE_TYPES
+            subscribed: List[str] = []
+            if is_realtime:
+                # 실시간 노드는 **분기 아이템(종목)마다 최초 1회는 반드시 실행**해야 한다
+                # — 그래야 그 종목의 구독이 걸린다. 그 뒤(틱마다의 분기 재구동)엔 실행하지
+                # 않는다: 재실행하면 틱마다 재구독이 걸려 소켓이 폭주한다. 최신 시세는 틱
+                # 콜백이 이 노드의 context 출력에 계속 갱신해 두므로 하류는 그걸 읽으면 된다.
+                #
+                # ⚠️ 예전엔 "출력이 있으면 스킵"으로 판단했는데, 첫 종목이 실행되며 출력을
+                # 남기는 순간 **2번째 이후 종목의 최초 구독까지 건너뛰어** 그 종목엔 시세가
+                # 영영 오지 않았다(HKEX 라이브에서 2번째 종목이 통째로 死, 2026-07-14).
+                subscribed = list(
+                    self.context.get_node_state(node_id, _SUBSCRIBED_SCOPES_KEY) or []
+                )
+                if branch_scope in subscribed:
+                    continue
 
             # Prepare config
             config = dict(node.config)
@@ -18901,15 +18944,26 @@ class WorkflowJob:
             for port_name, value in outputs.items():
                 self.context.set_output(node_id, port_name, value)
 
+            if is_realtime:
+                # 이 종목 구독 완료 — 다음 재구동부터는 이 노드를 건너뛴다
+                subscribed.append(branch_scope)
+                self.context.set_node_state(node_id, _SUBSCRIBED_SCOPES_KEY, subscribed)
+
             # Track last result — only from PUBLIC ports. Internal meta
             # (_throttle_stats 등)이 유일 출력일 때 그걸 결과로 집으면 Aggregate/Display
             # 가 내부 통계를 데이터로 렌더한다.
             public = _public_outputs(outputs) if outputs else {}
             last_had_public = bool(public)
             if public:
-                row = _realtime_branch_row(public, symbol) if realtime_branch else None
-                if row is not None:
-                    result = row
+                if realtime_branch:
+                    row = _realtime_branch_row(public, symbol)
+                    if row is None:
+                        # 실시간 분기인데 가격 payload 가 없다(예: symbols 목록만 남음)
+                        # → 이 아이템은 표에 기여할 실데이터가 없다 → skip.
+                        # 그러지 않으면 가격 없는 행이 '실시간 체결가' 표에 낀다.
+                        last_had_public = False
+                    else:
+                        result = row
                 else:
                     result = next(
                         (public[p] for p in _BRANCH_PAYLOAD_PORTS if public.get(p) is not None),
