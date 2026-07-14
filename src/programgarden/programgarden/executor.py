@@ -913,6 +913,43 @@ class ThrottleNodeExecutor(NodeExecutorBase):
         return input_data
 
 
+# Priority-ordered output ports a SplitNode may iterate when its ``array`` input
+# is not explicitly bound. Canonical single-array producers first (Watchlist →
+# symbols, Condition → values, …), then account multi-array ports.
+_SPLIT_ARRAY_KEYS = [
+    "array", "symbols", "values", "data", "items",
+    "held_symbols", "positions", "open_orders",
+]
+
+
+def _pick_split_array(upstream: Dict[str, Any], *, source: str) -> List[Any]:
+    """Deterministically pick the array a SplitNode should iterate from an
+    upstream output dict.
+
+    Raises ``RuntimeError`` with a clear reason on ambiguity/absence — it never
+    silently returns ``[]`` or grabs an arbitrary "first list" (that made the
+    iteration source depend on dict ordering: an account node exposing
+    ``held_symbols``/``positions``/``open_orders`` would iterate whichever the
+    executor happened to emit first, and an explicit ``array`` binding was
+    ignored entirely — see the 2026-07-14 runtime-wiring fix).
+    """
+    candidates = [k for k in _SPLIT_ARRAY_KEYS if isinstance(upstream.get(k), list)]
+    if len(candidates) == 1:
+        return upstream[candidates[0]]
+    if not candidates:
+        raise RuntimeError(
+            f"SplitNode has no array to split: upstream ({source}) exposes no "
+            f"array output among {_SPLIT_ARRAY_KEYS}. Bind split.array explicitly "
+            "(e.g. array: '{{ nodes.<id>.held_symbols }}') or wire an "
+            "array-producing node upstream."
+        )
+    raise RuntimeError(
+        f"SplitNode array source is ambiguous: upstream ({source}) exposes "
+        f"multiple candidate arrays {candidates}. Bind split.array explicitly to "
+        f"pick one (e.g. array: '{{{{ nodes.<id>.{candidates[0]} }}}}')."
+    )
+
+
 class SplitNodeExecutor(NodeExecutorBase):
     """
     SplitNode executor
@@ -936,33 +973,43 @@ class SplitNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
-        # Get array from config or input port
-        input_array = config.get("array", [])
+        # NOTE: For the common Split→Aggregate branch pattern this executor is
+        # NOT the runtime source of truth — WorkflowJob._execute_split_branch
+        # resolves the array and drives iteration, and _execute_branch_for_item
+        # sets item/index/total/items/_array directly. This method only runs on
+        # the legacy/standalone path; it shares _pick_split_array with the branch
+        # driver so the two can never diverge again.
+        input_array = None
 
-        # If array binding expression, resolve from context
-        if isinstance(input_array, str) and "{{" in input_array:
-            expr_context = context.get_expression_context()
-            evaluator = ExpressionEvaluator(expr_context)
-            try:
-                input_array = evaluator.evaluate(input_array) or []
-            except Exception as e:
-                context.log("warning", f"Array expression evaluation failed: {e}", node_id)
+        # 1순위: 명시적 array 바인딩 (있으면 상류보다 우선).
+        array_cfg = config.get("array")
+        if array_cfg is not None:
+            if isinstance(array_cfg, str) and "{{" in array_cfg:
+                expr_context = context.get_expression_context()
+                evaluator = ExpressionEvaluator(expr_context)
+                try:
+                    array_cfg = evaluator.evaluate(array_cfg)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"SplitNode {node_id}: array binding '{config.get('array')}' "
+                        f"failed to evaluate: {e}"
+                    ) from e
+            if isinstance(array_cfg, list):
+                input_array = array_cfg
+            elif array_cfg is None:
                 input_array = []
+            else:
+                input_array = [array_cfg]  # scalar → single explicit item
 
-        # Also check input port (upstream node output)
-        if not input_array:
+        # 2순위: 상류 출력 — KNOWN 키 우선순위로 결정화 (모호/부재 시 raise).
+        if input_array is None:
             input_data = context.get_output(f"_input_{node_id}", "input")
             if isinstance(input_data, list):
                 input_array = input_data
             elif isinstance(input_data, dict):
-                # Check for array fields in input
-                for key in ["array", "symbols", "values", "data", "items"]:
-                    if key in input_data and isinstance(input_data[key], list):
-                        input_array = input_data[key]
-                        break
-
-        if not isinstance(input_array, list):
-            input_array = [input_array] if input_array else []
+                input_array = _pick_split_array(input_data, source=f"input of '{node_id}'")
+            else:
+                input_array = [input_data] if input_data else []
 
         # Get current item context (set by _execute_main_flow during iteration)
         split_context = context.get_node_state(node_id, "_split_context") or {
@@ -18322,22 +18369,59 @@ class WorkflowJob:
             state=NodeState.RUNNING,
         )
 
-        # Get input array from upstream node
-        input_array = []
-        for edge in self.workflow.edges:
-            if edge.to_node_id == split_id:
-                upstream_outputs = self.context.get_all_outputs(edge.from_node_id)
-                # Look for array in outputs
-                for key in ["symbols", "values", "array", "data", "items"]:
-                    if key in upstream_outputs and isinstance(upstream_outputs[key], list):
-                        input_array = upstream_outputs[key]
-                        break
-                if not input_array and upstream_outputs:
-                    # Check if single output is a list
-                    first_val = next(iter(upstream_outputs.values()), None)
-                    if isinstance(first_val, list):
-                        input_array = first_val
-                break
+        # Get SplitNode config (array binding + iteration params)
+        config = dict(split_node.config)
+        parallel = config.get("parallel", False)
+        delay_ms = config.get("delay_ms", 0)
+        continue_on_error = config.get("continue_on_error", True)
+
+        # Resolve the array to split — the single source of truth for this
+        # branch: per-item item/index/total AND the items/_array output ports
+        # all derive from it. Historically the iteration driver ignored
+        # config.array and grabbed the "first list" from upstream, so an
+        # explicit binding was silently dropped and account nodes iterated a
+        # nondeterministic port (held_symbols vs positions depended on dict
+        # ordering) — 2026-07-14 runtime-wiring fix.
+        input_array = None
+
+        # 1순위: 명시적 array 바인딩 ({{ }} 평가). 있으면 상류보다 우선.
+        array_cfg = config.get("array")
+        if array_cfg is not None:
+            if isinstance(array_cfg, str) and "{{" in array_cfg:
+                evaluator = ExpressionEvaluator(self.context.get_expression_context())
+                try:
+                    array_cfg = evaluator.evaluate(array_cfg)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"SplitNode {split_id}: array binding "
+                        f"'{config.get('array')}' failed to evaluate: {e}"
+                    ) from e
+            if isinstance(array_cfg, list):
+                input_array = array_cfg
+            elif array_cfg is None:
+                input_array = []
+            else:
+                input_array = [array_cfg]  # scalar → single explicit item
+
+        # 2순위: 상류 엣지 출력 — KNOWN 키 우선순위로 결정화 (모호/부재 시 raise).
+        if input_array is None:
+            upstream_id = None
+            upstream_outputs: Dict[str, Any] = {}
+            for edge in self.workflow.edges:
+                if edge.to_node_id == split_id:
+                    upstream_id = edge.from_node_id
+                    upstream_outputs = self.context.get_all_outputs(edge.from_node_id)
+                    break
+            input_array = _pick_split_array(
+                upstream_outputs,
+                source=f"node '{upstream_id}'" if upstream_id else "no upstream edge",
+            )
+
+        # 선언한 items/_array 출력 포트를 실제로 채운다(선언==런타임). 값은 모든
+        # 아이템 공통이라 루프 전에 한 번만 세팅한다. 예전엔 branch flow 에서
+        # SplitNodeExecutor.execute 가 아예 호출되지 않아 items/_array 가 늘 비었다.
+        self.context.set_output(split_id, "items", input_array)
+        self.context.set_output(split_id, "_array", input_array)
 
         if not input_array:
             self.context.log("info", f"SplitNode {split_id}: empty array, skipping branch", split_id)
@@ -18345,15 +18429,9 @@ class WorkflowJob:
                 node_id=split_id,
                 node_type="SplitNode",
                 state=NodeState.COMPLETED,
-                outputs={"item": None, "index": 0, "total": 0},
+                outputs={"item": None, "index": 0, "total": 0, "items": []},
             )
             return
-
-        # Get SplitNode config
-        config = dict(split_node.config)
-        parallel = config.get("parallel", False)
-        delay_ms = config.get("delay_ms", 0)
-        continue_on_error = config.get("continue_on_error", True)
 
         total = len(input_array)
         collected_results: List[Any] = []
@@ -18416,7 +18494,7 @@ class WorkflowJob:
             node_id=split_id,
             node_type="SplitNode",
             state=NodeState.COMPLETED,
-            outputs={"item": input_array[-1] if input_array else None, "index": total - 1, "total": total},
+            outputs={"item": input_array[-1] if input_array else None, "index": total - 1, "total": total, "items": input_array},
             duration_ms=duration_ms,
         )
 

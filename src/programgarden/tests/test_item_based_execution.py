@@ -245,3 +245,110 @@ class TestNodeRegistry:
 
         assert "SplitNode" in infra_types
         assert "AggregateNode" in infra_types
+
+
+class TestSplitBranchArrayResolution:
+    """SplitNode branch flow 의 배열 해석 — 2026-07-14 런타임 배선 결함1 회귀 테스트.
+
+    계약 테스트(test_output_schema_contract)는 executor 의 return dict 를 AST 로 본다.
+    그러나 Split→Aggregate branch flow 에서는 SplitNodeExecutor.execute 가 **아예 호출되지
+    않고** WorkflowJob._execute_split_branch / _execute_branch_for_item 이 출력을 직접 set 한다.
+    AST 계약 테스트가 구조적으로 못 보는 그 실제 경로를 여기서 행위로 검증한다.
+    """
+
+    @staticmethod
+    def _mk_job(upstream_outputs: Dict[str, Any], split_config: Dict[str, Any]):
+        from programgarden.executor import WorkflowJob
+        from programgarden.context import ExecutionContext
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+        for port, val in upstream_outputs.items():
+            ctx.set_output("up", port, val)
+
+        class _Edge:
+            def __init__(self, f, t):
+                self.from_node_id, self.to_node_id = f, t
+
+        job = MagicMock(spec=WorkflowJob)
+        job.context = ctx
+        job._execute_split_branch = WorkflowJob._execute_split_branch.__get__(job)
+        job._get_branch_nodes = MagicMock(return_value={"rm"})
+        wf = MagicMock()
+        wf.edges = [_Edge("up", "split"), _Edge("split", "rm"), _Edge("rm", "agg")]
+        wf.execution_order = ["up", "split", "rm", "agg"]
+        wf.nodes = {}
+        job.workflow = wf
+        ctx.notify_node_state = AsyncMock()
+
+        captured: Dict[str, Any] = {"items": []}
+
+        async def _fbi(split_id, branch_order, item, index, total):
+            captured["items"].append(item)
+            captured["total"] = total
+            return item
+
+        job._execute_branch_for_item = _fbi
+        job._execute_aggregate_node = AsyncMock()
+
+        split_node = MagicMock()
+        cfg = {"parallel": False, "delay_ms": 0, "continue_on_error": True}
+        cfg.update(split_config)
+        split_node.config = cfg
+        return job, ctx, split_node, captured
+
+    @pytest.mark.asyncio
+    async def test_declared_items_port_is_actually_emitted(self):
+        """선언한 `items` 출력 포트가 branch flow 에서 실제로 채워진다.
+
+        이전엔 SplitNodeExecutor.execute 가 호출 안 돼 items/_array 가 늘 비어 있었고,
+        `{{ nodes.split.items }}` 를 바인딩한 하류는 조용히 빈 데이터를 받았다.
+        """
+        held = [{"exchange": "82", "symbol": "AUID"}, {"exchange": "82", "symbol": "TSLA"}]
+        job, ctx, split_node, _ = self._mk_job({"symbols": held}, {})
+        await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm"})
+        assert ctx.get_output("split", "items") == held
+        assert ctx.get_output("split", "_array") == held
+
+    @pytest.mark.asyncio
+    async def test_explicit_array_binding_is_honored_over_upstream(self):
+        """config.array 바인딩이 상류보다 **우선**한다(이전엔 구동부가 config 를 무시했다).
+
+        상류에 held_symbols(2) 와 positions(3) 가 모두 있고 positions 가 먼저여도,
+        array={{ held_symbols }} 를 명시하면 held_symbols(2건)를 순회해야 한다.
+        """
+        held = [{"symbol": "A"}, {"symbol": "B"}]
+        pos = [{"symbol": "A"}, {"symbol": "B"}, {"symbol": "C"}]
+        job, ctx, split_node, cap = self._mk_job(
+            {"positions": pos, "held_symbols": held},
+            {"array": "{{ nodes.up.held_symbols }}"},
+        )
+        await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm"})
+        assert cap["total"] == 2
+        assert cap["items"] == held
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_multi_array_upstream_raises(self):
+        """상류가 다중 배열(계좌: held_symbols/positions)인데 바인딩이 없으면 조용히 첫
+        리스트를 집지 말고 사유가 담긴 예외로 실패한다."""
+        job, ctx, split_node, _ = self._mk_job(
+            {"held_symbols": [{"symbol": "A"}], "positions": [{"symbol": "A"}]},
+            {},
+        )
+        with pytest.raises(RuntimeError, match="ambiguous"):
+            await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm"})
+
+    @pytest.mark.asyncio
+    async def test_no_array_source_raises(self):
+        """상류에 어떤 배열 포트도 없으면(스칼라만) 사유가 담긴 예외로 실패한다."""
+        job, ctx, split_node, _ = self._mk_job({"price": 100.0, "count": 1}, {})
+        with pytest.raises(RuntimeError, match="no array to split"):
+            await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm"})
+
+    @pytest.mark.asyncio
+    async def test_single_array_upstream_still_works_without_binding(self):
+        """단일 배열 상류(Watchlist→symbols)는 바인딩 없이도 그대로 동작(무회귀)."""
+        syms = [{"symbol": "AAPL"}, {"symbol": "MSFT"}]
+        job, ctx, split_node, cap = self._mk_job({"symbols": syms, "count": 2}, {})
+        await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm"})
+        assert cap["total"] == 2
+        assert cap["items"] == syms

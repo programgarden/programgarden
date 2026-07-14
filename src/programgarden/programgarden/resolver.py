@@ -1099,15 +1099,16 @@ class WorkflowResolver:
     #   (1) 짝 AggregateNode 가 그래프상 도달 가능해야 한다. 없으면 _execute_split_branch
     #       가 aggregate_id=None 에서 즉시 return → branch 자체가 실행 안 됨(노드 pending
     #       유지, 하류 item 전부 공백). engine._find_split_aggregate_pairs 참조.
-    #   (2) split 로 들어오는 상류 노드가 리스트를 출력해야 한다. 엔진은 분리 대상 배열을
-    #       **오직 상류 노드 출력**(포트 symbols/values/array/data/items)에서만 읽는다.
-    #       config `array` 필드는 **어느 경로에서도 읽히지 않는다**(SplitNodeExecutor.execute
-    #       의 config.get("array") 는 죽은 코드 — 실행 엔진이 그 executor 를 거치지 않고
-    #       상류 출력에서 배열을 직접 가져와 item 을 set). 따라서 `array`/`items` 를 config
-    #       리터럴로 넣는 저작 패턴은 검증만 통과하고 런타임엔 0개를 낸다.
-    # 둘 중 하나라도 빠지면 하류 `{{ nodes.<split>.item }}` 이 조용히 비어 count:0 쓰레기
-    # 결과가 된다(단일 심볼에 SplitNode 를 잘못 붙이는 것이 전형적 저작 결함). 정적으로
-    # 잡아 AI self-correct 루프가 dry_run 전에 보게 한다.
+    #   (2) 분리 대상 배열의 소스가 있어야 한다. 엔진(_execute_split_branch)은 배열을
+    #       (a) 명시적 `array` 바인딩({{ }} 표현식 또는 리터럴 리스트)에서 **1순위**로,
+    #       없으면 (b) 상류 노드의 리스트 출력(KNOWN 포트 symbols/values/array/data/
+    #       items/held_symbols/positions/open_orders)에서 결정적으로 읽는다.
+    #       (2026-07-14 이전엔 config `array` 가 어느 경로에서도 안 읽혔고 상류의 "첫
+    #       리스트"를 dict 순서대로 집었다 — 그 낡은 서술은 폐기.) 상류가 다중 배열
+    #       포트(계좌 노드)를 노출하는데 `array` 바인딩이 없으면 엔진이 모호하다며
+    #       런타임에 raise 하므로, 그 경우 명시 바인딩이 필수다.
+    # (1)이 빠지면 branch 자체가 실행 안 되고, (2)가 빠지면 하류 `{{ nodes.<split>.item }}`
+    # 이 비어 count:0 결과가 된다. 정적으로 잡아 AI self-correct 루프가 dry_run 전에 보게 한다.
     # 오탐(최대 리스크) 최소화: (2)는 상류 중 하나라도 리스트를 낼 "가능성"이 있으면 통과.
     #   가능성 = (a) 상류가 CodeNode(동적 출력), (b) 상류 스키마 미상(커뮤니티/제네릭),
     #            (c) 상류 출력 포트 타입 중 하나라도 확정 스칼라/시그널이 아님.
@@ -1120,8 +1121,8 @@ class WorkflowResolver:
     def _validate_split_nodes(self, workflow, registry, result: ValidationResult) -> None:
         """SplitNode 가 실 엔진에서 동작 가능하게 배선됐는지 정적 검증(오탐 보수적).
 
-        엔진 동작(프로브 확정): SplitNode 는 (1) 짝 AggregateNode 가 도달 가능하고
-        (2) 상류가 리스트를 출력해야만 branch 를 실행한다. config `array` 는 안 읽힌다.
+        엔진 동작: SplitNode 는 (1) 짝 AggregateNode 가 도달 가능해야 branch 를 실행하고,
+        (2) 분리 배열은 명시 `array` 바인딩(1순위) 또는 상류 리스트 출력에서 읽는다.
         """
         split_nodes = [
             n for n in workflow.nodes
@@ -1206,7 +1207,19 @@ class WorkflowResolver:
                     )
                 )
                 continue
-            # (2) 상류 리스트 소스 — config `array` 는 엔진이 안 읽으므로 소스로 인정 안 함.
+            # (2) 배열 소스 — 아래 둘 중 하나라도 있으면 통과:
+            #   (a) 명시적 `array` 바인딩(엔진이 이제 1순위로 읽음: {{ }} 표현식 또는
+            #       리터럴 리스트). 상류가 다중 배열 포트(계좌: held_symbols/positions/
+            #       open_orders)일 때는 이 바인딩이 필수다 — 없으면 엔진이 모호하다며
+            #       런타임에 raise 한다.
+            #   (b) 상류 노드가 리스트를 낼 가능성(단일 배열 소스면 바인딩 없이도 동작).
+            array_cfg = node.get("array")
+            has_array_binding = (
+                (isinstance(array_cfg, str) and "{{" in array_cfg)
+                or (isinstance(array_cfg, list) and len(array_cfg) > 0)
+            )
+            if has_array_binding:
+                continue
             srcs = incoming.get(sid, [])
             if srcs and any(_may_produce_list(node_type_by_id.get(s)) for s in srcs):
                 continue
@@ -1214,21 +1227,22 @@ class WorkflowResolver:
                 build_error(
                     ErrorCode.MISSING_REQUIRED_FIELD,
                     (
-                        f"SplitNode '{sid}' has no upstream node that outputs a list. The "
-                        f"engine reads the array to split ONLY from an upstream node's list "
-                        f"output (ports symbols/values/array/data/items) — the `array` "
-                        f"config field is NOT read at runtime. It will emit zero items and "
-                        f"every downstream `{{{{ nodes.{sid}.item }}}}` resolves empty "
-                        f"(silent count:0 result)."
+                        f"SplitNode '{sid}' has no array source. The engine reads the array "
+                        f"to split from (1) an explicit `array` binding ({{{{ ... }}}} or a "
+                        f"literal list), or (2) an upstream node's list output (ports "
+                        f"symbols/values/held_symbols/positions/…). This SplitNode has "
+                        f"neither, so it emits zero items and every downstream "
+                        f"`{{{{ nodes.{sid}.item }}}}` resolves empty (silent count:0 result)."
                     ),
                     location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path="array"),
                     suggestion=(
-                        "Connect an edge from an upstream node that OUTPUTS a list "
-                        "(WatchlistNode/MarketUniverseNode → symbols, AccountNode → "
-                        "positions, ConditionNode → values, or a CodeNode returning a list). "
-                        "Do NOT put the list in an `array`/`items` config field — the engine "
-                        "ignores it. For a single known symbol, DELETE SplitNode and bind "
-                        "that symbol directly on the downstream node."
+                        "Either bind `array` explicitly (e.g. array: "
+                        "'{{ nodes.<account>.held_symbols }}') — REQUIRED when the upstream "
+                        "exposes several arrays (held_symbols/positions/open_orders), or "
+                        "connect an edge from a node that OUTPUTS a single list "
+                        "(WatchlistNode/MarketUniverseNode → symbols, ConditionNode → values, "
+                        "or a CodeNode returning a list). For a single known symbol, DELETE "
+                        "SplitNode and bind that symbol directly on the downstream node."
                     ),
                 )
             )
