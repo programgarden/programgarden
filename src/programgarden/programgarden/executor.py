@@ -6897,26 +6897,49 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         watchlist_output: Optional[Dict[str, Any]],
     ) -> List[Dict[str, str]]:
         """
-        Symbols 획득 (필드 우선, 포트 폴백 패턴)
-        
-        1. 노드 config의 symbols 필드 확인
-        2. WatchlistNode 출력에서 symbols 가져오기
-        3. AccountNode/RealAccountNode의 held_symbols 가져오기
+        Symbols 획득 (선언된 `symbol` 우선, 포트 폴백)
+
+        0. 노드가 선언한 단일 `symbol`({exchange,symbol} dict) — item-based /
+           SplitNode fan-out 의 per-branch 입력. 선언==런타임: 3개 realtime
+           market 노드가 InputPort("symbol") 를 선언하므로 executor 가 반드시
+           읽는다(과거엔 안 읽어 조용히 상류 held_symbols 전체 폴백을 탔다 —
+           Split fan-out 이 장식이 됐다).
+        1. Input 포트(context input) — 포트 경로
+        2. WatchlistNode 출력 — 포트 경로
+        3. AccountNode/RealAccountNode 의 held_symbols (자동 iterate 폴백)
+
+        미선언 `symbols`(복수) config 필드는 제거됐다: realtime market 노드 어느
+        것도 선언하지 않고 코퍼스 사용 0건 — consumed-but-not-declared 드리프트
+        였다. 정본 per-node 입력은 단일 `symbol` 이다.
         """
-        # 1. 필드에서 직접 설정된 경우
-        if config.get("symbols"):
-            return config["symbols"]
-        
-        # 2. Input 포트에서 받기 (context input)
+        from programgarden_core.exceptions import ValidationError
+
+        # 0. 선언된 `symbol`(단수 dict): config 바인딩 또는 wired 입력 포트.
+        single = config.get("symbol")
+        if single in (None, "", {}):
+            single = context.get_output(f"_input_{node_id}", "symbol")
+        if single not in (None, "", {}):
+            # shape 강제: {exchange, symbol} dict 이어야 한다. 문자열/스칼라를
+            # 조용히 넘기지 않는다(silent 금지 — 사유 담아 raise).
+            if not isinstance(single, dict) or not single.get("symbol"):
+                raise ValidationError(
+                    f"Node '{node_id}': 'symbol' 은 {{exchange, symbol}} dict 여야 한다 "
+                    f"({{{{ nodes.<split>.item }}}} 에 바인딩); 받은 값 "
+                    f"{type(single).__name__}: {single!r}",
+                    node_id=node_id,
+                )
+            return [single]
+
+        # 1. Input 포트에서 받기 (context input) — 포트 경로
         symbols_input = context.get_output(f"_input_{node_id}", "symbols")
         if symbols_input:
             return symbols_input
-        
-        # 3. WatchlistNode에서 받기
+
+        # 2. WatchlistNode에서 받기 — 포트 경로
         if watchlist_output and watchlist_output.get("symbols"):
             return watchlist_output["symbols"]
-        
-        # 4. AccountNode/RealAccountNode에서 held_symbols 가져오기
+
+        # 3. AccountNode/RealAccountNode에서 held_symbols 가져오기
         for account_type in (
             "RealAccountNode",
             "OverseasStockRealAccountNode",

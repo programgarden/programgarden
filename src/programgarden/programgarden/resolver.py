@@ -1294,6 +1294,71 @@ class WorkflowResolver:
                 )
             )
 
+        # (3) 하류 realtime market 노드의 `symbol` 미바인딩 — Split fan-out 이 장식이 된다.
+        #     선언된 `symbol` 이 없으면 엔진(_resolve_symbols)은 상류 계좌 held_symbols
+        #     전체로 폴백해 **모든 branch 가 전 종목을 중복 구독**한다(per-branch 구독 실패).
+        #     이건 결함1 엔진 수정만으로는 못 잡는다(사용자가 원한 "종목별 실시간 행"이
+        #     안 됨). 2026-07-14. 코퍼스(split→realtime market 예제) 오탐 0 재검증.
+        split_ids: Set[str] = {n.get("id") for n in split_nodes}
+
+        def _has_split_ancestor(start: Optional[str]) -> bool:
+            if not start:
+                return False
+            seen: Set[str] = set()
+            queue: List[str] = list(incoming.get(start, []))
+            while queue:
+                cur = queue.pop(0)
+                if cur in seen:
+                    continue
+                seen.add(cur)
+                if cur in split_ids:
+                    return True
+                queue.extend(incoming.get(cur, []))
+            return False
+
+        _RT_MARKET_TYPES = {
+            "RealMarketDataNode", "OverseasStockRealMarketDataNode",
+            "KoreaStockRealMarketDataNode", "OverseasFuturesRealMarketDataNode",
+        }
+        # port-qualified 엣지(예: 'rm.symbol')로 symbol 을 배선한 경우는 오탐이 아니다
+        # (엔진이 wired 입력 포트도 읽음) → 그런 타겟이 있으면 제외.
+        symbol_wired: Set[str] = set()
+        for edge in workflow.edges:
+            to_raw = getattr(edge, "to_node", "") or ""
+            if "." in to_raw and to_raw.split(".", 1)[1] == "symbol":
+                symbol_wired.add(to_raw.split(".")[0])
+
+        for node in workflow.nodes:
+            if not isinstance(node, dict) or node.get("type") not in _RT_MARKET_TYPES:
+                continue
+            rid = node.get("id")
+            sym = node.get("symbol")
+            symbol_bound = (
+                (isinstance(sym, str) and "{{" in sym)
+                or (isinstance(sym, dict) and bool(sym.get("symbol")))
+            )
+            if symbol_bound or rid in symbol_wired:
+                continue
+            if _has_split_ancestor(rid):
+                result.add(
+                    build_error(
+                        ErrorCode.MISSING_REQUIRED_FIELD,
+                        (
+                            f"RealMarketDataNode '{rid}' 는 상류 SplitNode 의 per-item fan-out "
+                            f"아래 있는데 `symbol` 이 바인딩되지 않았다. 엔진은 선언된 `symbol` 이 "
+                            f"없으면 상류 계좌의 held_symbols 전체로 폴백해 **모든 branch 가 전 종목을 "
+                            f"중복 구독**한다 — Split fan-out 이 무의미해지고 '종목별 실시간 행'이 안 된다."
+                        ),
+                        location=ErrorLocation(
+                            node_id=rid, node_type=node.get("type"), field_path="symbol"
+                        ),
+                        suggestion=(
+                            "`symbol` 을 각 branch 의 항목에 바인딩하라: "
+                            "symbol: '{{ nodes.<split>.item }}' (per-branch 단일 종목)."
+                        ),
+                    )
+                )
+
     def _validate_ai_agent_nodes(self, workflow, result: ValidationResult) -> None:
         """AIAgentNode 는 ai_model 엣지로 LLMModelNode 가 연결돼야 한다.
 
