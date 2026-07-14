@@ -549,3 +549,235 @@ class TestRealtimePendingProducesNoRow:
             {"mode": "latest", "interval_sec": 5.0, "pass_first": True}, ctx,
         )
         assert "ohlcv_data" in _public_outputs(out)
+
+
+class TestThrottleReadsUpstreamWithoutRealtimeEvent:
+    """ThrottleNode 는 실시간 이벤트가 config 로 데이터를 꽂아주지 않아도 상류를 읽어야 한다.
+
+    회귀 방지: 예전엔 상류 수집이 `context._workflow_edges` 만 봤는데, 그 속성은
+    **프로덕션 실행 경로에서 아무도 설정하지 않았다**(테스트만 주입). 그래서 Split 분기
+    안의 ThrottleNode 는 상류에 실시간 시세가 흘러도 영원히 빈 입력을 보고 통과하지
+    못했고, Aggregate 표가 절대 차지 않았다. 실행 경로가 채우는 `_input_<node_id>` 를
+    읽어야 한다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_reads_input_pseudo_node(self):
+        from programgarden.context import ExecutionContext
+        from programgarden.executor import ThrottleNodeExecutor, _public_outputs
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+
+        async def _noop(**k):
+            return None
+
+        ctx.notify_node_state = _noop
+        # 실행 경로가 상류 출력을 모아두는 자리 (_workflow_edges 도, _realtime_data 도 없음)
+        ctx.set_output("_input_throttle", "ohlcv_data", [{"close": 263500.0}])
+
+        out = await ThrottleNodeExecutor().execute(
+            "throttle", "ThrottleNode",
+            {"mode": "latest", "interval_sec": 5.0, "pass_first": True}, ctx,
+        )
+        assert _public_outputs(out).get("ohlcv_data") == [{"close": 263500.0}]
+
+
+class TestBranchScopedThrottleCooldown:
+    """분기 아이템(종목)마다 쿨다운이 독립이어야 한다.
+
+    노드 하나를 분기 아이템들이 공유하므로 스코프가 없으면 쿨다운까지 공유돼
+    한 사이클에 한 종목만 통과하고 나머지 종목 행은 매번 사라진다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_two_items_both_pass_on_first_cycle(self):
+        from programgarden.context import ExecutionContext
+        from programgarden.executor import ThrottleNodeExecutor, _public_outputs
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+
+        async def _noop(**k):
+            return None
+
+        ctx.notify_node_state = _noop
+        executor = ThrottleNodeExecutor()
+        passed = []
+
+        for idx, symbol in enumerate(["005930", "000660"]):
+            ctx.set_output("_input_throttle", "ohlcv_data", [{"symbol": symbol}])
+            out = await executor.execute(
+                "throttle", "ThrottleNode",
+                {
+                    "mode": "latest", "interval_sec": 5.0, "pass_first": True,
+                    "_branch_scope": f"split#{idx}",
+                },
+                ctx,
+            )
+            if _public_outputs(out):
+                passed.append(symbol)
+
+        # 스코프가 없으면 두 번째 종목이 첫 종목의 쿨다운에 걸려 버려진다
+        assert passed == ["005930", "000660"]
+
+
+class TestRealtimeBranchRowShape:
+    """실시간 분기가 수집하는 값은 표가 렌더할 수 있는 **평평한 행**이어야 한다.
+
+    회귀 방지: 예전엔 공개 포트 중 dict 순서상 첫 번째를 집어서, 시세 노드가 `symbols`
+    를 먼저 쓰면 가격 대신 종목코드 목록이 표에 실렸다(비결정 + 잘못된 데이터).
+    """
+
+    def test_item_symbol_extraction(self):
+        from programgarden.executor import _item_symbol
+
+        assert _item_symbol({"symbol": "005930"}) == "005930"
+        assert _item_symbol("005930") == "005930"
+        assert _item_symbol({"qty": 3}) is None
+
+    def test_slice_merged_realtime_outputs_per_symbol(self):
+        from programgarden.executor import _slice_realtime_outputs
+
+        bar_a = {"date": "20260714", "close": 263500, "volume": 33325135}
+        bar_b = {"date": "20260714", "close": 1901000, "volume": 9114265}
+        merged = {
+            "symbols": [{"symbol": "005930"}, {"symbol": "000660"}],
+            "ohlcv_data": {"005930": [bar_a], "000660": [bar_b]},
+            "data": {"005930": [bar_a], "000660": [bar_b]},
+        }
+
+        sliced = _slice_realtime_outputs(merged, "005930")
+
+        assert sliced["ohlcv_data"] == [bar_a]
+        assert sliced["data"] == [bar_a]
+        assert sliced["symbols"] == [{"symbol": "005930"}]
+
+    def test_row_carries_price_not_symbol_list(self):
+        from programgarden.executor import _realtime_branch_row
+
+        bar = {"date": "20260714", "close": 263500, "volume": 33325135}
+        public = {
+            "symbols": [{"symbol": "005930"}],  # dict 순서상 첫 포트 — 예전엔 이게 행이 됐다
+            "ohlcv_data": [bar],
+            "data": [bar],
+        }
+
+        row = _realtime_branch_row(public, "005930")
+
+        assert row == {"symbol": "005930", **bar}
+        assert row["close"] == 263500
+
+    def test_no_row_when_no_payload(self):
+        from programgarden.executor import _realtime_branch_row
+
+        assert _realtime_branch_row({"symbols": [{"symbol": "005930"}]}, "005930") is None
+
+
+class TestRealtimeSplitBranchFillsTablePerSymbol:
+    """Split → 실시간시세 → Throttle → Aggregate 가 **종목당 1행**을 채운다 (통합).
+
+    실제 `_execute_split_branch` / `_execute_branch_for_item` / ThrottleNodeExecutor 를 그대로
+    돌린다. 시세 노드는 이미 구독된 상태(출력 있음)로 심어 두므로 재실행되지 않는다 —
+    라이브 소켓 없이 틱 사이클을 재현할 수 있다.
+
+    회귀 방지 대상(2026-07-14 라이브 실측으로 확인된 것):
+      · 틱 경로가 분기를 재구동하지 않아 수집 배열이 t=0 의 []에 얼어붙던 것
+      · 종목들이 시세·쿨다운을 공유해 가격 없는 한 행만 실리던 것
+      · 쿨다운 사이클마다 수집이 비어 표가 깜빡이던 것
+    """
+
+    BAR_A = {"date": "20260714", "open": 255000, "close": 263500, "volume": 33325135}
+    BAR_B = {"date": "20260714", "open": 1825000, "close": 1901000, "volume": 9114265}
+
+    @classmethod
+    def _mk_job(cls):
+        from programgarden.executor import WorkflowJob, ThrottleNodeExecutor
+        from programgarden.context import ExecutionContext
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+        ctx.notify_node_state = AsyncMock()
+
+        # 이미 구독 중인 실시간 시세 노드: 두 종목이 한 덩어리로 합쳐진 출력
+        merged = {"005930": [cls.BAR_A], "000660": [cls.BAR_B]}
+        ctx.set_output("rm", "_pending", True)
+        ctx.set_output("rm", "symbols", [{"symbol": "005930"}, {"symbol": "000660"}])
+        ctx.set_output("rm", "ohlcv_data", merged)
+        ctx.set_output("rm", "data", merged)
+
+        class _Edge:
+            def __init__(self, f, t):
+                self.from_node_id, self.to_node_id = f, t
+
+        class _Node:
+            def __init__(self, node_type, config=None):
+                self.node_type = node_type
+                self.config = config or {}
+                self.plugin = None
+                self.fields = None
+
+        job = MagicMock(spec=WorkflowJob)
+        job.context = ctx
+        job._execute_split_branch = WorkflowJob._execute_split_branch.__get__(job)
+        job._execute_branch_for_item = WorkflowJob._execute_branch_for_item.__get__(job)
+        job._get_branch_nodes = MagicMock(return_value={"rm", "throttle"})
+        job._resolve_config_expressions = lambda cfg, node_id: cfg
+        job._auto_inject_connection = lambda node_id, node, cfg: cfg
+        job._execute_aggregate_node = AsyncMock()
+
+        wf = MagicMock()
+        wf.edges = [_Edge("split", "rm"), _Edge("rm", "throttle"), _Edge("throttle", "agg")]
+        wf.execution_order = ["split", "rm", "throttle", "agg"]
+        wf.nodes = {
+            "split": _Node("SplitNode"),
+            "rm": _Node("KoreaStockRealMarketDataNode"),
+            "throttle": _Node("ThrottleNode"),
+            "agg": _Node("AggregateNode"),
+        }
+        job.workflow = wf
+
+        throttle = ThrottleNodeExecutor()
+
+        async def _execute_node(node_id, node_type, config, context, **kwargs):
+            if node_type == "ThrottleNode":
+                return await throttle.execute(node_id, node_type, config, context)
+            raise AssertionError(f"unexpected node execution: {node_type}")
+
+        job.executor = MagicMock()
+        job.executor.execute_node = _execute_node
+
+        split_node = _Node("SplitNode", {
+            "array": [{"symbol": "005930"}, {"symbol": "000660"}],
+            "parallel": False,
+            "delay_ms": 0,
+            "continue_on_error": True,
+            "mode": "latest",
+        })
+        return job, ctx, split_node
+
+    @pytest.mark.asyncio
+    async def test_each_symbol_becomes_a_priced_row(self):
+        job, ctx, split_node = self._mk_job()
+
+        await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm", "throttle"})
+
+        rows = ctx.get_node_state("agg", "_collected_items")
+        assert [r["symbol"] for r in rows] == ["005930", "000660"]
+        assert rows[0]["close"] == 263500
+        assert rows[1]["close"] == 1901000
+
+    @pytest.mark.asyncio
+    async def test_table_does_not_blank_out_during_throttle_cooldown(self):
+        job, ctx, split_node = self._mk_job()
+
+        # 사이클 1: 두 종목 모두 통과
+        await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm", "throttle"})
+        first = ctx.get_node_state("agg", "_collected_items")
+        assert len(first) == 2
+
+        # 사이클 2: 곧바로 재구동 → 기본 쿨다운(5초)에 걸려 새 값 없음.
+        # 그래도 직전 행을 유지해야 한다(표가 빈 표로 깜빡이면 안 된다).
+        await job._execute_split_branch("split", split_node, {"split": "agg"}, {"rm", "throttle"})
+        second = ctx.get_node_state("agg", "_collected_items")
+
+        assert len(second) == 2, "쿨다운 사이클에서 수집이 비어 표가 깜빡인다"
+        assert [r["symbol"] for r in second] == ["005930", "000660"]
+        assert second[0]["close"] == 263500

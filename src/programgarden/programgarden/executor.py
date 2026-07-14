@@ -758,8 +758,14 @@ class ThrottleNodeExecutor(NodeExecutorBase):
         interval_sec = config.get("interval_sec", 5.0)
         pass_first = config.get("pass_first", True)
 
-        # State key for this node
+        # State key for this node.
+        # Split 분기 안에서는 종목마다 별도 스코프를 쓴다. 노드 하나를 분기 아이템들이
+        # 공유하므로, 스코프가 없으면 쿨다운까지 공유돼 한 사이클에 한 종목만 통과하고
+        # 나머지 종목은 매번 버려진다(표에 종목당 1행이 안 나온다).
         state_key = "_throttle_state"
+        branch_scope = config.get("_branch_scope")
+        if branch_scope:
+            state_key = f"{state_key}:{branch_scope}"
         throttle_state = context.get_node_state(node_id, state_key) or {
             "last_passed_at": None,
             "skipped_count": 0,
@@ -952,7 +958,18 @@ class ThrottleNodeExecutor(NodeExecutorBase):
                             for key, value in all_outputs.items():
                                 if not key.startswith("_"):
                                     input_data[key] = value
-        
+
+        # 상류 출력은 모든 실행 경로(메인 플로우/Split 분기/실시간 재실행)가 이미
+        # `_input_<node_id>` 의사 노드에 모아둔다. 위의 `context._workflow_edges` 워크는
+        # **프로덕션에서 그 속성을 아무도 설정하지 않아** 통째로 죽어 있었다(테스트만 주입).
+        # 그래서 ThrottleNode 는 실시간 핸들러가 `_realtime_data` 를 직접 꽂아주는 경로에서만
+        # 동작했고, Split 분기 안에서는 상류에 실시간 시세가 흘러도 영원히 빈 입력을 봤다
+        # → 영원히 cooldown → 분기 결과가 전부 버려져 Aggregate 표가 안 찼다.
+        upstream = context.get_all_outputs(f"_input_{node_id}") or {}
+        for key, value in upstream.items():
+            if not key.startswith("_"):
+                input_data.setdefault(key, value)
+
         return input_data
 
 
@@ -1009,6 +1026,71 @@ def _public_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
         k: v for k, v in outputs.items()
         if not (isinstance(k, str) and k.startswith("_"))
     }
+
+
+# ── Split 분기 × 실시간 시세: 종목별 분리 (2026-07-14) ────────────────────────
+# 실시간 시세 노드는 **노드 하나에 구독 종목이 전부 합쳐진** symbol-keyed 출력을 낸다
+# (`ohlcv_data = {"005930": [bar], "000660": [bar]}` — on_tick 이 종목별 bar 를 한 dict 에
+# 누적). 그런데 Split 분기의 아이템 하나는 자기 종목만 봐야 한다. 자르지 않으면 모든
+# 분기가 같은 덩어리를 보고 같은 값을 수집해 "종목당 1행" 표가 나오지 않는다.
+_SYMBOL_ITEM_KEYS = ("symbol", "shcode", "code")
+
+# Split 분기가 수집할 값을 고를 때 payload 로 인정하는 포트(선언 순). 예전엔 공개 포트
+# 중 **아무거나 첫 번째**(dict 순서 의존)를 집어서, 시세 노드가 `symbols` 를 먼저 쓰면
+# 가격 대신 종목코드 목록이 표에 실렸다(비결정 + 잘못된 데이터).
+_BRANCH_PAYLOAD_PORTS = ("result", "value", "data", "ohlcv_data")
+
+
+def _item_symbol(item: Any) -> Optional[str]:
+    """Split 아이템에서 종목코드를 뽑는다 ('005930' 또는 {'symbol': '005930'})."""
+    if isinstance(item, str):
+        return item or None
+    if isinstance(item, dict):
+        for key in _SYMBOL_ITEM_KEYS:
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def _slice_realtime_outputs(outputs: Dict[str, Any], symbol: str) -> Dict[str, Any]:
+    """실시간 시세 노드의 합쳐진 출력을 한 종목 몫으로 자른다."""
+    sliced: Dict[str, Any] = {}
+    for port, value in outputs.items():
+        if port == "symbol":
+            sliced[port] = symbol
+        elif isinstance(value, dict) and symbol in value:
+            # symbol-keyed dict (ohlcv_data / data) → 이 종목의 값만
+            sliced[port] = value[symbol]
+        elif port == "symbols" and isinstance(value, list):
+            kept = [s for s in value if _item_symbol(s) == symbol]
+            sliced[port] = kept or value
+        else:
+            sliced[port] = value
+    return sliced
+
+
+def _realtime_branch_row(public: Dict[str, Any], symbol: Optional[str]) -> Optional[Dict[str, Any]]:
+    """실시간 분기 아이템이 표에 기여할 **평평한 한 행**을 만든다.
+
+    슬라이스된 payload 는 이 종목의 bar 리스트(`[{date, open, high, low, close, volume}]`)
+    이므로, 최신 bar 에 종목코드를 붙여 `{symbol, date, open, ..., volume}` 한 행으로 낸다.
+    TableDisplayNode 는 평평한 dict 의 리스트를 기대한다(첫 행의 키가 곧 표의 열).
+    """
+    for port in ("data", "ohlcv_data"):
+        value = public.get(port)
+        bar = None
+        if isinstance(value, list) and value and isinstance(value[-1], dict):
+            bar = value[-1]
+        elif isinstance(value, dict) and value and not isinstance(next(iter(value.values()), None), (dict, list)):
+            bar = value
+        if bar is None:
+            continue
+        row = dict(bar)
+        if symbol:
+            row.setdefault("symbol", symbol)
+        return row
+    return None
 
 
 # ── 해외주식 거래소 표기 정규화 (2026-07-14 결함3) ────────────────────────────
@@ -18626,7 +18708,7 @@ class WorkflowJob:
             return
 
         total = len(input_array)
-        collected_results: List[Any] = []
+        results_by_index: Dict[int, Any] = {}
         errors: List[str] = []
 
         print(f"    📦 SplitNode: {total} items, parallel={parallel}, delay_ms={delay_ms}")
@@ -18635,7 +18717,7 @@ class WorkflowJob:
         if parallel:
             # Parallel execution
             async def execute_item(idx: int, item: Any) -> Any:
-                return await self._execute_branch_for_item(
+                return idx, await self._execute_branch_for_item(
                     split_id=split_id,
                     branch_order=branch_order,
                     item=item,
@@ -18646,38 +18728,62 @@ class WorkflowJob:
             tasks = [execute_item(i, item) for i, item in enumerate(input_array)]
             for coro in asyncio.as_completed(tasks):
                 try:
-                    result = await coro
-                    if result is not _SKIP_BRANCH_ITEM:
-                        collected_results.append(result)
+                    idx, result = await coro
+                    results_by_index[idx] = result
                 except Exception as e:
                     if continue_on_error:
                         errors.append(str(e))
-                        collected_results.append(None)
                     else:
                         raise
         else:
             # Sequential execution
             for idx, item in enumerate(input_array):
                 try:
-                    result = await self._execute_branch_for_item(
+                    results_by_index[idx] = await self._execute_branch_for_item(
                         split_id=split_id,
                         branch_order=branch_order,
                         item=item,
                         index=idx,
                         total=total,
                     )
-                    if result is not _SKIP_BRANCH_ITEM:
-                        collected_results.append(result)
                 except Exception as e:
                     if continue_on_error:
                         errors.append(str(e))
-                        collected_results.append(None)
+                        results_by_index[idx] = None
                     else:
                         raise
 
                 # Apply delay between items (except last)
                 if delay_ms > 0 and idx < total - 1:
                     await asyncio.sleep(delay_ms / 1000)
+
+        # === Collect, holding the last known row per item (realtime branches) ===
+        # 실시간 분기는 틱마다 재구동되고 ThrottleNode 는 종목별 쿨다운으로 대부분의
+        # 사이클을 막는다. 통과하지 못한 종목을 그냥 버리면 수집 배열이 사이클마다
+        # 통째로 비어 **표가 깜빡인다**(찼다 → 빈 표 → 찼다). 이번 사이클에 새 값이 없으면
+        # 그 종목의 **직전 행을 유지**한다. 실시간이 아닌 분기는 기존대로 버린다
+        # (아직 실데이터가 없는 아이템을 표에 끼우지 않기 위함 — 2026-07-14 결함2).
+        realtime_branch = any(
+            (self.workflow.nodes.get(n).node_type in REALTIME_NODE_TYPES)
+            for n in branch_order
+            if self.workflow.nodes.get(n)
+        )
+        held_key = "_last_branch_rows"
+        held: Dict[str, Any] = dict(self.context.get_node_state(aggregate_id, held_key) or {})
+
+        collected_results: List[Any] = []
+        for idx in range(total):
+            result = results_by_index.get(idx, _SKIP_BRANCH_ITEM)
+            if result is _SKIP_BRANCH_ITEM:
+                if realtime_branch and str(idx) in held:
+                    collected_results.append(held[str(idx)])
+                continue
+            collected_results.append(result)
+            if realtime_branch and result is not None:
+                held[str(idx)] = result
+
+        if realtime_branch:
+            self.context.set_node_state(aggregate_id, held_key, held)
 
         # === Store results for AggregateNode ===
         self.context.set_node_state(aggregate_id, "_collected_items", collected_results)
@@ -18733,21 +18839,50 @@ class WorkflowJob:
         result = item
         last_had_public = None  # None = branch 노드 없음 / True|False = 마지막 노드 결과
 
+        # 이 분기가 실시간 시세를 다루는가 + 이 아이템의 종목은 무엇인가.
+        # (실시간 분기에서만 종목별 슬라이싱/행 생성을 적용해 파장을 그 경우로 가둔다.)
+        symbol = _item_symbol(item)
+        realtime_branch = any(
+            (self.workflow.nodes.get(n).node_type in REALTIME_NODE_TYPES)
+            for n in branch_order
+            if self.workflow.nodes.get(n)
+        )
+        # 분기 아이템마다 독립된 상태 스코프. ThrottleNode 의 쿨다운은 노드별 상태라
+        # 종목들이 한 노드를 공유하면 대기시간까지 공유돼 한 번에 한 종목만 통과한다.
+        branch_scope = f"{split_id}#{index}"
+
         # Execute each branch node
         for node_id in branch_order:
             node = self.workflow.nodes.get(node_id)
             if not node:
                 continue
 
+            # 이미 구독을 건 실시간 노드는 분기 재구동 때 다시 실행하지 않는다.
+            # 재실행하면 틱마다 재구독이 걸려 소켓이 폭주한다. 최신 시세는 틱 콜백이
+            # 이 노드의 context 출력에 계속 갱신해 두므로, 하류는 그걸 그대로 읽으면 된다.
+            # (최초 실행 때는 출력이 없으므로 정상적으로 실행돼 구독이 걸린다.)
+            if node.node_type in REALTIME_NODE_TYPES and self.context.get_all_outputs(node_id):
+                continue
+
             # Prepare config
             config = dict(node.config)
             config = self._resolve_config_expressions(config, node_id)
             config = self._auto_inject_connection(node_id, node, config)
+            config["_branch_scope"] = branch_scope
 
             # Connect inputs from upstream
             for edge in self.workflow.edges:
                 if edge.to_node_id == node_id:
                     all_outputs = self.context.get_all_outputs(edge.from_node_id)
+                    source = self.workflow.nodes.get(edge.from_node_id)
+                    if (
+                        all_outputs
+                        and symbol
+                        and source
+                        and source.node_type in REALTIME_NODE_TYPES
+                    ):
+                        # 합쳐진 시세를 이 아이템의 종목 몫으로 자른다
+                        all_outputs = _slice_realtime_outputs(all_outputs, symbol)
                     for port_name, port_value in all_outputs.items():
                         self.context.set_output(f"_input_{node_id}", port_name, port_value)
 
@@ -18772,7 +18907,14 @@ class WorkflowJob:
             public = _public_outputs(outputs) if outputs else {}
             last_had_public = bool(public)
             if public:
-                result = public.get("result") or public.get("value") or next(iter(public.values()), item)
+                row = _realtime_branch_row(public, symbol) if realtime_branch else None
+                if row is not None:
+                    result = row
+                else:
+                    result = next(
+                        (public[p] for p in _BRANCH_PAYLOAD_PORTS if public.get(p) is not None),
+                        next(iter(public.values()), item),
+                    )
 
         # 마지막 branch 노드가 공개 출력을 전혀 못 냈으면(예: ThrottleNode 가 이번 사이클
         # 을 throttling 중이라 내부 메타만 반환) 이 아이템은 기여할 실데이터가 없다 →
@@ -19280,19 +19422,42 @@ class WorkflowJob:
         # 🆕 트리거된 노드들 + 하위 노드들을 모두 찾아서 실행 순서대로 정렬
         nodes_to_execute = self._find_downstream_nodes(trigger_nodes)
         print(f"  → 실행할 노드 체인: {nodes_to_execute}")
-        
+
+        # Split→Aggregate 분기는 노드를 하나씩 재실행해서는 절대 채워지지 않는다.
+        # AggregateNode 의 유일한 입력인 node_state["_collected_items"] 를 쓰는 곳은
+        # _execute_split_branch 한 곳뿐이라, 틱이 하류만 일반 재실행하면 수집 배열이
+        # 최초 실행 시점 값(대개 [])에 영구히 얼어붙는다 → 표가 영원히 빈 채로 남는다.
+        # 체인이 분기에 닿으면 그 Split 분기를 통째로 재구동해 수집을 다시 채운다.
+        split_pairs = self._find_split_aggregate_pairs()
+        chain = set(nodes_to_execute)
+        branch_driven: Set[str] = set()
+        for split_id, aggregate_id in split_pairs.items():
+            branch = self._get_branch_nodes(split_id, aggregate_id)
+            if not (chain & branch) and aggregate_id not in chain:
+                continue
+            split_node = self.workflow.nodes.get(split_id)
+            if not split_node:
+                continue
+            print(f"    🔀 Re-driving split branch: {split_id} → {aggregate_id}")
+            await self._execute_split_branch(split_id, split_node, split_pairs, branch)
+            branch_driven |= branch | {split_id, aggregate_id}
+
         for node_id in nodes_to_execute:
             if not self.context.is_running:
                 break
-            
+
             node = self.workflow.nodes.get(node_id)
             if not node:
                 continue
-            
+
             # 실시간 노드는 이미 실행 중이므로 스킵 (무한 루프 방지)
             if node.node_type in REALTIME_NODE_TYPES:
                 continue
-            
+
+            # 분기 재구동이 이미 실행한 노드는 중복 실행하지 않는다
+            if node_id in branch_driven:
+                continue
+
             # Re-execute the triggered node
             try:
                 print(f"    ▶ Re-executing: {node_id} ({node.node_type})")
