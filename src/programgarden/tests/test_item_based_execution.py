@@ -671,6 +671,94 @@ class TestRealtimeBranchRowShape:
 
         assert _realtime_branch_row({"symbols": [{"symbol": "005930"}]}, "005930") is None
 
+    def test_symbol_without_tick_yet_yields_no_public_port(self):
+        """아직 틱이 없는 종목은 **공개 포트를 하나도 받으면 안 된다.**
+
+        회귀 방지 (2026-07-14 HKEX 라이브에서 발견): 예전엔 내 종목이 symbol-keyed dict 에
+        없으면 **합쳐진 덩어리를 그대로 통과**시켰고, 그게 표의 한 행이 됐다
+        (`{"HMHN26": [{...}]}` 가 HMCEN26 의 행으로 실림). 빈 값이나 symbols 목록만 내보내도
+        Throttle 이 '흘릴 데이터 있음'으로 착각해 통과시켜 가격 없는 행이 낀다.
+        """
+        from programgarden.executor import _slice_realtime_outputs, _public_outputs
+
+        bar = {"date": "20260714", "close": 24347.0, "volume": 113310}
+        outputs = {
+            "_pending": True,
+            "symbols": [{"symbol": "HMHN26"}, {"symbol": "HMCEN26"}],
+            "ohlcv_data": {"HMHN26": [bar]},   # HMCEN26 은 아직 체결 없음
+            "data": {"HMHN26": [bar]},
+        }
+
+        sliced = _slice_realtime_outputs(outputs, "HMCEN26")
+
+        assert _public_outputs(sliced) == {}, "틱 없는 종목에 공개 데이터가 새어나갔다"
+        assert sliced.get("_pending") is True  # 내부 신호는 유지
+
+        # 틱이 있는 종목은 정상적으로 자기 몫을 받는다
+        ok = _slice_realtime_outputs(outputs, "HMHN26")
+        assert ok["ohlcv_data"] == [bar]
+
+
+class TestRealtimeNodeSubscribesEveryBranchItem:
+    """실시간 노드는 **분기 아이템(종목)마다 최초 1회 실행**돼야 한다 — 그래야 구독이 걸린다.
+
+    회귀 방지 (2026-07-14 HKEX 라이브에서 발견): 재구독 폭주를 막는 가드를 "출력이 있으면
+    스킵"으로 걸었더니, 첫 종목이 실행되며 출력을 남기는 순간 **2번째 이후 종목의 최초 구독까지
+    건너뛰어** 그 종목엔 시세가 영영 오지 않았다. 스킵 판단은 **분기 스코프별**이어야 한다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_second_symbol_also_subscribes_then_redrive_skips(self):
+        from programgarden.executor import WorkflowJob, REALTIME_NODE_TYPES
+        from programgarden.context import ExecutionContext
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+        ctx.notify_node_state = AsyncMock()
+
+        class _Edge:
+            def __init__(self, f, t):
+                self.from_node_id, self.to_node_id = f, t
+
+        class _Node:
+            def __init__(self, node_type):
+                self.node_type = node_type
+                self.config = {}
+                self.plugin = None
+                self.fields = None
+
+        job = MagicMock(spec=WorkflowJob)
+        job.context = ctx
+        job._execute_branch_for_item = WorkflowJob._execute_branch_for_item.__get__(job)
+        job._resolve_config_expressions = lambda cfg, node_id: cfg
+        job._auto_inject_connection = lambda node_id, node, cfg: cfg
+
+        wf = MagicMock()
+        wf.edges = [_Edge("split", "rm")]
+        wf.nodes = {"split": _Node("SplitNode"), "rm": _Node("OverseasFuturesRealMarketDataNode")}
+        job.workflow = wf
+        assert "OverseasFuturesRealMarketDataNode" in REALTIME_NODE_TYPES
+
+        subscribed = []
+
+        async def _execute_node(node_id, node_type, config, context, **kwargs):
+            subscribed.append(config.get("_branch_scope"))
+            return {"_pending": True}
+
+        job.executor = MagicMock()
+        job.executor.execute_node = _execute_node
+
+        items = [{"symbol": "HMHN26"}, {"symbol": "HMCEN26"}]
+
+        # 최초 분기: 두 종목 **모두** 구독돼야 한다
+        for idx, item in enumerate(items):
+            await job._execute_branch_for_item("split", ["rm"], item, idx, len(items))
+        assert subscribed == ["split#0", "split#1"], "2번째 종목이 구독되지 않았다"
+
+        # 틱에 의한 분기 재구동: 이미 구독한 종목은 다시 실행하지 않는다 (재구독 폭주 방지)
+        for idx, item in enumerate(items):
+            await job._execute_branch_for_item("split", ["rm"], item, idx, len(items))
+        assert subscribed == ["split#0", "split#1"], "재구동에서 재구독이 일어났다"
+
 
 class TestRealtimeSplitBranchFillsTablePerSymbol:
     """Split → 실시간시세 → Throttle → Aggregate 가 **종목당 1행**을 채운다 (통합).
@@ -739,6 +827,10 @@ class TestRealtimeSplitBranchFillsTablePerSymbol:
         async def _execute_node(node_id, node_type, config, context, **kwargs):
             if node_type == "ThrottleNode":
                 return await throttle.execute(node_id, node_type, config, context)
+            if node_type == "KoreaStockRealMarketDataNode":
+                # 실제 시세 노드처럼: 종목마다 최초 1회 실행돼 구독을 걸고 _pending 만 낸다.
+                # (틱 데이터는 이미 context 에 심어둔 것 = 소켓이 채워준 상태)
+                return {"_pending": True}
             raise AssertionError(f"unexpected node execution: {node_type}")
 
         job.executor = MagicMock()
