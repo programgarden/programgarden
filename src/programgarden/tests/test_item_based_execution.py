@@ -500,3 +500,52 @@ class TestBranchSkipsMetaOnlyItems:
         )
         assert r is not _SKIP_BRANCH_ITEM
         assert r == 123.45
+
+
+class TestRealtimePendingProducesNoRow:
+    """real_market 이 pending(_pending 신호)일 때 하류가 빈 행을 그리지 않는다 — 결함2-pending.
+
+    수용 기준: 표에 실제 체결가 행 or 정직한 빈 표만. 빈 dict/내부구조 행 0.
+    """
+
+    @pytest.mark.asyncio
+    async def test_pending_upstream_yields_no_public_through_throttle(self):
+        from programgarden.context import ExecutionContext
+        from programgarden.executor import ThrottleNodeExecutor, _public_outputs
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+
+        async def _noop(**k):
+            return None
+
+        ctx.notify_node_state = _noop
+        # real_market pending → 내부 _pending 신호만 (공개 데이터 포트 없음)
+        ctx.set_output("rm", "_pending", True)
+        ctx._workflow_edges = [{"from": "rm", "to": "throttle"}]
+
+        out = await ThrottleNodeExecutor().execute(
+            "throttle", "ThrottleNode",
+            {"mode": "latest", "interval_sec": 5.0, "pass_first": True}, ctx,
+        )
+        # throttle 이 흘릴 실데이터가 없어 공개 출력이 없다 → branch 가 skip → 행 없음
+        assert _public_outputs(out) == {}
+
+    @pytest.mark.asyncio
+    async def test_real_tick_passes_through(self):
+        from programgarden.context import ExecutionContext
+        from programgarden.executor import ThrottleNodeExecutor, _public_outputs
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+
+        async def _noop(**k):
+            return None
+
+        ctx.notify_node_state = _noop
+        ctx.set_output("rm", "ohlcv_data", {"AUID": [{"close": 100.0}]})
+        ctx._workflow_edges = [{"from": "rm", "to": "throttle"}]
+
+        out = await ThrottleNodeExecutor().execute(
+            "throttle", "ThrottleNode",
+            {"mode": "latest", "interval_sec": 5.0, "pass_first": True}, ctx,
+        )
+        assert "ohlcv_data" in _public_outputs(out)

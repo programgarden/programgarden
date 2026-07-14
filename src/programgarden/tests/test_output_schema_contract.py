@@ -314,6 +314,23 @@ def _returned_keys(cls, method_name: str) -> Set[str]:
             keys |= {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
         elif isinstance(node.value, ast.Name):
             keys |= assigned.get(node.value.id, set())
+
+    # 실시간 노드는 선언 포트를 **return 이 아니라 콜백에서 set_output** 으로 방출한다
+    # (틱 도착 시). pending 시엔 데이터형 포트를 안 내야 하류가 빈 행을 그리지 않으므로
+    # (2026-07-14 결함2-pending), 그 포트들은 return 에 없다. context.set_output(node_id,
+    # "PORT", ...) 로 **자기 노드에** 세팅하는 포트도 방출로 인정한다(_input_<id> 는 제외).
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        if not (isinstance(f, ast.Attribute) and f.attr == "set_output"):
+            continue
+        if len(node.args) < 2:
+            continue
+        tgt, port = node.args[0], node.args[1]
+        # 첫 인자가 node_id(자기 노드)일 때만 — _input_<id>(입력) 은 제외
+        if isinstance(tgt, ast.Name) and tgt.id == "node_id" and isinstance(port, ast.Constant):
+            keys.add(port.value)
     return keys
 
 

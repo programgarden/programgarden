@@ -6496,6 +6496,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
                     
                     # context에 업데이트
+                    context.set_output(node_id, "symbols", symbols_raw)  # 선언 포트 — 틱 시 방출
                     context.set_output(node_id, "ohlcv_data", ohlcv_data)
                     context.set_output(node_id, "data", ohlcv_data)
                     
@@ -6549,11 +6550,13 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.log("info", f"GSC subscription active - waiting for ticks...", node_id)
         
         # 초기 반환: 빈 OHLCV 데이터 (체결 시 콜백에서 업데이트)
-        return {
-            "symbols": symbols_raw,
-            "ohlcv_data": {},
-            "data": {},
-        }
+        # pending 을 1급 신호로 방출한다: 아직 틱이 없어 흘릴 **실데이터가 없다.**
+        # 예전엔 {symbols, ohlcv_data:{}, data:{}} 처럼 **공개 데이터 포트를 빈 값으로**
+        # 냈고, 하류 Throttle→Aggregate→Display 가 그 빈 dict 를 '체결가' 행으로 렌더했다
+        # (제목은 '실시간 체결가'인데 내용이 빈 dict — 결함2 의 원증상). 이제 내부 `_pending`
+        # 신호만 내면 Throttle 이 통과시킬 실데이터가 없어 branch 가 skip 되고, 표에는 실제
+        # 틱이 온 종목만(또는 정직한 빈 표) 뜬다. 선언 포트 symbols 는 틱 경로에서 방출한다.
+        return {"_pending": True}
     
     async def _execute_futures(
         self,
@@ -6660,6 +6663,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                     # OHLCV 데이터 형식으로 변환
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
                     
+                    context.set_output(node_id, "symbols", symbols_raw)  # 선언 포트 — 틱 시 방출
                     context.set_output(node_id, "ohlcv_data", ohlcv_data)
                     context.set_output(node_id, "data", ohlcv_data)
                     
@@ -6711,11 +6715,13 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.log("info", f"OVC subscription active - waiting for ticks...", node_id)
         
         # 초기 반환: 빈 OHLCV 데이터
-        return {
-            "symbols": symbols_raw,
-            "ohlcv_data": {},
-            "data": {},
-        }
+        # pending 을 1급 신호로 방출한다: 아직 틱이 없어 흘릴 **실데이터가 없다.**
+        # 예전엔 {symbols, ohlcv_data:{}, data:{}} 처럼 **공개 데이터 포트를 빈 값으로**
+        # 냈고, 하류 Throttle→Aggregate→Display 가 그 빈 dict 를 '체결가' 행으로 렌더했다
+        # (제목은 '실시간 체결가'인데 내용이 빈 dict — 결함2 의 원증상). 이제 내부 `_pending`
+        # 신호만 내면 Throttle 이 통과시킬 실데이터가 없어 branch 가 skip 되고, 표에는 실제
+        # 틱이 온 종목만(또는 정직한 빈 표) 뜬다. 선언 포트 symbols 는 틱 경로에서 방출한다.
+        return {"_pending": True}
     
     def _get_stock_exchange_code(self, exchange: str, exchange_code: str = "", symbol: str = "") -> str:
         """구독/주문용 LS 거래소 코드(81/82)로 환원.
@@ -6820,6 +6826,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                     context.set_node_state(node_id, "ohlcv_bars", ohlcv_bars)
 
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
+                    context.set_output(node_id, "symbols", symbols_raw)  # 선언 포트 — 틱 시 방출
                     context.set_output(node_id, "ohlcv_data", ohlcv_data)
                     context.set_output(node_id, "data", ohlcv_data)
 
@@ -6874,11 +6881,13 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
             context.log("info", f"S3_/K3_ subscription active - waiting for ticks...", node_id)
 
-        return {
-            "symbols": symbols_raw,
-            "ohlcv_data": {},
-            "data": {},
-        }
+        # pending 을 1급 신호로 방출한다: 아직 틱이 없어 흘릴 **실데이터가 없다.**
+        # 예전엔 {symbols, ohlcv_data:{}, data:{}} 처럼 **공개 데이터 포트를 빈 값으로**
+        # 냈고, 하류 Throttle→Aggregate→Display 가 그 빈 dict 를 '체결가' 행으로 렌더했다
+        # (제목은 '실시간 체결가'인데 내용이 빈 dict — 결함2 의 원증상). 이제 내부 `_pending`
+        # 신호만 내면 Throttle 이 통과시킬 실데이터가 없어 branch 가 skip 되고, 표에는 실제
+        # 틱이 온 종목만(또는 정직한 빈 표) 뜬다. 선언 포트 symbols 는 틱 경로에서 방출한다.
+        return {"_pending": True}
 
     def _resolve_symbols(
         self,
