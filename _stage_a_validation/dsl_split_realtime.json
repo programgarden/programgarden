@@ -1,0 +1,35 @@
+{
+  "name": "Stage A engine validation — account→Split(array={{held_symbols}})→realtime→Throttle→Aggregate→Table",
+  "id": "stage_a_split_runtime_wiring",
+  "version": "1.0.0",
+  "description": "Hand-authored engine-validation DSL for fix/split-runtime-wiring. CORRECTLY binds SplitNode.array to real_account.held_symbols (the binding the chatbot omitted). Read-only: NO order nodes. Exercises defects 1 (Split honors config.array + iterates real held_symbols), 3 (held_symbols emit exchange=NASDAQ + exchange_code=82), 2 (realtime pending → no empty rows).",
+  "nodes": [
+    { "id": "start", "type": "StartNode" },
+    { "id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_ls_overseas_stock_cred" },
+    { "id": "real_account", "type": "OverseasStockRealAccountNode", "stay_connected": true, "sync_interval_sec": 60, "commission_rate": 0.25 },
+    { "id": "split", "type": "SplitNode", "array": "{{ nodes.real_account.held_symbols }}", "parallel": false, "delay_ms": 500, "continue_on_error": true },
+    { "id": "real_market", "type": "OverseasStockRealMarketDataNode", "stay_connected": true, "symbol": "{{ nodes.split.item }}" },
+    { "id": "throttle", "type": "ThrottleNode", "mode": "latest", "pass_first": true, "interval_sec": 5.0 },
+    { "id": "aggregate", "type": "AggregateNode", "mode": "collect" },
+    { "id": "display", "type": "TableDisplayNode", "title": "실시간 보유종목 체결가", "data": "{{ nodes.aggregate.array }}", "limit": 20, "sort_order": "desc" }
+  ],
+  "edges": [
+    { "from": "start", "to": "broker" },
+    { "from": "broker", "to": "real_account" },
+    { "from": "real_account", "to": "split" },
+    { "from": "split", "to": "real_market" },
+    { "from": "real_market", "to": "throttle" },
+    { "from": "throttle", "to": "aggregate" },
+    { "from": "aggregate", "to": "display" }
+  ],
+  "credentials": [
+    {
+      "credential_id": "broker_ls_overseas_stock_cred",
+      "type": "broker_ls_overseas_stock",
+      "data": [
+        { "key": "appkey", "value": "", "type": "password", "label": "App Key" },
+        { "key": "appsecret", "value": "", "type": "password", "label": "App Secret" }
+      ]
+    }
+  ]
+}
