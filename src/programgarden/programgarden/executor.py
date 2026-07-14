@@ -850,16 +850,37 @@ class ThrottleNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """Process data pass-through"""
         from programgarden_core.bases.listener import NodeState
-        
+
         now = datetime.now()
+
+        # 상류에 흘릴 실데이터가 없으면(예: 실시간 시세 노드가 아직 틱 대기) '통과했다'고
+        # data-형 output 을 내지 않는다. 예전엔 여기서 outputs={} 에 _throttle_stats 만
+        # 실어 방출했고, 하류 collector 가 그 내부 통계를 데이터로 오인했다(passed:True
+        # 껍데기가 표에 렌더). pending 이면 내부 메타만 돌려주고 cooldown 도 리셋 안 한다
+        # (실제로 통과한 게 없으므로). — 2026-07-14 runtime-wiring fix (생산자 측).
+        if not input_data:
+            context.log(
+                "debug",
+                "Throttle pass-through skipped: no upstream data yet (pending)",
+                node_id,
+            )
+            return {
+                "_throttled": True,
+                "_throttle_stats": {
+                    "skipped_count": throttle_state.get("skipped_count", 0),
+                    "passed": False,
+                    "reason": "no upstream data yet",
+                },
+            }
+
         throttle_state["last_passed_at"] = now.isoformat()
         throttle_state["pending_data"] = None
         # Keep skipped_count for cumulative stats
-        
+
         context.set_node_state(node_id, state_key, throttle_state)
-        
+
         # Pass input data as output (transparent proxy)
-        outputs = dict(input_data) if input_data else {}
+        outputs = dict(input_data)
         outputs["_throttle_stats"] = {
             "skipped_count": throttle_state.get("skipped_count", 0),
             "last_passed_at": now.isoformat(),
@@ -913,6 +934,128 @@ class ThrottleNodeExecutor(NodeExecutorBase):
         return input_data
 
 
+# Priority-ordered output ports a SplitNode may iterate when its ``array`` input
+# is not explicitly bound. Canonical single-array producers first (Watchlist →
+# symbols, Condition → values, …), then account multi-array ports.
+_SPLIT_ARRAY_KEYS = [
+    "array", "symbols", "values", "data", "items",
+    "held_symbols", "positions", "open_orders",
+]
+
+
+def _pick_split_array(upstream: Dict[str, Any], *, source: str) -> List[Any]:
+    """Deterministically pick the array a SplitNode should iterate from an
+    upstream output dict.
+
+    Raises ``RuntimeError`` with a clear reason on ambiguity/absence — it never
+    silently returns ``[]`` or grabs an arbitrary "first list" (that made the
+    iteration source depend on dict ordering: an account node exposing
+    ``held_symbols``/``positions``/``open_orders`` would iterate whichever the
+    executor happened to emit first, and an explicit ``array`` binding was
+    ignored entirely — see the 2026-07-14 runtime-wiring fix).
+    """
+    candidates = [k for k in _SPLIT_ARRAY_KEYS if isinstance(upstream.get(k), list)]
+    if len(candidates) == 1:
+        return upstream[candidates[0]]
+    if not candidates:
+        raise RuntimeError(
+            f"SplitNode has no array to split: upstream ({source}) exposes no "
+            f"array output among {_SPLIT_ARRAY_KEYS}. Bind split.array explicitly "
+            "(e.g. array: '{{ nodes.<id>.held_symbols }}') or wire an "
+            "array-producing node upstream."
+        )
+    raise RuntimeError(
+        f"SplitNode array source is ambiguous: upstream ({source}) exposes "
+        f"multiple candidate arrays {candidates}. Bind split.array explicitly to "
+        f"pick one (e.g. array: '{{{{ nodes.<id>.{candidates[0]} }}}}')."
+    )
+
+
+def _public_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop internal/meta ports (``_``-prefixed, e.g. ``_throttle_stats`` /
+    ``_throttled``) so they never leak downstream as data.
+
+    The ``_`` prefix is the repo-wide convention for internal port metadata
+    (see NodeExecutorBase._collect_input_data, which already filters inputs this
+    way). This centralizes the same filter for the *output* side so ANY node's
+    meta — not just ThrottleNode's stats — is excluded consistently. Without it,
+    a ThrottleNode that has nothing to pass (upstream still pending) returns
+    only ``_throttle_stats`` and a downstream collector grabs that stats dict as
+    if it were the payload (2026-07-14 runtime-wiring fix).
+    """
+    return {
+        k: v for k, v in outputs.items()
+        if not (isinstance(k, str) and k.startswith("_"))
+    }
+
+
+# ── 해외주식 거래소 표기 정규화 (2026-07-14 결함3) ────────────────────────────
+# LS 는 거래소를 갈래마다 다른 표현으로 준다: REST balance(COSOQ00201) MktTpNm 은
+# 한글 표시명('뉴욕'/'나스닥'), FcurrMktCode 는 LS 코드('81'/'82'/'83'), screener/
+# universe 갈래는 yfinance 접미사(NMS/NYQ/…). 같은 종목인데 시점마다 값이 갈려
+# 표·비교·구독이 조용히 깨진다. producer 경계에서 (표시명, LS코드) 두 표현을 **둘 다**
+# 확정하고, 구독·주문 소비자는 어느 쪽을 받든 코드로 환원한다(미매핑은 raise).
+#
+# ⚠️ 국내/선물은 이번 릴리스에서 건드리지 않는다(정상 동작 중). 전역 네이밍 통일
+# (market_code→exchange_code)은 계획서 후속 항목이다.
+# ⚠️ LS 에서 **AMEX 의 코드는 81** 이다 (주문 OrdMktCode=Literal["81","82"], GSC "81=
+# NYSE/AMEX, 82=NASDAQ"). '83' 은 LS 가 반환/수용하지 않는 **유령 코드**라 제거했다.
+# - 이름→코드는 many-to-one(NYSE→81, AMEX→81, NASDAQ→82) — 무손실(기계 경로엔 코드만 필요).
+# - 코드→이름은 1:1 아님(81=NYSE 이자 AMEX). **표시명을 코드에서 역산하면 AMEX 가 NYSE 로
+#   보일 수 있다**(한계 — 계획서에 명시). 정확한 표시명이 필요하면 이름 소스(MktTpNm 정규화)
+#   를 쓰되, REST↔tracker 값 일치를 위해 producer 는 공통 소스(코드)에서 파생한다.
+_OVERSEAS_STOCK_EXCHANGE = {
+    # LS 코드 → (표시명, 코드). 81 은 NYSE 로 표시(AMEX 도 81이나 코드만으론 구분 불가).
+    "81": ("NYSE", "81"), "82": ("NASDAQ", "82"),
+    # 영문 표시명 → 코드 (이름 소스는 AMEX 를 정확히 구분)
+    "NYSE": ("NYSE", "81"), "AMEX": ("AMEX", "81"), "NASDAQ": ("NASDAQ", "82"),
+    # 한글 표시명 (MktTpNm) → 영문명+코드
+    "뉴욕": ("NYSE", "81"), "아멕스": ("AMEX", "81"), "나스닥": ("NASDAQ", "82"),
+    # yfinance 접미사 (screener/universe 갈래)
+    "NMS": ("NASDAQ", "82"), "NGM": ("NASDAQ", "82"), "NCM": ("NASDAQ", "82"),
+    "NYQ": ("NYSE", "81"), "ASE": ("AMEX", "81"),
+}
+
+
+def normalize_overseas_stock_exchange(raw: Any) -> "tuple[Optional[str], Optional[str]]":
+    """해외주식 거래소 원시값 → (표시명, LS코드). 매핑 불가면 (None, None).
+
+    코드('82')·영문('NASDAQ')·한글('나스닥')·yfinance('NMS')를 모두 받아 정규화한다.
+    """
+    if raw is None:
+        return (None, None)
+    s = str(raw).strip()
+    hit = _OVERSEAS_STOCK_EXCHANGE.get(s) or _OVERSEAS_STOCK_EXCHANGE.get(s.upper())
+    return hit if hit else (None, None)
+
+
+def overseas_stock_exchange_pair(raw: Any) -> "tuple[str, str]":
+    """producer 경계용: (영문 표시명, LS코드) 를 확정해 둘 다 반환.
+
+    소스는 FcurrMktCode(코드 캐리어)를 권장한다. 매핑 불가한 값은:
+    - 한글/미지 **표시명을 데이터에 박지 않는다**(i18n 부채 방지 — 코드·데이터=영어 규율).
+    - raw 가 LS 코드(숫자)면 코드를 그대로 보존(권한 있는 코드 캐리어), 표시명은 코드
+      문자열로 둔다(영어/숫자, 한글 아님). 이름형 미지 값이면 빈 값.
+    코드가 필요한 소비자(구독/주문)는 미매핑 코드에서 raise 한다 — 조용히 틀린 코드로
+    대체하지 않는다.
+    """
+    name, code = normalize_overseas_stock_exchange(raw)
+    if name is not None:
+        return (name, code)
+    raw_s = str(raw).strip() if raw is not None else ""
+    if raw_s.isdigit():
+        return (raw_s, raw_s)  # 미지 LS 코드 — 코드 보존, 한글 아님
+    return ("", "")  # 이름형 미지 표기 → 데이터에 안 박음(빈 값)
+
+
+# Sentinel: a split branch item that produced no real (public) data this cycle
+# and must NOT contribute a row to the AggregateNode/Display. Used when the
+# terminal branch node emits only internal meta (e.g. ThrottleNode is throttling
+# or the realtime source is still pending) — showing that item as a row makes a
+# "실시간 체결가" table render a priceless / heterogeneous row (2026-07-14 fix).
+_SKIP_BRANCH_ITEM = object()
+
+
 class SplitNodeExecutor(NodeExecutorBase):
     """
     SplitNode executor
@@ -936,33 +1079,43 @@ class SplitNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         **kwargs,
     ) -> Dict[str, Any]:
-        # Get array from config or input port
-        input_array = config.get("array", [])
+        # NOTE: For the common Split→Aggregate branch pattern this executor is
+        # NOT the runtime source of truth — WorkflowJob._execute_split_branch
+        # resolves the array and drives iteration, and _execute_branch_for_item
+        # sets item/index/total/items/_array directly. This method only runs on
+        # the legacy/standalone path; it shares _pick_split_array with the branch
+        # driver so the two can never diverge again.
+        input_array = None
 
-        # If array binding expression, resolve from context
-        if isinstance(input_array, str) and "{{" in input_array:
-            expr_context = context.get_expression_context()
-            evaluator = ExpressionEvaluator(expr_context)
-            try:
-                input_array = evaluator.evaluate(input_array) or []
-            except Exception as e:
-                context.log("warning", f"Array expression evaluation failed: {e}", node_id)
+        # 1순위: 명시적 array 바인딩 (있으면 상류보다 우선).
+        array_cfg = config.get("array")
+        if array_cfg is not None:
+            if isinstance(array_cfg, str) and "{{" in array_cfg:
+                expr_context = context.get_expression_context()
+                evaluator = ExpressionEvaluator(expr_context)
+                try:
+                    array_cfg = evaluator.evaluate(array_cfg)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"SplitNode {node_id}: array binding '{config.get('array')}' "
+                        f"failed to evaluate: {e}"
+                    ) from e
+            if isinstance(array_cfg, list):
+                input_array = array_cfg
+            elif array_cfg is None:
                 input_array = []
+            else:
+                input_array = [array_cfg]  # scalar → single explicit item
 
-        # Also check input port (upstream node output)
-        if not input_array:
+        # 2순위: 상류 출력 — KNOWN 키 우선순위로 결정화 (모호/부재 시 raise).
+        if input_array is None:
             input_data = context.get_output(f"_input_{node_id}", "input")
             if isinstance(input_data, list):
                 input_array = input_data
             elif isinstance(input_data, dict):
-                # Check for array fields in input
-                for key in ["array", "symbols", "values", "data", "items"]:
-                    if key in input_data and isinstance(input_data[key], list):
-                        input_array = input_data[key]
-                        break
-
-        if not isinstance(input_array, list):
-            input_array = [input_array] if input_array else []
+                input_array = _pick_split_array(input_data, source=f"input of '{node_id}'")
+            else:
+                input_array = [input_data] if input_data else []
 
         # Get current item context (set by _execute_main_flow during iteration)
         split_context = context.get_node_state(node_id, "_split_context") or {
@@ -981,8 +1134,10 @@ class SplitNodeExecutor(NodeExecutorBase):
             "item": split_context["item"],
             "index": split_context["index"],
             "total": split_context["total"],
-            # Expose full array via both legacy name and the documented schema port.
-            "_array": input_array,
+            # Full input array via the documented schema port. (The undeclared
+            # legacy `_array` alias was dropped — it had no reader and its `_`
+            # prefix collided with the internal-meta filter; only declared ports
+            # are emitted so declaration == runtime.)
             "items": input_array,
         }
 
@@ -4443,6 +4598,10 @@ class AccountNodeExecutor(NodeExecutorBase):
             if not symbol:
                 continue
 
+            # 거래소 표기: FcurrMktCode(코드 캐리어) → (영문 표시명, LS 코드). 예전엔
+            # exchange 에 MktTpNm(한글 '나스닥')을 실어 RealAccount 갈래(코드/영문)와
+            # 갈렸고 한글이 엔진 데이터에 박혔다. market 필드는 종전 표기 유지(별도 필드).
+            _ex_name, _ex_code = overseas_stock_exchange_pair(getattr(item, 'FcurrMktCode', ''))
             positions.append({
                 "symbol": symbol,
                 "name": item.JpnMktHanglIsuNm.strip() if item.JpnMktHanglIsuNm else symbol,
@@ -4456,7 +4615,8 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "pnl_amount": item.FcurrEvalPnlAmt,
                 "currency": item.CrcyCode,
                 "market": item.MktTpNm.strip() if item.MktTpNm else "",
-                "exchange": item.MktTpNm.strip() if item.MktTpNm else "NASDAQ",  # NewOrderNode 호환
+                "exchange": _ex_name,          # 영문 표시명 (NASDAQ)
+                "exchange_code": _ex_code,     # LS 코드 (82)
                 "eval_amount": item.FcurrEvalAmt,
                 "purchase_amount": item.FcurrBuyAmt,
             })
@@ -4464,7 +4624,8 @@ class AccountNodeExecutor(NodeExecutorBase):
         # held_symbols 는 선언된 출력 포트다. 예전엔 여기서 계산만 하고 **반환 dict 에 싣지
         # 않아** 늘 비어 있었다 — 바인딩하면 정적 검증은 통과하고 런타임엔 None 이었다.
         held_symbols = [
-            {"exchange": p.get("exchange", ""), "symbol": p["symbol"]} for p in positions
+            {"exchange": p.get("exchange", ""), "exchange_code": p.get("exchange_code", ""), "symbol": p["symbol"]}
+            for p in positions
         ]
         
         # block2 = 전체 평가 요약. `orderable_amount` is set later by
@@ -5360,10 +5521,14 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 for sym, pos in positions.items():
                     quantity = pos.quantity
                     current_price = float(pos.current_price)
+                    # tracker 갈래(_get_overseas_stock_tracker_data)와 **같은 소스(market_code)
+                    # 에서 같은 값 표현**을 낸다 — exchange=영문 표시명, exchange_code=LS 코드.
+                    _ex_name, _ex_code = overseas_stock_exchange_pair(getattr(pos, 'market_code', ''))
                     serialized_positions.append({
                         "symbol": sym,
-                        "exchange": getattr(pos, 'market_code', 'NASDAQ'),
-                        "market_code": getattr(pos, 'market_code', ''),
+                        "exchange": _ex_name,          # 영문 표시명
+                        "exchange_code": _ex_code,     # LS 코드
+                        "market_code": getattr(pos, 'market_code', ''),  # 후속: exchange_code 로 수렴/제거
                         "name": getattr(pos, 'symbol_name', sym),
                         "qty": quantity,
                         "quantity": quantity,  # NewOrderNode 호환
@@ -5828,14 +5993,17 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         for symbol, pos in tracker.get_positions().items():
             quantity = pos.quantity
             current_price = float(pos.current_price)
+            # 거래소 표기 정규화: FcurrMktCode(코드 캐리어) → (영문 표시명, LS 코드).
+            # REST 스냅샷 갈래(_ls_stock_with_tracker)와 **같은 키 + 같은 값 표현**이어야
+            # 한다. 예전엔 exchange 에 raw market_code 를 실어, 스냅샷(이름)과 틱(코드)이
+            # 시점마다 갈렸다(주문/표가 조용히 깨짐).
+            _ex_name, _ex_code = overseas_stock_exchange_pair(getattr(pos, 'market_code', ''))
             positions.append({
                 "symbol": symbol,
                 "name": getattr(pos, 'name', getattr(pos, 'symbol_name', symbol)),
-                # REST 스냅샷 갈래(_ls_stock_with_tracker)와 **같은 키 집합**이어야 한다.
-                # 안 그러면 같은 포트가 스냅샷일 땐 exchange/quantity 를 주고 실시간 틱일 땐
-                # 안 주는, 시점마다 모양이 바뀌는 출력이 된다 (주문 노드가 조용히 깨진다).
-                "exchange": getattr(pos, 'market_code', 'NASDAQ'),
-                "market_code": getattr(pos, 'market_code', ''),
+                "exchange": _ex_name,          # 영문 표시명 (NASDAQ)
+                "exchange_code": _ex_code,     # LS 코드 (82)
+                "market_code": getattr(pos, 'market_code', ''),  # 후속: exchange_code 로 수렴/제거
                 "qty": quantity,
                 "quantity": quantity,  # NewOrderNode 호환
                 "price": current_price,  # NewOrderNode 호환
@@ -5849,7 +6017,8 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             })
 
         held_symbols = [
-            {"exchange": p["exchange"], "symbol": p["symbol"]} for p in positions
+            {"exchange": p["exchange"], "exchange_code": p["exchange_code"], "symbol": p["symbol"]}
+            for p in positions
         ]
         
         # balance를 JSON 직렬화 가능한 형태로 변환
@@ -6173,10 +6342,15 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                 symbol = entry.get("symbol", "")
                 exchange = entry.get("exchange", "")
                 symbols.append(symbol)
-                symbols_with_exchange.append({"symbol": symbol, "exchange": exchange})
+                # exchange_code(있으면 권한 있는 LS 코드)를 함께 통과시켜 하류 구독이
+                # 이름 역매핑 없이도 정확한 코드를 쓰게 한다.
+                symbols_with_exchange.append({
+                    "symbol": symbol, "exchange": exchange,
+                    "exchange_code": entry.get("exchange_code", ""),
+                })
             elif isinstance(entry, str):
                 symbols.append(entry)
-                symbols_with_exchange.append({"symbol": entry, "exchange": ""})
+                symbols_with_exchange.append({"symbol": entry, "exchange": "", "exchange_code": ""})
         
         # ========================================
         # 3. stay_connected 설정
@@ -6250,9 +6424,11 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         subscribe_symbols = []
         for entry in symbols_with_exchange:
             symbol = entry.get("symbol", "")
-            exchange = entry.get("exchange", "")
-            # 거래소 코드 매핑: NASDAQ=82, NYSE=81, AMEX=83
-            exchange_code = self._get_stock_exchange_code(exchange)
+            # exchange_code(우선) 또는 exchange(이름/코드) → LS 코드(81/82). 미매핑은
+            # 조용히 기본값으로 바꾸지 않고 raise(종목·거래소 명시).
+            exchange_code = self._get_stock_exchange_code(
+                entry.get("exchange", ""), entry.get("exchange_code", ""), symbol
+            )
             subscribe_symbols.append(f"{exchange_code}{symbol}")
         
         # M-11: OHLCV 데이터를 context.node_state에 저장 (클로저 메모리 관리)
@@ -6320,6 +6496,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
                     
                     # context에 업데이트
+                    context.set_output(node_id, "symbols", symbols_raw)  # 선언 포트 — 틱 시 방출
                     context.set_output(node_id, "ohlcv_data", ohlcv_data)
                     context.set_output(node_id, "data", ohlcv_data)
                     
@@ -6373,11 +6550,13 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.log("info", f"GSC subscription active - waiting for ticks...", node_id)
         
         # 초기 반환: 빈 OHLCV 데이터 (체결 시 콜백에서 업데이트)
-        return {
-            "symbols": symbols_raw,
-            "ohlcv_data": {},
-            "data": {},
-        }
+        # pending 을 1급 신호로 방출한다: 아직 틱이 없어 흘릴 **실데이터가 없다.**
+        # 예전엔 {symbols, ohlcv_data:{}, data:{}} 처럼 **공개 데이터 포트를 빈 값으로**
+        # 냈고, 하류 Throttle→Aggregate→Display 가 그 빈 dict 를 '체결가' 행으로 렌더했다
+        # (제목은 '실시간 체결가'인데 내용이 빈 dict — 결함2 의 원증상). 이제 내부 `_pending`
+        # 신호만 내면 Throttle 이 통과시킬 실데이터가 없어 branch 가 skip 되고, 표에는 실제
+        # 틱이 온 종목만(또는 정직한 빈 표) 뜬다. 선언 포트 symbols 는 틱 경로에서 방출한다.
+        return {"_pending": True}
     
     async def _execute_futures(
         self,
@@ -6484,6 +6663,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                     # OHLCV 데이터 형식으로 변환
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
                     
+                    context.set_output(node_id, "symbols", symbols_raw)  # 선언 포트 — 틱 시 방출
                     context.set_output(node_id, "ohlcv_data", ohlcv_data)
                     context.set_output(node_id, "data", ohlcv_data)
                     
@@ -6535,23 +6715,40 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.log("info", f"OVC subscription active - waiting for ticks...", node_id)
         
         # 초기 반환: 빈 OHLCV 데이터
-        return {
-            "symbols": symbols_raw,
-            "ohlcv_data": {},
-            "data": {},
-        }
+        # pending 을 1급 신호로 방출한다: 아직 틱이 없어 흘릴 **실데이터가 없다.**
+        # 예전엔 {symbols, ohlcv_data:{}, data:{}} 처럼 **공개 데이터 포트를 빈 값으로**
+        # 냈고, 하류 Throttle→Aggregate→Display 가 그 빈 dict 를 '체결가' 행으로 렌더했다
+        # (제목은 '실시간 체결가'인데 내용이 빈 dict — 결함2 의 원증상). 이제 내부 `_pending`
+        # 신호만 내면 Throttle 이 통과시킬 실데이터가 없어 branch 가 skip 되고, 표에는 실제
+        # 틱이 온 종목만(또는 정직한 빈 표) 뜬다. 선언 포트 symbols 는 틱 경로에서 방출한다.
+        return {"_pending": True}
     
-    def _get_stock_exchange_code(self, exchange: str) -> str:
-        """거래소명을 LS증권 거래소 코드로 변환"""
-        exchange_map = {
-            "NASDAQ": "82",
-            "NYSE": "81",
-            "AMEX": "83",
-            "82": "82",
-            "81": "81",
-            "83": "83",
-        }
-        return exchange_map.get(exchange.upper(), "82")  # 기본값 NASDAQ
+    def _get_stock_exchange_code(self, exchange: str, exchange_code: str = "", symbol: str = "") -> str:
+        """구독/주문용 LS 거래소 코드(81/82)로 환원.
+
+        exchange_code(있으면 권한 있는 코드) → exchange(이름/코드) 순으로 시도한다.
+        비어 있으면(미지정) 관례상 NASDAQ(82). **비어 있지 않은데 매핑 불가하면 조용히
+        기본값으로 바꾸지 않고 raise** — 종목·거래소를 명시해 사용자가 무엇을 고칠지 알게
+        한다. (예전엔 미매핑을 조용히 '82' 로 떨궈 NYSE/AMEX 종목이 NASDAQ 로 잘못 구독됐다.)
+
+        판단(전체 실패 vs 종목 제외): 미지원 거래소(도쿄 등) 1종목 때문에 **하드 실패**한다.
+        '내 보유종목 실시간 감시' 워크플로우에서 조용히/부분적으로 일부만 감시하면 사용자는
+        감시되는 줄 알지만 아니다 — 그 침묵이 더 위험하다. 에러가 어느 종목·거래소인지
+        명시하므로 사용자가 그 종목을 빼거나 거래소를 고치면 된다.
+        """
+        for cand in (exchange_code, exchange):
+            if cand is None or str(cand).strip() == "":
+                continue
+            _name, code = normalize_overseas_stock_exchange(cand)
+            if code:
+                return code
+            raise RuntimeError(
+                f"해외주식 실시간 구독/주문 거래소를 LS 코드로 환원할 수 없습니다: "
+                f"symbol={symbol or '?'!r} exchange={cand!r}. LS 해외주식은 "
+                f"NYSE/NASDAQ/AMEX(코드 81/82)만 지원합니다 — 이 종목의 거래소를 확인하거나 "
+                f"워크플로우에서 제외하세요."
+            )
+        return "82"  # 미지정(빈 값) → 관례상 NASDAQ
 
     async def _execute_korea_stock(
         self,
@@ -6629,6 +6826,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                     context.set_node_state(node_id, "ohlcv_bars", ohlcv_bars)
 
                     ohlcv_data = {s: [bar] for s, bar in ohlcv_bars.items()}
+                    context.set_output(node_id, "symbols", symbols_raw)  # 선언 포트 — 틱 시 방출
                     context.set_output(node_id, "ohlcv_data", ohlcv_data)
                     context.set_output(node_id, "data", ohlcv_data)
 
@@ -6683,11 +6881,13 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
             context.log("info", f"S3_/K3_ subscription active - waiting for ticks...", node_id)
 
-        return {
-            "symbols": symbols_raw,
-            "ohlcv_data": {},
-            "data": {},
-        }
+        # pending 을 1급 신호로 방출한다: 아직 틱이 없어 흘릴 **실데이터가 없다.**
+        # 예전엔 {symbols, ohlcv_data:{}, data:{}} 처럼 **공개 데이터 포트를 빈 값으로**
+        # 냈고, 하류 Throttle→Aggregate→Display 가 그 빈 dict 를 '체결가' 행으로 렌더했다
+        # (제목은 '실시간 체결가'인데 내용이 빈 dict — 결함2 의 원증상). 이제 내부 `_pending`
+        # 신호만 내면 Throttle 이 통과시킬 실데이터가 없어 branch 가 skip 되고, 표에는 실제
+        # 틱이 온 종목만(또는 정직한 빈 표) 뜬다. 선언 포트 symbols 는 틱 경로에서 방출한다.
+        return {"_pending": True}
 
     def _resolve_symbols(
         self,
@@ -6697,26 +6897,49 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         watchlist_output: Optional[Dict[str, Any]],
     ) -> List[Dict[str, str]]:
         """
-        Symbols 획득 (필드 우선, 포트 폴백 패턴)
-        
-        1. 노드 config의 symbols 필드 확인
-        2. WatchlistNode 출력에서 symbols 가져오기
-        3. AccountNode/RealAccountNode의 held_symbols 가져오기
+        Symbols 획득 (선언된 `symbol` 우선, 포트 폴백)
+
+        0. 노드가 선언한 단일 `symbol`({exchange,symbol} dict) — item-based /
+           SplitNode fan-out 의 per-branch 입력. 선언==런타임: 3개 realtime
+           market 노드가 InputPort("symbol") 를 선언하므로 executor 가 반드시
+           읽는다(과거엔 안 읽어 조용히 상류 held_symbols 전체 폴백을 탔다 —
+           Split fan-out 이 장식이 됐다).
+        1. Input 포트(context input) — 포트 경로
+        2. WatchlistNode 출력 — 포트 경로
+        3. AccountNode/RealAccountNode 의 held_symbols (자동 iterate 폴백)
+
+        미선언 `symbols`(복수) config 필드는 제거됐다: realtime market 노드 어느
+        것도 선언하지 않고 코퍼스 사용 0건 — consumed-but-not-declared 드리프트
+        였다. 정본 per-node 입력은 단일 `symbol` 이다.
         """
-        # 1. 필드에서 직접 설정된 경우
-        if config.get("symbols"):
-            return config["symbols"]
-        
-        # 2. Input 포트에서 받기 (context input)
+        from programgarden_core.exceptions import ValidationError
+
+        # 0. 선언된 `symbol`(단수 dict): config 바인딩 또는 wired 입력 포트.
+        single = config.get("symbol")
+        if single in (None, "", {}):
+            single = context.get_output(f"_input_{node_id}", "symbol")
+        if single not in (None, "", {}):
+            # shape 강제: {exchange, symbol} dict 이어야 한다. 문자열/스칼라를
+            # 조용히 넘기지 않는다(silent 금지 — 사유 담아 raise).
+            if not isinstance(single, dict) or not single.get("symbol"):
+                raise ValidationError(
+                    f"Node '{node_id}': 'symbol' 은 {{exchange, symbol}} dict 여야 한다 "
+                    f"({{{{ nodes.<split>.item }}}} 에 바인딩); 받은 값 "
+                    f"{type(single).__name__}: {single!r}",
+                    node_id=node_id,
+                )
+            return [single]
+
+        # 1. Input 포트에서 받기 (context input) — 포트 경로
         symbols_input = context.get_output(f"_input_{node_id}", "symbols")
         if symbols_input:
             return symbols_input
-        
-        # 3. WatchlistNode에서 받기
+
+        # 2. WatchlistNode에서 받기 — 포트 경로
         if watchlist_output and watchlist_output.get("symbols"):
             return watchlist_output["symbols"]
-        
-        # 4. AccountNode/RealAccountNode에서 held_symbols 가져오기
+
+        # 3. AccountNode/RealAccountNode에서 held_symbols 가져오기
         for account_type in (
             "RealAccountNode",
             "OverseasStockRealAccountNode",
@@ -18322,22 +18545,58 @@ class WorkflowJob:
             state=NodeState.RUNNING,
         )
 
-        # Get input array from upstream node
-        input_array = []
-        for edge in self.workflow.edges:
-            if edge.to_node_id == split_id:
-                upstream_outputs = self.context.get_all_outputs(edge.from_node_id)
-                # Look for array in outputs
-                for key in ["symbols", "values", "array", "data", "items"]:
-                    if key in upstream_outputs and isinstance(upstream_outputs[key], list):
-                        input_array = upstream_outputs[key]
-                        break
-                if not input_array and upstream_outputs:
-                    # Check if single output is a list
-                    first_val = next(iter(upstream_outputs.values()), None)
-                    if isinstance(first_val, list):
-                        input_array = first_val
-                break
+        # Get SplitNode config (array binding + iteration params)
+        config = dict(split_node.config)
+        parallel = config.get("parallel", False)
+        delay_ms = config.get("delay_ms", 0)
+        continue_on_error = config.get("continue_on_error", True)
+
+        # Resolve the array to split — the single source of truth for this
+        # branch: per-item item/index/total AND the items/_array output ports
+        # all derive from it. Historically the iteration driver ignored
+        # config.array and grabbed the "first list" from upstream, so an
+        # explicit binding was silently dropped and account nodes iterated a
+        # nondeterministic port (held_symbols vs positions depended on dict
+        # ordering) — 2026-07-14 runtime-wiring fix.
+        input_array = None
+
+        # 1순위: 명시적 array 바인딩 ({{ }} 평가). 있으면 상류보다 우선.
+        array_cfg = config.get("array")
+        if array_cfg is not None:
+            if isinstance(array_cfg, str) and "{{" in array_cfg:
+                evaluator = ExpressionEvaluator(self.context.get_expression_context())
+                try:
+                    array_cfg = evaluator.evaluate(array_cfg)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"SplitNode {split_id}: array binding "
+                        f"'{config.get('array')}' failed to evaluate: {e}"
+                    ) from e
+            if isinstance(array_cfg, list):
+                input_array = array_cfg
+            elif array_cfg is None:
+                input_array = []
+            else:
+                input_array = [array_cfg]  # scalar → single explicit item
+
+        # 2순위: 상류 엣지 출력 — KNOWN 키 우선순위로 결정화 (모호/부재 시 raise).
+        if input_array is None:
+            upstream_id = None
+            upstream_outputs: Dict[str, Any] = {}
+            for edge in self.workflow.edges:
+                if edge.to_node_id == split_id:
+                    upstream_id = edge.from_node_id
+                    upstream_outputs = self.context.get_all_outputs(edge.from_node_id)
+                    break
+            input_array = _pick_split_array(
+                upstream_outputs,
+                source=f"node '{upstream_id}'" if upstream_id else "no upstream edge",
+            )
+
+        # 선언한 items 출력 포트를 실제로 채운다(선언==런타임). 값은 모든 아이템
+        # 공통이라 루프 전에 한 번만 세팅한다. 예전엔 branch flow 에서
+        # SplitNodeExecutor.execute 가 아예 호출되지 않아 items 가 늘 비었다.
+        self.context.set_output(split_id, "items", input_array)
 
         if not input_array:
             self.context.log("info", f"SplitNode {split_id}: empty array, skipping branch", split_id)
@@ -18345,15 +18604,9 @@ class WorkflowJob:
                 node_id=split_id,
                 node_type="SplitNode",
                 state=NodeState.COMPLETED,
-                outputs={"item": None, "index": 0, "total": 0},
+                outputs={"item": None, "index": 0, "total": 0, "items": []},
             )
             return
-
-        # Get SplitNode config
-        config = dict(split_node.config)
-        parallel = config.get("parallel", False)
-        delay_ms = config.get("delay_ms", 0)
-        continue_on_error = config.get("continue_on_error", True)
 
         total = len(input_array)
         collected_results: List[Any] = []
@@ -18377,7 +18630,8 @@ class WorkflowJob:
             for coro in asyncio.as_completed(tasks):
                 try:
                     result = await coro
-                    collected_results.append(result)
+                    if result is not _SKIP_BRANCH_ITEM:
+                        collected_results.append(result)
                 except Exception as e:
                     if continue_on_error:
                         errors.append(str(e))
@@ -18395,7 +18649,8 @@ class WorkflowJob:
                         index=idx,
                         total=total,
                     )
-                    collected_results.append(result)
+                    if result is not _SKIP_BRANCH_ITEM:
+                        collected_results.append(result)
                 except Exception as e:
                     if continue_on_error:
                         errors.append(str(e))
@@ -18416,7 +18671,7 @@ class WorkflowJob:
             node_id=split_id,
             node_type="SplitNode",
             state=NodeState.COMPLETED,
-            outputs={"item": input_array[-1] if input_array else None, "index": total - 1, "total": total},
+            outputs={"item": input_array[-1] if input_array else None, "index": total - 1, "total": total, "items": input_array},
             duration_ms=duration_ms,
         )
 
@@ -18459,6 +18714,7 @@ class WorkflowJob:
         self.context.set_output(split_id, "total", total)
 
         result = item
+        last_had_public = None  # None = branch 노드 없음 / True|False = 마지막 노드 결과
 
         # Execute each branch node
         for node_id in branch_order:
@@ -18493,9 +18749,20 @@ class WorkflowJob:
             for port_name, value in outputs.items():
                 self.context.set_output(node_id, port_name, value)
 
-            # Track last result
-            if outputs:
-                result = outputs.get("result") or outputs.get("value") or next(iter(outputs.values()), item)
+            # Track last result — only from PUBLIC ports. Internal meta
+            # (_throttle_stats 등)이 유일 출력일 때 그걸 결과로 집으면 Aggregate/Display
+            # 가 내부 통계를 데이터로 렌더한다.
+            public = _public_outputs(outputs) if outputs else {}
+            last_had_public = bool(public)
+            if public:
+                result = public.get("result") or public.get("value") or next(iter(public.values()), item)
+
+        # 마지막 branch 노드가 공개 출력을 전혀 못 냈으면(예: ThrottleNode 가 이번 사이클
+        # 을 throttling 중이라 내부 메타만 반환) 이 아이템은 기여할 실데이터가 없다 →
+        # skip 하여 "실시간 체결가" 표에 가격 없는/이질적인 행이 끼지 않게 한다. branch
+        # 노드가 아예 없으면(bare Split→Aggregate) item 을 그대로 수집한다(정상 패턴).
+        if branch_order and last_had_public is False:
+            return _SKIP_BRANCH_ITEM
 
         return result
 

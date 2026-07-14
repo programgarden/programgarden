@@ -1099,15 +1099,16 @@ class WorkflowResolver:
     #   (1) 짝 AggregateNode 가 그래프상 도달 가능해야 한다. 없으면 _execute_split_branch
     #       가 aggregate_id=None 에서 즉시 return → branch 자체가 실행 안 됨(노드 pending
     #       유지, 하류 item 전부 공백). engine._find_split_aggregate_pairs 참조.
-    #   (2) split 로 들어오는 상류 노드가 리스트를 출력해야 한다. 엔진은 분리 대상 배열을
-    #       **오직 상류 노드 출력**(포트 symbols/values/array/data/items)에서만 읽는다.
-    #       config `array` 필드는 **어느 경로에서도 읽히지 않는다**(SplitNodeExecutor.execute
-    #       의 config.get("array") 는 죽은 코드 — 실행 엔진이 그 executor 를 거치지 않고
-    #       상류 출력에서 배열을 직접 가져와 item 을 set). 따라서 `array`/`items` 를 config
-    #       리터럴로 넣는 저작 패턴은 검증만 통과하고 런타임엔 0개를 낸다.
-    # 둘 중 하나라도 빠지면 하류 `{{ nodes.<split>.item }}` 이 조용히 비어 count:0 쓰레기
-    # 결과가 된다(단일 심볼에 SplitNode 를 잘못 붙이는 것이 전형적 저작 결함). 정적으로
-    # 잡아 AI self-correct 루프가 dry_run 전에 보게 한다.
+    #   (2) 분리 대상 배열의 소스가 있어야 한다. 엔진(_execute_split_branch)은 배열을
+    #       (a) 명시적 `array` 바인딩({{ }} 표현식 또는 리터럴 리스트)에서 **1순위**로,
+    #       없으면 (b) 상류 노드의 리스트 출력(KNOWN 포트 symbols/values/array/data/
+    #       items/held_symbols/positions/open_orders)에서 결정적으로 읽는다.
+    #       (2026-07-14 이전엔 config `array` 가 어느 경로에서도 안 읽혔고 상류의 "첫
+    #       리스트"를 dict 순서대로 집었다 — 그 낡은 서술은 폐기.) 상류가 다중 배열
+    #       포트(계좌 노드)를 노출하는데 `array` 바인딩이 없으면 엔진이 모호하다며
+    #       런타임에 raise 하므로, 그 경우 명시 바인딩이 필수다.
+    # (1)이 빠지면 branch 자체가 실행 안 되고, (2)가 빠지면 하류 `{{ nodes.<split>.item }}`
+    # 이 비어 count:0 결과가 된다. 정적으로 잡아 AI self-correct 루프가 dry_run 전에 보게 한다.
     # 오탐(최대 리스크) 최소화: (2)는 상류 중 하나라도 리스트를 낼 "가능성"이 있으면 통과.
     #   가능성 = (a) 상류가 CodeNode(동적 출력), (b) 상류 스키마 미상(커뮤니티/제네릭),
     #            (c) 상류 출력 포트 타입 중 하나라도 확정 스칼라/시그널이 아님.
@@ -1120,8 +1121,8 @@ class WorkflowResolver:
     def _validate_split_nodes(self, workflow, registry, result: ValidationResult) -> None:
         """SplitNode 가 실 엔진에서 동작 가능하게 배선됐는지 정적 검증(오탐 보수적).
 
-        엔진 동작(프로브 확정): SplitNode 는 (1) 짝 AggregateNode 가 도달 가능하고
-        (2) 상류가 리스트를 출력해야만 branch 를 실행한다. config `array` 는 안 읽힌다.
+        엔진 동작: SplitNode 는 (1) 짝 AggregateNode 가 도달 가능해야 branch 를 실행하고,
+        (2) 분리 배열은 명시 `array` 바인딩(1순위) 또는 상류 리스트 출력에서 읽는다.
         """
         split_nodes = [
             n for n in workflow.nodes
@@ -1166,6 +1167,27 @@ class WorkflowResolver:
                     queue.append(nxt)
             return False
 
+        # 엔진 _pick_split_array 가 상류 dict 에서 배열로 인정하는 KNOWN 포트 이름. 상류가
+        # 이 중 **2개 이상**을 출력으로 선언하면(계좌: held_symbols/positions/open_orders)
+        # 엔진은 array 바인딩 없이는 모호하다며 런타임 raise 한다 → 정적으로 미리 막는다.
+        _known_array_ports = {
+            "array", "symbols", "values", "data", "items",
+            "held_symbols", "positions", "open_orders",
+        }
+
+        def _count_array_ports(src_type: Optional[str]) -> int:
+            if not src_type:
+                return 0
+            schema = registry.get_schema(src_type)
+            if schema is None:
+                return 0
+            n = 0
+            for out in (schema.outputs or []):
+                name = out.get("name") if isinstance(out, dict) else getattr(out, "name", None)
+                if name in _known_array_ports:
+                    n += 1
+            return n
+
         def _may_produce_list(src_type: Optional[str]) -> bool:
             # 동적/미상 출력은 리스트 가능 → 보수적으로 통과.
             if not src_type or src_type == "CodeNode":
@@ -1206,32 +1228,136 @@ class WorkflowResolver:
                     )
                 )
                 continue
-            # (2) 상류 리스트 소스 — config `array` 는 엔진이 안 읽으므로 소스로 인정 안 함.
+            # (2) 배열 소스 — 아래 둘 중 하나라도 있으면 통과:
+            #   (a) 명시적 `array` 바인딩(엔진이 이제 1순위로 읽음: {{ }} 표현식 또는
+            #       리터럴 리스트). 상류가 다중 배열 포트(계좌: held_symbols/positions/
+            #       open_orders)일 때는 이 바인딩이 필수다 — 없으면 엔진이 모호하다며
+            #       런타임에 raise 한다.
+            #   (b) 상류 노드가 리스트를 낼 가능성(단일 배열 소스면 바인딩 없이도 동작).
+            array_cfg = node.get("array")
+            has_array_binding = (
+                (isinstance(array_cfg, str) and "{{" in array_cfg)
+                or (isinstance(array_cfg, list) and len(array_cfg) > 0)
+            )
+            if has_array_binding:
+                continue
             srcs = incoming.get(sid, [])
+            # (2') 다중 배열 상류(계좌 등) — 바인딩이 없으면 엔진이 어느 배열을 분리할지
+            # 모호하다며 런타임 raise 한다. 그 raise 를 **빌드 시점 error 로 승격**해 챗봇
+            # self-correct 루프가 실행 전에 잡게 한다. (silent misroute 방지 규율.)
+            ambiguous = [
+                s for s in srcs if _count_array_ports(node_type_by_id.get(s)) >= 2
+            ]
+            if ambiguous:
+                amb_type = node_type_by_id.get(ambiguous[0]) or "?"
+                result.add(
+                    build_error(
+                        ErrorCode.MISSING_REQUIRED_FIELD,
+                        (
+                            f"SplitNode '{sid}' 의 상류 '{ambiguous[0]}'({amb_type})는 여러 배열을 "
+                            f"출력한다(held_symbols/positions/open_orders 등). 엔진은 어느 배열을 "
+                            f"분리할지 몰라 런타임에 실패한다 — `array` 를 명시 바인딩해 하나를 "
+                            f"골라야 한다."
+                        ),
+                        location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path="array"),
+                        suggestion=(
+                            "Bind `array` explicitly to the array you want to split, e.g. "
+                            "array: '{{ nodes." + str(ambiguous[0]) + ".held_symbols }}' "
+                            "(보유종목) 또는 '{{ nodes." + str(ambiguous[0]) + ".positions }}' (포지션)."
+                        ),
+                    )
+                )
+                continue
             if srcs and any(_may_produce_list(node_type_by_id.get(s)) for s in srcs):
                 continue
             result.add(
                 build_error(
                     ErrorCode.MISSING_REQUIRED_FIELD,
                     (
-                        f"SplitNode '{sid}' has no upstream node that outputs a list. The "
-                        f"engine reads the array to split ONLY from an upstream node's list "
-                        f"output (ports symbols/values/array/data/items) — the `array` "
-                        f"config field is NOT read at runtime. It will emit zero items and "
-                        f"every downstream `{{{{ nodes.{sid}.item }}}}` resolves empty "
-                        f"(silent count:0 result)."
+                        f"SplitNode '{sid}' has no array source. The engine reads the array "
+                        f"to split from (1) an explicit `array` binding ({{{{ ... }}}} or a "
+                        f"literal list), or (2) an upstream node's list output (ports "
+                        f"symbols/values/held_symbols/positions/…). This SplitNode has "
+                        f"neither, so it emits zero items and every downstream "
+                        f"`{{{{ nodes.{sid}.item }}}}` resolves empty (silent count:0 result)."
                     ),
                     location=ErrorLocation(node_id=sid, node_type="SplitNode", field_path="array"),
                     suggestion=(
-                        "Connect an edge from an upstream node that OUTPUTS a list "
-                        "(WatchlistNode/MarketUniverseNode → symbols, AccountNode → "
-                        "positions, ConditionNode → values, or a CodeNode returning a list). "
-                        "Do NOT put the list in an `array`/`items` config field — the engine "
-                        "ignores it. For a single known symbol, DELETE SplitNode and bind "
-                        "that symbol directly on the downstream node."
+                        "Either bind `array` explicitly (e.g. array: "
+                        "'{{ nodes.<account>.held_symbols }}') — REQUIRED when the upstream "
+                        "exposes several arrays (held_symbols/positions/open_orders), or "
+                        "connect an edge from a node that OUTPUTS a single list "
+                        "(WatchlistNode/MarketUniverseNode → symbols, ConditionNode → values, "
+                        "or a CodeNode returning a list). For a single known symbol, DELETE "
+                        "SplitNode and bind that symbol directly on the downstream node."
                     ),
                 )
             )
+
+        # (3) 하류 realtime market 노드의 `symbol` 미바인딩 — Split fan-out 이 장식이 된다.
+        #     선언된 `symbol` 이 없으면 엔진(_resolve_symbols)은 상류 계좌 held_symbols
+        #     전체로 폴백해 **모든 branch 가 전 종목을 중복 구독**한다(per-branch 구독 실패).
+        #     이건 결함1 엔진 수정만으로는 못 잡는다(사용자가 원한 "종목별 실시간 행"이
+        #     안 됨). 2026-07-14. 코퍼스(split→realtime market 예제) 오탐 0 재검증.
+        split_ids: Set[str] = {n.get("id") for n in split_nodes}
+
+        def _has_split_ancestor(start: Optional[str]) -> bool:
+            if not start:
+                return False
+            seen: Set[str] = set()
+            queue: List[str] = list(incoming.get(start, []))
+            while queue:
+                cur = queue.pop(0)
+                if cur in seen:
+                    continue
+                seen.add(cur)
+                if cur in split_ids:
+                    return True
+                queue.extend(incoming.get(cur, []))
+            return False
+
+        _RT_MARKET_TYPES = {
+            "RealMarketDataNode", "OverseasStockRealMarketDataNode",
+            "KoreaStockRealMarketDataNode", "OverseasFuturesRealMarketDataNode",
+        }
+        # port-qualified 엣지(예: 'rm.symbol')로 symbol 을 배선한 경우는 오탐이 아니다
+        # (엔진이 wired 입력 포트도 읽음) → 그런 타겟이 있으면 제외.
+        symbol_wired: Set[str] = set()
+        for edge in workflow.edges:
+            to_raw = getattr(edge, "to_node", "") or ""
+            if "." in to_raw and to_raw.split(".", 1)[1] == "symbol":
+                symbol_wired.add(to_raw.split(".")[0])
+
+        for node in workflow.nodes:
+            if not isinstance(node, dict) or node.get("type") not in _RT_MARKET_TYPES:
+                continue
+            rid = node.get("id")
+            sym = node.get("symbol")
+            symbol_bound = (
+                (isinstance(sym, str) and "{{" in sym)
+                or (isinstance(sym, dict) and bool(sym.get("symbol")))
+            )
+            if symbol_bound or rid in symbol_wired:
+                continue
+            if _has_split_ancestor(rid):
+                result.add(
+                    build_error(
+                        ErrorCode.MISSING_REQUIRED_FIELD,
+                        (
+                            f"RealMarketDataNode '{rid}' 는 상류 SplitNode 의 per-item fan-out "
+                            f"아래 있는데 `symbol` 이 바인딩되지 않았다. 엔진은 선언된 `symbol` 이 "
+                            f"없으면 상류 계좌의 held_symbols 전체로 폴백해 **모든 branch 가 전 종목을 "
+                            f"중복 구독**한다 — Split fan-out 이 무의미해지고 '종목별 실시간 행'이 안 된다."
+                        ),
+                        location=ErrorLocation(
+                            node_id=rid, node_type=node.get("type"), field_path="symbol"
+                        ),
+                        suggestion=(
+                            "`symbol` 을 각 branch 의 항목에 바인딩하라: "
+                            "symbol: '{{ nodes.<split>.item }}' (per-branch 단일 종목)."
+                        ),
+                    )
+                )
 
     def _validate_ai_agent_nodes(self, workflow, result: ValidationResult) -> None:
         """AIAgentNode 는 ai_model 엣지로 LLMModelNode 가 연결돼야 한다.

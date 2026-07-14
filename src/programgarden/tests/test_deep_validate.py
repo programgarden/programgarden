@@ -166,7 +166,9 @@ async def test_real_market_data_returns_fixture_in_deep_mode():
     out = await ex.execute(
         node_id="rt",
         node_type="OverseasStockRealMarketDataNode",
-        config={"symbols": [{"symbol": "TSLA", "exchange": "NASDAQ"}], "connection": {"product": "overseas_stock"}},
+        # per-node input is the declared singular `symbol` (item-based); `symbols`
+        # (plural) config was undeclared drift, removed in Option A (2026-07-14).
+        config={"symbol": {"symbol": "TSLA", "exchange": "NASDAQ"}, "connection": {"product": "overseas_stock"}},
         context=ctx,
     )
     assert "ohlcv_data" in out and "data" in out

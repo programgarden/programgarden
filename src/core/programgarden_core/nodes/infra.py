@@ -467,6 +467,11 @@ class SplitNode(BaseNode):
             "reason": "Placing orders concurrently without delay_ms will trip LS-Sec TR rate limits and cause spurious cancellations.",
             "alternative": "Use sequential mode with delay_ms >= 500ms for order-sensitive loops.",
         },
+        {
+            "pattern": "AccountNode → SplitNode without binding the `array` input",
+            "reason": "An account node outputs SEVERAL arrays (held_symbols, positions, open_orders). Without an explicit `array` binding the engine cannot tell which one to split — it fails at build/validation time (and at runtime). Wiring the edge alone is NOT enough here.",
+            "alternative": "Bind `array` explicitly to the array you mean, e.g. array: '{{ nodes.account.held_symbols }}' (holdings) or '{{ nodes.account.positions }}' (positions).",
+        },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
@@ -533,9 +538,36 @@ class SplitNode(BaseNode):
             },
             "expected_output": "Historical node runs once per top-N symbol with 500ms pacing; any single failure is logged but the remaining items continue.",
         },
+        {
+            "title": "Split held symbols from an account (explicit array binding)",
+            "description": "An account node exposes several arrays (held_symbols/positions/open_orders), so the `array` input MUST be bound explicitly to the one you want. Here held_symbols feeds realtime quotes for each holding.",
+            "workflow_snippet": {
+                "id": "split-held-subscribe",
+                "name": "Account held_symbols → Split → realtime quotes",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockRealAccountNode"},
+                    {"id": "split", "type": "SplitNode", "array": "{{ nodes.account.held_symbols }}"},
+                    {"id": "quote", "type": "OverseasStockRealMarketDataNode", "symbol": "{{ nodes.split.item }}"},
+                    {"id": "agg", "type": "AggregateNode", "mode": "collect"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "account", "to": "split"},
+                    {"from": "split", "to": "quote"},
+                    {"from": "quote", "to": "agg"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Split iterates each held symbol; the realtime node subscribes per holding. Without the `array: {{ nodes.account.held_symbols }}` binding the workflow would be rejected at validation (account exposes multiple arrays).",
+        },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
-        "input_handling": "`array` input is REQUIRED and MUST have a source: either an incoming edge from an upstream node that outputs an ARRAY (WatchlistNode/MarketUniverseNode → symbols, AccountNode → positions/held_symbols, ConditionNode → values, etc.), or an explicit `array` config binding. SplitNode has NOTHING to split if no upstream produces a list — it emits zero items and every downstream `{{ nodes.split.item }}` silently resolves empty. If you already know a single concrete symbol (e.g. 'AAPL'), do NOT add SplitNode — bind that one symbol directly on the downstream node.",
+        "input_handling": "`array` input is REQUIRED and MUST have a source: either an incoming edge from an upstream node that outputs an ARRAY (WatchlistNode/MarketUniverseNode → symbols, ConditionNode → values), or an explicit `array` config binding. **AccountNode outputs SEVERAL arrays (held_symbols/positions/open_orders), so an edge alone is ambiguous — you MUST bind `array` explicitly, e.g. array: '{{ nodes.account.held_symbols }}'** (validation rejects account→Split without it). SplitNode has NOTHING to split if no upstream produces a list — it emits zero items and every downstream `{{ nodes.split.item }}` silently resolves empty. If you already know a single concrete symbol (e.g. 'AAPL'), do NOT add SplitNode — bind that one symbol directly on the downstream node.",
         "output_consumption": "Downstream binds `{{ nodes.split.item }}` for the current element, `{{ nodes.split.index }}` for the 0-based position, and `{{ nodes.split.total }}` for the count.",
         "common_combinations": [
             "WatchlistNode → SplitNode → OverseasStockFundamentalNode",
@@ -591,6 +623,22 @@ class SplitNode(BaseNode):
                 ui_component=UIComponent.CHECKBOX,
                 example=True,
                 expected_type="bool",
+            ),
+            # `array` 는 분리할 배열의 명시 소스다. 엔진(_execute_split_branch)이 1순위로
+            # 읽는다(상류 엣지보다 우선). 상류가 여러 배열을 출력할 때(계좌:
+            # held_symbols/positions/open_orders) **필수** — 없으면 정적 검증이 반려한다.
+            # 카탈로그가 이걸 노출해야 챗봇이 `{{ nodes.X.held_symbols }}` 로 바인딩한다.
+            "array": FieldSchema(
+                name="array",
+                type=FieldType.ARRAY,
+                array_item_type=FieldType.OBJECT,
+                description="i18n:fields.SplitNode.array",
+                required=False,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example="{{ nodes.account.held_symbols }}",
+                expected_type="list",
+                helper_text="i18n:fields.SplitNode.array_helper",
             ),
         }
 
