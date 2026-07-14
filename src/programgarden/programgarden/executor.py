@@ -54,6 +54,28 @@ _RESERVED_ITERATION_ROOTS: frozenset = frozenset({"item", "row"})
 
 _INLINE_EXPR_PATTERN = re.compile(r"\{\{\s*(.+?)\s*\}\}")
 
+# Realtime (event-source) node types — the ONE list. Three separate lifecycle
+# decisions key off it: (1) whether the job enters the event loop (and so keeps
+# the WebSocket subscriptions alive instead of tearing them down in `finally`),
+# (2) whether the node auto-triggers its downstream chain on each event, and
+# (3) whether it is skipped on re-execution (it is already running).
+#
+# It used to be copy-pasted at all three sites, and the Korea family — added
+# later — was never added to any of them. Result: Korea realtime workflows had
+# no event source, so the job completed immediately, cleanup closed the socket,
+# and ticks never reached the table. Keep this the single source of truth;
+# `test_realtime_node_types_cover_declarations` fails if a node declares
+# `stay_connected` but is missing here.
+REALTIME_NODE_TYPES: frozenset = frozenset({
+    "RealAccountNode", "RealMarketDataNode", "RealOrderEventNode",
+    "OverseasStockRealAccountNode", "OverseasStockRealMarketDataNode",
+    "OverseasStockRealOrderEventNode",
+    "OverseasFuturesRealAccountNode", "OverseasFuturesRealMarketDataNode",
+    "OverseasFuturesRealOrderEventNode",
+    "KoreaStockRealAccountNode", "KoreaStockRealMarketDataNode",
+    "KoreaStockRealOrderEventNode",
+})
+
 
 def _free_root_names(text: str) -> Set[str]:
     """Return the set of free-variable root identifiers referenced (ctx=Load) by
@@ -17523,12 +17545,7 @@ class WorkflowJob:
         result = []
         for node_id, node in self.workflow.nodes.items():
             # 실시간 노드 (stay_connected 설정)
-            if node.node_type in (
-                "RealAccountNode", "RealMarketDataNode", "RealOrderEventNode",
-                "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
-                "OverseasStockRealMarketDataNode", "OverseasFuturesRealMarketDataNode",
-                "OverseasStockRealOrderEventNode", "OverseasFuturesRealOrderEventNode",
-            ):
+            if node.node_type in REALTIME_NODE_TYPES:
                 if node.config.get("stay_connected", True):
                     result.append(node_id)
             # 영속 노드 (백그라운드 태스크를 등록하는 노드)
@@ -18835,13 +18852,7 @@ class WorkflowJob:
         source_node = self.workflow.nodes.get(source_node_id)
         
         # 실시간 노드는 하위 노드를 자동 트리거
-        auto_trigger_types = {
-            "RealAccountNode", "RealMarketDataNode", "RealOrderEventNode",
-            "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
-            "OverseasStockRealMarketDataNode", "OverseasFuturesRealMarketDataNode",
-            "OverseasStockRealOrderEventNode", "OverseasFuturesRealOrderEventNode",
-        }
-        is_realtime_source = source_node and source_node.node_type in auto_trigger_types
+        is_realtime_source = source_node and source_node.node_type in REALTIME_NODE_TYPES
         
         for edge in self.workflow.edges:
             if edge.from_node_id == source_node_id:
@@ -19279,12 +19290,7 @@ class WorkflowJob:
                 continue
             
             # 실시간 노드는 이미 실행 중이므로 스킵 (무한 루프 방지)
-            if node.node_type in (
-                "RealAccountNode", "RealMarketDataNode", "RealOrderEventNode",
-                "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
-                "OverseasStockRealMarketDataNode", "OverseasFuturesRealMarketDataNode",
-                "OverseasStockRealOrderEventNode", "OverseasFuturesRealOrderEventNode",
-            ):
+            if node.node_type in REALTIME_NODE_TYPES:
                 continue
             
             # Re-execute the triggered node
