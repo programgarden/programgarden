@@ -989,6 +989,14 @@ def _public_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# Sentinel: a split branch item that produced no real (public) data this cycle
+# and must NOT contribute a row to the AggregateNode/Display. Used when the
+# terminal branch node emits only internal meta (e.g. ThrottleNode is throttling
+# or the realtime source is still pending) — showing that item as a row makes a
+# "실시간 체결가" table render a priceless / heterogeneous row (2026-07-14 fix).
+_SKIP_BRANCH_ITEM = object()
+
+
 class SplitNodeExecutor(NodeExecutorBase):
     """
     SplitNode executor
@@ -18495,7 +18503,8 @@ class WorkflowJob:
             for coro in asyncio.as_completed(tasks):
                 try:
                     result = await coro
-                    collected_results.append(result)
+                    if result is not _SKIP_BRANCH_ITEM:
+                        collected_results.append(result)
                 except Exception as e:
                     if continue_on_error:
                         errors.append(str(e))
@@ -18513,7 +18522,8 @@ class WorkflowJob:
                         index=idx,
                         total=total,
                     )
-                    collected_results.append(result)
+                    if result is not _SKIP_BRANCH_ITEM:
+                        collected_results.append(result)
                 except Exception as e:
                     if continue_on_error:
                         errors.append(str(e))
@@ -18577,6 +18587,7 @@ class WorkflowJob:
         self.context.set_output(split_id, "total", total)
 
         result = item
+        last_had_public = None  # None = branch 노드 없음 / True|False = 마지막 노드 결과
 
         # Execute each branch node
         for node_id in branch_order:
@@ -18613,11 +18624,18 @@ class WorkflowJob:
 
             # Track last result — only from PUBLIC ports. Internal meta
             # (_throttle_stats 등)이 유일 출력일 때 그걸 결과로 집으면 Aggregate/Display
-            # 가 내부 통계를 데이터로 렌더한다. 공개 포트가 없으면(예: 시세 노드가 아직
-            # 틱 대기라 throttle 이 흘릴 실데이터가 없음) 이 아이템의 결과는 item 으로 둔다.
+            # 가 내부 통계를 데이터로 렌더한다.
             public = _public_outputs(outputs) if outputs else {}
+            last_had_public = bool(public)
             if public:
                 result = public.get("result") or public.get("value") or next(iter(public.values()), item)
+
+        # 마지막 branch 노드가 공개 출력을 전혀 못 냈으면(예: ThrottleNode 가 이번 사이클
+        # 을 throttling 중이라 내부 메타만 반환) 이 아이템은 기여할 실데이터가 없다 →
+        # skip 하여 "실시간 체결가" 표에 가격 없는/이질적인 행이 끼지 않게 한다. branch
+        # 노드가 아예 없으면(bare Split→Aggregate) item 을 그대로 수집한다(정상 패턴).
+        if branch_order and last_had_public is False:
+            return _SKIP_BRANCH_ITEM
 
         return result
 

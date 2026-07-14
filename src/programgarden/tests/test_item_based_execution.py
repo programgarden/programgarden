@@ -424,3 +424,79 @@ class TestThrottleMetaDoesNotLeakAsData:
         assert pick({"_throttle_stats": {"passed": True}}, item) == item
         # 실데이터 → 실데이터
         assert pick({"price": 99.0, "_throttle_stats": {}}, item) == 99.0
+
+
+class TestBranchSkipsMetaOnlyItems:
+    """메타만 낸 branch 아이템은 Aggregate 에 기여하지 않는다(skip) — 결함2 후속.
+
+    ThrottleNode 가 이번 사이클을 throttling 중이면(공개 출력 없음) 그 아이템은 실데이터가
+    없다 → 표에 가격 없는/이질적인 행이 끼면 안 된다."""
+
+    @staticmethod
+    def _job_with_stub_executor(node_outputs_by_type):
+        from programgarden.executor import WorkflowJob
+        from programgarden.context import ExecutionContext
+        from unittest.mock import AsyncMock, MagicMock
+
+        ctx = ExecutionContext(job_id="j", workflow_id="w")
+
+        async def _noop(**k):
+            return None
+
+        ctx.notify_node_state = _noop
+        ctx.notify_edge_state = _noop
+
+        job = MagicMock(spec=WorkflowJob)
+        job.context = ctx
+        job._execute_branch_for_item = WorkflowJob._execute_branch_for_item.__get__(job)
+        job._resolve_config_expressions = lambda cfg, nid: cfg
+        job._auto_inject_connection = lambda nid, node, cfg: cfg
+
+        class _Node:
+            def __init__(self, t):
+                self.node_type = t
+                self.config = {}
+                self.plugin = None
+                self.fields = None
+
+        wf = MagicMock()
+        wf.edges = []
+        wf.nodes = {t + "_node": _Node(t) for t in node_outputs_by_type}
+        job.workflow = wf
+
+        exec_stub = MagicMock()
+
+        async def _exec_node(node_id, node_type, **kw):
+            return node_outputs_by_type[node_type]
+
+        exec_stub.execute_node = _exec_node
+        job.executor = exec_stub
+        return job, ctx
+
+    @pytest.mark.asyncio
+    async def test_meta_only_branch_item_is_skipped(self):
+        from programgarden.executor import _SKIP_BRANCH_ITEM
+
+        # throttle 이 throttling 중 → 내부 메타만
+        job, _ = self._job_with_stub_executor(
+            {"ThrottleNode": {"_throttled": True, "_throttle_stats": {"passed": False}}}
+        )
+        r = await job._execute_branch_for_item(
+            split_id="split", branch_order=["ThrottleNode_node"],
+            item={"symbol": "AUID"}, index=0, total=1,
+        )
+        assert r is _SKIP_BRANCH_ITEM
+
+    @pytest.mark.asyncio
+    async def test_real_data_branch_item_is_kept(self):
+        from programgarden.executor import _SKIP_BRANCH_ITEM
+
+        job, _ = self._job_with_stub_executor(
+            {"ThrottleNode": {"price": 123.45, "_throttle_stats": {"passed": True}}}
+        )
+        r = await job._execute_branch_for_item(
+            split_id="split", branch_order=["ThrottleNode_node"],
+            item={"symbol": "AUID"}, index=0, total=1,
+        )
+        assert r is not _SKIP_BRANCH_ITEM
+        assert r == 123.45
