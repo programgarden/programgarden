@@ -13901,6 +13901,14 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         if side == "sell" and ordprc_ptn_code == "03":
             price = 0.0
 
+        # DEF-A: LS 는 $1 이상 종목의 주문단가를 소수 2자리, $1 미만은 4자리까지만 받는다
+        # (미국 페니/서브페니 틱 규칙). 시장가→현재가 지정가 변환 시 현재가가 3자리 이상이거나
+        # 사용자 지정가가 규칙을 벗어나면 rsp_cd=00891 "주문단가 오류. $1이상은 소수점 2째
+        # 자리까지 입력가능합니다" 로 거부되므로, 제출 전 정밀도에 맞춰 반올림한다.
+        # (매도 시장가 price=0.0 은 반올림 대상 아님.)
+        if price and price > 0:
+            price = round(price, 2 if price >= 1.0 else 4)
+
         try:
             order_api = ls.overseas_stock().주문().cosat00301(
                 COSAT00301InBlock1(
@@ -18164,7 +18172,16 @@ class WorkflowJob:
                 )
 
             # Phase 3: Mark completed if no failures
-            if not self.context.is_failed:
+            # DEF-B (order-failure observability): 주문이 raise 없이 실패하면
+            # (order_result.success=False) errors_count>0·last_error 는 채워지지만
+            # is_failed 는 False 로 남아 단일패스 워크플로우가 "completed" 로 보고된다 —
+            # 사용자는 주문 실패를 성공으로 오인한다. 단일패스 경로는 errors_count 도 함께
+            # 본다. 스케줄/stay_connected 잡은 사이클 단위로 실패를 복구하며 errors_count 가
+            # transient 이므로(사이클 격리) 단일패스에서만 게이트한다.
+            _single_pass_had_errors = (
+                not has_event_sources and self.stats.get("errors_count", 0) > 0
+            )
+            if not self.context.is_failed and not _single_pass_had_errors:
                 self.status = "completed"
             else:
                 self.status = "failed"

@@ -780,3 +780,61 @@ class TestKoreaStockRejectDiagnostics:
         assert "kr net down" in order_result["error"]
         assert order_result["diagnostics"]["known"] is False
         assert order_result["diagnostics"]["rsp_cd"] == ""
+
+
+# ---------------------------------------------------------------------------
+# DEF-A: 해외주식 주문단가 정밀도 반올림
+#   LS 는 $1 이상 종목의 주문단가를 소수 2자리, $1 미만은 4자리까지만 받는다
+#   (미국 페니/서브페니 틱 규칙). 시장가→현재가 지정가 변환 시 현재가가 3자리 이상이거나
+#   사용자 지정가가 규칙을 벗어나면 rsp_cd=00891 "주문단가 오류. $1이상은 소수점 2째
+#   자리까지 입력가능합니다" 로 거부된다. 제출 전 반올림해야 한다.
+#   (반올림은 cosat00301 호출 *전*에 일어나므로, 거부 응답으로도 call_args 로 검증 가능.)
+# ---------------------------------------------------------------------------
+
+class TestOverseasOrderPricePrecision:
+    @staticmethod
+    def _capturing_ls(response):
+        order_api = MagicMock()
+        order_api.req_async = AsyncMock(return_value=response)
+        order_ns = MagicMock()
+        order_ns.cosat00301 = MagicMock(return_value=order_api)
+        overseas_stock = MagicMock()
+        overseas_stock.주문 = MagicMock(return_value=order_ns)
+        ls = MagicMock()
+        ls.overseas_stock = MagicMock(return_value=overseas_stock)
+        return ls, order_ns
+
+    @pytest.mark.asyncio
+    async def test_ge_1_dollar_price_rounded_to_2dp(self):
+        """$1 이상: 소수 3자리 지정가 → 2자리 반올림 후 제출."""
+        ex = NewOrderNodeExecutor()
+        ctx = _make_context()
+        # 거부 응답 — submit 후 fill-requery 없이 깨끗이 반환. 반올림은 제출 전에 끝남.
+        ls, order_ns = self._capturing_ls(_cosat_response(rsp_cd="40570", error_msg="reject"))
+        order = {"symbol": "NIO", "exchange": "NYSE", "quantity": 1, "price": 12.347}
+        await ex._execute_overseas_stock(ls, order, "buy", "limit", {}, ctx, "o-2dp")
+        inblock = order_ns.cosat00301.call_args.args[0]
+        # 예전엔 12.347 그대로 전달 → rsp_cd=00891. 이제 12.35.
+        assert inblock.OvrsOrdPrc == pytest.approx(12.35)
+
+    @pytest.mark.asyncio
+    async def test_sub_1_dollar_price_rounded_to_4dp(self):
+        """$1 미만: 4자리까지 유지(서브페니)."""
+        ex = NewOrderNodeExecutor()
+        ctx = _make_context()
+        ls, order_ns = self._capturing_ls(_cosat_response(rsp_cd="40570", error_msg="reject"))
+        order = {"symbol": "SNDL", "exchange": "NASDAQ", "quantity": 1, "price": 0.98763}
+        await ex._execute_overseas_stock(ls, order, "buy", "limit", {}, ctx, "o-4dp")
+        inblock = order_ns.cosat00301.call_args.args[0]
+        assert inblock.OvrsOrdPrc == pytest.approx(0.9876)
+
+    @pytest.mark.asyncio
+    async def test_already_2dp_price_unchanged(self):
+        """규칙에 맞는 가격은 그대로."""
+        ex = NewOrderNodeExecutor()
+        ctx = _make_context()
+        ls, order_ns = self._capturing_ls(_cosat_response(rsp_cd="40570", error_msg="reject"))
+        order = {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 1, "price": 150.0}
+        await ex._execute_overseas_stock(ls, order, "buy", "limit", {}, ctx, "o-nochg")
+        inblock = order_ns.cosat00301.call_args.args[0]
+        assert inblock.OvrsOrdPrc == pytest.approx(150.0)
