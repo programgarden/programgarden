@@ -112,6 +112,60 @@ def _order_failure_from_outputs(outputs: Any) -> Optional[str]:
     return f"{label}: {' — '.join(parts)}" if parts else str(label)
 
 
+def _orders_placed_from_outputs(outputs: Any) -> int:
+    """Return how many orders this node successfully *submitted* (accepted).
+
+    DEF-26: the job's ``orders_placed`` stat was initialised to 0 and never
+    incremented, so the dashboard/monitoring always reported "0 orders placed"
+    even after a real fill. This derives the submitted count from the node's
+    ``order_result``:
+
+    - single-order shape (``_order_result``): 1 when ``success is True`` (an
+      order number came back = accepted), else 0.
+    - batch shape (``success_count``): that count (defensive — currently unused
+      by the live single-order path).
+    - non-order nodes / failed orders / no_signal: 0.
+
+    "Submitted" means accepted by the broker (order number returned), NOT
+    filled — see :func:`_orders_filled_from_outputs` for fills (DEF-27).
+    """
+    if not isinstance(outputs, dict):
+        return 0
+    result = outputs.get("order_result")
+    if not isinstance(result, dict):
+        return 0
+    if "success_count" in result:
+        try:
+            return max(0, int(result.get("success_count") or 0))
+        except (TypeError, ValueError):
+            return 0
+    return 1 if result.get("success") is True else 0
+
+
+def _orders_filled_from_outputs(outputs: Any) -> int:
+    """Return how many orders this node confirmed as *fully filled*.
+
+    DEF-26/DEF-27: ``orders_filled`` was a dead counter, and the engine
+    reported a bare "submitted" (order accepted) as if the order had traded.
+    An order only counts here when a post-submission re-query confirmed a
+    complete fill (``order_result.status == "filled"``, set by
+    :meth:`NewOrderNodeExecutor._confirm_order_fill`). ``submitted`` / ``open``
+    / ``partially_filled`` deliberately do NOT count — an accepted-but-unfilled
+    order must never inflate the fill counter.
+    """
+    if not isinstance(outputs, dict):
+        return 0
+    result = outputs.get("order_result")
+    if not isinstance(result, dict):
+        return 0
+    if "filled_count" in result:
+        try:
+            return max(0, int(result.get("filled_count") or 0))
+        except (TypeError, ValueError):
+            return 0
+    return 1 if (result.get("status") == "filled" and result.get("success") is True) else 0
+
+
 def _free_root_names(text: str) -> Set[str]:
     """Return the set of free-variable root identifiers referenced (ctx=Load) by
     every ``{{ ... }}`` expression embedded in ``text``.
@@ -13562,6 +13616,20 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 context.log("error", f"{node_type}: Unsupported product: {product}", node_id)
                 return self._error_result(f"Unsupported product: {product}")
 
+            # === 5.4. DEF-27: 접수(order number) ≠ 체결. 주문 TR 응답은 주문번호만
+            # 돌려주므로, 방금 접수된 주문의 체결 여부를 best-effort 로 재조회해
+            # order_result.status 를 submitted → filled / partially_filled / open
+            # 으로 승격하고 filled_quantity / filled_count 를 붙인다. 순수 관측용 —
+            # 재조회가 실패해도 접수 성공(success=True)은 절대 뒤집지 않는다. ===
+            if (
+                isinstance(order_result, dict)
+                and isinstance(order_result.get("order_result"), dict)
+                and order_result["order_result"].get("success") is True
+            ):
+                await self._confirm_order_fill(
+                    ls, product, order_type, order_result, config, context, node_id
+                )
+
             # === 5.5. A-4: 성공 주문 idempotency 레지스트리에 기록 ===
             context.record_order_submitted(
                 node_id=node_id,
@@ -14084,6 +14152,259 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 
         except Exception as e:
             context.log("warning", f"Failed to sync fills after market order: {e}", node_id)
+
+    async def _confirm_order_fill(
+        self,
+        ls,
+        product: str,
+        order_type: str,
+        order_result: Dict[str, Any],
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        node_id: str,
+    ) -> None:
+        """Best-effort post-submission fill confirmation (DEF-27).
+
+        A broker order TR returns the order number only (= accepted), never a
+        fill. This re-queries the order right after submission and upgrades
+        ``order_result['order_result']`` in place:
+
+        - ``status``: submitted → ``filled`` / ``partially_filled`` / ``open``
+        - adds ``filled_quantity`` / ``fill_price`` / ``filled_count``
+
+        Purely additive observability: it never raises and never flips
+        ``success``. If the re-query errors or the order is not found, the
+        order stays reported as accepted with ``status="open"`` (honest
+        "accepted, not confirmed filled").
+
+        Fills are recorded a few seconds after the accept ack, so every order is
+        polled over a short bounded window (fill_confirm_attempts ×
+        fill_confirm_delay_seconds), breaking as soon as the fill lands; an order
+        still unfilled at the end is reported "open". Per-product re-query TR:
+        korea_stock=t0425, overseas_stock=COSAQ00102, overseas_futures/option=CIDBQ02400.
+        """
+        try:
+            inner = order_result.get("order_result", {})
+            order_id = str(order_result.get("order_id") or inner.get("order_id") or "")
+            if not order_id:
+                return
+            if product not in (
+                "korea_stock", "overseas_stock", "overseas_futures", "overseas_futureoption",
+            ):
+                return  # unknown product: no fill re-query — leave as submitted
+
+            try:
+                ordered_qty = int(inner.get("quantity") or 0)
+            except (TypeError, ValueError):
+                ordered_qty = 0
+
+            # A fill is recorded to the day's order/fill query a few seconds AFTER
+            # the accept ack — even for a marketable order (live-observed on HKEX
+            # futures paper: an immediate re-query still shows unfilled). So poll a
+            # short bounded window for every order type, breaking as soon as the
+            # fill lands. A genuinely resting limit order simply exhausts the window
+            # and is reported "open" (honest). Both knobs are configurable; set
+            # fill_confirm_attempts=1 to disable polling for latency-sensitive flows.
+            try:
+                attempts = int(config.get("fill_confirm_attempts", 4))
+            except (TypeError, ValueError):
+                attempts = 4
+            try:
+                delay = float(config.get("fill_confirm_delay_seconds", 2.0))
+            except (TypeError, ValueError):
+                delay = 2.0
+            attempts = max(1, attempts)
+
+            symbol = inner.get("symbol", "")
+            filled_qty, fill_price = 0, 0.0
+            for i in range(attempts):
+                # Query immediately first (catches an already-recorded fill at no
+                # cost), then wait between retries for the lagged fill to land.
+                if i > 0:
+                    await asyncio.sleep(delay)
+                if product == "korea_stock":
+                    filled_qty, fill_price = await self._query_korea_fill(
+                        ls, order_id, symbol, context, node_id
+                    )
+                elif product == "overseas_stock":
+                    filled_qty, fill_price = await self._query_overseas_stock_fill(
+                        ls, order_id, context, node_id
+                    )
+                else:  # overseas_futures / overseas_futureoption
+                    filled_qty, fill_price = await self._query_overseas_futures_fill(
+                        ls, order_id, context, node_id
+                    )
+                if ordered_qty > 0 and filled_qty >= ordered_qty:
+                    break
+
+            if ordered_qty > 0 and filled_qty >= ordered_qty:
+                inner["status"] = "filled"
+                inner["filled_count"] = 1
+            elif filled_qty > 0:
+                inner["status"] = "partially_filled"
+                inner["filled_count"] = 0
+            else:
+                inner["status"] = "open"
+                inner["filled_count"] = 0
+            inner["filled_quantity"] = filled_qty
+            if fill_price > 0:
+                inner["fill_price"] = fill_price
+
+            context.log(
+                "info",
+                f"Fill confirm: order {order_id} → {inner['status']} "
+                f"({filled_qty}/{ordered_qty})",
+                node_id,
+            )
+        except Exception as e:
+            # Best-effort: a re-query failure must not disturb the (successful)
+            # order submission. Leave order_result untouched (status stays
+            # "submitted").
+            context.log("debug", f"Fill confirmation skipped (best-effort): {e}", node_id)
+
+    async def _query_korea_fill(
+        self,
+        ls,
+        order_id: str,
+        symbol: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> tuple:
+        """Return ``(filled_qty, avg_fill_price)`` for a korea_stock order via
+        t0425 (당일 체결/미체결 조회). ``(0, 0.0)`` when not found or on error."""
+        try:
+            from programgarden_finance.ls.korea_stock.accno.t0425.blocks import T0425InBlock
+
+            # expcode 는 빈값(전체 종목)으로 둔다 — 주문번호(ordno)가 authoritative
+            # 매칭 키이고, 심볼 포맷 차이('005930' vs 'A005930' 등)로 내 주문을
+            # 놓치는 것을 피한다. symbol 인자는 로깅/시그니처 호환용으로만 유지.
+            _ = symbol
+            response = await ls.korea_stock().accno().t0425(
+                body=T0425InBlock(
+                    expcode="",           # 전체 종목 (ordno 로 매칭)
+                    chegb="0",            # 0: 전체(체결+미체결) — 상태 판정에 필요
+                    medosu="0",           # 0: 전체
+                    sortgb="1",           # 1: 주문번호 역순(방금 낸 주문이 앞쪽)
+                    cts_ordno="",
+                )
+            ).req_async()
+
+            if getattr(response, "error_msg", None):
+                context.log("debug", f"t0425 fill query error: {response.error_msg}", node_id)
+                return 0, 0.0
+
+            for item in getattr(response, "block", None) or []:
+                if str(getattr(item, "ordno", "")) == order_id:
+                    filled_qty = int(getattr(item, "cheqty", 0) or 0)
+                    fill_price = float(getattr(item, "cheprice", 0) or 0)
+                    return filled_qty, fill_price
+            return 0, 0.0
+        except Exception as e:
+            context.log("debug", f"t0425 fill query exception: {e}", node_id)
+            return 0, 0.0
+
+    async def _query_overseas_stock_fill(
+        self,
+        ls,
+        order_id: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> tuple:
+        """Return ``(filled_qty, avg_fill_price)`` for an overseas_stock order
+        via COSAQ00102 (주문체결내역조회, 체결분만). ``(0, 0.0)`` when not found
+        or on error."""
+        try:
+            from programgarden_finance import COSAQ00102
+            from datetime import datetime as _dt
+
+            today = _dt.now().strftime("%Y%m%d")
+            response = ls.overseas_stock().accno().cosaq00102(
+                body=COSAQ00102.COSAQ00102InBlock1(
+                    RecCnt=1,
+                    QryTpCode="1",       # 계좌별
+                    BkseqTpCode="1",     # 역순
+                    OrdMktCode="00",     # 전체 시장
+                    BnsTpCode="0",       # 전체(매수/매도)
+                    IsuNo="",            # 전체 종목
+                    SrtOrdNo=999999999,  # 역순 시작
+                    OrdDt=today,
+                    ExecYn="1",          # 1: 체결만
+                    CrcyCode="000",      # 전체 통화
+                    ThdayBnsAppYn="0",
+                    LoanBalHldYn="0",
+                ),
+            )
+            result = await response.req_async()
+            if not result or not getattr(result, "block3", None):
+                return 0, 0.0
+
+            filled_qty = 0
+            amount = 0.0
+            for item in result.block3:
+                if str(getattr(item, "OrdNo", 0)) != order_id:
+                    continue
+                q = int(getattr(item, "ExecQty", 0) or 0)
+                p = float(
+                    getattr(item, "OvrsExecPrc", 0) or getattr(item, "OvrsOrdPrc", 0) or 0
+                )
+                filled_qty += q
+                amount += q * p
+            avg_price = (amount / filled_qty) if filled_qty > 0 else 0.0
+            return filled_qty, avg_price
+        except Exception as e:
+            context.log("debug", f"COSAQ00102 fill query exception: {e}", node_id)
+            return 0, 0.0
+
+    async def _query_overseas_futures_fill(
+        self,
+        ls,
+        order_id: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> tuple:
+        """Return ``(filled_qty, avg_fill_price)`` for an overseas_futures/option
+        order via CIDBQ02400 (당일 주문체결내역, 전체). ``(0, 0.0)`` when not
+        found or on error. Also covers HKEX-futures paper accounts."""
+        try:
+            from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import (
+                CIDBQ02400InBlock1,
+            )
+            from datetime import datetime as _dt
+
+            today = _dt.now().strftime("%Y%m%d")
+            response = await ls.overseas_futureoption().accno().CIDBQ02400(
+                body=CIDBQ02400InBlock1(
+                    IsuCodeVal="",          # 전체 종목
+                    QrySrtDt=today,
+                    QryEndDt=today,
+                    ThdayTpCode="1",        # 1: 당일조회
+                    OrdStatCode="0",        # 0: 전체(체결+미체결) — 상태 판정에 필요
+                    BnsTpCode="0",          # 0: 전체
+                    QryTpCode="1",          # 1: 역순(방금 낸 주문이 앞쪽)
+                    OrdPtnCode="00",        # 00: 전체
+                    OvrsDrvtFnoTpCode="A",  # A: 전체(선물+옵션)
+                )
+            ).req_async()
+
+            if getattr(response, "error_msg", None):
+                context.log("debug", f"CIDBQ02400 fill query error: {response.error_msg}", node_id)
+                return 0, 0.0
+
+            # block2 = 주문/체결 상세 (한 주문에 다중 체결이면 행이 여럿 → ExecQty 합산)
+            filled_qty = 0
+            amount = 0.0
+            for item in getattr(response, "block2", None) or []:
+                if str(getattr(item, "OvrsFutsOrdNo", "")) != order_id:
+                    continue
+                q = int(getattr(item, "ExecQty", 0) or 0)
+                p = float(getattr(item, "AbrdFutsExecPrc", 0) or 0)
+                filled_qty += q
+                amount += q * p
+            avg_price = (amount / filled_qty) if filled_qty > 0 else 0.0
+            return filled_qty, avg_price
+        except Exception as e:
+            context.log("debug", f"CIDBQ02400 fill query exception: {e}", node_id)
+            return 0, 0.0
 
     async def _execute_overseas_futures(
         self,
@@ -18267,6 +18588,15 @@ class WorkflowJob:
                 # it: FAILED node state + job stats + an error log line. no_signal
                 # ("no trading signal today") is a normal no-op and is excluded.
                 order_failure = _order_failure_from_outputs(outputs)
+
+                # DEF-26/DEF-27: wire the previously-dead orders_placed /
+                # orders_filled counters. placed = orders this node actually
+                # submitted (accepted by the broker); filled = orders a
+                # post-submit re-query confirmed as fully traded. Both are 0 for
+                # non-order nodes and for failed orders, so this is safe to run
+                # unconditionally for every node.
+                self.stats["orders_placed"] += _orders_placed_from_outputs(outputs)
+                self.stats["orders_filled"] += _orders_filled_from_outputs(outputs)
 
                 # deep_validate: promote it to a blocking structured error so the
                 # chatbot learns its order wiring is broken at *build* time instead
