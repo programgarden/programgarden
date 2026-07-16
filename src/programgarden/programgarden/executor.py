@@ -166,6 +166,32 @@ def _orders_filled_from_outputs(outputs: Any) -> int:
     return 1 if (result.get("status") == "filled" and result.get("success") is True) else 0
 
 
+def _final_job_status(
+    *, is_failed: bool, has_event_sources: bool, errors_count: int
+) -> str:
+    """Decide a finished job's terminal status from its failure surfaces (DEF-B).
+
+    Two failure regimes:
+
+    - **Single-pass** (oneshot: no schedule / realtime / stay_connected sources):
+      the run executes the flow exactly once, so *any* node error is terminal —
+      a non-raising order failure (``order_result.success=False`` → errors_count
+      incremented, but ``is_failed`` left False) must still fail the job. Without
+      this, "the order never went out" is reported as COMPLETED — the single most
+      dangerous silent failure in automated trading (S5 E2E, 2026-07-14).
+    - **Event-source** (schedule / realtime): errors are per-cycle transient — a
+      later cycle recovers — so only an explicit ``is_failed`` fails the job;
+      ``errors_count`` is NOT gated (it accumulates across cycles).
+
+    Extracted as a pure function so the contract is regression-tested directly
+    (the surrounding run() finalize is a 300-line coroutine).
+    """
+    single_pass_had_errors = (not has_event_sources) and errors_count > 0
+    if not is_failed and not single_pass_had_errors:
+        return "completed"
+    return "failed"
+
+
 def _free_root_names(text: str) -> Set[str]:
     """Return the set of free-variable root identifiers referenced (ctx=Load) by
     every ``{{ ... }}`` expression embedded in ``text``.
@@ -18171,6 +18197,19 @@ class WorkflowJob:
                     f"persistent_tasks: {len(self.context._persistent_tasks)})"
                 )
 
+            # DEF-27 재조정: orders_filled 관측 갭 보정. 인라인 재조회(_confirm_order_fill)
+            # 는 접수 직후 짧은 폴링창(기본 4×2s)만 보므로, 브로커 체결조회 TR 이 창을 넘겨
+            # 반영되면 status="open" 에 머물러 orders_filled 가 실제 체결인데 0 에 死한다.
+            # 잡 종료 시점엔 SC1 체결이벤트/체결내역 동기화가 채운 trade_history 가 권위
+            # 기록이므로, 그 기록으로 이 잡의 완전 체결 건수를 재집계해 카운터를 끌어올린다.
+            # 순수 관측용·additive(내리지 않음) — 체결 기록이 아직 안 왔으면 기존값 유지.
+            try:
+                reconciled_filled = self.context.count_confirmed_filled_orders()
+                if reconciled_filled > self.stats.get("orders_filled", 0):
+                    self.stats["orders_filled"] = reconciled_filled
+            except Exception:
+                pass
+
             # Phase 3: Mark completed if no failures
             # DEF-B (order-failure observability): 주문이 raise 없이 실패하면
             # (order_result.success=False) errors_count>0·last_error 는 채워지지만
@@ -18178,13 +18217,11 @@ class WorkflowJob:
             # 사용자는 주문 실패를 성공으로 오인한다. 단일패스 경로는 errors_count 도 함께
             # 본다. 스케줄/stay_connected 잡은 사이클 단위로 실패를 복구하며 errors_count 가
             # transient 이므로(사이클 격리) 단일패스에서만 게이트한다.
-            _single_pass_had_errors = (
-                not has_event_sources and self.stats.get("errors_count", 0) > 0
+            self.status = _final_job_status(
+                is_failed=self.context.is_failed,
+                has_event_sources=has_event_sources,
+                errors_count=self.stats.get("errors_count", 0),
             )
-            if not self.context.is_failed and not _single_pass_had_errors:
-                self.status = "completed"
-            else:
-                self.status = "failed"
 
             self.completed_at = datetime.utcnow()
 

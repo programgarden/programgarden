@@ -382,3 +382,143 @@ class TestConfirmOrderFill:
         filled, price = await ex._query_korea_fill(ls, "9972", "028670", _mock_ctx(), "ord1")
         assert filled == 0
         assert price == 0.0
+
+
+# ── DEF-B: 종료 상태 게이트 계약 (단일패스 vs 이벤트소스) ──
+
+
+from programgarden.executor import _final_job_status
+
+
+class TestFinalJobStatusGate:
+    """잡 종료 상태 결정 계약 (DEF-B).
+
+    2026-07-16 로컬실행 E2E 증거(job-11ef9a3f/c45b71f0/0e4ff163): order 노드가
+    ``no_symbol`` 로 non-raising 실패(errors_count=1, orders_placed=0)한 oneshot 잡이
+    로그·유저 알림에 "완료"로 떴다. 단일패스는 어떤 노드 오류든 종료이므로 반드시
+    failed 여야 한다 — 이 계약이 그 회귀를 못박는다. (당시 런타임은 이 게이트 이전
+    executor 를 메모리에 들고 있던 stale 프로세스였고, HEAD 코드는 아래대로 failed.)
+    """
+
+    def test_single_pass_nonraising_order_failure_is_failed(self):
+        # no_symbol/fetch_failed 등: errors_count>0 인데 is_failed 는 False.
+        assert _final_job_status(
+            is_failed=False, has_event_sources=False, errors_count=1
+        ) == "failed"
+
+    def test_single_pass_clean_run_is_completed(self):
+        assert _final_job_status(
+            is_failed=False, has_event_sources=False, errors_count=0
+        ) == "completed"
+
+    def test_explicit_is_failed_always_failed(self):
+        assert _final_job_status(
+            is_failed=True, has_event_sources=False, errors_count=0
+        ) == "failed"
+        assert _final_job_status(
+            is_failed=True, has_event_sources=True, errors_count=0
+        ) == "failed"
+
+    def test_event_source_transient_error_stays_completed(self):
+        # 스케줄/실시간: 한 사이클 주문실패는 transient(다음 사이클 복구) — is_failed 만 게이트.
+        assert _final_job_status(
+            is_failed=False, has_event_sources=True, errors_count=3
+        ) == "completed"
+
+    def test_event_source_with_explicit_failure_is_failed(self):
+        assert _final_job_status(
+            is_failed=True, has_event_sources=True, errors_count=3
+        ) == "failed"
+
+
+# ── DEF-27 재조정: orders_filled 를 체결내역(trade_history) 권위 기록으로 보정 ──
+
+
+import sqlite3
+
+from programgarden.database.workflow_position_tracker import WorkflowPositionTracker
+
+_TS = "2026-07-17T01:13:22.114667"
+
+
+class TestCountConfirmedFilledOrders:
+    """order#431 실측 재현: 접수(workflow_orders 1주)됐고 체결(trade_history 1주)인데,
+    인라인 재조회(_confirm_order_fill)가 폴링창 안에서 놓쳐 status="open"·orders_filled=0.
+    잡 종료 재조정이 권위 기록으로 1 을 확증해야 한다.
+    """
+
+    def _tracker(self, tmp_path, job_id="job-3b301c57", trading_mode="live"):
+        return WorkflowPositionTracker(
+            db_path=str(tmp_path / "wf.db"),
+            job_id=job_id,
+            broker_node_id="order",
+            product="overseas_stock",
+            provider="ls-sec.co.kr",
+            trading_mode=trading_mode,
+        )
+
+    def _order(self, tr, order_no, qty, job_id=None, trading_mode="live"):
+        with sqlite3.connect(tr.db_path) as conn:
+            conn.execute(
+                "INSERT INTO workflow_orders "
+                "(product, provider, order_no, order_date, symbol, quantity, price, "
+                " job_id, node_id, trading_mode, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                ("overseas_stock", "ls-sec.co.kr", order_no, "20260717", "NIO",
+                 qty, 5.04, job_id or tr.job_id, "order", trading_mode, _TS),
+            )
+
+    def _fill(self, tr, order_no, qty, trading_mode="live"):
+        with sqlite3.connect(tr.db_path) as conn:
+            conn.execute(
+                "INSERT INTO trade_history "
+                "(product, provider, order_no, order_date, symbol, side, quantity, "
+                " price, fill_datetime, classification, trading_mode, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("overseas_stock", "ls-sec.co.kr", order_no, "20260717", "NIO", "buy",
+                 qty, 5.035, "20260717_11321863", "workflow", trading_mode, _TS),
+            )
+
+    def test_full_fill_counts_one(self, tmp_path):
+        tr = self._tracker(tmp_path)
+        self._order(tr, "431", 1)
+        self._fill(tr, "431", 1)
+        assert tr.count_confirmed_filled_orders(tr.job_id) == 1
+
+    def test_submitted_but_unfilled_counts_zero(self, tmp_path):
+        """접수만 되고 체결내역이 없으면(=인라인 open) 재조정도 0 — 부풀리지 않는다."""
+        tr = self._tracker(tmp_path)
+        self._order(tr, "431", 1)  # trade_history 없음
+        assert tr.count_confirmed_filled_orders(tr.job_id) == 0
+
+    def test_partial_fill_counts_zero(self, tmp_path):
+        tr = self._tracker(tmp_path)
+        self._order(tr, "500", 10)
+        self._fill(tr, "500", 3)  # 부분체결
+        assert tr.count_confirmed_filled_orders(tr.job_id) == 0
+
+    def test_multi_row_fill_sums_to_full(self, tmp_path):
+        tr = self._tracker(tmp_path)
+        self._order(tr, "600", 5)
+        self._fill(tr, "600", 2)
+        self._fill(tr, "600", 3)  # 2+3=5 → 완전 체결
+        assert tr.count_confirmed_filled_orders(tr.job_id) == 1
+
+    def test_other_job_is_not_counted(self, tmp_path):
+        """job_id 로 이 잡에 한정 — 다른 잡의 체결은 세지 않는다."""
+        tr = self._tracker(tmp_path)
+        self._order(tr, "700", 1, job_id="job-OTHER")
+        self._fill(tr, "700", 1)
+        assert tr.count_confirmed_filled_orders(tr.job_id) == 0
+
+    def test_trading_mode_isolation(self, tmp_path):
+        """live 추적기는 paper 주문/체결을 세지 않는다."""
+        tr = self._tracker(tmp_path, trading_mode="live")
+        self._order(tr, "800", 1, trading_mode="paper")
+        self._fill(tr, "800", 1, trading_mode="paper")
+        assert tr.count_confirmed_filled_orders(tr.job_id) == 0
+
+    def test_missing_tracker_db_returns_zero(self, tmp_path):
+        """조회 실패해도 예외 없이 0 (best-effort)."""
+        tr = self._tracker(tmp_path)
+        assert tr.count_confirmed_filled_orders("nonexistent-job") == 0

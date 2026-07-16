@@ -2568,6 +2568,21 @@ class ExecutionContext:
             logger.warning(f"Failed to get orders without fill price: {e}")
             return []
 
+    def count_confirmed_filled_orders(self) -> int:
+        """이 잡의 확정 체결(완전 체결) 주문 수 — 체결내역 권위 기록 기준 (DEF-27 재조정).
+
+        인라인 재조회(``_confirm_order_fill``)가 폴링창 안에서 체결을 놓쳐 ``orders_filled``
+        가 0 에 死한 경우를, 잡 종료 시 ``trade_history`` 로 재조정하기 위한 접근자.
+        추적기가 없거나(dry_run 등) 조회 실패 시 0.
+        """
+        if self._workflow_position_tracker is None:
+            return 0
+        try:
+            return self._workflow_position_tracker.count_confirmed_filled_orders(self.job_id)
+        except Exception as e:
+            logger.warning(f"Failed to count confirmed filled orders: {e}")
+            return 0
+
     def sync_workflow_fill_prices_from_history(
         self,
         fill_history: list,

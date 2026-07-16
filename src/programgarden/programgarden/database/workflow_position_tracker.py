@@ -514,7 +514,49 @@ class WorkflowPositionTracker:
                 WHERE order_no = ? AND order_date = ? AND trading_mode = ?
             """, (order_no, order_date, self.trading_mode))
             return cursor.fetchone() is not None
-    
+
+    def count_confirmed_filled_orders(self, job_id: str) -> int:
+        """이 잡이 낸 주문 중 체결내역(trade_history)이 '완전 체결'을 확증한 건수.
+
+        DEF-27 follow-up (orders_filled 관측 갭): ``orders_filled`` 통계는 주문 직후
+        인라인 재조회(``_confirm_order_fill`` 의 t0425/COSAQ00102/CIDBQ02400 폴링,
+        기본 4×2s)에만 의존한다. 그런데 브로커의 체결조회 TR 은 접수 ack 후 폴링창을
+        넘겨 반영될 수 있어(실측: order#431 이 trade_history 엔 체결됐는데 인라인
+        재조회는 창 안에서 0 → status="open"), 실제 체결인데 카운터가 0 에 死한다.
+
+        ``trade_history`` / ``workflow_position_lots`` 는 SC1 체결이벤트·체결내역
+        동기화가 채우는 **권위 기록**이므로, 잡 종료 시 이 기록으로 카운터를 재조정한다.
+        각 주문(order_no+order_date, job_id 로 이 잡에 한정)의 누적 체결수량이 주문수량
+        이상이면 '완전 체결 1건' 으로 센다. 접수만 되고 미체결/부분체결은 세지 않는다.
+        best-effort — 실패해도 예외를 던지지 않고 0 을 반환한다.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT wo.quantity, COALESCE(SUM(th.quantity), 0) AS filled_qty
+                    FROM workflow_orders wo
+                    LEFT JOIN trade_history th
+                      ON th.order_no = wo.order_no
+                     AND th.order_date = wo.order_date
+                     AND th.trading_mode = wo.trading_mode
+                    WHERE wo.job_id = ? AND wo.trading_mode = ?
+                    GROUP BY wo.id, wo.order_no, wo.order_date, wo.quantity
+                """, (job_id, self.trading_mode))
+                count = 0
+                for ordered, filled in cursor.fetchall():
+                    try:
+                        ordered_i = int(ordered or 0)
+                        if ordered_i > 0 and int(filled or 0) >= ordered_i:
+                            count += 1
+                    except (TypeError, ValueError):
+                        continue
+                return count
+        except Exception as e:
+            logger.warning(f"count_confirmed_filled_orders failed: {e}")
+            return 0
+
+
     def get_workflow_positions(
         self,
         start_date: Optional[str] = None,
