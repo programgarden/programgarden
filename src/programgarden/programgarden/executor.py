@@ -15,6 +15,7 @@ import ast
 import re
 import uuid
 import logging
+import sys
 
 from programgarden.resolver import WorkflowResolver, ResolvedWorkflow, ValidationResult
 from programgarden_core import (
@@ -40,6 +41,44 @@ from programgarden_core.retry_executor import RetryExecutor
 from programgarden_core.nodes.base import BaseMessagingNode
 
 logger = logging.getLogger("programgarden.executor")
+
+
+def _safe_print(*args: Any, **kwargs: Any) -> None:
+    """Emit console output without ever letting it abort the caller.
+
+    Console output is a side effect — a workflow must never die because a log
+    line could not be rendered. On a console whose encoding cannot represent
+    the text (cp949 on Korean Windows is the case we hit), a bare ``print``
+    raises ``UnicodeEncodeError``. Two things make that fatal rather than
+    cosmetic:
+
+    1. The progress line at the head of ``_execute_main_flow`` runs before any
+       node does, so the whole job dies before it starts.
+    2. The same call pattern sits inside ``except`` blocks, so the *reporting*
+       path raises too and the original cause is swallowed — the failure never
+       reaches ``notify_job_state`` and vanishes silently.
+
+    Note that ASCII-only literals are not sufficient protection: interpolated
+    values (node names, exception messages) can themselves carry characters the
+    console cannot encode. So every print in this module goes through here.
+    """
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        # Re-render through the stream's own encoding so the line still lands,
+        # with unrepresentable characters replaced rather than the job lost.
+        try:
+            stream = kwargs.get("file") or sys.stdout
+            encoding = getattr(stream, "encoding", None) or "ascii"
+            sep = kwargs.get("sep", " ")
+            end = kwargs.get("end", "\n")
+            text = sep.join(str(a) for a in args) + end
+            stream.write(text.encode(encoding, errors="replace").decode(encoding, errors="replace"))
+        except Exception:
+            logger.debug("console output dropped", exc_info=True)
+    except Exception:
+        # Logging is never load-bearing.
+        logger.debug("console output dropped", exc_info=True)
 
 
 # lib reserved iteration variable roots — valid ONLY mid-iteration.
@@ -8396,8 +8435,8 @@ class DisplayNodeExecutor(NodeExecutorBase):
         
         if chart_type == "summary":
             # Raw JSON 표시
-            print(f"\n📋 {title or 'Data Summary'} [{now}]")
-            print("=" * 60)
+            _safe_print(f"\n📋 {title or 'Data Summary'} [{now}]")
+            _safe_print("=" * 60)
             try:
                 def serialize(obj):
                     if hasattr(obj, 'model_dump'):
@@ -8411,11 +8450,11 @@ class DisplayNodeExecutor(NodeExecutorBase):
                     return obj
                 
                 serialized = serialize(data)
-                print(json.dumps(serialized, indent=2, ensure_ascii=False, default=str))
+                _safe_print(json.dumps(serialized, indent=2, ensure_ascii=False, default=str))
             except Exception as e:
-                print(f"(직렬화 실패: {e})")
-                print(str(data)[:500])
-            print("=" * 60 + "\n")
+                _safe_print(f"(직렬화 실패: {e})")
+                _safe_print(str(data)[:500])
+            _safe_print("=" * 60 + "\n")
             
             output_data["data"] = data
             
@@ -8426,8 +8465,8 @@ class DisplayNodeExecutor(NodeExecutorBase):
             sort_by = config.get("sort_by")
             sort_order = config.get("sort_order", "desc")
             
-            print(f"\n📊 {title or 'Table'} [{now}]")
-            print("=" * 80)
+            _safe_print(f"\n📊 {title or 'Table'} [{now}]")
+            _safe_print("=" * 80)
             
             # 데이터 형식 판단
             if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
@@ -8441,13 +8480,13 @@ class DisplayNodeExecutor(NodeExecutorBase):
                     (k, k) for k in list(rows[0].keys())[:8]
                 ]
                 header = " | ".join(f"{label:<12}" for _, label in cols)
-                print(header)
-                print("-" * 80)
+                _safe_print(header)
+                _safe_print("-" * 80)
                 for row in rows:
                     values = " | ".join(
                         f"{self._format_value(row.get(key)):<12}" for key, _ in cols
                     )
-                    print(values)
+                    _safe_print(values)
                     
             elif isinstance(data, dict):
                 # dict of dicts (symbol: {field: value}) 또는 flat dict
@@ -8463,19 +8502,19 @@ class DisplayNodeExecutor(NodeExecutorBase):
                             (k, k) for k in list(items[0][1].keys())[:6]
                         ]
                         header = f"{'Key':<12} | " + " | ".join(f"{label:<12}" for _, label in cols)
-                        print(header)
-                        print("-" * 80)
+                        _safe_print(header)
+                        _safe_print("-" * 80)
                         for key, val in items:
                             values = f"{key:<12} | " + " | ".join(
                                 f"{self._format_value(val.get(col_key)):<12}" for col_key, _ in cols
                             )
-                            print(values)
+                            _safe_print(values)
                 else:
                     # flat dict
                     for k, v in list(data.items())[:limit]:
-                        print(f"  {k:<25}: {self._format_value(v)}")
+                        _safe_print(f"  {k:<25}: {self._format_value(v)}")
             
-            print("=" * 80 + "\n")
+            _safe_print("=" * 80 + "\n")
             output_data["data"] = data
             
         elif chart_type == "line":
@@ -8489,36 +8528,36 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 context.log("error", f"line 차트에 x_field, y_field 필수", node_id)
                 return {"rendered": False, "error": "x_field, y_field 필수"}
             
-            print(f"\n📈 {title or 'Line Chart'} [{now}]")
-            print("=" * 60)
+            _safe_print(f"\n📈 {title or 'Line Chart'} [{now}]")
+            _safe_print("=" * 60)
             
             if isinstance(data, list) and len(data) > 0:
                 first = data[0]
                 last = data[-1]
-                print(f"📊 데이터 포인트: {len(data)}개")
-                print(f"📅 X축 범위: {first.get(x_field)} ~ {last.get(x_field)}")
-                print(f"📈 Y축({y_field}) 시작: {self._format_value(first.get(y_field))}")
-                print(f"📈 Y축({y_field}) 끝: {self._format_value(last.get(y_field))}")
+                _safe_print(f"📊 데이터 포인트: {len(data)}개")
+                _safe_print(f"📅 X축 범위: {first.get(x_field)} ~ {last.get(x_field)}")
+                _safe_print(f"📈 Y축({y_field}) 시작: {self._format_value(first.get(y_field))}")
+                _safe_print(f"📈 Y축({y_field}) 끝: {self._format_value(last.get(y_field))}")
                 
                 # 최대/최소
                 values = [d.get(y_field, 0) for d in data if d.get(y_field) is not None]
                 if values:
-                    print(f"📈 최대: {self._format_value(max(values))}")
-                    print(f"📉 최소: {self._format_value(min(values))}")
+                    _safe_print(f"📈 최대: {self._format_value(max(values))}")
+                    _safe_print(f"📉 최소: {self._format_value(min(values))}")
                 
                 # 시그널 마커 표시
                 if signal_field:
                     signals = self._extract_signals(data, x_field, signal_field, side_field)
                     if signals:
-                        print(f"\n🎯 시그널 ({len(signals)}개):")
+                        _safe_print(f"\n🎯 시그널 ({len(signals)}개):")
                         for sig in signals[:10]:  # 최대 10개만 표시
-                            print(f"  {sig['marker']} {sig['x']} ({sig['signal']}/{sig['side']})")
+                            _safe_print(f"  {sig['marker']} {sig['x']} ({sig['signal']}/{sig['side']})")
                         if len(signals) > 10:
-                            print(f"  ... 외 {len(signals) - 10}개")
+                            _safe_print(f"  ... 외 {len(signals) - 10}개")
             else:
-                print("(데이터 없음)")
+                _safe_print("(데이터 없음)")
             
-            print("=" * 60 + "\n")
+            _safe_print("=" * 60 + "\n")
             output_data["data"] = data
             output_data["x_field"] = x_field
             output_data["y_field"] = y_field
@@ -8542,8 +8581,8 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 context.log("error", f"multi_line 차트에 x_field, y_field, series_key 필수", node_id)
                 return {"rendered": False, "error": "x_field, y_field, series_key 필수"}
             
-            print(f"\n📈 {title or 'Multi-Line Chart'} [{now}]")
-            print("=" * 80)
+            _safe_print(f"\n📈 {title or 'Multi-Line Chart'} [{now}]")
+            _safe_print("=" * 80)
             
             # data가 평탄화된 배열 형식인 경우 [{symbol, date, value, ...}, ...]
             if isinstance(data, list):
@@ -8568,29 +8607,29 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 
                 series_items = series_items[:limit]
                 
-                print(f"📊 시리즈 수: {len(series_items)}개 (limit: {limit})")
-                print("-" * 80)
-                print(f"{'Series':<12} | {'Points':<8} | {f'First {y_field}':<15} | {f'Last {y_field}':<15}")
-                print("-" * 80)
+                _safe_print(f"📊 시리즈 수: {len(series_items)}개 (limit: {limit})")
+                _safe_print("-" * 80)
+                _safe_print(f"{'Series':<12} | {'Points':<8} | {f'First {y_field}':<15} | {f'Last {y_field}':<15}")
+                _safe_print("-" * 80)
                 
                 for symbol, rows in series_items:
                     if isinstance(rows, list) and len(rows) > 0:
                         first_val = rows[0].get(y_field, 0)
                         last_val = rows[-1].get(y_field, 0)
-                        print(f"{symbol:<12} | {len(rows):<8} | {self._format_value(first_val):<15} | {self._format_value(last_val):<15}")
+                        _safe_print(f"{symbol:<12} | {len(rows):<8} | {self._format_value(first_val):<15} | {self._format_value(last_val):<15}")
                 
                 # 시그널 마커 표시
                 if signal_field:
                     signals = self._extract_signals(data, x_field, signal_field, side_field, series_key)
                     if signals:
-                        print(f"\n🎯 시그널 ({len(signals)}개):")
+                        _safe_print(f"\n🎯 시그널 ({len(signals)}개):")
                         for sig in signals[:15]:  # 최대 15개만 표시
                             series_info = f" [{sig.get('series', '')}]" if sig.get('series') else ""
-                            print(f"  {sig['marker']} {sig['x']}{series_info} ({sig['signal']}/{sig['side']})")
+                            _safe_print(f"  {sig['marker']} {sig['x']}{series_info} ({sig['signal']}/{sig['side']})")
                         if len(signals) > 15:
-                            print(f"  ... 외 {len(signals) - 15}개")
+                            _safe_print(f"  ... 외 {len(signals) - 15}개")
             
-            print("=" * 80 + "\n")
+            _safe_print("=" * 80 + "\n")
             output_data["data"] = data
             output_data["x_field"] = x_field
             output_data["y_field"] = y_field
@@ -8616,16 +8655,16 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 context.log("error", f"candlestick 차트에 date_field, open_field, high_field, low_field, close_field 필수", node_id)
                 return {"rendered": False, "error": "OHLC 필드 필수"}
             
-            print(f"\n📊 {title or 'Candlestick Chart'} [{now}]")
-            print("=" * 80)
+            _safe_print(f"\n📊 {title or 'Candlestick Chart'} [{now}]")
+            _safe_print("=" * 80)
             
             if isinstance(data, list) and len(data) > 0:
                 first = data[0]
                 last = data[-1]
-                print(f"📊 캔들 수: {len(data)}개")
-                print(f"📅 기간: {first.get(date_field)} ~ {last.get(date_field)}")
-                print(f"💵 시작 종가: {self._format_value(first.get(close_field))}")
-                print(f"💵 최종 종가: {self._format_value(last.get(close_field))}")
+                _safe_print(f"📊 캔들 수: {len(data)}개")
+                _safe_print(f"📅 기간: {first.get(date_field)} ~ {last.get(date_field)}")
+                _safe_print(f"💵 시작 종가: {self._format_value(first.get(close_field))}")
+                _safe_print(f"💵 최종 종가: {self._format_value(last.get(close_field))}")
                 
                 # 수익률
                 start_price = first.get(close_field, 0)
@@ -8634,21 +8673,21 @@ class DisplayNodeExecutor(NodeExecutorBase):
                     pct_change = (end_price - start_price) / start_price * 100
                     sign = "+" if pct_change >= 0 else ""
                     color = "\033[92m" if pct_change >= 0 else "\033[91m"
-                    print(f"📈 변동률: {color}{sign}{pct_change:.2f}%\033[0m")
+                    _safe_print(f"📈 변동률: {color}{sign}{pct_change:.2f}%\033[0m")
                 
                 # 시그널 마커 표시
                 if signal_field:
                     signals = self._extract_signals(data, date_field, signal_field, side_field)
                     if signals:
-                        print(f"\n🎯 시그널 ({len(signals)}개):")
+                        _safe_print(f"\n🎯 시그널 ({len(signals)}개):")
                         for sig in signals[:10]:  # 최대 10개만 표시
-                            print(f"  {sig['marker']} {sig['x']} ({sig['signal']}/{sig['side']})")
+                            _safe_print(f"  {sig['marker']} {sig['x']} ({sig['signal']}/{sig['side']})")
                         if len(signals) > 10:
-                            print(f"  ... 외 {len(signals) - 10}개")
+                            _safe_print(f"  ... 외 {len(signals) - 10}개")
             else:
-                print("(데이터 없음)")
+                _safe_print("(데이터 없음)")
             
-            print("=" * 80 + "\n")
+            _safe_print("=" * 80 + "\n")
             output_data["data"] = data
             output_data["date_field"] = date_field
             output_data["open_field"] = open_field
@@ -8671,23 +8710,23 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 context.log("error", f"bar 차트에 x_field, y_field 필수", node_id)
                 return {"rendered": False, "error": "x_field, y_field 필수"}
             
-            print(f"\n📊 {title or 'Bar Chart'} [{now}]")
-            print("=" * 60)
+            _safe_print(f"\n📊 {title or 'Bar Chart'} [{now}]")
+            _safe_print("=" * 60)
             
             if isinstance(data, list) and len(data) > 0:
-                print(f"{'Bar':<20} | {y_field}")
-                print("-" * 60)
+                _safe_print(f"{'Bar':<20} | {y_field}")
+                _safe_print("-" * 60)
                 for item in data[:20]:
                     x_val = item.get(x_field, "")
                     y_val = item.get(y_field, 0)
-                    print(f"{str(x_val):<20} | {self._format_value(y_val)}")
+                    _safe_print(f"{str(x_val):<20} | {self._format_value(y_val)}")
             elif isinstance(data, dict):
-                print(f"{'Key':<20} | {'Value'}")
-                print("-" * 60)
+                _safe_print(f"{'Key':<20} | {'Value'}")
+                _safe_print("-" * 60)
                 for k, v in list(data.items())[:20]:
-                    print(f"{str(k):<20} | {self._format_value(v)}")
+                    _safe_print(f"{str(k):<20} | {self._format_value(v)}")
             
-            print("=" * 60 + "\n")
+            _safe_print("=" * 60 + "\n")
             output_data["data"] = data
             output_data["x_field"] = x_field
             output_data["y_field"] = y_field
@@ -18203,7 +18242,7 @@ class WorkflowJob:
         except asyncio.CancelledError:
             self.status = "cancelled"
             logger.info(f"Job {self.job_id} cancelled")
-            print(f"⚠️ Job {self.job_id} cancelled")
+            _safe_print(f"[CANCELLED] Job {self.job_id} cancelled")
             await self.context.notify_job_state("cancelled", self.stats)
         except Exception as e:
             self.status = "failed"
@@ -18220,9 +18259,17 @@ class WorkflowJob:
                 }
             self.context.log("error", error_msg)
             logger.exception(f"Job {self.job_id} failed: {e}")
-            print(f"❌ Job {self.job_id} failed: {e}")
+            # ASCII-only marker: this is the failure-reporting path, so it must
+            # survive a console that could not render the text that failed.
+            _safe_print(f"[FAILED] Job {self.job_id} failed: {e}")
             import traceback
-            traceback.print_exc()
+            try:
+                # print_exc renders the offending source line, which may itself
+                # hold the character that could not be encoded — so it can raise
+                # the very error it is reporting.
+                traceback.print_exc()
+            except Exception:
+                logger.debug("traceback output dropped", exc_info=True)
             await self.context.notify_job_state("failed", self.stats)
 
             # WORKFLOW_FAILED notification
@@ -18296,7 +18343,7 @@ class WorkflowJob:
             skip_nodes: 복구 모드에서 이미 완료된 노드 ID 집합 (스킵)
         """
         skip_nodes = skip_nodes or set()
-        print(f"🔄 Executing main flow: {self.workflow.execution_order}")
+        _safe_print(f"🔄 Executing main flow: {self.workflow.execution_order}")
 
         # === Item-based execution setup ===
         # Find Split/Aggregate pairs and their branch nodes
@@ -18336,7 +18383,7 @@ class WorkflowJob:
 
             # === Checkpoint restore: 이미 완료된 노드 스킵 ===
             if node_id in skip_nodes:
-                print(f"  ⏭ Skipping restored node: {node_id} ({node.node_type})")
+                _safe_print(f"  ⏭ Skipping restored node: {node_id} ({node.node_type})")
                 self._completed_node_ids.add(node_id)
                 await self.context.notify_node_state(
                     node_id=node_id,
@@ -18347,7 +18394,7 @@ class WorkflowJob:
 
             # === Item-based execution: Skip branch nodes (handled by SplitNode) ===
             if node_id in branch_nodes and node.node_type not in ("SplitNode", "AggregateNode"):
-                print(f"  ⏭ Skipping branch node: {node_id} (handled by SplitNode)")
+                _safe_print(f"  ⏭ Skipping branch node: {node_id} (handled by SplitNode)")
                 continue
 
             # === Item-based execution: Handle SplitNode specially ===
@@ -18358,12 +18405,12 @@ class WorkflowJob:
 
             # === Item-based execution: Skip AggregateNode (already executed by SplitNode) ===
             if node.node_type == "AggregateNode" and node_id in split_aggregate_pairs.values():
-                print(f"  ⏭ Skipping AggregateNode: {node_id} (already executed by SplitNode)")
+                _safe_print(f"  ⏭ Skipping AggregateNode: {node_id} (already executed by SplitNode)")
                 continue
 
             # === IfNode: 비활성 브랜치 스킵 ===
             if node_id in if_skipped_nodes:
-                print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
+                _safe_print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
@@ -18371,7 +18418,7 @@ class WorkflowJob:
                 )
                 continue
 
-            print(f"  ▶ Executing node: {node_id} ({node.node_type})")
+            _safe_print(f"  ▶ Executing node: {node_id} ({node.node_type})")
             
             # 🆕 노드 실행 시작 알림
             start_time = datetime.utcnow()
@@ -18542,7 +18589,7 @@ class WorkflowJob:
                     new_skips = self._compute_if_skip_nodes(node_id, taken)
                     if_skipped_nodes.update(new_skips)
                     if new_skips:
-                        print(f"  🔀 IfNode {node_id}: branch={taken}, skipping {new_skips}")
+                        _safe_print(f"  🔀 IfNode {node_id}: branch={taken}, skipping {new_skips}")
 
                 # deep_validate: a node that *returns* a sole-`error` dict (rather
                 # than raising) would otherwise be stored as a COMPLETED output and
@@ -18843,7 +18890,7 @@ class WorkflowJob:
         all_results = []
         total = len(items)
 
-        print(f"  🔄 Auto-iterate: {node_id} ({node.node_type}) - {total} items")
+        _safe_print(f"  🔄 Auto-iterate: {node_id} ({node.node_type}) - {total} items")
 
         for idx, current_item in enumerate(items):
             # === item, index, total을 ExecutionContext에 설정 ===
@@ -18854,7 +18901,7 @@ class WorkflowJob:
 
             # 진행 상황 로그
             item_label = current_item.get("symbol", str(current_item)) if isinstance(current_item, dict) else str(current_item)
-            print(f"    [{idx+1}/{total}] Processing: {item_label}")
+            _safe_print(f"    [{idx+1}/{total}] Processing: {item_label}")
             self.context.log("debug", f"Auto-iterate [{idx+1}/{total}]: {item_label}", node_id)
 
             # A-3: per-item spacing for order / external-API nodes
@@ -18887,7 +18934,7 @@ class WorkflowJob:
 
         # 결과 병합: 배열 필드는 병합, 단일 필드는 마지막 값
         merged = self._merge_iterate_results(all_results)
-        print(f"  ✅ Auto-iterate complete: {len(all_results)} results merged")
+        _safe_print(f"  ✅ Auto-iterate complete: {len(all_results)} results merged")
 
         return merged
 
@@ -19081,7 +19128,7 @@ class WorkflowJob:
         """
         from programgarden_core.bases.listener import NodeState
 
-        print(f"  🔀 Executing SplitNode branch: {split_id}")
+        _safe_print(f"  🔀 Executing SplitNode branch: {split_id}")
 
         # Get paired AggregateNode
         aggregate_id = split_aggregate_pairs.get(split_id)
@@ -19170,7 +19217,7 @@ class WorkflowJob:
         results_by_index: Dict[int, Any] = {}
         errors: List[str] = []
 
-        print(f"    📦 SplitNode: {total} items, parallel={parallel}, delay_ms={delay_ms}")
+        _safe_print(f"    📦 SplitNode: {total} items, parallel={parallel}, delay_ms={delay_ms}")
 
         # === Execute branch for each item ===
         if parallel:
@@ -19417,7 +19464,7 @@ class WorkflowJob:
         if not node:
             return
 
-        print(f"  🔗 Executing AggregateNode: {aggregate_id}")
+        _safe_print(f"  🔗 Executing AggregateNode: {aggregate_id}")
 
         start_time = datetime.utcnow()
         await self.context.notify_node_state(
@@ -19884,24 +19931,24 @@ class WorkflowJob:
         Follows topological order to ensure proper data flow.
         """
         from datetime import datetime
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 실시간 업데이트 이벤트 수신: trigger_nodes={event.trigger_nodes}")
+        _safe_print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 실시간 업데이트 이벤트 수신: trigger_nodes={event.trigger_nodes}")
         
         # trigger_nodes가 비어있으면 source_node_id에서 연결된 하위 노드 찾기
         trigger_nodes = event.trigger_nodes
         if not trigger_nodes and event.source_node_id:
             trigger_nodes = self._find_trigger_nodes(event.source_node_id)
-            print(f"  → 자동 탐색된 trigger_nodes: {trigger_nodes}")
+            _safe_print(f"  → 자동 탐색된 trigger_nodes: {trigger_nodes}")
         
         if not trigger_nodes:
-            print(f"  ⚠️ 트리거할 노드 없음, 스킵")
+            _safe_print(f"  ⚠️ 트리거할 노드 없음, 스킵")
             return
         
         logger.debug(f"Realtime update from {event.source_node_id}, triggering: {trigger_nodes}")
-        print(f"  → {event.source_node_id}에서 트리거: {trigger_nodes}")
+        _safe_print(f"  → {event.source_node_id}에서 트리거: {trigger_nodes}")
         
         # 🆕 트리거된 노드들 + 하위 노드들을 모두 찾아서 실행 순서대로 정렬
         nodes_to_execute = self._find_downstream_nodes(trigger_nodes)
-        print(f"  → 실행할 노드 체인: {nodes_to_execute}")
+        _safe_print(f"  → 실행할 노드 체인: {nodes_to_execute}")
 
         # Split→Aggregate 분기는 노드를 하나씩 재실행해서는 절대 채워지지 않는다.
         # AggregateNode 의 유일한 입력인 node_state["_collected_items"] 를 쓰는 곳은
@@ -19918,7 +19965,7 @@ class WorkflowJob:
             split_node = self.workflow.nodes.get(split_id)
             if not split_node:
                 continue
-            print(f"    🔀 Re-driving split branch: {split_id} → {aggregate_id}")
+            _safe_print(f"    🔀 Re-driving split branch: {split_id} → {aggregate_id}")
             await self._execute_split_branch(split_id, split_node, split_pairs, branch)
             branch_driven |= branch | {split_id, aggregate_id}
 
@@ -19940,7 +19987,7 @@ class WorkflowJob:
 
             # Re-execute the triggered node
             try:
-                print(f"    ▶ Re-executing: {node_id} ({node.node_type})")
+                _safe_print(f"    ▶ Re-executing: {node_id} ({node.node_type})")
                 
                 # 소스 노드 ID를 config에 추가하여 최신 데이터 참조 가능하게
                 config_with_source = dict(node.config)
