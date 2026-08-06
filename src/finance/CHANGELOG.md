@@ -1,3 +1,14 @@
+## [1.6.16] - 2026-08-06
+### Fixed
+- **모의선물 계좌 추적기 예수금·잔고 오분류 (L11)** — 해외선물 모의계좌 추적기
+  (`ls/overseas_futureoption/extension/tracker.py`)가 잔고/포지션/미체결 응답을
+  `rsp_cd` 로만 에러 판정해, 모의계좌가 정상 데이터를 비표준 응답코드(예: 00136)와
+  함께 돌려주면 조회 실패로 오분류했다. **실데이터(block2) 존재를 우선** 보고,
+  데이터가 없을 때만 응답코드로 에러를 판정하도록 재구성.
+- **TC1 실시간 구독 시 access token 로그 유출 (보안)** —
+  `ls/overseas_futureoption/real/__init__.py` 가 구독 요청 전문을 access token
+  포함 그대로 `print` 하던 것을 token 제외 + `logger.debug` 로 전환.
+
 ## [1.6.15] - 2026-07-10
 ### Fixed
 - **README 해외주식 계좌 TR 라벨 정정 (docs-only)** — `README.md` "해외 주식 › 계좌"

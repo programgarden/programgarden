@@ -1,0 +1,498 @@
+{
+  "id": "nasdaq-trend-turnover-trailing",
+  "name": "나스닥 추세 + 거래대금 상위 매수 + 트레일링스탑 매도",
+  "edges": [
+    {
+      "to": "schedule",
+      "from": "start"
+    },
+    {
+      "to": "hours",
+      "from": "schedule"
+    },
+    {
+      "to": "broker",
+      "from": "hours"
+    },
+    {
+      "to": "account",
+      "from": "broker"
+    },
+    {
+      "to": "qqq_hist",
+      "from": "broker"
+    },
+    {
+      "to": "trend_check",
+      "from": "qqq_hist"
+    },
+    {
+      "to": "trend_gate",
+      "from": "trend_check"
+    },
+    {
+      "to": "nasdaq_universe",
+      "from": "trend_gate",
+      "from_port": "true"
+    },
+    {
+      "to": "if_has_pos",
+      "from": "trend_gate",
+      "from_port": "false"
+    },
+    {
+      "to": "screener",
+      "from": "nasdaq_universe"
+    },
+    {
+      "to": "market_data_batch",
+      "from": "screener"
+    },
+    {
+      "to": "price_filter",
+      "from": "market_data_batch"
+    },
+    {
+      "to": "price_filter",
+      "from": "account"
+    },
+    {
+      "to": "buy_gate",
+      "from": "price_filter"
+    },
+    {
+      "to": "market_1",
+      "from": "buy_gate",
+      "from_port": "true"
+    },
+    {
+      "to": "market_2",
+      "from": "buy_gate",
+      "from_port": "true"
+    },
+    {
+      "to": "market_3",
+      "from": "buy_gate",
+      "from_port": "true"
+    },
+    {
+      "to": "if_has_pos",
+      "from": "buy_gate",
+      "from_port": "false"
+    },
+    {
+      "to": "sizing_1",
+      "from": "market_1"
+    },
+    {
+      "to": "order_1",
+      "from": "sizing_1"
+    },
+    {
+      "to": "if_has_pos",
+      "from": "order_1"
+    },
+    {
+      "to": "sizing_2",
+      "from": "market_2"
+    },
+    {
+      "to": "order_2",
+      "from": "sizing_2"
+    },
+    {
+      "to": "if_has_pos",
+      "from": "order_2"
+    },
+    {
+      "to": "sizing_3",
+      "from": "market_3"
+    },
+    {
+      "to": "order_3",
+      "from": "sizing_3"
+    },
+    {
+      "to": "if_has_pos",
+      "from": "order_3"
+    },
+    {
+      "to": "trail_cond",
+      "from": "if_has_pos",
+      "from_port": "true"
+    },
+    {
+      "to": "agg_sell",
+      "from": "if_has_pos",
+      "from_port": "false"
+    },
+    {
+      "to": "sell_pick",
+      "from": "trail_cond"
+    },
+    {
+      "to": "sell_order",
+      "from": "sell_pick"
+    },
+    {
+      "to": "agg_sell",
+      "from": "sell_order"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "StartNode"
+    },
+    {
+      "id": "schedule",
+      "cron": "*/5 * * * 1-5",
+      "type": "ScheduleNode",
+      "enabled": true,
+      "timezone": "Asia/Seoul",
+      "max_duration_hours": 720
+    },
+    {
+      "id": "hours",
+      "end": "16:00",
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+      ],
+      "type": "TradingHoursFilterNode",
+      "start": "09:30",
+      "timezone": "America/New_York"
+    },
+    {
+      "id": "broker",
+      "type": "OverseasStockBrokerNode",
+      "credential_id": "broker_cred"
+    },
+    {
+      "id": "account",
+      "type": "OverseasStockAccountNode"
+    },
+    {
+      "id": "nasdaq_universe",
+      "type": "OverseasStockSymbolQueryNode",
+      "country": "US",
+      "max_results": 500,
+      "stock_exchange": "82"
+    },
+    {
+      "id": "qqq_hist",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": {
+        "symbol": "QQQ",
+        "exchange": "NASDAQ"
+      },
+      "end_date": "{{ date.today(format='yyyymmdd') }}",
+      "interval": "1d",
+      "start_date": "{{ date.ago(120, format='yyyymmdd') }}"
+    },
+    {
+      "id": "trend_check",
+      "code": "async def execute(data, params, context):\n    ts = data or []\n    if not ts:\n        return {'any_trend': False, 'ma5': None, 'ma20': None, 'ma60': None}\n    closes = []\n    for row in ts:\n        c = row.get('close')\n        if c is not None:\n            closes.append(float(c))\n    if len(closes) < 60:\n        return {'any_trend': False, 'ma5': None, 'ma20': None, 'ma60': None}\n    ma5 = sum(closes[-5:]) / 5.0\n    ma20 = sum(closes[-20:]) / 20.0\n    ma60 = sum(closes[-60:]) / 60.0\n    any_trend = ma20 > ma60 and ma5 > ma20\n    return {'any_trend': any_trend, 'ma5': round(ma5, 2), 'ma20': round(ma20, 2), 'ma60': round(ma60, 2)}",
+      "data": "{{ nodes.qqq_hist.values }}",
+      "type": "CodeNode",
+      "outputs": [
+        {
+          "name": "any_trend",
+          "type": "boolean"
+        },
+        {
+          "name": "ma5",
+          "type": "number"
+        },
+        {
+          "name": "ma20",
+          "type": "number"
+        },
+        {
+          "name": "ma60",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "trend_gate",
+      "left": "{{ nodes.trend_check.any_trend }}",
+      "type": "IfNode",
+      "right": true,
+      "operator": "=="
+    },
+    {
+      "id": "screener",
+      "type": "ScreenerNode",
+      "market": "overseas_stock",
+      "symbols": "{{ nodes.nasdaq_universe.symbols }}",
+      "data_source": "ls",
+      "max_results": 50
+    },
+    {
+      "id": "market_data_batch",
+      "type": "OverseasStockMarketDataNode",
+      "fields": [
+        "price"
+      ],
+      "symbols": "{{ nodes.screener.symbols }}"
+    },
+    {
+      "id": "price_filter",
+      "code": "async def execute(data, params, context):\n    balance = params.get('balance', 0)\n    market_data = data or []\n    if not market_data or balance <= 0:\n        return {'has_buy': False, 'top3': [], 'reason': 'no_data_or_balance'}\n    candidates = []\n    for item in market_data:\n        price = float(item.get('price', 0) or 0)\n        symbol = item.get('symbol', '')\n        exchange = item.get('exchange', '')\n        if price <= 0 or not symbol:\n            continue\n        if price > balance:\n            continue\n        volume = float(item.get('volume', 0) or 0)\n        trade_amount = price * volume\n        candidates.append({'symbol': symbol, 'exchange': exchange, 'price': price, 'trade_amount': trade_amount})\n    candidates.sort(key=lambda x: x['trade_amount'], reverse=True)\n    top3 = candidates[:3]\n    return {'has_buy': len(top3) > 0, 'top3': top3, 'reason': 'ok' if top3 else 'no_affordable'}",
+      "data": "{{ nodes.market_data_batch.values }}",
+      "type": "CodeNode",
+      "params": {
+        "balance": "{{ nodes.account.balance.orderable_amount }}"
+      },
+      "outputs": [
+        {
+          "name": "has_buy",
+          "type": "boolean"
+        },
+        {
+          "name": "top3",
+          "type": "array"
+        },
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "buy_gate",
+      "left": "{{ nodes.price_filter.has_buy }}",
+      "type": "IfNode",
+      "right": true,
+      "operator": "=="
+    },
+    {
+      "id": "market_1",
+      "type": "OverseasStockMarketDataNode",
+      "fields": [
+        "price"
+      ],
+      "symbols": [
+        {
+          "symbol": "{{ nodes.price_filter.top3[0].symbol }}",
+          "exchange": "{{ nodes.price_filter.top3[0].exchange }}"
+        }
+      ],
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "sizing_1",
+      "type": "PositionSizingNode",
+      "method": "fixed_quantity",
+      "symbol": "{{ nodes.price_filter.top3[0].symbol }}",
+      "balance": "{{ nodes.account.balance }}",
+      "symbols": [
+        {
+          "symbol": "{{ nodes.price_filter.top3[0].symbol }}",
+          "exchange": "{{ nodes.price_filter.top3[0].exchange }}"
+        }
+      ],
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "market_data": "{{ nodes.market_1.values }}",
+      "fixed_quantity": 1
+    },
+    {
+      "id": "order_1",
+      "side": "buy",
+      "type": "OverseasStockNewOrderNode",
+      "order": "{{ nodes.sizing_1[\"orders\"][0] }}",
+      "order_type": "limit",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "market_2",
+      "type": "OverseasStockMarketDataNode",
+      "fields": [
+        "price"
+      ],
+      "symbols": [
+        {
+          "symbol": "{{ nodes.price_filter.top3[1].symbol }}",
+          "exchange": "{{ nodes.price_filter.top3[1].exchange }}"
+        }
+      ],
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "sizing_2",
+      "type": "PositionSizingNode",
+      "method": "fixed_quantity",
+      "symbol": "{{ nodes.price_filter.top3[1].symbol }}",
+      "balance": "{{ nodes.account.balance }}",
+      "symbols": [
+        {
+          "symbol": "{{ nodes.price_filter.top3[1].symbol }}",
+          "exchange": "{{ nodes.price_filter.top3[1].exchange }}"
+        }
+      ],
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "market_data": "{{ nodes.market_2.values }}",
+      "fixed_quantity": 1
+    },
+    {
+      "id": "order_2",
+      "side": "buy",
+      "type": "OverseasStockNewOrderNode",
+      "order": "{{ nodes.sizing_2[\"orders\"][0] }}",
+      "order_type": "limit",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "market_3",
+      "type": "OverseasStockMarketDataNode",
+      "fields": [
+        "price"
+      ],
+      "symbols": [
+        {
+          "symbol": "{{ nodes.price_filter.top3[2].symbol }}",
+          "exchange": "{{ nodes.price_filter.top3[2].exchange }}"
+        }
+      ],
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "sizing_3",
+      "type": "PositionSizingNode",
+      "method": "fixed_quantity",
+      "symbol": "{{ nodes.price_filter.top3[2].symbol }}",
+      "balance": "{{ nodes.account.balance }}",
+      "symbols": [
+        {
+          "symbol": "{{ nodes.price_filter.top3[2].symbol }}",
+          "exchange": "{{ nodes.price_filter.top3[2].exchange }}"
+        }
+      ],
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      },
+      "market_data": "{{ nodes.market_3.values }}",
+      "fixed_quantity": 1
+    },
+    {
+      "id": "order_3",
+      "side": "buy",
+      "type": "OverseasStockNewOrderNode",
+      "order": "{{ nodes.sizing_3[\"orders\"][0] }}",
+      "order_type": "limit",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "if_has_pos",
+      "left": "{{ nodes.account.positions.count() }}",
+      "type": "IfNode",
+      "right": 0,
+      "operator": ">"
+    },
+    {
+      "id": "trail_cond",
+      "type": "ConditionNode",
+      "items": {
+        "from": "{{ nodes.account.positions }}",
+        "extract": {
+          "date": "{{ date.today(format='yyyymmdd') }}",
+          "close": "{{ row.current_price }}",
+          "symbol": "{{ row.symbol }}",
+          "exchange": "{{ row.exchange }}"
+        }
+      },
+      "fields": {
+        "trail_percent": 5.0
+      },
+      "plugin": "TrailingStop"
+    },
+    {
+      "id": "sell_pick",
+      "type": "SymbolFilterNode",
+      "input_a": "{{ nodes.account.positions }}",
+      "input_b": "{{ nodes.trail_cond.passed_symbols }}",
+      "operation": "intersection"
+    },
+    {
+      "id": "sell_order",
+      "side": "sell",
+      "type": "OverseasStockNewOrderNode",
+      "order": "{{ item }}",
+      "order_type": "market",
+      "resilience": {
+        "fallback": {
+          "mode": "skip"
+        }
+      }
+    },
+    {
+      "id": "agg_sell",
+      "data": {
+        "result": "{{ nodes.sell_order.result }}",
+        "triggered": "{{ nodes.trail_cond.passed_symbols }}"
+      },
+      "type": "SummaryDisplayNode",
+      "title": "매도 완료"
+    }
+  ],
+  "version": "1.0.0",
+  "credentials": [
+    {
+      "data": [
+        {
+          "key": "appkey",
+          "type": "password",
+          "label": "App Key",
+          "value": ""
+        },
+        {
+          "key": "appsecret",
+          "type": "password",
+          "label": "App Secret",
+          "value": ""
+        }
+      ],
+      "type": "broker_ls_overseas_stock",
+      "credential_id": "broker_cred"
+    }
+  ],
+  "description": "나스닥 지수(QQQ) 중기(MA20>MA60)·단기(MA5>MA20) 추세가 모두 양호할 때만, LS 미국주식 마스터에서 거래대금(가격x거래량) 상위 3종목을 주문가능금액으로 살 수 있는 가격대로 골라 종목당 1주 지정가 매수. 보유 포지션은 고점 대비 -5% 트레일링스탑으로 시장가 청산. 미국 정규장(09:30-16:00 ET) 5분 주기 폴링."
+}

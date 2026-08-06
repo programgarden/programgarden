@@ -1,5 +1,27 @@
 ## [Unreleased]
 
+## [1.29.4] - 2026-08-06
+> DEF-08/09 (#28) + 세션5 추적기 정리 (#29). 콘솔 인코딩 실패 내성 + CodeNode
+> 다중입력 지침 + `stop()` 추적기 누수 보완.
+
+### Fixed
+- **로그 출력 실패가 워크플로우를 죽이지 않게 (DEF-08)** — cp949(한국어 Windows)
+  콘솔에서 이모지 렌더 실패(UnicodeEncodeError)가 `_execute_main_flow` 시작을
+  막고, except 블록 안의 print 까지 같이 터져 `notify_job_state("failed")` 가
+  실행되지 않는 무징후 실패를 만들었다. executor.py 의 print 83개 전부를
+  `_safe_print`(인코딩 실패 시 `errors="replace"` 재렌더 → 그마저 실패하면 drop)
+  로 통과시키고, 예외 핸들러 2곳은 ASCII 마커([FAILED]/[CANCELLED])로 고정.
+- **`WorkflowJob.stop()` 추적기 미정리 (L10 보완)** — `stop()` 이
+  `cleanup_persistent_nodes`/`cleanup_flow_end_nodes` 를 호출하지 않아 계좌
+  추적기 폴링이 잡 정지 후에도 살아남던 누수를 수정. (실시간 틱-구동 잡의 잔여
+  누수는 별도 추적 — L10 후속.)
+
+### Changed
+- **CodeNode 다중입력 지침 (DEF-09)** — "CodeNode 는 data 입력 하나만 받는다" /
+  "`params.get()` 금지" 라는 **없는 제약**을 AI 가 선언하던 문제. `_node_guide`
+  input_handling 을 단일/다중 upstream 으로 분리 서술, 업스트림 2개 예제 추가,
+  anti_patterns 2건 신설, i18n en/ko description 갱신.
+
 ## [1.29.3] - 2026-07-15
 > 라이브 검증된 주문 실행 관측성 수정(DEF-21/26/27). 국내주식 실체결(팬오션 1주) +
 > HKEX 선물 모의로 검증된 뒤 #27 로 머지됨.
