@@ -20167,7 +20167,17 @@ class WorkflowJob:
                     await self._task
                 except asyncio.CancelledError:
                     pass
-        
+
+        # Cleanup persistent trackers / flow-end nodes / broker·JIF 구독.
+        # 여태 stop() 은 이 정리를 빼먹어(cancel() 에만 있었다) 잡이 stop 으로 끝나면
+        # 계좌 추적기의 주기 폴링 루프가 취소되지 않고 무한히 LS 를 계속 조회했다(레이트
+        # 리밋·불필요 호출 유발). cleanup_* 는 끝에서 딕셔너리를 비우므로 _run 의 정상완료
+        # 경로가 먼저 정리했더라도 여기서 다시 불려도 빈 순회 = no-op(멱등).
+        await self._cleanup_broker_fill_subscriptions()
+        await self._cleanup_jif_subscriptions()
+        await self.context.cleanup_persistent_nodes()
+        await self.context.cleanup_flow_end_nodes()
+
         # Cleanup RiskTracker flush
         if self.context.risk_tracker:
             try:

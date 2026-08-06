@@ -27,7 +27,12 @@ from .symbol_spec_manager import SymbolSpecManager, SymbolSpec
 from .subscription_manager import SubscriptionManager
 
 # LS증권 API 응답 코드
-SUCCESS_CODES = {"00000", "00001"}  # 정상 응답
+# 이 집합은 "확실히 아는" 정상 코드만 담는다 — LS 가 붙이는 코드 상수에 전부 의존하지
+# 않는다(예: 모의투자는 실데이터를 담고도 00136 "모의투자 조회가 완료되었습니다" 로
+# 응답하며, 이 값이 항상 온다는 보장이 없다). 따라서 아래 각 _fetch_* 는 rsp_cd 로
+# 에러를 단정하기 전에 **실제 데이터(block2) 존재 여부를 먼저 본다** — 데이터가 오면
+# 코드와 무관하게 성공으로 처리하고, 데이터가 없을 때에 한해 코드로 에러를 판정한다.
+SUCCESS_CODES = {"00000", "00001"}  # 정상 응답 (확정 코드만)
 
 # "데이터 없음" 판단 패턴 (rsp_msg에서 확인)
 NO_DATA_PATTERNS = ["없습니다", "없음", "no data", "not found", "조회내역"]
@@ -209,8 +214,9 @@ class FuturesAccountTracker:
                 self._last_errors.pop("positions", None)
                 return
             
-            # 성공이 아닌 다른 응답 → 에러
-            if rsp_cd and rsp_cd not in SUCCESS_CODES:
+            # 코드가 성공이 아니어도 실데이터(block2)가 오면 성공으로 간주한다 — LS 코드
+            # 상수(예: 모의투자 00136)에 의존하지 않고, 데이터가 없을 때에만 에러로 판정.
+            if rsp_cd and rsp_cd not in SUCCESS_CODES and not (hasattr(resp, 'block2') and resp.block2):
                 error_msg = f"[포지션 조회 실패] rsp_cd={rsp_cd}, msg={rsp_msg}"
                 self._last_errors["positions"] = error_msg
                 logger.error(f"[_fetch_positions] {error_msg}")
@@ -329,8 +335,9 @@ class FuturesAccountTracker:
                 self._last_errors.pop("balance", None)
                 return
             
-            # 성공이 아닌 다른 응답 → 에러
-            if rsp_cd and rsp_cd not in SUCCESS_CODES:
+            # 코드가 성공이 아니어도 실데이터(block2)가 오면 성공으로 간주한다 — LS 코드
+            # 상수(예: 모의투자 00136)에 의존하지 않고, 데이터가 없을 때에만 에러로 판정.
+            if rsp_cd and rsp_cd not in SUCCESS_CODES and not (hasattr(resp, 'block2') and resp.block2):
                 error_msg = f"[예수금 조회 실패] rsp_cd={rsp_cd}, msg={rsp_msg}"
                 self._last_errors["balance"] = error_msg
                 logger.error(f"[_fetch_balance] {error_msg}")
@@ -427,8 +434,9 @@ class FuturesAccountTracker:
                 self._last_errors.pop("open_orders", None)
                 return
             
-            # 성공이 아닌 다른 응답 → 에러
-            if rsp_cd and rsp_cd not in SUCCESS_CODES:
+            # 코드가 성공이 아니어도 실데이터(block2)가 오면 성공으로 간주한다 — LS 코드
+            # 상수(예: 모의투자 00136)에 의존하지 않고, 데이터가 없을 때에만 에러로 판정.
+            if rsp_cd and rsp_cd not in SUCCESS_CODES and not (hasattr(resp, 'block2') and resp.block2):
                 error_msg = f"[미체결 조회 실패] rsp_cd={rsp_cd}, msg={rsp_msg}"
                 self._last_errors["open_orders"] = error_msg
                 logger.error(f"[_fetch_open_orders] {error_msg}")

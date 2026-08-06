@@ -68,6 +68,10 @@ from .TC3.blocks import (
 
 from programgarden_core.korea_alias import require_korean_alias
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class Real(RealRequestAbstract, BaseReal):
     """
@@ -127,7 +131,10 @@ class Real(RealRequestAbstract, BaseReal):
                 )
             )
             req_dict = {"header": req.header.model_dump(), "body": req.body.model_dump()}
-            print(f"[해외선물 Real] TC1/TC2/TC3 주문 실시간 구독 요청: {req_dict}")
+            logger.debug(
+                "[해외선물 Real] TC1/TC2/TC3 주문 실시간 구독 요청: tr_cd=%s tr_type=%s tr_key=%r",
+                req.body.tr_cd, req.header.tr_type, req.body.tr_key,
+            )
             asyncio.create_task(self._ws.send(json.dumps(req_dict)))
 
     @require_korean_alias
