@@ -20,7 +20,12 @@ ACCOUNT_TYPES = {
     "AccountNode", "OverseasStockAccountNode", "OverseasFuturesAccountNode",
 }
 
-roots = [Path(p) for p in sys.argv[1:]] or [Path("src/programgarden/examples/workflows")]
+# Default: the privatized corpus in the sibling programgarden_ai checkout
+# (the public repo stopped shipping examples 2026-08). Pass paths to override.
+_DEFAULT_CORPUS = (
+    Path(__file__).resolve().parents[2] / "programgarden_ai" / "knowledge_base" / "workflow_examples"
+)
+roots = [Path(p) for p in sys.argv[1:]] or [_DEFAULT_CORPUS]
 files = []
 for r in roots:
     files += sorted(r.rglob("*.json"))

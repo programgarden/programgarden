@@ -45,7 +45,18 @@ from programgarden import ProgramGarden  # noqa: E402
 from programgarden_core.bases.listener import BaseExecutionListener  # noqa: E402
 
 
-WORKFLOWS_DIR = project_root / "src" / "programgarden" / "examples" / "workflows"
+# The curated example corpus was privatized (2026-08-07): it now lives in the
+# programgarden_ai repo. Default assumes the monorepo sibling checkout; point
+# PG_EXAMPLES_DIR elsewhere when running standalone.
+WORKFLOWS_DIR = Path(
+    os.environ.get(
+        "PG_EXAMPLES_DIR",
+        project_root.parent / "programgarden_ai" / "knowledge_base" / "workflow_examples",
+    )
+)
+if not WORKFLOWS_DIR.is_dir():
+    print(f"SKIP: example corpus not found at {WORKFLOWS_DIR} (set PG_EXAMPLES_DIR)")
+    sys.exit(0)
 
 # 타임아웃 (초)
 TIMEOUT_SHORT = 30   # 단발 실행 (68, 69, 70, 72)

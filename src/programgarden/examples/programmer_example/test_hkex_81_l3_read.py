@@ -52,14 +52,21 @@ from programgarden import ProgramGarden  # noqa: E402
 from programgarden_core.bases.listener import BaseExecutionListener  # noqa: E402
 
 
+# The curated example corpus was privatized (2026-08-07): it now lives in the
+# programgarden_ai repo. Default assumes the monorepo sibling checkout; point
+# PG_EXAMPLES_DIR elsewhere when running standalone.
 WORKFLOW_PATH = (
-    project_root
-    / "src"
-    / "programgarden"
-    / "examples"
-    / "workflows"
+    Path(
+        os.environ.get(
+            "PG_EXAMPLES_DIR",
+            project_root.parent / "programgarden_ai" / "knowledge_base" / "workflow_examples",
+        )
+    )
     / "81-hkex-multi-symbol-rsi-bollinger.json"
 )
+if not WORKFLOW_PATH.exists():
+    print(f"SKIP: example corpus not found at {WORKFLOW_PATH.parent} (set PG_EXAMPLES_DIR)")
+    sys.exit(0)
 
 STRIP_NODE_IDS = {"buy_order", "telegram"}
 TIMEOUT_SEC = 90
