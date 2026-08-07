@@ -770,13 +770,14 @@ async def test_generic_node_invalid_config_lenient_in_dry_run():
 # correct examples.
 # ============================================================
 
-_EXAMPLES_DIR = (
-    Path(__file__).resolve().parent / ".." / "examples" / "workflows"
-).resolve()
+# Snapshots of two curated examples, frozen here when the example corpus was
+# privatized into programgarden_ai (2026-08-07). These tests exercise
+# deep_validate mechanics, not corpus health, so local copies are correct.
+_EXAMPLES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def _load_example(name: str) -> dict:
-    """Load an examples/workflows/<name>.json workflow definition."""
+    """Load a tests/fixtures/<name>.json workflow definition."""
     return json.loads((_EXAMPLES_DIR / f"{name}.json").read_text())
 
 

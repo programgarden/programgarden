@@ -55,9 +55,9 @@ src/
 ## 예제
 
 * **워크플로우(자동매매)**: [`src/programgarden/examples/`](src/programgarden/examples/)
-  * `workflows/` — 77개 실행 가능한 워크플로우 JSON + 동반 `.md` 문서
   * `dynamic_plugins/` — 커뮤니티 전략 플러그인 예시
   * `programmer_example/` — AI Agent · quant 통합 스크립트
+  * 워크플로우 JSON 예제 corpus 는 내부(private) repo 에서 관리됩니다 (2026-08 비공개 전환)
 * **LS증권 데이터 API**: [`src/finance/example/`](src/finance/example/)
   * 해외주식 · 해외선물 · 국내주식 TR 호출 샘플
 
@@ -126,9 +126,9 @@ workflow JSON that runs through `WorkflowExecutor`. Follow this context strictly
 ### Build a new workflow
 
 ```
-First read `CLAUDE.md` to learn the node / edge / expression rules, then study
-`src/programgarden/examples/workflows/01-account-stock-balance.json` plus one
-or two strategy workflows in the same directory.
+First read `CLAUDE.md` to learn the node / edge / expression rules. (The
+curated workflow-example corpus is maintained internally; study a workflow
+JSON you already have, or start from the node reference docs.)
 Then build the following workflow JSON:
 
 - Goal: buy at market for 5 NASDAQ tickers whose RSI is <= 30
@@ -181,8 +181,8 @@ keys in English only.
   `execute()`, `validate()`, dry-run behavior
 - `src/core/programgarden_core/bases/listener.py` — `ExecutionListener`
   callback contract
-- `src/programgarden/examples/workflows/` — 77 runnable workflow JSON files
-  (start with `01-account-stock-balance.json`)
+- Workflow JSON examples: the curated corpus is maintained internally
+  (privatized 2026-08); see `docs/structure.md` for the workflow format
 - `src/community/programgarden_community/plugins/rsi/__init__.py` — canonical
   plugin shape
 ````

@@ -15,7 +15,6 @@ Covers:
 from __future__ import annotations
 
 import copy
-import glob
 import json
 import os
 
@@ -35,9 +34,11 @@ from programgarden.semantic_rules import (
 
 pytestmark = pytest.mark.timeout(60)
 
-EXAMPLES_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "examples", "workflows"
-)
+# Snapshot fixture dir — the example corpus was privatized into programgarden_ai
+# (2026-08-07); corpus-wide semantic sweeps live there now
+# (tests/test_workflow_examples_corpus.py). These tests keep a frozen copy of
+# example 86 to exercise the R1 rule mechanics.
+FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
 
 def _codes(infos):
@@ -249,7 +250,7 @@ def pg():
 
 @pytest.fixture(scope="module")
 def ai_autotrade_def():
-    path = os.path.join(EXAMPLES_DIR, "86-ai-news-sentiment-auto-trade.json")
+    path = os.path.join(FIXTURES_DIR, "86-ai-news-sentiment-auto-trade.json")
     with open(path) as fh:
         return json.load(fh)
 
@@ -281,19 +282,5 @@ def test_deep_validate_strict_rejects_ai_to_order_probe(pg, ai_autotrade_def):
                    for e in list(rd.errors) + list(rd.warnings))
 
 
-# ---------------------------------------------------------------------------
-# 86-example corpus — false-reject 0 under strict
-# ---------------------------------------------------------------------------
-
-_EXAMPLE_FILES = sorted(glob.glob(os.path.join(EXAMPLES_DIR, "*.json")))
-
-
-@pytest.mark.parametrize("wf_path", _EXAMPLE_FILES,
-                         ids=[os.path.basename(p) for p in _EXAMPLE_FILES])
-def test_corpus_zero_strict_errors(wf_path):
-    """No shipped example produces an error-severity (blocking) semantic finding."""
-    with open(wf_path) as fh:
-        d = json.load(fh)
-    infos = analyze_workflow_semantics(d, STRICT_SEMANTIC_SEVERITIES)
-    blocking = [str(i.code) for i in infos if str(i.severity) == "error"]
-    assert blocking == [], f"{os.path.basename(wf_path)} false-rejected: {blocking}"
+# The corpus-wide "false-reject 0 under strict" sweep moved with the corpus to
+# programgarden_ai/tests/test_workflow_examples_corpus.py (2026-08-07).

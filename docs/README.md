@@ -102,5 +102,6 @@ flowchart LR
 - [워크플로우 구조 이해](structure.md) — 노드, 엣지, 인증의 개념
 - [전체 노드 레퍼런스](node_reference.md) — 74개 노드 상세 설명
 - **예제 코드 둘러보기**
-  - 워크플로우(자동매매): [`src/programgarden/examples/`](https://github.com/programgarden/programgarden/tree/main/src/programgarden/examples)
+  - 플러그인·프로그래머 예제: [`src/programgarden/examples/`](https://github.com/programgarden/programgarden/tree/main/src/programgarden/examples)
+    (워크플로우 JSON 예제 corpus 는 내부 repo 에서 관리 — 2026-08 비공개 전환)
   - LS증권 데이터 API: [`src/finance/example/`](https://github.com/programgarden/programgarden/tree/main/src/finance/example)

@@ -137,8 +137,10 @@ out = await runner.run(
 
 ## 10. 예제
 
-- `examples/workflows/87-code-node-momentum.json` — 커스텀 모멘텀 스코어 (선언 outputs).
-- `examples/workflows/88-code-node-symbol-passthrough.json` — 표준 심볼 배열 → 타입드 노드 패스스루.
+예제 corpus 는 내부 repo(`programgarden_ai/knowledge_base/workflow_examples/`)에서 관리됩니다 (2026-08 비공개 전환):
+
+- `87-code-node-momentum.json` — 커스텀 모멘텀 스코어 (선언 outputs).
+- `88-code-node-symbol-passthrough.json` — 표준 심볼 배열 → 타입드 노드 패스스루.
 
 ## 관련 문서
 

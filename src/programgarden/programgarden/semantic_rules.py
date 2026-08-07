@@ -7,8 +7,8 @@ workflows that are still *semantically* wrong or *unsafe* — they validate
 *executability*, never *intent* or *safety*.
 
 The four ground-truth anti-patterns (verified against the canonical example
-workflows shipped in ``programgarden/examples/workflows`` and the live node
-registry):
+corpus — maintained internally since the 2026-08 privatization — and the live
+node registry):
 
   * **R1 — order quantity bound to an AIAgent response.** An AIAgent
     sentiment/decision output wired straight into an order quantity risks a
