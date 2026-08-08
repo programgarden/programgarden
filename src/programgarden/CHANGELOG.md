@@ -1,5 +1,26 @@
 ## [Unreleased]
 
+## [1.30.0] - 2026-08-08
+> 챗봇 산출 워크플로우의 "겉으론 정상, 실제론 다르게 동작" 경로 차단 —
+> ⑭ ScheduleNode 5분 폴백 제거 + ⑰ 사이징 스키마 환각 차단 + unknown-key lint R5.
+> core 1.22.0 과 동반 릴리즈.
+
+### Added
+- **시맨틱 규칙 R5 `unknown_node_field`** — 노드 `get_field_schema ∪ model_fields ∪ 예약키`
+  밖의 config 키(`{mode, schedule}`·`size_type` 등)를 검출. opt-in(기본 off)이며 STRICT
+  프로파일에서 error → `validate_deep(semantic_rules="strict")`(챗봇 저장 경로)에서 하드블록.
+  미등록 노드 타입은 skip. `ErrorCode.UNKNOWN_NODE_FIELD`(core 1.22.0) 사용.
+
+### Changed
+- **executor: ScheduleNode `cron` 조용한 폴백 제거** — `config.get("cron", "*/5 * * * *")` 가
+  cron 부재를 5분 주기로 조용히 확정하던 것을 ValueError 명시 에러로 전환. 모델에 없던
+  `count` 키를 executor 만 읽던 이원화도 모델/스키마 편입으로 정리.
+- **executor: PositionSizing `method` 조용한 폴백 제거** — `evaluated.get("method",
+  "fixed_percent")` 가 `size_type` 같은 환각 키를 조용히 fixed_percent 로 확정하던 것을
+  미지정 시 명시 에러로 전환.
+- `value`/`values` 자동 언랩 직전 진단 훅(report-only) — 잘못된 바인딩 키를 리포트.
+- `programgarden-core = "^1.22.0"`.
+
 ## [1.29.4] - 2026-08-06
 > DEF-08/09 (#28) + 세션5 추적기 정리 (#29). 콘솔 인코딩 실패 내성 + CodeNode
 > 다중입력 지침 + `stop()` 추적기 누수 보완.

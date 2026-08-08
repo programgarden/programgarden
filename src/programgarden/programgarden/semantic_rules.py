@@ -191,8 +191,14 @@ def _is_aiagent_node(node_type: Any) -> bool:
 # Structural keys present on every node dict but not always declared as a schema
 # / model field. ``config`` / ``description`` are BaseNode fields; ``plugin`` /
 # ``fields`` are the ConditionNode plugin-binding structure carried at node level.
+# ``credential_id`` is the canonical credential-binding key (``nodes[].credential_id``
+# + top-level ``credentials[]``): the executor's universal node-creation layer reads
+# it (``config.get("credential_id")`` → ``_inject_credentials``) for every node type,
+# so no per-node schema declares it — flagging it would block every credential-bound
+# workflow at the strict save gate.
 _RESERVED_NODE_KEYS: frozenset = frozenset(
-    {"id", "type", "category", "position", "config", "description", "plugin", "fields"}
+    {"id", "type", "category", "position", "config", "description", "plugin",
+     "fields", "credential_id"}
 )
 
 

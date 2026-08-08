@@ -10622,7 +10622,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             except (ValueError, _json.JSONDecodeError):
                 pass
 
-        # 우선순위: config.symbol > input.symbol
+        # 우선순위: config.symbol > input.symbol > config.symbols (수동 목록 폴백)
         if config_symbol:
             symbols_raw = [config_symbol] if isinstance(config_symbol, dict) else []
             context.log("debug", f"Using config.symbol: {config_symbol}", node_id)
@@ -10630,7 +10630,23 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             symbols_raw = [input_symbol] if isinstance(input_symbol, dict) else []
             context.log("debug", f"Using input port symbol: {input_symbol}", node_id)
         else:
-            symbols_raw = []
+            # 마지막 폴백: config.symbols (복수 리터럴 목록) — MarketDataNodeExecutor 의
+            # config_symbols 폴백과 대칭. 상류 배열 입력은 메인 루프 auto-iterate 가
+            # 단수 input.symbol 로 풀어 위 분기에서 소화되므로, 여기 도달하는 건
+            # 리터럴 목록뿐이라 N² 재조회 우려가 없다. deep_validate 픽스처는 이미
+            # _config_symbols() 로 plural 을 읽어 라이브만 조용히 무시하던 비대칭이었다
+            # (실측: code-node 예제 87~93 이 심볼 3개를 적고도 빈 ohlcv 로 사망).
+            config_symbols = config.get("symbols")
+            if isinstance(config_symbols, list):
+                symbols_raw = [e for e in config_symbols if isinstance(e, (dict, str))]
+                if symbols_raw:
+                    context.log(
+                        "debug",
+                        f"Using config.symbols list: {len(symbols_raw)} entries",
+                        node_id,
+                    )
+            else:
+                symbols_raw = []
         
         # symbols 정규화: [{exchange, symbol}] → 문자열 리스트 + exchange 정보 보존
         symbols = []

@@ -51,6 +51,12 @@ class OverseasStockFundamentalNode(BaseNode):
         default=None,
         description="Single symbol entry with exchange and symbol code",
     )
+    # symbols (복수) — executor 폴백 입력(config.get("symbols")). 선언 누락으로
+    # R5(unknown_node_field)가 정상 워크플로우를 오탐하던 이원화 정리 (⑭ count 동형).
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{exchange, symbol}] — manual list or list binding; upstream array input takes precedence",
+    )
 
     @classmethod
     def is_tool_enabled(cls) -> bool:
@@ -217,5 +223,17 @@ class OverseasStockFundamentalNode(BaseNode):
                     {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasStockFundamentalNode.symbol.exchange", "required": True},
                     {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockFundamentalNode.symbol.symbol", "required": True},
                 ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{exchange, symbol}] — manual list or list binding, used when no upstream array input is wired (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols"],
+                expected_type="[{exchange: str, symbol: str}]",
             ),
         }

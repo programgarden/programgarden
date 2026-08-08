@@ -1,3 +1,24 @@
+## [1.22.0] - 2026-08-08
+### Changed
+- **`ScheduleNode.cron` is now required** — the `"*/5 * * * *"` default is gone, and
+  `get_field_schema` no longer advertises `required=True` with a default alongside (that
+  contradiction signalled "omittable" to LLMs, which then invented `{mode, schedule}` keys
+  while the executor silently ran every 5 minutes). `count` — previously an executor-only
+  key absent from the model — is now a declared model/schema field (SETTINGS-exposed).
+- **`PositionSizingNode.method` no longer defaults to `"fixed_percent"`** — the model keeps a
+  `None` sentinel so plain construction (tests/catalog) still works, but the schema declares
+  it `required=True` (default removed) and the `programgarden` 1.30.0 executor raises when it
+  is missing instead of silently sizing with fixed_percent.
+
+### Added
+- **`ErrorCode.UNKNOWN_NODE_FIELD`** — backs the `programgarden` 1.30.0 semantic rule R5
+  (`unknown_node_field`, opt-in / STRICT=error) that rejects config keys outside a node's
+  declared schema (e.g. `{mode, schedule}` instead of `cron`, `size_type` instead of `method`).
+- Expression-evaluator diagnostic hook around the `value`/`values` auto-unwrap (report-only) —
+  surfaces bindings that hit the wrong key of the dual-port alias instead of unwrapping silently.
+
+Ships together with the `programgarden` 1.30.0 runtime (executor hard errors + R5 lint).
+
 ## [1.20.0] - 2026-07-14
 ### Fixed
 - **Output-port declarations now match what the runtime actually emits.** The resolver validates

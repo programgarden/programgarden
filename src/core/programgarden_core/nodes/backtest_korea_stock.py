@@ -51,6 +51,12 @@ class KoreaStockHistoricalDataNode(BaseNode):
         default=None,
         description="Single symbol entry with symbol code (6-digit)",
     )
+    # symbols (복수) — executor 폴백 입력(config.get("symbols"), 단수 symbol/입력 부재 시).
+    # 선언 누락 + executor 미소비로 리터럴 목록 예제가 빈 ohlcv 로 조용히 죽던 이원화 정리.
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{symbol}] — manual literal list; symbol (single) and upstream input take precedence",
+    )
     start_date: str = Field(
         default="{{ months_ago_yyyymmdd(3) }}",
         description="Start date (YYYY-MM-DD or {{ months_ago_yyyymmdd(N) }})",
@@ -232,6 +238,18 @@ class KoreaStockHistoricalDataNode(BaseNode):
                 object_schema=[
                     {"name": "symbol", "type": "STRING", "label": "i18n:fields.KoreaStockHistoricalDataNode.symbol.symbol", "required": True},
                 ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{symbol}] — manual literal list, used only when symbol (single) and upstream input are absent (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"symbol": "005930"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols"],
+                expected_type="[{symbol: str}]",
             ),
             "start_date": FieldSchema(
                 name="start_date",

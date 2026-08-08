@@ -51,6 +51,12 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
         default=None,
         description="Single symbol entry with exchange and symbol code",
     )
+    # symbols (복수) — executor 폴백 입력(config.get("symbols"), 단수 symbol/입력 부재 시).
+    # 선언 누락 + executor 미소비로 리터럴 목록 예제가 빈 ohlcv 로 조용히 죽던 이원화 정리.
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{exchange, symbol}] — manual literal list; symbol (single) and upstream input take precedence",
+    )
     start_date: str = Field(
         default="{{ months_ago_yyyymmdd(3) }}",
         description="Start date (YYYY-MM-DD or {{ months_ago_yyyymmdd(N) }})",
@@ -234,6 +240,18 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                     {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbol.exchange", "required": True},
                     {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbol.symbol", "required": True},
                 ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{exchange, symbol}] — manual literal list, used only when symbol (single) and upstream input are absent (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"exchange": "CME", "symbol": "ESH26"}],
+                example_binding="{{ nodes.contract.symbols }}",
+                bindable_sources=["FuturesContractNode.symbols", "WatchlistNode.symbols"],
+                expected_type="[{exchange: str, symbol: str}]",
             ),
             "start_date": FieldSchema(
                 name="start_date",

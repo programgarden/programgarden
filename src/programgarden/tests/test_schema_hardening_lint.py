@@ -116,6 +116,27 @@ def test_r5_canonical_sizing_not_flagged():
     assert analyze_workflow_semantics(wf, STRICT_SEMANTIC_SEVERITIES) == []
 
 
+def test_r5_credential_id_reserved_not_flagged():
+    """`credential_id` is the canonical credential-binding key (`nodes[].credential_id`
+    + top-level `credentials[]`): the executor's universal node-creation layer consumes
+    it for every node type, so no per-node schema declares it. R5 must treat it as
+    reserved — the real P2 payload carries it on account/order nodes, and flagging it
+    would block every credential-bound workflow at the strict save gate."""
+    wf = {"nodes": [
+        {"id": "acct", "type": "OverseasFuturesAccountNode",
+         "credential_id": "da406e2a-9b50-40d2-91ea-6f95a4f726f7"},
+        {"id": "buy", "type": "OverseasFuturesNewOrderNode",
+         "credential_id": "da406e2a-9b50-40d2-91ea-6f95a4f726f7",
+         "order": "{{ nodes.sizing.order }}"},
+    ], "edges": []}
+    infos = analyze_workflow_semantics(wf, STRICT_SEMANTIC_SEVERITIES)
+    assert not [
+        i for i in infos
+        if str(i.code) == ErrorCode.UNKNOWN_NODE_FIELD.value
+        and i.location.field_path == "credential_id"
+    ]
+
+
 # ── validate_deep integration (save chokepoint) ───────────────────────────
 
 def test_validate_deep_strict_detects_schedule_hallucination():

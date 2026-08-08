@@ -69,6 +69,13 @@ class OverseasStockBrokerNode(BaseBrokerNode):
 
     type: Literal["OverseasStockBrokerNode"] = "OverseasStockBrokerNode"
     description: str = "i18n:nodes.OverseasStockBrokerNode.description"
+    # paper_trading — executor 가 읽고(True 면 명시 에러: LS 해외주식 모의투자 미지원),
+    # _node_guide/_anti_patterns/_examples 가 `paper_trading: false` 표기를 정본으로
+    # 가르치는데 모델 선언이 없어 R5(unknown_node_field)가 오탐했다. False 만 유효.
+    paper_trading: bool = Field(
+        default=False,
+        description="Must remain False — LS has no paper-trading channel for overseas stock (use OverseasFuturesBrokerNode for paper trading)",
+    )
 
     _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
@@ -237,6 +244,15 @@ class OverseasStockBrokerNode(BaseBrokerNode):
                 credential_types=["broker_ls_overseas_stock"],
                 example="cred_stock",
                 help_text="Use the credential id provided in user message <credentials_context> block (verbatim). Do NOT invent.",
+            ),
+            "paper_trading": FieldSchema(
+                name="paper_trading",
+                type=FieldType.BOOLEAN,
+                description="Must remain False — LS has no paper-trading channel for overseas stock; the executor raises if True. Use OverseasFuturesBrokerNode for paper trading.",
+                default=False,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                example=False,
             ),
         }
 
