@@ -56,9 +56,16 @@ class PositionSizingNode(BaseNode):
     )
 
     # PositionSizingNode specific config
-    method: Literal["fixed_percent", "fixed_amount", "fixed_quantity", "kelly", "atr_based"] = Field(
-        default="fixed_percent",
-        description="Position sizing method",
+    # ⑰ method has NO usable default — the old default "fixed_percent" was the
+    # source of a silent fallback: an AI emitting a hallucinated key (e.g.
+    # size_type:"fixed") produced no method, and the executor quietly confirmed
+    # fixed_percent. A sentinel None keeps model construction working
+    # (PositionSizingNode(id=...) is used in tests / catalog placeholders) while
+    # the executor raises an explicit error when method is unset. The
+    # get_field_schema below still marks it required=True.
+    method: Optional[Literal["fixed_percent", "fixed_amount", "fixed_quantity", "kelly", "atr_based"]] = Field(
+        default=None,
+        description="Position sizing method (required — no default; executor errors if unset)",
     )
     max_percent: float = Field(
         default=10.0,
@@ -367,11 +374,12 @@ class PositionSizingNode(BaseNode):
                 help_text="i18n:fields.PositionSizingNode.market_data.help_text",
             ),
             # === PARAMETERS: 핵심 포지션 사이징 설정 ===
+            # ⑰ required with NO default — a default re-introduced the "may be
+            # omitted" signal that produced the silent fixed_percent fallback.
             "method": FieldSchema(
                 name="method",
                 type=FieldType.ENUM,
                 description="i18n:fields.PositionSizingNode.method",
-                default="fixed_percent",
                 enum_values=["fixed_percent", "fixed_amount", "fixed_quantity", "kelly", "atr_based"],
                 enum_labels={
                     "fixed_percent": "i18n:enum.PositionSizingNode.method.fixed_percent",

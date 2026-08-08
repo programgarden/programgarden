@@ -31,6 +31,7 @@ class ErrorCode(str, Enum):
 
     # Node / plugin registry
     UNKNOWN_NODE_TYPE = "UNKNOWN_NODE_TYPE"
+    UNKNOWN_NODE_FIELD = "UNKNOWN_NODE_FIELD"  # config key absent from the node's schema (hallucinated / typo'd field, silently ignored at runtime)
     MISSING_PLUGIN = "MISSING_PLUGIN"
     UNKNOWN_PLUGIN = "UNKNOWN_PLUGIN"
 

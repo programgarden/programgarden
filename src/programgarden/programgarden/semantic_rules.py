@@ -27,6 +27,15 @@ node registry):
     Always trades the same size regardless of balance/risk. (Advisory.)
   * **R4 — order node carrying ``paper_trading``.** That field is a *broker*
     field; on an order node it is silently ignored. (Advisory.)
+  * **R5 — unknown node config key.** A key that is not in the node's
+    ``get_field_schema()`` nor its declared model fields. ``BaseNode`` sets
+    ``extra="allow"`` so Pydantic accepts it, and the executor never reads it —
+    the workflow *looks* configured but behaves differently (e.g. ScheduleNode
+    ``{mode, schedule}`` instead of ``cron`` → silent 5-min fallback;
+    PositionSizingNode ``size_type`` instead of ``method``). (Blocking when
+    enabled.) Structural, not keyword-based: the allowed set is derived from the
+    registry node class, and unknown / community / dynamic types (no resolvable
+    class) are skipped rather than false-flagged.
 
 Design contract
 ---------------
@@ -58,6 +67,7 @@ from programgarden_core import (
     ErrorLocation,
     ErrorSeverity,
     build_error,
+    suggest_close_match,
 )
 
 # ---------------------------------------------------------------------------
@@ -68,12 +78,14 @@ RULE_ORDER_QTY_FROM_AI = "order_qty_from_ai_response"            # R1
 RULE_STRUCTURED_OUTPUT_NO_SCHEMA = "structured_output_missing_schema"  # R2
 RULE_HARDCODED_ORDER_QTY = "hardcoded_order_quantity"            # R3
 RULE_ORDER_IGNORED_FIELD = "order_ignored_field"                # R4
+RULE_UNKNOWN_NODE_FIELD = "unknown_node_field"                  # R5
 
 ALL_RULES: tuple[str, ...] = (
     RULE_ORDER_QTY_FROM_AI,
     RULE_STRUCTURED_OUTPUT_NO_SCHEMA,
     RULE_HARDCODED_ORDER_QTY,
     RULE_ORDER_IGNORED_FIELD,
+    RULE_UNKNOWN_NODE_FIELD,
 )
 
 _RULE_CODE: Dict[str, ErrorCode] = {
@@ -81,18 +93,23 @@ _RULE_CODE: Dict[str, ErrorCode] = {
     RULE_STRUCTURED_OUTPUT_NO_SCHEMA: ErrorCode.SEMANTIC_STRUCTURED_OUTPUT_NO_SCHEMA,
     RULE_HARDCODED_ORDER_QTY: ErrorCode.SEMANTIC_HARDCODED_ORDER_QTY,
     RULE_ORDER_IGNORED_FIELD: ErrorCode.SEMANTIC_ORDER_IGNORED_FIELD,
+    RULE_UNKNOWN_NODE_FIELD: ErrorCode.UNKNOWN_NODE_FIELD,
 }
 
 # Everything off — the default when no config is supplied.
 DEFAULT_SEMANTIC_SEVERITIES: Dict[str, str] = {r: "off" for r in ALL_RULES}
 
-# Chatbot strict preset — reproduces the legacy ``workflow_semantic_lint``
-# behavior exactly (R1/R2 block, R3/R4 advise). Callers opt in with this.
+# Chatbot strict preset — the save-chokepoint anti-pattern gate (R1/R2/R5
+# block, R3/R4 advise). R5 blocks hallucinated / typo'd node config keys
+# (e.g. ScheduleNode {mode,schedule} instead of cron, PositionSizingNode
+# size_type instead of method) that ``extra="allow"`` silently accepts — the
+# workflow looks configured but the extra keys are ignored at runtime.
 STRICT_SEMANTIC_SEVERITIES: Dict[str, str] = {
     RULE_ORDER_QTY_FROM_AI: "error",
     RULE_STRUCTURED_OUTPUT_NO_SCHEMA: "error",
     RULE_HARDCODED_ORDER_QTY: "warning",
     RULE_ORDER_IGNORED_FIELD: "warning",
+    RULE_UNKNOWN_NODE_FIELD: "error",
 }
 
 _SEVERITY_MAP: Dict[str, ErrorSeverity] = {
@@ -169,6 +186,41 @@ def _is_aiagent_node(node_type: Any) -> bool:
         return issubclass(cls, _aiagent_base_class())
     except Exception:  # pragma: no cover - defensive
         return False
+
+
+# Structural keys present on every node dict but not always declared as a schema
+# / model field. ``config`` / ``description`` are BaseNode fields; ``plugin`` /
+# ``fields`` are the ConditionNode plugin-binding structure carried at node level.
+_RESERVED_NODE_KEYS: frozenset = frozenset(
+    {"id", "type", "category", "position", "config", "description", "plugin", "fields"}
+)
+
+
+def _node_allowed_keys(node_type: Any) -> Optional[frozenset]:
+    """Allowed top-level config keys for a registered node type, or None.
+
+    The allowed set is the union of the node's declared Pydantic model fields,
+    its ``get_field_schema()`` keys (the AI/UI-facing schema), and the reserved
+    structural keys. Returns None when ``node_type`` does not resolve to a
+    registered class (unknown / community / dynamic) — R5 skips those, since
+    their schema is unknown and any key would otherwise be false-flagged.
+    Never raises.
+    """
+    cls = _node_class(node_type)
+    if cls is None:
+        return None
+    allowed = set(_RESERVED_NODE_KEYS)
+    try:
+        allowed |= set(cls.model_fields.keys())
+    except Exception:  # pragma: no cover - defensive
+        pass
+    try:
+        fs = cls.get_field_schema()
+        if isinstance(fs, dict):
+            allowed |= set(fs.keys())
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return frozenset(allowed)
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +313,7 @@ def analyze_workflow_semantics(
     sev_r2 = _enabled(severities, RULE_STRUCTURED_OUTPUT_NO_SCHEMA)
     sev_r3 = _enabled(severities, RULE_HARDCODED_ORDER_QTY)
     sev_r4 = _enabled(severities, RULE_ORDER_IGNORED_FIELD)
+    sev_r5 = _enabled(severities, RULE_UNKNOWN_NODE_FIELD)
 
     # Index node id → node, and whether any PositionSizingNode exists (R3).
     nodes_by_id: Dict[str, Dict[str, Any]] = {}
@@ -281,6 +334,41 @@ def analyze_workflow_semantics(
             continue
         node_type = node.get("type")
         node_id = node.get("id") if isinstance(node.get("id"), str) else "?"
+
+        # ── R5: unknown node config key (hallucinated / typo'd field) ──────
+        # Runs for every node. Structural: the allowed set comes from the
+        # registry node class; unknown / dynamic types (allowed is None) are
+        # skipped rather than false-flagged.
+        if sev_r5 is not None:
+            allowed = _node_allowed_keys(node_type)
+            if allowed is not None:
+                for key in node.keys():
+                    if key in allowed:
+                        continue
+                    errors.append(build_error(
+                        ErrorCode.UNKNOWN_NODE_FIELD,
+                        f"Node '{node_id}' ({node_type}) has field '{key}', which is not "
+                        f"in this node's schema. Pydantic accepts it (extra='allow') but "
+                        f"the executor never reads it, so the workflow looks configured "
+                        f"but behaves differently than it appears.",
+                        severity=sev_r5,
+                        location=ErrorLocation(
+                            node_id=node_id,
+                            node_type=node_type if isinstance(node_type, str) else None,
+                            field_path=key if isinstance(key, str) else None,
+                        ),
+                        available_values=(
+                            suggest_close_match(key, sorted(allowed))
+                            if isinstance(key, str) else None
+                        ),
+                        suggestion=(
+                            f"'{key}' 는 {node_type} 노드에 없는 필드예요. 오탈자이거나 "
+                            f"다른 노드의 필드일 수 있습니다. 이 노드의 config_schema 에 "
+                            f"정의된 필드만 사용하세요 (예: ScheduleNode 는 cron, "
+                            f"PositionSizingNode 는 method)."
+                        ),
+                        details={"rule": RULE_UNKNOWN_NODE_FIELD, "field": key},
+                    ))
 
         # ── R2: AIAgent structured output with no schema (and no preset) ──
         if sev_r2 is not None and _is_aiagent_node(node_type):
@@ -396,6 +484,7 @@ __all__ = [
     "RULE_STRUCTURED_OUTPUT_NO_SCHEMA",
     "RULE_HARDCODED_ORDER_QTY",
     "RULE_ORDER_IGNORED_FIELD",
+    "RULE_UNKNOWN_NODE_FIELD",
     "ALL_RULES",
     "DEFAULT_SEMANTIC_SEVERITIES",
     "STRICT_SEMANTIC_SEVERITIES",

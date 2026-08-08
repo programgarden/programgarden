@@ -36,9 +36,15 @@ class ScheduleNode(BaseNode):
     description: str = "i18n:nodes.ScheduleNode.description"
 
     # ScheduleNode specific config
+    # ⑭ cron is REQUIRED — the previous "*/5 * * * *" default let a schedule
+    # with no cron silently run every 5 minutes ("looks fine, behaves
+    # differently"). WorkflowDefinition keeps nodes as raw dicts, so a required
+    # field here never breaks deserialization of stored DSL; missing cron is
+    # surfaced as an explicit error by the executor (no silent fallback) and by
+    # the deep_validate / save chokepoint.
     cron: str = Field(
-        default="*/5 * * * *",
-        description="Cron expression (e.g., */5 * * * * = every 5 minutes)",
+        ...,
+        description="Cron expression (e.g., */5 * * * * = every 5 minutes). Required — there is no default schedule.",
     )
     timezone: str = Field(
         default="America/New_York", description="Timezone (e.g., America/New_York, Asia/Seoul)"
@@ -47,6 +53,14 @@ class ScheduleNode(BaseNode):
     max_duration_hours: float = Field(
         default=24.0,
         description="최대 실행 시간 (시간). 초과 시 스케줄 자동 종료.",
+    )
+    # ⑭ count was read by the executor (config.get("count", 1000)) but not
+    # declared on the model — that schema/executor duality meant a canonical
+    # field was invisible to validation. Declared here (default matches the
+    # executor's safety cap) so the model is the single source of truth.
+    count: int = Field(
+        default=1000,
+        description="Max number of schedule cycles before the scheduler exits (safety cap alongside max_duration_hours).",
     )
 
     _inputs: List[InputPort] = []
@@ -83,6 +97,11 @@ class ScheduleNode(BaseNode):
         "enabled=False freezes the trigger without removing the node from the DAG",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Configuring the schedule with `mode` / `schedule` (or any key other than `cron`)",
+            "reason": "The ONLY schedule field is `cron` (a 5-field cron expression) with `timezone`. Keys like `mode: 'interval'` or `schedule: {every: '5m'}` are not in this node's schema — they are silently ignored, so the workflow looks scheduled but never fires on the intended cadence.",
+            "alternative": "Express the cadence purely as `cron` — every 5 min = `*/5 * * * *`, 09:30 weekdays = `30 9 * * 1-5`. Set `timezone` to the target market. Do not add `mode` / `schedule` / interval fields.",
+        },
         {
             "pattern": "Using ScheduleNode with `* * * * *` (every minute) to poll cheap data",
             "reason": "Every fire triggers the full main flow — brokers, LS TRs, downstream plugins. Even if cheap per run, it accumulates rate-limit pressure.",
@@ -175,11 +194,13 @@ class ScheduleNode(BaseNode):
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         return {
             # === PARAMETERS: 핵심 스케줄 설정 ===
+            # ⑭ required with NO default — the only way to set the cadence is
+            # `cron`. A default here re-introduced the "generation may omit it"
+            # signal that produced the silent 5-minute fallback.
             "cron": FieldSchema(
                 name="cron",
                 type=FieldType.STRING,
-                description="Cron expression. Format: minute hour day month weekday. Examples: */5 * * * * (every 5 min), 0 9 * * 1-5 (9am weekdays)",
-                default="*/5 * * * *",
+                description="Cron expression. Format: minute hour day month weekday. Examples: */5 * * * * (every 5 min), 0 9 * * 1-5 (9am weekdays). Required — there is no default schedule.",
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -217,6 +238,17 @@ class ScheduleNode(BaseNode):
                 category=FieldCategory.SETTINGS,
                 expected_type="float",
                 example=24.0,
+            ),
+            "count": FieldSchema(
+                name="count",
+                type=FieldType.INTEGER,
+                description="Max number of schedule cycles before the scheduler exits (safety cap alongside max_duration_hours).",
+                default=1000,
+                min_value=1,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                expected_type="int",
+                example=1000,
             ),
         }
 

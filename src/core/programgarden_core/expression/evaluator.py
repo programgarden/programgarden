@@ -27,11 +27,20 @@ Jinja2 스타일 {{ }} 표현식 평가기
 from typing import Any, Callable, Dict, Optional, List, Set
 import re
 import ast
+import logging
 import operator
 import math
 import statistics
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+# ⑰ Canonical array output ports an auto-unwrap looks for, and the singular
+# aliases that are a common wrong-key mistake (e.g. binding `{{ nodes.md.value }}`
+# — a single dict — where a `values` array was meant). Report-only diagnostic;
+# never changes resolution (the value/values ports legitimately co-exist).
+_SINGULAR_ARRAY_ALIASES: Dict[str, str] = {"value": "values", "item": "items"}
 
 
 def _get_nested_value(obj: Any, path: str) -> Any:
@@ -373,6 +382,19 @@ class NodeOutputProxy:
             for key in ["positions", "symbols", "values", "data", "items", "array", "results"]:
                 if key in self._data and isinstance(self._data[key], list):
                     return self._data[key]
+            # ⑰ Diagnostic (report-only): no array port matched, but a singular
+            # alias (value/item) is present — the caller likely referenced the
+            # singular port where the plural array was meant. Never blocks; the
+            # single dict is still wrapped as [dict] below.
+            for singular, plural in _SINGULAR_ARRAY_ALIASES.items():
+                if singular in self._data and plural not in self._data:
+                    logger.debug(
+                        "ArrayQuery auto-unwrap: dict has '%s' (singular) but no "
+                        "'%s' (array) — did you mean '%s'? Wrapping the single "
+                        "value as a 1-element list.",
+                        singular, plural, plural,
+                    )
+                    break
             # 단일 dict는 [dict]로 반환
             return [self._data]
         return []

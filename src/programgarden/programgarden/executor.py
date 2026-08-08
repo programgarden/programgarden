@@ -1125,10 +1125,22 @@ def _pick_split_array(upstream: Dict[str, Any], *, source: str) -> List[Any]:
     if len(candidates) == 1:
         return upstream[candidates[0]]
     if not candidates:
+        # ⑰ Diagnostic: a singular alias (value → values, item → items) present
+        # where the plural array port was meant is a common wrong-key mistake;
+        # surface it in the error so the fix is obvious (report-only — resolution
+        # is unchanged, the two ports legitimately co-exist).
+        _alias_hint = ""
+        for _sing, _plur in (("value", "values"), ("item", "items")):
+            if _sing in upstream and _plur not in upstream:
+                _alias_hint = (
+                    f" Upstream has '{_sing}' (singular) but no '{_plur}' (array) "
+                    f"— did you mean '{_plur}'?"
+                )
+                break
         raise RuntimeError(
             f"SplitNode has no array to split: upstream ({source}) exposes no "
-            f"array output among {_SPLIT_ARRAY_KEYS}. Bind split.array explicitly "
-            "(e.g. array: '{{ nodes.<id>.held_symbols }}') or wire an "
+            f"array output among {_SPLIT_ARRAY_KEYS}.{_alias_hint} Bind split.array "
+            "explicitly (e.g. array: '{{ nodes.<id>.held_symbols }}') or wire an "
             "array-producing node upstream."
         )
     raise RuntimeError(
@@ -1548,10 +1560,26 @@ class ScheduleNodeExecutor(NodeExecutorBase):
             context.log("debug", f"Scheduler already running for {node_id}, skip", node_id)
             return {"trigger": True}
         
-        cron_expr = config.get("cron", "*/5 * * * *")
+        # ⑭ cron is required — NO silent "*/5 * * * *" fallback. A missing cron
+        # used to make the schedule quietly run every 5 minutes ("looks fine,
+        # behaves differently"). Fail loudly instead so the real cause surfaces.
+        cron_expr = config.get("cron")
+        if not isinstance(cron_expr, str) or not cron_expr.strip():
+            context.log(
+                "error",
+                "ScheduleNode requires a 'cron' expression; there is no default schedule fallback",
+                node_id,
+            )
+            raise ValueError(
+                f"ScheduleNode '{node_id}' requires a 'cron' expression; there is no "
+                f"default schedule fallback. Set cron explicitly, e.g. '*/5 * * * *' "
+                f"(every 5 min) or '30 9 * * 1-5' (09:30 weekdays). Keys like "
+                f"'mode'/'schedule' are not read by this node."
+            )
+        cron_expr = cron_expr.strip()
         tz_name = config.get("timezone", "America/New_York")
         enabled = config.get("enabled", True)
-        count = config.get("count", 1000)  # 최대 반복 횟수 (M-6: 기본값 축소)
+        count = config.get("count", 1000)  # 최대 반복 횟수 (M-6: 기본값 축소; 모델 필드로 편입)
         max_duration_hours = config.get("max_duration_hours", 24.0)
         
         if not enabled:
@@ -12386,7 +12414,21 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         price_data = evaluated.get("price_data") or evaluated.get("prices") or evaluated.get("market_data") or {}
         
         # 설정 추출
-        method = evaluated.get("method", "fixed_percent")
+        # ⑰ method is required — NO silent "fixed_percent" fallback. The old
+        # default quietly confirmed a hallucinated key (e.g. size_type:"fixed"
+        # left method unset → sized as fixed_percent). Fail loudly instead.
+        method = evaluated.get("method")
+        if not method:
+            context.log(
+                "error",
+                "PositionSizingNode requires 'method'; there is no default fallback",
+                node_id,
+            )
+            raise ValueError(
+                f"PositionSizingNode '{node_id}' requires 'method' (one of "
+                f"fixed_percent, fixed_amount, fixed_quantity, kelly, atr_based); "
+                f"there is no default. A key like 'size_type' is not read by this node."
+            )
         max_percent = float(evaluated.get("max_percent", 10.0))
         fixed_amount = evaluated.get("fixed_amount")
         fixed_quantity = int(evaluated.get("fixed_quantity", 1))

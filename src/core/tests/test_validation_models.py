@@ -46,7 +46,9 @@ def test_error_code_count_matches_matrix() -> None:
     # CODE_NODE_NO_EXECUTE, CODE_NODE_EXEC_ERROR, CODE_NODE_DISABLED) = 38.
     # The 3 legacy dynamic-injection error codes were removed together with
     # that mechanism (41 − 3 = 38).
-    assert len(list(ErrorCode)) == 38
+    # + 1 unknown-node-field code (UNKNOWN_NODE_FIELD — ⑭⑰ schema-hardening
+    # save-chokepoint lint for hallucinated / typo'd node config keys) = 39.
+    assert len(list(ErrorCode)) == 39
 
 
 def test_unknown_plugin_defaults_to_warning() -> None:

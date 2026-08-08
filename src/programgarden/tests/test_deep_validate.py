@@ -332,7 +332,11 @@ async def test_schedule_workflow_fires_once_and_terminates():
         "id": "wf-deep-sched",
         "name": "deep schedule",
         "nodes": [
-            {"id": "sched", "type": "ScheduleNode", "config": {"cron": "0 9 * * *", "enabled": True}},
+            # ⑭ cron is a top-level field (canonical shape — matches node examples
+            # and the AI catalog). The previous nested {"config": {"cron": ...}}
+            # was never read by the executor; the schedule only "worked" because
+            # of the removed silent "*/5 * * * *" fallback.
+            {"id": "sched", "type": "ScheduleNode", "cron": "0 9 * * *", "enabled": True},
             {"id": "start", "type": "StartNode"},
         ],
         "edges": [{"from": "sched", "to": "start"}],
