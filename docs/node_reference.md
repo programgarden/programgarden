@@ -2,7 +2,7 @@
 
 ProgramGarden에서 사용할 수 있는 모든 노드의 상세 설명입니다. 각 노드는 워크플로우에서 하나의 **블록** 역할을 하며, 블록을 연결(엣지)하여 자동매매 전략을 만듭니다.
 
-> **노드 수**: 12개 카테고리, 74개 노드
+> **노드 수**: 12개 카테고리, 76개 노드
 >
 > **해외주식 / 해외선물 / 국내주식**: 대부분의 노드가 상품별로 분리되어 있습니다. 예를 들어 `OverseasStockBrokerNode`(해외주식), `OverseasFuturesBrokerNode`(해외선물), `KoreaStockBrokerNode`(국내주식)는 같은 기능이지만 상품이 다릅니다.
 
@@ -539,11 +539,13 @@ REST API로 **당일 현재가**를 조회합니다. 단일 종목 기반으로 
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|:----:|------|
-| `symbol` | object | ✅ | 종목 정보 |
+| `symbol` | object | ✅ | 종목 정보 (단일) |
+| `symbols` | array | ❌ | 종목 목록 — 상류 배열 입력이 없을 때 수동 목록/바인딩으로 사용 |
 
 `symbol` 지정 방법:
 - SplitNode과 함께: `"{{ item }}"` (자동으로 현재 종목 사용)
 - 직접 지정: `{"exchange": "NASDAQ", "symbol": "AAPL"}`
+- 여러 종목을 직접 넣으려면 `symbols` 에 배열로: `[{"exchange": "NASDAQ", "symbol": "AAPL"}, ...]` (상류 WatchlistNode 배열 입력이 있으면 그쪽이 우선)
 
 **출력**: `value` - 시세 데이터
 
@@ -643,7 +645,8 @@ LS증권 g3104 API로 **PER, EPS, 시가총액, 52주 고/저가** 등 펀더멘
 
 | 필드 | 타입 | 기본값 | 설명 |
 |------|------|--------|------|
-| `symbol` | object | - | 종목 정보 |
+| `symbol` | object | - | 종목 정보 (단일 — 상류 배열 입력·auto-iterate 와 함께 쓰는 기본 경로) |
+| `symbols` | array | - | 종목 목록 (수동 리터럴 목록 — `symbol`/상류 입력이 없을 때만 사용됨) |
 | `interval` | string | `"1d"` | 데이터 주기 |
 | `start_date` | string | 3개월 전 | 조회 시작일 (YYYYMMDD) |
 | `end_date` | string | 오늘 | 조회 종료일 (YYYYMMDD) |
@@ -1900,6 +1903,36 @@ flowchart LR
 
 > **팁 - Buy & Hold 벤치마크**: BacktestEngineNode에 조건 신호 없이 데이터만 넣으면 **Buy & Hold** (사서 보유) 전략으로 자동 적용됩니다. 내 전략이 단순 보유보다 나은지 비교하세요.
 
+### PerformanceReportNode (성과·리스크 리포트)
+
+백테스트나 실계좌의 수익 시계열(equity/returns/prices)로부터 **성과·리스크 지표**를 산출합니다. quantstats 백엔드를 사용하며, `perf` extra 설치가 필요합니다 (`pip install "programgarden-community[perf]"` — 미설치 시 설치 안내와 함께 명시 에러).
+
+```json
+{
+  "id": "perf",
+  "type": "PerformanceReportNode",
+  "data": "{{ nodes.backtest.equity_curve }}",
+  "data_kind": "equity"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `data` | array | ✅ | 수익 시계열 (BacktestEngineNode `equity_curve` 등) |
+| `data_kind` | enum | ❌ | 입력 종류: `equity`(기본) / `returns` / `prices` |
+| `value_field` | string | ❌ | 시계열 항목에서 읽을 값 필드 (기본 `close`) |
+| `benchmark` | array | ❌ | 벤치마크 수익 시계열 (지정 시 beta/alpha 산출) |
+| `periods_per_year` | number | ❌ | 연환산 기준 기간 수 (기본 252) |
+| `risk_free_rate` | number | ❌ | 무위험 수익률 (기본 0.0) |
+
+**출력:**
+- `metrics` - 성과·리스크 지표 객체 (샤프/소르티노/MDD 등)
+- `report` - 텍스트 리포트
+- `drawdown_series` - 낙폭 시계열 (차트용)
+- `summary` - 요약 (관측치 3개 미만이면 `metrics=None` + `summary.error.reason="insufficient_data"`)
+
+> **팁**: `TableDisplayNode`/`SummaryDisplayNode`에 `metrics`를 연결해 지표 표를 표시하거나, `drawdown_series`를 `LineChartNode`로 시각화할 수 있습니다.
+
 ---
 
 ## 11. ai - AI 에이전트
@@ -2021,14 +2054,14 @@ AI 에이전트가 워크플로우의 다른 노드를 **도구(Tool)**로 활�
 |----------|--------|------|----------|
 | `infra` | 8 | 시작/연결/흐름/분기 | StartNode, BrokerNode, ThrottleNode, SplitNode, AggregateNode, IfNode |
 | `account` | 12 | 계좌 조회 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode (해외주식/선물 + 국내주식) |
-| `market` | 23 | 시세/종목/펀더멘털/환율/심리/제외종목/장운영정보 | MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, FundamentalDataNode, MarketStatusNode, KoreaStock* |
+| `market` | 24 | 시세/종목/펀더멘털/환율/심리/제외종목/장운영정보 | MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, FundamentalDataNode, MarketStatusNode, FuturesContractNode, KoreaStock* |
 | `condition` | 2 | 조건 평가 | ConditionNode, LogicNode |
 | `order` | 10 | 주문 실행 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode (해외주식/선물 + 국내주식) |
 | `risk` | 1 | 리스크 관리 | PortfolioNode |
 | `schedule` | 2 | 스케줄/시간 | ScheduleNode, TradingHoursFilterNode |
 | `data` | 5 | 데이터 조회/저장/커스텀코드 | SQLiteNode, HTTPRequestNode, FieldMappingNode, FileReaderNode, CodeNode |
 | `display` | 6 | 시각화 | TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
-| `analysis` | 2 | 백테스트 | BacktestEngineNode, BenchmarkCompareNode |
+| `analysis` | 3 | 백테스트/성과분석 | BacktestEngineNode, BenchmarkCompareNode, PerformanceReportNode |
 | `ai` | 2 | AI 에이전트 | LLMModelNode, AIAgentNode |
 | `messaging` | 1 | 알림/메시징 | TelegramNode |
 
@@ -2040,5 +2073,5 @@ AI 에이전트가 워크플로우의 다른 노드를 **도구(Tool)**로 활�
 - [자동 반복 처리](auto_iterate_guide.md) - 여러 종목을 자동으로 처리하는 방법
 - [표현식 문법](expression_guide.md) - `{{ }}` 표현식 작성법
 - [조건 조합](logic_guide.md) - 여러 조건을 논리 연산으로 조합
-- [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 77개 전략 플러그인
+- [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 86개 전략 플러그인
 - [AI 에이전트](ai_agent_guide.md) - LLM으로 시장 분석
