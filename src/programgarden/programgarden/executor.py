@@ -4631,7 +4631,12 @@ class BrokerNodeExecutor(NodeExecutorBase):
                         # 트래커는 REST(AbrdFutsEvalPnlAmt)·실시간 틱(net_pl_usd) 양쪽에서
                         # pnl_amount 를 승수 반영해 갱신하므로 항상 최신값이다.
                         "pnl_amount": float(pos_item.pnl_amount) if hasattr(pos_item, 'pnl_amount') else 0,
-                        "side": pos_item.side if hasattr(pos_item, 'side') else "long",
+                        # FuturesPositionItem 은 side 속성이 없고 is_long 만 있다.
+                        # 과거 pos_item.side 는 항상 없어 "long" 으로 오라벨돼 숏이
+                        # 승수 역산에서 부호가 뒤집혀 폴백됐다. is_long 으로 정확히
+                        # 표기하고, REST 경로(direction 키)와 정합되게 direction 도 싣는다.
+                        "direction": "long" if getattr(pos_item, 'is_long', True) else "short",
+                        "side": "long" if getattr(pos_item, 'is_long', True) else "short",
                         "product": product,  # 상품 유형 (overseas_futures)
                     }
 

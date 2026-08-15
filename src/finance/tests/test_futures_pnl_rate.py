@@ -70,5 +70,22 @@ class TestComputeFuturesPnlRate:
         assert compute_futures_pnl_rate(100.0, None, is_long=True) == 0.0
 
 
+def test_futures_position_item_has_is_long_not_side():
+    """MAJOR-1 회귀 가드: FuturesPositionItem 은 side 속성이 없고 is_long 만 있다.
+
+    과거 executor 실시간 콜백이 pos_item.side(부재) 를 읽어 숏을 항상 "long" 으로
+    오라벨 → 승수 역산 부호가 뒤집혀 폴백됐다. 실시간 dict 는 is_long 으로 방향을
+    표기해야 한다.
+    """
+    from programgarden_finance.ls.overseas_futureoption.extension.models import (
+        FuturesPositionItem,
+    )
+    short = FuturesPositionItem(symbol="HSIQ26", is_long=False)
+    assert not hasattr(short, "side")
+    assert short.is_long is False
+    # 실시간 콜백이 쓰는 매핑 규약
+    assert ("long" if getattr(short, "is_long", True) else "short") == "short"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
