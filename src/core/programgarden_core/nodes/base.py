@@ -345,7 +345,9 @@ KOREA_STOCK_POSITION_FIELDS: List[Dict[str, str]] = [
 ]
 
 # 해외선물 REST 계좌 (CIDBQ01500 block2)
-# 주의: 이 TR 응답에는 수익률(pnl_rate)이 없다 — 손익 금액(pnl_amount)만 온다.
+# 주의: 이 TR 응답 자체에는 수익률 필드가 없다 — 손익 금액(pnl_amount)만 온다.
+# pnl_rate 는 진입가/현재가로 직접 계산해 실었다(승수 무관, RealAccountNode 와
+# 동일 공식). StopLoss/ProfitTarget 이 pnl_rate 를 소비하므로 반드시 필요.
 OVERSEAS_FUTURES_POSITION_FIELDS: List[Dict[str, str]] = [
     {"name": "exchange", "type": "string", "description": "거래소 코드"},
     {"name": "symbol", "type": "string", "description": "종목코드 (월물 포함)"},
@@ -357,6 +359,7 @@ OVERSEAS_FUTURES_POSITION_FIELDS: List[Dict[str, str]] = [
     {"name": "entry_price", "type": "number", "description": "진입 가격"},
     {"name": "current_price", "type": "number", "description": "현재가"},
     {"name": "pnl_amount", "type": "number", "description": "평가 손익 (금액)"},
+    {"name": "pnl_rate", "type": "number", "description": "명목가 대비 수익률 (%) — 진입가/현재가로 산출 (승수 무관)"},
     {"name": "currency", "type": "string", "description": "통화 코드"},
 ]
 

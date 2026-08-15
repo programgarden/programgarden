@@ -5128,6 +5128,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         try:
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ05300.blocks import CIDBQ05300InBlock1
+            from programgarden_finance.ls.overseas_futureoption.extension.calculator import compute_futures_pnl_rate
 
             today = datetime.now().strftime("%Y%m%d")
 
@@ -5160,6 +5161,11 @@ class AccountNodeExecutor(NodeExecutorBase):
                 close_side = "sell" if is_long else "buy"
                 quantity = int(item.BalQty) if item.BalQty else 0
                 current_price = float(item.OvrsDrvtNowPrc) if item.OvrsDrvtNowPrc else 0.0
+                entry_price = float(item.PchsPrc) if item.PchsPrc else 0.0
+                # 이 TR 응답에는 수익률이 없어 명목가 대비 수익률을 직접 계산한다.
+                # 승수는 분자/분모에서 소거되므로 불필요. RealAccountNode(트래커)와
+                # 동일한 공식/부호 규약을 공유해 REST/실시간 두 경로가 같은 값을 낸다.
+                pnl_rate = float(compute_futures_pnl_rate(entry_price, current_price, is_long))
 
                 positions.append({
                     "symbol": symbol,
@@ -5169,9 +5175,10 @@ class AccountNodeExecutor(NodeExecutorBase):
                     "close_side": close_side,  # 청산 시 주문 방향: sell/buy
                     "quantity": quantity,  # NewOrderNode 호환
                     "price": current_price,  # NewOrderNode 호환
-                    "entry_price": float(item.PchsPrc) if item.PchsPrc else 0.0,
+                    "entry_price": entry_price,
                     "current_price": current_price,
                     "pnl_amount": float(item.AbrdFutsEvalPnlAmt) if item.AbrdFutsEvalPnlAmt else 0.0,
+                    "pnl_rate": pnl_rate,  # 명목가 대비 수익률(%) — StopLoss/ProfitTarget 소비
                     "currency": item.CrcyCodeVal.strip() if item.CrcyCodeVal else "USD",
                 })
                 held_symbols.append({"exchange": "HKEX", "symbol": symbol})

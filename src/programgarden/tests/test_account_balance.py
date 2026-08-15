@@ -360,6 +360,9 @@ async def test_futures_cidbq05300_replaces_cidbq03000():
     assert pos["symbol"] == "CLH26"
     assert pos["direction"] == "long"
     assert pos["quantity"] == 2
+    # E2: 이 TR 에는 수익률이 없으므로 진입가/현재가로 직접 산출 (승수 무관)
+    #     long: (72.50 - 70.00) / 70.00 * 100 = 3.5714...%
+    assert pos["pnl_rate"] == pytest.approx((72.50 - 70.00) / 70.00 * 100)
 
     # balance 기존 필드 + 신규 필드 확인
     balance = result["balance"]
@@ -551,3 +554,83 @@ async def test_position_sizing_normal_balance_unaffected():
     result = await executor.execute("sizing1", "PositionSizingNode", config, ctx)
     # 정상 sizing 결과 반환
     assert result is not None
+
+
+# ── E2: 해외선물 REST 포지션 pnl_rate 산출 (부호 규약 포함) ──
+
+
+def _make_futures_position_mock(bns_tp_code, entry_price, current_price):
+    """CIDBQ01500 block2 항목 mock (한 종목)."""
+    item = MagicMock()
+    item.IsuCodeVal = "HSIQ26"
+    item.BnsTpCode = bns_tp_code  # "2"=long, "1"=short
+    item.BalQty = 3
+    item.OvrsDrvtNowPrc = current_price
+    item.PchsPrc = entry_price
+    item.AbrdFutsEvalPnlAmt = 1600.0
+    item.CrcyCodeVal = "HKD"
+    item.IsuNm = "HSI Future"
+    return item
+
+
+async def _run_futures_serialization(position_item):
+    """빈 잔고(CIDBQ05300) + 주어진 포지션으로 _ls_overseas_futureoption 실행."""
+    executor = _make_executor()
+    ctx = _make_mock_context()
+    ls = MagicMock()
+
+    cidbq01500_response = MagicMock()
+    cidbq01500_response.rsp_cd = "00000"
+    cidbq01500_response.rsp_msg = ""
+    cidbq01500_response.block2 = [position_item]
+    mock_cidbq01500 = MagicMock()
+    mock_cidbq01500.req_async = AsyncMock(return_value=cidbq01500_response)
+
+    cidbq05300_response = MagicMock()
+    cidbq05300_response.block2 = []
+    cidbq05300_response.block3 = MagicMock()
+    mock_cidbq05300 = MagicMock()
+    mock_cidbq05300.req_async = AsyncMock(return_value=cidbq05300_response)
+
+    mock_accno = MagicMock()
+    mock_accno.CIDBQ01500 = MagicMock(return_value=mock_cidbq01500)
+    mock_accno.CIDBQ05300 = MagicMock(return_value=mock_cidbq05300)
+    mock_futures = MagicMock()
+    mock_futures.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_futureoption = MagicMock(return_value=mock_futures)
+
+    result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
+    return result["positions"][0]
+
+
+@pytest.mark.asyncio
+async def test_futures_position_pnl_rate_long_verification_case():
+    """검증 케이스: entry 8547.67 / current 8601 / long → 명목가 대비 +0.62%.
+
+    (승수 10 이면 LS 금액 1,600 HKD 지만 pnl_rate 는 승수와 무관)
+    """
+    item = _make_futures_position_mock("2", entry_price=8547.67, current_price=8601.0)
+    pos = await _run_futures_serialization(item)
+    expected = (8601.0 - 8547.67) / 8547.67 * 100
+    assert pos["pnl_rate"] == pytest.approx(expected)
+    assert pos["pnl_rate"] > 0  # long, 현재가 > 진입가 → 이익
+
+
+@pytest.mark.asyncio
+async def test_futures_position_pnl_rate_short_sign_reversed():
+    """숏 포지션은 부호 반전: 현재가 > 진입가면 손실(음수)."""
+    item = _make_futures_position_mock("1", entry_price=8547.67, current_price=8601.0)
+    pos = await _run_futures_serialization(item)
+    expected = -((8601.0 - 8547.67) / 8547.67 * 100)
+    assert pos["pnl_rate"] == pytest.approx(expected)
+    assert pos["pnl_rate"] < 0  # short, 현재가 > 진입가 → 손실
+    assert pos["direction"] == "short"
+    assert pos["close_side"] == "buy"
+
+
+@pytest.mark.asyncio
+async def test_futures_position_pnl_rate_zero_entry_safe():
+    """진입가 0(비정상)이면 계산 불가 → 0.0 (크래시 없음)."""
+    item = _make_futures_position_mock("2", entry_price=0.0, current_price=8601.0)
+    pos = await _run_futures_serialization(item)
+    assert pos["pnl_rate"] == 0.0
