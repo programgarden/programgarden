@@ -83,5 +83,46 @@ class TestStopLossSignValidation:
         assert STOP_LOSS_SCHEMA.fields_schema["stop_percent"]["lt"] == 0.0
 
 
+# ── E3: 청산 수량/방향 탑재 ──
+
+
+class TestSellQuantityWiring:
+    """passed_symbols 가 {{ item.quantity }}/{{ item.close_side }} 를 공급"""
+
+    @pytest.mark.asyncio
+    async def test_passed_symbol_carries_quantity_and_close_side(self):
+        result = await stop_loss_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": -5.0, "quantity": 12,
+                        "close_side": "sell", "market_code": "82"}],
+            fields={"stop_percent": -3.0},
+        )
+        ps = result["passed_symbols"][0]
+        assert ps["symbol"] == "AAPL"
+        assert ps["exchange"] == "NASDAQ"  # market_code 82 → NASDAQ
+        assert ps["quantity"] == 12
+        assert ps["close_side"] == "sell"
+
+    @pytest.mark.asyncio
+    async def test_quantity_falls_back_to_qty_alias(self):
+        # 일부 소스는 quantity 대신 qty 를 싣는다 (해외주식 REST 별칭)
+        result = await stop_loss_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": -5.0, "qty": 9, "market_code": "82"}],
+            fields={"stop_percent": -3.0},
+        )
+        assert result["passed_symbols"][0]["quantity"] == 9
+
+    @pytest.mark.asyncio
+    async def test_futures_short_close_side_preserved(self):
+        # 해외선물 숏 포지션은 close_side=buy 로 청산
+        result = await stop_loss_condition(
+            positions=[{"symbol": "ESH26", "pnl_rate": -5.0, "quantity": 3,
+                        "exchange": "CME", "close_side": "buy"}],
+            fields={"stop_percent": -3.0},
+        )
+        ps = result["passed_symbols"][0]
+        assert ps["quantity"] == 3
+        assert ps["close_side"] == "buy"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

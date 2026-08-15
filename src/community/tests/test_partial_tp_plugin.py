@@ -154,3 +154,42 @@ class TestPartialTakeProfitPlugin:
         cat = PARTIAL_TAKE_PROFIT_SCHEMA.category
         assert (cat.value if hasattr(cat, 'value') else cat) == "position"
         assert "levels" in PARTIAL_TAKE_PROFIT_SCHEMA.fields_schema
+
+
+class TestSellQuantityWiring:
+    """E3: passed_symbols 에 부분 청산 수량(quantity)/방향(close_side) 탑재"""
+
+    @pytest.mark.asyncio
+    async def test_passed_symbol_carries_partial_qty_and_close_side(self):
+        positions = [
+            {"symbol": "AAPL", "pnl_rate": 6.0, "qty": 100, "market_code": "82"},
+        ]
+        result = await partial_take_profit_condition(
+            positions=positions,
+            fields={"levels": [{"pnl_pct": 5, "sell_pct": 50}]},
+        )
+        ps = result["passed_symbols"][0]
+        # 부분 익절이므로 passed_symbols.quantity = 계산된 sell_quantity (50)
+        assert ps["quantity"] == 50
+        assert ps["quantity"] == result["symbol_results"][0]["sell_quantity"]
+        # 기본 청산 방향은 sell
+        assert ps["close_side"] == "sell"
+
+    @pytest.mark.asyncio
+    async def test_close_side_from_position_for_futures_short(self):
+        # 숏 선물 포지션은 close_side=buy 로 청산 — positions 가 실은 값을 그대로 전달
+        positions = [
+            {"symbol": "ESH26", "pnl_rate": 6.0, "quantity": 4,
+             "exchange": "CME", "close_side": "buy"},
+        ]
+        result = await partial_take_profit_condition(
+            positions=positions,
+            fields={"levels": [{"pnl_pct": 5, "sell_pct": 50}]},
+        )
+        ps = result["passed_symbols"][0]
+        assert ps["close_side"] == "buy"
+        assert ps["quantity"] == 2  # 4 * 50%
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

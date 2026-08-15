@@ -167,7 +167,20 @@ async def trailing_stop_condition(
 
             triggered = (drawdown >= threshold) if trail_percent > 0 else (drawdown > threshold)
             if triggered:
-                passed_symbols.append({"symbol": sym, "exchange": exchange})
+                # 하위 주문 노드가 {{ item.quantity }} / {{ item.close_side }} 로
+                # 소비하므로 전량 청산 수량(HWM 트래커가 추적한 position_qty)과
+                # 청산 방향을 passed_symbols 에 함께 실어야 한다. (트레일링 스탑은
+                # 롱 포지션 고점 대비 하락 청산이므로 close_side 는 sell.)
+                try:
+                    trail_qty = int(getattr(hwm, "position_qty", 0) or 0)
+                except (TypeError, ValueError):
+                    trail_qty = 0
+                passed_symbols.append({
+                    "symbol": sym,
+                    "exchange": exchange,
+                    "quantity": trail_qty,
+                    "close_side": "sell",
+                })
                 symbol_results.append({
                     "symbol": sym, "exchange": exchange,
                     "signal": "sell",

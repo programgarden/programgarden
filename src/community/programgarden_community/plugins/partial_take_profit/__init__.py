@@ -136,7 +136,12 @@ async def partial_take_profit_condition(
         exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
         exchange_name = exchange_map.get(str(exchange), exchange)
-        sym_dict = {"symbol": symbol, "exchange": exchange_name}
+        # 하위 주문 노드가 {{ item.quantity }} / {{ item.close_side }} 로 소비하므로
+        # 청산 방향을 함께 싣는다. 분할 익절은 '부분' 수량이므로 passed_symbols 의
+        # quantity 는 아래 sell_quantity 로 통일한다(sell_quantity 는 하위 호환용으로
+        # symbol_results 에 유지).
+        close_side = pos_data.get("close_side", "sell")
+        sym_dict = {"symbol": symbol, "exchange": exchange_name, "close_side": close_side}
 
         # 수량 0이면 청산 완료 → 상태 삭제
         if qty <= 0:
@@ -181,7 +186,8 @@ async def partial_take_profit_condition(
 
                 remaining_levels = len(levels) - len(new_completed)
 
-                passed.append(sym_dict)
+                # 부분 청산 수량을 quantity 로 실어 주문 노드가 부분 매도하도록 한다.
+                passed.append({**sym_dict, "quantity": sell_quantity})
                 symbol_results.append({
                     "symbol": symbol, "exchange": exchange_name,
                     "pnl_rate": round(pnl_rate, 2), "qty": qty,

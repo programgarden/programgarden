@@ -163,7 +163,17 @@ async def dynamic_stop_loss_condition(
 
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
         exchange_name = exchange_map.get(str(exchange), exchange)
-        sym_dict = {"symbol": symbol, "exchange": exchange_name}
+
+        # 하위 주문 노드가 {{ item.quantity }} / {{ item.close_side }} 로 소비하므로
+        # 전량 청산 수량과 청산 방향을 passed_symbols 에 함께 실어야 한다.
+        quantity = pos_data.get("quantity", pos_data.get("qty", 0))
+        close_side = pos_data.get("close_side", "sell")
+        sym_dict = {
+            "symbol": symbol,
+            "exchange": exchange_name,
+            "quantity": quantity,
+            "close_side": close_side,
+        }
 
         # ATR 계산
         rows = symbol_data_map.get(symbol, [])

@@ -82,5 +82,33 @@ class TestProfitTargetSignValidation:
         assert PROFIT_TARGET_SCHEMA.fields_schema["target_percent"]["gt"] == 0.0
 
 
+# ── E3: 청산 수량/방향 탑재 ──
+
+
+class TestSellQuantityWiring:
+    """passed_symbols 가 {{ item.quantity }}/{{ item.close_side }} 를 공급"""
+
+    @pytest.mark.asyncio
+    async def test_passed_symbol_carries_quantity_and_close_side(self):
+        result = await profit_target_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": 6.0, "quantity": 12,
+                        "close_side": "sell", "market_code": "82"}],
+            fields={"target_percent": 5.0},
+        )
+        ps = result["passed_symbols"][0]
+        assert ps["symbol"] == "AAPL"
+        assert ps["exchange"] == "NASDAQ"
+        assert ps["quantity"] == 12
+        assert ps["close_side"] == "sell"
+
+    @pytest.mark.asyncio
+    async def test_quantity_falls_back_to_qty_alias(self):
+        result = await profit_target_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": 6.0, "qty": 9, "market_code": "82"}],
+            fields={"target_percent": 5.0},
+        )
+        assert result["passed_symbols"][0]["quantity"] == 9
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

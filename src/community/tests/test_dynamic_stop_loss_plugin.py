@@ -176,6 +176,19 @@ class TestDynamicStopLossPlugin:
         assert "atr_multiplier" in DYNAMIC_STOP_LOSS_SCHEMA.fields_schema
         assert "trailing" in DYNAMIC_STOP_LOSS_SCHEMA.fields_schema
 
+    @pytest.mark.asyncio
+    async def test_passed_symbol_carries_quantity_and_close_side(self, price_data, positions_stop):
+        """E3: passed_symbols 에 청산 수량(quantity)/방향(close_side) 탑재"""
+        result = await dynamic_stop_loss_condition(
+            data=price_data,
+            positions=positions_stop,  # qty=10 별칭 사용
+            fields={"atr_period": 14, "atr_multiplier": 2.0},
+        )
+        assert result["result"] is True
+        ps = result["passed_symbols"][0]
+        assert ps["quantity"] == 10  # qty 별칭에서 채움
+        assert ps["close_side"] == "sell"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -119,7 +119,18 @@ async def stop_loss_condition(
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
         exchange_name = exchange_map.get(str(exchange), exchange)
 
-        sym_dict = {"exchange": exchange_name, "symbol": symbol}
+        # 하위 주문 노드가 {{ item.quantity }} / {{ item.close_side }} 로 소비하므로
+        # 전량 청산 수량과 청산 방향을 passed_symbols 에 함께 실어야 한다.
+        # (누락 시 order 정규화가 quantity<=0 으로 주문을 조용히 버린다.)
+        quantity = pos_data.get("quantity", pos_data.get("qty", 0))
+        close_side = pos_data.get("close_side", "sell")
+
+        sym_dict = {
+            "exchange": exchange_name,
+            "symbol": symbol,
+            "quantity": quantity,
+            "close_side": close_side,
+        }
 
         symbol_results.append({
             "symbol": symbol,
