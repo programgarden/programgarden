@@ -117,12 +117,22 @@ async def trailing_stop_condition(
         # 종목별 최신 close 를 추출해 HWM 을 직접 갱신한다.
         # P&L 틱 리스너가 없는 스케줄 폴링 구성에서도 HWM 이 전진하도록 보장.
         latest_close: Dict[str, float] = {}
+        latest_qty: Dict[str, int] = {}  # data 행(라이브 포지션 스냅샷)의 권위 수량
         for row in data or []:
             if not isinstance(row, dict):
                 continue
             row_sym = row.get("symbol")
+            if not row_sym:
+                continue
+            # 라이브 포지션 수량(권위값) 캡처 — close 유효성과 무관하게 잡는다.
+            row_qty = row.get("quantity", row.get("qty"))
+            if row_qty is not None:
+                try:
+                    latest_qty[row_sym] = int(float(row_qty))
+                except (TypeError, ValueError):
+                    pass
             row_close = row.get("close")
-            if not row_sym or row_close is None:
+            if row_close is None:
                 continue
             try:
                 close_val = float(row_close)
@@ -168,13 +178,28 @@ async def trailing_stop_condition(
             triggered = (drawdown >= threshold) if trail_percent > 0 else (drawdown > threshold)
             if triggered:
                 # 하위 주문 노드가 {{ item.quantity }} / {{ item.close_side }} 로
-                # 소비하므로 전량 청산 수량(HWM 트래커가 추적한 position_qty)과
-                # 청산 방향을 passed_symbols 에 함께 실어야 한다. (트레일링 스탑은
+                # 소비하므로 전량 청산 수량과 청산 방향을 passed_symbols 에 함께
+                # 실어야 한다. 다른 청산 플러그인과 동일하게 라이브 포지션 dict 의
+                # quantity(권위값 — sym_info 또는 data 행 스냅샷)를 우선 쓰고, 없을
+                # 때만 HWM 트래커 기억값(position_qty)으로 폴백한다. (트레일링 스탑은
                 # 롱 포지션 고점 대비 하락 청산이므로 close_side 는 sell.)
-                try:
-                    trail_qty = int(getattr(hwm, "position_qty", 0) or 0)
-                except (TypeError, ValueError):
-                    trail_qty = 0
+                live_qty = None
+                if isinstance(sym_info, dict):
+                    q = sym_info.get("quantity", sym_info.get("qty"))
+                    if q is not None:
+                        try:
+                            live_qty = int(float(q))
+                        except (TypeError, ValueError):
+                            live_qty = None
+                if live_qty is None:
+                    live_qty = latest_qty.get(sym)
+                if live_qty is not None:
+                    trail_qty = live_qty
+                else:
+                    try:
+                        trail_qty = int(getattr(hwm, "position_qty", 0) or 0)
+                    except (TypeError, ValueError):
+                        trail_qty = 0
                 passed_symbols.append({
                     "symbol": sym,
                     "exchange": exchange,
