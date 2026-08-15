@@ -109,6 +109,11 @@ class WorkflowPositionTracker:
         self._pending_fills: Dict[str, PendingFill] = {}  # key: order_no_order_date
         self._buffer_lock = asyncio.Lock()
 
+        # 심볼별 계약 승수(contract multiplier) 캐시.
+        # 브로커 스냅샷의 pnl_amount 에서 역산한다(선물 승수 반영). 현재가≈평단이라
+        # 역산 불가한 틱에서는 이 캐시(최근 성공값)로 폴백해 FIFO 산술을 스케일한다.
+        self._multiplier_cache: Dict[str, Decimal] = {}
+
         # DB 초기화
         self._init_db()
     
@@ -602,6 +607,62 @@ class WorkflowPositionTracker:
         
         return other_positions
     
+    def _infer_multipliers(
+        self,
+        all_positions: Dict[str, Any],
+        prices: Dict[str, Decimal],
+    ) -> Dict[str, Decimal]:
+        """브로커 스냅샷에서 심볼별 계약 승수(contract multiplier)를 역산한다.
+
+        선물 평가손익은 ``qty × mult × (현재가 − 평단)`` 이므로, 브로커가 실은
+        승수 반영 ``pnl_amount`` 로부터:
+
+            mult = pnl_amount / ((current − avg) × qty × side_factor)
+
+        (side_factor: long=+1, short=−1). 분모 절댓값이 epsilon 이하(현재가≈평단)
+        이거나 pnl_amount 가 없/0 이면 역산이 불안정하므로, 심볼별 최근 성공값
+        캐시로 폴백하고, 캐시도 없으면 승수를 싣지 않는다(호출부에서 1.0 = 기존
+        산술과 동일 → 회귀 없음). 주식(승수 1)은 자연히 1.0 로 역산된다.
+        """
+        epsilon = Decimal("0.000000001")
+        result: Dict[str, Decimal] = {}
+        for symbol, pos_data in (all_positions or {}).items():
+            if not isinstance(pos_data, dict):
+                continue
+            pnl_raw = pos_data.get("pnl_amount")
+            # 명시적 0.0 은 여러 빌더가 넣는 placeholder 일 수 있어 역산에서 제외
+            # (0 으로는 승수를 알 수 없다). 캐시/기본 1.0 폴백으로 넘어간다.
+            if pnl_raw:
+                try:
+                    pnl_amount = Decimal(str(pnl_raw))
+                    qty = pos_data.get("quantity", 0) or pos_data.get("qty", 0)
+                    avg_raw = pos_data.get("avg_price", 0) or pos_data.get("buy_price", 0)
+                    cur = prices.get(symbol)
+                    if cur is None:
+                        cur_raw = pos_data.get("current_price")
+                        cur = Decimal(str(cur_raw)) if cur_raw is not None else None
+                    if cur is not None and qty:
+                        avg_d = Decimal(str(avg_raw))
+                        qty_d = Decimal(str(qty))
+                        cur_d = cur if isinstance(cur, Decimal) else Decimal(str(cur))
+                        direction = str(
+                            pos_data.get("direction") or pos_data.get("side") or "long"
+                        ).lower()
+                        side_factor = Decimal(-1) if direction.startswith("short") else Decimal(1)
+                        denom = (cur_d - avg_d) * qty_d * side_factor
+                        if abs(denom) > epsilon:
+                            mult = pnl_amount / denom
+                            if mult > 0:  # 승수는 양수 — 음수/0 은 비정상, 캐시 폴백
+                                self._multiplier_cache[symbol] = mult
+                                result[symbol] = mult
+                                continue
+                except (TypeError, ValueError, ArithmeticError):
+                    pass  # 역산 실패 → 캐시/기본 폴백
+            cached = self._multiplier_cache.get(symbol)
+            if cached is not None:
+                result[symbol] = cached
+        return result
+
     def calculate_pnl(
         self,
         current_prices: Dict[str, Any],  # Decimal 또는 float
@@ -611,42 +672,48 @@ class WorkflowPositionTracker:
     ) -> Dict[str, Any]:
         """
         실시간 평가 수익률 계산
-        
+
         Args:
             current_prices: 현재가 {symbol: price} (Decimal 또는 float)
             all_positions: 전체 보유 포지션
             currency: 통화
             start_date: 필터 시작일 (YYYYMMDD), None이면 전체 기간
-            
+
         Returns:
             WorkflowPnLEvent 생성에 필요한 데이터 dict
         """
         from programgarden_core.bases import PositionDetail
-        
+
         # float를 Decimal로 변환
         prices = {
             symbol: Decimal(str(price)) if not isinstance(price, Decimal) else price
             for symbol, price in current_prices.items()
         }
-        
+
+        # 브로커 스냅샷에서 심볼별 계약 승수 역산. FIFO lot 산술은 승수를 모르므로
+        # (eval/buy/pnl 금액이 선물에서 1/N 로 축소) 여기서 얻은 승수로 스케일한다.
+        # pnl_rate 는 eval/buy 비율이라 승수가 소거돼 영향 없음.
+        multipliers = self._infer_multipliers(all_positions, prices)
+
         workflow_positions = self.get_workflow_positions(start_date=start_date)
         other_positions = self.get_other_positions(all_positions)
-        
+
         # 워크플로우 포지션 계산
         wf_eval = Decimal(0)
         wf_buy = Decimal(0)
         wf_details: List[PositionDetail] = []
-        
+
         for symbol, pos in workflow_positions.items():
             current_price = prices.get(symbol, pos.avg_price)
-            eval_amount = current_price * pos.quantity
-            buy_amount = pos.avg_price * pos.quantity
+            mult = multipliers.get(symbol, Decimal(1))
+            eval_amount = current_price * pos.quantity * mult
+            buy_amount = pos.avg_price * pos.quantity * mult
             pnl_amount = eval_amount - buy_amount
             pnl_rate = (pnl_amount / buy_amount * 100) if buy_amount else Decimal(0)
-            
+
             wf_eval += eval_amount
             wf_buy += buy_amount
-            
+
             wf_details.append(PositionDetail(
                 symbol=symbol,
                 exchange=pos.exchange,
@@ -656,25 +723,26 @@ class WorkflowPositionTracker:
                 pnl_amount=pnl_amount,
                 pnl_rate=pnl_rate,
             ))
-        
+
         wf_pnl = wf_eval - wf_buy
         wf_rate = (wf_pnl / wf_buy * 100) if wf_buy else Decimal(0)
-        
+
         # 그 외 포지션 계산
         other_eval = Decimal(0)
         other_buy = Decimal(0)
         other_details: List[PositionDetail] = []
-        
+
         for symbol, pos in other_positions.items():
             current_price = prices.get(symbol, pos.avg_price)
-            eval_amount = current_price * pos.quantity
-            buy_amount = pos.avg_price * pos.quantity
+            mult = multipliers.get(symbol, Decimal(1))
+            eval_amount = current_price * pos.quantity * mult
+            buy_amount = pos.avg_price * pos.quantity * mult
             pnl_amount = eval_amount - buy_amount
             pnl_rate = (pnl_amount / buy_amount * 100) if buy_amount else Decimal(0)
-            
+
             other_eval += eval_amount
             other_buy += buy_amount
-            
+
             other_details.append(PositionDetail(
                 symbol=symbol,
                 exchange=pos.exchange,
