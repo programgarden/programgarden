@@ -23,7 +23,13 @@ PROFIT_TARGET_SCHEMA = PluginSchema(
     description="Checks if holdings have reached the target profit rate. Example: Sell to realize profit when gain exceeds 5%.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
-        "target_percent": {"type": "float", "default": 5.0, "title": "Target Profit (%)"},
+        "target_percent": {
+            "type": "float",
+            "default": 5.0,
+            "title": "Target Profit (%)",
+            "description": "Profit threshold as a positive percent (e.g. 5.0 = sell at a +5% gain). Must be > 0.",
+            "gt": 0.0,
+        },
     },
     required_data=["positions"],  # 시계열 데이터 불필요, positions만 필요
     # items { from, extract } 필수 필드 (v3.0.0+) - positions 사용 시 빈 배열
@@ -68,6 +74,24 @@ async def profit_target_condition(
         fields = {}
 
     target_percent = fields.get("target_percent", fields.get("percent", 5.0))
+    # target_percent must be a strictly positive percent. Reject non-positive
+    # values loudly — a 0-or-negative target can never fire on a gain
+    # (pnl_rate >= target_percent would match a loss or every position),
+    # a silent misconfiguration.
+    try:
+        target_percent = float(target_percent)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"ProfitTarget: 'target_percent' must be a number, got {target_percent!r}."
+        )
+    if target_percent <= 0:
+        raise ValueError(
+            "ProfitTarget: 'target_percent' must be positive "
+            "(e.g. 5.0 means a +5% profit target). "
+            f"Got {target_percent}. A zero or negative target can never trigger "
+            "on a gain. To exit a position while it is at a loss, use the "
+            "StopLoss or TrailingStop plugin instead."
+        )
 
     positions = positions or []
     if not positions:

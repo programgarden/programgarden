@@ -23,7 +23,13 @@ STOP_LOSS_SCHEMA = PluginSchema(
     description="Sells when losses exceed the set threshold to prevent larger losses. Example: Auto-sell at -3% loss.",
     products=[ProductType.OVERSEAS_STOCK, ProductType.OVERSEAS_FUTURES],
     fields_schema={
-        "stop_percent": {"type": "float", "default": -3.0, "title": "Stop Loss (%)"},
+        "stop_percent": {
+            "type": "float",
+            "default": -3.0,
+            "title": "Stop Loss (%)",
+            "description": "Loss threshold as a negative percent (e.g. -3.0 = sell at a -3% loss). Must be < 0.",
+            "lt": 0.0,
+        },
     },
     required_data=["positions"],  # 시계열 데이터 불필요, positions만 필요
     # items { from, extract } 필수 필드 (v3.0.0+) - positions 사용 시 빈 배열
@@ -68,6 +74,24 @@ async def stop_loss_condition(
         fields = {}
 
     stop_percent = fields.get("stop_percent", fields.get("percent", -3.0))
+    # stop_percent must be a strictly negative percent. Reject non-negative
+    # values loudly instead of silently flipping the sign — a 0-or-positive
+    # threshold can never fire on a loss (pnl_rate <= stop_percent), so it
+    # would either exit immediately or never, both silent misconfigurations.
+    try:
+        stop_percent = float(stop_percent)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"StopLoss: 'stop_percent' must be a number, got {stop_percent!r}."
+        )
+    if stop_percent >= 0:
+        raise ValueError(
+            "StopLoss: 'stop_percent' must be negative "
+            "(e.g. -3.0 means a -3% stop-loss line). "
+            f"Got {stop_percent}. A zero or positive threshold can never trigger "
+            "on a loss. To exit a position while it is in profit, use the "
+            "ProfitTarget or TrailingStop plugin instead."
+        )
 
     positions = positions or []
     if not positions:
