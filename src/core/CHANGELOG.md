@@ -1,3 +1,13 @@
+## [1.23.0] - 2026-08-15
+### Added
+- **`OVERSEAS_FUTURES_POSITION_FIELDS` 에 `pnl_rate` 선언 추가** — 해외선물 REST 계좌
+  (CIDBQ01500 block2) 포지션 포트에 명목가 대비 수익률(`pnl_rate`, %) 필드를 선언한다.
+  TR 응답 자체엔 `pnl_amount`(금액)만 오지만 `programgarden` 런타임이 진입가/현재가로
+  직접 산출해 싣는다(승수 무관, `RealAccountNode` 와 동일 공식). StopLoss/ProfitTarget
+  계열 플러그인이 `pnl_rate` 를 소비하므로 선언이 필수다.
+
+`programgarden` 1.31.0 · `finance` 1.7.0 · `community` 1.15.0 과 동반 릴리즈.
+
 ## [1.22.0] - 2026-08-08
 ### Changed
 - **`ScheduleNode.cron` is now required** — the `"*/5 * * * *"` default is gone, and

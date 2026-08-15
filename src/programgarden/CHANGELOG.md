@@ -1,5 +1,38 @@
 ## [Unreleased]
 
+## [1.31.0] - 2026-08-15
+> 선물 손익(P&L)·수익률(`pnl_rate`) 정합 릴리즈 — 계약 승수 역산·부호 보정으로 평가손익을
+> 바로잡고, 청산 계열 플러그인이 수량·방향을 하류로 전달한다. StopLoss/ProfitTarget 임계값
+> 부호 검증 추가. `core` 1.23.0 · `finance` 1.7.0 · `community` 1.15.0 과 동반.
+
+### Added
+- **선물 REST(CIDBQ01500) 포지션 `pnl_rate` 직렬화** — TR 응답에 없는 수익률(%)을
+  진입가/현재가로 직접 산출해 계좌 포지션에 실어 준다(승수 무관, `RealAccountNode` 와 동일
+  공식). StopLoss/ProfitTarget 이 `pnl_rate` 를 소비하므로 REST 잔고 경로에서도 채운다.
+
+### Changed
+- **평가손익(P&L)에 브로커 `pnl_amount` 우선** — 계좌/폴백 경로에서 브로커가 준 `pnl_amount`
+  를 우선 사용해 선물 평가손익이 계약 승수를 유지하도록 한다. placeholder `0.0` 은 비권위값
+  으로 간주(truthy guard)해 실제 손익을 덮어쓰지 않는다.
+- **`WorkflowPositionTracker` 계약 승수 역산 (`_infer_multipliers`)** — 승수 미상일 때 브로커
+  `pnl_amount` 와 가격 gap 으로 승수를 역산해 워크플로우 FIFO 손익(주 경로)에 적용한다.
+  상대 gap 0.1% 가드 · 밴드 0.5~10000 · 정수 스냅 · `side_sign` 부호 보정으로 short 포지션
+  부호 오류를 교정한다.
+- **실시간 트래커 포지션 side 표기를 `is_long` 기준으로** — 존재하지 않는 `.side` 참조 대신
+  `is_long` 으로 long/short 을 표기한다.
+
+### Dependencies
+- `programgarden-core = "^1.23.0"` (was `^1.22.0`)
+- `programgarden-finance = "^1.7.0"` (was `^1.6.14`)
+- `programgarden-community = "^1.15.0"` (was `^1.13.11`)
+
+#### 동반 패키지 변경 요약
+- **core 1.23.0** — `OVERSEAS_FUTURES_POSITION_FIELDS` 에 `pnl_rate` 필드 선언 추가.
+- **finance 1.7.0** — `compute_futures_pnl_rate` 공유 헬퍼(float 일원화) + 모의선물 추적기
+  공식 공유 + 실시간 side 표기 정정.
+- **community 1.15.0** — StopLoss/ProfitTarget 부호 검증 + 청산 5종 `passed_symbols` 에
+  `quantity`/`close_side` 탑재 + `trailing_stop` 수량 라이브 우선.
+
 ## [1.30.0] - 2026-08-08
 > 챗봇 산출 워크플로우의 "겉으론 정상, 실제론 다르게 동작" 경로 차단 —
 > ⑭ ScheduleNode 5분 폴백 제거 + ⑰ 사이징 스키마 환각 차단 + unknown-key lint R5.

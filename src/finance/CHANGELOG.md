@@ -1,3 +1,19 @@
+## [1.7.0] - 2026-08-15
+### Added
+- **`compute_futures_pnl_rate` 공유 헬퍼** (`ls/overseas_futureoption/extension/calculator.py`)
+  — 진입가·현재가·`is_long` 으로 해외선물 수익률(%)을 계산하는 단일 공식을 신설. 두 가격
+  인자를 방어적으로 `float` 로 강제하고 항상 `float` 를 반환해 Decimal/float 혼합 호출의
+  `TypeError` 와 반환 타입 비일관을 제거한다.
+
+### Changed
+- **모의선물 계좌 추적기(`extension/tracker.py`) 수익률을 공유 헬퍼로 일원화** —
+  `FuturesPositionItem` 의 `pnl_rate` 를 자체 계산 대신 `compute_futures_pnl_rate` 로 산출해
+  REST 계좌 경로와 동일 공식을 쓴다.
+- **실시간 포지션 side 표기 정정** — 존재하지 않는 `.side` 참조 대신 `is_long` 기준으로
+  long/short 을 표기한다.
+
+`core` 1.23.0 · `programgarden` 1.31.0 · `community` 1.15.0 과 동반 릴리즈.
+
 ## [1.6.16] - 2026-08-06
 ### Fixed
 - **모의선물 계좌 추적기 예수금·잔고 오분류 (L11)** — 해외선물 모의계좌 추적기

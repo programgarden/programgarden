@@ -1,3 +1,19 @@
+## [1.15.0] - 2026-08-15
+### Changed
+- **StopLoss/ProfitTarget 임계값 부호 검증** (`stop_loss`, `profit_target`,
+  `dynamic_stop_loss`, `partial_take_profit`) — 손절 임계값은 음수, 익절 임계값은 양수를
+  강제한다. 잘못된 부호가 들어오면 조용히 오작동(never/always fire)하던 것을 명확한
+  `ValueError`(사유 + 올바른 부호 대안 안내)로 차단하고, `fields_schema` 에 `lt`/`gt`
+  힌트를 노출해 저작 단계에서 바로잡히게 한다.
+- **청산 계열 플러그인 `passed_symbols` 에 `quantity` + `close_side` 탑재** — stop_loss /
+  profit_target / dynamic_stop_loss / partial_take_profit / trailing_stop 5종이 청산 대상
+  심볼에 매도 수량과 청산 방향(`close_side`)을 실어, 하류 주문 노드가 수량·방향을 그대로
+  사용하도록 한다.
+- **`trailing_stop` 수량 라이브 우선** — 기억된 최고점(HWM) 시점 수량 대신 현재 라이브
+  포지션 수량을 우선 사용해 부분 청산 이후 잔여 수량 불일치를 방지한다.
+
+`core` 1.23.0 · `finance` 1.7.0 · `programgarden` 1.31.0 과 동반 릴리즈.
+
 ## [1.14.0] - 2026-07-11
 ### Added
 - **9 new strategy plugins (77 → 86).** VALUE 4 (`PiotroskiFScore`, `GrahamNumber`,
