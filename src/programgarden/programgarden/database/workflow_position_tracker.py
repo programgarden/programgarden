@@ -16,11 +16,27 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# ── 계약 승수(contract multiplier) 역산 안정화 파라미터 ──
+# 브로커 pnl_amount 를 (현재가−평단)×수량 으로 나눠 승수를 역산할 때, 분모가
+# 작으면(현재가≈평단) 반올림 오차가 증폭돼 mult 가 폭주한다. 아래 가드로 오염을
+# 막고, 실패 시 심볼별 최근 성공값 캐시(없으면 1.0)로 폴백한다.
+#
+# _MULT_MIN_REL_GAP: |현재가−평단|/평단 이 이 값 미만이면 역산 생략. 0.1% 로 둔다 —
+#   검증한 폭주 케이스(평단 8547.67, 현재가차 1.0 → 상대차 ≈0.0117%)를 잡아야 하므로
+#   0.01% 는 부족(0.0117% > 0.01%)하고 0.1% 여야 확실히 걸린다.
+# _MULT_MIN/_MULT_MAX: 표준 선물 승수는 0.5~수천 범위. 이 밴드 밖 역산값은 거부.
+# _MULT_INT_SNAP_REL: 선물 승수는 정수 관행이라, 역산값이 최근접 정수와 상대오차
+#   이 값 이내면 정수로 스냅(수수료 혼입/반올림 왜곡 완화).
+_MULT_MIN_REL_GAP = Decimal("0.001")   # 0.1%
+_MULT_MIN = Decimal("0.5")
+_MULT_MAX = Decimal("10000")
+_MULT_INT_SNAP_REL = Decimal("0.02")   # 2%
 
 
 @dataclass
@@ -611,27 +627,40 @@ class WorkflowPositionTracker:
         self,
         all_positions: Dict[str, Any],
         prices: Dict[str, Decimal],
-    ) -> Dict[str, Decimal]:
-        """브로커 스냅샷에서 심볼별 계약 승수(contract multiplier)를 역산한다.
+    ) -> Dict[str, Tuple[Decimal, Decimal]]:
+        """브로커 스냅샷에서 심볼별 ``(계약 승수, 방향 부호)`` 를 역산한다.
 
-        선물 평가손익은 ``qty × mult × (현재가 − 평단)`` 이므로, 브로커가 실은
-        승수 반영 ``pnl_amount`` 로부터:
+        선물 평가손익은 ``mult × side_sign × qty × (현재가 − 평단)`` 이므로
+        (side_sign: long=+1, short=−1), 브로커가 실은 승수 반영 ``pnl_amount`` 에서:
 
-            mult = pnl_amount / ((current − avg) × qty × side_factor)
+            mult = pnl_amount / ((current − avg) × qty × side_sign)
 
-        (side_factor: long=+1, short=−1). 분모 절댓값이 epsilon 이하(현재가≈평단)
-        이거나 pnl_amount 가 없/0 이면 역산이 불안정하므로, 심볼별 최근 성공값
-        캐시로 폴백하고, 캐시도 없으면 승수를 싣지 않는다(호출부에서 1.0 = 기존
-        산술과 동일 → 회귀 없음). 주식(승수 1)은 자연히 1.0 로 역산된다.
+        - side_sign 은 스냅샷 방향 라벨(``direction`` 또는 ``side``)에서 항상 얻는다
+          (역산 성공 여부와 무관). 호출부는 이 부호로 FIFO 롱-only 산식의 pnl 부호를
+          보정한다 → 숏도 올바른 부호.
+        - mult(양수 크기)는 아래 가드를 모두 통과할 때만 채택하고, 실패 시 심볼별
+          최근 성공값 캐시(없으면 1.0)로 폴백한다:
+            · pnl_amount 없/0(placeholder) → 역산 생략
+            · |현재가−평단|/평단 < _MULT_MIN_REL_GAP → 분모가 작아 불안정 → 생략
+            · mult 이 [_MULT_MIN, _MULT_MAX] 밖 → 거부 (라벨 오류로 부호가 뒤집혀
+              음수가 나오는 경우도 여기서 거부됨)
+            · 최근접 정수와 상대오차 ≤ _MULT_INT_SNAP_REL → 정수로 스냅
+        주식(승수 1)은 자연히 1.0 으로 역산된다.
         """
-        epsilon = Decimal("0.000000001")
-        result: Dict[str, Decimal] = {}
+        result: Dict[str, Tuple[Decimal, Decimal]] = {}
         for symbol, pos_data in (all_positions or {}).items():
             if not isinstance(pos_data, dict):
                 continue
+
+            # 방향 부호는 라벨에서 항상 결정 (역산 실패해도 유지)
+            direction = str(
+                pos_data.get("direction") or pos_data.get("side") or "long"
+            ).lower()
+            side_sign = Decimal(-1) if direction.startswith("short") else Decimal(1)
+
+            mult: Optional[Decimal] = None
             pnl_raw = pos_data.get("pnl_amount")
-            # 명시적 0.0 은 여러 빌더가 넣는 placeholder 일 수 있어 역산에서 제외
-            # (0 으로는 승수를 알 수 없다). 캐시/기본 1.0 폴백으로 넘어간다.
+            # 명시적 0.0 은 여러 빌더가 넣는 placeholder 이므로 역산에서 제외.
             if pnl_raw:
                 try:
                     pnl_amount = Decimal(str(pnl_raw))
@@ -645,22 +674,25 @@ class WorkflowPositionTracker:
                         avg_d = Decimal(str(avg_raw))
                         qty_d = Decimal(str(qty))
                         cur_d = cur if isinstance(cur, Decimal) else Decimal(str(cur))
-                        direction = str(
-                            pos_data.get("direction") or pos_data.get("side") or "long"
-                        ).lower()
-                        side_factor = Decimal(-1) if direction.startswith("short") else Decimal(1)
-                        denom = (cur_d - avg_d) * qty_d * side_factor
-                        if abs(denom) > epsilon:
-                            mult = pnl_amount / denom
-                            if mult > 0:  # 승수는 양수 — 음수/0 은 비정상, 캐시 폴백
-                                self._multiplier_cache[symbol] = mult
-                                result[symbol] = mult
-                                continue
+                        if avg_d > 0:
+                            rel_gap = abs(cur_d - avg_d) / avg_d
+                            if rel_gap >= _MULT_MIN_REL_GAP:
+                                denom = (cur_d - avg_d) * qty_d * side_sign
+                                if denom != 0:
+                                    cand = pnl_amount / denom
+                                    if _MULT_MIN <= cand <= _MULT_MAX:
+                                        # 정수 근사 스냅 (선물 승수는 정수 관행)
+                                        nearest = cand.to_integral_value(rounding=ROUND_HALF_UP)
+                                        if nearest >= 1 and abs(cand - nearest) / nearest <= _MULT_INT_SNAP_REL:
+                                            cand = Decimal(nearest)
+                                        mult = cand
+                                        self._multiplier_cache[symbol] = cand
                 except (TypeError, ValueError, ArithmeticError):
                     pass  # 역산 실패 → 캐시/기본 폴백
-            cached = self._multiplier_cache.get(symbol)
-            if cached is not None:
-                result[symbol] = cached
+
+            if mult is None:
+                mult = self._multiplier_cache.get(symbol, Decimal(1))
+            result[symbol] = (mult, side_sign)
         return result
 
     def calculate_pnl(
@@ -698,21 +730,26 @@ class WorkflowPositionTracker:
         workflow_positions = self.get_workflow_positions(start_date=start_date)
         other_positions = self.get_other_positions(all_positions)
 
-        # 워크플로우 포지션 계산
+        # 워크플로우 포지션 계산.
+        # eval/buy 는 양수 명목가(승수 스케일)로 유지하고, pnl 은 side_sign 으로
+        # 부호를 보정해 별도 누적한다(FIFO 는 롱-only 산식이라 숏이면 eval−buy 의
+        # 부호가 뒤집혀 있음). 롱은 side_sign=+1 이라 기존과 동일.
         wf_eval = Decimal(0)
         wf_buy = Decimal(0)
+        wf_pnl = Decimal(0)
         wf_details: List[PositionDetail] = []
 
         for symbol, pos in workflow_positions.items():
             current_price = prices.get(symbol, pos.avg_price)
-            mult = multipliers.get(symbol, Decimal(1))
+            mult, side_sign = multipliers.get(symbol, (Decimal(1), Decimal(1)))
             eval_amount = current_price * pos.quantity * mult
             buy_amount = pos.avg_price * pos.quantity * mult
-            pnl_amount = eval_amount - buy_amount
+            pnl_amount = (eval_amount - buy_amount) * side_sign
             pnl_rate = (pnl_amount / buy_amount * 100) if buy_amount else Decimal(0)
 
             wf_eval += eval_amount
             wf_buy += buy_amount
+            wf_pnl += pnl_amount
 
             wf_details.append(PositionDetail(
                 symbol=symbol,
@@ -724,24 +761,25 @@ class WorkflowPositionTracker:
                 pnl_rate=pnl_rate,
             ))
 
-        wf_pnl = wf_eval - wf_buy
         wf_rate = (wf_pnl / wf_buy * 100) if wf_buy else Decimal(0)
 
         # 그 외 포지션 계산
         other_eval = Decimal(0)
         other_buy = Decimal(0)
+        other_pnl = Decimal(0)
         other_details: List[PositionDetail] = []
 
         for symbol, pos in other_positions.items():
             current_price = prices.get(symbol, pos.avg_price)
-            mult = multipliers.get(symbol, Decimal(1))
+            mult, side_sign = multipliers.get(symbol, (Decimal(1), Decimal(1)))
             eval_amount = current_price * pos.quantity * mult
             buy_amount = pos.avg_price * pos.quantity * mult
-            pnl_amount = eval_amount - buy_amount
+            pnl_amount = (eval_amount - buy_amount) * side_sign
             pnl_rate = (pnl_amount / buy_amount * 100) if buy_amount else Decimal(0)
 
             other_eval += eval_amount
             other_buy += buy_amount
+            other_pnl += pnl_amount
 
             other_details.append(PositionDetail(
                 symbol=symbol,
@@ -752,14 +790,13 @@ class WorkflowPositionTracker:
                 pnl_amount=pnl_amount,
                 pnl_rate=pnl_rate,
             ))
-        
-        other_pnl = other_eval - other_buy
+
         other_rate = (other_pnl / other_buy * 100) if other_buy else Decimal(0)
-        
-        # 전체 계산
+
+        # 전체 계산 — pnl 은 부호 보정된 per-position 합, eval/buy 는 명목가 합.
         total_eval = wf_eval + other_eval
         total_buy = wf_buy + other_buy
-        total_pnl = total_eval - total_buy
+        total_pnl = wf_pnl + other_pnl
         total_rate = (total_pnl / total_buy * 100) if total_buy else Decimal(0)
         
         # 신뢰도 계산

@@ -239,12 +239,13 @@ class TestFuturesMultiplierInference:
     CUR = 8601.0
     PER_CONTRACT_RAW = CUR - AVG  # 53.33
 
-    async def _futures_tracker(self, d, wf_qty):
+    async def _futures_tracker(self, d, wf_qty, avg=None):
+        avg = self.AVG if avg is None else avg
         tracker = WorkflowPositionTracker(
             f'{d}/t.db', 'jobF', 'brokerF', product='overseas_futures'
         )
-        tracker.record_order('OF1', '20260810', 'HSIQ26', 'HKEX', 'buy', wf_qty, self.AVG, 'jobF', 'nodeF')
-        await tracker.record_fill('OF1', '20260810', 'HSIQ26', 'HKEX', 'buy', wf_qty, self.AVG, '103000000', '40')
+        tracker.record_order('OF1', '20260810', 'HSIQ26', 'HKEX', 'buy', wf_qty, avg, 'jobF', 'nodeF')
+        await tracker.record_fill('OF1', '20260810', 'HSIQ26', 'HKEX', 'buy', wf_qty, avg, '103000000', '40')
         return tracker
 
     @pytest.mark.asyncio
@@ -344,6 +345,124 @@ class TestFuturesMultiplierInference:
                 }},
             )
             assert float(pnl['workflow_pnl_amount']) == pytest.approx(3 * self.PER_CONTRACT_RAW, rel=1e-3)
+
+    # ── MAJOR-1: 숏 실시간 (side 키) 부호 보정 ──
+
+    @pytest.mark.asyncio
+    async def test_short_realtime_side_key_inference_and_sign(self):
+        """실시간 트래커 dict 는 direction 이 아니라 side 키를 쓴다. 숏이 올바로
+        역산되고(수익 숏 → 양수), workflow total == account 스케일 일치.
+
+        과거엔 side 가 항상 "long" 으로 오라벨돼 역산이 폴백(mult=1)되고 FIFO
+        롱-only 산식이라 수익 숏이 음수로 뒤집혔다.
+        """
+        from programgarden.context import ExecutionContext
+        with tempfile.TemporaryDirectory() as d:
+            # 워크플로우는 숏을 못 담으므로(FIFO 롱-only) other 버킷에서 검증
+            tracker = WorkflowPositionTracker(
+                f'{d}/t.db', 'jobSh', 'brokerSh', product='overseas_futures'
+            )
+            short_avg = 8601.0     # 숏 진입가
+            short_cur = 8547.67    # 하락 → 숏 수익
+            mult = 10.0
+            broker_pnl = mult * 3 * (short_avg - short_cur)  # +1599.9 (수익, 양수)
+            snapshot = {'HSIQ26': {
+                'quantity': 3, 'avg_price': short_avg, 'current_price': short_cur,
+                'pnl_amount': broker_pnl, 'side': 'short',  # direction 아닌 side 키
+                'exchange': 'HKEX', 'product': 'overseas_futures',
+            }}
+            pnl = tracker.calculate_pnl(
+                current_prices={'HSIQ26': Decimal(str(short_cur))},
+                all_positions=snapshot,
+            )
+            # 수익 숏 → 양수 (자체 산식이면 −159.99 로 부호까지 뒤집힘)
+            assert float(pnl['total_pnl_amount']) > 0
+            assert float(pnl['total_pnl_amount']) == pytest.approx(broker_pnl, rel=1e-3)
+            assert float(pnl['other_pnl_amount']) == pytest.approx(broker_pnl, rel=1e-3)
+
+            # account 경로(pnl_amount 우선)와 스케일 일치 → 자기모순 없음
+            ctx = ExecutionContext(job_id='v', workflow_id='v')
+            acct = ctx._calculate_account_pnl(snapshot)
+            assert float(acct['account_overseas_futures_pnl_amount']) == pytest.approx(
+                float(pnl['total_pnl_amount']), rel=1e-3
+            )
+
+    @pytest.mark.asyncio
+    async def test_mislabeled_short_as_long_rejects_negative_mult(self):
+        # 숏을 "long" 으로 오라벨하면 역산 mult 이 음수 → 밴드 밖 거부 → mult=1 폴백
+        # (부호는 여전히 long 로 처리되나, 최소한 승수 폭주는 없음)
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(
+                f'{d}/t.db', 'jobSh', 'brokerSh', product='overseas_futures'
+            )
+            short_avg, short_cur = 8601.0, 8547.67
+            broker_pnl = 10.0 * 3 * (short_avg - short_cur)  # +1599.9
+            snapshot = {'HSIQ26': {
+                'quantity': 3, 'avg_price': short_avg, 'current_price': short_cur,
+                'pnl_amount': broker_pnl, 'side': 'long',  # 오라벨
+                'exchange': 'HKEX',
+            }}
+            pnl = tracker.calculate_pnl(
+                current_prices={'HSIQ26': Decimal(str(short_cur))},
+                all_positions=snapshot,
+            )
+            # mult=1 폴백 → buy≈avg×3 (폭주 없음)
+            assert float(pnl['other_buy_amount']) == pytest.approx(short_avg * 3, rel=1e-3)
+
+    # ── MAJOR-2: 승수 역산 안정화 가드 ──
+
+    @pytest.mark.asyncio
+    async def test_tiny_price_gap_skips_inference_no_blowup(self):
+        """P1 폭주 케이스: 현재가−평단=1.0 (상대차 ≈0.0117% < 0.1%) → 역산 생략,
+        캐시 없음 → mult=1 폴백. eval/buy 53× 팽창 없음."""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = await self._futures_tracker(d, 3)  # 워크플로우 3 @ 8547.67
+            avg = self.AVG
+            cur = avg + 1.0  # gap 1.0 → 역산하면 mult=1600/(1×3)=533 폭주
+            pnl = tracker.calculate_pnl(
+                current_prices={'HSIQ26': Decimal(str(cur))},
+                all_positions={'HSIQ26': {
+                    'quantity': 3, 'avg_price': avg, 'current_price': cur,
+                    'pnl_amount': 1600.0, 'direction': 'long', 'exchange': 'HKEX',
+                }},
+            )
+            # mult=1 폴백: buy≈avg×3 (533× 팽창 아님), pnl=3×1.0=3.0
+            assert float(pnl['workflow_buy_amount']) == pytest.approx(avg * 3, rel=1e-3)
+            assert float(pnl['workflow_pnl_amount']) == pytest.approx(3.0, rel=1e-3)
+
+    @pytest.mark.asyncio
+    async def test_multiplier_above_band_rejected(self):
+        # 밴드(≤10000) 초과 mult → 거부 → mult=1 폴백 (팽창 없음)
+        with tempfile.TemporaryDirectory() as d:
+            tracker = await self._futures_tracker(d, 1, avg=100.0)
+            cur = 110.0  # +10% (gap guard 통과)
+            gap = cur - 100.0
+            pnl = tracker.calculate_pnl(
+                current_prices={'HSIQ26': Decimal(str(cur))},
+                all_positions={'HSIQ26': {
+                    'quantity': 1, 'avg_price': 100.0, 'current_price': cur,
+                    'pnl_amount': gap * 50000,  # mult 50000 유도 (>10000)
+                    'direction': 'long', 'exchange': 'HKEX',
+                }},
+            )
+            assert float(pnl['workflow_buy_amount']) == pytest.approx(100.0, rel=1e-3)
+
+    @pytest.mark.asyncio
+    async def test_multiplier_snaps_to_integer(self):
+        # 수수료 혼입으로 mult 9.87 → 정수 10 스냅 (상대오차 1.3% < 2%)
+        with tempfile.TemporaryDirectory() as d:
+            tracker = await self._futures_tracker(d, 1, avg=100.0)
+            cur = 110.0  # gap 10, +10%
+            pnl = tracker.calculate_pnl(
+                current_prices={'HSIQ26': Decimal(str(cur))},
+                all_positions={'HSIQ26': {
+                    'quantity': 1, 'avg_price': 100.0, 'current_price': cur,
+                    'pnl_amount': 98.7,  # mult 9.87 → 10 스냅
+                    'direction': 'long', 'exchange': 'HKEX',
+                }},
+            )
+            # 스냅됐으면 buy=100×1×10=1000 (스냅 안 하면 987)
+            assert float(pnl['workflow_buy_amount']) == pytest.approx(1000.0, rel=1e-3)
 
 
 if __name__ == '__main__':
