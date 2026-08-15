@@ -279,10 +279,11 @@ class FuturesAccountTracker:
                     # 현재가 저장
                     self._current_prices[symbol] = position.current_price
                     
-                    # 손익률 계산 (REST/실시간 공용 공식)
-                    position.pnl_rate = compute_futures_pnl_rate(
+                    # 손익률 계산 (REST/실시간 공용 공식). 헬퍼는 float 반환이므로
+                    # Decimal 필드 유지를 위해 Decimal 로 감싼다.
+                    position.pnl_rate = Decimal(str(compute_futures_pnl_rate(
                         position.entry_price, position.current_price, is_long
-                    )
+                    )))
 
                     self._positions[symbol] = position
                     logger.debug(f"[_fetch_positions] 포지션 추가: {symbol}@{exchange_code} ({'LONG' if is_long else 'SHORT'}) x{position.quantity}")
@@ -582,10 +583,10 @@ class FuturesAccountTracker:
                     pos.realtime_pnl = pnl
                     pos.pnl_amount = pnl.net_pl_usd
 
-                    # 손익률 계산 (REST/실시간 공용 공식)
-                    pos.pnl_rate = compute_futures_pnl_rate(
+                    # 손익률 계산 (REST/실시간 공용 공식). float 반환 → Decimal 유지.
+                    pos.pnl_rate = Decimal(str(compute_futures_pnl_rate(
                         pos.entry_price, price, pos.is_long
-                    )
+                    )))
                 except Exception:
                     pass
                 

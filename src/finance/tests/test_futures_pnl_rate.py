@@ -42,10 +42,21 @@ class TestComputeFuturesPnlRate:
         rate = compute_futures_pnl_rate(8547.67, 8601.0, is_long=True)
         assert rate == pytest.approx(0.6239, abs=1e-3)
 
-    def test_decimal_inputs_preserve_type(self):
+    def test_decimal_inputs_return_float(self):
+        # 반환 타입은 float 로 일원화 (Decimal 입력이어도)
         rate = compute_futures_pnl_rate(Decimal("100"), Decimal("110"), is_long=True)
-        assert isinstance(rate, Decimal)
-        assert rate == Decimal("10")
+        assert isinstance(rate, float)
+        assert rate == pytest.approx(10.0)
+
+    def test_mixed_decimal_float_no_typeerror(self):
+        # Decimal 진입가 + float 현재가 혼합 — TypeError 없이 계산
+        rate = compute_futures_pnl_rate(Decimal("100"), 110.0, is_long=True)
+        assert rate == pytest.approx(10.0)
+        rate2 = compute_futures_pnl_rate(100.0, Decimal("90"), is_long=True)
+        assert rate2 == pytest.approx(-10.0)
+
+    def test_non_numeric_inputs_return_zero(self):
+        assert compute_futures_pnl_rate("abc", 100.0, is_long=True) == 0.0
 
     def test_zero_entry_returns_zero(self):
         assert compute_futures_pnl_rate(0.0, 8601.0, is_long=True) == 0.0

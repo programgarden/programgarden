@@ -17,24 +17,31 @@ DEFAULT_FEE_PER_CONTRACT = Decimal("7.5")  # 편도 $7.5 Safety Margin (왕복 $
 CAPITAL_GAINS_TAX_RATE = Decimal("0.11")  # 양도소득세 11%
 
 
-def compute_futures_pnl_rate(entry_price, current_price, is_long: bool):
+def compute_futures_pnl_rate(entry_price, current_price, is_long: bool) -> float:
     """해외선물 명목가 대비 수익률(%) 을 계산한다.
 
     승수(contract multiplier)는 분자·분모에서 소거되므로 수익률 계산에 불필요:
         long  : (current - entry) / entry * 100
         short : 부호 반전
 
-    진입가가 0/음수면 계산 불가 → 0 을 반환한다. 입력 타입(Decimal/float)을
-    보존하기 위해 두 가격 인자는 동일 타입이어야 한다.
+    두 가격 인자를 방어적으로 float 로 강제하고 항상 float 를 반환한다
+    (Decimal/float 혼합 호출의 TypeError 와 반환 타입 비일관을 제거). 진입가가
+    0/음수이거나 인자가 숫자로 변환 불가하면 0.0 을 반환한다.
 
     이 함수는 REST 잔고 직렬화(CIDBQ01500)와 실시간 트래커(FuturesAccountTracker)
-    양쪽이 **같은 값**을 내도록 공유하는 단일 진실 공급원이다.
+    양쪽이 **같은 값**을 내도록 공유하는 단일 진실 공급원이다. Decimal 필드에
+    담아야 하는 호출부는 반환값을 Decimal(str(...)) 로 감싼다.
     """
     if entry_price is None or current_price is None:
         return 0.0
-    if entry_price <= 0:
-        return Decimal("0") if isinstance(entry_price, Decimal) else 0.0
-    rate = (current_price - entry_price) / entry_price * 100
+    try:
+        entry = float(entry_price)
+        current = float(current_price)
+    except (TypeError, ValueError):
+        return 0.0
+    if entry <= 0:
+        return 0.0
+    rate = (current - entry) / entry * 100
     if not is_long:
         rate = -rate
     return rate
