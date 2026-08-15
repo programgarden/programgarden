@@ -2036,7 +2036,9 @@ class ExecutionContext:
                     # 승수 반영된 브로커 제공 손익금액 우선 (선물 승수 누락 시 금액이
                     # 1/N 로 축소되는 것을 방지). 없을 때만 산술 폴백.
                     pnl_amount_raw = pos.get("pnl_amount")
-                    if pnl_amount_raw is not None:
+                    # truthy 검사: 기본 0.0 placeholder 를 권위값으로 오인해 실손익을
+                    # 0 으로 무음 소거하는 것을 방지 (0 은 산술 폴백).
+                    if pnl_amount_raw:
                         try:
                             pnl_amt = float(pnl_amount_raw)
                         except (TypeError, ValueError):
@@ -2165,7 +2167,11 @@ class ExecutionContext:
                 # 때만 산술 폴백. pnl_rate 는 승수가 분자·분모에서 소거되는
                 # eval/buy 비율로 계속 계산하므로 정확하다(금액과 별개로 안전).
                 pnl_amount_raw = pos.get("pnl_amount")
-                if pnl_amount_raw is not None:
+                # truthy 검사: 여러 포지션 빌더가 pnl_amount 를 기본 0.0 placeholder 로
+                # 채우므로, 명시적 0/0.0 은 권위값이 아니라고 보고 산술 폴백한다
+                # (실손익을 0 으로 무음 소거하는 것을 방지). 진짜 0 손익도 산술이
+                # ≈0 을 내므로 결과 동일.
+                if pnl_amount_raw:
                     try:
                         total_pnl += float(pnl_amount_raw)
                     except (TypeError, ValueError):

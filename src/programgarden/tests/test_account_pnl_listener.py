@@ -287,6 +287,37 @@ class TestFuturesPnlAmountPreferred:
         # PositionDetail 에도 승수 반영된 금액
         assert float(result["other_positions"][0].pnl_amount) == pytest.approx(1600.0)
 
+    def test_placeholder_zero_pnl_amount_falls_back_to_arithmetic(self):
+        # MINOR1: 여러 빌더가 pnl_amount 를 기본 0.0 placeholder 로 넣는다.
+        # 명시적 0.0 을 권위값으로 오인해 실손익을 0 으로 무음 소거하면 안 된다 —
+        # 산술 폴백으로 실제 손익(100)을 계산해야 한다.
+        ctx = self._ctx()
+        pos = {
+            "AAPL": {
+                "symbol": "AAPL", "product": "overseas_stock",
+                "quantity": 10, "buy_price": 100.0, "current_price": 110.0,
+                "pnl_amount": 0.0,  # placeholder — 실손익 아님
+            }
+        }
+        result = ctx._calculate_account_pnl(pos)
+        assert result["account_overseas_stock_pnl_amount"] == pytest.approx(100.0)
+
+    def test_placeholder_zero_pnl_amount_workflow_fallback(self):
+        # MINOR1: no-tracker 워크플로우 폴백 경로도 동일 규약
+        ctx = self._ctx()
+        pos = {
+            "AAPL": {
+                "symbol": "AAPL", "product": "overseas_stock",
+                "quantity": 10, "buy_price": 100.0, "current_price": 110.0,
+                "pnl_amount": 0.0,
+            }
+        }
+        result = ctx._calculate_workflow_pnl(
+            current_prices={"AAPL": 110.0}, all_positions=pos, product="overseas_stock"
+        )
+        assert result["other_pnl_amount"] == pytest.approx(100.0)
+        assert float(result["other_positions"][0].pnl_amount) == pytest.approx(100.0)
+
     def test_stock_pnl_amount_unchanged(self):
         # 주식은 승수 1 이라 pnl_amount == qty×(current-avg) — 값 동일해야 함
         ctx = self._ctx()
