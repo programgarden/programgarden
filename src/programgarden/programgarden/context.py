@@ -2021,22 +2021,33 @@ class ExecutionContext:
             # 트래커 없음 = 모든 포지션이 "other"
             total_eval = 0.0
             total_buy = 0.0
+            total_pnl = 0.0
             other_positions_list = []
-            
+
             if all_positions:
                 for symbol, pos in all_positions.items():
                     qty = pos.get("quantity", 0)
                     buy_price = pos.get("buy_price", 0)
                     current_price = pos.get("current_price", 0)
                     pnl_rate = pos.get("pnl_rate", 0)
-                    
+
                     eval_amt = qty * current_price
                     buy_amt = qty * buy_price
-                    pnl_amt = eval_amt - buy_amt
-                    
+                    # 승수 반영된 브로커 제공 손익금액 우선 (선물 승수 누락 시 금액이
+                    # 1/N 로 축소되는 것을 방지). 없을 때만 산술 폴백.
+                    pnl_amount_raw = pos.get("pnl_amount")
+                    if pnl_amount_raw is not None:
+                        try:
+                            pnl_amt = float(pnl_amount_raw)
+                        except (TypeError, ValueError):
+                            pnl_amt = eval_amt - buy_amt
+                    else:
+                        pnl_amt = eval_amt - buy_amt
+
                     total_eval += eval_amt
                     total_buy += buy_amt
-                    
+                    total_pnl += pnl_amt
+
                     other_positions_list.append(PositionDetail(
                         symbol=symbol,
                         exchange=pos.get("exchange", ""),
@@ -2046,9 +2057,9 @@ class ExecutionContext:
                         pnl_amount=pnl_amt,
                         pnl_rate=pnl_rate,
                     ))
-            
-            total_pnl = total_eval - total_buy
-            total_pnl_rate = (total_pnl / total_buy * 100) if total_buy > 0 else 0.0
+
+            # 금액은 pnl_amount 합(브로커 제공 우선), 비율은 승수 무관 eval/buy 비율.
+            total_pnl_rate = ((total_eval - total_buy) / total_buy * 100) if total_buy > 0 else 0.0
             
             return {
                 "workflow_pnl_rate": 0.0,
@@ -2139,18 +2150,33 @@ class ExecutionContext:
         def calc_pnl(positions: Dict[str, Any]) -> Dict[str, float]:
             total_eval = 0.0
             total_buy = 0.0
+            total_pnl = 0.0
             for pos in positions.values():
                 qty = pos.get("quantity", 0) or pos.get("qty", 0)
                 buy_price = pos.get("buy_price", 0) or pos.get("avg_price", 0)
                 current_price = pos.get("current_price", buy_price)
-                total_eval += qty * current_price
-                total_buy += qty * buy_price
-            pnl_amount = total_eval - total_buy
-            pnl_rate = (pnl_amount / total_buy * 100) if total_buy > 0 else 0.0
+                eval_amt = qty * current_price
+                buy_amt = qty * buy_price
+                total_eval += eval_amt
+                total_buy += buy_amt
+                # 승수(contract multiplier)가 반영된 브로커 제공 손익금액이 있으면
+                # 그것을 우선 합산한다. 자체 산술 qty×(현재가-평단) 은 선물 승수를
+                # 무시해 평가손익이 1/N 로 축소된다(예: HKEX 승수 10 → 1/10). 없을
+                # 때만 산술 폴백. pnl_rate 는 승수가 분자·분모에서 소거되는
+                # eval/buy 비율로 계속 계산하므로 정확하다(금액과 별개로 안전).
+                pnl_amount_raw = pos.get("pnl_amount")
+                if pnl_amount_raw is not None:
+                    try:
+                        total_pnl += float(pnl_amount_raw)
+                    except (TypeError, ValueError):
+                        total_pnl += eval_amt - buy_amt
+                else:
+                    total_pnl += eval_amt - buy_amt
+            pnl_rate = ((total_eval - total_buy) / total_buy * 100) if total_buy > 0 else 0.0
             return {
                 "eval": total_eval,
                 "buy": total_buy,
-                "pnl_amount": pnl_amount,
+                "pnl_amount": total_pnl,
                 "pnl_rate": pnl_rate,
             }
 
@@ -2158,11 +2184,12 @@ class ExecutionContext:
         of_result = calc_pnl(overseas_futures_positions)
         ks_result = calc_pnl(korea_stock_positions)
 
-        # 전체 합산
+        # 전체 합산 — 금액은 상품별 pnl_amount(브로커 제공 우선) 합, 비율은
+        # 승수 무관한 eval/buy 비율로 산출.
         total_eval = os_result["eval"] + of_result["eval"] + ks_result["eval"]
         total_buy = os_result["buy"] + of_result["buy"] + ks_result["buy"]
-        total_pnl = total_eval - total_buy
-        total_pnl_rate = (total_pnl / total_buy * 100) if total_buy > 0 else 0.0
+        total_pnl = os_result["pnl_amount"] + of_result["pnl_amount"] + ks_result["pnl_amount"]
+        total_pnl_rate = ((total_eval - total_buy) / total_buy * 100) if total_buy > 0 else 0.0
 
         return {
             "account_total_pnl_rate": total_pnl_rate,

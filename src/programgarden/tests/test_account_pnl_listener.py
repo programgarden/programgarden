@@ -228,5 +228,79 @@ class TestBrokerNodeExecutor:
         assert callable(getattr(active, 'on_workflow_pnl_update'))
 
 
+class TestFuturesPnlAmountPreferred:
+    """D1: 선물 평가손익 승수 누락 — 포지션에 pnl_amount 가 있으면 우선 합산한다.
+
+    자체 산술 qty×(현재가-평단) 은 승수를 무시해 1/N 로 축소되므로,
+    브로커/트래커가 실은 pnl_amount(승수 반영)를 우선 써야 한다. pnl_rate 는
+    승수가 소거되는 eval/buy 비율이라 금액과 무관하게 정확하다.
+    """
+
+    def _ctx(self):
+        from programgarden.context import ExecutionContext
+        ctx = ExecutionContext(job_id="d1-job", workflow_id="d1-wf")
+        # no-tracker fallback 경로를 타도록 명시
+        ctx._workflow_position_tracker = None
+        return ctx
+
+    # 검증 케이스: qty=3, entry=8547.67, current=8601, 승수 10 → LS 금액 1,600 HKD
+    _POS = {
+        "HSIQ26": {
+            "symbol": "HSIQ26",
+            "product": "overseas_futures",
+            "quantity": 3,
+            "buy_price": 8547.67,
+            "current_price": 8601.0,
+            "pnl_amount": 1600.0,  # 승수 반영 (자체 산술이면 ≈160)
+            "pnl_rate": 0.6239,
+        }
+    }
+
+    def test_account_pnl_prefers_broker_pnl_amount(self):
+        ctx = self._ctx()
+        result = ctx._calculate_account_pnl(self._POS)
+        # 자체 산술이면 ≈160 이지만 pnl_amount 우선 → 1600
+        assert result["account_overseas_futures_pnl_amount"] == pytest.approx(1600.0)
+        assert result["account_total_pnl_amount"] == pytest.approx(1600.0)
+        # pnl_rate 는 승수 무관 eval/buy 비율 — 여전히 정확
+        expected_rate = (8601.0 - 8547.67) / 8547.67 * 100
+        assert result["account_overseas_futures_pnl_rate"] == pytest.approx(expected_rate)
+
+    def test_account_pnl_falls_back_to_arithmetic_when_absent(self):
+        ctx = self._ctx()
+        pos = {"HSIQ26": {**self._POS["HSIQ26"]}}
+        del pos["HSIQ26"]["pnl_amount"]
+        result = ctx._calculate_account_pnl(pos)
+        # 폴백: qty×(현재가-평단) = 3×53.33 ≈ 159.99
+        assert result["account_overseas_futures_pnl_amount"] == pytest.approx(3 * (8601.0 - 8547.67))
+
+    def test_workflow_fallback_prefers_broker_pnl_amount(self):
+        ctx = self._ctx()
+        result = ctx._calculate_workflow_pnl(
+            current_prices={"HSIQ26": 8601.0},
+            all_positions=self._POS,
+            product="overseas_futures",
+        )
+        # no-tracker fallback: 모든 포지션이 "other"
+        assert result["other_pnl_amount"] == pytest.approx(1600.0)
+        assert result["total_pnl_amount"] == pytest.approx(1600.0)
+        # PositionDetail 에도 승수 반영된 금액
+        assert float(result["other_positions"][0].pnl_amount) == pytest.approx(1600.0)
+
+    def test_stock_pnl_amount_unchanged(self):
+        # 주식은 승수 1 이라 pnl_amount == qty×(current-avg) — 값 동일해야 함
+        ctx = self._ctx()
+        pos = {
+            "AAPL": {
+                "symbol": "AAPL", "product": "overseas_stock",
+                "quantity": 10, "buy_price": 100.0, "current_price": 110.0,
+                "pnl_amount": 100.0,  # 10×(110-100)
+            }
+        }
+        result = ctx._calculate_account_pnl(pos)
+        assert result["account_overseas_stock_pnl_amount"] == pytest.approx(100.0)
+        assert result["account_overseas_stock_pnl_rate"] == pytest.approx(10.0)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

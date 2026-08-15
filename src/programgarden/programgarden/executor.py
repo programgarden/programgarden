@@ -4626,6 +4626,11 @@ class BrokerNodeExecutor(NodeExecutorBase):
                         "buy_price": float(pos_item.entry_price) if hasattr(pos_item, 'entry_price') else 0,
                         "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
                         "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
+                        # 승수(multiplier)가 반영된 트래커 손익금액을 실어 하류 pnl 집계가
+                        # 자체 산술(승수 무시, 1/N 축소) 대신 이 값을 우선 쓰게 한다.
+                        # 트래커는 REST(AbrdFutsEvalPnlAmt)·실시간 틱(net_pl_usd) 양쪽에서
+                        # pnl_amount 를 승수 반영해 갱신하므로 항상 최신값이다.
+                        "pnl_amount": float(pos_item.pnl_amount) if hasattr(pos_item, 'pnl_amount') else 0,
                         "side": pos_item.side if hasattr(pos_item, 'side') else "long",
                         "product": product,  # 상품 유형 (overseas_futures)
                     }
