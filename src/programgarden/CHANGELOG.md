@@ -1,5 +1,25 @@
 ## [Unreleased]
 
+## [1.31.1] - 2026-08-16
+> 주문 안전·관측성 패치 — A-4 주문 idempotency 가 실제 주문 결과 shape 에서 통째로
+> 미작동하던 결함을 복구하고, Split 분기 안 주문의 완료 이벤트 미방출을 해소한다.
+> `core` 1.23.0 · `finance` 1.7.0 · `community` 1.15.0 은 무변경 동반.
+
+### Fixed
+- **A-4 주문 idempotency 死 복구** — `record_order_submitted` 가 flat `{"success": ...}` 를
+  가정해 실제 중첩 shape(`{"order_result": {...}, "order_id": ...}`)에서 성공 주문을 한 번도
+  기록하지 못했다 → 체크포인트 복구 재실행 시 같은 실주문이 중복 제출될 수 있었다.
+  중첩 unwrap(+flat 하위호환)으로 교정, 차단 로그의 주문번호 표기도 중첩에서 도출.
+- **Split 분기 안 주문 node_state 미방출** — 분기 노드는 메인 루프가 건너뛰어 완료 이벤트가
+  전혀 방출되지 않았다(리스너의 per-order durable 로그 적재·실시간 표시 불가). 주문 결과
+  (order/modify/cancel_result)를 낸 실행에 한해 COMPLETED 를 방출한다("제출할 주문 없음"
+  빈 결과 제외 — 실시간 분기 틱 재구동의 이벤트 홍수 방지).
+
+### Added
+- **`idempotent_replay` 리플레이 표식** — A-4 차단 경로가 저장된 결과를 재방출할 때
+  outputs/order_result 양쪽에 표식을 달아, 리스너가 리플레이를 신규 주문으로 재적재
+  (durable 로그 중복행)하지 않게 한다.
+
 ## [1.31.0] - 2026-08-15
 > 선물 손익(P&L)·수익률(`pnl_rate`) 정합 릴리즈 — 계약 승수 역산·부호 보정으로 평가손익을
 > 바로잡고, 청산 계열 플러그인이 수량·방향을 하류로 전달한다. StopLoss/ProfitTarget 임계값
