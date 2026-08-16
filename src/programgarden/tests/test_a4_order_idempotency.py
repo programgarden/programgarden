@@ -210,17 +210,27 @@ class TestA4DuplicateOrderProof:
         return []
 
     def _mock_order_result(self, log: list) -> dict:
-        """order_result 반환값 (성공)"""
+        """order_result 반환값 (성공) — **프로덕션 중첩 shape**.
+
+        실제 _execute_overseas_stock 은 self._order_result(...) 를 반환한다:
+        {"order_result": {...}, "order_id": "..."}. 예전 이 mock 은 flat
+        {"success": ...} 을 반환해, record_order_submitted 의 flat 가정 결함
+        (중첩에서 success 를 못 찾아 성공 주문을 영영 미기록)을 가렸다.
+        """
         log.append("order_submitted")
         return {
-            "success": True,
-            "order_no": "ORD-MOCK-001",
-            "symbol": "AAPL",
-            "exchange": "NASDAQ",
-            "side": "buy",
-            "quantity": 10,
-            "price": 150.0,
-            "status": "submitted",
+            "order_result": {
+                "success": True,
+                "symbol": "AAPL",
+                "exchange": "NASDAQ",
+                "side": "buy",
+                "quantity": 10,
+                "price": 150.0,
+                "status": "submitted",
+                "error": None,
+                "diagnostics": None,
+            },
+            "order_id": "ORD-MOCK-001",
         }
 
     @pytest.mark.asyncio
@@ -345,11 +355,30 @@ class TestA4DuplicateOrderProof:
         with tempfile.TemporaryDirectory() as tmpdir:
             executor = WorkflowExecutor()
 
+            # record 스파이 — 회귀 가드의 관측점. 예전 record_order_submitted 는
+            # flat {"success": ...} 가정이라 중첩 shape 에서 조기 return 해 이 스파이가
+            # 0회 캡처됐다(성공 주문 영영 미기록 = A-4 死). 지금은 1회 캡처돼야 한다.
+            recorded: list = []
+            orig_record = CheckpointManager.record_order_submission
+
+            def spy_record(self_mgr, job_id, idempotency_key, order_result):
+                recorded.append({
+                    "job_id": job_id,
+                    "key": idempotency_key,
+                    "order_result": order_result,
+                })
+                return orig_record(
+                    self_mgr, job_id=job_id,
+                    idempotency_key=idempotency_key, order_result=order_result,
+                )
+
             # 1단계: idempotency 활성화 실행
             with patch.object(
                 NewOrderNodeExecutor,
                 "_execute_overseas_stock",
                 new=fake_execute_overseas_stock,
+            ), patch.object(
+                CheckpointManager, "record_order_submission", new=spy_record,
             ), patch("programgarden.executor.ensure_ls_login") as login_mock:
                 login_mock.return_value = (MagicMock(), True, None)
                 job1 = await asyncio.wait_for(
@@ -380,14 +409,30 @@ class TestA4DuplicateOrderProof:
                 cycle=0,
                 item=normalized_order,
             )
-            existing = mgr.get_submitted_order(job_id=job1.job_id, idempotency_key=idem_key)
-            if existing is None:
-                # 첫 실행에서 기록됐어야 할 주문 — 없으면 수동 삽입 (테스트 환경 보완)
-                mgr.record_order_submission(
-                    job_id=job1.job_id,
-                    idempotency_key=idem_key,
-                    order_result={"success": True, "order_no": "ORD-MOCK-001"},
-                )
+            # 회귀 가드: 첫 실행이 프로덕션 중첩 shape 그대로 record 를 발화해야 한다.
+            # (예전엔 flat 가정 조기 return 으로 0회 → 테스트가 "수동 삽입 보완"으로
+            # 결함을 덮고 통과했다. 그 보완을 제거하고 발화 자체를 단언한다.)
+            assert len(recorded) == 1, (
+                f"성공 주문 record 발화 {len(recorded)}회 (기대 1) — "
+                "record_order_submitted 가 중첩 order_result shape 의 success 를 "
+                "읽지 못하는 회귀 (A-4 死 결함)"
+            )
+            assert recorded[0]["job_id"] == job1.job_id
+            assert recorded[0]["key"] == idem_key, (
+                f"record 키 불일치: {recorded[0]['key']} != {idem_key}"
+            )
+            _rec_inner = recorded[0]["order_result"].get("order_result")
+            assert isinstance(_rec_inner, dict) and _rec_inner.get("success") is True
+
+            # 잡이 **정상 완료**되면 checkpoint 정리가 레지스트리도 비운다(의도 —
+            # 완료 잡은 복구 대상이 아님). 여기 크래시 시뮬레이션은 "완료 전 종료"
+            # 상태를 만들므로, 크래시였다면 남아 있었을 기록을 **캡처한 실기록물
+            # 그대로** 복원한다(예전의 손으로 만든 flat 삽입과 달리 프로덕션 shape).
+            mgr.record_order_submission(
+                job_id=recorded[0]["job_id"],
+                idempotency_key=recorded[0]["key"],
+                order_result=recorded[0]["order_result"],
+            )
 
             # checkpoint를 order1 미완료 상태로 덮어씀
             mgr.save_checkpoint(
@@ -433,6 +478,15 @@ class TestA4DuplicateOrderProof:
                 f"\n  [A-4 FIX] idempotency 활성: "
                 f"dispatch {calls_after_recovery}회 (복구 전={calls_after_first_run}) — 중복 차단 확인"
             )
+
+            # 리플레이 표식: 차단 경로가 돌려준 결과에는 idempotent_replay 가 달려
+            # 리스너(트레이 per-order 로그)가 신규 주문으로 재적재하지 않는다.
+            replay_outputs = job2.context.get_all_outputs("order1")
+            assert replay_outputs.get("idempotent_replay") is True, (
+                f"리플레이 표식 누락 — outputs={replay_outputs}"
+            )
+            inner = replay_outputs.get("order_result")
+            assert isinstance(inner, dict) and inner.get("idempotent_replay") is True
 
 
 # ---------------------------------------------------------------------------

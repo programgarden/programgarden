@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any, List, Callable, Awaitable, Set, Tuple
 from datetime import datetime
 import asyncio
 import ast
+import copy
 import re
 import uuid
 import logging
@@ -13683,13 +13684,23 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             item=normalized_order,
         )
         if existing_order is not None:
+            _inner = existing_order.get("order_result")
+            _inner = _inner if isinstance(_inner, dict) else {}
             context.log(
                 "info",
                 f"{node_type}: 중복 주문 차단 — idempotency 레지스트리에서 기존 결과 반환 "
-                f"(order_no={existing_order.get('order_no', '?')})",
+                f"(order_no={existing_order.get('order_id') or _inner.get('order_no') or '?'})",
                 node_id,
             )
-            return existing_order
+            # 리플레이 표식: 이 완료 이벤트는 새 주문이 아니라 저장된 결과의 재방출이다.
+            # 리스너(트레이 per-order durable 로그 등)가 이걸 신규 주문으로 재적재하면
+            # 같은 실주문이 로그에 2행 생긴다 — 깊은 복사에 표식을 달아 반환한다
+            # (레지스트리 원본은 불변 유지).
+            replayed = copy.deepcopy(existing_order)
+            if isinstance(replayed.get("order_result"), dict):
+                replayed["order_result"]["idempotent_replay"] = True
+            replayed["idempotent_replay"] = True
+            return replayed
 
         # === 4. LS 로그인 ===
         credential = context.get_credential()
@@ -19492,6 +19503,36 @@ class WorkflowJob:
             for port_name, value in outputs.items():
                 self.context.set_output(node_id, port_name, value)
 
+            # 분기 안 주문 실행 관측성 (2026-08-16): 분기 노드는 메인 루프가 건너뛰어
+            # (⏭ Skipping branch node) node_state 이벤트가 전혀 방출되지 않았다 —
+            # 실주문이 나가도 리스너(트레이 per-order durable 로그·SSE 화면)가 완료를
+            # 못 봤다. 전 노드 방출은 실시간 분기의 틱 재구동에서 이벤트 홍수가 되므로
+            # **주문 결과(order/modify/cancel_result)를 낸 실행에만** COMPLETED 를
+            # 방출한다("제출할 주문 없음" 빈 결과는 제외 — 틱마다 재발화 방지).
+            # 분기 전 노드의 일반 관측성은 SplitNode 시맨틱 개편에서 다룬다.
+            _order_payload = None
+            if isinstance(outputs, dict):
+                for _k in ("order_result", "modify_result", "cancel_result"):
+                    _r = outputs.get(_k)
+                    if isinstance(_r, dict):
+                        _order_payload = _r
+                        break
+            if _order_payload is not None and _order_payload.get("reason") not in (
+                "no_signal", "fetch_failed", "no_symbol"
+            ):
+                try:
+                    await self.context.notify_node_state(
+                        node_id=node_id,
+                        node_type=node.node_type,
+                        state=NodeState.COMPLETED,
+                        outputs=outputs,
+                    )
+                except Exception as _notify_err:
+                    # 관측 실패가 분기 실행(실주문 경로)을 막으면 안 된다.
+                    logger.warning(
+                        f"branch order node_state notify failed: {node_id}: {_notify_err}"
+                    )
+
             if is_realtime:
                 # 이 종목 구독 완료 — 다음 재구동부터는 이 노드를 건너뛴다
                 subscribed.append(branch_scope)
@@ -20637,8 +20678,17 @@ class WorkflowJob:
         """
         if not self._is_order_idempotency_enabled():
             return
-        # 실패한 주문은 기록하지 않음 (재시도 가능해야 함)
-        if not order_result.get('success'):
+        # 실패한 주문은 기록하지 않음 (재시도 가능해야 함).
+        # ⚠️ order_result 는 노드 outputs 통짜 {"order_result": {...}, "order_id": ...}
+        # (NewOrderNodeExecutor → context.record_order_submitted 경유). 예전 flat
+        # {"success": ...} 가정은 중첩 shape 에서 항상 None 이라 성공 주문이 한 번도
+        # 기록되지 않았다 — check 가 항상 미제출을 돌려줘 A-4 가드가 통째로 죽어
+        # 복구 재실행 시 실중복 주문이 나갈 수 있었다(2026-08-16). flat 이 오면
+        # 하위호환으로 그대로 본다.
+        inner = order_result.get("order_result")
+        if not isinstance(inner, dict):
+            inner = order_result
+        if not inner.get('success'):
             return
         try:
             key = self._build_order_idempotency_key(
