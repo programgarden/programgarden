@@ -17,6 +17,9 @@ from programgarden_core.models.order_diagnostics import (
     OVERSEAS_STOCK_REJECT_CODES,
     OVERSEAS_FUTURES_REJECT_CODES,
     KOREA_STOCK_REJECT_CODES,
+    RetryAdvice,
+    _MARKET_TABLES,
+    diagnose_missing_order_no,
     map_reject_code,
 )
 
@@ -204,6 +207,9 @@ def test_order_reject_info_model_dump() -> None:
         "cause": "Insufficient buying power.",
         "tip": "Deposit more funds.",
         "raw_msg": "잔고 부족",
+        # 미지정 시 UNKNOWN — 관측 안 된 코드를 "재시도해도 된다"로 기본값 두면
+        # 챗봇이 주문을 중복 발주할 수 있다. 모르면 모른다고 말한다.
+        "retry": "unknown",
         "known": True,
     }
 
@@ -255,3 +261,53 @@ def test_import_smoke_from_top_level() -> None:
         EmptyOrderReason as _e,
         map_reject_code as _m,
     )
+
+
+# ---------------------------------------------------------------------------
+# 재시도 판단 (RetryAdvice) — 챗봇이 "다시 걸까 / 고치라고 할까 / 기다릴까"를
+# 프로즈에서 추론하지 않고 필드 하나로 알 수 있어야 한다.
+# ---------------------------------------------------------------------------
+
+def test_measured_codes_carry_a_retry_decision() -> None:
+    """실측 등재된 코드는 재시도 판단을 함께 준다."""
+    # 같은 요청을 다시 보내면 같은 답이 오는 것들
+    for market, code in (
+        ("overseas_stock", "02259"),   # 그 원주문번호가 없다
+        ("overseas_stock", "03053"),   # 없는 종목
+        ("overseas_stock", "03759"),   # 정정/취소할 잔량 없음
+        ("korea_stock", "01524"),      # 없는 종목
+        ("korea_stock", "03056"),      # 그 원주문번호가 없다
+    ):
+        assert map_reject_code(market, code).retry is RetryAdvice.DO_NOT_RETRY, code
+
+    # 사용자가 뭔가 바꾸면 통하는 것들
+    assert map_reject_code("overseas_stock", "02201").retry is RetryAdvice.RETRY_AFTER_FIX
+    assert map_reject_code("korea_stock", "03181").retry is RetryAdvice.RETRY_AFTER_FIX
+
+
+def test_unobserved_code_never_claims_it_is_retryable() -> None:
+    """🔴 관측 안 된 코드는 UNKNOWN — 챗봇이 raw_msg 를 읽고 판단하라는 뜻이다.
+
+    여기에 "재시도 가능" 기본값을 두면, 접수됐는지 알 수 없는 주문을 다시 보내
+    **중복 발주**가 난다. 모르면 모른다고 말하는 쪽이 언제나 싸다.
+    """
+    info = map_reject_code("korea_stock", "03591", raw_msg="입력일자를 잘못 입력하셨습니다")
+    assert info.known is False
+    assert info.retry is RetryAdvice.UNKNOWN
+    assert info.raw_msg == "입력일자를 잘못 입력하셨습니다"   # 증권사 원문이 그대로 실린다
+    assert info.rsp_cd == "03591"
+
+
+def test_accepted_but_unnumbered_order_is_never_retried() -> None:
+    """접수는 됐는데 번호가 없는 상태에서 재전송하면 살아 있는 주문이 중복된다."""
+    info = diagnose_missing_order_no("korea_stock", "00040", raw_msg="")
+    assert info.known is True
+    assert info.retry is RetryAdvice.DO_NOT_RETRY
+
+
+def test_every_registered_code_declares_a_retry_decision() -> None:
+    """등재하면서 재시도 판단을 빠뜨리면 조용히 UNKNOWN 이 된다 — 그걸 막는다."""
+    for market, table in _MARKET_TABLES.items():
+        for code, entry in table.items():
+            assert entry.get("retry"), f"{market}/{code} 에 retry 가 없다"
+            RetryAdvice(entry["retry"])   # 오타면 여기서 터진다

@@ -30,6 +30,32 @@ from typing import Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class RetryAdvice(str, Enum):
+    """Whether re-sending the same order could ever succeed.
+
+    The consuming chatbot has to answer one question before anything else:
+    *do I try again, ask the user to change something, or wait?* Leaving that to
+    be inferred from prose means every consumer re-derives it, differently.
+
+    ``UNKNOWN`` is not a failure of this module — it is the honest answer for a
+    code we have never observed. The chatbot then reads ``raw_msg`` (the broker's
+    own words, always carried) and decides. Never guess a value here from an
+    unverified spec; that is how a "just retry" ends up duplicating an order.
+    """
+
+    DO_NOT_RETRY = "do_not_retry"
+    """The same request will get the same answer. Nothing to wait for."""
+
+    RETRY_AFTER_FIX = "retry_after_fix"
+    """Retrying is fine once the user changes something (price, quantity, cash)."""
+
+    RETRY_LATER = "retry_later"
+    """Transient — the same request may succeed later without any change."""
+
+    UNKNOWN = "unknown"
+    """We have never observed this code. Read ``raw_msg`` and decide."""
+
+
 class OrderRejectInfo(BaseModel):
     """Structured diagnostic for a broker-rejected order.
 
@@ -56,6 +82,13 @@ class OrderRejectInfo(BaseModel):
     raw_msg: str = Field(
         default="",
         description="Original LS broker message (rsp_msg / error_msg), always included.",
+    )
+    retry: RetryAdvice = Field(
+        default=RetryAdvice.UNKNOWN,
+        description=(
+            "Whether re-sending the same order could succeed. UNKNOWN means the "
+            "code is unobserved — read raw_msg and decide, do not blind-retry."
+        ),
     )
     known: bool = Field(
         description=(
@@ -100,10 +133,12 @@ class EmptyOrderReason(str, Enum):
 # the returned rsp_cd/rsp_msg — none of these are inferred from the LS spec.
 OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
     "02201": {
+        "retry": RetryAdvice.RETRY_AFTER_FIX.value,
         "cause": "The account does not have enough cash to place this order.",
         "tip": "Reduce the quantity or price, or deposit more cash, then retry.",
     },
     "02259": {
+        "retry": RetryAdvice.DO_NOT_RETRY.value,
         "cause": "No order exists for the original order number given.",
         "tip": (
             "Re-read the open orders and use an order number from that list; "
@@ -111,10 +146,12 @@ OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
         ),
     },
     "03053": {
+        "retry": RetryAdvice.DO_NOT_RETRY.value,
         "cause": "The broker does not recognize the symbol code.",
         "tip": "Check the symbol spelling and that it is listed on the given exchange.",
     },
     "03759": {
+        "retry": RetryAdvice.DO_NOT_RETRY.value,
         "cause": (
             "The original order has no remaining quantity to modify or cancel "
             "(it was already filled or already cancelled)."
@@ -137,10 +174,12 @@ OVERSEAS_FUTURES_REJECT_CODES: Dict[str, Dict[str, str]] = {}
 # catches it.
 KOREA_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
     "01524": {
+        "retry": RetryAdvice.DO_NOT_RETRY.value,
         "cause": "The broker does not recognize the symbol code.",
         "tip": "Check the symbol code — Korean issues are 6 digits, optionally prefixed with 'A'.",
     },
     "03056": {
+        "retry": RetryAdvice.DO_NOT_RETRY.value,
         "cause": "No order exists for the original order number given.",
         "tip": (
             "Re-read the open orders (t0425) and use an order number from that "
@@ -148,6 +187,7 @@ KOREA_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
         ),
     },
     "03181": {
+        "retry": RetryAdvice.RETRY_AFTER_FIX.value,
         "cause": "The order price is below the daily lower price limit.",
         "tip": (
             "Korean equities trade inside a daily price band. Move the price "
@@ -202,6 +242,9 @@ def diagnose_missing_order_no(
             "Verify market hours and re-query open orders to confirm whether "
             "the order was actually placed."
         ),
+        # Accepted-but-unnumbered: re-sending could duplicate a live order, so the
+        # only safe move is to re-query, never to retry.
+        retry=RetryAdvice.DO_NOT_RETRY,
         raw_msg=raw_msg,
         known=True,
     )
@@ -238,19 +281,30 @@ def map_reject_code(market: str, rsp_cd: str, raw_msg: str = "") -> OrderRejectI
             f"Order rejected by broker (code {rsp_cd}, no diagnostic mapping)"
         )
         tip = entry.get("tip") or None
+        advice = entry.get("retry") or RetryAdvice.UNKNOWN.value
         return OrderRejectInfo(
             rsp_cd=rsp_cd,
             cause=cause,
             tip=tip,
             raw_msg=raw_msg,
+            retry=RetryAdvice(advice),
             known=True,
         )
 
+    # Unmapped code. The consumer (chatbot) decides the retry itself, and it gets
+    # the whole model — rsp_cd, raw_msg and retry=UNKNOWN — so `cause` stays the
+    # broker's own words rather than a restatement of fields already present.
+    # An empty raw_msg is itself information: LS business rejections routinely
+    # arrive with an empty error_msg and the cause only in rsp_cd (live-measured
+    # 2026-08-19), so "no message" must not read as "no error".
     cause = raw_msg or f"Order rejected by broker (code {rsp_cd}, no diagnostic mapping)"
     return OrderRejectInfo(
         rsp_cd=rsp_cd,
         cause=cause,
         tip=None,
+        # 🔴 Never guess. An unobserved code retried blindly can duplicate an
+        # order; the chatbot must read the message and decide.
+        retry=RetryAdvice.UNKNOWN,
         raw_msg=raw_msg,
         known=False,
     )

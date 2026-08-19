@@ -95,6 +95,7 @@ from programgarden_core.models.validation import (
 )
 from programgarden_core.models.order_diagnostics import (
     OrderRejectInfo,
+    RetryAdvice,
     EmptyOrderReason,
     map_reject_code,
     diagnose_missing_order_no,
@@ -191,6 +192,7 @@ __all__ = [
     "build_error",
     # Order Diagnostics (runtime order reject + empty-order reason)
     "OrderRejectInfo",
+    "RetryAdvice",
     "EmptyOrderReason",
     "map_reject_code",
     "diagnose_missing_order_no",

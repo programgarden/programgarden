@@ -129,6 +129,7 @@ __all__ = [
     "build_error",
     # Order Diagnostics (runtime order reject + empty-order reason)
     "OrderRejectInfo",
+    "RetryAdvice",
     "EmptyOrderReason",
     "map_reject_code",
     "diagnose_missing_order_no",
