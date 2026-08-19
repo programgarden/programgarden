@@ -29,6 +29,11 @@ from programgarden_core.models.order_diagnostics import (
 # triggering each rejection. Pinned here so a future guess-based addition fails.
 LIVE_VERIFIED_OVERSEAS_STOCK_CODES = {"02201", "02259", "03053", "03759"}
 
+# Registered from a real LS Korea-stock account on 2026-08-19 the same way
+# (CSPAT00601 new order / CSPAT00801 cancel, each rejection deliberately
+# triggered). Pinned so a future guess-based addition fails.
+LIVE_VERIFIED_KOREA_STOCK_CODES = {"01524", "03056", "03181"}
+
 _HANGUL = re.compile(r"[가-힣ᄀ-ᇿ㄰-㆏]")
 
 
@@ -49,11 +54,23 @@ def test_registered_entries_carry_english_cause_and_tip() -> None:
         assert not _HANGUL.search(tip), f"{code} tip contains Korean: {tip!r}"
 
 
+def test_korea_stock_table_holds_exactly_the_live_verified_codes() -> None:
+    assert set(KOREA_STOCK_REJECT_CODES) == LIVE_VERIFIED_KOREA_STOCK_CODES
+
+
+def test_korea_entries_carry_english_cause_and_tip() -> None:
+    for code, entry in KOREA_STOCK_REJECT_CODES.items():
+        cause, tip = entry.get("cause", ""), entry.get("tip", "")
+        assert cause.strip(), f"{code} has no cause"
+        assert tip.strip(), f"{code} has no tip"
+        assert not _HANGUL.search(cause), f"{code} cause contains Korean: {cause!r}"
+        assert not _HANGUL.search(tip), f"{code} tip contains Korean: {tip!r}"
+
+
 def test_unmeasured_tables_stay_empty() -> None:
-    # Futures / Korea rejects have not been live-collected yet. They must stay
-    # empty rather than be filled in from the spec.
+    # Overseas-futures rejects have not been live-collected yet. That table must
+    # stay empty rather than be filled in from the spec.
     assert OVERSEAS_FUTURES_REJECT_CODES == {}
-    assert KOREA_STOCK_REJECT_CODES == {}
 
 
 # ---------------------------------------------------------------------------

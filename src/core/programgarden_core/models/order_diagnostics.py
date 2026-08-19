@@ -126,7 +126,35 @@ OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
     },
 }
 OVERSEAS_FUTURES_REJECT_CODES: Dict[str, Dict[str, str]] = {}
-KOREA_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {}
+
+# Live-verified 2026-08-19 on a real LS Korea-stock account (CSPAT00601 new /
+# CSPAT00801 cancel). Same shape as the overseas table: rsp_cd carries the cause
+# and error_msg comes back empty, so a rejection is only visible through rsp_cd.
+#
+# One shape difference worth knowing: a rejected *cancel* (CSPAT00801) still
+# returns block2, but with OrdNo=0 — unlike a rejected *new* order, which comes
+# back with no block2 at all. The executor's "OrdNo missing or 0" guard is what
+# catches it.
+KOREA_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
+    "01524": {
+        "cause": "The broker does not recognize the symbol code.",
+        "tip": "Check the symbol code — Korean issues are 6 digits, optionally prefixed with 'A'.",
+    },
+    "03056": {
+        "cause": "No order exists for the original order number given.",
+        "tip": (
+            "Re-read the open orders (t0425) and use an order number from that "
+            "list; the number may be wrong or the order may already be gone."
+        ),
+    },
+    "03181": {
+        "cause": "The order price is below the daily lower price limit.",
+        "tip": (
+            "Korean equities trade inside a daily price band. Move the price "
+            "inside the band (the quote TR reports the upper/lower limits)."
+        ),
+    },
+}
 
 _MARKET_TABLES: Dict[str, Dict[str, Dict[str, str]]] = {
     "overseas_stock": OVERSEAS_STOCK_REJECT_CODES,

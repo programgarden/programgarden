@@ -15789,6 +15789,43 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                 "cancelled_order": None,
             }
 
+    async def _fetch_korea_remaining_qty(
+        self,
+        ls,
+        order_id: str,
+        symbol: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> int:
+        """원주문의 미체결 잔량을 t0425 로 조회한다. 못 구하면 0 (추측하지 않는다).
+
+        🔴 t0425 의 ``expcode`` 는 **6자리 순수 코드**다. 주문 TR(CSPAT00601)의
+        ``IsuNo`` 는 ``A``+6자리도 받으므로 그대로 넘기면 **0건**이 돌아오고, 그
+        0건을 "잔량 없음" 으로 읽으면 조용히 틀린 수량으로 취소하게 된다.
+        """
+        try:
+            from programgarden_finance.ls.korea_stock.accno.t0425.blocks import T0425InBlock
+
+            code = symbol[1:] if len(symbol) == 7 and symbol[:1].isalpha() else symbol
+            response = await ls.korea_stock().accno().t0425(
+                T0425InBlock(expcode=code, chegb="2", medosu="0", sortgb="1", cts_ordno="")
+            ).req_async()
+            if getattr(response, "error_msg", None):
+                context.log("warning", f"t0425 조회 실패: {response.error_msg}", node_id)
+                return 0
+            for row in (getattr(response, "block", None) or []):
+                if str(getattr(row, "ordno", "")) == str(order_id):
+                    return int(getattr(row, "ordrem", 0) or 0)
+            context.log(
+                "warning",
+                f"원주문 {order_id} 이 미체결 목록에 없습니다 (이미 체결/취소됐을 수 있음)",
+                node_id,
+            )
+            return 0
+        except Exception as e:  # 조회 실패는 취소 실패로 이어져야 한다 — 추측 금지
+            context.log("warning", f"원주문 잔량 조회 중 오류: {e}", node_id)
+            return 0
+
     async def _cancel_korea_stock(
         self,
         ls,
@@ -15801,12 +15838,37 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         """국내주식 취소주문 실행 (CSPAT00801)"""
         from programgarden_finance.ls.korea_stock.order.CSPAT00801.blocks import CSPAT00801InBlock1
 
-        # 취소 수량: config에서 지정하거나, 미지정 시 원주문 잔량 사용
+        # 취소 수량. 🔴 국내는 해외와 의미가 **다르다** (2026-08-19 실계좌 실측):
+        #   해외주식 COSAT00301 : OrdQty=0  → 전량 취소
+        #   국내주식 CSPAT00801 : OrdQty=N  → **N주만** 취소 (부분취소)
+        # 실측 근거 — 2주 주문(ordno=15531)을 OrdQty=1 로 취소하니 rsp_cd=00156
+        # "취소주문이 완료되었습니다" 를 받고도 t0425 잔량이 2→**1** 로 남았다.
+        # 따라서 수량 미지정 시 1 로 떨어뜨리면 "취소했습니다" 라고 답한 뒤 잔량이
+        # 그대로 살아 시장에 남는다(사용자는 취소된 줄 안다). 미지정이면 원주문
+        # 잔량을 조회해서 그 값을 쓰고, 잔량을 못 구하면 **1 로 추측하지 않고** 실패한다.
         cancel_qty = config.get("quantity", 0) or config.get("cancel_quantity", 0)
         if not cancel_qty:
-            context.log("warning", f"cancel_quantity not specified, using original order remaining qty from order info", node_id)
-            # 미체결 잔량 정보가 없으면 기본 1 (API에서 잔량 초과 시 에러 반환)
-            cancel_qty = config.get("remaining_quantity", 1)
+            cancel_qty = config.get("remaining_quantity", 0)
+        if not cancel_qty:
+            cancel_qty = await self._fetch_korea_remaining_qty(ls, order_id, symbol, context, node_id)
+        if not cancel_qty:
+            reason = (
+                "취소 수량을 정할 수 없습니다 — 취소할 수량(quantity)이 지정되지 않았고 "
+                f"원주문({order_id})의 미체결 잔량도 조회되지 않았습니다. "
+                "국내주식 취소는 수량만큼만 취소되므로(부분취소), 임의 수량으로 보내면 "
+                "일부만 취소되고 나머지가 시장에 남습니다. 취소할 수량을 지정해 주세요."
+            )
+            context.log("warning", f"Korea stock cancel aborted: {symbol} — {reason}", node_id)
+            return {
+                "cancel_result": {
+                    "success": False,
+                    "error": reason,
+                    "order_id": order_id,
+                    "product": "korea_stock",
+                },
+                "cancelled_order_id": "",
+                "cancelled_order": None,
+            }
 
         try:
             body = CSPAT00801InBlock1(
