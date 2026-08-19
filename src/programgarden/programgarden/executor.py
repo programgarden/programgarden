@@ -26,6 +26,7 @@ from programgarden_core import (
     OrderRejectInfo,
     ValidationLimits,
     map_reject_code,
+    diagnose_missing_order_no,
 )
 from programgarden.context import ExecutionContext, WorkflowEvent
 from programgarden.reconnect_handler import ReconnectHandler
@@ -368,6 +369,43 @@ def _build_reconnect_hooks(
 
 class NodeExecutorBase:
     """Node executor base class"""
+
+    async def _notify_order_reject(
+        self,
+        context: ExecutionContext,
+        node_id: str,
+        symbol: str,
+        reject: OrderRejectInfo,
+        node_type: str = "OverseasStockNewOrderNode",
+    ) -> None:
+        """주문 거부 시 투자자 알림 1건 발행(on_notification).
+
+        on_log warning 과 별개로, AI/UI/텔레그램 소비자가 거부 사유(cause)와 대응
+        팁(tip)을 구조화 payload 로 받도록 한다. ``node_type`` 은 시장별 주문 노드
+        이름(해외주식/해외선물/국내주식)을 정확히 라벨링하기 위해 호출자가 전달한다.
+        """
+        try:
+            await context.send_notification(
+                # ORDER_REJECTED is the semantically correct category for a
+                # broker reject (RISK_ALERT means drawdown/risk-halt).
+                category=NotificationCategory.ORDER_REJECTED,
+                severity=NotificationSeverity.WARNING,
+                title=f"Order rejected: {symbol}",
+                message=f"{symbol} order rejected — {reject.cause}",
+                node_id=node_id,
+                node_type=node_type,
+                data={
+                    "symbol": symbol,
+                    "rsp_cd": reject.rsp_cd,
+                    "cause": reject.cause,
+                    "tip": reject.tip,
+                    "raw_msg": reject.raw_msg,
+                    "known": reject.known,
+                },
+            )
+        except Exception:
+            # 알림 전파 실패가 주문 결과 반환을 막아서는 안 된다.
+            pass
 
     async def execute(
         self,
@@ -14084,14 +14122,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if not order_no:
                 msg = response.rsp_msg or "주문번호 없음"
                 context.log("warning", f"Order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
-                # rsp_cd 가 성공("00000")인데 OrderNo 가 안 온 케이스 — rsp_cd 매핑이
-                # 아니라 전용 진단을 동봉한다(장 마감 / 브로커 지연 등).
-                reject = OrderRejectInfo(
-                    rsp_cd=response.rsp_cd or "",
-                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
-                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
-                    raw_msg=msg,
-                    known=True,
+                # 🔴 종전에는 무조건 "장 마감 / 브로커 지연" 이라고 단정했다. 전제는
+                # "rsp_cd 는 성공인데 OrdNo 만 없다" 였는데, 2026-08-19 실계좌 실측에서
+                # LS 의 업무 거부는 **error_msg 가 비고 rsp_cd 에 오류 코드가 실린 채
+                # 접수 블록 자체가 없이** 온다는 게 확인됐다(02201 예수금 부족 등).
+                # 그래서 이 분기가 실제 거부를 삼키고 틀린 원인을 말하고 있었다.
+                reject = diagnose_missing_order_no(
+                    "overseas_stock", response.rsp_cd or "", msg
                 )
                 await self._notify_order_reject(context, node_id, symbol, reject)
                 return self._order_result(
@@ -14633,14 +14670,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if not order_no:
                 msg = response.rsp_msg or "주문번호 없음"
                 context.log("warning", f"Futures order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
-                # rsp_cd 성공인데 OrderNo 가 안 온 케이스 — 전용 lifecycle 진단 동봉
-                # (장 마감 / 브로커 지연 등). stock 경로와 동일 구조.
-                reject = OrderRejectInfo(
-                    rsp_cd=response.rsp_cd or "",
-                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
-                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
-                    raw_msg=msg,
-                    known=True,
+                # 🔴 종전에는 무조건 "장 마감 / 브로커 지연" 이라고 단정했다. 전제는
+                # "rsp_cd 는 성공인데 OrdNo 만 없다" 였는데, 2026-08-19 실계좌 실측에서
+                # LS 의 업무 거부는 **error_msg 가 비고 rsp_cd 에 오류 코드가 실린 채
+                # 접수 블록 자체가 없이** 온다는 게 확인됐다(02201 예수금 부족 등).
+                # 그래서 이 분기가 실제 거부를 삼키고 틀린 원인을 말하고 있었다.
+                reject = diagnose_missing_order_no(
+                    "overseas_futures", response.rsp_cd or "", msg
                 )
                 await self._notify_order_reject(
                     context, node_id, symbol, reject,
@@ -14772,12 +14808,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if not order_no:
                 msg = response.rsp_msg or "주문번호 없음"
                 context.log("warning", f"Korea stock order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
-                reject = OrderRejectInfo(
-                    rsp_cd=response.rsp_cd or "",
-                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
-                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
-                    raw_msg=msg,
-                    known=True,
+                # 🔴 종전에는 무조건 "장 마감 / 브로커 지연" 이라고 단정했다. 전제는
+                # "rsp_cd 는 성공인데 OrdNo 만 없다" 였는데, 2026-08-19 실계좌 실측에서
+                # LS 의 업무 거부는 **error_msg 가 비고 rsp_cd 에 오류 코드가 실린 채
+                # 접수 블록 자체가 없이** 온다는 게 확인됐다(02201 예수금 부족 등).
+                # 그래서 이 분기가 실제 거부를 삼키고 틀린 원인을 말하고 있었다.
+                reject = diagnose_missing_order_no(
+                    "korea_stock", response.rsp_cd or "", msg
                 )
                 await self._notify_order_reject(
                     context, node_id, symbol, reject,
@@ -14807,43 +14844,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             return self._order_result(
                 False, symbol, "KRX", side, qty, price, str(e), reject_info=reject,
             )
-
-    async def _notify_order_reject(
-        self,
-        context: ExecutionContext,
-        node_id: str,
-        symbol: str,
-        reject: OrderRejectInfo,
-        node_type: str = "OverseasStockNewOrderNode",
-    ) -> None:
-        """주문 거부 시 투자자 알림 1건 발행(on_notification).
-
-        on_log warning 과 별개로, AI/UI/텔레그램 소비자가 거부 사유(cause)와 대응
-        팁(tip)을 구조화 payload 로 받도록 한다. ``node_type`` 은 시장별 주문 노드
-        이름(해외주식/해외선물/국내주식)을 정확히 라벨링하기 위해 호출자가 전달한다.
-        """
-        try:
-            await context.send_notification(
-                # ORDER_REJECTED is the semantically correct category for a
-                # broker reject (RISK_ALERT means drawdown/risk-halt).
-                category=NotificationCategory.ORDER_REJECTED,
-                severity=NotificationSeverity.WARNING,
-                title=f"Order rejected: {symbol}",
-                message=f"{symbol} order rejected — {reject.cause}",
-                node_id=node_id,
-                node_type=node_type,
-                data={
-                    "symbol": symbol,
-                    "rsp_cd": reject.rsp_cd,
-                    "cause": reject.cause,
-                    "tip": reject.tip,
-                    "raw_msg": reject.raw_msg,
-                    "known": reject.known,
-                },
-            )
-        except Exception:
-            # 알림 전파 실패가 주문 결과 반환을 막아서는 안 된다.
-            pass
 
     def _order_result(
         self,
@@ -15612,12 +15612,22 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             if not cancel_ord_no or cancel_ord_no == "0":
                 rsp_cd = getattr(response, "rsp_cd", "") or ""
                 rsp_msg = getattr(response, "rsp_msg", "") or ""
+                # 실측 취소 거부 코드(2026-08-19): 02259 = 그 원주문번호가 없음,
+                # 03759 = 정정/취소할 잔량이 없음(이미 체결됐거나 이미 취소됨).
+                # 코드표에 있으면 원인·조치를 특정해 주고, 없으면 원문만 넘긴다.
+                reject = diagnose_missing_order_no("overseas_stock", rsp_cd, rsp_msg)
                 reason = (
                     f"취소가 접수되지 않았습니다 (취소주문번호 미발급) — "
                     f"rsp_cd={rsp_cd or '없음'}, rsp_msg={rsp_msg or '없음'}. "
-                    "원주문이 그대로 살아 있을 수 있으니 미체결 조회로 확인하세요."
+                    f"{reject.cause}"
+                    + (f" {reject.tip}" if reject.tip else
+                       " 원주문이 그대로 살아 있을 수 있으니 미체결 조회로 확인하세요.")
                 )
                 context.log("warning", f"Cancel order rejected: {symbol} — {reason}", node_id)
+                await self._notify_order_reject(
+                    context, node_id, symbol, reject,
+                    node_type="OverseasStockCancelOrderNode",
+                )
                 return {
                     "cancel_result": {
                         "success": False,
@@ -15626,6 +15636,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                         "product": "overseas_stock",
                         "rsp_cd": rsp_cd,
                         "rsp_msg": rsp_msg,
+                        "reject_info": reject.model_dump(),
                     },
                     "cancelled_order_id": "",
                     "cancelled_order": None,

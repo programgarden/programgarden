@@ -95,7 +95,36 @@ class EmptyOrderReason(str, Enum):
 # after it is observed and confirmed in live trading.
 # ---------------------------------------------------------------------------
 
-OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {}
+# Live-verified 2026-08-19 on a real LS overseas-stock account (COSAT00301).
+# Each entry was produced by deliberately triggering the rejection and reading
+# the returned rsp_cd/rsp_msg — none of these are inferred from the LS spec.
+OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
+    "02201": {
+        "cause": "The account does not have enough cash to place this order.",
+        "tip": "Reduce the quantity or price, or deposit more cash, then retry.",
+    },
+    "02259": {
+        "cause": "No order exists for the original order number given.",
+        "tip": (
+            "Re-read the open orders and use an order number from that list; "
+            "the number may be wrong or the order may already be gone."
+        ),
+    },
+    "03053": {
+        "cause": "The broker does not recognize the symbol code.",
+        "tip": "Check the symbol spelling and that it is listed on the given exchange.",
+    },
+    "03759": {
+        "cause": (
+            "The original order has no remaining quantity to modify or cancel "
+            "(it was already filled or already cancelled)."
+        ),
+        "tip": (
+            "Re-read the order status before retrying — a filled order cannot be "
+            "cancelled, and an already-cancelled order needs no action."
+        ),
+    },
+}
 OVERSEAS_FUTURES_REJECT_CODES: Dict[str, Dict[str, str]] = {}
 KOREA_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {}
 
@@ -104,6 +133,50 @@ _MARKET_TABLES: Dict[str, Dict[str, Dict[str, str]]] = {
     "overseas_futures": OVERSEAS_FUTURES_REJECT_CODES,
     "korea_stock": KOREA_STOCK_REJECT_CODES,
 }
+
+
+# Response codes that mean "the broker accepted the order". Live-measured on a
+# real LS account (2026-08-19): new buy "00040", new sell "00039", cancel
+# "00156". "00000" is the generic success code kept for defensiveness.
+ORDER_ACCEPTED_RSP_CDS = frozenset({"00000", "00039", "00040", "00156"})
+
+
+def diagnose_missing_order_no(
+    market: str, rsp_cd: str, raw_msg: str = ""
+) -> OrderRejectInfo:
+    """Diagnose a response that carries no order number.
+
+    🔴 Callers used to assume this always meant "the broker accepted it but the
+    order number is missing", and told the user it was probably a closed market
+    or a broker delay. Live measurement on a real account (2026-08-19) showed
+    that assumption is wrong: an LS business rejection arrives with an **empty
+    ``error_msg``, an error ``rsp_cd``, and no response block at all** — e.g.
+    ``02201`` (not enough cash) or ``03053`` (unknown symbol). So that branch
+    swallowed real rejections and reported the wrong cause — telling a user
+    whose account was short on cash that the market was probably closed.
+
+    Only a genuine accept code falls back to the lifecycle explanation; anything
+    else is routed to the live-verified reject table.
+    """
+    rsp_cd = str(rsp_cd or "")
+    raw_msg = str(raw_msg or "")
+
+    if rsp_cd and rsp_cd not in ORDER_ACCEPTED_RSP_CDS:
+        return map_reject_code(market, rsp_cd, raw_msg)
+
+    return OrderRejectInfo(
+        rsp_cd=rsp_cd,
+        cause=(
+            "Order accepted but no order number returned "
+            "(likely market closed or broker delay)"
+        ),
+        tip=(
+            "Verify market hours and re-query open orders to confirm whether "
+            "the order was actually placed."
+        ),
+        raw_msg=raw_msg,
+        known=True,
+    )
 
 
 def map_reject_code(market: str, rsp_cd: str, raw_msg: str = "") -> OrderRejectInfo:
