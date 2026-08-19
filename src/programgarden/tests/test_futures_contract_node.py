@@ -103,6 +103,49 @@ def _patched_master(rows):
     return patch("programgarden.executor.ensure_ls_login", return_value=(ls, True, None))
 
 
+async def _async_noop(*_a, **_k):
+    """asyncio.sleep 대체 — 재시도 백오프를 실시간 대기 없이 통과시킨다."""
+    return None
+
+
+def _patched_master_raw(block, rsp_cd="00000", rsp_msg="", error_msg=""):
+    """block + LS 응답 코드(rsp_cd/rsp_msg/error_msg)까지 갖춘 o3101 응답을 흉내낸다.
+
+    업무거부는 HTTP 200 + 빈 block + rsp_cd(원인) 로 오고 error_msg 는 "" 일 수 있다 —
+    사유 노출 경로가 rsp_cd 를 실제로 읽는지 검증하기 위한 mock.
+    """
+    response = SimpleNamespace(block=block, rsp_cd=rsp_cd, rsp_msg=rsp_msg, error_msg=error_msg)
+
+    query = MagicMock()
+
+    async def _req_async():
+        return response
+
+    query.req_async = _req_async
+
+    ls = MagicMock()
+    ls.overseas_futureoption.return_value.market.return_value.해외선물마스터조회.return_value = query
+    return patch("programgarden.executor.ensure_ls_login", return_value=(ls, True, None))
+
+
+def _patched_master_sequence(responses):
+    """호출마다 다른 응답을 돌려준다 (재시도 회복 검증용). 소진 후엔 마지막 응답을 반복."""
+    calls = {"i": 0}
+
+    query = MagicMock()
+
+    async def _req_async():
+        i = min(calls["i"], len(responses) - 1)
+        calls["i"] += 1
+        return responses[i]
+
+    query.req_async = _req_async
+
+    ls = MagicMock()
+    ls.overseas_futureoption.return_value.market.return_value.해외선물마스터조회.return_value = query
+    return patch("programgarden.executor.ensure_ls_login", return_value=(ls, True, None))
+
+
 async def _run(config, rows=LISTED_ROWS, now=(2026, 7)):
     """지정한 '오늘'로 노드를 실행한다 (만기 판정이 시계에 의존하므로 고정)."""
     ex = FuturesContractNodeExecutor()
@@ -224,6 +267,40 @@ async def test_next_unavailable_raises_instead_of_dropping_symbol():
     rows = [_row("HMHN26", "HMH", 2026, "N")]  # 월물이 하나뿐
     with pytest.raises(RuntimeError, match="contract_selection='next'"):
         await _run({"base_products": ["HMH"], "contract_selection": "next"}, rows=rows)
+
+
+@pytest.mark.asyncio
+async def test_empty_master_surfaces_ls_rsp_cd_not_a_guess():
+    """o3101 이 빈 블록 + 업무거부 rsp_cd 를 주면(HTTP 200, error_msg 빈 문자열), 최종 에러가
+    LS 원문(rsp_cd/rsp_msg)을 그대로 실어야 한다 — '앱키가 몰렸을 것' 같은 추측이 아니라.
+    이 한 줄이 '토큰 무효화 vs 시세 권한 문제'를 라이브 프로브 없이 판별해 준다."""
+    ex = FuturesContractNodeExecutor()
+    with _patched_master_raw([], rsp_cd="IGW00121", rsp_msg="해외선물 시세 권한이 없습니다"), \
+            patch("programgarden.executor.asyncio.sleep", new=_async_noop):
+        with pytest.raises(RuntimeError) as e:
+            await ex.execute(
+                "contract", "FuturesContractNode", {"base_products": ["HMH"]}, _make_context()
+            )
+    msg = str(e.value)
+    assert "IGW00121" in msg
+    assert "해외선물 시세 권한이 없습니다" in msg
+    # rsp_cd 가 성공이 아니므로 '일시적 경합' 이 아니라 '권한/토큰' 으로 진단해야 한다.
+    assert "entitlement" in msg or "token" in msg
+
+
+@pytest.mark.asyncio
+async def test_empty_master_recovers_from_transient_empty_block():
+    """빈 블록 한 번(일시적 토큰 경합)은 재시도로 회복된다 — 멀쩡한 전략의 한 틱을 죽이지 않는다."""
+    empty = SimpleNamespace(block=[], rsp_cd="00000", rsp_msg="", error_msg="")
+    full = SimpleNamespace(block=LISTED_ROWS, rsp_cd="00000", rsp_msg="", error_msg="")
+    ex = FuturesContractNodeExecutor()
+    with _patched_master_sequence([empty, full]), \
+            patch("programgarden.executor.asyncio.sleep", new=_async_noop), \
+            _fixed_now(2026, 7):
+        out = await ex.execute(
+            "contract", "FuturesContractNode", {"base_products": ["HMH"], "contract_selection": "front"}, _make_context()
+        )
+    assert out["symbols"] == [{"exchange": "HKEX", "symbol": "HMHN26"}]
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +427,47 @@ async def test_symbol_query_available_exchange_filters():
     assert {s["exchange"] for s in out["symbols"]} == {"HKEX"}
     # exchange 는 레지스트리 코드여야 한다 — LS 의 한글명이 주문 TR 로 새면 주문이 깨진다.
     assert all(s["exchange_name"] == "홍콩거래소" for s in out["symbols"])
+
+
+@pytest.mark.asyncio
+async def test_symbol_query_empty_master_raises_with_ls_reason():
+    """o3101 이 빈 블록 + 업무거부 rsp_cd 를 주면, 조용히 빈 배열이 아니라 LS 원문을 실어 실패한다.
+    빈 유니버스는 하류를 전부 no-op 시키고 워크플로우가 '성공'한 척 아무것도 안 하게 만든다 —
+    이 저장소가 없애려는 바로 그 무음 실패다."""
+    from programgarden.executor import SymbolQueryNodeExecutor
+
+    ex = SymbolQueryNodeExecutor()
+    with _patched_master_raw([], rsp_cd="IGW00121", rsp_msg="권한이 없습니다"), \
+            patch("programgarden.executor.asyncio.sleep", new=_async_noop):
+        with pytest.raises(RuntimeError) as e:
+            await ex.execute(
+                "q", "OverseasFuturesSymbolQueryNode",
+                {"futures_exchange": "6"},
+                _symbol_query_context(),
+            )
+    msg = str(e.value)
+    assert "IGW00121" in msg
+    assert "권한이 없습니다" in msg
+
+
+@pytest.mark.asyncio
+async def test_symbol_query_recovers_from_transient_empty():
+    """단발 호출이지만 형제 노드처럼 3회 재시도한다 — 일시적 토큰 경합(빈 블록) 한 번에
+    워크플로우 틱을 죽이지 않는다."""
+    from programgarden.executor import SymbolQueryNodeExecutor
+
+    empty = SimpleNamespace(block=[], rsp_cd="00000", rsp_msg="", error_msg="")
+    full = SimpleNamespace(block=LISTED_ROWS, rsp_cd="00000", rsp_msg="", error_msg="")
+    ex = SymbolQueryNodeExecutor()
+    with _patched_master_sequence([empty, full]), \
+            patch("programgarden.executor.asyncio.sleep", new=_async_noop), \
+            _fixed_now(2026, 7):
+        out = await ex.execute(
+            "q", "OverseasFuturesSymbolQueryNode",
+            {"futures_exchange": "6"},  # HKEX
+            _symbol_query_context(),
+        )
+    assert out["count"] == 7  # 재시도 성공 후 LME 1건만 제외
 
 
 @pytest.mark.asyncio

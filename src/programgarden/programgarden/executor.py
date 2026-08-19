@@ -3157,19 +3157,71 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
 
         all_symbols = []
 
-        try:
-            # gubun 은 거래소 필터가 **아니다** — 실측: 0/1/2/6 어느 값이든 같은 전체 목록을 준다.
-            # 거래소 좁히기는 응답의 ExchCd 로 클라이언트에서 한다(아래). gubun 은 "0" 고정.
-            query = ls.overseas_futureoption().market().해외선물마스터조회(
-                body=o3101.O3101InBlock(gubun="0")
+        # LS 는 같은 앱키로 요청이 몰리면 o3101 에 빈 블록을 준다(에러가 아니라 빈 배열). 이건 단발
+        # 호출이라 재시도 없이 하드 실패로 올리면 일시적 토큰 경합 한 번이 워크플로우 틱을 죽인다 —
+        # 형제 노드(FuturesContractNode)와 같은 3회 재시도 패턴을 쓴다. 그래도 비면 조용히 빈 배열을
+        # 주지 않고 LS 원문(rsp_cd/rsp_msg/error_msg)을 실어 실패한다. 업무거부는 HTTP 200 + rsp_cd
+        # 에만 원인이 있으므로(error_msg 는 "" 일 수 있다), rsp_cd 를 반드시 남긴다.
+        rows: List[Any] = []
+        last_error: Optional[Exception] = None
+        last_rsp_cd = ""
+        last_rsp_msg = ""
+        last_error_msg = ""
+        for attempt in range(3):
+            if attempt:
+                await asyncio.sleep(1.5 * attempt)
+            try:
+                # gubun 은 거래소 필터가 **아니다** — 실측: 0/1/2/6 어느 값이든 같은 전체 목록을 준다.
+                # 거래소 좁히기는 응답의 ExchCd 로 클라이언트에서 한다(아래). gubun 은 "0" 고정.
+                query = ls.overseas_futureoption().market().해외선물마스터조회(
+                    body=o3101.O3101InBlock(gubun="0")
+                )
+                result = await query.req_async()
+            except Exception as e:  # noqa: BLE001 — 원인을 그대로 사용자에게 전달한다
+                last_error = e
+                context.log("warning", f"o3101 조회 실패 (시도 {attempt + 1}/3): {e}", node_id)
+                continue
+            last_rsp_cd = (getattr(result, "rsp_cd", "") or "").strip()
+            last_rsp_msg = (getattr(result, "rsp_msg", "") or "").strip()
+            last_error_msg = (getattr(result, "error_msg", "") or "").strip()
+            rows = list(getattr(result, 'block', None) or [])
+            if rows:
+                break
+            context.log(
+                "warning",
+                f"o3101 이 빈 마스터를 반환 (시도 {attempt + 1}/3): "
+                f"rsp_cd={last_rsp_cd or '(none)'}, rsp_msg={last_rsp_msg or '(none)'}"
+                + (f", error_msg={last_error_msg}" if last_error_msg else ""),
+                node_id,
             )
 
-            result = await query.req_async()
-            rows = list(getattr(result, 'block', None) or [])
-
-        except Exception as e:
-            context.log("error", f"o3101 API error: {str(e)}", node_id)
-            return {"symbols": [], "count": 0, "error": str(e)}
+        # 빈 응답을 조용히 넘기지 않는다 — 빈 유니버스는 하류를 전부 no-op 시키고 워크플로우는
+        # '성공'한 척 아무것도 안 한다. 이 저장소가 없애려는 바로 그 무음 실패다.
+        if not rows:
+            if last_error is not None:
+                raise RuntimeError(
+                    f"OverseasFuturesSymbolQueryNode[{node_id}]: LS master query (o3101) failed "
+                    f"after 3 attempts: {last_error}"
+                ) from last_error
+            ls_reason = ", ".join(
+                part for part in (
+                    f"rsp_cd={last_rsp_cd}" if last_rsp_cd else "",
+                    f"rsp_msg={last_rsp_msg}" if last_rsp_msg else "",
+                    f"error_msg={last_error_msg}" if last_error_msg else "",
+                ) if part
+            )
+            hint = (
+                " A non-'00000' rsp_cd means missing overseas-futures market entitlement or a "
+                "rejected token, not a transient collision."
+                if last_rsp_cd and last_rsp_cd != "00000" else ""
+            )
+            raise RuntimeError(
+                f"OverseasFuturesSymbolQueryNode[{node_id}]: LS returned an empty overseas-futures "
+                f"master (o3101) on 3 attempts"
+                + (f". LS says: {ls_reason}.{hint}" if ls_reason else
+                   " with no LS response code. The broker session may lack overseas-futures "
+                   "entitlement, or too many requests share this app key.")
+            )
 
         wanted_exchange = self.FUTURES_EXCHANGE_CODES.get(futures_exchange, futures_exchange)
         if wanted_exchange in ("1", "", "ALL"):
@@ -3438,8 +3490,16 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
         # LS 는 같은 앱키로 요청이 몰리면 o3101 에 **빈 블록**을 돌려준다(에러가 아니라 빈 배열).
         # 그 한 번에 워크플로우를 죽이면, 실제로는 멀쩡한 전략이 스케줄 한 틱을 통째로 날린다.
         # 짧게 몇 번 다시 물어보고, 그래도 비어 있을 때만 (진짜 권한/장애로 보고) 크게 실패한다.
+        #
+        # 🔴 업무거부는 HTTP 200 + 빈 block + rsp_cd(원인) 로 온다(error_msg 는 "" 일 수 있다).
+        # 매 시도의 LS 원문(rsp_cd/rsp_msg/error_msg)을 보관해 재시도 경고와 최종 실패에 그대로
+        # 싣는다 — 이 한 줄이 "토큰 무효화인가 / 시세 권한 문제인가"를 라이브 프로브 없이 판별해 준다.
+        # (`if error_msg:` 로 판정하면 rsp_cd 에만 실린 업무거부를 전부 놓쳐 "빈 마스터"로 오진한다.)
         rows: List[Any] = []
         last_error: Optional[Exception] = None
+        last_rsp_cd = ""
+        last_rsp_msg = ""
+        last_error_msg = ""
         for attempt in range(3):
             if attempt:
                 await asyncio.sleep(1.5 * attempt)
@@ -3452,10 +3512,19 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
                 last_error = e
                 context.log("warning", f"o3101 조회 실패 (시도 {attempt + 1}/3): {e}", node_id)
                 continue
+            last_rsp_cd = (getattr(result, "rsp_cd", "") or "").strip()
+            last_rsp_msg = (getattr(result, "rsp_msg", "") or "").strip()
+            last_error_msg = (getattr(result, "error_msg", "") or "").strip()
             rows = getattr(result, "block", None) or []
             if rows:
                 break
-            context.log("warning", f"o3101 이 빈 마스터를 반환 (시도 {attempt + 1}/3)", node_id)
+            context.log(
+                "warning",
+                f"o3101 이 빈 마스터를 반환 (시도 {attempt + 1}/3): "
+                f"rsp_cd={last_rsp_cd or '(none)'}, rsp_msg={last_rsp_msg or '(none)'}"
+                + (f", error_msg={last_error_msg}" if last_error_msg else ""),
+                node_id,
+            )
 
         if not rows:
             if last_error is not None:
@@ -3463,10 +3532,34 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
                     f"FuturesContractNode[{node_id}]: LS contract-master query (o3101) failed "
                     f"after 3 attempts: {last_error}"
                 ) from last_error
+            # LS 원문 우선 — 추측 문구는 원문이 하나도 없을 때만.
+            ls_reason = ", ".join(
+                part for part in (
+                    f"rsp_cd={last_rsp_cd}" if last_rsp_cd else "",
+                    f"rsp_msg={last_rsp_msg}" if last_rsp_msg else "",
+                    f"error_msg={last_error_msg}" if last_error_msg else "",
+                ) if part
+            )
+            if ls_reason:
+                # rsp_cd 가 비었거나 '00000'(성공)이면 마스터가 진짜로 빈 것, 아니면 그 코드가 원인.
+                if last_rsp_cd and last_rsp_cd != "00000":
+                    hint = (
+                        " A non-'00000' rsp_cd means the broker session lacks overseas-futures "
+                        "market entitlement or the token was rejected — not a transient app-key collision."
+                    )
+                else:
+                    hint = (
+                        " rsp_cd is success/blank, so the master is genuinely empty for this account — "
+                        "check overseas-futures entitlement, or too many requests share this app key."
+                    )
+                raise RuntimeError(
+                    f"FuturesContractNode[{node_id}]: LS returned an empty contract master (o3101) "
+                    f"on 3 attempts. LS says: {ls_reason}.{hint}"
+                )
             raise RuntimeError(
                 f"FuturesContractNode[{node_id}]: LS returned an empty contract master (o3101) "
-                f"on 3 attempts. The broker session may lack overseas-futures entitlement, or too "
-                f"many requests are sharing this app key at once."
+                f"on 3 attempts with no LS response code. The broker session may lack overseas-futures "
+                f"entitlement, or too many requests are sharing this app key at once."
             )
 
         # 거래소 필터를 걸기 **전** 목록도 들고 있는다 — 실패 메시지의 "쓸 수 있는 코드" 를
