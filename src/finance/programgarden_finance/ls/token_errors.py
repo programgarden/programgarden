@@ -48,9 +48,11 @@ TOKEN_MESSAGE_PATTERNS = (
     "unauthorized",
 )
 
-# rsp_cd 만으로 토큰 실패가 확정되는 코드. 실측으로 확인한 값만 넣는다
+# rsp_cd 만으로 토큰 실패가 확정되는 코드. **실측으로 확인한 값만** 넣는다
 # (추측 코드를 넣으면 주문 거부를 토큰 문제로 오판해 불필요한 재발급을 부른다).
-TOKEN_RSP_CODES: frozenset[str] = frozenset()
+#   IGW00121 — `HTTP 500: 유효하지 않은 token` 과 함께 오는 코드(라이브 실측).
+#              문구가 바뀌어도 코드로 잡히도록 함께 등재한다.
+TOKEN_RSP_CODES: frozenset[str] = frozenset({"IGW00121"})
 
 # 토큰 문구가 없을 때 '일시 실패'로 볼 상태코드.
 _TRANSIENT_STATUSES = frozenset({408, 425, 429})

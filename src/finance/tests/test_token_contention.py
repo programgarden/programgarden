@@ -68,6 +68,13 @@ def test_classify(status, body, expected):
     assert classify_token_failure(_Resp(status), body) is expected
 
 
+def test_classify_rsp_cd_alone_is_enough():
+    """문구가 바뀌어도 실측 코드로 잡힌다 (`error_msg` 가 빈 경로가 있다)."""
+    assert classify_token_failure(
+        _Resp(500), {"rsp_cd": "IGW00121", "rsp_msg": "", "error_msg": ""}
+    ) is TokenFailureKind.TOKEN_INVALID
+
+
 def test_classify_exception_is_transient():
     assert classify_token_failure(None, None, exc=OSError("conn reset")) is TokenFailureKind.TRANSIENT
 
