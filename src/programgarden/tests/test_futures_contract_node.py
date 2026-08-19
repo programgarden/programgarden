@@ -72,6 +72,21 @@ def _make_context():
     return ctx
 
 
+def _fixed_now(year, month, day=15):
+    """실행 시각을 고정하는 patch 컨텍스트 (만기 판정이 datetime.now() 에 의존하므로).
+
+    LISTED_ROWS 는 2026-07 상장분 고정인데 _is_expired_contract / _parse_master 는
+    실제 벽시계를 본다. 시각을 고정하지 않으면 그 달을 지나는 순간 근월물(N=7월)이
+    '만기 경과' 로 걸러져 카운트가 흔들린다. _run() 이 쓰는 것과 같은 patch 방식이다.
+    """
+    class _FixedNow:
+        @staticmethod
+        def now():
+            import datetime as _dt
+            return _dt.datetime(year, month, day)
+    return patch("programgarden.executor.datetime", _FixedNow)
+
+
 def _patched_master(rows):
     """ensure_ls_login + o3101 마스터 응답을 통째로 대체한다 (네트워크 0)."""
     response = SimpleNamespace(block=rows)
@@ -323,7 +338,9 @@ async def test_symbol_query_available_exchange_filters():
     from programgarden.executor import SymbolQueryNodeExecutor
 
     ex = SymbolQueryNodeExecutor()
-    with _patched_master(LISTED_ROWS):
+    # LISTED_ROWS 는 2026-07 상장분이라 그 달(2026-07)로 시각을 고정한다 — 안 하면 근월물(N=7월)
+    # 2건이 실제 벽시계 기준 만기 경과로 걸러져 7 이 아니라 5 가 된다.
+    with _patched_master(LISTED_ROWS), _fixed_now(2026, 7):
         out = await ex.execute(
             "q", "OverseasFuturesSymbolQueryNode",
             {"futures_exchange": "6"},  # HKEX
