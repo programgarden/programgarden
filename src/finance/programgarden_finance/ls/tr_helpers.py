@@ -103,7 +103,14 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
                     await asyncio.sleep(delay)
                     continue
                 # 간격 재시도를 다 썼는데도 안 되면, 겉으로 안 드러난 토큰 문제일 수 있다.
-                if reissues < TOKEN_REISSUE_RETRY_MAX and self._token_manager is not None:
+                # 단, **서버에 닿지도 못한 실패**(네트워크 예외)는 제외한다 — 토큰을 바꿀
+                # 이유가 없고, 회선 장애가 재발급 예산을 태워 나중의 진짜 토큰 사고를
+                # 막지 못하게 만든다.
+                if (
+                    exc is None
+                    and reissues < TOKEN_REISSUE_RETRY_MAX
+                    and self._token_manager is not None
+                ):
                     if await self._force_reissue_async(generation, kind, detail):
                         # transient_attempts 는 일부러 초기화하지 않는다 — 초기화하면
                         # 재발급마다 지연 사다리가 처음부터 다시 돌아 총 대기가 불어난다.
@@ -148,7 +155,12 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
                     )
                     time.sleep(delay)
                     continue
-                if reissues < TOKEN_REISSUE_RETRY_MAX and self._token_manager is not None:
+                # 비동기 경로와 같은 이유로 네트워크 예외는 재발급으로 승격하지 않는다.
+                if (
+                    exc is None
+                    and reissues < TOKEN_REISSUE_RETRY_MAX
+                    and self._token_manager is not None
+                ):
                     if self._force_reissue_sync(generation, kind, detail):
                         reissues += 1
                         continue

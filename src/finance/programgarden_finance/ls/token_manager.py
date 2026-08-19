@@ -224,43 +224,78 @@ class TokenManager:
             return False
         return self._token_generation != observed_generation and self.is_token_available()
 
-    def _check_forced_reissue_budget(self) -> None:
-        """강제 재발급 상한/간격을 검사한다. 초과 시 예외."""
+    _REISSUE_LIMIT_MESSAGE = (
+        f"LS 토큰을 {FORCED_REISSUE_WINDOW_SECONDS}초 안에 {FORCED_REISSUE_MAX}회 새로 "
+        "발급했는데도 계속 거부됩니다. 재발급으로 풀리는 문제가 아니므로 멈춥니다 — "
+        "앱키 권한(해당 시세/주문 TR 사용 가능 여부)과 같은 앱키를 쓰는 다른 프로그램을 "
+        "확인하세요."
+    )
+
+    def _reissue_budget_left(self) -> int:
+        """롤링 창 안에 남은 강제 재발급 횟수.
+
+        세는 것은 **성공한 재발급**이다. 시도를 세면 네트워크 장애 한 번이 예산을 다 태워,
+        몇 분 뒤 찾아온 진짜 토큰 사고를 막지 못하고 엉뚱한 사유("앱키 권한을 확인하세요")로
+        실패하게 된다.
+        """
         now = time.time()
         self._forced_reissue_times = [
             t for t in self._forced_reissue_times if now - t < FORCED_REISSUE_WINDOW_SECONDS
         ]
-        if len(self._forced_reissue_times) >= FORCED_REISSUE_MAX:
-            raise TokenReissueLimitExceeded(
-                f"LS 토큰 강제 재발급이 {FORCED_REISSUE_WINDOW_SECONDS}초 안에 "
-                f"{FORCED_REISSUE_MAX}회를 넘었습니다. 새로 발급한 토큰으로도 계속 거부되고 "
-                "있으므로 재발급을 멈춥니다 — 앱키 권한(해당 시세/주문 TR 사용 가능 여부)과 "
-                "같은 앱키를 쓰는 다른 프로그램을 확인하세요."
-            )
-        last = self._forced_reissue_times[-1] if self._forced_reissue_times else None
-        if last is not None:
-            gap = now - last
-            if gap < FORCED_REISSUE_MIN_INTERVAL_SECONDS:
-                time.sleep(FORCED_REISSUE_MIN_INTERVAL_SECONDS - gap)
-        self._forced_reissue_times.append(time.time())
+        return FORCED_REISSUE_MAX - len(self._forced_reissue_times)
+
+    def _reissue_gap_remaining(self) -> float:
+        """연속 강제 재발급 사이 최소 간격 중 남은 시간(초)."""
+        if not self._forced_reissue_times:
+            return 0.0
+        gap = time.time() - self._forced_reissue_times[-1]
+        return max(0.0, FORCED_REISSUE_MIN_INTERVAL_SECONDS - gap)
+
+    def _check_forced_reissue_budget(self) -> None:
+        """강제 재발급 상한을 검사하고 최소 간격만큼 기다린다. 초과 시 예외."""
+        if self._reissue_budget_left() <= 0:
+            raise TokenReissueLimitExceeded(self._REISSUE_LIMIT_MESSAGE)
+        wait = self._reissue_gap_remaining()
+        if wait > 0:
+            time.sleep(wait)
 
     async def _check_forced_reissue_budget_async(self) -> None:
-        now = time.time()
-        self._forced_reissue_times = [
-            t for t in self._forced_reissue_times if now - t < FORCED_REISSUE_WINDOW_SECONDS
-        ]
-        if len(self._forced_reissue_times) >= FORCED_REISSUE_MAX:
-            raise TokenReissueLimitExceeded(
-                f"LS 토큰 강제 재발급이 {FORCED_REISSUE_WINDOW_SECONDS}초 안에 "
-                f"{FORCED_REISSUE_MAX}회를 넘었습니다. 새로 발급한 토큰으로도 계속 거부되고 "
-                "있으므로 재발급을 멈춥니다 — 앱키 권한(해당 시세/주문 TR 사용 가능 여부)과 "
-                "같은 앱키를 쓰는 다른 프로그램을 확인하세요."
-            )
-        last = self._forced_reissue_times[-1] if self._forced_reissue_times else None
-        if last is not None:
-            gap = now - last
-            if gap < FORCED_REISSUE_MIN_INTERVAL_SECONDS:
-                await asyncio.sleep(FORCED_REISSUE_MIN_INTERVAL_SECONDS - gap)
+        if self._reissue_budget_left() <= 0:
+            raise TokenReissueLimitExceeded(self._REISSUE_LIMIT_MESSAGE)
+        wait = self._reissue_gap_remaining()
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    def _sync_lock_async(self):
+        """비동기 경로에서 동기 ``_refresh_lock`` 을 잡는 async 컨텍스트 매니저.
+
+        동기 경로(``get_bearer_token`` → ``_refresh_token``)와 비동기 경로가 같은
+        ``access_token`` / ``_token_generation`` / 재발급 예산을 만진다. 각자 다른 락을
+        쓰면 서로를 막지 못해 **동시에 두 번 발급**할 수 있다 — 이 모듈이 없애려는 문제를
+        스스로 만드는 셈이다.
+
+        ``acquire`` 는 블로킹이므로 스레드로 넘겨 이벤트 루프를 세우지 않는다. 타임아웃 시에는
+        예외를 올린다 — 조용히 통과시키면 배타성이 깨진 채로 발급이 나간다.
+        """
+        lock = self._refresh_lock
+
+        class _Guard:
+            async def __aenter__(self_):
+                acquired = await asyncio.to_thread(lock.acquire, True, 10)
+                if not acquired:
+                    raise TimeoutError(
+                        "token refresh lock timeout (another refresh is in progress)"
+                    )
+                return self_
+
+            async def __aexit__(self_, *exc):
+                lock.release()
+                return False
+
+        return _Guard()
+
+    def _record_forced_reissue(self) -> None:
+        """**성공한** 강제 재발급 1건을 예산에 기록한다."""
         self._forced_reissue_times.append(time.time())
 
     # ------------------------------------------------------------------
@@ -311,6 +346,8 @@ class TokenManager:
                 access_token, expires_at = self.token_provider(**kwargs)
                 if access_token:
                     self.apply_token(access_token, expires_at)
+                    if force:
+                        self._record_forced_reissue()
                     logger.info(
                         "Token refreshed via token_provider (sync, force=%s)", force
                     )
@@ -358,6 +395,8 @@ class TokenManager:
 
                     if response.block and response.block.access_token:
                         self.update_from_block(response.block)
+                        if force:
+                            self._record_forced_reissue()
                         logger.info("Token refreshed successfully (sync, force=%s)", force)
                         return True
                 except Exception as e:
@@ -379,7 +418,12 @@ class TokenManager:
         if self.has_provider():
             if self._async_refresh_lock is None:
                 self._async_refresh_lock = asyncio.Lock()
-            async with self._async_refresh_lock:
+            # asyncio.Lock 하나로는 부족하다 — 같은 TokenManager 를 **동기 경로**가 동시에
+            # 만질 수 있고, 두 락은 서로를 막지 못해 토큰이 두 번 발급된다("1 앱키 = 1 토큰"
+            # 위반을 스스로 만든다). 그래서 async 락 안에서 sync 락도 함께 잡는다.
+            # 잠금 순서는 항상 async → sync 한 방향이고 동기 경로는 sync 락만 잡으므로
+            # 데드락이 생기지 않는다. acquire 는 스레드로 넘겨 이벤트 루프를 막지 않는다.
+            async with self._async_refresh_lock, self._sync_lock_async():
                 if self._joined_other_reissue(observed_generation):
                     logger.info("Joined another caller's token reissue (async, provider)")
                     return True
@@ -398,6 +442,8 @@ class TokenManager:
                         access_token, expires_at = fn(**self._provider_kwargs(fn, force))
                     if access_token:
                         self.apply_token(access_token, expires_at)
+                        if force:
+                            self._record_forced_reissue()
                         logger.info(
                             "Token refreshed via token_provider (async, force=%s)", force
                         )
@@ -417,7 +463,8 @@ class TokenManager:
         if self._async_refresh_lock is None:
             self._async_refresh_lock = asyncio.Lock()
 
-        async with self._async_refresh_lock:
+        # provider 경로와 같은 이유로 동기 락도 함께 잡는다(아래 _sync_lock_async 주석 참조).
+        async with self._async_refresh_lock, self._sync_lock_async():
             # Lock 획득 후 다시 체크
             if self._joined_other_reissue(observed_generation):
                 logger.info("Joined another caller's token reissue (async, self-issue)")
@@ -443,6 +490,8 @@ class TokenManager:
 
                     if response.block and response.block.access_token:
                         self.update_from_block(response.block)
+                        if force:
+                            self._record_forced_reissue()
                         logger.info("Token refreshed successfully (async, force=%s)", force)
                         return True
                 except Exception as e:

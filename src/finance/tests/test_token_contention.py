@@ -329,9 +329,8 @@ def test_order_endpoint_does_retry_after_token_reissue(monkeypatch):
     assert calls["n"] == 2 and resp.status == 200
 
 
-def test_repeated_token_invalid_stops_at_cap(monkeypatch):
-    """새 토큰으로도 계속 거부되면 무한 재발급 대신 사유를 담아 실패한다."""
-    monkeypatch.setattr(tm_mod, "FORCED_REISSUE_MAX", 2)
+def test_repeated_token_invalid_stops_at_per_request_cap(monkeypatch):
+    """한 요청 안에서는 재발급을 TOKEN_REISSUE_RETRY_MAX 회로 끊는다."""
     tm = _token_manager_with_provider(["A", "B", "C", "D"])
     gtr = _make_generic("https://x/overseas-futureoption/market-data", tm)
     calls = {"n": 0}
@@ -343,9 +342,78 @@ def test_repeated_token_invalid_stops_at_cap(monkeypatch):
     monkeypatch.setattr(gtr, "execute_sync", fake_execute)
     resp, _rj, _rh = gtr._execute_sync_with_retry()
 
-    # 요청당 재발급 상한(TOKEN_REISSUE_RETRY_MAX=2) 에서 멈추고 마지막 응답을 돌려준다.
     assert calls["n"] == trh.TOKEN_REISSUE_RETRY_MAX + 1
     assert resp.status == 500
+
+
+def test_rolling_cap_surfaces_a_reason_not_a_silent_failure(monkeypatch):
+    """창 상한을 넘기면 조용히 실패하지 않고 사유가 error_msg 로 올라온다.
+
+    (종전 테스트는 FORCED_REISSUE_MAX 를 monkeypatch 했지만 요청당 상한이 먼저 걸려
+    그 값이 한 번도 쓰이지 않았다 — 이름이 주장하던 것을 전혀 검증하지 못했다.)
+    """
+    monkeypatch.setattr(tm_mod, "FORCED_REISSUE_MAX", 1)
+    tm = _token_manager_with_provider(["A", "B", "C", "D"])
+    gtr = _make_generic("https://x/overseas-futureoption/market-data", tm)
+
+    def fake_execute(url, request_data, timeout=10):
+        return _Resp(500), {"rsp_msg": "유효하지 않은 token 입니다"}, {}
+
+    monkeypatch.setattr(gtr, "execute_sync", fake_execute)
+
+    # 재발급 1회로 예산을 다 쓰고, 그래도 거부되면 두 번째 시도에서 창 상한에 걸린다.
+    with pytest.raises(TokenReissueLimitExceeded) as exc_info:
+        gtr._execute_sync_with_retry()
+    assert "앱키 권한" in str(exc_info.value)
+
+
+def test_reissue_limit_reason_reaches_the_response(monkeypatch):
+    """상한 사유가 예외로만 끝나지 않고 호출자가 받는 응답까지 올라와야 한다."""
+    monkeypatch.setattr(tm_mod, "FORCED_REISSUE_MAX", 1)
+    tm = _token_manager_with_provider(["A", "B", "C"])
+    gtr = _make_generic("https://x/overseas-futureoption/market-data", tm)
+    monkeypatch.setattr(
+        gtr, "execute_sync",
+        lambda url, rd, timeout=10: (_Resp(500), {"rsp_msg": "유효하지 않은 token 입니다"}, {}),
+    )
+
+    # req() 는 예외를 삼켜 response_builder 에 넘긴다 — 사유가 거기 실려야 한다.
+    _resp, _rj, _rh, exc = gtr.req()
+    assert isinstance(exc, TokenReissueLimitExceeded)
+    assert "앱키 권한" in str(exc)
+
+
+def test_network_failures_do_not_burn_the_reissue_budget(monkeypatch):
+    """회선 장애는 토큰 문제가 아니다 — 예산을 태우면 나중의 진짜 사고를 못 막는다."""
+    monkeypatch.setattr(trh, "TRANSIENT_RETRY_DELAYS", (0.0, 0.0, 0.0))
+    monkeypatch.setattr(trh.time, "sleep", lambda _s: None)
+
+    tm = _token_manager_with_provider(["FRESH"])
+    gtr = _make_generic("https://x/overseas-stock/market-data", tm)
+
+    def boom(url, request_data, timeout=10):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(gtr, "execute_sync", boom)
+    with pytest.raises(OSError):
+        gtr._execute_sync_with_retry()
+
+    # 예산이 그대로 남아 있어야 한다.
+    assert tm._reissue_budget_left() == tm_mod.FORCED_REISSUE_MAX
+
+
+def test_failed_reissue_attempt_does_not_burn_the_budget():
+    """provider 가 실패한 시도는 예산을 소모하지 않는다(성공만 센다)."""
+    def failing_provider(*, force_reissue: bool = False, stale_token=None):
+        raise RuntimeError("LS auth server down")
+
+    tm = TokenManager()
+    tm.token_provider = failing_provider
+    tm.apply_token("DEAD", time.time() + 3600)
+
+    for _ in range(5):
+        assert tm.force_reissue() is False
+    assert tm._reissue_budget_left() == tm_mod.FORCED_REISSUE_MAX
 
 
 @pytest.mark.asyncio
