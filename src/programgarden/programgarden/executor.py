@@ -15553,7 +15553,19 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """해외주식 취소주문 실행 (COSAT00301)"""
+        """해외주식 취소주문 실행 (COSAT00301)
+
+        해외주식엔 전용 취소 TR 이 없다 — 신규와 같은 COSAT00301 에 OrdPtnCode="08"
+        을 실어 보낸다.
+
+        ★ 라이브 실측 (2026-08-19, 실계좌 SNDL@NASDAQ 1주 왕복) — 이 경로가 LS 에서
+          실제로 접수됨을 확인했다:
+          · 취소 응답 rsp_cd="00156" "취소주문이 완료되었습니다." + 취소 전용 새 OrdNo
+          · **OrdQty=0 = 전량 취소** (LS 소스에 선언이 없어 미지수였던 값의 서버측
+            해석 확정 — 거부도 무시도 아니다). 원주문이 미체결에서 소멸했고 원장에서
+            ExecQty=0 · UnercQty=0 으로 남았다.
+          · 미국 정규장 밖에서도 접수된다.
+        """
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
 
 
