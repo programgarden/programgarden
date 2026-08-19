@@ -369,12 +369,69 @@ async def test_contract_node_wrong_exchange_names_the_real_cause():
 
 
 def test_deep_fixture_honors_contract_selection():
-    """fixture 가 selection 을 무시하면 세 설정이 같은 심볼을 내 게이트가 오배선을 못 잡는다."""
-    front = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "front"})
-    nxt = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "next"})
-    qtr = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "quarterly"})
+    """fixture 가 selection 을 무시하면 세 설정이 같은 심볼을 내 게이트가 오배선을 못 잡는다.
+
+    월물은 실행 시각 기준이라, front/next/quarterly 가 서로 다르게 나오는 달(1월: F/G/H)로
+    시각을 고정해 결정론적으로 검증한다 — 어떤 달은 next 와 quarterly 가 겹칠 수 있다.
+    """
+    import datetime as _dt
+    now = _dt.datetime(2026, 1, 15, tzinfo=_dt.timezone.utc)
+    front = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "front"}, now=now)
+    nxt = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "next"}, now=now)
+    qtr = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "quarterly"}, now=now)
     syms = {front["symbols"][0]["symbol"], nxt["symbols"][0]["symbol"], qtr["symbols"][0]["symbol"]}
     assert len(syms) == 3
+    # 1월 기준: front=F(1월), next=G(2월), quarterly=H(3월)
+    assert front["symbols"][0]["symbol"] == "HMHF26"
+    assert nxt["symbols"][0]["symbol"] == "HMHG26"
+    assert qtr["symbols"][0]["symbol"] == "HMHH26"
+
+
+def test_deep_fixture_month_is_live_not_anchor_frozen():
+    """회귀 가드 — fixture 가 만든 월물은 항상 '오늘 이후' 여야 한다.
+
+    앵커(2025-01) 고정이면 fixture 가 19개월 전 만료 심볼(HMHF25)을 내고, 그게 dry_run 하류
+    시세 노드로 흘러 만기 경과 종목으로 실제 LS 를 친다(시세도 과거봉도 안 옴, 에러도 없음).
+    now 를 주입하지 않으면 벽시계 기준이므로, 산출 월물이 현재 연-월 이상임을 단정한다."""
+    import datetime as _dt
+    fx = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "front"})
+    ym = fx["contracts"][0]["contract_month"]  # "YYYY-MM"
+    y, m = (int(x) for x in ym.split("-"))
+    now = _dt.datetime.now(_dt.timezone.utc)
+    assert (y, m) >= (now.year, now.month)
+
+
+def test_deep_fixture_rolls_over_at_month_end():
+    """당월 만기가 임박한 말일 며칠 동안은 fixture 가 익월물을 낸다 (만료 심볼 방지).
+
+    HKEX 만기(끝에서 두 번째 영업일)가 지난 뒤 front 를 당월로 잡으면 또 만료 심볼이 나온다.
+    잔여일이 임계 미만이면 익월로 롤오버해야 한다."""
+    import datetime as _dt
+    # 8월 30일 = 잔여 1일 → 9월(U)로 롤오버
+    late = _df.futures_contract_fixture(
+        {"base_products": ["HMH"], "contract_selection": "front"},
+        now=_dt.datetime(2026, 8, 30, tzinfo=_dt.timezone.utc),
+    )
+    assert late["contracts"][0]["contract_month"] == "2026-09"
+    assert late["symbols"][0]["symbol"] == "HMHU26"
+    # 8월 5일 = 잔여 넉넉 → 8월(Q) 유지
+    early = _df.futures_contract_fixture(
+        {"base_products": ["HMH"], "contract_selection": "front"},
+        now=_dt.datetime(2026, 8, 5, tzinfo=_dt.timezone.utc),
+    )
+    assert early["contracts"][0]["contract_month"] == "2026-08"
+    assert early["symbols"][0]["symbol"] == "HMHQ26"
+
+
+def test_deep_fixture_rolls_over_year_boundary():
+    """12월 말 롤오버는 이듬해 1월물로 넘어가야 한다 (연도 오버플로 정규화)."""
+    import datetime as _dt
+    fx = _df.futures_contract_fixture(
+        {"base_products": ["HMH"], "contract_selection": "front"},
+        now=_dt.datetime(2026, 12, 30, tzinfo=_dt.timezone.utc),
+    )
+    assert fx["contracts"][0]["contract_month"] == "2027-01"
+    assert fx["symbols"][0]["symbol"] == "HMHF27"
 
 
 def test_deep_fixture_normalizes_sibling_enum_exchange():
