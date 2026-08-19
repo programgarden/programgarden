@@ -91,7 +91,14 @@ except ImportError:
     # Community package not installed
     pass
 
-__version__ = "1.29.3"
+# 배포 metadata 에서 파생한다. 손으로 적으면 릴리스 때마다 잊혀 **패키지가 스스로 거짓
+# 버전을 말한다** — 실제로 1.31.2 를 출하하는 동안 여기는 1.29.3 이었다.
+try:  # 설치된 배포판
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("programgarden")
+except Exception:  # 소스 트리에서 직접 import (미설치)
+    __version__ = "0.0.0+source"
 __all__ = [
     # Core
     "ProgramGarden",

@@ -1,12 +1,15 @@
 """Phase 1 unit tests for src/core/programgarden_core/models/order_diagnostics.py.
 
 Covers map_reject_code fallback / mapped-hit / unknown-market behavior, plus
-OrderRejectInfo and EmptyOrderReason shape and serialization. The reject-code
-tables ship empty (codes are registered only after live verification), so the
-mapped-hit case injects a code via monkeypatch rather than relying on shipped
-data.
+OrderRejectInfo and EmptyOrderReason shape and serialization. Codes are
+registered only after live verification; the overseas-stock table now holds four
+codes measured on a real account (2026-08-19), while the futures / Korea tables
+are still empty. The mapped-hit case injects a code via monkeypatch so it stays
+independent of whichever codes happen to be registered.
 """
 from __future__ import annotations
+
+import re
 
 from programgarden_core.models.order_diagnostics import (
     EmptyOrderReason,
@@ -19,14 +22,55 @@ from programgarden_core.models.order_diagnostics import (
 
 
 # ---------------------------------------------------------------------------
-# Tables ship empty (live-collected, no guessing)
+# Tables hold live-collected codes only (no guessing)
 # ---------------------------------------------------------------------------
 
+# Registered from a real LS overseas-stock account on 2026-08-19 by deliberately
+# triggering each rejection. Pinned here so a future guess-based addition fails.
+LIVE_VERIFIED_OVERSEAS_STOCK_CODES = {"02201", "02259", "03053", "03759"}
 
-def test_reject_tables_start_empty() -> None:
-    assert OVERSEAS_STOCK_REJECT_CODES == {}
+# Registered from a real LS Korea-stock account on 2026-08-19 the same way
+# (CSPAT00601 new order / CSPAT00801 cancel, each rejection deliberately
+# triggered). Pinned so a future guess-based addition fails.
+LIVE_VERIFIED_KOREA_STOCK_CODES = {"01524", "03056", "03181"}
+
+_HANGUL = re.compile(r"[가-힣ᄀ-ᇿ㄰-㆏]")
+
+
+def test_overseas_stock_table_holds_exactly_the_live_verified_codes() -> None:
+    assert set(OVERSEAS_STOCK_REJECT_CODES) == LIVE_VERIFIED_OVERSEAS_STOCK_CODES
+
+
+def test_registered_entries_carry_english_cause_and_tip() -> None:
+    for code, entry in OVERSEAS_STOCK_REJECT_CODES.items():
+        cause, tip = entry.get("cause", ""), entry.get("tip", "")
+        assert cause.strip(), f"{code} has no cause"
+        assert tip.strip(), f"{code} has no tip"
+        # ``cause``/``tip`` are the chatbot-facing strings and must stay English —
+        # the raw Korean broker text travels separately in ``raw_msg``. Checked
+        # by looking for Hangul rather than ``isascii()``, which would also
+        # reject ordinary English typography such as an em dash.
+        assert not _HANGUL.search(cause), f"{code} cause contains Korean: {cause!r}"
+        assert not _HANGUL.search(tip), f"{code} tip contains Korean: {tip!r}"
+
+
+def test_korea_stock_table_holds_exactly_the_live_verified_codes() -> None:
+    assert set(KOREA_STOCK_REJECT_CODES) == LIVE_VERIFIED_KOREA_STOCK_CODES
+
+
+def test_korea_entries_carry_english_cause_and_tip() -> None:
+    for code, entry in KOREA_STOCK_REJECT_CODES.items():
+        cause, tip = entry.get("cause", ""), entry.get("tip", "")
+        assert cause.strip(), f"{code} has no cause"
+        assert tip.strip(), f"{code} has no tip"
+        assert not _HANGUL.search(cause), f"{code} cause contains Korean: {cause!r}"
+        assert not _HANGUL.search(tip), f"{code} tip contains Korean: {tip!r}"
+
+
+def test_unmeasured_tables_stay_empty() -> None:
+    # Overseas-futures rejects have not been live-collected yet. That table must
+    # stay empty rather than be filled in from the spec.
     assert OVERSEAS_FUTURES_REJECT_CODES == {}
-    assert KOREA_STOCK_REJECT_CODES == {}
 
 
 # ---------------------------------------------------------------------------

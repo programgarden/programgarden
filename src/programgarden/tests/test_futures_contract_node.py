@@ -72,6 +72,21 @@ def _make_context():
     return ctx
 
 
+def _fixed_now(year, month, day=15):
+    """실행 시각을 고정하는 patch 컨텍스트 (만기 판정이 datetime.now() 에 의존하므로).
+
+    LISTED_ROWS 는 2026-07 상장분 고정인데 _is_expired_contract / _parse_master 는
+    실제 벽시계를 본다. 시각을 고정하지 않으면 그 달을 지나는 순간 근월물(N=7월)이
+    '만기 경과' 로 걸러져 카운트가 흔들린다. _run() 이 쓰는 것과 같은 patch 방식이다.
+    """
+    class _FixedNow:
+        @staticmethod
+        def now():
+            import datetime as _dt
+            return _dt.datetime(year, month, day)
+    return patch("programgarden.executor.datetime", _FixedNow)
+
+
 def _patched_master(rows):
     """ensure_ls_login + o3101 마스터 응답을 통째로 대체한다 (네트워크 0)."""
     response = SimpleNamespace(block=rows)
@@ -80,6 +95,49 @@ def _patched_master(rows):
 
     async def _req_async():
         return response
+
+    query.req_async = _req_async
+
+    ls = MagicMock()
+    ls.overseas_futureoption.return_value.market.return_value.해외선물마스터조회.return_value = query
+    return patch("programgarden.executor.ensure_ls_login", return_value=(ls, True, None))
+
+
+async def _async_noop(*_a, **_k):
+    """asyncio.sleep 대체 — 재시도 백오프를 실시간 대기 없이 통과시킨다."""
+    return None
+
+
+def _patched_master_raw(block, rsp_cd="00000", rsp_msg="", error_msg=""):
+    """block + LS 응답 코드(rsp_cd/rsp_msg/error_msg)까지 갖춘 o3101 응답을 흉내낸다.
+
+    업무거부는 HTTP 200 + 빈 block + rsp_cd(원인) 로 오고 error_msg 는 "" 일 수 있다 —
+    사유 노출 경로가 rsp_cd 를 실제로 읽는지 검증하기 위한 mock.
+    """
+    response = SimpleNamespace(block=block, rsp_cd=rsp_cd, rsp_msg=rsp_msg, error_msg=error_msg)
+
+    query = MagicMock()
+
+    async def _req_async():
+        return response
+
+    query.req_async = _req_async
+
+    ls = MagicMock()
+    ls.overseas_futureoption.return_value.market.return_value.해외선물마스터조회.return_value = query
+    return patch("programgarden.executor.ensure_ls_login", return_value=(ls, True, None))
+
+
+def _patched_master_sequence(responses):
+    """호출마다 다른 응답을 돌려준다 (재시도 회복 검증용). 소진 후엔 마지막 응답을 반복."""
+    calls = {"i": 0}
+
+    query = MagicMock()
+
+    async def _req_async():
+        i = min(calls["i"], len(responses) - 1)
+        calls["i"] += 1
+        return responses[i]
 
     query.req_async = _req_async
 
@@ -211,6 +269,40 @@ async def test_next_unavailable_raises_instead_of_dropping_symbol():
         await _run({"base_products": ["HMH"], "contract_selection": "next"}, rows=rows)
 
 
+@pytest.mark.asyncio
+async def test_empty_master_surfaces_ls_rsp_cd_not_a_guess():
+    """o3101 이 빈 블록 + 업무거부 rsp_cd 를 주면(HTTP 200, error_msg 빈 문자열), 최종 에러가
+    LS 원문(rsp_cd/rsp_msg)을 그대로 실어야 한다 — '앱키가 몰렸을 것' 같은 추측이 아니라.
+    이 한 줄이 '토큰 무효화 vs 시세 권한 문제'를 라이브 프로브 없이 판별해 준다."""
+    ex = FuturesContractNodeExecutor()
+    with _patched_master_raw([], rsp_cd="IGW00121", rsp_msg="해외선물 시세 권한이 없습니다"), \
+            patch("programgarden.executor.asyncio.sleep", new=_async_noop):
+        with pytest.raises(RuntimeError) as e:
+            await ex.execute(
+                "contract", "FuturesContractNode", {"base_products": ["HMH"]}, _make_context()
+            )
+    msg = str(e.value)
+    assert "IGW00121" in msg
+    assert "해외선물 시세 권한이 없습니다" in msg
+    # rsp_cd 가 성공이 아니므로 '일시적 경합' 이 아니라 '권한/토큰' 으로 진단해야 한다.
+    assert "entitlement" in msg or "token" in msg
+
+
+@pytest.mark.asyncio
+async def test_empty_master_recovers_from_transient_empty_block():
+    """빈 블록 한 번(일시적 토큰 경합)은 재시도로 회복된다 — 멀쩡한 전략의 한 틱을 죽이지 않는다."""
+    empty = SimpleNamespace(block=[], rsp_cd="00000", rsp_msg="", error_msg="")
+    full = SimpleNamespace(block=LISTED_ROWS, rsp_cd="00000", rsp_msg="", error_msg="")
+    ex = FuturesContractNodeExecutor()
+    with _patched_master_sequence([empty, full]), \
+            patch("programgarden.executor.asyncio.sleep", new=_async_noop), \
+            _fixed_now(2026, 7):
+        out = await ex.execute(
+            "contract", "FuturesContractNode", {"base_products": ["HMH"], "contract_selection": "front"}, _make_context()
+        )
+    assert out["symbols"] == [{"exchange": "HKEX", "symbol": "HMHN26"}]
+
+
 # ---------------------------------------------------------------------------
 # 4. 거래소 필터 / 하류 계약
 # ---------------------------------------------------------------------------
@@ -323,7 +415,9 @@ async def test_symbol_query_available_exchange_filters():
     from programgarden.executor import SymbolQueryNodeExecutor
 
     ex = SymbolQueryNodeExecutor()
-    with _patched_master(LISTED_ROWS):
+    # LISTED_ROWS 는 2026-07 상장분이라 그 달(2026-07)로 시각을 고정한다 — 안 하면 근월물(N=7월)
+    # 2건이 실제 벽시계 기준 만기 경과로 걸러져 7 이 아니라 5 가 된다.
+    with _patched_master(LISTED_ROWS), _fixed_now(2026, 7):
         out = await ex.execute(
             "q", "OverseasFuturesSymbolQueryNode",
             {"futures_exchange": "6"},  # HKEX
@@ -333,6 +427,47 @@ async def test_symbol_query_available_exchange_filters():
     assert {s["exchange"] for s in out["symbols"]} == {"HKEX"}
     # exchange 는 레지스트리 코드여야 한다 — LS 의 한글명이 주문 TR 로 새면 주문이 깨진다.
     assert all(s["exchange_name"] == "홍콩거래소" for s in out["symbols"])
+
+
+@pytest.mark.asyncio
+async def test_symbol_query_empty_master_raises_with_ls_reason():
+    """o3101 이 빈 블록 + 업무거부 rsp_cd 를 주면, 조용히 빈 배열이 아니라 LS 원문을 실어 실패한다.
+    빈 유니버스는 하류를 전부 no-op 시키고 워크플로우가 '성공'한 척 아무것도 안 하게 만든다 —
+    이 저장소가 없애려는 바로 그 무음 실패다."""
+    from programgarden.executor import SymbolQueryNodeExecutor
+
+    ex = SymbolQueryNodeExecutor()
+    with _patched_master_raw([], rsp_cd="IGW00121", rsp_msg="권한이 없습니다"), \
+            patch("programgarden.executor.asyncio.sleep", new=_async_noop):
+        with pytest.raises(RuntimeError) as e:
+            await ex.execute(
+                "q", "OverseasFuturesSymbolQueryNode",
+                {"futures_exchange": "6"},
+                _symbol_query_context(),
+            )
+    msg = str(e.value)
+    assert "IGW00121" in msg
+    assert "권한이 없습니다" in msg
+
+
+@pytest.mark.asyncio
+async def test_symbol_query_recovers_from_transient_empty():
+    """단발 호출이지만 형제 노드처럼 3회 재시도한다 — 일시적 토큰 경합(빈 블록) 한 번에
+    워크플로우 틱을 죽이지 않는다."""
+    from programgarden.executor import SymbolQueryNodeExecutor
+
+    empty = SimpleNamespace(block=[], rsp_cd="00000", rsp_msg="", error_msg="")
+    full = SimpleNamespace(block=LISTED_ROWS, rsp_cd="00000", rsp_msg="", error_msg="")
+    ex = SymbolQueryNodeExecutor()
+    with _patched_master_sequence([empty, full]), \
+            patch("programgarden.executor.asyncio.sleep", new=_async_noop), \
+            _fixed_now(2026, 7):
+        out = await ex.execute(
+            "q", "OverseasFuturesSymbolQueryNode",
+            {"futures_exchange": "6"},  # HKEX
+            _symbol_query_context(),
+        )
+    assert out["count"] == 7  # 재시도 성공 후 LME 1건만 제외
 
 
 @pytest.mark.asyncio
@@ -352,12 +487,69 @@ async def test_contract_node_wrong_exchange_names_the_real_cause():
 
 
 def test_deep_fixture_honors_contract_selection():
-    """fixture 가 selection 을 무시하면 세 설정이 같은 심볼을 내 게이트가 오배선을 못 잡는다."""
-    front = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "front"})
-    nxt = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "next"})
-    qtr = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "quarterly"})
+    """fixture 가 selection 을 무시하면 세 설정이 같은 심볼을 내 게이트가 오배선을 못 잡는다.
+
+    월물은 실행 시각 기준이라, front/next/quarterly 가 서로 다르게 나오는 달(1월: F/G/H)로
+    시각을 고정해 결정론적으로 검증한다 — 어떤 달은 next 와 quarterly 가 겹칠 수 있다.
+    """
+    import datetime as _dt
+    now = _dt.datetime(2026, 1, 15, tzinfo=_dt.timezone.utc)
+    front = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "front"}, now=now)
+    nxt = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "next"}, now=now)
+    qtr = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "quarterly"}, now=now)
     syms = {front["symbols"][0]["symbol"], nxt["symbols"][0]["symbol"], qtr["symbols"][0]["symbol"]}
     assert len(syms) == 3
+    # 1월 기준: front=F(1월), next=G(2월), quarterly=H(3월)
+    assert front["symbols"][0]["symbol"] == "HMHF26"
+    assert nxt["symbols"][0]["symbol"] == "HMHG26"
+    assert qtr["symbols"][0]["symbol"] == "HMHH26"
+
+
+def test_deep_fixture_month_is_live_not_anchor_frozen():
+    """회귀 가드 — fixture 가 만든 월물은 항상 '오늘 이후' 여야 한다.
+
+    앵커(2025-01) 고정이면 fixture 가 19개월 전 만료 심볼(HMHF25)을 내고, 그게 dry_run 하류
+    시세 노드로 흘러 만기 경과 종목으로 실제 LS 를 친다(시세도 과거봉도 안 옴, 에러도 없음).
+    now 를 주입하지 않으면 벽시계 기준이므로, 산출 월물이 현재 연-월 이상임을 단정한다."""
+    import datetime as _dt
+    fx = _df.futures_contract_fixture({"base_products": ["HMH"], "contract_selection": "front"})
+    ym = fx["contracts"][0]["contract_month"]  # "YYYY-MM"
+    y, m = (int(x) for x in ym.split("-"))
+    now = _dt.datetime.now(_dt.timezone.utc)
+    assert (y, m) >= (now.year, now.month)
+
+
+def test_deep_fixture_rolls_over_at_month_end():
+    """당월 만기가 임박한 말일 며칠 동안은 fixture 가 익월물을 낸다 (만료 심볼 방지).
+
+    HKEX 만기(끝에서 두 번째 영업일)가 지난 뒤 front 를 당월로 잡으면 또 만료 심볼이 나온다.
+    잔여일이 임계 미만이면 익월로 롤오버해야 한다."""
+    import datetime as _dt
+    # 8월 30일 = 잔여 1일 → 9월(U)로 롤오버
+    late = _df.futures_contract_fixture(
+        {"base_products": ["HMH"], "contract_selection": "front"},
+        now=_dt.datetime(2026, 8, 30, tzinfo=_dt.timezone.utc),
+    )
+    assert late["contracts"][0]["contract_month"] == "2026-09"
+    assert late["symbols"][0]["symbol"] == "HMHU26"
+    # 8월 5일 = 잔여 넉넉 → 8월(Q) 유지
+    early = _df.futures_contract_fixture(
+        {"base_products": ["HMH"], "contract_selection": "front"},
+        now=_dt.datetime(2026, 8, 5, tzinfo=_dt.timezone.utc),
+    )
+    assert early["contracts"][0]["contract_month"] == "2026-08"
+    assert early["symbols"][0]["symbol"] == "HMHQ26"
+
+
+def test_deep_fixture_rolls_over_year_boundary():
+    """12월 말 롤오버는 이듬해 1월물로 넘어가야 한다 (연도 오버플로 정규화)."""
+    import datetime as _dt
+    fx = _df.futures_contract_fixture(
+        {"base_products": ["HMH"], "contract_selection": "front"},
+        now=_dt.datetime(2026, 12, 30, tzinfo=_dt.timezone.utc),
+    )
+    assert fx["contracts"][0]["contract_month"] == "2027-01"
+    assert fx["symbols"][0]["symbol"] == "HMHF27"
 
 
 def test_deep_fixture_normalizes_sibling_enum_exchange():

@@ -150,7 +150,9 @@ class ExecutionContext:
         workflow_edges: Optional[List[Any]] = None,  # List[ResolvedEdge]
         workflow_nodes: Optional[Dict[str, Any]] = None,  # Dict[str, ResolvedNode]
         storage_dir: Optional[str] = None,
-        ls_token_provider: Optional[Any] = None,  # sync (appkey, product, paper_trading) -> (token, expires_at_epoch)
+        # sync (appkey, product, paper_trading, *, force_reissue=False, stale_token=None)
+        #   -> (token, expires_at_epoch)
+        ls_token_provider: Optional[Any] = None,
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id

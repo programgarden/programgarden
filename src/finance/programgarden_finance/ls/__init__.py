@@ -98,7 +98,11 @@ class LS(SingletonClientMixin, BaseClient):
                 if appkey:
                     self.token_manager.appkey = appkey
                 self.token_manager.configure_trading_mode(paper_trading)
-            return self.token_manager.ensure_fresh_token(force_refresh=True)
+            # force_refresh 는 쓰지 않는다. 이 플래그는 이제 "서버 캐시를 무시하고
+            # 새로 발급하라"는 뜻이라(사용 중 토큰 무효를 목격했을 때만 켠다), 로그인마다
+            # 켜면 앱키 하나에 토큰이 계속 새로 발급돼 "1 앱키 = 1 토큰"이 깨진다.
+            # 아직 토큰이 없으면 is_expired() 가 True 이므로 여기서도 발급은 일어난다.
+            return self.token_manager.ensure_fresh_token()
 
         if not appkey or not appsecretkey:
             raise AppKeyException()
@@ -158,7 +162,8 @@ class LS(SingletonClientMixin, BaseClient):
                 if appkey:
                     self.token_manager.appkey = appkey
                 self.token_manager.configure_trading_mode(paper_trading)
-            return await self.token_manager.ensure_fresh_token_async(force_refresh=True)
+            # 동기 login() 과 같은 이유로 force_refresh 를 켜지 않는다.
+            return await self.token_manager.ensure_fresh_token_async()
 
         if not appkey or not appsecretkey:
             raise AppKeyException()

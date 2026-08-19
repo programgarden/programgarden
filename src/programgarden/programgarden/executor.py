@@ -26,6 +26,7 @@ from programgarden_core import (
     OrderRejectInfo,
     ValidationLimits,
     map_reject_code,
+    diagnose_missing_order_no,
 )
 from programgarden.context import ExecutionContext, WorkflowEvent
 from programgarden.reconnect_handler import ReconnectHandler
@@ -42,6 +43,29 @@ from programgarden_core.retry_executor import RetryExecutor
 from programgarden_core.nodes.base import BaseMessagingNode
 
 logger = logging.getLogger("programgarden.executor")
+
+
+# 해외주식 주문시장코드(OrdMktCode) — LS 는 **"81"/"82" 두 값만** 받는다.
+# COSAT00301/COSAT00311 의 OrdMktCode 도, 시세 g3101 의 exchcd 도 모두
+# ``Literal["81", "82"]`` 이고 SDK 어디에도 "83" 은 없다.
+#
+# 🔴 AMEX(현 NYSE American)를 "83" 으로 보내던 것이 결함이었다 — 주문/정정/취소
+#    InBlock 생성 단계에서 pydantic ValidationError 로 죽어 **AMEX 종목은 주문도
+#    취소도 불가능**했다. 엔진의 실시간·관심종목 경로는 이미 AMEX 를 "81" 로
+#    매핑하고 있어(아래 _resolve_symbol_exchange 계열) 내부적으로도 어긋나 있었다.
+#    NYSE American 은 NYSE 가 운영하므로 "81" 로 통일한다.
+#
+# 이 표는 **주문 3종(신규/정정/취소)이 공유**한다. 종전에는 세 executor 클래스가
+# 각자 사본을 들고 있어, 한 곳만 고치면 나머지가 조용히 남는 구조였다(같은 사고
+# 패턴이 노드타입 목록 복사에서 이미 한 번 났다).
+OVERSEAS_STOCK_MARKET_CODES = {
+    "NYSE": "81",
+    "NASDAQ": "82",
+    "AMEX": "81",   # NYSE American — LS 전용 코드가 없어 NYSE 와 같은 81
+    "81": "81",
+    "82": "82",
+    "83": "81",     # 과거 우리가 쓰던 잘못된 AMEX 코드가 저장된 워크플로우 방어
+}
 
 
 def _safe_print(*args: Any, **kwargs: Any) -> None:
@@ -346,6 +370,43 @@ def _build_reconnect_hooks(
 class NodeExecutorBase:
     """Node executor base class"""
 
+    async def _notify_order_reject(
+        self,
+        context: ExecutionContext,
+        node_id: str,
+        symbol: str,
+        reject: OrderRejectInfo,
+        node_type: str = "OverseasStockNewOrderNode",
+    ) -> None:
+        """주문 거부 시 투자자 알림 1건 발행(on_notification).
+
+        on_log warning 과 별개로, AI/UI/텔레그램 소비자가 거부 사유(cause)와 대응
+        팁(tip)을 구조화 payload 로 받도록 한다. ``node_type`` 은 시장별 주문 노드
+        이름(해외주식/해외선물/국내주식)을 정확히 라벨링하기 위해 호출자가 전달한다.
+        """
+        try:
+            await context.send_notification(
+                # ORDER_REJECTED is the semantically correct category for a
+                # broker reject (RISK_ALERT means drawdown/risk-halt).
+                category=NotificationCategory.ORDER_REJECTED,
+                severity=NotificationSeverity.WARNING,
+                title=f"Order rejected: {symbol}",
+                message=f"{symbol} order rejected — {reject.cause}",
+                node_id=node_id,
+                node_type=node_type,
+                data={
+                    "symbol": symbol,
+                    "rsp_cd": reject.rsp_cd,
+                    "cause": reject.cause,
+                    "tip": reject.tip,
+                    "raw_msg": reject.raw_msg,
+                    "known": reject.known,
+                },
+            )
+        except Exception:
+            # 알림 전파 실패가 주문 결과 반환을 막아서는 안 된다.
+            pass
+
     async def execute(
         self,
         node_id: str,
@@ -486,10 +547,25 @@ class LSClientManager:
         # appkey/product/paper_trading; returns (access_token, expires_at_epoch).
         token_provider = getattr(context, "ls_token_provider", None)
         if token_provider is not None:
+            from programgarden_finance.ls.token_manager import provider_accepts_kwarg
+
+            # 사용 중 토큰 실패로 촉발되는 강제 재발급을 서버까지 전달한다. 이 인자를
+            # 못 넘기면 서버가 캐시된(이미 죽었을 수 있는) 토큰을 그대로 돌려줘
+            # 재발급이 아무 효과가 없다. 구판 provider(3-인자)와도 호환되도록,
+            # 실제 provider 가 받는 키워드만 골라 넘긴다.
+            _forwards_force = provider_accepts_kwarg(token_provider, "force_reissue")
+            _forwards_stale = provider_accepts_kwarg(token_provider, "stale_token")
+
             def _sync_token_provider(
                 _appkey=appkey, _product=product, _paper=paper_trading,
+                *, force_reissue: bool = False, stale_token=None,
             ):
-                return token_provider(_appkey, _product, _paper)
+                extra = {}
+                if force_reissue and _forwards_force:
+                    extra["force_reissue"] = True
+                if force_reissue and _forwards_stale:
+                    extra["stale_token"] = stale_token
+                return token_provider(_appkey, _product, _paper, **extra)
 
             ls.set_token_provider(provider=_sync_token_provider)
             context.log("info", f"LS token provider attached for {product}", node_id)
@@ -3096,19 +3172,71 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
 
         all_symbols = []
 
-        try:
-            # gubun 은 거래소 필터가 **아니다** — 실측: 0/1/2/6 어느 값이든 같은 전체 목록을 준다.
-            # 거래소 좁히기는 응답의 ExchCd 로 클라이언트에서 한다(아래). gubun 은 "0" 고정.
-            query = ls.overseas_futureoption().market().해외선물마스터조회(
-                body=o3101.O3101InBlock(gubun="0")
+        # LS 는 같은 앱키로 요청이 몰리면 o3101 에 빈 블록을 준다(에러가 아니라 빈 배열). 이건 단발
+        # 호출이라 재시도 없이 하드 실패로 올리면 일시적 토큰 경합 한 번이 워크플로우 틱을 죽인다 —
+        # 형제 노드(FuturesContractNode)와 같은 3회 재시도 패턴을 쓴다. 그래도 비면 조용히 빈 배열을
+        # 주지 않고 LS 원문(rsp_cd/rsp_msg/error_msg)을 실어 실패한다. 업무거부는 HTTP 200 + rsp_cd
+        # 에만 원인이 있으므로(error_msg 는 "" 일 수 있다), rsp_cd 를 반드시 남긴다.
+        rows: List[Any] = []
+        last_error: Optional[Exception] = None
+        last_rsp_cd = ""
+        last_rsp_msg = ""
+        last_error_msg = ""
+        for attempt in range(3):
+            if attempt:
+                await asyncio.sleep(1.5 * attempt)
+            try:
+                # gubun 은 거래소 필터가 **아니다** — 실측: 0/1/2/6 어느 값이든 같은 전체 목록을 준다.
+                # 거래소 좁히기는 응답의 ExchCd 로 클라이언트에서 한다(아래). gubun 은 "0" 고정.
+                query = ls.overseas_futureoption().market().해외선물마스터조회(
+                    body=o3101.O3101InBlock(gubun="0")
+                )
+                result = await query.req_async()
+            except Exception as e:  # noqa: BLE001 — 원인을 그대로 사용자에게 전달한다
+                last_error = e
+                context.log("warning", f"o3101 조회 실패 (시도 {attempt + 1}/3): {e}", node_id)
+                continue
+            last_rsp_cd = (getattr(result, "rsp_cd", "") or "").strip()
+            last_rsp_msg = (getattr(result, "rsp_msg", "") or "").strip()
+            last_error_msg = (getattr(result, "error_msg", "") or "").strip()
+            rows = list(getattr(result, 'block', None) or [])
+            if rows:
+                break
+            context.log(
+                "warning",
+                f"o3101 이 빈 마스터를 반환 (시도 {attempt + 1}/3): "
+                f"rsp_cd={last_rsp_cd or '(none)'}, rsp_msg={last_rsp_msg or '(none)'}"
+                + (f", error_msg={last_error_msg}" if last_error_msg else ""),
+                node_id,
             )
 
-            result = await query.req_async()
-            rows = list(getattr(result, 'block', None) or [])
-
-        except Exception as e:
-            context.log("error", f"o3101 API error: {str(e)}", node_id)
-            return {"symbols": [], "count": 0, "error": str(e)}
+        # 빈 응답을 조용히 넘기지 않는다 — 빈 유니버스는 하류를 전부 no-op 시키고 워크플로우는
+        # '성공'한 척 아무것도 안 한다. 이 저장소가 없애려는 바로 그 무음 실패다.
+        if not rows:
+            if last_error is not None:
+                raise RuntimeError(
+                    f"OverseasFuturesSymbolQueryNode[{node_id}]: LS master query (o3101) failed "
+                    f"after 3 attempts: {last_error}"
+                ) from last_error
+            ls_reason = ", ".join(
+                part for part in (
+                    f"rsp_cd={last_rsp_cd}" if last_rsp_cd else "",
+                    f"rsp_msg={last_rsp_msg}" if last_rsp_msg else "",
+                    f"error_msg={last_error_msg}" if last_error_msg else "",
+                ) if part
+            )
+            hint = (
+                " A non-'00000' rsp_cd means missing overseas-futures market entitlement or a "
+                "rejected token, not a transient collision."
+                if last_rsp_cd and last_rsp_cd != "00000" else ""
+            )
+            raise RuntimeError(
+                f"OverseasFuturesSymbolQueryNode[{node_id}]: LS returned an empty overseas-futures "
+                f"master (o3101) on 3 attempts"
+                + (f". LS says: {ls_reason}.{hint}" if ls_reason else
+                   " with no LS response code. The broker session may lack overseas-futures "
+                   "entitlement, or too many requests share this app key.")
+            )
 
         wanted_exchange = self.FUTURES_EXCHANGE_CODES.get(futures_exchange, futures_exchange)
         if wanted_exchange in ("1", "", "ALL"):
@@ -3377,8 +3505,16 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
         # LS 는 같은 앱키로 요청이 몰리면 o3101 에 **빈 블록**을 돌려준다(에러가 아니라 빈 배열).
         # 그 한 번에 워크플로우를 죽이면, 실제로는 멀쩡한 전략이 스케줄 한 틱을 통째로 날린다.
         # 짧게 몇 번 다시 물어보고, 그래도 비어 있을 때만 (진짜 권한/장애로 보고) 크게 실패한다.
+        #
+        # 🔴 업무거부는 HTTP 200 + 빈 block + rsp_cd(원인) 로 온다(error_msg 는 "" 일 수 있다).
+        # 매 시도의 LS 원문(rsp_cd/rsp_msg/error_msg)을 보관해 재시도 경고와 최종 실패에 그대로
+        # 싣는다 — 이 한 줄이 "토큰 무효화인가 / 시세 권한 문제인가"를 라이브 프로브 없이 판별해 준다.
+        # (`if error_msg:` 로 판정하면 rsp_cd 에만 실린 업무거부를 전부 놓쳐 "빈 마스터"로 오진한다.)
         rows: List[Any] = []
         last_error: Optional[Exception] = None
+        last_rsp_cd = ""
+        last_rsp_msg = ""
+        last_error_msg = ""
         for attempt in range(3):
             if attempt:
                 await asyncio.sleep(1.5 * attempt)
@@ -3391,10 +3527,19 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
                 last_error = e
                 context.log("warning", f"o3101 조회 실패 (시도 {attempt + 1}/3): {e}", node_id)
                 continue
+            last_rsp_cd = (getattr(result, "rsp_cd", "") or "").strip()
+            last_rsp_msg = (getattr(result, "rsp_msg", "") or "").strip()
+            last_error_msg = (getattr(result, "error_msg", "") or "").strip()
             rows = getattr(result, "block", None) or []
             if rows:
                 break
-            context.log("warning", f"o3101 이 빈 마스터를 반환 (시도 {attempt + 1}/3)", node_id)
+            context.log(
+                "warning",
+                f"o3101 이 빈 마스터를 반환 (시도 {attempt + 1}/3): "
+                f"rsp_cd={last_rsp_cd or '(none)'}, rsp_msg={last_rsp_msg or '(none)'}"
+                + (f", error_msg={last_error_msg}" if last_error_msg else ""),
+                node_id,
+            )
 
         if not rows:
             if last_error is not None:
@@ -3402,10 +3547,34 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
                     f"FuturesContractNode[{node_id}]: LS contract-master query (o3101) failed "
                     f"after 3 attempts: {last_error}"
                 ) from last_error
+            # LS 원문 우선 — 추측 문구는 원문이 하나도 없을 때만.
+            ls_reason = ", ".join(
+                part for part in (
+                    f"rsp_cd={last_rsp_cd}" if last_rsp_cd else "",
+                    f"rsp_msg={last_rsp_msg}" if last_rsp_msg else "",
+                    f"error_msg={last_error_msg}" if last_error_msg else "",
+                ) if part
+            )
+            if ls_reason:
+                # rsp_cd 가 비었거나 '00000'(성공)이면 마스터가 진짜로 빈 것, 아니면 그 코드가 원인.
+                if last_rsp_cd and last_rsp_cd != "00000":
+                    hint = (
+                        " A non-'00000' rsp_cd means the broker session lacks overseas-futures "
+                        "market entitlement or the token was rejected — not a transient app-key collision."
+                    )
+                else:
+                    hint = (
+                        " rsp_cd is success/blank, so the master is genuinely empty for this account — "
+                        "check overseas-futures entitlement, or too many requests share this app key."
+                    )
+                raise RuntimeError(
+                    f"FuturesContractNode[{node_id}]: LS returned an empty contract master (o3101) "
+                    f"on 3 attempts. LS says: {ls_reason}.{hint}"
+                )
             raise RuntimeError(
                 f"FuturesContractNode[{node_id}]: LS returned an empty contract master (o3101) "
-                f"on 3 attempts. The broker session may lack overseas-futures entitlement, or too "
-                f"many requests are sharing this app key at once."
+                f"on 3 attempts with no LS response code. The broker session may lack overseas-futures "
+                f"entitlement, or too many requests are sharing this app key at once."
             )
 
         # 거래소 필터를 걸기 **전** 목록도 들고 있는다 — 실패 메시지의 "쓸 수 있는 코드" 를
@@ -13529,14 +13698,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
     """
 
     # 해외주식 시장 코드 매핑
-    STOCK_MARKET_CODES = {
-        "NYSE": "81",
-        "NASDAQ": "82",
-        "AMEX": "83",
-        "81": "81",
-        "82": "82",
-        "83": "83",
-    }
+    # 모듈 단일 정의를 참조한다 — 사본을 두면 한 곳만 고쳐지는 사고가 난다.
+    STOCK_MARKET_CODES = OVERSEAS_STOCK_MARKET_CODES
 
     # 해외주식 호가 유형 코드 매핑
     STOCK_PRICE_TYPE_CODES = {
@@ -14067,14 +14230,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if not order_no:
                 msg = response.rsp_msg or "주문번호 없음"
                 context.log("warning", f"Order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
-                # rsp_cd 가 성공("00000")인데 OrderNo 가 안 온 케이스 — rsp_cd 매핑이
-                # 아니라 전용 진단을 동봉한다(장 마감 / 브로커 지연 등).
-                reject = OrderRejectInfo(
-                    rsp_cd=response.rsp_cd or "",
-                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
-                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
-                    raw_msg=msg,
-                    known=True,
+                # 🔴 종전에는 무조건 "장 마감 / 브로커 지연" 이라고 단정했다. 전제는
+                # "rsp_cd 는 성공인데 OrdNo 만 없다" 였는데, 2026-08-19 실계좌 실측에서
+                # LS 의 업무 거부는 **error_msg 가 비고 rsp_cd 에 오류 코드가 실린 채
+                # 접수 블록 자체가 없이** 온다는 게 확인됐다(02201 예수금 부족 등).
+                # 그래서 이 분기가 실제 거부를 삼키고 틀린 원인을 말하고 있었다.
+                reject = diagnose_missing_order_no(
+                    "overseas_stock", response.rsp_cd or "", msg
                 )
                 await self._notify_order_reject(context, node_id, symbol, reject)
                 return self._order_result(
@@ -14616,14 +14778,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if not order_no:
                 msg = response.rsp_msg or "주문번호 없음"
                 context.log("warning", f"Futures order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
-                # rsp_cd 성공인데 OrderNo 가 안 온 케이스 — 전용 lifecycle 진단 동봉
-                # (장 마감 / 브로커 지연 등). stock 경로와 동일 구조.
-                reject = OrderRejectInfo(
-                    rsp_cd=response.rsp_cd or "",
-                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
-                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
-                    raw_msg=msg,
-                    known=True,
+                # 🔴 종전에는 무조건 "장 마감 / 브로커 지연" 이라고 단정했다. 전제는
+                # "rsp_cd 는 성공인데 OrdNo 만 없다" 였는데, 2026-08-19 실계좌 실측에서
+                # LS 의 업무 거부는 **error_msg 가 비고 rsp_cd 에 오류 코드가 실린 채
+                # 접수 블록 자체가 없이** 온다는 게 확인됐다(02201 예수금 부족 등).
+                # 그래서 이 분기가 실제 거부를 삼키고 틀린 원인을 말하고 있었다.
+                reject = diagnose_missing_order_no(
+                    "overseas_futures", response.rsp_cd or "", msg
                 )
                 await self._notify_order_reject(
                     context, node_id, symbol, reject,
@@ -14755,12 +14916,13 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             if not order_no:
                 msg = response.rsp_msg or "주문번호 없음"
                 context.log("warning", f"Korea stock order submitted but no OrderNo returned: {symbol} - {msg}", node_id)
-                reject = OrderRejectInfo(
-                    rsp_cd=response.rsp_cd or "",
-                    cause="Order accepted but no order number returned (likely market closed or broker delay)",
-                    tip="Verify market hours and re-query open orders to confirm whether the order was actually placed.",
-                    raw_msg=msg,
-                    known=True,
+                # 🔴 종전에는 무조건 "장 마감 / 브로커 지연" 이라고 단정했다. 전제는
+                # "rsp_cd 는 성공인데 OrdNo 만 없다" 였는데, 2026-08-19 실계좌 실측에서
+                # LS 의 업무 거부는 **error_msg 가 비고 rsp_cd 에 오류 코드가 실린 채
+                # 접수 블록 자체가 없이** 온다는 게 확인됐다(02201 예수금 부족 등).
+                # 그래서 이 분기가 실제 거부를 삼키고 틀린 원인을 말하고 있었다.
+                reject = diagnose_missing_order_no(
+                    "korea_stock", response.rsp_cd or "", msg
                 )
                 await self._notify_order_reject(
                     context, node_id, symbol, reject,
@@ -14790,43 +14952,6 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             return self._order_result(
                 False, symbol, "KRX", side, qty, price, str(e), reject_info=reject,
             )
-
-    async def _notify_order_reject(
-        self,
-        context: ExecutionContext,
-        node_id: str,
-        symbol: str,
-        reject: OrderRejectInfo,
-        node_type: str = "OverseasStockNewOrderNode",
-    ) -> None:
-        """주문 거부 시 투자자 알림 1건 발행(on_notification).
-
-        on_log warning 과 별개로, AI/UI/텔레그램 소비자가 거부 사유(cause)와 대응
-        팁(tip)을 구조화 payload 로 받도록 한다. ``node_type`` 은 시장별 주문 노드
-        이름(해외주식/해외선물/국내주식)을 정확히 라벨링하기 위해 호출자가 전달한다.
-        """
-        try:
-            await context.send_notification(
-                # ORDER_REJECTED is the semantically correct category for a
-                # broker reject (RISK_ALERT means drawdown/risk-halt).
-                category=NotificationCategory.ORDER_REJECTED,
-                severity=NotificationSeverity.WARNING,
-                title=f"Order rejected: {symbol}",
-                message=f"{symbol} order rejected — {reject.cause}",
-                node_id=node_id,
-                node_type=node_type,
-                data={
-                    "symbol": symbol,
-                    "rsp_cd": reject.rsp_cd,
-                    "cause": reject.cause,
-                    "tip": reject.tip,
-                    "raw_msg": reject.raw_msg,
-                    "known": reject.known,
-                },
-            )
-        except Exception:
-            # 알림 전파 실패가 주문 결과 반환을 막아서는 안 된다.
-            pass
 
     def _order_result(
         self,
@@ -14918,7 +15043,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
 
     지원 노드:
     - OverseasStockModifyOrderNode: 해외주식 정정주문 (COSAT00311)
-    - OverseasFuturesModifyOrderNode: 해외선물 정정주문 (CIDBT00200)
+    - OverseasFuturesModifyOrderNode: 해외선물 정정주문 (CIDBT00900)
 
     입력:
     - original_order_id: 원주문번호 (필수)
@@ -14929,11 +15054,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
     """
 
     # 해외주식 시장 코드 매핑
-    STOCK_MARKET_CODES = {
-        "NYSE": "81",
-        "NASDAQ": "82",
-        "AMEX": "83",
-    }
+    STOCK_MARKET_CODES = OVERSEAS_STOCK_MARKET_CODES
 
     async def execute(
         self,
@@ -15401,8 +15522,8 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     주문 취소 Executor
 
     지원 노드:
-    - OverseasStockCancelOrderNode: 해외주식 취소주문 (COSAT00303)
-    - OverseasFuturesCancelOrderNode: 해외선물 취소주문 (CIDBT00300)
+    - OverseasStockCancelOrderNode: 해외주식 취소주문 (COSAT00301, OrdPtnCode="08")
+    - OverseasFuturesCancelOrderNode: 해외선물 취소주문 (CIDBT01000)
 
     입력:
     - original_order_id: 취소할 주문번호 (필수)
@@ -15413,11 +15534,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     """
 
     # 해외주식 시장 코드 매핑
-    STOCK_MARKET_CODES = {
-        "NYSE": "81",
-        "NASDAQ": "82",
-        "AMEX": "83",
-    }
+    STOCK_MARKET_CODES = OVERSEAS_STOCK_MARKET_CODES
 
     async def execute(
         self,
@@ -15544,7 +15661,19 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """해외주식 취소주문 실행 (COSAT00301)"""
+        """해외주식 취소주문 실행 (COSAT00301)
+
+        해외주식엔 전용 취소 TR 이 없다 — 신규와 같은 COSAT00301 에 OrdPtnCode="08"
+        을 실어 보낸다.
+
+        ★ 라이브 실측 (2026-08-19, 실계좌 SNDL@NASDAQ 1주 왕복) — 이 경로가 LS 에서
+          실제로 접수됨을 확인했다:
+          · 취소 응답 rsp_cd="00156" "취소주문이 완료되었습니다." + 취소 전용 새 OrdNo
+          · **OrdQty=0 = 전량 취소** (LS 소스에 선언이 없어 미지수였던 값의 서버측
+            해석 확정 — 거부도 무시도 아니다). 원주문이 미체결에서 소멸했고 원장에서
+            ExecQty=0 · UnercQty=0 으로 남았다.
+          · 미국 정규장 밖에서도 접수된다.
+        """
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
 
 
@@ -15580,16 +15709,59 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "cancelled_order": None,
                 }
 
+            # 🔴 error_msg 부재만으로 성공 처리하면 **살아 있는 주문을 "취소됨" 으로
+            # 보고**한다. LS 는 업무 거부(이미 체결됨·원주문 없음 등)를 error_msg 없이
+            # HTTP 200 + 오류 rsp_cd 로 돌려주고, 그때 접수 블록(block2)이 비거나
+            # 취소주문번호(OrdNo)가 0/빈 값으로 온다. 신규주문 경로에는 이미 같은
+            # 가드가 있는데 취소에만 없어 비대칭이었다 — 취소는 "이미 체결됨" 류
+            # 거부가 정상 빈발 경로라 신규보다 더 아프다.
+            block2 = getattr(response, "block2", None)
+            cancel_ord_no = str(getattr(block2, "OrdNo", "") or "").strip() if block2 else ""
+            if not cancel_ord_no or cancel_ord_no == "0":
+                rsp_cd = getattr(response, "rsp_cd", "") or ""
+                rsp_msg = getattr(response, "rsp_msg", "") or ""
+                # 실측 취소 거부 코드(2026-08-19): 02259 = 그 원주문번호가 없음,
+                # 03759 = 정정/취소할 잔량이 없음(이미 체결됐거나 이미 취소됨).
+                # 코드표에 있으면 원인·조치를 특정해 주고, 없으면 원문만 넘긴다.
+                reject = diagnose_missing_order_no("overseas_stock", rsp_cd, rsp_msg)
+                reason = (
+                    f"취소가 접수되지 않았습니다 (취소주문번호 미발급) — "
+                    f"rsp_cd={rsp_cd or '없음'}, rsp_msg={rsp_msg or '없음'}. "
+                    f"{reject.cause}"
+                    + (f" {reject.tip}" if reject.tip else
+                       " 원주문이 그대로 살아 있을 수 있으니 미체결 조회로 확인하세요.")
+                )
+                context.log("warning", f"Cancel order rejected: {symbol} — {reason}", node_id)
+                await self._notify_order_reject(
+                    context, node_id, symbol, reject,
+                    node_type="OverseasStockCancelOrderNode",
+                )
+                return {
+                    "cancel_result": {
+                        "success": False,
+                        "error": reason,
+                        "order_id": order_id,
+                        "product": "overseas_stock",
+                        "rsp_cd": rsp_cd,
+                        "rsp_msg": rsp_msg,
+                        "reject_info": reject.model_dump(),
+                    },
+                    "cancelled_order_id": "",
+                    "cancelled_order": None,
+                }
+
             context.log(
                 "info",
-                f"Order cancelled: {symbol} order_id={order_id}",
+                f"Order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
-            
+
             return {
                 "cancel_result": {
                     "success": True,
                     "order_id": order_id,
+                    # 취소는 그 자체로 새 주문번호를 받는다 — 원주문번호와 구분해 남긴다.
+                    "cancel_order_no": cancel_ord_no,
                     "product": "overseas_stock",
                 },
                 "cancelled_order_id": order_id,
@@ -15661,16 +15833,46 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "cancelled_order": None,
                 }
             
+            # 해외주식 취소와 동일한 가드 — error_msg 부재만 보고 성공 처리하면 살아
+            # 있는 주문을 "취소됨" 으로 보고한다. 선물 응답의 주문번호 필드는 OrdNo 가
+            # 아니라 **OvrsFutsOrdNo** 다(CIDBT01000OutBlock2).
+            block2 = getattr(response, "block2", None)
+            cancel_ord_no = (
+                str(getattr(block2, "OvrsFutsOrdNo", "") or "").strip() if block2 else ""
+            )
+            if not cancel_ord_no or cancel_ord_no == "0":
+                rsp_cd = getattr(response, "rsp_cd", "") or ""
+                rsp_msg = getattr(response, "rsp_msg", "") or ""
+                reason = (
+                    f"취소가 접수되지 않았습니다 (취소주문번호 미발급) — "
+                    f"rsp_cd={rsp_cd or '없음'}, rsp_msg={rsp_msg or '없음'}. "
+                    "원주문이 그대로 살아 있을 수 있으니 미체결 조회로 확인하세요."
+                )
+                context.log("warning", f"Cancel futures order rejected: {symbol} — {reason}", node_id)
+                return {
+                    "cancel_result": {
+                        "success": False,
+                        "error": reason,
+                        "order_id": order_id,
+                        "product": "overseas_futures",
+                        "rsp_cd": rsp_cd,
+                        "rsp_msg": rsp_msg,
+                    },
+                    "cancelled_order_id": "",
+                    "cancelled_order": None,
+                }
+
             context.log(
                 "info",
-                f"Futures order cancelled: {symbol} order_id={order_id}",
+                f"Futures order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
-            
+
             return {
                 "cancel_result": {
                     "success": True,
                     "order_id": order_id,
+                    "cancel_order_no": cancel_ord_no,
                     "product": "overseas_futures",
                 },
                 "cancelled_order_id": order_id,
@@ -15695,6 +15897,43 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                 "cancelled_order": None,
             }
 
+    async def _fetch_korea_remaining_qty(
+        self,
+        ls,
+        order_id: str,
+        symbol: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> int:
+        """원주문의 미체결 잔량을 t0425 로 조회한다. 못 구하면 0 (추측하지 않는다).
+
+        🔴 t0425 의 ``expcode`` 는 **6자리 순수 코드**다. 주문 TR(CSPAT00601)의
+        ``IsuNo`` 는 ``A``+6자리도 받으므로 그대로 넘기면 **0건**이 돌아오고, 그
+        0건을 "잔량 없음" 으로 읽으면 조용히 틀린 수량으로 취소하게 된다.
+        """
+        try:
+            from programgarden_finance.ls.korea_stock.accno.t0425.blocks import T0425InBlock
+
+            code = symbol[1:] if len(symbol) == 7 and symbol[:1].isalpha() else symbol
+            response = await ls.korea_stock().accno().t0425(
+                T0425InBlock(expcode=code, chegb="2", medosu="0", sortgb="1", cts_ordno="")
+            ).req_async()
+            if getattr(response, "error_msg", None):
+                context.log("warning", f"t0425 조회 실패: {response.error_msg}", node_id)
+                return 0
+            for row in (getattr(response, "block", None) or []):
+                if str(getattr(row, "ordno", "")) == str(order_id):
+                    return int(getattr(row, "ordrem", 0) or 0)
+            context.log(
+                "warning",
+                f"원주문 {order_id} 이 미체결 목록에 없습니다 (이미 체결/취소됐을 수 있음)",
+                node_id,
+            )
+            return 0
+        except Exception as e:  # 조회 실패는 취소 실패로 이어져야 한다 — 추측 금지
+            context.log("warning", f"원주문 잔량 조회 중 오류: {e}", node_id)
+            return 0
+
     async def _cancel_korea_stock(
         self,
         ls,
@@ -15707,12 +15946,37 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         """국내주식 취소주문 실행 (CSPAT00801)"""
         from programgarden_finance.ls.korea_stock.order.CSPAT00801.blocks import CSPAT00801InBlock1
 
-        # 취소 수량: config에서 지정하거나, 미지정 시 원주문 잔량 사용
+        # 취소 수량. 🔴 국내는 해외와 의미가 **다르다** (2026-08-19 실계좌 실측):
+        #   해외주식 COSAT00301 : OrdQty=0  → 전량 취소
+        #   국내주식 CSPAT00801 : OrdQty=N  → **N주만** 취소 (부분취소)
+        # 실측 근거 — 2주 주문(ordno=15531)을 OrdQty=1 로 취소하니 rsp_cd=00156
+        # "취소주문이 완료되었습니다" 를 받고도 t0425 잔량이 2→**1** 로 남았다.
+        # 따라서 수량 미지정 시 1 로 떨어뜨리면 "취소했습니다" 라고 답한 뒤 잔량이
+        # 그대로 살아 시장에 남는다(사용자는 취소된 줄 안다). 미지정이면 원주문
+        # 잔량을 조회해서 그 값을 쓰고, 잔량을 못 구하면 **1 로 추측하지 않고** 실패한다.
         cancel_qty = config.get("quantity", 0) or config.get("cancel_quantity", 0)
         if not cancel_qty:
-            context.log("warning", f"cancel_quantity not specified, using original order remaining qty from order info", node_id)
-            # 미체결 잔량 정보가 없으면 기본 1 (API에서 잔량 초과 시 에러 반환)
-            cancel_qty = config.get("remaining_quantity", 1)
+            cancel_qty = config.get("remaining_quantity", 0)
+        if not cancel_qty:
+            cancel_qty = await self._fetch_korea_remaining_qty(ls, order_id, symbol, context, node_id)
+        if not cancel_qty:
+            reason = (
+                "취소 수량을 정할 수 없습니다 — 취소할 수량(quantity)이 지정되지 않았고 "
+                f"원주문({order_id})의 미체결 잔량도 조회되지 않았습니다. "
+                "국내주식 취소는 수량만큼만 취소되므로(부분취소), 임의 수량으로 보내면 "
+                "일부만 취소되고 나머지가 시장에 남습니다. 취소할 수량을 지정해 주세요."
+            )
+            context.log("warning", f"Korea stock cancel aborted: {symbol} — {reason}", node_id)
+            return {
+                "cancel_result": {
+                    "success": False,
+                    "error": reason,
+                    "order_id": order_id,
+                    "product": "korea_stock",
+                },
+                "cancelled_order_id": "",
+                "cancelled_order": None,
+            }
 
         try:
             body = CSPAT00801InBlock1(
@@ -15737,9 +16001,36 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "cancelled_order": None,
                 }
 
+            # 해외 취소와 동일한 가드. 국내는 **실전 계좌 전용**(모의투자 없음)이라
+            # "취소됨" 오보의 대가가 가장 크다. CSPAT00801OutBlock2.OrdNo 가 새로
+            # 발급되는 취소주문번호이고, 0/빈 값이면 접수되지 않은 것이다.
+            block2 = getattr(response, "block2", None)
+            cancel_ord_no = str(getattr(block2, "OrdNo", "") or "").strip() if block2 else ""
+            if not cancel_ord_no or cancel_ord_no == "0":
+                rsp_cd = getattr(response, "rsp_cd", "") or ""
+                rsp_msg = getattr(response, "rsp_msg", "") or ""
+                reason = (
+                    f"취소가 접수되지 않았습니다 (취소주문번호 미발급) — "
+                    f"rsp_cd={rsp_cd or '없음'}, rsp_msg={rsp_msg or '없음'}. "
+                    "원주문이 그대로 살아 있을 수 있으니 미체결 조회로 확인하세요."
+                )
+                context.log("warning", f"Korea stock cancel rejected: {symbol} — {reason}", node_id)
+                return {
+                    "cancel_result": {
+                        "success": False,
+                        "error": reason,
+                        "order_id": order_id,
+                        "product": "korea_stock",
+                        "rsp_cd": rsp_cd,
+                        "rsp_msg": rsp_msg,
+                    },
+                    "cancelled_order_id": "",
+                    "cancelled_order": None,
+                }
+
             context.log(
                 "info",
-                f"Korea stock order cancelled: {symbol} order_id={order_id}",
+                f"Korea stock order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
 
@@ -15747,6 +16038,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                 "cancel_result": {
                     "success": True,
                     "order_id": order_id,
+                    "cancel_order_no": cancel_ord_no,
                     "product": "korea_stock",
                 },
                 "cancelled_order_id": order_id,
@@ -17209,7 +17501,12 @@ class WorkflowExecutor:
         # self-issuing via GenerateToken, so the platform server is the single
         # token issuer and this executor is a pure consumer. login() is sync, so
         # the provider is a sync callable:
-        #   (appkey: str, product: str, paper_trading: bool) -> (access_token, expires_at_epoch)
+        #   (appkey: str, product: str, paper_trading: bool,
+        #    *, force_reissue: bool = False, stale_token: str | None = None)
+        #       -> (access_token, expires_at_epoch)
+        # force_reissue 는 **사용 중** 토큰이 죽었다고 확인됐을 때만 True 로 온다 —
+        # 서버가 캐시를 무시하고 새로 발급해야 한다는 뜻이다. 구판 3-인자 provider 도
+        # 그대로 동작한다(받는 키워드만 골라 넘긴다).
         # Left None for standalone/public usage (unchanged self-issue path).
         self.ls_token_provider = None
 

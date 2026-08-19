@@ -20,6 +20,7 @@ All user-facing strings in this module must be English.
 """
 from __future__ import annotations
 
+import calendar
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,11 @@ from typing import Any, Dict, List, Optional
 # A single deterministic "as-of" date for fixture time series, so deep runs are
 # reproducible and do not depend on wall-clock during a validation pass.
 _FIXTURE_ANCHOR = datetime(2025, 1, 2, tzinfo=timezone.utc)
+
+# 월말 만기 구멍 방어용 임계(달력일). 당월 잔여일이 이 값 미만이면 futures fixture 가 익월물로
+# 롤오버한다 — HKEX HSI/MHI 지수선물이 '끝에서 두 번째 영업일'에 만기라, 월말이 주말이면 만기가
+# 월말에서 최대 3 달력일까지 앞선다. 그 구간을 덮도록 넉넉히 5 로 잡는다(근거는 fixture 주석 참조).
+_MONTH_END_ROLLOVER_DAYS = 5
 
 
 def _norm_symbols(raw: Any) -> List[Dict[str, str]]:
@@ -318,15 +324,28 @@ def real_order_event_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def futures_contract_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
+def futures_contract_fixture(
+    config: Dict[str, Any], *, now: Optional[datetime] = None
+) -> Dict[str, Any]:
     """FuturesContractNode deep fixture (no o3101 master query).
 
     Real shape: ``{"symbols": [{exchange, symbol}], "contracts": [...], "count": int}``.
 
-    The month code is derived from the fixture anchor, not the wall clock, so a deep
-    run is reproducible. The *symbol string* is therefore not a real listed contract —
-    that is fine and deliberate: deep_validate checks field/type/flow integrity, and
-    downstream fixtures key off the symbol string only as an opaque identifier.
+    The contract-month code is derived from the *execution time* (``now`` or the wall
+    clock), **not** the fixed anchor, so the fabricated symbol is a currently-live month.
+    Anchoring the month to 2025-01 (as this fixture used to) always minted a long-expired
+    symbol (HMHF25): deep_validate only checks field/type/flow integrity, but a dry-run
+    can let that symbol flow into a downstream quote node that hits LS for real, and LS
+    returns *empty data with no error* for an expired contract — a silent workflow death.
+    ``now`` is an injection hook so tests can pin the clock; the OHLCV series and fill
+    timestamp keep using ``_FIXTURE_ANCHOR`` for reproducibility, only the month here is
+    wall-clock based.
+
+    Limitation: with no listing master, the fixture cannot know which months a given
+    underlying actually lists. For a **quarterly-only** product (front lands on a
+    non-quarter month — 1·2·4·5·7·8·10·11), the fabricated front/next symbol is not a
+    real listed contract. That case is meant to surface as a *named* failure at run time
+    via the live FuturesContractNode's o3101 reason exposure, not to be papered over here.
     """
     raw = config.get("base_products") or []
     if isinstance(raw, str):
@@ -340,18 +359,34 @@ def futures_contract_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
     exchange = _ENUM_TO_EXCHCD.get(exchange, exchange) or "HKEX"
 
     # 월물 문자 코드 (F=1월 … Z=12월) — 실제 노드와 같은 표기를 쓴다.
-    # contract_selection 을 실제 노드와 같은 규칙으로 반영한다(front=당월, next=익월,
-    # quarterly=3·6·9·12월 중 최근접). fixture 가 이걸 무시하면 세 설정이 같은 심볼을 내
-    # 배선 검증이 selection 오류를 못 잡는다.
     month_letters = "FGHJKMNQUVXZ"
     selection = str(config.get("contract_selection") or "front").strip().lower()
-    month = _FIXTURE_ANCHOR.month
+
+    # 월물의 기준은 실행 시각(오늘)이다. now 는 테스트가 시각을 주입하기 위한 훅.
+    base = now or datetime.now(timezone.utc)
+    year = base.year
+    month = base.month
+
+    # 🔴 월말 만기 구멍 방어. HKEX HSI/MHI 지수선물은 그 달 '끝에서 두 번째 영업일'에 만기다.
+    # 실제 노드는 만기분을 LS 마스터가 빼주므로 그 며칠 뒤엔 익월물이 자동으로 근월이 되지만,
+    # fixture 엔 마스터가 없어 front 를 당월로 무조건 잡으면 만기 지난 며칠 동안 다시 만료 심볼을 낸다.
+    # 정확한 만기일 계산 대신 보수적으로: 당월 잔여일이 임계 미만이면 익월로 롤오버한다(_MONTH_END_ROLLOVER_DAYS).
+    # 롤오버가 이르게 걸려도 익월물 = 여전히 만료 안 된 미래 월물이라 안전하다(front 정밀도만 조금 손해).
+    last_day = calendar.monthrange(year, month)[1]
+    if last_day - base.day < _MONTH_END_ROLLOVER_DAYS:
+        month += 1  # front 를 익월로 롤오버
+
+    # contract_selection 을 실제 노드 _select 와 같은 규칙으로 반영한다(front=근월,
+    # next=그 다음 달=candidates[1], quarterly=근월 이상 최근접 분기월 3·6·9·12). fixture 가
+    # 이걸 무시하면 세 설정이 같은 심볼을 내 배선 검증이 selection 오류를 못 잡는다.
     if selection == "next":
         month += 1
     elif selection == "quarterly":
         while month % 3:
             month += 1
-    year = _FIXTURE_ANCHOR.year + (month - 1) // 12
+
+    # 월 오버플로(>12)를 연도로 정규화한다.
+    year += (month - 1) // 12
     month = (month - 1) % 12 + 1
     letter = month_letters[month - 1]
     yy = f"{year % 100:02d}"
