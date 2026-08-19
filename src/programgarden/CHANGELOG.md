@@ -5,6 +5,12 @@
 > 동반 릴리즈: `finance` **1.9.0**(판정기·강제 재발급 본체 — 이 버전이 선행 조건이다),
 > `core` 1.24.0 · `community` 1.15.0(무변경).
 
+### Fixed
+- **`programgarden.__version__` 이 거짓 버전을 말하던 문제** — 손으로 적어 둔 `1.29.3` 이
+  릴리스마다 잊혀 실제 배포판(1.31.2)과 어긋나 있었다. `importlib.metadata` 에서 파생해
+  다시 어긋날 수 없게 했다. (`programgarden_core.__version__` 은 core 릴리스가 필요해 별건.)
+- **루트 `pyproject.toml` 버전 동기화** — 1.31.1 로 뒤처져 있던 것을 1.32.0 으로 맞췄다.
+
 ### Changed
 - **토큰 provider 래퍼가 강제 재발급 신호를 전달한다** (`executor.LSClientManager`).
   provider 는 이제 `(appkey, product, paper_trading, *, force_reissue=False,
