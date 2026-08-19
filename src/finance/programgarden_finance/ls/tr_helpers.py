@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Generic
 
 import aiohttp
@@ -10,6 +11,11 @@ from programgarden_finance.ls.config import URLS
 logger = logging.getLogger("programgarden.ls.tr_helpers")
 from programgarden_finance.ls.status import RequestStatus
 from programgarden_finance.ls.token_manager import TokenManager
+from programgarden_finance.ls.token_errors import (
+    TokenFailureKind,
+    TokenReissueLimitExceeded,
+    classify_token_failure,
+)
 from .tr_base import TRAccnoAbstract
 
 
@@ -19,6 +25,19 @@ R = TypeVar("R")
 ResponseBuilder = Callable[[Optional[object], Optional[dict], Optional[dict], Optional[Exception]], R]
 
 
+# --- 사용 중 실패 대응 정책 -------------------------------------------------------
+# 토큰이 죽었다고 응답이 **말해 주면** 기다릴 이유가 없으므로 즉시 재발급한다.
+# 토큰인지 알 수 없는 일시 실패만 간격을 두고 재시도하고, 끝까지 안 되면 마지막으로
+# 재발급을 한 번 시도한다. 두 경로 모두 상한이 있다(무한 재시도·재발급 금지).
+TRANSIENT_RETRY_DELAYS: Tuple[float, ...] = (0.5, 1.5, 3.0)
+TOKEN_REISSUE_RETRY_MAX = 2  # 한 요청 안에서 허용하는 강제 재발급 횟수
+
+# 주문/정정/취소 엔드포인트. 5xx·타임아웃은 **주문이 접수됐는지 알 수 없으므로**
+# 절대 자동 재시도하지 않는다(중복 주문). 반대로 '토큰 무효' 는 인증 단계에서 거부된
+# 것이라 주문이 나가지 않았음이 보장되므로 재발급 후 재시도해도 안전하다.
+_MUTATING_URL_SUFFIX = "/order"
+
+
 class GenericTR(TRAccnoAbstract, Generic[R]):
     """
     범용 TR 핸들러입니다. 공통적인 동기/비동기 요청 처리, 예외 처리, 재시도 로직을 제공합니다.
@@ -26,12 +45,6 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
     TR별로 "response_builder"만 구현하면 됩니다. response_builder는
     (resp, resp_json, resp_headers, exc) -> ResponseObject 를 반환해야 합니다.
     """
-
-    _EXPIRED_TOKEN_KEYWORDS = (
-        "기간이 만료된 token",
-        "token expired",
-        "token 만료",
-    )
 
     def __init__(self, request_data: object, response_builder: ResponseBuilder, url: str = URLS.ACCNO_URL):
         super().__init__(
@@ -49,79 +62,176 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         options = getattr(request_data, "options", None)
         self._token_manager: Optional[TokenManager] = getattr(options, "token_manager", None)
 
+    @property
+    def _is_mutating(self) -> bool:
+        """주문/정정/취소 엔드포인트인지 여부 (일시 실패 재시도 금지 대상)."""
+        return self._url.rstrip("/").endswith(_MUTATING_URL_SUFFIX)
+
     async def _execute_async_with_retry(self, session: aiohttp.ClientSession) -> Tuple[Optional[object], Optional[dict], Optional[dict]]:
-        resp, resp_json, resp_headers = await self.execute_async_with_session(session, self._url, self.request_data, timeout=10)
+        transient_attempts = 0
+        reissues = 0
 
-        if self._should_retry_due_to_expired(resp, resp_json):
-            retry_payload = await self._retry_after_refresh_async(session)
-            if retry_payload is not None:
-                resp, resp_json, resp_headers = retry_payload
+        while True:
+            # 재발급 single-flight 판정을 위해 **요청을 보내기 직전**의 토큰 세대를 남긴다.
+            generation = self._token_generation()
+            exc: Optional[BaseException] = None
+            resp = resp_json = resp_headers = None
+            try:
+                resp, resp_json, resp_headers = await self.execute_async_with_session(
+                    session, self._url, self.request_data, timeout=10
+                )
+            except Exception as e:
+                exc = e
 
-        return resp, resp_json, resp_headers
+            kind = classify_token_failure(resp, resp_json, exc)
+            detail = self._failure_detail(resp, resp_json, exc)
+
+            if kind is TokenFailureKind.TOKEN_INVALID and reissues < TOKEN_REISSUE_RETRY_MAX:
+                if await self._force_reissue_async(generation, kind, detail):
+                    reissues += 1
+                    continue
+
+            elif kind is TokenFailureKind.TRANSIENT and not self._is_mutating:
+                if transient_attempts < len(TRANSIENT_RETRY_DELAYS):
+                    delay = TRANSIENT_RETRY_DELAYS[transient_attempts]
+                    transient_attempts += 1
+                    logger.warning(
+                        "%s 일시 실패 — %.1f초 후 재시도 (%d/%d): %s",
+                        self._url, delay, transient_attempts, len(TRANSIENT_RETRY_DELAYS),
+                        detail,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                # 간격 재시도를 다 썼는데도 안 되면, 겉으로 안 드러난 토큰 문제일 수 있다.
+                if reissues < TOKEN_REISSUE_RETRY_MAX and self._token_manager is not None:
+                    if await self._force_reissue_async(generation, kind, detail):
+                        # transient_attempts 는 일부러 초기화하지 않는다 — 초기화하면
+                        # 재발급마다 지연 사다리가 처음부터 다시 돌아 총 대기가 불어난다.
+                        reissues += 1
+                        continue
+
+            if exc is not None:
+                raise exc
+            return resp, resp_json, resp_headers
 
     def _execute_sync_with_retry(self) -> Tuple[Optional[object], Optional[dict], Optional[dict]]:
-        resp, resp_json, resp_headers = self.execute_sync(self._url, self.request_data, timeout=10)
+        transient_attempts = 0
+        reissues = 0
 
-        if self._should_retry_due_to_expired(resp, resp_json):
-            retry_payload = self._retry_after_refresh_sync()
-            if retry_payload is not None:
-                resp, resp_json, resp_headers = retry_payload
+        while True:
+            generation = self._token_generation()
+            exc: Optional[BaseException] = None
+            resp = resp_json = resp_headers = None
+            try:
+                resp, resp_json, resp_headers = self.execute_sync(
+                    self._url, self.request_data, timeout=10
+                )
+            except Exception as e:
+                exc = e
 
-        return resp, resp_json, resp_headers
+            kind = classify_token_failure(resp, resp_json, exc)
+            detail = self._failure_detail(resp, resp_json, exc)
 
-    def _extract_status_code(self, resp: Optional[object]) -> Optional[int]:
-        if resp is None:
+            if kind is TokenFailureKind.TOKEN_INVALID and reissues < TOKEN_REISSUE_RETRY_MAX:
+                if self._force_reissue_sync(generation, kind, detail):
+                    reissues += 1
+                    continue
+
+            elif kind is TokenFailureKind.TRANSIENT and not self._is_mutating:
+                if transient_attempts < len(TRANSIENT_RETRY_DELAYS):
+                    delay = TRANSIENT_RETRY_DELAYS[transient_attempts]
+                    transient_attempts += 1
+                    logger.warning(
+                        "%s 일시 실패 — %.1f초 후 재시도 (%d/%d): %s",
+                        self._url, delay, transient_attempts, len(TRANSIENT_RETRY_DELAYS),
+                        detail,
+                    )
+                    time.sleep(delay)
+                    continue
+                if reissues < TOKEN_REISSUE_RETRY_MAX and self._token_manager is not None:
+                    if self._force_reissue_sync(generation, kind, detail):
+                        reissues += 1
+                        continue
+
+            if exc is not None:
+                raise exc
+            return resp, resp_json, resp_headers
+
+    # ------------------------------------------------------------------
+    # 강제 재발급
+    # ------------------------------------------------------------------
+    def _token_generation(self) -> Optional[int]:
+        if self._token_manager is None:
             return None
-        return getattr(resp, "status", getattr(resp, "status_code", None))
+        return getattr(self._token_manager, "token_generation", None)
 
-    def _should_retry_due_to_expired(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]]) -> bool:
+    def _log_reissue_reason(self, kind: TokenFailureKind, detail: str) -> None:
+        if kind is TokenFailureKind.TOKEN_INVALID:
+            logger.warning(
+                "%s — 응답이 토큰 무효를 알렸다. 재시도 없이 즉시 재발급한다: %s",
+                self._url, detail,
+            )
+        else:
+            logger.warning(
+                "%s — 간격 재시도를 모두 소진했다. 마지막으로 토큰을 재발급해 본다: %s",
+                self._url, detail,
+            )
+
+    def _force_reissue_sync(
+        self, generation: Optional[int], kind: TokenFailureKind, detail: str
+    ) -> bool:
         if self._token_manager is None:
             return False
-
-        status = self._extract_status_code(resp)
-        if status is None or status < 400:
-            return False
-
-        # 401 Unauthorized or 403 Forbidden are strong indicators of token issues
-        if status in (401, 403):
-            return True
-
-        message = ""
-        if isinstance(resp_json, dict):
-            message = str(resp_json.get("rsp_msg") or resp_json.get("error_msg") or "").lower()
-
-        if not message:
-            return False
-
-        return any(keyword in message for keyword in self._EXPIRED_TOKEN_KEYWORDS)
-
-    def _retry_after_refresh_sync(self) -> Optional[Tuple[Optional[object], Optional[dict], Optional[dict]]]:
-        if self._token_manager is None:
-            return None
-        if not self._token_manager.ensure_fresh_token(force_refresh=True):
-            return None
-        self._update_authorization_header()
+        self._log_reissue_reason(kind, detail)
         try:
-            return self.execute_sync(self._url, self.request_data, timeout=10)
-        except Exception as exc:  # pragma: no cover - propagate error handling to caller
-            logger.error(f"토큰 재발급 후 동기 재시도 실패: {exc}")
-            return None
-
-    async def _retry_after_refresh_async(self, session: aiohttp.ClientSession) -> Optional[Tuple[Optional[object], Optional[dict], Optional[dict]]]:
-        if self._token_manager is None:
-            return None
-
-        refreshed = await self._token_manager.ensure_fresh_token_async(force_refresh=True)
+            refreshed = self._token_manager.force_reissue(observed_generation=generation)
+        except TokenReissueLimitExceeded:
+            raise
+        except Exception as e:
+            logger.error(f"토큰 강제 재발급 실패(sync): {e}")
+            return False
         if not refreshed:
-            return None
-
+            logger.error("토큰 강제 재발급이 새 토큰을 만들지 못했다(sync).")
+            return False
         self._update_authorization_header()
+        return True
 
+    async def _force_reissue_async(
+        self, generation: Optional[int], kind: TokenFailureKind, detail: str
+    ) -> bool:
+        if self._token_manager is None:
+            return False
+        self._log_reissue_reason(kind, detail)
         try:
-            return await self.execute_async_with_session(session, self._url, self.request_data, timeout=10)
-        except Exception as exc:  # pragma: no cover - propagate error handling to caller
-            logger.error(f"토큰 재발급 후 비동기 재시도 실패: {exc}")
-            return None
+            refreshed = await self._token_manager.force_reissue_async(
+                observed_generation=generation
+            )
+        except TokenReissueLimitExceeded:
+            raise
+        except Exception as e:
+            logger.error(f"토큰 강제 재발급 실패(async): {e}")
+            return False
+        if not refreshed:
+            logger.error("토큰 강제 재발급이 새 토큰을 만들지 못했다(async).")
+            return False
+        self._update_authorization_header()
+        return True
+
+    @staticmethod
+    def _failure_detail(
+        resp: Optional[object],
+        resp_json: Optional[Dict[str, Any]],
+        exc: Optional[BaseException] = None,
+    ) -> str:
+        """로그·진단용 실패 요약. rsp_cd 만 채우는 경로가 있어 셋을 모두 싣는다."""
+        if exc is not None:
+            return f"{type(exc).__name__}: {exc}"
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        rsp_cd = rsp_msg = ""
+        if isinstance(resp_json, dict):
+            rsp_cd = str(resp_json.get("rsp_cd") or "")
+            rsp_msg = str(resp_json.get("rsp_msg") or resp_json.get("error_msg") or "")
+        return f"HTTP {status} rsp_cd={rsp_cd or '-'} rsp_msg={rsp_msg or '-'}"
 
     def _update_authorization_header(self) -> None:
         if self._token_manager is None or not hasattr(self.request_data, "header"):

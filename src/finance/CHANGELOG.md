@@ -1,3 +1,45 @@
+## [1.9.0] - 2026-08-19
+> LS 토큰 경합 대응 — 만료시각만 보던 토큰 판정을 **사용 중 실패**까지 보도록 넓힌다.
+> 죽은 토큰을 만료 전까지 계속 재사용하던 구조를 끊는 릴리즈다.
+> 동반 릴리즈: `programgarden` **1.32.0**(provider 계약 확장 — 이 버전과 lockstep).
+
+### Added
+- **`ls/token_errors.py` — 토큰 실패 단일 판정기.** LS 는 죽은 토큰을 한 가지 모양으로
+  알려주지 않는다: 401/403 을 주는 경로, **HTTP 500 + `rsp_msg`** 만 주는 경로
+  (국내 만료 토큰, 해외선물 시세 `o3101` 의 `유효하지 않은 token 입니다`), `error_msg` 는
+  비고 `rsp_cd` 에만 원인이 담기는 주문 경로가 섞여 있다. 응답을
+  `TOKEN_INVALID`(토큰이 죽었다고 **말해 준** 경우) / `TRANSIENT`(토큰인지 알 수 없는 일시
+  실패) / `NONE` 으로 가른다.
+- **`TokenManager.force_reissue()` / `force_reissue_async()`** — 만료 전이라도 재발급한다.
+  세대 번호(`token_generation`)를 함께 받아, 관측 이후 다른 호출자가 이미 재발급했으면
+  발급을 또 내지 않고 그 결과에 **합류**한다(시간 heuristic 없는 single-flight).
+- **`TokenManager.set_on_token_refreshed()`** — 자체 발급으로 갱신된 토큰을 공유 저장소에
+  되쓰기(write-through)할 수 있게 하는 훅. 저장소가 죽은 토큰을 계속 내주는 창을 없앤다.
+
+### Fixed
+- **`ensure_fresh_token(force_refresh=True)` 가 강제 갱신을 무시하던 결함.**
+  `_refresh_token()` 이 `force` 를 인자로 받지 않아, Lock 획득 후 `if not self.is_expired():
+  return True` 에서 **만료 전이면 그대로 성공 반환**했다. 그래서 401/403 재시도 경로가
+  "재발급했다"고 믿고 **같은 죽은 토큰으로** 재시도했다. force 를 끝까지 전달한다.
+- **`GenericTR` 이 죽은 토큰을 알아보지 못하던 문제.** 종전 판정은 401/403 과 만료 문구
+  3종뿐이라 실측 문구 `유효하지 않은 token`(HTTP 500)이 걸리지 않았다. 새 판정기로 교체하고,
+  **토큰 무효는 재시도 없이 즉시 재발급**, 일시 실패만 간격(0.5·1.5·3초)을 두고 재시도한다.
+
+### Changed
+- **`login()` 은 더 이상 `force_refresh=True` 를 쓰지 않는다.** 이 플래그가 "서버 캐시를
+  무시하고 새로 발급하라"는 뜻이 됐으므로, 로그인마다 켜면 앱키 하나에 토큰이 계속 새로
+  발급돼 "1 앱키 = 1 토큰"이 깨진다. 토큰이 없으면 `is_expired()` 가 True 라 발급은 그대로 된다.
+- **주문 엔드포인트(`/order`)는 일시 실패를 재시도하지 않는다** — 5xx·타임아웃은 주문 접수
+  여부를 알 수 없어 재시도가 곧 중복 주문이다. 반대로 토큰 무효는 인증 단계 거부라 주문이
+  나가지 않았음이 보장되므로 재발급 후 재시도한다.
+- **재발급 상한** — 롤링 10분 창에 3회(`FORCED_REISSUE_MAX`), 요청당 2회
+  (`TOKEN_REISSUE_RETRY_MAX`), 연속 재발급 최소 간격 2초. 초과 시 조용한 `False` 가 아니라
+  `TokenReissueLimitExceeded` 로 사유를 올린다.
+- **토큰 provider 계약 확장(하위 호환)** — provider 가 받는 경우에만
+  `force_reissue: bool` / `stale_token: str | None` 키워드를 넘긴다. 구판 provider 는
+  시그니처 검사로 걸러 그대로 동작하고, force 를 못 넘기는 경우 경고를 남긴다.
+- `acquired_at` 을 `ClassVar` 에서 일반 필드로 바꿨다(인스턴스마다 독립).
+
 ## [1.8.0] - 2026-08-19
 > **소스 변경 없음.** `core` 1.24.0 동반 릴리즈에 맞춘 lockstep 버전 정렬이다
 > (3서비스가 서로 다른 core 를 물지 않도록 하는 저장소 규율).

@@ -102,3 +102,49 @@ def test_no_provider_does_not_attach(monkeypatch):
     assert success is True
     assert attempted["login"] == 1
     assert ls.token_manager.has_provider() is False
+
+
+def test_force_reissue_is_forwarded_to_a_provider_that_supports_it(monkeypatch):
+    """사용 중 토큰 무효로 촉발된 강제 재발급이 주입된 provider 까지 도달해야 한다.
+
+    도달하지 않으면 서버가 만료 전 캐시 토큰을 그대로 돌려주므로 재발급이 무의미해진다.
+    """
+    import time
+
+    seen = []
+
+    def provider(appkey, product, paper_trading, *, force_reissue=False, stale_token=None):
+        seen.append({"force": force_reissue, "stale": stale_token})
+        return f"TOK{len(seen)}", time.time() + 3600
+
+    ctx = _FakeContext(ls_token_provider=provider)
+    ls, success, _err = LSClientManager.get_or_create(
+        product="overseas_futures", appkey="AK", appsecret="",
+        paper_trading=False, context=ctx, node_id="broker-1",
+    )
+    assert success is True and seen[0]["force"] is False
+
+    assert ls.token_manager.force_reissue() is True
+    assert seen[1] == {"force": True, "stale": "TOK1"}
+    assert ls.token_manager.access_token == "TOK2"
+
+
+def test_legacy_three_arg_provider_still_works_under_force(monkeypatch):
+    """구판 3-인자 provider 에 force 를 넘겨 TypeError 로 죽지 않아야 한다."""
+    import time
+
+    calls = {"n": 0}
+
+    def legacy_provider(appkey, product, paper_trading):
+        calls["n"] += 1
+        return f"LEGACY{calls['n']}", time.time() + 3600
+
+    ctx = _FakeContext(ls_token_provider=legacy_provider)
+    ls, success, _err = LSClientManager.get_or_create(
+        product="overseas_stock", appkey="AK", appsecret="",
+        paper_trading=False, context=ctx, node_id="broker-1",
+    )
+    assert success is True
+
+    assert ls.token_manager.force_reissue() is True
+    assert calls["n"] == 2 and ls.token_manager.access_token == "LEGACY2"

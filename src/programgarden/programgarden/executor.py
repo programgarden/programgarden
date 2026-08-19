@@ -547,10 +547,25 @@ class LSClientManager:
         # appkey/product/paper_trading; returns (access_token, expires_at_epoch).
         token_provider = getattr(context, "ls_token_provider", None)
         if token_provider is not None:
+            from programgarden_finance.ls.token_manager import provider_accepts_kwarg
+
+            # 사용 중 토큰 실패로 촉발되는 강제 재발급을 서버까지 전달한다. 이 인자를
+            # 못 넘기면 서버가 캐시된(이미 죽었을 수 있는) 토큰을 그대로 돌려줘
+            # 재발급이 아무 효과가 없다. 구판 provider(3-인자)와도 호환되도록,
+            # 실제 provider 가 받는 키워드만 골라 넘긴다.
+            _forwards_force = provider_accepts_kwarg(token_provider, "force_reissue")
+            _forwards_stale = provider_accepts_kwarg(token_provider, "stale_token")
+
             def _sync_token_provider(
                 _appkey=appkey, _product=product, _paper=paper_trading,
+                *, force_reissue: bool = False, stale_token=None,
             ):
-                return token_provider(_appkey, _product, _paper)
+                extra = {}
+                if force_reissue and _forwards_force:
+                    extra["force_reissue"] = True
+                if force_reissue and _forwards_stale:
+                    extra["stale_token"] = stale_token
+                return token_provider(_appkey, _product, _paper, **extra)
 
             ls.set_token_provider(provider=_sync_token_provider)
             context.log("info", f"LS token provider attached for {product}", node_id)
@@ -17486,7 +17501,12 @@ class WorkflowExecutor:
         # self-issuing via GenerateToken, so the platform server is the single
         # token issuer and this executor is a pure consumer. login() is sync, so
         # the provider is a sync callable:
-        #   (appkey: str, product: str, paper_trading: bool) -> (access_token, expires_at_epoch)
+        #   (appkey: str, product: str, paper_trading: bool,
+        #    *, force_reissue: bool = False, stale_token: str | None = None)
+        #       -> (access_token, expires_at_epoch)
+        # force_reissue 는 **사용 중** 토큰이 죽었다고 확인됐을 때만 True 로 온다 —
+        # 서버가 캐시를 무시하고 새로 발급해야 한다는 뜻이다. 구판 3-인자 provider 도
+        # 그대로 동작한다(받는 키워드만 골라 넘긴다).
         # Left None for standalone/public usage (unchanged self-issue path).
         self.ls_token_provider = None
 
