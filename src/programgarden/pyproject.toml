@@ -29,8 +29,8 @@ lxml = "^6.0.2"
 pytickersymbols = {version = ">=1.17.5", python = ">=3.12,<4.0"}
 aiosqlite = "^0.20.0"
 litellm = ">=1.40.0"
-programgarden-core = "^1.23.0"
-programgarden-finance = "^1.7.0"
+programgarden-core = "^1.24.0"
+programgarden-finance = "^1.8.0"
 programgarden-community = "^1.15.0"
 
 [tool.poetry.group.dev.dependencies]

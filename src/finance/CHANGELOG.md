@@ -1,3 +1,10 @@
+## [1.8.0] - 2026-08-19
+> **소스 변경 없음.** `core` 1.24.0 동반 릴리즈에 맞춘 lockstep 버전 정렬이다
+> (3서비스가 서로 다른 core 를 물지 않도록 하는 저장소 규율).
+
+### Dependencies
+- `programgarden-core` 하한을 `^1.24.0` 으로 올린다.
+
 ## [1.7.0] - 2026-08-15
 ### Added
 - **`compute_futures_pnl_rate` 공유 헬퍼** (`ls/overseas_futureoption/extension/calculator.py`)
