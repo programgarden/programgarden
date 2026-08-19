@@ -891,7 +891,8 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
 
     기존 미체결 주문을 취소합니다.
 
-    API: COSAT00303 (해외주식 취소주문)
+    API: COSAT00301 (OrdPtnCode="08") — 해외주식엔 전용 취소 TR 이 없어
+         신규주문과 같은 TR 에 취소 유형코드를 실어 보낸다.
     """
 
     type: Literal["OverseasStockCancelOrderNode"] = "OverseasStockCancelOrderNode"
@@ -1386,7 +1387,7 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
 
     기존 미체결 주문의 가격이나 수량을 정정합니다.
 
-    API: CIDBT00200 (해외선물 정정주문)
+    API: CIDBT00900 (해외선물 정정주문)
     """
 
     type: Literal["OverseasFuturesModifyOrderNode"] = "OverseasFuturesModifyOrderNode"
@@ -1650,7 +1651,7 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
 
     기존 미체결 주문을 취소합니다.
 
-    API: CIDBT00300 (해외선물 취소주문)
+    API: CIDBT01000 (해외선물 취소주문)
     """
 
     type: Literal["OverseasFuturesCancelOrderNode"] = "OverseasFuturesCancelOrderNode"

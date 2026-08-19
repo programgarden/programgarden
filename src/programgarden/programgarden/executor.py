@@ -44,6 +44,29 @@ from programgarden_core.nodes.base import BaseMessagingNode
 logger = logging.getLogger("programgarden.executor")
 
 
+# 해외주식 주문시장코드(OrdMktCode) — LS 는 **"81"/"82" 두 값만** 받는다.
+# COSAT00301/COSAT00311 의 OrdMktCode 도, 시세 g3101 의 exchcd 도 모두
+# ``Literal["81", "82"]`` 이고 SDK 어디에도 "83" 은 없다.
+#
+# 🔴 AMEX(현 NYSE American)를 "83" 으로 보내던 것이 결함이었다 — 주문/정정/취소
+#    InBlock 생성 단계에서 pydantic ValidationError 로 죽어 **AMEX 종목은 주문도
+#    취소도 불가능**했다. 엔진의 실시간·관심종목 경로는 이미 AMEX 를 "81" 로
+#    매핑하고 있어(아래 _resolve_symbol_exchange 계열) 내부적으로도 어긋나 있었다.
+#    NYSE American 은 NYSE 가 운영하므로 "81" 로 통일한다.
+#
+# 이 표는 **주문 3종(신규/정정/취소)이 공유**한다. 종전에는 세 executor 클래스가
+# 각자 사본을 들고 있어, 한 곳만 고치면 나머지가 조용히 남는 구조였다(같은 사고
+# 패턴이 노드타입 목록 복사에서 이미 한 번 났다).
+OVERSEAS_STOCK_MARKET_CODES = {
+    "NYSE": "81",
+    "NASDAQ": "82",
+    "AMEX": "81",   # NYSE American — LS 전용 코드가 없어 NYSE 와 같은 81
+    "81": "81",
+    "82": "82",
+    "83": "81",     # 과거 우리가 쓰던 잘못된 AMEX 코드가 저장된 워크플로우 방어
+}
+
+
 def _safe_print(*args: Any, **kwargs: Any) -> None:
     """Emit console output without ever letting it abort the caller.
 
@@ -13529,14 +13552,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
     """
 
     # 해외주식 시장 코드 매핑
-    STOCK_MARKET_CODES = {
-        "NYSE": "81",
-        "NASDAQ": "82",
-        "AMEX": "83",
-        "81": "81",
-        "82": "82",
-        "83": "83",
-    }
+    # 모듈 단일 정의를 참조한다 — 사본을 두면 한 곳만 고쳐지는 사고가 난다.
+    STOCK_MARKET_CODES = OVERSEAS_STOCK_MARKET_CODES
 
     # 해외주식 호가 유형 코드 매핑
     STOCK_PRICE_TYPE_CODES = {
@@ -14918,7 +14935,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
 
     지원 노드:
     - OverseasStockModifyOrderNode: 해외주식 정정주문 (COSAT00311)
-    - OverseasFuturesModifyOrderNode: 해외선물 정정주문 (CIDBT00200)
+    - OverseasFuturesModifyOrderNode: 해외선물 정정주문 (CIDBT00900)
 
     입력:
     - original_order_id: 원주문번호 (필수)
@@ -14929,11 +14946,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
     """
 
     # 해외주식 시장 코드 매핑
-    STOCK_MARKET_CODES = {
-        "NYSE": "81",
-        "NASDAQ": "82",
-        "AMEX": "83",
-    }
+    STOCK_MARKET_CODES = OVERSEAS_STOCK_MARKET_CODES
 
     async def execute(
         self,
@@ -15401,8 +15414,8 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     주문 취소 Executor
 
     지원 노드:
-    - OverseasStockCancelOrderNode: 해외주식 취소주문 (COSAT00303)
-    - OverseasFuturesCancelOrderNode: 해외선물 취소주문 (CIDBT00300)
+    - OverseasStockCancelOrderNode: 해외주식 취소주문 (COSAT00301, OrdPtnCode="08")
+    - OverseasFuturesCancelOrderNode: 해외선물 취소주문 (CIDBT01000)
 
     입력:
     - original_order_id: 취소할 주문번호 (필수)
@@ -15413,11 +15426,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
     """
 
     # 해외주식 시장 코드 매핑
-    STOCK_MARKET_CODES = {
-        "NYSE": "81",
-        "NASDAQ": "82",
-        "AMEX": "83",
-    }
+    STOCK_MARKET_CODES = OVERSEAS_STOCK_MARKET_CODES
 
     async def execute(
         self,
@@ -15580,16 +15589,48 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "cancelled_order": None,
                 }
 
+            # 🔴 error_msg 부재만으로 성공 처리하면 **살아 있는 주문을 "취소됨" 으로
+            # 보고**한다. LS 는 업무 거부(이미 체결됨·원주문 없음 등)를 error_msg 없이
+            # HTTP 200 + 오류 rsp_cd 로 돌려주고, 그때 접수 블록(block2)이 비거나
+            # 취소주문번호(OrdNo)가 0/빈 값으로 온다. 신규주문 경로에는 이미 같은
+            # 가드가 있는데 취소에만 없어 비대칭이었다 — 취소는 "이미 체결됨" 류
+            # 거부가 정상 빈발 경로라 신규보다 더 아프다.
+            block2 = getattr(response, "block2", None)
+            cancel_ord_no = str(getattr(block2, "OrdNo", "") or "").strip() if block2 else ""
+            if not cancel_ord_no or cancel_ord_no == "0":
+                rsp_cd = getattr(response, "rsp_cd", "") or ""
+                rsp_msg = getattr(response, "rsp_msg", "") or ""
+                reason = (
+                    f"취소가 접수되지 않았습니다 (취소주문번호 미발급) — "
+                    f"rsp_cd={rsp_cd or '없음'}, rsp_msg={rsp_msg or '없음'}. "
+                    "원주문이 그대로 살아 있을 수 있으니 미체결 조회로 확인하세요."
+                )
+                context.log("warning", f"Cancel order rejected: {symbol} — {reason}", node_id)
+                return {
+                    "cancel_result": {
+                        "success": False,
+                        "error": reason,
+                        "order_id": order_id,
+                        "product": "overseas_stock",
+                        "rsp_cd": rsp_cd,
+                        "rsp_msg": rsp_msg,
+                    },
+                    "cancelled_order_id": "",
+                    "cancelled_order": None,
+                }
+
             context.log(
                 "info",
-                f"Order cancelled: {symbol} order_id={order_id}",
+                f"Order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
-            
+
             return {
                 "cancel_result": {
                     "success": True,
                     "order_id": order_id,
+                    # 취소는 그 자체로 새 주문번호를 받는다 — 원주문번호와 구분해 남긴다.
+                    "cancel_order_no": cancel_ord_no,
                     "product": "overseas_stock",
                 },
                 "cancelled_order_id": order_id,
@@ -15661,16 +15702,46 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "cancelled_order": None,
                 }
             
+            # 해외주식 취소와 동일한 가드 — error_msg 부재만 보고 성공 처리하면 살아
+            # 있는 주문을 "취소됨" 으로 보고한다. 선물 응답의 주문번호 필드는 OrdNo 가
+            # 아니라 **OvrsFutsOrdNo** 다(CIDBT01000OutBlock2).
+            block2 = getattr(response, "block2", None)
+            cancel_ord_no = (
+                str(getattr(block2, "OvrsFutsOrdNo", "") or "").strip() if block2 else ""
+            )
+            if not cancel_ord_no or cancel_ord_no == "0":
+                rsp_cd = getattr(response, "rsp_cd", "") or ""
+                rsp_msg = getattr(response, "rsp_msg", "") or ""
+                reason = (
+                    f"취소가 접수되지 않았습니다 (취소주문번호 미발급) — "
+                    f"rsp_cd={rsp_cd or '없음'}, rsp_msg={rsp_msg or '없음'}. "
+                    "원주문이 그대로 살아 있을 수 있으니 미체결 조회로 확인하세요."
+                )
+                context.log("warning", f"Cancel futures order rejected: {symbol} — {reason}", node_id)
+                return {
+                    "cancel_result": {
+                        "success": False,
+                        "error": reason,
+                        "order_id": order_id,
+                        "product": "overseas_futures",
+                        "rsp_cd": rsp_cd,
+                        "rsp_msg": rsp_msg,
+                    },
+                    "cancelled_order_id": "",
+                    "cancelled_order": None,
+                }
+
             context.log(
                 "info",
-                f"Futures order cancelled: {symbol} order_id={order_id}",
+                f"Futures order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
-            
+
             return {
                 "cancel_result": {
                     "success": True,
                     "order_id": order_id,
+                    "cancel_order_no": cancel_ord_no,
                     "product": "overseas_futures",
                 },
                 "cancelled_order_id": order_id,
@@ -15737,9 +15808,36 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "cancelled_order": None,
                 }
 
+            # 해외 취소와 동일한 가드. 국내는 **실전 계좌 전용**(모의투자 없음)이라
+            # "취소됨" 오보의 대가가 가장 크다. CSPAT00801OutBlock2.OrdNo 가 새로
+            # 발급되는 취소주문번호이고, 0/빈 값이면 접수되지 않은 것이다.
+            block2 = getattr(response, "block2", None)
+            cancel_ord_no = str(getattr(block2, "OrdNo", "") or "").strip() if block2 else ""
+            if not cancel_ord_no or cancel_ord_no == "0":
+                rsp_cd = getattr(response, "rsp_cd", "") or ""
+                rsp_msg = getattr(response, "rsp_msg", "") or ""
+                reason = (
+                    f"취소가 접수되지 않았습니다 (취소주문번호 미발급) — "
+                    f"rsp_cd={rsp_cd or '없음'}, rsp_msg={rsp_msg or '없음'}. "
+                    "원주문이 그대로 살아 있을 수 있으니 미체결 조회로 확인하세요."
+                )
+                context.log("warning", f"Korea stock cancel rejected: {symbol} — {reason}", node_id)
+                return {
+                    "cancel_result": {
+                        "success": False,
+                        "error": reason,
+                        "order_id": order_id,
+                        "product": "korea_stock",
+                        "rsp_cd": rsp_cd,
+                        "rsp_msg": rsp_msg,
+                    },
+                    "cancelled_order_id": "",
+                    "cancelled_order": None,
+                }
+
             context.log(
                 "info",
-                f"Korea stock order cancelled: {symbol} order_id={order_id}",
+                f"Korea stock order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
 
@@ -15747,6 +15845,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                 "cancel_result": {
                     "success": True,
                     "order_id": order_id,
+                    "cancel_order_no": cancel_ord_no,
                     "product": "korea_stock",
                 },
                 "cancelled_order_id": order_id,
