@@ -24,7 +24,16 @@ from programgarden_core.exceptions import *
 from programgarden_core import korea_alias
 from programgarden_core import bases
 
-__version__ = "1.12.4"
+# 배포 metadata 에서 파생한다. 손으로 적으면 릴리스 때마다 잊혀 **패키지가 스스로 거짓
+# 버전을 말한다** — 실제로 pyproject 가 1.24.0 인 동안 여기는 1.12.4 였다.
+# (programgarden 메인 패키지가 같은 이유로 먼저 이 패턴으로 옮겼고, 그때 core 는
+#  "core 릴리스가 필요하다" 며 미뤄졌다. 이번이 그 릴리스다.)
+try:  # 설치된 배포판
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("programgarden-core")
+except Exception:  # 소스 트리에서 직접 import (미설치)
+    __version__ = "0.0.0+source"
 __all__ = [
     # Nodes - Base
     "BaseNode",
@@ -129,6 +138,7 @@ __all__ = [
     "build_error",
     # Order Diagnostics (runtime order reject + empty-order reason)
     "OrderRejectInfo",
+    "RetryAdvice",
     "EmptyOrderReason",
     "map_reject_code",
     "diagnose_missing_order_no",

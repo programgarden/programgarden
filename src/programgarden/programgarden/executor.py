@@ -381,8 +381,14 @@ class NodeExecutorBase:
         """주문 거부 시 투자자 알림 1건 발행(on_notification).
 
         on_log warning 과 별개로, AI/UI/텔레그램 소비자가 거부 사유(cause)와 대응
-        팁(tip)을 구조화 payload 로 받도록 한다. ``node_type`` 은 시장별 주문 노드
-        이름(해외주식/해외선물/국내주식)을 정확히 라벨링하기 위해 호출자가 전달한다.
+        팁(tip), 그리고 **재시도 판단(retry)** 을 구조화 payload 로 받도록 한다.
+        ``node_type`` 은 시장별 주문 노드 이름(해외주식/해외선물/국내주식)을 정확히
+        라벨링하기 위해 호출자가 전달한다.
+
+        ⚠️ 이 ``data`` 는 ``model_dump()`` 가 아니라 **키를 손으로 고른다.** 그래서
+        ``OrderRejectInfo`` 에 필드를 추가해도 여기 적지 않으면 알림 경로에는 실리지
+        않는다 — 노드 출력(``diagnostics``)은 자동으로 실려서, 한쪽만 새 필드를 갖는
+        비대칭이 조용히 생긴다. 필드를 늘릴 때는 이 dict 도 같이 본다.
         """
         try:
             await context.send_notification(
@@ -400,6 +406,12 @@ class NodeExecutorBase:
                     "cause": reject.cause,
                     "tip": reject.tip,
                     "raw_msg": reject.raw_msg,
+                    # 🔴 소비자가 거부를 받고 가장 먼저 답해야 하는 질문이 "다시 걸까" 다.
+                    # 이 키가 빠지면 소비자는 cause/tip 문장에서 그걸 **추론**해야 하고,
+                    # 그 추론이 틀리면 살아 있는 주문을 중복 발주한다. 이 dict 는 필드를
+                    # 손으로 고르므로, RetryAdvice 를 만들어 놓고도 여기 안 적으면
+                    # 알림 경로에는 영원히 안 실린다(실제로 그 상태였다).
+                    "retry": reject.retry.value,
                     "known": reject.known,
                 },
             )
