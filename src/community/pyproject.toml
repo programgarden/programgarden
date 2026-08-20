@@ -48,11 +48,6 @@ quantstats = ">=0.0.81,<0.1"
 setuptools = ">=68"
 
 
-[[tool.poetry.source]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-priority = "supplemental"
-
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

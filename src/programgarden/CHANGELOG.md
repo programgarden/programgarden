@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+## [1.33.0] - 2026-08-20
+> 주문 거부 알림에 **재시도 판단(`retry`)** 을 싣는다. `core` 1.25.0 이 그 필드를
+> 만들었는데, 알림 경로만 키를 손으로 골라 담고 있어 **만들어 놓고 안 보내는** 상태였다.
+> 동반 릴리즈: `core` **1.25.0**(선행 조건) · `finance` **1.9.1**.
+
+### Fixed
+- **`_notify_order_reject` 가 `retry` 를 빠뜨리던 문제.** 거부 정보가 나가는 경로는 셋인데
+  노드 출력(`order_result.diagnostics`)과 해외주식 취소(`cancel_result.reject_info`)는
+  `model_dump()` 라 새 필드가 자동으로 실리고, **알림만 6개 키를 수동 선택**한다.
+  그래서 `OrderRejectInfo` 에 필드를 추가해도 알림 소비자는 영영 볼 수 없었다.
+  docstring 에 이 비대칭을 박고, 테스트에 `data["retry"]` 단언을 넣었다 — 기존 테스트가
+  `category` 와 `node_type` 만 봐서 **처음부터 빠진 걸 아무도 몰랐다.**
+
+### Changed
+- deps: `programgarden-core` **^1.25.0** · `programgarden-finance` **^1.9.1**
+
 ## [1.32.0] - 2026-08-19
 > LS 토큰 경합 대응 — 사용 중 죽은 토큰을 만료 전까지 계속 쓰던 구조를 끊는다.
 > 동반 릴리즈: `finance` **1.9.0**(판정기·강제 재발급 본체 — 이 버전이 선행 조건이다),
