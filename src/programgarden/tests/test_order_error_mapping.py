@@ -608,6 +608,11 @@ class TestOverseasFuturesRejectDiagnostics:
         _, kwargs = ctx.send_notification.await_args
         assert kwargs["category"] == NotificationCategory.ORDER_REJECTED
         assert kwargs["node_type"] == "OverseasFuturesNewOrderNode"
+        # 🔴 알림 payload 는 키를 손으로 고른다 — 이 assert 가 없으면 OrderRejectInfo 에
+        # 필드를 추가해도 여기 빠진 걸 아무도 모른다(실제로 retry 가 그렇게 빠져 있었다).
+        # 미등재 코드는 "unknown" 이어야 한다: 여기에 재시도 가능을 기본값으로 두면
+        # 접수 여부를 모르는 주문을 다시 보내 중복 발주가 난다.
+        assert kwargs["data"]["retry"] == "unknown"
 
     @pytest.mark.asyncio
     async def test_futures_empty_order_no_uses_dedicated_diagnostic(self):
