@@ -392,7 +392,7 @@ class AS2RealResponseBody(BaseModel):
         description="Overseas-side execution identifier.",
         examples=[""],
     )
-    sOrdQty: int = Field(
+    sOrdQty: float = Field(
         ...,
         title="주문수량 (Order quantity)",
         description="Order quantity in shares.",
@@ -407,7 +407,7 @@ class AS2RealResponseBody(BaseModel):
         ),
         examples=[0.0, 180.5],
     )
-    sExecQty: int = Field(
+    sExecQty: float = Field(
         ...,
         title="체결수량 (Execution quantity)",
         description="Quantity filled in this event (typically 0 for modify).",
@@ -419,7 +419,7 @@ class AS2RealResponseBody(BaseModel):
         description="Execution price (typically 0 for modify).",
         examples=[0.0],
     )
-    sMdfyCnfQty: int = Field(
+    sMdfyCnfQty: float = Field(
         ...,
         title="정정확인수량 (Modify-confirm quantity)",
         description="Quantity confirmed for the modify event.",
@@ -431,13 +431,13 @@ class AS2RealResponseBody(BaseModel):
         description="Price confirmed for the modify event.",
         examples=[0.0, 181.0],
     )
-    sCancCnfQty: int = Field(
+    sCancCnfQty: float = Field(
         ...,
         title="취소확인수량 (Cancel-confirm quantity)",
         description="Quantity confirmed for a cancel event (0 for modify).",
         examples=[0],
     )
-    sRjtQty: int = Field(
+    sRjtQty: float = Field(
         ...,
         title="거부수량 (Reject quantity)",
         description="Quantity rejected.",
@@ -485,25 +485,25 @@ class AS2RealResponseBody(BaseModel):
         description="Operation-directive number; consume as returned by LS.",
         examples=[""],
     )
-    sUnercQty: int = Field(
+    sUnercQty: float = Field(
         ...,
         title="미체결수량(주문) (Unfilled order quantity)",
         description="Quantity unfilled on this order after the modify.",
         examples=[0, 5],
     )
-    sOrgOrdUnercQty: int = Field(
+    sOrgOrdUnercQty: float = Field(
         ...,
         title="원주문미체결수량 (Original-order unfilled quantity)",
         description="Unfilled quantity remaining on the original order.",
         examples=[0, 5],
     )
-    sOrgOrdMdfyQty: int = Field(
+    sOrgOrdMdfyQty: float = Field(
         ...,
         title="원주문정정수량 (Original-order modified quantity)",
         description="Quantity that has been modified on the original order.",
         examples=[0, 1],
     )
-    sOrgOrdCancQty: int = Field(
+    sOrgOrdCancQty: float = Field(
         ...,
         title="원주문취소수량 (Original-order cancelled quantity)",
         description="Quantity cancelled from the original order.",
@@ -603,13 +603,13 @@ class AS2RealResponseBody(BaseModel):
         description="Reuse-funds executed amount within current day.",
         examples=[0.0],
     )
-    sSpotExecQty: int = Field(
+    sSpotExecQty: float = Field(
         ...,
         title="실물체결수량 (Spot execution quantity)",
         description="Spot-execution quantity in shares.",
         examples=[0],
     )
-    sStslExecQty: int = Field(
+    sStslExecQty: float = Field(
         ...,
         title="공매도체결수량 (Short-sale execution quantity)",
         description="Short-sale execution quantity in shares.",
@@ -657,43 +657,43 @@ class AS2RealResponseBody(BaseModel):
         description="Reject reason text / code; empty when not rejected.",
         examples=[""],
     )
-    sSecBalQty: int = Field(
+    sSecBalQty: float = Field(
         ...,
         title="잔고수량 (Holding quantity)",
         description="Position holding quantity for the symbol after the event.",
         examples=[0, 10],
     )
-    sSpotOrdAbleQty: int = Field(
+    sSpotOrdAbleQty: float = Field(
         ...,
         title="실물주문가능수량 (Spot-orderable quantity)",
         description="Quantity available for spot ordering.",
         examples=[0, 10],
     )
-    sOrdAbleRuseQty: int = Field(
+    sOrdAbleRuseQty: float = Field(
         ...,
         title="주문가능재사용수량 (Reuse-orderable quantity)",
         description="Reusable quantity available for ordering.",
         examples=[0],
     )
-    sFlctQty: int = Field(
+    sFlctQty: float = Field(
         ...,
         title="변동수량 (Change quantity)",
         description="Net change in quantity caused by this event.",
         examples=[0],
     )
-    sSecBalQtyD2: int = Field(
+    sSecBalQtyD2: float = Field(
         ...,
         title="잔고수량(D2) (D+2 holding quantity)",
         description="D+2 settled holding quantity for the symbol.",
         examples=[0, 10],
     )
-    sSellAbleQty: int = Field(
+    sSellAbleQty: float = Field(
         ...,
         title="매도주문가능수량 (Sell-orderable quantity)",
         description="Quantity currently available to sell.",
         examples=[0, 10],
     )
-    sUnercSellOrdQty: int = Field(
+    sUnercSellOrdQty: float = Field(
         ...,
         title="미체결매도주문수량 (Unfilled sell-order quantity)",
         description="Sell-side quantity currently unfilled.",
