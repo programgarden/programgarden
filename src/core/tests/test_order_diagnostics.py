@@ -30,7 +30,9 @@ from programgarden_core.models.order_diagnostics import (
 
 # Registered from a real LS overseas-stock account on 2026-08-19 by deliberately
 # triggering each rejection. Pinned here so a future guess-based addition fails.
-LIVE_VERIFIED_OVERSEAS_STOCK_CODES = {"02201", "02259", "03053", "03759"}
+# IGW40011 added 2026-08-24: OrdQty=0.1 deliberately submitted (COSAT00301) →
+# gateway type-validation rejection (fractional quantities not accepted).
+LIVE_VERIFIED_OVERSEAS_STOCK_CODES = {"02201", "02259", "03053", "03759", "IGW40011"}
 
 # Registered from a real LS Korea-stock account on 2026-08-19 the same way
 # (CSPAT00601 new order / CSPAT00801 cancel, each rejection deliberately

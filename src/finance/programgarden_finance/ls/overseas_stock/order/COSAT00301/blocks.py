@@ -83,7 +83,12 @@ class COSAT00301InBlock1(BaseModel):
     OrdQty: int = Field(
         ...,
         title="주문수량 (Order quantity)",
-        description="Order quantity in shares.",
+        description=(
+            "Order quantity in shares. Integers only — the LS gateway rejects "
+            "fractional quantities at its type-validation layer (measured "
+            "2026-08-24: OrdQty=0.1 -> HTTP 500, rsp_cd IGW40011 '주문수량"
+            "(OrdQty) data type을 확인하세요.')."
+        ),
         examples=[1, 5],
     )
     OvrsOrdPrc: float = Field(

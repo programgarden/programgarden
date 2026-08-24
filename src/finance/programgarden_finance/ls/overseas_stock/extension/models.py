@@ -40,8 +40,8 @@ class StockTradeInput(BaseModel):
     ticker: str = Field(..., description="종목코드")
     """종목코드"""
     
-    qty: int = Field(..., description="수량")
-    """수량"""
+    qty: Decimal = Field(..., description="수량 (소수점 잔고 포함 가능)")
+    """수량 — 소수점(fractional) 보유분 손익 계산을 위해 Decimal (int 입력도 허용)"""
     
     buy_price: Decimal = Field(..., description="매수단가 (외화)")
     """매수단가 (외화)"""
@@ -117,11 +117,11 @@ class StockPositionItem(BaseModel):
     currency_code: str = Field(default="USD", description="통화코드")
     """통화코드"""
     
-    quantity: int = Field(default=0, description="보유수량")
-    """보유수량"""
-    
-    sellable_quantity: int = Field(default=0, description="매도가능수량")
-    """매도가능수량"""
+    quantity: Decimal = Field(default=Decimal("0"), description="보유수량 (소수점 잔고 AstkBalTpCode='20' 포함)")
+    """보유수량 — 소수점(fractional) 잔고를 담을 수 있어 Decimal"""
+
+    sellable_quantity: Decimal = Field(default=Decimal("0"), description="매도가능수량 (소수점 잔고 포함)")
+    """매도가능수량 — 소수점(fractional) 잔고를 담을 수 있어 Decimal"""
     
     buy_price: Decimal = Field(default=Decimal("0"), description="매입단가")
     """매입단가"""
@@ -201,17 +201,17 @@ class StockOpenOrder(BaseModel):
     order_type: str = Field(default="", description="주문유형 (01: 매도, 02: 매수)")
     """주문유형 (01: 매도, 02: 매수)"""
     
-    order_qty: int = Field(default=0, description="주문수량")
-    """주문수량"""
-    
+    order_qty: int | float = Field(default=0, description="주문수량 (소수점 가능)")
+    """주문수량 — 소수점(fractional) 행 대응 int|float (정수는 int 유지)"""
+
     order_price: Decimal = Field(default=Decimal("0"), description="주문가격")
     """주문가격"""
-    
-    executed_qty: int = Field(default=0, description="체결수량")
-    """체결수량"""
-    
-    remaining_qty: int = Field(default=0, description="미체결수량")
-    """미체결수량"""
+
+    executed_qty: int | float = Field(default=0, description="체결수량 (소수점 가능)")
+    """체결수량 — 소수점(fractional) 행 대응 int|float"""
+
+    remaining_qty: int | float = Field(default=0, description="미체결수량 (소수점 가능)")
+    """미체결수량 — 소수점(fractional) 행 대응 int|float"""
     
     order_time: str = Field(default="", description="주문시간")
     """주문시간"""

@@ -271,8 +271,8 @@ class COSAQ01400OutBlock2(BaseModel):
         description="Korean display name of the issue when applicable to Japan market.",
         examples=["", "도요타자동차"],
     )
-    OrdQty: int = Field(
-        default=0,
+    OrdQty: float = Field(
+        default=0.0,
         title="주문수량 (Order quantity)",
         description="Reservation order quantity (shares).",
         examples=[0, 100],
@@ -298,20 +298,20 @@ class COSAQ01400OutBlock2(BaseModel):
         description="Display name of the buy/sell side (e.g., '매도', '매수').",
         examples=["매도", "매수"],
     )
-    ExecQty: int = Field(
-        default=0,
+    ExecQty: float = Field(
+        default=0.0,
         title="체결수량 (Executed quantity)",
         description="Quantity that has been executed for this reservation.",
         examples=[0, 100],
     )
-    UnercQty: int = Field(
-        default=0,
+    UnercQty: float = Field(
+        default=0.0,
         title="미체결수량 (Unexecuted quantity)",
         description="Remaining unexecuted quantity for this reservation.",
         examples=[0, 100],
     )
-    TotExecQty: int = Field(
-        default=0,
+    TotExecQty: float = Field(
+        default=0.0,
         title="총체결수량 (Total executed quantity)",
         description="Total executed quantity across this reservation's lifecycle.",
         examples=[0, 100],

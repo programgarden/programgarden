@@ -334,8 +334,8 @@ class COSAQ00102OutBlock2(BaseModel):
         ),
         examples=["0", "1234.56"],
     )
-    SellExecQty: int = Field(
-        default=0,
+    SellExecQty: float = Field(
+        default=0.0,
         title="매도체결수량 (Sell-executed quantity)",
         description="Aggregated sell-executed share quantity.",
         examples=[0, 100],
@@ -350,8 +350,8 @@ class COSAQ00102OutBlock2(BaseModel):
         ),
         examples=["0", "1234.56"],
     )
-    BuyExecQty: int = Field(
-        default=0,
+    BuyExecQty: float = Field(
+        default=0.0,
         title="매수체결수량 (Buy-executed quantity)",
         description="Aggregated buy-executed share quantity.",
         examples=[0, 100],
@@ -435,14 +435,14 @@ class COSAQ00102OutBlock3(BaseModel):
         ),
         examples=[0, 1, 2],
     )
-    MrcAbleQty: int = Field(
-        default=0,
+    MrcAbleQty: float = Field(
+        default=0.0,
         title="정정취소가능수량 (Modify/cancel-able quantity)",
         description="Remaining quantity that can still be modified or cancelled.",
         examples=[0, 100],
     )
-    OrdQty: int = Field(
-        default=0,
+    OrdQty: float = Field(
+        default=0.0,
         title="주문수량 (Order quantity)",
         description="Total order quantity (shares).",
         examples=[0, 100],
@@ -456,8 +456,8 @@ class COSAQ00102OutBlock3(BaseModel):
         ),
         examples=[0.0, 150.25],
     )
-    ExecQty: int = Field(
-        default=0,
+    ExecQty: float = Field(
+        default=0.0,
         title="체결수량 (Executed quantity)",
         description="Quantity that has been executed so far for this order.",
         examples=[0, 100],
@@ -516,8 +516,8 @@ class COSAQ00102OutBlock3(BaseModel):
         description="Display name of the modify/cancel classification.",
         examples=["", "정정", "취소"],
     )
-    AllExecQty: int = Field(
-        default=0,
+    AllExecQty: float = Field(
+        default=0.0,
         title="전체체결수량 (Total executed quantity)",
         description="Total executed quantity across this order's lifecycle.",
         examples=[0, 100],
@@ -555,14 +555,14 @@ class COSAQ00102OutBlock3(BaseModel):
         description="Korean display name of the issue when applicable to Japan market.",
         examples=["", "도요타자동차"],
     )
-    UnercQty: int = Field(
-        default=0,
+    UnercQty: float = Field(
+        default=0.0,
         title="미체결수량 (Unexecuted quantity)",
         description="Remaining unexecuted quantity for this order.",
         examples=[0, 100],
     )
-    CnfQty: int = Field(
-        default=0,
+    CnfQty: float = Field(
+        default=0.0,
         title="확인수량 (Confirmed quantity)",
         description="Confirmed quantity. Exact semantics not declared in available source.",
         examples=[0, 100],

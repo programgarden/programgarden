@@ -179,7 +179,7 @@ class StockPnLCalculator:
     def calculate_realtime_pnl(
         self,
         symbol: str,
-        quantity: int,
+        quantity: Decimal,
         buy_price: Decimal,
         current_price: Decimal,
         currency: str = "USD",

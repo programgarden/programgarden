@@ -44,7 +44,7 @@ class PositionInfo:
     """포지션 정보"""
     symbol: str
     exchange: str
-    quantity: int
+    quantity: Decimal  # 소수점(fractional) 잔고 대응 — 가격류와의 Decimal 혼합 산술 안전
     avg_price: Decimal
     classification: str  # "workflow" | "manual" | "unknown_api"
 
@@ -570,18 +570,21 @@ class WorkflowPositionTracker:
             positions: Dict[str, PositionInfo] = {}
             
             for symbol, exchange, buy_price, remaining_qty, classification in cursor.fetchall():
+                # SQLite 가 소수점 체결 lot 을 REAL 로 돌려줄 수 있어 Decimal 로
+                # 통일한다 (Decimal * float 는 TypeError).
+                lot_qty = Decimal(str(remaining_qty))
                 if symbol in positions:
                     # 같은 종목: 평균단가 재계산
                     pos = positions[symbol]
-                    total_qty = pos.quantity + remaining_qty
-                    total_cost = (pos.avg_price * pos.quantity) + (Decimal(str(buy_price)) * remaining_qty)
+                    total_qty = pos.quantity + lot_qty
+                    total_cost = (pos.avg_price * pos.quantity) + (Decimal(str(buy_price)) * lot_qty)
                     pos.quantity = total_qty
                     pos.avg_price = total_cost / total_qty
                 else:
                     positions[symbol] = PositionInfo(
                         symbol=symbol,
                         exchange=exchange or "",
-                        quantity=remaining_qty,
+                        quantity=lot_qty,
                         avg_price=Decimal(str(buy_price)),
                         classification=classification,
                     )
@@ -605,11 +608,11 @@ class WorkflowPositionTracker:
         other_positions: Dict[str, PositionInfo] = {}
         
         for symbol, pos_data in all_positions.items():
-            total_qty = pos_data.get("quantity", 0) or pos_data.get("qty", 0)
+            total_qty = Decimal(str(pos_data.get("quantity", 0) or pos_data.get("qty", 0) or 0))
             avg_price = pos_data.get("avg_price", 0) or pos_data.get("buy_price", 0)
             exchange = pos_data.get("exchange", "")
-            
-            workflow_qty = workflow_positions.get(symbol, PositionInfo(symbol, "", 0, Decimal(0), "")).quantity
+
+            workflow_qty = workflow_positions.get(symbol, PositionInfo(symbol, "", Decimal(0), Decimal(0), "")).quantity
             other_qty = total_qty - workflow_qty
             
             if other_qty > 0:
