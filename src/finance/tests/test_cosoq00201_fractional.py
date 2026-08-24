@@ -149,3 +149,100 @@ class TestTrackerFailClosed:
 
         assert tracker._positions == {}
         assert "positions" not in tracker._last_errors
+
+
+class TestPartialFailureSignal:
+    """적대 리뷰 #2·#3·#15 — 부분실패가 응답 계약에 드러난다."""
+
+    def test_partial_rows_populate_parse_warnings_without_error(self):
+        resp = _build({
+            "rsp_cd": "00000",
+            "COSOQ00201OutBlock4": [
+                _integer_row(),
+                {"ShtnIsuNo": "BAD", "AstkBalQty": "not-a-number"},
+            ],
+        })
+        assert resp.error_msg is None
+        assert len(resp.parse_warnings) == 1
+        assert "OutBlock4[1]" in resp.parse_warnings[0]
+
+    def test_full_success_has_empty_warnings(self):
+        resp = _build({
+            "rsp_cd": "00000",
+            "COSOQ00201OutBlock4": [_integer_row(), _fractional_row()],
+        })
+        assert resp.parse_warnings == []
+
+    def test_block2_loss_is_loud(self):
+        """잔고 요약(OutBlock2) 전손은 무음 0원이 아니라 에러다 (적대 리뷰 #2)."""
+        resp = _build({
+            "rsp_cd": "00000",
+            "COSOQ00201OutBlock2": {"WonDpsBalAmt": "not-a-number"},
+            "COSOQ00201OutBlock4": [_integer_row()],
+        })
+        assert resp.error_msg is not None
+        assert "OutBlock2" in resp.error_msg
+
+    @pytest.mark.asyncio
+    async def test_tracker_partial_rows_fail_closed(self):
+        """스킵된 행이 있으면 기존 포지션을 갱신하지 않는다 (적대 리뷰 #3)."""
+        partial = types.SimpleNamespace(
+            rsp_cd="00000", rsp_msg="정상", error_msg=None,
+            parse_warnings=["OutBlock4[1]: boom"],
+            block3=[], block4=[],
+        )
+        tracker = _make_tracker(partial)
+        sentinel = object()
+        tracker._positions["IBM"] = sentinel
+
+        await tracker._fetch_positions()
+
+        assert tracker._positions.get("IBM") is sentinel
+        assert "부분실패" in tracker._last_errors["positions"]
+
+
+class TestOpenOrdersReadsBlock3:
+    """적대 리뷰 #4 — 미체결 조회가 입력 에코(block1)가 아닌 block3 을 읽는다."""
+
+    @pytest.mark.asyncio
+    async def test_real_rows_flow_into_open_orders(self):
+        row = types.SimpleNamespace(
+            OrdNo=12345, OrgOrdNo=0, ShtnIsuNo="SOXL", IsuNo="SOXL",
+            JpnMktHanglIsuNm="SOXL", OrdPtnCode="02", OrdQty=16,
+            OvrsOrdPrc=10.5, ExecQty=0, UnercQty=16, OrdTime="120000",
+            OrdTrxPtnCode=1, CrcyCode="USD",
+        )
+        resp = types.SimpleNamespace(
+            rsp_cd="00000", rsp_msg="정상", error_msg=None,
+            block1=object(), block3=[row],
+        )
+        tracker = StockAccountTracker(
+            accno_client=types.SimpleNamespace(cosaq00102=lambda body: _StubTR(resp)),
+            real_client=None,
+        )
+        await tracker._fetch_open_orders()
+        assert "12345" in tracker._open_orders
+        order = tracker._open_orders["12345"]
+        assert order.symbol == "SOXL"
+        assert order.order_qty == 16
+        assert order.remaining_qty == 16
+
+    @pytest.mark.asyncio
+    async def test_fractional_open_order_row_does_not_raise(self):
+        row = types.SimpleNamespace(
+            OrdNo=777, ShtnIsuNo="IBM", IsuNo="IBM", JpnMktHanglIsuNm="IBM",
+            OrdPtnCode="01", OrdQty=0.847972, OvrsOrdPrc=100.0,
+            ExecQty=0.5, UnercQty=0.347972, OrdTime="120000",
+            OrdTrxPtnCode=1, CrcyCode="USD",
+        )
+        resp = types.SimpleNamespace(
+            rsp_cd="00000", rsp_msg="정상", error_msg=None,
+            block1=object(), block3=[row],
+        )
+        tracker = StockAccountTracker(
+            accno_client=types.SimpleNamespace(cosaq00102=lambda body: _StubTR(resp)),
+            real_client=None,
+        )
+        await tracker._fetch_open_orders()
+        assert tracker._open_orders["777"].order_qty == pytest.approx(0.847972)
+        assert "open_orders" not in tracker._last_errors

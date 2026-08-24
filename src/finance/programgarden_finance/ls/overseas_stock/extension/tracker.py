@@ -197,6 +197,19 @@ class StockAccountTracker:
                 logger.error(f"[_fetch_positions] {error_msg}")
                 return
 
+            # 행 단위 파싱에서 스킵된 행이 있으면(부분실패) 기존 포지션을 갱신하지
+            # 않는다 — 유실 행의 종목이 '미보유' 로 둔갑해 이중 매수를 유발한다
+            # (적대 리뷰 #3). 낡은 스냅샷이 잘못된 빈 스냅샷보다 낫다.
+            parse_warnings = getattr(resp, 'parse_warnings', None) or []
+            if parse_warnings:
+                error_msg = (
+                    f"[포지션 조회 부분실패] {len(parse_warnings)}행 파싱 스킵 — "
+                    f"기존 포지션 유지: {parse_warnings[0]}"
+                )
+                self._last_errors["positions"] = error_msg
+                logger.error(f"[_fetch_positions] {error_msg}")
+                return
+
             # "데이터 없음" 응답 → 정상 케이스 (빈 데이터)
             if is_no_data_response(rsp_cd, rsp_msg):
                 logger.info(f"[_fetch_positions] 보유종목 없음 (rsp_cd={rsp_cd}, msg={rsp_msg})")
@@ -339,20 +352,25 @@ class StockAccountTracker:
             now = datetime.now()
             self._open_orders.clear()
             
-            if hasattr(resp, 'block1') and resp.block1:
-                for item in resp.block1:
+            # 🔴 미체결 행은 block3 다 — 종전 코드는 block1(입력 에코, 단일 모델)을
+            # 순회해 (필드명, 값) 튜플에 getattr 기본값만 얻었고, 그 결과
+            # order_no='' 인 가짜 1건만 만들어 미체결 추적이 한 번도 실데이터를
+            # 흐른 적이 없었다 (적대 리뷰 2026-08-24 #4). 필드명도 OutBlock3
+            # 실명(UnercQty 등)으로 정정.
+            if getattr(resp, 'block3', None):
+                for item in resp.block3:
                     order = StockOpenOrder(
-                        order_no=getattr(item, 'OrdNo', ''),
-                        symbol=getattr(item, 'IsuNo', ''),
-                        symbol_name=getattr(item, 'IsuNm', ''),
-                        order_type=getattr(item, 'OrdPtnCode', ''),
+                        order_no=str(getattr(item, 'OrdNo', '') or ''),
+                        symbol=getattr(item, 'ShtnIsuNo', '') or getattr(item, 'IsuNo', ''),
+                        symbol_name=getattr(item, 'JpnMktHanglIsuNm', ''),
+                        order_type=str(getattr(item, 'OrdPtnCode', '') or ''),
                         order_qty=getattr(item, 'OrdQty', 0),
-                        order_price=Decimal(str(getattr(item, 'OrdPrc', 0))),
+                        order_price=Decimal(str(getattr(item, 'OvrsOrdPrc', 0) or 0)),
                         executed_qty=getattr(item, 'ExecQty', 0),
-                        remaining_qty=getattr(item, 'UnexecQty', 0),
+                        remaining_qty=getattr(item, 'UnercQty', 0),
                         order_time=getattr(item, 'OrdTime', ''),
-                        order_status=getattr(item, 'OrdStatCode', ''),
-                        currency_code=getattr(item, 'CrcyCode', 'USD'),
+                        order_status=str(getattr(item, 'OrdTrxPtnCode', '') or ''),
+                        currency_code=getattr(item, 'CrcyCode', '') or 'USD',
                         last_updated=now
                     )
                     self._open_orders[order.order_no] = order

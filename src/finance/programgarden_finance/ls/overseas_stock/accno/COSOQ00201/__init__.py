@@ -103,8 +103,9 @@ class TrCOSOQ00201(TRAccnoAbstract):
             logger.error(f"COSOQ00201 request failed with status: {error_msg}")
         else:
             # A block that had data but lost every row is a real failure; a few
-            # skipped rows among survivors stays a logged warning (error_msg on a
-            # partially parsed response would make consumers treat it as total).
+            # skipped rows among survivors stays a warning carried on
+            # ``parse_warnings`` (error_msg on a partially parsed response would
+            # make consumers treat it as total failure).
             for block_name, raw_rows, parsed_rows in (
                 ("OutBlock3", block3_data, parsed_block3),
                 ("OutBlock4", block4_data, parsed_block4),
@@ -116,6 +117,15 @@ class TrCOSOQ00201(TRAccnoAbstract):
                     )
                     logger.error(f"COSOQ00201 {error_msg}")
                     break
+            # OutBlock2(잔고 요약)가 있었는데 통째로 잃었으면 진짜 실패다 — 무음
+            # 처리하면 예수금/평가금이 0 원으로 조용히 나간다(적대 리뷰 #2).
+            # OutBlock1 은 입력 에코라 소실돼도 로그로 충분하다.
+            if error_msg is None and block2_data is not None and parsed_block2 is None:
+                error_msg = (
+                    "response parse error: OutBlock2 (balance summary) failed to "
+                    f"parse — {parse_failures[0] if parse_failures else 'unknown'}"
+                )
+                logger.error(f"COSOQ00201 {error_msg}")
 
         result = COSOQ00201Response(
             header=header,
@@ -127,6 +137,7 @@ class TrCOSOQ00201(TRAccnoAbstract):
             rsp_msg=resp_json.get("rsp_msg", ""),
             status_code=status,
             error_msg=error_msg,
+            parse_warnings=parse_failures,
         )
         if resp is not None:
             result.raw_data = resp

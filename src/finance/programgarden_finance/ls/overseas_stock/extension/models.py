@@ -201,17 +201,17 @@ class StockOpenOrder(BaseModel):
     order_type: str = Field(default="", description="주문유형 (01: 매도, 02: 매수)")
     """주문유형 (01: 매도, 02: 매수)"""
     
-    order_qty: int = Field(default=0, description="주문수량")
-    """주문수량"""
-    
+    order_qty: int | float = Field(default=0, description="주문수량 (소수점 가능)")
+    """주문수량 — 소수점(fractional) 행 대응 int|float (정수는 int 유지)"""
+
     order_price: Decimal = Field(default=Decimal("0"), description="주문가격")
     """주문가격"""
-    
-    executed_qty: int = Field(default=0, description="체결수량")
-    """체결수량"""
-    
-    remaining_qty: int = Field(default=0, description="미체결수량")
-    """미체결수량"""
+
+    executed_qty: int | float = Field(default=0, description="체결수량 (소수점 가능)")
+    """체결수량 — 소수점(fractional) 행 대응 int|float"""
+
+    remaining_qty: int | float = Field(default=0, description="미체결수량 (소수점 가능)")
+    """미체결수량 — 소수점(fractional) 행 대응 int|float"""
     
     order_time: str = Field(default="", description="주문시간")
     """주문시간"""

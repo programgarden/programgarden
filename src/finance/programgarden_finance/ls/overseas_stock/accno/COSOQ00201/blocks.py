@@ -575,6 +575,17 @@ class COSOQ00201Response(BaseModel):
         title="오류 메시지 (Error message)",
         description="Error message when an exception or HTTP error occurred. None on success.",
     )
+    parse_warnings: List[str] = Field(
+        default_factory=list,
+        title="행 단위 파싱 경고 (Row-level parse warnings)",
+        description=(
+            "Rows/blocks skipped during row-level parsing (one entry per skipped "
+            "row). Empty on full success. A non-empty list with error_msg=None "
+            "means PARTIAL success — surviving rows are present but some rows "
+            "were lost; consumers that must not mistake a lost row for 'no "
+            "position' should treat this as a failure signal (2026-08-24)."
+        ),
+    )
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 
     @property
