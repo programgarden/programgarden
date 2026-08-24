@@ -38,6 +38,16 @@ TOKEN_REISSUE_RETRY_MAX = 2  # 한 요청 안에서 허용하는 강제 재발�
 _MUTATING_URL_SUFFIX = "/order"
 
 
+class ResponseParseException(Exception):
+    """response_builder 가 이미 수신한 HTTP 응답 위에서 실패한 경우 — 파싱/검증
+    실패이지 전송 실패가 아니다. error_msg 에 'response parse error:' 접두어가
+    실려 하류에서 네트워크 장애와 구분된다 (전에는 둘이 똑같이 보였다)."""
+
+    def __init__(self, original: Exception):
+        self.original = original
+        super().__init__(f"response parse error: {original}")
+
+
 class GenericTR(TRAccnoAbstract, Generic[R]):
     """
     범용 TR 핸들러입니다. 공통적인 동기/비동기 요청 처리, 예외 처리, 재시도 로직을 제공합니다.
@@ -254,15 +264,26 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         except TokenNotFoundException:
             pass
 
+    def _build_result(self, resp, resp_json, resp_headers) -> R:
+        """수신 완료한 응답을 파싱한다 — 여기서 나는 예외는 전송 실패가 아니라
+        파싱 실패이므로 ResponseParseException 으로 감싸 구분한다."""
+        try:
+            result: R = self._response_builder(resp, resp_json, resp_headers, None)
+        except Exception as e:
+            raise ResponseParseException(e) from e
+        if hasattr(result, "raw_data"):
+            result.raw_data = resp
+        return result
+
     async def req_async(self) -> R:
         try:
             async with aiohttp.ClientSession() as session:
                 resp, resp_json, resp_headers = await self._execute_async_with_retry(session)
-                result: R = self._response_builder(resp, resp_json, resp_headers, None)
-                if hasattr(result, "raw_data"):
-                    result.raw_data = resp
-                return result
+                return self._build_result(resp, resp_json, resp_headers)
 
+        except ResponseParseException as e:
+            logger.error(f"GenericTR 응답 파싱 중 예외: {e.original}")
+            return self._response_builder(None, None, None, e)
         except Exception as e:
             logger.error(f"GenericTR 비동기 요청 중 예외: {e}")
             return self._response_builder(None, None, None, e)
@@ -275,11 +296,11 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         """
         try:
             resp, resp_json, resp_headers = await self._execute_async_with_retry(session)
-            result: R = self._response_builder(resp, resp_json, resp_headers, None)
-            if hasattr(result, "raw_data"):
-                result.raw_data = resp
-            return result
+            return self._build_result(resp, resp_json, resp_headers)
 
+        except ResponseParseException as e:
+            logger.error(f"GenericTR._req_async_with_session 응답 파싱 중 예외: {e.original}")
+            return self._response_builder(None, None, None, e)
         except Exception as e:
             logger.error(f"GenericTR._req_async_with_session 비동기 요청 중 예외: {e}")
             return self._response_builder(None, None, None, e)
@@ -287,11 +308,11 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
     def req(self) -> R:
         try:
             resp, resp_json, resp_headers = self._execute_sync_with_retry()
-            result: R = self._response_builder(resp, resp_json, resp_headers, None)
-            if hasattr(result, "raw_data"):
-                result.raw_data = resp
-            return result
+            return self._build_result(resp, resp_json, resp_headers)
 
+        except ResponseParseException as e:
+            logger.error(f"GenericTR 응답 파싱 중 예외: {e.original}")
+            return self._response_builder(None, None, None, e)
         except Exception as e:
             logger.error(f"GenericTR 동기 요청 중 예외: {e}")
             return self._response_builder(None, None, None, e)

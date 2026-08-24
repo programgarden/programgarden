@@ -185,7 +185,18 @@ class StockAccountTracker:
             # 응답 코드 확인
             rsp_cd = getattr(resp, 'rsp_cd', '')
             rsp_msg = getattr(resp, 'rsp_msg', '')
-            
+
+            # 전송/파싱 실패 → fail-closed: 기존 상태를 지우지 않고 에러로 남긴다.
+            # (GenericTR fallback 은 rsp_cd="" 인 빈 응답을 주므로, 이 가드가 없으면
+            #  아래 분기를 전부 통과해 "데이터 0건" 이라는 조용한 오답이 된다 —
+            #  prod 2026-08-24 소수점 잔고 파싱 실패에서 실측된 경로)
+            resp_error = getattr(resp, 'error_msg', None)
+            if resp_error:
+                error_msg = f"[포지션 조회 실패] error_msg={resp_error}"
+                self._last_errors["positions"] = error_msg
+                logger.error(f"[_fetch_positions] {error_msg}")
+                return
+
             # "데이터 없음" 응답 → 정상 케이스 (빈 데이터)
             if is_no_data_response(rsp_cd, rsp_msg):
                 logger.info(f"[_fetch_positions] 보유종목 없음 (rsp_cd={rsp_cd}, msg={rsp_msg})")
@@ -235,8 +246,8 @@ class StockAccountTracker:
                         symbol=symbol,
                         symbol_name=item.JpnMktHanglIsuNm or symbol,
                         currency_code=item.CrcyCode,
-                        quantity=item.AstkBalQty,
-                        sellable_quantity=item.AstkSellAbleQty,
+                        quantity=Decimal(str(item.AstkBalQty)),
+                        sellable_quantity=Decimal(str(item.AstkSellAbleQty)),
                         buy_price=Decimal(str(item.FcstckUprc)),
                         current_price=Decimal(str(item.OvrsScrtsCurpri)),
                         buy_amount=Decimal(str(item.FcurrBuyAmt)),
@@ -297,7 +308,18 @@ class StockAccountTracker:
             # 응답 코드 확인
             rsp_cd = getattr(resp, 'rsp_cd', '')
             rsp_msg = getattr(resp, 'rsp_msg', '')
-            
+
+            # 전송/파싱 실패 → fail-closed: 기존 상태를 지우지 않고 에러로 남긴다.
+            # (GenericTR fallback 은 rsp_cd="" 인 빈 응답을 주므로, 이 가드가 없으면
+            #  아래 분기를 전부 통과해 "데이터 0건" 이라는 조용한 오답이 된다 —
+            #  prod 2026-08-24 소수점 잔고 파싱 실패에서 실측된 경로)
+            resp_error = getattr(resp, 'error_msg', None)
+            if resp_error:
+                error_msg = f"[미체결 조회 실패] error_msg={resp_error}"
+                self._last_errors["open_orders"] = error_msg
+                logger.error(f"[_fetch_open_orders] {error_msg}")
+                return
+
             # "데이터 없음" 응답 → 정상 케이스 (빈 데이터)
             if is_no_data_response(rsp_cd, rsp_msg):
                 logger.info(f"[_fetch_open_orders] 미체결 주문 없음 (rsp_cd={rsp_cd}, msg={rsp_msg})")

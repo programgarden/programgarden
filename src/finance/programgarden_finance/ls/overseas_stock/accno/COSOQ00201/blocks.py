@@ -369,23 +369,27 @@ class COSOQ00201OutBlock4(BaseModel):
         description="Display name of the balance type.",
         examples=["일반", "소수점"],
     )
-    AstkBalQty: int = Field(
-        default=0,
+    AstkBalQty: float = Field(
+        default=0.0,
         title="해외증권잔고수량 (Overseas-stock balance quantity)",
         description=(
-            "Holdings quantity. Integer typed in the SDK — fractional positions "
-            "(``AstkBalTpCode='20'``) may be truncated by Pydantic int coercion."
+            "Holdings quantity. Float typed — fractional positions "
+            "(``AstkBalTpCode='20'``) arrive as decimal strings "
+            "(e.g. '0.847972', measured on prod 2026-08-24). The former int "
+            "typing did not truncate; it raised a Pydantic ValidationError and "
+            "killed the whole balance parse."
         ),
-        examples=[0, 100],
+        examples=[0.0, 100.0, 0.847972],
     )
-    AstkSellAbleQty: int = Field(
-        default=0,
+    AstkSellAbleQty: float = Field(
+        default=0.0,
         title="해외증권매도가능수량 (Overseas-stock sellable quantity)",
         description=(
-            "Quantity available to sell. Integer typed in the SDK — fractional "
-            "positions may be truncated by Pydantic int coercion."
+            "Quantity available to sell. Float typed — fractional positions "
+            "(``AstkBalTpCode='20'``) arrive as decimal strings; see "
+            "``AstkBalQty``."
         ),
-        examples=[0, 100],
+        examples=[0.0, 100.0, 0.847972],
     )
     FcstckUprc: float = Field(
         default=0.0,
