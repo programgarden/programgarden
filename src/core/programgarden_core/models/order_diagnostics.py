@@ -138,6 +138,15 @@ class EmptyOrderReason(str, Enum):
 # Each entry was produced by deliberately triggering the rejection and reading
 # the returned rsp_cd/rsp_msg — none of these are inferred from the LS spec.
 OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
+    # Live-verified 2026-08-24: deliberately submitted OrdQty=0.1 (COSAT00301,
+    # limit buy far below market). The LS gateway rejected at its type-validation
+    # layer with HTTP 500 + rsp_cd IGW40011 "주문수량(OrdQty) data type을
+    # 확인하세요." — fractional order quantities are not accepted by this TR.
+    "IGW40011": {
+        "retry": RetryAdvice.RETRY_AFTER_FIX.value,
+        "cause": "The order quantity failed the LS gateway's data-type validation (non-integer quantity).",
+        "tip": "Order quantities must be integers; floor fractional quantities before ordering.",
+    },
     "02201": {
         "retry": RetryAdvice.RETRY_AFTER_FIX.value,
         "cause": "The account does not have enough cash to place this order.",
