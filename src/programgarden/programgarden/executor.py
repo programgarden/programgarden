@@ -68,6 +68,19 @@ OVERSEAS_STOCK_MARKET_CODES = {
 }
 
 
+def _qty_num(value: Any, default: int = 0):
+    """수량 필드 정규화 — 정수 값이면 int, 소수점(fractional)이면 값 보존 float.
+
+    소수점 잔고/체결(AstkBalTpCode='20', prod 2026-08-24 IBM 0.847972주 실측)을
+    ``int()`` 로 자르면 0 이 되어 체결 이벤트·포지션이 조용히 사라진다. 정수
+    응답은 종전과 동일하게 int 로 유지해 직렬화 모양이 바뀌지 않게 한다."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return int(f) if f.is_integer() else f
+
+
 def _safe_print(*args: Any, **kwargs: Any) -> None:
     """Emit console output without ever letting it abort the caller.
 
@@ -4122,9 +4135,9 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 order_date = getattr(body, 'sOrdDt', datetime.now().strftime('%Y%m%d'))
                 
                 if ord_type_code == '12':  # 정정완료
-                    quantity = int(getattr(body, 'sOrdQty', 0))
+                    quantity = _qty_num(getattr(body, 'sOrdQty', 0))
                     price = float(getattr(body, 'sOrdPrc', 0))
-                    new_qty = int(getattr(body, 'sOrgOrdMdfyQty', 0)) or quantity
+                    new_qty = _qty_num(getattr(body, 'sOrgOrdMdfyQty', 0)) or quantity
                     new_price = price
                     asyncio.run_coroutine_threadsafe(
                         context.modify_workflow_order(
@@ -4157,8 +4170,9 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     return
                 body = getattr(resp, 'body', resp)
                 
-                # AS1 체결 전용 필드
-                exec_qty = int(getattr(body, 'sExecQty', 0))
+                # AS1 체결 전용 필드 — 소수점 체결이 int() 절단으로 0 이 되면
+                # 체결 이벤트 자체가 조용히 사라진다 (_qty_num 은 정수는 int 유지)
+                exec_qty = _qty_num(getattr(body, 'sExecQty', 0))
                 exec_price = float(getattr(body, 'sExecPrc', 0))
                 
                 if exec_qty <= 0:
@@ -4741,7 +4755,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     # 전체 포지션 정보도 전달
                     account_positions[symbol] = {
                         "symbol": symbol,
-                        "quantity": int(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
+                        "quantity": _qty_num(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
                         "buy_price": float(pos_item.buy_price) if hasattr(pos_item, 'buy_price') else 0,
                         "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
                         "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
@@ -4804,7 +4818,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                         current_prices[symbol] = float(pos_item.current_price)
                     account_positions[symbol] = {
                         "symbol": symbol,
-                        "quantity": int(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
+                        "quantity": _qty_num(pos_item.quantity) if hasattr(pos_item, 'quantity') else 0,
                         "buy_price": float(pos_item.entry_price) if hasattr(pos_item, 'entry_price') else 0,
                         "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
                         "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
@@ -5351,7 +5365,7 @@ class AccountNodeExecutor(NodeExecutorBase):
                 is_long = item.BnsTpCode == "2"
                 position_side = "long" if is_long else "short"
                 close_side = "sell" if is_long else "buy"
-                quantity = int(item.BalQty) if item.BalQty else 0
+                quantity = _qty_num(item.BalQty) if item.BalQty else 0
                 current_price = float(item.OvrsDrvtNowPrc) if item.OvrsDrvtNowPrc else 0.0
                 entry_price = float(item.PchsPrc) if item.PchsPrc else 0.0
                 # 이 TR 응답에는 수익률이 없어 명목가 대비 수익률을 직접 계산한다.
@@ -7657,11 +7671,11 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                         "order_no": getattr(body, 'sOrdNo', 0),
                         "orig_order_no": getattr(body, 'sOrgOrdNo', 0),
                         "side": getattr(body, 'sOrdPtnCode', ''),
-                        "order_qty": int(getattr(body, 'sOrdQty', 0)),
+                        "order_qty": _qty_num(getattr(body, 'sOrdQty', 0)),
                         "order_price": float(getattr(body, 'sOrdPrc', 0)),
-                        "remain_qty": int(getattr(body, 'sOrgOrdUnercQty', 0)),
-                        "modified_qty": int(getattr(body, 'sOrgOrdMdfyQty', 0)),
-                        "cancelled_qty": int(getattr(body, 'sOrgOrdCancQty', 0)),
+                        "remain_qty": _qty_num(getattr(body, 'sOrgOrdUnercQty', 0)),
+                        "modified_qty": _qty_num(getattr(body, 'sOrgOrdMdfyQty', 0)),
+                        "cancelled_qty": _qty_num(getattr(body, 'sOrgOrdCancQty', 0)),
                         "order_time": getattr(body, 'sOrdTime', ''),
                         "market_code": getattr(body, 'sOrdMktCode', ''),
                     }
@@ -13965,16 +13979,27 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         exchange = order_raw.get("exchange", "NASDAQ")
         try:
-            quantity = int(float(order_raw.get("quantity", 0)))
+            raw_quantity = float(order_raw.get("quantity", 0))
         except (ValueError, TypeError):
-            quantity = 0
+            raw_quantity = 0.0
+        # 주문 수량은 정수만 송신한다(COSAT00301 InBlock OrdQty). 소수점 잔고
+        # (예: 0.847972주)는 정수부만 주문하고 잔량은 결과에 명시한다 —
+        # 종전의 int() 절단은 소수점 전량매도를 **조용히** 소멸시켰다.
+        quantity = int(raw_quantity)
+        fractional_remainder = round(raw_quantity - quantity, 8)
         try:
             price = float(order_raw.get("price", 0.0))
         except (ValueError, TypeError):
             price = 0.0
 
-        # quantity가 없으면 None
+        # quantity가 없으면 None (소수점만 보유한 경우 포함 —
+        # _diagnose_empty_reason 이 FRACTIONAL_ONLY 로 사유를 밝힌다)
         if quantity <= 0:
+            if fractional_remainder > 0:
+                logger.warning(
+                    f"_normalize_order: fractional-only quantity {raw_quantity} for "
+                    f"{symbol} — integer order not possible, skipping"
+                )
             return None
 
         # price 필드 자동 탐색 (MarketDataNode 바인딩 시)
@@ -13987,12 +14012,21 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     except (ValueError, TypeError):
                         pass
 
-        return {
+        normalized = {
             "symbol": symbol,
             "exchange": exchange,
             "quantity": int(quantity),
             "price": float(price) if price else 0.0,
         }
+        if fractional_remainder > 0:
+            # 소수점 잔량이 잘렸음을 결과에 남긴다(숨은 절단 금지). 소비부는
+            # 필요한 키만 읽으므로 추가 키는 하위호환에 안전하다.
+            normalized["fractional_remainder"] = fractional_remainder
+            logger.warning(
+                f"_normalize_order: floored fractional quantity {raw_quantity} -> "
+                f"{quantity} for {symbol} (remainder {fractional_remainder})"
+            )
+        return normalized
 
     def _diagnose_empty_reason(
         self,
@@ -14057,6 +14091,21 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             err = self._extract_upstream_error(candidate)
             if err is not None:
                 return EmptyOrderReason.FETCH_FAILED, err
+
+        # 4.5) 소수점만 보유(0 < 수량 < 1) → 정수 주문 불가로 스킵된 케이스.
+        #     "신호 없음" 으로 뭉개지 않고 사유를 명시한다 (prod 2026-08-24
+        #     IBM 0.847972주 실측 — 소수점 잔고는 실계좌에 실존한다).
+        if isinstance(order, dict):
+            try:
+                _q = float(order.get("quantity", 0))
+            except (ValueError, TypeError):
+                _q = 0.0
+            if 0 < _q < 1:
+                return (
+                    EmptyOrderReason.FRACTIONAL_ONLY,
+                    f"quantity {_q} of {order.get('symbol', '?')} is fractional-only; "
+                    "integer orders cannot include it",
+                )
 
         # 5) 주문 대상 자체가 비었으면(종목 미지정) → 설정 누락.
         #    order 가 명시적으로 비어있고(빈 리스트/빈 dict/None) 상류 실패 신호도
@@ -15009,6 +15058,10 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         ),
         EmptyOrderReason.NO_SYMBOL.value: (
             "No symbol provided to the order node (configuration missing)."
+        ),
+        EmptyOrderReason.FRACTIONAL_ONLY.value: (
+            "Position is fractional-only (less than 1 share); integer-quantity "
+            "orders cannot include the fractional remainder, so no order was placed."
         ),
     }
 

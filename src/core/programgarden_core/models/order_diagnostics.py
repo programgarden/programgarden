@@ -117,6 +117,12 @@ class EmptyOrderReason(str, Enum):
     NO_SYMBOL = "no_symbol"
     """No symbol was specified (missing configuration)."""
 
+    FRACTIONAL_ONLY = "fractional_only"
+    """The position quantity is fractional-only (e.g. 0.847972 shares) and the
+    order pipeline submits integer quantities, so flooring left nothing to
+    order. Distinct from NO_SIGNAL so the holder learns why nothing happened
+    (fractional balances measured on a real LS account, prod 2026-08-24)."""
+
 
 # ---------------------------------------------------------------------------
 # Market-specific reject-code tables.

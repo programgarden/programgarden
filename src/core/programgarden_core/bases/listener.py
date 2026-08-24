@@ -189,7 +189,7 @@ class PositionDetail:
     """
     symbol: str
     exchange: str
-    quantity: int
+    quantity: Union[Decimal, float, int]  # 소수점(fractional) 잔고 대응
     avg_price: Union[Decimal, float]
     current_price: Union[Decimal, float]
     pnl_amount: Union[Decimal, float]
