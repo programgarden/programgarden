@@ -22,7 +22,14 @@ from programgarden_community.nodes_registry import (
     get_community_node_list,
 )
 
-__version__ = "2.0.0"
+# 배포 메타데이터에서 버전을 읽는다 — 하드코딩("2.0.0" 잔재)은 pyproject 와
+# 다른 말을 했다. core/programgarden 과 동일 패턴 (릴리스 위생, 2026-08-24).
+try:
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("programgarden-community")
+except Exception:
+    __version__ = "0.0.0+source"
 
 # 패키지 로드 시 플러그인 및 노드 자동 등록
 register_all_plugins()
