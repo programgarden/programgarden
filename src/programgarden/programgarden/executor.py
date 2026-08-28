@@ -10851,13 +10851,36 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             except (ValueError, _json.JSONDecodeError):
                 pass
 
-        # 우선순위: config.symbol > input.symbol > config.symbols (수동 목록 폴백)
+        # auto-iterate 중이면 **이번 아이템 1건만** 조회한다 — MarketDataNodeExecutor 와 같은
+        # 규칙. `symbols: "{{ nodes.watchlist.symbols }}"`(복수 전체 바인딩)로 배선된 노드가
+        # 상류 배열 때문에 N회 반복되면, 아래 config.symbols 폴백이 매 회 전체 N종목을 다시
+        # 조회해 N² 이 된다(실측: 7종목 → g3204 49회, 1건/3초 제한기라 60초에 2종목만 완료 —
+        # prod 대화 f2eed93c). runtime 에도 적용한다(N² 조회는 LS 제한기 낭비일 뿐 의미가 없다).
+        # 반복 소스가 없는 단독 실행(iteration_item 없음)은 종전대로 config.symbols 전체.
+        iteration_item = getattr(context, "_iteration_item", None)
+        if isinstance(iteration_item, str):
+            try:
+                _parsed = _json.loads(iteration_item)
+                if isinstance(_parsed, dict):
+                    iteration_item = _parsed
+            except (ValueError, _json.JSONDecodeError):
+                pass
+
+        # 우선순위: config.symbol > input.symbol > 반복 아이템 > config.symbols (수동 목록 폴백)
         if config_symbol:
             symbols_raw = [config_symbol] if isinstance(config_symbol, dict) else []
             context.log("debug", f"Using config.symbol: {config_symbol}", node_id)
         elif input_symbol:
             symbols_raw = [input_symbol] if isinstance(input_symbol, dict) else []
             context.log("debug", f"Using input port symbol: {input_symbol}", node_id)
+        elif isinstance(iteration_item, dict) and iteration_item.get("symbol"):
+            symbols_raw = [iteration_item]
+            context.log(
+                "debug",
+                f"Using auto-iterate item symbol (config.symbols 전체 대신 1건): "
+                f"{iteration_item.get('symbol')}",
+                node_id,
+            )
         else:
             # 마지막 폴백: config.symbols (복수 리터럴 목록) — MarketDataNodeExecutor 의
             # config_symbols 폴백과 대칭. 상류 배열 입력은 메인 루프 auto-iterate 가
