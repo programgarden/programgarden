@@ -19041,7 +19041,9 @@ class WorkflowJob:
                 else:
                     input_data = fallback_data
 
-                should_iterate, port_name, items = self._should_auto_iterate(node.node_type, input_data)
+                should_iterate, port_name, items = self._should_auto_iterate(
+                    node.node_type, input_data, config,
+                )
 
                 if should_iterate and node_id not in branch_nodes:
                     # 자동 iterate 실행 (SplitNode 브랜치가 아닌 경우에만)
@@ -19359,14 +19361,71 @@ class WorkflowJob:
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode", "KoreaStockRealAccountNode",
     }
 
-    def _should_auto_iterate(self, node_type: str, input_data: Any) -> tuple:
+    # 설정 모양에 따라 **배열 전체를 한 번에 소비**할 수도, 종목별로 반복할 수도 있는 노드.
+    # {node_type: 전체 배열 입력 포트}. 해당 포트가 전체 바인딩(`{{ nodes.x.symbols }}` /
+    # 리터럴 목록)이면 반복하지 않고, `symbol: {{ item }}` 처럼 아이템 바인딩이면 반복한다.
+    #
+    # PositionSizingNode 가 대표 — `symbols` 는 canonical 입력이고 executor 가 이미 배열
+    # 전체를 순회해 orders 를 만든다(`PositionSizingNodeExecutor.execute`). 이걸 상류 배열
+    # 크기만큼 또 반복하면 매 회 `{{ nodes.buy_pick.symbols }}` 가 **전체로 재평가**돼
+    # 병합 결과 symbols 가 N² 로 불어나고 하류 주문 노드가 그만큼 반복된다 — 실주문 N배
+    # 중복 위험(실측: prod 대화 f2eed93c 에서 4후보 → 주문 노드 16회). LogicNode 를
+    # NO_AUTO_ITERATE 에 넣은 것과 같은 이유인데, 사이징은 `symbol: {{ item }}` 로 종목별
+    # 사이징하는 예제(16·28 등)가 있어 블랭킷 제외가 아니라 설정 모양으로 가른다.
+    WHOLE_ARRAY_INPUT_PORTS: Dict[str, str] = {
+        "PositionSizingNode": "symbols",
+    }
+
+    @staticmethod
+    def _references_iteration_item(value: Any) -> bool:
+        """값(문자열/컨테이너)에 `{{ item… }}`/`{{ index }}` 아이템 바인딩이 있는가."""
+        if isinstance(value, str):
+            return "{{ item" in value or "{{item" in value or "{{ index" in value
+        if isinstance(value, dict):
+            return any(WorkflowJob._references_iteration_item(v) for v in value.values())
+        if isinstance(value, list):
+            return any(WorkflowJob._references_iteration_item(v) for v in value)
+        return False
+
+    def _consumes_whole_array(self, node_type: str, config: Optional[Dict[str, Any]]) -> bool:
+        """이 노드가 (설정 모양상) 상류 배열 전체를 한 번에 소비하는가.
+
+        `WHOLE_ARRAY_INPUT_PORTS` 의 포트가 설정에 있고 그 값이 아이템 바인딩이 아니면
+        True. 단수 포트(`symbol`)가 `{{ item }}` 을 참조하면 종목별 반복 의도이므로 False.
+        config 가 없으면(레거시 호출) 판단하지 않는다(False).
+        """
+        if not config:
+            return False
+        port = self.WHOLE_ARRAY_INPUT_PORTS.get(node_type)
+        if not port:
+            return False
+        # 명시적 종목별 의도가 우선 — `symbol: {{ item }}` / `symbols: [{{ item.symbol }}…]`
+        singular = port[:-1] if port.endswith("s") else None
+        if singular and self._references_iteration_item(config.get(singular)):
+            return False
+        value = config.get(port)
+        if value is None or value == "":
+            return False
+        if self._references_iteration_item(value):
+            return False
+        # 리터럴 목록이거나(이미 평가된 배열 포함) 전체 바인딩 문자열
+        return isinstance(value, (list, str, dict))
+
+    def _should_auto_iterate(
+        self,
+        node_type: str,
+        input_data: Any,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> tuple:
         """
         이전 노드 출력이 배열이면 자동 반복 실행
 
         조건:
         1. 입력 데이터가 배열 (1개 이상)
         2. 노드가 NO_AUTO_ITERATE_NODE_TYPES에 포함되지 않음
-        3. SplitNode 브랜치 내부가 아님
+        3. (config 가 주어지면) 설정 모양상 배열 전체를 소비하는 노드가 아님
+           — `WHOLE_ARRAY_INPUT_PORTS` / `_consumes_whole_array`
+        4. SplitNode 브랜치 내부가 아님
 
         Returns:
             (should_iterate: bool, input_port_name: str, items: list)
@@ -19377,6 +19436,10 @@ class WorkflowJob:
 
         # 입력이 배열이 아니거나 비어있으면 iterate 불필요
         if not isinstance(input_data, list) or len(input_data) < 1:
+            return False, "", []
+
+        # 설정 모양상 배열 전체를 한 번에 소비하는 노드 (PositionSizingNode.symbols 전체 바인딩)
+        if config and self._consumes_whole_array(node_type, config) is True:
             return False, "", []
 
         # 배열 입력이면 자동 반복 실행
@@ -19420,6 +19483,13 @@ class WorkflowJob:
             # config 내 표현식 평가 ({{ item.xxx }}, {{ index }} 등)
             item_config = self._resolve_config_expressions(config, node_id)
 
+            # 방어선 2: 반복 중인데 복수 포트가 **전체 배열로 재평가**됐으면 경고 + (모의 실행
+            # 에서만) 현재 아이템으로 좁힌다 — MarketDataNodeExecutor 의 iteration_item 가드를
+            # 일반화한 것. 실전은 경고만(기존 워크플로우 의미 보존; 3.1.6 적대 검증 후 재결정).
+            item_config = self._guard_whole_array_reevaluation(
+                node_id, node.node_type, item_config, current_item, total,
+            )
+
             # 진행 상황 로그
             item_label = current_item.get("symbol", str(current_item)) if isinstance(current_item, dict) else str(current_item)
             _safe_print(f"    [{idx+1}/{total}] Processing: {item_label}")
@@ -19459,11 +19529,66 @@ class WorkflowJob:
 
         return merged
 
+    # 반복 중 전체 배열 재평가를 감시할 복수 포트
+    _WHOLE_ARRAY_REEVAL_PORTS = ("symbols",)
+
+    @staticmethod
+    def _same_symbol_entry(a: Any, b: Any) -> bool:
+        if isinstance(a, dict) and isinstance(b, dict):
+            if a.get("symbol") and a.get("symbol") == b.get("symbol"):
+                ea, eb = a.get("exchange"), b.get("exchange")
+                return (not ea or not eb) or ea == eb
+            return a == b
+        return a == b
+
+    def _guard_whole_array_reevaluation(
+        self,
+        node_id: str,
+        node_type: str,
+        item_config: Dict[str, Any],
+        current_item: Any,
+        total: int,
+    ) -> Dict[str, Any]:
+        """auto-iterate 아이템 실행 직전, 복수 포트(`symbols`)가 반복 대상 배열 **전체**로
+        재평가된 경우를 잡는다.
+
+        증상: `symbols: "{{ nodes.x.symbols }}"` 를 가진 노드가 그 배열 크기만큼 반복되면
+        매 회 전체가 다시 들어가 병합 결과가 N² 이 된다(실주문 N배 중복 경로).
+        - 모든 모드: 경고 로그(어느 노드가 몇 건을 재평가했는지)
+        - dry_run/deep: 현재 아이템 1건으로 좁혀 모의 실행 시간을 N² 에서 N 으로 되돌린다
+        - runtime: 좁히지 않는다(기존 워크플로우 의미 보존 — 1순위 방어선인
+          `_consumes_whole_array` 가 애초에 반복을 막는다)
+        """
+        if total <= 1 or not isinstance(current_item, dict):
+            return item_config
+        narrowed = None
+        for port in self._WHOLE_ARRAY_REEVAL_PORTS:
+            value = item_config.get(port)
+            if not isinstance(value, list) or len(value) != total:
+                continue
+            if not any(self._same_symbol_entry(entry, current_item) for entry in value):
+                continue
+            simulated = bool(getattr(self.context, "is_dry_run", False))
+            self.context.log(
+                "warning",
+                f"Auto-iterate: {node_id} ({node_type}) 의 '{port}' 가 반복 아이템이 아니라 "
+                f"전체 배열({total}건)로 재평가됨 — 병합 시 {total}×{total} 중복 위험. "
+                + ("[dry_run] 현재 아이템 1건으로 좁힘." if simulated
+                   else "실전은 좁히지 않음 — 바인딩을 `{{ item }}` 로 바꾸거나 전체 배열 노드로 두세요."),
+                node_id,
+            )
+            if simulated:
+                if narrowed is None:
+                    narrowed = dict(item_config)
+                narrowed[port] = [current_item]
+        return narrowed if narrowed is not None else item_config
+
     def _merge_iterate_results(self, results: list) -> Dict[str, Any]:
         """
         자동 iterate 결과 병합
 
         - 배열 필드 (value, values, items 등): 모든 결과를 하나의 배열로 병합
+        - `orders`: 배열로 병합하되 (symbol, exchange) 중복은 첫 건만 남긴다
         - 단일 필드: 마지막 값 사용
         """
         if not results:
@@ -19472,22 +19597,33 @@ class WorkflowJob:
         merged = {}
         # 배열로 병합할 포트. `symbols`/`symbol_results` 가 빠져 있어 auto-iterate N회 중
         # **마지막 1회만 살아남았다**(실측: 28 의 logic 이 5종목 중 1건만 받음).
+        # `orders` 도 같은 결함이었다 — PositionSizingNode 를 종목별로 반복하면 canonical
+        # `orders` 가 마지막 1건만 남았다(`order` 단수 alias 만 살아남는 셈).
         array_fields = {
             "value", "values", "items", "data", "result", "results",
             "passed_symbols", "failed_symbols", "symbols", "symbol_results",
+            "orders",
         }
+        # 주문 배열은 (symbol, exchange) 로 중복을 제거한다 — 같은 종목에 주문 객체가
+        # 두 번 들어가면 하류 주문 노드가 그만큼 반복된다(실주문 중복 경로).
+        dedup_by_symbol = {"orders"}
 
         for key in results[0].keys():
             if key in array_fields:
                 # 배열 필드: 모든 결과 수집
                 merged[key] = []
+                seen_keys: Set[Tuple[Any, Any]] = set()
                 for r in results:
                     val = r.get(key)
                     if val is not None:
-                        if isinstance(val, list):
-                            merged[key].extend(val)
-                        else:
-                            merged[key].append(val)
+                        entries = val if isinstance(val, list) else [val]
+                        for entry in entries:
+                            if key in dedup_by_symbol and isinstance(entry, dict) and entry.get("symbol"):
+                                dk = (entry.get("symbol"), entry.get("exchange"))
+                                if dk in seen_keys:
+                                    continue
+                                seen_keys.add(dk)
+                            merged[key].append(entry)
             else:
                 # 단일 필드: 마지막 유효 값
                 for r in reversed(results):
