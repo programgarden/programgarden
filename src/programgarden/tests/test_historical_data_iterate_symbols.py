@@ -110,3 +110,17 @@ async def test_standalone_literal_symbols_fetches_whole_list_once():
     job, calls = await _run(_wf({"symbols": literal}, with_watchlist=False))
     assert job.get_state()["errors"] == [], job.get_state()["errors"]
     assert calls == [["AAPL", "MSFT", "NVDA"]], calls
+
+
+async def test_literal_symbols_plus_upstream_array_prefers_iteration_item():
+    """(3.1.6 적대 검증 pin) 리터럴 `symbols:[…]` 목록 **과** 상류 배열 엣지를 동시에 가진
+    모순 배선. 종전: 리터럴 3종목을 7회 재조회(21건). 신규: 반복 아이템(상류 7종목)을 1건씩
+    조회하고 리터럴은 무시한다 — 상류가 배열을 흘려보냈다는 건 종목별 반복 의도이고,
+    리터럴을 N회 재조회하는 건 어떤 해석으로도 옳지 않다. KB 예제 전수에 이 패턴은 0건
+    (2026-08-28 스캔) — 의도를 여기 못박는다."""
+    literal = [{"symbol": s, "exchange": "NASDAQ"} for s in ("ZZZA", "ZZZB", "ZZZC")]
+    job, calls = await _run(_wf({"symbols": literal}, with_watchlist=True))
+    assert job.get_state()["errors"] == [], job.get_state()["errors"]
+    assert len(calls) == 7 and all(len(c) == 1 for c in calls), calls
+    assert sorted(s for c in calls for s in c) == sorted(e["symbol"] for e in WATCHLIST7)
+    assert not any("ZZZ" in s for c in calls for s in c), "리터럴 목록이 재조회됨"

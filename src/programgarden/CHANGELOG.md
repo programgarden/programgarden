@@ -1,5 +1,51 @@
 ## [Unreleased]
 
+## [1.33.2] - 2026-08-28
+> 챗봇 자동매매 제작이 **모의 실행(dry_run) 60초 컷**으로 저장되지 못한 사건(prod 대화
+> f2eed93c) 의 엔진 몫. 모의 실행이 "안 끝난 척"이 아니라 정말 86~95초가 걸렸고, 그 대부분이
+> **엔진이 스스로 잠든 시간**(모의 주문인데 주문당 5초 간격 × 16건) 이었으며 16건 자체가
+> 4건이 4배로 뻥튀기된 결함이었다 — 그 경로는 실전에도 그대로라 **실주문 4배 중복 위험**.
+> 동반 릴리즈 없음(core 1.25.1 · finance 1.9.2 · community 1.15.1 유지).
+
+### Fixed
+- **dry_run 에서 모의 응답 노드의 자동반복 간격 대기 제거.** 주문 신규/정정/취소(3상품군 9종)·
+  AIAgentNode(간격 60초)·메시징 카테고리는 dry_run 에서 외부 호출 없이 단락되는데도
+  `_auto_iterate_pacing_sleep` 이 브로커 제한(5초)을 그대로 지켰다. `DRY_RUN_SIMULATED_NODE_TYPES`
+  집합 + `_is_dry_run_simulated()` 로 **그 집합만** skip — HTTPRequestNode·CurrencyRateNode 처럼
+  dry_run 에서도 실제 호출하는 노드는 간격 유지, runtime 무변화.
+- **`PositionSizingNode` 자동반복 N² 중복 (🔴 실주문 안전).** `symbols: "{{ nodes.x.symbols }}"`
+  전체 바인딩인 사이징이 상류 배열 크기만큼 반복되며 매 회 전체로 재평가돼 4후보 → 주문 노드 16회.
+  ① `WHOLE_ARRAY_INPUT_PORTS`/`_consumes_whole_array`: 설정 모양이 전체 바인딩이면 반복하지 않음
+  (`symbol: {{ item }}` 종목별 사이징 예제는 종전대로 반복) ② `_guard_whole_array_reevaluation`:
+  반복 중 `symbols` 가 전체로 재평가되면 경고, dry_run/deep 은 현재 아이템 1건으로 좁힘(runtime 은
+  경고만) ③ `_merge_iterate_results` 가 `orders` 를 배열로 병합(종전엔 마지막 1건만 생존) +
+  (symbol, exchange) 중복 제거.
+- **`HistoricalDataNode` 복수 `symbols` 바인딩 + 자동반복 = N² 조회.** 반복 중이면 config.symbols
+  전체 대신 현재 반복 아이템 1건만 조회(MarketDataNode 와 같은 규칙; 7종목 g3204 49회 → 7회).
+  runtime 에도 적용. 단독 실행(반복 소스 없음)은 종전대로 전체.
+
+### Added
+- **dry_run 종목 표본 상한** `context_params["dry_run_sample_size"]`(기본 3, 0=전수): plain dry_run
+  에서 자동반복 아이템을 앞에서 K개로 절단하고 `get_state()["dry_run_sampling"]` 에 N중 K 를 기록.
+  deep_validate·runtime 무변화. 1이 아니라 3인 이유: 첫 종목이 데이터 없음이면 검증이 헛돈다.
+- **`get_state()` 진단 보강**: 노드 항목에 `status`(=`state` 별칭 — 챗봇 샌드박스가 `status` 를
+  읽어 왔는데 엔진은 `state` 만 내보내 "어느 노드에서 잘렸는지" 가 영영 안 보였다), 실행 중 노드에
+  `started_at`/`elapsed_ms`.
+- 회귀 fixture `tests/fixtures/f2eed93c-ma-golden-cross-stop-loss.json`(사건 DSL 재구성) —
+  LS 3종 mock 시 dry_run 완주 **0.17초**(주문 노드는 실제 dry_run 경로·5초 제한 그대로; 종전 ≥15초).
+
+### Notes
+- 적대 검증(2026-08-28)에서 확인된 **이 릴리즈 밖의 기존 결함**: 정본 예제 16/28/48/81/85 의
+  `order: "{{ nodes.sizing.order }}"`(단수) + 포트 없는 `sizing → order` 엣지는 주문 노드가
+  `sizing.symbols` 위로 반복하며 매 회 같은 단수 `order` 를 발주한다(N건 전부 같은 종목).
+  이 릴리즈는 그 동작을 바꾸지 않는다 — 별도 결정(엔진 `orders[index]` 매핑 vs 예제 교정).
+- 루트 `pyproject.toml` 버전(1.33.0 으로 뒤처짐)을 1.33.2 로 동기화. 1.33.1 항목은 출하 당시 누락.
+
+## [1.33.1] - 2026-08-27
+> 소수점 잔고/주문 경로 정리 (PR #34 `fix/fractional-balance-cosoq00201`) — COSAQ00102 소비부
+> 절단·부분실패 신호·미체결 block3·관측성. 동반: core 1.25.1 · community 1.15.1 · finance 1.9.2.
+> (출하 당시 CHANGELOG 항목이 누락돼 1.33.2 에서 사후 기입.)
+
 ## [1.33.0] - 2026-08-20
 > 주문 거부 알림에 **재시도 판단(`retry`)** 을 싣는다. `core` 1.25.0 이 그 필드를
 > 만들었는데, 알림 경로만 키를 손으로 골라 담고 있어 **만들어 놓고 안 보내는** 상태였다.
