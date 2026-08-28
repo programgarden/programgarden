@@ -53,6 +53,7 @@ def _wf(historical_cfg: Dict[str, Any], *, with_watchlist: bool) -> Dict[str, An
 
 
 async def _run(workflow: Dict[str, Any], *, dry_run: bool = False) -> tuple:
+    # dry_run 은 표본 절단(3.1.5, 기본 K=3)을 끄고 돈다 — 이 파일은 "종목당 1회" 규칙만 본다.
     fetch_calls: List[List[str]] = []
 
     async def fake_broker(self, node_id, node_type, config, context, **kw):
@@ -68,7 +69,10 @@ async def _run(workflow: Dict[str, Any], *, dry_run: bool = False) -> tuple:
     with patch.object(BrokerNodeExecutor, "execute", new=fake_broker), \
          patch.object(HistoricalDataNodeExecutor, "_fetch_overseas_stock", new=fake_fetch):
         ex = WorkflowExecutor()
-        job = await ex.execute(workflow, context_params={"dry_run": True} if dry_run else None)
+        job = await ex.execute(
+            workflow,
+            context_params={"dry_run": True, "dry_run_sample_size": 0} if dry_run else None,
+        )
         try:
             await asyncio.wait_for(job._task, timeout=30)
         except asyncio.TimeoutError:
@@ -87,7 +91,7 @@ async def test_plural_binding_with_upstream_array_fetches_each_symbol_once():
 
 
 async def test_plural_binding_runtime_and_dry_run_same_count():
-    """runtime 에도 적용 — dry_run 과 동일하게 7회."""
+    """runtime 에도 적용 — dry_run(표본 절단 끔) 과 동일하게 7회."""
     _, rt = await _run(_wf({"symbols": "{{ nodes.watchlist.symbols }}"}, with_watchlist=True))
     _, dr = await _run(_wf({"symbols": "{{ nodes.watchlist.symbols }}"}, with_watchlist=True), dry_run=True)
     assert sum(len(c) for c in rt) == 7 and sum(len(c) for c in dr) == 7

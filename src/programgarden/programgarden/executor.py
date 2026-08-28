@@ -10897,6 +10897,12 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                         f"Using config.symbols list: {len(symbols_raw)} entries",
                         node_id,
                     )
+                # dry_run 종목 표본(K) — 단독 실행의 복수 목록에도 auto-iterate 와 같은 K 적용.
+                if getattr(context, "dry_run_sampling_active", False):
+                    _k = int(getattr(context, "dry_run_sample_size", 0) or 0)
+                    if 0 < _k < len(symbols_raw):
+                        context.record_dry_run_sampling(node_id, len(symbols_raw), _k)
+                        symbols_raw = symbols_raw[:_k]
             else:
                 symbols_raw = []
         
@@ -18463,6 +18469,10 @@ class WorkflowJob:
         self._node_errors: Dict[str, str] = {}              # node_id -> last error message
         self._node_durations: Dict[str, float] = {}         # node_id -> last duration_ms
         self._node_error_timestamps: Dict[str, str] = {}    # node_id -> ISO timestamp of last failure
+        # 진행 중 노드의 시작 시각 — get_state() 가 "어느 노드가 몇 초째" 를 보일 수 있게.
+        # (타임아웃으로 잘린 dry_run 의 사후 진단용: 완료 전엔 duration_ms 가 없다.)
+        self._node_started_monotonic: Dict[str, float] = {}  # node_id -> time.monotonic() at RUNNING
+        self._node_started_at: Dict[str, str] = {}           # node_id -> ISO timestamp at RUNNING
         # Structured ErrorInfo cache — populated whenever a node fails. dry_run failures
         # use DRY_RUN_RUNTIME_ERROR; real-run failures use DRY_RUN_RUNTIME_ERROR's
         # sibling form so chatbot consumers get the same shape regardless of mode.
@@ -19493,6 +19503,16 @@ class WorkflowJob:
             병합된 출력 (배열 필드는 배열로, 단일 필드는 마지막 값)
         """
         from programgarden_core.bases.listener import NodeState
+
+        # dry_run 종목 표본(K): 모의 실행은 "흐름이 끝까지 도는가" 를 보는 것이지 전 종목을
+        # 다 돌리는 게 아니다 — 종목 50개짜리도 같은 시간에 끝나게 앞에서 K개만 돈다.
+        # deep_validate(오프라인 fixture, 비용 0)·runtime 은 무변화. K=0 이면 전수.
+        # (컨텍스트가 표본 API 를 모르는 레거시/mock 이면 그대로 전수.)
+        if getattr(self.context, "dry_run_sampling_active", False):
+            k = int(getattr(self.context, "dry_run_sample_size", 0) or 0)
+            if 0 < k < len(items):
+                self.context.record_dry_run_sampling(node_id, len(items), k)
+                items = list(items[:k])
 
         all_results = []
         total = len(items)
@@ -21051,6 +21071,11 @@ class WorkflowJob:
         replay or scraping logs.
         """
         self._node_states[node_id] = state
+        if state == NodeState.RUNNING:
+            import time as _time
+            from datetime import datetime as _dt, timezone as _tz
+            self._node_started_monotonic[node_id] = _time.monotonic()
+            self._node_started_at[node_id] = _dt.now(_tz.utc).isoformat()
         if error is not None:
             self._node_errors[node_id] = error
             if error_timestamp is not None:
@@ -21074,6 +21099,10 @@ class WorkflowJob:
             cached_state = self._node_states.get(node_id, NodeState.PENDING)
             entry: Dict[str, Any] = {
                 "state": cached_state.value,
+                # `status` 는 `state` 의 별칭 — 외부 소비자(챗봇 샌드박스 `_summarise_job_state`)
+                # 가 `status` 를 읽어 왔는데 엔진은 `state` 만 내보내 "어느 노드에서 잘렸는지"
+                # 가 영영 안 보였다. 양쪽 키를 모두 싣는다.
+                "status": cached_state.value,
                 "node_type": node.node_type,
                 # 🔐 외부 노출면 — BrokerNode 는 하류 전송용으로 connection.appkey/appsecret 을
                 # 출력에 싣는다. 리스너 경로는 이미 가리는데 여기만 raw 로 새고 있었다.
@@ -21083,6 +21112,13 @@ class WorkflowJob:
                 entry["error"] = self._node_errors[node_id]
             if node_id in self._node_durations:
                 entry["duration_ms"] = self._node_durations[node_id]
+            if node_id in self._node_started_at:
+                entry["started_at"] = self._node_started_at[node_id]
+            if cached_state == NodeState.RUNNING and node_id in self._node_started_monotonic:
+                import time as _time
+                entry["elapsed_ms"] = round(
+                    (_time.monotonic() - self._node_started_monotonic[node_id]) * 1000.0, 1
+                )
             nodes_state[node_id] = entry
 
         # Aggregated structured errors — primary debugging surface for
@@ -21159,6 +21195,12 @@ class WorkflowJob:
             "nodes": nodes_state,
             "errors": errors,
             "structured_errors": structured_errors,
+            # dry_run 종목 표본(K) 적용 여부 — 소비자가 "N중 K 만 검증했음" 을 고지할 수 있게.
+            "dry_run_sampling": (
+                self.context.get_dry_run_sampling()
+                if hasattr(self.context, "get_dry_run_sampling")
+                else {"applied": False, "k": 0, "nodes": []}
+            ),
         }
 
     def get_structured_errors(self) -> List[Any]:
