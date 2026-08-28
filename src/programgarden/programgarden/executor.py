@@ -19309,6 +19309,46 @@ class WorkflowJob:
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
     }
 
+    # dry_run 에서 **외부 호출 없이 모의 응답**으로 단락되는 노드 타입 — 각 executor 의
+    # `if context.is_dry_run:` 분기와 1:1 로 맞춘다(NewOrder/ModifyOrder/CancelOrder 의
+    # `DRYRUN-…` 모의 응답, AIAgentNode 의 fixture 단락). 메시징 노드(TelegramNode 등)는
+    # 클래스 category(MESSAGING) 로 판별하므로 여기 적지 않는다 — `_is_dry_run_simulated()`.
+    #
+    # 용도: auto-iterate 의 per-item 간격 대기(`_auto_iterate_pacing_sleep`)는 **실제
+    # 브로커/외부 API 제한**을 모델링한 것이라, 호출 자체가 없는 dry_run 모의 노드에는
+    # 순수 낭비다 — 실측: 모의 주문 16건 × 5초 = 75초가 60초 빌드 타임아웃을 넘겼다
+    # (prod 대화 f2eed93c, 2026-08-28). dry_run 에서도 **실제 호출하는** 노드
+    # (HTTPRequestNode 1초·CurrencyRateNode 30초)는 이 집합에 넣지 말 것 — 간격을 지켜야 한다.
+    DRY_RUN_SIMULATED_NODE_TYPES = frozenset({
+        # 주문 — NewOrderNodeExecutor / ModifyOrderNodeExecutor / CancelOrderNodeExecutor
+        "OverseasStockNewOrderNode", "OverseasStockModifyOrderNode", "OverseasStockCancelOrderNode",
+        "OverseasFuturesNewOrderNode", "OverseasFuturesModifyOrderNode", "OverseasFuturesCancelOrderNode",
+        "KoreaStockNewOrderNode", "KoreaStockModifyOrderNode", "KoreaStockCancelOrderNode",
+        # AI — AIAgentNodeExecutor 는 dry_run 에서도 fixture 로 단락(실 LLM 호출 0). 간격 60초.
+        "AIAgentNode",
+    })
+
+    def _is_dry_run_simulated(self, node_type: str, node_class: Any = None) -> bool:
+        """dry_run 에서 이 노드가 외부 호출 없이 모의 응답으로 단락되는가.
+
+        `DRY_RUN_SIMULATED_NODE_TYPES` 명시 집합 + 메시징 카테고리(GenericNodeExecutor 의
+        dry_run 가드가 `NodeCategory.MESSAGING` 이면 no-op 반환) 를 합친 판정.
+        """
+        if node_type in self.DRY_RUN_SIMULATED_NODE_TYPES:
+            return True
+        if node_class is not None:
+            try:
+                from programgarden_core.nodes.base import NodeCategory
+                # `category` 는 pydantic 필드라 클래스 속성으로는 안 보인다(v2 는 필드
+                # 기본값을 클래스 네임스페이스에서 걷어낸다) — model_fields 의 default 를 읽는다.
+                fields = getattr(node_class, "model_fields", None) or {}
+                field = fields.get("category")
+                category = field.default if field is not None else getattr(node_class, "category", None)
+                return category == NodeCategory.MESSAGING
+            except Exception:
+                return False
+        return False
+
     # auto-iterate 의 **소스**가 되어선 안 되는 노드 (그 노드 자신의 iterate 여부와 무관).
     # 계좌 노드의 첫 출력 포트는 `positions`(보유잔고)다. 이게 폴백 소스로 잡히면
     # 하류가 **보유종목을 신규 매수 후보로 순회**한다 — 실주문 위험. 종목 후보는
@@ -20290,6 +20330,19 @@ class WorkflowJob:
         registry = NodeTypeRegistry()
         node_class = registry.get(node_type)
         if not node_class:
+            return
+
+        # dry_run: 주문/AI/메시징처럼 **모의 응답으로 단락되는** 노드에는 간격 대기가
+        # 낭비다(호출이 없다). 블랭킷 skip 은 아니다 — HTTPRequestNode 처럼 dry_run 에서도
+        # 실제 호출하는 노드는 아래로 내려가 간격을 지킨다. (deep 은 위에서 이미 전부 skip.)
+        if getattr(self.context, "is_dry_run", False) and self._is_dry_run_simulated(
+            node_type, node_class
+        ):
+            self.context.log(
+                "debug",
+                f"[dry_run] Auto-iterate pacing skipped for simulated node {node_id} ({node_type})",
+                node_id,
+            )
             return
 
         class_rate_limit = getattr(node_class, '_rate_limit', None)
