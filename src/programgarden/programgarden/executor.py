@@ -3901,8 +3901,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
         # ========================================
         # Fallback: 체결내역 조회로 시장가 주문 가격 복구
         # 연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우 대비
+        #
+        # dry_run 은 skip — 모의 실행엔 실제 주문·체결이 없다. 아래 계좌 추적기와 함께
+        # 이 두 경로는 **별도 LS() 로 appkey/appsecret 직접 로그인**하므로(토큰 공급자
+        # 미상속), 서버 단일 발급 토큰 + 더미 appsecret 으로 도는 트레이앱 검증 잡에서
+        # oauth2/token 403 → "Failed to login for account tracking" 이 errors[] 에 실려
+        # 모의 실행이 항상 실패했다(2026-08-29 Phase 9.6 실측, 잡 8/8). 샌드박스는
+        # 진짜 appsecret 이라 같은 코드가 조용히 통과해 가려져 있던 결함.
         # ========================================
-        if appkey and appsecret:
+        if appkey and appsecret and not context.is_dry_run:
             asyncio.create_task(
                 self._sync_fill_prices_from_history(
                     node_id=node_id,
@@ -3913,14 +3920,14 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     context=context,
                 )
             )
-        
+
         # ========================================
         # 계좌 수익률 자동 추적 (리스너 자동 감지)
-        # on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작
+        # on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작 — dry_run 제외(위 주석)
         # ========================================
         has_workflow_listener = self._has_workflow_pnl_listener(context)
 
-        if appkey and appsecret and has_workflow_listener:
+        if appkey and appsecret and has_workflow_listener and not context.is_dry_run:
             context.log("info", "WorkflowPnL listener detected - starting account tracking", node_id)
             asyncio.create_task(
                 self._start_account_tracking(

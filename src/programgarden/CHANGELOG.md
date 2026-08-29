@@ -8,6 +8,13 @@
 > 동반 릴리즈 없음(core 1.25.1 · finance 1.9.2 · community 1.15.1 유지).
 
 ### Fixed
+- **dry_run 에서 브로커 노드가 계좌 수익률 추적기·체결내역 동기화를 띄우지 않는다.** (2026-08-29 추가)
+  `is_dry_run` 가드가 포지션/위험 추적기만 감쌌고, `_start_account_tracking`(PnL 리스너 있을 때)·
+  `_sync_fill_prices_from_history` 는 dry_run 에도 **별도 `LS()` 로 appkey/appsecret 직접 로그인**했다
+  (토큰 공급자 미상속). 서버 단일 발급 토큰 + 더미 appsecret 으로 도는 트레이앱 검증 잡에서
+  oauth2/token 403 → "Failed to login for account tracking" 이 errors[] 에 실려 모의 실행이 항상
+  실패했다(Phase 9.6 실측, 잡 8/8). 모의 실행엔 주문·체결이 없으니 둘 다 skip — runtime 무변화.
+  (추적기 LS 인스턴스가 토큰 공급자를 상속하지 않는 runtime 쪽 갭은 별건으로 남김.)
 - **dry_run 에서 모의 응답 노드의 자동반복 간격 대기 제거.** 주문 신규/정정/취소(3상품군 9종)·
   AIAgentNode(간격 60초)·메시징 카테고리는 dry_run 에서 외부 호출 없이 단락되는데도
   `_auto_iterate_pacing_sleep` 이 브로커 제한(5초)을 그대로 지켰다. `DRY_RUN_SIMULATED_NODE_TYPES`
