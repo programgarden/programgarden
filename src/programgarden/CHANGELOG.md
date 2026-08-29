@@ -14,7 +14,13 @@
   (토큰 공급자 미상속). 서버 단일 발급 토큰 + 더미 appsecret 으로 도는 트레이앱 검증 잡에서
   oauth2/token 403 → "Failed to login for account tracking" 이 errors[] 에 실려 모의 실행이 항상
   실패했다(Phase 9.6 실측, 잡 8/8). 모의 실행엔 주문·체결이 없으니 둘 다 skip — runtime 무변화.
-  (추적기 LS 인스턴스가 토큰 공급자를 상속하지 않는 runtime 쪽 갭은 별건으로 남김.)
+- **계좌 수익률 추적기의 별도 LS 인스턴스도 토큰 공급자를 상속한다.** (2026-08-29 추가, 위 항목의 runtime 짝)
+  `_start_account_tracking` 만 맨손 `LS()` 로 appkey/appsecret 직접 로그인이라, 서버 단일 발급 토큰 +
+  더미 appsecret 으로 도는 기기(트레이앱 검증 잡·서버 발급 모드)의 **실제 실행**에서 추적기만 403 으로
+  죽고(error 로그 뒤 추적 없음) 자체 발급이 가능한 환경에서는 서버 토큰을 죽였다. `LSClientManager
+  .get_or_create` 의 부착 블록을 모듈 헬퍼 `attach_context_token_provider()` 로 뽑아 두 곳이 같은 규칙을
+  쓴다(`force_reissue`/`stale_token` 전달 규칙 포함). 공급자 없으면 종전 자체 발급 경로 그대로.
+  (`_sync_fill_prices_from_history` 는 `ensure_ls_login` 경유라 이미 상속했다.)
 - **dry_run 에서 모의 응답 노드의 자동반복 간격 대기 제거.** 주문 신규/정정/취소(3상품군 9종)·
   AIAgentNode(간격 60초)·메시징 카테고리는 dry_run 에서 외부 호출 없이 단락되는데도
   `_auto_iterate_pacing_sleep` 이 브로커 제한(5초)을 그대로 지켰다. `DRY_RUN_SIMULATED_NODE_TYPES`

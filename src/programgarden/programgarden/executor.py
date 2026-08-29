@@ -519,6 +519,59 @@ def resolve_port_bindings(
     return config
 
 
+def attach_context_token_provider(
+    ls: Any,
+    context: "ExecutionContext",
+    *,
+    appkey: str,
+    product: str,
+    paper_trading: bool,
+    node_id: Optional[str] = None,
+) -> bool:
+    """`context.ls_token_provider` 가 있으면 이 LS 인스턴스의 로그인을 그 공급자로 돌린다.
+
+    Verified League §3.2.3: 서버(dsl-api)가 앱키당 토큰의 **단일 발급자**다 — 엔진이 자체
+    `oauth2/token` 을 치면 같은 앱키로 발급된 서버 토큰이 죽는다(LS 는 앱키당 1토큰). 트레이앱
+    검증 잡·샌드박스처럼 appsecret 이 더미인 환경에서는 자체 발급이 아예 불가능하다.
+
+    `login()` 이 동기라 동기 공급자를 등록한다(비동기 갱신 경로도 폴백으로 재사용). 이 인스턴스의
+    appkey/product/paper_trading 에 바인딩되고 `(access_token, expires_at_epoch)` 를 돌려준다.
+    사용 중 토큰 실패로 촉발되는 강제 재발급(`force_reissue`/`stale_token`)은 공급자가 그 키워드를
+    받을 때만 넘긴다 — 구판 3-인자 공급자와도 호환.
+
+    호출처 두 곳: `LSClientManager.get_or_create`(노드 공용 인스턴스)와
+    `BrokerNodeExecutor._start_account_tracking`(계좌 추적기의 **별도** 인스턴스 — 2026-08-29 이전엔
+    맨손 `LS()` 로그인이라 더미 secret 기기의 실제 실행에서 추적기만 403 으로 죽었다).
+
+    Returns:
+        True 면 부착했다(공급자 없음 → False, 종전 자체 발급 경로).
+    """
+    token_provider = getattr(context, "ls_token_provider", None)
+    if token_provider is None:
+        return False
+    from programgarden_finance.ls.token_manager import provider_accepts_kwarg
+
+    # 사용 중 토큰 실패로 촉발되는 강제 재발급을 서버까지 전달한다. 이 인자를 못 넘기면
+    # 서버가 캐시된(이미 죽었을 수 있는) 토큰을 그대로 돌려줘 재발급이 아무 효과가 없다.
+    _forwards_force = provider_accepts_kwarg(token_provider, "force_reissue")
+    _forwards_stale = provider_accepts_kwarg(token_provider, "stale_token")
+
+    def _sync_token_provider(
+        _appkey=appkey, _product=product, _paper=paper_trading,
+        *, force_reissue: bool = False, stale_token=None,
+    ):
+        extra = {}
+        if force_reissue and _forwards_force:
+            extra["force_reissue"] = True
+        if force_reissue and _forwards_stale:
+            extra["stale_token"] = stale_token
+        return token_provider(_appkey, _product, _paper, **extra)
+
+    ls.set_token_provider(provider=_sync_token_provider)
+    context.log("info", f"LS token provider attached for {product}", node_id)
+    return True
+
+
 class LSClientManager:
     """Product별 LS 클라이언트 관리 (토큰 충돌 방지)
     
@@ -564,36 +617,13 @@ class LSClientManager:
         ls = object.__new__(LS)
         ls.__init__()
 
-        # Verified League §3.2.3: when a token provider is configured, route this
-        # LS instance through it (server = single issuer) so login consumes a
-        # server-issued token instead of self-issuing via GenerateToken. login()
-        # is synchronous, so we register a sync provider (it is also reused by the
-        # async refresh path as a fallback). Bound to this instance's
-        # appkey/product/paper_trading; returns (access_token, expires_at_epoch).
-        token_provider = getattr(context, "ls_token_provider", None)
-        if token_provider is not None:
-            from programgarden_finance.ls.token_manager import provider_accepts_kwarg
-
-            # 사용 중 토큰 실패로 촉발되는 강제 재발급을 서버까지 전달한다. 이 인자를
-            # 못 넘기면 서버가 캐시된(이미 죽었을 수 있는) 토큰을 그대로 돌려줘
-            # 재발급이 아무 효과가 없다. 구판 provider(3-인자)와도 호환되도록,
-            # 실제 provider 가 받는 키워드만 골라 넘긴다.
-            _forwards_force = provider_accepts_kwarg(token_provider, "force_reissue")
-            _forwards_stale = provider_accepts_kwarg(token_provider, "stale_token")
-
-            def _sync_token_provider(
-                _appkey=appkey, _product=product, _paper=paper_trading,
-                *, force_reissue: bool = False, stale_token=None,
-            ):
-                extra = {}
-                if force_reissue and _forwards_force:
-                    extra["force_reissue"] = True
-                if force_reissue and _forwards_stale:
-                    extra["stale_token"] = stale_token
-                return token_provider(_appkey, _product, _paper, **extra)
-
-            ls.set_token_provider(provider=_sync_token_provider)
-            context.log("info", f"LS token provider attached for {product}", node_id)
+        # Verified League §3.2.3: 토큰 공급자가 있으면 이 인스턴스의 로그인을 서버 단일
+        # 발급 경로로 돌린다(자체 GenerateToken 대신). 부착 로직은 계좌 추적기의 별도
+        # LS 인스턴스와 공유한다(`attach_context_token_provider`).
+        attach_context_token_provider(
+            ls, context, appkey=appkey, product=product, paper_trading=paper_trading,
+            node_id=node_id,
+        )
 
         # 로그인
         login_result = ls.login(
@@ -4698,12 +4728,23 @@ class BrokerNodeExecutor(NodeExecutorBase):
         paper_trading: bool,
         context: ExecutionContext,
     ) -> None:
-        """계좌 추적기 시작 및 수익률 콜백 등록"""
+        """계좌 추적기 시작 및 수익률 콜백 등록
+
+        추적기는 실시간 연결을 전용으로 쥐어야 해서 **별도** LS 인스턴스를 쓴다. 그래도 로그인은
+        브로커 노드와 같은 규칙 — `context.ls_token_provider` 가 있으면 서버 단일 발급 토큰을
+        쓴다(`attach_context_token_provider`). 2026-08-29 이전엔 여기만 appkey/appsecret 직접
+        로그인이라, 더미 secret 으로 도는 기기(트레이앱 검증 잡·서버 발급 모드)의 실제 실행에서
+        추적기만 403 으로 죽고 error 로그 뒤 추적 없이 진행됐다.
+        """
         try:
             from programgarden_finance import LS
             
-            # LS 클라이언트 생성 (별도 인스턴스)
+            # LS 클라이언트 생성 (별도 인스턴스) + 토큰 공급자 상속
             ls = LS()
+            attach_context_token_provider(
+                ls, context, appkey=appkey, product=product, paper_trading=paper_trading,
+                node_id=node_id,
+            )
             login_success = ls.login(
                 appkey=appkey,
                 appsecretkey=appsecret,
