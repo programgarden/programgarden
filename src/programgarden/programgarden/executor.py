@@ -519,6 +519,59 @@ def resolve_port_bindings(
     return config
 
 
+def attach_context_token_provider(
+    ls: Any,
+    context: "ExecutionContext",
+    *,
+    appkey: str,
+    product: str,
+    paper_trading: bool,
+    node_id: Optional[str] = None,
+) -> bool:
+    """`context.ls_token_provider` 가 있으면 이 LS 인스턴스의 로그인을 그 공급자로 돌린다.
+
+    Verified League §3.2.3: 서버(dsl-api)가 앱키당 토큰의 **단일 발급자**다 — 엔진이 자체
+    `oauth2/token` 을 치면 같은 앱키로 발급된 서버 토큰이 죽는다(LS 는 앱키당 1토큰). 트레이앱
+    검증 잡·샌드박스처럼 appsecret 이 더미인 환경에서는 자체 발급이 아예 불가능하다.
+
+    `login()` 이 동기라 동기 공급자를 등록한다(비동기 갱신 경로도 폴백으로 재사용). 이 인스턴스의
+    appkey/product/paper_trading 에 바인딩되고 `(access_token, expires_at_epoch)` 를 돌려준다.
+    사용 중 토큰 실패로 촉발되는 강제 재발급(`force_reissue`/`stale_token`)은 공급자가 그 키워드를
+    받을 때만 넘긴다 — 구판 3-인자 공급자와도 호환.
+
+    호출처 두 곳: `LSClientManager.get_or_create`(노드 공용 인스턴스)와
+    `BrokerNodeExecutor._start_account_tracking`(계좌 추적기의 **별도** 인스턴스 — 2026-08-29 이전엔
+    맨손 `LS()` 로그인이라 더미 secret 기기의 실제 실행에서 추적기만 403 으로 죽었다).
+
+    Returns:
+        True 면 부착했다(공급자 없음 → False, 종전 자체 발급 경로).
+    """
+    token_provider = getattr(context, "ls_token_provider", None)
+    if token_provider is None:
+        return False
+    from programgarden_finance.ls.token_manager import provider_accepts_kwarg
+
+    # 사용 중 토큰 실패로 촉발되는 강제 재발급을 서버까지 전달한다. 이 인자를 못 넘기면
+    # 서버가 캐시된(이미 죽었을 수 있는) 토큰을 그대로 돌려줘 재발급이 아무 효과가 없다.
+    _forwards_force = provider_accepts_kwarg(token_provider, "force_reissue")
+    _forwards_stale = provider_accepts_kwarg(token_provider, "stale_token")
+
+    def _sync_token_provider(
+        _appkey=appkey, _product=product, _paper=paper_trading,
+        *, force_reissue: bool = False, stale_token=None,
+    ):
+        extra = {}
+        if force_reissue and _forwards_force:
+            extra["force_reissue"] = True
+        if force_reissue and _forwards_stale:
+            extra["stale_token"] = stale_token
+        return token_provider(_appkey, _product, _paper, **extra)
+
+    ls.set_token_provider(provider=_sync_token_provider)
+    context.log("info", f"LS token provider attached for {product}", node_id)
+    return True
+
+
 class LSClientManager:
     """Product별 LS 클라이언트 관리 (토큰 충돌 방지)
     
@@ -564,36 +617,13 @@ class LSClientManager:
         ls = object.__new__(LS)
         ls.__init__()
 
-        # Verified League §3.2.3: when a token provider is configured, route this
-        # LS instance through it (server = single issuer) so login consumes a
-        # server-issued token instead of self-issuing via GenerateToken. login()
-        # is synchronous, so we register a sync provider (it is also reused by the
-        # async refresh path as a fallback). Bound to this instance's
-        # appkey/product/paper_trading; returns (access_token, expires_at_epoch).
-        token_provider = getattr(context, "ls_token_provider", None)
-        if token_provider is not None:
-            from programgarden_finance.ls.token_manager import provider_accepts_kwarg
-
-            # 사용 중 토큰 실패로 촉발되는 강제 재발급을 서버까지 전달한다. 이 인자를
-            # 못 넘기면 서버가 캐시된(이미 죽었을 수 있는) 토큰을 그대로 돌려줘
-            # 재발급이 아무 효과가 없다. 구판 provider(3-인자)와도 호환되도록,
-            # 실제 provider 가 받는 키워드만 골라 넘긴다.
-            _forwards_force = provider_accepts_kwarg(token_provider, "force_reissue")
-            _forwards_stale = provider_accepts_kwarg(token_provider, "stale_token")
-
-            def _sync_token_provider(
-                _appkey=appkey, _product=product, _paper=paper_trading,
-                *, force_reissue: bool = False, stale_token=None,
-            ):
-                extra = {}
-                if force_reissue and _forwards_force:
-                    extra["force_reissue"] = True
-                if force_reissue and _forwards_stale:
-                    extra["stale_token"] = stale_token
-                return token_provider(_appkey, _product, _paper, **extra)
-
-            ls.set_token_provider(provider=_sync_token_provider)
-            context.log("info", f"LS token provider attached for {product}", node_id)
+        # Verified League §3.2.3: 토큰 공급자가 있으면 이 인스턴스의 로그인을 서버 단일
+        # 발급 경로로 돌린다(자체 GenerateToken 대신). 부착 로직은 계좌 추적기의 별도
+        # LS 인스턴스와 공유한다(`attach_context_token_provider`).
+        attach_context_token_provider(
+            ls, context, appkey=appkey, product=product, paper_trading=paper_trading,
+            node_id=node_id,
+        )
 
         # 로그인
         login_result = ls.login(
@@ -3901,8 +3931,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
         # ========================================
         # Fallback: 체결내역 조회로 시장가 주문 가격 복구
         # 연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우 대비
+        #
+        # dry_run 은 skip — 모의 실행엔 실제 주문·체결이 없다. 아래 계좌 추적기와 함께
+        # 이 두 경로는 **별도 LS() 로 appkey/appsecret 직접 로그인**하므로(토큰 공급자
+        # 미상속), 서버 단일 발급 토큰 + 더미 appsecret 으로 도는 트레이앱 검증 잡에서
+        # oauth2/token 403 → "Failed to login for account tracking" 이 errors[] 에 실려
+        # 모의 실행이 항상 실패했다(2026-08-29 Phase 9.6 실측, 잡 8/8). 샌드박스는
+        # 진짜 appsecret 이라 같은 코드가 조용히 통과해 가려져 있던 결함.
         # ========================================
-        if appkey and appsecret:
+        if appkey and appsecret and not context.is_dry_run:
             asyncio.create_task(
                 self._sync_fill_prices_from_history(
                     node_id=node_id,
@@ -3913,14 +3950,14 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     context=context,
                 )
             )
-        
+
         # ========================================
         # 계좌 수익률 자동 추적 (리스너 자동 감지)
-        # on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작
+        # on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작 — dry_run 제외(위 주석)
         # ========================================
         has_workflow_listener = self._has_workflow_pnl_listener(context)
 
-        if appkey and appsecret and has_workflow_listener:
+        if appkey and appsecret and has_workflow_listener and not context.is_dry_run:
             context.log("info", "WorkflowPnL listener detected - starting account tracking", node_id)
             asyncio.create_task(
                 self._start_account_tracking(
@@ -4691,12 +4728,23 @@ class BrokerNodeExecutor(NodeExecutorBase):
         paper_trading: bool,
         context: ExecutionContext,
     ) -> None:
-        """계좌 추적기 시작 및 수익률 콜백 등록"""
+        """계좌 추적기 시작 및 수익률 콜백 등록
+
+        추적기는 실시간 연결을 전용으로 쥐어야 해서 **별도** LS 인스턴스를 쓴다. 그래도 로그인은
+        브로커 노드와 같은 규칙 — `context.ls_token_provider` 가 있으면 서버 단일 발급 토큰을
+        쓴다(`attach_context_token_provider`). 2026-08-29 이전엔 여기만 appkey/appsecret 직접
+        로그인이라, 더미 secret 으로 도는 기기(트레이앱 검증 잡·서버 발급 모드)의 실제 실행에서
+        추적기만 403 으로 죽고 error 로그 뒤 추적 없이 진행됐다.
+        """
         try:
             from programgarden_finance import LS
             
-            # LS 클라이언트 생성 (별도 인스턴스)
+            # LS 클라이언트 생성 (별도 인스턴스) + 토큰 공급자 상속
             ls = LS()
+            attach_context_token_provider(
+                ls, context, appkey=appkey, product=product, paper_trading=paper_trading,
+                node_id=node_id,
+            )
             login_success = ls.login(
                 appkey=appkey,
                 appsecretkey=appsecret,
@@ -10851,13 +10899,36 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             except (ValueError, _json.JSONDecodeError):
                 pass
 
-        # 우선순위: config.symbol > input.symbol > config.symbols (수동 목록 폴백)
+        # auto-iterate 중이면 **이번 아이템 1건만** 조회한다 — MarketDataNodeExecutor 와 같은
+        # 규칙. `symbols: "{{ nodes.watchlist.symbols }}"`(복수 전체 바인딩)로 배선된 노드가
+        # 상류 배열 때문에 N회 반복되면, 아래 config.symbols 폴백이 매 회 전체 N종목을 다시
+        # 조회해 N² 이 된다(실측: 7종목 → g3204 49회, 1건/3초 제한기라 60초에 2종목만 완료 —
+        # prod 대화 f2eed93c). runtime 에도 적용한다(N² 조회는 LS 제한기 낭비일 뿐 의미가 없다).
+        # 반복 소스가 없는 단독 실행(iteration_item 없음)은 종전대로 config.symbols 전체.
+        iteration_item = getattr(context, "_iteration_item", None)
+        if isinstance(iteration_item, str):
+            try:
+                _parsed = _json.loads(iteration_item)
+                if isinstance(_parsed, dict):
+                    iteration_item = _parsed
+            except (ValueError, _json.JSONDecodeError):
+                pass
+
+        # 우선순위: config.symbol > input.symbol > 반복 아이템 > config.symbols (수동 목록 폴백)
         if config_symbol:
             symbols_raw = [config_symbol] if isinstance(config_symbol, dict) else []
             context.log("debug", f"Using config.symbol: {config_symbol}", node_id)
         elif input_symbol:
             symbols_raw = [input_symbol] if isinstance(input_symbol, dict) else []
             context.log("debug", f"Using input port symbol: {input_symbol}", node_id)
+        elif isinstance(iteration_item, dict) and iteration_item.get("symbol"):
+            symbols_raw = [iteration_item]
+            context.log(
+                "debug",
+                f"Using auto-iterate item symbol (config.symbols 전체 대신 1건): "
+                f"{iteration_item.get('symbol')}",
+                node_id,
+            )
         else:
             # 마지막 폴백: config.symbols (복수 리터럴 목록) — MarketDataNodeExecutor 의
             # config_symbols 폴백과 대칭. 상류 배열 입력은 메인 루프 auto-iterate 가
@@ -10874,6 +10945,12 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                         f"Using config.symbols list: {len(symbols_raw)} entries",
                         node_id,
                     )
+                # dry_run 종목 표본(K) — 단독 실행의 복수 목록에도 auto-iterate 와 같은 K 적용.
+                if getattr(context, "dry_run_sampling_active", False):
+                    _k = int(getattr(context, "dry_run_sample_size", 0) or 0)
+                    if 0 < _k < len(symbols_raw):
+                        context.record_dry_run_sampling(node_id, len(symbols_raw), _k)
+                        symbols_raw = symbols_raw[:_k]
             else:
                 symbols_raw = []
         
@@ -18440,6 +18517,10 @@ class WorkflowJob:
         self._node_errors: Dict[str, str] = {}              # node_id -> last error message
         self._node_durations: Dict[str, float] = {}         # node_id -> last duration_ms
         self._node_error_timestamps: Dict[str, str] = {}    # node_id -> ISO timestamp of last failure
+        # 진행 중 노드의 시작 시각 — get_state() 가 "어느 노드가 몇 초째" 를 보일 수 있게.
+        # (타임아웃으로 잘린 dry_run 의 사후 진단용: 완료 전엔 duration_ms 가 없다.)
+        self._node_started_monotonic: Dict[str, float] = {}  # node_id -> time.monotonic() at RUNNING
+        self._node_started_at: Dict[str, str] = {}           # node_id -> ISO timestamp at RUNNING
         # Structured ErrorInfo cache — populated whenever a node fails. dry_run failures
         # use DRY_RUN_RUNTIME_ERROR; real-run failures use DRY_RUN_RUNTIME_ERROR's
         # sibling form so chatbot consumers get the same shape regardless of mode.
@@ -19041,7 +19122,9 @@ class WorkflowJob:
                 else:
                     input_data = fallback_data
 
-                should_iterate, port_name, items = self._should_auto_iterate(node.node_type, input_data)
+                should_iterate, port_name, items = self._should_auto_iterate(
+                    node.node_type, input_data, config,
+                )
 
                 if should_iterate and node_id not in branch_nodes:
                     # 자동 iterate 실행 (SplitNode 브랜치가 아닌 경우에만)
@@ -19309,6 +19392,46 @@ class WorkflowJob:
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
     }
 
+    # dry_run 에서 **외부 호출 없이 모의 응답**으로 단락되는 노드 타입 — 각 executor 의
+    # `if context.is_dry_run:` 분기와 1:1 로 맞춘다(NewOrder/ModifyOrder/CancelOrder 의
+    # `DRYRUN-…` 모의 응답, AIAgentNode 의 fixture 단락). 메시징 노드(TelegramNode 등)는
+    # 클래스 category(MESSAGING) 로 판별하므로 여기 적지 않는다 — `_is_dry_run_simulated()`.
+    #
+    # 용도: auto-iterate 의 per-item 간격 대기(`_auto_iterate_pacing_sleep`)는 **실제
+    # 브로커/외부 API 제한**을 모델링한 것이라, 호출 자체가 없는 dry_run 모의 노드에는
+    # 순수 낭비다 — 실측: 모의 주문 16건 × 5초 = 75초가 60초 빌드 타임아웃을 넘겼다
+    # (prod 대화 f2eed93c, 2026-08-28). dry_run 에서도 **실제 호출하는** 노드
+    # (HTTPRequestNode 1초·CurrencyRateNode 30초)는 이 집합에 넣지 말 것 — 간격을 지켜야 한다.
+    DRY_RUN_SIMULATED_NODE_TYPES = frozenset({
+        # 주문 — NewOrderNodeExecutor / ModifyOrderNodeExecutor / CancelOrderNodeExecutor
+        "OverseasStockNewOrderNode", "OverseasStockModifyOrderNode", "OverseasStockCancelOrderNode",
+        "OverseasFuturesNewOrderNode", "OverseasFuturesModifyOrderNode", "OverseasFuturesCancelOrderNode",
+        "KoreaStockNewOrderNode", "KoreaStockModifyOrderNode", "KoreaStockCancelOrderNode",
+        # AI — AIAgentNodeExecutor 는 dry_run 에서도 fixture 로 단락(실 LLM 호출 0). 간격 60초.
+        "AIAgentNode",
+    })
+
+    def _is_dry_run_simulated(self, node_type: str, node_class: Any = None) -> bool:
+        """dry_run 에서 이 노드가 외부 호출 없이 모의 응답으로 단락되는가.
+
+        `DRY_RUN_SIMULATED_NODE_TYPES` 명시 집합 + 메시징 카테고리(GenericNodeExecutor 의
+        dry_run 가드가 `NodeCategory.MESSAGING` 이면 no-op 반환) 를 합친 판정.
+        """
+        if node_type in self.DRY_RUN_SIMULATED_NODE_TYPES:
+            return True
+        if node_class is not None:
+            try:
+                from programgarden_core.nodes.base import NodeCategory
+                # `category` 는 pydantic 필드라 클래스 속성으로는 안 보인다(v2 는 필드
+                # 기본값을 클래스 네임스페이스에서 걷어낸다) — model_fields 의 default 를 읽는다.
+                fields = getattr(node_class, "model_fields", None) or {}
+                field = fields.get("category")
+                category = field.default if field is not None else getattr(node_class, "category", None)
+                return category == NodeCategory.MESSAGING
+            except Exception:
+                return False
+        return False
+
     # auto-iterate 의 **소스**가 되어선 안 되는 노드 (그 노드 자신의 iterate 여부와 무관).
     # 계좌 노드의 첫 출력 포트는 `positions`(보유잔고)다. 이게 폴백 소스로 잡히면
     # 하류가 **보유종목을 신규 매수 후보로 순회**한다 — 실주문 위험. 종목 후보는
@@ -19319,14 +19442,71 @@ class WorkflowJob:
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode", "KoreaStockRealAccountNode",
     }
 
-    def _should_auto_iterate(self, node_type: str, input_data: Any) -> tuple:
+    # 설정 모양에 따라 **배열 전체를 한 번에 소비**할 수도, 종목별로 반복할 수도 있는 노드.
+    # {node_type: 전체 배열 입력 포트}. 해당 포트가 전체 바인딩(`{{ nodes.x.symbols }}` /
+    # 리터럴 목록)이면 반복하지 않고, `symbol: {{ item }}` 처럼 아이템 바인딩이면 반복한다.
+    #
+    # PositionSizingNode 가 대표 — `symbols` 는 canonical 입력이고 executor 가 이미 배열
+    # 전체를 순회해 orders 를 만든다(`PositionSizingNodeExecutor.execute`). 이걸 상류 배열
+    # 크기만큼 또 반복하면 매 회 `{{ nodes.buy_pick.symbols }}` 가 **전체로 재평가**돼
+    # 병합 결과 symbols 가 N² 로 불어나고 하류 주문 노드가 그만큼 반복된다 — 실주문 N배
+    # 중복 위험(실측: prod 대화 f2eed93c 에서 4후보 → 주문 노드 16회). LogicNode 를
+    # NO_AUTO_ITERATE 에 넣은 것과 같은 이유인데, 사이징은 `symbol: {{ item }}` 로 종목별
+    # 사이징하는 예제(16·28 등)가 있어 블랭킷 제외가 아니라 설정 모양으로 가른다.
+    WHOLE_ARRAY_INPUT_PORTS: Dict[str, str] = {
+        "PositionSizingNode": "symbols",
+    }
+
+    @staticmethod
+    def _references_iteration_item(value: Any) -> bool:
+        """값(문자열/컨테이너)에 `{{ item… }}`/`{{ index }}` 아이템 바인딩이 있는가."""
+        if isinstance(value, str):
+            return "{{ item" in value or "{{item" in value or "{{ index" in value
+        if isinstance(value, dict):
+            return any(WorkflowJob._references_iteration_item(v) for v in value.values())
+        if isinstance(value, list):
+            return any(WorkflowJob._references_iteration_item(v) for v in value)
+        return False
+
+    def _consumes_whole_array(self, node_type: str, config: Optional[Dict[str, Any]]) -> bool:
+        """이 노드가 (설정 모양상) 상류 배열 전체를 한 번에 소비하는가.
+
+        `WHOLE_ARRAY_INPUT_PORTS` 의 포트가 설정에 있고 그 값이 아이템 바인딩이 아니면
+        True. 단수 포트(`symbol`)가 `{{ item }}` 을 참조하면 종목별 반복 의도이므로 False.
+        config 가 없으면(레거시 호출) 판단하지 않는다(False).
+        """
+        if not config:
+            return False
+        port = self.WHOLE_ARRAY_INPUT_PORTS.get(node_type)
+        if not port:
+            return False
+        # 명시적 종목별 의도가 우선 — `symbol: {{ item }}` / `symbols: [{{ item.symbol }}…]`
+        singular = port[:-1] if port.endswith("s") else None
+        if singular and self._references_iteration_item(config.get(singular)):
+            return False
+        value = config.get(port)
+        if value is None or value == "":
+            return False
+        if self._references_iteration_item(value):
+            return False
+        # 리터럴 목록이거나(이미 평가된 배열 포함) 전체 바인딩 문자열
+        return isinstance(value, (list, str, dict))
+
+    def _should_auto_iterate(
+        self,
+        node_type: str,
+        input_data: Any,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> tuple:
         """
         이전 노드 출력이 배열이면 자동 반복 실행
 
         조건:
         1. 입력 데이터가 배열 (1개 이상)
         2. 노드가 NO_AUTO_ITERATE_NODE_TYPES에 포함되지 않음
-        3. SplitNode 브랜치 내부가 아님
+        3. (config 가 주어지면) 설정 모양상 배열 전체를 소비하는 노드가 아님
+           — `WHOLE_ARRAY_INPUT_PORTS` / `_consumes_whole_array`
+        4. SplitNode 브랜치 내부가 아님
 
         Returns:
             (should_iterate: bool, input_port_name: str, items: list)
@@ -19337,6 +19517,10 @@ class WorkflowJob:
 
         # 입력이 배열이 아니거나 비어있으면 iterate 불필요
         if not isinstance(input_data, list) or len(input_data) < 1:
+            return False, "", []
+
+        # 설정 모양상 배열 전체를 한 번에 소비하는 노드 (PositionSizingNode.symbols 전체 바인딩)
+        if config and self._consumes_whole_array(node_type, config) is True:
             return False, "", []
 
         # 배열 입력이면 자동 반복 실행
@@ -19368,6 +19552,16 @@ class WorkflowJob:
         """
         from programgarden_core.bases.listener import NodeState
 
+        # dry_run 종목 표본(K): 모의 실행은 "흐름이 끝까지 도는가" 를 보는 것이지 전 종목을
+        # 다 돌리는 게 아니다 — 종목 50개짜리도 같은 시간에 끝나게 앞에서 K개만 돈다.
+        # deep_validate(오프라인 fixture, 비용 0)·runtime 은 무변화. K=0 이면 전수.
+        # (컨텍스트가 표본 API 를 모르는 레거시/mock 이면 그대로 전수.)
+        if getattr(self.context, "dry_run_sampling_active", False):
+            k = int(getattr(self.context, "dry_run_sample_size", 0) or 0)
+            if 0 < k < len(items):
+                self.context.record_dry_run_sampling(node_id, len(items), k)
+                items = list(items[:k])
+
         all_results = []
         total = len(items)
 
@@ -19379,6 +19573,13 @@ class WorkflowJob:
 
             # config 내 표현식 평가 ({{ item.xxx }}, {{ index }} 등)
             item_config = self._resolve_config_expressions(config, node_id)
+
+            # 방어선 2: 반복 중인데 복수 포트가 **전체 배열로 재평가**됐으면 경고 + (모의 실행
+            # 에서만) 현재 아이템으로 좁힌다 — MarketDataNodeExecutor 의 iteration_item 가드를
+            # 일반화한 것. 실전은 경고만(기존 워크플로우 의미 보존; 3.1.6 적대 검증 후 재결정).
+            item_config = self._guard_whole_array_reevaluation(
+                node_id, node.node_type, item_config, current_item, total,
+            )
 
             # 진행 상황 로그
             item_label = current_item.get("symbol", str(current_item)) if isinstance(current_item, dict) else str(current_item)
@@ -19419,11 +19620,66 @@ class WorkflowJob:
 
         return merged
 
+    # 반복 중 전체 배열 재평가를 감시할 복수 포트
+    _WHOLE_ARRAY_REEVAL_PORTS = ("symbols",)
+
+    @staticmethod
+    def _same_symbol_entry(a: Any, b: Any) -> bool:
+        if isinstance(a, dict) and isinstance(b, dict):
+            if a.get("symbol") and a.get("symbol") == b.get("symbol"):
+                ea, eb = a.get("exchange"), b.get("exchange")
+                return (not ea or not eb) or ea == eb
+            return a == b
+        return a == b
+
+    def _guard_whole_array_reevaluation(
+        self,
+        node_id: str,
+        node_type: str,
+        item_config: Dict[str, Any],
+        current_item: Any,
+        total: int,
+    ) -> Dict[str, Any]:
+        """auto-iterate 아이템 실행 직전, 복수 포트(`symbols`)가 반복 대상 배열 **전체**로
+        재평가된 경우를 잡는다.
+
+        증상: `symbols: "{{ nodes.x.symbols }}"` 를 가진 노드가 그 배열 크기만큼 반복되면
+        매 회 전체가 다시 들어가 병합 결과가 N² 이 된다(실주문 N배 중복 경로).
+        - 모든 모드: 경고 로그(어느 노드가 몇 건을 재평가했는지)
+        - dry_run/deep: 현재 아이템 1건으로 좁혀 모의 실행 시간을 N² 에서 N 으로 되돌린다
+        - runtime: 좁히지 않는다(기존 워크플로우 의미 보존 — 1순위 방어선인
+          `_consumes_whole_array` 가 애초에 반복을 막는다)
+        """
+        if total <= 1 or not isinstance(current_item, dict):
+            return item_config
+        narrowed = None
+        for port in self._WHOLE_ARRAY_REEVAL_PORTS:
+            value = item_config.get(port)
+            if not isinstance(value, list) or len(value) != total:
+                continue
+            if not any(self._same_symbol_entry(entry, current_item) for entry in value):
+                continue
+            simulated = bool(getattr(self.context, "is_dry_run", False))
+            self.context.log(
+                "warning",
+                f"Auto-iterate: {node_id} ({node_type}) 의 '{port}' 가 반복 아이템이 아니라 "
+                f"전체 배열({total}건)로 재평가됨 — 병합 시 {total}×{total} 중복 위험. "
+                + ("[dry_run] 현재 아이템 1건으로 좁힘." if simulated
+                   else "실전은 좁히지 않음 — 바인딩을 `{{ item }}` 로 바꾸거나 전체 배열 노드로 두세요."),
+                node_id,
+            )
+            if simulated:
+                if narrowed is None:
+                    narrowed = dict(item_config)
+                narrowed[port] = [current_item]
+        return narrowed if narrowed is not None else item_config
+
     def _merge_iterate_results(self, results: list) -> Dict[str, Any]:
         """
         자동 iterate 결과 병합
 
         - 배열 필드 (value, values, items 등): 모든 결과를 하나의 배열로 병합
+        - `orders`: 배열로 병합하되 (symbol, exchange) 중복은 첫 건만 남긴다
         - 단일 필드: 마지막 값 사용
         """
         if not results:
@@ -19432,22 +19688,33 @@ class WorkflowJob:
         merged = {}
         # 배열로 병합할 포트. `symbols`/`symbol_results` 가 빠져 있어 auto-iterate N회 중
         # **마지막 1회만 살아남았다**(실측: 28 의 logic 이 5종목 중 1건만 받음).
+        # `orders` 도 같은 결함이었다 — PositionSizingNode 를 종목별로 반복하면 canonical
+        # `orders` 가 마지막 1건만 남았다(`order` 단수 alias 만 살아남는 셈).
         array_fields = {
             "value", "values", "items", "data", "result", "results",
             "passed_symbols", "failed_symbols", "symbols", "symbol_results",
+            "orders",
         }
+        # 주문 배열은 (symbol, exchange) 로 중복을 제거한다 — 같은 종목에 주문 객체가
+        # 두 번 들어가면 하류 주문 노드가 그만큼 반복된다(실주문 중복 경로).
+        dedup_by_symbol = {"orders"}
 
         for key in results[0].keys():
             if key in array_fields:
                 # 배열 필드: 모든 결과 수집
                 merged[key] = []
+                seen_keys: Set[Tuple[Any, Any]] = set()
                 for r in results:
                     val = r.get(key)
                     if val is not None:
-                        if isinstance(val, list):
-                            merged[key].extend(val)
-                        else:
-                            merged[key].append(val)
+                        entries = val if isinstance(val, list) else [val]
+                        for entry in entries:
+                            if key in dedup_by_symbol and isinstance(entry, dict) and entry.get("symbol"):
+                                dk = (entry.get("symbol"), entry.get("exchange"))
+                                if dk in seen_keys:
+                                    continue
+                                seen_keys.add(dk)
+                            merged[key].append(entry)
             else:
                 # 단일 필드: 마지막 유효 값
                 for r in reversed(results):
@@ -20292,6 +20559,19 @@ class WorkflowJob:
         if not node_class:
             return
 
+        # dry_run: 주문/AI/메시징처럼 **모의 응답으로 단락되는** 노드에는 간격 대기가
+        # 낭비다(호출이 없다). 블랭킷 skip 은 아니다 — HTTPRequestNode 처럼 dry_run 에서도
+        # 실제 호출하는 노드는 아래로 내려가 간격을 지킨다. (deep 은 위에서 이미 전부 skip.)
+        if getattr(self.context, "is_dry_run", False) and self._is_dry_run_simulated(
+            node_type, node_class
+        ):
+            self.context.log(
+                "debug",
+                f"[dry_run] Auto-iterate pacing skipped for simulated node {node_id} ({node_type})",
+                node_id,
+            )
+            return
+
         class_rate_limit = getattr(node_class, '_rate_limit', None)
         if not class_rate_limit:
             return
@@ -20839,6 +21119,11 @@ class WorkflowJob:
         replay or scraping logs.
         """
         self._node_states[node_id] = state
+        if state == NodeState.RUNNING:
+            import time as _time
+            from datetime import datetime as _dt, timezone as _tz
+            self._node_started_monotonic[node_id] = _time.monotonic()
+            self._node_started_at[node_id] = _dt.now(_tz.utc).isoformat()
         if error is not None:
             self._node_errors[node_id] = error
             if error_timestamp is not None:
@@ -20862,6 +21147,10 @@ class WorkflowJob:
             cached_state = self._node_states.get(node_id, NodeState.PENDING)
             entry: Dict[str, Any] = {
                 "state": cached_state.value,
+                # `status` 는 `state` 의 별칭 — 외부 소비자(챗봇 샌드박스 `_summarise_job_state`)
+                # 가 `status` 를 읽어 왔는데 엔진은 `state` 만 내보내 "어느 노드에서 잘렸는지"
+                # 가 영영 안 보였다. 양쪽 키를 모두 싣는다.
+                "status": cached_state.value,
                 "node_type": node.node_type,
                 # 🔐 외부 노출면 — BrokerNode 는 하류 전송용으로 connection.appkey/appsecret 을
                 # 출력에 싣는다. 리스너 경로는 이미 가리는데 여기만 raw 로 새고 있었다.
@@ -20871,6 +21160,13 @@ class WorkflowJob:
                 entry["error"] = self._node_errors[node_id]
             if node_id in self._node_durations:
                 entry["duration_ms"] = self._node_durations[node_id]
+            if node_id in self._node_started_at:
+                entry["started_at"] = self._node_started_at[node_id]
+            if cached_state == NodeState.RUNNING and node_id in self._node_started_monotonic:
+                import time as _time
+                entry["elapsed_ms"] = round(
+                    (_time.monotonic() - self._node_started_monotonic[node_id]) * 1000.0, 1
+                )
             nodes_state[node_id] = entry
 
         # Aggregated structured errors — primary debugging surface for
@@ -20947,6 +21243,12 @@ class WorkflowJob:
             "nodes": nodes_state,
             "errors": errors,
             "structured_errors": structured_errors,
+            # dry_run 종목 표본(K) 적용 여부 — 소비자가 "N중 K 만 검증했음" 을 고지할 수 있게.
+            "dry_run_sampling": (
+                self.context.get_dry_run_sampling()
+                if hasattr(self.context, "get_dry_run_sampling")
+                else {"applied": False, "k": 0, "nodes": []}
+            ),
         }
 
     def get_structured_errors(self) -> List[Any]:

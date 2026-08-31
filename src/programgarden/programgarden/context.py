@@ -256,6 +256,10 @@ class ExecutionContext:
         # M-10: Risk halt flag - critical risk event 시 주문 중단
         self._risk_halt: bool = False
 
+        # dry_run 종목 표본(K) 적용 기록 — get_state()["dry_run_sampling"] 로 노출.
+        # {"applied": bool, "k": int, "nodes": [{"node_id", "n", "k"}, ...]}
+        self._dry_run_sampling: Dict[str, Any] = {"applied": False, "k": self.dry_run_sample_size, "nodes": []}
+
         # Shutdown flag: cleanup 진행 중/완료 시 실시간 콜백 차단
         self._shutdown: bool = False
 
@@ -316,6 +320,48 @@ class ExecutionContext:
             self.context_params.get("dry_run", False)
             or self.context_params.get("deep_validate", False)
         )
+
+    # dry_run 종목 표본 상한 기본값. 1이 아니라 3인 이유: 첫 종목이 데이터 없음/상장폐지면
+    # 흐름이 빈 리스트로 헛돌아 검증이 무의미해진다 — 3이면 그 위험이 거의 사라진다.
+    DRY_RUN_SAMPLE_SIZE_DEFAULT = 3
+
+    @property
+    def dry_run_sample_size(self) -> int:
+        """dry_run 에서 auto-iterate 아이템(종목 등)을 앞에서 몇 개로 절단할지. 0 = 전수.
+
+        ``context_params={"dry_run_sample_size": K}`` 로 지정(기본 3). deep_validate 와
+        runtime 에는 적용되지 않는다 — `dry_run_sampling_active` 참조.
+        """
+        raw = self.context_params.get("dry_run_sample_size", self.DRY_RUN_SAMPLE_SIZE_DEFAULT)
+        try:
+            k = int(raw)
+        except (TypeError, ValueError):
+            k = self.DRY_RUN_SAMPLE_SIZE_DEFAULT
+        return max(0, k)
+
+    @property
+    def dry_run_sampling_active(self) -> bool:
+        """표본 절단이 켜진 모드인가 — plain dry_run(＝deep 아님)이고 K>0."""
+        return self.is_dry_run and not self.is_deep_validate and self.dry_run_sample_size > 0
+
+    def record_dry_run_sampling(self, node_id: str, n: int, k: int) -> None:
+        """표본 절단이 실제로 일어났음을 기록(N중 K). get_state()["dry_run_sampling"] 로 노출."""
+        self._dry_run_sampling["applied"] = True
+        self._dry_run_sampling["k"] = self.dry_run_sample_size
+        self._dry_run_sampling["nodes"].append({"node_id": node_id, "n": int(n), "k": int(k)})
+        self.log(
+            "info",
+            f"[dry_run] {node_id}: {n} items → sampled {k} (dry_run_sample_size={self.dry_run_sample_size}; "
+            f"전수 검증은 dry_run_sample_size=0)",
+            node_id,
+        )
+
+    def get_dry_run_sampling(self) -> Dict[str, Any]:
+        return {
+            "applied": bool(self._dry_run_sampling.get("applied")),
+            "k": self.dry_run_sample_size,
+            "nodes": list(self._dry_run_sampling.get("nodes") or []),
+        }
 
     @property
     def is_deep_validate(self) -> bool:
