@@ -1,3 +1,15 @@
+## [1.25.2] - 2026-09-07
+> 코드 변경 없음 — 노드 가이드 문구만. 동반 릴리즈: `programgarden` **1.33.3**(D2 "No symbols provided" 3분류).
+
+### Changed
+- `PositionSizingNode` 가이드: `symbols` 를 ConditionNode.passed_symbols / SymbolFilterNode.symbols 에 묶었을 때 그 목록이
+  비는 것은 정상 무신호(`reason=no_signal`)이지 배선 결함이 아니라는 점, "No symbols provided" **경고**는 소스 미연결·
+  미해석 바인딩일 때만 나온다는 점을 pitfalls 에 명시. 고정 수량 매매는 사이징 없이 조건→주문 직결이 정석임을
+  when_not_to_use 첫 항목으로.
+- 과거시세 노드 3종(해외주식·국내주식·해외선물) 가이드: `{{ item }}`/`{{ nodes.<split>.item }}` 은 종목별 반복 안에서만
+  풀리고, 상류 배열이 비면 빈 시리즈(정상)라는 점.
+- 현재가 노드 3종 가이드: 바인딩된 소스가 비면 error 없이 `values=[]`, `symbols 필드가 필수입니다` 는 소스 미연결·미해석일 때만.
+
 ## [1.25.0] - 2026-08-20
 > 주문 거부에 **재시도 판단**을 필드로 싣는다. 챗봇이 거부를 받고 가장 먼저 답해야 하는
 > 질문은 하나다 — 다시 걸까, 사용자에게 고치라 할까, 기다릴까. 지금까지는 그걸 영어

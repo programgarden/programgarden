@@ -178,6 +178,7 @@ class OverseasFuturesMarketDataNode(BaseNode):
             "OverseasFuturesMarketDataNode.values → PositionSizingNode.market_data (with symbols + balance)",
         ],
         "pitfalls": [
+            "If the bound symbol source (ConditionNode.passed_symbols / SymbolFilterNode.symbols) is empty for this run the node returns values=[] with no error (normal no-signal). The `symbols 필드가 필수입니다` error is raised only when no symbol source is configured or the binding did not resolve",
             "Symbol must include contract month code (e.g., ESH26 not ES) — check OverseasFuturesSymbolQueryNode for valid codes",
             "Use OverseasFuturesBrokerNode (not OverseasStockBrokerNode) as the upstream broker",
             "REST polling returns a snapshot; for tick-level streaming use OverseasFuturesRealMarketDataNode",

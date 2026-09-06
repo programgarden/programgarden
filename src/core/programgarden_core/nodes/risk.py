@@ -143,6 +143,7 @@ class PositionSizingNode(BaseNode):
             "Standardize risk exposure across different strategies (share the same PositionSizingNode config)",
         ],
         "when_not_to_use": [
+            "Buying/selling a FIXED quantity of every symbol that passed a ConditionNode / SymbolFilterNode — you do not need sizing at all: wire the condition/filter straight into NewOrderNode (it auto-iterates the symbol list) and set `quantity` on the order node",
             "Fixed-quantity simple tests — set `quantity` directly on NewOrderNode and skip sizing entirely",
             "Portfolio-level rebalancing — use PortfolioNode to compute allocations first, then size each leg",
             "Per-leg position-management signals (stop-loss / trailing) — that lives in ConditionNode with position-management plugins",
@@ -292,6 +293,7 @@ class PositionSizingNode(BaseNode):
             "AccountNode + MarketDataNode → PositionSizingNode(atr_based) → NewOrderNode",
         ],
         "pitfalls": [
+            "`symbols` bound to ConditionNode.passed_symbols / SymbolFilterNode.symbols may legitimately be EMPTY on a given run (no symbol met the condition today). The node then emits orders=[] with reason='no_signal' and logs an info line — that is normal runtime behaviour, not a wiring defect, and it does not block saving. A `No symbols provided for position sizing` WARNING means the symbol source itself is missing or the binding did not resolve (unknown node id / output port, or `{{ item }}` used outside a per-symbol loop) — fix the wiring in that case only",
             "`symbol` must be the object form, not a plain string",
             "method='kelly' needs kelly_fraction <= 1.0 (quarter-Kelly = 0.25 is a sane default)",
             "method='atr_based' needs `market_data` bound — otherwise the fallback produces a zero / tiny quantity",
