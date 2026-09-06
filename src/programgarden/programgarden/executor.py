@@ -10340,6 +10340,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             values = []
             
             for symbol_entry in symbols:
+                exchange, symbol = "", ""  # handler-safe defaults: the except below must never touch an unassigned name (UnboundLocalError masked the real cause)
                 try:
                     # 거래소와 심볼 추출
                     exchange = symbol_entry.get("exchange", "NASDAQ")
@@ -10414,7 +10415,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                         context.log("warning", f"No data for {exchange}:{symbol}", node_id)
                         
                 except Exception as e:
-                    context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
+                    context.log("warning", f"Failed to fetch {exchange}:{symbol or symbol_entry!r}: {e}", node_id)
                     continue
             
             return {"values": values}
@@ -10459,6 +10460,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             values = []
             
             for symbol_entry in symbols:
+                exchange, symbol = "", ""  # handler-safe defaults: the except below must never touch an unassigned name (UnboundLocalError masked the real cause)
                 try:
                     # 해외선물은 exchange 대신 symbol만 사용 (예: "GCGF25", "CLH25")
                     exchange = symbol_entry.get("exchange", "CME")
@@ -10499,7 +10501,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                         context.log("warning", f"No data for {exchange}:{symbol}", node_id)
                         
                 except Exception as e:
-                    context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
+                    context.log("warning", f"Failed to fetch {exchange}:{symbol or symbol_entry!r}: {e}", node_id)
                     continue
             
             return {"values": values}
@@ -10544,6 +10546,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             values = []
 
             for symbol_entry in symbols:
+                symbol = ""  # handler-safe default: the except below must never touch an unassigned name (UnboundLocalError masked the real cause)
                 try:
                     symbol = symbol_entry.get("symbol", "")
                     if not symbol:
@@ -10583,7 +10586,7 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                         context.log("warning", f"No data for KRX:{symbol}", node_id)
 
                 except Exception as e:
-                    context.log("warning", f"Failed to fetch KRX:{symbol}: {e}", node_id)
+                    context.log("warning", f"Failed to fetch KRX:{symbol or symbol_entry!r}: {e}", node_id)
                     continue
 
             return {"values": values}
@@ -10690,6 +10693,7 @@ class FundamentalNodeExecutor(NodeExecutorBase):
             values = []
 
             for symbol_entry in symbols:
+                exchange, symbol = "", ""  # handler-safe defaults: the except below must never touch an unassigned name (UnboundLocalError masked the real cause)
                 try:
                     exchange = symbol_entry.get("exchange", "NASDAQ")
                     symbol = symbol_entry.get("symbol", "")
@@ -10739,7 +10743,7 @@ class FundamentalNodeExecutor(NodeExecutorBase):
                         context.log("warning", f"No data for {exchange}:{symbol}", node_id)
 
                 except Exception as e:
-                    context.log("warning", f"Failed to fetch {exchange}:{symbol}: {e}", node_id)
+                    context.log("warning", f"Failed to fetch {exchange}:{symbol or symbol_entry!r}: {e}", node_id)
                     continue
 
             return {"values": values}
@@ -10780,6 +10784,7 @@ class FundamentalNodeExecutor(NodeExecutorBase):
             values = []
 
             for symbol_entry in symbols:
+                symbol = ""  # handler-safe default: the except below must never touch an unassigned name (UnboundLocalError masked the real cause)
                 try:
                     symbol = symbol_entry.get("symbol", "")
                     if not symbol:
@@ -10812,7 +10817,7 @@ class FundamentalNodeExecutor(NodeExecutorBase):
                         context.log("warning", f"No data for KRX:{symbol}", node_id)
 
                 except Exception as e:
-                    context.log("warning", f"Failed to fetch KRX:{symbol}: {e}", node_id)
+                    context.log("warning", f"Failed to fetch KRX:{symbol or symbol_entry!r}: {e}", node_id)
                     continue
 
             return {"values": values}
