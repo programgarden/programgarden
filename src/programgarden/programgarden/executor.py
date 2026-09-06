@@ -798,6 +798,7 @@ def evaluate_all_bindings(
 EMPTY_SYMBOLS_NO_SIGNAL = "no_signal"
 EMPTY_SYMBOLS_UNRESOLVED = "unresolved"
 EMPTY_SYMBOLS_UNBOUND = "unbound"
+EMPTY_SYMBOLS_UPSTREAM_FAILED = "upstream_failed"   # 참조한 노드가 error/fetch_failed 를 냈다
 
 _EMPTY_VALUES = (None, "", [], {}, ())
 
@@ -848,6 +849,51 @@ def _first_expression(value: Any) -> Optional[str]:
     return None
 
 
+def _referenced_node_failure(expr: Optional[str], context: "ExecutionContext") -> Optional[str]:
+    """`{{ nodes.<id>.<port> }}` 가 가리키는 노드의 FULL 출력에 실패 신호(error /
+    reason=fetch_failed / _partial_failure)가 있으면 그 사유, 없으면 None.
+
+    MarketData/HistoricalData 는 조회 실패를 raise 하지 않고 ``{"values": [], "error": …}``
+    로 돌려주므로, 그 ``values`` 를 symbols 로 묶은 하류는 빈 목록만 보고 "오늘 신호 없음"
+    으로 오판할 수 있다 — 여기서 참조 노드 자체를 본다.
+    """
+    if not isinstance(expr, str) or context is None:
+        return None
+    import re as _re
+
+    m = _re.search(r"nodes\.([A-Za-z0-9_\-]+)", expr)
+    if not m:
+        return None
+    try:
+        outputs = context.get_all_outputs(m.group(1))
+    except Exception:
+        return None
+    if not isinstance(outputs, dict) or not outputs:
+        return None
+    return NewOrderNodeExecutor._extract_upstream_error(outputs)
+
+
+# 심볼을 나르는 포트 — `{{ item }}` 이 반복 밖에서 리터럴로 남았을 때 "상류 배열이 비어
+# 반복이 안 일어났다" 를 판정할 축. 메인 루프의 auto-iterate 소스 우선순위(명시 from_port
+# > symbols > 첫 출력)와 맞춘다: ConditionNode 는 0건 통과일 때도 ``symbols``(평가 대상 전체)·
+# ``failed_symbols``·``symbol_results`` 가 **비어 있지 않으므로**, 모든 리스트 포트가 비어야
+# 한다는 규칙은 D2 가 없애려던 바로 그 케이스(조건 미통과 → `symbol: {{ item }}` 경고)를
+# 남긴다. passed_symbols 가 있으면 그것만, 없으면 symbols, 둘 다 없으면 전체 리스트 포트.
+_ITERATION_SYMBOL_PORTS = ("passed_symbols", "symbols", "items", "values")
+
+
+def _upstream_array_is_empty(inputs: Dict[str, Any]) -> Optional[bool]:
+    """True = 반복 소스 배열이 비어 있다(no_signal), False = 배열이 있는데 반복이 안 걸렸다
+    (설계 결함), None = 리스트 포트가 하나도 없다."""
+    for port in _ITERATION_SYMBOL_PORTS:
+        if port in inputs and isinstance(inputs[port], list):
+            return len(inputs[port]) == 0
+    list_ports = [v for k, v in inputs.items() if isinstance(v, list) and not str(k).startswith("_")]
+    if not list_ports:
+        return None
+    return all(len(v) == 0 for v in list_ports)
+
+
 def classify_empty_symbol_source(
     node_id: str,
     evaluated_config: Dict[str, Any],
@@ -884,23 +930,19 @@ def classify_empty_symbol_source(
         if not expr:
             continue
         if item_re.search(expr) and not iterating:
-            list_ports = {
-                k: v for k, v in inputs.items()
-                if isinstance(v, list) and not str(k).startswith("_")
-            }
-            if list_ports and all(len(v) == 0 for v in list_ports.values()):
+            empty = _upstream_array_is_empty(inputs)
+            if empty is True:
                 return (
                     EMPTY_SYMBOLS_NO_SIGNAL,
-                    f"`{key}: {expr}` — the upstream array "
-                    f"({', '.join(sorted(list_ports))}) is empty in this run, so there is "
-                    "nothing to iterate (no signal)",
+                    f"`{key}: {expr}` — the upstream symbol array is empty in this run "
+                    "(no symbol passed / nothing to iterate), so this node was not iterated (no signal)",
                 )
             return (
                 EMPTY_SYMBOLS_UNRESOLVED,
                 f"`{key}: {expr}` is an item binding but this node is not being iterated — "
-                "`{{ item }}` only resolves downstream of an array output "
-                "(WatchlistNode.symbols / ConditionNode.passed_symbols / SymbolFilterNode.symbols) "
-                "or inside a SplitNode branch",
+                "`{{ item }}` only resolves when this node is auto-iterated over an upstream "
+                "array (WatchlistNode.symbols / ConditionNode.passed_symbols / SymbolFilterNode.symbols); "
+                "inside a SplitNode branch use `{{ nodes.<split>.item }}` instead",
             )
         return (
             EMPTY_SYMBOLS_UNRESOLVED,
@@ -920,15 +962,33 @@ def classify_empty_symbol_source(
         raw_value = raw[bound_key]
         if _contains_expression(raw_value):
             expr = _first_expression(raw_value)
+            resolved = evaluated_config.get(bound_key)
+            # 참조한 노드 자체가 실패했다(MarketData/HistoricalData 의 `{"values": [], "error": …}`,
+            # reason=fetch_failed, _partial_failure) → 빈 목록은 신호 없음이 아니라 파이프라인 고장.
+            failure = _referenced_node_failure(expr, context)
+            if failure:
+                return (
+                    EMPTY_SYMBOLS_UPSTREAM_FAILED,
+                    f"upstream node referenced by `{bound_key}: {expr}` failed: {failure}",
+                )
             # 표현식이 **빈 목록이 아니라 None** 으로 풀렸다 = 참조한 노드/포트가 없다
             # (평가기는 없는 포트를 None 으로 관대하게 푼다). 실제 종목 소스(ConditionNode.
             # passed_symbols / SymbolFilterNode.symbols …)는 비어도 항상 [] 를 낸다.
-            if evaluated_config.get(bound_key) is None and bound_key not in inputs:
+            if resolved is None and bound_key not in inputs:
                 return (
                     EMPTY_SYMBOLS_UNRESOLVED,
                     f"`{bound_key}: {expr}` resolved to nothing — the referenced node id or "
                     "output port does not exist (check the spelling; e.g. "
                     "`{{ nodes.<condition>.passed_symbols }}` / `{{ nodes.<filter>.symbols }}`)",
+                )
+            # 스칼라(bool/int/str)로 풀렸다 = 종목 목록이 아닌 포트를 묶었다(`result` /
+            # `is_condition_met` / `count`). 매 실행 빈 목록이 되는 영구 결함이라 warning.
+            if resolved is not None and not isinstance(resolved, (list, dict)):
+                return (
+                    EMPTY_SYMBOLS_UNRESOLVED,
+                    f"`{bound_key}: {expr}` resolved to a {type(resolved).__name__} "
+                    f"({str(resolved)[:40]!r}), not a symbol list — bind a list port "
+                    "(`passed_symbols` / `symbols`), not `result` / `is_condition_met` / `count`",
                 )
             return (
                 EMPTY_SYMBOLS_NO_SIGNAL,
@@ -946,6 +1006,17 @@ def classify_empty_symbol_source(
             f"symbol source `{bound_key}` resolved to nothing in this run (no signal)",
         )
     if port_key is not None:
+        port_value = inputs.get(port_key)
+        # 엣지로 들어온 포트가 **비어 있지 않은데** 이 노드가 빈 목록을 봤다 = 이 노드는
+        # 입력 포트를 읽지 않는다(사이징은 evaluated config 만 본다). 바인딩을 명시해야
+        # 하는 설계 결함이지 "오늘 신호 없음" 이 아니다.
+        if port_value not in _EMPTY_VALUES:
+            return (
+                EMPTY_SYMBOLS_UNBOUND,
+                f"the upstream node emits a non-empty `{port_key}` list but this node has no "
+                f"`{port_key}` binding to consume it — bind `{port_key}: "
+                "{{ nodes.<upstream>." + port_key + " }}` explicitly",
+            )
         return (
             EMPTY_SYMBOLS_NO_SIGNAL,
             f"the upstream node wired into this node emitted an empty `{port_key}` list "
@@ -13011,6 +13082,8 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                 f"No symbols provided for position sizing — {detail}",
                 node_id,
             )
+            if kind == EMPTY_SYMBOLS_UPSTREAM_FAILED:
+                return self._empty_result(EmptyOrderReason.FETCH_FAILED, detail)
             return self._empty_result(EmptyOrderReason.NO_SYMBOL, detail)
         
         # Refuse to silently zero-out when the upstream AccountNode flagged
@@ -13055,6 +13128,18 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
                     or "balance fetch partially failed"
                 )
                 return self._empty_result(EmptyOrderReason.FETCH_FAILED, detail)
+            # 잔고 입력 자체가 없거나 미해석(`{{ … }}` 리터럴) = 읽지 못한 것이지 "오늘
+            # 신호 없음" 이 아니다. 종목은 있는데 잔고가 안 묶인 채 no_signal 로 흘리면
+            # 하류 주문 노드(D2 상속)까지 조용한 no-op 이 된다. 실제로 잔고 dict 가 있고
+            # 매수가능금액이 0 인 경우만 정상 no_signal(현금 없음).
+            if balance_data in (None, "", {}, [], ()) or (
+                isinstance(balance_data, str) and "{{" in balance_data
+            ):
+                return self._empty_result(
+                    EmptyOrderReason.FETCH_FAILED,
+                    "balance input is missing or unresolved — bind `balance` to "
+                    "AccountNode.balance (every sizing method except fixed_quantity needs it)",
+                )
             return self._empty_result(
                 EmptyOrderReason.NO_SIGNAL,
                 "No available balance for position sizing",

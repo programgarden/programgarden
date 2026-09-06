@@ -312,3 +312,96 @@ def test_order_upstream_no_signal_with_error_marker_stays_fetch_failed():
                        "_failure_reason": "balance fetch partially failed"})
     reason, _ = NewOrderNodeExecutor()._diagnose_empty_reason(None, {}, None, ctx, node_id="order")
     assert reason != EmptyOrderReason.NO_SIGNAL
+
+
+# ---------------------------------------------------------------------------
+# 5. 적대 리뷰(2026-09-07) 반영 — 분류기가 결함을 no_signal 로 삼키지 않는다
+# ---------------------------------------------------------------------------
+
+from programgarden.executor import EMPTY_SYMBOLS_UPSTREAM_FAILED  # noqa: E402
+
+
+def test_non_empty_input_port_without_binding_is_unbound():
+    """엣지로 symbols 가 들어왔는데(비어 있지 않음) 이 노드가 빈 목록을 봤다 = 바인딩 누락."""
+    kind, detail = classify_empty_symbol_source(
+        "sizing", {"method": "fixed_quantity"},
+        _Ctx(inputs={"symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}]}),
+        _wf("sizing", {"method": "fixed_quantity"}),
+    )
+    assert kind == EMPTY_SYMBOLS_UNBOUND
+    assert "no `symbols` binding" in detail
+
+
+def test_item_binding_with_condition_zero_pass_is_no_signal_despite_other_lists():
+    """ConditionNode 0건 통과: passed_symbols=[] 이지만 symbols/failed_symbols 는 비어 있지 않다."""
+    evaluated = {"symbol": "{{ item }}"}
+    inputs = {
+        "passed_symbols": [],
+        "failed_symbols": [{"symbol": "AAPL"}, {"symbol": "MSFT"}],
+        "symbols": [{"symbol": "AAPL"}, {"symbol": "MSFT"}],
+        "symbol_results": [{"symbol": "AAPL", "passed": False}],
+        "is_condition_met": False,
+    }
+    kind, _ = classify_empty_symbol_source(
+        "historical", evaluated, _Ctx(inputs=inputs), _wf("historical", dict(evaluated)),
+        keys=("symbol", "symbols"),
+    )
+    assert kind == EMPTY_SYMBOLS_NO_SIGNAL
+
+
+def test_item_binding_with_condition_pass_but_no_iteration_is_unresolved():
+    evaluated = {"symbol": "{{ item }}"}
+    inputs = {"passed_symbols": [{"symbol": "AAPL"}], "symbols": [{"symbol": "AAPL"}]}
+    kind, _ = classify_empty_symbol_source(
+        "historical", evaluated, _Ctx(inputs=inputs), _wf("historical", dict(evaluated)),
+        keys=("symbol", "symbols"),
+    )
+    assert kind == EMPTY_SYMBOLS_UNRESOLVED
+
+
+@pytest.mark.parametrize("scalar", [False, True, 0, 3, "AAPL"])
+def test_binding_resolved_to_scalar_is_unresolved(scalar):
+    raw = {"symbols": "{{ nodes.cond.is_condition_met }}", "method": "fixed_quantity"}
+    kind, detail = classify_empty_symbol_source("sizing", {"symbols": scalar}, _Ctx(), _wf("sizing", raw))
+    assert kind == EMPTY_SYMBOLS_UNRESOLVED
+    assert "not a symbol list" in detail
+
+
+def test_referenced_node_error_is_upstream_failed():
+    raw = {"symbols": "{{ nodes.market.values }}", "method": "fixed_percent"}
+    ctx = _Ctx(node_outputs={"market": {"values": [], "error": "MARKET_DATA_FETCH_FAILED: LS timeout"}})
+    kind, detail = classify_empty_symbol_source("sizing", {"symbols": []}, ctx, _wf("sizing", raw))
+    assert kind == EMPTY_SYMBOLS_UPSTREAM_FAILED
+    assert "LS timeout" in detail
+
+
+def test_sizing_referenced_node_error_returns_fetch_failed_with_warning():
+    raw = {"symbols": "{{ nodes.market.values }}", "method": "fixed_percent", "balance": {"orderable_amount": 100}}
+    ctx = _Ctx(node_outputs={"market": {"values": [], "error": "MARKET_DATA_FETCH_FAILED: LS timeout"}})
+    out = _run_sizing(raw, ctx)
+    assert out["reason"] == EmptyOrderReason.FETCH_FAILED.value
+    assert ctx.warnings_with("No symbols provided for position sizing")
+    assert "LS timeout" in out["detail"]
+
+
+def test_sizing_missing_balance_is_fetch_failed_not_no_signal():
+    """종목은 있는데 balance 바인딩이 없다 — 주문 노드가 D2 상속으로 조용히 no-op 되면 안 된다."""
+    raw = {"symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "method": "fixed_percent", "max_percent": 5}
+    ctx = _Ctx()
+    out = _run_sizing(raw, ctx)
+    assert out["reason"] == EmptyOrderReason.FETCH_FAILED.value
+    assert "balance" in out["detail"]
+
+
+def test_sizing_zero_cash_with_balance_present_is_no_signal():
+    raw = {"symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "method": "fixed_percent",
+           "balance": {"orderable_amount": 0}}
+    out = _run_sizing(raw, _Ctx())
+    assert out["reason"] == EmptyOrderReason.NO_SIGNAL.value
+
+
+def test_sizing_unresolved_balance_literal_is_fetch_failed():
+    raw = {"symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "method": "fixed_percent",
+           "balance": "{{ nodes.ghost.balance }}"}
+    out = _run_sizing(raw, _Ctx(), evaluated={**raw, "balance": None})
+    assert out["reason"] == EmptyOrderReason.FETCH_FAILED.value

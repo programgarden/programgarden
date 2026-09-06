@@ -19,8 +19,17 @@
   - **unresolved** — 표현식이 리터럴로 남았거나(없는 노드, 반복 밖의 `{{ item }}`) **None 으로 풀렸다**(없는
     포트 — 평가기는 없는 포트를 None 으로 관대하게 푼다) → 종전 warning + 표현식·원인 힌트.
   - **unbound** — symbols/symbol 자체가 없다 → 종전 warning + 정본 소스(`passed_symbols`/`symbols`/`{{ item }}`) 안내.
-  `{{ item }}` 이 반복 밖에서 리터럴로 남은 경우는 상류 리스트 포트가 **전부 비어** 반복이 안 일어난 것(no_signal)과
-  배열 소스 없이 item 바인딩을 쓴 것(unresolved)을 `_input_<id>` 로 가른다.
+  `{{ item }}` 이 반복 밖에서 리터럴로 남은 경우는 `_input_<id>` 의 **심볼 포트**(`passed_symbols` > `symbols` >
+  `items`/`values`)가 비어 반복이 안 일어난 것(no_signal)과 배열 소스 없이 item 바인딩을 쓴 것(unresolved)을 가른다
+  — ConditionNode 는 0건 통과일 때도 `symbols`/`failed_symbols` 가 비어 있지 않으므로 "모든 리스트 포트가 비어야" 는
+  틀린 규칙이었다(적대 리뷰).
+  - **upstream_failed** — 바인딩이 가리킨 노드 자체가 `error`/`reason=fetch_failed`/`_partial_failure` 를 냈다(현재가·과거시세의
+    `{"values": [], "error": …}`) → 사이징은 `fetch_failed`, 데이터 노드는 종전 warning/error + 상류 사유.
+  - 스칼라(bool/int/str)로 풀린 바인딩(`result`/`is_condition_met`/`count` 를 묶음)과, 엣지로 **비어 있지 않은** `symbols` 가
+    들어왔는데 바인딩이 없어 못 읽은 경우는 설계 결함(unresolved/unbound) — 이전 초안은 둘 다 no_signal 로 삼켰다(적대 리뷰).
+- **사이징의 잔고 미해석은 no_signal 이 아니다.** 종목은 있는데 `balance` 바인딩이 없거나 리터럴로 남으면 종전엔
+  `reason=no_signal`("No available balance") 로 흘러, 위 주문 노드 상속과 합쳐지면 잔고를 못 읽은 워크플로우가 매일 조용한
+  no-op 이 됐다. 이제 `fetch_failed` + "bind `balance` to AccountNode.balance". 잔고 dict 가 있고 매수가능금액이 0 인 경우만 no_signal.
 - **사이징 상류 error dict 를 가짜 종목으로 만들던 순서 결함.** `symbols` 에 `{"error": …, "values": []}` 가 오면
   `_normalize_symbols` 의 dict 분기가 "error"/"values" 라는 종목 2건을 만들어 그대로 사이징했다(빈-목록 분기에
   영영 안 닿음). 정규화 **전에** error 를 보고 `fetch_failed` 로 돌린다.
