@@ -201,6 +201,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
             "OverseasStockHistoricalDataNode.value → LineChartNode (price chart display)",
         ],
         "pitfalls": [
+            "`symbol: {{ item }}` / `{{ nodes.<split>.item }}` resolves only inside a per-symbol loop (auto-iterate over an upstream array, or a SplitNode branch). If the upstream array is empty for this run the node logs `No symbols to fetch` and returns an empty series — normal no-signal, not a defect. A `No symbols provided` WARNING means the symbol source is missing or the binding did not resolve",
             "Access time_series via `{{ nodes.historical.value.time_series }}` — the value port is a dict, not a plain list",
             "Intraday intervals (1m/5m/15m/1h) may have limited history depth depending on LS Securities API availability",
             "adjust=False (default) returns unadjusted prices; set True when comparing long-term price levels across splits",

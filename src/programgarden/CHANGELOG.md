@@ -1,5 +1,43 @@
 ## [Unreleased]
 
+## [1.33.3] - 2026-09-07
+> AI 모델 벤치마크(2026-09-05~06, 서버 repo `.claude/plans/2026-09-06-engine-defects-from-benchmark.md`)가
+> 라이브로 재현한 엔진 결함 2건. 둘 다 **모델 무관** — 어떤 챗봇 모델이 만들어도 같은 자리에서 죽어,
+> 자동매매 저장 통과율을 모델 교체보다 크게 좌우했다. 동반 릴리즈: `core` **1.25.2**(노드 가이드 문구만).
+
+### Fixed
+- **D2 — "No symbols provided" 3분류: 정상 무신호(no_signal) 를 설계 결함으로 찍지 않는다.**
+  `PositionSizingNode` · `HistoricalDataNode` · `MarketDataNode`(현재가·종목정보) 가 빈 종목 목록을 받으면
+  원인 불문 같은 warning 을 남겼고, 챗봇 저장 게이트(pg-ai `_detect_input_warnings`)는 그 문구를 "종목 소스
+  미연결" 로 읽어 저장을 막았다. 그래서 `symbols: {{ nodes.rsi.passed_symbols }}` / `{{ nodes.filter.symbols }}`
+  로 **올바르게** 배선한 워크플로우가 모의 실행 표본에서 오늘 조건 통과 종목이 0 이라는 이유만으로 저장되지
+  못했다(본선 40여 건 관측의 대부분; DeepSeek Pro 실패 2/2 전부, gpt-5.6 6종 중 5종 관통, 재빌드 루프로
+  시나리오당 $4~5 낭비). 이제 `classify_empty_symbol_source()` 가 원본 설정(`ResolvedWorkflow.nodes[id].config`)
+  과 `_input_<id>` 입력 포트를 보고 세 갈래로 가른다:
+  - **no_signal** — 바인딩/입력 포트가 있고 상류가 빈 목록을 냈다 → info 로만 남기고 사이징은
+    `reason=no_signal` 빈 결과, 과거시세는 빈 시리즈, 현재가는 `values=[]`(error 없음). 저장 게이트 통과.
+  - **unresolved** — 표현식이 리터럴로 남았거나(없는 노드, 반복 밖의 `{{ item }}`) **None 으로 풀렸다**(없는
+    포트 — 평가기는 없는 포트를 None 으로 관대하게 푼다) → 종전 warning + 표현식·원인 힌트.
+  - **unbound** — symbols/symbol 자체가 없다 → 종전 warning + 정본 소스(`passed_symbols`/`symbols`/`{{ item }}`) 안내.
+  `{{ item }}` 이 반복 밖에서 리터럴로 남은 경우는 상류 리스트 포트가 **전부 비어** 반복이 안 일어난 것(no_signal)과
+  배열 소스 없이 item 바인딩을 쓴 것(unresolved)을 `_input_<id>` 로 가른다.
+- **사이징 상류 error dict 를 가짜 종목으로 만들던 순서 결함.** `symbols` 에 `{"error": …, "values": []}` 가 오면
+  `_normalize_symbols` 의 dict 분기가 "error"/"values" 라는 종목 2건을 만들어 그대로 사이징했다(빈-목록 분기에
+  영영 안 닿음). 정규화 **전에** error 를 보고 `fetch_failed` 로 돌린다.
+- **주문 노드가 상류의 `reason=no_signal` 을 물려받는다.** 사이징이 빈 종목 목록(조건 미통과)으로 `orders=[]` 를 내면
+  주문 노드는 `order=None` 을 받는데, `_diagnose_empty_reason` 5) 가 그걸 "종목 미지정(no_symbol)" 으로 분류해
+  `_order_failure_from_outputs` 가 조용한 날마다 "설정 누락" 으로 보고했다. 원본 order 표현식의 상류 출력 또는
+  `_input_<id>` 에 `reason=no_signal` 이 있고 실패 마커(error/_partial_failure/fetch_failed)가 없으면 no_signal.
+  `reason` 이 없는 레거시 빈 출력은 종전대로 no_symbol.
+- (D1, 1.33.2 이후 미발행분) **실시간 시세 per-symbol 루프 예외 핸들러의 `UnboundLocalError: exchange / symbol`.**
+  루프 안에서 할당하는 `exchange`/`symbol` 을 inner `except` 가 참조해, 심볼 항목이 dict 가 아니거나 첫 문장이
+  던지면 진짜 원인을 `UnboundLocalError` 로 가렸다(해외주식·해외선물·국내 실시간 5 루프). 루프 진입 직후 선초기화
+  + 핸들러 메시지에 원 항목(`symbol_entry!r`) 표시.
+
+### Tests
+- `tests/test_empty_symbol_source_classification.py`(3분류 단위 + 사이징/과거시세/현재가 executor + 주문 노드 물려받기),
+  `tests/test_marketdata_handler_unbound_local.py`(D1), `tests/test_order_error_mapping.py` 의 no_signal 판정 갱신.
+
 ## [1.33.2] - 2026-08-28
 > 챗봇 자동매매 제작이 **모의 실행(dry_run) 60초 컷**으로 저장되지 못한 사건(prod 대화
 > f2eed93c) 의 엔진 몫. 모의 실행이 "안 끝난 척"이 아니라 정말 86~95초가 걸렸고, 그 대부분이

@@ -383,15 +383,27 @@ class TestEmptyOrderRealPathBlocker:
         assert reason == EmptyOrderReason.FETCH_FAILED
         assert "COSOQ02701" in detail
 
-    def test_normal_empty_upstream_via_missing_port_is_no_symbol(self):
-        """상류가 정상 빈 결과(실패 신호 없음) + order=None → no_symbol(설정 누락)."""
+    def test_normal_empty_upstream_via_missing_port_inherits_no_signal(self):
+        """상류가 정상 빈 결과(reason=no_signal, 실패 신호 없음) + order=None → no_signal.
+
+        D2(2026-09-06): 종전엔 "order 페이로드 비어있음 → no_symbol(설정 누락)" 이었으나,
+        상류 사이징이 명시적으로 '오늘 신호 없음' 을 냈으면 주문 노드도 그걸 물려받는다 —
+        조용한 날마다 "설정 누락" 경보가 나던 오분류 제거. fetch_failed 오판 금지는 그대로.
+        """
         ex = NewOrderNodeExecutor()
         upstream = {"orders": [], "order": None, "reason": "no_signal"}
         ctx = self._ctx_with_upstream("sizing", upstream)
         reason, _ = ex._diagnose_empty_reason(
             None, {}, "{{ nodes.sizing.order }}", ctx
         )
-        # 상류 실패 신호 없음 → order 페이로드 비어있음 → no_symbol
+        assert reason != EmptyOrderReason.FETCH_FAILED
+        assert reason == EmptyOrderReason.NO_SIGNAL
+
+    def test_normal_empty_upstream_without_reason_is_still_no_symbol(self):
+        """상류가 reason 을 안 실은 빈 결과(레거시 출력) → 종전대로 no_symbol."""
+        ex = NewOrderNodeExecutor()
+        ctx = self._ctx_with_upstream("sizing", {"orders": [], "order": None})
+        reason, _ = ex._diagnose_empty_reason(None, {}, "{{ nodes.sizing.order }}", ctx)
         assert reason == EmptyOrderReason.NO_SYMBOL
 
     def test_unresolved_literal_expression_is_fetch_failed(self):
@@ -543,10 +555,13 @@ class TestExecuteRawOrderExprWiring:
 
         order_result = result["order_result"]
         assert order_result["success"] is False
-        # No upstream failure signal + empty order payload → no_symbol, and
-        # critically NOT fetch_failed (no false positive).
+        # No upstream failure signal → critically NOT fetch_failed (no false
+        # positive). D2 (2026-09-06): the upstream's explicit ``reason=no_signal``
+        # is now inherited — "no trading signal today" is a normal no-op, not
+        # "configuration missing" (no_symbol), so runtime monitoring stops
+        # raising a daily false alarm on quiet days.
         assert order_result["reason"] != "fetch_failed"
-        assert order_result["reason"] == "no_symbol"
+        assert order_result["reason"] == "no_signal"
 
 
 # ---------------------------------------------------------------------------

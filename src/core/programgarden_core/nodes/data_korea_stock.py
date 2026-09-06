@@ -183,6 +183,7 @@ class KoreaStockMarketDataNode(BaseNode):
             "KoreaStockSymbolQueryNode/ConditionNode.passed_symbols → PositionSizingNode.symbols (canonical symbol list)",
         ],
         "pitfalls": [
+            "If the bound symbol source (ConditionNode.passed_symbols / SymbolFilterNode.symbols) is empty for this run the node returns values=[] with no error (normal no-signal). The `symbols 필드가 필수입니다` error is raised only when no symbol source is configured or the binding did not resolve",
             "KoreaStock does not support paper trading — KoreaStockBrokerNode always uses a live session",
             "Symbol must be a 6-digit KRX code without exchange field — do not include exchange key",
             "REST polling returns a snapshot; for tick-level streaming use KoreaStockRealMarketDataNode",

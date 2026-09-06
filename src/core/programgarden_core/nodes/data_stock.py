@@ -184,6 +184,7 @@ class OverseasStockMarketDataNode(BaseNode):
             "OverseasStockMarketDataNode.values → PositionSizingNode.market_data (with symbols + balance)",
         ],
         "pitfalls": [
+            "If the bound symbol source (ConditionNode.passed_symbols / SymbolFilterNode.symbols) is empty for this run the node returns values=[] with no error (normal no-signal). The `symbols 필드가 필수입니다` error is raised only when no symbol source is configured or the binding did not resolve",
             "The symbol field must be a single dict — not a list. Use SplitNode for multi-symbol scenarios",
             "REST polling returns a snapshot at call time; for tick-level streaming use OverseasStockRealMarketDataNode",
             "OverseasStockBrokerNode must be upstream via a main edge for connection auto-injection to work",

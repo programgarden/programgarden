@@ -199,6 +199,7 @@ class KoreaStockHistoricalDataNode(BaseNode):
             "KoreaStockHistoricalDataNode.value → LineChartNode (domestic price history chart)",
         ],
         "pitfalls": [
+            "`symbol: {{ item }}` / `{{ nodes.<split>.item }}` resolves only inside a per-symbol loop (auto-iterate over an upstream array, or a SplitNode branch). If the upstream array is empty for this run the node logs `No symbols to fetch` and returns an empty series — normal no-signal, not a defect. A `No symbols provided` WARNING means the symbol source is missing or the binding did not resolve",
             "Access time_series via `{{ nodes.historical.value.time_series }}` — the value port wraps the list in a dict",
             "Intraday intervals (1m/5m/15m) not supported for Korean domestic stocks — use 1d minimum",
             "adjust=True is the default; set False only if you specifically need unadjusted prices",

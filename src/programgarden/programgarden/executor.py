@@ -778,6 +778,189 @@ def evaluate_all_bindings(
     return {k: evaluate_value(v) for k, v in config.items()}
 
 
+# ---------------------------------------------------------------------------
+# D2 (AI 모델 벤치마크 2026-09-06): "No symbols provided" 3분류
+#
+# 사이징/과거시세/현재가 노드가 빈 종목 목록을 받는 원인은 세 가지인데, 종전에는 전부
+# 같은 warning("No symbols provided …")으로 찍혔다. 챗봇 저장 게이트(pg-ai
+# `_detect_input_warnings`)는 그 문구를 "설계 결함" 으로 읽어 저장을 막으므로, 조건을
+# 올바르게 배선한 워크플로우가 **모의 실행 표본에서 오늘 조건을 통과한 종목이 0** 이라는
+# 이유만으로 저장되지 못했다(벤치 본선: 모델 무관 최대 실패 원인, 40여 건 중 대부분이
+# `symbols: {{ nodes.rsi.passed_symbols }}` / `{{ nodes.filter.symbols }}` 정상 배선).
+#
+#   no_signal  — 원본 설정에 바인딩(또는 입력 포트)이 있고 상류가 이번 실행에서 빈 목록을
+#                냈다. 정상 런타임(오늘 신호 없음). info 로만 남기고 경고를 찍지 않는다.
+#   unresolved — 바인딩 표현식이 리터럴로 남았다(없는 노드/포트, 반복 밖의 `{{ item }}`).
+#   unbound    — symbols/symbol 자체가 없다(종목 소스 미연결).
+# 뒤의 둘은 설계 결함이라 종전처럼 warning("No symbols provided …") 을 유지한다 — 게이트가
+# 계속 잡아야 하는 케이스다.
+# ---------------------------------------------------------------------------
+EMPTY_SYMBOLS_NO_SIGNAL = "no_signal"
+EMPTY_SYMBOLS_UNRESOLVED = "unresolved"
+EMPTY_SYMBOLS_UNBOUND = "unbound"
+
+_EMPTY_VALUES = (None, "", [], {}, ())
+
+
+def _raw_node_config(node_id: str, workflow: Any, fallback: Dict[str, Any]) -> Dict[str, Any]:
+    """`ResolvedWorkflow.nodes[node_id].config` (평가 전 원본). 없으면 fallback."""
+    try:
+        nodes = getattr(workflow, "nodes", None)
+        node = nodes.get(node_id) if isinstance(nodes, dict) else None
+    except Exception:
+        node = None
+    cfg = getattr(node, "config", None)
+    return cfg if isinstance(cfg, dict) else fallback
+
+
+def _input_namespace(context: "ExecutionContext", node_id: str) -> Dict[str, Any]:
+    """`_input_<node_id>` 의사 노드(엣지로 들어온 상류 출력 전체). 없으면 {}."""
+    try:
+        outputs = context.get_all_outputs(f"_input_{node_id}")
+    except Exception:
+        return {}
+    return outputs if isinstance(outputs, dict) else {}
+
+
+def _contains_expression(value: Any) -> bool:
+    if isinstance(value, str):
+        return "{{" in value
+    if isinstance(value, dict):
+        return any(_contains_expression(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_contains_expression(v) for v in value)
+    return False
+
+
+def _first_expression(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        return value if "{{" in value else None
+    if isinstance(value, dict):
+        for v in value.values():
+            found = _first_expression(v)
+            if found:
+                return found
+    if isinstance(value, list):
+        for v in value:
+            found = _first_expression(v)
+            if found:
+                return found
+    return None
+
+
+def classify_empty_symbol_source(
+    node_id: str,
+    evaluated_config: Dict[str, Any],
+    context: "ExecutionContext",
+    workflow: Any = None,
+    keys: Tuple[str, ...] = ("symbols", "symbol"),
+) -> Tuple[str, str]:
+    """빈 종목 입력의 원인을 (kind, detail) 로 돌려준다.
+
+    kind ∈ {EMPTY_SYMBOLS_NO_SIGNAL, EMPTY_SYMBOLS_UNRESOLVED, EMPTY_SYMBOLS_UNBOUND}.
+    detail 은 사람이 읽는 한 문장(영문 — 챗봇 fix_hint 로 그대로 실린다).
+
+    판정 순서:
+      1. 평가된 값에 `{{ … }}` 가 리터럴로 남아 있다 → 미해석.
+         단 `{{ item }}`/`{{ index }}` 인데 반복 컨텍스트가 없으면, 상류 배열이 비어
+         반복이 안 일어난 것(no_signal)과 배열 소스 없이 item 바인딩을 쓴 것(unresolved)을
+         `_input_<id>` 의 리스트 포트로 가른다.
+      2. 원본 설정에 바인딩/리터럴이 있었거나 입력 포트로 값이 들어왔다 → 상류가 빈 목록을
+         낸 것(no_signal). 원본이 표현식 없는 리터럴 목록인데 정규화 결과가 비었다면 항목
+         모양이 틀린 것(unbound 로 분류하되 detail 로 알린다).
+      3. 그 외 → 종목 소스 미연결(unbound).
+    """
+    import re as _re
+
+    item_re = _re.compile(r"\{\{\s*(item|index)\b")
+    raw = _raw_node_config(node_id, workflow, evaluated_config)
+    inputs = _input_namespace(context, node_id)
+    iterating = getattr(context, "_iteration_item", None) is not None
+
+    # 1) 미해석 표현식
+    for key in keys:
+        value = evaluated_config.get(key)
+        expr = _first_expression(value)
+        if not expr:
+            continue
+        if item_re.search(expr) and not iterating:
+            list_ports = {
+                k: v for k, v in inputs.items()
+                if isinstance(v, list) and not str(k).startswith("_")
+            }
+            if list_ports and all(len(v) == 0 for v in list_ports.values()):
+                return (
+                    EMPTY_SYMBOLS_NO_SIGNAL,
+                    f"`{key}: {expr}` — the upstream array "
+                    f"({', '.join(sorted(list_ports))}) is empty in this run, so there is "
+                    "nothing to iterate (no signal)",
+                )
+            return (
+                EMPTY_SYMBOLS_UNRESOLVED,
+                f"`{key}: {expr}` is an item binding but this node is not being iterated — "
+                "`{{ item }}` only resolves downstream of an array output "
+                "(WatchlistNode.symbols / ConditionNode.passed_symbols / SymbolFilterNode.symbols) "
+                "or inside a SplitNode branch",
+            )
+        return (
+            EMPTY_SYMBOLS_UNRESOLVED,
+            f"`{key}: {expr}` did not resolve — check the node id and output port "
+            "(e.g. `{{ nodes.<condition>.passed_symbols }}` / `{{ nodes.<filter>.symbols }}`)",
+        )
+
+    # 2) 바인딩/입력 포트는 있는데 결과가 빈 목록
+    bound_key = None
+    for key in keys:
+        if raw.get(key) not in _EMPTY_VALUES:
+            bound_key = key
+            break
+    port_key = next((k for k in keys if k in inputs), None)
+
+    if bound_key is not None:
+        raw_value = raw[bound_key]
+        if _contains_expression(raw_value):
+            expr = _first_expression(raw_value)
+            # 표현식이 **빈 목록이 아니라 None** 으로 풀렸다 = 참조한 노드/포트가 없다
+            # (평가기는 없는 포트를 None 으로 관대하게 푼다). 실제 종목 소스(ConditionNode.
+            # passed_symbols / SymbolFilterNode.symbols …)는 비어도 항상 [] 를 낸다.
+            if evaluated_config.get(bound_key) is None and bound_key not in inputs:
+                return (
+                    EMPTY_SYMBOLS_UNRESOLVED,
+                    f"`{bound_key}: {expr}` resolved to nothing — the referenced node id or "
+                    "output port does not exist (check the spelling; e.g. "
+                    "`{{ nodes.<condition>.passed_symbols }}` / `{{ nodes.<filter>.symbols }}`)",
+                )
+            return (
+                EMPTY_SYMBOLS_NO_SIGNAL,
+                f"upstream symbol source `{bound_key}: {expr}` "
+                "produced no symbols in this run (no signal)",
+            )
+        if isinstance(raw_value, (list, dict)):
+            return (
+                EMPTY_SYMBOLS_UNBOUND,
+                f"`{bound_key}` is a literal list but none of its entries is a usable "
+                "{symbol, exchange} object or symbol string",
+            )
+        return (
+            EMPTY_SYMBOLS_NO_SIGNAL,
+            f"symbol source `{bound_key}` resolved to nothing in this run (no signal)",
+        )
+    if port_key is not None:
+        return (
+            EMPTY_SYMBOLS_NO_SIGNAL,
+            f"the upstream node wired into this node emitted an empty `{port_key}` list "
+            "in this run (no signal)",
+        )
+
+    # 3) 소스 없음
+    return (
+        EMPTY_SYMBOLS_UNBOUND,
+        "no symbol source is configured — bind `symbols` to an upstream list "
+        "(`{{ nodes.<condition>.passed_symbols }}` / `{{ nodes.<filter>.symbols }}` / "
+        "`{{ nodes.<watchlist>.symbols }}`) or `symbol` to `{{ item }}` inside a per-symbol loop",
+    )
+
+
 class GenericNodeExecutor(NodeExecutorBase):
     """
     범용 노드 실행기 (커뮤니티 노드 및 execute() 메서드가 있는 노드용)
@@ -10275,7 +10458,18 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             return _df.apply_override(fixture, override)
 
         if not symbols:
-            error_msg = "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요."
+            # D2: 상류(조건/필터)가 이번 실행에서 빈 목록을 낸 정상 케이스는 error 없이 빈
+            # values 로 흘린다(오늘 조회할 종목 없음). 소스 미연결/미해석만 종전 error.
+            kind, detail = classify_empty_symbol_source(
+                node_id, config, context, kwargs.get("workflow"), keys=("symbol", "symbols")
+            )
+            if kind == EMPTY_SYMBOLS_NO_SIGNAL:
+                context.log("info", f"No symbols to quote in this run — {detail}", node_id)
+                return {"values": []}
+            error_msg = (
+                "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요. "
+                f"({detail})"
+            )
             context.log("error", error_msg, node_id)
             return {"error": error_msg, "values": []}
 
@@ -10647,7 +10841,17 @@ class FundamentalNodeExecutor(NodeExecutorBase):
                 symbols = [config_symbol]
 
         if not symbols:
-            error_msg = "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요."
+            # D2: MarketDataNodeExecutor 와 같은 3분류 — 정상 no-signal 은 error 없이 빈 values.
+            kind, detail = classify_empty_symbol_source(
+                node_id, config, context, kwargs.get("workflow"), keys=("symbol", "symbols")
+            )
+            if kind == EMPTY_SYMBOLS_NO_SIGNAL:
+                context.log("info", f"No symbols to look up in this run — {detail}", node_id)
+                return {"values": []}
+            error_msg = (
+                "symbols 필드가 필수입니다. 종목을 직접 입력하거나 WatchlistNode를 연결하세요. "
+                f"({detail})"
+            )
             context.log("error", error_msg, node_id)
             return {"error": error_msg, "values": []}
 
@@ -11003,7 +11207,16 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             # / ConditionNode 의 `item.time_series`)이 조용히 None 이 되고 방어적
             # `data or []` 가 그걸 삼켜 에러 없이 빈 결과(count:0)를 낸다.
             # (deep_fixtures.historical_data_fixture 도 이 스키마를 못박는다.)
-            context.log("warning", "No symbols provided", node_id)
+            # D2: 상류 배열이 비어 반복이 없었던 것(정상 no-signal)은 info, 소스 미연결/
+            # 미해석 바인딩(설계 결함)만 warning("No symbols provided …") — 챗봇 저장
+            # 게이트가 이 문구를 결함으로 읽으므로 정상 케이스에는 찍지 않는다.
+            kind, detail = classify_empty_symbol_source(
+                node_id, config, context, kwargs.get("workflow"), keys=("symbol", "symbols")
+            )
+            if kind == EMPTY_SYMBOLS_NO_SIGNAL:
+                context.log("info", f"No symbols to fetch in this run — {detail}", node_id)
+            else:
+                context.log("warning", f"No symbols provided — {detail}", node_id)
             return {
                 "value": None,
                 "values": [],
@@ -12762,18 +12975,43 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         kelly_fraction = float(evaluated.get("kelly_fraction", 0.25))
         atr_risk_percent = float(evaluated.get("atr_risk_percent", 1.0))
         
+        # 상류가 error 신호를 동봉한 dict(예: `{"error": …, "values": []}`)를 symbols 로
+        # 넘겼으면 fetch_failed. 정규화 **전에** 본다 — `_normalize_symbols` 의 dict 분기는
+        # `{종목: {...}}` 맵 전용이라, error 페이로드를 넣으면 "error"/"values" 라는 가짜
+        # 종목 2건이 만들어져 사이징이 그대로 진행됐다(빈-목록 분기에 영영 안 닿음).
+        if isinstance(symbols_input, dict) and symbols_input.get("error"):
+            err = str(symbols_input.get("error"))
+            context.log(
+                "warning",
+                f"No symbols provided for position sizing — upstream fetch failed: {err}",
+                node_id,
+            )
+            return self._empty_result(EmptyOrderReason.FETCH_FAILED, err)
+
         # 종목 리스트 정규화
         symbols = self._normalize_symbols(symbols_input)
         
         if not symbols:
-            context.log("warning", "No symbols provided for position sizing", node_id)
-            # 상류가 빈 리스트에 error 신호를 동봉했으면 fetch_failed, 아니면 종목 미지정.
-            err = None
-            if isinstance(symbols_input, dict) and symbols_input.get("error"):
-                err = str(symbols_input.get("error"))
-            if err:
-                return self._empty_result(EmptyOrderReason.FETCH_FAILED, err)
-            return self._empty_result(EmptyOrderReason.NO_SYMBOL, "")
+            # D2: "오늘 신호 없음(정상)" 과 "종목 소스 미연결/미해석(설계 결함)" 을 가른다.
+            # 전자는 warning 을 찍지 않는다 — 챗봇 저장 게이트가 "No symbols provided" 를
+            # 설계 결함으로 읽어, 올바로 배선된 워크플로우가 모의 실행 표본에서 조건 통과
+            # 종목이 0 이라는 이유만으로 저장되지 못했다(벤치 본선 최대 실패 원인).
+            kind, detail = classify_empty_symbol_source(
+                node_id, evaluated, context, kwargs.get("workflow"), keys=("symbols", "symbol")
+            )
+            if kind == EMPTY_SYMBOLS_NO_SIGNAL:
+                context.log(
+                    "info",
+                    f"No symbols to size in this run — {detail}; sizing skipped",
+                    node_id,
+                )
+                return self._empty_result(EmptyOrderReason.NO_SIGNAL, detail)
+            context.log(
+                "warning",
+                f"No symbols provided for position sizing — {detail}",
+                node_id,
+            )
+            return self._empty_result(EmptyOrderReason.NO_SYMBOL, detail)
         
         # Refuse to silently zero-out when the upstream AccountNode flagged
         # a partial fetch. fixed_quantity ignores balance entirely, so it
@@ -13919,7 +14157,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         if not normalized_order:
             context.log("warning", f"{node_type}: 주문할 종목이 없습니다", node_id)
             reason, detail = self._diagnose_empty_reason(
-                order, config, raw_order_expr, context
+                order, config, raw_order_expr, context, node_id=node_id
             )
             return self._empty_result(reason, detail)
 
@@ -14149,6 +14387,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         config: Dict[str, Any],
         raw_order_expr: Any = None,
         context: Optional[ExecutionContext] = None,
+        node_id: Optional[str] = None,
     ) -> tuple:
         """빈 주문 결과의 reason 을 상류 신호로 판정.
 
@@ -14198,6 +14437,23 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             err = self._extract_upstream_error(upstream)
             if err is not None:
                 return EmptyOrderReason.FETCH_FAILED, err
+
+        # 3.5) 상류가 명시적으로 "오늘 신호 없음"(reason=no_signal) 을 냈으면 정상 no-op.
+        #      D2(벤치 2026-09-06): 사이징이 빈 종목 목록(조건 미통과)을 받아 orders=[] 를
+        #      내면 주문 노드는 order=None 을 받는데, 아래 5) 가 그걸 "종목 미지정(no_symbol)"
+        #      으로 분류해 `_order_failure_from_outputs` 가 매 실행 "설정 누락" 으로 보고했다.
+        #      상류의 no_signal 은 실패 신호(error/_partial_failure/fetch_failed)가 없을 때만
+        #      그대로 물려받는다.
+        for candidate in (upstream, _input_namespace(context, node_id) if (context is not None and node_id) else None):
+            if (
+                isinstance(candidate, dict)
+                and candidate.get("reason") == EmptyOrderReason.NO_SIGNAL.value
+                and self._extract_upstream_error(candidate) is None
+            ):
+                return (
+                    EmptyOrderReason.NO_SIGNAL,
+                    str(candidate.get("detail") or candidate.get("message") or ""),
+                )
 
         # 4) 상류가 낸 빈 리스트에 실패 신호 동봉 → 조회 실패(파이프라인 고장).
         #    order/symbols 바인딩 결과가 dict 이면서 error/_partial_failure/

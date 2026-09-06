@@ -200,6 +200,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
             "OverseasFuturesHistoricalDataNode.value → LineChartNode (price history display)",
         ],
         "pitfalls": [
+            "`symbol: {{ item }}` / `{{ nodes.<split>.item }}` resolves only inside a per-symbol loop (auto-iterate over an upstream array, or a SplitNode branch). If the upstream array is empty for this run the node logs `No symbols to fetch` and returns an empty series — normal no-signal, not a defect. A `No symbols provided` WARNING means the symbol source is missing or the binding did not resolve",
             "Bind `.time_series` not `.value` to ConditionNode data — the value port wraps the list in a dict",
             "Use OverseasFuturesBrokerNode (not OverseasStockBrokerNode) upstream",
             "Contract month codes change every quarter — update symbol (e.g., ESH26 → ESM26) when rolling",
