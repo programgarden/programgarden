@@ -1,5 +1,34 @@
 ## [Unreleased]
 
+## [1.33.4] - 2026-09-08
+> LS증권 OPEN API 공지(**2026-09-12(토) 12:00** 적용)의 국내주식 TR 필드 추가를 반영하는
+> 릴리즈. 엔진 로직 변경은 없고 `finance` 의 TR 블록 스키마만 넓힌다.
+> 동반 릴리즈: `finance` **1.9.3**. (`core` 1.25.2 · `community` 1.15.1 변경 없음.)
+
+### Added
+- **(finance 1.9.3) LS 국내주식 TR 신규 필드 26종 반영** — 공지 대상 8종 중 이 저장소가
+  구현 중인 6종:
+  - InBlock `exchgubun`(거래소구분코드, `'K'`/`'N'`/`'U'`, 기본 `'K'`) — `t1901`·`t1903`·`t1904`
+    (`t8451`·`t8452`·`t8453` 은 이미 보유).
+  - OutBlock `ex_shcode`(거래소별종목코드) — `t1901`·`t1903`·`t1904`(OutBlock·OutBlock1).
+  - OutBlock `nxt_vi_gubun`(NXTVI발동해제) — `t1901`. 기존 `vi_gubun` 의 NXT 대응.
+  - OutBlock KRX 프리/애프터마켓 시간 6종 — `t8451`·`t8452`·`t8453`:
+    `krx_fm_s_time`·`krx_fm_e_time`·`krx_fm_dshmin`·
+    `krx_am_s_time`·`krx_am_e_time`·`krx_am_dshmin`.
+    같은 블록의 기존 `nxt_*` 6종과 1:1 대응.
+
+  반영하지 않으면 신규 필드가 응답에 실려 와도 pydantic 이 미정의 키를 무시해 **오류 없이
+  조용히 버려진다.** 신규 OutBlock 필드는 전부 기본값이 있어 적용일 이전 응답도 그대로
+  파싱되고, InBlock 의 `exchgubun` 기본값 `'K'` 는 `t8451` 계열이 이미 하던 동작과 같다.
+
+### Changed
+- deps: `programgarden-finance` **^1.9.1 → ^1.9.3**.
+
+### Notes
+- `t1902`(ETF시간별추이) · `t1906`(ETF LP호가) 는 이 저장소에 **미구현**이라 공지의 해당
+  항목은 반영 대상이 없다. 신규 TR 로 추가하려면 공지의 "추가 필드" 목록만으로는 부족하고
+  전체 블록 정의(LS 개발자센터 가이드)가 필요하다.
+
 ## [1.33.3] - 2026-09-07
 > AI 모델 벤치마크(2026-09-05~06, 서버 repo `.claude/plans/2026-09-06-engine-defects-from-benchmark.md`)가
 > 라이브로 재현한 엔진 결함 2건. 둘 다 **모델 무관** — 어떤 챗봇 모델이 만들어도 같은 자리에서 죽어,
