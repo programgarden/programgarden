@@ -4,8 +4,8 @@ t1903 returns a per-day historical time series for a Korean-market ETF
 or ETN issue. The response carries:
 
     - ``OutBlock`` (``cont_block``) — header row with the continuation
-      cursor (``date``) plus the issue's Korean name and the benchmark
-      sector / index name.
+      cursor (``date``) plus the issue's Korean name, the benchmark
+      sector / index name, and the exchange-specific issue code.
     - ``OutBlock1`` (``block``) — list of per-day rows: trade date,
       closing price + previous-close direction + change, traded volume,
       NAV + NAV change vs. price (``navdiff``), NAV-period change
@@ -76,6 +76,16 @@ class T1903InBlock(BaseModel):
         ),
         examples=[""],
     )
+    exchgubun: Literal["K", "N", "U"] = Field(
+        default="K",
+        title="거래소구분코드 (Exchange division code)",
+        description=(
+            "Exchange division code. 'K' = KRX (한국거래소), 'N' = NXT "
+            "(넥스트레이드), 'U' = unified (통합). Added by the LS TR change "
+            "of 2026-09-12."
+        ),
+        examples=["K", "N", "U"],
+    )
 
 
 class T1903OutBlock(BaseModel):
@@ -102,6 +112,15 @@ class T1903OutBlock(BaseModel):
         title="업종지수명 (Sector / benchmark index name)",
         description="Sector / benchmark index name that the ETF tracks.",
         examples=["KOSPI200"],
+    )
+    ex_shcode: str = Field(
+        default="",
+        title="거래소별종목코드 (Exchange-specific issue code)",
+        description=(
+            "Exchange-resolved issue code. Format and semantics not declared "
+            "in available source. Added by the LS TR change of 2026-09-12."
+        ),
+        examples=[""],
     )
 
 

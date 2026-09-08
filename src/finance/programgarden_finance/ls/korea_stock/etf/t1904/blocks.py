@@ -9,15 +9,16 @@ carries:
       volume), NAV + previous-day NAV (with direction / change / ratio),
       sector reference, front-month future reference, benchmark index
       reference, ETF total NAV (in 100M-KRW units), constituent-issue
-      count, CU share count, cash position, management company, and
-      aggregate evaluation / market-cap totals.
+      count, CU share count, cash position, management company,
+      aggregate evaluation / market-cap totals, and the
+      exchange-specific issue code.
     - ``OutBlock1`` (``block``) — list of per-constituent rows: short
       code, name, current price + previous-close direction + change +
       ratio, traded volume, traded value (in 백만 / million KRW units),
       unit count for index / cash / collateral / contracts, par price /
       setup-cash amount, evaluation amount, constituent market cap,
-      PDF date, weight in evaluation amount, and per-constituent vs.
-      ETF return spread.
+      PDF date, weight in evaluation amount, per-constituent vs.
+      ETF return spread, and the exchange-specific issue code.
 
 Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and
 the 2026-05-06 finance TR field metadata plan):
@@ -87,6 +88,16 @@ class T1904InBlock(BaseModel):
             "amount (평가금액), '2' = sort by security count (증권수)."
         ),
         examples=["1", "2"],
+    )
+    exchgubun: Literal["K", "N", "U"] = Field(
+        default="K",
+        title="거래소구분코드 (Exchange division code)",
+        description=(
+            "Exchange division code. 'K' = KRX (한국거래소), 'N' = NXT "
+            "(넥스트레이드), 'U' = unified (통합). Added by the LS TR change "
+            "of 2026-09-12."
+        ),
+        examples=["K", "N", "U"],
     )
 
 
@@ -333,6 +344,16 @@ class T1904OutBlock(BaseModel):
         description="Aggregate constituent market-cap total. Currency unit not declared in available source.",
         examples=[2500000000],
     )
+    ex_shcode: str = Field(
+        default="",
+        title="거래소별종목코드 (Exchange-specific issue code)",
+        description=(
+            "Exchange-resolved issue code for the queried ETF. Format and "
+            "semantics not declared in available source. Added by the LS TR "
+            "change of 2026-09-12."
+        ),
+        examples=[""],
+    )
 
 
 class T1904OutBlock1(BaseModel):
@@ -449,6 +470,16 @@ class T1904OutBlock1(BaseModel):
             "in available source."
         ),
         examples=[0.06, -0.04, 0.0],
+    )
+    ex_shcode: str = Field(
+        default="",
+        title="거래소별종목코드 (Exchange-specific issue code)",
+        description=(
+            "Exchange-resolved issue code for the constituent issue. Format "
+            "and semantics not declared in available source. Added by the LS "
+            "TR change of 2026-09-12."
+        ),
+        examples=[""],
     )
 
 

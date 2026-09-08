@@ -13,7 +13,8 @@ carries one ``OutBlock`` (no ``OutBlock1``) with:
     - Foreign-broker aggregate sell / buy totals.
     - Reference index name + code + current price (참고지수 — the
       benchmark the ETF tracks).
-    - ETF / ETN classification, replication method (복제방법), VI flag,
+    - ETF / ETN classification, replication method (복제방법), KRX and
+      NXT VI flags,
       management company (운용사), up to 5 LPs (Liquidity Providers),
       ETN maturity / payment / final-trading dates and ETN-specific
       flags, listing date, and tracking-return multiplier (레버리지).
@@ -69,6 +70,16 @@ class T1901InBlock(BaseModel):
         title="단축코드 (Short code)",
         description="6-digit Korean ETF / ETN short code (e.g., '069500' for KODEX 200).",
         examples=["069500"],
+    )
+    exchgubun: Literal["K", "N", "U"] = Field(
+        default="K",
+        title="거래소구분코드 (Exchange division code)",
+        description=(
+            "Exchange division code. 'K' = KRX (한국거래소), 'N' = NXT "
+            "(넥스트레이드), 'U' = unified (통합). Added by the LS TR change "
+            "of 2026-09-12."
+        ),
+        examples=["K", "N", "U"],
     )
 
 
@@ -945,6 +956,27 @@ class T1901OutBlock(BaseModel):
             "-1.0 = inverse). Decimal scale not declared in available source."
         ),
         examples=[1.0, 2.0, -1.0],
+    )
+    nxt_vi_gubun: str = Field(
+        default="",
+        title="NXTVI발동해제 (NXT volatility-interruption activation flag)",
+        description=(
+            "NXT (넥스트레이드) Volatility Interruption activation / release "
+            "flag, the NXT counterpart of ``vi_gubun``. Code values not "
+            "declared in available source; consume as returned by LS. Added "
+            "by the LS TR change of 2026-09-12."
+        ),
+        examples=[""],
+    )
+    ex_shcode: str = Field(
+        default="",
+        title="거래소별단축코드 (Exchange-specific short code)",
+        description=(
+            "Exchange-resolved short code for the issue. Format and semantics "
+            "not declared in available source. Added by the LS TR change of "
+            "2026-09-12."
+        ),
+        examples=[""],
     )
 
 

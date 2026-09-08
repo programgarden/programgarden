@@ -4,8 +4,8 @@ t8451 returns OHLCV chart data for a domestic stock symbol at one of four
 period types (daily / weekly / monthly / yearly). The response carries:
 
     - ``OutBlock`` (``block``) — chart metadata: previous-day OHLCV,
-      today's OHLCV, daily limits, session timing constants, NXT premarket /
-      aftermarket session timing, and the continuation key (``cts_date``).
+      today's OHLCV, daily limits, session timing constants, NXT and KRX
+      premarket / aftermarket session timing, and the continuation key (``cts_date``).
     - ``OutBlock1`` (``block1``) — list of period rows (date, OHLC, volume,
       value, adjustment-related fields, sign).
 
@@ -290,6 +290,42 @@ class T8451OutBlock(BaseModel):
         default="",
         title="NXT에프터마켓동시호가처리시간 (NXT aftermarket single-price auction window length)",
         description="NXT aftermarket single-price auction window length in minutes ('MM').",
+        examples=[""],
+    )
+    krx_fm_s_time: str = Field(
+        default="",
+        title="KRX프리마켓장시작시간 (KRX premarket start time)",
+        description="KRX premarket session start time in 'HHMMSS' format. Empty when not applicable. Added by the LS TR change of 2026-09-12.",
+        examples=[""],
+    )
+    krx_fm_e_time: str = Field(
+        default="",
+        title="KRX프리마켓장종료시간 (KRX premarket end time)",
+        description="KRX premarket session end time in 'HHMMSS' format. Added by the LS TR change of 2026-09-12.",
+        examples=[""],
+    )
+    krx_fm_dshmin: str = Field(
+        default="",
+        title="KRX프리마켓동시호가처리시간 (KRX premarket single-price auction window length)",
+        description="KRX premarket single-price auction window length in minutes ('MM'). Added by the LS TR change of 2026-09-12.",
+        examples=[""],
+    )
+    krx_am_s_time: str = Field(
+        default="",
+        title="KRX애프터마켓장시작시간 (KRX aftermarket start time)",
+        description="KRX aftermarket session start time in 'HHMMSS' format. Added by the LS TR change of 2026-09-12.",
+        examples=[""],
+    )
+    krx_am_e_time: str = Field(
+        default="",
+        title="KRX애프터마켓장종료시간 (KRX aftermarket end time)",
+        description="KRX aftermarket session end time in 'HHMMSS' format. Added by the LS TR change of 2026-09-12.",
+        examples=[""],
+    )
+    krx_am_dshmin: str = Field(
+        default="",
+        title="KRX애프터마켓동시호가처리시간 (KRX aftermarket single-price auction window length)",
+        description="KRX aftermarket single-price auction window length in minutes ('MM'). Added by the LS TR change of 2026-09-12.",
         examples=[""],
     )
 
