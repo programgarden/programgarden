@@ -7,9 +7,12 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
 2026-05-06 finance TR field metadata plan):
     - Description text mirrors the LS Korean source labels translated into English.
       Korean source label is appended in parentheses for AI chatbot Korean↔English mapping.
-    - Field length, decimal scale, currency unit, and complete enum mappings are NOT declared
-      in the source available to this codebase. Where ambiguous, descriptions state
-      "consume as returned by LS."
+    - The LS field table supplied by the user on 2026-09-09 provides field lengths,
+      numeric scales and selected enums; see docs/cidbq02400_contract.md in this package.
+      Currency units, fee additivity and missing enum meanings remain unspecified.
+    - The published table and example disagree on the output status code and
+      same-day input dates. Preserve the conflict; do not constrain response enums
+      or infer undocumented values from the example.
     - Commission fields (CsgnCmsn, FcmCmsn, ThcoCmsn, etc.) include positive and zero examples.
     - ``examples`` come from ``src/finance/example/overseas_futureoption/run_CIDBQ02400.py``
       where present, plus safe placeholder values ("12345678901" for account numbers).
@@ -41,7 +44,7 @@ class CIDBQ02400InBlock1(BaseModel):
         title="Issue code value (종목코드값)",
         description=(
             "Instrument code for the overseas futures/options symbol to query. "
-            "From the example script: 'ADM23'. Length not declared in available source."
+            "From the example script: 'ADM23'. Published length: 30."
         ),
         examples=["ADM23", "ESM26", "NQU26"],
     )
@@ -50,20 +53,20 @@ class CIDBQ02400InBlock1(BaseModel):
         ...,
         title="Query start date (조회시작일자)",
         description=(
-            "Query start date in YYYYMMDD format. Used for historical queries. "
-            "From the example script: '20230516'."
+            "Query start date in YYYYMMDD format for historical queries (ThdayTpCode='0'). "
+            "Send an empty string for same-day queries (ThdayTpCode='1'). Published length: 8."
         ),
-        examples=["20230516", "20260101"],
+        examples=["20230516", "20260101", ""],
     )
 
     QryEndDt: str = Field(
         ...,
         title="Query end date (조회종료일자)",
         description=(
-            "Query end date in YYYYMMDD format. Used for historical queries. "
-            "From the example script: '20230609'."
+            "Query end date in YYYYMMDD format for historical queries (ThdayTpCode='0'). "
+            "Send an empty string for same-day queries (ThdayTpCode='1'). Published length: 8."
         ),
-        examples=["20230609", "20260131"],
+        examples=["20230609", "20260131", ""],
     )
 
     ThdayTpCode: Literal["0", "1"] = Field(
@@ -158,7 +161,7 @@ class CIDBQ02400OutBlock1(BaseModel):
     AcntNo: str = Field(
         default="",
         title="Account number (계좌번호)",
-        description="Account number for the query. Length not declared in available source.",
+        description="Account number for the query. Published length: 20.",
         examples=["12345678901"],
     )
 
@@ -239,9 +242,9 @@ class CIDBQ02400OutBlock1(BaseModel):
 class CIDBQ02400OutBlock2(BaseModel):
     """CIDBQ02400OutBlock2 — per-order/execution detail row (Occurs).
 
-    One record per order or execution event. Field length, decimal scale, currency unit,
-    and complete enum mappings are not declared in the source available to this codebase —
-    consume as returned by LS.
+    One record per order or execution event. Published lengths and numeric scales
+    are recorded in docs/cidbq02400_contract.md. Currency units and complete enum
+    semantics remain unspecified; consume raw values without invented mappings.
     """
 
     OrdDt: str = Field(
@@ -312,7 +315,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Overseas futures exercise price (해외선물행사가격)",
         description=(
             "Strike / exercise price. 0 for futures contracts. "
-            "Decimal scale not declared in available source."
+            "Published numeric length/scale: 30.11."
         ),
         examples=[0.0, 5000.0],
     )
@@ -335,17 +338,19 @@ class CIDBQ02400OutBlock2(BaseModel):
         default="",
         title="Futures order status code (선물주문상태코드)",
         description=(
-            "Order status code. Enum mapping not declared in available source — "
-            "consume as returned by LS."
+            "Published table: '0'=all, '1'=executed, '2'=unexecuted. The same "
+            "published response example reports '4' with TrdTpNm='체결', positive "
+            "ExecQty, an execution number and ExecDttm. Preserve this discrepancy; "
+            "do not reject other values or identify executed rows using '1' alone."
         ),
-        examples=["", "1", "2"],
+        examples=["", "1", "2", "4"],
     )
 
     TpCodeNm: str = Field(
         default="",
         title="Type code name (구분코드명)",
-        description="Order classification name as returned by LS (e.g., 신규, 정정, 취소).",
-        examples=["", "신규", "정정", "취소"],
+        description="Published classification labels: 신규, 정정, 취소, 이관, 수관, 소멸, 장애.",
+        examples=["", "신규", "정정", "취소", "이관", "수관", "소멸", "장애"],
     )
 
     FutsOrdTpCode: str = Field(
@@ -422,7 +427,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Overseas derivative order price (해외파생주문가격)",
         description=(
             "Order price. 0 for market orders. "
-            "Decimal scale not declared in available source."
+            "Published numeric length/scale: 30.11."
         ),
         examples=[0.0, 4500.25, 1900.0],
     )
@@ -466,7 +471,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         default=0.0,
         title="Overseas futures execution price (해외선물체결가격)",
         description=(
-            "Execution price. Decimal scale not declared in available source."
+            "Execution price. Published numeric length/scale: 30.11."
         ),
         examples=[0.0, 4502.50],
     )
@@ -476,7 +481,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Order condition price (주문조건가격)",
         description=(
             "Stop trigger price. 0 when not applicable. "
-            "Decimal scale not declared in available source."
+            "Published numeric length/scale: 30.11."
         ),
         examples=[0.0, 4490.0],
     )
@@ -486,7 +491,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Overseas derivative current price (해외파생현재가)",
         description=(
             "Current market price at query time. "
-            "Decimal scale not declared in available source."
+            "Published numeric length/scale: 30.11."
         ),
         examples=[0.0, 4510.0],
     )
@@ -511,8 +516,12 @@ class CIDBQ02400OutBlock2(BaseModel):
     TrxStatCodeNm: str = Field(
         default="",
         title="Processing status code name (처리상태코드명)",
-        description="Display name of the processing status.",
-        examples=["", "처리완료"],
+        description=(
+            "Published processing-status labels: 체결, 체결취소. The table does not "
+            "define the numeric code mapping or the latter label's accounting effect; "
+            "retain the original value without inferring an order cancellation or reversal."
+        ),
+        examples=["", "체결", "체결취소"],
     )
 
     CsgnCmsn: float = Field(
@@ -520,7 +529,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Consignment commission (위탁수수료)",
         description=(
             "Commission charged by LS for the consignment. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[5.0, 0.0],
     )
@@ -530,7 +539,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="FCM commission (FCM수수료)",
         description=(
             "Commission charged by the FCM. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 21.4. Currency is not specified."
         ),
         examples=[2.0, 0.0],
     )
@@ -540,7 +549,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Company commission (당사수수료)",
         description=(
             "Internal company commission. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[1.0, 0.0],
     )
@@ -548,8 +557,13 @@ class CIDBQ02400OutBlock2(BaseModel):
     MdaCode: str = Field(
         default="",
         title="Media code (매체코드)",
-        description="Channel/media code used to place the order.",
-        examples=["", "00", "10"],
+        description=(
+            "Published media codes: 00=branch, 22=iPhone, 23=Android, 41=API, "
+            "43=Robo API, 85=HTS, 96=final settlement, LP=loss cut, SK=CashCall, "
+            "SO=conditional order. The example's '40' is not mapped by this table; "
+            "preserve unknown values. Published length: 2."
+        ),
+        examples=["", "00", "41", "43", "40"],
     )
 
     MdaCodeNm: str = Field(
@@ -583,7 +597,11 @@ class CIDBQ02400OutBlock2(BaseModel):
     ExecDttm: str = Field(
         default="",
         title="Execution datetime (체결일시)",
-        description="Execution datetime in YYYYMMDDHHMMSSsss format. Empty for unexecuted orders.",
+        description=(
+            "Actual execution datetime in YYYYMMDDHHMMSSsss format (published length: 17). "
+            "Use this execution timestamp for interval membership, not OrdSndDttm "
+            "(order send time) or the order date. Empty for unexecuted orders."
+        ),
         examples=["", "20230609093016500"],
     )
 
@@ -592,7 +610,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Exchange fee 1 commission amount (거래소비용1수수료금액)",
         description=(
             "Exchange cost 1 fee. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 1.25],
     )
@@ -602,7 +620,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Exchange fee 2 commission amount (거래소비용2수수료금액)",
         description=(
             "Exchange cost 2 fee. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.75],
     )
@@ -612,7 +630,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="London clearing house 1 commission amount (런던청산소1수수료금액)",
         description=(
             "London clearing house cost 1. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.50],
     )
@@ -622,7 +640,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="London clearing house 2 commission amount (런던청산소2수수료금액)",
         description=(
             "London clearing house cost 2. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.25],
     )
@@ -632,7 +650,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Trade 1 commission amount (거래1수수료금액)",
         description=(
             "Trade fee component 1. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.10],
     )
@@ -642,7 +660,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Trade 2 commission amount (거래2수수료금액)",
         description=(
             "Trade fee component 2. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.10],
     )
@@ -652,7 +670,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Trade 3 commission amount (거래3수수료금액)",
         description=(
             "Trade fee component 3. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.05],
     )
@@ -662,7 +680,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Short-term 1 commission amount (단기1수수료금액)",
         description=(
             "Short-term fee component 1. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.05],
     )
@@ -672,7 +690,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Short-term 2 commission amount (단기2수수료금액)",
         description=(
             "Short-term fee component 2. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.05],
     )
@@ -682,7 +700,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Short-term 3 commission amount (단기3수수료금액)",
         description=(
             "Short-term fee component 3. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.05],
     )
@@ -692,7 +710,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Transfer 1 commission amount (전달1수수료금액)",
         description=(
             "Transfer fee component 1. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.02],
     )
@@ -702,7 +720,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Transfer 2 commission amount (전달2수수료금액)",
         description=(
             "Transfer fee component 2. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.02],
     )
@@ -712,7 +730,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Transfer 3 commission amount (전달3수수료금액)",
         description=(
             "Transfer fee component 3. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.02],
     )
@@ -722,7 +740,7 @@ class CIDBQ02400OutBlock2(BaseModel):
         title="Transfer 4 commission amount (전달4수수료금액)",
         description=(
             "Transfer fee component 4. "
-            "Currency and decimal scale not declared in available source."
+            "Published numeric length/scale: 19.2. Currency is not specified."
         ),
         examples=[0.0, 0.01],
     )

@@ -22,6 +22,17 @@ Programgarden Finance는 AI 시대에 맞춰 파이썬을 모르는 투자자도
 
 ## 설치
 
+Futures account PnL now carries explicit currency, gross-estimate basis and
+availability. Broker-reported amounts are retained separately; mixed or
+unsupported scalar totals are nullable. See the
+[futures PnL currency contract](docs/futures_pnl_currency_basis.md) for the
+USD estimator compatibility boundary and consumer requirements.
+
+The [CIDBQ03000 snapshot reference](docs/cidbq03000_snapshot_evidence.md) records
+the supplied field metadata and two actual paper balance reads, including their
+date and accounting limits. Reported equity and its P&L/fee components must not
+be added twice.
+
 ```bash
 # PyPI에 게시된 경우
 pip install programgarden-finance
@@ -216,7 +227,7 @@ futures.real()    # 실시간 데이터
 
 #### 국내 주식 (88 TR)
 - **시장 정보**: `t9945`(마스터), `t8450`(호가), `t1101`(호가), `t1102`(현재가), `t1104`(현재가시세메모), `t1105`(피봇/디마크), `t1301`(체결), `t1302`(분별주가), `t1305`(기간별주가), `t1308`(시간대별체결챠트), `t1310`(당일전일분틱), `t1410`(초저유동성), `t1427`(상/하한가직전), `t1449`(가격대별매매비중), `t1471`(시간별체결), `t1475`(체결), `t1486`(시간별예상체결가), `t1488`(예상체결가등락율상위), `t8407`(복수종목시세), `t8454`(멀티현재가), `t1404`/`t1405`(프로그램매매), `t1422`/`t1442`(관리/이상종목)
-- **계좌**: `CSPAQ22200`(예수금), `CSPAQ12200`(잔고), `CSPAQ12300`(잔고상세), `CSPAQ13700`(미체결), `CDPCQ04700`(투자가능금액), `FOCCQ33600`(증거금), `CSPAQ00600`(체결내역), `CSPBQ00200`(평가손익), `t0424`(잔고2), `t0425`(종목별잔고)
+- **계좌**: `CSPAQ22200`(예수금), `CSPAQ12200`(잔고), `CSPAQ12300`(잔고상세), `CSPAQ13700`(order/execution history), `CDPCQ04700`(투자가능금액), `FOCCQ33600`(증거금), `CSPAQ00600`(credit/margin limits), `CSPBQ00200`(평가손익), `t0424`(잔고2), `t0425`(종목별잔고)
 - **주문**: `CSPAT00601`(현물주문), `CSPAT00701`(정정), `CSPAT00801`(취소)
 - **랭킹**: `t1441`(등락률), `t1444`(시가총액), `t1452`(거래량), `t1463`(거래대금), `t1466`(전일동시간비), `t1481`(급등락), `t1482`(신고/신저)
 - **차트**: `t8451`(일주월년봉), `t8452`(분봉), `t8453`(틱봉), `t1665`(종합차트)
@@ -237,11 +248,30 @@ futures.real()    # 실시간 데이터
 #### 해외 선물옵션
 - **시장 정보**: `o3101`(선물마스터), `o3104`~`o3107`(거래소/통화/가격단위/정산환율), `o3116`(옵션마스터), `o3121`~`o3128`(각종 시장 정보), `o3136`, `o3137`(추가 시장 정보)
 - **차트**: `o3103`(일별), `o3108`(분봉), `o3117`(틱봉), `o3139`(시간외)
-- **계좌**: `CIDBQ01400`(예수금), `CIDBQ01500`(잔고), `CIDBQ01800`(체결내역), `CIDBQ02400`(미체결), `CIDBQ03000`(일별손익), `CIDBQ05300`(청산가능수량), `CIDEQ00800`(예탁증거금)
+- **계좌**: `CIDBQ01400`(orderable quantity), `CIDBQ01500`(잔고), `CIDBQ01800`(체결내역), `CIDBQ02400`(order execution detail), `CIDBQ03000`(deposit/balance status), `CIDBQ05300`(evaluated deposit totals), `CIDEQ00800`(예탁증거금)
 - **주문**: `CIDBT00100`(신규), `CIDBT00900`(정정), `CIDBT01000`(취소)
 - **실시간**: `OVC`(체결), `OVH`(호가), `TC1`~`TC3`, `WOC`, `WOH`(각종 실시간 데이터)
 
 ## 응답 코드 참조
+
+### Observed overseas futures paper responses
+
+The [local execution parser](docs/futures_execution_history.md) separates positive
+CIDBQ02400 execution observations from unresolved source issues, preserving
+independent dates and milliseconds without an implicit timezone.
+
+The [CIDBQ02400 field contract](docs/cidbq02400_contract.md) records the supplied
+LS execution-detail table: blank dates for same-day queries, `ExecDttm` as the
+execution timestamp, dated order identity, field lengths/scales, and the
+published table/example inconsistencies. It preserves unknown codes without
+inventing accounting behavior.
+
+`CIDBT00100` returned HTTP 200 / `01425` with the original message
+`모의투자 주문가능금액이 부족합니다.` and no order identifier during a
+2026-09-09 paper order. See [observed broker responses](docs/observed_broker_responses.md)
+for the exact request context, message provenance, and subsequent
+`CIDBQ01400.OrdAbleQty` observations. These are TR/account-specific observations,
+not a universal success-code rule or a fill guarantee.
 
 ### 국내 주식 주문 (CSPAT00601 / CSPAT00701 / CSPAT00801)
 
@@ -252,7 +282,12 @@ futures.real()    # 실시간 데이터
 | `01478` | 매도가능수량 부족 | 거부 (LS 측 잔고 검증) |
 | `IGW00201` | 호출 거래건수 초과 | 시스템 (재시도 가능) |
 
-> ⚠️ **주의**: 조회 TR 은 성공 시 `rsp_cd == "00000"` 이지만, **주문 TR (`CSPAT006xx`) 은 방향별 성공 코드 `00040`/`00039` 를 사용**합니다. `rsp_cd != "00000"` 로 실패 판정하면 정상 주문 응답을 거부로 오분류합니다.
+Response codes are TR-specific: the domestic new-order example below expects
+`00040` for buys and `00039` for sells, while the observed paper
+`CIDBQ01400` quantity query returned `00136` with valid output. Do not use
+`rsp_cd == "00000"` as a universal success rule or reuse this new-order
+example to classify modification/cancellation responses. Check the expected
+response blocks and identifiers as well as the code and original message.
 
 ```python
 # 권장 주문 성공 판정

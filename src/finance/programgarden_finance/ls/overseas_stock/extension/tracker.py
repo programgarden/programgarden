@@ -312,45 +312,42 @@ class StockAccountTracker:
                     OrdDt=dt.now().strftime("%Y%m%d"),
                     ExecYn="2",       # 2: 미체결
                     CrcyCode="000",   # 전체
-                    ThdayBnsAppYn="0",
+                    ThdayBnsAppYn="1",
                     LoanBalHldYn="0"
                 ),
             )
             resp = await tr.req_async()
             
-            # 응답 코드 확인
-            rsp_cd = getattr(resp, 'rsp_cd', '')
-            rsp_msg = getattr(resp, 'rsp_msg', '')
-
-            # 전송/파싱 실패 → fail-closed: 기존 상태를 지우지 않고 에러로 남긴다.
-            # (GenericTR fallback 은 rsp_cd="" 인 빈 응답을 주므로, 이 가드가 없으면
-            #  아래 분기를 전부 통과해 "데이터 0건" 이라는 조용한 오답이 된다 —
-            #  prod 2026-08-24 소수점 잔고 파싱 실패에서 실측된 경로)
-            resp_error = getattr(resp, 'error_msg', None)
-            if resp_error:
-                error_msg = f"[미체결 조회 실패] error_msg={resp_error}"
+            rsp_cd = getattr(resp, "rsp_cd", "")
+            rsp_msg = getattr(resp, "rsp_msg", "")
+            resp_error = getattr(resp, "error_msg", None)
+            status = getattr(resp, "status_code", None)
+            rows = getattr(resp, "block3", None) or []
+            # A missing detail block defaults to [] in the SDK. Only a success
+            # envelope with echo and aggregate blocks proves an empty result.
+            valid_empty = (
+                not rows and rsp_cd == "00000"
+                and getattr(resp, "block1", None) is not None
+                and getattr(resp, "block2", None) is not None
+            )
+            if (
+                resp is None or resp_error
+                or (status is not None and status >= 400)
+                or rsp_cd not in SUCCESS_CODES
+                or (not rows and not valid_empty)
+                or any(not item.OrdNo or item.OrdNo <= 0 for item in rows)
+            ):
+                error_msg = (
+                    "COSAQ00102 returned no usable pending-order response: "
+                    f"status_code={status}, rsp_cd={rsp_cd}, rsp_msg={rsp_msg}, "
+                    f"error_msg={resp_error}"
+                )
                 self._last_errors["open_orders"] = error_msg
-                logger.error(f"[_fetch_open_orders] {error_msg}")
+                logger.error("[_fetch_open_orders] %s", error_msg)
                 return
 
-            # "데이터 없음" 응답 → 정상 케이스 (빈 데이터)
-            if is_no_data_response(rsp_cd, rsp_msg):
-                logger.info(f"[_fetch_open_orders] 미체결 주문 없음 (rsp_cd={rsp_cd}, msg={rsp_msg})")
-                self._open_orders.clear()
-                self._notify_open_orders_change()
-                self._last_errors.pop("open_orders", None)
-                return
-            
-            # 성공이 아닌 다른 응답 → 에러
-            if rsp_cd and rsp_cd not in SUCCESS_CODES:
-                error_msg = f"[미체결 조회 실패] rsp_cd={rsp_cd}, msg={rsp_msg}"
-                self._last_errors["open_orders"] = error_msg
-                logger.error(f"[_fetch_open_orders] {error_msg}")
-                return
-            
-            # block 데이터 처리 (block이 비어있으면 미체결 없음 = 정상 케이스)
             now = datetime.now()
-            self._open_orders.clear()
+            open_orders = {}
             
             # 🔴 미체결 행은 block3 다 — 종전 코드는 block1(입력 에코, 단일 모델)을
             # 순회해 (필드명, 값) 튜플에 getattr 기본값만 얻었고, 그 결과
@@ -373,10 +370,11 @@ class StockAccountTracker:
                         currency_code=getattr(item, 'CrcyCode', '') or 'USD',
                         last_updated=now
                     )
-                    self._open_orders[order.order_no] = order
+                    open_orders[order.order_no] = order
             else:
                 logger.info("[_fetch_open_orders] 미체결 주문 없음")
             
+            self._open_orders = open_orders
             self._notify_open_orders_change()
             
             # 성공 시 에러 상태 클리어

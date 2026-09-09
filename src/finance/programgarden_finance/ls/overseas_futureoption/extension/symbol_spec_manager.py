@@ -105,9 +105,11 @@ class SymbolSpecManager:
                             symbol=item.Symbol,
                             symbol_name=item.SymbolNm,
                             exchange_code=item.ExchCd,
-                            tick_size=Decimal(str(item.UntPrc)) if item.UntPrc else Decimal("0.01"),
-                            tick_value=Decimal(str(item.MnChgAmt)) if item.MnChgAmt else Decimal("1"),
-                            currency=item.CrncyCd or "USD",
+                            tick_size=Decimal(str(item.UntPrc)) if item.UntPrc else Decimal("0"),
+                            tick_value=Decimal(str(item.MnChgAmt)) if item.MnChgAmt else Decimal("0"),
+                            # Keep missing broker metadata unknown. The public
+                            # SymbolSpec default remains USD for legacy manual specs.
+                            currency=item.CrncyCd or "",
                             contract_amount=Decimal(str(item.CtrtPrAmt)) if item.CtrtPrAmt else Decimal("0"),
                             opening_margin=Decimal(str(item.OpngMgn)) if item.OpngMgn else Decimal("0"),
                             maintenance_margin=Decimal(str(item.MntncMgn)) if item.MntncMgn else Decimal("0"),
