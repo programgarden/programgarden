@@ -1955,7 +1955,12 @@ class ExecutionContext:
                 # Price ticks do not change retained executions. Bound full
                 # history reads to the durable reporting cadence and preserve
                 # the original observation timestamp when reusing a snapshot.
-                cache_key = (id(tracker), tracker.product, tracker.provider, tracker.trading_mode)
+                # 🔴 다만 **체결은 바꾼다** — 원장의 fill_revision 을 키에 실어,
+                # 체결이 하나라도 기록되면 10초 창이 남아 있어도 다시 읽는다.
+                # (실측 2026-09-10: 체결 0.5초 전에 계산된 봉투가 그대로 저장돼
+                #  원장에 체결 1건이 있는데 체결 주문 수가 0 으로 남았다.)
+                cache_key = (id(tracker), tracker.product, tracker.provider,
+                             tracker.trading_mode, getattr(tracker, "fill_revision", 0))
                 cache = self._personal_metrics_cache
                 if cache is not None and cache[0] == cache_key and time.monotonic() - cache[1] < 10:
                     personal_metrics = cache[2]

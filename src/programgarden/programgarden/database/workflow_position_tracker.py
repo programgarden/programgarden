@@ -128,6 +128,15 @@ class WorkflowPositionTracker:
         self.provider = provider
         self.trading_mode = trading_mode
 
+        # 체결 원장이 바뀔 때마다 증가한다. 읽는 쪽(개인 지표 캐시)이 "가격 틱은
+        # 체결을 바꾸지 않는다"는 이유로 결과를 잠시 재사용하는데, 시간만 보고
+        # 재사용하면 **막 들어온 체결을 놓친다**. 2026-09-10 실측: SNDL 체결이
+        # 02:17:31.674 에 기록됐는데 봉투는 0.5초 전(02:17:31.189)에 계산된 값이
+        # 그대로 굳어, 원장에 체결이 1건 있는데도 체결 주문 수가 0 으로 저장됐다.
+        # 버퍼 처리처럼 컨텍스트를 거치지 않는 쓰기 경로까지 덮으려면 원장 자신이
+        # 세는 게 맞다.
+        self.fill_revision = 0
+
         # 체결 버퍼 (Race Condition 방어)
         # Every arrival without an execution ID remains a separate event. An
         # order can have multiple partial executions before its ACK is recorded.
@@ -581,6 +590,10 @@ class WorkflowPositionTracker:
             ))
 
             conn.commit()
+
+        # 원장이 실제로 바뀌었다 — 이 값을 캐시 키에 실은 소비자는 다음 읽기에서
+        # 반드시 다시 계산한다.
+        self.fill_revision += 1
 
         logger.debug(f"Processed fill: {fill.symbol} {fill.side} {fill.quantity}@{fill.price} [{classification}] ({self.trading_mode})")
         return classification

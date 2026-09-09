@@ -140,3 +140,34 @@ async def test_stock_fill_history_retries_the_previous_date_but_keeps_the_local_
     assert history and history[0]["order_date"] == dates[0], (
         "the ledger keeps the local order date even when an earlier query found the fill")
     assert history[0]["order_no"] == "77" and history[0]["quantity"] == 2
+
+
+# ---------------------------------------------------------------------------
+# 개인 지표 캐시는 시간뿐 아니라 원장 변경도 봐야 한다.
+# 실측 2026-09-10: SNDL 실체결이 02:17:31.674 에 원장에 들어갔는데, 저장된 봉투는
+# 0.5초 전(02:17:31.189)에 계산된 것이라 원장에 체결 1건이 있는데도 체결 주문 수가
+# 0 으로 남았다. 원샷 워크플로우는 곧바로 끝나므로 "다음 틱에 갱신"이 오지 않는다.
+# ---------------------------------------------------------------------------
+
+
+def test_recording_a_fill_advances_the_ledger_revision(tmp_path):
+    import asyncio
+
+    from programgarden.database.workflow_position_tracker import WorkflowPositionTracker
+
+    tracker = WorkflowPositionTracker(
+        db_path=str(tmp_path / "ledger.db"), job_id="job-1", broker_node_id="broker",
+        product="overseas_stock", provider="ls-sec.co.kr", trading_mode="live")
+    assert tracker.fill_revision == 0
+
+    async def record():
+        tracker.record_order(
+            order_no="215", order_date="20260910", symbol="SNDL", exchange="NASDAQ",
+            side="buy", quantity=1, price=1.45, job_id="job-1", node_id="order")
+        return await tracker.record_fill(
+            order_no="215", order_date="20260910", symbol="SNDL", exchange="NASDAQ",
+            side="buy", quantity=1, price=1.41, fill_time="021731674", commda_code="40")
+
+    assert asyncio.run(record()) == "workflow"
+    assert tracker.fill_revision == 1, "체결이 원장에 들어갔으면 리비전이 올라가야 한다"
+    assert tracker.personal_metrics()["executed_order_count"] == 1

@@ -62,14 +62,20 @@ async def test_price_ticks_reuse_actual_observation_until_refresh_without_crossi
     monkeypatch.setattr("programgarden.context.time.monotonic", lambda: clock[0])
     await context.notify_workflow_pnl("broker", "overseas_stock", "ls-sec.co.kr", {}, {})
     before = events[-1].personal_metrics
-    await fill(ledger, "1", "buy", 1, 100, "11")
+    # 체결이 없는 가격 틱은 원장을 읽지 않고 그대로 재사용한다(캐시의 본래 목적).
     clock[0] += 1
     await context.notify_workflow_pnl("broker", "overseas_stock", "ls-sec.co.kr", {}, {})
     assert events[-1].personal_metrics == before
     assert events[-1].personal_metrics["as_of"] == before["as_of"]
-    clock[0] += 10
+    # 🔴 체결은 다르다 — 10초 창이 남아 있어도 즉시 반영돼야 한다.
+    # 실측 2026-09-10: SNDL 실체결이 원장에 들어간 0.5초 전에 계산된 봉투가 그대로
+    # 저장돼, 원장에 체결 1건이 있는데 체결 주문 수가 0 으로 남았다. 원샷 워크플로우는
+    # 곧바로 끝나 "10초 뒤 갱신"이 영영 오지 않는다.
+    await fill(ledger, "1", "buy", 1, 100, "11")
+    clock[0] += 1
     await context.notify_workflow_pnl("broker", "overseas_stock", "ls-sec.co.kr", {}, {})
     assert events[-1].personal_metrics["executed_order_count"] == 1
+    assert events[-1].personal_metrics["as_of"] != before["as_of"]
     await context.notify_workflow_pnl("other-broker", "overseas_stock", "ls-sec.co.kr", {}, {})
     assert events[-1].personal_metrics is None
     context._workflow_position_tracker = tracker(tmp_path, provider="ls-sec.co.kr", trading_mode="paper")
