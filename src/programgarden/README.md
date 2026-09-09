@@ -62,6 +62,93 @@ job = await pg.run_async(
 await job.stop()
 ```
 
+Broker account trackers belong to the workflow job. Normal completion, `stop()`,
+`cancel()`, and `force_stop()` cancel pending broker startup/history tasks, stop
+account polling, and close each tracker's dedicated WebSocket. Late account PnL
+callbacks do not restart work after shutdown. This cleanup also covers partially
+initialized trackers and leaves other jobs running.
+Already queued or in-flight PnL notifications have up to one second to finish
+after account trackers stop, before listeners close. On timeout, cleanup logs the
+pending count and cancels those tasks, allowing another 0.25 seconds for cancellation.
+A listener that suppresses cancellation is reported and remains tracked; it cannot
+hold job shutdown indefinitely. Delivery beyond this bounded grace is not guaranteed.
+
+For one-shot workflows, an unhandled `order_result.success=False` returned directly
+by a main-flow node makes the final job status `failed` and emits `WORKFLOW_FAILED`.
+The original broker message remains in node diagnostics and the failure statistics.
+Successful downstream nodes do not erase that rejection. `reason="no_signal"` stays
+a normal no-op. Scheduled/resident workflows continue after a rejected cycle;
+SplitNode and automatic iteration retain their existing item-error continuation
+policies. Final failure is not inferred from cumulative `errors_count` or old logs.
+Raised main-node exceptions retain the existing fail-fast behavior.
+
+New-order nodes for overseas stocks, overseas futures, and Korea stocks expose
+the catalog's `result` port as a list of outcome rows: `{{ nodes.order.result }}`
+can feed TableDisplayNode directly. Each row copies the final `order_result`
+and includes `order_id` from the existing top-level or nested order number.
+Legacy `order_result` and `order_id` outputs are unchanged. The projection occurs
+after fill confirmation, fractional-remainder annotation, and replay marking;
+an accepted order is not promoted to a fill without confirmation. Rejections and
+`no_signal` keep their original diagnostics/reason as an outcome row, with no
+fabricated order number. Dry runs add a `simulated` row while retaining the legacy
+flat simulation envelope; request/credential data is not copied into the row.
+Automatic iteration merges these rows into one list. Implicit SplitNode collection
+of a new-order result retains its legacy `order_result` row shape; explicit
+`nodes.order.result` bindings always read the list. Modify/cancel nodes retain their
+separately declared `modify_result`/`cancel_result` ports and are outside this change.
+
+## Explicit execution identities in local ledgers
+
+`WorkflowPositionTracker.record_fill(..., execution_id=...)` can preserve a
+broker-provided execution identity. Within one ledger/product/provider/mode,
+order date and normalized order number, an identical replay returns the first
+classification without changing FIFO or history. Conflicting facts raise
+`ExecutionIdentityConflictError`. Positive numeric identifiers ignore padding;
+opaque identifiers retain case. Missing, blank and zero identifiers retain legacy
+behavior and are never inferred from time, price or quantity. Every pending
+partial fill is retained while its order acknowledgement is being recorded.
+
+The migration is additive and does not invent identities for existing rows.
+Callers must establish consistent identifier and timestamp semantics first;
+exchange execution numbers and broker execution numbers are not interchangeable.
+This ledger API alone does not reconcile finite workflows after their shutdown.
+
+Standalone futures TC3 callbacks interpret `s_b_ccd="1"` as sell and `"2"` as buy,
+matching the SDK contract. Unknown or blank side codes are logged and skipped
+before any inventory write is scheduled. With an app order lifecycle handler,
+TC3 still bypasses this legacy fill path: canonical REST reconciliation remains
+the sole writer. This side correction does not establish an alias between TC3
+and REST execution identities, dates, or times.
+
+## Futures monetary evidence
+
+Futures workflow PnL events preserve native gross estimates separately from
+accounting results. `workflow_*`, `other_*`, `total_*`, account and competition
+monetary/rate scalars remain null when accounting evidence is unavailable.
+`pnl_by_currency` contains gross price-change subtotals by contract currency;
+`monetary_positions` retains their basis/status and unmodified, unconfirmed
+`broker_pnl_amount`. No fee, FX, margin/equity return or verified contest score
+is inferred from these estimates. Actual zero and negative amounts are retained.
+`currency` is null for mixed or unavailable currencies. Consumers must handle
+nullable monetary fields and must not coerce them to zero.
+
+## Stock read failures
+
+Stock open-order queries include current-day orders (`ThdayBnsAppYn="1"`).
+`OpenOrdersNode` reports unusable `COSAQ00102` responses with `error`,
+`reason="fetch_failed"`, and the original TR, HTTP status and broker response
+fields in `diagnostics`. Its legacy empty payload/count remains for compatibility;
+an error result is unavailable, not evidence of zero orders. A successful empty
+response requires documented success plus parsed echo and aggregate blocks.
+Unknown broker codes receive no inferred meaning.
+
+Stock `MarketDataNode` preserves failed `g3101` attempts under `failures`.
+An entirely failed fetch returns `error` and `reason="fetch_failed"`; mixed
+results retain usable `values` with `_partial_failure` and `_failure_reason`.
+The existing exchange fallback and empty upstream no-signal behavior remain.
+Futures master errors likewise report the observed catalogue and original broker
+fields without inferring account entitlement, token or quota causes.
+
 ### Dry Run (워크플로우 검증용 모의 실행)
 
 실제 주문/알림/Realtime WebSocket 연결 없이 워크플로우를 검증합니다.

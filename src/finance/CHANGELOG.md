@@ -1,3 +1,18 @@
+## [1.9.4] - 2026-09-09
+
+### Added
+- Parse CIDBQ02400 executions using dated order/execution identities, positive executed quantity and ExecDttm.
+- Document supplied CIDBQ02400/CIDBQ03000 fields, observed paper responses and unresolved snapshot scope.
+
+### Fixed
+- Keep futures monetary P&L unavailable when currency, contract multiplier or value basis is unverified.
+- Request today's stock pending orders and preserve prior orders on incomplete/error responses.
+- Distinguish an explicitly empty successful envelope from default empty SDK blocks.
+
+### Notes
+- Paper fill and recovery were observed; complete account ROI/MDD evidence remains unverified.
+- Deploy with the matching engine 1.33.5 to handle nullable finance amounts.
+
 ## [1.9.3] - 2026-09-08
 > LS증권 공지(2026-09-12 12:00 적용)의 **국내주식 TR 필드 추가** 8종 중, 이 라이브러리가
 > 이미 구현한 6종에 신규 필드를 반영한다. 반영이 없으면 NXT VI · 거래소별 종목코드 ·

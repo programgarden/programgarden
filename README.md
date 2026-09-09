@@ -283,3 +283,10 @@ example. Print each tick as it arrives and handle reconnect cleanly.
 ````
 
 </details>
+
+
+### Runtime futures order lifecycle
+
+`WorkflowExecutor.set_order_lifecycle_handler(handler)` installs a synchronous, local-only capability outside DSL and checkpoint data. The handler receives `OrderLifecycleMetadata` and implements `prepare`, `accepted`, and `rejected`. Exact futures broker/credential routing is captured before submission. Operation identity includes job, node, cycle and invocation/iteration identity; order facts are checked separately. A prepared/uncertain replay cannot authorize another transport. A valid broker ACK is frozen before callbacks; local storage failure cannot revoke it.
+
+Handler-managed futures return the accepted `submitted` result with additive parent references. Their app session owns canonical history observation, so legacy startup history repair, post-ACK fill polling and TC3 FIFO writes are skipped. Standalone futures and stocks retain their existing confirmation paths. This capability does not establish complete historical coverage, repair TC3/FIFO accounting or verify workflow returns/MDD.

@@ -1,3 +1,12 @@
+## [1.25.3] - 2026-09-09
+
+### Added
+- Add listener fields for futures P&L currency/basis and preserve unavailable monetary amounts as null.
+- Carry execution lifecycle and recovery evidence without converting acceptance into a fill.
+
+### Notes
+- Pair with finance 1.9.4 and engine 1.33.5 when deploying the new account-tracker contract.
+
 ## [1.25.2] - 2026-09-07
 > 코드 변경 없음 — 노드 가이드 문구만. 동반 릴리즈: `programgarden` **1.33.3**(D2 "No symbols provided" 3분류).
 

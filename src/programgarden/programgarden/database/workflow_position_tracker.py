@@ -14,6 +14,8 @@ FIFO 방식으로 포지션을 관리합니다.
 import sqlite3
 import asyncio
 import logging
+import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -84,6 +86,11 @@ class PendingFill:
     fill_time: str
     commda_code: str
     received_at: datetime
+    execution_id: Optional[str | int] = None
+
+
+class ExecutionIdentityConflictError(ValueError):
+    """An explicit execution identity was replayed with different fill facts."""
 
 
 class WorkflowPositionTracker:
@@ -122,7 +129,10 @@ class WorkflowPositionTracker:
         self.trading_mode = trading_mode
 
         # 체결 버퍼 (Race Condition 방어)
-        self._pending_fills: Dict[str, PendingFill] = {}  # key: order_no_order_date
+        # Every arrival without an execution ID remains a separate event. An
+        # order can have multiple partial executions before its ACK is recorded.
+        self._pending_fills: Dict[int, PendingFill] = {}
+        self._next_pending_fill = 0
         self._buffer_lock = asyncio.Lock()
 
         # 심볼별 계약 승수(contract multiplier) 캐시.
@@ -141,6 +151,7 @@ class WorkflowPositionTracker:
             # WAL 모드: 멀티 워크플로우 동시 접근 시 SQLITE_BUSY 방지
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.cursor()
 
             # 워크플로우 주문 기록
@@ -202,7 +213,10 @@ class WorkflowPositionTracker:
                     commda_code TEXT,
                     realized_pnl REAL,
                     trading_mode TEXT NOT NULL DEFAULT 'live',
-                    created_at TEXT
+                    created_at TEXT,
+                    execution_id TEXT,
+                    normalized_order_no TEXT,
+                    execution_payload TEXT
                 )
             """)
 
@@ -221,6 +235,19 @@ class WorkflowPositionTracker:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_lots_fifo_v2 ON workflow_position_lots(trading_mode, symbol, fill_datetime)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_lookup_v2 ON workflow_orders(trading_mode, order_no, order_date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_lots_remaining_v2 ON workflow_position_lots(trading_mode, symbol, remaining_qty)")
+
+            # Additive migration: old rows have no evidence of execution identity.
+            # Never infer or backfill one from timestamps, prices, or quantities.
+            columns = {row[1] for row in cursor.execute("PRAGMA table_info(trade_history)")}
+            for column in ("execution_id", "normalized_order_no", "execution_payload"):
+                if column not in columns:
+                    cursor.execute(f"ALTER TABLE trade_history ADD COLUMN {column} TEXT")
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_trade_history_execution_v1
+                ON trade_history(product, provider, trading_mode, order_date,
+                                 normalized_order_no, execution_id)
+                WHERE execution_id IS NOT NULL
+            """)
 
             conn.commit()
 
@@ -325,14 +352,17 @@ class WorkflowPositionTracker:
         logger.debug(f"Recorded workflow order: {order_no} ({symbol} {side} {quantity}@{price})")
     
     async def _process_buffered_fill(self, order_no: str, order_date: str) -> None:
-        """버퍼에서 매칭되는 체결 처리"""
-        key = f"{order_no}_{order_date}"
-        
+        """Process all buffered partial fills after recording their order."""
         async with self._buffer_lock:
-            if key in self._pending_fills:
-                fill = self._pending_fills.pop(key)
-                logger.debug(f"Processing buffered fill: {key}")
-                await self._process_fill_internal(fill, "workflow")
+            for key, fill in list(self._pending_fills.items()):
+                if fill.order_date != order_date:
+                    continue
+                matches = fill.order_no == order_no
+                if self._normalize_identifier(fill.execution_id) is not None:
+                    matches = self._normalize_identifier(fill.order_no) == self._normalize_identifier(order_no)
+                if matches:
+                    await self._process_fill_internal(fill, "workflow")
+                    self._pending_fills.pop(key)
     
     async def record_fill(
         self,
@@ -345,6 +375,8 @@ class WorkflowPositionTracker:
         price: float,
         fill_time: str,
         commda_code: str,
+        *,
+        execution_id: Optional[str | int] = None,
     ) -> str:
         """
         체결 기록 및 FIFO 처리
@@ -361,69 +393,157 @@ class WorkflowPositionTracker:
             price: 체결가
             fill_time: 체결시각 (HHMMSSsss)
             commda_code: 매체구분코드 (40=OPEN API)
+            execution_id: Optional broker execution identity. Positive numeric
+                strings/integers ignore padding; opaque strings retain case.
+                None, blank, and zero mean no identity and retain legacy replay
+                behavior. Numeric floats/negative IDs are rejected. Never derive
+                this value from order IDs, timestamps, quantities, or prices.
+
+        Explicit identity is scoped to this ledger, product, provider, mode,
+        order date and normalized order number. Exact replay returns the first
+        stored classification without mutating FIFO/history. Changed symbol,
+        exchange, side, quantity, price, fill time or source code raises
+        ExecutionIdentityConflictError. Callers must supply consistent broker
+        timestamp/field semantics; no timestamp or currency inference occurs.
+        This is a persistence prerequisite, not broker-history/TC3 integration.
             
         Returns:
             분류 결과: "workflow" | "manual" | "unknown_api" | "pending"
         """
-        # 1. 수동 주문 (앱/HTS) - CommdaCode != "40"
-        if commda_code != "40":
-            fill = PendingFill(
-                order_no=order_no, order_date=order_date, symbol=symbol,
-                exchange=exchange, side=side, quantity=quantity, price=price,
-                fill_time=fill_time, commda_code=commda_code, received_at=datetime.now()
-            )
-            await self._process_fill_internal(fill, "manual")
-            return "manual"
-        
-        # 2. API 주문 - DB 확인
-        is_workflow = self._check_workflow_order(order_no, order_date)
-        
-        if is_workflow:
-            fill = PendingFill(
-                order_no=order_no, order_date=order_date, symbol=symbol,
-                exchange=exchange, side=side, quantity=quantity, price=price,
-                fill_time=fill_time, commda_code=commda_code, received_at=datetime.now()
-            )
-            await self._process_fill_internal(fill, "workflow")
-            return "workflow"
-        
-        # 3. API 주문인데 DB에 없음 - 버퍼에 저장
-        key = f"{order_no}_{order_date}"
         fill = PendingFill(
             order_no=order_no, order_date=order_date, symbol=symbol,
             exchange=exchange, side=side, quantity=quantity, price=price,
-            fill_time=fill_time, commda_code=commda_code, received_at=datetime.now()
+            fill_time=fill_time, commda_code=commda_code, received_at=datetime.now(),
+            execution_id=execution_id,
         )
-        
+        identity = self._execution_key(fill)
         async with self._buffer_lock:
+            if identity is not None:
+                for pending in self._pending_fills.values():
+                    if self._execution_key(pending) == identity:
+                        self._assert_same_execution(pending, fill)
+                        return "pending"
+                with sqlite3.connect(self.db_path) as conn:
+                    previous = self._find_execution(conn.cursor(), fill)
+                if previous is not None:
+                    return previous
+
+            if commda_code != "40":
+                return await self._process_fill_internal(fill, "manual")
+            if self._is_workflow_fill(fill):
+                return await self._process_fill_internal(fill, "workflow")
+
+            self._next_pending_fill += 1
+            key = self._next_pending_fill
             self._pending_fills[key] = fill
-        
-        # 타임아웃 후 처리
         asyncio.create_task(self._process_timeout_fill(key))
-        
         logger.debug(f"Buffered fill (waiting for order): {key}")
         return "pending"
-    
-    async def _process_timeout_fill(self, key: str) -> None:
-        """버퍼 타임아웃 후 처리"""
-        await asyncio.sleep(self.FILL_BUFFER_TIMEOUT)
 
+    async def _process_timeout_fill(self, key: int) -> None:
+        """Expire one arrival, without consuming a later partial's timeout."""
+        await asyncio.sleep(self.FILL_BUFFER_TIMEOUT)
         async with self._buffer_lock:
             if key in self._pending_fills:
-                fill = self._pending_fills.pop(key)
-                logger.warning(
-                    f"Fill timeout ({self.FILL_BUFFER_TIMEOUT}s) - classifying as unknown_api: {key} "
-                    f"({fill.symbol} {fill.side} {fill.quantity}@{fill.price}). "
-                    f"워크플로우 주문이었다면 FIFO 수익률이 부정확할 수 있습니다."
-                )
-                await self._process_fill_internal(fill, "unknown_api")
-    
-    async def _process_fill_internal(self, fill: PendingFill, classification: str) -> None:
-        """체결 내부 처리 (FIFO 로직)"""
+                fill = self._pending_fills[key]
+                classification = "workflow" if self._is_workflow_fill(fill) else "unknown_api"
+                if classification == "unknown_api":
+                    logger.warning("Fill expired before its order was recorded; classifying as unknown_api")
+                await self._process_fill_internal(fill, classification)
+                self._pending_fills.pop(key)
+
+    @staticmethod
+    def _normalize_identifier(value: Optional[str | int]) -> Optional[str]:
+        """Normalize proven IDs only; never invent an ID for missing/zero data."""
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise ValueError("Execution/order identity must be a string or integer")
+        text = str(value).strip()
+        if not text:
+            return None
+        if re.fullmatch(r"[0-9]+", text):
+            return text.lstrip("0") or None
+        if re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", text):
+            raise ValueError("Numeric execution/order identity must be a positive integer")
+        return text
+
+    def _execution_key(self, fill: PendingFill) -> Optional[Tuple[str, ...]]:
+        execution_id = self._normalize_identifier(fill.execution_id)
+        if execution_id is None:
+            return None
+        order_no = self._normalize_identifier(fill.order_no)
+        if order_no is None or not fill.order_date:
+            raise ValueError("Explicit execution identity requires an order number and date")
+        return (self.product, self.provider, self.trading_mode, fill.order_date, order_no, execution_id)
+
+    @staticmethod
+    def _execution_facts(fill: PendingFill) -> Dict[str, Any]:
+        # Decimal equality avoids false conflicts for quantity/price formatting,
+        # while the first supplied values are retained in execution_payload.
+        quantity, price = Decimal(str(fill.quantity)), Decimal(str(fill.price))
+        if not quantity.is_finite() or not price.is_finite():
+            raise ValueError("Explicit execution quantity and price must be finite")
+        return {
+            "symbol": fill.symbol, "exchange": fill.exchange, "side": fill.side,
+            "quantity": quantity, "price": price, "fill_time": fill.fill_time,
+            "commda_code": fill.commda_code,
+        }
+
+    def _assert_same_execution(self, previous: PendingFill, fill: PendingFill) -> None:
+        if self._execution_facts(previous) != self._execution_facts(fill):
+            raise ExecutionIdentityConflictError("Conflicting fill facts for an existing execution identity")
+
+    def _find_execution(self, cursor: sqlite3.Cursor, fill: PendingFill) -> Optional[str]:
+        identity = self._execution_key(fill)
+        if identity is None:
+            return None
+        facts = self._execution_facts(fill)
+        cursor.execute("""
+            SELECT classification, execution_payload FROM trade_history
+            WHERE product = ? AND provider = ? AND trading_mode = ?
+              AND order_date = ? AND normalized_order_no = ? AND execution_id = ?
+        """, identity)
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        stored = json.loads(row[1])
+        stored.pop("reported_execution_id")
+        stored["quantity"] = Decimal(stored["quantity"])
+        stored["price"] = Decimal(stored["price"])
+        if stored != facts:
+            raise ExecutionIdentityConflictError("Conflicting fill facts for an existing execution identity")
+        return row[0]
+
+    def _is_workflow_fill(self, fill: PendingFill) -> bool:
+        identity = self._execution_key(fill)
+        if identity is None:
+            return self._check_workflow_order(fill.order_no, fill.order_date)
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("""
+                SELECT order_no FROM workflow_orders
+                WHERE product = ? AND provider = ? AND trading_mode = ? AND order_date = ?
+            """, identity[:4])
+            return any(self._normalize_identifier(row[0]) == identity[4] for row in rows)
+
+    async def _process_fill_internal(self, fill: PendingFill, classification: str) -> str:
+        """Gate explicit replay before atomically mutating FIFO and history."""
         fill_datetime = f"{fill.order_date}_{fill.fill_time}"
 
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.cursor()
+            previous = self._find_execution(cursor, fill)
+            if previous is not None:
+                return previous
+            identity = self._execution_key(fill)
+            payload = None
+            if identity is not None:
+                facts = self._execution_facts(fill)
+                payload = json.dumps({
+                    **facts, "quantity": str(fill.quantity), "price": str(fill.price),
+                    "reported_execution_id": fill.execution_id,
+                }, sort_keys=True)
             realized_pnl = 0.0
 
             if fill.side == "buy":
@@ -449,18 +569,21 @@ class WorkflowPositionTracker:
             cursor.execute("""
                 INSERT INTO trade_history
                 (product, provider, order_no, order_date, symbol, exchange, side, quantity, price,
-                 fill_datetime, classification, commda_code, realized_pnl, trading_mode, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 fill_datetime, classification, commda_code, realized_pnl, trading_mode, created_at,
+                 execution_id, normalized_order_no, execution_payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.product, self.provider,
                 fill.order_no, fill.order_date, fill.symbol, fill.exchange,
                 fill.side, fill.quantity, fill.price, fill_datetime,
-                classification, fill.commda_code, realized_pnl, self.trading_mode, datetime.now().isoformat()
+                classification, fill.commda_code, realized_pnl, self.trading_mode, datetime.now().isoformat(),
+                identity[5] if identity else None, identity[4] if identity else None, payload,
             ))
 
             conn.commit()
 
         logger.debug(f"Processed fill: {fill.symbol} {fill.side} {fill.quantity}@{fill.price} [{classification}] ({self.trading_mode})")
+        return classification
     
     def _process_sell_fifo(
         self,
