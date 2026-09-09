@@ -17,7 +17,7 @@ import logging
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
@@ -957,6 +957,115 @@ class WorkflowPositionTracker:
             
             "currency": currency,
             "timestamp": datetime.now(),
+        }
+
+    def personal_metrics(self) -> Dict[str, Any]:
+        """Read retained workflow executions without claiming account performance.
+
+        Historical FIFO rows have no currency or fee evidence. Keep their amounts
+        per symbol/exchange and reject mixed ownership or an incomplete FIFO basis.
+        Futures FIFO is not a monetary ledger. No equity/MDD basis is inferred.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = [dict(row) for row in conn.execute(
+                "SELECT * FROM trade_history WHERE trading_mode=? ORDER BY id",
+                (self.trading_mode,),
+            )]
+        selected = [row for row in rows if row["product"] == self.product
+                    and row["provider"] == self.provider and row["classification"] == "workflow"]
+        keys = set()
+        invalid_count = False
+        groups: Dict[Tuple[str, str], List[dict]] = {}
+        for row in selected:
+            try:
+                quantity = Decimal(str(row["quantity"]))
+                if not quantity.is_finite() or quantity < 0:
+                    raise ValueError("Invalid execution quantity")
+                if quantity == 0:
+                    continue
+                order_date = row["order_date"]
+                if not isinstance(order_date, str) or not re.fullmatch(r"[0-9]{8}", order_date):
+                    raise ValueError("Missing order date")
+                datetime.strptime(order_date, "%Y%m%d")
+                order_no = self._normalize_identifier(row["order_no"])
+                if order_no is None:
+                    raise ValueError("Missing order number")
+                keys.add((order_date, order_no))
+            except (ValueError, TypeError, ArithmeticError):
+                invalid_count = True
+            key = (row["symbol"] or "", row["exchange"] or "")
+            groups.setdefault(key, []).append(row)
+
+        realized = []
+        for (symbol, exchange), fills in sorted(groups.items()):
+            reason = None
+            amount = None
+            if self.product == "overseas_futures":
+                reason = "futures_fifo_not_monetary"
+            elif not symbol:
+                reason = "missing_symbol"
+            elif any(row["symbol"] == symbol and (
+                row["product"] != self.product or row["provider"] != self.provider
+                or row["classification"] != "workflow" or (row["exchange"] or "") != exchange
+            ) for row in rows):
+                # The historical sell writer matches symbol/mode across all lots.
+                # It cannot prove workflow ownership when those domains overlap.
+                reason = "mixed_fifo_ownership"
+            else:
+                try:
+                    lots = []
+                    total = Decimal(0)
+                    for fill in fills:
+                        quantity = Decimal(str(fill["quantity"]))
+                        price = Decimal(str(fill["price"]))
+                        stored = Decimal(str(fill["realized_pnl"]))
+                        if not all(value.is_finite() for value in (quantity, price, stored)) or quantity <= 0:
+                            raise ValueError("Invalid stored fill")
+                        if fill["side"] == "buy":
+                            if stored != 0:
+                                raise ValueError("Unexpected opening PnL")
+                            lots.append([fill["fill_datetime"] or "", fill["id"], quantity, price])
+                            lots.sort(key=lambda lot: (lot[0], lot[1]))
+                        elif fill["side"] == "sell":
+                            remaining = quantity
+                            expected = Decimal(0)
+                            for lot in lots:
+                                closed = min(remaining, lot[2])
+                                expected += (price - lot[3]) * closed
+                                lot[2] -= closed
+                                remaining -= closed
+                                if remaining == 0:
+                                    break
+                            tolerance = max(Decimal("0.000001"), abs(expected) * Decimal("0.000000001"))
+                            if remaining > 0 or abs(stored - expected) > tolerance:
+                                raise ValueError("Incomplete or inconsistent FIFO basis")
+                            # Preserve the stored amount; replay arithmetic only
+                            # validates the basis and never replaces its value.
+                            total += stored
+                        else:
+                            raise ValueError("Unknown fill side")
+                    amount = float(total)
+                    if not Decimal(str(amount)).is_finite():
+                        raise ValueError("Non-finite total")
+                except (ValueError, TypeError, ArithmeticError, OverflowError):
+                    reason = "incomplete_fifo_basis"
+            realized.append({"symbol": symbol, "exchange": exchange, "currency": None,
+                             "amount": amount, "status": "available" if reason is None else "unavailable",
+                             "reason": reason})
+        return {
+            "version": 1,
+            "scope": {"kind": "local_workflow_ledger", "product": self.product,
+                      "provider": self.provider, "trading_mode": self.trading_mode},
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "basis": "stored_fifo_gross_excluding_fees",
+            "executed_order_count": None if invalid_count else len(keys),
+            "executed_order_count_status": "unavailable" if invalid_count else "available",
+            "executed_order_count_reason": "invalid_execution_identity" if invalid_count else None,
+            "realized_pnl": realized,
+            "max_drawdown": None,
+            "max_drawdown_status": "unavailable",
+            "max_drawdown_reason": "equity_history_unavailable",
         }
     
     def detect_anomalies(self) -> List[AnomalyResult]:

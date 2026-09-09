@@ -346,6 +346,8 @@ class WorkflowPnLEvent:
     pnl_by_currency: Dict[str, Any] = field(default_factory=dict)
     monetary_positions: Dict[str, Any] = field(default_factory=dict)
     unavailable_position_count: int = 0
+    # Unverified retained workflow executions; separate from account/contest PnL.
+    personal_metrics: Optional[Dict[str, Any]] = None
 
     # ========== NEW FIELDS (v2.0) ==========
 

@@ -132,6 +132,34 @@ is inferred from these estimates. Actual zero and negative amounts are retained.
 `currency` is null for mixed or unavailable currencies. Consumers must handle
 nullable monetary fields and must not coerce them to zero.
 
+## Personal workflow execution metrics
+
+`WorkflowPositionTracker.personal_metrics()` reads retained SQLite `trade_history`
+for the current product, provider and paper/live mode. Its independent
+`WorkflowPnLEvent.personal_metrics` envelope retains stock realized PnL after all
+positions close and counts distinct positive executed orders by valid stored
+order date and normalized order number. Partial fills of one dated order count
+once. This is the reporting runtime's retained workflow ledger, not a complete
+account history or verified contest score. No credential/account generation is
+claimed by this legacy local storage.
+
+Stored stock realized PnL is gross long-only FIFO before fees. The reader
+validates sufficient recorded buys and consistency with stored results; mixed
+manual/product/provider/exchange FIFO ownership makes the affected symbol
+unavailable. Amounts remain separate by symbol/exchange, with currency null
+because the historical table has no currency evidence. No FX conversion or return
+denominator is invented. Futures executed-order counts are available under the
+same identity rules, but futures monetary results and portfolio MDD remain null:
+the retained FIFO lacks contract accounting and risk price windows are not equity
+curves. Invalid order identities also yield a null count with its reason.
+
+The listener refreshes this evidence at most once per 10 seconds to avoid scanning
+retained history on every price tick; reused observations retain their original
+`as_of`. The cache is isolated to the actual tracker/product/provider/mode, and
+other broker-node callbacks do not receive it. A newly recorded fill may appear
+at the next refresh. Existing open-position PnL fields are unchanged. Core and
+engine consumers must ship together to support the additive event field.
+
 ## Stock read failures
 
 Stock open-order queries include current-day orders (`ThdayBnsAppYn="1"`).

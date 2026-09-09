@@ -16,6 +16,7 @@ from enum import Enum
 from collections import deque
 import asyncio
 import logging
+import time
 
 from programgarden_core.expression import ExpressionContext
 from programgarden_core.bases.listener import (
@@ -232,6 +233,7 @@ class ExecutionContext:
         # === New: Workflow Position Tracker ===
         # Tracks workflow positions separately using FIFO for competition ranking
         self._workflow_position_tracker: Optional[Any] = None  # WorkflowPositionTracker (lazy init)
+        self._personal_metrics_cache: Optional[Tuple[tuple, float, dict]] = None
         self._workflow_risk_tracker: Optional[Any] = None  # WorkflowRiskTracker (lazy init)
         self._workflow_broker_node_id: Optional[str] = None  # BrokerNode ID for PnL refresh
         self._workflow_product: str = "overseas_stock"  # Product type for PnL refresh
@@ -1943,6 +1945,26 @@ class ExecutionContext:
             from .futures_pnl import unavailable_account_pnl
 
             account_result = unavailable_account_pnl()
+
+        personal_metrics = None
+        tracker = self._workflow_position_tracker
+        if (tracker is not None and getattr(tracker, "product", None) == product
+                and getattr(tracker, "provider", None) == provider
+                and getattr(tracker, "broker_node_id", None) == broker_node_id):
+            try:
+                # Price ticks do not change retained executions. Bound full
+                # history reads to the durable reporting cadence and preserve
+                # the original observation timestamp when reusing a snapshot.
+                cache_key = (id(tracker), tracker.product, tracker.provider, tracker.trading_mode)
+                cache = self._personal_metrics_cache
+                if cache is not None and cache[0] == cache_key and time.monotonic() - cache[1] < 10:
+                    personal_metrics = cache[2]
+                else:
+                    personal_metrics = tracker.personal_metrics()
+                    self._personal_metrics_cache = (cache_key, time.monotonic(), personal_metrics)
+            except Exception:
+                self._personal_metrics_cache = None
+                logger.warning("Personal workflow ledger metrics unavailable")
         
         # 3. 리스너별 이벤트 생성 및 전달
         for listener in self._listeners:
@@ -1982,6 +2004,7 @@ class ExecutionContext:
                     "trust_score": base_workflow_result.get("trust_score", 0),
                     "anomaly_count": base_workflow_result.get("anomaly_count", 0),
                     "currency": currency,
+                    "personal_metrics": personal_metrics,
                     
                     # 신규 필드: 워크플로우 상품별
                     "workflow_overseas_stock_pnl_rate": base_workflow_result.get("workflow_overseas_stock_pnl_rate"),
