@@ -106,10 +106,11 @@ async def test_futures_confirmation_never_takes_the_stock_date_retry():
 
 
 @pytest.mark.asyncio
-async def test_stock_fill_history_retries_the_previous_date_and_records_that_date():
-    # block3 carries no per-row order date, so the queried date IS the rows' order
-    # date. Recording the machine's date after a successful earlier-date query
-    # would stamp the ledger with an identity the broker never used.
+async def test_stock_fill_history_retries_the_previous_date_but_keeps_the_local_identity():
+    # Widen the search, never the ledger identity. Fill classification matches
+    # `workflow_orders` on (order_no, order_date), and that row is stamped with
+    # the local date at order time, so stamping the broker's date here would make
+    # the fill "unknown_api" and drop it from the executed-order count entirely.
     row = SimpleNamespace(OrdNo=77, OvrsExecPrc=10.5, ExecQty=2, ShtnIsuNo="AAPL",
                           OrdMktCode="82", BnsTpCode="2", ExecTime="093000000")
     captured = {}
@@ -136,5 +137,6 @@ async def test_stock_fill_history_retries_the_previous_date_and_records_that_dat
 
     assert len(dates) == 2 and dates[0] != dates[1]
     history = captured.get("history") or []
-    assert history and history[0]["order_date"] == dates[1]
+    assert history and history[0]["order_date"] == dates[0], (
+        "the ledger keeps the local order date even when an earlier query found the fill")
     assert history[0]["order_no"] == "77" and history[0]["quantity"] == 2

@@ -4949,14 +4949,18 @@ class BrokerNodeExecutor(NodeExecutorBase):
             # 같은 어긋남을 실측했다(2026-09-10 00:39 KST 접수 → OrdDt 20260909).
             # 그래서 오늘로 못 찾으면 전 영업일을 한 번 더 본다 — 지금 이미 실패하는
             # 경우에만 한 번 더 호출하므로 정상 경로의 호출 수는 그대로다.
-            # (LS 의 해외주식 OrdDt 규약은 직접 측정하지 못했다. 그래서 날짜를 추정해
-            #  단정하지 않고, 실제로 행이 나온 날짜를 그대로 원장에 쓴다.)
-            candidates = [
-                datetime.now().strftime("%Y%m%d"),
-                (datetime.now() - timedelta(days=1)).strftime("%Y%m%d"),
-            ]
+            # (LS 의 해외주식 OrdDt 규약은 직접 측정하지 못했다. 그래서 넓히는 건
+            #  조회 범위뿐이고, 원장에 쓰는 주문일자는 건드리지 않는다.)
+            #
+            # 🔴 원장 주문일자는 브로커 날짜가 아니라 **로컬 날짜**여야 한다.
+            # 체결 분류가 `workflow_orders` 를 (order_no, order_date) 로 대조하는데
+            # (workflow_position_tracker `_check_workflow_order`), 그 행은 주문 시점
+            # 로컬 날짜로 기록된다. 여기서 브로커 날짜를 찍으면 대조가 어긋나
+            # classification 이 unknown_api 로 떨어지고 personal_metrics 의
+            # 체결 주문 수에서 **통째로 빠진다** — 못 찾는 것보다 나쁘다.
+            today = datetime.now().strftime("%Y%m%d")
+            candidates = [today, (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")]
             result = None
-            today = candidates[0]
             for candidate in candidates:
                 response = ls.overseas_stock().accno().cosaq00102(
                     body=COSAQ00102.COSAQ00102InBlock1(
@@ -4976,8 +4980,6 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 )
                 result = await response.req_async()
                 if result and result.block3:
-                    # 아래 fill_history 가 이 날짜를 주문일자로 기록한다.
-                    today = candidate
                     break
 
             if not result or not result.block3:
