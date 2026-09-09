@@ -299,6 +299,7 @@ class StockAccountTracker:
         try:
             from ..accno.COSAQ00102.blocks import COSAQ00102InBlock1
             from datetime import datetime as dt
+            query_date = dt.now().strftime("%Y%m%d")
             
             tr = self._accno_client.cosaq00102(
                 body=COSAQ00102InBlock1(
@@ -309,7 +310,7 @@ class StockAccountTracker:
                     BnsTpCode="0",    # 전체
                     IsuNo="",
                     SrtOrdNo=999999999,
-                    OrdDt=dt.now().strftime("%Y%m%d"),
+                    OrdDt=query_date,
                     ExecYn="2",       # 2: 미체결
                     CrcyCode="000",   # 전체
                     ThdayBnsAppYn="1",
@@ -323,17 +324,42 @@ class StockAccountTracker:
             resp_error = getattr(resp, "error_msg", None)
             status = getattr(resp, "status_code", None)
             rows = getattr(resp, "block3", None) or []
-            # A missing detail block defaults to [] in the SDK. Only a success
-            # envelope with echo and aggregate blocks proves an empty result.
-            valid_empty = (
-                not rows and rsp_cd == "00000"
+            # Keep omitted details distinct from an explicitly empty list.
+            complete_empty = (
+                not rows
+                and "block3" in getattr(resp, "model_fields_set", ())
                 and getattr(resp, "block1", None) is not None
                 and getattr(resp, "block2", None) is not None
             )
+            echo = getattr(resp, "block1", None)
+            header = getattr(resp, "header", None)
+            # Observed for this exact pending-order query on 2026-09-09.
+            # The broker echoes market 00 as %. This is TR-local empty-result
+            # handling, not a generic success code or historical coverage claim.
+            observed_no_data = (
+                complete_empty and status == 200 and rsp_cd == "02679"
+                and getattr(echo, "OrdDt", None) == query_date
+                and getattr(echo, "OrdMktCode", None) == "%"
+                and getattr(echo, "ThdayBnsAppYn", None) == "1"
+                and getattr(echo, "BnsTpCode", None) == "0"
+                and getattr(echo, "CrcyCode", None) == "000"
+                and all(
+                    str(getattr(echo, name, None)) == expected
+                    for name, expected in (
+                        ("QryTpCode", "1"), ("BkseqTpCode", "1"),
+                        ("IsuNo", ""), ("SrtOrdNo", "999999999"),
+                        ("ExecYn", "2"), ("LoanBalHldYn", "0"),
+                    )
+                    if name in getattr(echo, "model_fields_set", ())
+                )
+                and getattr(header, "tr_cont", None) == "N"
+                and not getattr(header, "tr_cont_key", None)
+            )
+            valid_empty = complete_empty and (rsp_cd == "00000" or observed_no_data)
             if (
                 resp is None or resp_error
                 or (status is not None and status >= 400)
-                or rsp_cd not in SUCCESS_CODES
+                or (rsp_cd not in SUCCESS_CODES and not observed_no_data)
                 or (not rows and not valid_empty)
                 or any(not item.OrdNo or item.OrdNo <= 0 for item in rows)
             ):
