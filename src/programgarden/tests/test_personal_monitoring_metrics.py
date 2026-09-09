@@ -85,6 +85,51 @@ async def test_price_ticks_reuse_actual_observation_until_refresh_without_crossi
 
 
 @pytest.mark.asyncio
+async def test_futures_count_is_unavailable_while_an_app_session_owns_reconciliation(tmp_path):
+    # With a lifecycle handler attached, executor.on_tc3_event stops feeding
+    # fills into the ledger, so its 0 means "not counted here", not "none".
+    ledger = tracker(tmp_path, product="overseas_futures", provider="ls-sec.co.kr")
+    events = []
+    async def observe(event):
+        events.append(event)
+    context = ExecutionContext(job_id="job", workflow_id="workflow",
+                               order_lifecycle_handler=SimpleNamespace())
+    context._workflow_position_tracker = ledger
+    context.add_listener(SimpleNamespace(on_workflow_pnl_update=observe))
+    await context.notify_workflow_pnl("broker", "overseas_futures", "ls-sec.co.kr", {}, {})
+    metrics = events[-1].personal_metrics
+    assert metrics["executed_order_count"] is None
+    assert metrics["executed_order_count_status"] == "unavailable"
+    assert metrics["executed_order_count_reason"] == "local_futures_ledger_not_execution_source"
+    # The ledger itself keeps reporting what it holds; only the envelope is honest.
+    assert ledger.personal_metrics()["executed_order_count_status"] == "available"
+
+
+@pytest.mark.asyncio
+async def test_futures_without_an_app_session_and_stock_with_one_keep_their_counts(tmp_path):
+    events = []
+    async def observe(event):
+        events.append(event)
+    async def emit(context, product, ledger):
+        context._workflow_position_tracker = ledger
+        context.add_listener(SimpleNamespace(on_workflow_pnl_update=observe))
+        await context.notify_workflow_pnl("broker", product, "ls-sec.co.kr", {}, {})
+        return events[-1].personal_metrics
+
+    futures = tracker(tmp_path / "a", product="overseas_futures", provider="ls-sec.co.kr")
+    await fill(futures, "001", "buy", 1, 100, "11", symbol="FUT")
+    solo = await emit(ExecutionContext(job_id="job", workflow_id="workflow"), "overseas_futures", futures)
+    assert solo["executed_order_count"] == 1 and solo["executed_order_count_status"] == "available"
+
+    stock = tracker(tmp_path / "b", provider="ls-sec.co.kr")
+    await fill(stock, "001", "buy", 1, 100, "11")
+    attended = await emit(ExecutionContext(job_id="job", workflow_id="workflow",
+                                           order_lifecycle_handler=SimpleNamespace()),
+                          "overseas_stock", stock)
+    assert attended["executed_order_count"] == 1 and attended["executed_order_count_status"] == "available"
+
+
+@pytest.mark.asyncio
 async def test_partial_fills_exact_replay_and_restart_do_not_inflate_order_count(tmp_path):
     ledger = tracker(tmp_path)
     await fill(ledger, "001", "buy", 1, 100, "11")

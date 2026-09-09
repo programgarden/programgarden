@@ -44,6 +44,27 @@ from programgarden_core.models.resilience import RetryEvent
 logger = logging.getLogger("programgarden.context")
 
 
+def _honest_execution_count(metrics, product, order_lifecycle_handler):
+    """Refuse to report a futures execution count the ledger cannot know.
+
+    When an app session is attached it reconciles canonical REST executions and
+    ``executor.on_tc3_event`` deliberately stops feeding fills into the ledger
+    (TC3 and REST identifiers have no proven alias relation). The ledger then
+    holds no futures fills at all, so its count is 0 however many orders filled.
+    Reporting that 0 as an available figure is the difference between "no
+    executions" and "not counted here" — say the second one.
+    """
+    from .order_lifecycle import FUTURES_PRODUCTS
+
+    if (not isinstance(metrics, dict) or order_lifecycle_handler is None
+            or product not in FUTURES_PRODUCTS
+            or metrics.get("executed_order_count_status") != "available"):
+        return metrics
+    return {**metrics, "executed_order_count": None,
+            "executed_order_count_status": "unavailable",
+            "executed_order_count_reason": "local_futures_ledger_not_execution_source"}
+
+
 @runtime_checkable
 class DataProvider(Protocol):
     """Data provider protocol"""
@@ -1965,7 +1986,8 @@ class ExecutionContext:
                 if cache is not None and cache[0] == cache_key and time.monotonic() - cache[1] < 10:
                     personal_metrics = cache[2]
                 else:
-                    personal_metrics = tracker.personal_metrics()
+                    personal_metrics = _honest_execution_count(
+                        tracker.personal_metrics(), product, self.order_lifecycle_handler)
                     self._personal_metrics_cache = (cache_key, time.monotonic(), personal_metrics)
             except Exception:
                 self._personal_metrics_cache = None
