@@ -4938,34 +4938,54 @@ class BrokerNodeExecutor(NodeExecutorBase):
         체결내역 API를 조회하여 FIFO 포지션을 생성합니다.
         """
         try:
+            from datetime import timedelta
+
             from programgarden_finance import COSAQ00102
 
-            
-            # 오늘 날짜 기준 체결내역 조회 (COSAQ00102 = 주문체결내역조회)
+            # COSAQ00102 는 주문일자를 반드시 받고, block3 행에는 행별 주문일자가 없다
+            # (OrdDt 는 OutBlock2 의 조회 에코뿐) — 즉 **조회한 날짜가 곧 그 행들의
+            # 주문일자**다. 그런데 브로커의 주문일자는 실행 머신의 달력 날짜가 아니라
+            # 브로커 영업일이고, 미국장은 한국시간 자정을 넘겨 이어진다. 해외선물에서
+            # 같은 어긋남을 실측했다(2026-09-10 00:39 KST 접수 → OrdDt 20260909).
+            # 그래서 오늘로 못 찾으면 전 영업일을 한 번 더 본다 — 지금 이미 실패하는
+            # 경우에만 한 번 더 호출하므로 정상 경로의 호출 수는 그대로다.
+            # (LS 의 해외주식 OrdDt 규약은 직접 측정하지 못했다. 그래서 넓히는 건
+            #  조회 범위뿐이고, 원장에 쓰는 주문일자는 건드리지 않는다.)
+            #
+            # 🔴 원장 주문일자는 브로커 날짜가 아니라 **로컬 날짜**여야 한다.
+            # 체결 분류가 `workflow_orders` 를 (order_no, order_date) 로 대조하는데
+            # (workflow_position_tracker `_check_workflow_order`), 그 행은 주문 시점
+            # 로컬 날짜로 기록된다. 여기서 브로커 날짜를 찍으면 대조가 어긋나
+            # classification 이 unknown_api 로 떨어지고 personal_metrics 의
+            # 체결 주문 수에서 **통째로 빠진다** — 못 찾는 것보다 나쁘다.
             today = datetime.now().strftime("%Y%m%d")
-            
-            response = ls.overseas_stock().accno().cosaq00102(
-                body=COSAQ00102.COSAQ00102InBlock1(
-                    RecCnt=1,
-                    QryTpCode="1",  # 계좌별
-                    BkseqTpCode="1",  # 역순
-                    OrdMktCode="00",  # 전체 시장
-                    BnsTpCode="0",  # 전체 (매수/매도)
-                    IsuNo="",  # 전체 종목
-                    SrtOrdNo=999999999,  # 역순 시작
-                    OrdDt=today,  # 오늘 날짜
-                    ExecYn="1",  # 체결만 조회
-                    CrcyCode="000",  # 전체 통화
-                    ThdayBnsAppYn="0",
-                    LoanBalHldYn="0",
-                ),
-            )
-            result = await response.req_async()
-            
+            candidates = [today, (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")]
+            result = None
+            for candidate in candidates:
+                response = ls.overseas_stock().accno().cosaq00102(
+                    body=COSAQ00102.COSAQ00102InBlock1(
+                        RecCnt=1,
+                        QryTpCode="1",  # 계좌별
+                        BkseqTpCode="1",  # 역순
+                        OrdMktCode="00",  # 전체 시장
+                        BnsTpCode="0",  # 전체 (매수/매도)
+                        IsuNo="",  # 전체 종목
+                        SrtOrdNo=999999999,  # 역순 시작
+                        OrdDt=candidate,
+                        ExecYn="1",  # 체결만 조회
+                        CrcyCode="000",  # 전체 통화
+                        ThdayBnsAppYn="0",
+                        LoanBalHldYn="0",
+                    ),
+                )
+                result = await response.req_async()
+                if result and result.block3:
+                    break
+
             if not result or not result.block3:
                 context.log("debug", "No fill history found for today", node_id)
                 return
-            
+
             # 시장코드 → 거래소 매핑
             market_to_exchange = {'81': 'NYSE', '82': 'NASDAQ', '83': 'AMEX'}
             
@@ -15271,6 +15291,23 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 if ordered_qty > 0 and filled_qty >= ordered_qty:
                     break
 
+            if filled_qty == 0 and product == "overseas_stock":
+                # The broker files an order under its own business date, which
+                # can lag the ordering machine's calendar date after local
+                # midnight. This was observed directly on overseas futures
+                # (an order accepted 2026-09-10 00:39 KST came back as
+                # OrdDt 20260909); the same lag is *assumed by analogy* for
+                # overseas stock, whose OrdDt semantics were not measured.
+                # COSAQ00102 requires an explicit OrdDt, so look one day back
+                # once — only after the normal window already found nothing, so
+                # it costs one extra read only in the case that is broken today.
+                from datetime import date as _date, timedelta as _td
+
+                filled_qty, fill_price = await self._query_overseas_stock_fill(
+                    ls, order_id, context, node_id,
+                    order_date=(_date.today() - _td(days=1)).strftime("%Y%m%d"),
+                )
+
             if ordered_qty > 0 and filled_qty >= ordered_qty:
                 inner["status"] = "filled"
                 inner["filled_count"] = 1
@@ -15343,15 +15380,20 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         order_id: str,
         context: ExecutionContext,
         node_id: str,
+        order_date: str | None = None,
     ) -> tuple:
         """Return ``(filled_qty, avg_fill_price)`` for an overseas_stock order
         via COSAQ00102 (주문체결내역조회, 체결분만). ``(0, 0.0)`` when not found
-        or on error."""
+        or on error.
+
+        ``order_date`` (YYYYMMDD) overrides the queried order date; the caller
+        uses it to look one business day back after local midnight. Rows are
+        matched by order number alone, so the date only widens the search."""
         try:
             from programgarden_finance import COSAQ00102
             from datetime import datetime as _dt
 
-            today = _dt.now().strftime("%Y%m%d")
+            today = order_date or _dt.now().strftime("%Y%m%d")
             response = ls.overseas_stock().accno().cosaq00102(
                 body=COSAQ00102.COSAQ00102InBlock1(
                     RecCnt=1,
@@ -15403,14 +15445,17 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import (
                 CIDBQ02400InBlock1,
             )
-            from datetime import datetime as _dt
-
-            today = _dt.now().strftime("%Y%m%d")
+            # 당일조회(ThdayTpCode="1")에는 날짜를 싣지 않는다 — 브로커의 "당일"은
+            # 그쪽 영업일이고, 실행 머신의 달력 날짜와 다를 수 있다. 야간 세션에서
+            # 로컬이 자정을 넘기면 브로커는 아직 전 영업일이라(2026-09-10 00:39 KST
+            # 접수 주문이 OrdDt/ExecDt=20260909 로 조회됨) 로컬 날짜를 창으로 주면
+            # 방금 낸 주문의 체결을 스스로 잘라낸다. 아래 매칭은 주문번호로만 하므로
+            # 날짜 창은 필요 없다.
             response = await ls.overseas_futureoption().accno().CIDBQ02400(
                 body=CIDBQ02400InBlock1(
                     IsuCodeVal="",          # 전체 종목
-                    QrySrtDt=today,
-                    QryEndDt=today,
+                    QrySrtDt="",
+                    QryEndDt="",
                     ThdayTpCode="1",        # 1: 당일조회
                     OrdStatCode="0",        # 0: 전체(체결+미체결) — 상태 판정에 필요
                     BnsTpCode="0",          # 0: 전체

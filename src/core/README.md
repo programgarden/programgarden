@@ -97,3 +97,13 @@ monetary/rate scalars remain null when accounting evidence is unavailable.
 is inferred from these estimates. Actual zero and negative amounts are retained.
 `currency` is null for mixed or unavailable currencies. Consumers must handle
 nullable monetary fields and must not coerce them to zero.
+
+`WorkflowPnLEvent.personal_metrics` is an optional versioned envelope for retained
+local workflow executions. Version 1 includes `scope` (kind, product, provider,
+trading mode), timezone-aware `as_of`, `basis`, executed-order count/status,
+per-symbol/exchange/currency realized amounts/status, and unavailable MDD.
+It is unverified personal evidence, independent of whole-account contest results.
+Stock realized amounts are stored long-only FIFO gross values excluding fees;
+unknown currency stays null. Futures monetary values and portfolio MDD require
+accounting evidence absent from this ledger and remain null. Consumers must
+preserve null/status and use the latest cumulative observation, not sum dates.

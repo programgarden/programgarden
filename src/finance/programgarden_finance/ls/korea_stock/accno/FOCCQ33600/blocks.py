@@ -1,6 +1,6 @@
 """Pydantic models for LS Securities OpenAPI FOCCQ33600 (Account Periodic Return Detail).
 
-FOCCQ33600 returns periodic performance metrics for a Korean cash-equity
+FOCCQ33600 returns periodic performance metrics for a stock
 account over a date range, broken down at daily / weekly / monthly
 granularity per ``TermTp``. Three response blocks are returned:
     - ``FOCCQ33600OutBlock1`` (block1): echo-back of the input parameters.
@@ -16,6 +16,11 @@ granularity per ``TermTp``. Three response blocks are returned:
 Field descriptions follow LS official spec wording. Korean field labels
 (한글명) are appended in parentheses so AI chatbots can map between English
 descriptions and Korean LS documentation.
+
+The SDK routes this TR through the Korean-stock account API. An observed
+response using an overseas-stock credential is documented in
+``docs/observed_broker_responses.md``. Route placement does not establish
+asset coverage; KRW report amounts are not USD-only performance.
 """
 
 from typing import List, Literal, Optional

@@ -17,7 +17,7 @@ import logging
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
@@ -127,6 +127,15 @@ class WorkflowPositionTracker:
         self.product = product
         self.provider = provider
         self.trading_mode = trading_mode
+
+        # 체결 원장이 바뀔 때마다 증가한다. 읽는 쪽(개인 지표 캐시)이 "가격 틱은
+        # 체결을 바꾸지 않는다"는 이유로 결과를 잠시 재사용하는데, 시간만 보고
+        # 재사용하면 **막 들어온 체결을 놓친다**. 2026-09-10 실측: SNDL 체결이
+        # 02:17:31.674 에 기록됐는데 봉투는 0.5초 전(02:17:31.189)에 계산된 값이
+        # 그대로 굳어, 원장에 체결이 1건 있는데도 체결 주문 수가 0 으로 저장됐다.
+        # 버퍼 처리처럼 컨텍스트를 거치지 않는 쓰기 경로까지 덮으려면 원장 자신이
+        # 세는 게 맞다.
+        self.fill_revision = 0
 
         # 체결 버퍼 (Race Condition 방어)
         # Every arrival without an execution ID remains a separate event. An
@@ -582,6 +591,10 @@ class WorkflowPositionTracker:
 
             conn.commit()
 
+        # 원장이 실제로 바뀌었다 — 이 값을 캐시 키에 실은 소비자는 다음 읽기에서
+        # 반드시 다시 계산한다.
+        self.fill_revision += 1
+
         logger.debug(f"Processed fill: {fill.symbol} {fill.side} {fill.quantity}@{fill.price} [{classification}] ({self.trading_mode})")
         return classification
     
@@ -957,6 +970,115 @@ class WorkflowPositionTracker:
             
             "currency": currency,
             "timestamp": datetime.now(),
+        }
+
+    def personal_metrics(self) -> Dict[str, Any]:
+        """Read retained workflow executions without claiming account performance.
+
+        Historical FIFO rows have no currency or fee evidence. Keep their amounts
+        per symbol/exchange and reject mixed ownership or an incomplete FIFO basis.
+        Futures FIFO is not a monetary ledger. No equity/MDD basis is inferred.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = [dict(row) for row in conn.execute(
+                "SELECT * FROM trade_history WHERE trading_mode=? ORDER BY id",
+                (self.trading_mode,),
+            )]
+        selected = [row for row in rows if row["product"] == self.product
+                    and row["provider"] == self.provider and row["classification"] == "workflow"]
+        keys = set()
+        invalid_count = False
+        groups: Dict[Tuple[str, str], List[dict]] = {}
+        for row in selected:
+            try:
+                quantity = Decimal(str(row["quantity"]))
+                if not quantity.is_finite() or quantity < 0:
+                    raise ValueError("Invalid execution quantity")
+                if quantity == 0:
+                    continue
+                order_date = row["order_date"]
+                if not isinstance(order_date, str) or not re.fullmatch(r"[0-9]{8}", order_date):
+                    raise ValueError("Missing order date")
+                datetime.strptime(order_date, "%Y%m%d")
+                order_no = self._normalize_identifier(row["order_no"])
+                if order_no is None:
+                    raise ValueError("Missing order number")
+                keys.add((order_date, order_no))
+            except (ValueError, TypeError, ArithmeticError):
+                invalid_count = True
+            key = (row["symbol"] or "", row["exchange"] or "")
+            groups.setdefault(key, []).append(row)
+
+        realized = []
+        for (symbol, exchange), fills in sorted(groups.items()):
+            reason = None
+            amount = None
+            if self.product == "overseas_futures":
+                reason = "futures_fifo_not_monetary"
+            elif not symbol:
+                reason = "missing_symbol"
+            elif any(row["symbol"] == symbol and (
+                row["product"] != self.product or row["provider"] != self.provider
+                or row["classification"] != "workflow" or (row["exchange"] or "") != exchange
+            ) for row in rows):
+                # The historical sell writer matches symbol/mode across all lots.
+                # It cannot prove workflow ownership when those domains overlap.
+                reason = "mixed_fifo_ownership"
+            else:
+                try:
+                    lots = []
+                    total = Decimal(0)
+                    for fill in fills:
+                        quantity = Decimal(str(fill["quantity"]))
+                        price = Decimal(str(fill["price"]))
+                        stored = Decimal(str(fill["realized_pnl"]))
+                        if not all(value.is_finite() for value in (quantity, price, stored)) or quantity <= 0:
+                            raise ValueError("Invalid stored fill")
+                        if fill["side"] == "buy":
+                            if stored != 0:
+                                raise ValueError("Unexpected opening PnL")
+                            lots.append([fill["fill_datetime"] or "", fill["id"], quantity, price])
+                            lots.sort(key=lambda lot: (lot[0], lot[1]))
+                        elif fill["side"] == "sell":
+                            remaining = quantity
+                            expected = Decimal(0)
+                            for lot in lots:
+                                closed = min(remaining, lot[2])
+                                expected += (price - lot[3]) * closed
+                                lot[2] -= closed
+                                remaining -= closed
+                                if remaining == 0:
+                                    break
+                            tolerance = max(Decimal("0.000001"), abs(expected) * Decimal("0.000000001"))
+                            if remaining > 0 or abs(stored - expected) > tolerance:
+                                raise ValueError("Incomplete or inconsistent FIFO basis")
+                            # Preserve the stored amount; replay arithmetic only
+                            # validates the basis and never replaces its value.
+                            total += stored
+                        else:
+                            raise ValueError("Unknown fill side")
+                    amount = float(total)
+                    if not Decimal(str(amount)).is_finite():
+                        raise ValueError("Non-finite total")
+                except (ValueError, TypeError, ArithmeticError, OverflowError):
+                    reason = "incomplete_fifo_basis"
+            realized.append({"symbol": symbol, "exchange": exchange, "currency": None,
+                             "amount": amount, "status": "available" if reason is None else "unavailable",
+                             "reason": reason})
+        return {
+            "version": 1,
+            "scope": {"kind": "local_workflow_ledger", "product": self.product,
+                      "provider": self.provider, "trading_mode": self.trading_mode},
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "basis": "stored_fifo_gross_excluding_fees",
+            "executed_order_count": None if invalid_count else len(keys),
+            "executed_order_count_status": "unavailable" if invalid_count else "available",
+            "executed_order_count_reason": "invalid_execution_identity" if invalid_count else None,
+            "realized_pnl": realized,
+            "max_drawdown": None,
+            "max_drawdown_status": "unavailable",
+            "max_drawdown_reason": "equity_history_unavailable",
         }
     
     def detect_anomalies(self) -> List[AnomalyResult]:

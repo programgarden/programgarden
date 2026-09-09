@@ -16,6 +16,7 @@ from enum import Enum
 from collections import deque
 import asyncio
 import logging
+import time
 
 from programgarden_core.expression import ExpressionContext
 from programgarden_core.bases.listener import (
@@ -41,6 +42,27 @@ from programgarden_core.bases.listener import (
 from programgarden_core.models.resilience import RetryEvent
 
 logger = logging.getLogger("programgarden.context")
+
+
+def _honest_execution_count(metrics, product, order_lifecycle_handler):
+    """Refuse to report a futures execution count the ledger cannot know.
+
+    When an app session is attached it reconciles canonical REST executions and
+    ``executor.on_tc3_event`` deliberately stops feeding fills into the ledger
+    (TC3 and REST identifiers have no proven alias relation). The ledger then
+    holds no futures fills at all, so its count is 0 however many orders filled.
+    Reporting that 0 as an available figure is the difference between "no
+    executions" and "not counted here" — say the second one.
+    """
+    from .order_lifecycle import FUTURES_PRODUCTS
+
+    if (not isinstance(metrics, dict) or order_lifecycle_handler is None
+            or product not in FUTURES_PRODUCTS
+            or metrics.get("executed_order_count_status") != "available"):
+        return metrics
+    return {**metrics, "executed_order_count": None,
+            "executed_order_count_status": "unavailable",
+            "executed_order_count_reason": "local_futures_ledger_not_execution_source"}
 
 
 @runtime_checkable
@@ -232,6 +254,7 @@ class ExecutionContext:
         # === New: Workflow Position Tracker ===
         # Tracks workflow positions separately using FIFO for competition ranking
         self._workflow_position_tracker: Optional[Any] = None  # WorkflowPositionTracker (lazy init)
+        self._personal_metrics_cache: Optional[Tuple[tuple, float, dict]] = None
         self._workflow_risk_tracker: Optional[Any] = None  # WorkflowRiskTracker (lazy init)
         self._workflow_broker_node_id: Optional[str] = None  # BrokerNode ID for PnL refresh
         self._workflow_product: str = "overseas_stock"  # Product type for PnL refresh
@@ -1943,6 +1966,32 @@ class ExecutionContext:
             from .futures_pnl import unavailable_account_pnl
 
             account_result = unavailable_account_pnl()
+
+        personal_metrics = None
+        tracker = self._workflow_position_tracker
+        if (tracker is not None and getattr(tracker, "product", None) == product
+                and getattr(tracker, "provider", None) == provider
+                and getattr(tracker, "broker_node_id", None) == broker_node_id):
+            try:
+                # Price ticks do not change retained executions. Bound full
+                # history reads to the durable reporting cadence and preserve
+                # the original observation timestamp when reusing a snapshot.
+                # 🔴 다만 **체결은 바꾼다** — 원장의 fill_revision 을 키에 실어,
+                # 체결이 하나라도 기록되면 10초 창이 남아 있어도 다시 읽는다.
+                # (실측 2026-09-10: 체결 0.5초 전에 계산된 봉투가 그대로 저장돼
+                #  원장에 체결 1건이 있는데 체결 주문 수가 0 으로 남았다.)
+                cache_key = (id(tracker), tracker.product, tracker.provider,
+                             tracker.trading_mode, getattr(tracker, "fill_revision", 0))
+                cache = self._personal_metrics_cache
+                if cache is not None and cache[0] == cache_key and time.monotonic() - cache[1] < 10:
+                    personal_metrics = cache[2]
+                else:
+                    personal_metrics = _honest_execution_count(
+                        tracker.personal_metrics(), product, self.order_lifecycle_handler)
+                    self._personal_metrics_cache = (cache_key, time.monotonic(), personal_metrics)
+            except Exception:
+                self._personal_metrics_cache = None
+                logger.warning("Personal workflow ledger metrics unavailable")
         
         # 3. 리스너별 이벤트 생성 및 전달
         for listener in self._listeners:
@@ -1982,6 +2031,7 @@ class ExecutionContext:
                     "trust_score": base_workflow_result.get("trust_score", 0),
                     "anomaly_count": base_workflow_result.get("anomaly_count", 0),
                     "currency": currency,
+                    "personal_metrics": personal_metrics,
                     
                     # 신규 필드: 워크플로우 상품별
                     "workflow_overseas_stock_pnl_rate": base_workflow_result.get("workflow_overseas_stock_pnl_rate"),

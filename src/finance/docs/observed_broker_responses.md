@@ -1,5 +1,62 @@
 # Observed LS broker responses
 
+## COSAQ00102 real overseas-stock empty responses (2026-09-09)
+
+Two read-only observations at 13:32:35 and 13:32:37 UTC returned HTTP 200,
+`rsp_cd="02679"` and the exact message `조회내역이 없습니다.`. Both contained
+`COSAQ00102OutBlock1` and `COSAQ00102OutBlock2`, an explicitly present empty
+`COSAQ00102OutBlock3` list, `tr_cont="N"` and no continuation key. Requests used
+`OrdDt="20260909"`, `ThdayBnsAppYn="1"`, `ExecYn="0"`, `SrtOrdNo=999999999`,
+and separate `OrdMktCode="81"` and `"82"` values. No order was submitted.
+
+These observations establish only those response envelopes and request scopes.
+A subsequent read at 14:04:38 UTC used the tracker's exact pending query:
+`OrdMktCode="00"`, `ExecYn="2"`, `OrdDt="20260909"`, `ThdayBnsAppYn="1"`,
+`SrtOrdNo=999999999`. It returned HTTP 200, the same code/message, explicit
+echo/aggregate/empty detail blocks, `tr_cont="N"` and no continuation key.
+The response echoed `OrdMktCode="%"`, the requested date and current-day flag,
+`BnsTpCode="0"` and `CrcyCode="000"`.
+
+The tracker accepts this observed no-data envelope only with those matching
+echoes and terminal continuation metadata. It replaces the pending cache for
+its existing query and clears the prior error. Missing blocks, mismatched
+scope/date, nonempty 02679 responses and continuation pages retain the cache.
+The code is not added to generic success codes. This does not establish
+every-market coverage or complete historical execution counts.
+Additional explicitly returned query fields must agree with the request. A
+detail object, string or null is a malformed response, not an empty array.
+
+## FOCCQ33600: periodic report with an overseas-stock credential
+
+The existing `example/korea_stock/run_FOCCQ33600.py` demonstrates a dated
+account periodic-return request. A read-only request at 14:15:04 UTC on
+2026-09-09 used the existing real overseas-stock credential's shared token,
+the SDK's `/stock/accno` route, `QrySrtDt="20260901"`,
+`QryEndDt="20260909"` and `TermTp="1"`. The broker returned HTTP 200,
+`rsp_cd="00136"`, `rsp_msg="조회가 완료되었습니다."`, terminal continuation,
+the matching query echo, an account summary and eight daily rows dated
+September 1 through 8. September 9 was absent from this response.
+
+The returned fields include `InvstPlAmt`, `InvstErnrat`, `MnyinAmt`,
+`MnyoutAmt`, and daily opening/closing valuations and `TermErnrat`. The field
+contract labels monetary amounts as KRW. This successful response does not
+make the report a USD-only stock PnL series, establish a live current-day
+sample, or prove the inclusion rules for every asset type. Keep the requested
+period, actual returned dates, reporting currency and broker source explicit.
+Do not infer support from the example's directory name alone.
+
+The separate `example/korea_stock/run_CDPCQ04700.py` demonstrates transaction
+history with commission and tax fields. Its existence is not evidence that
+all those fields have been live-tested for overseas stocks.
+
+A separate confirmed structural defect is fixed: an omitted OutBlock3 must not
+count as an explicitly empty detail block. COSAQ00102 keeps its public `block3`
+default of `[]`, while `model_fields_set` retains whether the detail block was
+present. StockAccountTracker requires that presence before its existing empty
+00000 response path can clear pending orders. Missing/error/unknown-code
+responses preserve the previous cache and their original diagnostics. This
+presence guard does not establish market coverage or continuation completeness.
+
 This reference records directly observed responses, scoped to their TR and
 account mode. It is not a universal response-code dictionary. Preserve the
 original `rsp_cd` and `rsp_msg`; do not infer an undocumented rejection cause
