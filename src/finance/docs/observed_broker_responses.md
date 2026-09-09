@@ -1,5 +1,30 @@
 # Observed LS broker responses
 
+## COSAQ00102 real overseas-stock empty responses (2026-09-09)
+
+Two read-only observations at 13:32:35 and 13:32:37 UTC returned HTTP 200,
+`rsp_cd="02679"` and the exact message `조회내역이 없습니다.`. Both contained
+`COSAQ00102OutBlock1` and `COSAQ00102OutBlock2`, an explicitly present empty
+`COSAQ00102OutBlock3` list, `tr_cont="N"` and no continuation key. Requests used
+`OrdDt="20260909"`, `ThdayBnsAppYn="1"`, `ExecYn="0"`, `SrtOrdNo=999999999`,
+and separate `OrdMktCode="81"` and `"82"` values. No order was submitted.
+
+These observations establish only those response envelopes and request scopes.
+The stock tracker currently requests `OrdMktCode="00"` and `ExecYn="2"` and
+replaces its entire pending-order cache. The local field reference documents
+markets 81 and 82; its documentation does not establish that 00 covers every
+market. `StockOpenOrder` has no market identity for selective cache removal.
+Consequently, this record does not add 02679 to generic success codes or expand
+whole-cache clearing from the two market-specific observations.
+
+A separate confirmed structural defect is fixed: an omitted OutBlock3 must not
+count as an explicitly empty detail block. COSAQ00102 keeps its public `block3`
+default of `[]`, while `model_fields_set` retains whether the detail block was
+present. StockAccountTracker requires that presence before its existing empty
+00000 response path can clear pending orders. Missing/error/unknown-code
+responses preserve the previous cache and their original diagnostics. This
+presence guard does not establish market coverage or continuation completeness.
+
 This reference records directly observed responses, scoped to their TR and
 account mode. It is not a universal response-code dictionary. Preserve the
 original `rsp_cd` and `rsp_msg`; do not infer an undocumented rejection cause

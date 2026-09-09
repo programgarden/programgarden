@@ -80,11 +80,12 @@ class TrCOSAQ00102(TRAccnoAbstract):
             header=header,
             block1=parsed_block1,
             block2=parsed_block2,
-            block3=parsed_block3,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
             status_code=status,
             error_msg=error_msg,
+            # Preserve detail-block presence while retaining the public [] default.
+            **({"block3": parsed_block3} if "COSAQ00102OutBlock3" in resp_json else {}),
         )
         if resp is not None:
             result.raw_data = resp

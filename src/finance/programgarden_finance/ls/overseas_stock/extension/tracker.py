@@ -327,6 +327,7 @@ class StockAccountTracker:
             # envelope with echo and aggregate blocks proves an empty result.
             valid_empty = (
                 not rows and rsp_cd == "00000"
+                and "block3" in getattr(resp, "model_fields_set", ())
                 and getattr(resp, "block1", None) is not None
                 and getattr(resp, "block2", None) is not None
             )
