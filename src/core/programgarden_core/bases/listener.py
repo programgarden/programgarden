@@ -205,8 +205,11 @@ class WorkflowPnLEvent:
     WorkflowPnLEvent separates workflow positions from manual positions
     using FIFO (First-In-First-Out) tracking.
     
-    Used for competition ranking where only workflow-generated trades
-    should be counted for official scoring.
+    This is a local workflow observation. Official competition scoring requires
+    separate broker-verified accounting and must not trust this event alone.
+    Futures monetary scalars are unavailable until their accounting basis is
+    established. Native gross price-change estimates remain in pnl_by_currency
+    and monetary_positions, separately from unconfirmed broker-reported values.
     
     Attributes:
         job_id: Job identifier
@@ -295,9 +298,7 @@ class WorkflowPnLEvent:
                 super().__init__(start_date="20260115")  # 대회 시작일
             
             async def on_workflow_pnl_update(self, event: WorkflowPnLEvent) -> None:
-                # Use workflow_pnl_rate for official competition ranking
-                await update_leaderboard(event.job_id, event.workflow_pnl_rate)
-                # Use competition_workflow_pnl_rate if start_date filtering is needed
+                # Display available local estimates without verifying a score.
                 if event.competition_workflow_pnl_rate is not None:
                     print(f"Competition P&L: {event.competition_workflow_pnl_rate}%")
     """
@@ -306,22 +307,22 @@ class WorkflowPnLEvent:
     product: str  # "overseas_stock" | "overseas_futures" | "korea_stock"
 
     # Workflow position P&L
-    workflow_pnl_rate: Union[Decimal, float]
-    workflow_eval_amount: Union[Decimal, float]
-    workflow_buy_amount: Union[Decimal, float]
-    workflow_pnl_amount: Union[Decimal, float]
+    workflow_pnl_rate: Optional[Union[Decimal, float]]
+    workflow_eval_amount: Optional[Union[Decimal, float]]
+    workflow_buy_amount: Optional[Union[Decimal, float]]
+    workflow_pnl_amount: Optional[Union[Decimal, float]]
     
     # Other (manual/unknown) position P&L
-    other_pnl_rate: Union[Decimal, float]
-    other_eval_amount: Union[Decimal, float]
-    other_buy_amount: Union[Decimal, float]
-    other_pnl_amount: Union[Decimal, float]
+    other_pnl_rate: Optional[Union[Decimal, float]]
+    other_eval_amount: Optional[Union[Decimal, float]]
+    other_buy_amount: Optional[Union[Decimal, float]]
+    other_pnl_amount: Optional[Union[Decimal, float]]
     
     # Total account P&L
-    total_pnl_rate: Union[Decimal, float]
-    total_eval_amount: Union[Decimal, float]
-    total_buy_amount: Union[Decimal, float]
-    total_pnl_amount: Union[Decimal, float]
+    total_pnl_rate: Optional[Union[Decimal, float]]
+    total_eval_amount: Optional[Union[Decimal, float]]
+    total_buy_amount: Optional[Union[Decimal, float]]
+    total_pnl_amount: Optional[Union[Decimal, float]]
     
     # Position details
     workflow_positions: list = field(default_factory=list)  # List[PositionDetail]
@@ -335,9 +336,17 @@ class WorkflowPnLEvent:
     paper_trading: bool = False  # True: 모의투자, False: 실전투자
 
     # Metadata
-    currency: str = "USD"
+    currency: Optional[str] = "USD"
     timestamp: datetime = field(default_factory=datetime.utcnow)
     
+    # Native estimates and broker observations are distinct from account returns.
+    monetary_status: Optional[str] = None
+    monetary_basis: Optional[str] = None
+    monetary_unavailable_reason: Optional[str] = None
+    pnl_by_currency: Dict[str, Any] = field(default_factory=dict)
+    monetary_positions: Dict[str, Any] = field(default_factory=dict)
+    unavailable_position_count: int = 0
+
     # ========== NEW FIELDS (v2.0) ==========
 
     # Workflow product-specific P&L
@@ -890,6 +899,10 @@ class ConsoleExecutionListener(BaseExecutionListener):
 
     async def on_workflow_pnl_update(self, event: WorkflowPnLEvent) -> None:
         """Print workflow P&L update for debugging"""
+        if event.workflow_pnl_rate is None or event.total_pnl_rate is None:
+            print(f"[{event.broker_node_id}] Workflow/account return unavailable "
+                  f"({event.monetary_unavailable_reason or 'missing monetary evidence'})")
+            return
         wf_pnl = float(event.workflow_pnl_rate)
         total_pnl = float(event.total_pnl_rate)
 

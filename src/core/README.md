@@ -85,3 +85,15 @@ programgarden_core/
 ## 변경 로그
 
 자세한 변경 사항은 `CHANGELOG.md`를 참고하세요.
+
+## Workflow PnL event contract
+
+Futures workflow PnL events preserve native gross estimates separately from
+accounting results. `workflow_*`, `other_*`, `total_*`, account and competition
+monetary/rate scalars remain null when accounting evidence is unavailable.
+`pnl_by_currency` contains gross price-change subtotals by contract currency;
+`monetary_positions` retains their basis/status and unmodified, unconfirmed
+`broker_pnl_amount`. No fee, FX, margin/equity return or verified contest score
+is inferred from these estimates. Actual zero and negative amounts are retained.
+`currency` is null for mixed or unavailable currencies. Consumers must handle
+nullable monetary fields and must not coerce them to zero.

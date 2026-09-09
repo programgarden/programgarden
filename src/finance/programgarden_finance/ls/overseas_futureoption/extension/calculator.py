@@ -9,7 +9,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from .symbol_spec_manager import SymbolSpecManager, SymbolSpec
-from .models import FuturesTradeInput, FuturesPnLResult
+from .models import FuturesTradeInput, FuturesPnLResult, FuturesNativePnLResult
 
 # ===== 상수 정의 =====
 DEFAULT_EXCHANGE_RATE = Decimal("1400")  # 기본 환율 (원/달러)
@@ -61,6 +61,13 @@ def calculate_futures_pnl(
     Returns:
         FuturesPnLResult: 손익 계산 결과
     """
+    # This legacy API names its values USD. Never apply native non-USD tick
+    # money to USD fees or the USD/KRW rate without an explicit conversion.
+    if spec is not None and spec.currency.strip().upper() != "USD":
+        raise ValueError("usd_estimator_requires_usd_spec")
+    if trade.manual_tick_size is not None or trade.manual_tick_value is not None:
+        if trade.manual_currency.strip().upper() != "USD":
+            raise ValueError("usd_estimator_requires_usd_manual_values")
     safety_margin_applied = False
     
     # 1. Tick Size/Value 결정
@@ -77,6 +84,9 @@ def calculate_futures_pnl(
             f"Symbol spec not provided and manual_tick_size/manual_tick_value not set. "
             f"Provide either spec or manual values."
         )
+
+    if not tick_size.is_finite() or tick_size <= 0 or not tick_value.is_finite() or tick_value <= 0:
+        raise ValueError("missing_or_invalid_tick_metadata")
     
     # 2. 환율 결정
     exchange_rate = trade.exchange_rate
@@ -136,6 +146,44 @@ def calculate_futures_pnl(
         tick_value_used=tick_value,
         exchange_rate_used=exchange_rate,
         is_safety_margin_applied=safety_margin_applied
+    )
+
+
+def calculate_native_gross_pnl(
+    *,
+    spec: SymbolSpec,
+    quantity: int,
+    entry_price: Decimal,
+    current_price: Decimal,
+    is_long: bool = True,
+) -> FuturesNativePnLResult:
+    """Estimate gross linear tick-value price movement in contract currency.
+
+    This is not the broker's accounting valuation, net PnL, equity return or
+    settlement result. No fee, tax, FX or margin assumption is applied.
+    """
+    currency = spec.currency.strip().upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValueError("missing_or_invalid_spec_currency")
+    tick_size = Decimal(str(spec.tick_size))
+    tick_value = Decimal(str(spec.tick_value))
+    if not tick_size.is_finite() or tick_size <= 0 or not tick_value.is_finite() or tick_value <= 0:
+        raise ValueError("missing_or_invalid_tick_metadata")
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 0:
+        raise ValueError("invalid_quantity")
+    entry = Decimal(str(entry_price))
+    current = Decimal(str(current_price))
+    if not entry.is_finite() or not current.is_finite():
+        raise ValueError("invalid_position_price")
+    ticks = (current - entry) / tick_size
+    if not is_long:
+        ticks = -ticks
+    return FuturesNativePnLResult(
+        amount=ticks * tick_value * quantity,
+        currency=currency,
+        total_ticks=ticks,
+        tick_size_used=tick_size,
+        tick_value_used=tick_value,
     )
 
 

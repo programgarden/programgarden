@@ -21,11 +21,13 @@ from .models import (
     FuturesBalanceInfo,
     FuturesOpenOrder,
     AccountPnLInfo,
+    FuturesCurrencyPnL,
 )
 from .calculator import (
     FuturesPnLCalculator,
     DEFAULT_FEE_PER_CONTRACT,
     compute_futures_pnl_rate,
+    calculate_native_gross_pnl,
 )
 from .symbol_spec_manager import SymbolSpecManager, SymbolSpec
 from .subscription_manager import SubscriptionManager
@@ -49,6 +51,25 @@ def is_no_data_response(rsp_cd: str, rsp_msg: str) -> bool:
         return False
     msg_lower = (rsp_msg or "").lower()
     return any(pattern in msg_lower for pattern in NO_DATA_PATTERNS)
+
+
+def _response_field_present(item, name: str) -> bool:
+    """A Pydantic default is not evidence that the broker supplied the field."""
+    fields = getattr(item, "model_fields_set", None)
+    return name in fields if fields is not None else hasattr(item, name)
+
+
+def _reported_decimal(item, name: str) -> Optional[Decimal]:
+    if not _response_field_present(item, name):
+        return None
+    value = getattr(item, name, None)
+    if value is None or value == "":
+        return None
+    try:
+        amount = Decimal(str(value))
+        return amount if amount.is_finite() else None
+    except (ArithmeticError, TypeError, ValueError):
+        return None
 
 
 class FuturesAccountTracker:
@@ -98,6 +119,7 @@ class FuturesAccountTracker:
         
         # 데이터 캐시
         self._positions: Dict[str, FuturesPositionItem] = {}
+        self._position_evidence_errors: Dict[str, str] = {}
         self._balance: Optional[FuturesBalanceInfo] = None
         self._open_orders: Dict[str, FuturesOpenOrder] = {}
         self._current_prices: Dict[str, Decimal] = {}
@@ -214,6 +236,7 @@ class FuturesAccountTracker:
             if is_no_data_response(rsp_cd, rsp_msg):
                 logger.info(f"[_fetch_positions] 보유 포지션 없음 (rsp_cd={rsp_cd}, msg={rsp_msg})")
                 self._positions.clear()
+                self._position_evidence_errors.clear()
                 self._notify_position_change()
                 self._last_errors.pop("positions", None)
                 return
@@ -246,13 +269,14 @@ class FuturesAccountTracker:
             now = datetime.now()
             old_symbols = set(self._positions.keys())
             self._positions.clear()
+            self._position_evidence_errors.clear()
             
             # block2에 보유포지션 데이터가 있음
             if hasattr(resp, 'block2') and resp.block2:
                 for item in resp.block2:
                     symbol = getattr(item, 'IsuCodeVal', '')
                     is_long = getattr(item, 'BnsTpCode', '2') == '2'  # 2: 매수
-                    currency = getattr(item, 'CrcyCodeVal', 'USD')
+                    currency = str(getattr(item, 'CrcyCodeVal', '') or '').strip()
                     
                     # SymbolSpecManager에서 거래소 코드 조회
                     spec = self._spec_manager.get_spec(symbol)
@@ -268,7 +292,7 @@ class FuturesAccountTracker:
                         quantity=int(getattr(item, 'BalQty', 0)),
                         entry_price=Decimal(str(getattr(item, 'PchsPrc', 0))),
                         current_price=Decimal(str(getattr(item, 'OvrsDrvtNowPrc', 0))),
-                        pnl_amount=Decimal(str(getattr(item, 'AbrdFutsEvalPnlAmt', 0))),
+                        broker_pnl_amount=_reported_decimal(item, 'AbrdFutsEvalPnlAmt'),
                         opening_margin=Decimal(str(getattr(item, 'CsgnMgn', 0))),
                         maintenance_margin=Decimal(str(getattr(item, 'MaintMgn', 0))),
                         margin_call_rate=Decimal(str(getattr(item, 'MgnclRat', 0))),
@@ -278,6 +302,19 @@ class FuturesAccountTracker:
                     
                     # 현재가 저장
                     self._current_prices[symbol] = position.current_price
+                    for field_name, reason in (
+                        ("PchsPrc", "missing_position_entry_price"),
+                        ("BalQty", "missing_position_quantity"),
+                        ("BnsTpCode", "missing_position_side"),
+                    ):
+                        if not _response_field_present(item, field_name):
+                            self._position_evidence_errors[symbol] = reason
+                            break
+                    if (symbol not in self._position_evidence_errors
+                            and getattr(item, "BnsTpCode", None) not in ("1", "2")):
+                        self._position_evidence_errors[symbol] = "invalid_position_side"
+                    self._update_native_pnl(position,
+                        current_price_available=_response_field_present(item, "OvrsDrvtNowPrc"))
                     
                     # 손익률 계산 (REST/실시간 공용 공식). 헬퍼는 float 반환이므로
                     # Decimal 필드 유지를 위해 Decimal 로 감싼다.
@@ -570,25 +607,10 @@ class FuturesAccountTracker:
                 pos.current_price = price
                 pos.last_updated = datetime.now()
                 
-                # 실시간 손익 계산
-                try:
-                    pnl = self._calculator.calculate_realtime_pnl(
-                        symbol=symbol,
-                        quantity=pos.quantity,
-                        entry_price=pos.entry_price,
-                        current_price=price,
-                        is_long=pos.is_long,
-                        custom_fee_usd=self._commission_rate
-                    )
-                    pos.realtime_pnl = pnl
-                    pos.pnl_amount = pnl.net_pl_usd
-
-                    # 손익률 계산 (REST/실시간 공용 공식). float 반환 → Decimal 유지.
-                    pos.pnl_rate = Decimal(str(compute_futures_pnl_rate(
-                        pos.entry_price, price, pos.is_long
-                    )))
-                except Exception:
-                    pass
+                self._update_native_pnl(pos)
+                pos.pnl_rate = Decimal(str(compute_futures_pnl_rate(
+                    pos.entry_price, price, pos.is_long
+                )))
                 
                 self._notify_position_change()
                 
@@ -642,33 +664,82 @@ class FuturesAccountTracker:
             callback: AccountPnLInfo를 인자로 받는 콜백 함수
         
         Example:
-            tracker.on_account_pnl_change(lambda pnl: print(f"계좌 수익률: {pnl.account_pnl_rate:.2f}%"))
+            tracker.on_account_pnl_change(lambda pnl: print(pnl.pnl_status, pnl.pnl_by_currency))
         """
         self._on_account_pnl_change_callbacks.append(callback)
     
     # ===== 계좌 수익률 계산 =====
+    def _update_native_pnl(self, pos: FuturesPositionItem, *, current_price_available: bool = True) -> None:
+        """Use one gross-estimate basis for REST and ticks; retain broker raw PnL."""
+        pos.pnl_amount = None
+        pos.pnl_currency = None
+        pos.pnl_basis = None
+        pos.pnl_status = "unavailable"
+        pos.pnl_unavailable_reason = None
+        # Legacy fee-adjusted USD estimates must not masquerade as broker PnL.
+        pos.realtime_pnl = None
+        try:
+            spec = self._spec_manager.get_spec(pos.symbol)
+            if spec is None:
+                raise ValueError("missing_symbol_spec")
+            if not pos.currency:
+                raise ValueError("missing_position_currency")
+            if spec.currency.strip().upper() != pos.currency.strip().upper():
+                raise ValueError("position_spec_currency_mismatch")
+            evidence_error = self._position_evidence_errors.get(pos.symbol)
+            if evidence_error:
+                raise ValueError(evidence_error)
+            if not current_price_available:
+                raise ValueError("missing_position_current_price")
+            pnl = calculate_native_gross_pnl(spec=spec, quantity=pos.quantity,
+                entry_price=pos.entry_price, current_price=pos.current_price, is_long=pos.is_long)
+            pos.pnl_amount = pnl.amount
+            pos.pnl_currency = pnl.currency
+            pos.pnl_basis = pnl.basis
+            pos.pnl_status = "available"
+        except (ArithmeticError, TypeError, ValueError) as exc:
+            pos.pnl_unavailable_reason = str(exc)
+
     def _calculate_account_pnl(self) -> AccountPnLInfo:
-        """전체 계좌 수익률 계산 (총 평가손익 / 총 사용증거금)"""
-        total_margin = Decimal("0")
-        total_pnl = Decimal("0")
-        
+        """Aggregate compatible native gross estimates; never mix currencies."""
+        grouped: Dict[str, FuturesCurrencyPnL] = {}
+        unavailable = 0
+        incompatible_basis = False
         for pos in self._positions.values():
-            total_margin += pos.opening_margin
-            total_pnl += pos.pnl_amount
-        
-        # 평가금액 = 사용증거금 + 평가손익
-        total_eval = total_margin + total_pnl
-        
-        # 수익률 = (평가손익 / 사용증거금) * 100
-        pnl_rate = (total_pnl / total_margin * 100) if total_margin > 0 else Decimal("0")
-        
+            if (pos.pnl_status != "available" or pos.pnl_amount is None
+                    or not pos.pnl_amount.is_finite() or not pos.pnl_currency
+                    or not pos.currency or pos.pnl_currency != pos.currency.strip().upper()
+                    or pos.pnl_basis != "estimated_gross_price_change"):
+                unavailable += 1
+                incompatible_basis |= pos.pnl_basis not in (None, "estimated_gross_price_change")
+                continue
+            currency = pos.pnl_currency
+            if currency not in grouped:
+                grouped[currency] = FuturesCurrencyPnL(currency=currency,
+                    total_pnl_amount=Decimal("0"), position_count=0)
+            grouped[currency].total_pnl_amount += pos.pnl_amount
+            grouped[currency].position_count += 1
+
+        reason = None
+        if not self._positions:
+            reason = "no_positions"
+        elif incompatible_basis:
+            reason = "incompatible_monetary_basis"
+        elif unavailable:
+            reason = "unavailable_positions"
+        elif len(grouped) != 1:
+            reason = "mixed_currencies"
+        available = reason is None
+        only = next(iter(grouped.values())) if available else None
         return AccountPnLInfo(
-            account_pnl_rate=pnl_rate,
-            total_eval_amount=total_eval,
-            total_margin_used=total_margin,
-            total_pnl_amount=total_pnl,
+            total_pnl_amount=only.total_pnl_amount if only else None,
             position_count=len(self._positions),
-            currency="USD",
+            currency=only.currency if only else None,
+            pnl_status="available" if available else "unavailable",
+            pnl_basis="estimated_gross_price_change" if available else None,
+            pnl_unavailable_reason=reason,
+            pnl_by_currency=grouped,
+            unavailable_position_count=unavailable,
             last_updated=datetime.now(),
         )
     

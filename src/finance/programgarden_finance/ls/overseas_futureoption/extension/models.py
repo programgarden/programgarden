@@ -5,7 +5,7 @@
 """
 
 from decimal import Decimal
-from typing import Optional
+from typing import Dict, Literal, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -36,6 +36,8 @@ class FuturesTradeInput(BaseModel):
     
     manual_tick_value: Optional[Decimal] = Field(default=None, description="직접 입력 Tick Value")
     """직접 입력 Tick Value"""
+
+    manual_currency: str = Field(default="USD", description="Currency of manual tick values in the legacy USD estimator.")
     
     exchange_rate: Optional[Decimal] = Field(default=None, description="환율 (None이면 기본값 사용)")
     """환율 (None이면 기본값 사용)"""
@@ -81,6 +83,21 @@ class FuturesPnLResult(BaseModel):
     """안전마진 적용 여부"""
 
 
+NativePnLBasis = Literal["estimated_gross_price_change"]
+PnLAvailability = Literal["available", "unavailable"]
+
+
+class FuturesNativePnLResult(BaseModel):
+    """Native-currency gross price-change estimate; excludes fees, tax and FX."""
+
+    amount: Decimal
+    currency: str
+    basis: NativePnLBasis = "estimated_gross_price_change"
+    total_ticks: Decimal
+    tick_size_used: Decimal
+    tick_value_used: Decimal
+
+
 class FuturesPositionItem(BaseModel):
     """해외선물 보유종목(미결제약정) 모델"""
     
@@ -102,10 +119,15 @@ class FuturesPositionItem(BaseModel):
     current_price: Decimal = Field(default=Decimal("0"), description="현재가")
     """현재가"""
     
-    pnl_amount: Decimal = Field(default=Decimal("0"), description="평가손익 ($)")
-    """평가손익 ($)"""
+    pnl_amount: Optional[Decimal] = Field(default=None, description="Native gross price-change estimate; see pnl_currency, pnl_basis and pnl_status.")
+    pnl_currency: Optional[str] = None
+    pnl_basis: Optional[NativePnLBasis] = None
+    pnl_status: PnLAvailability = "unavailable"
+    pnl_unavailable_reason: Optional[str] = None
+    broker_pnl_amount: Optional[Decimal] = Field(default=None, description="Unmodified broker-reported amount; its monetary unit and cost basis remain unconfirmed.")
+    broker_pnl_basis: Literal["broker_reported_unconfirmed"] = "broker_reported_unconfirmed"
     
-    pnl_rate: Decimal = Field(default=Decimal("0"), description="손익률 (%)")
+    pnl_rate: Decimal = Field(default=Decimal("0"), description="Nominal quoted-price change (%), not account-equity return.")
     """손익률 (%)"""
     
     opening_margin: Decimal = Field(default=Decimal("0"), description="개시증거금")
@@ -117,7 +139,7 @@ class FuturesPositionItem(BaseModel):
     margin_call_rate: Decimal = Field(default=Decimal("0"), description="마진콜율")
     """마진콜율"""
     
-    currency: str = Field(default="USD", description="통화")
+    currency: str = Field(default="", description="Observed position currency code; not proof of the broker PnL amount's unit.")
     """통화"""
     
     exchange_code: str = Field(default="", description="거래소코드")
@@ -126,9 +148,9 @@ class FuturesPositionItem(BaseModel):
     last_updated: Optional[datetime] = Field(default=None, description="마지막 업데이트 시간")
     """마지막 업데이트 시간"""
     
-    # 실시간 계산된 손익 (수수료 반영)
-    realtime_pnl: Optional[FuturesPnLResult] = Field(default=None, description="실시간 손익 (수수료 반영)")
-    """실시간 손익 (수수료 반영)"""
+    # Retained for legacy consumers; the account tracker no longer fills this
+    # standalone USD estimator slot with a value in an unverified native unit.
+    realtime_pnl: Optional[FuturesPnLResult] = Field(default=None, description="Legacy USD estimator result; not populated by native account tracking.")
 
 
 class FuturesBalanceInfo(BaseModel):
@@ -205,26 +227,41 @@ class FuturesOpenOrder(BaseModel):
     """마지막 업데이트 시간"""
 
 
+class FuturesCurrencyPnL(BaseModel):
+    """Subtotal of available compatible estimates, not an equity valuation."""
+
+    currency: str
+    basis: NativePnLBasis = "estimated_gross_price_change"
+    total_pnl_amount: Decimal
+    position_count: int
+
+
 class AccountPnLInfo(BaseModel):
-    """계좌 전체 수익률 정보 모델"""
+    """Compatible native estimates and availability, not account accounting."""
     
-    account_pnl_rate: Decimal = Field(default=Decimal("0"), description="계좌 총 수익률 (%)")
+    account_pnl_rate: Optional[Decimal] = Field(default=None, description="Unavailable without a confirmed account-return denominator.")
     """계좌 총 수익률 (%)"""
     
-    total_eval_amount: Decimal = Field(default=Decimal("0"), description="총 평가금액")
+    total_eval_amount: Optional[Decimal] = Field(default=None, description="Unavailable without a confirmed valuation and currency basis.")
     """총 평가금액"""
     
-    total_margin_used: Decimal = Field(default=Decimal("0"), description="총 사용 증거금")
+    total_margin_used: Optional[Decimal] = Field(default=None, description="Unavailable without confirmed margin units; raw position margins are retained separately.")
     """총 사용 증거금"""
     
-    total_pnl_amount: Decimal = Field(default=Decimal("0"), description="총 평가손익")
+    total_pnl_amount: Optional[Decimal] = Field(default=None, description="Single-currency native gross subtotal, only when all positions have compatible available estimates.")
     """총 평가손익"""
     
     position_count: int = Field(default=0, description="보유 포지션 수")
     """보유 포지션 수"""
     
-    currency: str = Field(default="USD", description="통화")
+    currency: Optional[str] = None
     """통화"""
+
+    pnl_status: PnLAvailability = "unavailable"
+    pnl_basis: Optional[NativePnLBasis] = None
+    pnl_unavailable_reason: Optional[str] = None
+    pnl_by_currency: Dict[str, FuturesCurrencyPnL] = Field(default_factory=dict)
+    unavailable_position_count: int = 0
     
     last_updated: Optional[datetime] = Field(default=None, description="마지막 업데이트 시간")
     """마지막 업데이트 시간"""

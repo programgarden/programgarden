@@ -1,19 +1,22 @@
-"""Pydantic models for LS Securities OpenAPI CIDBQ03000 (Overseas Futures Deposit/Balance Status).
+"""LS Securities OpenAPI CIDBQ03000 overseas futures deposit/balance models.
 
-CIDBQ03000 returns a per-currency snapshot of the overseas futures account's deposit,
-margin, P&L, and orderable/withdrawable amounts for a given trading date.
+The response describes account deposit/balance state for ``TrdDt`` and may
+contain individual currency rows and an aggregate target such as ``TOT(USD)``.
 
-Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
-2026-05-06 finance TR field metadata plan):
-    - Description text mirrors the LS Korean source labels translated into English.
-      Korean source label is appended in parentheses for AI chatbot Korean↔English mapping.
-    - Field length, decimal scale, currency unit, and complete enum mappings are NOT declared
-      in the source available to this codebase. Where ambiguous, descriptions state
-      "consume as returned by LS."
-    - PnL fields (AbrdFutsLqdtPnlAmt, AbrdFutsEvalPnlAmt, LastSettPnlAmt) include positive,
-      negative, and zero examples as required by plan policy.
-    - ``examples`` come from ``src/finance/example/overseas_futureoption/run_CIDBQ03000.py``
-      where present, plus safe placeholder values ("12345678901" for account numbers).
+Metadata sources:
+    - The LS request/response table supplied by the user on 2026-09-09 defines
+      field labels, string lengths, numeric lengths/scales and account types.
+      These describe the wire format; the model adds no new validation limits.
+    - The supplied response example contains ``TOT(USD)`` and ``rsp_cd="00136"``.
+    - The repository example uses a blank ``TrdDt``. The supplied table does not
+      define that convention or the available historical query period.
+    - Date-specific responses do not establish intraday reset boundaries or
+      arithmetic relationships between the P&L and commission fields.
+
+Keep the returned currency target and snapshot fields separate. Do not treat
+snapshot components as independent additions to reported equity without a
+confirmed accounting identity. The labels/example do not establish a formula
+between liquidation P&L, final settlement P&L, valuation P&L and commission.
 """
 
 from typing import List, Literal, Optional
@@ -49,7 +52,7 @@ class CIDBQ03000InBlock1(BaseModel):
         title="Account type code (계좌구분코드)",
         description=(
             "'1' = consignment account (위탁계좌), '2' = brokerage account (중개계좌). "
-            "From the example script: '1'."
+            "String length 1 in the supplied request table."
         ),
         examples=["1", "2"],
     )
@@ -58,8 +61,8 @@ class CIDBQ03000InBlock1(BaseModel):
         default="",
         title="Trading date (거래일자)",
         description=(
-            "Trading date in YYYYMMDD format. Pass empty string for the current trading date. "
-            "From the example script: empty string."
+            "Trading date, string length 8, YYYYMMDD. "
+            "The repository example passes an empty string; the supplied table does not define this convention."
         ),
         examples=["", "20260117"],
     )
@@ -107,21 +110,21 @@ class CIDBQ03000OutBlock1(BaseModel):
     RecCnt: int = Field(
         default=0,
         title="Record count (레코드갯수)",
-        description="Echoed record count from the request.",
+        description="Echoed record count. Numeric length 5 in the supplied response table.",
         examples=[0, 1],
     )
 
     AcntTpCode: str = Field(
         default="",
         title="Account type code (계좌구분코드)",
-        description="Echoed account type. '1' = consignment, '2' = brokerage.",
+        description="Echoed account type, string length 1. '1' = consignment, '2' = brokerage.",
         examples=["1", "2"],
     )
 
     AcntNo: str = Field(
         default="",
         title="Account number (계좌번호)",
-        description="Account number for the query. Length not declared in available source.",
+        description="Account number for the query, string length 20.",
         examples=["12345678901"],
     )
 
@@ -129,7 +132,7 @@ class CIDBQ03000OutBlock1(BaseModel):
         default="",
         title="Account password (계좌비밀번호)",
         description=(
-            "Account password as echoed by LS. Treat as sensitive — avoid logging. "
+            "Account password as echoed by LS, string length 8. Treat as sensitive; avoid logging. "
             "Real production responses may mask or omit this value."
         ),
         examples=[""],
@@ -138,7 +141,7 @@ class CIDBQ03000OutBlock1(BaseModel):
     TrdDt: str = Field(
         default="",
         title="Trading date (거래일자)",
-        description="Echoed trading date in YYYYMMDD format.",
+        description="Echoed trading date, string length 8, YYYYMMDD.",
         examples=["", "20260117"],
     )
 
@@ -146,21 +149,23 @@ class CIDBQ03000OutBlock1(BaseModel):
 class CIDBQ03000OutBlock2(BaseModel):
     """CIDBQ03000OutBlock2 — per-currency deposit/balance detail row (Occurs).
 
-    One record per currency. Currency unit, decimal scale, and multiplier are not
-    declared in the source available to this codebase — consume values as returned by LS.
+    The supplied example returns a list containing a ``TOT(USD)`` aggregate row.
+    Keep aggregate and individual currency rows separate; summing them can double
+    count the same balance. Numeric lengths/scales describe the wire format,
+    not conversion rates, arithmetic identities or accumulation/reset periods.
     """
 
     AcntNo: str = Field(
         default="",
         title="Account number (계좌번호)",
-        description="Account number for this record. Length not declared in available source.",
+        description="Account number for this record, string length 20.",
         examples=["12345678901"],
     )
 
     TrdDt: str = Field(
         default="",
         title="Trading date (거래일자)",
-        description="Trading date for this balance record in YYYYMMDD format.",
+        description="Trading date for this balance record, string length 8, YYYYMMDD.",
         examples=["20260117", ""],
     )
 
@@ -168,10 +173,11 @@ class CIDBQ03000OutBlock2(BaseModel):
         default="",
         title="Currency target code (통화대상코드)",
         description=(
-            "Currency code for this record. "
-            "Enum mapping not declared in available source — consume as returned by LS."
+            "Currency target code, string length 12. The supplied example uses the "
+            "aggregate target 'TOT(USD)'. Preserve the target as returned; the "
+            "table does not give a complete enum or conversion rule."
         ),
-        examples=["USD", "HKD"],
+        examples=["TOT(USD)", "USD", "HKD"],
     )
 
     OvrsFutsDps: float = Field(
@@ -179,7 +185,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas futures deposit (해외선물예수금)",
         description=(
             "Deposit balance for overseas futures. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 23.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[10000.0, 0.0],
     )
@@ -189,7 +195,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Customer deposit/withdrawal amount (고객입출금금액)",
         description=(
             "Net customer deposit/withdrawal amount. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[5000.0, -2000.0, 0.0],
     )
@@ -199,7 +205,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas futures liquidation P&L amount (해외선물청산손익금액)",
         description=(
             "Realized P&L from liquidated overseas futures positions. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[1234.56, -789.01, 0.0],
     )
@@ -209,7 +215,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas futures commission amount (해외선물수수료금액)",
         description=(
             "Total commission for overseas futures. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[50.0, 0.0],
     )
@@ -218,8 +224,8 @@ class CIDBQ03000OutBlock2(BaseModel):
         default=0.0,
         title="Pre-exchange deposit (가환전예수금)",
         description=(
-            "Pre-exchange (before FX conversion) deposit amount. "
-            "Currency and decimal scale not declared in available source."
+            "LS-reported deposit amount (가환전예수금). "
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[0.0, 8000.0],
     )
@@ -229,7 +235,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Evaluated asset amount (평가자산금액)",
         description=(
             "Total evaluated asset amount including open positions. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[10000.0, 0.0],
     )
@@ -239,7 +245,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas futures consignment margin amount (해외선물위탁증거금액)",
         description=(
             "Required margin for overseas futures consignment positions. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[5000.0, 0.0],
     )
@@ -249,7 +255,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas futures additional margin amount (해외선물추가증거금액)",
         description=(
             "Additional margin required (variation/call margin). "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[0.0, 1000.0],
     )
@@ -259,7 +265,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas futures withdrawable amount (해외선물인출가능금액)",
         description=(
             "Amount that can be withdrawn from the overseas futures account. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[3000.0, 0.0],
     )
@@ -269,7 +275,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas futures orderable amount (해외선물주문가능금액)",
         description=(
             "Available funds for placing new overseas futures orders. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[5000.0, 0.0],
     )
@@ -279,17 +285,17 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas futures unrealized P&L amount (해외선물평가손익금액)",
         description=(
             "Unrealized (mark-to-market) P&L for overseas futures positions. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[1234.56, -789.01, 0.0],
     )
 
     LastSettPnlAmt: float = Field(
         default=0.0,
-        title="Last settlement P&L amount (최종결제손익금액)",
+        title="Final settlement P&L amount (최종결제손익금액)",
         description=(
-            "P&L from the last daily settlement. "
-            "Currency and decimal scale not declared in available source."
+            "Final settlement P&L amount as reported by LS. "
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[500.0, -200.0, 0.0],
     )
@@ -299,7 +305,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas option settlement amount (해외옵션결제금액)",
         description=(
             "Settlement amount for overseas options. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[0.0, 250.0],
     )
@@ -309,7 +315,7 @@ class CIDBQ03000OutBlock2(BaseModel):
         title="Overseas option balance evaluation amount (해외옵션잔고평가금액)",
         description=(
             "Evaluated balance amount for overseas option positions. "
-            "Currency and decimal scale not declared in available source."
+            "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[0.0, 750.0],
     )
@@ -331,7 +337,7 @@ class CIDBQ03000Response(BaseModel):
     block2: List[CIDBQ03000OutBlock2] = Field(
         default_factory=list,
         title="Second output block — per-currency balance rows (두 번째 출력 블록 리스트)",
-        description="Per-currency deposit/balance detail rows.",
+        description="Deposit/balance rows, including aggregate currency targets when returned.",
     )
     status_code: Optional[int] = Field(
         None,
@@ -341,7 +347,7 @@ class CIDBQ03000Response(BaseModel):
     rsp_cd: str = Field(
         ...,
         title="LS response code (응답코드)",
-        description="LS response code. '00000' indicates success.",
+        description="LS response code, preserved verbatim. The supplied completed-query example uses '00136'.",
     )
     rsp_msg: str = Field(
         ...,
