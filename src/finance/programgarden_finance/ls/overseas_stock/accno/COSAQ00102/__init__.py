@@ -48,6 +48,7 @@ class TrCOSAQ00102(TRAccnoAbstract):
         block1_data = resp_json.get("COSAQ00102OutBlock1")
         block2_data = resp_json.get("COSAQ00102OutBlock2")
         block3_data = resp_json.get("COSAQ00102OutBlock3", [])
+        malformed_detail = not isinstance(block3_data, list)
 
         status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
         is_error_status = status is not None and status >= 400
@@ -64,7 +65,8 @@ class TrCOSAQ00102(TRAccnoAbstract):
                 parsed_block1 = COSAQ00102OutBlock1.model_validate(block1_data)
             if block2_data is not None:
                 parsed_block2 = COSAQ00102OutBlock2.model_validate(block2_data)
-            parsed_block3 = [COSAQ00102OutBlock3.model_validate(item) for item in block3_data]
+            if not malformed_detail:
+                parsed_block3 = [COSAQ00102OutBlock3.model_validate(item) for item in block3_data]
 
         error_msg: Optional[str] = None
         if exc is not None:
@@ -75,6 +77,8 @@ class TrCOSAQ00102(TRAccnoAbstract):
             if resp_json.get("rsp_msg"):
                 error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
             logger.error(f"COSAQ00102 request failed with status: {error_msg}")
+        elif malformed_detail:
+            error_msg = "COSAQ00102OutBlock3 must be an array"
 
         result = COSAQ00102Response(
             header=header,
