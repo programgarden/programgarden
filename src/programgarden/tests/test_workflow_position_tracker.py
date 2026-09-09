@@ -380,12 +380,11 @@ class TestFuturesMultiplierInference:
             assert float(pnl['total_pnl_amount']) == pytest.approx(broker_pnl, rel=1e-3)
             assert float(pnl['other_pnl_amount']) == pytest.approx(broker_pnl, rel=1e-3)
 
-            # account 경로(pnl_amount 우선)와 스케일 일치 → 자기모순 없음
+            # Legacy local arithmetic is not sufficient currency/account-basis
+            # evidence for the actual listener's account totals.
             ctx = ExecutionContext(job_id='v', workflow_id='v')
             acct = ctx._calculate_account_pnl(snapshot)
-            assert float(acct['account_overseas_futures_pnl_amount']) == pytest.approx(
-                float(pnl['total_pnl_amount']), rel=1e-3
-            )
+            assert acct['account_overseas_futures_pnl_amount'] is None
 
     @pytest.mark.asyncio
     async def test_mislabeled_short_as_long_rejects_negative_mult(self):

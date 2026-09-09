@@ -153,6 +153,7 @@ class ExecutionContext:
         # sync (appkey, product, paper_trading, *, force_reissue=False, stale_token=None)
         #   -> (token, expires_at_epoch)
         ls_token_provider: Optional[Any] = None,
+        order_lifecycle_handler: Optional[Any] = None,
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id
@@ -162,6 +163,10 @@ class ExecutionContext:
         # Opt-in LS token provider (Verified League §3.2.3). When set, broker
         # logins consume a server-issued token instead of self-issuing.
         self.ls_token_provider = ls_token_provider
+        # Runtime-only capabilities and acceptance guards never enter DSL state
+        # or checkpoint context_params. PAPER orders use the same guard as live.
+        self.order_lifecycle_handler = order_lifecycle_handler
+        self._order_lifecycle_operations: Dict[str, Dict[str, Any]] = {}
 
         # Secrets storage (never logged, separate from context_params)
         self._secrets: Dict[str, Any] = secrets or {}
@@ -1880,7 +1885,7 @@ class ExecutionContext:
         provider: str,
         current_prices: Dict[str, float],
         account_positions: Optional[Dict[str, Any]],
-        currency: str = "USD",
+        currency: Optional[str] = "USD",
     ) -> None:
         """Notify all listeners about workflow P&L update (확장 버전).
         
@@ -1934,6 +1939,10 @@ class ExecutionContext:
             account_positions=account_positions,
             start_date=None,
         )
+        if product == "overseas_futures":
+            from .futures_pnl import unavailable_account_pnl
+
+            account_result = unavailable_account_pnl()
         
         # 3. 리스너별 이벤트 생성 및 전달
         for listener in self._listeners:
@@ -2015,6 +2024,8 @@ class ExecutionContext:
                         account_positions=account_positions,
                         start_date=listener_start_date,
                     )
+                    if product == "overseas_futures":
+                        competition_account = unavailable_account_pnl()
                     
                     event_data.update({
                         "competition_start_date": listener_start_date,
@@ -2036,6 +2047,10 @@ class ExecutionContext:
                         "competition_account_korea_stock_pnl_amount": competition_account.get("account_korea_stock_pnl_amount"),
                     })
                 
+                if product == "overseas_futures":
+                    from .futures_pnl import futures_pnl_metadata
+
+                    event_data.update(futures_pnl_metadata(account_positions))
                 event = WorkflowPnLEvent(**event_data)
                 await listener.on_workflow_pnl_update(event)
                 
@@ -2044,7 +2059,7 @@ class ExecutionContext:
         
         # 디버그 로그
         wf_rate = base_workflow_result.get("workflow_pnl_rate", 0.0)
-        logger.debug(f"📡 notify_workflow_pnl: {broker_node_id} ({product}) wf_rate={wf_rate:.2f}%")
+        logger.debug("notify_workflow_pnl: %s (%s) workflow_rate=%s", broker_node_id, product, wf_rate)
 
     def _calculate_workflow_pnl(
         self,
@@ -2064,6 +2079,13 @@ class ExecutionContext:
         Returns:
             워크플로우 수익률 데이터 dict
         """
+        if product == "overseas_futures":
+            from .futures_pnl import unavailable_workflow_pnl
+
+            # Native estimates do not prove workflow ownership, opening capital,
+            # realized PnL or fees. Do not infer these from the local legacy FIFO.
+            return unavailable_workflow_pnl()
+
         # 트래커 없으면 기본값 (모든 포지션이 "other")
         if self._workflow_position_tracker is None:
             # 트래커 없음 = 모든 포지션이 "other"
@@ -2181,6 +2203,13 @@ class ExecutionContext:
         """
         if not account_positions:
             return {}
+
+        if any(pos.get("product") == "overseas_futures" for pos in account_positions.values()):
+            from .futures_pnl import unavailable_account_pnl
+
+            # Current native gross estimates are exposed separately by currency.
+            # A price-times-quantity fallback is not a futures capital basis.
+            return unavailable_account_pnl()
         
         # 상품별 분류
         overseas_stock_positions = {}
@@ -2515,6 +2544,8 @@ class ExecutionContext:
         price: float,
         fill_time: str,
         commda_code: str = "40",
+        *,
+        execution_id: Optional[str | int] = None,
     ) -> str:
         """Record fill event for FIFO position tracking.
         
@@ -2530,6 +2561,7 @@ class ExecutionContext:
             price: 체결 가격
             fill_time: 체결시각 (HHMMSSsss)
             commda_code: 매체구분코드 ("40"=OPEN API, 기타=수동)
+            execution_id: Optional broker execution number, preserved for durable replay detection.
             
         Returns:
             분류 결과: "workflow" | "manual" | "unknown_api" | "pending"
@@ -2539,6 +2571,7 @@ class ExecutionContext:
             return "skipped"
         
         try:
+            identity_kwargs = {"execution_id": execution_id} if execution_id is not None else {}
             result = await self._workflow_position_tracker.record_fill(
                 order_no=order_no,
                 order_date=order_date,
@@ -2549,6 +2582,7 @@ class ExecutionContext:
                 price=price,
                 fill_time=fill_time,
                 commda_code=commda_code,
+                **identity_kwargs,
             )
             logger.info(f"Recorded workflow fill: {order_no} ({symbol} {side} {quantity}@{price}) → {result}")
 
@@ -2557,7 +2591,10 @@ class ExecutionContext:
                 try:
                     # 현재가로 PnL 계산 (체결가 사용)
                     current_prices = {symbol: price}
-                    currency = "KRW" if self._workflow_product == "korea_stock" else "USD"
+                    currency = (
+                        None if self._workflow_product == "overseas_futures" else
+                        "KRW" if self._workflow_product == "korea_stock" else "USD"
+                    )
                     await self.notify_workflow_pnl(
                         broker_node_id=self._workflow_broker_node_id,
                         product=self._workflow_product,

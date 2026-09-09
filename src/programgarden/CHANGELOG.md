@@ -1,5 +1,27 @@
 ## [Unreleased]
 
+## [1.33.5] - 2026-09-09
+
+### Added
+- Add durable order lifecycle hooks for delayed futures execution recovery with original parent identity.
+- Persist execution identities and payloads in the workflow ledger for replay-safe partial fills.
+- Forward AS1.sExecNO through execution context to the durable stock ledger.
+
+### Fixed
+- Keep submitted, partial, filled and rejected outcomes distinct; preserve raw broker diagnostics.
+- Route the canonical order result to downstream consumers and preserve recovery ownership.
+- Correct TC3 side handling and tracker cleanup; retain unavailable futures monetary values instead of nominal-price substitutes.
+- Include current-day stock pending orders and expose unavailable quote/order reads explicitly.
+- (finance 1.9.4) Preserve pending-order cache on unusable responses, canonical futures execution timestamps and documented currency basis.
+
+### Changed
+- Require programgarden-core ^1.25.3 and programgarden-finance ^1.9.4; community remains 1.15.1.
+- (core 1.25.3) Extend listener fields for execution and nullable account monetary evidence.
+
+### Validation and limitations
+- Focused offline regression suites cover execution replay, distinct partial fills, tracker lifecycle, response failures and serialization.
+- Actual paper-futures execution and durable recovery were confirmed. Full-account contest count/ROI/MDD acceptance and nighttime real-stock validation remain follow-ups.
+
 ## [1.33.4] - 2026-09-08
 > LS증권 OPEN API 공지(**2026-09-12(토) 12:00** 적용)의 국내주식 TR 필드 추가를 반영하는
 > 릴리즈. 엔진 로직 변경은 없고 `finance` 의 TR 블록 스키마만 넓힌다.

@@ -598,16 +598,29 @@ def _futures_response(*, rsp_cd="00000", rsp_msg="정상처리", error_msg=None,
 FUT_ORDER = {"symbol": "HSIM25", "exchange": "HKEX", "quantity": 1, "price": 18000.0}
 
 
+FUTURES_CONNECTION = {"product": "overseas_futures", "paper_trading": True, "broker_node_id": "broker", "credential_id": "fixture"}
+
+
+def _make_futures_context():
+    from programgarden.context import ExecutionContext
+    ctx = ExecutionContext(
+        job_id="futures-diagnostic", workflow_id="futures-diagnostic",
+        workflow_credentials=[{"credential_id": "fixture", "data": {"appkey": "fixture-key", "appsecret": "fixture-secret"}}],
+    )
+    ctx.send_notification = AsyncMock()
+    return ctx
+
+
 class TestOverseasFuturesRejectDiagnostics:
     @pytest.mark.asyncio
     async def test_futures_error_msg_attaches_diagnostics_and_notifies(self):
         ex = NewOrderNodeExecutor()
-        ctx = _make_context()
+        ctx = _make_futures_context()
         resp = _futures_response(rsp_cd="50001", error_msg="증거금 부족")
         ls = _make_ls_with_futures_response(resp)
 
         result = await ex._execute_overseas_futures(
-            ls, dict(FUT_ORDER), "buy", "limit", {}, ctx, "fut-1"
+            ls, dict(FUT_ORDER), "buy", "limit", {"connection": FUTURES_CONNECTION}, ctx, "fut-1"
         )
         order_result = result["order_result"]
         assert order_result["success"] is False
@@ -632,12 +645,12 @@ class TestOverseasFuturesRejectDiagnostics:
     @pytest.mark.asyncio
     async def test_futures_empty_order_no_uses_dedicated_diagnostic(self):
         ex = NewOrderNodeExecutor()
-        ctx = _make_context()
+        ctx = _make_futures_context()
         resp = _futures_response(rsp_cd="00000", rsp_msg="처리중", ord_no="")
         ls = _make_ls_with_futures_response(resp)
 
         result = await ex._execute_overseas_futures(
-            ls, dict(FUT_ORDER), "buy", "limit", {}, ctx, "fut-2"
+            ls, dict(FUT_ORDER), "buy", "limit", {"connection": FUTURES_CONNECTION}, ctx, "fut-2"
         )
         order_result = result["order_result"]
         assert order_result["success"] is False
@@ -651,7 +664,7 @@ class TestOverseasFuturesRejectDiagnostics:
     @pytest.mark.asyncio
     async def test_futures_exception_attaches_fallback_diagnostic(self):
         ex = NewOrderNodeExecutor()
-        ctx = _make_context()
+        ctx = _make_futures_context()
         order_api = MagicMock()
         order_api.req_async = AsyncMock(side_effect=RuntimeError("net down"))
         order_ns = MagicMock()
@@ -662,7 +675,7 @@ class TestOverseasFuturesRejectDiagnostics:
         ls.overseas_futureoption = MagicMock(return_value=ofo)
 
         result = await ex._execute_overseas_futures(
-            ls, dict(FUT_ORDER), "buy", "limit", {}, ctx, "fut-3"
+            ls, dict(FUT_ORDER), "buy", "limit", {"connection": FUTURES_CONNECTION}, ctx, "fut-3"
         )
         order_result = result["order_result"]
         assert order_result["success"] is False
@@ -675,12 +688,12 @@ class TestOverseasFuturesRejectDiagnostics:
     @pytest.mark.asyncio
     async def test_futures_success_has_null_diagnostics(self):
         ex = NewOrderNodeExecutor()
-        ctx = _make_context()
+        ctx = _make_futures_context()
         resp = _futures_response(rsp_cd="00000", ord_no="F987654")
         ls = _make_ls_with_futures_response(resp)
 
         result = await ex._execute_overseas_futures(
-            ls, dict(FUT_ORDER), "buy", "limit", {}, ctx, "fut-4"
+            ls, dict(FUT_ORDER), "buy", "limit", {"connection": FUTURES_CONNECTION}, ctx, "fut-4"
         )
         order_result = result["order_result"]
         assert order_result["success"] is True

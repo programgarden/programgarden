@@ -271,21 +271,18 @@ async def test_next_unavailable_raises_instead_of_dropping_symbol():
 
 @pytest.mark.asyncio
 async def test_empty_master_surfaces_ls_rsp_cd_not_a_guess():
-    """o3101 이 빈 블록 + 업무거부 rsp_cd 를 주면(HTTP 200, error_msg 빈 문자열), 최종 에러가
-    LS 원문(rsp_cd/rsp_msg)을 그대로 실어야 한다 — '앱키가 몰렸을 것' 같은 추측이 아니라.
-    이 한 줄이 '토큰 무효화 vs 시세 권한 문제'를 라이브 프로브 없이 판별해 준다."""
+    """An empty master retains original response fields without inferring a cause."""
     ex = FuturesContractNodeExecutor()
-    with _patched_master_raw([], rsp_cd="IGW00121", rsp_msg="해외선물 시세 권한이 없습니다"), \
+    with _patched_master_raw([], rsp_cd="SYNTHETIC_UNKNOWN", rsp_msg="Original broker message"), \
             patch("programgarden.executor.asyncio.sleep", new=_async_noop):
         with pytest.raises(RuntimeError) as e:
             await ex.execute(
                 "contract", "FuturesContractNode", {"base_products": ["HMH"]}, _make_context()
             )
     msg = str(e.value)
-    assert "IGW00121" in msg
-    assert "해외선물 시세 권한이 없습니다" in msg
-    # rsp_cd 가 성공이 아니므로 '일시적 경합' 이 아니라 '권한/토큰' 으로 진단해야 한다.
-    assert "entitlement" in msg or "token" in msg
+    assert "rsp_cd=SYNTHETIC_UNKNOWN" in msg
+    assert "rsp_msg=Original broker message" in msg
+    assert "entitlement" not in msg and "token" not in msg and "collision" not in msg
 
 
 @pytest.mark.asyncio
@@ -408,6 +405,8 @@ async def test_symbol_query_unavailable_exchange_raises_not_empty():
     msg = str(e.value)
     assert "CME" in msg
     assert "HKEX" in msg and "LME" in msg  # 무엇을 쓸 수 있는지 알려준다
+    assert "entitlement" not in msg
+    assert "rsp_cd=" in msg and "rsp_msg=" in msg
 
 
 @pytest.mark.asyncio
@@ -448,6 +447,7 @@ async def test_symbol_query_empty_master_raises_with_ls_reason():
     msg = str(e.value)
     assert "IGW00121" in msg
     assert "권한이 없습니다" in msg
+    assert "entitlement" not in msg and "token" not in msg and "app key" not in msg
 
 
 @pytest.mark.asyncio
