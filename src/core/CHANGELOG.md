@@ -1,3 +1,14 @@
+## [1.26.0] - 2026-09-10
+
+### Added
+- Carry a versioned `personal_metrics` envelope on `WorkflowPnLEvent` so an execution
+  ledger's own evidence reaches listeners without being confused with contest evidence.
+
+### Notes
+- Pair with finance 1.9.5 and engine 1.34.0. Engine 1.34.0 requires this version: it always
+  populates `personal_metrics`, so resolving core 1.25.x makes the event unconstructible and
+  the failure is swallowed, stopping PnL events silently.
+
 ## [1.25.3] - 2026-09-09
 
 ### Added
