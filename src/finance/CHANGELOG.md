@@ -1,3 +1,13 @@
+## [1.9.5] - 2026-09-10
+
+### Fixed
+- Handle scoped overseas-stock pending-order responses that return no data instead of an error.
+- Preserve omitted stock order detail blocks rather than dropping the response.
+- Correct FOCCQ33600 block field definitions against the observed response.
+
+### Notes
+- Pair with core 1.26.0 and engine 1.34.0.
+
 ## [1.9.4] - 2026-09-09
 
 ### Added

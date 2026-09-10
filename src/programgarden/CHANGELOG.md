@@ -1,5 +1,27 @@
 ## [Unreleased]
 
+## [1.34.0] - 2026-09-10
+
+### Added
+- Report a retained per-workflow execution ledger (`personal_metrics`) on PnL events, kept
+  separate from contest evidence.
+
+### Fixed
+- Stop pinning broker fill queries to the ordering machine's calendar date. LS files an
+  overnight order under the previous business day, so a matching execution was silently
+  discarded and the order stayed unreconciled forever.
+- Widen the overseas-stock fill search without changing the ledger's order identity, so a
+  fill found on the earlier date is still classified against its workflow order.
+- Refresh personal metrics when the ledger changes rather than only on a timer; a fill
+  arriving just after a computation was previously reported as zero executed orders.
+- Report a futures executed-order count as unavailable, never zero, while an app session owns
+  reconciliation: `on_tc3_event` deliberately stops feeding that ledger, so its zero means
+  "not counted here", not "nothing executed".
+
+### Changed
+- deps: require core ^1.26.0 and finance ^1.9.5. Lower bounds are deliberate — this version
+  always emits `personal_metrics`, which core gained in 1.26.0.
+
 ## [1.33.5] - 2026-09-09
 
 ### Added
