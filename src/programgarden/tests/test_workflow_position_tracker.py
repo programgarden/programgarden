@@ -1,5 +1,6 @@
 """WorkflowPositionTracker 테스트"""
 import asyncio
+import sqlite3
 import tempfile
 from decimal import Decimal
 import pytest
@@ -565,3 +566,117 @@ class TestRateEvidenceGate:
             )
             assert pnl['workflow_positions'], "포지션 명세는 그대로 실린다"
             assert pnl['workflow_positions'][0].pnl_rate is not None
+
+
+class TestMediaCodeClassification:
+    """E1: 프레임의 통신매체코드로 계좌 내 타 경로 체결을 가른다.
+
+    우리 주문과 일치하는 체결은 매체코드와 무관하게 workflow 이고(주문 기록이
+    권위 있는 소유 신호), 일치하지 않는 체결만 매체코드로 HTS(manual)/타 API 를
+    가른다. 빈 매체코드는 "모름"이라 사람의 HTS 로 단정하지 않고 버퍼→unknown_api.
+    """
+
+    @pytest.mark.asyncio
+    async def test_workflow_order_match_wins_over_non40_media(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            t.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, 'j', 'n')
+            # 우리 체결이 '40' 이 아닌 매체코드로 와도 주문 일치가 우선 → workflow
+            result = await t.record_fill('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', '41')
+            assert result == 'workflow'
+
+    @pytest.mark.asyncio
+    async def test_non40_media_without_order_is_manual(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            # 일치하는 주문이 없고 매체코드가 '40' 이 아니면 사람(HTS) → manual
+            result = await t.record_fill('X1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', '41')
+            assert result == 'manual'
+
+    @pytest.mark.asyncio
+    async def test_empty_media_without_order_buffers_then_unknown_api(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            t.FILL_BUFFER_TIMEOUT = 0.05
+            # 빈 매체코드는 사람의 HTS 로 단정하지 않는다 — 버퍼(늦게 도착할 우리
+            # 주문에 대비)했다가, 일치 주문이 없으면 unknown_api 로 접는다(manual 아님).
+            result = await t.record_fill('X2', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', '')
+            assert result == 'pending'
+            await asyncio.sleep(0.15)
+            with sqlite3.connect(t.db_path) as conn:
+                rows = conn.execute("SELECT classification FROM trade_history").fetchall()
+            assert rows == [('unknown_api',)]
+
+
+class TestWorkflowLotOwnershipAndEstimate:
+    """E2: workflow 매도는 workflow 로트만 소진하고, 남는 잔량은 계좌 평균매입가로 추정."""
+
+    @pytest.mark.asyncio
+    async def test_workflow_sell_consumes_only_workflow_lots(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            # 같은 종목의 수동(HTS) 로트와 workflow 로트가 공존
+            await t.record_fill('M1', '20260123', 'AAPL', 'NASDAQ', 'buy', 5, 90.0, '100000000', '41')  # manual
+            t.record_order('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 3, 100.0, 'j', 'n')
+            await t.record_fill('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 3, 100.0, '110000000', '40')  # workflow
+            # workflow 매도 2주: workflow 로트(100)만 소진, 수동 로트는 그대로
+            t.record_order('W2', '20260123', 'AAPL', 'NASDAQ', 'sell', 2, 120.0, 'j', 'n')
+            await t.record_fill('W2', '20260123', 'AAPL', 'NASDAQ', 'sell', 2, 120.0, '120000000', '40')
+            positions = t.get_workflow_positions()
+            assert positions['AAPL'].quantity == 1  # workflow 3 중 2 소진 → 1 남음
+            with sqlite3.connect(t.db_path) as conn:
+                manual_remaining = conn.execute(
+                    "SELECT remaining_qty FROM workflow_position_lots WHERE classification='manual'"
+                ).fetchone()[0]
+            assert manual_remaining == 5  # 수동 로트는 손대지 않음
+
+    @pytest.mark.asyncio
+    async def test_workflow_sell_records_account_avg_estimate_for_tail(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            t.record_order('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, 'j', 'n')
+            await t.record_fill('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', '40')
+            # 3 매도인데 workflow 로트는 1뿐 → 잔량 2를 계좌 평균매입가 105 로 추정
+            t.record_order('W2', '20260123', 'AAPL', 'NASDAQ', 'sell', 3, 110.0, 'j', 'n')
+            await t.record_fill('W2', '20260123', 'AAPL', 'NASDAQ', 'sell', 3, 110.0, '110000000', '40',
+                                account_avg_price=105.0)
+            with sqlite3.connect(t.db_path) as conn:
+                realized, unmatched, basis, source, est_pnl = conn.execute(
+                    "SELECT realized_pnl, unmatched_qty, estimate_basis_price, estimate_source, estimated_pnl "
+                    "FROM trade_history WHERE side='sell'"
+                ).fetchone()
+            assert realized == pytest.approx(10.0)   # FIFO 매칭분 1 @ (110-100)
+            assert unmatched == pytest.approx(2.0)
+            assert basis == pytest.approx(105.0)
+            assert source == 'account_balance_avg_price'
+            assert est_pnl == pytest.approx(10.0)     # (110-105)*2
+
+    @pytest.mark.asyncio
+    async def test_workflow_sell_without_account_avg_records_no_estimate(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            t.record_order('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, 'j', 'n')
+            await t.record_fill('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', '40')
+            t.record_order('W2', '20260123', 'AAPL', 'NASDAQ', 'sell', 3, 110.0, 'j', 'n')
+            await t.record_fill('W2', '20260123', 'AAPL', 'NASDAQ', 'sell', 3, 110.0, '110000000', '40')
+            with sqlite3.connect(t.db_path) as conn:
+                row = conn.execute(
+                    "SELECT unmatched_qty, estimate_basis_price, estimate_source, estimated_pnl "
+                    "FROM trade_history WHERE side='sell'"
+                ).fetchone()
+            assert row == (None, None, None, None)  # 평단 없으면 추정 저장 없음
+
+    @pytest.mark.asyncio
+    async def test_non_workflow_sell_still_consumes_any_lot(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            # workflow 매수 로트
+            t.record_order('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 5, 100.0, 'j', 'n')
+            await t.record_fill('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 5, 100.0, '100000000', '40')
+            # 수동(HTS) 매도: 분류 무관 로트 소진(종전 동작 불변) → workflow 로트를 먹는다
+            await t.record_fill('M1', '20260123', 'AAPL', 'NASDAQ', 'sell', 2, 120.0, '110000000', '41')
+            with sqlite3.connect(t.db_path) as conn:
+                wf_remaining = conn.execute(
+                    "SELECT remaining_qty FROM workflow_position_lots WHERE classification='workflow'"
+                ).fetchone()[0]
+            assert wf_remaining == 3  # 수동 매도가 workflow 로트 2주를 소진

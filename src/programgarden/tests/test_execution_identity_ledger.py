@@ -276,7 +276,10 @@ async def test_existing_schema_rows_are_preserved_without_inferred_identity(tmp_
     target = tracker(tmp_path)
     migrated = rows(target, "trade_history")[0]
     assert migrated[:len(old)] == old
-    assert migrated[len(old):] == (None, None, None)
+    # Additive columns backfill to NULL, never inferred: the three execution
+    # identity columns plus the four account-avg-price estimate columns
+    # (unmatched_qty, estimate_basis_price, estimate_source, estimated_pnl).
+    assert migrated[len(old):] == (None, None, None, None, None, None, None)
     await target.record_fill(**fill(commda_code="10"), execution_id="new-evidence")
     assert len(rows(target, "trade_history")) == 2
     assert rows(target, "trade_history")[0] == migrated

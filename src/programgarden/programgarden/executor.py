@@ -4567,6 +4567,25 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 
                 async def record_and_refresh():
                     """체결 기록 후 AccountTracker refresh"""
+                    tracker_key = f"{context.job_id}_{node_id}"
+                    tracker_info = self._active_trackers.get(tracker_key)
+
+                    # 매도 잔량 추정용 계좌 평균매입가 — record 전에(그래서 refresh
+                    # 전에) StockAccountTracker 캐시(_positions[symbol].buy_price)에서
+                    # 읽는다. 캐시는 아직 이번 매도가 반영되기 전이라 '매도 직전 평단'.
+                    # 캐시에 없으면 None → 추정 없음(오늘처럼 unavailable).
+                    account_avg_price = None
+                    if tracker_info and "tracker" in tracker_info:
+                        acct_tracker = tracker_info["tracker"]
+                        positions = getattr(acct_tracker, "_positions", None)
+                        pos = positions.get(symbol) if isinstance(positions, dict) else None
+                        buy_price = getattr(pos, "buy_price", None) if pos is not None else None
+                        if buy_price is not None:
+                            try:
+                                account_avg_price = float(buy_price)
+                            except (TypeError, ValueError):
+                                account_avg_price = None
+
                     await context.record_workflow_fill(
                         order_no=order_no,
                         order_date=order_date,
@@ -4576,19 +4595,21 @@ class BrokerNodeExecutor(NodeExecutorBase):
                         quantity=exec_qty,
                         price=exec_price,
                         fill_time=fill_time,
-                        commda_code='40',  # OPEN API
+                        # 프레임의 통신매체코드를 그대로 넘긴다(하드코딩 '40' 폐기).
+                        # 우리 주문과 일치하면 매체코드 무관하게 workflow 로 분류되고,
+                        # 일치하지 않는 계좌 내 타 체결만 이 코드로 HTS/타 API 를 가른다.
+                        commda_code=getattr(body, 'sCommdaCode', ''),
                         execution_id=execution_id,
+                        account_avg_price=account_avg_price,
                     )
-                    
+
                     # AccountTracker refresh로 PnL 이벤트 강제 트리거
-                    tracker_key = f"{context.job_id}_{node_id}"
-                    tracker_info = self._active_trackers.get(tracker_key)
                     if tracker_info and "tracker" in tracker_info:
                         tracker = tracker_info["tracker"]
                         if hasattr(tracker, 'refresh_now'):
                             await tracker.refresh_now()
                             logger.debug(f"📊 AccountTracker refreshed after fill")
-                
+
                 asyncio.run_coroutine_threadsafe(record_and_refresh(), loop)
                 logger.info(f"📌 Workflow fill recorded: {symbol} {side} {exec_qty}@{exec_price}")
                     
@@ -4742,6 +4763,9 @@ class BrokerNodeExecutor(NodeExecutorBase):
                                 quantity=quantity,
                                 price=price,
                                 fill_time=fill_time,
+                                # 선물 체결 프레임(TC3)에는 통신매체코드 필드가 없다
+                                # (blocks.py 에 commda/media 없음). 이 경로는 우리
+                                # 주문의 체결이므로 OPEN API 기본값 '40' 을 유지한다.
                                 commda_code='40',
                             ),
                             loop
@@ -4815,6 +4839,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     side = 'buy' if bns_tp == '2' else 'sell'
                     fill_time = getattr(body, 'exectime', datetime.now().strftime('%H%M%S000'))
 
+                    media_code = getattr(body, 'commdacode', '')
+
                     async def record_and_refresh():
                         """체결 기록 후 AccountTracker refresh"""
                         await context.record_workflow_fill(
@@ -4826,7 +4852,10 @@ class BrokerNodeExecutor(NodeExecutorBase):
                             quantity=exec_qty,
                             price=exec_price,
                             fill_time=fill_time,
-                            commda_code='40',
+                            # SC1 프레임의 통신매체코드(commdacode)를 그대로 넘긴다.
+                            # 우리 주문과 일치하면 workflow, 아니면 이 코드로
+                            # HTS(manual)/타 API(unknown_api)를 가른다.
+                            commda_code=media_code,
                         )
 
                         # AccountTracker refresh로 PnL 이벤트 강제 트리거

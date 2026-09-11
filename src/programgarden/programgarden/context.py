@@ -2612,6 +2612,7 @@ class ExecutionContext:
         commda_code: str = "40",
         *,
         execution_id: Optional[str | int] = None,
+        account_avg_price: Optional[float] = None,
     ) -> str:
         """Record fill event for FIFO position tracking.
         
@@ -2626,9 +2627,11 @@ class ExecutionContext:
             quantity: 체결 수량
             price: 체결 가격
             fill_time: 체결시각 (HHMMSSsss)
-            commda_code: 매체구분코드 ("40"=OPEN API, 기타=수동)
+            commda_code: 매체구분코드 (프레임 값 그대로; "40"=OPEN API, 기타=수동/HTS)
             execution_id: Optional broker execution number, preserved for durable replay detection.
-            
+            account_avg_price: Optional account average purchase price for this
+                symbol at fill time; only a workflow sell's residual tail uses it.
+
         Returns:
             분류 결과: "workflow" | "manual" | "unknown_api" | "pending"
         """
@@ -2638,6 +2641,8 @@ class ExecutionContext:
         
         try:
             identity_kwargs = {"execution_id": execution_id} if execution_id is not None else {}
+            if account_avg_price is not None:
+                identity_kwargs["account_avg_price"] = account_avg_price
             result = await self._workflow_position_tracker.record_fill(
                 order_no=order_no,
                 order_date=order_date,
