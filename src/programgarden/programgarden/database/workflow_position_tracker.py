@@ -102,10 +102,13 @@ class ExecutionIdentityConflictError(ValueError):
 #  85=HTS, 96=final settlement, LP=loss cut, SK=CashCall and SO=conditional order.
 #  The example uses 40, which the table does not map. Preserve it as returned;
 #  do not classify it by guessing a nearby code."
-# '40' 은 표에 없지만 우리 OPEN API 주문이 실제로 받는 값이다(dev verified_fills 실측 4건) —
-# 표의 41/43 과 함께 API 묶음으로 둔다. 표에 없는 값은 추측하지 않고 "other" 로 남긴다.
-MEDIA_CODES_HUMAN = frozenset({"85", "22", "23", "00"})   # HTS · iPhone · Android · 지점
-MEDIA_CODES_API = frozenset({"40", "41", "43"})           # OPEN API(실측) · API · Robo API
+# '40' 은 표에 없지만 우리 OPEN API 주문이 실제로 받는 값이다(dev verified_fills 실측 4건 +
+# 2026-09-12 해외주식 AS1 실측: 우리 매도 주문 244 → 40) — 표의 41/43 과 함께 API 묶음으로 둔다.
+# 🔴 해외주식 AS1 실측(2026-09-12, 실계좌 NIO 1주씩): HTS → 85(표와 일치) · iPhone 투혼앱 → **51**
+# (표의 22 아님) · 투혼 웹 → **03**(표에 없음). 표는 해외선물 TR 문서라 해외주식 푸시와 앱/웹 코드가
+# 다르다. 관측된 값만 사람 채널에 추가한다 — 표에 없고 관측도 안 된 값은 여전히 "other".
+MEDIA_CODES_HUMAN = frozenset({"85", "22", "23", "00", "51", "03"})   # HTS · iPhone(표) · Android(표) · 지점 · 투혼앱(실측) · 투혼웹(실측)
+MEDIA_CODES_API = frozenset({"40", "41", "43"})                       # OPEN API(실측) · API · Robo API
 
 
 def media_channel(commda_code: str | None) -> str:

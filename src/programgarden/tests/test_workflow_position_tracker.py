@@ -589,8 +589,9 @@ class TestMediaCodeClassification:
     async def test_human_media_without_order_is_manual(self):
         with tempfile.TemporaryDirectory() as d:
             t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
-            # 일치하는 주문이 없고 매체코드가 표의 인간 채널(85=HTS, 22/23=앱, 00=지점)이면 → manual
-            for code in ('85', '22', '23', '00'):
+            # 일치하는 주문이 없고 매체코드가 사람 채널이면 → manual
+            #   표: 85=HTS, 22/23=앱, 00=지점 · 실측(2026-09-12 해외주식 AS1): 51=투혼앱, 03=투혼웹
+            for code in ('85', '22', '23', '00', '51', '03'):
                 result = await t.record_fill(f'X{code}', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', code)
                 assert result == 'manual', code
 
