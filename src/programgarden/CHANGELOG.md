@@ -7,6 +7,7 @@
   상위 `closed_trade_count`·`closed_trade_status`(available|partial|unavailable)·`profit_loss_ratio`(단일 종목 + 손실 존재 시만)·
   `estimated_group_count`·`closed_trade_basis`·`profit_loss_ratio_basis`·`off_strategy_fills{hts,other_api,other}`.
   개수는 종목 간 합산, 금액은 합산 금지(통화 증거 없음) — 기존 규율 유지. (#47, #48)
+- `off_strategy_fills.other_codes` — 표에 없는 매체코드의 관측 목록(미측정 코드가 더 있다는 전제; 표는 근거로만 늘린다) + 미등재 코드 INFO 로그. (#50)
 - 워크플로우 매도가 워크플로우 로트를 넘어서면 잔량을 **계좌 평균매입가로 추정** — 매도 행에 additive 컬럼
   `unmatched_qty`·`estimate_basis_price`·`estimate_source`·`estimated_pnl`, 봉투 그룹 `status=estimated`/`basis=fifo_with_account_avg_price_estimate`. (#48)
 - 체결 매체코드를 프레임 값 그대로 원장에 기록(AS1 `sCommdaCode`, SC1 `commdacode`; 선물 TC3 는 필드 없음). (#48)
