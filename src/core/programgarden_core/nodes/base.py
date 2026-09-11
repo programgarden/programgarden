@@ -361,6 +361,16 @@ OVERSEAS_FUTURES_POSITION_FIELDS: List[Dict[str, str]] = [
     {"name": "pnl_amount", "type": "number", "description": "평가 손익 (금액)"},
     {"name": "pnl_rate", "type": "number", "description": "명목가 대비 수익률 (%) — 진입가/현재가로 산출 (승수 무관)"},
     {"name": "currency", "type": "string", "description": "통화 코드"},
+    # ── 손익 증거 메타 (v1.34.0 선물 monetary 작업에서 런타임에 추가됐는데 **선언이 안 따라왔다**) ──
+    # 선언에 없으면 `{{ nodes.account.positions[0].pnl_status }}` 같은 바인딩이
+    # INVALID_EXPRESSION_REF 로 **부당하게 거부된다** — 노드가 실제로 내보내는 값인데도.
+    # 이 값들이 있어야 "손익을 모른다" 와 "손익이 0" 을 사용자가 구분할 수 있다.
+    {"name": "pnl_status", "type": "string", "description": "손익 산출 가능 여부 (available / unavailable)"},
+    {"name": "pnl_basis", "type": "string", "description": "손익 산출 근거 (예: estimated_gross_price_change)"},
+    {"name": "pnl_currency", "type": "string", "description": "손익 금액의 통화 코드"},
+    {"name": "pnl_unavailable_reason", "type": "string", "description": "손익을 못 낸 사유 (pnl_status=unavailable 일 때)"},
+    {"name": "broker_pnl_amount", "type": "number", "description": "증권사가 보고한 평가손익 원문 (검증 전 값)"},
+    {"name": "broker_pnl_basis", "type": "string", "description": "증권사 보고 손익의 근거 표기 (예: broker_reported_unconfirmed)"},
 ]
 
 # ── 실시간 계좌 포지션 (RealAccountNode.positions) ──
@@ -416,6 +426,15 @@ OVERSEAS_FUTURES_REAL_POSITION_FIELDS: List[Dict[str, str]] = [
     {"name": "pnl_rate", "type": "number", "description": "수익률 (%)"},
     {"name": "currency", "type": "string", "description": "통화 코드"},
     {"name": "product", "type": "string", "description": "상품 구분 (항상 overseas_futures)"},
+    # ── 손익 증거 메타 — REST 계좌(OVERSEAS_FUTURES_POSITION_FIELDS)와 **같은 세트**다.
+    # 두 노드가 같은 직렬화 헬퍼(`_serialize_futures_tracker_position`)를 쓰므로 선언도
+    # 어긋나면 안 된다. v1.34.0 에서 런타임만 늘고 선언이 안 따라와 바인딩이 거부됐다.
+    {"name": "pnl_status", "type": "string", "description": "손익 산출 가능 여부 (available / unavailable)"},
+    {"name": "pnl_basis", "type": "string", "description": "손익 산출 근거 (예: estimated_gross_price_change)"},
+    {"name": "pnl_currency", "type": "string", "description": "손익 금액의 통화 코드"},
+    {"name": "pnl_unavailable_reason", "type": "string", "description": "손익을 못 낸 사유 (pnl_status=unavailable 일 때)"},
+    {"name": "broker_pnl_amount", "type": "number", "description": "증권사가 보고한 평가손익 원문 (검증 전 값)"},
+    {"name": "broker_pnl_basis", "type": "string", "description": "증권사 보고 손익의 근거 표기 (예: broker_reported_unconfirmed)"},
 ]
 
 ORDER_RESULT_FIELDS: List[Dict[str, str]] = [

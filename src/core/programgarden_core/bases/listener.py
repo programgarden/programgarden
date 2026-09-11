@@ -343,6 +343,13 @@ class WorkflowPnLEvent:
     monetary_status: Optional[str] = None
     monetary_basis: Optional[str] = None
     monetary_unavailable_reason: Optional[str] = None
+    # 워크플로우 **비율**을 못 낸 사유. 값을 비우는 것만으로는 "안 샀다" 와 "증권사가
+    # 평단·현재가를 안 보냈다" 가 구분되지 않는다 — 서버가 이 사유를 그대로 적재한다.
+    # 어휘: no_workflow_positions | basis_unreported | price_unreported | no_tracker |
+    #       computation_failed (dsl-api RATE_UNAVAILABLE_REASONS 와 공용).
+    # 🔴 monetary_* 를 재사용하지 않는다 — 그건 선물 전용 계약이고, 주식 이벤트에서
+    #    monetary_status is None 임을 고정하는 테스트가 있다.
+    workflow_rate_unavailable_reason: Optional[str] = None
     pnl_by_currency: Dict[str, Any] = field(default_factory=dict)
     monetary_positions: Dict[str, Any] = field(default_factory=dict)
     unavailable_position_count: int = 0

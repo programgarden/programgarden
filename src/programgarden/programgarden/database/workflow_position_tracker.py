@@ -877,9 +877,20 @@ class WorkflowPositionTracker:
         wf_buy = Decimal(0)
         wf_pnl = Decimal(0)
         wf_details: List[PositionDetail] = []
+        # 증거 카운터 — 비율을 **발행해도 되는지** 를 결정한다(금액은 영향 없음).
+        wf_unpriced = 0   # 현재가를 관측하지 못해 평단으로 대체한 종목 수
+        wf_unbased = 0    # 평단이 0 이하라 매수근거가 없는 종목 수
 
         for symbol, pos in workflow_positions.items():
-            current_price = prices.get(symbol, pos.avg_price)
+            observed_price = prices.get(symbol)
+            if observed_price is None or observed_price <= 0:
+                wf_unpriced += 1
+            if pos.avg_price <= 0:
+                wf_unbased += 1
+            # 🔴 금액 계산은 **현행 그대로** 둔다(평단 폴백 포함) — 금액을 비우면 모니터링
+            # KPI 합산이 통째로 접히고, 전량 청산한 날의 0 은 진짜 0 이다.
+            # 달라지는 것은 "그 금액으로 비율을 발행할 자격이 있는가" 뿐이다.
+            current_price = observed_price if (observed_price and observed_price > 0) else pos.avg_price
             mult, side_sign = multipliers.get(symbol, (Decimal(1), Decimal(1)))
             eval_amount = current_price * pos.quantity * mult
             buy_amount = pos.avg_price * pos.quantity * mult
@@ -900,16 +911,43 @@ class WorkflowPositionTracker:
                 pnl_rate=pnl_rate,
             ))
 
-        wf_rate = (wf_pnl / wf_buy * 100) if wf_buy else Decimal(0)
+        # 🔴 계산할 수 없으면 0 이 아니라 **아무것도 발행하지 않는다**(None).
+        #
+        # 종전 `else Decimal(0)` 는 "아무것도 안 샀다" 를 **"0% 로 측정됐다"** 로 바꿔 발행했다.
+        # 그러면 워크플로우를 시작만 해도 스냅샷이 생겨 공유 카드가 「참고 데이터」 배지 달린
+        # 정직한 0.0% 에서 **배지 없는 "실측 0.0%"** 로 바뀐다(승률 0%·손익비 0.00 까지).
+        # 선물은 이미 이 원칙으로 고쳐져 있다(`futures_pnl.unavailable_workflow_pnl`) —
+        # 주식만 안 따라갔다.
+        #
+        # 한 종목이라도 현재가를 못 봤거나(`wf_unpriced`) 평단이 없으면(`wf_unbased`)
+        # 합계 비율이 **부풀려진다**(분모만 줄거나 평가액이 매수액으로 눌린다). 그건 0 이
+        # 아닌 채로 틀리므로 값 자체를 내지 않는다.
+        wf_rate_reason: Optional[str] = None
+        if not workflow_positions:
+            wf_rate_reason = "no_workflow_positions"
+        elif wf_unbased:
+            wf_rate_reason = "basis_unreported"
+        elif wf_unpriced:
+            wf_rate_reason = "price_unreported"
+        elif not wf_buy:
+            wf_rate_reason = "no_workflow_positions"
+        wf_rate = None if wf_rate_reason else (wf_pnl / wf_buy * 100)
 
         # 그 외 포지션 계산
         other_eval = Decimal(0)
         other_buy = Decimal(0)
         other_pnl = Decimal(0)
         other_details: List[PositionDetail] = []
+        other_unpriced = 0
+        other_unbased = 0
 
         for symbol, pos in other_positions.items():
-            current_price = prices.get(symbol, pos.avg_price)
+            observed_price = prices.get(symbol)
+            if observed_price is None or observed_price <= 0:
+                other_unpriced += 1
+            if pos.avg_price <= 0:
+                other_unbased += 1
+            current_price = observed_price if (observed_price and observed_price > 0) else pos.avg_price
             mult, side_sign = multipliers.get(symbol, (Decimal(1), Decimal(1)))
             eval_amount = current_price * pos.quantity * mult
             buy_amount = pos.avg_price * pos.quantity * mult
@@ -930,13 +968,26 @@ class WorkflowPositionTracker:
                 pnl_rate=pnl_rate,
             ))
 
-        other_rate = (other_pnl / other_buy * 100) if other_buy else Decimal(0)
+        # wf_rate 와 같은 규율 — 근거가 없으면 비율을 발행하지 않는다.
+        other_rate = (
+            None
+            if (not other_positions or other_unbased or other_unpriced or not other_buy)
+            else (other_pnl / other_buy * 100)
+        )
 
         # 전체 계산 — pnl 은 부호 보정된 per-position 합, eval/buy 는 명목가 합.
         total_eval = wf_eval + other_eval
         total_buy = wf_buy + other_buy
         total_pnl = wf_pnl + other_pnl
-        total_rate = (total_pnl / total_buy * 100) if total_buy else Decimal(0)
+        # 전체 비율은 **양쪽 다 증거가 성립할 때만** 낸다. 한쪽이 모름이면 합계도 모름이다
+        # (모르는 쪽을 0 으로 치고 더하면 없는 정확도를 만들어낸다).
+        total_unpriced = wf_unpriced + other_unpriced
+        total_unbased = wf_unbased + other_unbased
+        total_rate = (
+            None
+            if (not total_buy or total_unbased or total_unpriced)
+            else (total_pnl / total_buy * 100)
+        )
         
         # 신뢰도 계산
         anomalies = self.detect_anomalies()
@@ -948,6 +999,10 @@ class WorkflowPositionTracker:
             "product": self.product,
             
             "workflow_pnl_rate": wf_rate,
+            # 비율을 못 낸 **이유**. 값을 비우는 것만으로는 "안 샀다" 와 "증권사가 평단을
+            # 안 보냈다" 가 구분되지 않는다 — 서버는 이 사유를 raw_event 에 그대로 싣는다.
+            # 어휘는 dsl-api `app/utils/pnl_rate_evidence.RATE_UNAVAILABLE_REASONS` 와 공용.
+            "workflow_rate_unavailable_reason": wf_rate_reason,
             "workflow_eval_amount": wf_eval,
             "workflow_buy_amount": wf_buy,
             "workflow_pnl_amount": wf_pnl,
