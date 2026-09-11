@@ -1,5 +1,6 @@
 """Retained personal execution evidence using synthetic SQLite fills only."""
 from types import SimpleNamespace
+import asyncio
 import sqlite3
 
 import pytest
@@ -25,7 +26,7 @@ async def fill(ledger, order, side, quantity, price, execution, *, symbol="SYNTH
     if not manual:
         ledger.record_order(order, date, symbol, "SYNTH_EXCHANGE", side, quantity, price, "job", "node")
     return await ledger.record_fill(order, date, symbol, "SYNTH_EXCHANGE", side,
-                                   quantity, price, "100000000", "10" if manual else "40", execution_id=execution)
+                                   quantity, price, "100000000", "85" if manual else "40", execution_id=execution)
 
 
 @pytest.mark.asyncio
@@ -172,7 +173,10 @@ async def test_manual_fifo_basis_never_becomes_workflow_realized_money(tmp_path)
     result = ledger.personal_metrics()
     assert result["executed_order_count"] == 1
     assert result["realized_pnl"][0]["amount"] is None
-    assert result["realized_pnl"][0]["reason"] == "mixed_fifo_ownership"
+    # A workflow sell now consumes only workflow lots, so it never realizes the
+    # manual buy's basis (no account_avg_price was supplied, so no estimate
+    # either). The residual with no estimate is rejected as an incomplete basis.
+    assert result["realized_pnl"][0]["reason"] == "incomplete_fifo_basis"
 
 
 @pytest.mark.asyncio
@@ -312,7 +316,124 @@ async def test_mixed_ownership_keeps_its_trades_out_of_the_count(tmp_path):
     await fill(ledger, "1", "buy", 1, 100, "11", manual=True)
     await fill(ledger, "2", "sell", 1, 110, "12")
     result = ledger.personal_metrics()
-    assert result["realized_pnl"][0]["reason"] == "mixed_fifo_ownership"
+    # The workflow sell consumes only workflow lots, so the manual buy's basis is
+    # never claimed; its residual (no estimate) is an incomplete basis, and the
+    # rejected group keeps its trades out of the count exactly as before.
+    assert result["realized_pnl"][0]["reason"] == "incomplete_fifo_basis"
     assert result["closed_trade_count"] is None
     assert result["closed_trade_status"] == "unavailable"
     assert result["closed_trade_reason"] == "no_scorable_fifo_basis"
+
+
+# --- v2 확장: 계좌 평균매입가 추정 + off_strategy_fills ------------------------
+# 워크플로우 매도가 자기 로트를 다 소진하고도 남는 잔량은, 계좌에 같은 종목을 다른
+# 경로로 사둔 것으로 보고 계좌 평균매입가 기준으로 추정 표기한다(basis includes_estimates).
+
+
+async def sell_with_estimate(ledger, order, quantity, price, execution, account_avg_price,
+                             *, symbol="SYNTH", date="20260909"):
+    """워크플로우 매도 + 계좌 평균매입가 추정 인자."""
+    ledger.record_order(order, date, symbol, "SYNTH_EXCHANGE", "sell", quantity, price, "job", "node")
+    return await ledger.record_fill(order, date, symbol, "SYNTH_EXCHANGE", "sell",
+                                    quantity, price, "120000000", "40",
+                                    execution_id=execution, account_avg_price=account_avg_price)
+
+
+@pytest.mark.asyncio
+async def test_estimated_tail_makes_the_group_estimated(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 1, 100, "11")           # workflow 매수 1
+    await sell_with_estimate(ledger, "2", 3, 110, "12", 105)  # 3 매도, 잔량 2 추정 @105
+    result = ledger.personal_metrics()
+    group = result["realized_pnl"][0]
+    assert group["status"] == "estimated"
+    assert group["basis"] == "fifo_with_account_avg_price_estimate"
+    assert group["estimated_quantity"] == 2
+    # amount = FIFO 매칭분(1 @ +10) + 추정분((110-105)*2 = +10) = 20
+    assert group["amount"] == 20
+    assert group["closed_trades"] == 1 and group["winning_trades"] == 1
+    # 상위: 추정 그룹 1개, 합계 basis 는 includes_estimates
+    assert result["estimated_group_count"] == 1
+    assert result["closed_trade_status"] == "available"
+    assert result["closed_trade_basis"] == "includes_estimates"
+    assert result["closed_trade_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_estimated_group_ratio_basis_includes_estimates(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 2, 100, "11")           # workflow 매수 2
+    await fill(ledger, "2", "sell", 1, 90, "12")           # 매도 1 @90 → 손실 -10 (매칭)
+    await sell_with_estimate(ledger, "3", 3, 110, "13", 105)  # 매도 3: 매칭 1(+10) + 추정 2(+10)=+20
+    result = ledger.personal_metrics()
+    group = result["realized_pnl"][0]
+    assert group["status"] == "estimated"
+    assert group["winning_trades"] == 1 and group["losing_trades"] == 1
+    assert group["gross_profit"] == 20 and group["gross_loss"] == 10
+    # 한 그룹만 닫힌 거래가 있으니 손익비 발행 — basis 는 includes_estimates
+    assert result["profit_loss_ratio"] == 2.0
+    assert result["profit_loss_ratio_status"] == "available"
+    assert result["profit_loss_ratio_basis"] == "includes_estimates"
+
+
+@pytest.mark.asyncio
+async def test_residual_without_estimate_stays_unavailable(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 1, 100, "11")   # workflow 매수 1
+    # 3 매도인데 workflow 로트 1뿐 + 계좌 평단 미제공 → 추정 없음 → 거부
+    ledger.record_order("2", "20260909", "SYNTH", "SYNTH_EXCHANGE", "sell", 3, 110, "job", "node")
+    await ledger.record_fill("2", "20260909", "SYNTH", "SYNTH_EXCHANGE", "sell", 3, 110,
+                             "120000000", "40", execution_id="12")
+    result = ledger.personal_metrics()
+    group = result["realized_pnl"][0]
+    assert group["status"] == "unavailable"
+    assert group["reason"] == "incomplete_fifo_basis"
+    assert group["basis"] is None and group["estimated_quantity"] is None
+    assert result["closed_trade_status"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_fully_matched_group_basis_is_measured(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 1, 100, "11")
+    await fill(ledger, "2", "sell", 1, 110, "12")   # 완전 매칭, 추정 없음
+    result = ledger.personal_metrics()
+    group = result["realized_pnl"][0]
+    assert group["status"] == "available"
+    assert group["basis"] == "fifo" and group["estimated_quantity"] == 0
+    assert result["estimated_group_count"] == 0
+    assert result["closed_trade_basis"] == "measured"
+
+
+@pytest.mark.asyncio
+async def test_off_strategy_fills_counts_hts_and_other_api(tmp_path):
+    ledger = tracker(tmp_path, provider="ls-sec.co.kr")
+    ledger.FILL_BUFFER_TIMEOUT = 0.05
+    await fill(ledger, "1", "buy", 1, 100, "11")   # 우리 workflow 체결
+    # 사람의 HTS 거래: 표의 인간 채널 코드(85=HTS) + 일치 주문 없음 → manual
+    await ledger.record_fill("H1", "20260909", "SYNTH", "SYNTH_EXCHANGE", "buy", 1, 90,
+                             "100000000", "85", execution_id="21")
+    # 타 API 클라이언트: 표의 API 코드(41) + 일치 주문 없음 → 버퍼 → unknown_api
+    r = await ledger.record_fill("A1", "20260909", "SYNTH", "SYNTH_EXCHANGE", "buy", 1, 95,
+                                 "100000000", "41", execution_id="22")
+    assert r == "pending"
+    # 증권사 발생 코드(96=최종결제): 사람도 API 도 아니다 → other
+    assert await ledger.record_fill("S1", "20260909", "SYNTH", "SYNTH_EXCHANGE", "sell", 1, 99,
+                                    "100000000", "96", execution_id="23") == "other"
+    await asyncio.sleep(0.15)
+    off = ledger.personal_metrics()["off_strategy_fills"]
+    assert off["status"] == "available"
+    assert off["hts"] == 1
+    assert off["other_api"] == 1
+    assert off["other"] == 1
+    assert off["reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_off_strategy_fills_unavailable_for_futures(tmp_path):
+    ledger = tracker(tmp_path, product="overseas_futures", trading_mode="paper")
+    await fill(ledger, "1", "buy", 1, 100, "11")
+    off = ledger.personal_metrics()["off_strategy_fills"]
+    assert off["status"] == "unavailable"
+    assert off["hts"] is None and off["other_api"] is None and off["other"] is None
+    assert off["reason"] == "futures_fills_have_no_media_code"

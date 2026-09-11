@@ -87,10 +87,45 @@ class PendingFill:
     commda_code: str
     received_at: datetime
     execution_id: Optional[str | int] = None
+    # Account average purchase price for this symbol at the moment of the fill,
+    # read from the broker snapshot before it refreshes. Used only to estimate a
+    # workflow sell's residual tail (see _process_sell_fifo); None → no estimate.
+    account_avg_price: Optional[float] = None
 
 
 class ExecutionIdentityConflictError(ValueError):
     """An explicit execution identity was replayed with different fill facts."""
+
+
+# LS 통신매체코드(CommdaCode / MdaCode) — 출처: src/finance/docs/cidbq02400_contract.md:74-77
+# "The published media map is 00=branch, 22=iPhone, 23=Android, 41=API, 43=Robo API,
+#  85=HTS, 96=final settlement, LP=loss cut, SK=CashCall and SO=conditional order.
+#  The example uses 40, which the table does not map. Preserve it as returned;
+#  do not classify it by guessing a nearby code."
+# '40' 은 표에 없지만 우리 OPEN API 주문이 실제로 받는 값이다(dev verified_fills 실측 4건 +
+# 2026-09-12 해외주식 AS1 실측: 우리 매도 주문 244 → 40) — 표의 41/43 과 함께 API 묶음으로 둔다.
+# 🔴 해외주식 AS1 실측(2026-09-12, 실계좌 NIO 1주씩): HTS → 85(표와 일치) · iPhone 투혼앱 → **51**
+# (표의 22 아님) · 투혼 웹 → **03**(표에 없음). 표는 해외선물 TR 문서라 해외주식 푸시와 앱/웹 코드가
+# 다르다. 관측된 값만 사람 채널에 추가한다 — 표에 없고 관측도 안 된 값은 여전히 "other".
+MEDIA_CODES_HUMAN = frozenset({"85", "22", "23", "00", "51", "03"})   # HTS · iPhone(표) · Android(표) · 지점 · 투혼앱(실측) · 투혼웹(실측)
+MEDIA_CODES_API = frozenset({"40", "41", "43"})                       # OPEN API(실측) · API · Robo API
+
+
+def media_channel(commda_code: str | None) -> str:
+    """Map a broker media code to "human" | "api" | "unknown" | "other".
+
+    unknown = blank/None (the frame said nothing); other = a code the published
+    table does not attribute to a person or an API client (96/LP/SK/SO …) or one
+    the table does not list at all. Neither is ever asserted to be a person.
+    """
+    code = (commda_code or "").strip()
+    if not code:
+        return "unknown"
+    if code in MEDIA_CODES_HUMAN:
+        return "human"
+    if code in MEDIA_CODES_API:
+        return "api"
+    return "other"
 
 
 class WorkflowPositionTracker:
@@ -251,6 +286,19 @@ class WorkflowPositionTracker:
             for column in ("execution_id", "normalized_order_no", "execution_payload"):
                 if column not in columns:
                     cursor.execute(f"ALTER TABLE trade_history ADD COLUMN {column} TEXT")
+            # Additive columns for the account-average-price sell estimate. A
+            # workflow sell that empties the strategy's own lots and still has a
+            # tail records that tail here (the residual quantity, the account
+            # average purchase price it was estimated against, the source label,
+            # and the estimated PnL). realized_pnl stays FIFO-matched only; these
+            # never enter _execution_facts / conflict detection. NULL on every
+            # row that carries no estimate (buys, fully matched sells, old rows).
+            for column, coltype in (("unmatched_qty", "REAL"),
+                                    ("estimate_basis_price", "REAL"),
+                                    ("estimate_source", "TEXT"),
+                                    ("estimated_pnl", "REAL")):
+                if column not in columns:
+                    cursor.execute(f"ALTER TABLE trade_history ADD COLUMN {column} {coltype}")
             cursor.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS uq_trade_history_execution_v1
                 ON trade_history(product, provider, trading_mode, order_date,
@@ -386,6 +434,7 @@ class WorkflowPositionTracker:
         commda_code: str,
         *,
         execution_id: Optional[str | int] = None,
+        account_avg_price: Optional[float] = None,
     ) -> str:
         """
         체결 기록 및 FIFO 처리
@@ -401,7 +450,12 @@ class WorkflowPositionTracker:
             quantity: 수량
             price: 체결가
             fill_time: 체결시각 (HHMMSSsss)
-            commda_code: 매체구분코드 (40=OPEN API)
+            commda_code: 매체구분코드 (40=OPEN API). 프레임에서 온 값을 그대로
+                받는다 — 우리 주문과 일치하면 매체코드와 무관하게 workflow 로,
+                일치하지 않는 fill 만 매체코드로 manual(HTS)/unknown_api 를 가른다.
+            account_avg_price: Optional account average purchase price for this
+                symbol at fill time. Only a workflow sell whose own lots run out
+                uses it, to estimate the residual tail. None → no estimate.
             execution_id: Optional broker execution identity. Positive numeric
                 strings/integers ignore padding; opaque strings retain case.
                 None, blank, and zero mean no identity and retain legacy replay
@@ -417,13 +471,13 @@ class WorkflowPositionTracker:
         This is a persistence prerequisite, not broker-history/TC3 integration.
             
         Returns:
-            분류 결과: "workflow" | "manual" | "unknown_api" | "pending"
+            분류 결과: "workflow" | "manual" | "unknown_api" | "other" | "pending"
         """
         fill = PendingFill(
             order_no=order_no, order_date=order_date, symbol=symbol,
             exchange=exchange, side=side, quantity=quantity, price=price,
             fill_time=fill_time, commda_code=commda_code, received_at=datetime.now(),
-            execution_id=execution_id,
+            execution_id=execution_id, account_avg_price=account_avg_price,
         )
         identity = self._execution_key(fill)
         async with self._buffer_lock:
@@ -437,11 +491,30 @@ class WorkflowPositionTracker:
                 if previous is not None:
                     return previous
 
-            if commda_code != "40":
-                return await self._process_fill_internal(fill, "manual")
+            # A fill that matches one of our recorded workflow orders is ours,
+            # whatever communication-media code the broker stamped on it — the
+            # recorded order is the authoritative ownership signal, so it is
+            # checked first. (Now that the real media code is forwarded instead
+            # of a hardcoded '40', our own OPEN-API fills may not carry '40'; the
+            # old media-first ordering would then misfile them as manual.)
             if self._is_workflow_fill(fill):
                 return await self._process_fill_internal(fill, "workflow")
+            # No matching order. Classify by the published media table
+            # (MEDIA_CODES_* above) — never by "not 40":
+            #   human (85 HTS / 22 iPhone / 23 Android / 00 branch) → "manual"
+            #   other (96/LP/SK/SO or unlisted)                    → "other"
+            #   api (40/41/43) or blank                            → buffer below
+            channel = media_channel(commda_code)
+            if channel == "human":
+                return await self._process_fill_internal(fill, "manual")
+            if channel == "other":
+                return await self._process_fill_internal(fill, "other")
 
+            # An API code or an empty media code ("medium unknown"): buffer to
+            # give a lagging order record a chance to arrive, then
+            # _process_timeout_fill files it as workflow (matched) or unknown_api
+            # (unmatched). An unknown medium is never asserted to be a person's
+            # HTS trade, so it floors to unknown_api rather than manual.
             self._next_pending_fill += 1
             key = self._next_pending_fill
             self._pending_fills[key] = fill
@@ -554,6 +627,7 @@ class WorkflowPositionTracker:
                     "reported_execution_id": fill.execution_id,
                 }, sort_keys=True)
             realized_pnl = 0.0
+            estimate = None
 
             if fill.side == "buy":
                 # 매수: 새 로트 생성
@@ -570,8 +644,9 @@ class WorkflowPositionTracker:
                 ))
             else:
                 # 매도: FIFO 청산 (현재 trading_mode 내에서만)
-                realized_pnl = self._process_sell_fifo(
-                    cursor, fill.symbol, fill.quantity, fill.price, classification
+                realized_pnl, estimate = self._process_sell_fifo(
+                    cursor, fill.symbol, fill.quantity, fill.price, classification,
+                    account_avg_price=fill.account_avg_price,
                 )
 
             # 체결 내역 저장
@@ -579,14 +654,19 @@ class WorkflowPositionTracker:
                 INSERT INTO trade_history
                 (product, provider, order_no, order_date, symbol, exchange, side, quantity, price,
                  fill_datetime, classification, commda_code, realized_pnl, trading_mode, created_at,
-                 execution_id, normalized_order_no, execution_payload)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 execution_id, normalized_order_no, execution_payload,
+                 unmatched_qty, estimate_basis_price, estimate_source, estimated_pnl)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.product, self.provider,
                 fill.order_no, fill.order_date, fill.symbol, fill.exchange,
                 fill.side, fill.quantity, fill.price, fill_datetime,
                 classification, fill.commda_code, realized_pnl, self.trading_mode, datetime.now().isoformat(),
                 identity[5] if identity else None, identity[4] if identity else None, payload,
+                estimate["unmatched_qty"] if estimate else None,
+                estimate["estimate_basis_price"] if estimate else None,
+                estimate["estimate_source"] if estimate else None,
+                estimate["estimated_pnl"] if estimate else None,
             ))
 
             conn.commit()
@@ -605,62 +685,97 @@ class WorkflowPositionTracker:
         quantity: int,
         sell_price: float,
         classification: str,
-    ) -> float:
+        account_avg_price: Optional[float] = None,
+    ) -> Tuple[float, Optional[Dict[str, Any]]]:
         """
         FIFO 매도 처리
-        
+
         fill_datetime 순으로 정렬하여 선입선출 방식으로 청산합니다.
-        
+
+        classification 이 'workflow' 인 매도는 **workflow 로트만** 소진한다. 수동/타
+        API 로트를 먹으면 이 전략이 열지 않은 포지션의 손익까지 실현한 셈이 되기
+        때문이다. workflow 로트가 바닥난 뒤 남는 수량(remaining)은 이 전략이 여기서
+        사지 않은 물량을 판 것이므로, 계좌 평균매입가(account_avg_price)가 주어지면
+        그 잔량을 추정손익으로 매도 행에 기록한다(realized_pnl 은 FIFO 매칭분만 유지).
+        non-workflow 매도는 종전과 동일하게 분류 무관 로트를 FIFO 소진한다.
+
         Args:
             cursor: DB 커서
             symbol: 종목코드
             quantity: 매도 수량
             sell_price: 매도가
-            classification: 분류 (로깅용)
-            
+            classification: 분류 ("workflow" 면 workflow 로트만 소진)
+            account_avg_price: 계좌 평균매입가 (workflow 매도의 잔량 추정용, 없으면 추정 없음)
+
         Returns:
-            실현 손익
+            (실현 손익 FIFO 매칭분, 추정 정보 dict 또는 None)
         """
         remaining_to_sell = quantity
         total_realized_pnl = 0.0
-        
-        # fill_datetime 순으로 정렬 (FIFO, 현재 trading_mode 내에서만)
-        cursor.execute("""
-            SELECT id, buy_price, remaining_qty, classification
-            FROM workflow_position_lots
-            WHERE symbol = ? AND remaining_qty > 0 AND trading_mode = ?
-            ORDER BY fill_datetime ASC
-        """, (symbol, self.trading_mode))
-        
+
+        # fill_datetime 순으로 정렬 (FIFO, 현재 trading_mode 내에서만).
+        # workflow 매도는 workflow 로트로 소진 대상을 좁힌다.
+        if classification == "workflow":
+            cursor.execute("""
+                SELECT id, buy_price, remaining_qty, classification
+                FROM workflow_position_lots
+                WHERE symbol = ? AND remaining_qty > 0 AND trading_mode = ?
+                  AND classification = 'workflow'
+                ORDER BY fill_datetime ASC
+            """, (symbol, self.trading_mode))
+        else:
+            cursor.execute("""
+                SELECT id, buy_price, remaining_qty, classification
+                FROM workflow_position_lots
+                WHERE symbol = ? AND remaining_qty > 0 AND trading_mode = ?
+                ORDER BY fill_datetime ASC
+            """, (symbol, self.trading_mode))
+
         lots = cursor.fetchall()
-        
+
         for lot_id, buy_price, remaining_qty, lot_classification in lots:
             if remaining_to_sell <= 0:
                 break
-            
+
             sell_qty = min(remaining_to_sell, remaining_qty)
             new_remaining = remaining_qty - sell_qty
-            
+
             # 로트 업데이트
             cursor.execute("""
                 UPDATE workflow_position_lots
                 SET remaining_qty = ?
                 WHERE id = ?
             """, (new_remaining, lot_id))
-            
+
             # 실현 손익 계산
             pnl = (sell_price - buy_price) * sell_qty
             total_realized_pnl += pnl
-            
+
             remaining_to_sell -= sell_qty
-            
+
             logger.debug(f"FIFO sell: lot {lot_id} ({lot_classification}), "
                         f"qty={sell_qty}, pnl={pnl:.2f}")
-        
+
+        estimate: Optional[Dict[str, Any]] = None
         if remaining_to_sell > 0:
-            logger.warning(f"Sell without enough position: {symbol} remaining={remaining_to_sell}")
-        
-        return total_realized_pnl
+            if (classification == "workflow" and account_avg_price is not None
+                    and account_avg_price > 0):
+                # 이 전략이 여기서 사지 않은 잔량 — 같은 종목을 계좌의 다른 경로로
+                # 사둔 것으로 보고 계좌 평균매입가 기준 추정손익을 기록한다.
+                # realized_pnl(FIFO 매칭분)에는 넣지 않고 별도 컬럼으로만 남긴다.
+                estimated_pnl = (sell_price - account_avg_price) * remaining_to_sell
+                estimate = {
+                    "unmatched_qty": float(remaining_to_sell),
+                    "estimate_basis_price": float(account_avg_price),
+                    "estimate_source": "account_balance_avg_price",
+                    "estimated_pnl": float(estimated_pnl),
+                }
+                logger.debug(f"Estimated sell tail: {symbol} qty={remaining_to_sell} "
+                             f"@avg={account_avg_price} est_pnl={estimated_pnl:.2f}")
+            else:
+                logger.warning(f"Sell without enough position: {symbol} remaining={remaining_to_sell}")
+
+        return total_realized_pnl, estimate
     
     def _check_workflow_order(self, order_no: str, order_date: str) -> bool:
         """워크플로우 주문 여부 확인 (현재 trading_mode 기준)"""
@@ -1039,6 +1154,22 @@ class WorkflowPositionTracker:
         basis and never replaces a stored value, so the outcome is read from the
         same number the ledger committed.
 
+        A workflow sell now consumes only workflow lots (_process_sell_fifo), so
+        the old ``mixed_fifo_ownership`` pre-check is gone: a workflow sell can
+        no longer have realized a non-workflow lot, so there is nothing to guard
+        against. Old ledger rows written under the previous (classification-blind)
+        sell replay with ``stored != expected`` and are rejected below as
+        ``incomplete_fifo_basis`` — the honest outcome for a basis we can no
+        longer reconstruct.
+
+        A workflow sell whose own lots run out leaves a residual. When that
+        residual was recorded with an account-average-price estimate covering
+        exactly it (``estimate_basis_price`` present and ``unmatched_qty`` equal
+        to the residual), the group is not rejected: its status becomes
+        ``estimated``, its basis ``fifo_with_account_avg_price_estimate``, and
+        the sell scores on ``stored + estimated_pnl`` (the FIFO-matched amount
+        plus the estimated tail). Any other residual is an incomplete basis.
+
         Counts aggregate across symbols because a count carries no currency.
         Amounts do not: with `currency` unproven per row, summing gross profit
         across symbols would invent the very unit this method refuses to claim.
@@ -1082,18 +1213,19 @@ class WorkflowPositionTracker:
             reason = None
             amount = None
             outcome = None
+            # Whether this group's amount includes an account-avg-price estimate,
+            # and how much quantity was estimated (Σ unmatched over its sells).
+            group_estimated = False
+            group_est_qty = Decimal(0)
             if self.product == "overseas_futures":
                 reason = "futures_fifo_not_monetary"
             elif not symbol:
                 reason = "missing_symbol"
-            elif any(row["symbol"] == symbol and (
-                row["product"] != self.product or row["provider"] != self.provider
-                or row["classification"] != "workflow" or (row["exchange"] or "") != exchange
-            ) for row in rows):
-                # The historical sell writer matches symbol/mode across all lots.
-                # It cannot prove workflow ownership when those domains overlap.
-                reason = "mixed_fifo_ownership"
             else:
+                # The old mixed_fifo_ownership pre-check is gone: a workflow sell
+                # now consumes only workflow lots, so it can never have realized a
+                # non-workflow lot. Old rows written under the previous replay
+                # fall out below as incomplete_fifo_basis (stored != expected).
                 try:
                     lots = []
                     total = Decimal(0)
@@ -1124,20 +1256,41 @@ class WorkflowPositionTracker:
                                 if remaining == 0:
                                     break
                             tolerance = max(Decimal("0.000001"), abs(expected) * Decimal("0.000000001"))
-                            if remaining > 0 or abs(stored - expected) > tolerance:
-                                raise ValueError("Incomplete or inconsistent FIFO basis")
-                            # Preserve the stored amount; replay arithmetic only
-                            # validates the basis and never replaces its value.
-                            total += stored
-                            # One sell fill = one closed trade. Read the outcome
-                            # from the stored amount for the same reason.
+                            # The FIFO-matched portion must reproduce the stored
+                            # amount, whether or not a tail remains.
+                            if abs(stored - expected) > tolerance:
+                                raise ValueError("Inconsistent FIFO basis")
+                            # trade_amount is what this one closed trade scores on;
+                            # it starts as the stored (matched) value and grows by
+                            # the recorded estimate when a tail remains.
+                            trade_amount = stored
+                            if remaining > 0:
+                                # A residual after the workflow lots run out is
+                                # accepted only as a recorded account-avg-price
+                                # estimate covering exactly this residual; anything
+                                # else is an incomplete basis.
+                                est_basis = fill["estimate_basis_price"]
+                                est_unmatched = fill["unmatched_qty"]
+                                est_pnl = fill["estimated_pnl"]
+                                if est_basis is None or est_unmatched is None or est_pnl is None:
+                                    raise ValueError("Incomplete FIFO basis without estimate")
+                                est_unmatched_d = Decimal(str(est_unmatched))
+                                est_pnl_d = Decimal(str(est_pnl))
+                                if est_unmatched_d != remaining or not est_pnl_d.is_finite():
+                                    raise ValueError("Estimate does not cover the residual")
+                                # Add (never replace) the stored estimate to the
+                                # matched amount; one sell fill is still one trade.
+                                trade_amount = stored + est_pnl_d
+                                group_estimated = True
+                                group_est_qty += remaining
+                            total += trade_amount
                             trades += 1
-                            if stored > 0:
+                            if trade_amount > 0:
                                 wins += 1
-                                gross_profit += stored
-                            elif stored < 0:
+                                gross_profit += trade_amount
+                            elif trade_amount < 0:
                                 losses += 1
-                                gross_loss += -stored
+                                gross_loss += -trade_amount
                             else:
                                 evens += 1
                         else:
@@ -1155,9 +1308,23 @@ class WorkflowPositionTracker:
                 except (ValueError, TypeError, ArithmeticError, OverflowError):
                     reason = "incomplete_fifo_basis"
                     outcome = None
+                    group_estimated = False
+                    group_est_qty = Decimal(0)
+            if reason is not None:
+                status = "unavailable"
+                basis = None
+                estimated_quantity = None
+            elif group_estimated:
+                status = "estimated"
+                basis = "fifo_with_account_avg_price_estimate"
+                estimated_quantity = float(group_est_qty)
+            else:
+                status = "available"
+                basis = "fifo"
+                estimated_quantity = 0
             entry = {"symbol": symbol, "exchange": exchange, "currency": None,
-                     "amount": amount, "status": "available" if reason is None else "unavailable",
-                     "reason": reason}
+                     "amount": amount, "status": status, "reason": reason,
+                     "basis": basis, "estimated_quantity": estimated_quantity}
             # A rejected group publishes no outcome: its trades are unknown, and
             # unknown trades must not be counted as zero of anything.
             entry.update(outcome or {"closed_trades": None, "winning_trades": None,
@@ -1205,6 +1372,44 @@ class WorkflowPositionTracker:
                 # that size and overstates the strategy.
                 ratio_reason = "no_losing_trades"
 
+        # How many groups carry an account-avg-price estimate, and whether the
+        # aggregated figures rest on any estimate. A count is null when it is
+        # itself unavailable; otherwise it is "measured" unless a scored group
+        # was estimated. The ratio comes from a single group, so its basis is
+        # that one group's.
+        estimated_group_count = sum(1 for g in realized if g["status"] == "estimated")
+        if trade_status == "unavailable":
+            closed_trade_basis = None
+        else:
+            closed_trade_basis = ("includes_estimates"
+                                  if any(g["status"] == "estimated" for g in scored)
+                                  else "measured")
+        if ratio_status != "available":
+            profit_loss_ratio_basis = None
+        else:
+            profit_loss_ratio_basis = ("includes_estimates"
+                                       if counted[0]["status"] == "estimated"
+                                       else "measured")
+
+        # Fills on this same account placed outside this strategy, by classification:
+        # manual (a person via HTS/app/branch) → hts, unknown_api (another API
+        # client) → other_api, other (broker-side codes 96/LP/SK/SO or unlisted)
+        # → other. Futures fill frames carry no communication-media field, so
+        # the channels cannot be told apart for them — unavailable.
+        if self.product == "overseas_futures":
+            off_strategy_fills = {"hts": None, "other_api": None, "other": None,
+                                  "status": "unavailable",
+                                  "reason": "futures_fills_have_no_media_code"}
+        else:
+            in_scope = [r for r in rows if r["product"] == self.product
+                        and r["provider"] == self.provider]
+            off_strategy_fills = {
+                "hts": sum(1 for r in in_scope if r["classification"] == "manual"),
+                "other_api": sum(1 for r in in_scope if r["classification"] == "unknown_api"),
+                "other": sum(1 for r in in_scope if r["classification"] == "other"),
+                "status": "available", "reason": None,
+            }
+
         return {
             "version": 2,
             "scope": {"kind": "local_workflow_ledger", "product": self.product,
@@ -1221,9 +1426,13 @@ class WorkflowPositionTracker:
             "breakeven_trade_count": breakeven_total,
             "closed_trade_status": trade_status,
             "closed_trade_reason": trade_reason,
+            "closed_trade_basis": closed_trade_basis,
+            "estimated_group_count": estimated_group_count,
             "profit_loss_ratio": ratio,
             "profit_loss_ratio_status": ratio_status,
             "profit_loss_ratio_reason": ratio_reason,
+            "profit_loss_ratio_basis": profit_loss_ratio_basis,
+            "off_strategy_fills": off_strategy_fills,
             "max_drawdown": None,
             "max_drawdown_status": "unavailable",
             "max_drawdown_reason": "equity_history_unavailable",
