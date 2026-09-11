@@ -207,3 +207,112 @@ async def test_nonfinite_history_and_inconsistent_realized_value_remain_unavaila
     result = ledger.personal_metrics()
     assert result["executed_order_count"] is None
     assert result["realized_pnl"][0]["amount"] is None
+
+
+# --- v2: closed-trade outcomes -------------------------------------------
+# One closed trade = one sell fill, scored from its *stored* realized amount.
+# Counts aggregate across symbols (a count has no currency); gross amounts do
+# not, so the ratio is published only when one group carries the whole ledger.
+
+
+@pytest.mark.asyncio
+async def test_closed_trades_are_scored_from_the_stored_amount(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 3, 100, "11")
+    await fill(ledger, "2", "sell", 1, 110, "12")   # +10
+    await fill(ledger, "3", "sell", 1, 90, "13")    # -10
+    await fill(ledger, "4", "sell", 1, 100, "14")   # 0
+    result = ledger.personal_metrics()
+    assert result["version"] == 2
+    assert result["closed_trade_count"] == 3
+    assert result["winning_trade_count"] == 1
+    assert result["losing_trade_count"] == 1
+    assert result["breakeven_trade_count"] == 1
+    assert result["closed_trade_status"] == "available"
+    group = result["realized_pnl"][0]
+    assert group["gross_profit"] == 10 and group["gross_loss"] == 10
+    assert result["profit_loss_ratio"] == 1.0
+    assert result["profit_loss_ratio_status"] == "available"
+
+
+@pytest.mark.asyncio
+async def test_open_position_has_no_closed_trade(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 1, 100, "11")
+    result = ledger.personal_metrics()
+    assert result["closed_trade_count"] == 0
+    assert result["closed_trade_status"] == "available"
+    # Nothing has been closed, so there is no ratio to speak of — and saying so
+    # is different from saying the ratio is zero.
+    assert result["profit_loss_ratio"] is None
+    assert result["profit_loss_ratio_reason"] == "no_closed_trades"
+
+
+@pytest.mark.asyncio
+async def test_winning_only_ledger_does_not_publish_profit_as_a_ratio(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 1, 100, "11")
+    await fill(ledger, "2", "sell", 1, 130, "12")
+    result = ledger.personal_metrics()
+    assert result["winning_trade_count"] == 1 and result["losing_trade_count"] == 0
+    assert result["realized_pnl"][0]["gross_profit"] == 30
+    # The server's day-based metric returns gross profit here and the screen
+    # reads it as "ratio 30.00". No denominator means no ratio.
+    assert result["profit_loss_ratio"] is None
+    assert result["profit_loss_ratio_reason"] == "no_losing_trades"
+
+
+@pytest.mark.asyncio
+async def test_two_symbols_count_together_but_publish_no_ratio(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 1, 100, "11", symbol="AAA")
+    await fill(ledger, "2", "sell", 1, 110, "12", symbol="AAA")
+    await fill(ledger, "3", "buy", 1, 200, "13", symbol="BBB")
+    await fill(ledger, "4", "sell", 1, 180, "14", symbol="BBB")
+    result = ledger.personal_metrics()
+    assert result["closed_trade_count"] == 2
+    assert result["winning_trade_count"] == 1 and result["losing_trade_count"] == 1
+    # Two symbols may settle in two currencies, and the ledger holds no currency
+    # evidence — so the amounts stay in their groups.
+    assert result["profit_loss_ratio"] is None
+    assert result["profit_loss_ratio_reason"] == "multi_symbol_currency_unknown"
+    assert {g["symbol"] for g in result["realized_pnl"]} == {"AAA", "BBB"}
+
+
+@pytest.mark.asyncio
+async def test_unscorable_group_downgrades_the_total_instead_of_shrinking_it(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 1, 100, "11", symbol="AAA")
+    await fill(ledger, "2", "sell", 1, 110, "12", symbol="AAA")
+    await fill(ledger, "3", "sell", 1, 50, "13", symbol="BBB")   # unmatched
+    result = ledger.personal_metrics()
+    assert result["closed_trade_count"] == 1
+    assert result["closed_trade_status"] == "partial"
+    assert result["closed_trade_reason"] == "some_groups_unscorable"
+    rejected = [g for g in result["realized_pnl"] if g["symbol"] == "BBB"][0]
+    # An unknown group contributes no trades, not zero trades.
+    assert rejected["closed_trades"] is None and rejected["gross_profit"] is None
+
+
+@pytest.mark.asyncio
+async def test_futures_ledger_scores_no_trades(tmp_path):
+    ledger = tracker(tmp_path, product="overseas_futures", trading_mode="paper")
+    await fill(ledger, "1", "buy", 1, 100, "11")
+    await fill(ledger, "2", "sell", 1, 110, "12")
+    result = ledger.personal_metrics()
+    assert result["closed_trade_count"] is None
+    assert result["closed_trade_status"] == "unavailable"
+    assert result["closed_trade_reason"] == "futures_fifo_not_monetary"
+    assert result["profit_loss_ratio"] is None
+
+
+@pytest.mark.asyncio
+async def test_mixed_ownership_keeps_its_trades_out_of_the_count(tmp_path):
+    ledger = tracker(tmp_path)
+    await fill(ledger, "1", "buy", 1, 100, "11", manual=True)
+    await fill(ledger, "2", "sell", 1, 110, "12")
+    result = ledger.personal_metrics()
+    assert result["realized_pnl"][0]["reason"] == "mixed_fifo_ownership"
+    assert result["closed_trade_count"] is None
+    assert result["closed_trade_status"] == "unavailable"
+    assert result["closed_trade_reason"] == "no_scorable_fifo_basis"
