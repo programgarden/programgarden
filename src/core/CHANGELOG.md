@@ -1,3 +1,30 @@
+## [1.28.0] - 2026-09-12
+
+### Added
+- 체결 확정 이벤트 계약 — `OrderFillEvent` 데이터클래스와 `ExecutionListener.on_order_fill`
+  훅(기본 no-op) 신설. 엔진 원장에 체결이 **새로** 확정될 때마다 정확히 1회 발화하는 사실
+  전용 이벤트다(금액/수익 계산 없음): job_id·node_id(우리 주문이면 값, 아니면 None)·
+  order_no·order_date·execution_id(opt)·symbol·exchange·side·quantity·price·fill_time·
+  product·provider·classification(workflow|manual|unknown_api|other)·commda_code·
+  trading_mode·received_at·timestamp. `BaseExecutionListener`/`ConsoleExecutionListener`
+  에도 대응 훅 추가.
+
+### Notes
+- 🔴 **engine lockstep** — `programgarden` 1.36.0 이 이 심볼을 import 시점에 하드 의존한다
+  (`context.py` 가 `OrderFillEvent` 를 eager import). 반드시 **이 core 1.28.0 을 먼저 발행**한
+  뒤 엔진을 발행해야 한다. 구 core(≤1.27.0) 위에서 엔진 1.36.0 을 설치하면 `import programgarden`
+  이 ImportError 로 통째 실패한다. finance 1.9.5 / community 1.15.x 와 동반.
+
+## [1.27.0] - 2026-09-12
+
+### Added
+- `WorkflowPnLEvent.workflow_rate_unavailable_reason` — 선물 등 수익률을 낼 수 없는 경우
+  그 사유를 이벤트에 실어 리스너가 "0%" 와 "산출 불가" 를 구분할 수 있게 한다.
+
+### Notes
+- 엔진 1.35.1 과 동반. 이 필드가 없는 core(≤1.26.0) 위에서 1.35.x 가 `WorkflowPnLEvent(**event_data)`
+  를 매 tick TypeError → pnl 리스너 전부 실패하므로 lockstep 필수.
+
 ## [1.26.0] - 2026-09-10
 
 ### Added

@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.36.0] - 2026-09-12
 
 ### Added
 - C24 체결 확정 이벤트 — 리스너 계약(core `ExecutionListener`)에 `on_order_fill(OrderFillEvent)` 훅과
@@ -8,11 +8,16 @@
   수익 계산 없음): job_id·node_id(우리 주문이면 workflow_orders 의 node_id, 아니면 None)·order_no·
   order_date·execution_id·symbol·exchange·side·quantity·price·fill_time·product·provider·
   classification(workflow|manual|unknown_api|other)·commda_code·trading_mode·received_at. 세 체결
-  경로(AS1/SC1/TC3)가 `record_workflow_fill` 을 거치므로 자동으로 이 이벤트를 낸다.
-- 🔴 **core lockstep** — 이 엔진은 import 시점에 `OrderFillEvent` 를 core 에서 끌어온다(`context.py`).
-  **core 1.28.0**(`OrderFillEvent` + `on_order_fill` 포함)을 먼저 발행하고 `programgarden-core`
-  의존성을 `^1.28.0` 으로 올려야 한다 — 구 core(≤1.27.0) 위에서는 context.py import 자체가 실패한다
-  (#46/1.35.1 의 조용한 TypeError 보다 강한, 모듈 로드 실패).
+  경로(AS1/SC1/TC3)가 `record_workflow_fill` 을 거치므로 자동으로 이 이벤트를 낸다. `on_order_fill`
+  발화는 tracker 의 `_buffer_lock` 밖에서 일어난다 — 리스너 체인이 네트워크 POST 를 await 해도 다른
+  브로커 체결 푸시가 락 뒤에서 직렬화되지 않는다(락 안에서는 확정분을 큐잉만 하고, 락을 놓은 뒤 emit).
+
+### Fixed / lockstep
+- 🔴 **core lockstep 완결** — 이 엔진은 import 시점에 `OrderFillEvent` 를 core 에서 eager import
+  한다(`context.py`). 그 심볼은 **core 1.28.0** 신설이므로 `programgarden-core` 의존성을 `^1.28.0`
+  으로 상향했다(1.35.1 의 `^1.27.0` 유지 시 구 core 위에서 `import programgarden` 이 ImportError 로
+  통째 실패 — #46/1.35.1 의 조용한 TypeError 보다 강한 모듈 로드 실패). **발행 순서**: core 1.28.0 을
+  먼저 PyPI 에 올린 뒤 이 엔진 1.36.0 을 올리고, pg-worker 이미지를 lockstep 재빌드해야 한다.
 
 ### Fixed
 - C23 미해석 템플릿 심볼 차단 — `_normalize_order` 가 symbol 또는 exchange 에 `{{` 가 있으면 주문을

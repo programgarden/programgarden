@@ -11,7 +11,7 @@ Workflow execution context protocol
 
 from typing import Optional, Dict, Any, List, Protocol, runtime_checkable, Callable, Awaitable, TYPE_CHECKING, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from collections import deque
 import asyncio
@@ -2718,7 +2718,7 @@ class ExecutionContext:
         received_at = getattr(fill, "received_at", None)
         received_iso = (
             received_at.isoformat() if hasattr(received_at, "isoformat")
-            else datetime.utcnow().isoformat()
+            else datetime.now(timezone.utc).isoformat()
         )
 
         event = OrderFillEvent(

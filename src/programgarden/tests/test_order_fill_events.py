@@ -140,10 +140,13 @@ class TestPendingTimeoutFill:
 
     @pytest.mark.asyncio
     async def test_pending_resolves_to_workflow_when_order_arrives(self, tmp_path):
-        ctx, tracker = _make_context_with_tracker(tmp_path, buffer_timeout=0.05)
+        # 체결이 주문보다 먼저 도착해 버퍼링된 뒤, timeout 전에 우리 주문이 도착하면
+        # _process_buffered_fill 이 workflow 로 확정하고 on_order_fill 을 1회 발화한다.
+        ctx, tracker = _make_context_with_tracker(tmp_path, buffer_timeout=0.3)
         listener = _RecordingListener()
         ctx.add_listener(listener)
 
+        # 1) 체결 먼저 → 버퍼링(pending).
         result = await ctx.record_workflow_fill(
             order_no="555", order_date="20260912", symbol="NVDA",
             exchange="NASDAQ", side="buy", quantity=2, price=120.0,
@@ -152,13 +155,26 @@ class TestPendingTimeoutFill:
         assert result == "pending"
         assert listener.fills == []
 
-        await asyncio.sleep(0.05 + 0.25)
+        # 2) 버퍼 동안 우리 주문이 도착 → 버퍼된 체결이 workflow 로 확정.
+        tracker.record_order(
+            order_no="555", order_date="20260912", symbol="NVDA",
+            exchange="NASDAQ", side="buy", quantity=2, price=120.0,
+            job_id="job-c24", node_id="order_node_arr",
+        )
+        # record_order 가 스케줄한 _process_buffered_fill task 가 돌 시간을 준다
+        # (timeout 0.3 보다 충분히 짧다).
+        await asyncio.sleep(0.15)
 
         assert len(listener.fills) == 1
         ev = listener.fills[0]
-        # 버퍼 동안 주문이 안 왔으므로 unknown_api 로 확정(node_id None).
-        assert ev.classification == "unknown_api"
-        assert ev.node_id is None
+        assert ev.classification == "workflow"
+        assert ev.node_id == "order_node_arr"
+        assert ev.order_no == "555"
+        assert ev.symbol == "NVDA"
+
+        # timeout task 를 깨끗이 소진(키는 이미 제거됨 → no-op, 재발화 없음).
+        await asyncio.sleep(0.3)
+        assert len(listener.fills) == 1
 
 
 class TestNoListenerHarmless:
@@ -199,6 +215,40 @@ class TestNoListenerHarmless:
             fill_time="093000000", commda_code="40",
         )
         assert result == "workflow"
+
+
+class TestReplayIdempotency:
+    @pytest.mark.asyncio
+    async def test_same_execution_id_replay_does_not_reemit(self, tmp_path):
+        """동일 execution_id 재도착(at-least-once 재전송)은 원장을 바꾸지 않고
+        on_order_fill 도 재발화하지 않는다 — 정확히 1회 유지."""
+        ctx, tracker = _make_context_with_tracker(tmp_path)
+        listener = _RecordingListener()
+        ctx.add_listener(listener)
+
+        tracker.record_order(
+            order_no="321", order_date="20260912", symbol="AMD",
+            exchange="NASDAQ", side="buy", quantity=5, price=100.0,
+            job_id="job-c24", node_id="node-replay",
+        )
+        first = await ctx.record_workflow_fill(
+            order_no="321", order_date="20260912", symbol="AMD",
+            exchange="NASDAQ", side="buy", quantity=5, price=100.0,
+            fill_time="093000000", commda_code="40", execution_id="EXEC-1",
+        )
+        assert first == "workflow"
+        assert len(listener.fills) == 1
+        assert listener.fills[0].node_id == "node-replay"
+        assert listener.fills[0].execution_id == "EXEC-1"
+
+        # 같은 execution_id 로 재도착 → 스토어드 분류만 돌려주고 재발화 없음.
+        again = await ctx.record_workflow_fill(
+            order_no="321", order_date="20260912", symbol="AMD",
+            exchange="NASDAQ", side="buy", quantity=5, price=100.0,
+            fill_time="093000000", commda_code="40", execution_id="EXEC-1",
+        )
+        assert again == "workflow"
+        assert len(listener.fills) == 1  # 여전히 1회 — 리플레이는 미발화
 
 
 class TestOrderIdentityLookup:

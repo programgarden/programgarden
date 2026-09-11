@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.12"
 name = "programgarden"
-version = "1.35.1"
+version = "1.36.0"
 license = "AGPL-3.0-or-later"
 description = "ProgramGarden - 노드 기반 자동매매 DSL 실행 엔진"
 readme = "README.md"
@@ -29,11 +29,14 @@ lxml = "^6.0.2"
 pytickersymbols = {version = ">=1.17.5", python = ">=3.12,<4.0"}
 aiosqlite = "^0.20.0"
 litellm = ">=1.40.0"
-# 🔴 core 하한은 1.26.0 이어야 한다 — context.py 가 event_data 에 personal_metrics 를
-# 무조건 실어 WorkflowPnLEvent(**event_data) 를 만드는데, 그 필드는 core 1.26.0 에서
-# 추가됐다. 하한을 낮게 두면 core 1.25.x 로 해석된 환경에서 생성이 TypeError 로 죽고,
-# 그 예외가 바로 위 except Exception 에 삼켜져 **PnL 이벤트가 통째로 조용히 멈춘다.**
-programgarden-core = "^1.27.0"
+# 🔴 core 하한은 1.28.0 이어야 한다 — 이 엔진은 import 시점에 context.py 가
+# `from programgarden_core.bases.listener import OrderFillEvent` 를 eager import
+# 한다(C24). OrderFillEvent 는 core 1.28.0 에서 신설됐으므로, 하한을 낮게 두면
+# 구 core(≤1.27.0)로 resolve 된 환경에서 `import programgarden` 자체가 ImportError
+# 로 통째 실패한다(1.35.1 의 조용한 TypeError 보다 강한 모듈 로드 실패).
+# (1.26.0 이후로도 context.py 는 WorkflowPnLEvent(**event_data) 에 personal_metrics
+#  를 무조건 실으므로 그 하한 근거도 이 상한에 포함된다.)
+programgarden-core = "^1.28.0"
 programgarden-finance = "^1.9.5"
 programgarden-community = "^1.15.0"
 
