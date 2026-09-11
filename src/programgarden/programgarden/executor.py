@@ -14484,7 +14484,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         order_type = config.get("order_type", "limit")
 
         # order 정규화
-        normalized_order = self._normalize_order(order, config)
+        normalized_order = self._normalize_order(order, config, context, node_id)
 
         if not normalized_order:
             context.log("warning", f"{node_type}: 주문할 종목이 없습니다", node_id)
@@ -14677,12 +14677,18 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         self,
         order_raw: Any,
         config: Dict[str, Any],
+        context: Optional["ExecutionContext"] = None,
+        node_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         order 객체를 정규화 (단일 종목)
 
         입력: {symbol, exchange, quantity, price}
         출력: {symbol, exchange, quantity, price} (검증된 객체) 또는 None
+
+        symbol 또는 exchange 가 미해석 템플릿('{{ ... }}')이면 주문을 만들지 않고
+        None 을 반환한다 — 상류 바인딩이 풀리지 않은 것이므로, 이 값이 브로커
+        주문(매수·매도·시장가·지정가 전부)이나 원장에 절대 실려선 안 된다(C23).
         """
         if not order_raw:
             return None
@@ -14695,6 +14701,28 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             return None
 
         exchange = order_raw.get("exchange", "NASDAQ")
+
+        # C23: 미해석 템플릿 심볼/거래소 차단. 상류 노드가 실행되지 않았거나
+        # 포트가 없어 '{{ item.symbol }}' 같은 리터럴이 그대로 넘어온 경우다.
+        # 여기서 막지 않으면 매도 시장가·sizing price>0 분기에서 이 원문이 실제
+        # 브로커 주문(IsuNo)으로 나갈 수 있다.
+        if (isinstance(symbol, str) and "{{" in symbol) or (
+            isinstance(exchange, str) and "{{" in exchange
+        ):
+            if context is not None:
+                context.log(
+                    "error",
+                    f"주문 심볼/거래소가 미해석 템플릿입니다 — 주문을 만들지 않습니다 "
+                    f"(unresolved_template_symbol: symbol={symbol!r}, exchange={exchange!r})",
+                    node_id,
+                )
+            else:
+                logger.error(
+                    "_normalize_order: unresolved_template_symbol "
+                    "(symbol=%r, exchange=%r) — refusing to build order",
+                    symbol, exchange,
+                )
+            return None
         try:
             raw_quantity = float(order_raw.get("quantity", 0))
         except (ValueError, TypeError):
@@ -15838,6 +15866,31 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         은 ``order_result.diagnostics`` 로 추가 동봉한다. AI 챗봇 소비자는
         ``diagnostics`` 로 자가수정/안내를 결정적으로 분기할 수 있다.
         """
+        diagnostics = reject_info.model_dump() if reject_info else None
+
+        # C23 방어선: 미해석 템플릿이 결과의 symbol/exchange 자리를 차지하면 안 된다.
+        # _normalize_order 가 이미 그런 주문 자체를 만들지 않지만, 그래도 실패 결과를
+        # 남기는 경로(예: 현재가 조회 실패)가 템플릿 값으로 _order_result 를 부르면
+        # 여기서 symbol/exchange 를 None 으로 비우고, error 코드를 고정하며, 원문은
+        # diagnostics 에 보존한다 — 원장/서버가 심볼 자리에 '{{ ... }}' 를 절대 받지
+        # 않게(prod 실측 order_fills id=17 재발 차단).
+        if (isinstance(symbol, str) and "{{" in symbol) or (
+            isinstance(exchange, str) and "{{" in exchange
+        ):
+            template_diag = {
+                "unresolved_template": True,
+                "raw_symbol": symbol,
+                "raw_exchange": exchange,
+            }
+            diagnostics = (
+                {**diagnostics, **template_diag}
+                if isinstance(diagnostics, dict) else template_diag
+            )
+            error = "unresolved_template_symbol"
+            success = False
+            symbol = None
+            exchange = None
+
         return {
             "order_result": {
                 "success": success,
@@ -15848,7 +15901,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 "price": price,
                 "status": "submitted" if success else "failed",
                 "error": error,
-                "diagnostics": reject_info.model_dump() if reject_info else None,
+                "diagnostics": diagnostics,
             },
             "order_id": order_id,
         }

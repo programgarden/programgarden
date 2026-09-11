@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Callable, Awaitable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -184,8 +184,69 @@ class WorkflowPositionTracker:
         # 역산 불가한 틱에서는 이 캐시(최근 성공값)로 폴백해 FIFO 산술을 스케일한다.
         self._multiplier_cache: Dict[str, Decimal] = {}
 
+        # 체결 확정 콜백. 원장에 **새로** 기록된 체결마다 정확히 1회 발화한다 —
+        # 즉시/버퍼/타임아웃 경로가 모두 _process_fill_internal 을 거치므로 한 곳에서
+        # 부른다. 리플레이(동일 execution identity 재도착)는 그 앞에서 조기 반환하므로
+        # 재발화하지 않는다. 컨텍스트가 이걸 on_order_fill 리스너로 연결한다.
+        self._on_fill_classified: Optional[
+            Callable[["PendingFill", str], Awaitable[None]]
+        ] = None
+
         # DB 초기화
         self._init_db()
+
+    def set_fill_classified_callback(
+        self,
+        callback: Optional[Callable[["PendingFill", str], Awaitable[None]]],
+    ) -> None:
+        """Register an async callback fired once per newly recorded fill.
+
+        The callback receives ``(fill: PendingFill, classification: str)`` where
+        classification is one of "workflow" | "manual" | "unknown_api" | "other".
+        It must not mutate ledger state; exceptions raised by it are caught and
+        logged so they never break FIFO recording.
+        """
+        self._on_fill_classified = callback
+
+    def lookup_order_identity(
+        self,
+        order_no: str,
+        order_date: str,
+    ) -> Optional[Tuple[Optional[str], Optional[str]]]:
+        """Return ``(job_id, node_id)`` for a recorded workflow order, else None.
+
+        Scoped to this ledger's product/provider/trading mode and the order date.
+        Matches the exact order number first, then the normalized form (so
+        zero-padding differences between the order ACK and the fill still map).
+        A fill that is not one of our workflow orders returns None (node_id then
+        stays None on the emitted event).
+        """
+        try:
+            norm = self._normalize_identifier(order_no)
+        except ValueError:
+            norm = None
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                rows = conn.execute(
+                    """
+                    SELECT order_no, job_id, node_id FROM workflow_orders
+                    WHERE product = ? AND provider = ? AND trading_mode = ? AND order_date = ?
+                    """,
+                    (self.product, self.provider, self.trading_mode, order_date),
+                ).fetchall()
+        except Exception as e:
+            logger.warning(f"lookup_order_identity failed: {e}")
+            return None
+        for row_order_no, job_id, node_id in rows:
+            if row_order_no == order_no:
+                return (job_id, node_id)
+            if norm is not None:
+                try:
+                    if self._normalize_identifier(row_order_no) == norm:
+                        return (job_id, node_id)
+                except ValueError:
+                    continue
+        return None
     
     def _init_db(self) -> None:
         """데이터베이스 테이블 초기화"""
@@ -410,6 +471,7 @@ class WorkflowPositionTracker:
     
     async def _process_buffered_fill(self, order_no: str, order_date: str) -> None:
         """Process all buffered partial fills after recording their order."""
+        notifications: list = []
         async with self._buffer_lock:
             for key, fill in list(self._pending_fills.items()):
                 if fill.order_date != order_date:
@@ -418,8 +480,9 @@ class WorkflowPositionTracker:
                 if self._normalize_identifier(fill.execution_id) is not None:
                     matches = self._normalize_identifier(fill.order_no) == self._normalize_identifier(order_no)
                 if matches:
-                    await self._process_fill_internal(fill, "workflow")
+                    await self._process_fill_internal(fill, "workflow", notifications)
                     self._pending_fills.pop(key)
+        await self._emit_fill_notifications(notifications)
     
     async def record_fill(
         self,
@@ -480,6 +543,8 @@ class WorkflowPositionTracker:
             execution_id=execution_id, account_avg_price=account_avg_price,
         )
         identity = self._execution_key(fill)
+        notifications: list = []
+        result: Optional[str] = None
         async with self._buffer_lock:
             if identity is not None:
                 for pending in self._pending_fills.values():
@@ -498,31 +563,36 @@ class WorkflowPositionTracker:
             # of a hardcoded '40', our own OPEN-API fills may not carry '40'; the
             # old media-first ordering would then misfile them as manual.)
             if self._is_workflow_fill(fill):
-                return await self._process_fill_internal(fill, "workflow")
-            # No matching order. Classify by the published media table
-            # (MEDIA_CODES_* above) — never by "not 40":
-            #   human (85 HTS / 22 iPhone / 23 Android / 00 branch) → "manual"
-            #   other (96/LP/SK/SO or unlisted)                    → "other"
-            #   api (40/41/43) or blank                            → buffer below
-            channel = media_channel(commda_code)
-            if channel == "human":
-                return await self._process_fill_internal(fill, "manual")
-            if channel == "other":
-                # A code the table does not attribute — more of these exist than
-                # we have measured (only 40/51/85/03 are live-observed so far).
-                # Log it so the table can grow from evidence, never from guesses.
-                logger.info("Unlisted media code %r on fill %s/%s — classified other",
-                            commda_code, order_date, order_no)
-                return await self._process_fill_internal(fill, "other")
-
-            # An API code or an empty media code ("medium unknown"): buffer to
-            # give a lagging order record a chance to arrive, then
-            # _process_timeout_fill files it as workflow (matched) or unknown_api
-            # (unmatched). An unknown medium is never asserted to be a person's
-            # HTS trade, so it floors to unknown_api rather than manual.
-            self._next_pending_fill += 1
-            key = self._next_pending_fill
-            self._pending_fills[key] = fill
+                result = await self._process_fill_internal(fill, "workflow", notifications)
+            else:
+                # No matching order. Classify by the published media table
+                # (MEDIA_CODES_* above) — never by "not 40":
+                #   human (85 HTS / 22 iPhone / 23 Android / 00 branch) → "manual"
+                #   other (96/LP/SK/SO or unlisted)                    → "other"
+                #   api (40/41/43) or blank                            → buffer below
+                channel = media_channel(commda_code)
+                if channel == "human":
+                    result = await self._process_fill_internal(fill, "manual", notifications)
+                elif channel == "other":
+                    # A code the table does not attribute — more of these exist than
+                    # we have measured (only 40/51/85/03 are live-observed so far).
+                    # Log it so the table can grow from evidence, never from guesses.
+                    logger.info("Unlisted media code %r on fill %s/%s — classified other",
+                                commda_code, order_date, order_no)
+                    result = await self._process_fill_internal(fill, "other", notifications)
+                else:
+                    # An API code or an empty media code ("medium unknown"): buffer to
+                    # give a lagging order record a chance to arrive, then
+                    # _process_timeout_fill files it as workflow (matched) or unknown_api
+                    # (unmatched). An unknown medium is never asserted to be a person's
+                    # HTS trade, so it floors to unknown_api rather than manual.
+                    self._next_pending_fill += 1
+                    key = self._next_pending_fill
+                    self._pending_fills[key] = fill
+        # Emit any confirmed-fill notifications now that _buffer_lock is released.
+        if result is not None:
+            await self._emit_fill_notifications(notifications)
+            return result
         asyncio.create_task(self._process_timeout_fill(key))
         logger.debug(f"Buffered fill (waiting for order): {key}")
         return "pending"
@@ -530,14 +600,16 @@ class WorkflowPositionTracker:
     async def _process_timeout_fill(self, key: int) -> None:
         """Expire one arrival, without consuming a later partial's timeout."""
         await asyncio.sleep(self.FILL_BUFFER_TIMEOUT)
+        notifications: list = []
         async with self._buffer_lock:
             if key in self._pending_fills:
                 fill = self._pending_fills[key]
                 classification = "workflow" if self._is_workflow_fill(fill) else "unknown_api"
                 if classification == "unknown_api":
                     logger.warning("Fill expired before its order was recorded; classifying as unknown_api")
-                await self._process_fill_internal(fill, classification)
+                await self._process_fill_internal(fill, classification, notifications)
                 self._pending_fills.pop(key)
+        await self._emit_fill_notifications(notifications)
 
     @staticmethod
     def _normalize_identifier(value: Optional[str | int]) -> Optional[str]:
@@ -613,8 +685,18 @@ class WorkflowPositionTracker:
             """, identity[:4])
             return any(self._normalize_identifier(row[0]) == identity[4] for row in rows)
 
-    async def _process_fill_internal(self, fill: PendingFill, classification: str) -> str:
-        """Gate explicit replay before atomically mutating FIFO and history."""
+    async def _process_fill_internal(
+        self, fill: PendingFill, classification: str, notifications: list
+    ) -> str:
+        """Gate explicit replay before atomically mutating FIFO and history.
+
+        A newly confirmed fill is *queued* into ``notifications`` (a caller-owned
+        list) instead of being emitted here — the caller emits it via
+        ``_emit_fill_notifications`` AFTER releasing ``_buffer_lock``. Emitting
+        under the lock would await the listener chain (a network POST in the
+        pg-worker forwarder, ``request_timeout`` seconds) while holding
+        ``_buffer_lock``, serializing every other broker fill push behind it.
+        Replays return early and queue nothing (no re-fire)."""
         fill_datetime = f"{fill.order_date}_{fill.fill_time}"
 
         with sqlite3.connect(self.db_path) as conn:
@@ -681,8 +763,31 @@ class WorkflowPositionTracker:
         self.fill_revision += 1
 
         logger.debug(f"Processed fill: {fill.symbol} {fill.side} {fill.quantity}@{fill.price} [{classification}] ({self.trading_mode})")
+
+        # 새 체결이 원장에 확정됐다 → on_order_fill 통지를 큐잉한다(1회 발화).
+        # 실제 emit 은 caller 가 _buffer_lock 을 놓은 뒤 _emit_fill_notifications
+        # 로 수행한다(락 안에서 리스너 network POST 를 await 하지 않기 위함).
+        # 리플레이는 위에서 previous 반환으로 이미 걸러졌으므로 여기 오지 않는다.
+        if self._on_fill_classified is not None:
+            notifications.append((fill, classification))
+
         return classification
-    
+
+    async def _emit_fill_notifications(self, notifications: list) -> None:
+        """Emit queued on_order_fill notifications OUTSIDE ``_buffer_lock``.
+
+        Each caller collects confirmed fills into its own list under the lock
+        (via ``_process_fill_internal``) and drains them here once the lock is
+        released, so a slow listener never blocks other broker fill pushes.
+        """
+        if self._on_fill_classified is None:
+            return
+        for fill, classification in notifications:
+            try:
+                await self._on_fill_classified(fill, classification)
+            except Exception as cb_err:
+                logger.warning(f"Fill-classified callback error: {cb_err}")
+
     def _process_sell_fifo(
         self,
         cursor: sqlite3.Cursor,
