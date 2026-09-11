@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+## [1.35.1] - 2026-09-12
+
+### Fixed
+- 🔴 core lockstep 누락 — #46(1f7199b)이 `WorkflowPnLEvent` 에 `workflow_rate_unavailable_reason` 을 더하면서 core 버전을 안 올려,
+  PyPI `programgarden-core 1.26.0` 위에서 1.35.0 이 `WorkflowPnLEvent(**event_data)` 로 매 tick TypeError → pnl 리스너 전부 실패
+  (스냅샷·봉투 미발행; prod 파드 v1.26.0 실측). core **1.27.0** 으로 발행하고 엔진 의존성을 `^1.27.0` 으로 올린다.
+
+### Changed
+- deps: programgarden-core ^1.27.0
+
 ## [1.35.0] - 2026-09-12
 
 ### Added
