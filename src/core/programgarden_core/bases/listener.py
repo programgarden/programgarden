@@ -650,7 +650,7 @@ class OrderFillEvent:
     received_at: str
     node_id: Optional[str] = None
     execution_id: Optional[Union[str, int]] = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @runtime_checkable
