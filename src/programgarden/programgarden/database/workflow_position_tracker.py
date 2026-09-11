@@ -508,6 +508,11 @@ class WorkflowPositionTracker:
             if channel == "human":
                 return await self._process_fill_internal(fill, "manual")
             if channel == "other":
+                # A code the table does not attribute — more of these exist than
+                # we have measured (only 40/51/85/03 are live-observed so far).
+                # Log it so the table can grow from evidence, never from guesses.
+                logger.info("Unlisted media code %r on fill %s/%s — classified other",
+                            commda_code, order_date, order_no)
                 return await self._process_fill_internal(fill, "other")
 
             # An API code or an empty media code ("medium unknown"): buffer to
@@ -1397,7 +1402,7 @@ class WorkflowPositionTracker:
         # → other. Futures fill frames carry no communication-media field, so
         # the channels cannot be told apart for them — unavailable.
         if self.product == "overseas_futures":
-            off_strategy_fills = {"hts": None, "other_api": None, "other": None,
+            off_strategy_fills = {"hts": None, "other_api": None, "other": None, "other_codes": None,
                                   "status": "unavailable",
                                   "reason": "futures_fills_have_no_media_code"}
         else:
@@ -1407,6 +1412,10 @@ class WorkflowPositionTracker:
                 "hts": sum(1 for r in in_scope if r["classification"] == "manual"),
                 "other_api": sum(1 for r in in_scope if r["classification"] == "unknown_api"),
                 "other": sum(1 for r in in_scope if r["classification"] == "other"),
+                # Distinct unlisted codes behind "other" — the evidence trail for
+                # extending MEDIA_CODES_* (consumers may ignore this key).
+                "other_codes": sorted({str(r["commda_code"]) for r in in_scope
+                                       if r["classification"] == "other" and r["commda_code"]}),
                 "status": "available", "reason": None,
             }
 
