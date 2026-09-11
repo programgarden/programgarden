@@ -592,6 +592,67 @@ class RestartEvent:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+# ============================================================
+# 체결 확정 이벤트
+# ============================================================
+
+@dataclass
+class OrderFillEvent:
+    """
+    Event emitted when an order fill is confirmed and recorded to the ledger.
+
+    Facts only — no monetary computation. This mirrors what the broker reported
+    for one execution plus how the workflow ledger classified it. It fires once
+    per newly recorded fill, including a fill whose classification is only
+    resolved after the arrival-buffering timeout.
+
+    A fill whose ``classification`` is not "workflow" did not match one of our
+    recorded workflow orders, so ``node_id`` is None. Return/P&L interpretation
+    belongs to WorkflowPnLEvent and to broker-verified accounting, never to this
+    raw record — quantity/price are the reported execution facts, nothing is
+    summed or converted here.
+
+    Attributes:
+        job_id: Job identifier
+        node_id: OrderNode ID when this fill matches a recorded workflow order;
+            None for manual/unknown_api/other fills
+        order_no: Broker order number
+        order_date: Order date (YYYYMMDD)
+        execution_id: Broker execution identity when the frame reported one; else None
+        symbol: Symbol code
+        exchange: Exchange code
+        side: "buy" | "sell"
+        quantity: Filled quantity (reported, not aggregated)
+        price: Fill price (reported)
+        fill_time: Fill time (HHMMSSsss) as reported by the broker
+        product: "overseas_stock" | "overseas_futures" | "korea_stock"
+        provider: Broker provider (e.g. "ls")
+        classification: "workflow" | "manual" | "unknown_api" | "other"
+        commda_code: Broker communication-media code, preserved as reported
+        trading_mode: "live" | "paper"
+        received_at: ISO-8601 timestamp when the tracker received the fill
+        timestamp: Event emission timestamp
+    """
+    job_id: str
+    order_no: str
+    order_date: str
+    symbol: str
+    exchange: str
+    side: str  # "buy" | "sell"
+    quantity: Union[Decimal, float, int]
+    price: Union[Decimal, float]
+    fill_time: str
+    product: str
+    provider: str
+    classification: str  # "workflow" | "manual" | "unknown_api" | "other"
+    commda_code: str
+    trading_mode: str
+    received_at: str
+    node_id: Optional[str] = None
+    execution_id: Optional[Union[str, int]] = None
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
 @runtime_checkable
 class ExecutionListener(Protocol):
     """
@@ -746,6 +807,21 @@ class ExecutionListener(Protocol):
         """
         ...
 
+    async def on_order_fill(self, event: 'OrderFillEvent') -> None:
+        """
+        Called when an order fill is confirmed and recorded to the ledger.
+
+        Facts only — no monetary computation. Fires once per newly recorded
+        fill, including a fill whose classification resolves after the
+        arrival-buffering timeout. Servers may durably record the fill (symbol,
+        side, quantity, price, classification) without trusting it as a return.
+
+        Args:
+            event: OrderFillEvent with order/execution identifiers, symbol,
+                side, quantity, price, classification, and trading mode.
+        """
+        ...
+
 
 class BaseExecutionListener:
     """
@@ -826,6 +902,10 @@ class BaseExecutionListener:
         pass
 
     async def on_notification(self, event: 'NotificationEvent') -> None:
+        """Default implementation: do nothing"""
+        pass
+
+    async def on_order_fill(self, event: 'OrderFillEvent') -> None:
         """Default implementation: do nothing"""
         pass
 
@@ -966,3 +1046,9 @@ class ConsoleExecutionListener(BaseExecutionListener):
         print(f"{color}{emoji} NOTIFY {cat.upper()}{node_tag} {event.title}{reset}")
         if event.message:
             print(f"   {event.message}")
+
+    async def on_order_fill(self, event: 'OrderFillEvent') -> None:
+        """Print a confirmed order fill (facts only, no P&L)."""
+        node_tag = f" [{event.node_id}]" if event.node_id else ""
+        print(f"💵 FILL{node_tag} {event.symbol} {event.side} {event.quantity}@{event.price} "
+              f"[{event.classification}] order={event.order_no} ({event.trading_mode})")

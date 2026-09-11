@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Callable, Awaitable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -184,8 +184,69 @@ class WorkflowPositionTracker:
         # 역산 불가한 틱에서는 이 캐시(최근 성공값)로 폴백해 FIFO 산술을 스케일한다.
         self._multiplier_cache: Dict[str, Decimal] = {}
 
+        # 체결 확정 콜백. 원장에 **새로** 기록된 체결마다 정확히 1회 발화한다 —
+        # 즉시/버퍼/타임아웃 경로가 모두 _process_fill_internal 을 거치므로 한 곳에서
+        # 부른다. 리플레이(동일 execution identity 재도착)는 그 앞에서 조기 반환하므로
+        # 재발화하지 않는다. 컨텍스트가 이걸 on_order_fill 리스너로 연결한다.
+        self._on_fill_classified: Optional[
+            Callable[["PendingFill", str], Awaitable[None]]
+        ] = None
+
         # DB 초기화
         self._init_db()
+
+    def set_fill_classified_callback(
+        self,
+        callback: Optional[Callable[["PendingFill", str], Awaitable[None]]],
+    ) -> None:
+        """Register an async callback fired once per newly recorded fill.
+
+        The callback receives ``(fill: PendingFill, classification: str)`` where
+        classification is one of "workflow" | "manual" | "unknown_api" | "other".
+        It must not mutate ledger state; exceptions raised by it are caught and
+        logged so they never break FIFO recording.
+        """
+        self._on_fill_classified = callback
+
+    def lookup_order_identity(
+        self,
+        order_no: str,
+        order_date: str,
+    ) -> Optional[Tuple[Optional[str], Optional[str]]]:
+        """Return ``(job_id, node_id)`` for a recorded workflow order, else None.
+
+        Scoped to this ledger's product/provider/trading mode and the order date.
+        Matches the exact order number first, then the normalized form (so
+        zero-padding differences between the order ACK and the fill still map).
+        A fill that is not one of our workflow orders returns None (node_id then
+        stays None on the emitted event).
+        """
+        try:
+            norm = self._normalize_identifier(order_no)
+        except ValueError:
+            norm = None
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                rows = conn.execute(
+                    """
+                    SELECT order_no, job_id, node_id FROM workflow_orders
+                    WHERE product = ? AND provider = ? AND trading_mode = ? AND order_date = ?
+                    """,
+                    (self.product, self.provider, self.trading_mode, order_date),
+                ).fetchall()
+        except Exception as e:
+            logger.warning(f"lookup_order_identity failed: {e}")
+            return None
+        for row_order_no, job_id, node_id in rows:
+            if row_order_no == order_no:
+                return (job_id, node_id)
+            if norm is not None:
+                try:
+                    if self._normalize_identifier(row_order_no) == norm:
+                        return (job_id, node_id)
+                except ValueError:
+                    continue
+        return None
     
     def _init_db(self) -> None:
         """데이터베이스 테이블 초기화"""
@@ -681,6 +742,15 @@ class WorkflowPositionTracker:
         self.fill_revision += 1
 
         logger.debug(f"Processed fill: {fill.symbol} {fill.side} {fill.quantity}@{fill.price} [{classification}] ({self.trading_mode})")
+
+        # 새 체결이 원장에 확정됐다 → on_order_fill 리스너로 연결(1회 발화).
+        # 리플레이는 위에서 previous 반환으로 이미 걸러졌으므로 여기 오지 않는다.
+        if self._on_fill_classified is not None:
+            try:
+                await self._on_fill_classified(fill, classification)
+            except Exception as cb_err:
+                logger.warning(f"Fill-classified callback error: {cb_err}")
+
         return classification
     
     def _process_sell_fifo(

@@ -38,6 +38,7 @@ from programgarden_core.bases.listener import (
     LLMStreamEvent,
     TokenUsageEvent,
     AIToolCallEvent,
+    OrderFillEvent,
 )
 from programgarden_core.models.resilience import RetryEvent
 
@@ -2413,6 +2414,12 @@ class ExecutionContext:
             # 거래 모드 메타데이터 기록 (데이터 초기화 없이 모드만 업데이트)
             self._workflow_position_tracker.update_trading_mode(trading_mode)
 
+            # 체결 확정 → on_order_fill 리스너 연결. 즉시/버퍼/타임아웃 경로가
+            # 모두 원장의 단일 지점을 거치므로 여기서 한 번만 연결한다.
+            self._workflow_position_tracker.set_fill_classified_callback(
+                self._on_tracker_fill_classified
+            )
+
             # PnL refresh용 정보 저장
             self._workflow_broker_node_id = broker_node_id
             self._workflow_product = product
@@ -2682,6 +2689,72 @@ class ExecutionContext:
         except Exception as e:
             logger.warning(f"Failed to record workflow fill: {e}")
             return "error"
+
+    async def _on_tracker_fill_classified(self, fill, classification: str) -> None:
+        """Bridge a newly recorded ledger fill to on_order_fill listeners.
+
+        The tracker invokes this exactly once per new fill — for immediate,
+        buffered, and timeout-resolved classifications alike — so notification
+        happens whether ``record_workflow_fill`` returned a final classification
+        or "pending" that only settled after the arrival-buffering timeout.
+        Facts only: no monetary computation. Manual/unknown_api/other fills have
+        no matching workflow order, so node_id stays None.
+        """
+        tracker = self._workflow_position_tracker
+        if tracker is None:
+            return
+
+        job_id = self.job_id
+        node_id = None
+        try:
+            identity = tracker.lookup_order_identity(fill.order_no, fill.order_date)
+            if identity is not None:
+                row_job_id, node_id = identity
+                if row_job_id:
+                    job_id = row_job_id
+        except Exception as e:
+            logger.warning(f"Failed to resolve order identity for fill: {e}")
+
+        received_at = getattr(fill, "received_at", None)
+        received_iso = (
+            received_at.isoformat() if hasattr(received_at, "isoformat")
+            else datetime.utcnow().isoformat()
+        )
+
+        event = OrderFillEvent(
+            job_id=job_id,
+            node_id=node_id,
+            order_no=fill.order_no,
+            order_date=fill.order_date,
+            execution_id=fill.execution_id,
+            symbol=fill.symbol,
+            exchange=fill.exchange,
+            side=fill.side,
+            quantity=fill.quantity,
+            price=fill.price,
+            fill_time=fill.fill_time,
+            product=tracker.product,
+            provider=tracker.provider,
+            classification=classification,
+            commda_code=fill.commda_code,
+            trading_mode=tracker.trading_mode,
+            received_at=received_iso,
+        )
+        await self.notify_order_fill(event)
+
+    async def notify_order_fill(self, event: OrderFillEvent) -> None:
+        """Notify all listeners about a confirmed order fill (facts only)."""
+        if not self._listeners:
+            return
+
+        for listener in self._listeners:
+            try:
+                await listener.on_order_fill(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_order_fill: {e}")
+
+        # SSE 스트림 전송을 위해 이벤트 루프에 제어권 양보
+        await asyncio.sleep(0)
 
     async def cancel_workflow_order(
         self,
