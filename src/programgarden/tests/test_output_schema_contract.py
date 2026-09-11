@@ -15,6 +15,7 @@ resolver 는 선언된 `fields` 로 **필드 존재를 정적 검증**한다. �
 """
 import ast
 import inspect
+import textwrap
 from typing import Dict, Set
 
 import pytest
@@ -108,6 +109,23 @@ def _listcomp_dict_keys(cls, method_name: str, var: str) -> Set[str]:
     return keys
 
 
+def _return_dict_keys(cls, method: str, _var=None) -> Set[str]:
+    """`return {...}` 로 dict 를 돌려주는 **직렬화 헬퍼**의 키를 뽑는다.
+
+    executor 가 포지션 dict 를 인라인(`positions.append({...})`)으로 만들다가
+    공용 헬퍼로 옮겨가면서 append/listcomp 추출이 빈 집합을 돌려줬다 —
+    그러면 "런타임 키를 못 뽑았다" 로 죽는다(2026-09-11 실측).
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(getattr(cls, method))))
+    keys: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
+            for k in node.value.keys:
+                if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                    keys.add(k.value)
+    return keys
+
+
 def _port_runtime_keys(producers) -> Dict[str, Set[str]]:
     """포트 하나를 만드는 **모든 갈래**의 런타임 키를 갈래별로 돌려준다.
 
@@ -120,6 +138,8 @@ def _port_runtime_keys(producers) -> Dict[str, Set[str]]:
             keys = _runtime_keys(cls, method, var)
         elif kind == "listcomp":
             keys = _listcomp_dict_keys(cls, method, var)
+        elif kind == "return":
+            keys = _return_dict_keys(cls, method)
         elif kind == "subscript":
             keys = _runtime_keys_of_assigned_dict(cls, method, var)
         else:  # pragma: no cover
@@ -182,9 +202,10 @@ CASES = [
         (RealAccountNodeExecutor, "_get_korea_stock_tracker_data", "positions", "append"),
         (RealAccountNodeExecutor, "_ls_korea_stock_with_tracker", "serialized_positions", "append"),
     ]),
+    # 두 갈래(tracker 스냅샷 / WebSocket 콜백)가 **같은 직렬화 헬퍼**를 쓰도록 합쳐졌다 —
+    # 갈래별 인라인 dict 가 사라졌으므로 그 헬퍼 하나를 본다(2026-09-11 정정).
     ("OverseasFuturesRealAccountNode", "positions", [
-        (RealAccountNodeExecutor, "_get_overseas_futures_tracker_data", "positions", "append"),
-        (RealAccountNodeExecutor, "_ls_futureoption_with_tracker", "serialized_positions", "append"),
+        (RealAccountNodeExecutor, "_serialize_futures_tracker_position", None, "return"),
     ]),
     ("OverseasStockRealAccountNode", "held_symbols", [(RealAccountNodeExecutor, "_get_overseas_stock_tracker_data", "held_symbols", "listcomp")]),
     ("KoreaStockRealAccountNode", "held_symbols", [(RealAccountNodeExecutor, "_get_korea_stock_tracker_data", "held_symbols", "listcomp")]),

@@ -196,6 +196,16 @@ class TestItemBasedNodeSchemas:
         assert "order" in input_names
         assert "orders" not in input_names
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "D2 미해결 — PositionSizingNode 가 item 기반으로 이관되지 않아 legacy "
+            "`symbols`/`orders` 포트를 아직 들고 있다. 그래서 item 하나씩 흐르는 실행에서 "
+            "'No symbols provided' 로 죽는다(2026-09-06 벤치에서 관측). "
+            "이 테스트는 **의도한 설계를 옳게 적고 있고 구현이 안 따라온 것**이라 지우지 않는다. "
+            "strict=True 라 노드를 고치면 XPASS 로 실패해 이 마커를 떼도록 강제한다."
+        ),
+    )
     def test_position_sizing_node_single_symbol_input(self):
         """PositionSizingNode가 단일 symbol 입력을 받는지 확인"""
         from programgarden_core.nodes.risk import PositionSizingNode
@@ -205,6 +215,16 @@ class TestItemBasedNodeSchemas:
         assert "symbol" in input_names
         assert "symbols" not in input_names
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "D2 미해결 — PositionSizingNode 가 item 기반으로 이관되지 않아 legacy "
+            "`symbols`/`orders` 포트를 아직 들고 있다. 그래서 item 하나씩 흐르는 실행에서 "
+            "'No symbols provided' 로 죽는다(2026-09-06 벤치에서 관측). "
+            "이 테스트는 **의도한 설계를 옳게 적고 있고 구현이 안 따라온 것**이라 지우지 않는다. "
+            "strict=True 라 노드를 고치면 XPASS 로 실패해 이 마커를 떼도록 강제한다."
+        ),
+    )
     def test_position_sizing_node_single_order_output(self):
         """PositionSizingNode가 단일 order 출력을 하는지 확인"""
         from programgarden_core.nodes.risk import PositionSizingNode

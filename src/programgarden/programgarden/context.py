@@ -2011,7 +2011,14 @@ class ExecutionContext:
                     "timestamp": now,
                     
                     # 워크플로우 기본 (전체)
+                    # 🔴 `.get(..., 0.0)` 의 기본값은 **키가 아예 없을 때만** 쓰인다.
+                    # 계산부는 값을 못 낼 때 키를 빼지 않고 `None` 을 담는다 — 그래서
+                    # None 이 그대로 흐른다. **키를 빼는 순간 0.0 이 되살아나** "모름" 이
+                    # 다시 "실측 0%" 가 된다. 계산부를 고칠 때 이 규약을 깨지 말 것.
                     "workflow_pnl_rate": base_workflow_result.get("workflow_pnl_rate", 0.0),
+                    "workflow_rate_unavailable_reason": base_workflow_result.get(
+                        "workflow_rate_unavailable_reason"
+                    ),
                     "workflow_eval_amount": base_workflow_result.get("workflow_eval_amount", 0.0),
                     "workflow_buy_amount": base_workflow_result.get("workflow_buy_amount", 0.0),
                     "workflow_pnl_amount": base_workflow_result.get("workflow_pnl_amount", 0.0),
@@ -2184,7 +2191,11 @@ class ExecutionContext:
             total_pnl_rate = ((total_eval - total_buy) / total_buy * 100) if total_buy > 0 else 0.0
             
             return {
-                "workflow_pnl_rate": 0.0,
+                # 🔴 트래커가 없다 = **어느 포지션이 이 워크플로우 것인지 판정할 근거가 0**.
+                # 종전엔 그 상태에서 `0.0` 을 발행해 "이 워크플로우는 0% 로 측정됐다" 로
+                # 읽히게 했다. 워크플로우 몫을 모르는 것이지 0인 게 아니다.
+                "workflow_pnl_rate": None,
+                "workflow_rate_unavailable_reason": "no_tracker",
                 "workflow_eval_amount": 0.0,
                 "workflow_buy_amount": 0.0,
                 "workflow_pnl_amount": 0.0,
@@ -2217,17 +2228,22 @@ class ExecutionContext:
                 start_date=start_date,  # 날짜 필터
             )
         except Exception as e:
-            logger.warning(f"calculate_workflow_pnl failed: {e}")
+            # 🔴 계산이 실패한 것을 **"수익률 0%" 라는 측정값**으로 바꿔 내보내던 자리다.
+            # 가장 조용한 거짓말 경로 — 예외를 삼키고 0 을 발행하면 아래 계층 어디에서도
+            # 실패였다는 사실을 알 수 없다. 비율은 None(모름), 금액만 0 으로 남긴다.
+            # (금액 0 은 "포지션 없음" 과 같은 모양이라 하류 합산을 깨지 않는다.)
+            logger.exception("calculate_workflow_pnl failed: %s", e)
             return {
-                "workflow_pnl_rate": 0.0,
+                "workflow_pnl_rate": None,
+                "workflow_rate_unavailable_reason": "computation_failed",
                 "workflow_eval_amount": 0.0,
                 "workflow_buy_amount": 0.0,
                 "workflow_pnl_amount": 0.0,
-                "other_pnl_rate": 0.0,
+                "other_pnl_rate": None,
                 "other_eval_amount": 0.0,
                 "other_buy_amount": 0.0,
                 "other_pnl_amount": 0.0,
-                "total_pnl_rate": 0.0,
+                "total_pnl_rate": None,
                 "total_eval_amount": 0.0,
                 "total_buy_amount": 0.0,
                 "total_pnl_amount": 0.0,

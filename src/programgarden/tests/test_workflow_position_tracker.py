@@ -466,3 +466,102 @@ class TestFuturesMultiplierInference:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestRateEvidenceGate:
+    """🔴 계산할 수 없으면 비율을 **발행하지 않는다**(0 이 아니라 None).
+
+    종전 `else Decimal(0)` 는 "아무것도 안 샀다" 를 "0% 로 측정됐다" 로 바꿔 내보냈다.
+    그러면 워크플로우를 시작만 해도 공유 카드가 「참고 데이터」에서 "실측 0.0%" 로 바뀐다.
+    선물은 이미 이 원칙으로 고쳐져 있고(`futures_pnl.unavailable_workflow_pnl`) 주식만
+    안 따라가 있었다.
+
+    **금액은 한 곳도 바뀌지 않는다** — 전량 청산한 날의 0 은 진짜 0 이고, 모니터링 KPI 는
+    합산이라 값 하나만 None 이어도 카드가 통째로 접힌다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_workflow_positions_yields_none_not_zero(self):
+        """아무것도 안 산 실행 — 비율 None + 사유, 금액은 0 그대로."""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            pnl = tracker.calculate_pnl(current_prices={}, all_positions={})
+
+            assert pnl['workflow_pnl_rate'] is None
+            assert pnl['workflow_rate_unavailable_reason'] == 'no_workflow_positions'
+            # 금액 3종은 불변(INV-2)
+            assert pnl['workflow_buy_amount'] == Decimal(0)
+            assert pnl['workflow_eval_amount'] == Decimal(0)
+            assert pnl['workflow_pnl_amount'] == Decimal(0)
+            # 키는 **항상 있어야 한다** — 빠지면 상류 `.get(..., 0.0)` 이 0 을 되살린다.
+            assert 'workflow_pnl_rate' in pnl
+
+    @pytest.mark.asyncio
+    async def test_unobserved_price_yields_none(self):
+        """현재가를 못 받으면 평단 폴백으로 손익이 정확히 0 이 된다 — 그건 측정이 아니다."""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            tracker.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 1.41, 'job1', 'node1')
+            await tracker.record_fill('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 1.41, '103000000', '40')
+
+            pnl = tracker.calculate_pnl(
+                current_prices={},  # 🔴 현재가 미관측
+                all_positions={'AAPL': {'quantity': 1, 'avg_price': 1.41, 'exchange': 'NASDAQ'}},
+            )
+            assert pnl['workflow_pnl_rate'] is None
+            assert pnl['workflow_rate_unavailable_reason'] == 'price_unreported'
+            # 매수금액은 여전히 관측값이다 — 비우지 않는다.
+            assert pnl['workflow_buy_amount'] > 0
+
+    @pytest.mark.asyncio
+    async def test_partial_unpriced_does_not_publish_inflated_rate(self):
+        """🔴 여러 종목 중 **하나만** 미관측이어도 합계 비율은 부풀려진다 → 발행 금지.
+
+        이게 서버 경계 가드가 못 잡는 구멍이다(그쪽은 정확히 0.0 인 값만 접는다).
+        """
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            for i, (sym, px) in enumerate((('AAPL', 150.0), ('NVDA', 500.0))):
+                tracker.record_order(f'O{i}', '20260123', sym, 'NASDAQ', 'buy', 10, px, 'job1', 'node1')
+                await tracker.record_fill(f'O{i}', '20260123', sym, 'NASDAQ', 'buy', 10, px, '103000000', '40')
+
+            pnl = tracker.calculate_pnl(
+                current_prices={'AAPL': Decimal('155.0')},  # NVDA 만 미관측
+                all_positions={
+                    'AAPL': {'quantity': 10, 'avg_price': 150.0, 'exchange': 'NASDAQ'},
+                    'NVDA': {'quantity': 10, 'avg_price': 500.0, 'exchange': 'NASDAQ'},
+                },
+            )
+            assert pnl['workflow_pnl_rate'] is None
+            assert pnl['workflow_rate_unavailable_reason'] == 'price_unreported'
+
+    @pytest.mark.asyncio
+    async def test_fully_observed_still_publishes_the_rate(self):
+        """근거가 다 있으면 종전과 **똑같이** 값을 낸다(회귀 가드)."""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            tracker.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
+            await tracker.record_fill('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, '103000000', '40')
+
+            pnl = tracker.calculate_pnl(
+                current_prices={'AAPL': Decimal('155.0')},
+                all_positions={'AAPL': {'quantity': 10, 'avg_price': 150.0, 'exchange': 'NASDAQ'}},
+            )
+            assert float(pnl['workflow_pnl_rate']) == pytest.approx(3.33, rel=0.01)
+            assert pnl['workflow_rate_unavailable_reason'] is None
+
+    @pytest.mark.asyncio
+    async def test_per_position_rate_is_untouched(self):
+        """per-position `pnl_rate` 는 이번 범위가 아니다 — listener 계약이 non-Optional 이고
+        소비처(DSL 표현식·화면)가 엔진 밖이라 회귀면을 넓히지 않는다."""
+        with tempfile.TemporaryDirectory() as d:
+            tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
+            tracker.record_order('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, 'job1', 'node1')
+            await tracker.record_fill('O1', '20260123', 'AAPL', 'NASDAQ', 'buy', 10, 150.0, '103000000', '40')
+
+            pnl = tracker.calculate_pnl(
+                current_prices={},
+                all_positions={'AAPL': {'quantity': 10, 'avg_price': 150.0, 'exchange': 'NASDAQ'}},
+            )
+            assert pnl['workflow_positions'], "포지션 명세는 그대로 실린다"
+            assert pnl['workflow_positions'][0].pnl_rate is not None
