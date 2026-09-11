@@ -79,7 +79,7 @@ async def test_padded_order_and_execution_replay_keeps_original_evidence(tmp_pat
 @pytest.mark.asyncio
 async def test_distinct_opaque_ids_do_not_collapse_identical_fill_facts(tmp_path):
     target = tracker(tmp_path)
-    args = fill(commda_code="10")
+    args = fill(commda_code="85")
     for identity in (" 000A ", "A", "a"):
         assert await target.record_fill(**args, execution_id=identity) == "manual"
     assert await target.record_fill(**args, execution_id="000A") == "manual"
@@ -90,7 +90,7 @@ async def test_distinct_opaque_ids_do_not_collapse_identical_fill_facts(tmp_path
 @pytest.mark.asyncio
 @pytest.mark.parametrize("changed", [
     {"symbol": "OTHER"}, {"exchange": "OTHER"}, {"side": "sell"},
-    {"quantity": 3}, {"price": 101}, {"fill_time": "100000002"}, {"commda_code": "10"},
+    {"quantity": 3}, {"price": 101}, {"fill_time": "100000002"}, {"commda_code": "85"},
 ])
 async def test_conflicting_committed_identity_never_mutates_facts(tmp_path, changed):
     target = tracker(tmp_path)
@@ -192,7 +192,7 @@ async def test_identity_domain_separates_dates_orders_modes_products_and_provide
     ]
     for target in targets:
         for date, number in [("20260909", "123"), ("20260910", "123"), ("20260909", "124")]:
-            args = fill(order_date=date, order_no=number, commda_code="10")
+            args = fill(order_date=date, order_no=number, commda_code="85")
             assert await target.record_fill(**args, execution_id="same") == "manual"
             assert await target.record_fill(**args, execution_id="same") == "manual"
     assert len(rows(targets[0], "trade_history")) == 12
@@ -204,7 +204,7 @@ def test_concurrent_connections_gate_before_fifo_mutation(tmp_path):
 
     def write(target):
         barrier.wait(timeout=5)
-        return asyncio.run(target.record_fill(**fill(commda_code="10"), execution_id="race"))
+        return asyncio.run(target.record_fill(**fill(commda_code="85"), execution_id="race"))
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(write, target) for target in (first, second)]
@@ -220,7 +220,7 @@ def test_concurrent_conflicting_identity_accepts_only_one_payload(tmp_path):
     def write(target, quantity):
         barrier.wait(timeout=5)
         try:
-            return asyncio.run(target.record_fill(**fill(commda_code="10", quantity=quantity), execution_id="race"))
+            return asyncio.run(target.record_fill(**fill(commda_code="85", quantity=quantity), execution_id="race"))
         except ExecutionIdentityConflictError:
             return "conflict"
 
@@ -238,8 +238,8 @@ def test_concurrent_conflicting_identity_accepts_only_one_payload(tmp_path):
 async def test_history_write_failure_rolls_back_fifo_and_identity(tmp_path, side):
     target = tracker(tmp_path)
     if side == "sell":
-        await target.record_fill(**fill(commda_code="10"), execution_id="opening")
-    args = fill(commda_code="10", side=side, quantity=1 if side == "sell" else 2)
+        await target.record_fill(**fill(commda_code="85"), execution_id="opening")
+    args = fill(commda_code="85", side=side, quantity=1 if side == "sell" else 2)
     before = rows(target, "trade_history"), rows(target, "workflow_position_lots")
     with sqlite3.connect(target.db_path) as conn:
         conn.execute("CREATE TRIGGER reject_history BEFORE INSERT ON trade_history BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END")
@@ -270,7 +270,7 @@ async def test_existing_schema_rows_are_preserved_without_inferred_identity(tmp_
                 exchange, side, quantity, price, fill_datetime, classification, commda_code,
                 realized_pnl, trading_mode, created_at)
             VALUES ('overseas_stock', 'ls', '000123', '20260909', 'SYNTH', 'TEST',
-                'buy', 2, 100, '20260909_100000001', 'manual', '10', 0, 'live', 'original')
+                'buy', 2, 100, '20260909_100000001', 'manual', '85', 0, 'live', 'original')
         """)
         old = conn.execute("SELECT * FROM trade_history").fetchone()
     target = tracker(tmp_path)
@@ -280,7 +280,7 @@ async def test_existing_schema_rows_are_preserved_without_inferred_identity(tmp_
     # identity columns plus the four account-avg-price estimate columns
     # (unmatched_qty, estimate_basis_price, estimate_source, estimated_pnl).
     assert migrated[len(old):] == (None, None, None, None, None, None, None)
-    await target.record_fill(**fill(commda_code="10"), execution_id="new-evidence")
+    await target.record_fill(**fill(commda_code="85"), execution_id="new-evidence")
     assert len(rows(target, "trade_history")) == 2
     assert rows(target, "trade_history")[0] == migrated
     assert len(rows(tracker(tmp_path), "trade_history")) == 2

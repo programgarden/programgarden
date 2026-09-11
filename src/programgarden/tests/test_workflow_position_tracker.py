@@ -66,7 +66,7 @@ class TestWorkflowPositionTracker:
             tracker = WorkflowPositionTracker(f'{d}/t.db', 'job1', 'broker1')
             
             # CommdaCode != '40'이면 수동 주문
-            result = await tracker.record_fill('O2', '20260123', 'NVDA', 'NASDAQ', 'buy', 5, 500.0, '104000000', '10')
+            result = await tracker.record_fill('O2', '20260123', 'NVDA', 'NASDAQ', 'buy', 5, 500.0, '104000000', '85')
             assert result == 'manual'
 
     @pytest.mark.asyncio
@@ -586,12 +586,34 @@ class TestMediaCodeClassification:
             assert result == 'workflow'
 
     @pytest.mark.asyncio
-    async def test_non40_media_without_order_is_manual(self):
+    async def test_human_media_without_order_is_manual(self):
         with tempfile.TemporaryDirectory() as d:
             t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
-            # 일치하는 주문이 없고 매체코드가 '40' 이 아니면 사람(HTS) → manual
-            result = await t.record_fill('X1', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', '41')
-            assert result == 'manual'
+            # 일치하는 주문이 없고 매체코드가 표의 인간 채널(85=HTS, 22/23=앱, 00=지점)이면 → manual
+            for code in ('85', '22', '23', '00'):
+                result = await t.record_fill(f'X{code}', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', code)
+                assert result == 'manual', code
+
+    @pytest.mark.asyncio
+    async def test_api_media_without_order_is_never_manual(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            t.FILL_BUFFER_TIMEOUT = 0.05
+            # 표의 API 코드(41, 43)와 실측 40 은 사람이 아니다 — 버퍼 후 unknown_api
+            for code in ('40', '41', '43'):
+                assert await t.record_fill(f'A{code}', '20260123', 'AAPL', 'NASDAQ', 'buy', 1, 100.0, '100000000', code) == 'pending'
+            await asyncio.sleep(0.15)
+            with sqlite3.connect(t.db_path) as conn:
+                kinds = [r[0] for r in conn.execute("SELECT classification FROM trade_history")]
+            assert kinds == ['unknown_api'] * 3
+
+    @pytest.mark.asyncio
+    async def test_unlisted_or_broker_side_media_is_other(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
+            # 96=최종결제 / LP=로스컷 / 표에 없는 값: 추측 분류하지 않고 other
+            for code in ('96', 'LP', 'ZZ'):
+                assert await t.record_fill(f'O{code}', '20260123', 'AAPL', 'NASDAQ', 'sell', 1, 100.0, '100000000', code) == 'other', code
 
     @pytest.mark.asyncio
     async def test_empty_media_without_order_buffers_then_unknown_api(self):
@@ -616,7 +638,7 @@ class TestWorkflowLotOwnershipAndEstimate:
         with tempfile.TemporaryDirectory() as d:
             t = WorkflowPositionTracker(f'{d}/t.db', 'j', 'b')
             # 같은 종목의 수동(HTS) 로트와 workflow 로트가 공존
-            await t.record_fill('M1', '20260123', 'AAPL', 'NASDAQ', 'buy', 5, 90.0, '100000000', '41')  # manual
+            await t.record_fill('M1', '20260123', 'AAPL', 'NASDAQ', 'buy', 5, 90.0, '100000000', '85')  # manual (HTS)
             t.record_order('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 3, 100.0, 'j', 'n')
             await t.record_fill('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 3, 100.0, '110000000', '40')  # workflow
             # workflow 매도 2주: workflow 로트(100)만 소진, 수동 로트는 그대로
@@ -674,7 +696,7 @@ class TestWorkflowLotOwnershipAndEstimate:
             t.record_order('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 5, 100.0, 'j', 'n')
             await t.record_fill('W1', '20260123', 'AAPL', 'NASDAQ', 'buy', 5, 100.0, '100000000', '40')
             # 수동(HTS) 매도: 분류 무관 로트 소진(종전 동작 불변) → workflow 로트를 먹는다
-            await t.record_fill('M1', '20260123', 'AAPL', 'NASDAQ', 'sell', 2, 120.0, '110000000', '41')
+            await t.record_fill('M1', '20260123', 'AAPL', 'NASDAQ', 'sell', 2, 120.0, '110000000', '85')  # HTS 수동 매도
             with sqlite3.connect(t.db_path) as conn:
                 wf_remaining = conn.execute(
                     "SELECT remaining_qty FROM workflow_position_lots WHERE classification='workflow'"

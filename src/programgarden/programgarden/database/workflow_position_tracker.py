@@ -97,6 +97,34 @@ class ExecutionIdentityConflictError(ValueError):
     """An explicit execution identity was replayed with different fill facts."""
 
 
+# LS 통신매체코드(CommdaCode / MdaCode) — 출처: src/finance/docs/cidbq02400_contract.md:74-77
+# "The published media map is 00=branch, 22=iPhone, 23=Android, 41=API, 43=Robo API,
+#  85=HTS, 96=final settlement, LP=loss cut, SK=CashCall and SO=conditional order.
+#  The example uses 40, which the table does not map. Preserve it as returned;
+#  do not classify it by guessing a nearby code."
+# '40' 은 표에 없지만 우리 OPEN API 주문이 실제로 받는 값이다(dev verified_fills 실측 4건) —
+# 표의 41/43 과 함께 API 묶음으로 둔다. 표에 없는 값은 추측하지 않고 "other" 로 남긴다.
+MEDIA_CODES_HUMAN = frozenset({"85", "22", "23", "00"})   # HTS · iPhone · Android · 지점
+MEDIA_CODES_API = frozenset({"40", "41", "43"})           # OPEN API(실측) · API · Robo API
+
+
+def media_channel(commda_code: str | None) -> str:
+    """Map a broker media code to "human" | "api" | "unknown" | "other".
+
+    unknown = blank/None (the frame said nothing); other = a code the published
+    table does not attribute to a person or an API client (96/LP/SK/SO …) or one
+    the table does not list at all. Neither is ever asserted to be a person.
+    """
+    code = (commda_code or "").strip()
+    if not code:
+        return "unknown"
+    if code in MEDIA_CODES_HUMAN:
+        return "human"
+    if code in MEDIA_CODES_API:
+        return "api"
+    return "other"
+
+
 class WorkflowPositionTracker:
     """
     워크플로우 포지션 FIFO 추적기
@@ -440,7 +468,7 @@ class WorkflowPositionTracker:
         This is a persistence prerequisite, not broker-history/TC3 integration.
             
         Returns:
-            분류 결과: "workflow" | "manual" | "unknown_api" | "pending"
+            분류 결과: "workflow" | "manual" | "unknown_api" | "other" | "pending"
         """
         fill = PendingFill(
             order_no=order_no, order_date=order_date, symbol=symbol,
@@ -468,14 +496,19 @@ class WorkflowPositionTracker:
             # old media-first ordering would then misfile them as manual.)
             if self._is_workflow_fill(fill):
                 return await self._process_fill_internal(fill, "workflow")
-            # No matching order. A definite, non-'40' media code identifies a
-            # trade placed on this account through another channel (HTS/web) —
-            # a person, classified "manual".
-            if commda_code and commda_code != "40":
+            # No matching order. Classify by the published media table
+            # (MEDIA_CODES_* above) — never by "not 40":
+            #   human (85 HTS / 22 iPhone / 23 Android / 00 branch) → "manual"
+            #   other (96/LP/SK/SO or unlisted)                    → "other"
+            #   api (40/41/43) or blank                            → buffer below
+            channel = media_channel(commda_code)
+            if channel == "human":
                 return await self._process_fill_internal(fill, "manual")
+            if channel == "other":
+                return await self._process_fill_internal(fill, "other")
 
-            # '40' (OPEN API) or an empty/None media code ("medium unknown"):
-            # buffer to give a lagging order record a chance to arrive, then
+            # An API code or an empty media code ("medium unknown"): buffer to
+            # give a lagging order record a chance to arrive, then
             # _process_timeout_fill files it as workflow (matched) or unknown_api
             # (unmatched). An unknown medium is never asserted to be a person's
             # HTS trade, so it floors to unknown_api rather than manual.
@@ -1356,11 +1389,12 @@ class WorkflowPositionTracker:
                                        else "measured")
 
         # Fills on this same account placed outside this strategy, by classification:
-        # manual (a person via HTS/web) → hts, unknown_api (another OPEN-API
-        # client) → other_api. Futures fill frames carry no communication-media
-        # field, so HTS vs OPEN-API cannot be told apart for them — unavailable.
+        # manual (a person via HTS/app/branch) → hts, unknown_api (another API
+        # client) → other_api, other (broker-side codes 96/LP/SK/SO or unlisted)
+        # → other. Futures fill frames carry no communication-media field, so
+        # the channels cannot be told apart for them — unavailable.
         if self.product == "overseas_futures":
-            off_strategy_fills = {"hts": None, "other_api": None,
+            off_strategy_fills = {"hts": None, "other_api": None, "other": None,
                                   "status": "unavailable",
                                   "reason": "futures_fills_have_no_media_code"}
         else:
@@ -1369,6 +1403,7 @@ class WorkflowPositionTracker:
             off_strategy_fills = {
                 "hts": sum(1 for r in in_scope if r["classification"] == "manual"),
                 "other_api": sum(1 for r in in_scope if r["classification"] == "unknown_api"),
+                "other": sum(1 for r in in_scope if r["classification"] == "other"),
                 "status": "available", "reason": None,
             }
 

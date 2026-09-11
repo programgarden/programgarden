@@ -26,7 +26,7 @@ async def fill(ledger, order, side, quantity, price, execution, *, symbol="SYNTH
     if not manual:
         ledger.record_order(order, date, symbol, "SYNTH_EXCHANGE", side, quantity, price, "job", "node")
     return await ledger.record_fill(order, date, symbol, "SYNTH_EXCHANGE", side,
-                                   quantity, price, "100000000", "10" if manual else "40", execution_id=execution)
+                                   quantity, price, "100000000", "85" if manual else "40", execution_id=execution)
 
 
 @pytest.mark.asyncio
@@ -410,18 +410,22 @@ async def test_off_strategy_fills_counts_hts_and_other_api(tmp_path):
     ledger = tracker(tmp_path, provider="ls-sec.co.kr")
     ledger.FILL_BUFFER_TIMEOUT = 0.05
     await fill(ledger, "1", "buy", 1, 100, "11")   # 우리 workflow 체결
-    # 사람의 HTS 거래: 실제 비-'40' 매체코드 + 일치 주문 없음 → manual
+    # 사람의 HTS 거래: 표의 인간 채널 코드(85=HTS) + 일치 주문 없음 → manual
     await ledger.record_fill("H1", "20260909", "SYNTH", "SYNTH_EXCHANGE", "buy", 1, 90,
-                             "100000000", "41", execution_id="21")
-    # 타 API 클라이언트: '40' + 일치 주문 없음 → 버퍼 → unknown_api
+                             "100000000", "85", execution_id="21")
+    # 타 API 클라이언트: 표의 API 코드(41) + 일치 주문 없음 → 버퍼 → unknown_api
     r = await ledger.record_fill("A1", "20260909", "SYNTH", "SYNTH_EXCHANGE", "buy", 1, 95,
-                                 "100000000", "40", execution_id="22")
+                                 "100000000", "41", execution_id="22")
     assert r == "pending"
+    # 증권사 발생 코드(96=최종결제): 사람도 API 도 아니다 → other
+    assert await ledger.record_fill("S1", "20260909", "SYNTH", "SYNTH_EXCHANGE", "sell", 1, 99,
+                                    "100000000", "96", execution_id="23") == "other"
     await asyncio.sleep(0.15)
     off = ledger.personal_metrics()["off_strategy_fills"]
     assert off["status"] == "available"
     assert off["hts"] == 1
     assert off["other_api"] == 1
+    assert off["other"] == 1
     assert off["reason"] is None
 
 
@@ -431,5 +435,5 @@ async def test_off_strategy_fills_unavailable_for_futures(tmp_path):
     await fill(ledger, "1", "buy", 1, 100, "11")
     off = ledger.personal_metrics()["off_strategy_fills"]
     assert off["status"] == "unavailable"
-    assert off["hts"] is None and off["other_api"] is None
+    assert off["hts"] is None and off["other_api"] is None and off["other"] is None
     assert off["reason"] == "futures_fills_have_no_media_code"
