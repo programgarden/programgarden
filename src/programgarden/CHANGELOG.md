@@ -1,5 +1,25 @@
 ## [Unreleased]
 
+## [1.35.0] - 2026-09-12
+
+### Added
+- `personal_metrics` 봉투 **v2** — 체결 단위 승/패·총이익·총손실(그룹별 `closed/winning/losing/breakeven_trades`, `gross_profit/gross_loss`),
+  상위 `closed_trade_count`·`closed_trade_status`(available|partial|unavailable)·`profit_loss_ratio`(단일 종목 + 손실 존재 시만)·
+  `estimated_group_count`·`closed_trade_basis`·`profit_loss_ratio_basis`·`off_strategy_fills{hts,other_api,other}`.
+  개수는 종목 간 합산, 금액은 합산 금지(통화 증거 없음) — 기존 규율 유지. (#47, #48)
+- `off_strategy_fills.other_codes` — 표에 없는 매체코드의 관측 목록(미측정 코드가 더 있다는 전제; 표는 근거로만 늘린다) + 미등재 코드 INFO 로그. (#50)
+- 워크플로우 매도가 워크플로우 로트를 넘어서면 잔량을 **계좌 평균매입가로 추정** — 매도 행에 additive 컬럼
+  `unmatched_qty`·`estimate_basis_price`·`estimate_source`·`estimated_pnl`, 봉투 그룹 `status=estimated`/`basis=fifo_with_account_avg_price_estimate`. (#48)
+- 체결 매체코드를 프레임 값 그대로 원장에 기록(AS1 `sCommdaCode`, SC1 `commdacode`; 선물 TC3 는 필드 없음). (#48)
+
+### Changed
+- 체결 분류: 우리 주문번호 일치 → `workflow` **먼저**; 사람 채널(85 HTS·22/23 앱·00 지점 + **실측 51 투혼 iPhone 앱·03 투혼 웹**) → `manual`;
+  API(40 실측·41·43) 또는 빈값 → 버퍼 후 `unknown_api`; 그 외(96/LP/SK/SO·미등재) → 신설 `other`. 종전 "40 아니면 manual" 규칙 폐기. (#48)
+- 워크플로우 매도는 워크플로우 로트만 소진(비-워크플로우 매도는 불변). `mixed_fifo_ownership` 사전검사 제거(옛 혼합 원장은 `incomplete_fifo_basis` 로 거부). (#48)
+
+### Fixed
+- 계산할 수 없는 수익률은 0 이 아니라 발행하지 않는다(부분 현재가 미관측 시 NULL). (#46)
+
 ## [1.34.0] - 2026-09-10
 
 ### Added
