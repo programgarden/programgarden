@@ -1033,6 +1033,18 @@ class WorkflowPositionTracker:
         Historical FIFO rows have no currency or fee evidence. Keep their amounts
         per symbol/exchange and reject mixed ownership or an incomplete FIFO basis.
         Futures FIFO is not a monetary ledger. No equity/MDD basis is inferred.
+
+        Version 2 adds closed-trade outcomes. One closed trade = one sell fill,
+        using its *stored* realized amount — the replay below only validates the
+        basis and never replaces a stored value, so the outcome is read from the
+        same number the ledger committed.
+
+        Counts aggregate across symbols because a count carries no currency.
+        Amounts do not: with `currency` unproven per row, summing gross profit
+        across symbols would invent the very unit this method refuses to claim.
+        So gross amounts stay inside each group, and the top-level profit/loss
+        ratio is published only when a single group carries the whole ledger —
+        the one case where "the currency is the same" needs no evidence.
         """
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -1069,6 +1081,7 @@ class WorkflowPositionTracker:
         for (symbol, exchange), fills in sorted(groups.items()):
             reason = None
             amount = None
+            outcome = None
             if self.product == "overseas_futures":
                 reason = "futures_fifo_not_monetary"
             elif not symbol:
@@ -1084,6 +1097,11 @@ class WorkflowPositionTracker:
                 try:
                     lots = []
                     total = Decimal(0)
+                    # NB: `closed` below is the matched lot quantity — do not
+                    # reuse that name for a counter.
+                    trades = wins = losses = evens = 0
+                    gross_profit = Decimal(0)
+                    gross_loss = Decimal(0)
                     for fill in fills:
                         quantity = Decimal(str(fill["quantity"]))
                         price = Decimal(str(fill["price"]))
@@ -1111,18 +1129,84 @@ class WorkflowPositionTracker:
                             # Preserve the stored amount; replay arithmetic only
                             # validates the basis and never replaces its value.
                             total += stored
+                            # One sell fill = one closed trade. Read the outcome
+                            # from the stored amount for the same reason.
+                            trades += 1
+                            if stored > 0:
+                                wins += 1
+                                gross_profit += stored
+                            elif stored < 0:
+                                losses += 1
+                                gross_loss += -stored
+                            else:
+                                evens += 1
                         else:
                             raise ValueError("Unknown fill side")
                     amount = float(total)
                     if not Decimal(str(amount)).is_finite():
                         raise ValueError("Non-finite total")
+                    gross_profit_f = float(gross_profit)
+                    gross_loss_f = float(gross_loss)
+                    if not all(Decimal(str(v)).is_finite() for v in (gross_profit_f, gross_loss_f)):
+                        raise ValueError("Non-finite gross amount")
+                    outcome = {"closed_trades": trades, "winning_trades": wins,
+                               "losing_trades": losses, "breakeven_trades": evens,
+                               "gross_profit": gross_profit_f, "gross_loss": gross_loss_f}
                 except (ValueError, TypeError, ArithmeticError, OverflowError):
                     reason = "incomplete_fifo_basis"
-            realized.append({"symbol": symbol, "exchange": exchange, "currency": None,
-                             "amount": amount, "status": "available" if reason is None else "unavailable",
-                             "reason": reason})
+                    outcome = None
+            entry = {"symbol": symbol, "exchange": exchange, "currency": None,
+                     "amount": amount, "status": "available" if reason is None else "unavailable",
+                     "reason": reason}
+            # A rejected group publishes no outcome: its trades are unknown, and
+            # unknown trades must not be counted as zero of anything.
+            entry.update(outcome or {"closed_trades": None, "winning_trades": None,
+                                     "losing_trades": None, "breakeven_trades": None,
+                                     "gross_profit": None, "gross_loss": None})
+            realized.append(entry)
+        # Counts carry no currency, so they aggregate across symbols. A group the
+        # replay rejected is excluded and downgrades the status to "partial" —
+        # "some of this strategy's trades are not in these numbers" is a different
+        # claim from "these are all of them", and the caller must be able to tell.
+        scored = [g for g in realized if g["closed_trades"] is not None]
+        counted = [g for g in scored if g["closed_trades"] > 0]
+        if not scored:
+            trade_status, trade_reason = "unavailable", (
+                "futures_fifo_not_monetary" if self.product == "overseas_futures"
+                else "no_scorable_fifo_basis")
+            closed_total = winning_total = losing_total = breakeven_total = None
+        else:
+            trade_status = "available" if len(scored) == len(realized) else "partial"
+            trade_reason = None if trade_status == "available" else "some_groups_unscorable"
+            closed_total = sum(g["closed_trades"] for g in scored)
+            winning_total = sum(g["winning_trades"] for g in scored)
+            losing_total = sum(g["losing_trades"] for g in scored)
+            breakeven_total = sum(g["breakeven_trades"] for g in scored)
+
+        # The ratio is money, and money needs a unit. One group means one symbol,
+        # hence one currency — the only case where the unit is provable without
+        # currency evidence. Anything else stays per group.
+        ratio = None
+        ratio_status = "unavailable"
+        if len(counted) != 1:
+            ratio_reason = ("no_closed_trades" if not counted
+                            else "multi_symbol_currency_unknown")
+        else:
+            group = counted[0]
+            if group["gross_loss"] > 0:
+                candidate = group["gross_profit"] / group["gross_loss"]
+                if Decimal(str(candidate)).is_finite():
+                    ratio, ratio_status, ratio_reason = candidate, "available", None
+                else:
+                    ratio_reason = "non_finite_ratio"
+            else:
+                # No losing trade means no denominator. Publishing gross profit
+                # here (the server's day-based metric does) reads as a ratio of
+                # that size and overstates the strategy.
+                ratio_reason = "no_losing_trades"
+
         return {
-            "version": 1,
+            "version": 2,
             "scope": {"kind": "local_workflow_ledger", "product": self.product,
                       "provider": self.provider, "trading_mode": self.trading_mode},
             "as_of": datetime.now(timezone.utc).isoformat(),
@@ -1131,6 +1215,15 @@ class WorkflowPositionTracker:
             "executed_order_count_status": "unavailable" if invalid_count else "available",
             "executed_order_count_reason": "invalid_execution_identity" if invalid_count else None,
             "realized_pnl": realized,
+            "closed_trade_count": closed_total,
+            "winning_trade_count": winning_total,
+            "losing_trade_count": losing_total,
+            "breakeven_trade_count": breakeven_total,
+            "closed_trade_status": trade_status,
+            "closed_trade_reason": trade_reason,
+            "profit_loss_ratio": ratio,
+            "profit_loss_ratio_status": ratio_status,
+            "profit_loss_ratio_reason": ratio_reason,
             "max_drawdown": None,
             "max_drawdown_status": "unavailable",
             "max_drawdown_reason": "equity_history_unavailable",
