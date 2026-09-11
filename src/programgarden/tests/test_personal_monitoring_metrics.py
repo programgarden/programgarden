@@ -426,6 +426,7 @@ async def test_off_strategy_fills_counts_hts_and_other_api(tmp_path):
     assert off["hts"] == 1
     assert off["other_api"] == 1
     assert off["other"] == 1
+    assert off["other_codes"] == ["96"]   # 미등재 코드는 근거로 남는다
     assert off["reason"] is None
 
 
