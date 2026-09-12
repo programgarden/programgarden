@@ -2589,14 +2589,14 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "1.15.0"
+version = "1.15.3"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_community-1.15.0-py3-none-any.whl", hash = "sha256:216acbf9c33d0ff2fd2bf94da90618955254976ced872a1fe6bc7279838c71e8"},
-    {file = "programgarden_community-1.15.0.tar.gz", hash = "sha256:5a65c8a74986398d3ebc7454a0fbf3276c8c5d5dde030c091f4544c732062412"},
+    {file = "programgarden_community-1.15.3-py3-none-any.whl", hash = "sha256:af5095a862d0b001762ccfd957d182f06029a5058247bc40f23cc325b2bb56d5"},
+    {file = "programgarden_community-1.15.3.tar.gz", hash = "sha256:fb2a8de99aedea781992e9434af6a44611fadabe5baddef81a875b935934bcc7"},
 ]
 
 [package.dependencies]
@@ -2610,14 +2610,14 @@ quant-all = ["packaging (>=23)", "pyportfolioopt (>=1.6,<2) ; python_version < \
 
 [[package]]
 name = "programgarden-core"
-version = "1.25.3"
+version = "1.28.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.25.3-py3-none-any.whl", hash = "sha256:67a1acda5cf127d3f9ba3a7fead834323e6c83d6a23d6a63e3bf5957612bb78a"},
-    {file = "programgarden_core-1.25.3.tar.gz", hash = "sha256:70ef83eb725e89051737d54befd52667639533b3b62b89ad3d369255f5fea7a3"},
+    {file = "programgarden_core-1.28.0-py3-none-any.whl", hash = "sha256:b56ad13c6ef669f53b4d191d9b3426ed95461a4bc5d5eed7cc894828a9ac9ef6"},
+    {file = "programgarden_core-1.28.0.tar.gz", hash = "sha256:353c4b234004923ac3c7d0c84b5858974614cc1f2a7dc869c109de32323281bb"},
 ]
 
 [package.dependencies]
@@ -2625,14 +2625,14 @@ pydantic = ">=2.0.0,<3.0.0"
 
 [[package]]
 name = "programgarden-finance"
-version = "1.9.4"
+version = "1.9.7"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-1.9.4-py3-none-any.whl", hash = "sha256:5de04e96537afe70da1ccd4241a1cb56b0650af072abad555a64c6ca056895f9"},
-    {file = "programgarden_finance-1.9.4.tar.gz", hash = "sha256:6a9c75dbaa5a1914067058d6d01e52e6b00b59d2adc589b1ccf105c76c77d5e9"},
+    {file = "programgarden_finance-1.9.7-py3-none-any.whl", hash = "sha256:1512b1c155f4e4575c61620c4e2288b70c310ca1d25bd37b3a626965bb787828"},
+    {file = "programgarden_finance-1.9.7.tar.gz", hash = "sha256:ca853c0ff12371412526a400f46203fa840bb5b98e41a6b86bfbc947081be07e"},
 ]
 
 [package.dependencies]
@@ -4179,4 +4179,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "6bdd030a8a8b436efcf1dd67a41e0c7817c7043dd76248de08152986e517e8b7"
+content-hash = "ec1c408b63c7cda257fee1ae18ced9451890f1055032594106950577b81f0d91"
