@@ -12,18 +12,20 @@ from programgarden_community.plugins.var_cvar_monitor import (
 
 
 class MockRiskTracker:
-    """위험 이벤트 기록 **목 계약** — 실제 WorkflowRiskTracker 인터페이스가 아니다.
+    """실제 ``WorkflowRiskTracker.record_risk_event`` 와 같은 시그니처의 fake.
 
-    실제 클래스에는 ``record_event`` 가 없다(실제 이름은 ``record_risk_event``).
-    플러그인 쪽 호출은 ``except Exception: pass`` 로 감싸져 있어 라이브에서는
-    이벤트가 한 건도 기록되지 않는다 — 아래 이벤트 테스트는 '목이 약속한
-    계약대로 플러그인이 호출한다' 만 증명한다. 관측 2026-09-12.
+    (event_type, severity, symbol, exchange, details, node_id) → event_id. 실제 클래스에 없는
+    ``record_event`` 를 제공하던 옛 목은 '초록인데 라이브에선 0건' 을 가렸다(2026-09-12).
+    실제 트래커 왕복은 아래 TestLiveEventPathIsAlive 가 고정한다.
     """
     def __init__(self):
         self.events = []
 
-    def record_event(self, event_type, symbol, data):
-        self.events.append({"event_type": event_type, "symbol": symbol, "data": data})
+    def record_risk_event(self, event_type, severity="warning", symbol=None, exchange=None,
+                          details=None, node_id=None):
+        self.events.append({"event_type": event_type, "severity": severity, "symbol": symbol,
+                            "details": details})
+        return len(self.events)
 
 
 class MockContext:
@@ -218,6 +220,7 @@ class TestVarCvarMonitorPlugin:
         if result["result"]:
             assert len(ctx.risk_tracker.events) > 0
             assert ctx.risk_tracker.events[0]["event_type"] == "var_breach"
+            assert ctx.risk_tracker.events[0]["details"]["threshold"] == 0.1
 
     @pytest.mark.asyncio
     async def test_empty_data(self):
@@ -407,3 +410,43 @@ class TestReducePositionBelowOneShareIsNotSilent:
 
     def test_schema_declares_the_reason(self):
         assert "reduce_skipped_reason" in VAR_CVAR_MONITOR_SCHEMA.output_fields
+
+
+class TestLiveEventPathIsAlive:
+    """실제 WorkflowRiskTracker(sqlite) 로 var_breach 이벤트가 정말 기록되는지 — 목이 아니라."""
+
+    @staticmethod
+    def _real_tracker(tmp_path):
+        mod = pytest.importorskip(
+            "programgarden.database.workflow_risk_tracker",
+            reason="engine package not installed; live-truth pin skipped",
+        )
+        return mod.WorkflowRiskTracker(
+            db_path=str(tmp_path / "rt.db"),
+            job_id="pin", product="overseas_stock", provider="ls",
+            trading_mode="real", features={"events"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_records_var_breach(self, tmp_path):
+        import json
+        import random
+        random.seed(7)
+        data = []
+        for i in range(120):
+            data.append({"symbol": "VOL", "close": 100 + random.uniform(-30, 30), "date": f"2026-01-{i % 28 + 1:02d}"})
+        tracker = self._real_tracker(tmp_path)
+
+        class Ctx:
+            risk_tracker = tracker
+
+        result = await var_cvar_monitor_condition(
+            data=data, fields={"lookback": 60, "alert_threshold_pct": 0.1}, context=Ctx(),
+        )
+        assert result["result"] is True, result
+        events = tracker.get_risk_events(event_type="var_breach")
+        assert len(events) >= 1
+        assert events[0]["symbol"] == "VOL"
+        details = json.loads(events[0]["details"])
+        assert details["threshold"] == 0.1
+        assert "var_pct" in details and "action" in details

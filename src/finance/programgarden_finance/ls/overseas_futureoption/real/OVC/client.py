@@ -21,5 +21,5 @@ class RealOVC():
     def on_ovc_message(self, listener: Callable[[OVCRealResponse], None]):
         return self._parent._on_message("OVC", listener)
 
-    def on_remove_ovc_message(self):
-        return self._parent._on_remove_message("OVC")
+    def on_remove_ovc_message(self, listener=None):
+        return self._parent._on_remove_message("OVC", listener)

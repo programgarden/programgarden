@@ -3,9 +3,8 @@ PartialTakeProfit (분할 익절) 플러그인
 
 여러 단계에서 분할 매도하여 리스크를 줄이면서 수익 확보.
 - levels: [{pnl_pct: 5, sell_pct: 50}, {pnl_pct: 10, sell_pct: 30}, {pnl_pct: 20, sell_pct: 20}]
-- strategy_state로 완료된 단계 추적 (⚠️ 의도일 뿐 — 아래 '상태 경로는 라이브에서
-  동작하지 않는다' 절 참조)
-- 포지션 청산 시 상태 자동 삭제 (같은 이유로 미검증)
+- strategy_state로 완료된 단계 추적
+- 포지션 청산 시 상태 자동 삭제
 
 입력 형식:
 - positions: RealAccountNode의 positions 출력 (list[dict])
@@ -13,31 +12,27 @@ PartialTakeProfit (분할 익절) 플러그인
 - fields: {levels}
 - context: strategy_state 접근용 (선택)
 
-🔴 상태(strategy_state) 경로는 현재 **라이브에서 동작하지 않는다** (관측 2026-09-12)
+상태(strategy_state) 경로 — 2026-09-12 수정 전/후
 --------------------------------------------------------------------------------
-아래 ``get_state``/``set_state``/``delete_state`` 헬퍼는 두 가지 이유로 실행기
-경로에서 실제로 돌지 않는다. 둘 다 이 파일 밖(엔진 쪽)의 문제이며 여기서 고치지
-않는다 — 아래 분기는 **미검증**이다.
+2026-09-12 이전에는 이 경로가 **라이브에서 죽어 있었다**. 두 가지 이유였고 둘 다
+이번에 닫혔다:
 
-1. 메서드 이름이 실제 트래커와 다르다. 실제 클래스
+1. 메서드 이름이 실제 트래커와 달랐다. 실제 클래스
    ``programgarden.database.workflow_risk_tracker.WorkflowRiskTracker`` 에는
    ``get_state``/``set_state`` 가 **없다** — 있는 것은 ``save_state`` /
-   ``load_state`` / ``load_states`` / ``delete_state`` / ``delete_states`` 뿐이다
-   (그리고 이것들은 async 가 아니라 동기 메서드다). 실제 트래커를 가진 context 를
-   넘기면 이 경로는 ``AttributeError: 'WorkflowRiskTracker' object has no
-   attribute 'get_state'`` 로 즉사한다(실제 트래커 인스턴스로 재현 확인).
-2. 애초에 context 가 오지 않는다. 이 플러그인은 ``required_data=["positions"]``
-   라 실행기의 **positions 기반 분기**로 도는데, 그 분기
-   (``ConditionNodeExecutor.execute``, programgarden/executor.py — plugin_kwargs 가
-   ``{"positions": positions, "fields": evaluated_fields}`` 로 고정)는 ``context``
-   를 넘기지 않는다. 그래서 라이브에서는 항상 ``has_state`` 가 False 이고 상태는
-   저장·복원되지 않는다(context 없이 연속 호출하면 매번 같은 단계가 재발동하는
-   것으로 재현 확인).
+   ``load_state`` / ``load_states`` / ``delete_state`` / ``delete_states`` 이고
+   전부 **동기** 메서드다. 아래 헬퍼는 이제 그 실제 이름을 동기 호출한다.
+2. 애초에 context 가 오지 않았다. 이 플러그인은 ``required_data=["positions"]``
+   라 실행기의 positions 기반 분기로 도는데, 그 분기
+   (``ConditionNodeExecutor.execute``)가 plugin_kwargs 를
+   ``{"positions", "fields"}`` 로 고정해 ``context`` 를 넘기지 않았다. 이제
+   items/data 기반 분기와 같은 규약으로 **시그니처에 context 가 있으면 넘긴다**.
 
-따라서 위 docstring 의 "strategy_state 로 ... 추적/저장" 은 **의도**이지 현재
-동작이 아니다. 이 경로를 되살리려면 (a) 메서드명을 실제 트래커에 맞추고,
-(b) 실행기의 positions 분기가 context 를 넘기게 하고, (c) 동기/비동기 호출 규약을
-맞춰야 한다 — 전부 이 플러그인 파일 밖의 수정이다.
+남은 조건: 트래커는 ``state`` feature 로 초기화돼 있어야 한다(이 모듈이
+``risk_features = {"state"}`` 를 선언하므로 실행기가 워크플로우에 이 플러그인이
+있으면 그 feature 로 트래커를 만든다). feature 가 없으면 ``load_state`` 는 기본값
+None, ``save_state`` 는 False 를 돌려주고 — 그 경우 동작은 상태가 없던 종전과 같다
+(같은 단계가 매 사이클 재발동). dry_run 에서는 트래커 자체가 뜨지 않는다.
 """
 
 import json
@@ -147,25 +142,27 @@ async def partial_take_profit_condition(
         }
 
     # strategy_state 접근 헬퍼.
-    # 🔴 아래 세 함수는 라이브 실행기 경로에서 돌지 않는다 — 실행기의 positions 분기
-    #    (ConditionNodeExecutor.execute)가 context 를 넘기지 않아 has_state 가 항상
-    #    False 이고, 설령 실제 트래커를 넘겨도 WorkflowRiskTracker 에는
-    #    get_state/set_state 가 없어 AttributeError 로 죽는다. 모듈 docstring 의
-    #    '상태 경로는 라이브에서 동작하지 않는다' 절 참조. 미검증 분기.
-    has_state = context and hasattr(context, "risk_tracker") and context.risk_tracker
+    # 메서드 이름·호출 규약은 **실제 트래커**(WorkflowRiskTracker)에 맞춘다 —
+    # load_state / save_state / delete_state 이고 전부 동기다(await 하지 않는다).
+    # 종전의 get_state/set_state 는 실제 클래스에 없는 이름이라 실제 트래커를
+    # 넘기면 AttributeError 로 죽었다. 모듈 docstring 의 '상태 경로' 절 참조.
+    _tracker = getattr(context, "risk_tracker", None) if context else None
+    has_state = _tracker is not None and all(
+        hasattr(_tracker, name) for name in ("load_state", "save_state", "delete_state")
+    )
 
     async def get_state(key: str) -> Any:
         if has_state:
-            return await context.risk_tracker.get_state(key)
+            return _tracker.load_state(key)
         return None
 
     async def set_state(key: str, value: Any) -> None:
         if has_state:
-            await context.risk_tracker.set_state(key, value)
+            _tracker.save_state(key, value)
 
     async def delete_state(key: str) -> None:
         if has_state:
-            await context.risk_tracker.delete_state(key)
+            _tracker.delete_state(key)
 
     passed, failed, symbol_results = [], [], []
 
@@ -245,10 +242,12 @@ async def partial_take_profit_condition(
         original_qty_raw = await get_state(f"partial_tp.{symbol}.original_qty")
         # Decimal 로 복원되는 저장값도 받아들인다(구 isinstance(int, float) 검사는
         # Decimal 을 놓쳐 매 단계 '현재 수량' 기준으로 되돌아갔다).
-        # ⚠️ 이 분기는 **라이브에서 도달하지 않는다** — get_state 가 항상 None 을
-        #    돌려주므로(모듈 docstring 의 '상태 경로' 절) original_qty 는 늘 아래
-        #    폴백인 현재 qty 가 된다. Decimal 복원 자체는 목(MockRiskTracker)에서만
-        #    검증됐다.
+        # 저장 경로는 이제 라이브에서 실제로 돈다(2026-09-12 상태 경로 복구).
+        # 다만 Decimal 복원은 **이 플러그인이 만드는 값에서는 나오지 않는다** —
+        # 아래 set_state 가 싣는 값은 preserve_qty 의 int/float 이고, 트래커는
+        # 선언 타입대로 되돌려준다(_serialize/_deserialize_state_value: int→int,
+        # float→float, Decimal→Decimal). Decimal 수용은 다른 기록자(HWM 트래커의
+        # Decimal 수량 등)가 같은 키를 쓸 때를 위한 방어다.
         original_qty_state = coerce_qty(original_qty_raw)
         original_qty = (
             original_qty_state

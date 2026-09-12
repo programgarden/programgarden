@@ -1,3 +1,25 @@
+## [1.15.3] - 2026-09-12
+### Fixed
+- **상태 기반 플러그인 5종의 트래커 메서드명 정렬 (time_based_exit / pair_trading / beta_hedge / correlation_guard /
+  roll_management) + partial_take_profit** — 실제 `WorkflowRiskTracker` 에 없는 `get_state`/`set_state`(및 `record_event`)
+  를 부르던 결함. `time_based_exit` 는 실제 트래커 + 포지션 1건에서 `AttributeError` 로 즉사(엔진 1.37.1 이 positions
+  분기에 context 를 넘기게 되면서 드러남), 나머지는 `except: pass` 가 삼켜 상태·이벤트가 한 번도 기록되지 않았다.
+  실제 이름 `load_state`/`save_state`/`delete_state`/`record_risk_event(details=)` 를 **동기** 호출하고, hasattr 3종으로
+  has_state 를 판정해 다른 트래커 변종은 크래시 대신 무상태 강등, 실패는 삼키지 않고 warning 로그.
+- **var_cvar_monitor 위험 이벤트가 한 건도 기록되지 않던 결함** — 실제 트래커에 없는 `record_event(data=)` 를 부르고
+  `except: pass` 가 삼켰다. `record_risk_event(event_type="var_breach", severity, symbol, details=)` 로 정렬, 실패는
+  warning. 이로써 커뮤니티 플러그인에 남은 잘못된 트래커 메서드명은 0건(grep 실측).
+- **partial_take_profit 분할 익절이 매 사이클 재발동하던 결함** — 상태 경로가 죽어 `level_index=0` 으로 되돌아가
+  3사이클 연속 50% 매도가 재현됐다. 실제 트래커로 단계·최초수량이 왕복한다(엔진 1.37.1 필요).
+- **time_based_exit 보유일수가 실제로 자란다** — 종전엔 상태가 죽어 매 사이클 entry_date=오늘 → hold_days=0 으로
+  영영 청산하지 않았다. 이제 처음 관측한 날이 진입일로 고정된다(브로커 체결일 아님 — 워크플로우 시작 전 보유분은
+  첫 실행일). docstring 이 약속했던 '사라진 종목 상태 자동 정리' 스윕 구현(없으면 재매수 직후 거짓 exit 위험).
+  `analysis.stale_state_cleared` 추가.
+- **correlation_guard 히스테리시스가 실제로 동작** — 경계 구간의 '이전 regime 유지' 가 종전엔 항상 normal 이었다.
+  `beta_hedge`/`correlation_guard` 위험 이벤트(`beta_deviation`/`high_correlation`)가 이제 risk_events 에 기록된다.
+- 테스트: 6개 파일의 목 트래커를 실제 시그니처 fake 로 교체하고, 실제 `WorkflowRiskTracker`(sqlite) 왕복 테스트를
+  추가. 공허했던 `test_hysteresis`(픽스처 avg=1.0 → threshold 0.99 로는 경계 구간 아님) 실효화.
+
 ## [1.15.2] - 2026-09-12
 ### Fixed
 - **포지션 값 강제(coercion) 전수 정리** — 12개 플러그인(beta_hedge / correlation_guard / drawdown_protection /

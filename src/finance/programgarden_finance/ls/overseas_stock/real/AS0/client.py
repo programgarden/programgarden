@@ -16,5 +16,5 @@ class RealAS0():
         self._parent._add_real_order()
         return self._parent._on_message("AS0", listener)
 
-    def on_remove_as0_message(self):
-        return self._parent._on_remove_message("AS0")
+    def on_remove_as0_message(self, listener=None):
+        return self._parent._on_remove_message("AS0", listener)

@@ -1,3 +1,17 @@
+## [1.9.7] - 2026-09-12
+
+### Fixed
+- **실시간 리스너 레지스트리가 TR 코드당 하나만 잡던 결함 (`real_base._on_message`)** — `dict[key] = listener`
+  단일 대입이라, 같은 `Real` 객체(엔진 `LSClientManager` 가 product 별로 공유)에 두 경로가 같은 TR 을 걸면
+  나중 등록이 앞의 것을 **조용히 지웠다**. 엔진에서 체결 원장 구독(`on_sc1_message`/`on_as0_message`/
+  `on_tc3_message`)과 주문이벤트 노드 마스터가 정확히 이 조합이다(2026-09-12 국내 SC1 회귀 실측; 해외주식
+  AS0·해외선물 TC3 는 그 전부터 같은 구조). 이제 키당 **리스너 리스트** — 등록은 append(동일 객체 중복 없음),
+  디스패치는 등록된 전부에 전달(한 리스너의 예약 실패가 다른 리스너를 막지 않음), 제거는
+  `_on_remove_message(key, listener=None)` — 지정 리스너만 떼고 미지정이면 종전처럼 그 키 전체를 뗀다.
+  마지막 리스너가 사라질 때만 계좌 실시간 등록(`_as01234_connect`/`_sc01234_connect`)을 해제한다.
+- 모든 `on_remove_*_message(listener=None)` 래퍼(28개 client.py)가 리스너를 받아 넘긴다 — 인자 없이 부르면
+  종전 동작(그 TR 전체 제거)이라 하위호환.
+
 ## [1.9.6] - 2026-09-12
 
 ### Changed

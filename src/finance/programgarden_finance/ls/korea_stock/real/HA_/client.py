@@ -43,6 +43,6 @@ class RealHA_():
         """
         return self._parent._on_message("HA_", listener)
 
-    def on_remove_ha__message(self):
+    def on_remove_ha__message(self, listener=None):
         """등록된 KOSDAQ 호가잔량 콜백을 제거합니다."""
-        return self._parent._on_remove_message("HA_")
+        return self._parent._on_remove_message("HA_", listener)

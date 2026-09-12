@@ -10,13 +10,32 @@ BetaHedge (베타 헷지) 플러그인
 - positions (선택): 보유 포지션 (list[dict]) — 포트폴리오 베타 계산용
   예: [{"symbol": "AAPL", "current_price": 150.0, "qty": 100, ...}, ...]
 - fields: {lookback, market_symbol, target_beta, beta_tolerance, hedge_method, ...}
+
+상태(strategy_state)·이벤트 경로 — 2026-09-12 수정
+--------------------------------------------------------------------------------
+계산된 포트폴리오 베타를 ``portfolio_beta`` 키에 저장하고(값 float → 트래커 'float'
+타입으로 그대로 왕복), 헷지가 필요하면 ``beta_deviation`` 위험 이벤트를 남긴다. 상태는
+**write-only** 다 — 이 플러그인은 되읽지 않는다. 키는 노드별로 나뉘지 않는다(같은
+워크플로우에 BetaHedge 노드를 둘 이상 두면 마지막 값이 남는다).
+
+2026-09-12 이전에는 실제 트래커 ``programgarden.database.workflow_risk_tracker.
+WorkflowRiskTracker`` 에 없는 ``set_state``/``record_event`` 를 불렀고 ``except: pass``
+가 그 AttributeError 를 삼켜 상태도 이벤트도 **한 번도 기록되지 않았다**(data 기반
+분기는 예전부터 context 를 넘겼으므로 라이브에서도 같은 경로였다 — 코드 대조 기준).
+이제 실제 이름 ``save_state`` / ``record_risk_event(event_type, severity, symbol, exchange,
+details, node_id)`` 를 동기 호출하고, 실패는 삼키지 않고 logger.warning 으로 남긴다.
+``load_state``/``save_state``/``delete_state`` 셋이 전부 없는 트래커 변종이면 크래시
+대신 **무상태로 강등**한다(저장·이벤트 생략). dry_run 에서는 트래커가 뜨지 않는다.
 """
 
+import logging
 from typing import List, Dict, Any, Optional, Set
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
 from .._position_qty import coerce_qty
+
+logger = logging.getLogger(__name__)
 
 
 # risk_features 선언
@@ -343,34 +362,50 @@ async def beta_hedge_condition(
                 "reduce_by_pct": min(max_hedge_pct, round(abs(beta_deviation) * 20, 2)),
             }
 
-    # state 저장
-    has_risk_tracker = context and hasattr(context, "risk_tracker") and context.risk_tracker
-    if has_risk_tracker and portfolio_beta is not None:
+    # state / risk_event — 메서드 이름·호출 규약은 **실제 트래커**(WorkflowRiskTracker)에
+    # 맞춘다: save_state / load_state / delete_state, record_risk_event(event_type, severity,
+    # symbol, exchange, details, node_id) — 전부 동기. 종전의 set_state / record_event 는 실제
+    # 클래스에 없는 이름이라 except 가 AttributeError 를 삼켜 상태도 이벤트도 **한 번도
+    # 기록되지 않았다**. 필요한 메서드가 없는 트래커 변종이면 크래시 대신 그 경로만 끈다.
+    _tracker = getattr(context, "risk_tracker", None) if context else None
+    has_state = _tracker is not None and all(
+        hasattr(_tracker, name) for name in ("load_state", "save_state", "delete_state")
+    )
+    has_events = _tracker is not None and hasattr(_tracker, "record_risk_event")
+
+    if has_state and portfolio_beta is not None:
         # 계산되지 않은 베타를 상태에 저장하면 다음 회차가 그 거짓값을 읽는다.
+        # 값은 float → 트래커 'float' 타입으로 그대로 왕복한다.
         try:
-            context.risk_tracker.set_state("portfolio_beta", portfolio_beta)
-        except Exception:
-            pass
+            if not _tracker.save_state("portfolio_beta", portfolio_beta):
+                logger.warning(
+                    "BetaHedge: 상태 저장 실패 (portfolio_beta) — 트래커가 False 를 돌려줌 "
+                    "('state' feature 없음 또는 DB 쓰기 실패)"
+                )
+        except Exception as e:
+            logger.warning(f"BetaHedge: 상태 저장 실패 (portfolio_beta): {e}")
 
     # risk_event 기록
-    if hedge_needed and has_risk_tracker:
+    if hedge_needed and has_events:
         try:
-            # 🔴 record_event 는 실제 트래커에 없는 메서드다 (관측 2026-09-12):
-            #    WorkflowRiskTracker 의 실제 이름은 record_risk_event 다. 아래 except 가
-            #    AttributeError 를 삼키므로 이 위험 이벤트는 **한 건도 기록되지 않는다**.
-            #    메서드명 정렬은 이 플러그인 밖(엔진) 수정이라 여기서 고치지 않는다 — 미검증.
-            context.risk_tracker.record_event(
+            event_id = _tracker.record_risk_event(
                 event_type="beta_deviation",
+                severity="warning",
                 symbol="PORTFOLIO",
-                data={
+                details={
                     "portfolio_beta": portfolio_beta,
                     "target_beta": target_beta,
                     "deviation": round(beta_deviation, 4),
                     "hedge_method": hedge_method,
                 },
             )
-        except Exception:
-            pass
+            if event_id is None:
+                logger.warning(
+                    "BetaHedge: 위험 이벤트 기록 실패 (beta_deviation) — 트래커가 None 을 돌려줌 "
+                    "('events' feature 없음 또는 INSERT 실패)"
+                )
+        except Exception as e:
+            logger.warning(f"BetaHedge: 위험 이벤트 기록 실패 (beta_deviation): {e}")
 
     # 결과 정리
     for bd in beta_data:

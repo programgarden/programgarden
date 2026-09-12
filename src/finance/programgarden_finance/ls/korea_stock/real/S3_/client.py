@@ -81,7 +81,7 @@ class RealS3_():
         """
         return self._parent._on_message("S3_", listener)
 
-    def on_remove_s3__message(self):
+    def on_remove_s3__message(self, listener=None):
         """등록된 KOSPI 체결 콜백을 제거합니다.
 
         EN:
@@ -90,4 +90,4 @@ class RealS3_():
         KO:
             등록된 S3_ 메시지 리스너를 제거합니다.
         """
-        return self._parent._on_remove_message("S3_")
+        return self._parent._on_remove_message("S3_", listener)

@@ -142,3 +142,95 @@ class TestRollManagementPlugin:
         result = await roll_management_condition(positions=positions, fields={})
         assert result["result"] is False
         assert len(result["failed_symbols"]) == 1
+
+
+def _current_month_contract() -> str:
+    """현재 월 월물(만기 = 이달 셋째 금요일 근사) — days_before_expiry=30 이면 항상 should_roll."""
+    now = datetime.now()
+    month_code_map = {1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
+                      7: "N", 8: "Q", 9: "U", 10: "V", 11: "X", 12: "Z"}
+    return f"CL{month_code_map[now.month]}{str(now.year)[-2:]}"
+
+
+class TestLiveStatePathIsAlive:
+    """상태 경로가 **실제 트래커로 실제로 돈다**는 것을 고정한다 (2026-09-12 수정).
+
+    수정 전에는 실제 트래커에 없는 ``set_state`` 를 await 했고 ``except: pass`` 가 그
+    AttributeError 를 삼켜 롤 신호 이력이 **한 번도 저장되지 않았다**. 여기서는 실제
+    ``WorkflowRiskTracker`` 인스턴스(sqlite, tmp_path)로 저장·직렬화를 본다.
+    """
+
+    @staticmethod
+    def _real_tracker(tmp_path, features=frozenset({"state"})):
+        mod = pytest.importorskip(
+            "programgarden.database.workflow_risk_tracker",
+            reason="engine package not installed; live-truth pin skipped",
+        )
+        return mod.WorkflowRiskTracker(
+            db_path=str(tmp_path / "rt.db"),
+            job_id="pin", product="overseas_futures", provider="ls",
+            trading_mode="real", features=set(features),
+        )
+
+    @staticmethod
+    def _ctx(tracker):
+        class RealCtx:
+            risk_tracker = tracker
+        return RealCtx()
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_persists_roll_signal_date(self, tmp_path):
+        tracker = self._real_tracker(tmp_path)
+        symbol = _current_month_contract()
+        before = datetime.now().strftime("%Y-%m-%d")
+        result = await roll_management_condition(
+            positions=[{"symbol": symbol, "current_price": 70.5, "qty": 2, "market_code": "CME"}],
+            fields={"days_before_expiry": 30},
+            context=self._ctx(tracker),
+        )
+        after = datetime.now().strftime("%Y-%m-%d")
+        assert result["symbol_results"][0]["should_roll"] is True  # 전제
+        saved = tracker.load_state(f"roll.{symbol}.signal_date")
+        assert saved in {before, after}  # 자정 경계 허용
+        assert isinstance(saved, str)  # 'string' 타입 왕복
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_does_not_write_when_no_roll_signal(self, tmp_path):
+        tracker = self._real_tracker(tmp_path)
+        await roll_management_condition(
+            positions=[{"symbol": "CLZ30", "current_price": 72.0, "qty": 3, "market_code": "CME"}],
+            fields={"days_before_expiry": 5},
+            context=self._ctx(tracker),
+        )
+        assert tracker.load_state("roll.CLZ30.signal_date") is None
+
+    @pytest.mark.asyncio
+    async def test_tracker_without_state_feature_warns_instead_of_swallowing(self, tmp_path, caplog):
+        import logging
+        caplog.set_level(logging.WARNING)
+        tracker = self._real_tracker(tmp_path, features=frozenset())
+        symbol = _current_month_contract()
+        result = await roll_management_condition(
+            positions=[{"symbol": symbol, "current_price": 70.5, "qty": 2, "market_code": "CME"}],
+            fields={"days_before_expiry": 30},
+            context=self._ctx(tracker),
+        )
+        assert result["symbol_results"][0]["should_roll"] is True  # 판정 자체는 그대로
+        assert tracker.load_state(f"roll.{symbol}.signal_date") is None
+        assert any("RollManagement: 상태 저장 실패" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_foreign_tracker_variant_degrades_instead_of_crashing(self):
+        class Foreign:
+            async def set_state(self, key, value):  # 옛 이름 — 실제 트래커엔 없다
+                raise AssertionError("must not be called")
+
+        class Ctx:
+            risk_tracker = Foreign()
+
+        result = await roll_management_condition(
+            positions=[{"symbol": _current_month_contract(), "current_price": 70.5, "qty": 2, "market_code": "CME"}],
+            fields={"days_before_expiry": 30},
+            context=Ctx(),
+        )
+        assert result["symbol_results"][0]["should_roll"] is True

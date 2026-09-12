@@ -147,5 +147,92 @@ class TestPairTradingPlugin:
         assert "spread_method" in PAIR_TRADING_SCHEMA.fields_schema
 
 
+class TestLiveStatePathIsAlive:
+    """상태 경로가 **실제 트래커로 실제로 돈다**는 것을 고정한다 (2026-09-12 수정).
+
+    수정 전에는 실제 트래커에 없는 ``set_state`` 를 불러 except 가 AttributeError 를
+    삼켰고, 그래서 신호 이력이 **한 번도 저장되지 않았다**. 여기서는 실제
+    ``WorkflowRiskTracker`` 인스턴스(sqlite, tmp_path)로 왕복해 저장·직렬화를 본다.
+    """
+
+    @staticmethod
+    def _real_tracker(tmp_path, features=frozenset({"state"})):
+        mod = pytest.importorskip(
+            "programgarden.database.workflow_risk_tracker",
+            reason="engine package not installed; live-truth pin skipped",
+        )
+        return mod.WorkflowRiskTracker(
+            db_path=str(tmp_path / "rt.db"),
+            job_id="pin", product="overseas_stock", provider="ls",
+            trading_mode="real", features=set(features),
+        )
+
+    @staticmethod
+    def _ctx(tracker):
+        class RealCtx:
+            risk_tracker = tracker
+        return RealCtx()
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_persists_last_signal_as_string(self, tmp_path):
+        """entry_z=1.0 / exit_z=2.0 이면 z 가 무엇이든 신호가 난다 → 저장값 == analysis.signal."""
+        tracker = self._real_tracker(tmp_path)
+        result = await pair_trading_condition(
+            data=_make_correlated_pair(70, "diverged"),
+            fields={"symbol_a": "AAPL", "symbol_b": "MSFT", "lookback": 60,
+                    "entry_z": 1.0, "exit_z": 2.0, "correlation_min": 0.0},
+            context=self._ctx(tracker),
+        )
+        signal = result["analysis"]["signal"]
+        assert signal in {"short_a_long_b", "long_a_short_b", "exit"}
+        saved = tracker.load_state("pair_AAPL_MSFT")
+        assert saved == signal
+        assert isinstance(saved, str)  # 'string' 타입 왕복
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_overwrites_signal_on_next_cycle(self, tmp_path):
+        tracker = self._real_tracker(tmp_path)
+        tracker.save_state("pair_AAPL_MSFT", "stale_signal")
+        await pair_trading_condition(
+            data=_make_correlated_pair(70, "diverged"),
+            fields={"symbol_a": "AAPL", "symbol_b": "MSFT", "lookback": 60,
+                    "entry_z": 1.0, "exit_z": 2.0, "correlation_min": 0.0},
+            context=self._ctx(tracker),
+        )
+        assert tracker.load_state("pair_AAPL_MSFT") != "stale_signal"
+
+    @pytest.mark.asyncio
+    async def test_tracker_without_state_feature_warns_instead_of_swallowing(self, tmp_path, caplog):
+        import logging
+        caplog.set_level(logging.WARNING)
+        tracker = self._real_tracker(tmp_path, features=frozenset())
+        result = await pair_trading_condition(
+            data=_make_correlated_pair(70, "diverged"),
+            fields={"symbol_a": "AAPL", "symbol_b": "MSFT", "lookback": 60,
+                    "entry_z": 1.0, "exit_z": 2.0, "correlation_min": 0.0},
+            context=self._ctx(tracker),
+        )
+        assert result["analysis"]["signal"] is not None  # 판정 자체는 그대로
+        assert tracker.load_state("pair_AAPL_MSFT") is None
+        assert any("PairTrading: 상태 저장 실패" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_foreign_tracker_variant_degrades_instead_of_crashing(self):
+        class Foreign:
+            def set_state(self, key, value):  # 옛 이름 — 실제 트래커엔 없다
+                raise AssertionError("must not be called")
+
+        class Ctx:
+            risk_tracker = Foreign()
+
+        result = await pair_trading_condition(
+            data=_make_correlated_pair(70, "diverged"),
+            fields={"symbol_a": "AAPL", "symbol_b": "MSFT", "lookback": 60,
+                    "entry_z": 1.0, "exit_z": 2.0, "correlation_min": 0.0},
+            context=Ctx(),
+        )
+        assert result["analysis"]["signal"] is not None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

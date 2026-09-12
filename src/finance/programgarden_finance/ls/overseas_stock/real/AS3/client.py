@@ -16,5 +16,5 @@ class RealAS3():
         self._parent._add_real_order()
         return self._parent._on_message("AS3", listener)
 
-    def on_remove_as3_message(self):
-        return self._parent._on_remove_message("AS3")
+    def on_remove_as3_message(self, listener=None):
+        return self._parent._on_remove_message("AS3", listener)

@@ -4076,6 +4076,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
     _PNL_DRAIN_TIMEOUT_SECONDS = 1.0
     _PNL_CANCEL_TIMEOUT_SECONDS = 0.25
 
+    # 체결 이벤트 구독 로그인 재시도 간격(초). 길이 = 재시도 횟수(최초 1회 + 2회 = 총 3회).
+    # 상한을 두는 이유: LS 앱키는 여러 서비스가 **공유**하고 oauth2/token 에 전송수
+    # 제한이 있다(이 저장소 운영 메모). 무한/무제한 재시도는 그 한도를 때려 다른
+    # 워크플로우의 로그인까지 같이 막는다. 반대로 0회면 2026-09-12 prod 사고처럼
+    # 일시적 접속 불가에 영구히 눈이 먼다 — 그 타협점이 3회/누적 7초다.
+    # (값의 근거는 '일시 장애면 수 초 안에 복구된다' 는 경험칙이지, 관측된 복구
+    #  시간 분포가 아니다 — LS 측 복구 시간은 우리가 관측한 적 없다.)
+    _FILL_SUBSCRIPTION_LOGIN_RETRY_DELAYS = (2.0, 5.0)
+
     def _start_background_task(
         self, context: ExecutionContext, coroutine, *, notification: bool = False,
     ) -> Optional[asyncio.Task]:
@@ -4374,7 +4383,13 @@ class BrokerNodeExecutor(NodeExecutorBase):
         # await로 실행하여 WebSocket 연결이 완료된 후 다음 노드 진행
         # 이렇게 해야 주문 시점에 체결 이벤트를 수신할 수 있음
         # ========================================
-        if appkey and appsecret and has_workflow_listener:
+        # dry_run 은 skip — 모의 실행은 주문/실시간 콜백을 모두 skip 하므로 기록할
+        # 체결 자체가 없고, 이 경로도 위 두 경로(_sync_fill_prices_from_history,
+        # _start_account_tracking)와 똑같이 실제 LS 로그인을 시도한다. 종전에는 이
+        # 하나만 dry_run 게이트가 없어, 더미 appsecret 으로 도는 검증 잡에서 매번
+        # 로그인 실패를 낸 뒤 조용히 통과했다(같은 이유로 저 둘은 이미 skip 이다 —
+        # 2026-08-29 Phase 9.6 실측 주석 참조).
+        if appkey and appsecret and has_workflow_listener and not context.is_dry_run:
             context.log("info", "Starting workflow fill event subscription for FIFO tracking", node_id)
             await self._subscribe_workflow_fill_events(
                 node_id=node_id,
@@ -4383,6 +4398,12 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 appsecret=appsecret,
                 paper_trading=paper_trading,
                 context=context,
+            )
+        elif appkey and appsecret and has_workflow_listener and context.is_dry_run:
+            context.log(
+                "info",
+                "dry_run: 체결 이벤트 구독을 건너뜁니다 (모의 실행에는 실제 체결이 없습니다)",
+                node_id,
             )
         
         # 🔐 `connection` 은 노드 출력이라 리스너(SSE) · get_state · 체크포인트로 외부에 나간다.
@@ -4507,16 +4528,38 @@ class BrokerNodeExecutor(NodeExecutorBase):
         LS 인스턴스를 공유합니다. 이로써 하나의 WebSocket 연결에서
         GSC(시세)와 AS0/AS1(주문) 이벤트를 모두 수신합니다.
         """
+        from programgarden_core.exceptions import ExecutionError
+
         try:
-            from datetime import datetime
-            
             # ensure_ls_login으로 동일한 LS 인스턴스 사용 (RealMarketDataNode와 공유)
+            # 🔴 로그인 실패를 **삼키지 않는다** (2026-09-12 prod 실관측):
+            #    LS OpenAPI 접속 불가 중에 뜬 파드가 `Token 요청 실패` 뒤 여기서 조용히
+            #    return 해 브로커 노드가 completed 로 끝났다. 그 파드는 실시간 체결을
+            #    영영 받지 못하는데, 주문 노드는 LSClientManager.get_or_create 가 매번
+            #    재로그인을 시도하므로 **주문은 나갔다** — 주문은 나가는데 체결은 원장에
+            #    안 잡히는 조합(FIFO 포지션·손익·리스크 판정이 전부 눈먼 상태)이다.
+            #    그래서 (가) 제한된 재시도 후에도 실패하면 (나) 노드 실패로 올린다.
+            delays = self._FILL_SUBSCRIPTION_LOGIN_RETRY_DELAYS
             ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, product)
-            
+            for attempt, delay in enumerate(delays, start=1):
+                if success:
+                    break
+                context.log(
+                    "warning",
+                    f"체결 이벤트 구독 로그인 실패 — {delay}초 후 재시도 "
+                    f"{attempt}/{len(delays)} (product={product}, node={node_id}): {error}",
+                    node_id,
+                )
+                await asyncio.sleep(delay)
+                ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, product)
+
             if not success:
-                context.log("error", f"Failed to login for fill event subscription (node={node_id}): {error}", node_id)
-                return
-            
+                raise ExecutionError(
+                    f"체결 이벤트 구독을 위한 LS 로그인이 재시도 {len(delays)}회 후에도 "
+                    f"실패했습니다 (product={product}): {error}",
+                    node_id=node_id,
+                )
+
             context.log("info", f"Using shared LS instance for fill event subscription (product={product})", node_id)
             
             if product == "overseas_stock":
@@ -4529,7 +4572,36 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 context.log("warning", f"Unknown product type for fill subscription: {product}", node_id)
                 
         except Exception as e:
-            context.log("error", f"Failed to subscribe fill events: {e}", node_id)
+            # context.log("error") 는 stdout 에 남지 않는다 — 투자자 알림 채널로도
+            # 드러내고(구독 없이 주문만 나가는 상태를 사람이 알아야 한다), 노드를
+            # 실패시킨다. 구독이 없으면 체결 원장이 비어 손익·리스크가 전부 눈먼다.
+            message = (
+                f"체결 이벤트 구독에 실패했습니다 (product={product}): {e}. "
+                "실시간 체결이 원장에 기록되지 않으므로 주문을 내지 않고 중단합니다."
+            )
+            context.log("error", message, node_id)
+            try:
+                await context.send_notification(
+                    category=NotificationCategory.CONNECTION_FAILED,
+                    severity=NotificationSeverity.CRITICAL,
+                    title="체결 이벤트 구독 실패",
+                    message=message,
+                    node_id=node_id,
+                    node_type="BrokerNode",
+                    data={
+                        "product": product,
+                        "login_retry_count": len(self._FILL_SUBSCRIPTION_LOGIN_RETRY_DELAYS),
+                        "error": str(e),
+                    },
+                )
+            except Exception as notify_error:  # 알림 실패가 본래 실패를 가리지 않게
+                logger.warning(f"체결 구독 실패 알림 전송 실패: {notify_error}")
+            if isinstance(e, ExecutionError):
+                raise
+            raise ExecutionError(
+                f"Failed to subscribe fill events (product={product}): {e}",
+                node_id=node_id,
+            ) from e
     
     async def _subscribe_overseas_stock_fill_events(
         self,
@@ -8311,106 +8383,126 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         stay_connected: bool,
         event_filter: str = "all",
     ) -> Dict[str, Any]:
-        """해외주식 실시간 주문 체결 이벤트 (AS0~AS4)
-        
-        AS0~AS4 중 하나만 등록해도 전체 수신됨.
-        여러 노드가 동시에 사용할 수 있도록 마스터 콜백 패턴 사용.
-        """
-        from datetime import datetime
-        
-        product = "overseas_stock"
-        
-        try:
-            # 현재 이벤트 루프 캡처 (콜백에서 사용)
-            loop = asyncio.get_running_loop()
-            
-            # 트리거할 하위 노드 목록
-            trigger_nodes = config.get("_trigger_on_update_nodes", [])
-            
-            # ========================================
-            # 노드별 핸들러 생성 및 등록
-            # ========================================
-            def create_handler(_node_id: str, _event_filter: str, _trigger_nodes: list):
-                """특정 노드용 핸들러 생성 (클로저로 값 캡처)"""
+        """해외주식 실시간 주문 체결 이벤트 (AS0~AS4).
 
+        🔴 종전 결함(국내 SC 와 동형): real_client.AS0().on_as0_message(master)
+        하나만 걸고 핸들러 안에서 tr_cd 로 AS1~AS4 를 분기했는데, SDK 디스패치는
+        tr_cd **정확일치 키**다(ls/real_base.py:340 _on_message_listeners.get(tr_cd)).
+        AS1(체결)·AS2(정정)·AS3(취소확인)·AS4(거부) 프레임은 리스너가 없어 이 노드에
+        **도달조차 못 했다** — filled/modified/cancelled/rejected 포트는 영구히 0건,
+        event_filter='AS1'~'AS4' 면 출력이 통째로 없었다. 게다가 체결가 갱신 분기는
+        주문가(sOrdPrc)를 체결가로 썼고 '11' 코드는 AS0 enum('01'/'03'/'12'/'13'/'14')에
+        없어 한 번도 타지 않았다. 이제 스트림마다 리스너를 따로 등록하고 AS1 체결가는
+        sExecPrc(파서의 filled_price)로 읽는다.
+
+        체결 원장 경로(_subscribe_overseas_stock_fill_events 의 AS0/AS1 리스너)는
+        같은 Real 객체를 공유하지만, SDK 가 키당 리스너 **리스트**로 바뀌어(append)
+        서로 덮어쓰지 않는다. 등록한 마스터는 context.set_order_event_masters 로
+        저장해, 정리 경로가 원장 리스너를 건드리지 않고 이 마스터만 떼게 한다.
+        """
+        product = "overseas_stock"
+
+        try:
+            loop = asyncio.get_running_loop()
+            trigger_nodes = config.get("_trigger_on_update_nodes", [])
+
+            wanted_streams = self._overseas_stock_order_event_streams(event_filter)
+            if not wanted_streams:
+                msg = (
+                    f"Unsupported event_filter for overseas_stock order events: "
+                    f"{event_filter} (allowed: all, AS0~AS4)"
+                )
+                context.log("error", msg, node_id)
+                return {"error": msg}
+
+            def create_handler(_node_id: str, _event_filter: str, _stream: str, _trigger_nodes: list):
                 def handler(resp):
                     if context.is_shutdown:
                         return
                     from datetime import datetime
 
-                    # header에서 tr_cd 확인하여 필터링
                     header = getattr(resp, 'header', None)
-                    tr_cd = getattr(header, 'tr_cd', 'AS0') if header else 'AS0'
-                    
-                    # event_filter가 'all'이 아니면 해당 TR만 처리
+                    # 헤더가 없으면 이 리스너가 등록된 스트림이 곧 TR 이다 —
+                    # real_base 는 tr_cd 정확일치로만 배달하므로 둘은 같다.
+                    tr_cd = (getattr(header, 'tr_cd', '') if header else '') or _stream
+
                     if _event_filter != "all" and tr_cd != _event_filter:
-                        return  # 필터링된 TR이 아니면 무시
-                    
-                    # body에서 필드 추출
-                    body = getattr(resp, 'body', resp)
-                    ord_type_code = getattr(body, 'sOrdxctPtnCode', '')
-                    
-                    event_data = {
-                        "timestamp": datetime.now().isoformat(),
-                        "tr_cd": tr_cd,
-                        "event_code": ord_type_code,
-                        "symbol": getattr(body, 'sShtnIsuNo', getattr(body, 'sIsuNo', '')),
-                        "symbol_name": getattr(body, 'sIsuNm', ''),
-                        "order_no": getattr(body, 'sOrdNo', 0),
-                        "orig_order_no": getattr(body, 'sOrgOrdNo', 0),
-                        "side": getattr(body, 'sOrdPtnCode', ''),
-                        "order_qty": _qty_num(getattr(body, 'sOrdQty', 0)),
-                        "order_price": float(getattr(body, 'sOrdPrc', 0)),
-                        "remain_qty": _qty_num(getattr(body, 'sOrgOrdUnercQty', 0)),
-                        "modified_qty": _qty_num(getattr(body, 'sOrgOrdMdfyQty', 0)),
-                        "cancelled_qty": _qty_num(getattr(body, 'sOrgOrdCancQty', 0)),
-                        "order_time": getattr(body, 'sOrdTime', ''),
-                        "market_code": getattr(body, 'sOrdMktCode', ''),
-                    }
-                    
-                    # 주문체결유형코드에 따라 포트 및 상태명 결정
-                    port_map = {
-                        '01': ('accepted', '신규접수'),
-                        '02': ('accepted', '정정접수'),
-                        '03': ('accepted', '취소접수'),
-                        '11': ('filled', '체결'),
-                        '12': ('modified', '정정완료'),
-                        '13': ('cancelled', '취소완료'),
-                        '14': ('rejected', '거부'),
-                    }
-                    
-                    port, status_name = port_map.get(ord_type_code, ('accepted', f'코드:{ord_type_code}'))
+                        return
+
+                    body = getattr(resp, 'body', None)
+                    if body is None:
+                        # real_base 는 바디 검증 실패 시 body=None + error_msg 로 만든다.
+                        # 그 프레임에서 필드를 읽으면 전부 기본값이 되어 '0원 0주' 를
+                        # 지어내므로 버린다.
+                        context.log(
+                            "warning",
+                            f"{tr_cd} frame without body (error_msg="
+                            f"{getattr(resp, 'error_msg', '')}) — skipped",
+                            _node_id,
+                        )
+                        return
+
+                    if tr_cd == "AS0":
+                        event_data = self._parse_overseas_stock_as0_event(body)
+                    elif tr_cd in self._OVERSEAS_STOCK_ORDER_EVENT_FILL_FAMILY:
+                        event_data = self._parse_overseas_stock_fill_family_event(body, tr_cd)
+                    else:
+                        # 모르는 TR 을 계열 파서에 넣으면 빈값 '이벤트' 를 만든다 —
+                        # 짐작하지 말고 버리고 사실만 남긴다.
+                        context.log(
+                            "warning",
+                            f"Unknown overseas_stock order event TR: {tr_cd} — frame skipped",
+                            _node_id,
+                        )
+                        return
+
+                    port, status_name = self._OVERSEAS_STOCK_ORDER_EVENT_PORTS[tr_cd]
                     event_data["status"] = status_name
-                    
-                    # 체결 이벤트('11')일 때 시장가 주문의 가격 업데이트
-                    if ord_type_code == '11' and event_data['order_price'] > 0:
-                        order_no_str = str(event_data['order_no'])
-                        order_date = getattr(body, 'sOrdDt', datetime.now().strftime('%Y%m%d'))
+
+                    # 체결(AS1)로 시장가 주문의 원장 가격을 실체결가로 채운다.
+                    # 🔴 체결가 = filled_price(=sExecPrc). 종전엔 order_price(sOrdPrc,
+                    #    주문가)를 썼다(AS0 엔 체결가 필드가 없다). 이 분기는 AS1 리스너가
+                    #    없던 종전에는 한 번도 실행되지 않았다.
+                    if (
+                        tr_cd == "AS1"
+                        and event_data.get("filled_price", 0) > 0
+                        and str(event_data.get("order_no") or "").strip()
+                    ):
+                        order_no_str = str(event_data["order_no"]).strip()
+                        # 🔴 AS1 프레임에는 주문일자 필드가 없다(AS1RealResponseBody 에
+                        # 일자 필드 자체가 부재 — SDK). 원장 쓰기 경로
+                        # (_subscribe_overseas_stock_fill_events)도 같은 이유로 로컬
+                        # 날짜를 키로 쓴다(executor.py:4693 "AS1에는 sOrdDt 없음").
+                        # 두 경로가 같은 규약을 써야 (order_no, order_date) 대조가 맞으므로
+                        # 여기서도 로컬 오늘 날짜를 쓴다.
+                        # ⚠️ 한계: 주문~체결 사이 로컬 자정을 넘기면 키가 어긋난다
+                        # (프로세스 TZ 가 UTC 면 KST 09:00=UTC 00:00). 쓰기·읽기 양쪽을
+                        # 함께 바꿔야 하는 별건이라 이 경로만 고치지 않는다(국내 SC1 동일).
+                        order_date = datetime.now().strftime("%Y%m%d")
                         context.update_workflow_order_fill_price(
                             order_no=order_no_str,
                             order_date=order_date,
-                            fill_price=event_data['order_price'],
+                            fill_price=event_data["filled_price"],
                         )
-                    
+
                     context.set_output(_node_id, port, event_data)
-                    
-                    side_name = "매수" if event_data['side'] == '02' else "매도"
-                    
-                    logger.debug(f"\n{'='*60}")
-                    logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] 📣 [{_node_id}] 해외주식 {status_name} ({side_name})")
-                    logger.debug(f"  종목: {event_data['symbol']} ({event_data['symbol_name']})")
-                    logger.debug(f"  주문번호: {event_data['order_no']}")
-                    logger.debug(f"{'='*60}\n")
-                    
+
+                    # 매매구분 '2'=매수 / '1'=매도 (blocks.py sBnsTp)
+                    side_name = "매수" if event_data.get("side") == "2" else "매도"
+                    logger.debug(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] [{_node_id}] "
+                        f"해외주식 {status_name} ({side_name}) "
+                        f"{event_data.get('symbol', '')} #{event_data.get('order_no', '')}"
+                    )
+
                     asyncio.run_coroutine_threadsafe(
                         context.notify_output_update(
                             node_id=_node_id,
                             node_type="RealOrderEventNode",
                             outputs={port: event_data},
                         ),
-                        loop
+                        loop,
                     )
-                    
                     asyncio.run_coroutine_threadsafe(
                         context.emit_event(
                             event_type="order_event",
@@ -8418,65 +8510,124 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                             data={port: event_data},
                             trigger_nodes=_trigger_nodes,
                         ),
-                        loop
+                        loop,
                     )
-                
+
                 return handler
-            
-            # 핸들러 등록 (AS0~AS4는 모두 같은 콜백으로 수신됨)
-            handler = create_handler(node_id, event_filter, trigger_nodes)
-            context.register_order_event_handler(product, "AS0", node_id, event_filter, handler)
-            
-            # ========================================
-            # 마스터 콜백 설정 (첫 번째 노드만)
-            # ========================================
+
+            # 이 노드가 듣기로 한 스트림마다 핸들러를 등록한다. 종전에는 filter 와
+            # 무관하게 "AS0" 키 하나에만 걸어 뒀다.
+            for stream in wanted_streams:
+                context.register_order_event_handler(
+                    product,
+                    stream,
+                    node_id,
+                    event_filter,
+                    create_handler(node_id, event_filter, stream, trigger_nodes),
+                )
+
             if not context.has_order_event_subscription(product):
                 real_client = ls.overseas_stock().real()
                 if not await real_client.is_connected():
                     await real_client.connect()
-                
-                context.set_order_event_real_client(product, real_client)
-                
-                # 마스터 콜백: 모든 등록된 핸들러에게 분배
-                def master_callback(resp):
-                    if context.is_shutdown:
-                        return
-                    handlers = context.get_order_event_handlers(product, "AS0")
-                    for (handler_node_id, handler_filter, handler_func) in handlers:
-                        try:
-                            handler_func(resp)
-                        except Exception as e:
-                            context.log("error", f"Handler error for {handler_node_id}: {e}", handler_node_id)
 
-                real_client.AS0().on_as0_message(master_callback)
-                context.log("info", f"Master order event callback registered for {product}", node_id)
-            
-            # ========================================
-            # stay_connected에 따라 등록 방식 결정
-            # ========================================
+                context.set_order_event_real_client(product, real_client)
+
+                def create_master(_stream: str):
+                    def master_callback(resp):
+                        if context.is_shutdown:
+                            return
+                        handlers = context.get_order_event_handlers(product, _stream)
+                        for (handler_node_id, handler_filter, handler_func) in handlers:
+                            try:
+                                handler_func(resp)
+                            except Exception as e:
+                                context.log("error", f"Handler error for {handler_node_id}: {e}", handler_node_id)
+                    return master_callback
+
+                # 마스터는 **항상 다섯 스트림 전부** 건다 — 뒤에 붙는 노드가 다른
+                # filter 를 쓰면 has_order_event_subscription 게이트에 막혀 여기를
+                # 다시 지나지 않기 때문이다. 스트림별 실제 전달 여부는 위의
+                # register_order_event_handler 키가 가른다.
+                registered_masters: Dict[str, Callable] = {}
+                missing_streams: List[str] = []
+                for stream in self._OVERSEAS_STOCK_ORDER_EVENT_STREAMS:
+                    stream_factory = getattr(real_client, stream, None)
+                    subscribe = None
+                    if callable(stream_factory):
+                        subscribe = getattr(
+                            stream_factory(), f"on_{stream.lower()}_message", None
+                        )
+                    if not callable(subscribe):
+                        missing_streams.append(stream)
+                        continue
+                    master = create_master(stream)
+                    subscribe(master)
+                    registered_masters[stream] = master
+
+                # 🔴 등록한 마스터만 스트림별로 저장 — 정리 경로가 이것만 떼어
+                # 체결 원장 리스너(_subscribe_overseas_stock_fill_events 의 AS0/AS1)를
+                # 지우지 않게 한다(SDK 가 키당 리스너 리스트로 바뀜).
+                context.set_order_event_masters(product, registered_masters)
+
+                if missing_streams:
+                    context.log(
+                        "warning",
+                        f"SDK has no listener API for overseas_stock order streams: "
+                        f"{', '.join(missing_streams)} — those events cannot be received",
+                        node_id,
+                    )
+                if not registered_masters:
+                    msg = "No overseas_stock order event stream could be registered (SDK listener API missing)"
+                    context.log("error", msg, node_id)
+                    return {"error": msg}
+
+                context.log(
+                    "info",
+                    f"Master order event callbacks registered for overseas_stock: "
+                    f"{', '.join(registered_masters)}",
+                    node_id,
+                )
+
+            # 이 노드가 고른 스트림 중 SDK 마스터가 없는 것 보고(첫 노드든 뒤 노드든).
+            # 뒤에 붙는 노드가 미등록 스트림을 filter 로 고르면 status='subscribed'
+            # 인데 이벤트 0건인 조용한 실패가 되므로, 노드별로 확인해 드러낸다.
+            available_masters = set(context.get_order_event_masters(product))
+            node_unavailable = [s for s in wanted_streams if s not in available_masters]
+            if node_unavailable:
+                context.log(
+                    "warning",
+                    f"event_filter 선택 스트림 중 SDK 미등록(수신 불가): "
+                    f"{', '.join(node_unavailable)}",
+                    node_id,
+                )
+
             real_client = context.get_order_event_real_client(product)
             if stay_connected:
                 context.register_persistent(node_id, real_client, metadata={"event_filter": event_filter})
-                context.log("info", f"AS0~AS4 order event subscription started (filter={event_filter}, stay_connected=True)", node_id)
+                context.log("info", f"AS0~AS4 order event subscription started (filter={event_filter}, streams={','.join(wanted_streams)}, stay_connected=True)", node_id)
             else:
                 context.register_cleanup_on_flow_end(node_id, real_client)
-                context.log("info", f"AS0~AS4 order event subscription started (filter={event_filter}, stay_connected=False)", node_id)
-            
+                context.log("info", f"AS0~AS4 order event subscription started (filter={event_filter}, streams={','.join(wanted_streams)}, stay_connected=False)", node_id)
+
             result = {
                 "status": "subscribed",
                 "product": "overseas_stock",
                 "event_type": "AS0~AS4",
                 "event_filter": event_filter,
+                "subscribed_streams": list(wanted_streams),
             }
-            
+            if node_unavailable:
+                result["unavailable_streams"] = node_unavailable
+
             asyncio.create_task(context.notify_output_update(
                 node_id=node_id,
                 node_type="RealOrderEventNode",
                 outputs=result,
             ))
-            
+
             return result
-            
+
         except Exception as e:
             context.log("error", f"AS0~AS4 subscription failed: {e}", node_id)
             return {"error": str(e)}
@@ -8540,15 +8691,30 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                         event_data = self._parse_tc3_data(body)
                         port, status_name = 'filled', '체결'
                         
-                        # 체결 시 시장가 주문의 가격 업데이트
-                        fill_price = event_data.get('fill_price', 0)
-                        if fill_price > 0:
+                        # 체결 시 시장가 주문의 가격 업데이트.
+                        # 🔴 키는 `_parse_tc3_data` 가 **실제로 담는 이름**(filled_price)이다.
+                        #    종전 코드는 그 dict 에 없는 `fill_price` 를 읽어 늘 0 을 받았고,
+                        #    그래서 `if fill_price > 0:` 이 한 번도 참이 되지 않아
+                        #    시장가 주문의 체결가 갱신이 통째로 죽어 있었다
+                        #    (해외선물 주문이벤트 노드 경로, 관측 2026-09-12).
+                        fill_price = event_data.get('filled_price', 0)
+                        # 주문일자도 프레임의 ordr_dt 만 쓴다 — 없으면 갱신을 **건너뛴다**.
+                        # 종전의 `datetime.now()` 폴백은 파드 로컬(UTC) 날짜를 주문일자로
+                        # 지어내, 야간장처럼 브로커 영업일과 로컬 날짜가 어긋나는 구간에서
+                        # (order_no, order_date) 대조를 조용히 빗나가게 한다.
+                        order_date = str(event_data.get('order_date', '') or '').strip()
+                        if fill_price > 0 and order_date:
                             order_no_str = str(event_data.get('order_no', ''))
-                            order_date = event_data.get('order_date', datetime.now().strftime('%Y%m%d'))
                             context.update_workflow_order_fill_price(
                                 order_no=order_no_str,
                                 order_date=order_date,
                                 fill_price=fill_price,
+                            )
+                        elif fill_price > 0:
+                            logger.warning(
+                                "[TC3] 체결가 갱신 건너뜀 — 프레임에 주문일자(ordr_dt)가 없다 "
+                                f"(order_no={event_data.get('order_no', '')!r}, "
+                                f"filled_price={fill_price!r})"
                             )
                     else:
                         return
@@ -8617,10 +8783,20 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                     return master_callback
                 
                 # TC1, TC2, TC3 마스터 콜백 등록
-                real_client.TC1().on_tc1_message(create_master_callback("TC1"))
-                real_client.TC2().on_tc2_message(create_master_callback("TC2"))
-                real_client.TC3().on_tc3_message(create_master_callback("TC3"))
-                
+                tc1_master = create_master_callback("TC1")
+                tc2_master = create_master_callback("TC2")
+                tc3_master = create_master_callback("TC3")
+                real_client.TC1().on_tc1_message(tc1_master)
+                real_client.TC2().on_tc2_message(tc2_master)
+                real_client.TC3().on_tc3_message(tc3_master)
+
+                # 🔴 등록한 마스터만 스트림별로 저장 — 정리 경로가 이것만 떼어
+                # 체결 원장 리스너(_subscribe_overseas_futures_fill_events)를 지우지
+                # 않게 한다(SDK 가 키당 리스너 리스트로 바뀜, 같은 Real 객체 공유).
+                context.set_order_event_masters(
+                    product, {"TC1": tc1_master, "TC2": tc2_master, "TC3": tc3_master}
+                )
+
                 context.log("info", f"Master order event callbacks registered for {product}", node_id)
             
             # ========================================
@@ -8657,7 +8833,7 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
     def _parse_tc1_data(self, body) -> Dict[str, Any]:
         """TC1 응답 파싱"""
         from datetime import datetime
-        return {
+        return self._with_order_event_aliases({
             "timestamp": datetime.now().isoformat(),
             "tr_cd": "TC1",
             "svc_id": getattr(body, 'svc_id', ''),
@@ -8669,8 +8845,8 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             "order_qty": int(getattr(body, 'ordr_q', 0) or 0),
             "order_price": float(getattr(body, 'ordr_prc', 0) or 0),
             "order_time": getattr(body, 'ordr_tm', ''),
-        }
-    
+        })
+
     def _get_tc1_port_status(self, event_data: Dict) -> tuple:
         """TC1 포트 및 상태명 결정"""
         svc_id = event_data.get("svc_id", "")
@@ -8684,7 +8860,7 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
     def _parse_tc2_data(self, body) -> Dict[str, Any]:
         """TC2 응답 파싱"""
         from datetime import datetime
-        return {
+        return self._with_order_event_aliases({
             "timestamp": datetime.now().isoformat(),
             "tr_cd": "TC2",
             "svc_id": getattr(body, 'svc_id', ''),
@@ -8699,8 +8875,8 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             "order_time": getattr(body, 'ordr_tm', ''),
             "reject_code": getattr(body, 'rfsl_cd', ''),
             "reject_reason": getattr(body, 'text', ''),
-        }
-    
+        })
+
     def _get_tc2_port_status(self, event_data: Dict) -> tuple:
         """TC2 포트 및 상태명 결정"""
         svc_id = event_data.get("svc_id", "")
@@ -8721,12 +8897,20 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
     def _parse_tc3_data(self, body) -> Dict[str, Any]:
         """TC3 응답 파싱"""
         from datetime import datetime
-        return {
+        return self._with_order_event_aliases({
             "timestamp": datetime.now().isoformat(),
             "tr_cd": "TC3",
             "svc_id": getattr(body, 'svc_id', ''),
             "symbol": getattr(body, 'is_cd', ''),
             "order_no": getattr(body, 'ordr_no', ''),
+            # 주문일자(ordr_dt) — TC3 프레임이 실제로 싣는 필드다
+            # (SDK overseas_futureoption/real/TC3/blocks.py, 같은 파일의 체결 원장
+            #  핸들러 on_tc3_event 가 이미 이 이름을 읽는다). 종전에는 파서가 이걸
+            # 아예 담지 않아, 아래 체결가 갱신 경로가 '오늘 날짜' 를 지어내 썼다.
+            # 값이 비면(브로커가 ordr_dt="" 를 실어 보내는 경우가 있다 —
+            # _usable_execution_identity 주석 참조) 빈 문자열 그대로 둔다.
+            # 소비처가 '오늘' 로 폴백하지 않고 갱신을 건너뛰게 하기 위해서다.
+            "order_date": str(getattr(body, 'ordr_dt', '') or '').strip(),
             "orig_order_no": getattr(body, 'orgn_ordr_no', ''),
             "side": getattr(body, 's_b_ccd', ''),
             "filled_qty": int(getattr(body, 'ccls_q', 0) or 0),
@@ -8737,7 +8921,389 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             "pnl": float(getattr(body, 'clr_pl_amt', 0) or 0),
             "commission": float(getattr(body, 'ent_fee', 0) or 0),
             "currency": getattr(body, 'crncy_cd', 'USD'),
+        })
+
+    # ── 공용: core 선언 필드명 alias ─────────────────────────────────────────
+    @staticmethod
+    def _with_order_event_aliases(event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """core ``base.ORDER_EVENT_FIELDS``(base.py:553-564)가 선언한 이름을 런타임
+        키의 **별칭**으로 함께 싣는다(기존 키는 유지 — 하위 호환).
+
+        선언은 ``order_id``/``quantity``/``filled_quantity``/``price`` 를 쓰지만 파서
+        3종(국내 SC0~SC4·해외주식 AS·해외선물 TC)은 ``order_no``/``order_qty``/
+        ``filled_qty``/``order_price`` 를 내보낸다. ``realtime_*.py`` 예제가
+        ``{{ nodes.order_event.rejected.order_id }}`` 를 템플릿하므로(예:
+        realtime_stock.py:563) AI 생성물이 그대로면 빈값이 렌더된다. core 를 바꾸면
+        lockstep 릴리스(버전 핀된 엔진엔 안 감)라 이번엔 파서에서 alias 한다.
+
+        🔴 의미가 1:1 인 것만 alias 한다. 그리고 **원 키가 실제로 있을 때만** —
+        SC0/AS0 처럼 체결 필드가 없는 접수 프레임에는 filled_qty 가 아예 없으므로
+        filled_quantity 도 만들지 않는다(0 지어내기 금지).
+          order_id ← order_no · quantity ← order_qty ·
+          filled_quantity ← filled_qty · price ← order_price
+        선언의 ``exchange``/``symbol``/``side``/``filled_price``/``timestamp`` 는
+        파서가 **이미 같은 이름**으로 싣는다 → alias 불필요.
+        선언의 ``event_type`` 은 런타임에 1:1 대응 키가 없다(``event_code``=원 LS 코드,
+        ``tr_cd``=스트림, ``status``=표시명 — 셋 다 의미가 다르다) → alias 하지 않는다.
+        이미 선언 키가 있으면 덮지 않는다(파서가 직접 실은 값 우선).
+        """
+        for declared, runtime in (
+            ("order_id", "order_no"),
+            ("quantity", "order_qty"),
+            ("filled_quantity", "filled_qty"),
+            ("price", "order_price"),
+        ):
+            if runtime in event_data and declared not in event_data:
+                event_data[declared] = event_data[runtime]
+        return event_data
+
+    # ── 해외주식 주문 이벤트(AS0~AS4) 스트림 정의 ─────────────────────────────
+    # AS0 는 '주문접수'(Acceptance) TR 이고 AS1~AS4 는 execution-shape 바디를 **각자
+    # 동일한 필드 집합**으로 선언한다. SDK 확인(programgarden_finance/ls/overseas_stock/real/):
+    #   · AS0/blocks.py:87  class AS0RealResponseBody(BaseModel)  — 접수 전용 필드
+    #     (체결수량/체결가/미체결/정정·취소확인/거부수량 **선언 자체가 없다**)
+    #   · AS1/blocks.py:83  class AS1RealResponseBody(BaseModel)  — 체결 필드 포함
+    #   · AS2/blocks.py:84 · AS3/blocks.py:84 · AS4/blocks.py:89
+    #     → module docstring: AS2=Modify / AS3=Cancel / AS4=Reject, "mirrors AS1's
+    #       execution shape". model_fields 동등성은 test_overseas_stock_order_event_streams 가 단언.
+    # 그래서 파서는 'AS0 용' 과 'AS1 계열용'(AS1~AS4) 둘이면 충분하다 — 국내 SC 와 동형.
+    _OVERSEAS_STOCK_ORDER_EVENT_FILL_FAMILY: Tuple[str, ...] = ("AS1", "AS2", "AS3", "AS4")
+    _OVERSEAS_STOCK_ORDER_EVENT_STREAMS: Tuple[str, ...] = ("AS0", "AS1", "AS2", "AS3", "AS4")
+
+    # tr_cd → (출력 포트, 상태명). 국내 SC 와 같이 **스트림 자체가 이벤트 종류**다
+    # (SDK module docstring: AS0=Acceptance, AS1=Execution, AS2=Modify, AS3=Cancel,
+    #  AS4=Reject). 포트명은 core OverseasStockRealOrderEventNode._outputs 와 일치
+    # (realtime_stock.py:618-622: accepted/filled/modified/cancelled/rejected).
+    # 상태 표시명은 노드 docstring(realtime_stock.py:479)의 한글 라벨을 따른다:
+    #  AS0(접수) AS1(체결) AS2(정정) AS3(취소확인) AS4(거부).
+    _OVERSEAS_STOCK_ORDER_EVENT_PORTS: Dict[str, Tuple[str, str]] = {
+        "AS0": ("accepted", "주문접수"),
+        "AS1": ("filled", "체결"),
+        "AS2": ("modified", "정정"),
+        "AS3": ("cancelled", "취소확인"),
+        "AS4": ("rejected", "거부"),
+    }
+
+    # 주문시장코드 → 거래소. 매핑 출처는 체결 원장 경로
+    # _subscribe_overseas_stock_fill_events 의 exchange_map(executor.py:4745,
+    # {'81':'NYSE','82':'NASDAQ','83':'AMEX'}). 🔴 원장 경로는 미지 코드를 'NASDAQ'
+    # 로 **기본값 처리**하지만(그 경로는 건드리지 않는다), 이 표시용 출력은 미관측
+    # 거래소를 지어내지 않는다 — 미지 코드면 exchange 키를 빼고 사유를 남기고
+    # market_code 원값은 그대로 싣는다(이 저장소 '안 보낸 값은 안 보냄' 규약).
+    _OVERSEAS_STOCK_MARKET_EXCHANGE: Dict[str, str] = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
+
+    @classmethod
+    def _overseas_stock_order_event_streams(cls, event_filter: str) -> Tuple[str, ...]:
+        """event_filter → 이 노드가 구독할 스트림 목록.
+
+        'all' 이면 다섯 개 전부, 'AS0'~'AS4' 면 그 하나. 그 외 값은 빈 튜플이고
+        호출부가 에러로 만든다(허용값 출처: OverseasStockRealOrderEventNode
+        .get_field_schema enum_values=["all","AS0","AS1","AS2","AS3","AS4"] —
+        realtime_stock.py:638)."""
+        if not event_filter or event_filter == "all":
+            return cls._OVERSEAS_STOCK_ORDER_EVENT_STREAMS
+        if event_filter in cls._OVERSEAS_STOCK_ORDER_EVENT_STREAMS:
+            return (event_filter,)
+        return ()
+
+    @classmethod
+    def _overseas_exchange_from_market(cls, market_code: str) -> Tuple[str, str]:
+        """주문시장코드 → (거래소, 미해석 사유). 미지 코드면 ('', 사유)."""
+        ex = cls._OVERSEAS_STOCK_MARKET_EXCHANGE.get(str(market_code or "").strip())
+        if ex:
+            return ex, ""
+        return "", "overseas_stock_market_code_not_in_known_exchange_map"
+
+    @classmethod
+    def _parse_overseas_stock_as0_event(cls, body: Any) -> Dict[str, Any]:
+        """AS0(해외주식 주문접수) 프레임 → 이벤트 dict.
+
+        AS0 는 주문접수 TR 이라 체결 관련 필드(체결수량/체결가/미체결수량/체결번호/
+        체결시각, 정정확인·취소확인·거부수량)가 **선언 자체가 없다**(SDK
+        overseas_stock/real/AS0/blocks.py — sExecQty/sExecPrc/sExecNO/sExecTime/
+        sMdfyCnfQty/sCancCnfQty/sRjtQty/sUnercQty 부재). 국내 SC0 과 같은 규약으로
+        0 을 지어내지 않고 키를 빼고 사유를 남긴다.
+
+        읽는 필드(AS0/blocks.py): sOrdxctPtnCode:323 · sOrdMktCode:333 ·
+        sOrdPtnCode:342 · sOrgOrdNo:348 · sIsuNo:366 · sShtnIsuNo:372 · sIsuNm:378 ·
+        sOrdQty:384(str) · sOrdPrc:390(float) · sOrdNo:438(int) · sOrdTime:444 ·
+        sOrgOrdUnercQty:456 · sOrgOrdMdfyQty:462 · sOrgOrdCancQty:468 · sBnsTp:489
+        """
+        market_code = str(getattr(body, "sOrdMktCode", "") or "").strip()
+        exchange, exchange_reason = cls._overseas_exchange_from_market(market_code)
+        event_data: Dict[str, Any] = {
+            "timestamp": datetime.now().isoformat(),
+            "tr_cd": "AS0",
+            # 주문체결유형코드: '01'=신규매매접수 '03'=취소주문접수 '12'=정정완료
+            # '13'=취소완료 '14'=거부완료 (AS0/blocks.py:323-331)
+            "event_code": getattr(body, "sOrdxctPtnCode", ""),
+            "symbol": str(getattr(body, "sShtnIsuNo", "") or "").strip(),
+            # sIsuNo 는 LS 내부 종목번호(거래소+티커, 예 '82AAPL') (blocks.py:366-370)
+            "symbol_full_code": str(getattr(body, "sIsuNo", "") or "").strip(),
+            "symbol_name": getattr(body, "sIsuNm", ""),
+            "order_no": getattr(body, "sOrdNo", ""),
+            "orig_order_no": getattr(body, "sOrgOrdNo", ""),
+            # 매매구분: '1'=매도 '2'=매수 (blocks.py:489-498, AS1 cross-ref).
+            # 원장 경로와 같이 sBnsTp 를 buy/sell 분류자로 쓴다(executor.py:4751).
+            "side": str(getattr(body, "sBnsTp", "") or "").strip(),
+            "order_qty": _qty_num(getattr(body, "sOrdQty", 0)),
+            "order_price": float(getattr(body, "sOrdPrc", 0) or 0),
+            "order_time": getattr(body, "sOrdTime", ""),
+            "market_code": market_code,
+            # 원주문(정정/취소접수 대상)의 수량들 — 이 주문 자체의 체결 상태가 아니다.
+            "orig_order_remain_qty": _qty_num(getattr(body, "sOrgOrdUnercQty", 0)),
+            "orig_order_modified_qty": _qty_num(getattr(body, "sOrgOrdMdfyQty", 0)),
+            "orig_order_cancelled_qty": _qty_num(getattr(body, "sOrgOrdCancQty", 0)),
         }
+        if exchange:
+            event_data["exchange"] = exchange
+        else:
+            event_data["exchange_unavailable_reason"] = exchange_reason
+        # 값을 지어내는 대신 '왜 없는지' 를 싣는다(국내 SC0 와 동일 규약).
+        reason = "as0_order_acceptance_frame_has_no_fill_fields"
+        event_data["filled_qty_unavailable_reason"] = reason
+        event_data["filled_price_unavailable_reason"] = reason
+        event_data["remain_qty_unavailable_reason"] = reason
+        return cls._with_order_event_aliases(event_data)
+
+    @classmethod
+    def _parse_overseas_stock_fill_family_event(cls, body: Any, tr_cd: str) -> Dict[str, Any]:
+        """AS1~AS4(체결/정정/취소확인/거부) 프레임 → 이벤트 dict.
+
+        네 TR 은 동일한 execution-shape 필드 집합을 쓴다(module docstring: AS2~AS4
+        "mirrors AS1's execution shape"). 필드명은 AS0 와 **다르다** — 특히
+        체결(sExecQty/sExecPrc)·미체결(sUnercQty)·정정확인(sMdfyCnfQty/sMdfyCnfPrc)·
+        취소확인(sCancCnfQty)·거부(sRjtQty/sRjtRsn)·체결번호(sExecNO)·체결시각
+        (sExecTime)은 AS1 계열에만 있다. AS0 용 파서를 재사용하면 전부 빈값이 된다.
+
+        읽는 필드(SDK overseas_stock/real/AS1/blocks.py):
+          sOrdxctPtnCode:319 · sOrdMktCode:329 · sIsuNo:362 · sIsuNm:368 ·
+          sOrdNo:374(int) · sOrgOrdNo:380(int) · sExecNO:386 · sOrdQty:398(float) ·
+          sOrdPrc:404 · sExecQty:413 · sExecPrc:419 · sMdfyCnfQty:428 ·
+          sMdfyCnfPrc:434 · sCancCnfQty:440 · sRjtQty:446 · sShtnIsuNo:482 ·
+          sUnercQty:494 · sStdIsuNo:530 · sBnsTp:536 · sExecTime:644 ·
+          sRcptExecTime:650 · sRjtRsn:656
+
+        🔴 AS1 계열에는 주문시각(sOrdTime)이 **선언되어 있지 않다** — 시각 필드는
+        체결시각(sExecTime)과 거래소수신체결시각(sRcptExecTime)뿐이다(국내 SC1 계열과
+        같은 상황). 그래서 order_time 을 체결시각으로 채우지 않고 키를 빼고 사유를
+        남긴다.
+        """
+        market_code = str(getattr(body, "sOrdMktCode", "") or "").strip()
+        exchange, exchange_reason = cls._overseas_exchange_from_market(market_code)
+        event_data: Dict[str, Any] = {
+            "timestamp": datetime.now().isoformat(),
+            "tr_cd": tr_cd,
+            "event_code": getattr(body, "sOrdxctPtnCode", ""),
+            "symbol": str(getattr(body, "sShtnIsuNo", "") or "").strip(),
+            "symbol_full_code": str(getattr(body, "sIsuNo", "") or "").strip(),
+            "symbol_std_code": str(getattr(body, "sStdIsuNo", "") or "").strip(),
+            "symbol_name": getattr(body, "sIsuNm", ""),
+            "order_no": getattr(body, "sOrdNo", ""),
+            "orig_order_no": getattr(body, "sOrgOrdNo", ""),
+            # 매매구분: '1'=매도 '2'=매수 (blocks.py:536-541)
+            "side": str(getattr(body, "sBnsTp", "") or "").strip(),
+            "order_qty": _qty_num(getattr(body, "sOrdQty", 0)),
+            "order_price": float(getattr(body, "sOrdPrc", 0) or 0),
+            # 🔴 체결수량/체결가 = sExecQty/sExecPrc (체결 전용 필드). 주문수량/주문가와
+            #    다르다 — 종전 단일 파서는 주문가(sOrdPrc)를 체결가로 썼다.
+            "filled_qty": _qty_num(getattr(body, "sExecQty", 0)),
+            "filled_price": float(getattr(body, "sExecPrc", 0) or 0),
+            "remain_qty": _qty_num(getattr(body, "sUnercQty", 0)),
+            "fill_no": getattr(body, "sExecNO", ""),
+            # 체결시각 → 거래소수신체결시각 우선순위(원장 경로와 동일, executor.py:4726).
+            "fill_time": (
+                str(getattr(body, "sExecTime", "") or "").strip()
+                or str(getattr(body, "sRcptExecTime", "") or "").strip()
+            ),
+            "modified_qty": _qty_num(getattr(body, "sMdfyCnfQty", 0)),
+            "modified_price": float(getattr(body, "sMdfyCnfPrc", 0) or 0),
+            "cancelled_qty": _qty_num(getattr(body, "sCancCnfQty", 0)),
+            "rejected_qty": _qty_num(getattr(body, "sRjtQty", 0)),
+            "reject_reason": getattr(body, "sRjtRsn", ""),
+            "market_code": market_code,
+            "order_time_unavailable_reason": "overseas_stock_fill_family_frame_has_no_order_time_field",
+        }
+        if exchange:
+            event_data["exchange"] = exchange
+        else:
+            event_data["exchange_unavailable_reason"] = exchange_reason
+        return cls._with_order_event_aliases(event_data)
+
+    # ── 국내주식 주문 이벤트(SC0~SC4) 스트림 정의 ────────────────────────────
+    # SC0 는 '주문접수' TR 이고 SC1~SC4 는 **같은 바디 모델**을 공유한다.
+    # SDK 확인(programgarden_finance/ls/korea_stock/real/):
+    #   · SC0/blocks.py:110 `class SC0RealResponseBody(BaseModel)`
+    #   · SC1/blocks.py:103 `class SC1RealResponseBody(BaseModel)`
+    #   · SC2/blocks.py:69 · SC3/blocks.py:69 · SC4/blocks.py:69
+    #     → 셋 다 `class SCxRealResponseBody(SC1RealResponseBody)` (필드 동일)
+    # 그래서 파서는 'SC0 용' 과 'SC1 계열용' 둘이면 충분하다.
+    _KOREA_ORDER_EVENT_SC1_FAMILY: Tuple[str, ...] = ("SC1", "SC2", "SC3", "SC4")
+    _KOREA_ORDER_EVENT_STREAMS: Tuple[str, ...] = ("SC0", "SC1", "SC2", "SC3", "SC4")
+
+    # tr_cd → (출력 포트, 상태명). SC0~SC4 는 **스트림 자체가 이벤트 종류**라
+    # body 코드가 아니라 TR 로 가른다. 출처는 각 SC 클라이언트 docstring:
+    # SC0/client.py:4 "order acceptance" · SC1/client.py:4 "order execution" ·
+    # SC2/client.py:4 "order modification" · SC3/client.py:4 "order cancellation" ·
+    # SC4/client.py:4 "order rejection".
+    _KOREA_ORDER_EVENT_PORTS: Dict[str, Tuple[str, str]] = {
+        "SC0": ("accepted", "주문접수"),
+        "SC1": ("filled", "체결"),
+        "SC2": ("modified", "정정확인"),
+        "SC3": ("cancelled", "취소확인"),
+        "SC4": ("rejected", "거부"),
+    }
+
+    @classmethod
+    def _korea_order_event_streams(cls, event_filter: str) -> Tuple[str, ...]:
+        """event_filter → 이 노드가 실제로 구독할 스트림 목록.
+
+        'all' 이면 다섯 개 전부, 'SC0'~'SC4' 면 그 하나. 그 외 값은 빈 튜플이고
+        호출부가 에러로 만든다 — 종전처럼 조용히 SC0 만 듣다가 출력 0건이 되는
+        것보다 착오를 즉시 드러내는 쪽이 낫다.
+        (허용값 출처: KoreaStockRealOrderEventNode.get_field_schema 의
+         enum_values=["all","SC0","SC1","SC2","SC3","SC4"] —
+         core/programgarden_core/nodes/realtime_korea_stock.py:635)
+        """
+        if not event_filter or event_filter == "all":
+            return cls._KOREA_ORDER_EVENT_STREAMS
+        if event_filter in cls._KOREA_ORDER_EVENT_STREAMS:
+            return (event_filter,)
+        return ()
+
+    @staticmethod
+    def _korea_price_num(value: Any, default: float = 0.0) -> float:
+        """가격 문자열 → float. SC 프레임의 가격 필드는 전부 ``str`` 이고
+        (SC0/blocks.py:213 ``ordprice: str`` · SC1/blocks.py:324 ``ordprc: str``)
+        해당 없는 이벤트에서는 ''/'0' 이 온다. ``float('')`` 은 ValueError 라
+        여기서 흡수한다."""
+        try:
+            return float(str(value).strip())
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _korea_symbol_from_short_code(value: Any) -> str:
+        """단축종목번호 'A005930' → '005930'.
+
+        접두어 규약은 SDK 선언 그대로다 — "stock = 'A' + 6-digit code; ELW =
+        'J' + 6-digit code" (SC0/blocks.py:201-209 ``shtcode`` ·
+        SC1/blocks.py:159-167 ``shtnIsuno``). 원장 경로
+        (_subscribe_korea_stock_fill_events)와 국내 미체결 조회(t0425 ``expcode``)가
+        모두 6자리 코드를 쓰므로 이 출력 표면도 같은 모양으로 맞춘다.
+        규약에 안 맞는 값은 **손대지 않고 그대로** 내보낸다(짐작 금지)."""
+        code = str(value or "").strip()
+        if len(code) == 7 and code[0] in ("A", "J") and code[1:].isdigit():
+            return code[1:]
+        return code
+
+    @classmethod
+    def _parse_korea_sc0_event(cls, body: Any) -> Dict[str, Any]:
+        """SC0(국내주식 주문접수) 프레임 → 이벤트 dict.
+
+        🔴 SC0 의 필드명은 전부 **소문자**다. 종전 파서는 PascalCase
+        (OrdNo/OrdQty/OrdPrc/ExecQty/…)를 읽었는데 그런 속성은
+        ``SC0RealResponseBody`` 에 없고 pydantic v2 는 기본 ``extra='ignore'`` 라
+        전 필드가 getattr 기본값(0/'')으로 나갔다 — 즉 **출력이 통째로 가짜**였다.
+
+        읽는 필드(SDK korea_stock/real/SC0/blocks.py):
+          ordchegb:167 · marketgb:177 · orgordno:196 · expcode:200 · shtcode:201 ·
+          hname:211 · ordqty:212 · ordprice:213 · ordno:296 · ordtm:297 ·
+          orgordundrqty:300 · orgordmdfyqty:301 · ordordcancelqty:302 · bnstp:305
+
+        🔴 SC0 에는 체결 관련 필드(체결수량/체결가격/미체결수량)가 **선언 자체가
+        없다** — 주문접수 TR 이기 때문이다. 그래서 0 으로 지어내지 않고 키를 빼고
+        사유를 남긴다(이 저장소 규약: 안 보낸 값은 '안 보냄' 이라고 표시).
+        체결번호/체결시각도 같은 이유로 SC0 에는 없다(SC1 계열에만 있다).
+        """
+        short_code = getattr(body, "shtcode", "")
+        event_data: Dict[str, Any] = {
+            "timestamp": datetime.now().isoformat(),
+            "tr_cd": "SC0",
+            # 주문체결구분: '01'=주문 '02'=정정 '03'=취소 '11'=체결 '12'=정정확인
+            # '13'=취소확인 '14'=거부 'A1'=접수중 'AC'=접수완료 (blocks.py:167-174)
+            "event_code": getattr(body, "ordchegb", ""),
+            "symbol": cls._korea_symbol_from_short_code(short_code),
+            "symbol_short_code": str(short_code or "").strip(),
+            "symbol_std_code": str(getattr(body, "expcode", "") or "").strip(),
+            "symbol_name": getattr(body, "hname", ""),
+            "order_no": getattr(body, "ordno", ""),
+            "orig_order_no": getattr(body, "orgordno", ""),
+            # 매매구분: '1'=매도, '2'=매수 (blocks.py:305-310)
+            "side": getattr(body, "bnstp", ""),
+            "order_qty": _qty_num(getattr(body, "ordqty", 0)),
+            "order_price": cls._korea_price_num(getattr(body, "ordprice", 0)),
+            "order_time": getattr(body, "ordtm", ""),
+            # 국내주식의 거래소는 KOSPI/KOSDAQ/KONEX 모두 KRX 다. 원장·미체결
+            # 조회 경로가 쓰는 값과 같게 맞춘다(record_workflow_fill(exchange='KRX')).
+            "exchange": "KRX",
+            # 시장구분 원값: '10'=KOSPI '20'=KOSDAQ '23'=KONEX (blocks.py:177-183).
+            # 종전에는 프레임을 안 보고 상수 "KRX" 를 market_code 에 넣었다.
+            "market_code": getattr(body, "marketgb", ""),
+            # 원주문(정정/취소 접수 시 대상 주문)의 수량들 — SC0 가 싣는 값이다.
+            # 이 주문 자체의 체결 상태가 아니므로 이름을 분명히 구분한다.
+            "orig_order_remain_qty": _qty_num(getattr(body, "orgordundrqty", 0)),
+            "orig_order_modified_qty": _qty_num(getattr(body, "orgordmdfyqty", 0)),
+            "orig_order_cancelled_qty": _qty_num(getattr(body, "ordordcancelqty", 0)),
+        }
+        # 값을 지어내는 대신 '왜 없는지' 를 싣는다.
+        reason = "sc0_order_acceptance_frame_has_no_fill_fields"
+        event_data["filled_qty_unavailable_reason"] = reason
+        event_data["filled_price_unavailable_reason"] = reason
+        event_data["remain_qty_unavailable_reason"] = reason
+        return cls._with_order_event_aliases(event_data)
+
+    @classmethod
+    def _parse_korea_sc1_family_event(cls, body: Any, tr_cd: str) -> Dict[str, Any]:
+        """SC1~SC4(체결/정정확인/취소확인/거부) 프레임 → 이벤트 dict.
+
+        네 TR 은 ``SC1RealResponseBody`` 를 공유한다(SC2~SC4/blocks.py:69 상속).
+        필드명은 SC0 와 **다르다** — 종목/가격 계열이 특히 다르므로 SC0 용 파서를
+        재사용하면 전부 빈값이 된다.
+
+        읽는 필드(SDK korea_stock/real/SC1/blocks.py):
+          exectime:133 · mdfycnfqty:136 · execprc:139 · mdfycnfprc:140 ·
+          execno:147 · ordno:150 · shtnIsuno:159 · Isunm:171 · Isuno:174 ·
+          rjtqty:183 · ordxctptncode:197 · canccnfqty:207 · orgordno:255 ·
+          unercqty:269 · execqty:270 · ordqty:284 · ordmktcode:297 ·
+          bnstp:317 · ordprc:324
+
+        🔴 이 계열에는 **주문시각(ordtm)이 선언되어 있지 않다** — 시각 필드는
+        체결시각(exectime)과 거래소수신체결시각(rcptexectime)뿐이다. 그래서
+        ``order_time`` 을 체결시각으로 채우지 않고 키를 빼고 사유를 남긴다.
+        """
+        short_code = getattr(body, "shtnIsuno", "")
+        event_data: Dict[str, Any] = {
+            "timestamp": datetime.now().isoformat(),
+            "tr_cd": tr_cd,
+            # 주문체결유형코드: '01'=주문 '02'=정정 '03'=취소 '11'=체결
+            # '12'=정정확인 '13'=취소확인 '14'=거부 (blocks.py:197-205)
+            "event_code": getattr(body, "ordxctptncode", ""),
+            "symbol": cls._korea_symbol_from_short_code(short_code),
+            "symbol_short_code": str(short_code or "").strip(),
+            "symbol_std_code": str(getattr(body, "Isuno", "") or "").strip(),
+            "symbol_name": getattr(body, "Isunm", ""),
+            "order_no": getattr(body, "ordno", ""),
+            "orig_order_no": getattr(body, "orgordno", ""),
+            # 매매구분: '1'=매도, '2'=매수 (blocks.py:317-322)
+            "side": getattr(body, "bnstp", ""),
+            "order_qty": _qty_num(getattr(body, "ordqty", 0)),
+            "order_price": cls._korea_price_num(getattr(body, "ordprc", 0)),
+            "filled_qty": _qty_num(getattr(body, "execqty", 0)),
+            "filled_price": cls._korea_price_num(getattr(body, "execprc", 0)),
+            "remain_qty": _qty_num(getattr(body, "unercqty", 0)),
+            "fill_no": getattr(body, "execno", ""),
+            "fill_time": getattr(body, "exectime", ""),
+            "modified_qty": _qty_num(getattr(body, "mdfycnfqty", 0)),
+            "modified_price": cls._korea_price_num(getattr(body, "mdfycnfprc", 0)),
+            "cancelled_qty": _qty_num(getattr(body, "canccnfqty", 0)),
+            "rejected_qty": _qty_num(getattr(body, "rjtqty", 0)),
+            "exchange": "KRX",
+            # 주문시장코드 원값: '10'=KOSPI '20'=KOSDAQ (blocks.py:297-305)
+            "market_code": getattr(body, "ordmktcode", ""),
+            "order_time_unavailable_reason": "sc1_family_frame_has_no_order_time_field",
+        }
+        return cls._with_order_event_aliases(event_data)
 
     async def _ls_korea_stock_order_event(
         self,
@@ -8750,10 +9316,18 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """국내주식 실시간 주문 이벤트 (SC0~SC4)
 
-        SC0: 주문접수, SC1: 체결, SC2: 정정확인, SC3: 취소확인, SC4: 거부
-        하나만 등록해도 전체 수신됨.
+        SC0: 주문접수, SC1: 체결, SC2: 정정확인, SC3: 취소확인, SC4: 거부.
+
+        🔴 '계좌 실시간 등록' 은 SC0~SC4 중 하나만 보내면 되지만
+        (SDK ls/real_base.py:964 ``_add_real_order_korea`` — ``_sc01234_connect``
+        플래그로 중복 요청 방지), **콜백 디스패치는 tr_cd 정확일치 키**로 이뤄진다
+        (ls/real_base.py:335 ``self._on_message_listeners.get(tr_cd, None)``).
+        종전에는 ``SC0().on_sc0_message(...)`` 하나만 등록해 두고 핸들러 안에서
+        ``tr_cd`` 로 SC1~SC4 를 분기했는데, SC1~SC4 프레임에는 리스너가 없어
+        **그 프레임이 이 노드에 도달조차 못 했다** — filled/modified/cancelled/
+        rejected 포트는 영구히 0건이고, event_filter='SC1'~'SC4' 면 출력이 통째로
+        없었다. 이제 스트림마다 리스너를 따로 등록한다.
         """
-        from datetime import datetime
 
         product = "korea_stock"
 
@@ -8761,53 +9335,78 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             loop = asyncio.get_running_loop()
             trigger_nodes = config.get("_trigger_on_update_nodes", [])
 
-            def create_handler(_node_id: str, _event_filter: str, _trigger_nodes: list):
+            wanted_streams = self._korea_order_event_streams(event_filter)
+            if not wanted_streams:
+                msg = (
+                    f"Unsupported event_filter for korea_stock order events: "
+                    f"{event_filter} (allowed: all, SC0~SC4)"
+                )
+                context.log("error", msg, node_id)
+                return {"error": msg}
+
+            def create_handler(_node_id: str, _event_filter: str, _stream: str, _trigger_nodes: list):
                 def handler(resp):
                     if context.is_shutdown:
                         return
                     from datetime import datetime
 
                     header = getattr(resp, 'header', None)
-                    tr_cd = getattr(header, 'tr_cd', 'SC0') if header else 'SC0'
+                    # 헤더가 없으면 이 리스너가 등록된 스트림이 곧 TR 이다 —
+                    # real_base 는 tr_cd 정확일치로만 배달하므로 둘은 같다.
+                    tr_cd = (getattr(header, 'tr_cd', '') if header else '') or _stream
 
                     if _event_filter != "all" and tr_cd != _event_filter:
                         return
 
-                    body = getattr(resp, 'body', resp)
+                    body = getattr(resp, 'body', None)
+                    if body is None:
+                        # real_base 는 바디 검증 실패 시 body=None + error_msg 로 만든다
+                        # (ls/real_base.py:346-354). 그 프레임에서 필드를 읽으면 전부
+                        # 기본값이 되어 '0원 0주 체결' 을 지어내게 되므로 버린다.
+                        context.log(
+                            "warning",
+                            f"{tr_cd} frame without body (error_msg="
+                            f"{getattr(resp, 'error_msg', '')}) — skipped",
+                            _node_id,
+                        )
+                        return
 
-                    # SC0~SC4 공통 필드 추출
-                    event_data = {
-                        "timestamp": datetime.now().isoformat(),
-                        "tr_cd": tr_cd,
-                        "symbol": getattr(body, 'shtnIsuNo', getattr(body, 'IsuNo', '')),
-                        "symbol_name": getattr(body, 'IsuNm', ''),
-                        "order_no": getattr(body, 'OrdNo', 0),
-                        "orig_order_no": getattr(body, 'OrgOrdNo', 0),
-                        "side": getattr(body, 'BnsTpCode', ''),
-                        "order_qty": int(getattr(body, 'OrdQty', 0)),
-                        "order_price": float(getattr(body, 'OrdPrc', 0)),
-                        "filled_qty": int(getattr(body, 'ExecQty', 0) or 0),
-                        "filled_price": float(getattr(body, 'ExecPrc', 0) or 0),
-                        "remain_qty": int(getattr(body, 'UnercQty', 0) or 0),
-                        "order_time": getattr(body, 'OrdTime', ''),
-                        "market_code": "KRX",
-                    }
+                    if tr_cd == "SC0":
+                        event_data = self._parse_korea_sc0_event(body)
+                    elif tr_cd in self._KOREA_ORDER_EVENT_SC1_FAMILY:
+                        event_data = self._parse_korea_sc1_family_event(body, tr_cd)
+                    else:
+                        # 모르는 TR 을 SC1 계열 파서에 넣으면 필드가 전부 빈값인
+                        # '이벤트' 를 만들어 낸다 — 그게 종전 결함의 모양이다.
+                        # 짐작하지 말고 버리고, 사실만 남긴다.
+                        context.log(
+                            "warning",
+                            f"Unknown korea_stock order event TR: {tr_cd} — frame skipped",
+                            _node_id,
+                        )
+                        return
 
-                    # TR별 포트/상태 결정
-                    port_map = {
-                        'SC0': ('accepted', '주문접수'),
-                        'SC1': ('filled', '체결'),
-                        'SC2': ('modified', '정정확인'),
-                        'SC3': ('cancelled', '취소확인'),
-                        'SC4': ('rejected', '거부'),
-                    }
-
-                    port, status_name = port_map.get(tr_cd, ('accepted', f'코드:{tr_cd}'))
+                    port, status_name = self._KOREA_ORDER_EVENT_PORTS[tr_cd]
                     event_data["status"] = status_name
 
-                    # 체결 이벤트(SC1)일 때 가격 업데이트
-                    if tr_cd == 'SC1' and event_data['filled_price'] > 0:
-                        order_no_str = str(event_data['order_no'])
+                    # 체결(SC1) 프레임으로 시장가 주문의 원장 가격을 실체결가로 채운다.
+                    # 이 분기는 SC1 리스너가 없던 종전에는 **한 번도 실행되지 않았다**.
+                    if (
+                        tr_cd == 'SC1'
+                        and event_data.get('filled_price', 0) > 0
+                        and str(event_data.get('order_no') or '').strip()
+                    ):
+                        order_no_str = str(event_data['order_no']).strip()
+                        # 🔴 주문일자는 프레임에 없다 — SC1RealResponseBody 의 130개
+                        # 필드 중 일자 필드는 대출일(Loandt, SC1/blocks.py:177) 하나뿐이고
+                        # 주문일자는 선언 자체가 없다(SC0 도 loandt 뿐). 원장 쓰기 쪽
+                        # (NewOrderNodeExecutor 의 국내주식 경로 record_workflow_order)도
+                        # 같은 이유로 **로컬 날짜**를 키로 쓴다 — 그 경로의 🔴 주석 참조.
+                        # 두 경로가 같은 규약을 써야 (order_no, order_date) 대조가 맞으므로
+                        # 여기서도 로컬 오늘 날짜를 쓴다.
+                        # ⚠️ 한계: 주문과 체결 사이에 **로컬 자정**을 넘기면 키가 어긋난다
+                        # (프로세스 TZ 가 UTC 면 KST 09:00 이 곧 UTC 00:00 이다). 쓰기·읽기
+                        # 양쪽을 함께 바꿔야 하는 별건이라 이 경로만 고치지 않는다.
                         order_date = datetime.now().strftime('%Y%m%d')
                         context.update_workflow_order_fill_price(
                             order_no=order_no_str,
@@ -8817,6 +9416,7 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
 
                     context.set_output(_node_id, port, event_data)
 
+                    # 매매구분 '2'=매수 / '1'=매도 (SC0 blocks.py:305 · SC1 blocks.py:317)
                     side_name = "매수" if event_data['side'] == '2' else "매도"
 
                     logger.debug(f"[{datetime.now().strftime('%H:%M:%S')}] [{_node_id}] 국내주식 {status_name} ({side_name})")
@@ -8843,8 +9443,23 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
 
                 return handler
 
-            handler = create_handler(node_id, event_filter, trigger_nodes)
-            context.register_order_event_handler(product, "SC0", node_id, event_filter, handler)
+            # 이 노드가 듣기로 한 스트림마다 핸들러를 등록한다. 종전에는 filter 와
+            # 무관하게 "SC0" 키 하나에만 걸어 뒀다.
+            for stream in wanted_streams:
+                context.register_order_event_handler(
+                    product,
+                    stream,
+                    node_id,
+                    event_filter,
+                    create_handler(node_id, event_filter, stream, trigger_nodes),
+                )
+
+            # SDK 에 등록 API 가 없어 **받을 수 없는** 스트림. 마스터를 거는 첫
+            # 노드만 채우고(뒤 노드는 아래 게이트에 막힌다) 그 노드의 warning 에만
+            # 쓰인다. 결과의 unavailable_streams 는 이것이 아니라 아래 node_unavailable
+            # (저장된 masters 키 대조)로 채운다 — 뒤 노드도 조용한 실패를 드러내도록.
+            # 비어 있는 게 정상이다(현재 SDK 는 SC0~SC4 전부 제공).
+            missing_streams: List[str] = []
 
             if not context.has_order_event_subscription(product):
                 real_client = ls.korea_stock().real()
@@ -8853,33 +9468,93 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
 
                 context.set_order_event_real_client(product, real_client)
 
-                def master_callback(resp):
-                    if context.is_shutdown:
-                        return
-                    handlers = context.get_order_event_handlers(product, "SC0")
-                    for (handler_node_id, handler_filter, handler_func) in handlers:
-                        try:
-                            handler_func(resp)
-                        except Exception as e:
-                            context.log("error", f"Handler error for {handler_node_id}: {e}", handler_node_id)
+                def create_master(_stream: str):
+                    def master_callback(resp):
+                        if context.is_shutdown:
+                            return
+                        handlers = context.get_order_event_handlers(product, _stream)
+                        for (handler_node_id, handler_filter, handler_func) in handlers:
+                            try:
+                                handler_func(resp)
+                            except Exception as e:
+                                context.log("error", f"Handler error for {handler_node_id}: {e}", handler_node_id)
+                    return master_callback
 
-                real_client.SC0().on_sc0_message(master_callback)
-                context.log("info", f"Master order event callback registered for korea_stock", node_id)
+                # 마스터는 **항상 다섯 스트림 전부** 건다 — 뒤에 붙는 노드가 다른
+                # filter 를 쓰면 has_order_event_subscription 게이트에 막혀 여기를
+                # 다시 지나지 않기 때문이다. 스트림별 실제 전달 여부는 위의
+                # register_order_event_handler 키가 가른다.
+                registered_masters: Dict[str, Callable] = {}
+                for stream in self._KOREA_ORDER_EVENT_STREAMS:
+                    stream_factory = getattr(real_client, stream, None)
+                    subscribe = None
+                    if callable(stream_factory):
+                        subscribe = getattr(
+                            stream_factory(), f"on_{stream.lower()}_message", None
+                        )
+                    if not callable(subscribe):
+                        missing_streams.append(stream)
+                        continue
+                    master = create_master(stream)
+                    subscribe(master)
+                    registered_masters[stream] = master
+
+                # 🔴 등록한 마스터만 스트림별로 저장 — 정리 경로가 이것만 떼어
+                # 체결 원장 리스너(_subscribe_korea_stock_fill_events 의 SC0/SC1)를
+                # 지우지 않게 한다(SDK 가 키당 리스너 리스트로 바뀜).
+                context.set_order_event_masters(product, registered_masters)
+
+                if missing_streams:
+                    # 짐작하지 않고 사실만 남긴다 — SDK 에 해당 스트림 등록 API 가 없다.
+                    context.log(
+                        "warning",
+                        f"SDK has no listener API for korea_stock order streams: "
+                        f"{', '.join(missing_streams)} — those events cannot be received",
+                        node_id,
+                    )
+                if not registered_masters:
+                    msg = "No korea_stock order event stream could be registered (SDK listener API missing)"
+                    context.log("error", msg, node_id)
+                    return {"error": msg}
+
+                context.log(
+                    "info",
+                    f"Master order event callbacks registered for korea_stock: "
+                    f"{', '.join(registered_masters)}",
+                    node_id,
+                )
+
+            # 디렉티브(3): 이 노드가 고른 스트림 중 SDK 마스터가 없는 것 보고
+            # (첫 노드든 뒤 노드든). 뒤에 붙는 노드가 미등록 스트림을 filter 로
+            # 고르면 status='subscribed' 인데 이벤트 0건인 조용한 실패가 되므로,
+            # context 에 저장된 masters 키로 노드별 확인해 드러낸다.
+            available_masters = set(context.get_order_event_masters(product))
+            node_unavailable = [s for s in wanted_streams if s not in available_masters]
+            if node_unavailable:
+                context.log(
+                    "warning",
+                    f"event_filter 선택 스트림 중 SDK 미등록(수신 불가): "
+                    f"{', '.join(node_unavailable)}",
+                    node_id,
+                )
 
             real_client = context.get_order_event_real_client(product)
             if stay_connected:
                 context.register_persistent(node_id, real_client, metadata={"event_filter": event_filter})
-                context.log("info", f"SC0~SC4 order event subscription started (filter={event_filter}, stay_connected=True)", node_id)
+                context.log("info", f"SC0~SC4 order event subscription started (filter={event_filter}, streams={','.join(wanted_streams)}, stay_connected=True)", node_id)
             else:
                 context.register_cleanup_on_flow_end(node_id, real_client)
-                context.log("info", f"SC0~SC4 order event subscription started (filter={event_filter}, stay_connected=False)", node_id)
+                context.log("info", f"SC0~SC4 order event subscription started (filter={event_filter}, streams={','.join(wanted_streams)}, stay_connected=False)", node_id)
 
             result = {
                 "status": "subscribed",
                 "product": "korea_stock",
                 "event_type": "SC0~SC4",
                 "event_filter": event_filter,
+                "subscribed_streams": list(wanted_streams),
             }
+            if node_unavailable:
+                result["unavailable_streams"] = node_unavailable
 
             asyncio.create_task(context.notify_output_update(
                 node_id=node_id,
@@ -8892,7 +9567,6 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("error", f"Korea stock order event error: {e}", node_id)
             return {"error": str(e)}
-
 
 class MarketStatusNodeExecutor(NodeExecutorBase):
     """MarketStatusNode executor — JIF 기반 실시간 시장 상태 추적.
@@ -10004,6 +10678,42 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         f"ConditionNode '{node_id}': positions 비어있음 → 통과 종목 없음(정상 0건).",
                         node_id
                     )
+                    # 🔴 계좌가 **빈 리스트**(None 아님)일 때도 상태 기반 포지션 플러그인
+                    # (time_based_exit 등)은 '계좌가 비면 남은 entry_date 전부 정리' 스윕
+                    # 기회가 필요하다. 이 스윕이 실행기 경로에서 도달 불가였던 탓에,
+                    # 전량 매도 뒤 재매수하면 옛 entry_date 로 hold_days 가 부풀어 **거짓
+                    # exit** 가 났다(실행기+WorkflowRiskTracker 재현 2026-09-12).
+                    # positions 가 정확히 [](빈 리스트)이고 플러그인이 context 를 선언
+                    # (= 상태 사용)하면 positions=[] 로 한 번 호출해 스윕시킨다. 그 결과는
+                    # 조건 판정에 쓰지 않고(예외는 warning 으로 삼킴) 종전 빈 결과를
+                    # 그대로 돌려준다 — 이 경로로는 어차피 통과 종목이 0건이다.
+                    # (None = 미해결 바인딩이므로 isinstance list 가드로 스윕에서 제외.
+                    #  context 미선언 플러그인은 종전대로 호출하지 않는다 — data 분기 규약.)
+                    if plugin is not None and isinstance(positions, list):
+                        import inspect as _inspect
+                        try:
+                            _uses_context = "context" in _inspect.signature(plugin).parameters
+                        except (ValueError, TypeError):
+                            _uses_context = False
+                        if _uses_context:
+                            try:
+                                sweep_fields = fields or config.get("fields", {}) or config.get("params", {})
+                                if sweep_fields:
+                                    _expr_ctx = context.get_expression_context()
+                                    sweep_fields = ExpressionEvaluator(_expr_ctx).evaluate_fields(sweep_fields)
+                                await sandbox.execute(
+                                    plugin_id=plugin_id,
+                                    plugin_callable=plugin,
+                                    kwargs={"positions": [], "fields": sweep_fields, "context": context},
+                                )
+                                context.log("info",
+                                    f"ConditionNode '{node_id}': positions=[] — 상태 플러그인 스윕 1회(판정 미반영).",
+                                    node_id)
+                            except Exception as _sweep_err:
+                                # 스윕 실패는 조건 판정을 바꾸지 않는다 — 삼키고 경고만.
+                                context.log("warning",
+                                    f"ConditionNode '{node_id}': positions=[] 상태 플러그인 스윕 실패(무시): {_sweep_err}",
+                                    node_id)
                     return {
                         "symbols": [],
                         "result": False,
@@ -10026,13 +10736,28 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 
                 if plugin:
                     try:
+                        plugin_kwargs: Dict[str, Any] = {
+                            "positions": positions,
+                            "fields": evaluated_fields,
+                        }
+                        # context 는 **시그니처에 있는 플러그인에만** 넘긴다
+                        # (items/data 기반 분기와 같은 규약 — _execute_condition_plugin).
+                        # 종전에는 positions 분기가 kwargs 를 {positions, fields} 로
+                        # 고정해 context 를 아예 넘기지 않았고, 그래서 strategy_state 를
+                        # 쓰는 포지션 플러그인(PartialTakeProfit)이 라이브에서 늘
+                        # has_state=False 로 떨어져 상태를 저장·복원하지 못했다
+                        # (분할 익절이 매 사이클 level_index=0 으로 재발동 — 관측 2026-09-12).
+                        import inspect as _inspect
+                        try:
+                            if "context" in _inspect.signature(plugin).parameters:
+                                plugin_kwargs["context"] = context
+                        except (ValueError, TypeError):
+                            pass
+
                         result = await sandbox.execute(
                             plugin_id=plugin_id,
                             plugin_callable=plugin,
-                            kwargs={
-                                "positions": positions,
-                                "fields": evaluated_fields,
-                            },
+                            kwargs=plugin_kwargs,
                         )
                         
                         context.log(

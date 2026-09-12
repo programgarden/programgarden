@@ -99,7 +99,7 @@ class RealJIF:
         self._parent._on_message("JIF", self._dispatch)
         self._parent._add_message_symbols(["0"], "JIF")
 
-    def on_remove_jif_message(self):
+    def on_remove_jif_message(self, listener=None):
         """Unsubscribe and drop the registered listener.
 
         EN:
@@ -114,7 +114,7 @@ class RealJIF:
         try:
             self._parent._remove_message_symbols(["0"], "JIF")
         finally:
-            self._parent._on_remove_message("JIF")
+            self._parent._on_remove_message("JIF", listener)
             self._user_listener = None
 
     # ------------------------------------------------------------------

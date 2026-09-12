@@ -105,7 +105,7 @@ class RealNH1():
         """
         return self._parent._on_message("NH1", listener)
 
-    def on_remove_nh1_message(self):
+    def on_remove_nh1_message(self, listener=None):
         """등록된 NXT 호가잔량 콜백을 제거합니다.
 
         EN:
@@ -114,4 +114,4 @@ class RealNH1():
         KO:
             등록된 NH1 메시지 리스너를 제거합니다.
         """
-        return self._parent._on_remove_message("NH1")
+        return self._parent._on_remove_message("NH1", listener)

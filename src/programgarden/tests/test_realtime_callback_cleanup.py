@@ -372,3 +372,55 @@ class TestBrokerFillSubscriptionCleanup:
 
         await executor.cleanup_fill_subscriptions("job-3")
         assert "job-3_broker_fill_sub" not in executor._active_trackers
+
+
+class TestMasterCallbackRemovalKeepsLedgerListeners:
+    """finance 1.9.7 — 정리는 노드 마스터 **콜러블만** 뗀다(같은 Real 의 원장 리스너는 남는다)."""
+
+    @pytest.mark.asyncio
+    async def test_masters_removed_by_listener_not_by_key(self, context):
+        removed = {}
+
+        def make_client(stream):
+            client = MagicMock()
+            setattr(client, f"on_remove_{stream.lower()}_message",
+                    MagicMock(side_effect=lambda listener=None, _s=stream: removed.__setitem__(_s, listener)))
+            return client
+
+        clients = {s: make_client(s) for s in ("SC0", "SC1", "SC2", "SC3", "SC4")}
+        real_client = MagicMock()
+        for s, c in clients.items():
+            setattr(real_client, s, MagicMock(return_value=c))
+        masters = {s: (lambda r, _s=s: None) for s in clients}
+
+        context._order_event_real_client["korea_stock"] = real_client
+        context.set_order_event_masters("korea_stock", masters)
+
+        await context.cleanup_persistent_nodes()
+
+        # 다섯 스트림 전부, 각각 **그 마스터 객체**를 인자로 떼었다(키 전체 제거 아님)
+        assert set(removed) == {"SC0", "SC1", "SC2", "SC3", "SC4"}
+        for s, master in masters.items():
+            assert removed[s] is master
+            getattr(clients[s], f"on_remove_{s.lower()}_message").assert_called_once_with(master)
+        assert context.get_order_event_masters("korea_stock") == {}
+
+    @pytest.mark.asyncio
+    async def test_old_sdk_without_listener_param_falls_back_to_key_removal(self, context):
+        client = MagicMock()
+        calls = []
+
+        def remover(*args):
+            if args:
+                raise TypeError("on_remove_sc0_message() takes 1 positional argument")
+            calls.append("key")
+
+        client.on_remove_sc0_message = MagicMock(side_effect=remover)
+        real_client = MagicMock()
+        real_client.SC0 = MagicMock(return_value=client)
+        context._order_event_real_client["korea_stock"] = real_client
+        context.set_order_event_masters("korea_stock", {"SC0": lambda r: None})
+
+        await context.cleanup_persistent_nodes()
+
+        assert calls == ["key"]

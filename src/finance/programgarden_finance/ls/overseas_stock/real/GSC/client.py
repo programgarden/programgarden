@@ -21,5 +21,5 @@ class RealGSC():
     def on_gsc_message(self, listener: Callable[[GSCRealResponse], None]):
         return self._parent._on_message("GSC", listener)
 
-    def on_remove_gsc_message(self):
-        return self._parent._on_remove_message("GSC")
+    def on_remove_gsc_message(self, listener=None):
+        return self._parent._on_remove_message("GSC", listener)

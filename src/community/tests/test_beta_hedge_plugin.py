@@ -1,24 +1,14 @@
 """
 BetaHedge (베타 헷지) 플러그인 테스트
 
-🔴 이 파일의 ``MockRiskTracker`` 는 **실제 클래스에 없는 메서드를 제공한다** (관측 2026-09-12)
+상태(strategy_state)·이벤트 경로 — 2026-09-12 수정
 ------------------------------------------------------------------------------------------
-실제 트래커 ``programgarden.database.workflow_risk_tracker.WorkflowRiskTracker`` 의
-실제 인터페이스와 대조한 결과:
-
-| 목이 제공하는 이름 | 실제 클래스 | 비고 |
-|---|---|---|
-| ``get_state``   | **없음** | 실제 이름은 ``load_state`` (동기) |
-| ``set_state``   | **없음** | 실제 이름은 ``save_state`` (동기) |
-| ``delete_state``| 있음     | 단 **동기** 메서드 — 플러그인은 ``await`` 한다 |
-| ``record_event``| **없음** | 실제 이름은 ``record_risk_event`` |
-
-즉 아래 상태 관련 테스트들은 '플러그인이 라이브에서 실제로 상태를 저장·복원한다'
-를 증명하지 않는다 — **목이 약속한 계약대로 플러그인이 호출한다**는 것만 증명한다.
-라이브에서는 (가) 실제 트래커를 넘기면 ``AttributeError`` 로 죽고, (나) 애초에
-실행기가 positions 기반 플러그인에 ``context`` 를 넘기지 않아 상태 경로가 아예
-돌지 않는다(플러그인 모듈 docstring 의 '상태 경로' 절 참조).
-목을 실제 시그니처로 맞추는 수정은 이번 회차 범위 밖이다 — 후속 필요.
+``FakeRiskTracker`` 는 실제 트래커 ``programgarden.database.workflow_risk_tracker.
+WorkflowRiskTracker`` 의 **실제 시그니처**(``load_state``/``save_state``/``delete_state``/
+``record_risk_event`` — 전부 동기)를 흉내낸다. 종전 목은 실제 클래스에 없는
+``get_state``/``set_state``/``record_event`` 를 제공해, 테스트는 통과하는데 라이브에서는
+except 가 AttributeError 를 삼켜 상태도 이벤트도 한 건도 기록되지 않았다.
+``TestLiveStatePathIsAlive`` 가 **실제 트래커 인스턴스**로 그 사실을 고정한다.
 """
 
 import pytest
@@ -30,31 +20,54 @@ from programgarden_community.plugins.beta_hedge import (
 )
 
 
-class MockRiskTracker:
-    """strategy_state **목 계약** 모킹 — 실제 WorkflowRiskTracker 인터페이스가 아니다.
-
-    ``get_state``/``set_state`` 는 실제 클래스에 없는 이름이고(실제: ``load_state``/
-    ``save_state``, 둘 다 동기), ``delete_state`` 는 이름은 같지만 실제로는 동기
-    메서드다. 파일 상단 주석 참조.
-    """
+class FakeRiskTracker:
+    """실제 WorkflowRiskTracker 의 state/events 인터페이스와 같은 이름·동기 규약의 fake."""
 
     def __init__(self):
         self.state = {}
         self.events = []
 
-    def get_state(self, key):
-        return self.state.get(key)
+    def load_state(self, key, default=None):
+        return self.state.get(key, default)
 
-    def set_state(self, key, value):
+    def save_state(self, key, value):
         self.state[key] = value
+        return True
 
-    def record_event(self, event_type, symbol, data):
-        self.events.append({"event_type": event_type, "symbol": symbol, "data": data})
+    def delete_state(self, key):
+        return self.state.pop(key, None) is not None
+
+    def record_risk_event(self, event_type, severity="warning", symbol=None,
+                          exchange=None, details=None, node_id=None):
+        self.events.append({
+            "event_type": event_type, "severity": severity, "symbol": symbol,
+            "exchange": exchange, "details": details, "node_id": node_id,
+        })
+        return len(self.events)
+
+
+MockRiskTracker = FakeRiskTracker  # 기존 테스트 본문 이름 유지 (실제 시그니처 fake)
 
 
 class MockContext:
     def __init__(self):
-        self.risk_tracker = MockRiskTracker()
+        self.risk_tracker = FakeRiskTracker()
+
+
+def _market_data():
+    """SPY + 고베타(TSLA) + 저베타(JNJ) — 클래스 픽스처 mock_data_with_market 와 같은 데이터"""
+    data = []
+    spy_price, tsla_price, jnj_price = 450.0, 200.0, 160.0
+    for i in range(130):
+        market_move = 0.005 if i % 3 < 2 else -0.003
+        spy_price *= (1 + market_move)
+        tsla_price *= (1 + market_move * 2.0 + 0.001)
+        jnj_price *= (1 + market_move * 0.5 + 0.0005)
+        date = f"2026{(i // 30) + 1:02d}{(i % 30) + 1:02d}"
+        data.append({"symbol": "SPY", "exchange": "NYSE", "date": date, "close": round(spy_price, 2)})
+        data.append({"symbol": "TSLA", "exchange": "NASDAQ", "date": date, "close": round(tsla_price, 2)})
+        data.append({"symbol": "JNJ", "exchange": "NYSE", "date": date, "close": round(jnj_price, 2)})
+    return data
 
 
 class TestBetaHedgePlugin:
@@ -457,3 +470,107 @@ class TestPortfolioBetaIsNotFabricated:
         )
         assert "portfolio_beta" in result["analysis"]
         assert "portfolio_beta_unavailable_reason" not in result["analysis"]
+
+
+class TestLiveStatePathIsAlive:
+    """상태·이벤트 경로가 **실제 트래커로 실제로 돈다**는 것을 고정한다 (2026-09-12 수정).
+
+    수정 전엔 set_state/record_event(없는 이름) → except 삼킴 → 상태 0건·이벤트 0건.
+    """
+
+    _HEDGE_FIELDS = {"lookback": 120, "market_symbol": "SPY", "target_beta": 0.0, "beta_tolerance": 0.1}
+
+    @staticmethod
+    def _real_tracker(tmp_path, features=frozenset({"state", "events"})):
+        mod = pytest.importorskip(
+            "programgarden.database.workflow_risk_tracker",
+            reason="engine package not installed; live-truth pin skipped",
+        )
+        return mod.WorkflowRiskTracker(
+            db_path=str(tmp_path / "rt.db"),
+            job_id="pin", product="overseas_stock", provider="ls",
+            trading_mode="real", features=set(features),
+        )
+
+    @staticmethod
+    def _ctx(tracker):
+        class RealCtx:
+            risk_tracker = tracker
+        return RealCtx()
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_persists_portfolio_beta_as_float(self, tmp_path):
+        tracker = self._real_tracker(tmp_path)
+        result = await beta_hedge_condition(
+            data=_market_data(), fields=dict(self._HEDGE_FIELDS), context=self._ctx(tracker),
+        )
+        assert result["analysis"]["hedge_needed"] is True  # 전제 (동일비중 beta ≈ 1.25 > 0.1)
+        saved = tracker.load_state("portfolio_beta")
+        assert isinstance(saved, float)  # 'float' 타입 왕복
+        assert saved == result["analysis"]["portfolio_beta"]
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_records_beta_deviation_event(self, tmp_path):
+        import json
+        tracker = self._real_tracker(tmp_path)
+        result = await beta_hedge_condition(
+            data=_market_data(), fields=dict(self._HEDGE_FIELDS), context=self._ctx(tracker),
+        )
+        events = tracker.get_risk_events(event_type="beta_deviation")
+        assert len(events) == 1
+        assert events[0]["symbol"] == "PORTFOLIO"
+        details = json.loads(events[0]["details"])
+        assert details["portfolio_beta"] == result["analysis"]["portfolio_beta"]
+        assert details["target_beta"] == 0.0
+        assert details["hedge_method"] == "long_inverse_etf"
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_no_event_when_hedge_not_needed(self, tmp_path):
+        tracker = self._real_tracker(tmp_path)
+        result = await beta_hedge_condition(
+            data=_market_data(),
+            fields={"lookback": 120, "market_symbol": "SPY", "target_beta": 1.25, "beta_tolerance": 1.0},
+            context=self._ctx(tracker),
+        )
+        assert result["analysis"]["hedge_needed"] is False
+        assert tracker.get_risk_events(event_type="beta_deviation") == []
+        assert isinstance(tracker.load_state("portfolio_beta"), float)  # 상태는 헷지 여부와 무관하게 저장
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_unavailable_portfolio_beta_is_not_saved(self, tmp_path):
+        """읽을 수 없는 포지션 → portfolio_beta None → 실제 트래커에도 저장하지 않는다."""
+        tracker = self._real_tracker(tmp_path)
+        await beta_hedge_condition(
+            data=_market_data(), fields={"lookback": 120, "market_symbol": "SPY"},
+            positions=[{"symbol": "TSLA", "current_price": 150.0, "qty": "n/a"}],
+            context=self._ctx(tracker),
+        )
+        assert tracker.load_state("portfolio_beta") is None
+
+    @pytest.mark.asyncio
+    async def test_tracker_without_features_warns_instead_of_swallowing(self, tmp_path, caplog):
+        import logging
+        caplog.set_level(logging.WARNING)
+        tracker = self._real_tracker(tmp_path, features=frozenset())
+        result = await beta_hedge_condition(
+            data=_market_data(), fields=dict(self._HEDGE_FIELDS), context=self._ctx(tracker),
+        )
+        assert result["analysis"]["hedge_needed"] is True  # 판정 자체는 그대로
+        messages = [r.message for r in caplog.records]
+        assert any("BetaHedge: 상태 저장 실패" in m for m in messages)
+        assert any("BetaHedge: 위험 이벤트 기록 실패" in m for m in messages)
+
+    @pytest.mark.asyncio
+    async def test_foreign_tracker_variant_degrades_instead_of_crashing(self):
+        class Foreign:
+            def set_state(self, key, value):  # 옛 이름 — 실제 트래커엔 없다
+                raise AssertionError("must not be called")
+
+            def record_event(self, **kw):
+                raise AssertionError("must not be called")
+
+        class Ctx:
+            risk_tracker = Foreign()
+
+        result = await beta_hedge_condition(data=_market_data(), fields=dict(self._HEDGE_FIELDS), context=Ctx())
+        assert result["analysis"]["hedge_needed"] is True

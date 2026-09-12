@@ -104,7 +104,12 @@ class RealRequestAbstract(ABC):
         self._listen_task = None
         self._as01234_connect = False
         self._sc01234_connect = False
-        self._on_message_listeners: Dict[str, Callable[[Any], Any]] = {}
+        # TR 코드(키)당 **리스너 리스트**. 1.9.7 이전엔 단일 대입(`dict[key] = listener`)이라
+        # 같은 Real 객체(엔진 LSClientManager 가 product 별로 공유)에 두 경로 — 예: 체결 원장 구독
+        # (`on_sc1_message`) 과 주문이벤트 노드 마스터 — 가 같은 TR 을 걸면 나중 것이 앞의 것을
+        # 조용히 지웠다(2026-09-12 국내 SC1 회귀 실측, 해외주식 AS0·해외선물 TC3 도 동일 구조).
+        # 이제 등록은 append, 디스패치는 전부 호출, 제거는 지정 리스너만(미지정 시 그 키 전체).
+        self._on_message_listeners: Dict[str, List[Callable[[Any], Any]]] = {}
         self._ref_count = 0
         self._ref_lock = asyncio.Lock()  # ref_count 보호용 Lock
         # 구독 심볼 추적 (재연결 시 자동 재구독용)
@@ -332,7 +337,7 @@ class RealRequestAbstract(ABC):
 
                             try:
 
-                                on_message = self._on_message_listeners.get(tr_cd, None)
+                                listeners = list(self._on_message_listeners.get(tr_cd) or [])
 
                                 resp_header = resp_json.get('header', {})
 
@@ -354,36 +359,12 @@ class RealRequestAbstract(ABC):
                                 )
                                 resp.raw_data = resp_json
 
-                            if on_message is None:
+                            if not listeners:
                                 continue
 
                             loop = asyncio.get_running_loop()
-
-                            # async handler: schedule a task
-                            if inspect.iscoroutinefunction(on_message):
-                                try:
-                                    task = asyncio.create_task(on_message(resp))
-                                except Exception:
-                                    # if scheduling fails, skip
-                                    continue
-
-                                # attach simple exception logging to avoid silent failures
-                                def _on_done(t: asyncio.Task):
-                                    try:
-                                        exc = t.exception()
-                                        if exc is not None:
-                                            pass
-                                            # print(f"handler task error: {exc}")
-                                    except asyncio.CancelledError:
-                                        pass
-
-                                task.add_done_callback(_on_done)
-                            else:
-                                # sync handler: offload to default threadpool so recv loop isn't blocked
-                                try:
-                                    loop.run_in_executor(None, on_message, resp)
-                                except Exception:
-                                    continue
+                            for on_message in listeners:
+                                self._dispatch_to_listener(loop, on_message, resp)
 
                 except asyncio.CancelledError:
                     # allow cancellation to bubble up for clean shutdown
@@ -520,14 +501,49 @@ class RealRequestAbstract(ABC):
         """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")
-        self._on_message_listeners[message_key] = listener
+        bucket = self._on_message_listeners.setdefault(message_key, [])
+        if listener not in bucket:
+            bucket.append(listener)
 
-    def _on_remove_message(self, message_key: str):
+    @staticmethod
+    def _dispatch_to_listener(loop: asyncio.AbstractEventLoop, on_message: Callable[[Any], Any], resp: Any) -> None:
+        """한 리스너에게 응답 1건을 전달한다 — 비동기면 task, 동기면 threadpool.
+
+        리스너 하나의 예약 실패가 같은 TR 의 다른 리스너를 막지 않도록 예외는 여기서 끝낸다.
+        """
+        # async handler: schedule a task
+        if inspect.iscoroutinefunction(on_message):
+            try:
+                task = asyncio.create_task(on_message(resp))
+            except Exception:
+                # if scheduling fails, skip
+                return
+
+            # attach simple exception logging to avoid silent failures
+            def _on_done(t: asyncio.Task):
+                try:
+                    exc = t.exception()
+                    if exc is not None:
+                        pass
+                        # print(f"handler task error: {exc}")
+                except asyncio.CancelledError:
+                    pass
+
+            task.add_done_callback(_on_done)
+        else:
+            # sync handler: offload to default threadpool so recv loop isn't blocked
+            try:
+                loop.run_in_executor(None, on_message, resp)
+            except Exception:
+                return
+
+    def _on_remove_message(self, message_key: str, listener: Optional[Callable[[Any], Any]] = None):
         """Detach a registered listener and clean up order subscriptions.
 
         EN:
-            Removes the listener and, when no listeners remain, clears
-            auto-registered order streams.
+            Removes ``listener`` for ``message_key`` (or every listener under that
+            key when ``listener`` is None) and, when no listeners remain at all,
+            clears auto-registered order streams.
 
         KO:
             등록된 리스너를 제거하며 더 이상 리스너가 없을 경우 자동 주문 구독을
@@ -535,8 +551,18 @@ class RealRequestAbstract(ABC):
         """
         if not self._connected_event.is_set():
             raise RuntimeError("WebSocket is not connected")
-        if message_key in self._on_message_listeners:
-            del self._on_message_listeners[message_key]
+        bucket = self._on_message_listeners.get(message_key)
+        if bucket is not None:
+            if listener is None:
+                # 하위호환: 리스너 미지정이면 그 키의 리스너 전부 제거(1.9.6 이전 동작).
+                bucket.clear()
+            else:
+                try:
+                    bucket.remove(listener)
+                except ValueError:
+                    pass
+            if not bucket:
+                del self._on_message_listeners[message_key]
 
         if len(self._on_message_listeners) == 0:
             self._as01234_connect = False
