@@ -9,15 +9,83 @@ FIFO 방식으로 포지션을 관리합니다.
 - FIFO 기반 포지션 청산 처리
 - 실시간 평가 수익률 계산
 - 이상 거래 감지 및 신뢰도 점수 계산
+
+주문일자(order_date) 매칭 규약 — 왜 ±1일 창인가:
+- 주문 기록의 order_date 와 체결의 order_date 는 **출처가 다르다**. 같은 주문이라도 두
+  값이 하루 어긋날 수 있고, 어긋나는 방향은 **양쪽 다 이 저장소에 근거가 있다**:
+  · **D-1**(주문 기록일 = 체결일자 − 1) — 설계상. 실시간 체결 프레임(AS1/SC1)에는
+    주문일자 필드 자체가 없어 **수신 시각의 로컬 날짜**로 채운다(executor.py 의 AS1/SC1
+    경로). 미국장은 KST 자정을 항상 관통하므로 23:5x 접수 → 00:0x 체결이면 주문 기록일이
+    체결일자보다 하루 앞선다.
+  · **D+1**(주문 기록일 = 체결일자 + 1) — 실측. LS 는 **야간 세션을 전 영업일로
+    파일링**한다: 00:39:25 KST(로컬 20260910)에 접수된 주문이 CIDBQ02400 에서
+    OrdDt/ExecDt **20260909** 로 돌아왔다(2026-09-10 실측 —
+    tests/test_broker_business_date_window.py 헤더). record_order 는 접수 시점 **로컬**
+    날짜를 쓰고 TC3 체결은 프레임의 ordr_dt(= 브로커 영업일)를 쓰므로(executor.py 의 TC3
+    경로), 이때는 주문 기록일이 체결일자보다 하루 **뒤**가 된다.
+  어느 쪽이든 정확일치만 보면 우리 주문인데도 매칭에 실패한다. 그러면 매체코드
+  '40'(API) → 버퍼 → 타임아웃 후 **unknown_api** 로 굳어, 우리 체결이 workflow 집계에서
+  통째로 빠진다.
+- 그래서 **정확일치를 먼저** 보고, 실패했을 때만 **D-1·D+1 두 칸**을 훑는다
+  (_order_date_window). D±2 이상은 어느 쪽으로도 보지 않는다.
+- 넓힌 창은 '날짜가 한 칸 어긋났을 것' 이라는 **추론**이다. 그래서 수용 조건이 다섯이다:
+  ① 후보가 **정확히 1건**일 것 — 우리 원장 안에서 같은 주문번호가 재사용된 경우를 거른다.
+  ② 후보의 **종목이 체결의 종목과 일치**할 것. ①만으로는 부족하다: 제3자(남의) 주문번호는
+     정의상 우리 원장에 없으므로 후보가 늘 1건이라 ①을 항상 통과한다. 종목 대조가 없으면
+     번호가 우연히 겹친 남의 체결(HTS 85 포함)이 workflow 로 흡수된다 — 2026-09-12 적대적
+     검토 실측: 우리 D-1 AAPL buy #86382 기록 뒤 다음 날 TSLA sell 5@300 commda=85 체결이
+     classification='workflow' 로 기록되고 FIFO 가 'Sell without enough position' 까지 냈다.
+  ③ 양쪽에 매매구분이 있으면 **side 도 일치**할 것.
+  ④ 프레임의 **매체코드가 사람 채널이 아닐 것**(_may_widen_for_media). 브로커 주문번호는
+     **영업일마다 리셋**되므로 어제 우리 번호가 오늘 사용자 주문에 재발급될 수 있다 —
+     2026-09-12 적대적 재검증 실측: 우리 D-1 AAPL buy #3 기록 뒤 다음 날 14:00 사용자 HTS
+     매수 7@250(order_no '3', commda_code '85')이 종목·side 까지 같아 ①②③ 을 전부
+     통과해 workflow 로 기록되고 workflow_position_lots 에 남의 로트가 생겼다. 프레임이
+     "이건 사람이 낸 주문" 이라고 명시한 체결을 추론으로 삼키지 않는다.
+  ⑤ **체결 수량이 주문 수량(workflow_orders.quantity)을 넘지 않을** 것
+     (_accept_widened_match → _fill_quantity_within_order). 우리 주문의 체결(부분·전량)은
+     주문 수량을 넘을 수 없으므로 이 가드는 우리 체결을 놓치지 않고(false-miss 없음),
+     세션 시각에 의존하지도 않는다. ④가 못 막는 재발급(매체코드가 사람이 아닌 경로)이
+     종목·side 까지 같아도 수량이 우리 주문보다 크면 여기서 걸린다(2026-09-12 재검증
+     실측 형태: 우리 1주 주문 → 남의 7주 체결). 비교는 float(소수점 주식 0.847972 vs
+     주문 1 → 통과). 원장 수량이 비었거나 0 이면 대조 불가이므로 추론 없이 거부한다.
+  ⑥ 주문 기록 시각(workflow_orders.created_at)과 체결 수신 시각(PendingFill.received_at)의
+     간격이 **_WIDENED_MATCH_MAX_GAP 이내**일 것(_accept_widened_match). 이건 세션 경계
+     **사실이 아니라 휴리스틱(보조 가드)** 이다 — 미국주식은 KST 주간(09:00~, Blue Ocean
+     주간거래)에도 거래되므로(저장소 메모리 관측 확정 2026-09-11: MARA 거래량 26→938)
+     '다음 날 낮에 재발급된 번호' 는 우리 주문 몇 시간 뒤일 수 있어 시각만으로는 못
+     가른다. 수량이 우리 주문 이하라 ⑤ 를 통과한 재발급이 임계 밖에서 오면 여기가
+     마지막 방어다. 임계 근거는 상수 정의 주석 참조. created_at 이 비어 있는 옛 행은
+     추론 없이 거부한다.
+  하나라도 어긋나면 넓히기 전과 같이 미매칭(→ unknown_api) 쪽으로 남긴다.
+  실질 방어는 ④(사람 매체코드 거부)·②③(종목/방향 일치)·⑤(체결수량≤주문수량)이고,
+  ⑥(시각)은 보조다.
+- ②③④⑤⑥ 은 **창 경로에만** 적용한다. 정확일치 경로의 의미는 건드리지 않는다 — 거기선
+  (주문번호, 주문일자) 동시 일치가 더 강한 증거다. 또 국내 SC1 체결의 종목코드는
+  'A005930' 처럼 접두가 붙어 주문 기록('005930')과 문자열이 다르므로, 정확일치 경로에
+  종목 대조를 넣으면 지금 맞던 매칭이 깨진다.
+- 넓히는 건 날짜뿐이다. product/provider/trading_mode/주문번호 스코프는 정확일치 조회와
+  똑같이 유지한다.
+- 분류 경로(_is_workflow_fill)와 식별자 조회 경로(lookup_order_identity)는 **같은 매칭
+  함수**(_match_workflow_order)를 쓰되, **주문번호 대조 mode 는 호출부마다 다르다**:
+  _is_workflow_fill 은 명시 체결번호가 없으면 'exact'(문자열 정확일치), 있으면
+  'normalized'; lookup_order_identity 는 'exact_or_normalized'. 이유는 각 호출부의 종전
+  의미를 그대로 보존하기 위해서다 — 분류는 처음부터 문자열 정확일치였고(느슨하게 바꾸면
+  오분류 표면이 커진다), 조회는 주문 ACK 와 체결의 0 패딩 차이를 흡수해야 node_id 를 붙일
+  수 있었다. mode 를 통일하면 둘 중 한쪽의 의미가 바뀌므로 통일하지 않는다. **날짜 규약과
+  창 수용 조건은 두 경로가 공유한다** — 그게 갈리면 classification='workflow' 인데 node_id
+  가 None 인 상태가 만들어지고, 하류 멱등 키(job_id:node_id:order_id:seq)의 node 축이 빈
+  문자열로 접혀 같은 주문의 경계 전후 체결이 서로 다른 축을 갖는다.
 """
 
 import sqlite3
 import asyncio
 import logging
 import json
+import math
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Any, Tuple, Callable, Awaitable
 from pathlib import Path
@@ -39,6 +107,30 @@ _MULT_MIN_REL_GAP = Decimal("0.001")   # 0.1%
 _MULT_MIN = Decimal("0.5")
 _MULT_MAX = Decimal("10000")
 _MULT_INT_SNAP_REL = Decimal("0.02")   # 2%
+
+# ── 넓힌 주문일자 창(D±1)의 시각 근접 임계 — **휴리스틱(보조 가드)** ──
+# 창은 '영업일/자정 경계가 한 칸 어긋난 같은 주문' 하나만 구제하려고 존재한다. 그런데
+# 브로커 주문번호는 **영업일마다 리셋**되므로(저장소 기록), 어제 우리 주문번호가 오늘
+# 사용자 주문에 재발급되고 종목·매매구분까지 같으면 후보 수·종목·side 가드를 전부
+# 통과한다. 그래서 창 수용은 **주문 기록 시각(workflow_orders.created_at)과 체결 수신
+# 시각(PendingFill.received_at)의 간격이 이 임계 이내** 일 때만 인정한다.
+#
+# 🔴 이 시각 가드는 세션 경계 **사실이 아니라 휴리스틱**이다. 미국주식은 KST 주간
+# (09:00~, Blue Ocean 주간거래)에도 거래된다 — 저장소 메모리 관측 확정(2026-09-11
+# 09:02~09:05 KST, g3101 반복 샘플링: MARA 거래량 26→938, NVDA 1,239→4,854). 우리
+# 워크플로우의 ScheduleNode/TradingHoursFilterNode 가 그 구간을 막고 있을 뿐, 사용자는
+# 그 시간에 거래한다. 따라서 '다음 날 낮에 재발급된 주문번호' 는 우리 주문 몇 시간 뒤일
+# 수 있다(자정 직전 우리 주문 → 다음 날 10:00 남의 주문 = 10시간, 임계 안). 시각만으로는
+# 재발급을 못 가른다. 실질 방어는 ① 사람 매체코드 거부(_may_widen_for_media)
+# ② 종목/방향 일치 ③ 체결수량 ≤ 주문수량(_fill_quantity_within_order) 이고, 시각은
+# 보조다.
+#
+# 값(12시간)을 유지하는 이유: 구제 대상(자정 관통·야간 세션 파일링)의 실제 간격은 미국
+# 정규장 한 세션(KST 22:30~05:00, 6.5시간) 안이고, 22:35 접수 → 04:5x 체결(6.4시간)
+# 지정가 체결이 실재한다. 더 줄이면 그 체결을 놓친다(false-miss). 더 늘리면 D±1 창 안에서
+# '반대쪽 날의 같은 시간대' 가 들어온다. 12시간은 그 두 제약 사이의 값이지 재발급을 끊는
+# 경계가 아니다.
+_WIDENED_MATCH_MAX_GAP = timedelta(hours=12)
 
 
 @dataclass
@@ -93,32 +185,70 @@ class PendingFill:
     account_avg_price: Optional[float] = None
 
 
+class ExecutionIdentityError(ValueError):
+    """A fill's execution/order identity could not be normalized into a key.
+
+    ``_normalize_identifier`` / ``_execution_key`` 계열이 **이것만** 올린다 —
+    "체결번호(또는 그 짝인 주문번호/주문일자)가 원장 중복방지 키로 쓸 수 없다" 는
+    뜻이다. 전용 타입을 두는 이유: context.record_workflow_fill 의 폴백이
+    "identity 축이 깨졌으면 체결번호를 떼고 한 번 더 기록한다" 를 수행하는데,
+    그 폴백이 **모든 ValueError** 를 잡으면 identity 와 무관한 예외까지 삼켜
+    체결번호 없이 재기록한다. 실제로 닿는 경로가 있다 —
+    ``_execution_facts`` 의 유한성 가드
+    (ValueError("Explicit execution quantity and price must be finite"))는
+    수량/가격이 inf·nan 일 때 나는데, 그건 체결번호를 뗀다고 나아지지 않는
+    **체결 사실 자체의 문제**다. 그래서 그 부류는 plain ValueError 로 남겨
+    폴백이 잡지 않게 한다.
+    """
+
+
 class ExecutionIdentityConflictError(ValueError):
-    """An explicit execution identity was replayed with different fill facts."""
+    """An explicit execution identity was replayed with different fill facts.
+
+    ⚠️ 일부러 ``ExecutionIdentityError`` 의 서브클래스가 **아니다**. 이건 정규화
+    실패가 아니라 "같은 체결번호가 이미 기록돼 있는데 체결 사실이 다르다" 는
+    신호라, 체결번호를 떼고 재시도하면 같은 브로커 체결이 두 번 기록된다.
+    context 의 폴백 대상에서 빠져 있어야 한다.
+    """
 
 
-# LS 통신매체코드(CommdaCode / MdaCode) — 출처: src/finance/docs/cidbq02400_contract.md:74-77
-# "The published media map is 00=branch, 22=iPhone, 23=Android, 41=API, 43=Robo API,
-#  85=HTS, 96=final settlement, LP=loss cut, SK=CashCall and SO=conditional order.
-#  The example uses 40, which the table does not map. Preserve it as returned;
-#  do not classify it by guessing a nearby code."
-# '40' 은 표에 없지만 우리 OPEN API 주문이 실제로 받는 값이다(dev verified_fills 실측 4건 +
-# 2026-09-12 해외주식 AS1 실측: 우리 매도 주문 244 → 40) — 표의 41/43 과 함께 API 묶음으로 둔다.
-# 🔴 해외주식 AS1 실측(2026-09-12, 실계좌 NIO 1주씩): HTS → 85(표와 일치) · iPhone 투혼앱 → **51**
-# (표의 22 아님) · 투혼 웹 → **03**(표에 없음). 표는 해외선물 TR 문서라 해외주식 푸시와 앱/웹 코드가
-# 다르다. 관측된 값만 사람 채널에 추가한다 — 표에 없고 관측도 안 된 값은 여전히 "other".
-MEDIA_CODES_HUMAN = frozenset({"85", "22", "23", "00", "51", "03"})   # HTS · iPhone(표) · Android(표) · 지점 · 투혼앱(실측) · 투혼웹(실측)
-MEDIA_CODES_API = frozenset({"40", "41", "43"})                       # OPEN API(실측) · API · Robo API
+# LS 통신매체코드(CommdaCode / MdaCode) — **상품 구분 없는 단일 합집합 표**.
+# 값마다 출처가 다르다:
+#  · 해외선물 TR 문서(src/finance/docs/cidbq02400_contract.md:74-77) — 00=지점, 22=iPhone,
+#    23=Android, 41=API, 43=Robo API, 85=HTS, 96=최종결제, LP=로스컷, SK=CashCall,
+#    SO=조건주문. 문서 예시에 나오는 40 은 이 표에 없다.
+#  · '40' = 우리 OPEN API 주문이 실제로 받는 값(dev verified_fills 실측 4건 + 2026-09-12
+#    해외주식 AS1 실측: 우리 매도 주문 244 → 40) — 표의 41/43 과 함께 API 묶음.
+#  · 해외주식 AS1 라이브 실측(2026-09-12, 실계좌 NIO 1주씩): HTS → 85(표와 일치) ·
+#    iPhone 투혼앱 → **51**(표의 22 아님) · 투혼 웹 → **03**(표에 없음).
+#  · 국내(SC1) **50=MTS · 60=HTS** · 00=지점 · 40/41=오픈API — **오너 진술(2026-09-12),
+#    라이브 미관측**. 저장소 SDK 에는 국내 매체코드 enum 이 선언돼 있지 않다.
+#
+# 왜 상품별로 쪼개지 않는가(2026-09-12 적대적 검토 지적 B3): tracker 는 워크플로우당 1개이고
+# **가장 먼저 초기화된 브로커의 product 로 고정**된다(context.py 의 조기 return). 한 워크플로우에
+# 해외+국내 브로커가 같이 있는 구성은 executor 가 이미 인정하는데, 표를 상품으로 가르면 국내가
+# 먼저 뜬 워크플로우에서 **해외 체결이 국내 표로 판정**돼 85(HTS)가 other 로 떨어지고 43 은
+# api→other 가 되어 버퍼를 건너뛰고 즉시 확정된다 — 표가 하나였을 때는 없던 회귀다.
+# 두 표 사이에 **같은 코드가 서로 다른 채널을 뜻하는 사례는 현재까지 없어** 합집합이 안전하다.
+# (해외 85=HTS / 국내 60=HTS 처럼 값이 다를 뿐, 같은 값이 한쪽은 사람 다른 쪽은 API 인 경우가
+# 없다.) 충돌이 관측되면 그때 상품별로 쪼갠다.
+MEDIA_CODES_HUMAN = frozenset({"85", "60", "22", "23", "50", "00", "51", "03"})
+# 85=HTS(해외) · 60=HTS(국내, 오너 진술) · 22/23=앱(표) · 50=MTS(국내, 오너 진술) ·
+# 00=지점 · 51=투혼앱(실측) · 03=투혼웹(실측)
+MEDIA_CODES_API = frozenset({"40", "41", "43"})   # OPEN API(실측) · API · Robo API
 
 
 def media_channel(commda_code: str | None) -> str:
     """Map a broker media code to "human" | "api" | "unknown" | "other".
 
-    unknown = blank/None (the frame said nothing); other = a code the published
-    table does not attribute to a person or an API client (96/LP/SK/SO …) or one
-    the table does not list at all. Neither is ever asserted to be a person.
+    One table for every product — see MEDIA_CODES_* above for why splitting it
+    by product regressed mixed (overseas + KRX) workflows.
+
+    unknown = blank/None (the frame said nothing); other = a code the table does
+    not attribute to a person or an API client (96/LP/SK/SO ...) or one it does
+    not list at all. Neither is ever asserted to be a person.
     """
-    code = (commda_code or "").strip()
+    code = str(commda_code or "").strip()
     if not code:
         return "unknown"
     if code in MEDIA_CODES_HUMAN:
@@ -212,41 +342,99 @@ class WorkflowPositionTracker:
         self,
         order_no: str,
         order_date: str,
+        *,
+        symbol: Optional[str] = None,
+        side: Optional[str] = None,
+        commda_code: Optional[str] = None,
+        received_at: Optional[datetime] = None,
+        quantity: Optional[float] = None,
     ) -> Optional[Tuple[Optional[str], Optional[str]]]:
         """Return ``(job_id, node_id)`` for a recorded workflow order, else None.
 
-        Scoped to this ledger's product/provider/trading mode and the order date.
-        Matches the exact order number first, then the normalized form (so
-        zero-padding differences between the order ACK and the fill still map).
-        A fill that is not one of our workflow orders returns None (node_id then
-        stays None on the emitted event).
+        Uses the same matcher as classification (``_match_workflow_order``), but
+        **the order-number comparison mode differs per call site**: this path
+        asks for "exact_or_normalized" while ``_is_workflow_fill`` asks for
+        "exact" (no explicit execution id) or "normalized" (with one). That
+        difference is deliberate — each call site keeps the meaning it had before
+        the two matchers were merged: classification was always a plain string
+        comparison, and this lookup had to absorb zero-padding differences
+        between the order ACK and the fill in order to resolve a node_id at all.
+        What the two paths DO share is the date rule and the widened-window
+        accept guards — exact order date first, then the D±1 window under
+        single-candidate + symbol/side + media-channel + fill-quantity-within-
+        order-quantity + time-proximity (heuristic) guards.
+        Sharing those is the contract: a fill classified "workflow" through the
+        window must resolve its node_id here too, or the downstream idempotency
+        key ``job_id:node_id:order_id:seq`` collapses its node axis to an empty
+        string for exactly those boundary-straddling fills.
+
+        ``symbol``/``side``/``commda_code``/``received_at``/``quantity`` describe
+        the fill being resolved and are used only by the widened path. When a caller does
+        not pass them, they are read back from this ledger's own trade_history
+        row for that order (the fill row is committed before the classified
+        callback fires) — never guessed. With no such row and no argument, the
+        widened path has nothing to compare and is refused, which is the safe
+        direction.
+
+        Scoped to this ledger's product/provider/trading mode.
         """
         try:
-            norm = self._normalize_identifier(order_no)
-        except ValueError:
-            norm = None
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                rows = conn.execute(
-                    """
-                    SELECT order_no, job_id, node_id FROM workflow_orders
-                    WHERE product = ? AND provider = ? AND trading_mode = ? AND order_date = ?
-                    """,
-                    (self.product, self.provider, self.trading_mode, order_date),
-                ).fetchall()
+            if (symbol is None or side is None or commda_code is None
+                    or received_at is None or quantity is None):
+                recorded = self._recorded_fill_identity(order_no, order_date)
+                if recorded is not None:
+                    if symbol is None:
+                        symbol = recorded[0]
+                    if side is None:
+                        side = recorded[1]
+                    if commda_code is None:
+                        commda_code = recorded[2]
+                    if received_at is None:
+                        received_at = recorded[3]
+                    if quantity is None:
+                        quantity = recorded[4]
+            match = self._match_workflow_order(
+                order_no, order_date, mode="exact_or_normalized",
+                symbol=symbol, side=side,
+                commda_code=commda_code, received_at=received_at,
+                quantity=quantity,
+            )
         except Exception as e:
             logger.warning(f"lookup_order_identity failed: {e}")
             return None
-        for row_order_no, job_id, node_id in rows:
-            if row_order_no == order_no:
-                return (job_id, node_id)
-            if norm is not None:
-                try:
-                    if self._normalize_identifier(row_order_no) == norm:
-                        return (job_id, node_id)
-                except ValueError:
-                    continue
-        return None
+        if match is None:
+            return None
+        _matched_date, job_id, node_id = match
+        return (job_id, node_id)
+
+    def _recorded_fill_identity(
+        self, order_no: str, order_date: str
+    ) -> Optional[Tuple[Optional[str], Optional[str], Optional[str], Optional[datetime],
+                        Optional[float]]]:
+        """This order's most recently recorded fill facts.
+
+        Returns ``(symbol, side, commda_code, recorded_at, quantity)``. Facts only — the
+        row was written by ``_process_fill_internal`` straight from the broker
+        frame, and ``recorded_at`` is this ledger's own ``created_at`` for that
+        row, i.e. when the fill was written (milliseconds after the arrival that
+        ``PendingFill.received_at`` stamps). Returns None when no fill has been
+        recorded for the order, and ``recorded_at`` is None when the stored
+        timestamp is missing or unparseable (nothing is inferred; the caller then
+        refuses to widen).
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT symbol, side, commda_code, created_at, quantity FROM trade_history
+                WHERE product = ? AND provider = ? AND trading_mode = ?
+                  AND order_date = ? AND order_no = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (self.product, self.provider, self.trading_mode, order_date, order_no),
+            ).fetchone()
+        if row is None:
+            return None
+        return (row[0], row[1], row[2], self._parse_recorded_timestamp(row[3]), row[4])
     
     def _init_db(self) -> None:
         """데이터베이스 테이블 초기화"""
@@ -462,26 +650,62 @@ class WorkflowPositionTracker:
         # 버퍼에서 매칭되는 체결 확인 (이벤트 루프가 있는 경우에만)
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._process_buffered_fill(order_no, order_date))
+            task = loop.create_task(self._process_buffered_fill(order_no, order_date))
         except RuntimeError:
             # 동기 환경에서는 버퍼 처리 생략 (체결이 먼저 올 일 없음)
             pass
+        else:
+            # 🔴 fire-and-forget 태스크의 예외는 **아무 데도 안 남는다**.
+            # _process_buffered_fill 안에서는 _normalize_identifier 가
+            # ExecutionIdentityError 를 올릴 수 있고(버퍼에 깨진 체결번호가
+            # 섞였을 때), 그러면 그 체결은 버퍼에 남아 타임아웃 경로로
+            # unknown_api 가 되면서 **원인 기록이 하나도 없다**. 아무도 await 하지
+            # 않으므로 done 콜백으로 직접 로깅한다(취소는 정상 종료로 본다 —
+            # 워크플로우 종료 시 루프가 태스크를 취소한다).
+            task.add_done_callback(self._log_buffered_fill_task_error)
         
         logger.debug(f"Recorded workflow order: {order_no} ({symbol} {side} {quantity}@{price})")
     
+    @staticmethod
+    def _log_buffered_fill_task_error(task: "asyncio.Task") -> None:
+        """record_order 가 띄운 버퍼 처리 태스크의 침묵 실패를 로그로 드러낸다."""
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            logger.error(
+                "Buffered-fill processing task failed after record_order: %r",
+                error, exc_info=error,
+            )
+
     async def _process_buffered_fill(self, order_no: str, order_date: str) -> None:
-        """Process all buffered partial fills after recording their order."""
+        """Process all buffered partial fills after recording their order.
+
+        버퍼에 있는 체결의 order_date 와 방금 기록한 주문의 order_date 는 출처가 달라
+        하루 갈릴 수 있다(양방향 모두 — 자정 관통이면 주문이 하루 앞서고, LS 야간 세션
+        영업일 파일링이면 주문이 하루 뒤다). 그래서 정확일치 먼저, 실패하면 **D±1** 후보를
+        추가로 본다. 날짜가 갈린 후보는 _is_workflow_fill 로 창 수용 조건을 전부 다시
+        확인한다. 모듈 상단 규약 참조.
+        """
         notifications: list = []
         async with self._buffer_lock:
             for key, fill in list(self._pending_fills.items()):
-                if fill.order_date != order_date:
+                same_date = fill.order_date == order_date
+                if not same_date and order_date not in self._order_date_window(fill.order_date):
                     continue
                 matches = fill.order_no == order_no
                 if self._normalize_identifier(fill.execution_id) is not None:
                     matches = self._normalize_identifier(fill.order_no) == self._normalize_identifier(order_no)
-                if matches:
-                    await self._process_fill_internal(fill, "workflow", notifications)
-                    self._pending_fills.pop(key)
+                if not matches:
+                    continue
+                if not same_date and not self._is_workflow_fill(fill):
+                    # 날짜가 갈린 후보는 원장을 다시 조회해 창 수용 조건(후보 1건 + 종목/
+                    # 매매구분 일치 + 사람 매체코드 아님 + 시각 근접)을 전부 확인한다 —
+                    # 하나라도 어긋나면 여기서 거부되고, 기존대로 타임아웃 경로
+                    # (unknown_api)로 간다.
+                    continue
+                await self._process_fill_internal(fill, "workflow", notifications)
+                self._pending_fills.pop(key)
         await self._emit_fill_notifications(notifications)
     
     async def record_fill(
@@ -566,10 +790,11 @@ class WorkflowPositionTracker:
                 result = await self._process_fill_internal(fill, "workflow", notifications)
             else:
                 # No matching order. Classify by the published media table
-                # (MEDIA_CODES_* above) — never by "not 40":
-                #   human (85 HTS / 22 iPhone / 23 Android / 00 branch) → "manual"
-                #   other (96/LP/SK/SO or unlisted)                    → "other"
-                #   api (40/41/43) or blank                            → buffer below
+                # (MEDIA_CODES_* above — one table for every product), never by
+                # "not 40":
+                #   human (85·60 HTS / 22·23 앱 / 50 MTS / 00 지점 / 51·03 실측) → "manual"
+                #   other (96/LP/SK/SO or unlisted)                             → "other"
+                #   api (40/41/43) or blank                                     → buffer below
                 channel = media_channel(commda_code)
                 if channel == "human":
                     result = await self._process_fill_internal(fill, "manual", notifications)
@@ -617,14 +842,14 @@ class WorkflowPositionTracker:
         if value is None:
             return None
         if isinstance(value, bool) or not isinstance(value, (str, int)):
-            raise ValueError("Execution/order identity must be a string or integer")
+            raise ExecutionIdentityError("Execution/order identity must be a string or integer")
         text = str(value).strip()
         if not text:
             return None
         if re.fullmatch(r"[0-9]+", text):
             return text.lstrip("0") or None
         if re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", text):
-            raise ValueError("Numeric execution/order identity must be a positive integer")
+            raise ExecutionIdentityError("Numeric execution/order identity must be a positive integer")
         return text
 
     def _execution_key(self, fill: PendingFill) -> Optional[Tuple[str, ...]]:
@@ -633,7 +858,7 @@ class WorkflowPositionTracker:
             return None
         order_no = self._normalize_identifier(fill.order_no)
         if order_no is None or not fill.order_date:
-            raise ValueError("Explicit execution identity requires an order number and date")
+            raise ExecutionIdentityError("Explicit execution identity requires an order number and date")
         return (self.product, self.provider, self.trading_mode, fill.order_date, order_no, execution_id)
 
     @staticmethod
@@ -642,6 +867,11 @@ class WorkflowPositionTracker:
         # while the first supplied values are retained in execution_payload.
         quantity, price = Decimal(str(fill.quantity)), Decimal(str(fill.price))
         if not quantity.is_finite() or not price.is_finite():
+            # 🔴 일부러 **plain ValueError** 다 — ExecutionIdentityError 가 아니다.
+            # 이건 identity 축이 아니라 체결 사실(수량/가격)이 inf·nan 이라는
+            # 뜻이고, 체결번호를 떼고 다시 넣는다고 나아지지 않는다. 전용 타입으로
+            # 올리면 context.record_workflow_fill 의 폴백이 이걸 삼켜
+            # **체결번호 없이 비유한 값을 원장에 기록**한다. 타입을 바꾸지 말 것.
             raise ValueError("Explicit execution quantity and price must be finite")
         return {
             "symbol": fill.symbol, "exchange": fill.exchange, "side": fill.side,
@@ -675,15 +905,27 @@ class WorkflowPositionTracker:
         return row[0]
 
     def _is_workflow_fill(self, fill: PendingFill) -> bool:
+        """이 체결이 우리가 기록한 워크플로우 주문의 체결인가.
+
+        주문번호 대조 방식은 종전 그대로다 — 명시 체결번호가 있으면 정규화된 주문번호로,
+        없으면 문자열 정확일치로 본다. 날짜는 정확일치 → D±1 창이고, 창 경로는 이 체결의
+        종목·매매구분·매체코드·수량·수신 시각까지 대조한 뒤에만 수용한다. 모듈 상단 규약
+        참조.
+        """
         identity = self._execution_key(fill)
         if identity is None:
-            return self._check_workflow_order(fill.order_no, fill.order_date)
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute("""
-                SELECT order_no FROM workflow_orders
-                WHERE product = ? AND provider = ? AND trading_mode = ? AND order_date = ?
-            """, identity[:4])
-            return any(self._normalize_identifier(row[0]) == identity[4] for row in rows)
+            return self._check_workflow_order(
+                fill.order_no, fill.order_date,
+                symbol=fill.symbol, side=fill.side,
+                commda_code=fill.commda_code, received_at=fill.received_at,
+                quantity=fill.quantity,
+            )
+        return self._match_workflow_order(
+            identity[4], fill.order_date, mode="normalized",
+            symbol=fill.symbol, side=fill.side,
+            commda_code=fill.commda_code, received_at=fill.received_at,
+            quantity=fill.quantity,
+        ) is not None
 
     async def _process_fill_internal(
         self, fill: PendingFill, classification: str, notifications: list
@@ -887,16 +1129,361 @@ class WorkflowPositionTracker:
 
         return total_realized_pnl, estimate
     
-    def _check_workflow_order(self, order_no: str, order_date: str) -> bool:
-        """워크플로우 주문 여부 확인 (현재 trading_mode 기준)"""
+    @staticmethod
+    def _order_date_window(order_date: Any) -> List[str]:
+        """정확일치가 실패했을 때만 훑는 후보 날짜 — **D-1 과 D+1, 두 칸**.
+
+        두 방향 모두 이 저장소에 근거가 있다(모듈 상단 규약 참조):
+        · **D-1** = 실시간 체결 프레임(AS1/SC1)에 주문일자 필드가 없어 **수신 시각의
+          로컬 날짜**로 채우기 때문이다(설계상 — executor.py 의 AS1/SC1 경로). 자정 직전
+          접수 → 자정 직후 체결이면 주문 기록일이 체결일자보다 하루 앞선다.
+        · **D+1** = LS 가 **야간 세션을 전 영업일로 파일링**하기 때문이다(2026-09-10
+          실측: 00:39:25 KST 접수(로컬 20260910) → CIDBQ02400 OrdDt/ExecDt 20260909 —
+          tests/test_broker_business_date_window.py 헤더). record_order 는 로컬 날짜를
+          쓰고 TC3 체결은 프레임의 ordr_dt(브로커 영업일)를 쓰므로, 이때는 주문 기록일이
+          체결일자보다 하루 뒤가 된다.
+        월말·연말·윤년은 날짜 산술이 알아서 처리한다. 창을 넓힌다고 매칭되는 건 아니다 —
+        수용 조건 여섯(_may_widen_for_media + _accept_widened_match)을 모두 통과해야 한다.
+
+        날짜가 비었거나 YYYYMMDD 형식이 아니면 창을 넓히지 않는다 — 근거 없는 매칭을
+        만들지 않기 위해서다. 문자열이 아닌 값(None/int/datetime 등)도 같은 경로로
+        흡수한다: 예전에는 ``(order_date or "").strip()`` 이 AttributeError 를 던져
+        record_fill 을 통째로 죽였다(2026-09-12 검토 지적 B5).
+        """
+        try:
+            base = datetime.strptime(str(order_date or "").strip(), "%Y%m%d")
+        except (TypeError, ValueError):
+            return []
+        return [
+            (base - timedelta(days=1)).strftime("%Y%m%d"),
+            (base + timedelta(days=1)).strftime("%Y%m%d"),
+        ]
+
+    @staticmethod
+    def _normalize_symbol(value: Any) -> str:
+        """종목 대조용 정규화 — 앞뒤 공백 제거 + 대문자. 비면 빈 문자열."""
+        return str(value or "").strip().upper()
+
+    @staticmethod
+    def _may_widen_for_media(commda_code: Optional[str]) -> bool:
+        """이 매체코드의 체결에 대해 주문일자 창을 넓혀도 되는가.
+
+        창 매칭은 '날짜가 한 칸 어긋났을 것' 이라는 **추론**이다. 프레임이 "이건 사람이
+        낸 주문" 이라고 명시한 체결(MEDIA_CODES_HUMAN — 85·60·22·23·50·00·51·03)을 그
+        추론으로 삼켜서는 안 된다. 브로커 주문번호는 **영업일마다 리셋**되므로 어제 우리
+        번호가 오늘 사용자 HTS 주문에 재발급될 수 있다(2026-09-12 적대적 재검증 실측:
+        우리 D-1 AAPL buy #3 → 다음 날 14:00 HTS 매수 7@250, order_no '3', commda '85'
+        가 종목·side 까지 같아 workflow 로 흡수).
+
+        **정확일치 경로에는 적용하지 않는다** — 거기선 (주문번호, 주문일자) 동시 일치가
+        더 강한 증거이고, 우리 OPEN API 주문이 항상 '40' 을 달고 오지도 않는다.
+        blank('unknown')와 미분류('other')는 사람이라고 단정된 적이 없으므로 넓히기를
+        막지 않는다.
+        """
+        return media_channel(commda_code) != "human"
+
+    @staticmethod
+    def _naive_local(value: Optional[datetime]) -> Optional[datetime]:
+        """tz-aware 든 naive 든 **로컬 naive** 로 맞춘다(간격 계산용).
+
+        원장에 적히는 시각은 ``datetime.now()``(로컬 naive)인데, 호출부가 aware 를 넘길
+        수 있다. 섞이면 뺄셈이 TypeError 로 죽으므로 여기서 한쪽으로 모은다.
+        """
+        if value is None:
+            return None
+        if value.tzinfo is not None:
+            return value.astimezone().replace(tzinfo=None)
+        return value
+
+    @staticmethod
+    def _parse_recorded_timestamp(value: Any) -> Optional[datetime]:
+        """원장에 적힌 ISO 시각 문자열을 datetime 으로. 비었거나 해석 불가면 None.
+
+        추론하지 않는다 — 해석 못 하면 None 을 돌려주고, 호출부가 '증거 없음' 으로
+        취급한다(창 수용 거부).
+        """
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _fill_quantity_within_order(fill_quantity: Any, order_quantity: Any) -> bool:
+        """창 수용 조건 ⑤ — 체결 수량이 주문 수량 이하인가(float 비교).
+
+        우리 주문의 체결(부분·전량)은 주문 수량을 넘을 수 없다. 소수점 주식(0.847972 vs
+        주문 1)을 위해 float 로 비교한다. 원장 수량이 비었거나 0 이하거나 숫자가 아니면,
+        또 체결 수량이 없거나 숫자가 아니거나 유한하지 않으면 **추론 없이 False** —
+        호출부가 창 수용을 거부한다. 창 경로 전용이다(정확일치 경로는 타지 않는다).
+        """
+        try:
+            order_qty = float(order_quantity)
+            fill_qty = float(fill_quantity)
+        except (TypeError, ValueError):
+            return False
+        if not (math.isfinite(order_qty) and math.isfinite(fill_qty)):
+            return False
+        if order_qty <= 0:
+            return False
+        return fill_qty <= order_qty
+
+    def _accept_widened_match(
+        self,
+        candidates: List[Tuple],
+        order_no: str,
+        order_date: str,
+        symbol: Optional[str],
+        side: Optional[str],
+        *,
+        commda_code: Optional[str] = None,
+        received_at: Optional[datetime] = None,
+        quantity: Optional[float] = None,
+    ) -> Optional[Tuple[str, Optional[str], Optional[str]]]:
+        """D±1 창의 후보를 수용할지 판정한다. 수용하면 (주문일자, job_id, node_id).
+
+        ① 후보가 **정확히 1건**일 때만 본다. 2건 이상이면(브로커/원장에서 같은 주문번호가
+           다시 쓰인 경우) 모호하므로 거부하고 기존대로 미매칭 경로로 보낸다.
+        ② 후보의 **종목이 이 체결의 종목과 같아야** 한다. ①은 *우리 원장 안의* 재사용만
+           잡는다 — 제3자 주문번호는 정의상 원장에 없어 후보가 늘 1건이고, 종목 대조가
+           없으면 번호가 우연히 겹친 남의 체결까지 workflow 로 흡수된다(2026-09-12 검토
+           실측: D-1 AAPL buy #86382 뒤 다음 날 TSLA sell commda=85 가 workflow 로 기록).
+           한쪽이라도 종목이 비어 있으면 대조 불가이므로 수용하지 않는다.
+        ③ 양쪽에 매매구분이 있고 서로 다르면 거부한다(한쪽이 비면 대조하지 않는다).
+        ⑤ **수량 상한** — 체결 수량이 후보 주문의 수량(workflow_orders.quantity)을 넘으면
+           거부한다(_fill_quantity_within_order). 우리 주문의 체결(부분·전량)은 주문 수량을
+           넘을 수 없으므로 우리 체결을 놓치는 일이 없고(false-miss 없음), 세션 시각에
+           의존하지 않는다. 브로커 주문번호가 영업일마다 리셋되므로 ①②③④ 를 전부
+           통과하는 재발급이 실제로 존재한다(2026-09-12 재검증 실측: 우리 1주 주문 → 남의
+           7주 체결) — 그 형태를 여기서 잡는다. 비교는 float 로 한다(소수점 주식 0.847972
+           vs 주문 1 → 통과). 원장 수량이 비었거나 0 이거나 숫자가 아니면, 또 체결 수량이
+           없으면 **추론 없이 거부**한다.
+        ⑥ **시각 근접(보조)** — 주문 기록 시각(workflow_orders.created_at)과 체결 수신 시각
+           (PendingFill.received_at)의 간격이 _WIDENED_MATCH_MAX_GAP 이내여야 한다. 이건
+           휴리스틱이다 — 미국주식은 KST 주간(09:00~)에도 거래되므로(저장소 메모리 관측
+           확정) 다음 날 낮 재발급이 몇 시간 뒤일 수 있어 시각만으로는 못 가른다(상수 정의
+           주석 참조). 수량이 우리 주문 이하라 ⑤ 를 통과한 재발급이 임계 밖에서 오면
+           여기가 마지막 방어다. created_at 이 비어 있는 옛 행과 수신 시각이 없는 호출은
+           **추론 없이 거부**한다.
+
+        (④ 매체코드 가드 _may_widen_for_media 는 창을 조회하기 **전에**
+         _match_workflow_order 가 건다 — 사람 채널 체결은 후보를 읽지도 않는다.)
+        """
+        if len(candidates) != 1:
+            if candidates:
+                logger.info(
+                    "주문일자 ±1일 창 후보가 %d건이라 매칭 거부(주문번호=%s, 체결=%s, 후보=%s)",
+                    len(candidates), order_no, order_date,
+                    [row[1] for row in candidates],
+                )
+            return None
+        row = candidates[0]
+        cand_symbol = self._normalize_symbol(row[2])
+        fill_symbol = self._normalize_symbol(symbol)
+        if not cand_symbol or not fill_symbol or cand_symbol != fill_symbol:
+            logger.info(
+                "주문일자 ±1일 창 후보의 종목이 체결과 달라 매칭 거부"
+                "(주문번호=%s, 체결=%s, 주문종목=%r, 체결종목=%r)",
+                order_no, order_date, row[2], symbol,
+            )
+            return None
+        cand_side = str(row[3] or "").strip().lower()
+        fill_side = str(side or "").strip().lower()
+        if cand_side and fill_side and cand_side != fill_side:
+            logger.info(
+                "주문일자 ±1일 창 후보의 매매구분이 체결과 달라 매칭 거부"
+                "(주문번호=%s, 체결=%s, 주문=%s, 체결=%s)",
+                order_no, order_date, cand_side, fill_side,
+            )
+            return None
+        if not self._fill_quantity_within_order(quantity, row[7]):
+            logger.info(
+                "주문일자 ±1일 창 후보의 주문 수량을 체결 수량이 넘거나 대조 불가라 매칭 거부"
+                "(주문번호=%s, 체결=%s, 주문수량=%r, 체결수량=%r)",
+                order_no, order_date, row[7], quantity,
+            )
+            return None
+        ordered_at = self._naive_local(self._parse_recorded_timestamp(row[6]))
+        filled_at = self._naive_local(received_at)
+        if ordered_at is None or filled_at is None:
+            logger.info(
+                "주문일자 ±1일 창 수용에 필요한 시각 증거가 없어 매칭 거부"
+                "(주문번호=%s, 체결=%s, 주문기록시각=%r, 체결수신시각=%r)",
+                order_no, order_date, row[6], received_at,
+            )
+            return None
+        gap = abs(filled_at - ordered_at)
+        if gap > _WIDENED_MATCH_MAX_GAP:
+            logger.info(
+                "주문일자 ±1일 창 후보가 체결과 %s 떨어져 있어 매칭 거부"
+                "(임계=%s, 주문번호=%s, 체결=%s)",
+                gap, _WIDENED_MATCH_MAX_GAP, order_no, order_date,
+            )
+            return None
+        logger.info("주문일자 ±1일 창에서 매칭됨(D=%s, 체결=%s, 주문번호=%s, 종목=%s, "
+                    "체결수량=%r/주문수량=%r, 간격=%s)",
+                    row[1], order_date, order_no, cand_symbol, quantity, row[7], gap)
+        return (row[1], row[4], row[5])
+
+    def _order_no_matches(
+        self,
+        target: str,
+        target_norm: Optional[str],
+        row_value: Any,
+        *,
+        mode: str,
+        strict: bool,
+    ) -> bool:
+        """저장된 주문번호가 대상 주문번호와 같은가.
+
+        mode (호출부마다 종전 의미를 그대로 유지한다):
+          - "exact"               : 문자열 정확일치만 (체결번호 없는 분류 경로)
+          - "normalized"          : 0 패딩 정규화 일치만 (명시 체결번호 경로)
+          - "exact_or_normalized" : 둘 중 하나 (lookup_order_identity)
+        strict=True 에서는 정규화 불가한 저장값이 예외로 올라간다 — 그 날짜의 우리 주문
+        기록이 깨졌다는 신호다. 이 의미는 **mode='normalized' 의 정확일치 날짜 조회에만**
+        남겨 둔다(통합 전 그 경로가 그렇게 동작했다). 'exact_or_normalized'(조회 경로)는
+        통합 전 깨진 행 하나를 ``except ValueError: continue`` 로 건너뛰었으므로 strict=
+        False 로 그 행만 건너뛴다 — 안 그러면 깨진 행 하나가 lookup 전체를 죽인다.
+        넓힌 창도 strict=False 다(이웃 날짜에 섞인 깨진 값 하나가 멀쩡한 체결 처리를 죽이지
+        않게 — 넓히기 전보다 나빠지지 않도록).
+        """
+        if mode == "exact":
+            return row_value == target
+        if mode == "exact_or_normalized" and row_value == target:
+            return True
+        if target_norm is None:
+            return False
+        try:
+            return self._normalize_identifier(row_value) == target_norm
+        except ValueError:
+            if strict:
+                raise
+            return False
+
+    def _match_workflow_order(
+        self,
+        order_no: str,
+        order_date: str,
+        *,
+        mode: str = "exact",
+        symbol: Optional[str] = None,
+        side: Optional[str] = None,
+        commda_code: Optional[str] = None,
+        received_at: Optional[datetime] = None,
+        quantity: Optional[float] = None,
+    ) -> Optional[Tuple[str, Optional[str], Optional[str]]]:
+        """워크플로우 주문 매칭 — (주문일자, job_id, node_id) 또는 None.
+
+        분류(_is_workflow_fill)와 식별자 조회(lookup_order_identity)가 공유하는 **유일한**
+        매칭 경로다. 주문번호 대조 mode 만 호출부마다 다르고(모듈 상단 규약 참조), 날짜
+        규약과 창 수용 조건은 공유한다 — 그게 갈리면 classification='workflow' 인데
+        node_id 가 None 인 상태가 생긴다.
+
+        1) 같은 order_date 를 **SQL 등가조건(order_no 포함)** 으로 먼저 친다. 체결 핫패스인
+           mode='exact' 는 여기서 끝나므로 그 날짜 행을 전부 읽어 파이썬에서 비교하지
+           않는다. EXPLAIN QUERY PLAN 실측(2026-09-12): 이 형태는
+           ``SEARCH ... USING INDEX sqlite_autoindex_workflow_orders_1 (order_no=? AND
+           order_date=?)`` 로 UNIQUE(order_no, order_date) 를 등가 탐색하고, order_date 만
+           걸면 ``SEARCH ... USING INDEX idx_orders_lookup_v2 (trading_mode=?)`` 가 되어 그
+           모드의 행을 전부 훑는다. 0 패딩 정규화가 필요한 mode 만 **order_date 로 좁힌
+           뒤** 파이썬 비교를 추가로 돈다. 이 경로의 의미는 종전 그대로이고 종목/매체/수량/
+           시각 대조를 넣지 않는다(국내 SC1 체결 종목코드 'A005930' vs 주문 기록 '005930').
+        2) 실패하면 D±1 창을 본다. 단 프레임이 사람 채널이라고 명시한 체결은 후보를
+           **조회하지도 않고**(_may_widen_for_media), 나머지는 _accept_widened_match 의
+           수용 조건을 모두 통과할 때만 매칭으로 인정한다.
+
+        스코프는 product/provider/trading_mode 다. 통합 전 체결번호 없는 경로는
+        trading_mode 로만 좁혔는데, record_order 가 언제나 이 tracker 의 product/provider
+        로 행을 쓰므로 실제 매칭 결과는 달라지지 않는다(체결번호 있는 경로는 통합 전에도
+        이 스코프였다).
+        """
+        try:
+            target_norm = self._normalize_identifier(order_no)
+        except ValueError:
+            target_norm = None
+        columns = "order_no, order_date, symbol, side, job_id, node_id, created_at, quantity"
+        scope = (self.product, self.provider, self.trading_mode)
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT 1 FROM workflow_orders
-                WHERE order_no = ? AND order_date = ? AND trading_mode = ?
-            """, (order_no, order_date, self.trading_mode))
-            return cursor.fetchone() is not None
-    
+            # 1) 정확일치 — UNIQUE(order_no, order_date) 등가 탐색이라 최대 1행.
+            hit = conn.execute(
+                f"""
+                SELECT {columns} FROM workflow_orders
+                WHERE product = ? AND provider = ? AND trading_mode = ?
+                  AND order_date = ? AND order_no = ?
+                """,
+                (*scope, order_date, order_no),
+            ).fetchone()
+            if hit is not None and mode != "normalized":
+                # 'exact'/'exact_or_normalized' 는 문자열 정확일치를 그대로 수용한다.
+                # 'normalized' 는 정규화 결과로만 판정하므로 아래 루프에 맡긴다
+                # (예: 저장값 '000' 은 정규화하면 빈 값이라 매칭이 성립하지 않는다).
+                return (hit[1], hit[4], hit[5])
+            if mode != "exact":
+                rows = conn.execute(
+                    f"""
+                    SELECT {columns} FROM workflow_orders
+                    WHERE product = ? AND provider = ? AND trading_mode = ? AND order_date = ?
+                    """,
+                    (*scope, order_date),
+                ).fetchall()
+                for row in rows:
+                    if self._order_no_matches(order_no, target_norm, row[0],
+                                              mode=mode, strict=(mode == "normalized")):
+                        return (row[1], row[4], row[5])
+
+            if not self._may_widen_for_media(commda_code):
+                # 사람 매체코드 체결이 우리 주문과 정확일치하지 않는 건 **정상**(사용자가
+                # 손으로 낸 주문)이라 debug 다. 아래 거부 로그들(종목/side/시각 불일치)은
+                # '거의 맞을 뻔한' 근접 사례라 info 로 남긴다.
+                logger.debug(
+                    "매체코드 %r 가 사람 채널이라 주문일자 창을 넓히지 않음"
+                    "(주문번호=%s, 체결=%s)", commda_code, order_no, order_date,
+                )
+                return None
+            window = self._order_date_window(order_date)
+            if not window:
+                return None
+            rows = conn.execute(
+                f"""
+                SELECT {columns} FROM workflow_orders
+                WHERE product = ? AND provider = ? AND trading_mode = ?
+                  AND order_date IN ({",".join("?" * len(window))})
+                """,
+                (*scope, *window),
+            ).fetchall()
+        candidates = [row for row in rows
+                      if self._order_no_matches(order_no, target_norm, row[0],
+                                                mode=mode, strict=False)]
+        return self._accept_widened_match(
+            candidates, order_no, order_date, symbol, side,
+            commda_code=commda_code, received_at=received_at, quantity=quantity,
+        )
+
+    def _check_workflow_order(
+        self,
+        order_no: str,
+        order_date: str,
+        *,
+        symbol: Optional[str] = None,
+        side: Optional[str] = None,
+        commda_code: Optional[str] = None,
+        received_at: Optional[datetime] = None,
+        quantity: Optional[float] = None,
+    ) -> bool:
+        """워크플로우 주문 여부 (이 tracker 의 product/provider/trading_mode 기준,
+        주문일자 D±1 창 포함).
+
+        symbol/side/commda_code/received_at/quantity 는 넓힌 창에서만 쓰인다 — 없으면 창
+        경로는 대조할 게 없어 거부되고 정확일치만 남는다(넓히기 전 동작).
+        """
+        return self._match_workflow_order(
+            order_no, order_date, mode="exact", symbol=symbol, side=side,
+            commda_code=commda_code, received_at=received_at, quantity=quantity,
+        ) is not None
+
     def get_workflow_positions(
         self,
         start_date: Optional[str] = None,
@@ -1583,17 +2170,26 @@ class WorkflowPositionTracker:
                 ))
             
             # 2. unknown_api_ratio: 알 수 없는 API 주문 비율
+            # 분모는 리터럴 '40' 이 아니라 **media_channel() 기준**으로 고른다 — 종전
+            # SQL 은 `commda_code = '40'` 하드코딩이라 표(MEDIA_CODES_*)와 어긋났다:
+            #  · TC3(해외선물) 프레임에는 통신매체코드 필드가 없어 이제 빈 문자열을
+            #    싣는데, '40' 고정 분모는 그 행을 통째로 빼서 선물에서는 이 이상탐지가
+            #    **영구히 0행**(절대 발화 안 함)이었다.
+            #  · 41(API)·43(Robo API) 행도 분모에서 빠졌다.
+            # 이제 channel 이 "api"(40/41/43) 또는 "unknown"(빈/미상 매체코드)인 행이
+            # 분모다 = "사람·브로커 채널이 아니어서 API 경로일 수 있는 체결". 동작 변화는
+            # 선물(빈 코드)이 다시 탐지 대상이 된다는 것 하나이고, 임계값(10%)과 감점
+            # 폭(최대 20)은 종전 그대로다. (2026-09-12 적대적 검토 지적 B6)
             cursor.execute("""
-                SELECT
-                    SUM(CASE WHEN classification = 'unknown_api' THEN 1 ELSE 0 END) as unknown_count,
-                    COUNT(*) as total_count
-                FROM trade_history
-                WHERE commda_code = '40' AND trading_mode = ?
+                SELECT commda_code, classification FROM trade_history
+                WHERE trading_mode = ?
             """, (self.trading_mode,))
-            
-            row = cursor.fetchone()
-            if row and row[1] > 0:
-                unknown_count, total_count = row
+
+            scoped = [(code, kind) for code, kind in cursor.fetchall()
+                      if media_channel(code) in ("api", "unknown")]
+            total_count = len(scoped)
+            if total_count > 0:
+                unknown_count = sum(1 for _, kind in scoped if kind == "unknown_api")
                 ratio = unknown_count / total_count
                 if ratio > 0.1:  # 10% 이상이면 이상
                     severity = min(int(ratio * 100), 20)  # 최대 20점 감점
@@ -1925,92 +2521,34 @@ class WorkflowPositionTracker:
         self,
         fill_history: List[Dict[str, Any]],
     ) -> int:
-        """
-        체결내역에서 FIFO 포지션 동기화 (record_fill 호출)
-        
-        연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우,
-        체결내역 API 응답으로 포지션을 생성합니다.
-        
+        """체결내역 기반 FIFO 복구 — **미구현(별도 작업 필요)**. 항상 0 을 반환한다.
+
+        연결 끊김 등으로 실시간 체결을 놓쳤을 때 체결내역 API 응답으로 포지션을
+        되살리려던 경로다. 그러나 이 함수는 **한 번도 동작한 적이 없다**:
+        - 본문이 이 모듈에 존재하지 않는 ``FillEvent`` 를 import 해 호출 즉시
+          ImportError 로 죽었고,
+        - (동기 함수인데) async 인 ``record_fill`` 을 await 없이 위치인자 1개로 불렀고,
+        - 매체코드를 '40' 으로 하드코딩해 브로커가 실제로 준 값을 버렸다.
+        호출부(``context.sync_workflow_fills_from_history``)의 try/except 가 그 예외를
+        삼켜 0 을 돌려줬기 때문에 실패가 조용했다 — 복구된 줄 알았는데 아무것도 안 됐다.
+
+        제대로 고치려면 ``record_fill`` 을 await 해야 하고(=이 함수가 async 가 돼야 하고),
+        그러면 동기 호출부인 context.py/executor.py 시그니처까지 함께 바뀌어야 한다.
+        여기서 자체적으로 이벤트 루프를 돌리는 우회는 쓰지 않는다 — 호출부가 이미 실행
+        중인 루프 안이라 중첩 루프/교착을 만든다. 그래서 지금은 **조용히 실패하지 않게만**
+        만든다: 죽은 import 를 지우고, 즉시 error 로그를 남기고, 0 을 반환한다.
+
         Args:
-            fill_history: 체결내역 API 응답 리스트
-                [{
-                    "order_no": "123",
-                    "order_date": "20260123",
-                    "symbol": "AAPL",
-                    "exchange": "NASDAQ",
-                    "side": "buy",
-                    "quantity": 10,
-                    "price": 192.50,
-                    "fill_time": "093000000"
-                }, ...]
-            
+            fill_history: 체결내역 API 응답 리스트 (현재 소비하지 않는다)
+
         Returns:
-            처리된 체결 수
+            처리된 체결 수 — 언제나 0
         """
-        processed_count = 0
-        
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            for fill in fill_history:
-                order_no = fill.get("order_no", "")
-                order_date = fill.get("order_date", "")
-                symbol = fill.get("symbol", "")
-                exchange = fill.get("exchange", "NASDAQ")
-                side = fill.get("side", "")
-                quantity = fill.get("quantity", 0)
-                price = fill.get("price", 0)
-                fill_time = fill.get("fill_time", "")
-                
-                if not order_no or not order_date or not symbol or not side:
-                    continue
-                
-                if quantity <= 0 or price <= 0:
-                    continue
-                
-                # 이미 처리된 체결인지 확인 (trade_history에 있는지)
-                cursor.execute("""
-                    SELECT COUNT(*) FROM trade_history
-                    WHERE order_no = ? AND order_date = ? AND trading_mode = ?
-                """, (order_no, order_date, self.trading_mode))
-                
-                if cursor.fetchone()[0] > 0:
-                    # 이미 처리됨
-                    continue
-        
-        # 연결 닫고 record_fill 호출 (별도 트랜잭션)
-        from programgarden.database.workflow_position_tracker import FillEvent
-        
-        for fill in fill_history:
-            order_no = fill.get("order_no", "")
-            order_date = fill.get("order_date", "")
-            symbol = fill.get("symbol", "")
-            exchange = fill.get("exchange", "NASDAQ")
-            side = fill.get("side", "")
-            quantity = fill.get("quantity", 0)
-            price = fill.get("price", 0)
-            fill_time = fill.get("fill_time", "")
-            
-            if not order_no or not symbol or not side or quantity <= 0 or price <= 0:
-                continue
-            
-            fill_event = FillEvent(
-                order_no=order_no,
-                order_date=order_date,
-                symbol=symbol,
-                exchange=exchange,
-                side=side,
-                quantity=quantity,
-                price=price,
-                fill_time=fill_time,
-                commda_code="40",  # OPEN API
-            )
-            
-            try:
-                self.record_fill(fill_event)
-                processed_count += 1
-                logger.info(f"Synced fill from history: {symbol} {side} {quantity}@{price}")
-            except Exception as e:
-                logger.warning(f"Failed to sync fill from history: {order_no} - {e}")
-        
-        return processed_count
+        logger.error(
+            "sync_fills_from_history 는 미구현이다 — 체결내역 %d건을 FIFO 원장에 반영하지 "
+            "않고 건너뛴다. 실시간 체결을 놓친 구간은 워크플로우 집계에서 누락된 채로 "
+            "남는다(복구 경로 없음). record_fill 의 async 호출 + 호출부 시그니처 변경이 "
+            "필요한 별도 작업이다.",
+            len(fill_history or []),
+        )
+        return 0

@@ -6,6 +6,7 @@ Feature-gated 위험관리 추적기의 모든 기능을 검증합니다.
 
 import asyncio
 import os
+import shutil
 import sqlite3
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,7 @@ from programgarden.database.workflow_risk_tracker import (
     HWMUpdateResult,
     HWMValidationResult,
     VALID_FEATURES,
+    _to_qty_decimal,
 )
 
 
@@ -28,9 +30,20 @@ from programgarden.database.workflow_risk_tracker import (
 # ============================================================
 
 @pytest.fixture
-def tmp_db_path(tmp_path):
-    """임시 DB 경로"""
-    return str(tmp_path / "test_workflow.db")
+def tmp_db_path():
+    """이 테스트 전용 임시 DB 경로.
+
+    pytest 의 ``tmp_path`` 를 쓰지 않는다 — ``tmp_path`` 는 사용자 단위 공용 base
+    (``pytest-of-<user>/pytest-N``)에 만들어지고 pytest 가 오래된 numbered dir 를
+    정리(기본 보관 3개)하므로, 같은 머신에서 다른 pytest 프로세스가 동시에 돌면
+    실행 중인 디렉토리가 정리 대상에 걸릴 수 있다. 여기서는 테스트마다
+    독립 디렉토리를 만들고 끝나면 우리가 지운다(WAL/SHM 부산물 포함).
+    """
+    d = tempfile.mkdtemp(prefix="pg-risk-tracker-")
+    try:
+        yield os.path.join(d, "test_workflow.db")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def make_tracker(db_path, features, trading_mode="live"):
@@ -764,3 +777,262 @@ class TestUpdatePriceWindowIntegration:
         assert len(tracker._price_window) == 50
         vol = tracker.get_volatility("AAPL")
         assert vol is not None
+
+
+# ============================================================
+# 13. 소수점(fractional) 수량 — HWM 보존
+# ============================================================
+
+class TestFractionalQuantity:
+    """소수 수량 포지션에서도 재시작 검증이 HWM(트레일링 고점)을 지켜야 한다.
+
+    LS 는 해외주식 소수점 주식을 지원한다(출처: 오너 진술 2026-09-12).
+    사용자의 HTS/앱 소수 매도가 분류 무관 로트를 FIFO 로 소진하면 workflow 잔량이
+    소수가 되는데, 예전처럼 position_qty 를 int 로 자르면 9.5 → 9 로 저장돼
+    다음 재시작 비교에서 Decimal('9.5') != 9 가 항상 참이 되고, HWM 이 매번
+    평단으로 리셋(drawdown 0 초기화)됐다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_fractional_qty_survives_db_roundtrip(self, tmp_db_path):
+        """0.532주가 flush → 재복원 후에도 0.532 로 남는다 (int 절단 시 0)"""
+        t1 = make_tracker(tmp_db_path, {"hwm"})
+        t1.register_symbol("AAPL", "NASDAQ", 150.0, Decimal("0.532"))
+        assert t1.get_hwm("AAPL").position_qty == Decimal("0.532")
+        await t1.flush_to_db()
+
+        t2 = make_tracker(tmp_db_path, {"hwm"})
+        assert t2.get_hwm("AAPL").position_qty == Decimal("0.532")
+
+    @pytest.mark.asyncio
+    async def test_fractional_position_keeps_hwm_on_restart(self, tmp_db_path):
+        """수량 9.5 그대로면 'kept' — HWM 200 이 평단 150 으로 리셋되지 않는다"""
+        t1 = make_tracker(tmp_db_path, {"hwm"})
+        t1.register_symbol("AAPL", "NASDAQ", 150.0, Decimal("9.5"))
+        t1.update_price("AAPL", "NASDAQ", 200.0)  # HWM = 200
+        await t1.flush_to_db()
+
+        t2 = make_tracker(tmp_db_path, {"hwm"})
+
+        class MockPT:
+            def get_workflow_positions(self):
+                return {"AAPL": type("P", (), {
+                    "symbol": "AAPL",
+                    "quantity": Decimal("9.5"),   # PositionInfo.quantity 는 Decimal
+                    "avg_price": Decimal("150.0"),
+                    "exchange": "NASDAQ",
+                })()}
+
+        results = t2.validate_hwm_on_restart(MockPT())
+        assert [r.action for r in results] == ["kept"]
+        assert t2.get_hwm("AAPL").hwm_price == Decimal("200")
+
+    @pytest.mark.asyncio
+    async def test_fractional_qty_decrease_still_resets(self, tmp_db_path):
+        """9.5 → 9.0 처럼 실제로 줄면 여전히 reset (오차 허용으로 놓치지 않는다)"""
+        t1 = make_tracker(tmp_db_path, {"hwm"})
+        t1.register_symbol("AAPL", "NASDAQ", 150.0, Decimal("9.5"))
+        t1.update_price("AAPL", "NASDAQ", 200.0)
+        await t1.flush_to_db()
+
+        t2 = make_tracker(tmp_db_path, {"hwm"})
+
+        class MockPT:
+            def get_workflow_positions(self):
+                return {"AAPL": type("P", (), {
+                    "symbol": "AAPL",
+                    "quantity": Decimal("9.0"),
+                    "avg_price": Decimal("150.0"),
+                    "exchange": "NASDAQ",
+                })()}
+
+        results = t2.validate_hwm_on_restart(MockPT())
+        assert [r.action for r in results] == ["reset"]
+        assert t2.get_hwm("AAPL").position_qty == Decimal("9.0")
+
+    def test_new_fractional_position_registers(self, tmp_db_path):
+        """포지션 0.532 만 있어도 등록되고 **수량 0.532 가 그대로 저장**된다.
+
+        신규 등록 게이트(`if pos_qty > 0`)는 절단 전 원본 Decimal('0.532') 로
+        판정하므로 구 코드에서도 등록 자체는 됐다 — 깨졌던 건 저장 수량이다.
+        int 절단 시 position_qty 가 0 으로 남아 트레일링 청산의 수량 폴백이
+        0 이 됐다.
+        """
+        tracker = make_tracker(tmp_db_path, {"hwm"})
+
+        class MockPT:
+            def get_workflow_positions(self):
+                return {"TSLA": type("P", (), {
+                    "symbol": "TSLA",
+                    "quantity": Decimal("0.532"),
+                    "avg_price": Decimal("200.0"),
+                    "exchange": "NASDAQ",
+                })()}
+
+        results = tracker.validate_hwm_on_restart(MockPT())
+        assert [r.action for r in results] == ["new"]
+        assert tracker.get_hwm("TSLA").position_qty == Decimal("0.532")
+
+    def test_additional_fractional_buy_updates_avg(self, tmp_db_path):
+        """소수 추가 매수: Decimal * Decimal 산술이 TypeError 없이 평단을 갱신"""
+        tracker = make_tracker(tmp_db_path, {"hwm"})
+        tracker.register_symbol("AAPL", "NASDAQ", 100.0, Decimal("0.5"))
+        tracker.register_symbol("AAPL", "NASDAQ", 120.0, Decimal("0.5"))
+
+        hwm = tracker.get_hwm("AAPL")
+        assert hwm.position_qty == Decimal("1.0")
+        assert hwm.position_avg_price == Decimal("110")
+
+    @pytest.mark.asyncio
+    async def test_float_unrepresentable_decimal_keeps_hwm(self, tmp_db_path):
+        """float 로 정확히 표현 못 하는 Decimal 수량도 재시작 시 'kept'.
+
+        _qty_changed 를 고정하는 테스트다. position_qty 는 저장 직전 float 로
+        바인딩되므로 Decimal('0.1234567890123456789') 는 복원 시
+        Decimal('0.12345678901234568') 이 된다. 비교를 순수 `!=` 로 되돌리면
+        브로커가 **같은 수량**을 보고해도 항상 '변동'으로 판정돼 HWM 이 매
+        재시작 평단으로 리셋된다. float 정밀도 비교라야 'kept' 가 나온다.
+        """
+        qty = Decimal("0.1234567890123456789")
+        # 전제 확인: 순수 Decimal 비교면 왕복 후 값이 달라진다
+        # (전제가 깨지면 이 테스트가 조용히 무의미해지므로 여기서 잡는다)
+        assert Decimal(str(float(qty))) != qty
+        assert float(Decimal(str(float(qty)))) == float(qty)
+
+        t1 = make_tracker(tmp_db_path, {"hwm"})
+        t1.register_symbol("AAPL", "NASDAQ", 150.0, qty)
+        t1.update_price("AAPL", "NASDAQ", 200.0)  # HWM = 200
+
+        # flush 완료를 명시적으로 확인한다. flush_to_db 는 executor 스레드에서
+        # 쓰고 dirty 플래그로 무엇을 쓸지 정하므로, 여기서 "몇 건 썼는지 + 실제로
+        # 행이 남았는지"를 직접 보지 않으면 flush 가 조용히 0건이어도 아래 단언이
+        # AttributeError('NoneType' has no attribute ...) 로만 터져 원인이 안 남는다.
+        written = await t1.flush_to_db()
+        assert written == 1, f"flush 가 HWM 을 쓰지 않았다 (written={written})"
+        assert not t1.get_hwm("AAPL").dirty, "flush 후에도 dirty 플래그가 남아 있다"
+        with sqlite3.connect(tmp_db_path) as conn:
+            rows = conn.execute(
+                "SELECT symbol, position_qty FROM risk_high_water_mark"
+            ).fetchall()
+        assert len(rows) == 1 and rows[0][0] == "AAPL", f"DB 에 HWM 행이 없다: {rows}"
+
+        t2 = make_tracker(tmp_db_path, {"hwm"})
+        restored = t2.get_hwm("AAPL")
+        assert restored is not None, "DB → 메모리 복원이 HWM 을 가져오지 못했다"
+        assert restored.position_qty != qty  # float 왕복으로 값이 바뀜
+
+        class MockPT:
+            def get_workflow_positions(self):
+                return {"AAPL": type("P", (), {
+                    "symbol": "AAPL",
+                    "quantity": qty,          # 브로커는 원래 Decimal 을 그대로 보고
+                    "avg_price": Decimal("150.0"),
+                    "exchange": "NASDAQ",
+                })()}
+
+        results = t2.validate_hwm_on_restart(MockPT())
+        assert [r.action for r in results] == ["kept"]
+        assert t2.get_hwm("AAPL").hwm_price == Decimal("200")
+
+    def test_nan_quantity_becomes_zero(self, tmp_db_path, caplog):
+        """NaN 수량은 0 으로 잘라내고 경고를 남긴다.
+
+        Decimal(str(float('nan'))) 은 InvalidOperation 을 던지지 않아 예전
+        except 가드를 그대로 통과했다. 그 값이 position_qty 에 들어가면
+        nan != nan 이 항상 참이라 HWM 이 매 재시작 리셋되고, sqlite 바인딩은
+        NULL 이 돼 원인조차 남지 않는다.
+        """
+        import logging
+
+        assert _to_qty_decimal(float("nan")) == Decimal("0")
+        assert _to_qty_decimal(Decimal("NaN")) == Decimal("0")
+        assert _to_qty_decimal(float("inf")) == Decimal("0")
+
+        with caplog.at_level(logging.WARNING):
+            tracker = make_tracker(tmp_db_path, {"hwm"})
+            tracker.register_symbol("AAPL", "NASDAQ", 150.0, float("nan"))
+        assert any("유한수가 아님" in r.message for r in caplog.records)
+
+        state = tracker.get_hwm("AAPL")
+        assert state.position_qty == Decimal("0")
+        assert state.position_qty == state.position_qty  # nan 이면 False 가 된다
+
+    def test_nan_quantity_does_not_reset_hwm_on_restart(self, tmp_db_path):
+        """브로커가 NaN 수량을 보고해도 0 으로 정규화돼 판정이 결정적이다."""
+        tracker = make_tracker(tmp_db_path, {"hwm"})
+        tracker.register_symbol("AAPL", "NASDAQ", 150.0, Decimal("0"))
+        tracker.update_price("AAPL", "NASDAQ", 200.0)
+
+        class MockPT:
+            def get_workflow_positions(self):
+                return {"AAPL": type("P", (), {
+                    "symbol": "AAPL",
+                    "quantity": float("nan"),
+                    "avg_price": Decimal("150.0"),
+                    "exchange": "NASDAQ",
+                })()}
+
+        results = tracker.validate_hwm_on_restart(MockPT())
+        # NaN → 0 이므로 기억값 0 과 같다 → 수량 변동 없음(kept).
+        # 정규화가 없으면 nan != 0 으로 매번 reset 된다.
+        assert [r.action for r in results] == ["kept"]
+        assert tracker.get_hwm("AAPL").hwm_price == Decimal("200")
+
+
+# ============================================================
+# 14. 수량 0 추가매수 — 평단 0/0 나눗셈 방지
+# ============================================================
+
+class TestZeroQuantityAveraging:
+    """수량이 0 으로 정규화된 매수가 겹쳐도 평단 계산이 터지지 않아야 한다.
+
+    _to_qty_decimal 이 NaN/읽기 실패를 0 으로 접기 때문에, 같은 종목에 그런 매수가
+    두 번 오면 total_qty = 0 이 되어 `total_cost / total_qty` 가
+    decimal.InvalidOperation [DivisionUndefined] 로 터졌다(검토자 라이브 재현).
+    """
+
+    def test_repeated_zero_qty_buy_does_not_raise(self, tmp_db_path, caplog):
+        import logging
+
+        tracker = make_tracker(tmp_db_path, {"hwm"})
+        tracker.register_symbol("AAPL", "NASDAQ", 150.0, Decimal("0"))
+
+        with caplog.at_level(logging.WARNING):
+            tracker.register_symbol("AAPL", "NASDAQ", 170.0, Decimal("0"))
+
+        state = tracker.get_hwm("AAPL")
+        assert state.position_qty == Decimal("0")
+        # 평단은 계산할 근거가 없으므로 직전 값을 유지한다(170 으로 덮어쓰지 않는다).
+        assert state.position_avg_price == Decimal("150.0")
+        assert any("평단 갱신 불가" in r.message for r in caplog.records)
+
+    def test_repeated_nan_qty_buy_does_not_raise(self, tmp_db_path):
+        """NaN 수량 두 번(→ 0 + 0)도 예외 없이 넘어간다."""
+        tracker = make_tracker(tmp_db_path, {"hwm"})
+        tracker.register_symbol("AAPL", "NASDAQ", 150.0, float("nan"))
+        tracker.register_symbol("AAPL", "NASDAQ", 160.0, float("nan"))
+
+        state = tracker.get_hwm("AAPL")
+        assert state.position_qty == Decimal("0")
+        assert state.position_avg_price == Decimal("150.0")
+        assert state.hwm_price == Decimal("150.0")  # HWM 은 추가매수로 건드리지 않는다
+
+    def test_normal_additional_buy_still_averages(self, tmp_db_path):
+        """가드가 정상 추가매수 경로를 막지 않는다(회귀 방지)."""
+        tracker = make_tracker(tmp_db_path, {"hwm"})
+        tracker.register_symbol("AAPL", "NASDAQ", 100.0, Decimal("0.5"))
+        tracker.register_symbol("AAPL", "NASDAQ", 120.0, Decimal("0.5"))
+
+        state = tracker.get_hwm("AAPL")
+        assert state.position_qty == Decimal("1.0")
+        assert state.position_avg_price == Decimal("110")
+
+    def test_zero_qty_buy_onto_existing_position_keeps_avg(self, tmp_db_path):
+        """기존 수량이 있으면 0 수량 추가매수는 평단을 희석하지 않는다."""
+        tracker = make_tracker(tmp_db_path, {"hwm"})
+        tracker.register_symbol("AAPL", "NASDAQ", 100.0, Decimal("2"))
+        tracker.register_symbol("AAPL", "NASDAQ", 500.0, Decimal("0"))
+
+        state = tracker.get_hwm("AAPL")
+        assert state.position_qty == Decimal("2")
+        assert state.position_avg_price == Decimal("100")

@@ -15,9 +15,12 @@ from typing import Any, Dict, List, Optional, Set
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
+from .._position_qty import below_broker_lot, coerce_number, half_position_qty
+
 
 # risk_features 선언
 risk_features: Set[str] = {"hwm", "events"}
+
 
 DRAWDOWN_PROTECTION_SCHEMA = PluginSchema(
     id="DrawdownProtection",
@@ -59,11 +62,17 @@ DRAWDOWN_PROTECTION_SCHEMA = PluginSchema(
         "drawdown": {"type": "float", "description": "Current drawdown from peak (%)"},
         "max_drawdown_pct": {"type": "float", "description": "Configured maximum allowed drawdown threshold (%)"},
         "triggered": {"type": "bool", "description": "Whether drawdown exceeded the threshold"},
-        "action": {"type": "str", "description": "Action taken: 'exit_all', 'reduce_half', 'stop_new_orders', or 'hold'"},
-        "current_price": {"type": "float", "description": "Current market price"},
-        "pnl_rate": {"type": "float", "description": "Current P&L rate (%)"},
+        "action": {"type": "str", "description": "Action taken: 'exit_all', 'reduce_half', 'stop_new_orders', 'hold', or 'skip' (drawdown could not be determined because pnl_rate was unreadable and no HWM was available)"},
+        "reason": {"type": "str", "description": "Why the position was skipped: names the unreadable field and its raw value (present on the 'skip' action)"},
+        "current_price": {"type": "float", "description": "Current market price (absent when it could not be read; see current_price_unavailable_reason)"},
+        "current_price_unavailable_reason": {"type": "str", "description": "Present when the position's current_price could not be read as a number (display only)"},
+        "pnl_rate": {"type": "float", "description": "Current P&L rate (%) (absent when it could not be read; see pnl_rate_unavailable_reason)"},
+        "pnl_rate_unavailable_reason": {"type": "str", "description": "Present when pnl_rate could not be read but the drawdown was still determined from the risk_tracker HWM"},
         "hwm_price": {"type": "float", "description": "High-water mark price (available when risk_tracker is active)"},
         "hwm_drawdown_pct": {"type": "float", "description": "Drawdown from HWM tracked by risk_tracker (available when active)"},
+        "sell_quantity": {"type": "float", "description": "Quantity to sell for the 'reduce_half' action: exactly half of the held quantity, never rounded up and never above the held quantity (fractional halves are kept; the order node truncates to the broker lot and reports the remainder)"},
+        "sell_quantity_unavailable_reason": {"type": "str", "description": "Present only when 'reduce_half' triggered but the held quantity could not be read, so no sell quantity was emitted"},
+        "reduce_skipped_reason": {"type": "str", "description": "Present when the 'reduce_half' quantity is below 1 share: the order node truncates to the integer part (0) and builds no order, so the reduction silently does nothing this round"},
     },
     locales={
         "ko": {
@@ -107,20 +116,40 @@ async def drawdown_protection_condition(
         symbol = pos_data.get("symbol")
         if not symbol:
             continue
-        pnl_rate = pos_data.get("pnl_rate", 0)
-        current_price = pos_data.get("current_price", 0)
         exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
 
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
         exchange_name = exchange_map.get(str(exchange), exchange)
         sym_dict = {"symbol": symbol, "exchange": exchange_name}
 
+        # 수익률·현재가는 **비교보다 먼저** 읽는다. 구 코드는 pos_data 원값을 그대로
+        # ``drawdown <= max_drawdown_pct`` / ``round(pnl_rate, 2)`` 에 넣어, 값이
+        # 숫자가 아니면('n/a'·None) TypeError 로 플러그인 전체가 죽었다. 못 읽은 값은
+        # 0 으로 뭉개지 않고 그렇다고 표시한다(_position_qty 참조).
+        raw_pnl_rate = pos_data.get("pnl_rate", 0)
+        raw_current_price = pos_data.get("current_price", 0)
+        pnl_rate = coerce_number(raw_pnl_rate)
+        current_price = coerce_number(raw_current_price)
+
         # risk_tracker HWM 기반 drawdown (우선)
-        drawdown = pnl_rate  # fallback
+        drawdown = pnl_rate  # fallback (읽을 수 없으면 None)
         if has_risk_tracker:
             hwm = context.risk_tracker.get_hwm(symbol)
             if hwm and hwm.hwm_price > 0:
                 drawdown = -float(hwm.drawdown_pct)  # drawdown_pct는 양수, 여기선 음수로 변환
+
+        if drawdown is None:
+            # pnl_rate 도 못 읽었고 HWM 도 없다 — 낙폭을 지어내지 않는다.
+            failed.append(sym_dict)
+            symbol_results.append({
+                "symbol": symbol, "exchange": exchange_name,
+                "max_drawdown_pct": max_drawdown_pct,
+                "action": "skip",
+                "reason": (
+                    f"수익률을 읽을 수 없어 낙폭을 판정하지 못함 (pnl_rate={raw_pnl_rate!r})"
+                ),
+            })
+            continue
 
         triggered = drawdown <= max_drawdown_pct
 
@@ -130,9 +159,20 @@ async def drawdown_protection_condition(
             "max_drawdown_pct": max_drawdown_pct,
             "triggered": triggered,
             "action": action if triggered else "hold",
-            "current_price": current_price,
-            "pnl_rate": round(pnl_rate, 2),
         }
+        if current_price is None:
+            result_info["current_price_unavailable_reason"] = (
+                f"현재가를 읽을 수 없음 (current_price={raw_current_price!r})"
+            )
+        else:
+            result_info["current_price"] = current_price
+        if pnl_rate is None:
+            # HWM 으로 낙폭은 판정했지만 pnl_rate 자체는 못 읽은 경우.
+            result_info["pnl_rate_unavailable_reason"] = (
+                f"수익률을 읽을 수 없음 (pnl_rate={raw_pnl_rate!r}) — 낙폭은 HWM 기준"
+            )
+        else:
+            result_info["pnl_rate"] = round(pnl_rate, 2)
 
         if has_risk_tracker:
             hwm = context.risk_tracker.get_hwm(symbol)
@@ -140,16 +180,37 @@ async def drawdown_protection_condition(
                 result_info["hwm_price"] = float(hwm.hwm_price)
                 result_info["hwm_drawdown_pct"] = float(hwm.drawdown_pct)
 
-        symbol_results.append(result_info)
-
         if triggered:
             # action에 따라 sell_quantity 설정
             if action == "reduce_half":
                 qty = pos_data.get("qty", pos_data.get("quantity", 0))
-                sym_dict["sell_quantity"] = max(1, int(qty) // 2)
+                half = half_position_qty(qty)
+                if half is None:
+                    # 수량을 읽을 수 없으면(없음·문자열 쓰레기·NaN·0 이하) 임의의 수량을
+                    # 지어내지 않는다. 왜 안 실었는지를 결과에 남긴다
+                    # ('안 보낸 필드는 안 보냈다고 표시' 규약).
+                    result_info["sell_quantity_unavailable_reason"] = (
+                        f"보유 수량을 읽을 수 없어 절반 수량을 싣지 않음 (qty={qty!r})"
+                    )
+                else:
+                    sym_dict["sell_quantity"] = half
+                    result_info["sell_quantity"] = half
+                    # 0 < 절반 < 1 이면 주문 송신부가 정수부 0 으로 접어 주문 자체를
+                    # 만들지 않는다(_position_qty.below_broker_lot). 1주 보유의
+                    # reduce_half 가 정확히 이 구간이다(0.5주). 수량은 그대로 둔다 —
+                    # 정수화·올림은 송신부의 규약이다. 다만 '절반 축소했다고 보고했는데
+                    # 아무 일도 없었다' 를 없애기 위해 사유를 드러낸다.
+                    if below_broker_lot(half):
+                        result_info["reduce_skipped_reason"] = (
+                            f"절반 축소 수량 {half!r} 주는 1주 미만이라 주문 송신부가 정수부(0)로 "
+                            f"접어 주문을 만들지 않는다 — 보유 {qty!r} 주에서 실제 축소가 "
+                            "일어나지 않는다"
+                        )
             passed.append(sym_dict)
         else:
             failed.append(sym_dict)
+
+        symbol_results.append(result_info)
 
     return {
         "passed_symbols": passed,

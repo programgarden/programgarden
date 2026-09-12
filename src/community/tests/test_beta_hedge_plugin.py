@@ -1,5 +1,24 @@
 """
 BetaHedge (베타 헷지) 플러그인 테스트
+
+🔴 이 파일의 ``MockRiskTracker`` 는 **실제 클래스에 없는 메서드를 제공한다** (관측 2026-09-12)
+------------------------------------------------------------------------------------------
+실제 트래커 ``programgarden.database.workflow_risk_tracker.WorkflowRiskTracker`` 의
+실제 인터페이스와 대조한 결과:
+
+| 목이 제공하는 이름 | 실제 클래스 | 비고 |
+|---|---|---|
+| ``get_state``   | **없음** | 실제 이름은 ``load_state`` (동기) |
+| ``set_state``   | **없음** | 실제 이름은 ``save_state`` (동기) |
+| ``delete_state``| 있음     | 단 **동기** 메서드 — 플러그인은 ``await`` 한다 |
+| ``record_event``| **없음** | 실제 이름은 ``record_risk_event`` |
+
+즉 아래 상태 관련 테스트들은 '플러그인이 라이브에서 실제로 상태를 저장·복원한다'
+를 증명하지 않는다 — **목이 약속한 계약대로 플러그인이 호출한다**는 것만 증명한다.
+라이브에서는 (가) 실제 트래커를 넘기면 ``AttributeError`` 로 죽고, (나) 애초에
+실행기가 positions 기반 플러그인에 ``context`` 를 넘기지 않아 상태 경로가 아예
+돌지 않는다(플러그인 모듈 docstring 의 '상태 경로' 절 참조).
+목을 실제 시그니처로 맞추는 수정은 이번 회차 범위 밖이다 — 후속 필요.
 """
 
 import pytest
@@ -12,6 +31,13 @@ from programgarden_community.plugins.beta_hedge import (
 
 
 class MockRiskTracker:
+    """strategy_state **목 계약** 모킹 — 실제 WorkflowRiskTracker 인터페이스가 아니다.
+
+    ``get_state``/``set_state`` 는 실제 클래스에 없는 이름이고(실제: ``load_state``/
+    ``save_state``, 둘 다 동기), ``delete_state`` 는 이름은 같지만 실제로는 동기
+    메서드다. 파일 상단 주석 참조.
+    """
+
     def __init__(self):
         self.state = {}
         self.events = []
@@ -239,3 +265,195 @@ class TestBetaHedgePlugin:
         assert analysis["target_beta"] == 0.8
         assert "portfolio_beta" in analysis
         assert "hedge_needed" in analysis
+
+
+class TestBetaHedgeFractionalPosition:
+    """소수 포지션 회귀 — 구 ``int(pos["qty"])`` 절단 (X3 전수확인에서 발견).
+
+    ⚠️ 이 분기(positions 인자)는 워크플로우 실행기 경로에서는 도달하지 않는다 —
+    실행기의 data 기반 분기가 plugin_kwargs 에 ``positions`` 를 넣지 않기 때문이다.
+    여기서 검증하는 것은 라이브러리 직접 호출 경로와 계산식 자체다.
+    """
+
+    @staticmethod
+    def _bars(n=130):
+        data = []
+        spy, tsla = 450.0, 200.0
+        for i in range(n):
+            move = 0.005 if i % 3 < 2 else -0.003
+            spy *= (1 + move)
+            tsla *= (1 + move * 2.0 + 0.001)
+            date = f"2026{(i // 30) + 1:02d}{(i % 30) + 1:02d}"
+            data.append({"symbol": "SPY", "exchange": "NYSE", "date": date, "close": round(spy, 2)})
+            data.append({"symbol": "TSLA", "exchange": "NASDAQ", "date": date, "close": round(tsla, 2)})
+        return data
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("qty,price", [(0.532, 150.0), (1, 150.0), (10, 150.0)])
+    async def test_weight_keeps_fractional_quantity(self, qty, price):
+        """0.532주 x 150달러 = 79.8 — 수정 전에는 int(0.532)=0 이라 weight 가 0.0 이었다."""
+        result = await beta_hedge_condition(
+            data=self._bars(),
+            fields={"lookback": 120, "market_symbol": "SPY"},
+            positions=[{"symbol": "TSLA", "current_price": price, "qty": qty}],
+        )
+        tsla = next(r for r in result["symbol_results"] if r["symbol"] == "TSLA")
+        assert tsla["weight"] == pytest.approx(price * qty, abs=0.01)
+        assert "weight_unavailable_reason" not in tsla
+
+    @pytest.mark.asyncio
+    async def test_fractional_position_still_weights_portfolio_beta(self):
+        """소수 포지션만 있어도 포트폴리오 베타가 0 으로 접히지 않는다.
+
+        수정 전에는 총 포지션 가치가 0 이라 ``total_value > 0`` 가 거짓이 되어
+        portfolio_beta 가 0 으로 떨어졌다.
+        """
+        result = await beta_hedge_condition(
+            data=self._bars(),
+            fields={"lookback": 120, "market_symbol": "SPY"},
+            positions=[{"symbol": "TSLA", "current_price": 150.0, "qty": 0.532}],
+        )
+        assert result["analysis"]["portfolio_beta"] != 0
+
+    @pytest.mark.asyncio
+    async def test_unreadable_quantity_leaves_reason_and_does_not_crash(self):
+        """문자열 쓰레기 수량 — 구 int() 는 ValueError 로 죽었다. 이제 사유를 남긴다."""
+        result = await beta_hedge_condition(
+            data=self._bars(),
+            fields={"lookback": 120, "market_symbol": "SPY"},
+            positions=[{"symbol": "TSLA", "current_price": 150.0, "qty": "n/a"}],
+        )
+        tsla = next(r for r in result["symbol_results"] if r["symbol"] == "TSLA")
+        assert "weight" not in tsla
+        assert "포지션 금액을 계산할 수 없음" in tsla["weight_unavailable_reason"]
+
+
+class TestBetaContributionSymmetry:
+    """Z2 — weight 와 beta_contribution 은 **같은 두 값**(수량·가격)에서 나온다.
+
+    구 코드는 weight 만 '못 읽으면 사유' 로 바꾸고, 바로 옆 beta_contribution 은
+    ``pos_value > 0`` 이 거짓이라는 이유로 0 을 지어냈다 — 같은 회차 안에서
+    "금액은 못 읽었는데 기여도는 0" 이라는 모순이 나왔다.
+    """
+
+    _bars = staticmethod(TestBetaHedgeFractionalPosition._bars)
+
+    async def _run(self, positions):
+        return await beta_hedge_condition(
+            data=self._bars(),
+            fields={"lookback": 120, "market_symbol": "SPY"},
+            positions=positions,
+        )
+
+    @pytest.mark.asyncio
+    async def test_unreadable_position_omits_contribution_with_reason(self):
+        result = await self._run([{"symbol": "TSLA", "current_price": 150.0, "qty": "n/a"}])
+        tsla = next(r for r in result["symbol_results"] if r["symbol"] == "TSLA")
+        assert "beta_contribution" not in tsla, "읽지 못한 값에서 기여도를 지어냈다"
+        assert "포지션 금액을 계산할 수 없음" in tsla["beta_contribution_unavailable_reason"]
+        # weight 와 정확히 같은 사유를 쓴다 — 두 필드의 가용성이 갈라지지 않는다
+        assert tsla["beta_contribution_unavailable_reason"] == tsla["weight_unavailable_reason"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [{"qty": "n/a"}, {"current_price": "-"}, {"qty": None}])
+    async def test_weight_and_contribution_are_available_together(self, bad):
+        pos = {"symbol": "TSLA", "current_price": 150.0, "qty": 3}
+        pos.update(bad)
+        result = await self._run([pos])
+        tsla = next(r for r in result["symbol_results"] if r["symbol"] == "TSLA")
+        assert ("weight" in tsla) == ("beta_contribution" in tsla)
+        assert (
+            "weight_unavailable_reason" in tsla
+        ) == ("beta_contribution_unavailable_reason" in tsla)
+
+    @pytest.mark.asyncio
+    async def test_readable_position_still_reports_contribution(self):
+        result = await self._run([{"symbol": "TSLA", "current_price": 150.0, "qty": 0.532}])
+        tsla = next(r for r in result["symbol_results"] if r["symbol"] == "TSLA")
+        assert tsla["weight"] == pytest.approx(79.8, abs=0.01)
+        assert tsla["beta_contribution"] == pytest.approx(tsla["beta"] * 79.8, abs=0.05)
+        assert "beta_contribution_unavailable_reason" not in tsla
+
+    @pytest.mark.asyncio
+    async def test_readable_zero_value_keeps_contribution_zero(self):
+        """수량 0 은 **읽은 값**이다 — beta x 0 = 0 은 계산 결과이지 지어낸 값이 아니다."""
+        result = await self._run([{"symbol": "TSLA", "current_price": 150.0, "qty": 0}])
+        tsla = next(r for r in result["symbol_results"] if r["symbol"] == "TSLA")
+        assert tsla["weight"] == 0
+        assert tsla["beta_contribution"] == 0
+        assert "beta_contribution_unavailable_reason" not in tsla
+
+    def test_schema_declares_the_reason(self):
+        assert "beta_contribution_unavailable_reason" in BETA_HEDGE_SCHEMA.output_fields
+
+
+class TestPortfolioBetaIsNotFabricated:
+    """Z2 — 읽힌 포지션이 하나도 없어 total_value 가 0 이면 portfolio 값도 지어내지 않는다.
+
+    구 코드는 ``weighted_beta / total_value if total_value > 0 else 0`` 으로 0 을
+    실었고, 그 0 이 ``beta_deviation = 0 - target_beta`` 를 지나
+    ``hedge_needed=True`` 라는 **거짓 신호**까지 만들었다(target_beta 기본 1.0,
+    tolerance 0.2 에서 |−1.0| > 0.2).
+    """
+
+    _bars = staticmethod(TestBetaHedgeFractionalPosition._bars)
+
+    async def _run(self, positions, **fields):
+        f = {"lookback": 120, "market_symbol": "SPY"}
+        f.update(fields)
+        return await beta_hedge_condition(data=self._bars(), fields=f, positions=positions)
+
+    @pytest.mark.asyncio
+    async def test_all_positions_unreadable_leaves_reason(self):
+        result = await self._run([{"symbol": "TSLA", "current_price": 150.0, "qty": "n/a"}])
+        analysis = result["analysis"]
+        assert "portfolio_beta" not in analysis, "계산되지 않은 베타를 0 으로 실었다"
+        assert "가중치 합" in analysis["portfolio_beta_unavailable_reason"]
+        assert "TSLA" in analysis["portfolio_beta_unavailable_reason"]
+        assert analysis["hedge_needed_undetermined"] is True
+        assert analysis["hedge_needed"] is False
+        assert result["result"] is False
+
+    @pytest.mark.asyncio
+    async def test_no_fabricated_hedge_signal(self):
+        """구 코드에서는 여기서 hedge_needed=True 가 나왔다 (portfolio_beta 0 발)."""
+        result = await self._run(
+            [{"symbol": "TSLA", "current_price": 150.0, "qty": "n/a"}],
+            target_beta=1.0, beta_tolerance=0.2,
+        )
+        assert result["analysis"]["hedge_needed"] is False
+        assert result["passed_symbols"] == []
+
+    @pytest.mark.asyncio
+    async def test_unavailable_portfolio_beta_is_not_put_in_time_series(self):
+        result = await self._run([{"symbol": "TSLA", "current_price": 150.0, "qty": "n/a"}])
+        for v in result["values"]:
+            for row in v["time_series"]:
+                assert "portfolio_beta" not in row
+
+    @pytest.mark.asyncio
+    async def test_unavailable_portfolio_beta_is_not_saved_to_state(self):
+        ctx = MockContext()
+        await beta_hedge_condition(
+            data=self._bars(),
+            fields={"lookback": 120, "market_symbol": "SPY"},
+            positions=[{"symbol": "TSLA", "current_price": 150.0, "qty": "n/a"}],
+            context=ctx,
+        )
+        assert "portfolio_beta" not in ctx.risk_tracker.state
+
+    @pytest.mark.asyncio
+    async def test_readable_position_still_reports_portfolio_beta(self):
+        result = await self._run([{"symbol": "TSLA", "current_price": 150.0, "qty": 0.532}])
+        assert result["analysis"]["portfolio_beta"] != 0
+        assert "portfolio_beta_unavailable_reason" not in result["analysis"]
+        assert "hedge_needed_undetermined" not in result["analysis"]
+
+    @pytest.mark.asyncio
+    async def test_no_positions_still_uses_equal_weight(self):
+        """positions 자체가 없으면 종전대로 동일 비중 가정 — 사유 분기가 아니다."""
+        result = await beta_hedge_condition(
+            data=self._bars(), fields={"lookback": 120, "market_symbol": "SPY"},
+        )
+        assert "portfolio_beta" in result["analysis"]
+        assert "portfolio_beta_unavailable_reason" not in result["analysis"]

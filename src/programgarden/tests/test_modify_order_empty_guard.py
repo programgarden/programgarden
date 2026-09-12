@@ -13,9 +13,23 @@ import pytest
 from programgarden.executor import CancelOrderNodeExecutor, ModifyOrderNodeExecutor
 
 
-def _make_context():
+def _make_context(side="sell"):
+    """빈-주문번호 가드만 보는 테스트용 컨텍스트.
+
+    정정 경로는 원 주문 원장 행에서 방향/미변경 필드를 승계한다
+    (executor._resolve_modify_target). 해외선물 CIDBT00900 은 매매구분
+    (BnsTpCode)이 필수라 원 주문을 못 찾으면 **정정 요청 자체가 거절**되므로,
+    빈-주문번호 가드(브로커 응답 단계)를 보려면 원장 조회가 성공해야 한다.
+    그래서 여기서는 원 주문 행이 있는 원장을 흉내낸다. 조회 결과가 dict 가
+    아니면(MagicMock 기본값) '원 주문 못 찾음' 으로 취급된다.
+    """
     ctx = MagicMock()
     ctx.log = MagicMock()
+    ctx.find_workflow_order = MagicMock(return_value={
+        "order_no": "ORIG", "order_date": "20260912", "symbol": "ORIG",
+        "exchange": "ORIG", "side": side, "quantity": 1, "price": 1.0,
+        "node_id": "order-node", "job_id": "job",
+    })
     return ctx
 
 

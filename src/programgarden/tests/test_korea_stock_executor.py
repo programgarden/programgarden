@@ -711,6 +711,147 @@ class TestKoreaStockNewOrderExecutor:
         assert result["order_result"]["success"] is True
 
     @pytest.mark.asyncio
+    async def test_new_order_records_workflow_order_ledger(self):
+        """신규주문 성공 시 원장(record_workflow_order)에 기록되어야 한다.
+
+        이 호출이 빠져 있으면 SC1 체결이 `_check_workflow_order` 에서 항상 False 가
+        되고, 남는 판단 기준이 매체코드뿐이라 'workflow' 분류가 한 건도 생기지
+        않는다 — personal_metrics 승률·손익비에서 국내주식 체결이 전량 누락된다.
+        주문일자는 브로커 날짜가 아니라 **로컬 날짜**여야 한다(체결 대조가
+        (order_no, order_date) 로 이뤄지고 SC1 프레임에는 주문일자가 없다).
+        """
+        from datetime import datetime
+
+        executor = self._make_executor()
+        ctx = _make_mock_context()
+        ls = MagicMock()
+
+        resp = MagicMock()
+        resp.error_msg = None
+        resp.block2 = MagicMock()
+        resp.block2.OrdNo = 99003
+
+        mock_order_api = MagicMock()
+        mock_order_api.req_async = AsyncMock(return_value=resp)
+
+        mock_order = MagicMock()
+        mock_order.cspat00601 = MagicMock(return_value=mock_order_api)
+        mock_ks = MagicMock()
+        mock_ks.order = MagicMock(return_value=mock_order)
+        ls.korea_stock = MagicMock(return_value=mock_ks)
+
+        order = {"symbol": "005930", "quantity": 10, "price": 65000}
+        result = await executor._execute_korea_stock(
+            ls, order, "buy", "limit", {}, ctx, "ord-ledger"
+        )
+
+        assert result["order_result"]["success"] is True
+        ctx.record_workflow_order.assert_called_once()
+        kwargs = ctx.record_workflow_order.call_args.kwargs
+        assert kwargs["order_no"] == "99003"
+        assert kwargs["order_date"] == datetime.now().strftime("%Y%m%d")
+        assert kwargs["symbol"] == "005930"
+        assert kwargs["exchange"] == "KRX"
+        assert kwargs["side"] == "buy"
+        assert kwargs["quantity"] == 10
+        assert kwargs["price"] == 65000.0
+        assert kwargs["node_id"] == "ord-ledger"
+
+    @pytest.mark.asyncio
+    async def test_new_order_market_records_zero_price_not_requested_price(self):
+        """시장가는 브로커에 보낸 값(0.0)을 기록한다 — 체결 시 실체결가로 갱신된다."""
+        executor = self._make_executor()
+        ctx = _make_mock_context()
+        ls = MagicMock()
+
+        resp = MagicMock()
+        resp.error_msg = None
+        resp.block2 = MagicMock()
+        resp.block2.OrdNo = 99004
+
+        mock_order_api = MagicMock()
+        mock_order_api.req_async = AsyncMock(return_value=resp)
+
+        mock_order = MagicMock()
+        mock_order.cspat00601 = MagicMock(return_value=mock_order_api)
+        mock_ks = MagicMock()
+        mock_ks.order = MagicMock(return_value=mock_order)
+        ls.korea_stock = MagicMock(return_value=mock_ks)
+
+        order = {"symbol": "005930", "quantity": 10, "price": 65000}
+        await executor._execute_korea_stock(
+            ls, order, "sell", "market", {}, ctx, "ord-market"
+        )
+
+        assert ctx.record_workflow_order.call_args.kwargs["price"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_new_order_failure_does_not_record_ledger(self):
+        """거부/빈 주문번호는 원장에 남기지 않는다(존재하지 않는 주문의 유령 행 금지)."""
+        executor = self._make_executor()
+        ctx = _make_mock_context()
+        ls = MagicMock()
+
+        resp = MagicMock()
+        resp.error_msg = None
+        resp.rsp_cd = "40300"
+        resp.rsp_msg = "주문가능금액 부족"
+        resp.block2 = None
+
+        mock_order_api = MagicMock()
+        mock_order_api.req_async = AsyncMock(return_value=resp)
+
+        mock_order = MagicMock()
+        mock_order.cspat00601 = MagicMock(return_value=mock_order_api)
+        mock_ks = MagicMock()
+        mock_ks.order = MagicMock(return_value=mock_order)
+        ls.korea_stock = MagicMock(return_value=mock_ks)
+
+        order = {"symbol": "005930", "quantity": 10, "price": 65000}
+        result = await executor._execute_korea_stock(
+            ls, order, "buy", "limit", {}, ctx, "ord-reject"
+        )
+
+        assert result["order_result"]["success"] is False
+        ctx.record_workflow_order.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ledger_write_failure_cannot_revoke_accepted_order(self):
+        """원장 기록이 실패해도 이미 접수된 주문을 실패로 뒤집지 않는다.
+
+        Legacy stores remain best effort; their failure cannot revoke ACK —
+        해외선물 신규주문 경로가 쓰는 규약과 같다. 이 호출이 메서드 전체 try 안에
+        벌거벗고 있으면 예외가 올라가 `_order_result(False, ...)` 가 되고,
+        브로커에는 실제로 들어간 주문이 워크플로우에는 '실패' 로 보인다.
+        """
+        executor = self._make_executor()
+        ctx = _make_mock_context()
+        ctx.record_workflow_order = MagicMock(side_effect=RuntimeError("ledger down"))
+        ls = MagicMock()
+
+        resp = MagicMock()
+        resp.error_msg = None
+        resp.block2 = MagicMock()
+        resp.block2.OrdNo = 99005
+
+        mock_order_api = MagicMock()
+        mock_order_api.req_async = AsyncMock(return_value=resp)
+
+        mock_order = MagicMock()
+        mock_order.cspat00601 = MagicMock(return_value=mock_order_api)
+        mock_ks = MagicMock()
+        mock_ks.order = MagicMock(return_value=mock_order)
+        ls.korea_stock = MagicMock(return_value=mock_ks)
+
+        order = {"symbol": "005930", "quantity": 10, "price": 65000}
+        result = await executor._execute_korea_stock(
+            ls, order, "buy", "limit", {}, ctx, "ord-ledger-fail"
+        )
+
+        assert result["order_result"]["success"] is True
+        assert result["order_result"]["order_id"] == "99005"
+
+    @pytest.mark.asyncio
     async def test_new_order_api_error(self):
         """주문 API 에러 시 success=False"""
         executor = self._make_executor()

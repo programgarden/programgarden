@@ -190,5 +190,80 @@ class TestDynamicStopLossPlugin:
         assert ps["close_side"] == "sell"
 
 
+
+class TestUnreadablePositionValues:
+    """V2 [MAJOR] — pos_data 원값이 ``atr = current_price * 0.02`` / ``current_price <= stop_price``
+    에 그대로 들어가 'n/a' → TypeError, None → TypeError 로 죽던 경로(실측 2026-09-12).
+    이제 연산 전에 읽고, 못 읽으면 계산하지 않고 action='skip' + 사유를 남긴다.
+    (전수 계약은 test_position_field_coercion_regression.py 가 잠근다 — 여기는 이 플러그인의
+    구체 사례 기록.)
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("raw", ["n/a", None], ids=repr)
+    async def test_unreadable_current_price_is_skipped_with_reason(self, raw):
+        result = await dynamic_stop_loss_condition(
+            data=[],
+            positions=[{"symbol": "AAPL", "current_price": raw, "avg_price": 140, "qty": 10, "market_code": "82"}],
+            fields={"atr_period": 14, "atr_multiplier": 2.0},
+        )
+        sr = result["symbol_results"][0]
+        assert sr["action"] == "skip"
+        assert f"current_price={raw!r}" in sr["reason"]
+        assert "atr" not in sr and "stop_price" not in sr  # 계산하지 않았다
+        assert result["passed_symbols"] == []
+        assert result["failed_symbols"][0]["symbol"] == "AAPL"
+
+    @pytest.mark.asyncio
+    async def test_unreadable_avg_price_is_skipped_not_faked(self):
+        result = await dynamic_stop_loss_condition(
+            data=[],
+            positions=[{"symbol": "AAPL", "current_price": 150, "avg_price": "n/a", "qty": 10, "market_code": "82"}],
+            fields={},
+        )
+        sr = result["symbol_results"][0]
+        assert sr["action"] == "skip"
+        assert "avg_price='n/a'" in sr["reason"]
+
+    @pytest.mark.asyncio
+    async def test_missing_avg_price_falls_back_to_current_price_and_says_so(self):
+        """avg_price 가 아예 없으면 종전대로 현재가를 기준가로 쓰되, 없는 값을 평단으로 싣지 않는다."""
+        result = await dynamic_stop_loss_condition(
+            data=[],
+            positions=[{"symbol": "AAPL", "current_price": 150, "qty": 10, "market_code": "82"}],
+            fields={},
+        )
+        sr = result["symbol_results"][0]
+        assert sr["reference_price"] == 150
+        assert "avg_price" not in sr
+        assert "avg_price=None" in sr["avg_price_unavailable_reason"]
+
+    @pytest.mark.asyncio
+    async def test_unreadable_quantity_is_skipped_with_reason(self):
+        result = await dynamic_stop_loss_condition(
+            data=[],
+            positions=[{"symbol": "AAPL", "current_price": 120, "avg_price": 150, "qty": "n/a", "market_code": "82"}],
+            fields={},
+        )
+        sr = result["symbol_results"][0]
+        assert sr["action"] == "skip"
+        assert "quantity='n/a'" in sr["reason"]
+        assert result["passed_symbols"] == []  # 수량 없는 청산 주문을 싣지 않는다
+
+    @pytest.mark.asyncio
+    async def test_numeric_string_price_is_evaluated_like_number(self):
+        num = await dynamic_stop_loss_condition(
+            data=[], fields={},
+            positions=[{"symbol": "AAPL", "current_price": 120.0, "avg_price": 150.0, "qty": 10, "market_code": "82"}],
+        )
+        txt = await dynamic_stop_loss_condition(
+            data=[], fields={},
+            positions=[{"symbol": "AAPL", "current_price": "120.0", "avg_price": "150.0", "qty": "10", "market_code": "82"}],
+        )
+        assert txt["symbol_results"] == num["symbol_results"]
+        assert txt["passed_symbols"] == num["passed_symbols"]
+        assert txt["result"] is True
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -110,5 +110,35 @@ class TestSellQuantityWiring:
         assert result["passed_symbols"][0]["quantity"] == 9
 
 
+class TestFractionalQuantityPassthrough:
+    """소수 수량 포지션은 절단 없이 그대로 실려야 한다(전량 청산 플러그인).
+
+    ProfitTarget 은 계산 없이 포지션의 quantity 를 그대로 싣기 때문에 원래도
+    절단이 없었다 — 이 테스트는 나중에 int() 정수화가 끼어드는 회귀를 막는 잠금이다.
+    (LS 해외주식 소수점 주식 — 출처: 오너 진술 2026-09-12. 정수화는 주문 송신부
+    _normalize_order 의 명시적 규약이다.)
+    """
+
+    @pytest.mark.asyncio
+    async def test_fractional_quantity_is_not_truncated(self):
+        result = await profit_target_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": 6.0, "quantity": 0.532,
+                        "market_code": "82"}],
+            fields={"target_percent": 5.0},
+        )
+        assert result["passed_symbols"][0]["quantity"] == pytest.approx(0.532)
+
+    @pytest.mark.asyncio
+    async def test_decimal_quantity_is_passed_through(self):
+        from decimal import Decimal
+
+        result = await profit_target_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": 6.0,
+                        "quantity": Decimal("9.5"), "market_code": "82"}],
+            fields={"target_percent": 5.0},
+        )
+        assert result["passed_symbols"][0]["quantity"] == Decimal("9.5")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

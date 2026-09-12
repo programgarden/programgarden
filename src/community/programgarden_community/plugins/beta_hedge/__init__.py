@@ -16,6 +16,8 @@ from typing import List, Dict, Any, Optional, Set
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
+from .._position_qty import coerce_qty
+
 
 # risk_features 선언
 risk_features: Set[str] = {"state", "events"}
@@ -86,8 +88,10 @@ BETA_HEDGE_SCHEMA = PluginSchema(
     tags=["beta", "hedge", "market_neutral", "risk_management"],
     output_fields={
         "beta": {"type": "float", "description": "Calculated beta of this symbol relative to the market benchmark"},
-        "beta_contribution": {"type": "float", "description": "This symbol's contribution to portfolio beta"},
-        "weight": {"type": "float", "description": "Position market value (available when positions are provided)"},
+        "beta_contribution": {"type": "float", "description": "This symbol's contribution to portfolio beta (beta x position market value when positions are provided, otherwise the equal-weight share)"},
+        "beta_contribution_unavailable_reason": {"type": "str", "description": "Present instead of beta_contribution when the held quantity or current price could not be read (same values weight depends on)"},
+        "weight": {"type": "float", "description": "Position market value (available when positions are provided; fractional share counts are kept, not truncated)"},
+        "weight_unavailable_reason": {"type": "str", "description": "Present instead of weight when the held quantity or current price could not be read"},
     },
     locales={
         "ko": {
@@ -267,27 +271,55 @@ async def beta_hedge_condition(
         }
 
     # 포트폴리오 베타 계산
+    portfolio_beta: Optional[float] = None
+    portfolio_beta_unavailable_reason: Optional[str] = None
     if position_map:
-        total_value = 0
-        weighted_beta = 0
+        total_value = 0.0
+        weighted_beta = 0.0
+        unreadable_symbols: List[str] = []
         for bd in beta_data:
             sym = bd["symbol"]
             if sym in position_map:
                 pos = position_map[sym]
-                qty = int(pos.get("qty", pos.get("quantity", 0)))
-                pos_value = float(pos.get("current_price", 0)) * qty
+                # 수량/가격을 int()·float() 로 직접 자르지 않는다 — int(0.532)=0 이라
+                # 소수점 주식 포지션이 가중치 0 으로 빠져 포트폴리오 베타를 왜곡했고,
+                # 문자열 쓰레기 값에는 ValueError 로 죽었다. 공용 헬퍼는 못 읽으면
+                # None 을 준다(_position_qty.coerce_qty).
+                qty = coerce_qty(pos.get("qty", pos.get("quantity", 0)))
+                price = coerce_qty(pos.get("current_price", 0))
+                if qty is None or price is None:
+                    unreadable_symbols.append(sym)
+                    continue  # 읽을 수 없는 포지션은 가중치에서 제외(0 으로 뭉개지 않음)
+                pos_value = price * qty
                 weighted_beta += bd["beta"] * pos_value
                 total_value += pos_value
-        portfolio_beta = weighted_beta / total_value if total_value > 0 else 0
+        if total_value > 0:
+            portfolio_beta = round(weighted_beta / total_value, 4)
+        else:
+            # 가중평균의 분모가 0 이다 — '베타가 0' 이 아니라 **값이 없다**.
+            # 구 코드는 여기서 0 을 지어냈고, 그 0 이 그대로 beta_deviation 을 지나
+            # hedge_needed=True 라는 거짓 신호(target_beta 와의 거리)까지 만들었다.
+            # 심볼 수준 weight 와 같은 규약으로 값을 싣지 않고 사유를 남긴다.
+            portfolio_beta_unavailable_reason = (
+                "포지션 가중 포트폴리오 베타를 계산할 수 없음 — 가중치 합(총 포지션 금액)이 0"
+            )
+            if unreadable_symbols:
+                portfolio_beta_unavailable_reason += (
+                    f" (수량/가격을 읽을 수 없는 종목: {', '.join(unreadable_symbols)})"
+                )
     else:
         # 동일 비중 가정
-        portfolio_beta = sum(bd["beta"] for bd in beta_data) / len(beta_data)
-
-    portfolio_beta = round(portfolio_beta, 4)
+        portfolio_beta = round(sum(bd["beta"] for bd in beta_data) / len(beta_data), 4)
 
     # 헷지 필요 여부
-    beta_deviation = portfolio_beta - target_beta
-    hedge_needed = abs(beta_deviation) > beta_tolerance
+    if portfolio_beta is None:
+        # 판정 불가다. '헷지 불필요' 라는 결론을 지어내지 않기 위해 deviation 도
+        # 싣지 않고, 아래 analysis 에 왜 판정을 못 했는지를 남긴다.
+        beta_deviation = None
+        hedge_needed = False
+    else:
+        beta_deviation = portfolio_beta - target_beta
+        hedge_needed = abs(beta_deviation) > beta_tolerance
 
     # 헷지 추천
     hedge_recommendation = None
@@ -313,7 +345,8 @@ async def beta_hedge_condition(
 
     # state 저장
     has_risk_tracker = context and hasattr(context, "risk_tracker") and context.risk_tracker
-    if has_risk_tracker:
+    if has_risk_tracker and portfolio_beta is not None:
+        # 계산되지 않은 베타를 상태에 저장하면 다음 회차가 그 거짓값을 읽는다.
         try:
             context.risk_tracker.set_state("portfolio_beta", portfolio_beta)
         except Exception:
@@ -322,6 +355,10 @@ async def beta_hedge_condition(
     # risk_event 기록
     if hedge_needed and has_risk_tracker:
         try:
+            # 🔴 record_event 는 실제 트래커에 없는 메서드다 (관측 2026-09-12):
+            #    WorkflowRiskTracker 의 실제 이름은 record_risk_event 다. 아래 except 가
+            #    AttributeError 를 삼키므로 이 위험 이벤트는 **한 건도 기록되지 않는다**.
+            #    메서드명 정렬은 이 플러그인 밖(엔진) 수정이라 여기서 고치지 않는다 — 미검증.
             context.risk_tracker.record_event(
                 event_type="beta_deviation",
                 symbol="PORTFOLIO",
@@ -341,26 +378,35 @@ async def beta_hedge_condition(
         exchange = bd["exchange"]
         sym_dict = {"symbol": symbol, "exchange": exchange}
 
-        # 포트폴리오 내 비중 기반 기여도
-        if symbol in position_map:
-            pos = position_map[symbol]
-            qty = int(pos.get("qty", pos.get("quantity", 0)))
-            pos_value = float(pos.get("current_price", 0)) * qty
-            beta_contribution = round(bd["beta"] * pos_value, 2) if pos_value > 0 else 0
-        else:
-            beta_contribution = round(bd["beta"] / len(beta_data), 4)
-
         result_info = {
             "symbol": symbol, "exchange": exchange,
             "beta": bd["beta"],
-            "beta_contribution": beta_contribution,
         }
+        # 포트폴리오 내 비중(weight)과 그 비중으로 만든 기여도(beta_contribution)는
+        # **같은 두 값(수량·가격)에서 나온다** — 그래서 가용성도 같이 간다. 구 코드는
+        # weight 만 '못 읽으면 사유' 로 바꾸고 기여도는 옆에서 0 을 지어내, 같은
+        # 회차 안에서 "금액은 못 읽었는데 기여도는 0" 이라는 모순을 냈다.
         if symbol in position_map:
             pos = position_map[symbol]
-            qty = int(pos.get("qty", pos.get("quantity", 0)))
-            result_info["weight"] = round(
-                float(pos.get("current_price", 0)) * qty, 2
-            )
+            qty = coerce_qty(pos.get("qty", pos.get("quantity", 0)))
+            price = coerce_qty(pos.get("current_price", 0))
+            if qty is None or price is None:
+                unavailable_reason = (
+                    "포지션 금액을 계산할 수 없음 "
+                    f"(current_price={pos.get('current_price')!r}, "
+                    f"qty={pos.get('qty', pos.get('quantity'))!r})"
+                )
+                result_info["weight_unavailable_reason"] = unavailable_reason
+                result_info["beta_contribution_unavailable_reason"] = unavailable_reason
+            else:
+                pos_value = price * qty
+                result_info["weight"] = round(pos_value, 2)
+                # pos_value 가 0 이면(수량 0 · 가격 0) 기여도 0 은 **읽은 값에서 나온
+                # 계산 결과**다 — 지어낸 값이 아니므로 그대로 싣는다.
+                result_info["beta_contribution"] = round(bd["beta"] * pos_value, 2)
+        else:
+            # positions 에 없는 종목: 포트폴리오 베타와 같은 '동일 비중' 가정을 쓴다.
+            result_info["beta_contribution"] = round(bd["beta"] / len(beta_data), 4)
 
         symbol_results.append(result_info)
 
@@ -375,28 +421,38 @@ async def beta_hedge_condition(
         else:
             failed.append(sym_dict)
 
-        time_series = [{
+        ts_row = {
             "beta": bd["beta"],
-            "portfolio_beta": portfolio_beta,
             "signal": "sell" if hedge_needed else None,
             "side": "short" if hedge_needed else None,
-        }]
+        }
+        if portfolio_beta is not None:
+            ts_row["portfolio_beta"] = portfolio_beta
+        time_series = [ts_row]
         values.append({"symbol": symbol, "exchange": exchange, "time_series": time_series})
+
+    analysis: Dict[str, Any] = {
+        "indicator": "BetaHedge",
+        "market_symbol": market_symbol,
+        "target_beta": target_beta,
+        "beta_tolerance": beta_tolerance,
+        "hedge_needed": hedge_needed,
+        "hedge_method": hedge_method,
+        "total_symbols": len(beta_data),
+    }
+    if portfolio_beta is None:
+        # 값을 지어내는 대신 왜 없는지를 싣는다. hedge_needed=False 는 '헷지가
+        # 필요 없다' 가 아니라 '판정하지 못했다' 는 뜻임을 여기서 읽을 수 있다.
+        analysis["portfolio_beta_unavailable_reason"] = portfolio_beta_unavailable_reason
+        analysis["hedge_needed_undetermined"] = True
+    else:
+        analysis["portfolio_beta"] = portfolio_beta
 
     result_dict = {
         "passed_symbols": passed, "failed_symbols": failed,
         "symbol_results": symbol_results, "values": values,
         "result": hedge_needed,
-        "analysis": {
-            "indicator": "BetaHedge",
-            "market_symbol": market_symbol,
-            "portfolio_beta": portfolio_beta,
-            "target_beta": target_beta,
-            "beta_tolerance": beta_tolerance,
-            "hedge_needed": hedge_needed,
-            "hedge_method": hedge_method,
-            "total_symbols": len(beta_data),
-        },
+        "analysis": analysis,
     }
 
     if hedge_recommendation:

@@ -15,6 +15,8 @@ from typing import List, Dict, Any, Optional
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
+from .._position_qty import coerce_number, preserve_qty
+
 
 DYNAMIC_STOP_LOSS_SCHEMA = PluginSchema(
     id="DynamicStopLoss",
@@ -59,7 +61,10 @@ DYNAMIC_STOP_LOSS_SCHEMA = PluginSchema(
     tags=["stop_loss", "atr", "dynamic", "volatility", "exit"],
     output_fields={
         "current_price": {"type": "float", "description": "Current market price"},
-        "avg_price": {"type": "float", "description": "Average entry price from position data"},
+        "avg_price": {"type": "float", "description": "Average entry price from position data (absent when the position carried no avg_price; see avg_price_unavailable_reason)"},
+        "avg_price_unavailable_reason": {"type": "str", "description": "Present when the position had no avg_price, so the current price was used as the reference price instead"},
+        "action": {"type": "str", "description": "'skip' when a position value (current_price / avg_price / quantity) could not be read and the stop was not evaluated (present only on skipped positions)"},
+        "reason": {"type": "str", "description": "Why the position was skipped: names the unreadable field(s) and their raw values (present on the 'skip' action)"},
         "reference_price": {"type": "float", "description": "Reference price used for stop calculation (entry or trailing high)"},
         "atr": {"type": "float", "description": "Current ATR value"},
         "stop_distance": {"type": "float", "description": "Stop distance in price units (ATR × multiplier)"},
@@ -157,17 +162,54 @@ async def dynamic_stop_loss_condition(
         symbol = pos_data.get("symbol")
         if not symbol:
             continue
-        current_price = pos_data.get("current_price", 0)
-        avg_price = pos_data.get("avg_price", current_price)
         exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
 
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
         exchange_name = exchange_map.get(str(exchange), exchange)
+        close_side = pos_data.get("close_side", "sell")
 
+        # 가격·수량은 **연산보다 먼저** 읽는다. 구 코드는 pos_data 원값을 그대로
+        # ``atr = current_price * 0.02`` / ``current_price <= stop_price`` 에 넣어,
+        # 값이 숫자가 아니면('n/a'·None) TypeError 로 플러그인 전체가 죽었다
+        # (실측 2026-09-12: 'n/a' → TypeError, None → TypeError). 못 읽은 값은 0 으로
+        # 뭉개지 않고 어느 필드가 어떤 원값이었는지를 남긴 뒤 건너뛴다
+        # ('안 보낸 필드는 안 보냈다고 표시' 규약, _position_qty 참조).
+        raw_current_price = pos_data.get("current_price", 0)
+        raw_avg_price = pos_data.get("avg_price")
         # 하위 주문 노드가 {{ item.quantity }} / {{ item.close_side }} 로 소비하므로
         # 전량 청산 수량과 청산 방향을 passed_symbols 에 함께 실어야 한다.
-        quantity = pos_data.get("quantity", pos_data.get("qty", 0))
-        close_side = pos_data.get("close_side", "sell")
+        raw_qty = pos_data.get("quantity", pos_data.get("qty", 0))
+
+        current_price = coerce_number(raw_current_price)
+        quantity = preserve_qty(raw_qty)
+        # avg_price 가 아예 없으면(키 없음·None) 현재가를 기준가로 쓴다 — 구 코드의
+        # ``pos_data.get("avg_price", current_price)`` 폴백을 유지하되, 폴백했다는
+        # 사실을 결과에 남긴다. 값이 있는데 못 읽는 경우는 폴백이 아니라 skip 이다.
+        avg_price_fallback = raw_avg_price is None
+        avg_price = current_price if avg_price_fallback else coerce_number(raw_avg_price)
+
+        unreadable = []
+        if current_price is None:
+            unreadable.append(f"current_price={raw_current_price!r}")
+        if not avg_price_fallback and avg_price is None:
+            unreadable.append(f"avg_price={raw_avg_price!r}")
+        if quantity is None:
+            unreadable.append(f"quantity={raw_qty!r}")
+        if unreadable:
+            skipped_dict = {"symbol": symbol, "exchange": exchange_name, "close_side": close_side}
+            if quantity is not None:
+                skipped_dict["quantity"] = quantity
+            failed.append(skipped_dict)
+            symbol_results.append({
+                "symbol": symbol, "exchange": exchange_name,
+                "action": "skip",
+                "reason": (
+                    "포지션 값을 읽을 수 없어 동적 손절을 평가하지 못함 ("
+                    + ", ".join(unreadable) + ")"
+                ),
+            })
+            continue
+
         sym_dict = {
             "symbol": symbol,
             "exchange": exchange_name,
@@ -225,7 +267,6 @@ async def dynamic_stop_loss_condition(
         result_info = {
             "symbol": symbol, "exchange": exchange_name,
             "current_price": current_price,
-            "avg_price": avg_price,
             "reference_price": round(reference_price, 4),
             "atr": round(atr, 4),
             "stop_distance": round(stop_distance, 4),
@@ -233,6 +274,14 @@ async def dynamic_stop_loss_condition(
             "stop_pct": round(stop_pct, 2),
             "triggered": triggered,
         }
+        if avg_price_fallback:
+            # 없는 값을 '현재가와 같은 평단' 으로 실지 않는다 — 폴백했음을 밝힌다.
+            result_info["avg_price_unavailable_reason"] = (
+                f"포지션에 avg_price 가 없어 현재가 {current_price!r} 를 기준가로 사용 "
+                f"(avg_price={raw_avg_price!r})"
+            )
+        else:
+            result_info["avg_price"] = avg_price
         symbol_results.append(result_info)
 
         if triggered:

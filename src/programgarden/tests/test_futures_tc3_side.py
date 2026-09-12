@@ -33,7 +33,7 @@ class MemorySocket:
         pass
 
 
-def tc3_packet(side):
+def tc3_packet(side, **overrides):
     body = {
         name: "" for name, field in TC3RealResponseBody.model_fields.items()
         if field.is_required()
@@ -44,13 +44,14 @@ def tc3_packet(side):
         ccls_q="2", ccls_prc="100.25", ccls_no="000777",
         ccls_dt="20260910", ccls_tm="001500",
     )
+    body.update(overrides)
     return {
         "header": {"tr_cd": "TC3", "rsp_cd": "00000", "rsp_msg": "synthetic"},
         "body": body,
     }
 
 
-async def deliver_tc3(monkeypatch, side, *, managed=False, shutdown=False):
+async def deliver_tc3(monkeypatch, side, *, managed=False, shutdown=False, **overrides):
     socket = MemorySocket()
     connect = Mock(return_value=socket)
     monkeypatch.setattr("programgarden_finance.ls.real_base.connect", connect)
@@ -95,7 +96,7 @@ async def deliver_tc3(monkeypatch, side, *, managed=False, shutdown=False):
                 loop.call_soon_threadsafe(processed.set)
 
         real.TC3().on_tc3_message(observe)
-        await socket.messages.put(json.dumps(tc3_packet(side)))
+        await socket.messages.put(json.dumps(tc3_packet(side, **overrides)))
         await asyncio.wait_for(processed.wait(), timeout=2)
         # The callback has finished on the SDK thread. Drain every submitted
         # coroutine so a skipped event cannot appear successful due to a race.
@@ -126,10 +127,21 @@ async def test_tc3_sdk_side_and_managed_reconciliation_guard(monkeypatch, caplog
         assert writes == [{
             "order_no": "000123", "order_date": "20260909", "symbol": "SYNTHETIC",
             "exchange": "FUTURES", "side": expected, "quantity": 2, "price": 100.25,
-            "fill_time": "001500", "commda_code": "40",
+            # TC3 프레임에는 통신매체코드 필드가 없다. 종전에는 '40'(OPEN API)을
+            # 하드코딩해 프레임이 말하지 않은 값을 원장에 남겼고, tracker 의
+            # detect_anomalies 가 그 '40' 을 unknown_api 비율의 분모로 써서
+            # trust_score 까지 흔들렸다. 이제 빈 문자열('프레임이 말하지 않음')이며
+            # media_channel('')='unknown' 은 api 와 같은 버퍼 분기라 분류는 그대로다.
+            "fill_time": "001500", "commda_code": "",
+            # 체결번호는 TC3 프레임 자신의 ccls_no 필드를 그대로 읽은 값이다.
+            # (종전 단언은 `"execution_id" not in writes[0]` 이었다. 그 취지는
+            #  "TC3 식별자를 REST 대사 식별자의 alias 로 지어내지 말라" 였는데,
+            #  여기서 싣는 건 alias 추론이 아니라 프레임 필드 독출이므로 그 취지와
+            #  충돌하지 않는다. 이 값이 없으면 원장의 execution_id 부분 유니크
+            #  인덱스가 선물에서 통째로 비활성이라 같은 프레임 재전달이 FIFO 에
+            #  이중계상된다.)
+            "execution_id": "000777",
         }]
-        # This fix does not invent TC3/REST execution identity or time aliases.
-        assert "execution_id" not in writes[0]
 
 
 @pytest.mark.asyncio
@@ -138,3 +150,70 @@ async def test_tc3_after_shutdown_never_schedules_inventory_write(monkeypatch, s
     writes, scheduled = await deliver_tc3(monkeypatch, side, shutdown=True)
     assert writes == []
     assert scheduled == 0
+
+
+@pytest.mark.asyncio
+async def test_tc3_without_order_number_keeps_the_fill_and_drops_execution_id(monkeypatch):
+    """주문번호가 빈 TC3 프레임은 체결번호를 싣지 않고 **체결을 유지**한다.
+
+    원장의 execution identity 키는 (product, provider, trading_mode, order_date,
+    order_no, execution_id) 다(workflow_position_tracker._execution_key). 체결번호만
+    있고 주문번호가 비면 그 키 생성이 ValueError 를 올리고, 그 예외를
+    context.record_workflow_fill 의 try 가 삼켜 **체결이 통째로 유실**된다
+    ("error" 반환). 그래서 이럴 때는 중복방지를 포기하고 종전 경로로 안전
+    강등한다 — 체결 자체를 버리는 것보다 낫다.
+    """
+    writes, scheduled = await deliver_tc3(monkeypatch, "2", ordr_no="")
+
+    assert scheduled == 1, "주문번호가 없다고 체결을 통째로 버리면 안 된다"
+    assert writes[0]["order_no"] == ""
+    assert writes[0]["execution_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_tc3_all_zero_order_number_also_drops_execution_id(monkeypatch):
+    """'0'/'000' 도 식별자가 아니다 — tracker._normalize_identifier 가 0-패딩을
+    벗겨 None 으로 접기 때문에 빈 주문번호와 같은 ValueError 경로다."""
+    writes, scheduled = await deliver_tc3(monkeypatch, "2", ordr_no="000")
+
+    assert scheduled == 1
+    assert writes[0]["execution_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_tc3_missing_fill_time_is_empty_not_synthesized(monkeypatch):
+    """체결시각이 없으면 **빈 문자열**이다 — 로컬 시계를 합성하지 않는다.
+
+    종전에는 `or datetime.now().strftime('%H%M%S000')` 으로 파드 로컬(UTC) 벽시계를
+    브로커 체결시각과 **같은 9자리 모양**으로 내보냈다. 소비자(pg-worker
+    app/order_fill_updates.py)는 그 9자리를 시장 세션 타임존으로 읽어 executed_at 을
+    '계산된 체결시각' 으로 확정하고 executed_at_source 태그도 붙이지 않는다.
+    빈 문자열이면 그쪽 `and fill_time` 가드가 걸려 정직한 received_at 폴백이 된다.
+    """
+    writes, scheduled = await deliver_tc3(monkeypatch, "2", ccls_tm="")
+
+    assert scheduled == 1
+    assert writes[0]["fill_time"] == ""
+
+
+@pytest.mark.asyncio
+async def test_tc3_blank_order_date_keeps_the_fill_and_drops_execution_id(monkeypatch):
+    """주문일자가 **빈 문자열**인 TC3 프레임도 체결을 잃지 않는다.
+
+    executor 는 주문일자를 `getattr(body, 'ordr_dt', <로컬날짜>)` 로 읽는데,
+    getattr 의 기본값은 **속성이 아예 없을 때만** 쓰인다 — 브로커가 `ordr_dt=""`
+    를 실어 보내면 빈 문자열이 그대로 흐른다. 원장의 execution identity 키는
+    order_no 뿐 아니라 order_date 도 요구해서
+    (workflow_position_tracker._execution_key: `if order_no is None or not
+    fill.order_date: raise ValueError`), 주문번호가 멀쩡해도 날짜가 비면 같은
+    ValueError 경로로 **체결이 통째로 유실**된다(record_workflow_fill 의 try 가
+    삼킴). 그래서 가드는 (주문번호, 주문일자)를 함께 본다. 여기서 로컬 날짜를
+    지어내 채우지는 않는다 — 프레임이 말하지 않은 주문일자는 원장 대조 키를
+    거짓으로 만든다.
+    """
+    writes, scheduled = await deliver_tc3(monkeypatch, "2", ordr_dt="")
+
+    assert scheduled == 1, "주문일자가 없다고 체결을 통째로 버리면 안 된다"
+    assert writes[0]["order_date"] == ""
+    assert writes[0]["order_no"] == "000123", "주문번호는 멀쩡한 프레임이다"
+    assert writes[0]["execution_id"] is None

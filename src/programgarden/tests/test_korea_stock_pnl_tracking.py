@@ -77,6 +77,9 @@ def _make_sc1_body(**kwargs):
         "execprc": "55000",
         "execqty": "10",
         "exectime": "093012000",
+        # 체결번호 — SC1 프레임(SDK korea_stock/real/SC1/blocks.py:147 execno)이
+        # 항상 싣는 필드. 원장 중복방지(execution_id)의 유일한 키라 기본값에 둔다.
+        "execno": "7654321",
         "mdfycnfqty": "0",
         "mdfycnfprc": "0",
         "orgordno": "",
@@ -466,6 +469,115 @@ class TestSubscribeKoreaStockFillEvents:
         assert call_kwargs["quantity"] == 5
         assert call_kwargs["price"] == 88000.0
         assert call_kwargs["fill_time"] == "141530000"
+
+    @pytest.mark.asyncio
+    async def test_fill_event_forwards_frame_execution_number(self):
+        """SC1 프레임의 체결번호(execno)가 execution_id 로 그대로 실려야 한다.
+
+        종전에는 프레임이 싣고 있는데도 읽지 않아 국내주식은 원장의
+        execution_id 부분 유니크 인덱스(중복방지)가 통째로 비활성이었고, 같은
+        프레임이 재전달되면 FIFO 가 이중계상됐다. 체결번호는 체결 성립 시
+        발행되며 1주문 분할체결이면 N개로 발급되므로(출처: 오너 진술 2026-09-12)
+        이 키는 '같은 체결의 재전달' 만 걸러내고 진짜 분할체결은 보존한다.
+        """
+        executor = _get_executor()
+        context = _make_mock_context()
+        mock_ls, _, _, mock_sc1 = _make_mock_ls()
+
+        on_sc1 = await self._setup_and_get_sc1_callback(executor, context, mock_ls, mock_sc1)
+
+        resp = MagicMock()
+        resp.body = _make_sc1_body(ordxctptncode="11", execno="0000042")
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            futures = []
+            mock_run.side_effect = lambda c, l: futures.append(c) or MagicMock()
+            on_sc1(resp)
+
+        await futures[0]
+
+        assert context.record_workflow_fill.call_args.kwargs["execution_id"] == "0000042"
+
+    @pytest.mark.asyncio
+    async def test_fill_without_order_number_keeps_fill_and_drops_execution_id(self):
+        """주문번호가 빈 SC1 프레임은 체결번호를 싣지 않고 **체결을 유지**한다.
+
+        원장의 execution identity 키는 (product, provider, trading_mode,
+        order_date, order_no, execution_id) 다
+        (workflow_position_tracker._execution_key). 체결번호만 있고 주문번호가
+        비면 그 키 생성이 ValueError 를 올리고, 그 예외를
+        context.record_workflow_fill 의 try 가 삼켜 **체결이 통째로 유실**된다
+        ("error" 반환). 이럴 때는 중복방지를 포기하고 종전 경로로 안전 강등한다.
+        """
+        executor = _get_executor()
+        context = _make_mock_context()
+        mock_ls, _, _, mock_sc1 = _make_mock_ls()
+
+        on_sc1 = await self._setup_and_get_sc1_callback(executor, context, mock_ls, mock_sc1)
+
+        resp = MagicMock()
+        resp.body = _make_sc1_body(ordxctptncode="11", ordno="", execno="7654321")
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            futures = []
+            mock_run.side_effect = lambda c, l: futures.append(c) or MagicMock()
+            on_sc1(resp)
+
+        assert futures, "주문번호가 없다고 체결을 통째로 버리면 안 된다"
+        await futures[0]
+
+        kwargs = context.record_workflow_fill.call_args.kwargs
+        assert kwargs["order_no"] == ""
+        assert kwargs["execution_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_fill_all_zero_order_number_drops_execution_id(self):
+        """'0'/'0000000' 도 식별자가 아니다 — tracker._normalize_identifier 가
+        0-패딩을 벗겨 None 으로 접으므로 빈 주문번호와 같은 ValueError 경로다."""
+        executor = _get_executor()
+        context = _make_mock_context()
+        mock_ls, _, _, mock_sc1 = _make_mock_ls()
+
+        on_sc1 = await self._setup_and_get_sc1_callback(executor, context, mock_ls, mock_sc1)
+
+        resp = MagicMock()
+        resp.body = _make_sc1_body(ordxctptncode="11", ordno="0000000")
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            futures = []
+            mock_run.side_effect = lambda c, l: futures.append(c) or MagicMock()
+            on_sc1(resp)
+
+        await futures[0]
+        assert context.record_workflow_fill.call_args.kwargs["execution_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_missing_fill_time_is_empty_not_synthesized(self):
+        """체결시각이 없으면 **빈 문자열**이다 — 로컬 시계를 합성하지 않는다.
+
+        종전 `or datetime.now().strftime('%H%M%S000')` 은 파드 로컬(UTC) 벽시계를
+        브로커 체결시각과 같은 9자리 모양으로 내보냈고, 소비자(pg-worker
+        app/order_fill_updates.py)가 그걸 Asia/Seoul 로 읽어 executed_at 을
+        '계산된 체결시각' 으로 확정했다(executed_at_source 태그도 없이 — 9시간
+        과거가 사실처럼 기록된다). 빈 문자열이면 그쪽 `and fill_time` 가드가
+        걸려 정직한 received_at 폴백이 된다.
+        """
+        executor = _get_executor()
+        context = _make_mock_context()
+        mock_ls, _, _, mock_sc1 = _make_mock_ls()
+
+        on_sc1 = await self._setup_and_get_sc1_callback(executor, context, mock_ls, mock_sc1)
+
+        resp = MagicMock()
+        resp.body = _make_sc1_body(ordxctptncode="11", exectime="")
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            futures = []
+            mock_run.side_effect = lambda c, l: futures.append(c) or MagicMock()
+            on_sc1(resp)
+
+        await futures[0]
+        assert context.record_workflow_fill.call_args.kwargs["fill_time"] == ""
 
     @pytest.mark.asyncio
     async def test_symbol_a_prefix_stripped(self):

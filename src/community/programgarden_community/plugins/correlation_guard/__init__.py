@@ -267,6 +267,14 @@ async def correlation_guard_condition(
     has_risk_tracker = context and hasattr(context, "risk_tracker") and context.risk_tracker
 
     if has_risk_tracker:
+        # 🔴 이 히스테리시스 상태 읽기/쓰기는 실제로 동작하지 않는다 (관측 2026-09-12):
+        #    실제 트래커 programgarden.database.workflow_risk_tracker.WorkflowRiskTracker
+        #    에는 get_state/set_state 가 없다(save_state/load_state/delete_state 뿐).
+        #    아래 except 가 그 AttributeError 를 삼키므로 prev_regime 은 언제나
+        #    "normal" 이고, 경계 구간(recovery_threshold < corr < corr_threshold)의
+        #    '이전 상태 유지' 는 사실상 '항상 normal' 로 동작한다.
+        #    메서드명 정렬은 이 플러그인 밖(엔진) 수정이라 여기서 고치지 않는다 —
+        #    미검증 분기로 남긴다.
         try:
             state = context.risk_tracker.get_state("correlation_guard_regime")
             if state:
@@ -293,6 +301,10 @@ async def correlation_guard_condition(
     # risk_event 기록
     if triggered and has_risk_tracker:
         try:
+            # 🔴 record_event 는 실제 트래커에 없는 메서드다 (관측 2026-09-12):
+            #    WorkflowRiskTracker 의 실제 이름은 record_risk_event 다. 아래 except 가
+            #    AttributeError 를 삼키므로 이 위험 이벤트는 **한 건도 기록되지 않는다**.
+            #    메서드명 정렬은 이 플러그인 밖(엔진) 수정이라 여기서 고치지 않는다 — 미검증.
             context.risk_tracker.record_event(
                 event_type="high_correlation",
                 symbol="PORTFOLIO",

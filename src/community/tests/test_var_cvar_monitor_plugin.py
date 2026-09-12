@@ -12,7 +12,13 @@ from programgarden_community.plugins.var_cvar_monitor import (
 
 
 class MockRiskTracker:
-    """mock risk tracker for event recording"""
+    """위험 이벤트 기록 **목 계약** — 실제 WorkflowRiskTracker 인터페이스가 아니다.
+
+    실제 클래스에는 ``record_event`` 가 없다(실제 이름은 ``record_risk_event``).
+    플러그인 쪽 호출은 ``except Exception: pass`` 로 감싸져 있어 라이브에서는
+    이벤트가 한 건도 기록되지 않는다 — 아래 이벤트 테스트는 '목이 약속한
+    계약대로 플러그인이 호출한다' 만 증명한다. 관측 2026-09-12.
+    """
     def __init__(self):
         self.events = []
 
@@ -202,7 +208,7 @@ class TestVarCvarMonitorPlugin:
 
     @pytest.mark.asyncio
     async def test_risk_event_recording(self, mock_data_volatile):
-        """risk_tracker 이벤트 기록"""
+        """[목 계약 — 라이브 아님] risk_tracker 이벤트 기록"""
         ctx = MockContext()
         result = await var_cvar_monitor_condition(
             data=mock_data_volatile,
@@ -229,3 +235,175 @@ class TestVarCvarMonitorPlugin:
         assert analysis["confidence_level"] == 99.0
         assert "portfolio_var_pct" in analysis
         assert "portfolio_cvar_pct" in analysis
+
+
+class TestVarCvarFractionalPosition:
+    """소수 포지션 회귀 — int() 절단 + max(1, qty // 2) 바닥올림 (X3).
+
+    ⚠️ 이 분기(positions 인자)는 워크플로우 실행기 경로에서는 도달하지 않는다 —
+    실행기의 data 기반 분기가 plugin_kwargs 에 ``positions`` 를 넣지 않기 때문이다
+    (플러그인 모듈 docstring 참조). 여기서 검증하는 것은 라이브러리를 직접
+    호출하는 경로와 계산식 자체다.
+    """
+
+    @staticmethod
+    def _volatile_bars(symbol="AAPL", n=70):
+        """VaR 가 임계를 확실히 넘도록 +-3% 로 진동하는 결정론적 시계열."""
+        bars = []
+        price = 150.0
+        for i in range(n):
+            price = price * (1.03 if i % 2 == 0 else 0.97)
+            bars.append({
+                "symbol": symbol, "exchange": "NASDAQ",
+                "date": f"2026-{(i // 28) + 1:02d}-{(i % 28) + 1:02d}",
+                "close": round(price, 4),
+            })
+        return bars
+
+    async def _run(self, qty, action="reduce_position", price=150.0):
+        return await var_cvar_monitor_condition(
+            data=self._volatile_bars(),
+            fields={"lookback": 20, "alert_threshold_pct": 1.0, "action": action},
+            positions=[{"symbol": "AAPL", "current_price": price, "qty": qty}],
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("qty", [0.532, 1, 10])
+    async def test_sell_quantity_never_exceeds_held(self, qty):
+        """0.532 / 1 / 10 보유 어느 쪽도 보유량을 넘는 수량을 싣지 않는다.
+
+        수정 전에는 0.532 보유에서 ``max(1, int(0.532) // 2) = 1`` 이 실렸다
+        (보유 초과 매도).
+        """
+        result = await self._run(qty)
+        assert result["result"] is True, "변동성 픽스처가 임계를 넘지 못했다"
+        passed = result["passed_symbols"][0]
+        assert passed["sell_quantity"] <= qty, (
+            f"보유 {qty} 인데 매도 수량 {passed['sell_quantity']}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("qty,expected", [(0.532, 0.266), (1, 0.5), (10, 5)])
+    async def test_sell_quantity_is_exact_half(self, qty, expected):
+        """정확히 절반 — 소수는 보존되고 정수는 int 로 남는다."""
+        result = await self._run(qty)
+        passed = result["passed_symbols"][0]
+        assert passed["sell_quantity"] == pytest.approx(expected)
+        if float(expected).is_integer():
+            assert isinstance(passed["sell_quantity"], int)
+
+    @pytest.mark.asyncio
+    async def test_fractional_position_value_is_not_zero(self):
+        """150달러 x 0.532 = 79.8 — 수정 전에는 int(0.532)=0 이라 0.0 으로 보고됐다."""
+        result = await self._run(0.532)
+        sr = result["symbol_results"][0]
+        assert sr["position_value"] == pytest.approx(79.8, abs=0.01)
+        assert sr["var_dollar"] > 0
+        assert "position_value_unavailable_reason" not in sr
+
+    @pytest.mark.asyncio
+    async def test_unreadable_quantity_leaves_reason_not_a_made_up_number(self):
+        """수량을 읽을 수 없으면 수량을 지어내지 않고 사유를 남긴다."""
+        result = await self._run("n/a")
+        passed = result["passed_symbols"][0]
+        sr = result["symbol_results"][0]
+        assert "sell_quantity" not in passed
+        assert "보유 수량을 읽을 수 없어" in sr["sell_quantity_unavailable_reason"]
+        assert "position_value" not in sr
+        assert "position_value_unavailable_reason" in sr
+
+    @pytest.mark.asyncio
+    async def test_missing_position_leaves_reason(self):
+        """positions 에 종목이 없으면 sell_quantity 대신 사유를 남긴다."""
+        result = await var_cvar_monitor_condition(
+            data=self._volatile_bars(),
+            fields={"lookback": 20, "alert_threshold_pct": 1.0, "action": "reduce_position"},
+            positions=[{"symbol": "MSFT", "current_price": 300.0, "qty": 5}],
+        )
+        passed = result["passed_symbols"][0]
+        sr = result["symbol_results"][0]
+        assert "sell_quantity" not in passed
+        assert "positions 입력에 해당 종목이 없어" in sr["sell_quantity_unavailable_reason"]
+
+    @pytest.mark.asyncio
+    async def test_exit_all_still_sells_everything(self):
+        """exit_all 은 수량 계산과 무관하게 'all' 이다 (회귀 가드)."""
+        result = await self._run(0.532, action="exit_all")
+        assert result["passed_symbols"][0]["sell_quantity"] == "all"
+
+
+class TestSellQuantityDeclarationMatchesValue:
+    """Z3 — output_fields 선언과 실제 값이 어긋나지 않아야 한다.
+
+    ``sell_quantity`` 는 'reduce_position' 에서는 숫자지만 'exit_all' 에서는 전량을
+    뜻하는 **문자열 "all"** 이다. 선언 type 은 레지스트리 공통 검증
+    (``test_plugin_output_fields.VALID_TYPES`` = float/int/str/bool/list/dict)이
+    유니온 표기를 허용하지 않으므로, description 이 두 모양을 모두 밝힌다.
+    """
+
+    def test_description_documents_the_all_string(self):
+        meta = VAR_CVAR_MONITOR_SCHEMA.output_fields["sell_quantity"]
+        desc = meta["description"]
+        assert '"all"' in desc, "문자열 'all' 을 싣는다는 사실이 선언에 없다"
+        assert "exit_all" in desc
+        assert "NOT always a number" in desc
+
+    def test_declared_type_stays_in_the_registry_vocabulary(self):
+        """공통 검증이 받는 어휘를 벗어나지 않는다(전 플러그인 일괄 테스트와 충돌 금지)."""
+        assert VAR_CVAR_MONITOR_SCHEMA.output_fields["sell_quantity"]["type"] in {
+            "float", "int", "str", "bool", "list", "dict"
+        }
+
+    @pytest.mark.asyncio
+    async def test_exit_all_really_emits_the_string(self):
+        result = await var_cvar_monitor_condition(
+            data=TestVarCvarFractionalPosition._volatile_bars(),
+            fields={"lookback": 20, "alert_threshold_pct": 1.0, "action": "exit_all"},
+            positions=[{"symbol": "AAPL", "current_price": 150.0, "qty": 10}],
+        )
+        assert result["passed_symbols"][0]["sell_quantity"] == "all"
+
+
+class TestReducePositionBelowOneShareIsNotSilent:
+    """Z4 — 1주 미만 축소 수량은 주문이 만들어지지 않는다는 사실을 드러낸다.
+
+    주문 송신부 ``NewOrderNodeExecutor._normalize_order`` 라이브 실측(2026-09-12,
+    executor 직접 호출): quantity 0.5 → None, 0.999 → None, 1.0 → quantity 1,
+    1.5 → quantity 1 + fractional_remainder 0.5. 즉 0 < 수량 < 1 이면 주문 자체가
+    만들어지지 않는다. 동작은 바꾸지 않고(수량 그대로) 사유만 드러낸다.
+    """
+
+    async def _run(self, qty):
+        return await var_cvar_monitor_condition(
+            data=TestVarCvarFractionalPosition._volatile_bars(),
+            fields={"lookback": 20, "alert_threshold_pct": 1.0, "action": "reduce_position"},
+            positions=[{"symbol": "AAPL", "current_price": 150.0, "qty": qty}],
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("qty,half", [(1, 0.5), (0.532, 0.266), (1.9, 0.95)])
+    async def test_sub_one_share_half_leaves_reason(self, qty, half):
+        result = await self._run(qty)
+        sr = result["symbol_results"][0]
+        assert sr["sell_quantity"] == pytest.approx(half)  # 수량은 그대로 둔다
+        assert result["passed_symbols"][0]["sell_quantity"] == pytest.approx(half)
+        assert "1주 미만" in sr["reduce_skipped_reason"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("qty", [2, 10, 3.5])
+    async def test_one_share_or_more_has_no_reason(self, qty):
+        result = await self._run(qty)
+        sr = result["symbol_results"][0]
+        assert sr["sell_quantity"] >= 1
+        assert "reduce_skipped_reason" not in sr
+
+    @pytest.mark.asyncio
+    async def test_unreadable_quantity_is_a_different_event(self):
+        """'못 읽음' 은 축소 무동작이 아니라 수량 미발행이다 — 사유 키가 다르다."""
+        result = await self._run("n/a")
+        sr = result["symbol_results"][0]
+        assert "sell_quantity_unavailable_reason" in sr
+        assert "reduce_skipped_reason" not in sr
+
+    def test_schema_declares_the_reason(self):
+        assert "reduce_skipped_reason" in VAR_CVAR_MONITOR_SCHEMA.output_fields
