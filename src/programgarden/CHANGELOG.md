@@ -1,3 +1,55 @@
+## [1.37.1] - 2026-09-12
+
+1.37.0 을 내면서 남긴 **장(브로커) 없이 고칠 수 있는 후속 결함** 묶음. 국내 주문이벤트 노드가 SC1~SC4 프레임을
+받지 못하던 것, TC3 체결가 갱신이 키 오타로 죽어 있던 것, 브로커 노드가 LS 로그인 실패를 삼키고 completed 로
+끝나던 것(2026-09-12 prod 실관측), 상태 기반 포지션 플러그인이 라이브에서 상태를 저장하지 못하던 것.
+
+### Fixed
+- **국내주식 주문이벤트 노드(`RealOrderEventNode`, SC0~SC4)가 SC1~SC4 프레임을 받지 못하던 결함** — 리스너를
+  `SC0().on_sc0_message` 하나만 등록한 채 핸들러 안에서 `tr_cd` 로 분기했는데, SDK 디스패치는 `tr_cd` 정확일치
+  키라 SC1(체결)·SC2(정정)·SC3(취소)·SC4(거부) 프레임은 노드에 도달조차 못 했다(`event_filter` 를 SC1 로 두면
+  출력 0건). 다섯 스트림을 각각 등록(`_KOREA_ORDER_EVENT_STREAMS`)하고 **스트림별 파서**로 분리 — 파서가 읽던
+  PascalCase 필드명(`OrdNo`/`ExecQty`…)은 SDK 블록에 존재하지 않아 전 필드가 0/빈값이었다(pydantic
+  `extra='ignore'`). 실제 필드(SC0 `ordno`/`ordqty`/`ordprice`/`expcode`…, SC1 계열 `execqty`/`execprc`/
+  `unercqty`/`exectime`/`execno`…)로 읽고, SC0(접수)에 없는 체결 필드는 0 으로 지어내지 않고
+  `filled_price_unavailable_reason` 으로 표시한다. 수량 `_qty_num`, 가격 float. SC1 체결가 반영 분기는 프레임의
+  주문일자를 쓴다. 체결 원장 경로(`on_sc1_event`)는 건드리지 않았다(별 표면).
+- **주문이벤트 노드 마스터가 체결 원장 구독을 덮어쓰던 회귀/결함** — SDK 리스너 레지스트리가 TR 당 하나였기 때문에
+  (finance ≤1.9.6), 같은 Real 객체에 원장 리스너(`on_sc1_event`/AS0·AS1/`on_tc3_event`)와 노드 마스터가 같은 TR 을
+  걸면 나중 등록이 앞의 것을 지웠다(국내 SC1 은 이번 변경으로 새로, 해외주식 AS0·해외선물 TC3 는 그 전부터).
+  finance 1.9.7(키당 다중 리스너)로 근본 수정하고, 정리 경로는 `context.set_order_event_masters` 에 기억해 둔
+  **노드 마스터 콜러블만** `on_remove_<tr>_message(master)` 로 뗀다 — 종전엔 SC0/AS0 키 전체를 떼어 원장 리스너까지
+  지웠고, SC1~SC4·AS1~AS4 마스터는 영영 남아 SDK 의 "리스너 0 → 계좌 실시간 해제" 조건에 도달하지 못했다.
+- **해외주식 주문이벤트 노드(`RealOrderEventNode`, AS0~AS4)도 같은 결함** — AS0 마스터 하나만 등록해 AS1(체결)·AS2·AS3·AS4
+  프레임이 노드에 도달하지 못했고, 체결가 갱신은 주문가(`sOrdPrc`)를 쓰는 데다 조건(`'11'`)이 AS0 enum 에 없어 한 번도
+  타지 않았다. 국내와 동형으로 스트림별 등록·파서 분리(AS0 접수 전용 / AS1~AS4 체결형), 체결가는 `sExecPrc`, 소수점
+  `sExecQty` 보존, 거래소는 검증된 코드(81/82/83)만 표시하고 미지 코드는 사유 표시. 뒤에 붙는 노드가 SDK 에 없는 스트림을
+  고르면 `unavailable_streams` + warning(조용한 실패 금지, 국내도 노드별로 통일).
+- **주문이벤트 출력에 선언 필드명 alias 추가** — core `ORDER_EVENT_FIELDS` 는 `order_id/quantity/filled_quantity/price` 를
+  선언하는데 파서 3종은 `order_no/order_qty/filled_qty/order_price` 만 실어 AI 가 예제대로 `{{ …order_id }}` 를 쓰면
+  빈값이 렌더됐다. 의미가 1:1 인 네 키만 alias 로 함께 싣는다(기존 키 유지, core 무변경). `event_type` 은 1:1 대응 키가
+  없어 alias 하지 않는다.
+- **positions 가 빈 리스트일 때 상태 플러그인이 아예 호출되지 않던 경로** — 전량 매도로 계좌가 비면 `time_based_exit` 의
+  진입일 정리 스윕이 돌지 않아 재매수 직후 옛 진입일로 거짓 청산이 날 수 있었다. `context` 를 선언한 플러그인은
+  `positions=[]` 로 한 번 호출(결과는 판정에 미반영, 예외는 warning).
+- **TC3(해외선물) 주문이벤트 체결가 갱신이 한 번도 호출되지 않던 결함** — 핸들러가 `fill_price` 키를 읽는데
+  `_parse_tc3_data` 는 `filled_price`(노드 선언 출력 필드명) 만 담아 항상 0 이었다. 리더 키를 고치고,
+  `ordr_dt` 기반 `order_date` 를 파서에 담아 그 값으로 갱신한다(비면 오늘 날짜로 지어내지 않고 건너뛴 사유를
+  warning 으로 남긴다).
+- **브로커 노드가 LS 로그인 실패를 삼키고 체결 구독 없이 completed 로 끝나던 결함(2026-09-12 prod 실관측)** —
+  주문 노드는 재로그인을 시도하므로 "주문은 나가는데 체결은 원장에 안 잡히는" 조합이 됐다. 체결 구독 로그인은
+  2회 백오프 재시도(2s·5s, LS 앱키 공유·전송수 제한 때문에 상한 고정) 후에도 실패하면 `ExecutionError` 로
+  **노드 실패**로 올리고 `CONNECTION_FAILED`(CRITICAL) 알림을 보낸다. 로그인 뒤 구독 자체 실패도 같은 경로.
+  체결 구독 호출부에만 없던 `dry_run` 게이트를 추가(모의 실행은 주문·체결이 없으므로 건너뛰고 info 로그).
+- **positions 기반 조건 플러그인에 `context` 가 전달되지 않아 상태 저장이 늘 꺼져 있던 결함** — data 분기와
+  같은 규약으로 `inspect.signature` 에 `context` 가 있을 때만 넘긴다. 이로써 `partial_take_profit` 등의
+  상태 경로가 처음으로 실제 동작한다(community 1.15.3 의 플러그인 수정과 짝).
+
+### Changed
+- deps: `programgarden-finance ^1.9.7`(실시간 리스너 레지스트리 키당 다중 리스너 — 주문이벤트 노드 마스터가 체결
+  원장 구독을 덮어쓰던 회귀의 근본 수정) · `programgarden-community ^1.15.3`(상태 기반 플러그인 5종 트래커 메서드명
+  수정). core 1.28.0 무변경.
+
 ## [1.37.0] - 2026-09-12
 
 LS 브로커 필드 의미를 오너가 확인해준 사실(체결번호·AP처리시각·소수점 주식·TC3 조건부 필드·국내 매체코드)로

@@ -104,7 +104,7 @@ class RealNVI():
         """
         return self._parent._on_message("NVI", listener)
 
-    def on_remove_nvi_message(self):
+    def on_remove_nvi_message(self, listener=None):
         """등록된 NXT VI발동해제 콜백을 제거합니다.
 
         EN:
@@ -113,4 +113,4 @@ class RealNVI():
         KO:
             등록된 NVI 메시지 리스너를 제거합니다.
         """
-        return self._parent._on_remove_message("NVI")
+        return self._parent._on_remove_message("NVI", listener)

@@ -31,5 +31,5 @@ class RealGSH():
     def on_gsh_message(self, listener: Callable[[GSHRealResponse], None]):
         return self._parent._on_message("GSH", listener)
 
-    def on_remove_gsh_message(self):
-        return self._parent._on_remove_message("GSH")
+    def on_remove_gsh_message(self, listener=None):
+        return self._parent._on_remove_message("GSH", listener)

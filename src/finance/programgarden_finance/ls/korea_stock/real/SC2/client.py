@@ -84,7 +84,7 @@ class RealSC2():
         self._parent._add_real_order_korea()
         return self._parent._on_message("SC2", listener)
 
-    def on_remove_sc2_message(self):
+    def on_remove_sc2_message(self, listener=None):
         """등록된 주문정정 콜백을 제거합니다.
 
         EN:
@@ -99,4 +99,4 @@ class RealSC2():
         Returns:
             WebSocket 메시지 리스너 제거 결과
         """
-        return self._parent._on_remove_message("SC2")
+        return self._parent._on_remove_message("SC2", listener)

@@ -16,5 +16,5 @@ class RealTC2():
         self._parent._add_real_order()
         return self._parent._on_message("TC2", listener)
 
-    def on_remove_tc2_message(self):
-        return self._parent._on_remove_message("TC2")
+    def on_remove_tc2_message(self, listener=None):
+        return self._parent._on_remove_message("TC2", listener)

@@ -26,11 +26,14 @@ Value at Risk(VaR)와 Conditional VaR(CVaR, Expected Shortfall) 계산.
 이 플러그인의 범위 밖이다.)
 """
 
+import logging
 from typing import List, Dict, Any, Optional, Set
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
 from .._position_qty import below_broker_lot, coerce_qty, half_position_qty
+
+logger = logging.getLogger(__name__)
 
 
 # risk_features 선언
@@ -329,20 +332,31 @@ async def var_cvar_monitor_condition(
                     )
             passed.append(sym_dict)
 
-            # risk_event 기록
-            if context and hasattr(context, "risk_tracker") and context.risk_tracker:
+            # risk_event 기록 — 메서드 이름·호출 규약은 **실제 트래커**(WorkflowRiskTracker)의
+            # record_risk_event(event_type, severity, symbol, exchange, details, node_id) 에 맞춘다.
+            # 종전의 record_event(data=) 는 실제 클래스에 없는 이름이라 except 가 AttributeError 를
+            # 삼켜 var_breach 이벤트가 **한 건도 기록되지 않았다**(2026-09-12 코드 대조). 메서드가
+            # 없는 트래커 변종이면 크래시 대신 이 경로만 끄고, 실패는 삼키지 않고 warning 으로 남긴다.
+            _tracker = getattr(context, "risk_tracker", None) if context else None
+            if _tracker is not None and hasattr(_tracker, "record_risk_event"):
                 try:
-                    # 🔴 record_event 는 실제 트래커에 없는 메서드다 (관측 2026-09-12):
-                    #    WorkflowRiskTracker 의 실제 이름은 record_risk_event 다. 아래 except 가
-                    #    AttributeError 를 삼키므로 이 위험 이벤트는 **한 건도 기록되지 않는다**.
-                    #    메서드명 정렬은 이 플러그인 밖(엔진) 수정이라 여기서 고치지 않는다 — 미검증.
-                    context.risk_tracker.record_event(
+                    event_id = _tracker.record_risk_event(
                         event_type="var_breach",
+                        severity="warning",
                         symbol=symbol,
-                        data={"var_pct": var_pct, "threshold": alert_threshold, "action": action},
+                        details={"var_pct": var_pct, "threshold": alert_threshold, "action": action},
                     )
-                except Exception:
-                    pass
+                    if event_id is None:
+                        logger.warning(
+                            "var_cvar_monitor: record_risk_event returned None for %s "
+                            "(events feature off or DB write failed) — event not recorded", symbol
+                        )
+                except Exception as exc:  # noqa: BLE001 — 기록 실패가 조건 판정을 막으면 안 된다
+                    logger.warning("var_cvar_monitor: record_risk_event failed for %s: %s", symbol, exc)
+            elif _tracker is not None:
+                logger.warning(
+                    "var_cvar_monitor: risk_tracker has no record_risk_event — var_breach for %s not recorded", symbol
+                )
         else:
             failed.append(sym_dict)
 

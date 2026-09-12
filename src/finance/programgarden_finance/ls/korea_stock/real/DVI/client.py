@@ -95,7 +95,7 @@ class RealDVI():
         """
         return self._parent._on_message("DVI", listener)
 
-    def on_remove_dvi_message(self):
+    def on_remove_dvi_message(self, listener=None):
         """등록된 시간외단일가 VI발동해제 콜백을 제거합니다.
 
         EN:
@@ -104,4 +104,4 @@ class RealDVI():
         KO:
             등록된 DVI 메시지 리스너를 제거합니다.
         """
-        return self._parent._on_remove_message("DVI")
+        return self._parent._on_remove_message("DVI", listener)

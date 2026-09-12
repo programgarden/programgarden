@@ -9,12 +9,29 @@ CorrelationAnalysis와 차별: 상관계수 측정이 아닌 진입/청산 신�
 - fields: {symbol_a, symbol_b, lookback, entry_z, exit_z, spread_method, correlation_min}
 
 ※ 다중 종목 플러그인 - ConditionNode auto-iterate 제약 → NodeRunner 테스트 권장
+
+상태(strategy_state) 경로 — 2026-09-12 수정
+--------------------------------------------------------------------------------
+마지막 신호를 ``pair_{symbol_a}_{symbol_b}`` 키에 저장한다(값 str → 트래커 'string'
+타입으로 그대로 왕복). **write-only 이력**이다 — 이 플러그인은 되읽지 않는다.
+
+2026-09-12 이전에는 실제 트래커 ``programgarden.database.workflow_risk_tracker.
+WorkflowRiskTracker`` 에 없는 ``set_state`` 를 불렀고 ``except: pass`` 가 그
+AttributeError 를 삼켜 **한 번도 저장되지 않았다**(data 기반 분기는 예전부터 context 를
+넘겼으므로 라이브에서도 같은 경로였다 — 코드 대조 기준). 이제 실제 이름
+``save_state`` 를 동기 호출하고, 실패는 삼키지 않고 logger.warning 으로 남긴다.
+``load_state``/``save_state``/``delete_state`` 셋이 전부 없는 트래커 변종이면 크래시
+대신 **무상태로 강등**한다(저장 생략). ``state`` feature 없이 만들어진 실제 트래커는
+save_state 가 False 를 돌려주며 warning 만 남는다. dry_run 에서는 트래커가 뜨지 않는다.
 """
 
+import logging
 import math
 from typing import List, Dict, Any, Optional, Set
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
+
+logger = logging.getLogger(__name__)
 
 
 # risk_features 선언 (페어 상태 추적)
@@ -300,13 +317,25 @@ async def pair_trading_condition(
     elif abs(z_score) < exit_z:
         signal = "exit"
 
-    # state 저장
-    has_risk_tracker = context and hasattr(context, "risk_tracker") and context.risk_tracker
-    if has_risk_tracker and signal:
+    # state 저장 — 마지막 신호 이력(write-only: 이 플러그인은 되읽지 않는다).
+    # 메서드 이름·호출 규약은 **실제 트래커**(WorkflowRiskTracker)에 맞춘다 —
+    # load_state / save_state / delete_state, 전부 동기. 종전의 set_state 는 실제 클래스에
+    # 없는 이름이라 except 가 AttributeError 를 삼켜 **한 번도 저장되지 않았다**.
+    # 셋이 전부 있을 때만 켜고, 다른 트래커 변종이면 무상태로 강등한다(모듈 docstring 참조).
+    _tracker = getattr(context, "risk_tracker", None) if context else None
+    has_state = _tracker is not None and all(
+        hasattr(_tracker, name) for name in ("load_state", "save_state", "delete_state")
+    )
+    if has_state and signal:
+        state_key = f"pair_{symbol_a}_{symbol_b}"
         try:
-            context.risk_tracker.set_state(f"pair_{symbol_a}_{symbol_b}", signal)
-        except Exception:
-            pass
+            if not _tracker.save_state(state_key, signal):
+                logger.warning(
+                    f"PairTrading: 상태 저장 실패 ({state_key}) — 트래커가 False 를 돌려줌 "
+                    "('state' feature 없음 또는 DB 쓰기 실패)"
+                )
+        except Exception as e:
+            logger.warning(f"PairTrading: 상태 저장 실패 ({state_key}): {e}")
 
     # 결과 구성
     exchange_a = symbol_exchange_map.get(symbol_a, "UNKNOWN")

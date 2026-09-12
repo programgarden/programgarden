@@ -21,5 +21,5 @@ class RealWOC():
     def on_woc_message(self, listener: Callable[[WOCRealResponse], None]):
         return self._parent._on_message("WOC", listener)
 
-    def on_remove_woc_message(self):
-        return self._parent._on_remove_message("WOC")
+    def on_remove_woc_message(self, listener=None):
+        return self._parent._on_remove_message("WOC", listener)

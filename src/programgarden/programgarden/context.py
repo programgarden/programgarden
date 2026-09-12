@@ -263,6 +263,10 @@ class ExecutionContext:
         # {product: {tr_cd: [(node_id, event_filter, handler)]}}
         self._order_event_handlers: Dict[str, Dict[str, List[tuple]]] = {}
         self._order_event_real_client: Dict[str, Any] = {}  # {product: real_client}
+        # {product: {stream(TR): master_callable}} — 주문이벤트 노드가 SDK 에 건 마스터 콜백.
+        # 정리 때 **이 콜러블만** 떼야 같은 Real 객체를 공유하는 체결 원장 구독(on_sc1_event 등)이
+        # 살아남는다(finance 1.9.7 키당 다중 리스너 + on_remove_*_message(listener)).
+        self._order_event_masters: Dict[str, Dict[str, Callable]] = {}
         
         # === New: Cleanup on flow end (stay_connected=False) ===
         # Stores trackers that should be cleaned up after each flow execution
@@ -1210,6 +1214,18 @@ class ExecutionContext:
         """Get the real_client for a product"""
         return self._order_event_real_client.get(product)
 
+    def set_order_event_masters(self, product: str, masters: Dict[str, Callable]) -> None:
+        """주문이벤트 노드가 SDK 에 등록한 마스터 콜백을 스트림(TR)별로 기억한다.
+
+        정리(`cleanup_persistent_nodes`)가 `on_remove_<tr>_message(master)` 로 **이 콜러블만** 떼어,
+        같은 Real 객체에 걸린 체결 원장 리스너를 지우지 않게 한다. 같은 product 에 다시 부르면 갱신.
+        """
+        self._order_event_masters[product] = dict(masters)
+
+    def get_order_event_masters(self, product: str) -> Dict[str, Callable]:
+        """등록된 마스터 콜백 {stream: callable} (없으면 빈 dict)."""
+        return dict(self._order_event_masters.get(product, {}))
+
     async def cleanup_persistent_nodes(self) -> None:
         """
         Cleanup all persistent nodes (call on job stop)
@@ -1296,6 +1312,28 @@ class ExecutionContext:
 
         # 4. Order event master callback SDK 레벨 해제
         for product, real_client in self._order_event_real_client.items():
+            masters = self._order_event_masters.get(product) or {}
+            if masters:
+                # 스트림별로 **우리 마스터만** 뗀다(리스너 인자). 리스너를 안 받는 구 SDK(<1.9.7)면
+                # 그 키 전체가 떨어지는 옛 동작으로 폴백 — 원장 구독이 같이 사라지므로 warning.
+                for stream, master in masters.items():
+                    try:
+                        client = getattr(real_client, stream)()
+                        remover = getattr(client, f"on_remove_{stream.lower()}_message")
+                        try:
+                            remover(master)
+                        except TypeError:
+                            remover()
+                            logger.warning(
+                                f"SDK on_remove_{stream.lower()}_message accepts no listener — "
+                                f"removed the whole {stream} key for {product} (ledger listener may be gone)"
+                            )
+                        logger.debug(f"Removed {stream} master callback for {product}")
+                    except RuntimeError:
+                        logger.debug(f"{stream} order event callback already detached for {product}")
+                    except (AttributeError, Exception) as e:
+                        logger.warning(f"Failed to remove {stream} order event callback for {product}: {e}")
+                continue
             try:
                 if product == "overseas_stock":
                     real_client.AS0().on_remove_as0_message()
@@ -1321,6 +1359,7 @@ class ExecutionContext:
 
         self._order_event_handlers.clear()
         self._order_event_real_client.clear()
+        self._order_event_masters.clear()
 
         # 5. Stop/Close all trackers (WebSocket clients 등)
         for node_id, tracker in self._persistent_nodes.items():

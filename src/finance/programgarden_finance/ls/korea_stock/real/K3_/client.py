@@ -51,6 +51,6 @@ class RealK3_():
         """
         return self._parent._on_message("K3_", listener)
 
-    def on_remove_k3__message(self):
+    def on_remove_k3__message(self, listener=None):
         """등록된 KOSDAQ 체결 콜백을 제거합니다."""
-        return self._parent._on_remove_message("K3_")
+        return self._parent._on_remove_message("K3_", listener)

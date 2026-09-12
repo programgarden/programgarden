@@ -16,5 +16,5 @@ class RealAS2():
         self._parent._add_real_order()
         return self._parent._on_message("AS2", listener)
 
-    def on_remove_as2_message(self):
-        return self._parent._on_remove_message("AS2")
+    def on_remove_as2_message(self, listener=None):
+        return self._parent._on_remove_message("AS2", listener)

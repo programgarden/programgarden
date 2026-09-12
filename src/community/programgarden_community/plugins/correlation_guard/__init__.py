@@ -7,11 +7,33 @@ regime 전환(히스테리시스) 및 포지션 축소를 추천합니다.
 입력 형식:
 - data: 플랫 배열 (2개 이상 종목 데이터 포함)
 - fields: {lookback, correlation_threshold, recovery_threshold, action, reduce_by_pct, method}
+
+상태(strategy_state)·이벤트 경로 — 2026-09-12 수정
+--------------------------------------------------------------------------------
+히스테리시스의 '이전 regime' 은 ``correlation_guard_regime`` 키에서 되읽고(값 str →
+트래커 'string' 타입으로 그대로 왕복), 매 사이클 현재 regime 을 다시 저장한다. 트리거
+시 ``high_correlation`` 위험 이벤트를 남긴다. 키는 노드별로 나뉘지 않는다 — 같은
+워크플로우에 CorrelationGuard 노드를 둘 이상 두면 regime 을 공유한다.
+
+2026-09-12 이전에는 실제 트래커 ``programgarden.database.workflow_risk_tracker.
+WorkflowRiskTracker`` 에 없는 ``get_state``/``set_state``/``record_event`` 를 불렀고
+``except: pass`` 가 그 AttributeError 를 삼켰다 → prev_regime 은 언제나 "normal"
+(경계 구간 recovery_threshold < avg < correlation_threshold 의 '이전 상태 유지' 가
+사실상 '항상 normal'), 이벤트는 한 건도 남지 않았다(data 기반 분기는 예전부터 context
+를 넘겼으므로 라이브에서도 같은 경로였다 — 코드 대조 기준). 이제 실제 이름
+``load_state``/``save_state``/``record_risk_event(event_type, severity, symbol, exchange,
+details, node_id)`` 를 동기 호출하고, 실패는 삼키지 않고 logger.warning 으로 남긴다.
+``load_state``/``save_state``/``delete_state`` 셋이 전부 없는 트래커 변종이면 크래시
+대신 **무상태로 강등**한다(prev_regime="normal", 저장·이벤트 생략). dry_run 에서는
+트래커가 뜨지 않는다.
 """
 
+import logging
 from typing import List, Dict, Any, Optional, Set
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
+
+logger = logging.getLogger(__name__)
 
 
 # risk_features 선언
@@ -262,25 +284,33 @@ async def correlation_guard_condition(
     else:
         avg_correlation = 0.0
 
-    # regime 결정 (히스테리시스)
-    prev_regime = "normal"
-    has_risk_tracker = context and hasattr(context, "risk_tracker") and context.risk_tracker
+    # regime 결정 (히스테리시스) — 이전 regime 은 strategy_state 에서 되읽는다.
+    # 메서드 이름·호출 규약은 **실제 트래커**(WorkflowRiskTracker)에 맞춘다: load_state /
+    # save_state / delete_state, record_risk_event(event_type, severity, symbol, exchange,
+    # details, node_id) — 전부 동기. 종전의 get_state/set_state/record_event 는 실제 클래스에
+    # 없는 이름이라 except 가 AttributeError 를 삼켜 prev_regime 이 언제나 "normal" 이었고
+    # 이벤트도 한 건도 남지 않았다. 필요한 메서드가 없는 트래커 변종이면 크래시 대신 그
+    # 경로만 끈다(무상태 강등). 모듈 docstring 참조.
+    _tracker = getattr(context, "risk_tracker", None) if context else None
+    has_state = _tracker is not None and all(
+        hasattr(_tracker, name) for name in ("load_state", "save_state", "delete_state")
+    )
+    has_events = _tracker is not None and hasattr(_tracker, "record_risk_event")
 
-    if has_risk_tracker:
-        # 🔴 이 히스테리시스 상태 읽기/쓰기는 실제로 동작하지 않는다 (관측 2026-09-12):
-        #    실제 트래커 programgarden.database.workflow_risk_tracker.WorkflowRiskTracker
-        #    에는 get_state/set_state 가 없다(save_state/load_state/delete_state 뿐).
-        #    아래 except 가 그 AttributeError 를 삼키므로 prev_regime 은 언제나
-        #    "normal" 이고, 경계 구간(recovery_threshold < corr < corr_threshold)의
-        #    '이전 상태 유지' 는 사실상 '항상 normal' 로 동작한다.
-        #    메서드명 정렬은 이 플러그인 밖(엔진) 수정이라 여기서 고치지 않는다 —
-        #    미검증 분기로 남긴다.
+    prev_regime = "normal"
+    if has_state:
         try:
-            state = context.risk_tracker.get_state("correlation_guard_regime")
-            if state:
-                prev_regime = state
-        except Exception:
-            pass
+            saved_regime = _tracker.load_state("correlation_guard_regime")
+        except Exception as e:
+            saved_regime = None
+            logger.warning(f"CorrelationGuard: 상태 조회 실패 (correlation_guard_regime): {e}")
+        if saved_regime in ("normal", "high_correlation"):
+            prev_regime = saved_regime
+        elif saved_regime:
+            logger.warning(
+                f"CorrelationGuard: 저장된 regime 을 읽을 수 없어 'normal' 로 간주 "
+                f"(value={saved_regime!r})"
+            )
 
     if avg_correlation >= corr_threshold:
         regime = "high_correlation"
@@ -291,27 +321,33 @@ async def correlation_guard_condition(
 
     triggered = regime == "high_correlation"
 
-    # state 저장
-    if has_risk_tracker:
+    # state 저장 — 값은 str → 트래커 'string' 타입으로 그대로 왕복한다
+    if has_state:
         try:
-            context.risk_tracker.set_state("correlation_guard_regime", regime)
-        except Exception:
-            pass
+            if not _tracker.save_state("correlation_guard_regime", regime):
+                logger.warning(
+                    "CorrelationGuard: 상태 저장 실패 (correlation_guard_regime) — 트래커가 False 를 "
+                    "돌려줌 ('state' feature 없음 또는 DB 쓰기 실패)"
+                )
+        except Exception as e:
+            logger.warning(f"CorrelationGuard: 상태 저장 실패 (correlation_guard_regime): {e}")
 
     # risk_event 기록
-    if triggered and has_risk_tracker:
+    if triggered and has_events:
         try:
-            # 🔴 record_event 는 실제 트래커에 없는 메서드다 (관측 2026-09-12):
-            #    WorkflowRiskTracker 의 실제 이름은 record_risk_event 다. 아래 except 가
-            #    AttributeError 를 삼키므로 이 위험 이벤트는 **한 건도 기록되지 않는다**.
-            #    메서드명 정렬은 이 플러그인 밖(엔진) 수정이라 여기서 고치지 않는다 — 미검증.
-            context.risk_tracker.record_event(
+            event_id = _tracker.record_risk_event(
                 event_type="high_correlation",
+                severity="warning",
                 symbol="PORTFOLIO",
-                data={"avg_correlation": avg_correlation, "threshold": corr_threshold, "action": action},
+                details={"avg_correlation": avg_correlation, "threshold": corr_threshold, "action": action},
             )
-        except Exception:
-            pass
+            if event_id is None:
+                logger.warning(
+                    "CorrelationGuard: 위험 이벤트 기록 실패 (high_correlation) — 트래커가 None 을 "
+                    "돌려줌 ('events' feature 없음 또는 INSERT 실패)"
+                )
+        except Exception as e:
+            logger.warning(f"CorrelationGuard: 위험 이벤트 기록 실패 (high_correlation): {e}")
 
     # 결과 집계
     passed, failed, symbol_results, values = [], [], [], []

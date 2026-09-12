@@ -96,7 +96,7 @@ class RealIJ_():
         """
         return self._parent._on_message("IJ_", listener)
 
-    def on_remove_ij__message(self):
+    def on_remove_ij__message(self, listener=None):
         """등록된 업종지수 콜백을 제거합니다.
 
         EN:
@@ -105,4 +105,4 @@ class RealIJ_():
         KO:
             등록된 IJ_ 메시지 리스너를 제거합니다.
         """
-        return self._parent._on_remove_message("IJ_")
+        return self._parent._on_remove_message("IJ_", listener)

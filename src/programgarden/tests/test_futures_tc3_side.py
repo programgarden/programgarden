@@ -86,7 +86,9 @@ async def deliver_tc3(monkeypatch, side, *, managed=False, shutdown=False, **ove
     processed = asyncio.Event()
     try:
         await executor._subscribe_overseas_futures_fill_events(ls, "broker", context)
-        callback = real._on_message_listeners["TC3"]
+        registered = real._on_message_listeners["TC3"]
+        # finance 1.9.7 부터 키당 리스너 리스트 — 원장 리스너는 이 테스트에서 유일한 등록자다
+        callback = registered[0] if isinstance(registered, list) else registered
 
         def observe(response):
             try:
@@ -95,6 +97,9 @@ async def deliver_tc3(monkeypatch, side, *, managed=False, shutdown=False, **ove
             finally:
                 loop.call_soon_threadsafe(processed.set)
 
+        # finance 1.9.7: 키당 다중 리스너라 래퍼를 *추가*하면 원본도 같이 불려 체결이 두 번 기록된다 —
+        # 원본을 떼고 래퍼(원본을 안에서 호출)만 남긴다.
+        real.TC3().on_remove_tc3_message(callback)
         real.TC3().on_tc3_message(observe)
         await socket.messages.put(json.dumps(tc3_packet(side, **overrides)))
         await asyncio.wait_for(processed.wait(), timeout=2)

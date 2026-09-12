@@ -1,24 +1,15 @@
 """
 PartialTakeProfit 플러그인 테스트
 
-🔴 이 파일의 ``MockRiskTracker`` 는 **실제 클래스에 없는 메서드를 제공한다** (관측 2026-09-12)
-------------------------------------------------------------------------------------------
-실제 트래커 ``programgarden.database.workflow_risk_tracker.WorkflowRiskTracker`` 의
-실제 인터페이스와 대조한 결과:
-
-| 목이 제공하는 이름 | 실제 클래스 | 비고 |
-|---|---|---|
-| ``get_state``   | **없음** | 실제 이름은 ``load_state`` (동기) |
-| ``set_state``   | **없음** | 실제 이름은 ``save_state`` (동기) |
-| ``delete_state``| 있음     | 단 **동기** 메서드 — 플러그인은 ``await`` 한다 |
-| ``record_event``| **없음** | 실제 이름은 ``record_risk_event`` |
-
-즉 아래 상태 관련 테스트들은 '플러그인이 라이브에서 실제로 상태를 저장·복원한다'
-를 증명하지 않는다 — **목이 약속한 계약대로 플러그인이 호출한다**는 것만 증명한다.
-라이브에서는 (가) 실제 트래커를 넘기면 ``AttributeError`` 로 죽고, (나) 애초에
-실행기가 positions 기반 플러그인에 ``context`` 를 넘기지 않아 상태 경로가 아예
-돌지 않는다(플러그인 모듈 docstring 의 '상태 경로' 절 참조).
-목을 실제 시그니처로 맞추는 수정은 이번 회차 범위 밖이다 — 후속 필요.
+``MockRiskTracker`` 는 **실제 클래스의 시그니처와 같다** (2026-09-12 정정)
+------------------------------------------------------------------------
+실제 트래커 ``programgarden.database.workflow_risk_tracker.WorkflowRiskTracker`` 는
+``load_state`` / ``save_state`` / ``delete_state`` 를 **동기** 메서드로 갖는다.
+종전 목은 실제에 없는 ``get_state``/``set_state`` 를 async 로 제공해, 상태 테스트가
+초록인데도 라이브에서는 AttributeError 로 죽는 상태를 가리고 있었다. 지금 목은
+같은 이름·같은 동기 호출 규약을 쓰므로, 플러그인이 목에서 통과하면 실제 트래커에서도
+같은 호출이 통한다(아래 ``TestLiveStatePathIsAlive`` 가 **실제 트래커 인스턴스**로
+한 번 더 고정한다).
 """
 
 import pytest
@@ -29,23 +20,23 @@ from programgarden_community.plugins.partial_take_profit import (
 
 
 class MockRiskTracker:
-    """strategy_state **목 계약** 모킹 — 실제 WorkflowRiskTracker 인터페이스가 아니다.
+    """strategy_state 모킹 — **실제 WorkflowRiskTracker 와 같은 이름·같은 동기 시그니처**.
 
-    ``get_state``/``set_state`` 는 실제 클래스에 없는 이름이고(실제: ``load_state``/
-    ``save_state``, 둘 다 동기), ``delete_state`` 는 이름은 같지만 실제로는 동기
-    메서드다. 파일 상단 주석 참조.
+    실제: ``load_state(key, default=None)`` / ``save_state(key, value) -> bool`` /
+    ``delete_state(key) -> bool`` (전부 동기). 파일 상단 주석 참조.
     """
     def __init__(self):
         self._state = {}
 
-    async def get_state(self, key):
-        return self._state.get(key)
+    def load_state(self, key, default=None):
+        return self._state.get(key, default)
 
-    async def set_state(self, key, value):
+    def save_state(self, key, value) -> bool:
         self._state[key] = value
+        return True
 
-    async def delete_state(self, key):
-        self._state.pop(key, None)
+    def delete_state(self, key) -> bool:
+        return self._state.pop(key, None) is not None
 
 
 class MockContext:
@@ -57,7 +48,7 @@ class TestPartialTakeProfitPlugin:
 
     @pytest.mark.asyncio
     async def test_level_triggered(self):
-        """1단계 익절 트리거 (context 경로는 목 계약 — 라이브에서는 context 가 오지 않는다)"""
+        """1단계 익절 트리거 (context 는 실행기의 positions 분기가 실제로 넘긴다)"""
         tracker = MockRiskTracker()
         context = MockContext(tracker)
 
@@ -146,10 +137,11 @@ class TestPartialTakeProfitPlugin:
 
     @pytest.mark.asyncio
     async def test_without_context(self):
-        """context 없이 실행 — **이것이 현재 라이브 실행기의 실제 모습이다**
+        """context 없이 실행 — 상태 없이도 죽지 않고 평가만 한다.
 
-        실행기의 positions 분기가 context 를 넘기지 않으므로 라이브는 항상 이
-        경로다. 매 호출이 level_index=0 을 다시 트리거한다(상태 없음).
+        (실행기의 positions 분기는 2026-09-12 부터 context 를 넘긴다. 이 경로는
+        context 를 넘기지 않는 외부 호출자·구버전 실행기용 하위 호환이다 —
+        상태가 없으니 매 호출이 같은 단계를 다시 트리거한다.)
         """
         positions = [
             {"symbol": "AAPL", "pnl_rate": 8.0, "qty": 100, "market_code": "82"},
@@ -361,20 +353,107 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
 
-class TestLiveStatePathIsDead:
-    """상태 경로가 라이브에서 죽어 있다는 **실제 동작**을 고정한다 (X4, 관측 2026-09-12).
+class TestLiveStatePathIsAlive:
+    """상태 경로가 **라이브에서 실제로 돈다**는 것을 고정한다 (2026-09-12 수정).
 
-    실행기의 positions 기반 분기(``ConditionNodeExecutor.execute``)는 plugin_kwargs
-    를 ``{"positions", "fields"}`` 로 고정해 ``context`` 를 넘기지 않는다. 따라서
-    라이브 호출은 항상 context=None 이고, 아래처럼 같은 단계가 매 사이클 재발동한다.
-
-    이 테스트가 초록인 것은 '정상' 이라는 뜻이 아니라 '아직 깨진 채다' 라는 뜻이다.
-    실행기가 context 를 넘기도록 고쳐지면 이 테스트가 빨개져야 하고, 그때 플러그인
-    docstring 의 '미검증' 문구도 함께 걷어내면 된다. 근본 수정은 이번 회차 범위 밖.
+    수정 전에는 두 군데가 끊겨 있었다:
+      1. 실행기의 positions 기반 분기가 plugin_kwargs 를 {"positions", "fields"} 로
+         고정해 ``context`` 를 넘기지 않았다 → has_state 가 항상 False.
+      2. 플러그인이 실제 트래커에 없는 ``get_state``/``set_state`` 를 await 했다 →
+         실제 트래커를 넘기면 AttributeError.
+    (1) 은 executor 쪽 테스트에서, (2) 는 아래에서 **실제 트래커 인스턴스**로 고정한다.
     """
+
+    @staticmethod
+    def _real_tracker(tmp_path):
+        mod = pytest.importorskip(
+            "programgarden.database.workflow_risk_tracker",
+            reason="engine package not installed; live-truth pin skipped",
+        )
+        return mod.WorkflowRiskTracker(
+            db_path=str(tmp_path / "rt.db"),
+            job_id="pin", product="overseas_stock", provider="ls",
+            trading_mode="real", features={"state"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_state_path_does_not_crash_and_persists(self, tmp_path):
+        """실제 트래커로 3사이클 — 1회차만 발동하고 이후는 hold (재발동 없음)."""
+        tracker = self._real_tracker(tmp_path)
+
+        class RealCtx:
+            risk_tracker = tracker
+
+        positions = [{"symbol": "AAPL", "pnl_rate": 6.0, "qty": 100, "market_code": "82"}]
+        levels = [{"pnl_pct": 5, "sell_pct": 50}, {"pnl_pct": 10, "sell_pct": 30}]
+
+        actions = []
+        for _ in range(3):
+            result = await partial_take_profit_condition(
+                positions=positions, fields={"levels": levels}, context=RealCtx(),
+            )
+            actions.append(result["symbol_results"][0]["action"])
+
+        assert actions == ["sell", "hold", "hold"], (
+            f"1단계는 한 번만 발동해야 한다. 관측: {actions}"
+        )
+        assert tracker.load_state("partial_tp.AAPL.completed_levels") == [0]
+        assert tracker.load_state("partial_tp.AAPL.original_qty") == 100
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_second_level_uses_original_quantity(self, tmp_path):
+        """2단계는 **최초 수량** 기준으로 계산된다 (상태에 저장된 original_qty)."""
+        tracker = self._real_tracker(tmp_path)
+
+        class RealCtx:
+            risk_tracker = tracker
+
+        levels = [{"pnl_pct": 5, "sell_pct": 50}, {"pnl_pct": 10, "sell_pct": 30}]
+        first = await partial_take_profit_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": 6.0, "qty": 100, "market_code": "82"}],
+            fields={"levels": levels}, context=RealCtx(),
+        )
+        assert first["symbol_results"][0]["sell_quantity"] == 50
+
+        # 50주 매도 체결 후 보유 50주 · 수익률 12% → 2단계 발동
+        second = await partial_take_profit_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": 12.0, "qty": 50, "market_code": "82"}],
+            fields={"levels": levels}, context=RealCtx(),
+        )
+        sr = second["symbol_results"][0]
+        assert sr["action"] == "sell"
+        assert sr["level_index"] == 1
+        assert sr["sell_quantity"] == 30, "최초 100주의 30% (현재 50주의 30% 가 아니다)"
+
+    @pytest.mark.asyncio
+    async def test_real_tracker_clears_state_when_position_closed(self, tmp_path):
+        tracker = self._real_tracker(tmp_path)
+
+        class RealCtx:
+            risk_tracker = tracker
+
+        levels = [{"pnl_pct": 5, "sell_pct": 50}]
+        await partial_take_profit_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": 6.0, "qty": 100, "market_code": "82"}],
+            fields={"levels": levels}, context=RealCtx(),
+        )
+        assert tracker.load_state("partial_tp.AAPL.completed_levels") == [0]
+
+        await partial_take_profit_condition(
+            positions=[{"symbol": "AAPL", "pnl_rate": 0.0, "qty": 0, "market_code": "82"}],
+            fields={"levels": levels}, context=RealCtx(),
+        )
+        assert tracker.load_state("partial_tp.AAPL.completed_levels") is None
+        assert tracker.load_state("partial_tp.AAPL.original_qty") is None
 
     @pytest.mark.asyncio
     async def test_same_level_retriggers_every_cycle_without_context(self):
+        """context 를 안 넘기는 호출자(구버전 실행기·직접 호출)는 종전 그대로다.
+
+        상태가 없으니 같은 단계가 매 사이클 재발동한다 — 이건 '고쳐지지 않은 결함' 이
+        아니라 '상태 저장소가 없을 때의 정의된 동작' 이다. 라이브 실행기는 위
+        테스트들처럼 context 를 넘긴다.
+        """
         positions = [{"symbol": "AAPL", "pnl_rate": 6.0, "qty": 100, "market_code": "82"}]
         levels = [{"pnl_pct": 5, "sell_pct": 50}]
 
@@ -386,35 +465,7 @@ class TestLiveStatePathIsDead:
             sr = result["symbol_results"][0]
             seen.append((sr["level_index"], sr["sell_quantity"]))
 
-        assert seen == [(0, 50), (0, 50), (0, 50)], (
-            "상태가 저장·복원되지 않아 매 사이클 같은 단계가 재발동한다. "
-            f"관측: {seen}"
-        )
-
-    @pytest.mark.asyncio
-    async def test_real_tracker_would_crash_on_the_state_path(self):
-        """실제 트래커를 넘기면 상태 경로가 AttributeError 로 즉사한다."""
-        mod = pytest.importorskip(
-            "programgarden.database.workflow_risk_tracker",
-            reason="engine package not installed; live-truth pin skipped",
-        )
-        import tempfile, os
-
-        tracker = mod.WorkflowRiskTracker(
-            db_path=os.path.join(tempfile.mkdtemp(), "rt.db"),
-            job_id="pin", product="overseas_stock", provider="ls",
-            trading_mode="real", features={"state"},
-        )
-
-        class RealCtx:
-            risk_tracker = tracker
-
-        with pytest.raises(AttributeError, match="get_state"):
-            await partial_take_profit_condition(
-                positions=[{"symbol": "AAPL", "pnl_rate": 6.0, "qty": 100, "market_code": "82"}],
-                fields={"levels": [{"pnl_pct": 5, "sell_pct": 50}]},
-                context=RealCtx(),
-            )
+        assert seen == [(0, 50), (0, 50), (0, 50)], f"관측: {seen}"
 
 
 class TestUnreadableQuantityIsReachable:

@@ -51,6 +51,6 @@ class RealH1_():
         """
         return self._parent._on_message("H1_", listener)
 
-    def on_remove_h1__message(self):
+    def on_remove_h1__message(self, listener=None):
         """등록된 KOSPI 호가잔량 콜백을 제거합니다."""
-        return self._parent._on_remove_message("H1_")
+        return self._parent._on_remove_message("H1_", listener)

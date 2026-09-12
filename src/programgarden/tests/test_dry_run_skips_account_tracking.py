@@ -1,9 +1,11 @@
-"""dry_run 에서는 브로커 노드가 계좌 추적기·체결내역 동기화를 띄우지 않는다 (Phase 9.6 실측, 2026-08-29).
+"""dry_run 에서는 브로커 노드가 계좌 추적기·체결내역 동기화·체결 이벤트 구독을 띄우지 않는다.
 
-두 경로는 별도 ``LS()`` 로 appkey/appsecret 직접 로그인한다(토큰 공급자 미상속). 서버 단일 발급
-토큰 + 더미 appsecret 으로 도는 트레이앱 검증 잡에서는 그 로그인이 403 → "Failed to login for
-account tracking" 이 errors[] 에 실려 모의 실행이 항상 실패했다. 모의 실행엔 주문·체결이 없으니
-둘 다 skip 이 맞다. runtime(실행) 은 종전대로 띄운다.
+(Phase 9.6 실측, 2026-08-29 / 체결 구독은 2026-09-12 추가)
+
+세 경로 모두 LS 로그인을 한다(앞의 둘은 별도 ``LS()`` 로 직접, 구독은 ``ensure_ls_login``).
+서버 단일 발급 토큰 + 더미 appsecret 으로 도는 트레이앱 검증 잡에서는 그 로그인이 403 →
+"Failed to login for account tracking" 이 errors[] 에 실려 모의 실행이 항상 실패했다.
+모의 실행엔 주문·체결이 없으니 전부 skip 이 맞다. runtime(실행) 은 종전대로 띄운다.
 """
 from __future__ import annotations
 
@@ -38,24 +40,30 @@ _CFG = {"appkey": "k", "appsecret": "dummy-secret", "paper_trading": False}
 
 async def _run_broker(ctx: ExecutionContext):
     ex = BrokerNodeExecutor()
+    # 체결 구독도 함께 막는다 — 실패 시 노드를 raise 시키는 경로라(2026-09-12) 더미
+    # 자격증명으로 실제 로그인을 시도하게 두면 이 테스트의 관심사(추적/동기화 게이트)와
+    # 무관한 실패가 난다.
     with patch.object(BrokerNodeExecutor, "_start_account_tracking", new=AsyncMock()) as track, \
-         patch.object(BrokerNodeExecutor, "_sync_fill_prices_from_history", new=AsyncMock()) as sync:
+         patch.object(BrokerNodeExecutor, "_sync_fill_prices_from_history", new=AsyncMock()) as sync, \
+         patch.object(BrokerNodeExecutor, "_subscribe_workflow_fill_events", new=AsyncMock()) as fills:
         out = await ex.execute("broker", "OverseasStockBrokerNode", dict(_CFG), ctx)
         await asyncio.sleep(0)  # create_task 된 코루틴이 있으면 여기서 시작된다
-    return out, track, sync
+    return out, track, sync, fills
 
 
 @pytest.mark.asyncio
 async def test_dry_run_broker_does_not_start_account_tracking_or_fill_sync():
-    out, track, sync = await _run_broker(_ctx(dry_run=True))
+    out, track, sync, fills = await _run_broker(_ctx(dry_run=True))
     assert out.get("connected") is True or out.get("connection")
     track.assert_not_awaited()
     sync.assert_not_awaited()
+    fills.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_runtime_broker_still_starts_account_tracking_and_fill_sync():
-    out, track, sync = await _run_broker(_ctx(dry_run=False))
+    out, track, sync, fills = await _run_broker(_ctx(dry_run=False))
     assert out.get("connected") is True or out.get("connection")
     track.assert_awaited_once()
     sync.assert_awaited_once()
+    fills.assert_awaited_once()

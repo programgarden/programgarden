@@ -21,5 +21,5 @@ class RealOVH():
     def on_ovh_message(self, listener: Callable[[OVHRealResponse], None]):
         return self._parent._on_message("OVH", listener)
 
-    def on_remove_ovh_message(self):
-        return self._parent._on_remove_message("OVH")
+    def on_remove_ovh_message(self, listener=None):
+        return self._parent._on_remove_message("OVH", listener)

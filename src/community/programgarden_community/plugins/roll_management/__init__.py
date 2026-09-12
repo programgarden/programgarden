@@ -8,8 +8,23 @@ RollManagement (롤오버 관리) 플러그인 - 선물 전용
 - positions: 선물 포지션 (list[dict])
   예: [{"symbol": "HSIZ25", "qty": 1, "current_price": 17500.0, "exchange": "HKEX", ...}, ...]
 - fields: {days_before_expiry, roll_strategy}
+
+상태(strategy_state) 경로 — 2026-09-12 수정
+--------------------------------------------------------------------------------
+롤 신호가 난 사이클마다 ``roll.{symbol}.signal_date`` 키에 그 날짜(``YYYY-MM-DD`` str →
+트래커 'string' 타입으로 그대로 왕복)를 저장한다. **write-only 이력**이다 — 이 플러그인은
+되읽지 않으며, 신호가 이어지는 동안 매 사이클 그날 날짜로 덮어쓴다(마지막 신호일).
+
+2026-09-12 이전에는 실제 트래커 ``programgarden.database.workflow_risk_tracker.
+WorkflowRiskTracker`` 에 없는 ``set_state`` 를 ``await`` 했고 ``except: pass`` 가 그
+AttributeError 를 삼켜 크래시는 없었지만 **이력이 한 번도 남지 않았다**. 이제 실제 이름
+``save_state`` 를 동기 호출하고, 실패는 삼키지 않고 logger.warning 으로 남긴다.
+``load_state``/``save_state``/``delete_state`` 셋이 전부 없는 트래커 변종이면 크래시
+대신 **무상태로 강등**한다(저장 생략). ``state`` feature 없이 만들어진 실제 트래커는
+save_state 가 False 를 돌려주며 warning 만 남는다. dry_run 에서는 트래커가 뜨지 않는다.
 """
 
+import logging
 from typing import Any, Dict, List, Optional, Set
 from datetime import datetime, timedelta
 
@@ -17,6 +32,8 @@ from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
 from .._position_qty import coerce_number, preserve_qty
+
+logger = logging.getLogger(__name__)
 
 
 # risk_features 선언
@@ -160,6 +177,14 @@ async def roll_management_condition(
     now = datetime.now()
     passed, failed, symbol_results = [], [], []
 
+    # strategy_state 접근 — 메서드 이름·호출 규약은 **실제 트래커**(WorkflowRiskTracker)에
+    # 맞춘다: load_state / save_state / delete_state, 전부 동기(await 하지 않는다).
+    # 셋이 전부 있을 때만 켜고, 다른 트래커 변종이면 무상태로 강등한다(모듈 docstring 참조).
+    _tracker = getattr(context, "risk_tracker", None) if context else None
+    has_state = _tracker is not None and all(
+        hasattr(_tracker, name) for name in ("load_state", "save_state", "delete_state")
+    )
+
     for pos_data in positions:
         symbol = pos_data.get("symbol")
         if not symbol:
@@ -208,15 +233,17 @@ async def roll_management_condition(
         else:
             result_info["qty"] = qty
 
-        # state 저장 (롤오버 이력)
-        if should_roll and context and hasattr(context, "risk_tracker") and context.risk_tracker:
+        # state 저장 (롤오버 이력 — write-only: 이 플러그인은 되읽지 않는다)
+        if should_roll and has_state:
+            state_key = f"roll.{symbol}.signal_date"
             try:
-                await context.risk_tracker.set_state(
-                    f"roll.{symbol}.signal_date",
-                    now.strftime("%Y-%m-%d"),
-                )
-            except Exception:
-                pass
+                if not _tracker.save_state(state_key, now.strftime("%Y-%m-%d")):
+                    logger.warning(
+                        f"RollManagement: 상태 저장 실패 ({state_key}) — 트래커가 False 를 돌려줌 "
+                        "('state' feature 없음 또는 DB 쓰기 실패)"
+                    )
+            except Exception as e:
+                logger.warning(f"RollManagement: 상태 저장 실패 ({state_key}): {e}")
 
         symbol_results.append(result_info)
 

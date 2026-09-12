@@ -21,5 +21,5 @@ class RealWOH():
     def on_woh_message(self, listener: Callable[[WOHRealResponse], None]):
         return self._parent._on_message("WOH", listener)
 
-    def on_remove_woh_message(self):
-        return self._parent._on_remove_message("WOH")
+    def on_remove_woh_message(self, listener=None):
+        return self._parent._on_remove_message("WOH", listener)
