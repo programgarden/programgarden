@@ -18,9 +18,12 @@ from typing import Any, ClassVar, Dict, List, Optional, Set
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
+from .._position_qty import Qty, preserve_qty
+
 
 # risk_features 선언: HWM 추적이 필요함
 risk_features: Set[str] = {"hwm"}
+
 
 TRAILING_STOP_SCHEMA = PluginSchema(
     id="TrailingStop",
@@ -117,7 +120,8 @@ async def trailing_stop_condition(
         # 종목별 최신 close 를 추출해 HWM 을 직접 갱신한다.
         # P&L 틱 리스너가 없는 스케줄 폴링 구성에서도 HWM 이 전진하도록 보장.
         latest_close: Dict[str, float] = {}
-        latest_qty: Dict[str, int] = {}  # data 행(라이브 포지션 스냅샷)의 권위 수량
+        # data 행(라이브 포지션 스냅샷)의 권위 수량 — 소수 잔량도 보존한다.
+        latest_qty: Dict[str, Qty] = {}
         for row in data or []:
             if not isinstance(row, dict):
                 continue
@@ -127,10 +131,9 @@ async def trailing_stop_condition(
             # 라이브 포지션 수량(권위값) 캡처 — close 유효성과 무관하게 잡는다.
             row_qty = row.get("quantity", row.get("qty"))
             if row_qty is not None:
-                try:
-                    latest_qty[row_sym] = int(float(row_qty))
-                except (TypeError, ValueError):
-                    pass
+                qty_val = preserve_qty(row_qty)
+                if qty_val is not None:
+                    latest_qty[row_sym] = qty_val
             row_close = row.get("close")
             if row_close is None:
                 continue
@@ -183,22 +186,23 @@ async def trailing_stop_condition(
                 # quantity(권위값 — sym_info 또는 data 행 스냅샷)를 우선 쓰고, 없을
                 # 때만 HWM 트래커 기억값(position_qty)으로 폴백한다. (트레일링 스탑은
                 # 롱 포지션 고점 대비 하락 청산이므로 close_side 는 sell.)
+                # 수량은 절단하지 않는다 — 정수화는 주문 송신부
+                # (_normalize_order)의 명시적 규약이다(_position_qty.preserve_qty).
                 live_qty = None
                 if isinstance(sym_info, dict):
                     q = sym_info.get("quantity", sym_info.get("qty"))
                     if q is not None:
-                        try:
-                            live_qty = int(float(q))
-                        except (TypeError, ValueError):
-                            live_qty = None
+                        live_qty = preserve_qty(q)
                 if live_qty is None:
                     live_qty = latest_qty.get(sym)
                 if live_qty is not None:
                     trail_qty = live_qty
                 else:
-                    try:
-                        trail_qty = int(getattr(hwm, "position_qty", 0) or 0)
-                    except (TypeError, ValueError):
+                    # HWM 트래커의 position_qty 는 Decimal 이다(소수 잔량 보존 —
+                    # workflow_risk_tracker._to_qty_decimal). 여기서 int 로 자르면
+                    # 0.532주 포지션이 quantity=0 으로 실려 주문이 사라진다.
+                    trail_qty = preserve_qty(getattr(hwm, "position_qty", 0) or 0)
+                    if trail_qty is None:
                         trail_qty = 0
                 passed_symbols.append({
                     "symbol": sym,

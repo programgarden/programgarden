@@ -9,11 +9,28 @@ Value at Risk(VaR)와 Conditional VaR(CVaR, Expected Shortfall) 계산.
 - positions (선택): 보유 포지션 (list[dict]) — 달러 VaR 계산용
   예: [{"symbol": "AAPL", "current_price": 150.0, "qty": 100, ...}, ...]
 - fields: {lookback, confidence_level, var_method, time_horizon, alert_threshold_pct, action}
+
+미검증 경로 주의 — ``positions`` 인자
+------------------------------------
+이 플러그인은 ``required_data=["data"]`` 라 실행기에서 **data 기반 분기**로 돈다.
+그 분기(``ConditionNodeExecutor._execute_condition_plugin``, programgarden/executor.py)
+가 만드는 plugin_kwargs 는 ``{data, fields, field_mapping, symbols}`` 이고
+(시그니처에 ``context`` 가 있으면 context 추가, 그리고 인자로 들어온 경우에만
+``held_symbols``/``position_data``), **``positions`` 키는 없다** — 유일한 호출부
+(같은 파일 ``ConditionNodeExecutor.execute``)도 ``held_symbols``/``position_data``
+를 넘기지 않는다. 따라서 워크플로우 실행 경로에서 ``positions`` 는 항상 ``None``
+이고, ``var_dollar``/``position_value``/``reduce_position`` 의 ``sell_quantity``
+는 그 경로에서 **산출되지 않는다**(관측: 위 두 심볼의 코드 읽기, 2026-09-12).
+아래 positions 분기는 라이브러리를 직접 호출하는 코드와 테스트에서만 돈다 —
+즉 실행기 경로에 대해서는 미검증이다. (실행기가 positions 를 넘기게 하는 수정은
+이 플러그인의 범위 밖이다.)
 """
 
 from typing import List, Dict, Any, Optional, Set
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
+
+from .._position_qty import below_broker_lot, coerce_qty, half_position_qty
 
 
 # risk_features 선언
@@ -81,8 +98,12 @@ VAR_CVAR_MONITOR_SCHEMA = PluginSchema(
         "var_pct": {"type": "float", "description": "Value at Risk over the configured time horizon (%)"},
         "cvar_pct": {"type": "float", "description": "Conditional VaR (Expected Shortfall) over the time horizon (%)"},
         "breached": {"type": "bool", "description": "Whether VaR exceeds the alert threshold"},
-        "var_dollar": {"type": "float", "description": "Dollar VaR of the position (available when positions are provided)"},
-        "position_value": {"type": "float", "description": "Total position market value (available when positions are provided)"},
+        "var_dollar": {"type": "float", "description": "Dollar VaR of the position (available when positions are provided; fractional share counts are kept, not truncated)"},
+        "position_value": {"type": "float", "description": "Total position market value (available when positions are provided; fractional share counts are kept, not truncated)"},
+        "position_value_unavailable_reason": {"type": "str", "description": "Present instead of var_dollar/position_value when the held quantity or current price could not be read"},
+        "sell_quantity": {"type": "float", "description": "Quantity to sell - a number ONLY on the 'reduce_position' action: exactly half of the held quantity, never rounded up and never above the held quantity (fractional halves are kept; the order node truncates to the broker lot and reports the remainder). NOT always a number: on the 'exit_all' action this key carries the literal string \"all\" instead, meaning the whole position (that string is emitted on passed_symbols for the downstream order node to bind, never in symbol_results). Consumers must accept both shapes"},
+        "sell_quantity_unavailable_reason": {"type": "str", "description": "Present only when an action needing a quantity triggered but the held quantity could not be read, so no sell quantity was emitted"},
+        "reduce_skipped_reason": {"type": "str", "description": "Present when the 'reduce_position' half quantity is below 1 share: the order node truncates to the integer part (0) and builds no order, so the reduction silently does nothing this round"},
     },
     locales={
         "ko": {
@@ -247,14 +268,26 @@ async def var_cvar_monitor_condition(
             "breached": breached,
         }
 
-        # positions가 있으면 달러 VaR 계산
+        # positions가 있으면 달러 VaR 계산.
+        # 수량은 int() 로 자르지 않는다 — 0.532주(LS 해외주식 소수점 주식) 포지션이
+        # int(0.532)=0 이 되어 150달러 x 0.532 = 79.8달러짜리 포지션이 0.0 으로
+        # 보고됐다(관측: 이 파일의 수정 전 코드로 재현, 2026-09-12).
         if symbol in position_map:
             pos = position_map[symbol]
-            current_price = float(pos.get("current_price", 0))
-            qty = int(pos.get("qty", pos.get("quantity", 0)))
-            position_value = current_price * qty
-            result_info["var_dollar"] = round(position_value * var_nd, 2)
-            result_info["position_value"] = round(position_value, 2)
+            current_price = coerce_qty(pos.get("current_price", 0))
+            qty = coerce_qty(pos.get("qty", pos.get("quantity", 0)))
+            if current_price is None or qty is None:
+                # 못 읽은 값을 0 으로 뭉개면 '포지션 가치 0' 이라는 거짓 사실이 된다.
+                # 왜 못 실었는지를 남긴다 ('안 보낸 필드는 안 보냈다고 표시' 규약).
+                result_info["position_value_unavailable_reason"] = (
+                    "포지션 금액을 계산할 수 없음 "
+                    f"(current_price={pos.get('current_price')!r}, "
+                    f"qty={pos.get('qty', pos.get('quantity'))!r})"
+                )
+            else:
+                position_value = current_price * qty
+                result_info["var_dollar"] = round(position_value * var_nd, 2)
+                result_info["position_value"] = round(position_value, 2)
 
         all_vars.append(var_pct)
 
@@ -264,13 +297,45 @@ async def var_cvar_monitor_condition(
                 sym_dict["sell_quantity"] = "all"
             elif action == "reduce_position":
                 if symbol in position_map:
-                    qty = int(position_map[symbol].get("qty", position_map[symbol].get("quantity", 0)))
-                    sym_dict["sell_quantity"] = max(1, qty // 2)
+                    raw_qty = position_map[symbol].get(
+                        "qty", position_map[symbol].get("quantity", 0)
+                    )
+                    # 구 코드 ``max(1, qty // 2)`` 는 0.532주 보유에서 1주 매도를
+                    # 실어 보냈다(보유 초과). 공용 헬퍼로 통일 — 절단·바닥올림 없음,
+                    # 상한은 보유량 (_position_qty.half_position_qty).
+                    half = half_position_qty(raw_qty)
+                    if half is None:
+                        result_info["sell_quantity_unavailable_reason"] = (
+                            f"보유 수량을 읽을 수 없어 축소 수량을 싣지 않음 (qty={raw_qty!r})"
+                        )
+                    else:
+                        sym_dict["sell_quantity"] = half
+                        result_info["sell_quantity"] = half
+                        # 0 < 절반 < 1 이면 주문 송신부가 정수부 0 으로 접어 주문
+                        # 자체를 만들지 않는다(_position_qty.below_broker_lot).
+                        # 수량은 그대로 둔다 — 정수화·올림은 송신부의 규약이다.
+                        # 다만 '축소했다고 보고했는데 아무 일도 없었다' 를 없애기
+                        # 위해 사유를 드러낸다.
+                        if below_broker_lot(half):
+                            result_info["reduce_skipped_reason"] = (
+                                f"축소 수량 {half!r} 주는 1주 미만이라 주문 송신부가 정수부(0)로 "
+                                f"접어 주문을 만들지 않는다 — 보유 {raw_qty!r} 주에서 실제 축소가 "
+                                "일어나지 않는다"
+                            )
+                else:
+                    # positions 에 해당 종목이 없으면 수량을 지어내지 않는다.
+                    result_info["sell_quantity_unavailable_reason"] = (
+                        "positions 입력에 해당 종목이 없어 축소 수량을 싣지 않음"
+                    )
             passed.append(sym_dict)
 
             # risk_event 기록
             if context and hasattr(context, "risk_tracker") and context.risk_tracker:
                 try:
+                    # 🔴 record_event 는 실제 트래커에 없는 메서드다 (관측 2026-09-12):
+                    #    WorkflowRiskTracker 의 실제 이름은 record_risk_event 다. 아래 except 가
+                    #    AttributeError 를 삼키므로 이 위험 이벤트는 **한 건도 기록되지 않는다**.
+                    #    메서드명 정렬은 이 플러그인 밖(엔진) 수정이라 여기서 고치지 않는다 — 미검증.
                     context.risk_tracker.record_event(
                         event_type="var_breach",
                         symbol=symbol,

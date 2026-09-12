@@ -1,3 +1,60 @@
+## [1.37.0] - 2026-09-12
+
+LS 브로커 필드 의미를 오너가 확인해준 사실(체결번호·AP처리시각·소수점 주식·TC3 조건부 필드·국내 매체코드)로
+코드를 전수 대조해 확정된 결함을 고친 릴리스. 체결 **분류(classification)** 가 깨지던 경로가 여럿 있었다.
+
+### Fixed
+- **국내주식 신규주문이 원장(`workflow_orders`)에 기록되지 않던 결함** — `record_workflow_order` 호출이
+  해외주식·해외선물에만 있고 국내(CSPAT00601)에 없어, 국내 워크플로우 체결이 한 건도 `workflow` 로 분류될 수
+  없었다(승률·손익비 전량 누락, pg-worker 전건 드롭). 성공 분기에 동일 규약(로컬 주문일자)으로 기록.
+- **정정(modify) 주문** — 브로커가 발급한 새 주문번호를 원장에 기록하지 않아 정정 후 체결이 오분류되던 결함.
+  세 경로(COSAT00311/CIDBT00900/CSPAT00701) 모두 원 주문 행에서 side·symbol·수량·가격을 **승계**해 기록하고
+  와이어에도 같은 값을 싣는다(SDK 예제가 실제 값을 싣고 CSPAT00701 은 0 을 시장가용 값으로 명시하므로 '0=변경 없음'
+  으로 보지 않는다). 해외선물 `BnsTpCode` 가 존재할 수 없는 config 키(`side` — ModifyOrder 노드에 없음)에서
+  항상 '2'(매수)로 나가던 것을 원 주문 방향으로 교정. 원 주문을 못 찾으면 방향을 추측하지 않고 실패
+  (`original_order_not_found`), 원장 트래커 자체가 없으면 `ledger_unavailable` 로 구분하되 호출자가 side 를
+  명시하면 그 값을 쓴다. 정수가 아닌 승계 수량(`non_integer_quantity`)·0 이하 수량·승계 가격 0 이하
+  (`non_positive_inherited_price`, 시장가 주문 승계)는 게이트에서 거부 — 정정 TR 은 정수 수량만 받고 0 에
+  '변경 없음' 뜻이 없다. `find_workflow_order` 는 오늘 → D±1 창(종목 일치) 순으로 조회(전 기간 폴백 폐기).
+- **SC1 `execno` / TC3 `ccls_no` 를 `execution_id` 로 싣는다**(AS1 `sExecNO` 와 동일). 두 상품은 원장
+  중복방지가 통째로 비활성이었다. 주문번호/주문일자가 쓸 수 없으면 싣지 않는다.
+- **체결 유실 부류 차단** — identity 정규화 예외(`ExecutionIdentityError`, 신설)가 `record_workflow_fill` 의
+  광역 except 에 삼켜져 체결이 통째로 사라지던 경로를 닫았다: 그 예외에 한해 identity 없이 한 번 더 기록
+  (중복방지만 포기, 체결은 보존, warning). `ExecutionIdentityConflictError` 는 재시도하지 않는다. 버퍼 처리
+  태스크(`create_task`) 의 침묵 실패에 예외 로깅 콜백 추가.
+- **AS1 체결시각** — `proctm`(AP처리시각, AS0~AS4 공용 프레임 헤더 필드)을 체결시각으로 쓰던 것을
+  `sExecTime` → `sRcptExecTime` 순으로 교체. 둘 다 비면 **빈 문자열**(합성 `now()` 폴백 제거 — 서버가 도착시각
+  폴백을 정직하게 표시하도록). SC1/TC3 의 합성 폴백도 제거. ⚠️ `sExecTime` 의 자릿수·타임존은 **라이브 미관측**.
+- **TC3 매체코드 `'40'` 하드코딩 폐기** — 프레임에 매체 필드가 없으므로 빈 값으로 싣는다(분류 결과 불변;
+  `detect_anomalies` 분모 오염 제거).
+- **매체코드 표** — 국내 SC1 값 **60(HTS)·50(MTS)** 을 사람 채널에 추가(출처: 오너 진술 2026-09-12, 라이브
+  미관측 — SDK 는 국내 매체코드 enum 미선언). 단일 합집합 표 유지(같은 코드가 시장별로 다른 채널을 뜻하는
+  사례 없음; 혼합 워크플로우에서 상품 분기가 오분류를 만들어 분기하지 않음).
+- **주문일자 창 매칭** — 주문 기록(접수 시점 로컬 날짜)과 AS1 체결(수신 시점 로컬 날짜)이 KST 자정을 넘기면
+  갈려 우리 체결이 `unknown_api` 로 떨어지던 결함, 그리고 LS 야간장 영업일 파일링(TC3 `ordr_dt` = 전 영업일,
+  2026-09-10 실측)으로 반대 방향이 갈리던 결함. 정확일치(SQL 등가조회) 실패 시에만 D±1 창으로 넓히되
+  **①후보 정확히 1건 ②종목 일치 ③방향 일치 ④사람 매체코드면 거부 ⑤주문 created_at↔체결 수신 12시간 이내
+  ⑥체결수량 ≤ 주문수량** 을 모두 요구한다(넓힌 창은 추론이므로). 시각 가드는 휴리스틱이다 — 미국주식은 KST
+  주간(09:00~)에도 거래되므로 세션 경계로 가를 수 없다. `lookup_order_identity` 도 같은 매처를 써 창으로
+  매칭된 체결에 node_id 가 붙는다.
+- `detect_anomalies` 의 unknown_api 비율 분모를 `commda_code='40'` 리터럴 대신 `media_channel()` 기준으로.
+- `RealAccountNode` 해외주식 미체결 수량 `int()` 절삭(소수점 주식 → 0) 및 `filled_qty` 필드명 오타
+  (SDK 실제 필드 `executed_qty`, 항상 0 이었음) 수정. `exchange` 는 SDK 매핑이 떨어뜨리는 값이라 사유 표기.
+- 위험관리 HWM `position_qty` 를 `int()` 로 잘라 소수점 포지션의 트레일링 고점을 재시작마다 리셋하던 결함 —
+  Decimal 보관(SQLite 저장 시 float 바인딩). NaN 가드, 0 수량 연속 매수 시 0 나눗셈 가드.
+- `sync_fills_from_history` — 존재하지 않는 `FillEvent` import 로 호출 즉시 죽고 0 을 돌려주던 죽은 복구 경로를
+  **미구현으로 명시**(명시적 로그 + 0 반환, 독스트링에 별도 작업 필요 기록). 동작 복원은 후속.
+- `record_workflow_fill(commda_code)` 기본값 `"40"` → `""`.
+
+### Changed
+- deps: `programgarden-finance ^1.9.6`, `programgarden-community ^1.15.2` (core 1.28.0 유지 — 이번 릴리스에
+  core 변경 없음).
+
+### Known / 후속
+- `sExecTime` 형식·타임존 미관측(월 2026-09-14 주간장 1주 체결로 확정 예정). 국내 매체코드 60/50 미관측.
+- SC2/SC3 미구독(국내 정정·취소 확인이 원장에 반영되지 않음), `_ls_korea_stock_order_event` 파서 필드명 오류,
+  `_parse_tc3_data` 의 `fill_price` 키 오타, 트레이앱 `on_order_fill` 미구현 — 별건.
+
 ## [1.36.0] - 2026-09-12
 
 ### Added

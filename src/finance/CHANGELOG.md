@@ -1,3 +1,19 @@
+## [1.9.6] - 2026-09-12
+
+### Changed
+- TC3 (overseas futures real-time fill) field documentation only — no runtime change. Recorded owner-observed
+  facts (2026-09-12, unverified in-repo) alongside the upstream labels: `fcm_fee` carries the FCM fee (upstream
+  title "매입잔고수량" is preserved with the conflict surfaced); `lineseq`/`filler2` reported always blank;
+  `orgn_ordr_no` populated only for modify/cancel; `sprd_*` populated only for spread instruments;
+  `lme_prdt_ccd` owner ("0" for non-LME) vs upstream ("blank") conflict left unresolved and both recorded.
+  `ccls_no`/`ordr_no` now state that the fill number is issued per execution (one order → N fill numbers)
+  and is the dedup key. Wording for required fields uses "populated / empty string" instead of "absent";
+  `examples` widened to the union of both readings.
+- New test guards TC3 required-field descriptions against "absent/not provided" vocabulary.
+
+### Notes
+- Pair with core 1.28.0 and engine 1.37.0.
+
 ## [1.9.5] - 2026-09-10
 
 ### Fixed

@@ -11,7 +11,7 @@ Workflow execution context protocol
 
 from typing import Optional, Dict, Any, List, Protocol, runtime_checkable, Callable, Awaitable, TYPE_CHECKING, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from collections import deque
 import asyncio
@@ -43,6 +43,25 @@ from programgarden_core.bases.listener import (
 from programgarden_core.models.resilience import RetryEvent
 
 logger = logging.getLogger("programgarden.context")
+
+# 체결시각을 브로커 프레임이 싣지 않았을 때 **원장에만** 쓰는 표식.
+#
+# 서버로 나가는 OrderFillEvent.fill_time 은 이때 빈 문자열이어야 한다 — 소비자
+# (pg-worker app/order_fill_updates.py)가 `order_date + fill_time` 을 시장 세션
+# 타임존으로 읽어 executed_at 을 **계산된 체결시각**으로 확정하기 때문이다. 값이
+# 없는데 무언가를 채우면 그게 체결시각으로 승격된다(엔진 <= v1.36.0 이
+# `datetime.now().strftime('%H%M%S000')` 를 합성하던 자리가 정확히 그 사고였다).
+#
+# 그런데 원장(workflow_position_lots.fill_datetime = f"{order_date}_{fill_time}")
+# 에 빈 값을 그대로 넣으면 다른 결함이 생긴다: 날짜 필터가
+# `fill_datetime >= f"{start_date}_000000000"` 문자열 비교라
+# ("20260912_" < "20260912_000000000") 그 로트가 **대회 구간 PnL 에서 통째로
+# 사라진다**(workflow_position_tracker.get_workflow_positions / calculate_pnl).
+# 그래서 원장에는 숫자가 아닌 표식을 쓴다 — 시계 값으로 오독될 수 없고(비숫자),
+# 날짜 필터에 포함되며("u" > "0"), FIFO 정렬에서는 그날 알려진 시각들 뒤에 온다.
+# 이 값은 컨텍스트 밖으로 나가지 않는다: _on_tracker_fill_classified 가 이벤트를
+# 만들 때 다시 빈 문자열로 되돌린다.
+UNKNOWN_FILL_TIME = "unknown"
 
 
 def _honest_execution_count(metrics, product, order_lifecycle_handler):
@@ -2512,6 +2531,22 @@ class ExecutionContext:
             logger.warning(f"Failed to init risk tracker: {e}")
             self._workflow_risk_tracker = None
 
+    def has_workflow_order_ledger(self) -> bool:
+        """이 실행에 **워크플로우 주문 원장이 존재하는가**(행이 있는지가 아니다).
+
+        트래커는 워크플로우에 PnL 리스너가 하나라도 있을 때만 만들어진다
+        (init_workflow_position_tracker 의
+        ``any(hasattr(l, 'on_workflow_pnl_update') ...)`` 게이트). 리스너 0개로
+        엔진을 라이브러리처럼 직접 구동하거나 초기화가 예외로 끝나면 트래커는
+        None 이고, 그러면 record_workflow_order 는 **no-op** 이라 원장에 행이
+        생길 수 없고 find_workflow_order 는 영원히 None 이다.
+
+        정정(ModifyOrder) 경로가 '원장에 행이 없다' 와 '원장 자체가 없다' 를
+        갈라 말하려고 쓴다 — 앞은 "그 주문을 우리가 기록한 적 없다", 뒤는
+        "이 구성에서는 어떤 주문도 조회할 수 없다" 로 운영자 조치가 다르다.
+        """
+        return self._workflow_position_tracker is not None
+
     def record_workflow_order(
         self,
         order_no: str,
@@ -2522,6 +2557,8 @@ class ExecutionContext:
         quantity: int,
         price: float,
         node_id: str,
+        *,
+        register_risk: bool = True,
     ) -> None:
         """Record workflow order for FIFO tracking.
         
@@ -2537,8 +2574,24 @@ class ExecutionContext:
             quantity: 수량
             price: 가격
             node_id: 주문을 실행한 노드 ID
+            register_risk: 리스크 트래커(HWM) 부수효과를 낼지 여부.
+                기본 True 는 **신규 주문** 의미다 — buy 면 HWM 을 등록하고
+                (register_symbol: 수량 누적 + 평단 갱신), 전량 매도면 해제한다.
+                정정(ModifyOrder)처럼 *이미 접수된 같은 주문의 새 주문번호* 를
+                남기는 경로는 False 로 불러야 한다. 정정은 새 포지션이 아니므로
+                HWM 에 수량을 한 번 더 더하거나(같은 물량 이중계상),
+                아직 체결되지도 않은 매도 정정으로 HWM 을 풀어버리면 안 된다.
+                원장 행 자체는 체결 분류((order_no, order_date) 대조)에 필요하므로
+                기록은 그대로 하고 리스크 부수효과만 끈다.
         """
         if self._workflow_position_tracker is None:
+            # 원장 자체가 없는 구성(PnL 리스너 0개 / 초기화 실패)이다. 조용히
+            # 지나가면 나중에 find_workflow_order 가 영원히 None 인 이유를 알 수
+            # 없으므로 최소한 흔적은 남긴다(주문마다 나므로 debug).
+            logger.debug(
+                "Workflow order ledger unavailable; not recording order %s (%s %s %s)",
+                order_no, symbol, side, quantity,
+            )
             return
         
         try:
@@ -2556,7 +2609,8 @@ class ExecutionContext:
             logger.debug(f"Recorded workflow order: {order_no} ({symbol} {side} {quantity})")
 
             # ━━━ Risk Tracker 체결 연동 ━━━
-            if self._workflow_risk_tracker:
+            # register_risk=False 는 "이 행은 새 포지션이 아니다"(정정 경로).
+            if register_risk and self._workflow_risk_tracker:
                 if side == "buy":
                     self._workflow_risk_tracker.register_symbol(
                         symbol=symbol,
@@ -2573,6 +2627,172 @@ class ExecutionContext:
                         self._workflow_risk_tracker.unregister_symbol(symbol)
         except Exception as e:
             logger.warning(f"Failed to record workflow order: {e}")
+
+    def find_workflow_order(
+        self,
+        order_no: str,
+        order_date: Optional[str] = None,
+        *,
+        symbol: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """원장에 기록된 워크플로우 주문 1건을 **읽기 전용**으로 조회한다.
+
+        정정(ModifyOrder) 경로가 원 주문의 방향(side)·종목·수량·가격을 승계하기
+        위해 쓴다. ModifyOrder 계열 노드 스키마에는 side 필드가 아예 없어
+        (core/programgarden_core/nodes/order.py:245-263 = connection /
+        original_order_id / symbol / exchange), config 에서 읽으면 사실상 항상
+        "buy" 가 된다. 그 값으로 record_workflow_order 를 부르면 보유하지도 않은
+        종목에 롱 HWM 이 등록되고(register_symbol), 이후 그 종목 신규 매수가
+        drawdown 게이트에 막힌다. 방향은 **추측하지 않고 원장에서 승계**한다.
+
+        조회 범위는 이 원장의 product/provider/trading_mode 로 한정한다.
+        주문번호는 정확히 일치하는 행을 먼저 보고, 없으면 0-패딩 차이를 흡수한
+        정규화 형태로 맞춘다(ACK 의 "0000123" 과 체결 프레임의 "123").
+
+        order_date 를 주면 **같은 날짜의 행을 먼저** 본다 — 브로커 주문번호는
+        날짜 안에서만 유일하므로, 날짜가 다른 행을 아무렇게나 집으면 어제 다른
+        주문의 방향을 승계한다.
+
+        그래도 자정을 관통하는 정정(장 마감 직전 접수 → 자정 이후 정정)은 살려야
+        한다. 종전에는 그걸 **전 기간 스캔 + 후보 정확히 1건**으로 풀었는데, 그건
+        워크플로우 DB 가 며칠~몇 주 누적되는 한 거의 항상 실패한다 — 브로커
+        주문번호는 **영업일마다 리셋**되므로(근거: database/workflow_position_tracker.py
+        모듈 독스트링 — 창 가드 수용조건 ④의 근거로 쓰이는 사실) 같은 번호가
+        과거 날짜에 또 있는 순간 후보가 2건이 돼 None → side 미해결 → 브로커 호출
+        0회 거부가 된다.
+
+        그래서 전 기간 폴백을 버리고, 트래커가 이미 세운 **D±1 창 규약**을 그대로
+        쓴다(_order_date_window 와 같은 조건: D-1·D+1 두 칸만, D±2 이상은 보지
+        않는다). 창 후보가 여러 건이면 **종목 일치**로 가른다(tracker 의 창 수용
+        조건 ② 와 같은 조건 — 종목이 다른 후보는 남의 주문번호 재발급이다).
+        종목까지 같은 후보가 둘 이상이면 모호하므로 None — '방향을 추측하지
+        않는다' 는 안전성은 그대로다. 정확일치(같은 날짜) 경로의 의미는 건들지
+        않는다 — 거긴 (주문번호, 주문일자) 동시 일치가 더 강한 증거다(tracker 모듈
+        독스트링과 같은 분배).
+
+        Args:
+            symbol: 주어지면 **창 경로의 후보 판정에만** 쓰인다(정확일치 경로는
+                종전 그대로). 비워두면 창 후보가 정확히 1건일 때만 수용한다.
+
+        Returns:
+            {"order_no", "order_date", "symbol", "exchange", "side",
+             "quantity", "price", "node_id", "job_id"} 또는 None(미발견/조회 실패).
+        """
+        tracker = self._workflow_position_tracker
+        if tracker is None:
+            return None
+
+        def _norm(value: Any) -> Optional[str]:
+            # workflow_position_tracker._normalize_identifier 의 숫자 규칙과 같은
+            # 접음(0-패딩 제거). 사설 메서드를 건드리지 않으려고 여기서 최소 구현.
+            text = str(value).strip() if value is not None else ""
+            if not text:
+                return None
+            return (text.lstrip("0") or None) if text.isdigit() else text
+
+        def _window(date: Any) -> List[str]:
+            """정확일치가 실패했을 때만 훑는 후보 날짜 — **D-1 과 D+1, 두 칸**.
+
+            workflow_position_tracker._order_date_window 와 **같은 규약**이다(근거는
+            그 모듈 독스트링: 실시간 체결 프레임의 로컬 날짜 채움 → D-1, LS 야간
+            세션의 전 영업일 파일링 → D+1). 사설 메서드를 건드리지 않으려고 여기
+            최소 구현한다(위 _norm 과 같은 이유). 날짜가 YYYYMMDD 가 아니면 창을
+            넓히지 않는다 — 근거 없는 매칭을 만들지 않기 위해서다.
+            """
+            try:
+                base = datetime.strptime(str(date or "").strip(), "%Y%m%d")
+            except (TypeError, ValueError):
+                return []
+            return [
+                (base - timedelta(days=1)).strftime("%Y%m%d"),
+                (base + timedelta(days=1)).strftime("%Y%m%d"),
+            ]
+
+        def _symbol_matches(row_symbol: Any) -> bool:
+            # tracker._normalize_symbol 과 같은 규칙(strip + upper).
+            return (str(row_symbol or "").strip().upper()
+                    == str(symbol or "").strip().upper())
+
+        wanted = _norm(order_no)
+        if wanted is None:
+            return None
+
+        want_symbol = bool(str(symbol or "").strip())
+
+        import sqlite3
+
+        columns = ("order_no, order_date, symbol, exchange, side, "
+                   "quantity, price, node_id, job_id")
+
+        def _matching_rows(scope: Tuple[Any, ...], db_path: str,
+                           date: Optional[str]) -> list:
+            # 0-패딩 차이는 SQL 로 접을 수 없어(정규화가 파이썬 규칙) 후보를 읽어
+            # 와서 거른다. 날짜를 주면 그날 주문으로 범위를 묶어 스캔을 줄인다.
+            sql = (f"SELECT {columns} FROM workflow_orders "
+                   "WHERE product = ? AND provider = ? AND trading_mode = ?")
+            params: Tuple[Any, ...] = scope
+            if date:
+                sql += " AND order_date = ?"
+                params = scope + (date,)
+            sql += " ORDER BY created_at DESC"
+            with sqlite3.connect(db_path) as conn:
+                return [r for r in conn.execute(sql, params).fetchall()
+                        if _norm(r[0]) == wanted]
+
+        try:
+            # 🔴 트래커 속성 독출도 try 안에 둔다. 독스트링이 'None(미발견/조회
+            # 실패)' 를 약속하는데, product/provider/trading_mode/db_path 중 하나라도
+            # 없는 트래커(테스트 더블·구판 트래커)를 물면 AttributeError 가 호출자
+            # (정정 경로)로 그대로 올라가 정정 자체를 죽인다. 조회 실패는 None 이다.
+            scope = (tracker.product, tracker.provider, tracker.trading_mode)
+            db_path = tracker.db_path
+
+            def _rows(date: Optional[str]) -> list:
+                return _matching_rows(scope, db_path, date)
+
+            row = None
+            if order_date:
+                same_date = _rows(order_date)
+                if same_date:
+                    row = same_date[0]
+                else:
+                    # 장 마감 직전 주문 → 자정 이후 정정(자정 관통). 전 기간을 훑지
+                    # 않고 **D±1 두 칸**만 본다 — 주문번호는 영업일마다 리셋되므로
+                    # 누적된 DB 에서 전체 유일성을 요구하면 멀지않아 항상 거부된다.
+                    widened = [r for d in _window(order_date) for r in _rows(d)]
+                    if want_symbol:
+                        # 창 후보는 '날짜가 한 칸 어긋났을 것' 이라는 추론이다.
+                        # 종목이 다른 후보는 남의 주문번호 재발급이므로 버린다
+                        # (tracker 창 수용조건 ② 와 같은 조건).
+                        widened = [r for r in widened if _symbol_matches(r[2])]
+                    if len(widened) != 1:
+                        return None
+                    row = widened[0]
+                    logger.warning(
+                        "find_workflow_order: order %s recorded on %s but looked up "
+                        "for %s; using the single D±1 match (symbol=%s)",
+                        order_no, row[1], order_date, row[2],
+                    )
+            else:
+                anywhere = _rows(None)
+                if not anywhere:
+                    return None
+                row = anywhere[0]
+        except Exception as e:
+            logger.warning(f"find_workflow_order failed: {e}")
+            return None
+
+        return {
+            "order_no": row[0],
+            "order_date": row[1],
+            "symbol": row[2],
+            "exchange": row[3],
+            "side": row[4],
+            "quantity": row[5],
+            "price": row[6],
+            "node_id": row[7],
+            "job_id": row[8],
+        }
 
     def update_workflow_order_fill_price(
         self,
@@ -2616,7 +2836,7 @@ class ExecutionContext:
         quantity: int,
         price: float,
         fill_time: str,
-        commda_code: str = "40",
+        commda_code: str = "",
         *,
         execution_id: Optional[str | int] = None,
         account_avg_price: Optional[float] = None,
@@ -2633,8 +2853,15 @@ class ExecutionContext:
             side: 매매구분 ("buy" | "sell")
             quantity: 체결 수량
             price: 체결 가격
-            fill_time: 체결시각 (HHMMSSsss)
-            commda_code: 매체구분코드 (프레임 값 그대로; "40"=OPEN API, 기타=수동/HTS)
+            fill_time: 체결시각 (HHMMSSsss). 프레임이 체결시각을 싣지 않았으면
+                **빈 문자열**을 넘긴다 — 값을 합성하면 하류(pg-worker)가 그걸
+                거래소 체결시각으로 승격시킨다. 원장 쪽 표기는 이 메서드가
+                UNKNOWN_FILL_TIME 으로 바꿔 넣고, 서버로 나가는 이벤트에서는
+                다시 빈 문자열로 되돌린다(_on_tracker_fill_classified).
+            commda_code: 매체구분코드 — **프레임 값 그대로**. 기본값은 ""(= 프레임이
+                말하지 않음)이다. 종전 기본값 "40"(OPEN API)은 관측되지 않은 값을
+                원장에 증거처럼 남기는 조작값이었다(tracker.detect_anomalies 가
+                `WHERE commda_code='40'` 을 unknown_api 비율 분모로 쓴다).
             execution_id: Optional broker execution number, preserved for durable replay detection.
             account_avg_price: Optional account average purchase price for this
                 symbol at fill time; only a workflow sell's residual tail uses it.
@@ -2646,11 +2873,56 @@ class ExecutionContext:
             logger.debug("Workflow position tracker not initialized, skipping record_fill")
             return "skipped"
         
+        # 빈 체결시각은 원장 정렬/날짜필터에서 위험하다(UNKNOWN_FILL_TIME 주석 참고).
+        # 원장에만 비숫자 표식을 넣고, 서버로 나가는 값은 비워둔다.
+        ledger_fill_time = fill_time if str(fill_time or "").strip() else UNKNOWN_FILL_TIME
+
         try:
-            identity_kwargs = {"execution_id": execution_id} if execution_id is not None else {}
-            if account_avg_price is not None:
-                identity_kwargs["account_avg_price"] = account_avg_price
-            result = await self._workflow_position_tracker.record_fill(
+            # 🔴 중복방지 키(execution_id)는 **체결 보존보다 우선하지 않는다**.
+            # tracker.record_fill 은 본문 첫 줄에서 _execution_key(fill) 를 계산하고
+            # (workflow_position_tracker.py 의 record_fill — PendingFill 생성 직후, 버퍼
+            # 락도 DB 연결도 잡기 전), 그 안의 _normalize_identifier 가
+            #   · 체결번호가 정수가 아닌 수치 문자열("0.0"/"-0"/"12.5")이면
+            #     ValueError("Numeric execution/order identity must be a positive integer")
+            #   · str/int 가 아니면 ValueError("Execution/order identity must be a string or integer")
+            #   · 체결번호는 쓸 만한데 주문번호/주문일자가 비면
+            #     ValueError("Explicit execution identity requires an order number and date")
+            # 를 올린다. 종전에는 그 예외를 아래 광역 except 가 삼켜 "error" 만
+            # 반환했고 — trade_history · workflow_position_lots 에 **아무것도 남지
+            # 않았다**. 체결 한 건이 통째로 사라지는 것보다 중복방지를 포기하는 쪽이
+            # 언제나 낫다. 그래서 identity 축이 깨지면 체결번호 없이 한 번 더 부른다.
+            # (executor._usable_execution_identity 는 '가능하면 미리 거른다' 는 최적화로
+            #  남아 있지만, 그건 (주문번호, 주문일자) 축만 본다 — 체결번호 자체가
+            #  비정수 수치 문자열인 경우는 여기서만 닫힌다.)
+            #
+            # ⚠️ 재시도가 이중 기록을 만들지 않는 근거(코드 확인,
+            #    database/workflow_position_tracker.py):
+            #   · record_fill 은 `fill = PendingFill(...)` 다음 줄이 곧바로
+            #     `identity = self._execution_key(fill)` 다. 그 사이에 쓰기가 없다.
+            #   · 그 뒤의 ValueError 발생 지점(_find_execution → _execution_facts,
+            #     _process_fill_internal 의 payload 구성)도 전부 INSERT/UPDATE 보다
+            #     앞이고, _process_fill_internal 의 쓰기는 `BEGIN IMMEDIATE` 트랜잭션
+            #     안이라 예외 시 롤백된다. 버퍼(_pending_fills) 등록도 그 모든
+            #     분기보다 뒤다. 즉 첫 호출이 ValueError 로 끝났다면 이 체결은
+            #     원장에도 버퍼에도 흔적이 없다.
+            #   · 단 하나의 예외가 ExecutionIdentityConflictError(ValueError 서브클래스)다.
+            #     이건 "같은 체결번호가 **이미 기록돼 있는데** 체결 사실이 다르다" 는
+            #     신호라, 체결번호를 떼고 다시 넣으면 같은 브로커 체결이 두 번
+            #     기록된다. 그래서 재시도 대상에서 제외하고 종전대로 "error" 로 둔다.
+            #
+            # 🔴 잡는 범위는 **ExecutionIdentityError 하나**다(모든 ValueError 가
+            #    아니다). 종전에는 광역 `except ValueError` 였는데, 그러면
+            #    execution_id 가 실려 있기만 하면 identity 와 무관한 tracker 예외까지
+            #    삼켜 체결번호 없이 재기록했다 — 실제로 닿는 경로가 있다:
+            #    _execution_facts 의 유한성 가드(수량/가격이 inf·nan 이면 plain
+            #    ValueError). 그건 체결번호를 뗀다고 나아지지 않는 **체결 사실의
+            #    문제**라 원장에 비유한 값을 남기는 대신 "error" 로 끝나야 한다.
+            from programgarden.database.workflow_position_tracker import (
+                ExecutionIdentityConflictError,
+                ExecutionIdentityError,
+            )
+
+            base_kwargs: Dict[str, Any] = dict(
                 order_no=order_no,
                 order_date=order_date,
                 symbol=symbol,
@@ -2658,10 +2930,35 @@ class ExecutionContext:
                 side=side,
                 quantity=quantity,
                 price=price,
-                fill_time=fill_time,
+                fill_time=ledger_fill_time,
                 commda_code=commda_code,
-                **identity_kwargs,
             )
+            if account_avg_price is not None:
+                # 재시도에도 유지한다 — identity 축이 아니고, 매도 잔량 추정의
+                # 유일한 근거다.
+                base_kwargs["account_avg_price"] = account_avg_price
+
+            try:
+                result = await self._workflow_position_tracker.record_fill(
+                    **base_kwargs,
+                    **({"execution_id": execution_id} if execution_id is not None else {}),
+                )
+            except ExecutionIdentityConflictError:
+                # ExecutionIdentityError 의 서브클래스가 아니라 아래 절에 걸리지
+                # 않지만, "충돌은 재시도하지 않는다" 는 의도를 코드로 못박아 둔다
+                # (누군가 상속 관계를 바꾸면 이 절이 이중 기록을 막는다).
+                raise
+            except ExecutionIdentityError as identity_err:
+                if execution_id is None:
+                    # 체결번호를 싣지도 않았는데 난 ValueError 는 identity 축이
+                    # 아니다 — 떼어낼 것이 없으므로 종전대로 처리한다.
+                    raise
+                logger.warning(
+                    "Execution identity unusable for fill %s/%s (execution_id=%r): %s "
+                    "— retrying without it (replay protection dropped, fill preserved)",
+                    order_date, order_no, execution_id, identity_err,
+                )
+                result = await self._workflow_position_tracker.record_fill(**base_kwargs)
             logger.info(f"Recorded workflow fill: {order_no} ({symbol} {side} {quantity}@{price}) → {result}")
 
             # 체결 후 PnL refresh 트리거
@@ -2732,7 +3029,10 @@ class ExecutionContext:
             side=fill.side,
             quantity=fill.quantity,
             price=fill.price,
-            fill_time=fill.fill_time,
+            # 원장 전용 표식은 서버로 내보내지 않는다 — 빈 fill_time 이어야
+            # pg-worker 의 `and fill_time` 가드가 걸려 executed_at 이 정직한
+            # received_at 폴백(+ executed_at_source 태그)이 된다.
+            fill_time=("" if fill.fill_time == UNKNOWN_FILL_TIME else fill.fill_time),
             product=tracker.product,
             provider=tracker.provider,
             classification=classification,

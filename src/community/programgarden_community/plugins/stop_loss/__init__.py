@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
+from .._position_qty import coerce_number, preserve_qty
+
 
 STOP_LOSS_SCHEMA = PluginSchema(
     id="StopLoss",
@@ -38,9 +40,12 @@ STOP_LOSS_SCHEMA = PluginSchema(
     tags=["exit", "risk", "realtime"],
     output_fields={
         "pnl_rate": {"type": "float", "description": "Current P&L rate (%)"},
-        "current_price": {"type": "float", "description": "Current market price"},
+        "current_price": {"type": "float", "description": "Current market price (absent when it could not be read; see current_price_unavailable_reason)"},
+        "current_price_unavailable_reason": {"type": "str", "description": "Present when the position's current_price could not be read as a number (display only - the stop decision does not use it)"},
         "stop_percent": {"type": "float", "description": "Stop loss threshold (%)"},
         "triggered": {"type": "bool", "description": "Whether stop loss was triggered (pnl_rate <= stop_percent)"},
+        "action": {"type": "str", "description": "'skip' when pnl_rate or the held quantity could not be read, so the stop was not evaluated (present only on skipped positions)"},
+        "reason": {"type": "str", "description": "Why the position was skipped: names the unreadable field(s) and their raw values (present on the 'skip' action)"},
     },
     locales={
         "ko": {
@@ -110,20 +115,51 @@ async def stop_loss_condition(
         symbol = pos_data.get("symbol")
         if not symbol:
             continue
-        # positions에서 직접 pnl_rate 사용 (이미 계산되어 있음)
-        pnl_rate = pos_data.get("pnl_rate", 0)
-        current_price = pos_data.get("current_price", 0)
         exchange = pos_data.get("exchange") or pos_data.get("market_code", "UNKNOWN")
 
         # market_code를 거래소명으로 변환 (숫자 코드일 때만)
         exchange_map = {"81": "NYSE", "82": "NASDAQ", "83": "AMEX"}
         exchange_name = exchange_map.get(str(exchange), exchange)
+        close_side = pos_data.get("close_side", "sell")
 
+        # 수익률·수량은 **비교보다 먼저** 읽는다. 구 코드는 pos_data 원값을 그대로
+        # ``round(pnl_rate, 2)`` / ``pnl_rate <= stop_percent`` 에 넣어, 값이 숫자가
+        # 아니면('n/a'·None) TypeError 로 플러그인 전체가 죽었다. 못 읽은 값은 0 으로
+        # 뭉개지 않고 어느 필드가 어떤 원값이었는지를 남긴 뒤 건너뛴다
+        # ('안 보낸 필드는 안 보냈다고 표시' 규약, _position_qty 참조).
+        # positions에서 직접 pnl_rate 사용 (이미 계산되어 있음)
+        raw_pnl_rate = pos_data.get("pnl_rate", 0)
+        raw_current_price = pos_data.get("current_price", 0)
         # 하위 주문 노드가 {{ item.quantity }} / {{ item.close_side }} 로 소비하므로
         # 전량 청산 수량과 청산 방향을 passed_symbols 에 함께 실어야 한다.
         # (누락 시 order 정규화가 quantity<=0 으로 주문을 조용히 버린다.)
-        quantity = pos_data.get("quantity", pos_data.get("qty", 0))
-        close_side = pos_data.get("close_side", "sell")
+        raw_qty = pos_data.get("quantity", pos_data.get("qty", 0))
+
+        pnl_rate = coerce_number(raw_pnl_rate)
+        current_price = coerce_number(raw_current_price)
+        # 수량은 절단하지 않는다 — 정수화는 주문 송신부(_normalize_order)의 규약이다.
+        quantity = preserve_qty(raw_qty)
+
+        unreadable = []
+        if pnl_rate is None:
+            unreadable.append(f"pnl_rate={raw_pnl_rate!r}")
+        if quantity is None:
+            # 수량 없이는 청산 주문을 실을 수 없다(송신부가 quantity<=0 으로 조용히
+            # 버린다) — 지어내지 않고 여기서 사유를 남긴다.
+            unreadable.append(f"quantity={raw_qty!r}")
+        if unreadable:
+            failed.append({"exchange": exchange_name, "symbol": symbol, "close_side": close_side})
+            symbol_results.append({
+                "symbol": symbol,
+                "exchange": exchange_name,
+                "stop_percent": stop_percent,
+                "action": "skip",
+                "reason": (
+                    "포지션 값을 읽을 수 없어 손절을 평가하지 못함 ("
+                    + ", ".join(unreadable) + ")"
+                ),
+            })
+            continue
 
         sym_dict = {
             "exchange": exchange_name,
@@ -132,17 +168,26 @@ async def stop_loss_condition(
             "close_side": close_side,
         }
 
-        symbol_results.append({
+        triggered = pnl_rate <= stop_percent
+        entry = {
             "symbol": symbol,
             "exchange": exchange_name,
             "pnl_rate": round(pnl_rate, 2),
-            "current_price": current_price,
             "stop_percent": stop_percent,
-            "triggered": pnl_rate <= stop_percent,
-        })
+            "triggered": triggered,
+        }
+        if current_price is None:
+            # 현재가는 표시용이다(손절 판정은 pnl_rate 만 쓴다) — 못 읽었으면 0 으로
+            # 싣지 않고 그렇다고 표시한다.
+            entry["current_price_unavailable_reason"] = (
+                f"현재가를 읽을 수 없음 (current_price={raw_current_price!r})"
+            )
+        else:
+            entry["current_price"] = current_price
+        symbol_results.append(entry)
 
         # 손절 조건: pnl_rate가 stop_percent 이하 (예: -21.95 <= -3.0)
-        if pnl_rate <= stop_percent:
+        if triggered:
             passed.append(sym_dict)
         else:
             failed.append(sym_dict)

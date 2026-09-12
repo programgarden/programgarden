@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
+from .._position_qty import coerce_number, preserve_qty
+
 
 # risk_features 선언
 risk_features: Set[str] = {"state"}
@@ -54,8 +56,10 @@ ROLL_MANAGEMENT_SCHEMA = PluginSchema(
         "should_roll": {"type": "bool", "description": "Whether it is time to roll to the next contract"},
         "next_contract": {"type": "str", "description": "Symbol of the next contract to roll into"},
         "roll_strategy": {"type": "str", "description": "Roll strategy applied: 'calendar', 'volume', or 'spread_optimal'"},
-        "current_price": {"type": "float", "description": "Current market price of the position"},
-        "qty": {"type": "int", "description": "Current position quantity"},
+        "current_price": {"type": "float", "description": "Current market price of the position (absent when it could not be read; see current_price_unavailable_reason)"},
+        "current_price_unavailable_reason": {"type": "str", "description": "Present when the position's current_price could not be read as a number (display only - the roll decision does not use it)"},
+        "qty": {"type": "float", "description": "Current position quantity (fractional counts are kept; absent when it could not be read; see qty_unavailable_reason)"},
+        "qty_unavailable_reason": {"type": "str", "description": "Present when the position's quantity could not be read as a number (display only - the roll decision does not use it)"},
     },
     locales={
         "ko": {
@@ -183,9 +187,26 @@ async def roll_management_condition(
             "should_roll": should_roll,
             "next_contract": next_contract,
             "roll_strategy": roll_strategy,
-            "current_price": pos_data.get("current_price", 0),
-            "qty": pos_data.get("qty", pos_data.get("quantity", 0)),
         }
+        # 현재가·수량은 표시용이다(롤 판정은 만기일만 쓴다). 원값을 그대로 싣지 않고
+        # 숫자로 읽어 싣되, 못 읽으면 0 으로 뭉개지 않고 그렇다고 표시한다
+        # ('안 보낸 필드는 안 보냈다고 표시' 규약, _position_qty 참조).
+        raw_current_price = pos_data.get("current_price", 0)
+        raw_qty = pos_data.get("qty", pos_data.get("quantity", 0))
+        current_price = coerce_number(raw_current_price)
+        qty = preserve_qty(raw_qty)
+        if current_price is None:
+            result_info["current_price_unavailable_reason"] = (
+                f"현재가를 읽을 수 없음 (current_price={raw_current_price!r})"
+            )
+        else:
+            result_info["current_price"] = current_price
+        if qty is None:
+            result_info["qty_unavailable_reason"] = (
+                f"보유 수량을 읽을 수 없음 (qty={raw_qty!r})"
+            )
+        else:
+            result_info["qty"] = qty
 
         # state 저장 (롤오버 이력)
         if should_roll and context and hasattr(context, "risk_tracker") and context.risk_tracker:

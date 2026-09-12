@@ -1,3 +1,22 @@
+## [1.15.2] - 2026-09-12
+### Fixed
+- **포지션 값 강제(coercion) 전수 정리** — 12개 플러그인(beta_hedge / correlation_guard / drawdown_protection /
+  dynamic_stop_loss / max_position_limit / partial_take_profit / profit_target / roll_management / stop_loss /
+  time_based_exit / trailing_stop / var_cvar_monitor)이 `pos_data` 의 `current_price`·`qty`·`pnl_rate` 등
+  원값을 강제 없이 산술·비교에 넣어 문자열/None 이면 예외로 죽거나(예: `'150.0' * 100` → 문자열 반복 뒤
+  `float()` ValueError) 0 으로 뭉개던 결함. 공용 헬퍼 `_position_qty.py`(`coerce_qty`/`coerce_number`/
+  `preserve_qty`)로 연산 전에 읽고, 못 읽으면 값을 지어내지 않고 `action='skip'` + 사유(필드·원값)를 남긴다.
+  디렉토리에서 플러그인을 자동 발견하는 파라미터화 회귀 테스트 추가.
+- **절반 축소 수량** — `drawdown_protection`·`var_cvar_monitor` 의 `max(1, int(qty)//2)` 가 소수점 포지션에서
+  보유 초과 매도(0.532 보유 → 1주)를, 1주 포지션에서 전량 매도를 내던 결함. `min(qty/2, qty)`, 바닥올림 제거.
+  1주/소수 보유에서 절반 축소가 주문 송신부의 정수 내림으로 무동작이 되는 경우 사유를 남긴다(정책 선택은 후속).
+- `trailing_stop` 이 보존된 Decimal 수량을 다시 `int()` 로 자르던 결함, `profit_target` 의 소수 포지션 부분
+  익절이 사유 없이 건너뛰어지던 결함, `var_cvar_monitor` 의 `var_dollar`/`position_value` 가 소수 포지션에서
+  0 으로 접히던 결함 수정.
+- `partial_take_profit` 상태 저장·복원 경로는 **라이브에서 동작하지 않는다**(실제 `WorkflowRiskTracker` 에
+  `get_state`/`set_state` 없음, executor 가 positions 플러그인에 context 를 넘기지 않음) — 코드는 바꾸지 않고
+  주석·테스트가 사실(목 계약 검증)을 말하도록 정정. 근본 수정은 후속.
+
 ## [1.15.0] - 2026-08-15
 ### Changed
 - **StopLoss/ProfitTarget 임계값 부호 검증** (`stop_loss`, `profit_target`,

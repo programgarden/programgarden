@@ -129,5 +129,70 @@ class TestMaxPositionLimitPlugin:
         assert "action" in MAX_POSITION_LIMIT_SCHEMA.fields_schema
 
 
+
+class TestUnreadablePositionValues:
+    """V3 [MAJOR] — ``market_value = current_price * qty`` 뒤 ``float(market_value)`` 였던 경로.
+
+    current_price='150.0'(정상 숫자 문자열)/qty=100 이면 곱셈이 문자열 반복('150.0'×100)이
+    되고 float() 에서 ValueError 로 죽었다(실측 2026-09-12) — **정상값으로도** 죽었다.
+    'n/a'·None 은 곱셈에서 TypeError. (전수 계약은 test_position_field_coercion_regression.py.)
+    """
+
+    @pytest.mark.asyncio
+    async def test_numeric_string_price_no_longer_repeats_string(self):
+        result = await max_position_limit_condition(
+            positions=[{"symbol": "AAPL", "current_price": "150.0", "qty": 100, "market_code": "82"}],
+            fields={"max_positions": 10},
+        )
+        sr = result["symbol_results"][0]
+        assert sr["market_value"] == 15000.0
+        assert sr["current_price"] == 150.0
+        assert result["analysis"]["total_value"] == 15000.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("raw", ["n/a", None], ids=repr)
+    async def test_unreadable_price_without_market_value_is_skipped_with_reason(self, raw):
+        result = await max_position_limit_condition(
+            positions=[
+                {"symbol": "AAPL", "current_price": raw, "qty": 100, "market_code": "82"},
+                {"symbol": "MSFT", "current_price": 400, "qty": 5, "market_code": "82"},
+            ],
+            fields={"max_positions": 10, "max_single_weight_pct": 50},
+        )
+        aapl = next(sr for sr in result["symbol_results"] if sr["symbol"] == "AAPL")
+        assert aapl["action_taken"] == "skip"
+        assert f"current_price={raw!r}" in aapl["reason"]
+        assert "market_value" not in aapl and "weight_pct" not in aapl  # 0 으로 지어내지 않는다
+        # 못 읽은 포지션은 총액·비중에서 빠진다 — MSFT 가 100% 가 된다(그게 읽은 값의 사실이다).
+        msft = next(sr for sr in result["symbol_results"] if sr["symbol"] == "MSFT")
+        assert msft["weight_pct"] == 100.0
+        assert result["analysis"]["total_value"] == 2000.0
+        assert result["analysis"]["unreadable_count"] == 1
+        assert result["analysis"]["position_count"] == 2  # 포지션인 건 사실이다
+
+    @pytest.mark.asyncio
+    async def test_unreadable_qty_is_skipped_with_reason(self):
+        result = await max_position_limit_condition(
+            positions=[{"symbol": "AAPL", "current_price": 150.0, "qty": "n/a", "market_code": "82"}],
+            fields={},
+        )
+        sr = result["symbol_results"][0]
+        assert sr["action_taken"] == "skip"
+        assert "qty='n/a'" in sr["reason"]
+        assert result["passed_symbols"] == []
+
+    @pytest.mark.asyncio
+    async def test_unreadable_price_with_readable_market_value_still_evaluates(self):
+        """market_value 로 금액은 읽혔다 — 현재가만 표시에서 빠지고 사유가 남는다."""
+        result = await max_position_limit_condition(
+            positions=[{"symbol": "AAPL", "current_price": "n/a", "qty": 100, "market_value": 15000, "market_code": "82"}],
+            fields={},
+        )
+        sr = result["symbol_results"][0]
+        assert sr["market_value"] == 15000.0
+        assert "current_price" not in sr
+        assert "current_price='n/a'" in sr["current_price_unavailable_reason"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

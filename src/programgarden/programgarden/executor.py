@@ -85,6 +85,77 @@ def _qty_num(value: Any, default: int = 0):
     return int(f) if f.is_integer() else f
 
 
+def _whole_unit_quantity(value: Any) -> Optional[int]:
+    """정수 수량이면 int 로, 아니면 None — **자르지 않는다**.
+
+    정정 TR 세 개는 수량 필드를 모두 **정수**로 선언한다:
+      · COSAT00311 blocks.py:79 ``OrdQty: int``  ("Revised order quantity in shares")
+      · CIDBT00900 blocks.py:130 ``OrdQty: int`` ("Revised order quantity in contracts")
+      · CSPAT00701 blocks.py:74 ``OrdQty: int``  ("New order quantity in shares")
+    그런데 해외주식은 소수점 거래가 실재한다(prod 2026-08-24 IBM 0.847972주 실측 —
+    _qty_num 독스트링). 그래서 ``int(quantity)`` 로 싣으면 0.847972 → **0** 이
+    브로커로 나가고 원장에는 0.847972 가 남아, 이 구조가 지키려던 '와이어=원장'
+    불변식을 스스로 깬다. 자르는 대신 **거부**한다(호출부 _resolve_modify_target).
+
+    bool 은 int 의 서브클래스라 먼저 걷어낸다(True 를 수량 1 로 받으면 안 된다).
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    return int(number) if number.is_integer() else None
+
+
+def _usable_execution_identity(order_no: Any, order_date: Any) -> bool:
+    """체결 프레임의 (주문번호, 주문일자)가 원장 execution identity 키로 쓸 수 있나.
+
+    원장은 체결번호(execution_id)를 실으면 (product, provider, trading_mode,
+    order_date, order_no, execution_id) 로 중복방지 키를 만드는데
+    (workflow_position_tracker._execution_key), 그때 주문번호도 정규화한다.
+    정규화가 None 을 주거나 ValueError 를 올리면, **또는 order_date 가 비면**
+    _execution_key 가
+    ValueError("Explicit execution identity requires an order number and date")
+    를 올린다. 그래서 체결번호를 싣기 전에 여기서 미리 확인하고, 못 쓰면
+    체결번호 없이 종전 경로로 안전 강등한다.
+
+    ⚠️ 이건 **최종 방어선이 아니라 '가능하면 미리 거른다' 는 최적화**다.
+    이 함수는 (주문번호, 주문일자) 축만 보고 **체결번호 자체는 보지 않는다**
+    (프레임 값을 읽는 시점이 호출부마다 다르기 때문) — 체결번호가 "0.0"/"-0"
+    같은 비정수 수치 문자열이면 여기를 통과하고도 _execution_key 가 ValueError 를
+    올린다. 그 부류 전체는 context.record_workflow_fill 이 닫는다 — identity 관련
+    ValueError 를 잡아 체결번호 없이 한 번 더 기록하고 warning 을 남긴다
+    (중복방지만 포기, 체결은 보존). 여기서 거르는 이유는 그 재시도/경고를
+    안 만들고 끝내기 위해서다.
+
+    주문일자까지 보는 이유: 프레임에서 주문일자를 읽는 경로가
+    `getattr(body, 'ordr_dt', <로컬날짜>)`(TC3/TC2) 인데, getattr 의 기본값은
+    **속성이 아예 없을 때만** 쓰인다 — 브로커가 `ordr_dt=""` 를 실어 보내면
+    빈 문자열이 그대로 흘러 `not fill.order_date` 분기에 걸린다. 여기서
+    로컬 날짜를 대신 채워 넣지는 않는다(프레임이 말하지 않은 주문일자를
+    지어내면 원장 대조 키가 거짓이 된다) — 중복방지만 포기한다.
+
+    주문번호 판정은 tracker._normalize_identifier 의 규칙을 그대로 따른다
+    (사설 메서드를 건드리지 않으려고 최소 복제): 빈 값/0-only 는 식별자가 아니고,
+    정수가 아닌 수치 문자열(예: "12.5")은 그쪽에서 ValueError 다.
+    """
+    if not str(order_date or "").strip():
+        return False
+    text = str(order_no or "").strip()
+    if not text:
+        return False
+    if re.fullmatch(r"[0-9]+", text):
+        return bool(text.lstrip("0"))
+    if re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", text):
+        return False
+    return True
+
+
 def _safe_print(*args: Any, **kwargs: Any) -> None:
     """Emit console output without ever letting it abort the caller.
 
@@ -4547,12 +4618,42 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 
                 # 필요한 필드 추출
                 order_no = str(getattr(body, 'sOrdNo', ''))
-                execution_id = getattr(body, 'sExecNO', None)
                 order_date = datetime.now().strftime('%Y%m%d')  # AS1에는 sOrdDt 없음
+                # E3: 체결번호는 **주문번호를 원장 키로 쓸 수 있을 때만** 싣는다.
+                # AS1 의 sOrdNo 는 int 라(SDK overseas_stock/real/AS1/blocks.py:374) 0 이 오면 str() 이 '0' 이 되고,
+                # _normalize_identifier 가 그걸 None 으로 접어 _execution_key 가
+                # ValueError 를 올린다. 그럴 땐 중복방지를 포기하고 종전 경로로
+                # 안전 강등한다. SC1(execno)·TC3(ccls_no)과 동일 패턴.
+                # (이건 최적화다 — 뚫려도 context.record_workflow_fill 이 identity
+                #  ValueError 를 잡아 체결번호 없이 다시 기록한다.)
                 symbol = getattr(body, 'sShtnIsuNo', getattr(body, 'sIsuNo', ''))
                 market_code = getattr(body, 'sOrdMktCode', '82')
                 side_code = getattr(body, 'sOrdPtnCode', '')  # 01: 매도, 02: 매수
-                fill_time = getattr(body, 'proctm', datetime.now().strftime('%H%M%S000'))
+                # 체결시각은 sExecTime(체결시각) → sRcptExecTime(거래소수신체결시각)
+                # 순으로만 읽는다. 종전에는 proctm 을 썼는데 proctm 은 **AP처리시간**
+                # (증권사 서버 처리시각, 9자리 HHMMSSmmm)이라 거래소 체결시각과 다른
+                # 값이다(출처: 오너 진술 2026-09-12). SDK 만으로도 확정된다 —
+                # blocks.py:91 이 proctm 구간을 'System / WS frame header fields
+                # (shared across AS0~AS4)' 로, :317 이 sExecTime 구간을
+                # 'Execution-specific fields (AS1)' 로 명시한다(sExecTime=:644,
+                # sRcptExecTime=:650). 국내 SC1 은 이미 exectime(체결시각)을 쓰고
+                # 있었으므로 이 수정으로 상품 간 의미도 일치한다.
+                #
+                # 🔴 폴백을 만들지 않는다. proctm 도, `datetime.now()` 합성값도 쓰지
+                # 않는다. 소비자(pg-worker app/order_fill_updates.py)가
+                # `order_date + fill_time` 을 시장 세션 타임존으로 읽어 executed_at 을
+                # **계산된 체결시각**으로 확정하고, 그럴 때는 executed_at_source 태그도
+                # 붙이지 않는다. 파드에는 TZ env 가 없어 now() 는 UTC 벽시계이므로,
+                # 합성 9자리를 Asia/Seoul 로 읽으면 9시간 과거가 되면서도 "계산된 값"
+                # 으로 보인다. 값이 없으면 **빈 문자열**로 내보내 pg-worker 의
+                # `and fill_time` 가드가 걸리게 하고, 그쪽이 received_at 폴백을
+                # executed_at_source="received_at" 으로 정직하게 표시하게 한다.
+                # (두 체결시각 필드의 자릿수/타임존은 SDK 에 선언돼 있지 않고 우리도
+                #  미관측이다 — examples 는 6자리 '093015'.)
+                fill_time = (
+                    str(getattr(body, 'sExecTime', '') or '').strip()
+                    or str(getattr(body, 'sRcptExecTime', '') or '').strip()
+                )
                 
                 # 시장코드 → 거래소 변환
                 exchange_map = {'81': 'NYSE', '82': 'NASDAQ', '83': 'AMEX'}
@@ -4599,7 +4700,11 @@ class BrokerNodeExecutor(NodeExecutorBase):
                         # 우리 주문과 일치하면 매체코드 무관하게 workflow 로 분류되고,
                         # 일치하지 않는 계좌 내 타 체결만 이 코드로 HTS/타 API 를 가른다.
                         commda_code=getattr(body, 'sCommdaCode', ''),
-                        execution_id=execution_id,
+                        # 위 E3 가드 — 주문번호/주문일자가 원장 키로 못 쓰이면 None.
+                        execution_id=(
+                            getattr(body, 'sExecNO', None)
+                            if _usable_execution_identity(order_no, order_date) else None
+                        ),
                         account_avg_price=account_avg_price,
                     )
 
@@ -4747,7 +4852,12 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 quantity = int(getattr(body, 'ccls_q', 0) or 0)
                 price_str = str(getattr(body, 'ccls_prc', '0') or '0')
                 price = float(price_str.strip()) if price_str.strip() else 0.0
-                fill_time = getattr(body, 'ccls_tm', datetime.now().strftime('%H%M%S000'))
+                # 체결시각은 프레임의 ccls_tm 만 쓴다 — 없으면 빈 문자열.
+                # 종전 `or datetime.now().strftime('%H%M%S000')` 합성 폴백은
+                # 파드 로컬(UTC) 벽시계를 브로커 체결시각과 같은 9자리 모양으로
+                # 내보내 하류(pg-worker)가 그것을 '계산된 체결시각'으로 승격시켰다.
+                # 빈 값이면 하류가 received_at 폴백을 태그와 함께 쓴다.
+                fill_time = str(getattr(body, 'ccls_tm', '') or '').strip()
 
                 logger.info(f"[TC3] 체결: svc_id={svc_id}, order_no={order_no}, symbol={symbol}, side={side}, qty={quantity}, price={price}")
 
@@ -4764,9 +4874,36 @@ class BrokerNodeExecutor(NodeExecutorBase):
                                 price=price,
                                 fill_time=fill_time,
                                 # 선물 체결 프레임(TC3)에는 통신매체코드 필드가 없다
-                                # (blocks.py 에 commda/media 없음). 이 경로는 우리
-                                # 주문의 체결이므로 OPEN API 기본값 '40' 을 유지한다.
-                                commda_code='40',
+                                # (blocks.py 에 commda/media 없음). 종전에는 '40'(OPEN
+                                # API)을 채웠는데, 그건 프레임이 말하지 않은 값을
+                                # 원장에 증거처럼 남기는 것이다 — tracker 의
+                                # detect_anomalies 가 `WHERE commda_code='40'` 을
+                                # unknown_api 비율의 분모로 써서 trust_score 에 실제로
+                                # 영향이 간다. 그래서 '프레임이 아무 말도 안 했다' 를
+                                # 그대로 빈 문자열로 남긴다. media_channel('') 은
+                                # 'unknown' 이고, tracker 의 record_fill 은 unknown 과
+                                # api 를 같은 버퍼 분기로 보내므로 분류 결과는 현행과
+                                # 동일하다. AS1 이 먼저 하드코딩을 폐기한 패턴과 같다.
+                                commda_code='',
+                                # 체결번호(ccls_no — SDK overseas_futureoption/real/TC3/blocks.py 의
+                                # '체결번호(Fill number)' 필드) — 원장
+                                # 중복방지(execution_id 부분 유니크 인덱스)의 유일한
+                                # 키다. 이건 REST 대사용 식별자 alias 를 지어내는 게
+                                # 아니라 프레임이 이미 싣고 있는 자기 필드를 읽는
+                                # 것이다. 1주문이 분할체결되면 체결번호가 N개 발급되므로
+                                # (출처: 오너 진술 2026-09-12) 같은 프레임 재전달만
+                                # 걸러지고 진짜 분할체결은 보존된다.
+                                # E3: 주문번호가 빈 프레임에서는 싣지 않는다 —
+                                # _execution_key 가 order_no 정규화를 요구하고
+                                # 실패 시 ValueError 를 올린다. 그럴 땐 중복방지를
+                                # 포기하고 종전 경로로 안전 강등한다. (최종 방어선은
+                                # context.record_workflow_fill 의 identity ValueError
+                                # 폴백이다 — 여긴 그걸 미리 거르는 최적화.)
+                                execution_id=(
+                                    getattr(body, 'ccls_no', None)
+                                    if _usable_execution_identity(order_no, order_date)
+                                    else None
+                                ),
                             ),
                             loop
                         )
@@ -4837,9 +4974,24 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     symbol = raw_symbol.lstrip('A') if raw_symbol.startswith('A') else raw_symbol
                     bns_tp = getattr(body, 'bnstp', '')  # 1:매도, 2:매수
                     side = 'buy' if bns_tp == '2' else 'sell'
-                    fill_time = getattr(body, 'exectime', datetime.now().strftime('%H%M%S000'))
+                    # 체결시각은 프레임의 exectime 만 쓴다 — 없으면 빈 문자열.
+                    # (TC3/AS1 과 같은 이유. 합성 9자리는 pg-worker 가 Asia/Seoul 로
+                    #  읽어 '계산된 체결시각' 으로 확정해버린다.)
+                    fill_time = str(getattr(body, 'exectime', '') or '').strip()
 
                     media_code = getattr(body, 'commdacode', '')
+
+                    # E3: 체결번호는 **주문번호가 있을 때만** 싣는다.
+                    # 원장의 execution identity 키는 (product, provider,
+                    # trading_mode, order_date, order_no, execution_id) 라
+                    # (workflow_position_tracker._execution_key), 주문번호가 비면
+                    # ValueError 를 올린다. 주문번호가 없는 프레임은 중복방지를
+                    # 포기하고 종전 경로로 안전 강등한다. (최종 방어선은
+                    # context.record_workflow_fill 의 identity ValueError 폴백.)
+                    execution_no = (
+                        getattr(body, 'execno', None)
+                        if _usable_execution_identity(order_no, order_date) else None
+                    )
 
                     async def record_and_refresh():
                         """체결 기록 후 AccountTracker refresh"""
@@ -4855,7 +5007,21 @@ class BrokerNodeExecutor(NodeExecutorBase):
                             # SC1 프레임의 통신매체코드(commdacode)를 그대로 넘긴다.
                             # 우리 주문과 일치하면 workflow, 아니면 이 코드로
                             # HTS(manual)/타 API(unknown_api)를 가른다.
+                            # 국내 매체코드 의미는 40/41=오픈API·50=MTS·60=HTS·
+                            # 00=지점(유선) — **출처는 오너 진술(2026-09-12)이며
+                            # 저장소 SDK 에는 국내 매체코드 enum 이 선언돼 있지 않고
+                            # 우리도 라이브 미관측**이다(그래서 여기서 코드를
+                            # 해석하지 않고 표(MEDIA_CODES_*)에만 맡긴다).
                             commda_code=media_code,
+                            # 체결번호(execno, SDK korea_stock/real/SC1/blocks.py:147)
+                            # — 원장 중복방지(execution_id 부분 유니크 인덱스)의
+                            # 유일한 키. 종전에는 프레임이 싣고 있는데도 안 읽어서
+                            # 국내주식은 중복방지가 통째로 비활성이었고, 같은 프레임이
+                            # 재전달되면 FIFO 가 이중계상됐다. AS1(sExecNO)과 동일 패턴.
+                            # 1주문 분할체결 시 체결번호는 N개로 발급되므로
+                            # (출처: 오너 진술 2026-09-12) 진짜 분할체결은 보존된다.
+                            # order_no 가 빈 프레임에서는 None 이다(위 E3 가드).
+                            execution_id=execution_no,
                         )
 
                         # AccountTracker refresh로 PnL 이벤트 강제 트리거
@@ -7036,16 +7202,51 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         open_orders = {}
         if hasattr(tracker, 'get_open_orders'):
             for order_no, order in tracker.get_open_orders().items():
+                # 🔴 exchange 가 비는 건 **브로커가 안 줘서가 아니라 SDK 매핑이
+                # 버려서**다. 브로커 응답 COSAQ00102OutBlock3 에는 주문시장코드가
+                # 있다(SDK overseas_stock/accno/COSAQ00102/blocks.py:534 OrdMktCode
+                # — "'81' = NYSE, '82' = NASDAQ"). 그런데 그 행을 StockOpenOrder 로
+                # 옮기는 SDK 매핑(overseas_stock/extension/tracker.py:385-398)이
+                # OrdMktCode 를 읽지 않고, 모델에도 자리가 없다
+                # (extension/models.py:189-226: order_no/symbol/symbol_name/
+                # order_type/order_qty/order_price/executed_qty/remaining_qty/
+                # order_time/order_status/currency_code/last_updated 뿐).
+                # 즉 이 값은 "거래소가 빈 주문" 도, "브로커가 말하지 않음" 도 아니고
+                # **중간 매핑에서 유실**이다. 키 자체는 포트 스키마(ORDER_LIST_FIELDS
+                # 에 exchange 선언)와 형제 경로(선물/국내)의 모양을 지키려고 남기되,
+                # 소비자가 빈 문자열을 사실로 오해하지 않도록 사유를 같은 dict 에
+                # 싣는다(안 보낸 필드는 '안 보냄' 으로 표시하는 저장소 규약).
+                # 독출 자체는 남겨둔다 — SDK 모델에 market_code 가 생기면 그때는
+                # 사유 없이 실제 값이 나가야 한다(근본 수정은 finance 패키지 몫).
+                exchange_value = str(
+                    getattr(order, 'exchange_code', '')
+                    or getattr(order, 'market_code', '')
+                    or ''
+                )
                 open_orders[order_no] = {
                     "order_no": order_no,
                     "symbol": getattr(order, 'symbol', ''),
-                    "exchange": getattr(order, 'exchange_code', getattr(order, 'market_code', '')),
+                    "exchange": exchange_value,
                     "order_type": getattr(order, 'order_type', ''),
                     "order_price": float(getattr(order, 'order_price', 0)),
-                    "order_qty": int(getattr(order, 'order_qty', 0)),
-                    "filled_qty": int(getattr(order, 'filled_qty', 0)),
-                    "remaining_qty": int(getattr(order, 'remaining_qty', getattr(order, 'order_qty', 0)) or 0),
+                    # SDK StockOpenOrder 의 수량은 int | float 다
+                    # (overseas_stock/extension/models.py:204·210·213 "소수점 가능").
+                    # LS 는 해외주식 소수점 거래를 지원하고(출처: 오너 진술
+                    # 2026-09-12), prod 실측도 있다(2026-08-24 IBM 0.847972주 —
+                    # _qty_num 독스트링). int() 로 자르면 1주 미만 주문이 통째
+                    # 0 이 돼 미체결이 조용히 사라진다 — 형제 경로
+                    # OpenOrdersNode(_ls_overseas_stock)가 이미 _qty_num 을 쓰는 것과
+                    # 맞춘다. 또 체결수량 필드명은 filled_qty 가 아니라
+                    # **executed_qty** 라(models.py:210) 종전 이름으로는 항상 0 이었다
+                    # (국내판은 executed_qty 를 올바르게 읽고 있다).
+                    "order_qty": _qty_num(getattr(order, 'order_qty', 0)),
+                    "filled_qty": _qty_num(getattr(order, 'executed_qty', 0)),
+                    "remaining_qty": _qty_num(getattr(order, 'remaining_qty', getattr(order, 'order_qty', 0)) or 0),
                 }
+                if not exchange_value:
+                    open_orders[order_no]["exchange_unavailable_reason"] = (
+                        "dropped_by_sdk_open_order_mapping"
+                    )
         
         return {
             "held_symbols": held_symbols,
@@ -15833,6 +16034,38 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 node_id
             )
 
+            # FIFO/체결분류용 원장 기록 — 해외주식(_execute_overseas_stock)·해외선물과
+            # 같은 규약. 종전에는 국내주식만 이 호출이 빠져 있어서 SC1 체결이
+            # `_check_workflow_order` 에서 항상 False 가 되고, 남은 기준이 매체코드뿐이라
+            # 'workflow' 분류가 한 건도 생기지 않았다 — personal_metrics 승률·손익비에서
+            # 국내주식 체결이 전량 누락된다.
+            # 🔴 주문일자는 브로커 날짜가 아니라 **로컬 날짜**여야 한다 — 체결
+            # 대조가 (order_no, order_date) 로 이뤄지고, SC1 프레임에는 주문일자
+            # 필드가 없어 수신 시점 로컬 날짜로 채워지기 때문이다(해외주식
+            # `_sync_positions_from_executions` 의 🔴 주석과 같은 근거).
+            # 가격은 브로커에 실제로 보낸 값(ord_prc) — 시장가면 0.0 이고,
+            # 체결 시 update_workflow_order_fill_price 가 실체결가로 채운다.
+            # Legacy stores remain best effort; their failure cannot revoke ACK.
+            # (해외선물 경로와 같은 규약 — 원장 기록 실패가 이미 브로커에
+            #  접수된 주문을 '실패' 로 뒤집으면 안 된다. 이 블록이 없으면 예외가
+            #  메서드 전체 try 로 올라가 _order_result(False, ...) 가 된다.)
+            try:
+                context.record_workflow_order(
+                    order_no=order_no,
+                    order_date=datetime.now().strftime("%Y%m%d"),
+                    symbol=symbol,
+                    exchange="KRX",
+                    side=side,
+                    quantity=qty,
+                    price=ord_prc,
+                    node_id=node_id,
+                )
+            except Exception as ledger_err:
+                logger.warning(
+                    "Korea stock order ledger write failed (order accepted): %s",
+                    ledger_err,
+                )
+
             result = self._order_result(
                 True, symbol, "KRX", side, qty, price
             )
@@ -16041,6 +16274,14 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         exchange = config.get("exchange", "KRX" if product == "korea_stock" else "NASDAQ")
         new_quantity = config.get("new_quantity")
         new_price = config.get("new_price")
+        # ⚠️ 잔재값이다 — ModifyOrder 계열 노드 스키마에 side 필드가 없어
+        # (core/programgarden_core/nodes/order.py:245-263) 노드로 들어오면 항상
+        # 기본값 "buy" 다. 세 정정 경로 어디도 이 **변수**로 방향을 정하지 않는다.
+        # 방향은 원 주문 원장 행에서 승계하고(_resolve_modify_target), 원장이
+        # 없거나 행이 없을 때만 **config 에 실제로 실린** side 를 쓴다 — 그건 각
+        # 정정 메서드가 `config.get("side")` 로 기본값 없이 직접 읽는다(여기서
+        # 기본값을 먹인 이 변수를 넘기면 '호출자가 말한 값' 과 '기본값' 을 구분할
+        # 수 없다). 시그니처 호환을 위해서만 넘긴다.
         side = config.get("side", "buy")
         
         if not original_order_id:
@@ -16100,6 +16341,337 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             context.log("error", f"{node_type}: Unexpected error: {e}", node_id)
             return self._error_result(str(e))
 
+    def _resolve_modify_target(
+        self,
+        context: ExecutionContext,
+        *,
+        product_label: str,
+        original_order_id: Any,
+        symbol: str,
+        exchange: str,
+        new_quantity: Optional[int],
+        new_price: Optional[float],
+        requires_side: bool,
+        explicit_side: Any = None,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """정정의 **실효 주문**(방향/수량/가격/종목/거래소)을 한 번에 확정한다.
+
+        브로커 요청과 원장 기록이 **같은 값**을 쓰게 하려고 한 곳에서만 푼다.
+        종전에는 원장만 원 주문 값을 승계하고(아래) 와이어는 ``new_quantity or 0``
+        / ``new_price or 0.0`` 이라, 수량만 정정하면 브로커에는 가격 0 이 나가고
+        원장에는 원가격이 적히는 **불일치**가 생겼다.
+
+        🔴 방향(side)은 config 에서 읽으면 안 된다. ModifyOrder 계열 노드 스키마에는
+        side 필드가 아예 없어(core/programgarden_core/nodes/order.py:245-263 =
+        connection / original_order_id / symbol / exchange) 호출부의
+        ``config.get("side", "buy")`` 는 세 경로 모두 사실상 항상 "buy" 다.
+        그 값은 두 곳으로 흘렀다:
+          1. 해외선물 정정 요청의 ``BnsTpCode``(CIDBT00900) — 매도 선물 주문을
+             정정해도 매수로 나갔다. (불일치 BnsTpCode 를 LS 가 어떻게 처리하는지는
+             **미관측**이다. 여기서 고치는 근거는 그 값이 *존재할 수 없는 config
+             키*에서 왔다는 사실 하나뿐이다.)
+          2. 원장 기록 → risk_tracker.register_symbol(entry_price, qty) — 보유하지도
+             않은 종목에 롱 HWM 이 생기고, 그 HWM 이 이후 그 종목의 신규 매수를
+             drawdown 게이트(check_drawdown_threshold)로 막았다.
+        그래서 방향은 **추측하지 않고 원 주문 원장 행에서 승계**한다.
+
+        수량/가격을 0 으로 치환하지 않는 근거(SDK 전수 확인, 2026-09-12):
+        세 정정 TR 어디에도 '0 = 변경 없음' 규약이 없다.
+          - COSAT00311 blocks.py:79-92 — OrdQty "Revised order quantity in shares",
+            OvrsOrdPrc "Revised order price ...". 예제
+            example/overseas_stock/run_COSAT00311.py:36-37 은 OrdQty=1,
+            OvrsOrdPrc=2.62 로 **실제 값**을 싣는다.
+          - CIDBT00900 blocks.py:110-133 — OvrsDrvtOrdPrc "Revised limit order
+            price", OrdQty "Revised order quantity in contracts. Example script
+            uses 1". 예제 example/overseas_futureoption/run_CIDBT00900.py:39-41 도
+            OvrsDrvtOrdPrc=0.64935, OrdQty=1.
+          - CSPAT00701 blocks.py:100-107 — OrdPrc 는 오히려 0 에 **다른 뜻**이
+            달려 있다: "Use 0 for market orders ('03') and other non-limit price
+            types". 지정가('00')로 0 을 보내면 '변경 없음' 이 아니라 가격 0 이다.
+            예제 example/korea_stock/run_CSPAT00701.py:32-35 도 OrdQty=1, OrdPrc=100.
+        노드 스키마도 같은 약속을 한다 — nodes/order.py:766-772
+        "정정할 수량 (변경하지 않으면 기존 수량 유지)". 그 '유지'를 실제로
+        수행하는 곳이 여기다: 안 바꾼 필드는 **원 주문 값을 그대로 다시 싣는다**.
+
+        🔴 '원장에 행이 없다' 와 '원장 자체가 없다' 는 다른 실패다.
+        트래커는 워크플로우에 PnL 리스너가 하나라도 있을 때만 만들어진다
+        (context.init_workflow_position_tracker 의
+        ``any(hasattr(l, 'on_workflow_pnl_update') ...)`` 게이트, 또는 초기화
+        예외). 리스너 0개로 엔진을 라이브러리처럼 직접 구동하면 트래커가 None 이라
+        record_workflow_order 가 no-op → 원장에 행이 생길 수 없고 →
+        find_workflow_order 는 **영원히** None 이다. 그 구성에서 방향을 원장에서만
+        찾으면 해외선물 정정이 전면 불능이 된다(매수든 매도든, 수량·가격을 다
+        줘도 브로커에 닿지 못한다). 그래서 두 경우의 사유 코드를 가른다:
+          · ``ledger_unavailable``       — 원장 자체가 없다(구성 문제).
+          · ``original_order_not_found`` — 원장은 있는데 그 주문 행이 없다.
+
+        그리고 **호출자가 side 를 실제로 준 경우에는 그 값을 쓴다** — 추측이 아니라
+        사용자가 알려준 값이다. ModifyOrder 노드 스키마에는 side 가 없지만
+        (core/programgarden_core/nodes/order.py:245-263) 라이브러리를 직접 부르는
+        호출자는 config 에 넣을 수 있다. 단 ``config.get("side", "buy")`` 의
+        **기본값**은 호출자가 준 값이 아니므로 여기까지 오지 않는다 — 세 정정
+        메서드가 ``config.get("side")`` 를 그대로(기본값 없이) 넘긴다. 원장 행이
+        있으면 원장이 이긴다(그건 우리가 실제로 브로커에 보낸 값의 기록이다).
+
+        ⚠️ 못 찾았을 때 종전처럼 'buy' 로 되돌리지 않는 이유: 매도 주문 정정에
+        매수 구분(BnsTpCode='2')을 보내는 건 실계좌 위험이고(LS 가 불일치
+        BnsTpCode 를 어떻게 처리하는지는 **미관측**이다), 원장에도 유령 롱 HWM 이
+        남는다. 조용히 틀린 방향으로 나가는 것보다 사유를 달고 실패하는 편이 낫다.
+
+        수량은 **정수만** 싣는다 — 세 TR 의 수량 필드가 모두 ``OrdQty: int``
+        (COSAT00311 blocks.py:79 / CIDBT00900 blocks.py:130 / CSPAT00701
+        blocks.py:74)인데 해외주식은 소수점 거래가 실재한다(prod 2026-08-24 IBM
+        0.847972주). ``int()`` 로 자르면 브로커엔 0, 원장엔 0.847972 가 남아
+        이 구조의 '와이어=원장' 불변식이 깨지므로 자르지 않고 거부한다
+        (사유 ``non_integer_quantity``). 근거는 _whole_unit_quantity 참조.
+
+        **승계 가격**도 0 이하면 거부한다(사유 ``non_positive_inherited_price``).
+        원장 price 는 '브로커에 실제로 보낸 값' 이라 시장가 신규주문은 0.0 으로
+        적힌다 — 국내주식 `_execute_korea_stock` 의 ``ord_prc = 0.0 if
+        ordprc_ptn_code == "03"`` → ``record_workflow_order(price=ord_prc)``,
+        해외주식 매도 시장가도 ``price = 0.0`` 을 그대로 기록한다. 체결 전
+        (= 정정 가능한 상태)에는 update_workflow_order_fill_price 가 아직 실체결가를
+        채우지 않았으므로 그 0.0 이 승계값이 된다. 그 값을 지정가('00') 정정에
+        실으면 '변경 없음' 이 아니라 **가격 0 주문**이다 — CSPAT00701
+        blocks.py:100-107 은 0 을 시장가('03')용 값으로 명시하고, 세 정정 TR
+        어디에도 '0 = 유지' 규약이 없다(위 SDK 인용). non_positive_quantity 게이트와
+        같은 모양의 구멍이 가격 축에 있었던 것이라 같은 자리에서 막는다.
+
+        ⚠️ 이 게이트는 **승계값에만** 건다(``new_price is None`` 일 때). 호출자가
+        ``new_price=0`` 을 명시적으로 준 경우는 막지 않는다 — 그건 호출자의
+        진술이고, CSPAT00701 에서는 시장가 유형(``price_type_code="03"``)과 함께
+        유효할 수 있다. 그 조합(유형 코드 × 가격 0)의 유효성은 우리가 판정하지
+        않는다 — 호출자가 준 값을 그대로 싣는다.
+
+        Returns:
+            (resolved, error). resolved 는
+            {"order_date", "side", "quantity", "price", "symbol", "exchange",
+             "side_known", "side_source"}. error 가 있으면 정정을 **보내지 않는다**.
+        """
+        order_date = datetime.now().strftime("%Y%m%d")
+        ledger_available = context.has_workflow_order_ledger()
+        original: Optional[Dict[str, Any]] = None
+        try:
+            # 종목까지 넘긴다 — 자정을 관통한 정정은 원장 행이 D±1 에 있고,
+            # 그 창 후보를 가르는 기준이 종목이다(브로커 주문번호는 영업일마다
+            # 리셋되므로 과거 날짜의 동명 번호가 있다). context.find_workflow_order 참조.
+            found = context.find_workflow_order(
+                str(original_order_id), order_date, symbol=symbol,
+            )
+            if isinstance(found, dict):
+                original = found
+        except Exception as lookup_err:
+            # 조회는 best-effort 다. 실패하면 '못 찾음' 과 같이 취급하고,
+            # 아래 게이트가 방향/미변경 필드를 못 풀면 정정을 거른다.
+            logger.warning(
+                "Modify (%s): ledger lookup failed for original order %s: %s",
+                product_label, original_order_id, lookup_err,
+            )
+
+        side = original.get("side") if original else None
+        if side not in ("buy", "sell"):
+            side = None
+        side_source = "ledger" if side is not None else None
+
+        # 호출자가 **실제로** 준 방향(기본값이 아니다 — 호출부가 config.get("side")
+        # 를 기본값 없이 넘긴다). 원장 행이 있으면 원장이 이긴다.
+        caller_side = str(explicit_side).strip().lower() if explicit_side is not None else ""
+        if caller_side not in ("buy", "sell"):
+            caller_side = ""
+        if caller_side:
+            if side is None:
+                side = caller_side
+                side_source = "config"
+                logger.warning(
+                    "Modify (%s): original order %s not found in the ledger; using the "
+                    "caller-supplied side %r from config (not a guess — the caller "
+                    "stated it). ledger_available=%s",
+                    product_label, original_order_id, caller_side, ledger_available,
+                )
+            elif caller_side != side:
+                logger.warning(
+                    "Modify (%s): caller-supplied side %r disagrees with the ledger row "
+                    "for order %s (%r); using the ledger value — it is the record of "
+                    "what we actually sent to the broker",
+                    product_label, caller_side, original_order_id, side,
+                )
+
+        quantity = new_quantity if new_quantity is not None else (
+            original.get("quantity") if original else None
+        )
+        price = new_price if new_price is not None else (
+            original.get("price") if original else None
+        )
+
+        if requires_side and side is None:
+            if not ledger_available:
+                # 원장 자체가 없다 — 이 구성에서는 어떤 주문도 조회될 수 없다.
+                # 종전(4차 이전)에는 여기서 config 기본값 "buy" 가 그대로 나가
+                # 매수 정정만 우연히 동작했다. 방향을 지어내지 않는 대신, 사유를
+                # 갈라 운영자가 '기록 안 된 주문' 과 '원장 없는 구성' 을 구분하게 한다.
+                return None, (
+                    f"ledger_unavailable: cannot resolve the original order direction "
+                    f"for {product_label} modify of order {original_order_id} — this "
+                    f"run has no workflow order ledger (the position tracker is only "
+                    f"created when a listener implements on_workflow_pnl_update, and "
+                    f"init failures leave it unset), so no order row can ever exist. "
+                    f"The modify request carries a mandatory buy/sell code; pass an "
+                    f"explicit 'side' in the node config to modify without a ledger. "
+                    f"Refusing to guess — sending 'buy' for a sell order is a live-account risk."
+                )
+            return None, (
+                f"original_order_not_found: cannot resolve original order direction "
+                f"for {product_label} modify of order {original_order_id} (ledger row "
+                f"not found or has no usable side). The modify request carries a "
+                f"buy/sell code, and the node schema has no side field to fall back "
+                f"on — refusing to guess."
+            )
+
+        if quantity is None or price is None:
+            return None, (
+                f"unchanged_field_unresolved: cannot resolve the unchanged field(s) "
+                f"for {product_label} modify of order {original_order_id} "
+                f"(new_quantity={new_quantity!r}, new_price={new_price!r}, "
+                f"original order not found in the ledger"
+                f"{'; this run has no order ledger at all' if not ledger_available else ''}"
+                f"). Sending 0 is not 'keep the original value' in any of the modify "
+                f"TRs — refusing."
+            )
+
+        whole_quantity = _whole_unit_quantity(quantity)
+        if whole_quantity is not None and whole_quantity <= 0:
+            # 정수이긴 한데 0 이하다. 절단 버그와 **같은 결과**(OrdQty=0)를 내므로
+            # 여기서도 막는다. 사유 코드는 따로 둔다 — 원인이 다르다.
+            return None, (
+                f"non_positive_quantity: cannot modify {product_label} order "
+                f"{original_order_id} with quantity {quantity!r} — a modify with "
+                f"OrdQty<=0 is not a quantity change, and none of the modify TRs "
+                f"give 0 a 'keep the original' meaning."
+            )
+        if whole_quantity is None:
+            return None, (
+                f"non_integer_quantity: cannot modify {product_label} order "
+                f"{original_order_id} with quantity {quantity!r} — every modify TR "
+                f"declares a whole-unit order quantity (COSAT00311 blocks.py:79 "
+                f"'OrdQty: int' / CIDBT00900 blocks.py:130 'OrdQty: int' / "
+                f"CSPAT00701 blocks.py:74 'OrdQty: int'), and LS overseas stock "
+                f"fractional orders do exist (prod 2026-08-24 IBM 0.847972 shares). "
+                f"Truncating would send OrdQty=0 to the broker while the ledger keeps "
+                f"the fraction — refusing instead of silently truncating."
+            )
+
+        if new_price is None:
+            # 승계 가격 게이트 — 호출자가 new_price 를 주지 않아 원장 값을 다시
+            # 싣는 경우에만 본다. 원장 price 는 '브로커에 보낸 값' 이라 시장가
+            # 신규주문은 0.0 으로 적혀 있고(국내 ord_prc / 해외 매도 시장가),
+            # 체결 전이라 실체결가로 덮이지도 않았다. 그 0 을 정정에 실으면
+            # 지정가 가격 0 주문이 된다(CSPAT00701 blocks.py:100-107 — 0 은
+            # 시장가용 값이지 '유지' 가 아니다). non_positive_quantity 와 같은
+            # 근거로 여기서 거부한다.
+            #
+            # 호출자가 new_price=0 을 **명시**한 경우는 이 분기에 들어오지 않는다.
+            # 그건 호출자의 진술이고, CSPAT00701 에선 시장가 유형('03')과 함께
+            # 유효할 수 있다 — 그 조합의 유효성은 우리가 판정하지 않는다.
+            #
+            # 원장 price 컬럼은 REAL 이라 float/None 만 온다(None 은 위
+            # unchanged_field_unresolved 가 이미 걸렀다). 그래도 숫자가 아니면
+            # 여기서 단정하지 않고 종전처럼 호출부의 float() 에 맡긴다.
+            try:
+                inherited_price = float(price)
+            except (TypeError, ValueError):
+                inherited_price = None
+            if inherited_price is not None and inherited_price <= 0:
+                return None, (
+                    f"non_positive_inherited_price: cannot modify {product_label} order "
+                    f"{original_order_id} by inheriting its ledger price {price!r} — "
+                    f"the ledger records the price actually sent to the broker, and a "
+                    f"market order is sent with price 0 (CSPAT00701 blocks.py:100-107 "
+                    f"'Use 0 for market orders'), so re-sending it as a limit modify "
+                    f"would place a price-0 order, not keep the original. "
+                    f"시장가로 낸 주문은 가격을 승계할 수 없다 — new_price 를 명시하라."
+                )
+
+        return {
+            "order_date": order_date,
+            # 브로커에 싣는 값과 원장에 적는 값이 **같은 객체**에서 나가야 하므로
+            # 여기서 정수로 확정한다(호출부는 다시 int() 로 감싸지 않는다).
+            "quantity": whole_quantity,
+            "side": side,
+            "price": price,
+            "symbol": (original.get("symbol") if original else None) or symbol,
+            "exchange": (original.get("exchange") if original else None) or exchange,
+            "side_known": side is not None,
+            "side_source": side_source,
+        }, None
+
+    def _record_modified_order(
+        self,
+        context: ExecutionContext,
+        *,
+        product_label: str,
+        resolved: Dict[str, Any],
+        new_order_no: str,
+        node_id: str,
+    ) -> None:
+        """정정으로 발급된 **새 주문번호**를 원장에 남긴다(값은 resolved 그대로).
+
+        정정 후 체결은 새 주문번호로 오므로, 이 행이 없으면 우리 체결이
+        (order_no, order_date) 대조에 실패해 manual/unknown_api 로 오분류된다.
+        원 주문 행은 지우지 않는다 — 원 주문의 잔여 체결이 늦게 도착할 수 있고,
+        record_order 는 INSERT OR IGNORE 라 재기록도 안전하다.
+
+        기록값은 브로커에 실제로 보낸 값(_resolve_modify_target 의 resolved)과
+        **같은 객체**에서 온다 — 원장과 와이어가 갈리지 않게 하는 게 이 구조의
+        목적이다.
+
+        방향을 끝내 못 푼 경우(해외주식/국내는 요청에 방향이 안 들어가므로 정정
+        자체는 나갈 수 있다)에는 **행을 남기지 않는다**: 체결 분류는
+        (order_no, order_date) 로만 이뤄지므로, 방향을 모르는 채 "buy" 로 박아
+        유령 롱 HWM 을 만드는 것보다 기록을 건너뛰는 편이 안전하다.
+        (호출자가 config 로 방향을 명시했다면 그건 추측이 아니므로 기록한다 —
+        resolved["side_source"] == "config".)
+
+        정정은 새 포지션이 아니므로 register_risk=False 로 리스크 트래커
+        부수효과를 끈다(HWM 이중계상·미체결 매도 정정으로 인한 HWM 조기 해제 방지).
+        원 주문이 이미 HWM 을 등록해 둔 상태라 정정이 추가로 할 일은 없다.
+
+        기록 실패는 절대 정정 자체를 실패로 만들지 않는다 — Legacy stores remain
+        best effort; their failure cannot revoke ACK(해외선물 신규주문 경로와 같은 규약).
+        """
+        try:
+            if not resolved.get("side_known"):
+                logger.warning(
+                    "Modify (%s): original order direction unknown; skipping ledger "
+                    "row for new order %s (recording it as 'buy' would register a "
+                    "phantom long HWM)",
+                    product_label, new_order_no,
+                )
+                return
+            if resolved.get("side_source") == "config":
+                logger.info(
+                    "Modify (%s): recording new order %s with the caller-supplied "
+                    "side %r (no ledger row for the original order)",
+                    product_label, new_order_no, resolved.get("side"),
+                )
+
+            context.record_workflow_order(
+                order_no=new_order_no,
+                order_date=resolved["order_date"],
+                symbol=resolved["symbol"],
+                exchange=resolved["exchange"],
+                side=resolved["side"],
+                quantity=resolved["quantity"],
+                price=resolved["price"],
+                node_id=node_id,
+                register_risk=False,
+            )
+        except Exception as ledger_err:
+            logger.warning(
+                "Modify (%s): ledger write failed for new order %s (modify already "
+                "accepted by broker): %s",
+                product_label, new_order_no, ledger_err,
+            )
+
     async def _modify_overseas_stock(
         self,
         ls,
@@ -16113,10 +16685,39 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """해외주식 정정주문 실행 (COSAT00311)"""
+        """해외주식 정정주문 실행 (COSAT00311)
+
+        ⚠️ ``side`` **인자**는 브로커 요청에도 원장 기록에도 쓰지 않는다. ModifyOrder
+        노드 스키마에 side 필드가 없어(core/programgarden_core/nodes/order.py:
+        245-263) 호출부의 ``config.get("side", "buy")`` 가 사실상 항상 "buy" 이기
+        때문이다(COSAT00311 자체는 매매구분을 받지 않는다 — blocks.py:55-95).
+        원장 방향은 원 주문 행에서 승계하고, 행이 없으면 **config 에 실제로 실린**
+        side 만 쓴다(``config.get("side")`` — 기본값 없이 읽으므로 노드 경로에서는
+        None 이다). 인자는 시그니처 호환을 위해 남겨둔다.
+
+        수량/가격은 **실효값**을 싣는다 — 안 바꾼 필드에 0 을 보내지 않는다.
+        근거는 _resolve_modify_target 독스트링(SDK blocks/example 인용).
+        """
         from programgarden_finance.ls.overseas_stock.order.COSAT00311.blocks import COSAT00311InBlock1
 
-        
+        resolved, resolve_error = self._resolve_modify_target(
+            context,
+            product_label="overseas_stock",
+            original_order_id=original_order_id,
+            symbol=symbol,
+            exchange=exchange,
+            new_quantity=new_quantity,
+            new_price=new_price,
+            # COSAT00311 에는 매매구분 필드가 없다 → 방향을 몰라도 요청은 나갈 수
+            # 있다(원장 행만 건너뛴다).
+            requires_side=False,
+            # 기본값 없이 넘긴다 — 호출자가 실제로 실어 보낸 경우만 쓴다.
+            explicit_side=config.get("side"),
+        )
+        if resolve_error:
+            context.log("error", f"Modify order blocked: {resolve_error}", node_id)
+            return self._error_result(resolve_error)
+
         # 시장 코드 결정
         ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
         
@@ -16131,8 +16732,12 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     OrgOrdNo=int(original_order_id),
                     OrdMktCode=ord_mkt_code,
                     IsuNo=symbol,
-                    OrdQty=new_quantity or 0,
-                    OvrsOrdPrc=new_price or 0.0,
+                    # resolved["quantity"] 는 이미 정수로 확정돼 있다
+                    # (_resolve_modify_target 의 non_integer_quantity 게이트).
+                    # 여기서 다시 int() 로 감싸면 그 게이트를 우회해 소수 수량을
+                    # 조용히 0 으로 자른다 — 감싸지 말 것.
+                    OrdQty=resolved["quantity"],
+                    OvrsOrdPrc=float(resolved["price"]),
                     OrdprcPtnCode=ordprc_ptn_code,
                 ),
             )
@@ -16180,7 +16785,17 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                 f"Order modified: {symbol} original={original_order_id} → new={new_order_no}",
                 node_id
             )
-            
+
+            # 원장 기록(브로커에 보낸 것과 **같은** resolved 값) — 상세 규약은
+            # _resolve_modify_target / _record_modified_order 독스트링 참고.
+            self._record_modified_order(
+                context,
+                product_label="overseas_stock",
+                resolved=resolved,
+                new_order_no=new_order_no,
+                node_id=node_id,
+            )
+
             return {
                 "modify_result": {
                     "success": True,
@@ -16223,14 +16838,47 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """해외선물 정정주문 실행 (CIDBT00900)"""
+        """해외선물 정정주문 실행 (CIDBT00900)
+
+        ⚠️ ``side`` **인자**는 쓰지 않는다. ModifyOrder 노드 스키마에 side 필드가 없어
+        (core/programgarden_core/nodes/order.py:245-263) 호출부의
+        ``config.get("side", "buy")`` 가 사실상 항상 "buy" 라, 이 TR 의
+        ``BnsTpCode``(blocks.py:88-93 "'1' = sell, '2' = buy")에 매도 주문을
+        정정할 때도 매수가 실렸다. 방향은 원 주문 원장 행에서 승계한다.
+
+        원장 행이 없을 때의 처리는 두 갈래다:
+          · ``config`` 에 side 가 **실제로** 실려 있으면(라이브러리 직접 호출자)
+            그 값을 쓴다 — 추측이 아니라 호출자가 알려준 값이다.
+          · 아니면 추측하지 않고 **정정 요청 자체를 거른다**. 사유는 원장 자체가
+            없는 구성이면 ``ledger_unavailable``, 원장은 있는데 행이 없으면
+            ``original_order_not_found`` 로 갈라 준다.
+        """
         from programgarden_finance.ls.overseas_futureoption.order.CIDBT00900.blocks import CIDBT00900InBlock1
 
         from datetime import datetime
-        
-        # 매매구분코드: 1=매도, 2=매수
-        bns_tp_code = "1" if side == "sell" else "2"
-        
+
+        resolved, resolve_error = self._resolve_modify_target(
+            context,
+            product_label="overseas_futures",
+            original_order_id=original_order_id,
+            symbol=symbol,
+            exchange=exchange,
+            new_quantity=new_quantity,
+            new_price=new_price,
+            # CIDBT00900 은 매매구분(BnsTpCode)을 **필수**로 받는다 → 방향을 모르면
+            # 보낼 수 없다.
+            requires_side=True,
+            # 원장에 행이 없어도(특히 원장 자체가 없는 구성) 호출자가 방향을
+            # 명시했으면 그 값을 쓴다 — 추측이 아니라 사용자가 알려준 값이다.
+            explicit_side=config.get("side"),
+        )
+        if resolve_error:
+            context.log("error", f"Modify futures order blocked: {resolve_error}", node_id)
+            return self._error_result(resolve_error)
+
+        # 매매구분코드: 1=매도, 2=매수 (원 주문 원장 행에서 승계 — config 아님)
+        bns_tp_code = "1" if resolved["side"] == "sell" else "2"
+
         today = datetime.now().strftime("%Y%m%d")
         expiry_month = config.get("expiry_month", "")
         exchange_code = config.get("exchange_code", exchange)
@@ -16246,9 +16894,9 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                     BnsTpCode=bns_tp_code,
                     FutsOrdPtnCode="2",  # 지정가
                     CrcyCodeVal="",
-                    OvrsDrvtOrdPrc=new_price or 0.0,
+                    OvrsDrvtOrdPrc=float(resolved["price"]),
                     CndiOrdPrc=0.0,
-                    OrdQty=new_quantity or 0,
+                    OrdQty=resolved["quantity"],   # 정수 확정값 — int() 재감싸기 금지
                     OvrsDrvtPrdtCode="000000",
                     DueYymm=expiry_month,
                     ExchCode=exchange_code,
@@ -16299,7 +16947,16 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                 f"Futures order modified: {symbol} original={original_order_id} → new={new_order_no}",
                 node_id
             )
-            
+
+            # 원장 기록(브로커에 보낸 것과 **같은** resolved 값).
+            self._record_modified_order(
+                context,
+                product_label="overseas_futures",
+                resolved=resolved,
+                new_order_no=new_order_no,
+                node_id=node_id,
+            )
+
             return {
                 "modify_result": {
                     "success": True,
@@ -16340,8 +16997,32 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> Dict[str, Any]:
-        """국내주식 정정주문 실행 (CSPAT00701)"""
+        """국내주식 정정주문 실행 (CSPAT00701)
+
+        CSPAT00701 은 매매구분을 받지 않는다(blocks.py:55-107 — OrgOrdNo/IsuNo/
+        OrdQty/OrdprcPtnCode/OrdCndiTpCode/OrdPrc). 그래서 방향을 몰라도 요청은
+        나가고, 원장 행만 건너뛴다.
+
+        가격/수량은 **실효값**을 싣는다. 특히 OrdPrc 는 0 이 '변경 없음' 이 아니라
+        **시장가용 값**이다(blocks.py:100-107 "Use 0 for market orders ('03') and
+        other non-limit price types") — 지정가('00')로 0 을 보내면 가격 0 이다.
+        """
         from programgarden_finance.ls.korea_stock.order.CSPAT00701.blocks import CSPAT00701InBlock1
+
+        resolved, resolve_error = self._resolve_modify_target(
+            context,
+            product_label="korea_stock",
+            original_order_id=original_order_id,
+            symbol=symbol,
+            exchange="KRX",
+            new_quantity=new_quantity,
+            new_price=new_price,
+            requires_side=False,
+            explicit_side=config.get("side"),
+        )
+        if resolve_error:
+            context.log("error", f"Korea stock modify order blocked: {resolve_error}", node_id)
+            return self._error_result(resolve_error)
 
         # 호가유형코드 (기본: 지정가)
         ordprc_ptn_code = config.get("price_type_code", "00")
@@ -16350,9 +17031,9 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             body = CSPAT00701InBlock1(
                 OrgOrdNo=int(original_order_id),
                 IsuNo=symbol,
-                OrdQty=new_quantity or 0,
+                OrdQty=resolved["quantity"],   # 정수 확정값 — int() 재감싸기 금지
                 OrdprcPtnCode=ordprc_ptn_code,
-                OrdPrc=float(new_price) if new_price else 0.0,
+                OrdPrc=float(resolved["price"]),
             )
 
             order_api = ls.korea_stock().order().cspat00701(body=body)
@@ -16398,6 +17079,17 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                 "info",
                 f"Korea stock order modified: {symbol} original={original_order_id} → new={new_order_no}",
                 node_id
+            )
+
+            # 원장 기록(브로커에 보낸 것과 **같은** resolved 값).
+            # 종전에는 config.get("side", "buy") 를 썼는데, ModifyOrder 노드에는
+            # side 필드 자체가 없어 항상 "buy" 였다(유령 롱 HWM).
+            self._record_modified_order(
+                context,
+                product_label="korea_stock",
+                resolved=resolved,
+                new_order_no=new_order_no,
+                node_id=node_id,
             )
 
             return {
