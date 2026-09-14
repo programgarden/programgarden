@@ -276,10 +276,15 @@ async def test_existing_schema_rows_are_preserved_without_inferred_identity(tmp_
     target = tracker(tmp_path)
     migrated = rows(target, "trade_history")[0]
     assert migrated[:len(old)] == old
-    # Additive columns backfill to NULL, never inferred: the three execution
-    # identity columns plus the four account-avg-price estimate columns
-    # (unmatched_qty, estimate_basis_price, estimate_source, estimated_pnl).
-    assert migrated[len(old):] == (None, None, None, None, None, None, None)
+    # New evidence stays NULL; the conflict flag alone starts at false.
+    # Inspect named fields so additive column order is not a test contract.
+    with sqlite3.connect(path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM trade_history").fetchone()
+        assert all(row[name] is None for name in (
+            "execution_id", "normalized_order_no", "execution_payload", "currency",
+            "unmatched_qty", "estimate_basis_price", "estimate_source", "estimated_pnl"))
+        assert row["currency_conflict"] == 0
     await target.record_fill(**fill(commda_code="85"), execution_id="new-evidence")
     assert len(rows(target, "trade_history")) == 2
     assert rows(target, "trade_history")[0] == migrated

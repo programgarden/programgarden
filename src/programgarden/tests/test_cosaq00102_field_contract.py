@@ -20,7 +20,7 @@ def _out_block3():
     pytest.fail("COSAQ00102OutBlock3 를 찾지 못했다 — SDK 구조가 바뀌었다")
 
 
-@pytest.mark.parametrize("field", ["OrdNo", "ShtnIsuNo", "ExecQty", "OvrsExecPrc", "OvrsOrdPrc", "ExecTime"])
+@pytest.mark.parametrize("field", ["OrdNo", "ShtnIsuNo", "ExecQty", "OvrsExecPrc", "OvrsOrdPrc", "ExecTime", "CrcyCode"])
 def test_batch_fill_query_fields_exist(field):
     """재조정 배치 조회가 읽는 필드가 실제로 응답 모델에 있어야 한다."""
     assert field in _out_block3().model_fields, (
