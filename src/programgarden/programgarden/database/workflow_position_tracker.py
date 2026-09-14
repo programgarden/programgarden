@@ -1484,6 +1484,124 @@ class WorkflowPositionTracker:
             commda_code=commda_code, received_at=received_at, quantity=quantity,
         ) is not None
 
+    # ── 체결 재조정 (2026-09-14) ────────────────────────────────────────────
+    # lot 과 trade_history 는 **체결 이벤트로만** 생긴다(_process_fill_internal 이 유일한
+    # 입구). 주문 접수 직후의 인라인 확인 창은 4회 x 2초로 짧아서, 지정가가 몇 분 뒤에
+    # 체결되면 그 사실이 원장에 영영 도착하지 않는다. 그러면:
+    #   · workflow_position_lots 가 비어 workflow_pnl_rate 가 NULL 로 발행되고
+    #     (분모 0) 커뮤니티 수익률이 통째로 빈다.
+    #   · 실제로 보유 중인 종목을 엔진은 모른다.
+    # prod 실측(2026-09-14): MARA 매수(09-11)·NIO 매도(09-14) 둘 다 실제 체결됐는데
+    # trade_history 0건, lot 0건이었다.
+    #
+    # 아래 두 메서드는 그 복구의 **조회 절반**이다. 실제 브로커 확인과 record_fill 호출은
+    # 호출자(엔진 주기 태스크)가 한다 — 트래커는 브로커를 모른다.
+
+    def get_unconfirmed_workflow_orders(
+        self,
+        *,
+        min_age_seconds: float = 60.0,
+        limit: int = 50,
+        now: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """체결이 원장에 도착하지 않은 우리 주문 목록(오래된 것부터).
+
+        ``workflow_orders`` 에는 있는데 대응하는 ``trade_history`` 행이 없는 주문이다.
+        주문번호는 양쪽에서 앞자리 0 을 떼고 비교한다 — ``normalized_order_no`` 는
+        execution_id 가 있을 때만 채워지므로 그 컬럼만 믿으면 안 된다.
+
+        Args:
+            min_age_seconds: 접수 직후의 인라인 확인 창과 겹치지 않도록 두는 유예.
+                갓 낸 주문을 곧바로 재확인하면 같은 체결이 두 번 기록될 수 있다.
+            limit: 한 번에 가져올 최대 건수(브로커 조회 속도 제한 때문에 필요).
+            now: 테스트용 기준 시각.
+
+        Returns:
+            ``{order_no, order_date, symbol, exchange, side, quantity, price,
+               node_id, job_id, created_at}`` 목록. 체결 여부는 **모른다** —
+            "원장에 없다" 만 말한다. 취소·거부된 주문도 여기 들어오므로, 호출자가
+            브로커에 확인한 뒤에만 원장에 넣어야 한다.
+        """
+        cutoff = ((now or datetime.now()) - timedelta(seconds=max(0.0, min_age_seconds))).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT o.order_no, o.order_date, o.symbol, o.exchange, o.side,
+                       o.quantity, o.price, o.node_id, o.job_id, o.created_at
+                  FROM workflow_orders o
+                 WHERE o.product = ? AND o.provider = ? AND o.trading_mode = ?
+                   AND o.created_at < ?
+                   AND NOT EXISTS (
+                         SELECT 1 FROM trade_history t
+                          WHERE t.product = o.product
+                            AND t.provider = o.provider
+                            AND t.trading_mode = o.trading_mode
+                            AND t.order_date = o.order_date
+                            AND COALESCE(NULLIF(ltrim(t.order_no, '0'), ''), t.order_no)
+                                = COALESCE(NULLIF(ltrim(o.order_no, '0'), ''), o.order_no)
+                       )
+                 ORDER BY o.created_at ASC
+                 LIMIT ?
+                """,
+                (self.product, self.provider, self.trading_mode, cutoff, int(limit)),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_phantom_workflow_positions(
+        self,
+        account_quantities: Dict[str, float],
+    ) -> List[Dict[str, Any]]:
+        """워크플로우 lot 은 남아 있는데 계좌에는 없는(또는 모자란) 종목.
+
+        🔴 대칭의 나머지 절반이다. 자동매매가 산 종목을 **자동매매 밖에서** 팔면
+        (HTS·전화·다른 API) 그 체결 이벤트를 받아야 lot 이 줄어든다. 못 받으면 lot 이
+        그대로 남아 **계좌에 없는 물량을 보유 중으로 계산**하고 수익률을 과대 계상한다.
+        저장소에 lot↔잔고 대조가 없어서 한번 어긋나면 되맞출 방법이 없었다.
+
+        Args:
+            account_quantities: 브로커 잔고 기준 ``{종목코드: 보유수량}``.
+                **조회에 실패했으면 빈 dict 를 넘기지 마라** — 보유 0 과 구분되지 않아
+                멀쩡한 lot 을 전부 유령으로 보고한다. 호출자가 실패를 걸러야 한다.
+
+        Returns:
+            ``{symbol, lot_quantity, account_quantity, missing_quantity,
+               avg_buy_price}`` 목록. 판정은 하지 않는다 — "차이가 있다" 만 말한다.
+            사라진 이유(밖에서 매도 / 잔고 반영 지연 / 종목코드 표기 차이)는 호출자가
+            **추정**으로 다루고, 사용자에게도 추정임을 밝혀야 한다.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT symbol,
+                       SUM(remaining_qty) AS lot_quantity,
+                       SUM(remaining_qty * buy_price) / NULLIF(SUM(remaining_qty), 0) AS avg_buy_price
+                  FROM workflow_position_lots
+                 WHERE product = ? AND provider = ? AND trading_mode = ?
+                   AND classification = 'workflow' AND remaining_qty > 0
+                 GROUP BY symbol
+                """,
+                (self.product, self.provider, self.trading_mode),
+            ).fetchall()
+
+        normalized = {self._normalize_symbol(k): float(v) for k, v in (account_quantities or {}).items()}
+        phantoms: List[Dict[str, Any]] = []
+        for r in rows:
+            symbol = r["symbol"]
+            lot_qty = float(r["lot_quantity"] or 0)
+            held = normalized.get(self._normalize_symbol(symbol), 0.0)
+            missing = lot_qty - held
+            if missing > 0:
+                phantoms.append({
+                    "symbol": symbol,
+                    "lot_quantity": lot_qty,
+                    "account_quantity": held,
+                    "missing_quantity": missing,
+                    "avg_buy_price": float(r["avg_buy_price"]) if r["avg_buy_price"] is not None else None,
+                })
+        return phantoms
+
     def get_workflow_positions(
         self,
         start_date: Optional[str] = None,
