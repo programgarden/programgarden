@@ -24469,12 +24469,24 @@ class WorkflowJob:
     RECONCILE_MIN_ORDER_AGE_SEC = 60.0
 
     def _find_account_tracker_entry(self) -> Optional[Dict[str, Any]]:
-        """재조정에 쓸 해외주식 계좌 추적기 엔트리(있으면).
+        """재조정에 쓸 이 잡의 해외주식 계좌 추적기 엔트리(있으면).
 
         추적기는 이미 60초 주기로 잔고를 들고 있다 — 유령 포지션 대조에 쓸 보유수량과
         매도 추정에 쓸 평균매입가를 **추가 브로커 호출 없이** 여기서 얻는다.
+
+        🔴 레지스트리는 `BrokerNodeExecutor` 의 **클래스 속성**이지 WorkflowJob 의 것이
+        아니다. 종전엔 `self._active_trackers` 로 읽어 prod 에서 매 주기
+        `AttributeError: 'WorkflowJob' object has no attribute '_active_trackers'` 가 났다
+        (2026-09-14 실관측). 단위 테스트가 그 속성을 직접 만들어 넣는 바람에 가려졌다.
+
+        키는 `f"{job_id}_{node_id}"` 이고 레지스트리는 프로세스 전역이다 — 한 프로세스에
+        여러 잡이 뜨면 **남의 계좌 추적기를 집을 수 있으므로** job_id 로 거른다. 그건
+        다른 계좌의 잔고로 이 잡의 유령 포지션을 판정하는 것이라 조용히 틀린다.
         """
-        for entry in self._active_trackers.values():
+        prefix = f"{self.job_id}_"
+        for key, entry in BrokerNodeExecutor._active_trackers.items():
+            if not str(key).startswith(prefix):
+                continue
             if not isinstance(entry, dict):
                 continue
             if entry.get("type") != "account_tracker":

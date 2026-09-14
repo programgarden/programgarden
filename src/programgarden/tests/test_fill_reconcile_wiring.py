@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-from programgarden.executor import WorkflowJob
+from programgarden.executor import BrokerNodeExecutor, WorkflowJob
 
 
 class _Pos:
@@ -22,13 +22,35 @@ class _AcctTracker:
         self._positions = positions
 
 
-def _job():
-    """생성자를 타지 않고 재조정 관련 상태만 갖춘 최소 객체."""
+@pytest.fixture(autouse=True)
+def _clean_registry():
+    """추적기 레지스트리는 BrokerNodeExecutor 의 **클래스 속성**(프로세스 전역)이다.
+    테스트 간 누수를 막는다."""
+    saved = dict(BrokerNodeExecutor._active_trackers)
+    BrokerNodeExecutor._active_trackers.clear()
+    yield
+    BrokerNodeExecutor._active_trackers.clear()
+    BrokerNodeExecutor._active_trackers.update(saved)
+
+
+def _job(job_id="job-1"):
+    """생성자를 타지 않고 재조정 관련 상태만 갖춘 최소 객체.
+
+    🔴 `_active_trackers` 를 **여기서 만들지 않는다.** 종전 픽스처가
+    `job._active_trackers = {}` 로 없는 속성을 지어내는 바람에, 실제로는
+    `AttributeError: 'WorkflowJob' object has no attribute '_active_trackers'` 로
+    매 주기 죽던 것을 prod 에서야 발견했다(2026-09-14). 테스트가 만든 세계에서만
+    통과하는 코드였다.
+    """
     job = WorkflowJob.__new__(WorkflowJob)
-    job._active_trackers = {}
+    job.job_id = job_id
     job._reconcile_task = None
     job.context = types.SimpleNamespace(_workflow_position_tracker=None)
     return job
+
+
+def _register(job_id, node_id, entry):
+    BrokerNodeExecutor._active_trackers[f"{job_id}_{node_id}"] = entry
 
 
 # ── 계좌 스냅샷 ────────────────────────────────────────────────────────────
@@ -54,20 +76,35 @@ def test_unparsable_fields_do_not_crash_the_snapshot():
 
 # ── 추적기 선택 ────────────────────────────────────────────────────────────
 
+def test_registry_lives_on_the_broker_executor_not_the_job():
+    """이 결함의 정확한 형태 — WorkflowJob 에는 그 속성이 없다."""
+    assert hasattr(BrokerNodeExecutor, "_active_trackers")
+    assert not hasattr(WorkflowJob, "_active_trackers"), (
+        "WorkflowJob 에 생기면 self._active_trackers 로 읽는 코드가 되살아난다"
+    )
+
+
 def test_picks_the_account_tracker_not_the_fill_subscription():
     job = _job()
-    job._active_trackers = {
-        "a_fill_sub": {"type": "fill_subscription", "ls": object(), "real": object()},
-        "a": {"type": "account_tracker", "tracker": _AcctTracker({}), "ls": object()},
-    }
+    _register("job-1", "broker_fill_sub", {"type": "fill_subscription", "ls": object(), "real": object()})
+    _register("job-1", "broker", {"type": "account_tracker", "tracker": _AcctTracker({}), "ls": object()})
     entry = job._find_account_tracker_entry()
     assert entry is not None and entry["type"] == "account_tracker"
 
 
 def test_no_account_tracker_returns_none():
     job = _job()
-    job._active_trackers = {"a_fill_sub": {"type": "fill_subscription", "ls": object()}}
+    _register("job-1", "broker_fill_sub", {"type": "fill_subscription", "ls": object()})
     assert job._find_account_tracker_entry() is None
+
+
+def test_another_jobs_tracker_is_not_borrowed():
+    """레지스트리는 프로세스 전역이다 — 남의 계좌 잔고로 이 잡을 판정하면 조용히 틀린다."""
+    job = _job("job-mine")
+    _register("job-other", "broker", {"type": "account_tracker", "tracker": _AcctTracker({"X": _Pos(1, 1.0)}), "ls": object()})
+    assert job._find_account_tracker_entry() is None
+    _register("job-mine", "broker", {"type": "account_tracker", "tracker": _AcctTracker({}), "ls": object()})
+    assert job._find_account_tracker_entry() is not None
 
 
 # ── 한 주기 실행 ───────────────────────────────────────────────────────────
@@ -75,7 +112,7 @@ def test_no_account_tracker_returns_none():
 @pytest.mark.asyncio
 async def test_skips_quietly_without_a_ledger_tracker():
     job = _job()
-    job._active_trackers = {"a": {"type": "account_tracker", "tracker": _AcctTracker({}), "ls": object()}}
+    _register("job-1", "broker", {"type": "account_tracker", "tracker": _AcctTracker({}), "ls": object()})
     assert await job._reconcile_fills_once() is None
 
 
