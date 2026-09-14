@@ -755,3 +755,35 @@ def test_node_state_error_string_leads_with_the_korean_reason():
     failure = _order_failure_from_outputs(outputs)
     assert failure is not None
     assert failure.startswith("no_symbol: 주문 입력이 채워지지 않아"), failure
+
+async def test_empty_upstream_array_is_no_signal_not_a_wiring_fault(tmp_path, monkeypatch):
+    """🔴 2026-09-14 prod 실관측 — 거짓 경보 회귀 가드.
+
+    상류(SymbolFilter)가 **정상적으로** 빈 목록을 내면(관심종목을 이미 보유 → 오늘 살 것
+    없음) 반복이 일어나지 않아 `{{ item.symbol }}` 이 리터럴로 남는다. 그건 배선 고장이
+    아니라 "오늘 신호 없음" 이다 — 매 실행 노드 FAILED + 알림으로 울리면 안 된다.
+    (엔진 1.37.2 배포 직후 매수 노드가 10분마다 이 경보를 냈다.)
+    """
+    _no_broker(monkeypatch)
+    ctx = _order_context(tmp_path, iterating=False)
+    # 상류 리스트 포트가 **존재하고 비어 있다** — `_input_<node_id>` 의사 노드로 들어온다.
+    ctx.set_output("_input_buy_order", "symbols", [])
+    notifications: List[Dict[str, Any]] = []
+
+    async def capture(**kwargs):
+        notifications.append(kwargs)
+
+    monkeypatch.setattr(ctx, "send_notification", capture)
+
+    out = await NewOrderNodeExecutor().execute(
+        "buy_order", "OverseasStockNewOrderNode",
+        {"connection": {"product": "overseas_stock", "paper_trading": True},
+         "side": "buy", "order_type": "market",
+         "order": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "quantity": 1}},
+        ctx,
+    )
+    inner = out["order_result"]
+    assert inner["reason"] == EmptyOrderReason.NO_SIGNAL.value, \
+        f"상류가 정상적으로 비었는데 고장으로 분류했다: {inner.get('reason')}"
+    assert inner.get("skipped_by") != "unresolved_order_input"
+    assert not notifications, "정상 무신호 날에 사용자 알림이 울렸다"

@@ -15523,7 +15523,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             #    을 낸 정상 무신호 날이 매 실행 노드 FAILED + 사용자 알림으로 승격된다
             #    (D2, 벤치 2026-09-06 이 없애려던 바로 그 증상). 그래서 분류를 먼저
             #    돌리고, **확실한 배선 고장**(`hard`)일 때만 NO_SYMBOL 로 승격한다.
-            unfilled = self._describe_unfilled_order_fields(order, context, node_type)
+            unfilled = self._describe_unfilled_order_fields(order, context, node_type, node_id)
             reason, detail = self._diagnose_empty_reason(
                 order, config, raw_order_expr, context, node_id=node_id
             )
@@ -15912,6 +15912,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         order: Any,
         context: Optional["ExecutionContext"] = None,
         node_type: str = "",
+        node_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """주문 입력이 **채워지지 않아서** 주문을 못 만든 경우의 구체 사유.
 
@@ -15990,9 +15991,42 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         #    수량이 0/음수인 것만으로는 승격하지 않는다 — 자금 부족·소수점 잔량 등
         #    **정상적으로 오늘 못 사는 날**이 있고, 그건 `_diagnose_empty_reason` 이
         #    no_signal / fractional_only 로 더 정확히 분류한다.
-        hard = item_shape is not None or any(
-            kind in ("unresolved_template", "invalid") for kind in kinds.values()
-        )
+        # 🔴 2026-09-14 prod 실관측(엔진 1.37.2 첫 판단) — 거짓 경보 교정.
+        #    매수 노드가 `{{ item.symbol }}` 을 쓰는데 상류(SymbolFilter)가 **정상적으로**
+        #    빈 목록을 냈다(관심종목을 이미 보유 → 오늘 살 것 없음). 반복이 아예 일어나지
+        #    않아 템플릿이 리터럴로 남았는데, 그걸 `unresolved_template` = 배선 고장으로
+        #    승격해 **매 실행 노드 FAILED + 사용자 알림**이 됐다. "오늘 살 게 없다" 는
+        #    정상이다.
+        #    → 반복 중이 아닐 때 남은 **아이템 바인딩**(`{{ item… }}` / `{{ index }}`)은
+        #      승격하지 않고 `_diagnose_empty_reason` 에 넘긴다. 그쪽은 상류 리스트 포트로
+        #      "상류가 비어 반복이 안 됨(no_signal)" 과 "배열 소스 없이 item 을 씀(unbound)"
+        #      을 이미 가른다 — 이 함수의 계약대로 분류는 그쪽 몫이다.
+        #      반복 **중인데도** 안 풀린 템플릿은 종전대로 고장이다(항목이 있는데 못 읽었다).
+        def _is_item_binding(value: Any) -> bool:
+            if not isinstance(value, str):
+                return False
+            return bool(re.search(r"\{\{\s*(item|index|total)\b", value))
+
+        #    판정 축은 "반복 중인가" 가 아니라 **상류 배열이 있는데 비었는가** 다.
+        #      · 상류 리스트 포트가 있고 비었다  → 오늘 줄 게 없어 반복이 안 된 것(정상)
+        #      · 리스트 포트가 아예 없다         → 배열 소스 없이 item 을 쓴 배선 고장
+        #    `_upstream_array_is_empty` 가 이미 그 셋(True/False/None)을 가른다.
+        upstream_empty = False
+        if not iterating and context is not None and node_id:
+            try:
+                upstream_empty = _upstream_array_is_empty(_input_namespace(context, node_id)) is True
+            except Exception:  # noqa: BLE001 — 진단이 실행을 막지 않는다
+                upstream_empty = False
+        hard_kinds = {
+            key
+            for key, kind in kinds.items()
+            if kind == "invalid"
+            or (
+                kind == "unresolved_template"
+                and not (upstream_empty and _is_item_binding(order.get(key)))
+            )
+        }
+        hard = item_shape is not None or bool(hard_kinds)
 
         labels = NewOrderNodeExecutor._ORDER_FIELD_LABELS
         kind_ko = {
@@ -16299,8 +16333,16 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
 
-        # 매수 지정가 주문인데 가격이 없으면 현재가 조회
-        if is_buy and ordprc_ptn_code == "00" and price <= 0:
+        # 지정가 주문인데 가격이 없으면 현재가 조회.
+        # 🔴 2026-09-14 — 종전엔 **매수만** 이 경로를 탔다. 그래서 매도를 지정가로 두고 가격을
+        #    비우면 price=0 이 그대로 나가 거부됐다. 미국주식 **주간거래(Blue Ocean) 세션은
+        #    지정가만 받는다**(rsp_cd 00891 "주간거래는 지정가로만 주문이 가능합니다", 실계좌
+        #    관측) — 그 시간대에 손절·익절을 쓰려면 매도도 지정가여야 하는데, 사람이 종목마다
+        #    가격을 적을 수는 없다(손절 대상은 조건이 고른다). 매수와 같은 규칙으로 맞춘다.
+        #    ⚠️ 지정가는 **체결을 보장하지 않는다** — 손절인데 안 팔릴 수 있다. 그건 워크플로우가
+        #       지정가를 선택한 결과이고, 노드 설정에 그대로 드러난다(엔진이 몰래 유형을 바꾸지
+        #       않는다 — 오너 지시 2026-09-14: "다시 보낼 때는 노드로 워크플로우에 있어야 사용자가 안다").
+        if ordprc_ptn_code == "00" and price <= 0:
             try:
                 current_price = await self._get_current_price(ls, symbol, ord_mkt_code, context, node_id)
                 if current_price and current_price > 0:
@@ -16334,6 +16376,14 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
             # 디버그: 응답 전체 출력
             context.log("debug", f"COSAT00301 response: rsp_cd={response.rsp_cd}, rsp_msg={response.rsp_msg}", node_id)
+            # 🔴 2026-09-14 — `context.log` 는 리스너 통지 전용이라 **stdout 에 안 나온다**.
+            #    그래서 파드 로그만 보면 접수됐는지 거부됐는지 구분이 안 됐다(주문 결과 0줄).
+            #    증권사 응답 코드는 사고 조사의 1차 근거라 모듈 로거로도 남긴다
+            #    (`kubectl logs | grep broker_order_response`).
+            logger.info(
+                "broker_order_response | node=%s tr=COSAT00301 symbol=%s rsp_cd=%s rsp_msg=%s",
+                node_id, symbol, response.rsp_cd, response.rsp_msg,
+            )
 
             if response.error_msg:
                 reject = map_reject_code(
@@ -16343,6 +16393,10 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     "warning",
                     f"Order failed: {symbol} - {response.error_msg} ({reject.cause})",
                     node_id,
+                )
+                logger.warning(
+                    "broker_order_rejected | node=%s symbol=%s rsp_cd=%s cause=%s msg=%s",
+                    node_id, symbol, getattr(response, "rsp_cd", None), reject.cause, response.error_msg,
                 )
                 await self._notify_order_reject(context, node_id, symbol, reject)
                 return self._order_result(
@@ -16373,6 +16427,10 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 )
 
             context.log("info", f"Order submitted: {symbol} {side} {qty}@{price} → order_id={order_no}", node_id)
+            logger.info(
+                "broker_order_submitted | node=%s symbol=%s side=%s qty=%s price=%s order_id=%s",
+                node_id, symbol, side, qty, price, order_no,
+            )
 
             # Record workflow order for FIFO tracking (OrderNo가 있는 경우만)
             context.record_workflow_order(
