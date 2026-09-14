@@ -21284,6 +21284,7 @@ class WorkflowJob:
         # Checkpoint support
         self._checkpoint_mgr = None  # CheckpointManager (lazy init)
         self._checkpoint_task: Optional[asyncio.Task] = None  # 실시간 주기 저장 태스크
+        self._reconcile_task: Optional[asyncio.Task] = None  # 체결 재조정 주기 태스크
         self._completed_node_ids: Set[str] = set()  # 완료된 노드 ID 집합
 
         # Per-node diagnostic cache for get_state() (in-memory only, not persisted to checkpoint)
@@ -21533,6 +21534,7 @@ class WorkflowJob:
                 )
                 # 실시간 checkpoint 주기 저장 시작
                 self._start_checkpoint_loop()
+                self._start_reconcile_loop()
                 await self._event_loop()
             elif has_event_sources and self.context.is_dry_run:
                 logger.info(
@@ -21560,6 +21562,7 @@ class WorkflowJob:
             # 정상 완료 → checkpoint 삭제
             self._delete_checkpoint()
             await self._stop_checkpoint_loop()
+            await self._stop_reconcile_loop()
 
             # 🆕 Job 완료 알림
             await self.context.notify_job_state(self.status, self.stats)
@@ -23935,6 +23938,7 @@ class WorkflowJob:
         # Checkpoint 저장 (cleanup 전에)
         await self._save_checkpoint()
         await self._stop_checkpoint_loop()
+        await self._stop_reconcile_loop()
 
         self.context.stop()
 
@@ -24448,6 +24452,111 @@ class WorkflowJob:
                 await self._save_checkpoint()
         except asyncio.CancelledError:
             pass
+
+    # ── 체결 재조정 주기 태스크 (2026-09-14) ────────────────────────────────
+    #: 재조정 주기. 계좌 추적기가 60초마다 같은 앱키를 쓰므로 그보다 넉넉히 둔다.
+    #: LS 주문체결내역 조회는 앱키당 2초 1회이고, 재조정은 **날짜당 1회**만 부른다.
+    RECONCILE_INTERVAL_SEC = 180.0
+    #: 접수 직후 인라인 확인 창(4회 x 2초)과 겹치지 않게 두는 유예.
+    RECONCILE_MIN_ORDER_AGE_SEC = 60.0
+
+    def _find_account_tracker_entry(self) -> Optional[Dict[str, Any]]:
+        """재조정에 쓸 해외주식 계좌 추적기 엔트리(있으면).
+
+        추적기는 이미 60초 주기로 잔고를 들고 있다 — 유령 포지션 대조에 쓸 보유수량과
+        매도 추정에 쓸 평균매입가를 **추가 브로커 호출 없이** 여기서 얻는다.
+        """
+        for entry in self._active_trackers.values():
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("type") != "account_tracker":
+                continue
+            if entry.get("tracker") is not None and entry.get("ls") is not None:
+                return entry
+        return None
+
+    @staticmethod
+    def _account_positions_snapshot(acct_tracker: Any) -> Optional[Dict[str, Any]]:
+        """계좌 추적기 캐시 → ``{종목: {quantity, avg_price}}``.
+
+        🔴 캐시를 아직 못 채웠으면 **None** 을 돌려준다(빈 dict 아님). 빈 dict 는 "보유 0"
+        과 구분되지 않아, 실제로 들고 있는 포지션을 전부 "자동매매 밖에서 팔렸다" 로
+        기록하게 만든다.
+        """
+        positions = getattr(acct_tracker, "_positions", None)
+        if not isinstance(positions, dict) or not positions:
+            return None
+        out: Dict[str, Any] = {}
+        for symbol, pos in positions.items():
+            try:
+                qty = float(getattr(pos, "quantity", 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0.0
+            avg = getattr(pos, "buy_price", None)
+            try:
+                avg = float(avg) if avg is not None else None
+            except (TypeError, ValueError):
+                avg = None
+            out[str(symbol)] = {"quantity": qty, "avg_price": avg}
+        return out
+
+    async def _reconcile_fills_once(self) -> Optional[Dict[str, Any]]:
+        """한 주기 재조정. 준비가 안 됐으면 조용히 건너뛴다(None)."""
+        from .database.fill_reconciler import reconcile_workflow_fills
+
+        tracker = getattr(self.context, "_workflow_position_tracker", None)
+        if tracker is None:
+            return None
+        entry = self._find_account_tracker_entry()
+        if entry is None:
+            return None
+
+        ls = entry["ls"]
+        node_id = "fill_reconciler"
+
+        async def _fetch(order_date: str) -> Dict[str, Dict[str, Any]]:
+            return await self._query_overseas_stock_fills_by_date(
+                ls, order_date, self.context, node_id
+            )
+
+        report = await reconcile_workflow_fills(
+            tracker,
+            fetch_fills_by_date=_fetch,
+            account_positions=self._account_positions_snapshot(entry["tracker"]),
+            min_age_seconds=self.RECONCILE_MIN_ORDER_AGE_SEC,
+        )
+        if report.recorded_fills or report.phantom_positions or report.errors:
+            logger.info("fill_reconcile | %s", report.as_dict())
+        return report.as_dict()
+
+    async def _reconcile_loop(self) -> None:
+        """주기 재조정. 한 주기의 실패가 루프를 죽이지 않는다."""
+        try:
+            while True:
+                await asyncio.sleep(self.RECONCILE_INTERVAL_SEC)
+                try:
+                    await self._reconcile_fills_once()
+                except Exception as e:
+                    logger.warning("fill_reconcile_cycle_failed: %s", e)
+        except asyncio.CancelledError:
+            pass
+
+    def _start_reconcile_loop(self) -> None:
+        """체결 재조정 주기 실행 시작."""
+        if self._reconcile_task is not None:
+            return
+        self._reconcile_task = asyncio.ensure_future(self._reconcile_loop())
+        logger.debug("Fill reconcile loop 시작 (%s초 주기)", self.RECONCILE_INTERVAL_SEC)
+
+    async def _stop_reconcile_loop(self) -> None:
+        """체결 재조정 중단."""
+        if self._reconcile_task and not self._reconcile_task.done():
+            self._reconcile_task.cancel()
+            try:
+                await self._reconcile_task
+            except asyncio.CancelledError:
+                pass
+        self._reconcile_task = None
 
     def _start_checkpoint_loop(self) -> None:
         """실시간 워크플로우에서 checkpoint 주기 저장 시작."""
